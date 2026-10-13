@@ -498,7 +498,7 @@ export type AutomationStudioPlanNodeResolution =
    * when the page already shows it (`./plan-parameter-resolution.ts`, t447). It only ever skips a step.
    */
   | { status: "resolved"; parameters: JsonObject; handleViews?: readonly AutomationStudioPlanHandleView[]; effect?: JsonObject }
-  | { status: "refused"; issueCodes: readonly string[] }
+  | { status: "refused"; issueCodes: readonly string[]; issues?: readonly { code: string; field?: string; valid?: readonly string[] }[] }
   | { status: "needs_permission"; missing: readonly string[]; requestId: string | null };
 
 /**

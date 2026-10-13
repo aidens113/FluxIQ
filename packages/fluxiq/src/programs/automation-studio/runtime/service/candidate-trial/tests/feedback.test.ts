@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { JsonObject } from "../../../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../../model/index.ts";
 import type { AutomationStudioGraphExecutionTrace } from "../../../executor/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../../result-verification/index.ts";
@@ -310,5 +310,58 @@ describe("an unsure trial whose judges split", () => {
     const readings = String(feedback.readings);
     for (const key of readings.match(/\b[a-z]+Reading\b/gu) ?? []) expect(feedback, key).toHaveProperty(key);
     expect(readings).toContain("unconfirmedReading is what the call that said no compared");
+  });
+});
+
+// Lane D round 13 (`run-mv66sc3c-c47e74b8`, trials 2 to 4): the last read failed `record_output.invalid` three times, and
+// each feedback said only "The step names a node that cannot run", though the node's result named the issue. t489 (F3):
+// a failed step lists its node's own issues -- the code, the field and the valid names where the node gives them --
+// and says in words what was refused; nothing that is not an identifier passes.
+describe("trial feedback for a step its node refused as written", () => {
+  const readGraph = { nodes: [
+    { id: "open", definitionId: "web.output.browser-navigate", parameterValues: { url: "http://club.test/members" } },
+    { id: "read", label: "read the accepted members", definitionId: "web.output.dom-extract_list", parameterValues: {} }
+  ] } as unknown as AutomationStudioFlowArtifact;
+  const refused = (issues: JsonValue[]): AutomationStudioGraphExecutionTrace => ({
+    status: "failed", startedAt: 1, values: {}, effects: [],
+    attempts: [
+      { attemptId: "a1", nodeId: "open", definitionId: "web.output.browser-navigate", startedAt: 1, status: "succeeded", inputs: {}, outputs: {}, effects: [] },
+      { attemptId: "a2", nodeId: "read", definitionId: "web.output.dom-extract_list", startedAt: 2, status: "failed", inputs: {}, effects: [],
+        outputs: { error: { code: "record_output.invalid", issues } }, message: "Save extracted records is not a valid record output, so the list was not read.",
+        failure: { category: "graph_validation_or_unknown_node", code: "record_output.invalid", retryable: false, stage: "dispatch" } }
+    ]
+  });
+  const failedStep = (issues: JsonValue[]): JsonObject => {
+    const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph: readGraph, trace: refused(issues) });
+    return (feedback.steps as JsonObject[])[1]!;
+  };
+
+  it("lists the node's issue codes and says the record output was refused, never that the node cannot run", () => {
+    const step = failedStep(["record_output.process_unknown_field"]);
+    expect(step).toMatchObject({ label: "read the accepted members", failureCode: "record_output.invalid", issues: [{ code: "record_output.process_unknown_field" }], retryable: false });
+    expect(step.happened).not.toBe("The step names a node that cannot run.");
+    expect(step.happened).toMatch(/recordOutput/u);
+    expect(step.happened).toMatch(/issues/u);
+  });
+
+  it("carries the field the node refused and the names it can use instead, when the node gives them", () => {
+    expect(failedStep([{ code: "record_output.process_unknown_field", field: "status", valid: ["name", "mutualCount"] }]).issues)
+      .toEqual([{ code: "record_output.process_unknown_field", field: "status", valid: ["name", "mutualCount"] }]);
+  });
+
+  it("drops anything that is not an identifier: a sentence, a page value, a code that is not dotted", () => {
+    const step = failedStep(["Private page words here", "not-a-code", { code: "record_output.process_unknown_field", field: "Ann Smith, 4 mutual", valid: ["name", "$12.00 off today"] }, 7]);
+    expect(step.issues).toEqual([{ code: "record_output.process_unknown_field", valid: ["name"] }]);
+    expect(JSON.stringify(step)).not.toMatch(/Private page|Ann Smith|\$12/u);
+  });
+
+  it("says a step whose parameters were refused at run time was refused, not that its node cannot run", () => {
+    const run = refused([]);
+    run.attempts[1]!.failure = { category: "graph_validation_or_unknown_node", code: "web.action.invalid_parameter", retryable: false, stage: "dispatch" };
+    run.attempts[1]!.outputs = {};
+    const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph: readGraph, trace: run });
+    const step = (feedback.steps as JsonObject[])[1]!;
+    expect(step).not.toHaveProperty("issues");
+    expect(step.happened).not.toBe("The step names a node that cannot run.");
   });
 });

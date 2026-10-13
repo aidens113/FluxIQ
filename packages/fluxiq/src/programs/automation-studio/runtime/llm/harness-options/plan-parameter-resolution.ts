@@ -90,10 +90,23 @@
 // is not kept. An effect only ever skips: state routing goes on along the
 // step's own success edge when the page shows it, and never runs a completed
 // lasting act again because of one (`../../executor/state-routing/repeated-act.ts`).
+//
+// **A refusal may say which field and which names (t489).** Lane D round 13
+// (`run-mv66sc3c-c47e74b8`) resubmitted one script until the build ended: every
+// refusal of its read said only "A node's parameters were not accepted by the
+// domain that runs it". A refused answer may now carry, beside its codes,
+// `issues: [{code, field?, valid?}]`: the field the step names that the domain
+// cannot use, and the names it can. Field and column names are structure, not
+// page values, and only identifiers pass. An issue whose code one of them
+// fits is said in Core's own sentence with the code, the field and the names
+// inserted (`automationStudioFlowBootstrapIssueDetailSentence`), and carries
+// them as `detail`; every other code keeps the fixed sentence.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
-import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapNode, AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
+import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapIssueDetail, AutomationStudioFlowBootstrapNode, AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
+// From the plan barrel, not the flow-bootstrap barrel, whose imports lead back here (t489).
+import { automationStudioFlowBootstrapIssueDetailSentence } from "../../flow-bootstrap/plan/index.ts";
 // From the module that owns them: `../harness.ts` and the harness barrel both lead back into this module's import cycle, and through them the two read as undefined when this module loads inside it.
 import { AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH, AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN } from "../harness/structured-response.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioPlanHandleReach, AutomationStudioPlanHandleView } from "./binding.ts";
@@ -127,6 +140,10 @@ const NOT_A_HANDLE_MESSAGE = "This fact names its element by something other tha
 
 const ISSUE_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 const MAX_REFUSAL_CODES = 16;
+/** A field or name a refusal's detail names: identifier characters only, so never a sentence or a page value (header, t489). */
+const DETAIL_NAME = /^[A-Za-z0-9_.:-]{1,200}$/u;
+/** The most names a refusal's detail lists as usable: as many as a read may have columns. */
+const MAX_DETAIL_NAMES = 64;
 const MAX_RESOLVED_PARAMETER_BYTES = 16_384;
 /** Bounds on a node's `handleViews` (header): as many as a node may name handles, each location as long as a handle reference's. */
 const MAX_HANDLE_VIEWS = 64;
@@ -206,7 +223,7 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
     }
     if (outcome.status !== "resolved") {
       // An `unchanged` answer leaves the handle in place, which `resolveNode` already refuses; this is the same refusal if it ever did not.
-      for (const code of outcome.status === "refused" ? outcome.issueCodes : [AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.unresolved]) issues.push(parameterIssue(code, site.path));
+      issues.push(...(outcome.status === "refused" ? refusalIssues(outcome, site.path) : [parameterIssue(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.unresolved, site.path)]));
       if (site.path.includes(".parameters.")) refusedHandlers.add(site.ref);
       continue;
     }
@@ -230,7 +247,7 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
         return { ok: false, issues };
       }
       if (outcome.status === "refused") {
-        for (const code of outcome.issueCodes) issues.push(parameterIssue(code, path));
+        issues.push(...refusalIssues(outcome, path));
         continue;
       }
       if (outcome.status === "unchanged") continue;
@@ -262,8 +279,11 @@ export function assertAutomationStudioFlowBootstrapPlanHandlesResolved(plan: Aut
 type NodeOutcome =
   | { status: "unchanged" }
   | { status: "resolved"; parameters: JsonObject; handleViews?: AutomationStudioPlanHandleView[]; effect?: JsonObject }
-  | { status: "refused"; issueCodes: string[] }
+  | { status: "refused"; issueCodes: string[]; details?: RefusalDetail[] }
   | { status: "needs_permission"; missing: string[]; requestId: string | null };
+
+/** What a domain's refusal named beside one of its codes (header, t489): the field it could not use and the names it can. */
+type RefusalDetail = AutomationStudioFlowBootstrapIssueDetail & { code: string };
 
 async function resolveNode(
   node: AutomationStudioFlowBootstrapNode,
@@ -315,9 +335,10 @@ async function resolveNode(
     return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.failed);
   }
   if (!isRecord(answer)) return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.invalid);
-  if (answer.status === "refused" && exactKeys(answer, ["status", "issueCodes"]) && Array.isArray(answer.issueCodes)) {
+  if (answer.status === "refused" && keysWithin(answer, ["status", "issueCodes"], ["issues"]) && Array.isArray(answer.issueCodes) && (answer.issues === undefined || Array.isArray(answer.issues))) {
     const codes = [...new Set(answer.issueCodes.filter((code): code is string => typeof code === "string" && ISSUE_CODE.test(code)))].slice(0, MAX_REFUSAL_CODES);
-    return codes.length ? { status: "refused", issueCodes: codes } : refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.refused);
+    const details = Array.isArray(answer.issues) ? refusalDetails(answer.issues) : [];
+    return codes.length ? { status: "refused", issueCodes: codes, ...(details.length ? { details } : {}) } : refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.refused);
   }
   if (answer.status === "needs_permission" && exactKeys(answer, ["status", "missing", "requestId"])) {
     const missing = Array.isArray(answer.missing) ? answer.missing.filter((code): code is string => typeof code === "string" && ISSUE_CODE.test(code)).slice(0, MAX_REFUSAL_CODES) : [];
@@ -370,8 +391,48 @@ function refused(issueCode: string): NodeOutcome {
   return { status: "refused", issueCodes: [issueCode] };
 }
 
-function parameterIssue(code: string, path: string): AutomationStudioFlowBootstrapIssue {
+function parameterIssue(code: string, path: string, detail?: AutomationStudioFlowBootstrapIssueDetail): AutomationStudioFlowBootstrapIssue {
+  if (detail) return { severity: "error", code, message: automationStudioFlowBootstrapIssueDetailSentence(code, detail), path, detail };
   return { severity: "error", code, message: "A node's parameters were not accepted by the domain that runs it.", path };
+}
+
+/**
+ * A refused node's issues: one per code, each with the detail the domain gave
+ * for that code (its own, or the reason before its `:` position) the first time
+ * it fits, in Core's sentence (header, t489). A detail no code takes is an issue
+ * of its own, so nothing the domain named is lost.
+ */
+function refusalIssues(outcome: Extract<NodeOutcome, { status: "refused" }>, path: string): AutomationStudioFlowBootstrapIssue[] {
+  const left = [...(outcome.details ?? [])];
+  const take = (code: string): RefusalDetail | undefined => {
+    const index = left.findIndex((detail) => detail.code === code || detail.code === code.split(":")[0]);
+    return index < 0 ? undefined : left.splice(index, 1)[0];
+  };
+  const issues = outcome.issueCodes.map((code) => {
+    const found = take(code);
+    return parameterIssue(code, path, found ? withoutCode(found) : undefined);
+  });
+  return [...issues, ...left.map((detail) => parameterIssue(detail.code, path, withoutCode(detail)))];
+}
+
+/** A detail without its code. */
+function withoutCode(detail: RefusalDetail): AutomationStudioFlowBootstrapIssueDetail {
+  return { ...(detail.field !== undefined ? { field: detail.field } : {}), ...(detail.valid ? { valid: [...detail.valid] } : {}) };
+}
+
+/**
+ * The details a domain's refusal named (header, t489): each a code in Core's
+ * alphabet with a `field` or `valid` names, every name an identifier; any
+ * other entry, key or name is dropped, and an entry with no name left is not kept.
+ */
+function refusalDetails(entries: readonly unknown[]): RefusalDetail[] {
+  return entries.slice(0, MAX_REFUSAL_CODES).flatMap((entry): RefusalDetail[] => {
+    if (!isRecord(entry) || !keysWithin(entry, ["code"], ["field", "valid"]) || typeof entry.code !== "string" || !ISSUE_CODE.test(entry.code)) return [];
+    const field = typeof entry.field === "string" && DETAIL_NAME.test(entry.field) ? entry.field : undefined;
+    const valid = Array.isArray(entry.valid) ? [...new Set(entry.valid.filter((name): name is string => typeof name === "string" && DETAIL_NAME.test(name)))].slice(0, MAX_DETAIL_NAMES) : [];
+    if (field === undefined && !valid.length) return [];
+    return [{ code: entry.code, ...(field !== undefined ? { field } : {}), ...(valid.length ? { valid } : {}) }];
+  });
 }
 
 /**

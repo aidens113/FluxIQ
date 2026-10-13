@@ -269,3 +269,40 @@ describe("a domain's parameter contract", () => {
     expect(result.slice(1)).toEqual(Array.from({ length: 20 }, (_, index) => `demo.items.issue_${index}`));
   });
 });
+
+// Lane D round 13 (`run-mv66sc3c-c47e74b8`, 0026 and 0036): a where on `status` over a schema storing `name` and
+// `mutualFriends` was refused `record_output.process_unknown_field` with the code, the path and the whole contract, and
+// nothing said which field was unknown or which were stored. t489 (F4): the issue names the field and the stored ids.
+describe("a record output whose processing names a field it does not keep", () => {
+  const club = (process: JsonObject, fields: JsonValue[] = [{ id: "name", label: "Name", valueType: "string" }, { id: "visits", label: "Visits", valueType: "number" }]): JsonObject =>
+    ({ ...VALID_RECORD_OUTPUT, schema: { schemaVersion: "0.1", fields }, process });
+  const issuesOf = (recordOutput: JsonObject) => validateAutomationStudioFlowBootstrapPlan({ plan: planWith(extractNode({ items: { item: ".row" }, recordOutput })), registry: registry(), resolution }).issues;
+
+  it("names the unknown field and lists the ids the schema stores", () => {
+    const [issue] = issuesOf(club({ where: [{ field: "status", contains: "active" }] }));
+    expect(issue).toMatchObject({ code: "record_output.process_unknown_field", path: "plan.subflows.0.nodes.0.parameters.recordOutput" });
+    expect(issue!.message).toContain("\"status\"");
+    expect(issue!.message).toContain("\"name\", \"visits\"");
+  });
+
+  it("names every unknown field once, from where, sort, dedupe and columns, and leaves out an excluded field from the stored ids", () => {
+    const fields = [{ id: "name", label: "Name", valueType: "string" }, { id: "secret", label: "Secret", valueType: "string", handling: "exclude" }];
+    const [issue] = issuesOf(club({ where: [{ field: "status", is: "present" }], sort: [{ field: "rank", order: "asc" }], dedupe: { by: ["status"] } }, fields));
+    expect(issue!.message).toContain("\"status\", \"rank\"");
+    expect(issue!.message).toMatch(/stores "name"\./u);
+  });
+
+  it("names a where field that columns leaves out, and the columns kept", () => {
+    const issues = issuesOf(club({ where: [{ field: "visits", atLeast: 5 }], columns: ["name"] }));
+    expect(issues.map((issue) => issue.code)).toEqual(["record_output.process_where_column_dropped"]);
+    expect(issues[0]!.message).toContain("\"visits\"");
+    expect(issues[0]!.message).toContain("columns keeps \"name\"");
+  });
+
+  it("names a field the schema excludes", () => {
+    const fields = [{ id: "name", label: "Name", valueType: "string" }, { id: "secret", label: "Secret", valueType: "string", handling: "exclude" }];
+    const [issue] = issuesOf(club({ sort: [{ field: "secret", order: "asc" }] }, fields));
+    expect(issue).toMatchObject({ code: "record_output.process_excluded_field" });
+    expect(issue!.message).toContain("\"secret\"");
+  });
+});

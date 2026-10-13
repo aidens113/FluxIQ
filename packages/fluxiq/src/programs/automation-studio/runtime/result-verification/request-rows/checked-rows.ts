@@ -33,6 +33,15 @@
 // And a measure (`MEASURE`: "600mAh") a title carries is no row's id unless it
 // is the whole of one row's cell: trial 2 named a charging case by its capacity.
 //
+// **A name is matched with the values written beside it (t489).** Lane C
+// round 13 (`run-mv66s8yl-fbbfa221`, 0032) named a left-out row as "<title>,
+// $50.00, 4.6"; the title's four-word start was also a stored row's, at another
+// price and rating, and the left-out row was in no witness list, so the prefix
+// named the stored row and a correct judge was called misread. A prefix now
+// names a stored row only when the prices and decimal values written after it,
+// up to the next row the sentence names, agree with that row's cells
+// (`row-values.ts`); otherwise it names a row Core does not hold.
+//
 // **What is said, in Core's words.** A named row no condition left out alone
 // that is in the result, although the judgement calls it left out: the check
 // misread which rows were left out, and advice resting on that reading is not
@@ -41,6 +50,7 @@
 
 import type { AutomationStudioRunResultSummary } from "../contracts.ts";
 import { automationStudioRequestRowNaming } from "./row-naming.ts";
+import { automationStudioRequestRowValuesAgree } from "./row-values.ts";
 import { automationStudioRequestRowsReads } from "./summary-reads.ts";
 import type { AutomationStudioRequestRowsRead, AutomationStudioRequestRowsStored } from "./types.ts";
 import { automationStudioRequestRowIds, automationStudioRequestRowWords } from "./words.ts";
@@ -85,7 +95,7 @@ export function automationStudioResultCheckedRows(summary: AutomationStudioRunRe
       // An id more than one row holds names none of them.
       if (holders.size === 1) note([...holders][0]!, id, leftOut);
     }
-    for (const label of longestNamed(sentence, prefixes)) note(label, undefined, leftOut);
+    for (const label of longestNamed(sentence, prefixes, stored)) note(label, undefined, leftOut);
   }
   return lines([...named.values()], reads, new Set([...stored.map((row) => row.label), ...reads.flatMap((read) => read.inResult)]));
 }
@@ -138,19 +148,39 @@ function wholeCellOfOne(stored: readonly AutomationStudioRequestRowsStored[], id
 /**
  * The labels a sentence names by prefix, each mention given to the longest
  * label it spells: a match that lies inside another label's longer match in
- * the same sentence is that label's, not its own.
+ * the same sentence is that label's, not its own. A mention of a stored row
+ * whose written values its cells contradict names no row it holds (header, t489).
  */
-function longestNamed(sentence: string, prefixes: ReadonlyArray<{ label: string; prefix: readonly string[] }>): string[] {
+function longestNamed(sentence: string, prefixes: ReadonlyArray<{ label: string; prefix: readonly string[] }>, stored: readonly AutomationStudioRequestRowsStored[]): string[] {
   const words = automationStudioRequestRowWords(sentence).map((word) => word.word);
-  const matches: Array<{ label: string; start: number; end: number }> = [];
+  const found: Array<{ label: string; start: number; end: number }> = [];
   for (const { label, prefix } of prefixes) {
     for (let start = 0; start + prefix.length <= words.length; start += 1) {
-      if (prefix.every((word, index) => words[start + index] === word)) matches.push({ label, start, end: start + prefix.length });
+      if (prefix.every((word, index) => words[start + index] === word)) found.push({ label, start, end: start + prefix.length });
     }
   }
+  const matches = found.filter((match) => valuesAgree(sentence, words.length, match, found, stored));
   const inside = (match: { label: string; start: number; end: number }): boolean => matches.some((other) =>
     other.label !== match.label && other.start <= match.start && other.end >= match.end && other.end - other.start > match.end - match.start);
   return [...new Set(matches.filter((match) => !inside(match)).map((match) => match.label))];
+}
+
+/**
+ * Whether what the sentence writes after a mention, up to the next mention or
+ * its end, agrees with the cells of a stored row by that label (`row-values.ts`);
+ * true for a label no stored row has, which has no cells to contradict.
+ */
+function valuesAgree(sentence: string, wordCount: number, match: { label: string; start: number; end: number }, found: ReadonlyArray<{ start: number }>, stored: readonly AutomationStudioRequestRowsStored[]): boolean {
+  const rows = stored.filter((row) => row.label === match.label);
+  if (!rows.length) return true;
+  // The words are the sentence's runs of letters and digits, apostrophes dropped (`words.ts`): the same runs here give each word's place.
+  const text = sentence.replace(/['’]/gu, "");
+  const runs = [...text.matchAll(/[\p{L}\p{N}]+/gu)];
+  if (runs.length !== wordCount) return true;
+  const last = runs[match.end - 1]!;
+  const next = found.filter((other) => other.start >= match.end).reduce((least, other) => Math.min(least, other.start), runs.length);
+  const after = text.slice(last.index + last[0].length, next < runs.length ? runs[next]!.index : text.length);
+  return rows.some((row) => automationStudioRequestRowValuesAgree(after, row.cells));
 }
 
 /** The judgement's sentences and clauses: a full stop, semicolon or line ends one, an abbreviation's stop does not. */

@@ -103,6 +103,56 @@ export function automationStudioFlowBootstrapRecordOutputIssues(definition: Auto
   return parsed.ok ? [] : parsed.issues;
 }
 
+/**
+ * Core's sentence for a processing refusal that is about a field, naming the
+ * field and the ids the schema stores, read from the value being checked; or
+ * `undefined` for any other code (t489, F4). Lane D round 13
+ * (`run-mv66sc3c-c47e74b8`, 0026 and 0036) was refused
+ * `record_output.process_unknown_field` with the code and the whole contract,
+ * and nothing said that `status` was the unknown field or that `name` and
+ * `mutualFriends` were stored. The parser returns codes only and stays so; the
+ * names here are field ids the model itself wrote in the record output, never
+ * a value a condition compares or anything from a page.
+ */
+export function automationStudioFlowBootstrapRecordOutputIssueMessage(code: string, value: JsonValue | undefined): string | undefined {
+  if (!PROCESS_FIELD_CODES.has(code) || !isPlainObject(value) || !isPlainObject(value.process)) return undefined;
+  const fields = isPlainObject(value.schema) && Array.isArray(value.schema.fields) ? value.schema.fields.filter(isPlainObject) : [];
+  const known = new Set(fields.map((field) => field.id).filter((id): id is string => typeof id === "string"));
+  const stored = fields.filter((field) => field.handling !== "exclude").map((field) => field.id).filter((id): id is string => typeof id === "string");
+  const process = value.process;
+  const storedSaid = stored.length ? `The schema stores ${quoted(stored)}.` : "The schema stores no field.";
+  if (code === "record_output.process_unknown_field") {
+    const unknown = processFields(process).filter((id) => !known.has(id));
+    return unknown.length ? `process names ${quoted(unknown)}, which schema.fields does not have. ${storedSaid} Name a stored field id instead, or add the field to schema.fields.` : undefined;
+  }
+  if (code === "record_output.process_excluded_field") {
+    const excluded = new Set(fields.filter((field) => field.handling === "exclude").map((field) => field.id));
+    const named = processFields(process).filter((id) => excluded.has(id));
+    return named.length ? `process names ${quoted(named)}, which schema.fields marks handling "exclude", so it is never stored. ${storedSaid} Name a stored field id instead.` : undefined;
+  }
+  const columns = idsOf(process.columns);
+  const dropped = unique(conditionFields(process.where).filter((id) => known.has(id) && !columns.includes(id)));
+  return dropped.length ? `process.where reads ${quoted(dropped)}, which process.columns leaves out; columns keeps ${quoted(columns)}. Add the field to columns, or take the condition out.` : undefined;
+}
+
+/** The processing codes about a field, which `automationStudioFlowBootstrapRecordOutputIssueMessage` names. */
+const PROCESS_FIELD_CODES: ReadonlySet<string> = new Set(["record_output.process_unknown_field", "record_output.process_excluded_field", "record_output.process_where_column_dropped"]);
+
+/** Every field id a record output's processing names, as the parser reads them: dedupe.by, where, sort and columns, each once. */
+function processFields(process: JsonObject): string[] {
+  const dedupe = isPlainObject(process.dedupe) ? idsOf(process.dedupe.by) : [];
+  const sort = Array.isArray(process.sort) ? process.sort.filter(isPlainObject).map((key) => key.field).filter((id): id is string => typeof id === "string") : [];
+  return unique([...dedupe, ...conditionFields(process.where), ...sort, ...idsOf(process.columns)]);
+}
+
+function conditionFields(where: JsonValue | undefined): string[] {
+  return Array.isArray(where) ? where.filter(isPlainObject).map((condition) => condition.field).filter((id): id is string => typeof id === "string") : [];
+}
+
+const idsOf = (value: JsonValue | undefined): string[] => Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
+const unique = (ids: readonly string[]): string[] => [...new Set(ids)];
+const quoted = (ids: readonly string[]): string => ids.map((id) => JSON.stringify(id)).join(", ");
+
 /** The contract this node's record output is held to, in the words a model is shown. */
 export function automationStudioFlowBootstrapRecordOutputContract(definition: AutomationStudioNodeDefinition): AutomationStudioFlowBootstrapRecordOutputContract {
   const supplied = automationStudioFlowBootstrapSuppliedRecordsPath(definition) !== undefined;

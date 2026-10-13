@@ -172,6 +172,16 @@
 // the box was emptied, so the clear step could never be seen to work. Typing
 // already replaces what a box holds (the web domain's `web.dom.type`), so the
 // act text says to type the new value and never clear first.
+//
+// The narrowing sentence changed in t489 (lane C round 13,
+// `run-mv66s8yl-fbbfa221`, D2). It told the model to narrow a part of a
+// collection "first with the steps that set the target's own controls", which
+// invites the trap t482's judge rule catches: a site's band, category or option
+// that keeps less than the request asks, whose missing rows no read can show.
+// It now says a site control narrows only when its words keep exactly what the
+// instruction asks, and otherwise the read's own condition does. Its example
+// moved from a shop's orders to a help desk's tickets, a kind of site no Lab
+// lane uses, and is titled for the case it shows.
 
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
 
@@ -187,7 +197,7 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
   "A step may act, not only read: choose an option, enter text, set a control, press one. The tools you were given while gathering evidence are for looking; one refusing to act, or not existing, says nothing about what the Flow may contain.",
   `A step that presses something says what pressing it would lastingly do: \`consequences: <classes>\`, from ${AUTOMATION_STUDIO_ACTION_CONSEQUENCES.join(", ")}, comma separated; \`consequences: none\` when it only reveals, opens, expands, filters, sorts, ticks, dismisses or navigates. Every press needs the line, and it says what that one press would cause, not what the Flow is for: the press that applies a filter is none, the press that publishes is send_or_publish. A typing step with \`submit: true\` sends its form, so it presses and needs the line too: \`consequences: none\` for a search. Any other step that types, chooses, waits or reads never needs it.`,
   "The Flow runs later on its own, with no model, from the page the run starts on, and nothing you did while gathering evidence is still in effect then: a notice you closed, a consent you answered, a search you ran and a filter you chose are all as they were before you touched them. So every change the answer depended on is a step, in the order you made it, including closing a notice, prompt or banner that stood in front of a control. Arriving at an address changes nothing else: whatever that page puts in front of its content on arrival is still there.",
-  "When the instruction asks for part of a collection -- a count, a range, a status -- narrow it first with the steps that set the target's own controls, then read what is left. Returning everything is a wrong answer. Where the answer may be no rows, write `extractList.minItems: 0`.",
+  "When the instruction asks for part of a collection -- a count, a range, a status -- the Flow keeps exactly that part. A step that sets one of the site's own controls may narrow it only when that control's words keep exactly what the instruction asks: a range no narrower, and no category, option or value the instruction does not name. Otherwise read the collection and narrow in the read's own condition, `extractList.where`, written in the instruction's own terms. Returning everything is a wrong answer. Where the answer may be no rows, write `extractList.minItems: 0`.",
   "Steps run and connect in the order written: never write ids, versions, keys or edges.",
   "`on <port>: go to <label>` sends one of the node's other output ports to a named step instead of to the next one. Use a port the node's catalog entry lists, and never the step written next.",
   "When the run can start in different situations that need different steps -- the instruction says so, or routing.situations shows it -- give each such situation a block: `subflow <label>: <the situation>`, then `when: <condition>`, then its steps, then `end`. The steps outside every block are what runs when no block's condition holds.",
@@ -213,15 +223,15 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
   "step shout: check the page said why",
   "  node: web.dom.wait_for_text",
   "  text: could not be renamed",
-  "Example, narrowing before reading:",
-  "flow: Orders awaiting dispatch",
-  "step: open the orders page",
+  "Example, narrowing with a control whose words are exactly the instruction's:",
+  "flow: Tickets awaiting reply",
+  "step: open the tickets page",
   "  node: web.browser.navigate",
-  "  url: https://shop.test/orders",
-  "step: filter to awaiting dispatch",
+  "  url: https://desk.test/tickets",
+  "step: filter to awaiting reply",
   "  node: web.dom.select",
   "  target: t4",
-  "  value: awaiting-dispatch",
+  "  value: awaiting-reply",
   "step: apply it",
   "  node: web.dom.click",
   "  target: t5",

@@ -44,7 +44,8 @@ describe("an issue's own words", () => {
       { code: "something.new" },
       { code: "something.new" }
     ]);
-    expect(said).toEqual({ reasons: ["a step points at something that wasn't seen on the page", "a step wasn't given what it works on from an earlier step"], steps: 2, others: 2 });
+    // t489: an unknown column is said as one, not as something not seen.
+    expect(said).toEqual({ reasons: ["a step reads a column the list it reads doesn't have", "a step wasn't given what it works on from an earlier step"], steps: 2, others: 2 });
     for (const reason of said.reasons) expect(reason).not.toMatch(CODE);
   });
 });
@@ -114,5 +115,45 @@ describe("a refused step named in the model's own words", () => {
       issueCodes: ["bootstrap.unknown_parameter"],
       feedback: { refusal: "flow_bootstrap.evidence_completion_plan_invalid", issues: [{ code: "bootstrap.unknown_parameter", path: "plan.subflows.0.nodes.8.parameters.items", line: 14, step: KEEP }] }
     })).toBe(`Sent back because the step '${KEEP}' was given a setting it doesn't take. One step needs fixing.`);
+  });
+});
+
+// t489, lane B round 13 (`run-mv66samo-b5e6d5e8`, chat): every handle code read "points at something that wasn't seen
+// on the page", the other-page refusal included, although its control was seen, on another page. Each code now says
+// what it means; only a handle the page never showed says it was not seen.
+describe("a refused handle, in the words of its own code", () => {
+  const one = (code: string): string[] => automationStudioActivityIssueWords([{ code, path: "plan.subflows.0.nodes.3.parameters" }]).reasons;
+
+  it("says a handle the page never showed was not seen", () => {
+    expect(one("web.handle.unknown")).toEqual(["a step points at something that wasn't seen on the page"]);
+    expect(one("bootstrap.handle_not_issued")).toEqual(["a step points at something that wasn't seen on the page"]);
+  });
+
+  it.each([
+    ["web.handle.stale", "another page"],
+    ["bootstrap.handle.other_page", "another page"],
+    ["web.handle.renumbered_by_reload", "reloaded"],
+    ["web.handle.ambiguous", "more than one"],
+    ["web.handle.not_unique", "more than one"],
+    ["web.handle.frame_mismatch", "frame"],
+    ["web.handle.unknown_field:extractList.fields.0", "column"],
+    ["web.handle.not_a_field", "type"],
+    ["web.handle.not_a_control", "press"],
+    ["web.handle.malformed", "form"],
+    ["web.handle.misplaced", "wrong setting"],
+    ["web.handle.not_a_handle", "describes"]
+  ])("says %s as what it means, never as something not seen", (code, words) => {
+    const [reason] = one(code);
+    expect(reason).toContain(words);
+    expect(reason).not.toContain("wasn't seen");
+    expect(reason).not.toMatch(CODE);
+  });
+
+  it("says nothing of its own for a hint that rides beside another handle code", () => {
+    expect(automationStudioActivityIssueWords([
+      { code: "web.handle.not_a_field", path: "plan.subflows.0.nodes.3.parameters" },
+      { code: "web.handle.target_kind.link", path: "plan.subflows.0.nodes.3.parameters" },
+      { code: "web.handle.expected.target.handle_location", path: "plan.subflows.0.nodes.3.parameters" }
+    ]).reasons).toHaveLength(1);
   });
 });

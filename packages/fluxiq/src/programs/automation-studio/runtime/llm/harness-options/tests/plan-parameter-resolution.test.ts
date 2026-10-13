@@ -239,3 +239,54 @@ describe("a plan that did not pass through resolution", () => {
     expect(() => assertAutomationStudioFlowBootstrapPlanHandlesResolved(plan({ item: "ledger://rows/*" }))).not.toThrow();
   });
 });
+
+// t489 (lane D round 13, `run-mv66sc3c-c47e74b8`): a domain that refuses a node because it names a field the step
+// cannot use now says which field and the names it can use, as `issues: [{code, field?, valid?}]` beside its codes.
+// The refusal the model sees carries Core's own sentence with them, in place of the fixed "parameters were not
+// accepted"; field and column names are structure, so only identifiers pass, and anything else is dropped.
+describe("a domain refusal that names the field and the names it can use", () => {
+  const refusing = (answer: unknown): Resolver => (({ nodeDefinitionId }) => nodeDefinitionId === "ledger.read_rows" ? answer : { status: "unchanged" }) as Resolver;
+
+  it("says the field and the valid names in Core's sentence, with the detail beside it", async () => {
+    const result = await resolve(plan({ maxItems: 3 }, {}), refusing({ status: "refused", issueCodes: ["ledger.column_unknown", "ledger.column_unknown:recordOutput.schema.fields.1.id"],
+      issues: [{ code: "ledger.column_unknown", field: "status", valid: ["payee", "amount"] }] }));
+    expect(result.ok).toBe(false);
+    const issues = result.ok ? [] : result.issues;
+    const named = issues.find((issue) => issue.code === "ledger.column_unknown")!;
+    expect(named.message).toContain("ledger.column_unknown");
+    expect(named.message).toContain("\"status\"");
+    expect(named.message).toContain("\"payee\", \"amount\"");
+    expect(named.message).not.toContain("were not accepted");
+    expect(named).toMatchObject({ detail: { field: "status", valid: ["payee", "amount"] } });
+    // A code the detail does not name keeps the fixed sentence.
+    expect(issues.find((issue) => issue.code !== "ledger.column_unknown")!.message).toContain("were not accepted");
+  });
+
+  it("drops a field or name that is not an identifier, and keeps the fixed sentence when nothing is left", async () => {
+    const result = await resolve(plan({ maxItems: 3 }, {}), refusing({ status: "refused", issueCodes: ["ledger.column_unknown"],
+      issues: [{ code: "ledger.column_unknown", field: "Ann Smith, 4 mutual", valid: ["$12.00 off"] }] }));
+    const [issue] = result.ok ? [] : result.issues;
+    expect(issue!.message).toContain("were not accepted");
+    expect(issue).not.toHaveProperty("detail");
+    expect(JSON.stringify(result)).not.toMatch(/Ann Smith|\$12/u);
+  });
+
+  it("drops a malformed issue -- an extra key, a code outside Core's alphabet, a list that is not names -- and keeps a well-formed one", async () => {
+    const result = await resolve(plan({ maxItems: 3 }, {}), refusing({ status: "refused", issueCodes: ["ledger.column_unknown", "ledger.column_dropped"], issues: [
+      { code: "ledger.column_unknown", field: "status", note: "the page said Overdue" },
+      { code: "Ledger column unknown!", field: "status" },
+      { code: "ledger.column_dropped", valid: "payee" },
+      { code: "ledger.column_dropped", field: "x".repeat(201) },
+      { code: "ledger.column_unknown", field: "state", valid: ["payee"] }
+    ] }));
+    const issues = result.ok ? [] : result.issues;
+    expect(issues.map((issue) => issue.detail)).toEqual([{ field: "state", valid: ["payee"] }, undefined]);
+    expect(issues[1]!.message).toContain("were not accepted");
+    expect(JSON.stringify(result)).not.toContain("Overdue");
+  });
+
+  it("still refuses an answer whose issues are not a list", async () => {
+    const result = await resolve(plan({ maxItems: 3 }, {}), refusing({ status: "refused", issueCodes: ["ledger.column_unknown"], issues: "status" }));
+    expect(result).toMatchObject({ ok: false, issues: [{ code: CODES.invalid }] });
+  });
+});

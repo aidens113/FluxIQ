@@ -297,7 +297,17 @@ export type AutomationStudioFlowBootstrapIssue = {
   code: string;
   message: string;
   path?: string;
+  /**
+   * What a domain's refusal named beside its code (t489): the field it could
+   * not use and the names it can use there. Identifiers only, screened where
+   * the refusal is read (`../../llm/harness-options/plan-parameter-resolution.ts`);
+   * the model is told them in Core's own sentence (`./issue-feedback.ts`).
+   */
+  detail?: AutomationStudioFlowBootstrapIssueDetail;
 };
+
+/** The field a refusal named and the names that can be used instead (`AutomationStudioFlowBootstrapIssue.detail`). */
+export type AutomationStudioFlowBootstrapIssueDetail = { field?: string; valid?: string[] };
 
 export type AutomationStudioValidatedFlowBootstrapPlan = {
   plan: AutomationStudioFlowBootstrapPlan;

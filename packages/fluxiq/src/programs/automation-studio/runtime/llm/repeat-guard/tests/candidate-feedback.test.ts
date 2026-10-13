@@ -105,3 +105,32 @@ describe("a repeat refused in candidate mode", () => {
     expect(note).not.toHaveProperty("issues");
   });
 });
+
+// t489, lane D round 13 (`run-mv66sc3c-c47e74b8`, 0044 and 0062, F5): an unchanged submission sent again was told its
+// issues were "listed under issues as that refusal gave them", and the unchanged refusal carries no issues -- what failed
+// is under its lastTrial. The note names the earlier call, says where that refusal put what failed, and what to change.
+describe("a repeat of a submission refused as unchanged", () => {
+  const UNCHANGED = { ok: false, revision: 9, diagnostics: { ok: false, code: "candidate.unchanged_submission", unchanged: true, revision: 8, lastTrial: { verdict: "execution_failed", feedback: { steps: [] } } }, issueCodes: ["candidate.unchanged_submission"] };
+  const repeated = () => {
+    const guard = automationStudioLlmEvidenceRepeatGuard();
+    guard.seen("s1");
+    guard.recorded({ callId: "submit-8b", toolId: "core.submit_candidate", input: SCRIPT, effect: "observe", proposes: true, effectApplied: false, refused: true, resultCode: "candidate.unchanged_submission", answer: JSON.stringify(UNCHANGED) });
+    return automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.submit_candidate", earlier: guard.blocks("core.submit_candidate", SCRIPT)!, inARow: 1, candidate: true });
+  };
+
+  it("names the earlier call and points at its lastTrial, never at issues it does not carry", () => {
+    const note = repeated();
+    expect(note).not.toHaveProperty("issues");
+    const instruction = String(note.instruction);
+    expect(instruction).toContain("submit-8b");
+    expect(instruction).toContain("lastTrial");
+    expect(instruction).not.toContain("listed under issues");
+    expect(instruction).not.toContain("Change the lines those issues name");
+    expect(instruction).toMatch(/Change the step/u);
+    expect(instruction).not.toMatch(LEGACY);
+  });
+
+  it("names the earlier call for a refusal that listed issues too", () => {
+    expect(String(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.submit_candidate", earlier: storedRefusal(), inARow: 1, candidate: true }).instruction)).toContain("submit-2");
+  });
+});
