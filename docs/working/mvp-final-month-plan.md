@@ -3,7 +3,7 @@
 Status: Active
 Status detail: t460 published; B/D provider-free repair replays passed; t461 witnesses/order passed independent checks and bounded headed proof; t461 integrated downstream493b1749/Core1f6580bb; new .25 ready preflights next.
 Created: 2026-10-06
-Last updated: 2026-10-12
+Last updated: 2026-10-13
 Owner: Codex senior supervisor
 Scope: Generic Core acceptance, candidate authoring/execution/promotion, cancellation and uncertain-outcome contracts required by the downstream MVP plan. Browser behavior and live qualification remain downstream.
 Paired document: C:/Users/osrs_/FluxStuff/!FluxIQWebExtension/docs/working/mvp-final-month-plan.md
@@ -12,6 +12,8 @@ Related: [authoring](./flow-authoring-and-defensive-runtime-plan.md), [version h
 ---
 
 ## Current State
+
+**October 13 continuation.** User directs execution through MVP completion. Instruction-led t519 is pushed to both dev branches (Core63692096/downstream7b416b99); t516/t517 are also delivered. Every existing automation needs explicit written task instructions before its next run; recordings are described optional evidence. Historical recording-only conversion is retired. Downstream adaptation-and-breadth-plan owns the next gate and current mvp-final-month-plan owns worker dispatch. t520 extracts only the generic native SQLite long-path opener and meaningful existing-parent regression from parked t518, because instruction bootstrap/run/recovery also use it. Remaining t518 stays unmerged/unpushed. No user-panel management or full suites are authorized by this continuation.
 
 The active execution order is downstream `docs/working/live-testing-handoff-audit-2026-10-11.md`.
 
@@ -190,3 +192,9 @@ Earlier receipts preserved intact in [the foundation archive](./mvp-final-month-
 - Changed: actual strict facade inventory/binding before provider resolution; same v2 source passed to submission/generator, full original artifacts retained, legacy getter delegates nonstrict inventory. Canonical ID order matches inventory code units, independent of locale. Authored bootstrap architecture updated.
 - Validation: actual facade fail-first4failed/3preserved; canonical-order behavioral fail-first1failed/7filtered after correcting shell-corrupted fixture. Final7owning files71/71 zero skips30.37s, nonincremental types0, fresh owning build0 (51.994s6250files). Owning baseline generator lowers ONLY service4395->4386, no growth. Fresh built external-Core domain32/32 zero skips6.341s; domain owning source/test check0 and final Core authored-memory audit0 (283warnings/349baseline). Downstream task gate follows.
 - Limits: no source pins, semantic complete requirements, reset/oracle/causal authority, detached native execution or promotion. No provider/panel/full-suite/browser qualification. Paired integration follows observed narrow gates.
+
+### 2026-10-13 - Generic Windows storage prerequisite
+- Agent: Codex senior supervisor; bounded implementation worker replay_investigation.
+- Changed: paired t520 normalizes only native SQLite constructor paths (read/write and pinned read-only), preserving repository/pool identities and POSIX behavior. It imports no retired recording conversion contracts or graph changes from t518.
+- Validation: worker reproduced SQLITE_CANTOPEN before the fix; supervisor independently reviewed the two-file diff and observed repository/pool13/13 pass, including existing-parent >300-character write/fresh-reopen/read-only behavior. Final source/test types, narrow public-library build and structure audit passed.
+- Outcome: accepted after independent narrow gates; paired dev integration precedes live qualification.

@@ -122,7 +122,7 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
       if (bytesRead !== 100 || header.subarray(0, 16).toString("binary") !== "SQLite format 3\0" || header[18] !== 1 || header[19] !== 1) throw new Error("repository.readonly_journal_unsupported");
     } finally { await handle.close(); }
     const db = await new Promise<sqlite3.Database>((resolve, reject) => {
-      const connection = new sqlite3.Database(filePath, sqlite3.OPEN_READONLY | sqlite3.OPEN_FULLMUTEX, error => error ? reject(error) : resolve(connection));
+      const connection = new sqlite3.Database(path.toNamespacedPath(filePath), sqlite3.OPEN_READONLY | sqlite3.OPEN_FULLMUTEX, error => error ? reject(error) : resolve(connection));
       connection.configure("busyTimeout", 10_000);
     });
     try {
@@ -360,7 +360,9 @@ export function createRecord<T extends JsonObject>(params: {
 
 function openDatabase(filePath: string): Promise<sqlite3.Database> {
   return new Promise((resolve, reject) => {
-    const db = new sqlite3.Database(filePath, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE | sqlite3.OPEN_FULLMUTEX, (error) => {
+    // Native SQLite needs Windows' extended path form for nested workspace storage.
+    // Keep the ordinary path as the repository/pool identity and on other platforms.
+    const db = new sqlite3.Database(path.toNamespacedPath(filePath), sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE | sqlite3.OPEN_FULLMUTEX, (error) => {
       if (error) reject(error);
       else resolve(db);
     });
