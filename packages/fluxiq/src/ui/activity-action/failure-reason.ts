@@ -34,11 +34,16 @@ const REASONS: readonly Reason[] = [
   // "1" back -- read "Clear field · Didn't work: the step wasn't accepted",
   // from `rejected`, as if it were refused (R4a, `run-mv2nlh9l-52e476da`,
   // moment 08). Before the page miss, whose `not` it is not.
+  //
+  // A typing step's words say only what the code knows: the text did not end
+  // up as it should. "the site set the box back" was said of typing into a
+  // span that holds no text and takes none, where nothing was set back and no
+  // box existed (round 12, lane B, `run-mv62icw0-2be384b4`).
   {
     words: /_(output_not_observed|not_observed|state_mismatch)_/u,
     why: "it ran, but the page didn't change the way it should have",
     read: "it ran, but didn't find the rows it should have",
-    typed: "it ran, but the site set the box back"
+    typed: "it ran, but the text there didn't change the way it should have"
   },
   // A control looked up by what FluxIQ saved of it and not found that way is
   // not a control missing from the page: the quantity box stood in plain sight

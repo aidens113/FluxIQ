@@ -58,6 +58,12 @@ const HAVE: Readonly<Record<string, string>> = { is: "has", are: "have", was: "h
  * revision 2" reached the chat (t362, `run-muyrpbnk-fef374e7`).
  */
 const REVISION = /\s*\(?\b(?:rev(?:ision)?s?\.?)\s*#?\d+(?:\s*(?:,|and|or|to|-|–)\s*#?\d+)*\)?/giu;
+/**
+ * A revision named as a part "of" the Flow: "Testing revision 3 of the Flow,
+ * which ..." lost only its number and read "Testing of the Flow, which ..."
+ * (round 12, lanes B and D). Said as the Flow it is part of: "Testing the Flow".
+ */
+const REVISION_OF = /\b(?:rev(?:ision)?\.?)\s*#?\d+\s+of\s+(the|this|that|your|my|our|its)\b/giu;
 /** What a candidate is to the person: the Flow. "the candidate", "this candidate Flow", "candidate's steps". */
 const CANDIDATE = /\bcandidate(s?)('s)?(?:\s+(?:flow|plan|script)s?\b)?/giu;
 /** A draft step's own number: "Step 8", "steps 3 and 4", which the person's Flow numbers its own way. */
@@ -89,6 +95,7 @@ function determined(text: string, offset: number): boolean {
  */
 export function automationStudioActivityPersonWords(text: string): string {
   return text
+    .replace(REVISION_OF, (found: string, owner: string, offset: number, whole: string) => (determined(whole, offset) ? found : cased(found, owner.toLowerCase())))
     .replace(REVISION, (found: string, offset: number, whole: string) => {
       // Said as "this version" where the sentence needs a noun -- its subject, or after a preposition -- and left out after the noun it numbers ("the Flow revision 2").
       const before = whole.slice(0, offset);
