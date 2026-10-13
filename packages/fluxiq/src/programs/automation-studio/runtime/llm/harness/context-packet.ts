@@ -343,6 +343,19 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     // Anything that varies per call goes after the policy, never before it.
     instructions,
     ...(input.policy ? { policyGates: adaptationPolicyGates(input.policy, input.actionPermissions) } : {}),
+    // Held to the tasks that are looking at a finished run: the verification
+    // that judges its result, and the runtime diagnosis and patch that repair
+    // it. A build has produced nothing yet, and an evidence-loop decision is
+    // mid-run, so neither carries one.
+    //
+    // **Before the ids and the run's own record (t495, B3 and W3 of round 15).**
+    // The summary opens with the page every trial of one build starts from
+    // (`startView`, about 1k tokens, t493), the same bytes in each trial's
+    // judge. With the run id in front of it, each trial's first judge was
+    // cached through the system prompt alone. The run id, the part and node
+    // ids, the actions and the summary's own counts all vary per trial, so
+    // all of them follow the start view.
+    ...(input.resultSummary && AUTOMATION_STUDIO_FINISHED_RUN_TASK_KINDS.has(input.taskKind) ? { resultSummary: input.resultSummary } : {}),
     ...(input.runId ? { runId: input.runId } : {}),
     ...(input.subflowId ? { subflowId: input.subflowId } : {}),
     ...(input.nodeId ? { nodeId: input.nodeId } : {}),
@@ -363,11 +376,6 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     ...(input.recoveryContext && (input.taskKind === "runtime_diagnosis" || input.taskKind === "runtime_patch") ? { recoveryContext: input.recoveryContext } : {}),
     ...(input.diagnosis ? packDiagnosisFields(input.taskKind, input.diagnosis) : {}),
     ...(inRunRepair ? { inRunRepair } : {}),
-    // Held to the tasks that are looking at a finished run: the verification
-    // that judges its result, and the runtime diagnosis and patch that repair
-    // it. A build has produced nothing yet, and an evidence-loop decision is
-    // mid-run, so neither carries one.
-    ...(input.resultSummary && AUTOMATION_STUDIO_FINISHED_RUN_TASK_KINDS.has(input.taskKind) ? { resultSummary: input.resultSummary } : {}),
     // The same set, and now the same three calls: a Flow that has never run has
     // no thread about a run; the request that repairs one has; and so has the
     // request that judges whether the answer was the one asked for, which is the
