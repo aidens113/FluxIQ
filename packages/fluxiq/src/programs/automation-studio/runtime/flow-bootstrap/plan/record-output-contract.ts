@@ -47,6 +47,7 @@ import {
   parseAutomationStudioRecordOutput,
   type AutomationStudioNodeDefinition
 } from "../../../nodes/index.ts";
+import type { AutomationStudioFlowBootstrapIssueDetail } from "./contracts.ts";
 
 export type AutomationStudioFlowBootstrapRecordOutputContract = {
   /** Every top-level key a record output may have. */
@@ -113,26 +114,65 @@ export function automationStudioFlowBootstrapRecordOutputIssues(definition: Auto
  * `mutualFriends` were stored. The parser returns codes only and stays so; the
  * names here are field ids the model itself wrote in the record output, never
  * a value a condition compares or anything from a page.
+ *
+ * The remedy follows how the field is used (t510, F2). Breadth wave 1
+ * (`run-mv6qrbgx-06151cdb`, 0022-0026) sorted on a field it had marked
+ * `handling: "exclude"` to keep it out of the answer, was told "Name a stored
+ * field id instead", and moved the sort from one excluded field to another
+ * until the build ended: no stored field could order the rows. A sort or
+ * dedupe key must be stored, and a stored field leaves the answer through
+ * `process.columns`, so that is what such a refusal now says. "Name a stored
+ * field id instead" stays for a field `columns` alone names.
  */
 export function automationStudioFlowBootstrapRecordOutputIssueMessage(code: string, value: JsonValue | undefined): string | undefined {
+  return fieldRefusal(code, value)?.message;
+}
+
+/**
+ * The field a processing refusal is about and the names that can stand there
+ * (t510, F2), in the shape a domain's refusal carries (t489): the first field
+ * the refusal names, and the ids the schema stores -- or, for a where field
+ * that columns leaves out, the columns kept. `undefined` for any other code.
+ * Identifiers the model wrote in this record output, never a page value.
+ */
+export function automationStudioFlowBootstrapRecordOutputIssueDetail(code: string, value: JsonValue | undefined): AutomationStudioFlowBootstrapIssueDetail | undefined {
+  return fieldRefusal(code, value)?.detail;
+}
+
+type FieldRefusal = { message: string; detail: AutomationStudioFlowBootstrapIssueDetail };
+
+const HIDE_WITH_COLUMNS = "and list the answer's columns in process.columns, which leaves every other stored field out of the answer.";
+
+function fieldRefusal(code: string, value: JsonValue | undefined): FieldRefusal | undefined {
   if (!PROCESS_FIELD_CODES.has(code) || !isPlainObject(value) || !isPlainObject(value.process)) return undefined;
   const fields = isPlainObject(value.schema) && Array.isArray(value.schema.fields) ? value.schema.fields.filter(isPlainObject) : [];
   const known = new Set(fields.map((field) => field.id).filter((id): id is string => typeof id === "string"));
   const stored = fields.filter((field) => field.handling !== "exclude").map((field) => field.id).filter((id): id is string => typeof id === "string");
   const process = value.process;
+  const keys = new Set(keyFields(process));
   const storedSaid = stored.length ? `The schema stores ${quoted(stored)}.` : "The schema stores no field.";
+  const refusal = (named: readonly string[], message: string, valid: readonly string[]): FieldRefusal | undefined =>
+    named.length ? { message, detail: { field: named[0]!, valid: [...valid] } } : undefined;
   if (code === "record_output.process_unknown_field") {
     const unknown = processFields(process).filter((id) => !known.has(id));
-    return unknown.length ? `process names ${quoted(unknown)}, which schema.fields does not have. ${storedSaid} Name a stored field id instead, or add the field to schema.fields.` : undefined;
+    const remedy = unknown.some((id) => keys.has(id))
+      ? `A sort or dedupe key must be stored: to order by, or drop repeats by, a field the answer should not show, add it to schema.fields ${HIDE_WITH_COLUMNS}`
+      : "Name a stored field id instead, or add the field to schema.fields.";
+    return refusal(unknown, `process names ${quoted(unknown)}, which schema.fields does not have. ${storedSaid} ${remedy}`, stored);
   }
   if (code === "record_output.process_excluded_field") {
     const excluded = new Set(fields.filter((field) => field.handling === "exclude").map((field) => field.id));
     const named = processFields(process).filter((id) => excluded.has(id));
-    return named.length ? `process names ${quoted(named)}, which schema.fields marks handling "exclude", so it is never stored. ${storedSaid} Name a stored field id instead.` : undefined;
+    const remedy = named.some((id) => keys.has(id))
+      ? `A sort or dedupe key must be stored: to order by, or drop repeats by, a field the answer should not show, keep it stored -- remove handling "exclude" from it -- ${HIDE_WITH_COLUMNS}`
+      : conditionFields(process.where).some((id) => excluded.has(id))
+        ? "A where field must be stored: remove handling \"exclude\" from it."
+        : "Name a stored field id instead.";
+    return refusal(named, `process names ${quoted(named)}, which schema.fields marks handling "exclude", so it is never stored. ${storedSaid} ${remedy}`, stored);
   }
   const columns = idsOf(process.columns);
   const dropped = unique(conditionFields(process.where).filter((id) => known.has(id) && !columns.includes(id)));
-  return dropped.length ? `process.where reads ${quoted(dropped)}, which process.columns leaves out; columns keeps ${quoted(columns)}. Add the field to columns, or take the condition out.` : undefined;
+  return refusal(dropped, `process.where reads ${quoted(dropped)}, which process.columns leaves out; columns keeps ${quoted(columns)}. Add the field to columns, or take the condition out.`, columns);
 }
 
 /** The processing codes about a field, which `automationStudioFlowBootstrapRecordOutputIssueMessage` names. */
@@ -140,9 +180,16 @@ const PROCESS_FIELD_CODES: ReadonlySet<string> = new Set(["record_output.process
 
 /** Every field id a record output's processing names, as the parser reads them: dedupe.by, where, sort and columns, each once. */
 function processFields(process: JsonObject): string[] {
-  const dedupe = isPlainObject(process.dedupe) ? idsOf(process.dedupe.by) : [];
-  const sort = Array.isArray(process.sort) ? process.sort.filter(isPlainObject).map((key) => key.field).filter((id): id is string => typeof id === "string") : [];
-  return unique([...dedupe, ...conditionFields(process.where), ...sort, ...idsOf(process.columns)]);
+  return unique([...(isPlainObject(process.dedupe) ? idsOf(process.dedupe.by) : []), ...conditionFields(process.where), ...sortFields(process), ...idsOf(process.columns)]);
+}
+
+/** The fields processing orders or drops repeats by: each must be stored, and may be one columns leaves out. */
+function keyFields(process: JsonObject): string[] {
+  return [...(isPlainObject(process.dedupe) ? idsOf(process.dedupe.by) : []), ...sortFields(process)];
+}
+
+function sortFields(process: JsonObject): string[] {
+  return Array.isArray(process.sort) ? process.sort.filter(isPlainObject).map((key) => key.field).filter((id): id is string => typeof id === "string") : [];
 }
 
 function conditionFields(where: JsonValue | undefined): string[] {
@@ -165,7 +212,7 @@ export function automationStudioFlowBootstrapRecordOutputContract(definition: Au
   const text = [
     `${nullable ? "null, or an object" : "Required: an object"} with only these keys: datasetId, schema, writeMode, and optional label, maxRecords, recordsPath, process.`,
     "datasetId: 1-200 of A-Za-z0-9._:-.",
-    `schema: {schemaVersion:"0.1", fields:[{id, label, valueType, required?, handling?}]}; ids A-Za-z0-9_-, labels unique; valueType ${valueTypes}; handling ${handlings}.`,
+    `schema: {schemaVersion:"0.1", fields:[{id, label, valueType, required?, handling?}]}; ids A-Za-z0-9_-, labels unique; valueType ${valueTypes}; handling ${handlings}, where exclude: never stored, for a value that must not be kept, and not the way a field leaves the answer.`,
     `writeMode: ${writeModes}. maxRecords: 1-${AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS.maxRecordsCeiling}.`,
     supplied ? "recordsPath: leave out, this node supplies it." : "recordsPath: required, dot path to the rows in the result.",
     processing
@@ -198,7 +245,7 @@ function processingText(): string {
     `sort: [{field:fieldId, order:${AUTOMATION_STUDIO_RECORD_SORT_ORDERS.join("|")}, as?:${AUTOMATION_STUDIO_RECORD_SORT_TYPES.join("|")}}]; at most ${AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.maxSortKeys} keys; absent as means auto.`,
     `limit: integer 1-${AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.limitCeiling}. columns: nonempty list of distinct stored field ids, in answer order.`,
     `minRows: nonnegative integer, default ${AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.minRowsDefault}; a shortfall is reported, never a failure.`,
-    "Every field id must be stored in schema, not excluded; every where field must remain in columns when columns is set.",
+    "Every field id must be stored in schema, not excluded. columns picks the answer's columns, so a sort or dedupe key may be a stored field columns leaves out; every where field must remain in columns when columns is set.",
     "Processing shapes the collected answer at run end in order where, dedupe, sort, limit, columns; it never changes which rows a repeat visits."
   ].join(" ");
 }

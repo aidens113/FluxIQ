@@ -527,3 +527,15 @@ describe("the format's guidance on narrowing a collection", () => {
     expect(narrowing![1]).not.toMatch(/shop|store|order|cart|feed|social|post|job|career/iu);
   });
 });
+
+// Breadth wave 1 (`run-mv6qrbgx-06151cdb`, 0022-0026) marked a sort key `handling: "exclude"` to keep it out of the
+// answer: nothing it was shown said that exclude means never stored and that `process.columns` is what leaves a
+// stored field out of the answer. t510 (F3): the loop format says both, and that a sort or dedupe key must be stored.
+describe("what the loop format says exclude and process.columns mean", () => {
+  it("says exclude is never stored, process.columns only hides, and a sort or dedupe key must be stored", () => {
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT).toContain("`handling: \"exclude\"` is never stored");
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT).toContain("`process.columns` keeps a field stored but leaves it out of the answer");
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT).toContain("A sort or dedupe key must be stored");
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT).not.toContain("over the columns `recordOutput.columns` saves");
+  });
+});

@@ -10,6 +10,8 @@ import {
 } from "../../../../nodes/index.ts";
 import {
   automationStudioFlowBootstrapRecordOutputContract,
+  automationStudioFlowBootstrapRecordOutputIssueDetail,
+  automationStudioFlowBootstrapRecordOutputIssueMessage,
   automationStudioFlowBootstrapRecordOutputIssues,
   automationStudioFlowBootstrapSuppliedRecordsPath
 } from "../record-output-contract.ts";
@@ -184,5 +186,65 @@ describe("a record output plan validation accepts", () => {
     expect(automationStudioFlowBootstrapRecordOutputIssues(extractList, { ...valid, recordsPath: "" })).toEqual(["record_output.invalid_records_path"]);
     expect(automationStudioFlowBootstrapRecordOutputIssues(writeRecords, { ...valid, recordsPath: "" })).toEqual([]);
     expect(automationStudioFlowBootstrapRecordOutputIssues(policyAction, withoutPath)).toEqual(["record_output.missing_records_path"]);
+  });
+});
+
+// Breadth wave 1 (`run-mv6qrbgx-06151cdb`, 0022-0026): a sort on a field the schema marked `handling: "exclude"`, so
+// the answer would not show it, was refused with "Name a stored field id instead", and no stored field could order the
+// rows. The model moved the sort from one excluded field to another until the build ended. t510 (F2): a sort or dedupe
+// key that is refused says to keep it stored and hide it with process.columns, and the refusal carries `{field, valid}`.
+describe("the sentence and detail a refused processing field is given", () => {
+  const recordOutput = (process: JsonObject, fields: JsonValue[]): JsonObject => ({
+    datasetId: "tasks",
+    writeMode: "append",
+    schema: { schemaVersion: "0.1", fields },
+    process
+  });
+  const name = { id: "name", label: "Name", valueType: "string" };
+  const owner = { id: "owner", label: "Owner", valueType: "string" };
+  const due = { id: "due", label: "Due", valueType: "string", handling: "exclude" };
+
+  it("tells a sort on an excluded field to keep it stored and hide it with process.columns", () => {
+    const value = recordOutput({ sort: [{ field: "due", order: "asc" }], columns: ["name", "owner"] }, [name, owner, due]);
+    expect(automationStudioFlowBootstrapRecordOutputIssues(extractList, value)).toEqual(["record_output.process_excluded_field"]);
+    const message = automationStudioFlowBootstrapRecordOutputIssueMessage("record_output.process_excluded_field", value)!;
+    expect(message).toContain("\"due\"");
+    expect(message).toContain("remove handling \"exclude\"");
+    expect(message).toContain("process.columns");
+    expect(message).not.toContain("Name a stored field id instead");
+    expect(automationStudioFlowBootstrapRecordOutputIssueDetail("record_output.process_excluded_field", value)).toEqual({ field: "due", valid: ["name", "owner"] });
+  });
+
+  it("says the same for a dedupe key, and still says to name a stored id for a column alone", () => {
+    const deduped = recordOutput({ dedupe: { by: ["due"] } }, [name, due]);
+    expect(automationStudioFlowBootstrapRecordOutputIssueMessage("record_output.process_excluded_field", deduped)).toContain("process.columns");
+    const listed = recordOutput({ columns: ["name", "due"] }, [name, due]);
+    expect(automationStudioFlowBootstrapRecordOutputIssueMessage("record_output.process_excluded_field", listed)).toContain("Name a stored field id instead");
+    expect(automationStudioFlowBootstrapRecordOutputIssueDetail("record_output.process_excluded_field", listed)).toEqual({ field: "due", valid: ["name"] });
+  });
+
+  it("tells a sort on a field the schema lacks to add it to schema.fields and hide it with process.columns", () => {
+    const value = recordOutput({ sort: [{ field: "due", order: "asc" }] }, [name, owner]);
+    expect(automationStudioFlowBootstrapRecordOutputIssues(extractList, value)).toEqual(["record_output.process_unknown_field"]);
+    const message = automationStudioFlowBootstrapRecordOutputIssueMessage("record_output.process_unknown_field", value)!;
+    expect(message).toContain("\"due\"");
+    expect(message).toContain("process.columns");
+    expect(automationStudioFlowBootstrapRecordOutputIssueDetail("record_output.process_unknown_field", value)).toEqual({ field: "due", valid: ["name", "owner"] });
+  });
+
+  it("names a dropped where field and the columns kept, and gives no detail for other codes", () => {
+    const value = recordOutput({ where: [{ field: "owner", is: "present" }], columns: ["name"] }, [name, owner]);
+    expect(automationStudioFlowBootstrapRecordOutputIssueDetail("record_output.process_where_column_dropped", value)).toEqual({ field: "owner", valid: ["name"] });
+    expect(automationStudioFlowBootstrapRecordOutputIssueDetail("record_output.invalid", value)).toBeUndefined();
+  });
+});
+
+// t510 (F3): `exclude` was read as "left out of the answer"; the contract says it means never stored, and that
+// process.columns is what leaves a stored field out of the answer.
+describe("what handling exclude and process.columns mean, as the contract says them", () => {
+  it("says exclude is never stored and that a sort or dedupe key may be a stored field columns leaves out", () => {
+    const { text, condensedText } = automationStudioFlowBootstrapRecordOutputContract(extractList);
+    expect(text).toContain("exclude: never stored");
+    for (const shown of [text, condensedText]) expect(shown).toContain("a sort or dedupe key may be a stored field columns leaves out");
   });
 });

@@ -374,6 +374,12 @@ export const AUTOMATION_STUDIO_FLOW_CONDITION_RULES = [
  * handle as `wayOut` when the domain could name it
  * (`../../service/candidate-trial/interruptions.ts`); with no handle, the Flow
  * answers with its pace alone and writes no step for the notice.
+ *
+ * **What exclude and process.columns mean (t510, F3).** Breadth wave 1
+ * (`run-mv6qrbgx-06151cdb`) marked a sort key `handling: "exclude"` to keep it
+ * out of the answer and was refused three times: exclude means never stored,
+ * and a stored field leaves the answer through `process.columns`. The format
+ * now says both, and that a sort or dedupe key must be stored.
  */
 export const AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT = [
   "Repetitive work is a loop, never the same steps written again. A step starts a span that repeats with lines beside its node:",
@@ -388,7 +394,8 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT = [
   "A value that changes between rows or runs is bound, never typed in: `$row.<field>` is a field the listing reads, of the row the pass is on, and only inside a repeat over that listing; `$input.<name> = <value>` is a Flow input, written with the value the person gave; `$step.<label>.<output>` is an output of an earlier step, by its label.",
   "The rows a `repeat over` acts on are the rows its listing kept. To act on only some, put the condition on the listing step: `extractList.where: [{\"field\": \"amount\", \"atLeast\": 100}]`.",
   `A where condition, on a listing or in \`recordOutput.process\`, names a column by field and must hold for a row to be kept. ${AUTOMATION_STUDIO_FLOW_CONDITION_RULES}`,
-  "Rows a Flow reads are also collected over the whole run, and `recordOutput.process` on the reading step only shapes that saved answer at the end -- keep some, drop repeats, sort, limit -- over the columns `recordOutput.columns` saves. It never changes which rows a repeat visits.",
+  "Rows a Flow reads are also collected over the whole run, and `recordOutput.process` on the reading step only shapes that saved answer at the end -- keep some, drop repeats, sort, limit -- over the columns it stores. It never changes which rows a repeat visits.",
+  "In a record output, a schema field with `handling: \"exclude\"` is never stored, for a value that must not be kept, while `process.columns` keeps a field stored but leaves it out of the answer. A sort or dedupe key must be stored: one the answer should not show stays in the schema and out of `process.columns`.",
   "Example, reading every page of a list:",
   "flow: Gardening books published since 2015 on every page of the catalogue search",
   "step: open the search results",
