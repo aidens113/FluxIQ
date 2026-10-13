@@ -94,6 +94,18 @@
 // gave no reading of a defect -- it could not tell, as in lane C round 11
 // (`run-mv5yaapy-8c34bf34`, trial 3) -- the note names only the yes's reading
 // and says the other named no defect, rather than a no it does not carry (t480).
+//
+// **A read that paged says how its paging ended (t498).** Live run
+// `run-mv6ff44s-01def7f6`, trial 1: one judge said no because the read "stopped
+// after page 5" while the listing went on, which Core's own read account -- the
+// list ended, the step moving it on found no page after page 5 -- contradicted.
+// The judges were shown that account; the model was not, took the no's reading,
+// invented a cause and chased it. Each read that paged, or was written to, now
+// carries `pagesRead`, its closed `stop` word and `paging`, the very sentence
+// the judges are shown (`automationStudioResultSummaryWithPagingWords`), and
+// the feedback says once (`pagingNote`), and a split's note again, that this
+// record stands against a reading about pages. The judges' own copy is
+// result-verification's and is unchanged.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../../../model/index.ts";
@@ -102,7 +114,7 @@ import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTr
 import type { AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
 import { automationStudioAttemptSettled } from "../../flow-change/index.ts";
 import { automationStudioModelFacingControlWords, automationStudioModelFacingFailureText } from "../../llm/model-facing/index.ts";
-import type { AutomationStudioBuildTestVerdict, AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
+import { automationStudioResultSummaryWithPagingWords, type AutomationStudioBuildTestVerdict, type AutomationStudioResultReadAccount, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import { automationStudioTrialAbsorbedFeedback } from "./absorbed.ts";
 import { automationStudioTrialCheckStepFeedback } from "./check-step.ts";
 import { automationStudioTrialExecutedSteps } from "./executed-steps.ts";
@@ -135,6 +147,12 @@ const UNREAD_SPLIT_NOTE = "The two judge calls disagreed and neither was confirm
   + `Weigh answeredReading by the evidence it names against this trial's own reads, steps and stored rows: ${WEIGH_NOTE}`
   + "Where that evidence supports it, test this same revision again; change the Flow only for a defect that evidence shows.";
 
+/** Said once when a read carries its paging account (header, t498). */
+const PAGING_NOTE = "Each read's pagesRead, stop and paging are Core's own record of how that read's paging ended, the same words the judges were shown: a judge's reading that says otherwise about pages is mistaken, so weigh it by that record, never change the Flow's paging on the reading alone.";
+
+/** Added to a split's note when a read carries its paging account (header, t498). */
+const PAGING_SPLIT_NOTE = " Where a reading speaks of pages, each read's paging is Core's own record of how its paging ended, and it stands against that reading.";
+
 /** The most steps a feedback lists; a longer Flow says how many it left out. */
 const MAX_STEPS = 40;
 
@@ -149,19 +167,22 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
         ? { code: graphFailure, happened: "The last step chose a route with no matching outgoing edge.", instruction: "Connect the step's settled route to the intended next step, then resubmit and test the new revision." }
         : undefined;
     // What each list read saw, kept and rejected, as a judged trial says it (`./reads.ts`).
-    const reads = automationStudioTrialReadsFeedback(input.reads, input.graph);
-    return { verdict: "execution_failed", feedback: { code: input.code, ...(input.trialRunId ? { trialRunId: input.trialRunId } : {}), start: input.start, ...(graphEnding ? { graphEnding } : {}), ...(reads.length ? { reads } : {}), ...steps(input.trace, input.graph, input.wayOuts) } };
+    // With how each read's paging ended, in the judges' words (header, t498).
+    const reads = withPaging(automationStudioTrialReadsFeedback(input.reads, input.graph), input.reads);
+    return { verdict: "execution_failed", feedback: { code: input.code, ...(input.trialRunId ? { trialRunId: input.trialRunId } : {}), start: input.start, ...(graphEnding ? { graphEnding } : {}), ...(reads.length ? { reads, ...pagingNote(reads) } : {}), ...steps(input.trace, input.graph, input.wayOuts) } };
   },
 
   /** The judge's verdict, read as the trial gate's. */
   judged(input: { verdict: AutomationStudioBuildTestVerdict; summary: AutomationStudioRunResultSummary; trialRunId: string; trace?: AutomationStudioGraphExecutionTrace | undefined; graph?: AutomationStudioFlowArtifact | undefined; start: string; wayOuts?: WayOutHandles }): { verdict: AutomationStudioCandidateTrialVerdict; code?: string; feedback: JsonObject } {
     const judged = input.verdict;
     // What each list read saw, kept and rejected: a read that kept no rows is said as a valid outcome of its conditions (`./reads.ts`, t466).
-    const reads = automationStudioTrialReadsFeedback(input.summary.reads, input.graph);
+    // With how each read's paging ended, in the judges' words, so a reading about pages can be held to it (header, t498).
+    const reads = withPaging(automationStudioTrialReadsFeedback(input.summary.reads, input.graph), input.summary.reads);
+    const paged = reads.some((read) => read.paging !== undefined);
     // The rows the saved answer's processing alone left out, by label (`./processed-out.ts`, t493).
     const processedOut = automationStudioTrialProcessedOutFeedback(input.summary);
     const stored: JsonObject = { rows: input.summary.totalRecordCount, refused: input.summary.totalRefusedCount, missingRequired: input.summary.totalRowsMissingRequired, ...(processedOut ? { processedOut } : {}) };
-    const common: JsonObject = { trialRunId: input.trialRunId, start: input.start, stored, ...(reads.length ? { reads } : {}), ...steps(input.trace, input.graph, input.wayOuts) };
+    const common: JsonObject = { trialRunId: input.trialRunId, start: input.start, stored, ...(reads.length ? { reads, ...pagingNote(reads) } : {}), ...steps(input.trace, input.graph, input.wayOuts) };
     if (judged.verdict === "yes") return { verdict: "yes", feedback: { ...common, judge: "The trial was judged twice to do what the instruction asks." } };
     if (judged.verdict === "no") {
       return { verdict: "no", code: "candidate.trial_judged_no", feedback: { ...common, code: "candidate.trial_judged_no", judge: compact({ expected: judged.expected, observed: judged.observed, advice: judged.advice, stillAchievable: judged.stillAchievable }), ...(judged.findings.length ? { findings: [...judged.findings] } : {}), ...(judged.fix?.length ? { fix: [...judged.fix] } : {}), ...(judged.checked?.length ? { checked: [...judged.checked] } : {}) } };
@@ -169,11 +190,39 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
     if (judged.verdict === "unknown") {
       const split = judged.answeredReading !== undefined;
       return { verdict: "unsure", code: "candidate.trial_unconfirmed", feedback: { ...common, code: "candidate.trial_unconfirmed", why: judged.why, ...(judged.unconfirmedReading ? { unconfirmedReading: compact({ ...judged.unconfirmedReading }) } : {}),
-        ...(split ? { answeredReading: compact({ ...judged.answeredReading }), readings: judged.unconfirmedReading ? SPLIT_NOTE : UNREAD_SPLIT_NOTE } : {}) } };
+        ...(split ? { answeredReading: compact({ ...judged.answeredReading }), readings: (judged.unconfirmedReading ? SPLIT_NOTE : UNREAD_SPLIT_NOTE) + (paged ? PAGING_SPLIT_NOTE : "") } : {}) } };
     }
     return { verdict: "not_judged", code: "candidate.trial_not_judged", feedback: { ...common, code: "candidate.trial_not_judged", why: judged.why } };
   }
 });
+
+/**
+ * Each read's feedback with how its paging ended, for a read that paged or was
+ * written to: its page count, its closed stop word and the judges' own
+ * sentence (header, t498). `told` is `reads` said one for one, in order
+ * (`./reads.ts`). A read that never pages is left as it was.
+ */
+function withPaging(told: JsonObject[], reads: readonly AutomationStudioResultReadAccount[] | undefined): JsonObject[] {
+  if (!reads?.length) return told;
+  // Only the reads are read; the rest of a summary is the shape the sentence's maker takes.
+  const worded = automationStudioResultSummaryWithPagingWords({ schemaVersion: "automation-studio.run-result-summary.v1", totalRecordCount: 0, totalRefusedCount: 0, totalRowsMissingRequired: 0, recordSetCount: 0, recordSets: [], flowShape: [], withheld: false, reads: [...reads] }).reads ?? [];
+  return told.map((entry, index) => {
+    const read = reads[index];
+    const paging = (worded[index] as { paging?: unknown } | undefined)?.paging;
+    if (!read || typeof paging !== "string" || !pages(read)) return entry;
+    return { ...entry, pagesRead: read.pagesRead, ...(read.stop !== undefined ? { stop: read.stop } : {}), paging };
+  });
+}
+
+/** Whether a read paged, or was written to: more than one page, a stop word, a loop's passes, or paging authored. */
+function pages(read: AutomationStudioResultReadAccount): boolean {
+  return read.pagesRead > 1 || read.stop !== undefined || read.keptPerPage !== undefined || read.paginates === true;
+}
+
+/** The note that the paging record stands, once, when any read carries one (header, t498). */
+function pagingNote(reads: readonly JsonObject[]): JsonObject {
+  return reads.some((read) => read.paging !== undefined) ? { pagingNote: PAGING_NOTE } : {};
+}
 
 /**
  * Why a run that reached a terminal step left steps behind, and what to change

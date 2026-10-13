@@ -240,7 +240,13 @@ function memberRefusal(input: {
     return `${at}, and one of the two is inside a repeat span the other is not in. Keep an optional step and the steps that run only after it together: all inside the same span, its \`repeat through:\` naming the last of them, or all outside every span.`;
   }
   if (span?.repeatsWhile && span.end === input.member) {
-    return `${at} and is the last step of the \`repeat while\` span that starts at line ${input.steps[span.head]!.line}: the step whose success repeats the span, so a pass that went past it would end the loop. End the span at a step that always runs.`;
+    // Both ways out, and the line itself (t498): a live build meant `only
+    // after:` as "after", was told only to end the span elsewhere, and never
+    // learned that deleting the line was the whole fix (`run-mv6ff44s-01def7f6`).
+    const onlyAfter = step.onlyAfter!;
+    return `${at} and is the last step of the \`repeat while\` span that starts at line ${input.steps[span.head]!.line}: the step whose success repeats the span, so a pass that skipped it would end the loop. `
+      + `Fix it one of two ways: delete the \`only after: ${onlyAfter.label}\` line at line ${onlyAfter.line} -- an optional step goes on to the next step whether or not it acted, so this step then runs on every pass; `
+      + `or move this step so the span ends at a step that always runs, and keep \`only after:\` only on a step that must be skipped when "${named.label}" did not act.`;
   }
   return undefined;
 }

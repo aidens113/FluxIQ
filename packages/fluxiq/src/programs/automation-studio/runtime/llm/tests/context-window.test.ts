@@ -381,3 +381,41 @@ describe("what a growing window rewrites between one decision and the next", () 
     return found;
   }
 });
+
+// One current Flow script in what a decision is shown (t498): every candidate
+// submission older than the newest accepted one carries `supersededBy` in place
+// of its script, and nothing else changes.
+const accepted = (callId: string, revision: number, body: JsonObject = { script: `flow: revision ${revision}` }): AutomationStudioLlmEvidenceEntry =>
+  ({ callId, toolId: "core.submit_candidate", value: { ok: true, status: "draft", revision, digest: `${revision}`.repeat(64), ...body, scriptIs: `Revision ${revision} is your current Flow.`, next: "Test next." } });
+const refused = (callId: string, revision: number, current?: number): AutomationStudioLlmEvidenceEntry =>
+  ({ callId, toolId: "core.submit_candidate", value: { ok: false, revision, diagnostics: { code: "flow_bootstrap.completion_refused", issues: [], previous: `flow: refused ${revision}`, instruction: "Correct it." }, issueCodes: ["x.y"], next: "Correct it.",
+    ...(current === undefined ? {} : { current: { revision: current, digest: "d", call: `submit.${current}` }, scriptIs: "This submission was refused." }) } });
+const look = (callId: string): AutomationStudioLlmEvidenceEntry => ({ callId, toolId: "demo.look", value: { script: "a page's own key", ok: true } });
+
+describe("a candidate's scripts in the window", () => {
+  it("leaves the newest accepted script whole and a refusal after it labelled, and stubs every older script by the next accepted submission", () => {
+    const records = [accepted("submit.1", 1), refused("submit.2", 2, 1), accepted("submit.3", 3), refused("submit.4", 4, 3), look("look.5")];
+    const before = structuredClone(records);
+    const window = automationStudioLlmEvidenceContextWindow(records);
+    expect(window[0]!.value).toEqual({ ok: true, status: "draft", revision: 1, digest: "1".repeat(64), next: "Test next.", supersededBy: "submit.3" });
+    expect(window[1]!.value).toEqual({ ok: false, revision: 2, diagnostics: { code: "flow_bootstrap.completion_refused", issues: [], instruction: "Correct it." }, issueCodes: ["x.y"], next: "Correct it.", supersededBy: "submit.3" });
+    expect(window[2]!.value).toEqual(records[2]!.value);
+    expect(window[3]!.value).toEqual(records[3]!.value);
+    // Another tool's result is never read as a submission, and the loop's own records are never changed.
+    expect(window[4]!.value).toEqual(records[4]!.value);
+    expect(records).toEqual(before);
+  });
+
+  it("stubs an accepted JSON plan as it stubs a script, and names the nearest newer accepted submission, never the newest", () => {
+    const window = automationStudioLlmEvidenceContextWindow([accepted("submit.1", 1, { plan: { schemaVersion: "0.1" } }), accepted("submit.2", 2), accepted("submit.3", 3)]);
+    expect(window[0]!.value).not.toHaveProperty("plan");
+    expect(window[0]!.value).toMatchObject({ supersededBy: "submit.2" });
+    expect(window[1]!.value).toMatchObject({ supersededBy: "submit.3" });
+    expect(window[2]!.value).toMatchObject({ script: "flow: revision 3" });
+  });
+
+  it("changes nothing where no submission was accepted", () => {
+    const records = [refused("submit.1", 1), refused("submit.2", 2)];
+    expect(automationStudioLlmEvidenceContextWindow(records)).toEqual(records);
+  });
+});

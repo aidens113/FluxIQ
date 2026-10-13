@@ -85,6 +85,16 @@ describe("an only after line where it cannot stand", () => {
     expect(guardedEnd.map(({ code, path }) => ({ code, path }))).toEqual([{ code: "flow_script.only_after_misplaced", path: "flow.line.20" }]);
   });
 
+  it("names the only after line on the last step of a repeat while span, and both ways to fix it (t498)", () => {
+    // A live build wrote `only after:` meaning "after", was told only to end the
+    // span elsewhere, and never learned the one-line fix: delete the line.
+    // more 5-10 (repeat while: cooldown); notice 11-15; cooldown 16-20 (only after at 20).
+    const [guardedEnd] = refusals([...OPEN, ...press("more", ["  repeat while: cooldown", "  repeat most: 3"]), ...press("notice", ["  optional: yes"]), ...pause("cooldown", ["  only after: notice"])]);
+    expect(guardedEnd!.message).toContain("delete the `only after: notice` line at line 20");
+    expect(guardedEnd!.message).toContain("an optional step goes on to the next step whether or not it acted, so this step then runs on every pass");
+    expect(guardedEnd!.message).toContain("or move this step so the span ends at a step that always runs");
+  });
+
   it("adds nothing to the refusal of an optional step that was itself refused", () => {
     // notice 5-9 (optional: maybe at 9), cooldown 10-14.
     const found = refusals([...OPEN, ...press("notice", ["  optional: maybe"]), ...pause("cooldown", ["  only after: notice"])]);

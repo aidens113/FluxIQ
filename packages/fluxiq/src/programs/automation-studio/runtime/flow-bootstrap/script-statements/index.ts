@@ -21,13 +21,16 @@
 // resolved each step's target, not during assembly: an optional or handler step
 // that presses an interruption's offer rather than its way out
 // (`./way-out-steps.ts`), which the candidate submission asks
-// (`../candidate/submission.ts`).
+// (`../candidate/submission.ts`). Since t498 a second check on a built plan: a
+// step inside a loop whose record output replaces the run's rows on every pass
+// (`./record-replace-in-repeat.ts`), which the completion check asks.
 export * from "./called-parts.ts";
 export * from "./entry-points.ts";
 export * from "./fact-condition.ts";
 export * from "./flow-requires.ts";
 export * from "./guarded-steps.ts";
 export * from "./handler-blocks.ts";
+export * from "./record-replace-in-repeat.ts";
 export * from "./repeat-bound.ts";
 export * from "./repeat-pace.ts";
 export * from "./script-spans.ts";
