@@ -21,6 +21,11 @@
 //   unsure, or a second ask that did not settle it     -> unknown, with the
 //                                                         reading of a call that
 //                                                         judged no, unconfirmed
+//   unsure about pages Core's record says were all     -> that call asked once more
+//     read, beside a yes                                   with the record named
+//                                                         (`../agreement.ts`, t503); still
+//                                                         unsure, unknown saying so
+//                                                         (`doubtContradicted`)
 //   not performed (no model), or the deadline passed  -> not_judged
 //   no call came back usable, each asked again after a -> not_judged, saying why and how
 //     temporary fault (`../verify.ts`)                     many times it was asked (t473)
@@ -74,7 +79,7 @@ import { randomUUID } from "node:crypto";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowIntervention } from "../../../model/index.ts";
 import { automationStudioLlmCurrentBuildPurse, type AutomationStudioLlmBuildPurseRefusal } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmProvider } from "../../llm/index.ts";
-import { automationStudioResultVerificationFailsRun, type AutomationStudioResultRepairDirective, type AutomationStudioRunResultSummary } from "../contracts.ts";
+import { automationStudioResultVerificationFailsRun, type AutomationStudioResultRepairDirective, type AutomationStudioResultVerification, type AutomationStudioRunResultSummary } from "../contracts.ts";
 import { automationStudioResultVerificationDeadlineMs, automationStudioResultVerificationWithinDeadline } from "../deadline.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "../repair-directive.ts";
 import { automationStudioResultCheckedRowsNamed, type AutomationStudioRequestRowsNamed } from "../request-rows/index.ts";
@@ -132,6 +137,13 @@ export type AutomationStudioBuildTestVerdict =
      * `flow-bootstrap/unfinished-build/progress.ts`; live run run-musp4h2f-72e8ed99).
      */
     oneCallSaidYes?: true;
+    /**
+     * Only on an `unknown` where one call could not tell because of pages
+     * Core's record says were all read (`AutomationStudioResultVerification.contradictedUnsure`,
+     * t503): Core's sentence naming that call, the record and what the re-ask
+     * answered. A doubt the record contradicts is no evidence against the Flow.
+     */
+    doubtContradicted?: string;
     spent: AutomationStudioBuildTestJudgeSpend;
   }
   | {
@@ -267,8 +279,21 @@ export function automationStudioBuildTestJudge(deps: {
     const reading = outcome.unconfirmedReading;
     // ...and on a split, the yes's beside it, so the build sees what each relied on (t477).
     const answered = outcome.basis === "model_disagreed" ? outcome.answeredReading : undefined;
-    return { verdict: "unknown", why: outcome.reason, ...carried, ...(reading ? { unconfirmedReading: { ...reading } } : {}), ...(answered ? { answeredReading: { ...answered } } : {}), ...(outcome.basis === "model_disagreed" ? { oneCallSaidYes: true as const } : {}), spent };
+    // ...and a doubt about pages Core's record contradicts, said in Core's words (t503).
+    const doubt = doubtContradicted(outcome);
+    return { verdict: "unknown", why: outcome.reason, ...carried, ...(reading ? { unconfirmedReading: { ...reading } } : {}), ...(answered ? { answeredReading: { ...answered } } : {}), ...(outcome.basis === "model_disagreed" ? { oneCallSaidYes: true as const } : {}), ...(doubt ? { doubtContradicted: doubt } : {}), spent };
   };
+}
+
+/** Core's sentence on an unsure call whose doubt about pages Core's record contradicts (`../agreement.ts`, t503); nothing without one. */
+function doubtContradicted(outcome: AutomationStudioResultVerification): string | undefined {
+  const marked = outcome.contradictedUnsure;
+  if (!marked) return undefined;
+  const last = outcome.verdicts?.at(-1);
+  const after = !marked.reasked ? ""
+    : last === "does_not_answer" ? " It was asked again with that record named and then said no: its reading is unconfirmedReading."
+      : " It was asked again with that record named and still could not tell.";
+  return `Judge call ${marked.call} could not tell, saying the list has pages its read never reached; Core's record says otherwise: ${marked.record}${after}`;
 }
 
 /**

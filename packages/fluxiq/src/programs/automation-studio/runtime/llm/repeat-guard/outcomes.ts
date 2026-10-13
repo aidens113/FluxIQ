@@ -145,6 +145,21 @@
 // instead of being refused unrun. A `core.submit_candidate` call is keyed on its
 // `flow` (or `plan`) alone (`keyedInput`).
 //
+// **A submission is keyed on the revision standing when it was answered
+// (t503).** Lane C round 17 (`run-mv6lgqi6-4bfab2e1`): revision 4 stood when
+// its script was sent again word for word (0043), and Core refused it as
+// unchanged. Revision 5 was accepted next. At 0051, on the same page, the
+// model sent revision 4's script once more; revision 4 had never been refuted,
+// so Core would have taken it back as a new revision, a restore. Keyed on the
+// Flow and the page alone, it was refused unrun as a repeat of 0043's refusal,
+// three times, and the build ended. Whether a submission is refused as
+// unchanged is relative to the revision standing, so its key holds that
+// revision's digest, read from the latest accepted submission's own answer
+// (`standing`). The same script sent again while the same revision stands is
+// refused unrun as before -- answered with the earlier refusal, or, for the
+// standing revision's own script, as already accepted -- and the same script
+// sent once another revision stands is a new call that Core checks.
+//
 // **What still runs.**
 //
 // - Anything after the page changed: the key holds the page.
@@ -280,7 +295,11 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
   let latest: string | undefined;
   let refusedInARow = 0;
   let lastRefused = Number.NEGATIVE_INFINITY;
-  const key = (toolId: string, input: JsonObject, state: string): string => `${toolId}\u0000${state}\u0000${options.draftOf?.(toolId) ?? ""}\u0000${automationStudioLlmEvidenceCanonicalJson(keyedInput(toolId, input))}`;
+  // The digest of the revision standing: the latest submission Core accepted (header, t503).
+  let standing: string | undefined;
+  // What a call is answered against besides its page: the draft a part run runs, or the revision a submission is compared with.
+  const against = (toolId: string): string => options.draftOf?.(toolId) ?? (toolId === SUBMIT_CANDIDATE ? standing : undefined) ?? "";
+  const key = (toolId: string, input: JsonObject, state: string): string => `${toolId}\u0000${state}\u0000${against(toolId)}\u0000${automationStudioLlmEvidenceCanonicalJson(keyedInput(toolId, input))}`;
   // A decision is keyed on the draft it was sent on, which a call key never starts with (a call's starts with its tool id, never empty).
   const amendmentKey = (signature: string, draft: string): string => `\u0000amend_draft\u0000${draft}\u0000${signature}`;
   return {
@@ -297,6 +316,9 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
     recorded(call) {
       const state = call.stateBefore ?? latest;
       if (call.stateAfter !== undefined) latest = call.stateAfter;
+      // An accepted submission is the revision standing from now on, and its own outcome is keyed on it (header, t503).
+      const digest = call.toolId === SUBMIT_CANDIDATE && !call.refused ? acceptedDigest(call.answer) : undefined;
+      if (digest !== undefined) standing = digest;
       const look = call.effect === "observe" && !call.proposes;
       // A look seen to leave the page as it found it is one more look in a row; anything else -- a look whose page was not seen
       // included, since nothing says it did not move -- ends the run (`./searching.ts`). A refused look looked at nothing and
@@ -396,20 +418,31 @@ function keyedInput(toolId: string, input: JsonObject): JsonObject {
   return Object.keys(flow).length ? flow : input;
 }
 
+/** The digest an accepted submission's answer returned, read from its own JSON; nothing for an answer that is not one. */
+function acceptedDigest(answer: string | undefined): string | undefined {
+  const value = parsed(answer);
+  return isObject(value) && value.ok === true && typeof value.digest === "string" && value.digest.length > 0 ? value.digest : undefined;
+}
+
 /** The issues a refusal listed, as it gave them: its `diagnostics.issues`, or else its own `issues`; nothing when it listed none. */
 function refusalIssues(answer: string | undefined): JsonValue[] | undefined {
-  if (answer === undefined) return undefined;
-  let value: unknown;
-  try {
-    value = JSON.parse(answer);
-  } catch (error) {
-    // The one failure that means "listed none": an answer in plain words, not JSON. Anything else is rethrown.
-    if (error instanceof SyntaxError) return undefined;
-    throw error;
-  }
+  // An answer in plain words, not JSON, listed none.
+  const value = parsed(answer);
   if (!isObject(value)) return undefined;
   const issues = isObject(value.diagnostics) && Array.isArray(value.diagnostics.issues) ? value.diagnostics.issues : value.issues;
   return Array.isArray(issues) && issues.length > 0 ? issues as JsonValue[] : undefined;
+}
+
+/** An answer read as JSON; nothing for an answer in plain words. */
+function parsed(answer: string | undefined): unknown {
+  if (answer === undefined) return undefined;
+  try {
+    return JSON.parse(answer);
+  } catch (error) {
+    // The one failure that means "not JSON": an answer in plain words. Anything else is rethrown.
+    if (error instanceof SyntaxError) return undefined;
+    throw error;
+  }
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

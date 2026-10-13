@@ -348,6 +348,8 @@ export type AutomationStudioRunResultSummary = {
    * judge is shown, and only when there are some. Information, never a verdict.
    */
   instructionColumnsUnread?: string;
+  /** Core's words to a check asked again because its doubt contradicted Core's record (`./agreement.ts`, t503); only on that ask's copy. */
+  recheck?: string;
   /**
    * Rows a read left out by one condition alone, tested on the row's own label,
    * whose label names first the request's phrase every kept row names first and
@@ -687,61 +689,58 @@ export type AutomationStudioResultVerification = {
   /** What was actually observed: counts, never a model's prose or a row's contents. */
   observation: string;
   /**
-   * The verdict each verification call returned, in the order asked: one, or
-   * two when the first answered anything but `answers`, or answered `answers` on
-   * a verification that confirms it (`confirmAnswer`). Verdict words only,
-   * never the model's prose. Absent when no model was asked.
+   * The verdict each verification call returned, in the order asked: one; two
+   * when the first answered anything but `answers`, or `answers` on a
+   * verification that confirms it (`confirmAnswer`); three when a contradicted
+   * unsure was asked again (`contradictedUnsure`). Verdict words only, never
+   * the model's prose. Absent when no model was asked.
    */
   verdicts?: AutomationStudioResultVerdict[];
-  /** The verification calls made or attempted: 1 or 2. Absent when no model was asked. */
+  /** The verification calls made or attempted: 1, 2, or 3 with a re-ask. Absent when no model was asked. */
   calls?: number;
   /**
-   * What to fix, present exactly when the verdict is `does_not_answer`.
-   *
-   * A verdict of `unsure` deliberately carries none: nobody judged the result
-   * wrong, so there is nothing to instruct a repair to change, and
-   * `recovery/refuted-result/attempt.ts` refuses to build a repair from an
-   * `unsure` for the same reason.
+   * What to fix, present exactly when the verdict is `does_not_answer`. An
+   * `unsure` carries none: nobody judged the result wrong, and
+   * `recovery/refuted-result/attempt.ts` builds no repair from one.
    */
   repair?: AutomationStudioResultRepairDirective;
   /**
    * On a verification two checks did not settle (`model_disagreed`,
-   * `model_unconfirmed`), the reading of the call that judged
-   * `does_not_answer`: its expected, observed and advice, as screened for that
-   * call's `repair.judgement`. One judge's reading the other call did not
-   * confirm, and nothing more: never a `repair` or a `failure` record, so it
-   * fails no run (`automationStudioResultVerificationFailsRun`) and builds no
-   * runtime repair. A build's repair is told it (`build-test/judge.ts`), because
-   * dropping it sent live run murwcmx2's repair back with only "unverified"
-   * while one call had said which condition to narrow. Absent when no call
-   * judged `does_not_answer`, or that call said nothing beyond its verdict. Like
-   * `repair.judgement`, it is the model's prose and is not recorded on a run
-   * (`run-outcome.ts`).
+   * `model_unconfirmed`), the reading of the call that judged `does_not_answer`,
+   * as screened for its `repair.judgement`: one judge's reading the other call
+   * did not confirm. Never a `repair` or a `failure` record, so it fails no run
+   * and builds no runtime repair; a build's repair is told it
+   * (`build-test/judge.ts`; live run murwcmx2 was told only "unverified").
+   * Absent when no call judged `does_not_answer` or it said nothing more. Like
+   * every reading here, the model's prose, never recorded on a run (`run-record.ts`).
    */
   unconfirmedReading?: NonNullable<AutomationStudioResultRepairDirective["judgement"]>;
   /**
-   * The reading of a call that judged `answers`: what it took the request to
-   * ask (`expected`) and what it compared that against (`observed`), screened
-   * as a refutation's judgement is (`./judgement-screen.ts`). Kept on a yes,
-   * and on a verification whose two calls split (`model_disagreed`) beside the
-   * no's `unconfirmedReading`, so a build is shown both readings and the
-   * evidence each relied on, not only the no's (t477; live run
-   * `run-mv5uu9g1-9d80deea`: the yes read "14 of 14 results, no pagination" in
-   * the end view, the no read the start view's pages as the read's, and the
-   * model was told only the no). Never a repair, never its advice (a yes's
-   * advice is no directive), and, as the model's prose, never recorded on a
-   * run (`run-record.ts`).
+   * The reading of a call that judged `answers` (`expected`, `observed`),
+   * screened as a refutation's is (`./judgement-screen.ts`). Kept on a yes, and
+   * on a split (`model_disagreed`) beside the other call's, so a build sees the
+   * evidence each relied on (t477, `run-mv5uu9g1-9d80deea`). Never a repair or
+   * its advice.
    */
   answeredReading?: { expected?: string; observed?: string };
+  /** On an `unsure` a model gave, what it doubted, screened as a refutation's is: what an unsure beside a yes is weighed by (`./agreement.ts`, t503). Never a repair. */
+  unsureReading?: NonNullable<AutomationStudioResultRepairDirective["judgement"]>;
+  /**
+   * On an unsure beside a yes, the unsure call (1 or 2) whose doubt speaks of
+   * pages left unread where every paging read's record says its list ended,
+   * and Core's words naming that record: that call is asked once more with the
+   * record named (`reasked` once it was), and the agreement rule stands
+   * (`./agreement.ts`, t503, `run-mv6lgqi6-4bfab2e1`).
+   */
+  contradictedUnsure?: { call: 1 | 2; record: string; reasked?: true };
   /**
    * Present exactly when the verification fails the run
    * (`automationStudioResultVerificationFailsRun`): what the run must report.
    */
   failure?: AutomationStudioFailureRecord;
   /**
-   * The exact code of what stopped the verification: the diagnostic code of a
-   * call that did not come back usable, or the error's own name where there was
-   * none. For a debug reading the record; never put into `reason` or
+   * The exact code of what stopped the verification (a call's diagnostic code,
+   * or the error's name), for a debug reading the record; never in `reason` or
    * `observation`, which are said in the chat. Absent when nothing failed.
    */
   failureCode?: string;

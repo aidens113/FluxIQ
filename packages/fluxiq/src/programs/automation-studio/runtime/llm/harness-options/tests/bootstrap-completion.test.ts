@@ -108,7 +108,9 @@ describe("the feedback on a completed plan that was refused", () => {
     expect(unresolved.feedback.previous).toBe(script);
     // Labelled refused, and never "just sent": the refusal stays in evidence after a later revision is accepted (t498).
     expect(unresolved.feedback.instruction).toContain("Where previous is given, it is the script this call sent, and it was refused: it is no revision");
-    expect(unresolved.feedback.instruction).toContain("Once a later submission is accepted, that revision is your current Flow: edit its script, never this refused one.");
+    expect(unresolved.feedback.instruction).toContain("Once a later submission is accepted, edit the script of the revision core.current_flow names, never this refused one.");
+    // No standing claim of a current Flow: core.current_flow alone names it (t503).
+    expect(unresolved.feedback.instruction).not.toContain("current Flow");
     expect(unresolved.feedback.instruction).not.toContain("just sent");
 
     const unreadable = await refusal({ flow: "step: do the thing nobody named" });

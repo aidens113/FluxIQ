@@ -7,6 +7,7 @@ import { AutomationStudioLlmBuildPurse, automationStudioLlmFlowPurseScope } from
 import { AutomationStudioLlmProviderError, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../llm/index.ts";
 import { automationStudioResultVerificationDeadlineMs, AUTOMATION_STUDIO_RESULT_VERIFICATION_DEADLINE_MS } from "../deadline.ts";
 import { RUN_MUW60J7C_REQUEST, runMuw60j7cRunSummary } from "../request-rows/tests/run-muw60j7c.ts";
+import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../contracts.ts";
 import { AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK, verifyAutomationStudioRunResult } from "../verify.ts";
 
 const instruction: AutomationStudioFlowInstruction = {
@@ -114,6 +115,49 @@ describe("a verification check that did not come back", () => {
     // Three calls settle: the timed-out one at its hold (its cost is not known), and the two that answered at what they reported.
     expect(charged).toHaveLength(3);
     expect(flow.spentCalls()).toBe(3);
+  });
+});
+
+// t503 (lane C round 17, `run-mv6lgqi6-4bfab2e1`, trial 3): one check could not
+// tell because "later pages were never read", against every paging read's own
+// account that its list ended, and the other said yes. That check is asked once
+// more, with Core's record named on its copy (`../agreement.ts`).
+describe("an unsure beside a yes whose doubt about pages Core's record contradicts", () => {
+  /** A read that followed five pages and stopped because the list had no next page. */
+  const ended: AutomationStudioResultReadAccount = { nodeId: "n2", definitionId: "extract", pagesRead: 5, pageLimit: 10, stop: "control_disabled", truncated: false, kept: 13, paginates: true };
+  const summary: AutomationStudioRunResultSummary = {
+    schemaVersion: "automation-studio.run-result-summary.v1", totalRecordCount: 13, totalRefusedCount: 0, totalRowsMissingRequired: 0, recordSetCount: 1, recordSets: [],
+    flowShape: [{ nodeId: "n1", definitionId: "navigate" }, { nodeId: "n2", definitionId: "extract" }], withheld: false, reads: [ended]
+  };
+  const PAGING = { answersRequest: "unknown", observed: "The search reports over 1,000 results, but later pages were never read, so I cannot confirm every match was kept." };
+  const YES = { answersRequest: "yes", expected: "Every matching item.", observed: "13 rows, each matching." };
+
+  it("asks the doubting check once more with the record named, and a yes there beside the other yes answers", async () => {
+    const { provider, seen } = scripted([{ answer: PAGING }, { answer: YES }, { answer: YES }]);
+    const report = await verify(provider, { confirmAnswer: true, summary });
+    expect(seen).toHaveLength(3);
+    expect(report.outcome).toMatchObject({ performed: true, verdict: "answers", verdicts: ["unsure", "answers", "answers"], calls: 3, contradictedUnsure: { call: 1, reasked: true } });
+    expect(report.interventions).toHaveLength(3);
+    expect(report.interventions.map((intervention) => [intervention.metadata?.verificationCheck, intervention.metadata?.verificationReask])).toEqual([[1, undefined], [2, undefined], [1, true]]);
+    // Only the re-ask's copy names the record.
+    expect(seen[0]?.context.resultSummary).not.toHaveProperty("recheck");
+    expect(seen[1]?.context.resultSummary).not.toHaveProperty("recheck");
+    expect(String(seen[2]?.context.resultSummary?.recheck)).toContain("every page (5) and the list ended");
+  });
+
+  it("stays unsure, never a yes, when the re-asked check still doubts the pages, and asks no more", async () => {
+    const { provider, seen } = scripted([{ answer: PAGING }, { answer: YES }, { answer: PAGING }, { answer: YES }]);
+    const report = await verify(provider, { confirmAnswer: true, summary });
+    expect(seen).toHaveLength(3);
+    expect(report.outcome).toMatchObject({ verdict: "unsure", basis: "model_disagreed", verdicts: ["unsure", "answers", "unsure"], calls: 3, contradictedUnsure: { reasked: true } });
+    expect(report.interventions).toHaveLength(3);
+  });
+
+  it("asks nothing more where the record leaves the paging open", async () => {
+    const { provider, seen } = scripted([{ answer: PAGING }, { answer: YES }, { answer: YES }]);
+    const report = await verify(provider, { confirmAnswer: true, summary: { ...summary, reads: [{ ...ended, pageLimit: 5, stop: "page_limit", truncated: true }] } });
+    expect(seen).toHaveLength(2);
+    expect(report.outcome).toMatchObject({ verdict: "unsure", calls: 2 });
   });
 });
 

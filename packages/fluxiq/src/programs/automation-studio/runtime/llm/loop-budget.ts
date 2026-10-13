@@ -16,7 +16,8 @@
 // smallest of them is what it has left. The model is told, in closed numbers,
 // as the newest evidence entry. When one decision is left a draft is offered
 // only completion; a candidate keeps submission and trial because finishing
-// requires them. Neither is offered further exploration.
+// requires them. Neither runs further exploration (a candidate's exploring
+// tools stay listed, and are answered unrun: below, t503).
 //
 // Tokens are read from each decision's reported usage. A decision the caller
 // could not use reports none, so it is counted at the loop's average; and one
@@ -66,6 +67,19 @@
 // guidance, and the purse may still pay for testing and then completion.
 // Lane B `run-mv4jqkko-bc9a05c6` lost its trial with an untested receipt and
 // was forced into a completion the trial gate correctly refused.
+//
+// **A candidate's wrap-up keeps its tool list (t503, W6).** It used to offer
+// only the finishing tools, which rebuilt the tools and the decision schema at
+// the head of the request: lane C round 17 (`run-mv6lgqi6-4bfab2e1`, 0051)
+// cached 1,664 of 86,040 input tokens on its first wrap-up decision, $0.0131
+// and a fifth of the build, the prefix broken where the schema's tool list
+// shrank from eight tools to two. So a candidate's wrap-up offers every tool
+// it offered before and withholds the exploring ones where a call is
+// dispatched (`withholds`, `./evidence-loop.ts`: answered `not_offered`, never
+// run). The withdrawal is said in the budget entry, which rides after the
+// window, so the head of the request does not change. A draft loop's wrap-up
+// still offers no tools: its schema then holds completion and amendments
+// only, which is what makes it finish.
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceLoopBudgetBound } from "./evidence-loop/index.ts";
@@ -162,9 +176,9 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID = "core.budget";
 const BUDGET_INSTRUCTION = "What this exploration has left, this decision included. Plan to complete while it is enough: running out ends the exploration without a result.";
 const FINAL_INSTRUCTION = "This is your last decision, so only complete is offered: write the result now from the evidence you have.";
 const WRAP_UP_INSTRUCTION = "Only a few decisions are left, so new tools are no longer offered: complete now from the draft you have. If completing is refused, amend the draft as the refusal says and complete again.";
-const CANDIDATE_BUDGET_INSTRUCTION = `What this exploration has left, this decision included. Plan to finish while it is enough: submit the whole candidate, test that revision, and complete once its trial answers yes. From ${AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS} decisions left only those are offered, and running out ends the exploration without a result.`;
+const CANDIDATE_BUDGET_INSTRUCTION = `What this exploration has left, this decision included. Plan to finish while it is enough: submit the whole candidate, test that revision, and complete once its trial answers yes. From ${AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS} decisions left only those run, and running out ends the exploration without a result.`;
 const CANDIDATE_FINAL_INSTRUCTION = "The budget counts one decision left; submitting, testing and completing are still offered while the budget permits. If the latest submission is untested, test its exact revision and digest now with core.test_candidate. Complete only after that exact revision's trial answers yes, or no trial runner is available. Never complete an untested revision when a trial runner is available.";
-const CANDIDATE_WRAP_UP_INSTRUCTION = "Only a few decisions are left, so exploring tools are no longer offered; submitting, testing and completing are. If your latest Flow is not submitted, submit the whole candidate now with core.submit_candidate; test that exact revision with core.test_candidate; complete with its revision and digest once the trial answers yes. If a submission or a trial is refused, correct what it names, submit again and test the new revision.";
+const CANDIDATE_WRAP_UP_INSTRUCTION = "Only a few decisions are left, so only core.submit_candidate, core.test_candidate and completing run now: every other tool is still listed, but a call to one is answered without running and spends a decision. If your latest Flow is not submitted, submit the whole candidate now with core.submit_candidate; test that exact revision with core.test_candidate; complete with its revision and digest once the trial answers yes. If a submission or a trial is refused, correct what it names, submit again and test the new revision.";
 
 /** Decisions left from which the loop wraps up: a candidate's wrap-up starts earlier, since it has a submission and a trial to make before it completes. */
 function wrapUpDecisions(candidate: boolean): number {
@@ -175,9 +189,11 @@ function wrapUpDecisions(candidate: boolean): number {
  * Whether this decision is in the wrap-up, the tools it offers, and whether a
  * call to a tool is one the wrap-up withholds. Outside the wrap-up every
  * eligible tool is offered. In it, a draft loop offers none; a candidate loop
- * (`candidate`, the loop's `discoveryOnly`) offers its submission and its
- * trial through its last counted decision. The purse and hard bounds still
- * decide whether another decision can run; the trial gate still owns success.
+ * (`candidate`, the loop's `discoveryOnly`) still offers every eligible tool,
+ * so the head of its request is unchanged (header, t503), and withholds all
+ * but its submission and its trial through its last counted decision. The
+ * purse and hard bounds still decide whether another decision can run; the
+ * trial gate still owns success.
  */
 export function automationStudioLlmEvidenceLoopWrapUp<Tool extends { toolId: string }>(input: {
   remaining: AutomationStudioLlmEvidenceLoopRemaining | undefined | false;
@@ -187,9 +203,9 @@ export function automationStudioLlmEvidenceLoopWrapUp<Tool extends { toolId: str
 }): { wrappingUp: boolean; offered: Tool[]; withholds: (toolId: string) => boolean } {
   const left = input.remaining ? input.remaining.decisionsLeft : undefined;
   const wrappingUp = left !== undefined && left <= wrapUpDecisions(input.candidate) && input.canComplete;
-  const offered = !wrappingUp ? [...input.tools] : input.candidate ? input.tools.filter((tool) => CANDIDATE_FINISHING_TOOL_IDS.has(tool.toolId)) : [];
-  const offeredIds = new Set(offered.map((tool) => tool.toolId));
-  return { wrappingUp, offered, withholds: (toolId) => wrappingUp && !offeredIds.has(toolId) };
+  const offered = !wrappingUp || input.candidate ? [...input.tools] : [];
+  const runs: ReadonlySet<string> = input.candidate ? CANDIDATE_FINISHING_TOOL_IDS : new Set();
+  return { wrappingUp, offered, withholds: (toolId) => wrappingUp && !runs.has(toolId) };
 }
 
 /** How many decisions each bound still allows, and the smallest of them with `decisionsLeft` from the iteration backstop. */

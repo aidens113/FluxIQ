@@ -33,6 +33,14 @@
 // evidence; a second `no` leaves it unsure (`agreement.ts`). The runtime result
 // check does not set it, and a first `yes` there still stands on one call.
 //
+// **An unsure beside a yes whose doubt Core's record contradicts is asked once
+// more (t503).** Lane C round 17 (`run-mv6lgqi6-4bfab2e1`, trial 3): one check
+// could not tell because later pages were never read, where every paging read's
+// own account said its list ended, and the other said yes. That check is asked
+// a third time, once, with Core's record named on its copy (`recheck`); its
+// answer takes its place under the same rule (`agreement.ts`). The call's
+// intervention says so (`verificationReask`).
+//
 // **Core's own counts are asked first and cost nothing.** A run whose every row
 // was refused, or whose rows lack a value their own schema requires, is settled
 // before a provider is even resolved.
@@ -73,7 +81,7 @@ import {
   type AutomationStudioLlmTokenLimits
 } from "../llm/index.ts";
 import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "./contracts.ts";
-import { automationStudioResultVerificationAgreement, automationStudioResultVerificationAskAgain } from "./agreement.ts";
+import { automationStudioResultVerificationAgreement, automationStudioResultVerificationAskAgain, automationStudioResultVerificationReaskContradicted } from "./agreement.ts";
 import { automationStudioResultCheckActivity } from "./check-activity.ts";
 import { automationStudioResultCoreObservation } from "./core-observation.ts";
 import { automationStudioResultSummaryWithPagingWords, automationStudioResultSummaryWithUnreadColumns } from "./read-account/index.ts";
@@ -133,14 +141,14 @@ export type AutomationStudioResultVerificationRequest = {
   recordIntervention?: ((intervention: AutomationStudioFlowIntervention) => void) | undefined;
 };
 
-/** The outcome, and the intervention record of each call made: none, one, or two. */
+/** The outcome, and the intervention record of each call made: none, one, two, or three with a re-ask (header, t503). */
 export type AutomationStudioResultVerificationReport = {
   outcome: AutomationStudioResultVerificationOutcome;
   /**
    * In the order the calls were made. Each carries
    * `metadata.source: "verifyAutomationStudioRunResult"` and
-   * `metadata.verificationCheck` (1 or 2), so a reader of the run can tell a
-   * verification call from a recovery's.
+   * `metadata.verificationCheck` (1 or 2), and a re-ask `verificationReask`, so
+   * a reader of the run can tell a verification call from a recovery's.
    */
   interventions: AutomationStudioFlowIntervention[];
 };
@@ -178,10 +186,14 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
     return said({ outcome: { ...automationStudioResultVerificationAgreement({ first }), performed: true }, interventions });
   }
   const second = await askCheck(request, provider, 2, interventions);
-  return said({
-    outcome: { ...automationStudioResultVerificationAgreement({ first, second, confirmAnswer, reads: request.summary.reads }), performed: true },
-    interventions
+  const input = { first, second, confirmAnswer, reads: request.summary.reads };
+  const settled = automationStudioResultVerificationAgreement(input);
+  // A contradicted unsure beside a yes is asked once more, with Core's record named (header, t503).
+  const outcome = await automationStudioResultVerificationReaskContradicted({
+    ...input, settled,
+    ask: (recheck) => askCheck({ ...request, summary: { ...request.summary, recheck } }, provider, settled.contradictedUnsure!.call, interventions, true)
   });
+  return said({ outcome: { ...outcome, performed: true }, interventions });
 }
 
 /**
@@ -195,10 +207,12 @@ async function askCheck(
   request: AutomationStudioResultVerificationRequest,
   provider: AutomationStudioLlmProvider,
   check: 1 | 2,
-  interventions: AutomationStudioFlowIntervention[]
+  interventions: AutomationStudioFlowIntervention[],
+  /** The one re-ask of a contradicted unsure (header, t503): marked on its intervention. */
+  reask = false
 ): Promise<ReturnType<typeof automationStudioResultVerdict>> {
   for (let ask = 1; ; ask += 1) {
-    const asked = await askOnce(request, provider, check, ask);
+    const asked = await askOnce(request, provider, check, ask, reask);
     const taken = new Set(interventions.map((intervention) => intervention.interventionId));
     const intervention = taken.has(asked.intervention.interventionId) ? { ...asked.intervention, interventionId: `${asked.intervention.interventionId}.${interventions.length + 1}` } : asked.intervention;
     interventions.push(intervention);
@@ -225,7 +239,8 @@ async function askOnce(
   request: AutomationStudioResultVerificationRequest,
   provider: AutomationStudioLlmProvider,
   check: 1 | 2,
-  ask: number
+  ask: number,
+  reask: boolean
 ): Promise<{ verification: ReturnType<typeof automationStudioResultVerdict>; intervention: AutomationStudioFlowIntervention; temporary: boolean }> {
   // With the instruction's named columns no stored column reads, said once
   // (`read-account/unread-columns.ts`): information for the judge, not a verdict.
@@ -275,7 +290,7 @@ async function askOnce(
   });
   // The harness records a call's own metadata, not the caller's, so the
   // intervention is told here which check it was and who asked.
-  const intervention = { ...result.intervention, metadata: { ...(result.intervention.metadata ?? {}), source: VERIFICATION_SOURCE, verificationCheck: check, ...(ask > 1 ? { verificationAsk: ask } : {}) } };
+  const intervention = { ...result.intervention, metadata: { ...(result.intervention.metadata ?? {}), source: VERIFICATION_SOURCE, verificationCheck: check, ...(ask > 1 ? { verificationAsk: ask } : {}), ...(reask ? { verificationReask: true } : {}) } };
   const temporary = !response && request.signal?.aborted !== true && firstError(result.diagnostics)?.metadata?.retryable === true;
   return { verification, intervention, temporary };
 }

@@ -228,7 +228,7 @@ describe("candidate submissions answered from memory", () => {
 
 
 it.each([
-  ["llm_evidence_loop.not_offered", "This call was not offered, so it was not run"],
+  ["llm_evidence_loop.not_offered", "The build is in its last decisions: only core.submit_candidate, core.test_candidate and completing run now"],
   ["llm_evidence_loop.looked_again_unchanged", "Core looked again and the page was unchanged"],
   ["llm_evidence_loop.already_observed", "This request was already answered and was not run again"]
 ] as const)("candidate note preserves what happened for %s", (code, prefix) => {
