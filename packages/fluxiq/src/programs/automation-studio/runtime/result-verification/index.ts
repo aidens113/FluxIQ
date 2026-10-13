@@ -29,10 +29,12 @@
 // keeps one.
 
 export * from "./build-test/index.ts";
+export * from "./captured-rows.ts";
 export * from "./check-activity.ts";
 export * from "./contracts.ts";
 export * from "./core-observation.ts";
 export * from "./deadline.ts";
+export * from "./narrowed-before.ts";
 export * from "./read-account/index.ts";
 export * from "./repair-directive.ts";
 export * from "./request-rows/index.ts";
