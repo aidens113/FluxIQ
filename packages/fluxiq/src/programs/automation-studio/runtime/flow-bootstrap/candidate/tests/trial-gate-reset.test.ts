@@ -187,6 +187,44 @@ describe("candidate trial gate: the site is put back first", () => {
     expect(asked[0]!.startedWith).toEqual(["already done by this build (act-1): press \"Add\" button", "not as the build found it: 1 lines where the start had 0"]);
   });
 
+  // Lane D round 17 (`run-mv6lgt3s-c3aa6fac`): a start hook took back an exploration act, and nothing the trial answered
+  // or the build kept said the act had existed. The trial is admitted exactly as before (t504).
+  it("lists under absorbedByStartReset the exploration act a start hook took back, in the trial's evidence and in the result the build keeps (t504)", async () => {
+    const asked: AutomationStudioCandidateTrialRequest[] = [];
+    let hooked = 0;
+    const prepareStart = async () => {
+      hooked += 1;
+      return "reset" as const;
+    };
+    const port = Object.assign(portOf(asked, [{ step: 1, definitionId: definition.id, label: "Inspect", consequences: ["create_new"] }]), { prepareStart });
+    const { seen, outcome } = await run([act(), submit, test, test, submit], port);
+    expect(hooked).toBe(2);
+    const first = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)!;
+    // Admitted, as before: the hook put the site back, and the model is asked for nothing.
+    expect(first).toMatchObject({ verdict: "unsure", trialRunId: "trial.1", absorbedByStartReset: [{ act: "act-1", did: "press \"Add\" button", call: expect.stringMatching(/^act\./) }] });
+    expect(first.startedWith).toBeUndefined();
+    // The second hook took back only what the first trial left.
+    const second = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[4]!)!;
+    expect(second).toMatchObject({ verdict: "unsure", trialRunId: "trial.2", absorbedByStartReset: [{ act: "act-2", did: "trial step 1 \"Inspect\"" }] });
+    expect(asked).toHaveLength(2);
+    // The result the build keeps names every act a hook took back during the build, the exploration act first.
+    const trial = (outcome as { trial?: AutomationStudioCandidateTrialResult }).trial;
+    expect(trial?.absorbedByStartReset).toEqual([
+      { act: "act-1", did: "press \"Add\" button", call: expect.stringMatching(/^act\./) },
+      { act: "act-2", did: "trial step 1 \"Inspect\"" }
+    ]);
+  });
+
+  it("says nothing of a start hook that took back nothing of the build", async () => {
+    const asked: AutomationStudioCandidateTrialRequest[] = [];
+    const port = Object.assign(portOf(asked), { prepareStart: async () => "reset" as const });
+    const { seen, outcome } = await run([submit, test, submit], port);
+    const ran = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[2]!)!;
+    expect(ran).toMatchObject({ verdict: "unsure" });
+    expect("absorbedByStartReset" in ran).toBe(false);
+    expect((outcome as { trial?: AutomationStudioCandidateTrialResult }).trial).not.toHaveProperty("absorbedByStartReset");
+  });
+
   it("tells the judge nothing when the trial started as the build found the site", async () => {
     const asked: AutomationStudioCandidateTrialRequest[] = [];
     await run([submit, test, submit], portOf(asked));

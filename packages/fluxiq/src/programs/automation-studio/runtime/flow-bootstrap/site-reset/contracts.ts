@@ -163,9 +163,16 @@ export type AutomationStudioSiteResetLines = { gone: string[]; added: string[] }
  * was still in place or different when it was admitted without a full reset;
  * or refuse it with the evidence the model is answered with. A refusal is not
  * a trial, and `moved` says whether the arrival applied an effect.
+ *
+ * `absorbedByStartReset` names each act of this build that was still on the
+ * site when the deployment's start hook put it back (`startReset`, t504): the
+ * hook, not the model, took it back, and the trial's evidence and the result
+ * the build keeps say so rather than let the act vanish. Absent when the hook
+ * took back nothing of the build, or no hook ran. It never changes whether the
+ * trial is admitted.
  */
 export type AutomationStudioSiteResetDecision =
-  | { kind: "admit"; startedWith?: JsonObject }
+  | { kind: "admit"; startedWith?: JsonObject; absorbedByStartReset?: AutomationStudioSiteResetNamedAct[] }
   | { kind: "refuse"; evidence: JsonObject & { code: string }; moved: boolean };
 
 /** One lasting act a trial made, as the ledger reads it (`AutomationStudioCandidateTrialAct`, `../candidate/contracts.ts`). */
@@ -180,7 +187,8 @@ export type AutomationStudioSiteResetTrialAct = {
 /**
  * How a trial's start was made (t475). `startReset`: the deployment's start
  * hook has just put the site back, before the check, so every act of this
- * build counts undone and the model is asked for nothing (t479).
+ * build counts undone and the model is asked for nothing (t479); the acts it
+ * took back are answered under `absorbedByStartReset` (t504).
  */
 export type AutomationStudioSiteResetBeforeTrialOptions = { startReset?: boolean };
 
