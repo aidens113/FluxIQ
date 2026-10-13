@@ -157,7 +157,8 @@ export class AutomationStudioDurableAdaptations {
       updatedAt: now
     };
     assertFlowValidationOk(after, "Flow adaptation metadata update");
-    const saved = await this.flowWriter.saveFlowInternal({ projectId: adaptation.projectId, flow: after }, false);
+    // Restored if its save fails part-way, so a failed apply leaves no parent claiming the change.
+    const saved = await this.patches.saveFlowOrRestore({ projectId: adaptation.projectId, before, after });
     return durableAdaptationMutationRecord({
       patchKind: "promote_adaptation",
       artifactKind: "flow",
