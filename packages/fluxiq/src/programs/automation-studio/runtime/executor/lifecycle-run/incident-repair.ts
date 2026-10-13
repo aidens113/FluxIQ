@@ -7,7 +7,7 @@
 // and the unit, and gets back a graph to run on, already overlaid and checked
 // (`live-patch/overlay.ts`), or the reason there is none.
 import type { AutomationStudioFlowDocument } from "../../../model/index.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../contracts.ts";
+import type { AutomationStudioClearedLayer, AutomationStudioNodeAttemptTrace } from "../contracts.ts";
 import type { AutomationStudioRecoveryIncident } from "../lifecycle/index.ts";
 
 /**
@@ -75,6 +75,32 @@ export type AutomationStudioIncidentRepair =
  * run's signal has aborted. A throw reads as `none`.
  */
 export type AutomationStudioIncidentRepairCallback = (request: AutomationStudioIncidentRepairRequest) => Promise<AutomationStudioIncidentRepair>;
+
+/**
+ * What the executor hands the run session when a step succeeded and the
+ * client's defence closed a layer over the page on the way (t516): the user's
+ * rule is that an interruption met in a run becomes a branch of the Flow. The
+ * session may answer with the frame's graph carrying a handler for that layer
+ * (an overlay, as a repair's), or `none`. Asked at most once per step and
+ * layer name in a run, never inside a handler body, and only for a layer that
+ * has a name and a way out the domain can press (`wayOut`,
+ * `wayOutDefinitionId`).
+ */
+export type AutomationStudioInterruptionLearningRequest = {
+  /** The graph of the frame the step ran in, as this run executes it. */
+  graph: AutomationStudioFlowDocument;
+  subflowId: string | null;
+  /** The invocation ids of the frames the step ran in, outermost first. */
+  framePath: readonly string[];
+  /** The step's succeeded attempt. */
+  attempt: AutomationStudioNodeAttemptTrace;
+  /** The closed layer to learn, as the attempt carries it. */
+  layer: AutomationStudioClearedLayer;
+  signal?: AbortSignal;
+};
+
+/** Supplied by the run session on a run that keeps what it learns; absent, a closed layer is only recorded on the attempt. A throw reads as `none`. */
+export type AutomationStudioInterruptionLearningCallback = (request: AutomationStudioInterruptionLearningRequest) => Promise<AutomationStudioIncidentRepair>;
 
 /**
  * What the run keeps of one incident's repair (`run-state.ts`, `repairs`):

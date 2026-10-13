@@ -39,6 +39,8 @@ export type {
   AutomationStudioIncidentRepair,
   AutomationStudioIncidentRepairCallback,
   AutomationStudioIncidentRepairRequest,
+  AutomationStudioInterruptionLearningCallback,
+  AutomationStudioInterruptionLearningRequest,
   AutomationStudioRepairUnit,
   AutomationStudioRunRepair
 } from "./incident-repair.ts";

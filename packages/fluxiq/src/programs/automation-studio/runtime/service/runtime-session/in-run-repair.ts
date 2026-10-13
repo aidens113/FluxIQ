@@ -9,6 +9,11 @@
 // did; and so does a run a person asked the model into for a diagnosis or a
 // proposal (`diagnosis_only`, `diagnose_and_adapt`), whose fix must never run.
 //
+// The same binding supplies `learnInterruption` (t516,
+// `./interruption-learning.ts`): a layer the client's defence closed while a
+// step succeeded, learned as a handler with no model. It asks none, so a run
+// that keeps adaptations gets it whether or not its context invokes a model.
+//
 // For each incident the callback runs the one recovery pipeline a run that
 // could not hold gets after it ends (`../../recovery/annotation/annotate.ts`):
 // its gates, interventions, diagnosis at `gather`, deterministic plan,
@@ -57,8 +62,10 @@ import { canonicalFlowDocument } from "../flows/index.ts";
 import { isJsonRecord } from "../json-values.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../runtime-adaptation/index.ts";
 import { runtimeSessionToFlowRunDetail } from "../summaries/index.ts";
+import { recordAutomationStudioInRunFix } from "./in-run-repair-fix-record.ts";
 import { AutomationStudioInRunRepairLedger } from "./in-run-repair-ledger.ts";
 import { automationStudioInRunRepairUnitRefusal } from "./in-run-repair-unit.ts";
+import { learnAutomationStudioInterruption } from "./interruption-learning.ts";
 
 export type AutomationStudioInRunRepairBinding = {
   context: AutomationStudioRuntimeAdaptationContext;
@@ -82,19 +89,27 @@ type PatchInput = Parameters<AutomationStudioInRunRecovery["apply"]>[0];
  * unchanged, and its options gain nothing.
  */
 export function bindAutomationStudioInRunRepair(input: AutomationStudioInRunRepairBinding): AutomationStudioRuntimeAdaptationContext {
-  if (!repairsInRun(input.context, input.llmExecution)) return input.context;
+  const learns = keepsWhatItLearns(input.context, input.llmExecution);
+  const repairs = learns && input.context.behavior.invokeLlm;
+  if (!learns) return input.context;
   const ledger = new AutomationStudioInRunRepairLedger();
   const purse: Purse = {};
   // The recovery reads the ledger off the context it is given, as the one after the run does.
   const repairing: AutomationStudioInRunRepairBinding = { ...input, context: { ...input.context, inRunRepairs: ledger } };
-  input.graphOptions.repairIncident = (request) => repairIncident(repairing, ledger, purse, request);
+  if (repairs) input.graphOptions.repairIncident = (request) => repairIncident(repairing, ledger, purse, request);
+  // A layer the defence closed is learned with no model, so a run that asks none learns it too (t516, `./interruption-learning.ts`).
+  input.graphOptions.learnInterruption = (request) => learnAutomationStudioInterruption(repairing, ledger, request);
   return repairing.context;
 }
 
-/** Only a run whose context invokes the model, keeps what it makes, and may run a fix: not a dry run, and not a lane that only diagnoses or proposes. */
-function repairsInRun(context: AutomationStudioRuntimeAdaptationContext, llmExecution: AutomationStudioRuntimeSessionLlm | undefined): boolean {
+/**
+ * Only a run that keeps what it makes and may run a fix: not a dry run, and not
+ * a lane that only diagnoses or proposes. A repair at a failing step also needs
+ * a context that invokes the model; learning a closed layer asks none.
+ */
+function keepsWhatItLearns(context: AutomationStudioRuntimeAdaptationContext, llmExecution: AutomationStudioRuntimeSessionLlm | undefined): boolean {
   if (llmExecution?.intent === "diagnosis_only" || llmExecution?.intent === "diagnose_and_adapt") return false;
-  return context.behavior.invokeLlm && context.behavior.createAdaptations && context.settings.metadata?.dryRunAdaptation !== true;
+  return context.behavior.createAdaptations && context.settings.metadata?.dryRunAdaptation !== true;
 }
 
 /** Why an in-run repair ended with no fix: the recovery's own gate code, or the applier's, and the domain's codes when a step was refused. */
@@ -199,7 +214,7 @@ async function applyInRun(step: {
   if ("code" in applied) return refusedPatches(step, applied);
   const receipts: JsonObject[] = [];
   try {
-    for (const prepared of applied.prepared) receipts.push(await recordFix(step.input, step.base, prepared, step.purse));
+    for (const prepared of applied.prepared) receipts.push(await recordAutomationStudioInRunFix({ ports: step.input.ports, context: step.input.context, base: step.base, prepared, spent: spent(step.purse, step.input.runId) }));
   } catch {
     // A fix that could not be recorded could never be saved, so it does not run either.
     return refusedPatches(step, { code: "unrecorded", reason: "The fix could not be recorded for review, so it was not used." });
@@ -326,30 +341,6 @@ async function permissionFor(gate: AutomationStudioActionPermissionGate | undefi
   return { outcome: "required", sentence: gate.request?.sentence ?? "The fix needs a permission the run does not hold." };
 }
 
-/** Saves one fix's review record and adaptation, asks the promotion gate, and answers its receipt. */
-async function recordFix(
-  input: AutomationStudioInRunRepairBinding,
-  base: JsonObject,
-  prepared: Extract<AutomationStudioInRunRepairPreparation, { ok: true }>,
-  purse: Purse
-): Promise<JsonObject> {
-  if (prepared.changeProposal) await input.ports.saveFlowChangeProposal(prepared.changeProposal);
-  const saved = await input.ports.saveFlowAdaptation(prepared.adaptation);
-  const promoted = await input.ports.promoteRuntimeAdaptation({ adaptation: saved, context: input.context });
-  const approvalDecision = isJsonRecord(promoted.metadata?.approvalDecision) ? promoted.metadata.approvalDecision : undefined;
-  return compactJsonObject({
-    ...base,
-    outcome: "overlaid",
-    kind: prepared.patch.kind,
-    changedUnit: prepared.overlay.changedUnit as unknown as JsonObject,
-    adaptationId: promoted.adaptationId,
-    changeProposalId: prepared.changeProposal?.proposalId,
-    approvalDecision,
-    // The executor takes the unit again itself; the detached retry never does on this fix's account.
-    retryOriginalAction: false,
-    ...spent(purse, input.runId)
-  });
-}
 
 /** What one recovery recorded, kept for the run detail: everything a recovery after the run would have put there. */
 function recoveryRecord(recovered: AutomationStudioFlowRunDetail): ReturnType<AutomationStudioInRunRepairLedger["recoveries"]>[number] {

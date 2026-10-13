@@ -26,6 +26,7 @@ import {
   automationStudioStepEntry,
   automationStudioStepFailedAttempt,
   automationStudioStepFrameSucceeded,
+  automationStudioStepLearnInterruption,
   automationStudioStepLifecycle,
   automationStudioStepLifecycleFrame,
   automationStudioStepLifecycleRegister,
@@ -471,6 +472,8 @@ async function executeAutomationStudioGraph(
       route = routeOverride ?? attempt.route ?? "success";
       // Before Next, on a verified success only, before the edge is chosen (`step-loop/before-next.ts`).
       if (routeOverride === undefined && route === "success" && attempt.status === "succeeded" && !attempt.skipped) {
+        // A layer the client's defence closed on the way is learned as a handler first (`step-loop/incident-repair.ts`, t516).
+        await automationStudioStepLearnInterruption(ctx, node, attemptIndex);
         const onward = await automationStudioStepBeforeNext(ctx, node, attemptIndex);
         if (onward?.kind === "return") return onward.trace;
         if (onward?.kind === "next") {

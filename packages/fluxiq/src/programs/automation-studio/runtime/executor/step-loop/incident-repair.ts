@@ -1,13 +1,14 @@
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
 import { AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID } from "../../../nodes/control-flow/index.ts";
 import { emitAutomationStudioActivityThought } from "../../activity/index.ts";
-import type { AutomationStudioAttemptRepairTrace, AutomationStudioLadderRungKind, AutomationStudioNodeAttemptTrace } from "../contracts.ts";
+import type { AutomationStudioAttemptRepairTrace, AutomationStudioClearedLayer, AutomationStudioLadderRungKind, AutomationStudioNodeAttemptTrace } from "../contracts.ts";
 import type { AutomationStudioFaultAssessment } from "../defensive/index.ts";
 import type { AutomationStudioInvocationOptions } from "../frames/index.ts";
 import {
   automationStudioIncidentHandlerRetrial,
   type AutomationStudioIncidentRepair,
   type AutomationStudioIncidentRepairRequest,
+  type AutomationStudioInterruptionLearningRequest,
   type AutomationStudioRepairUnit,
   type AutomationStudioRunRepair
 } from "../lifecycle-run/index.ts";
@@ -81,6 +82,73 @@ export async function automationStudioStepRepairIncident(
     return undefined;
   }
   return { kind: "next", node: holdOverlay(ctx, invocation, failure, incidentId, answer, reattempt) };
+}
+
+/**
+ * An interruption the client's defence closed while this step succeeded,
+ * learned as a branch of the Flow (t516; user rule: an interruption met in a
+ * run becomes a branch -- wait for it, dismiss it, return).
+ *
+ * The defence closes a layer the page put in the way and the step succeeds, so
+ * no failure ever reaches the ladder or `repairIncident`, and until now the
+ * Flow learned nothing: the next run met the layer by the same luck. So each
+ * layer the attempt says was closed, with a name and a way out the domain can
+ * press, is put to `options.learnInterruption` once per step and name in the
+ * run. An overlay is held exactly as a repair's is: the frame runs the graph
+ * with the learned handler for the rest of the frame, the attempt carries the
+ * repair, and the run lists it among its kept repairs (`trace.repairs`), which
+ * is what its judged end settles it by. `none`, or a throw, changes nothing
+ * but that the step and name are not asked about again.
+ *
+ * Never inside a handler body, never once cancelled or paused.
+ */
+export async function automationStudioStepLearnInterruption(ctx: AutomationStudioStepLoopContext, node: AutomationStudioFlowNode, attemptIndex: number): Promise<void> {
+  const { options } = ctx;
+  const invocation = options.invocation;
+  if (!options.learnInterruption || !invocation) return;
+  if (invocation.run.stack.some((frame) => frame.cursor.phase === "handler")) return;
+  for (const layer of ctx.attempts[attemptIndex]?.clearedLayers ?? []) {
+    if (options.signal?.aborted || options.runControl?.heldBy?.()) return;
+    if (!learnable(layer)) continue;
+    const key = `interruption:${invocation.frame.graphFlowId}/${node.id}:${layer.name}`;
+    if (invocation.run.lifecycle.repairs.has(key)) continue;
+    const answer = await learn(ctx, invocation, ctx.attempts[attemptIndex]!, layer);
+    const kept = answer.kind === "overlay" ? answer.graph.nodes.find((candidate) => candidate.id === node.id) : undefined;
+    if (answer.kind === "none" || !kept) {
+      invocation.run.lifecycle.repairs.set(key, { unit: { kind: "node", nodeId: node.id }, outcome: "none", reason: answer.kind === "none" ? answer.reason : "The learned handler left out the step it was learned at, so it was not used." });
+      continue;
+    }
+    swapGraph(ctx, invocation, answer.graph, node.id);
+    const reason = answer.reason ?? `The Flow now closes "${layer.name}" when it is in the way of ${node.id}, and carries on.`;
+    const repair = { repairId: answer.repairId, unit: answer.unit, outcome: "held" as const, reason };
+    invocation.run.lifecycle.repairs.set(key, repair);
+    ctx.attempts[attemptIndex] = { ...ctx.attempts[attemptIndex]!, repair };
+    emitAutomationStudioActivityThought({ phase: "repairing", title: "Learning an interruption", text: `The page put "${layer.name}" in the way and the run closed it. The Flow now keeps a step that closes it when it is there again, then carries on.`, ref: node.id, max: 480 });
+  }
+}
+
+/** A layer with a name to wait for and a way out the domain can press. */
+function learnable(layer: AutomationStudioClearedLayer): layer is AutomationStudioClearedLayer & { name: string; wayOut: string; wayOutDefinitionId: string } {
+  return Boolean(layer.name && layer.wayOut && layer.wayOutDefinitionId);
+}
+
+/** Asks the run session once; a throw is an answer of `none`. */
+async function learn(ctx: AutomationStudioStepLoopContext, invocation: AutomationStudioInvocationOptions, attempt: AutomationStudioNodeAttemptTrace, layer: AutomationStudioClearedLayer): Promise<AutomationStudioIncidentRepair> {
+  const { run, frame } = invocation;
+  const at = run.stack.indexOf(frame);
+  const request: AutomationStudioInterruptionLearningRequest = {
+    graph: ctx.flow,
+    subflowId: frame.subflowId,
+    framePath: (at >= 0 ? run.stack.slice(0, at + 1) : [frame]).map((held) => held.invocationId),
+    attempt,
+    layer,
+    ...(ctx.options.signal ? { signal: ctx.options.signal } : {})
+  };
+  try {
+    return await ctx.options.learnInterruption!(request);
+  } catch (error) {
+    return { kind: "none", reason: `The interruption could not be learned: ${error instanceof Error ? error.message : String(error)}` };
+  }
 }
 
 /**
