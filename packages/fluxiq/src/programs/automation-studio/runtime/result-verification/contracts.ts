@@ -692,6 +692,20 @@ export type AutomationStudioResultVerification = {
    */
   unconfirmedReading?: NonNullable<AutomationStudioResultRepairDirective["judgement"]>;
   /**
+   * The reading of a call that judged `answers`: what it took the request to
+   * ask (`expected`) and what it compared that against (`observed`), screened
+   * as a refutation's judgement is (`./judgement-screen.ts`). Kept on a yes,
+   * and on a verification whose two calls split (`model_disagreed`) beside the
+   * no's `unconfirmedReading`, so a build is shown both readings and the
+   * evidence each relied on, not only the no's (t477; live run
+   * `run-mv5uu9g1-9d80deea`: the yes read "14 of 14 results, no pagination" in
+   * the end view, the no read the start view's pages as the read's, and the
+   * model was told only the no). Never a repair, never its advice (a yes's
+   * advice is no directive), and, as the model's prose, never recorded on a
+   * run (`run-record.ts`).
+   */
+  answeredReading?: { expected?: string; observed?: string };
+  /**
    * Present exactly when the verification fails the run
    * (`automationStudioResultVerificationFailsRun`): what the run must report.
    */

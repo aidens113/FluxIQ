@@ -2,14 +2,17 @@
 // (`../repeat-guard/searching.ts`): at the note's count the model is told it
 // has been searching without acting, with the looks it made and where their
 // answers are, and pushed to act; at the run's limit the round stalls, as
-// refused repeats in a row do (`./refused-repeat.ts`). Codes and Core's own
-// sentences: a look's input is the model's own, and no page value is quoted.
+// refused repeats in a row do (`./refused-repeat.ts`) -- unless the caller
+// still has a move that may get the build further, which runs instead
+// (`./stall-recovery.ts`, t477). Codes and Core's own sentences: a look's input
+// is the model's own, and no page value is quoted.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioLlmDecisionContextSupersede } from "../decision-context/index.ts";
 import { automationStudioLlmEvidenceCanonicalJson } from "../evidence-loop-decision.ts";
 import { automationStudioLlmEvidenceLoopFailure as failure } from "../evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_LOOKS_IN_A_ROW, AUTOMATION_STUDIO_LLM_EVIDENCE_SEARCH_NOTE_AT } from "../repeat-guard/index.ts";
+import { automationStudioLlmEvidenceStallRecovery, type AutomationStudioLlmEvidenceStallOutcome } from "./stall-recovery.ts";
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext } from "./types.ts";
 
 /** The entry the note is shown under; a newer one replaces the older. */
@@ -24,22 +27,25 @@ const MAX_LISTED_INPUT = 300;
 const INSTRUCTION = "You have looked at or searched the page this many times in a row, and nothing changed between them: no control was used and the page did not move. "
   + "Their answers are above, under the call ids listed here, and looking again will not change the page. "
   + "Act on what you found: press, type into or choose a control the page shows, go to another page, use the page's own search or menus, or amend or complete the draft. "
-  + "If what you need is not on this page, go where it is. Looks in a row up to maxLooksInARow end this round, and the Flow so far is then tested and judged.";
+  + "If what you need is not on this page, go where it is. At maxLooksInARow looks in a row the searching is stopped: what you have built so far is then tested and judged where it still can be, and the build ends only when nothing is left to test.";
 
 /**
- * Says what the run of looks so far calls for: nothing, the note, or the end
- * of the round -- the error the caller built for a stall, or the loop's own
+ * Says what the run of looks so far calls for: nothing, the note, the call
+ * the caller recovers the stall with (`./stall-recovery.ts`), or the end of
+ * the round -- the error the caller built for a stall, or the loop's own
  * ending where it built none.
  */
 export function automationStudioLlmEvidenceSearchingWithoutActing(
   context: AutomationStudioLlmEvidenceDecisionHandlerContext,
   iteration: number
-): { kind: "stalled"; error: unknown } | { kind: "end"; result: ReturnType<typeof failure> } | undefined {
+): { kind: "stalled"; error: unknown } | { kind: "end"; result: ReturnType<typeof failure> } | Extract<AutomationStudioLlmEvidenceStallOutcome, { kind: "recover" }> | undefined {
   const { input, trace, accounting, draftSteps, evidence } = context;
   const looks = context.repeats.looks();
   if (looks.length >= AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_LOOKS_IN_A_ROW) {
     if (input.unusableDecisions) {
-      return { kind: "stalled", error: input.unusableDecisions.stalled({ issueCodes: [AUTOMATION_STUDIO_LLM_EVIDENCE_SEARCHING_CODE], trace: [...trace], accounting: { ...accounting }, steps: draftSteps.map((step) => structuredClone(step)) }) };
+      const stall = automationStudioLlmEvidenceStallRecovery(context, iteration, [AUTOMATION_STUDIO_LLM_EVIDENCE_SEARCHING_CODE]);
+      if (stall.kind === "recover") return stall;
+      return { kind: "stalled", error: input.unusableDecisions.stalled({ issueCodes: stall.issueCodes, trace: [...trace], accounting: { ...accounting }, steps: draftSteps.map((step) => structuredClone(step)) }) };
     }
     return { kind: "end", result: failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting) };
   }

@@ -29,4 +29,4 @@ export {
 } from "./value.ts";
 export { AUTOMATION_STUDIO_ROUTE_SIGNATURES_METADATA_KEY, automationStudioNodeRouteSignatures } from "./node.ts";
 export { automationStudioCompareRouteSignatures, automationStudioSignRouteState, type AutomationStudioRouteSignatureComparison } from "./host.ts";
-export { automationStudioRouteEffectHolds, automationStudioSignRouteEffect, type AutomationStudioRouteEffectReading } from "./effect.ts";
+export { automationStudioRouteEffectHolds, automationStudioRouteEffectSeen, automationStudioSignRouteEffect, type AutomationStudioRouteEffectReading } from "./effect.ts";

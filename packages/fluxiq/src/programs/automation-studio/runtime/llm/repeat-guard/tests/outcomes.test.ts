@@ -206,4 +206,35 @@ describe("what a call did on the page it found", () => {
     guard.amended({ signature: "A", draft: "d1", changed: false, callId: "rerun.14.6", resultCode: "web.action.rejected.rate_limited" });
     expect(guard.amendmentBlocks("A", "d1")).toBeUndefined();
   });
+
+  // Lane C round 10 (`run-mv5uu9g1-9d80deea`, 0034-0044): one detection on a stale handle sent four times on one page, each refused
+  // `target_unobserved`. Each ran, and each was one more look in a row toward the eight that ended the build (t477).
+  it("records a look the domain refused as a failed call there, which neither extends nor ends the run of looks", () => {
+    const find = call({ callId: "f1", toolId: "find", input: { query: "next" }, effect: "observe", proposes: false, effectApplied: false, refused: false, resultCode: "web.find.answered", resultReason: undefined, answer: "0 matches" });
+    const detect = call({ callId: "d1", toolId: "web.detect_repeating_structure", input: { target: "t230" }, effect: "observe", proposes: false, effectApplied: false, refused: true, resultCode: "web.action.rejected.target_unobserved", resultReason: "page_moved_since_packet", answer: "{\"ok\":false}" });
+    const guard = automationStudioLlmEvidenceRepeatGuard();
+    guard.recorded(find);
+    guard.recorded(detect);
+    // The identical refused look on the same page is refused unrun, as any failed call is.
+    expect(guard.blocks("web.detect_repeating_structure", { target: "t230" })).toEqual({ callId: "d1", outcome: "failed", resultCode: "web.action.rejected.target_unobserved", resultReason: "page_moved_since_packet" });
+    // It looked at nothing: the run of looks is as the find left it, neither longer nor ended.
+    expect(guard.looks().map((one) => one.callId)).toEqual(["f1"]);
+    guard.recorded({ ...find, callId: "f2", input: { query: "page 2" } });
+    expect(guard.looks().map((one) => one.callId)).toEqual(["f1", "f2"]);
+    // Another target, or the same one once the page has changed, is a new call.
+    expect(guard.blocks("web.detect_repeating_structure", { target: "t901" })).toBeUndefined();
+    guard.seen("s2");
+    expect(guard.blocks("web.detect_repeating_structure", { target: "t230" })).toBeUndefined();
+  });
+
+  it("starts the runs of refused repeats and of looks again once a stall was recovered (t477)", () => {
+    const guard = automationStudioLlmEvidenceRepeatGuard();
+    guard.recorded(call({ callId: "f1", toolId: "find", input: { query: "a" }, effect: "observe", proposes: false, refused: false, answer: "0 matches" }));
+    expect(guard.refusedAgain(4)).toBe(1);
+    expect(guard.refusedAgain(5)).toBe(2);
+    guard.stallRecovered();
+    expect(guard.looks()).toEqual([]);
+    // The next refusal, though the decision right after the last, starts a new run.
+    expect(guard.refusedAgain(6)).toBe(1);
+  });
 });

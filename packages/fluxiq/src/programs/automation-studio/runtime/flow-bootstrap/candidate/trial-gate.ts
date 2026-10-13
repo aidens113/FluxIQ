@@ -231,6 +231,24 @@ export class AutomationStudioFlowCandidateTrialGate {
     return step;
   }
 
+  /**
+   * Whether the latest submission may be tested now, for a stall to run that
+   * test instead of ending the build (`./stall-retest.ts`, t477): its revision,
+   * digest and the trials run of it so far, or why not -- the code the build's
+   * ending carries. A yes needs no test: the model completes on it.
+   */
+  retestable(): { revision: number; digest: string; trials: number } | { why: string } {
+    if (!this.input.trial) return { why: "candidate.stall_no_trial_runner" };
+    const latest = this.input.latest();
+    if (!latest) return { why: "candidate.stall_nothing_submitted" };
+    if (this.closedDigests.has(latest.digest)) return { why: "candidate.stall_latest_judged_no" };
+    if (this.repeatedFailures.has(key(latest))) return { why: "candidate.stall_latest_failed_twice" };
+    if (this.verdicts.get(key(latest))?.verdict === "yes") return { why: "candidate.stall_latest_passed" };
+    const trials = this.trials.get(key(latest)) ?? 0;
+    if (trials >= AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION) return { why: "candidate.stall_retests_used" };
+    return { revision: latest.revision, digest: latest.digest, trials };
+  }
+
   /** The judge's feedback when a trial of a Flow with this digest was judged no, which closes that Flow (header); undefined otherwise. */
   refuted(digest: string): JsonObject | undefined {
     const closed = this.closedDigests.get(digest);

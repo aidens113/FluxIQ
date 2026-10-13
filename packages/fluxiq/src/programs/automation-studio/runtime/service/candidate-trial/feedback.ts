@@ -69,6 +69,15 @@
 // ran no passes, it says so and does not ask for the connections to change;
 // where a loop ran no passes and some other step was not reached, it says the
 // loop's steps are not the ones owed.
+//
+// **A split judge shows both readings (t477).** Lane C round 10
+// (`run-mv5uu9g1-9d80deea`, trial of rev 3) was judged by two calls that split:
+// one said no, reading the start view's pagination as the read's page; the
+// other said yes, reading "14 of 14 results" and no pagination in the end view.
+// Only the no reached the model, which then hunted for pages that did not
+// exist. An unsure trial whose calls split now carries the yes's reading too
+// (`answeredReading`), beside the no's (`unconfirmedReading`), with a note
+// saying neither was confirmed and how to weigh them.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../../../model/index.ts";
@@ -88,6 +97,11 @@ import { automationStudioTrialTargetOnPage } from "./target-on-page.ts";
 
 /** The handle the domain named each pressed way out by, keyed by the client's reference (`./interruptions.ts`). */
 type WayOutHandles = Readonly<Record<string, string>>;
+
+/** What the model is told when the two judge calls split (header, t477). */
+const SPLIT_NOTE = "The two judge calls disagreed and neither was confirmed: unconfirmedReading is what the call that said no compared, answeredReading what the call that said yes compared. "
+  + "Weigh each by the evidence it names against this trial's own reads, steps and stored rows: a start view is the page before the Flow's first step, and a list read ran on the page its own steps reached. "
+  + "Change the Flow only for what that evidence supports; where it supports the yes, test this same revision again.";
 
 /** The most steps a feedback lists; a longer Flow says how many it left out. */
 const MAX_STEPS = 40;
@@ -118,7 +132,9 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
       return { verdict: "no", code: "candidate.trial_judged_no", feedback: { ...common, code: "candidate.trial_judged_no", judge: compact({ expected: judged.expected, observed: judged.observed, advice: judged.advice, stillAchievable: judged.stillAchievable }), ...(judged.findings.length ? { findings: [...judged.findings] } : {}), ...(judged.fix?.length ? { fix: [...judged.fix] } : {}), ...(judged.checked?.length ? { checked: [...judged.checked] } : {}) } };
     }
     if (judged.verdict === "unknown") {
-      return { verdict: "unsure", code: "candidate.trial_unconfirmed", feedback: { ...common, code: "candidate.trial_unconfirmed", why: judged.why, ...(judged.unconfirmedReading ? { unconfirmedReading: compact({ ...judged.unconfirmedReading }) } : {}) } };
+      const split = judged.answeredReading !== undefined;
+      return { verdict: "unsure", code: "candidate.trial_unconfirmed", feedback: { ...common, code: "candidate.trial_unconfirmed", why: judged.why, ...(judged.unconfirmedReading ? { unconfirmedReading: compact({ ...judged.unconfirmedReading }) } : {}),
+        ...(split ? { answeredReading: compact({ ...judged.answeredReading }), readings: SPLIT_NOTE } : {}) } };
     }
     return { verdict: "not_judged", code: "candidate.trial_not_judged", feedback: { ...common, code: "candidate.trial_not_judged", why: judged.why } };
   }

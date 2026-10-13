@@ -232,3 +232,36 @@ describe("a verification that confirms a first yes (the build-test judge)", () =
     expect(agreed).toMatchObject({ verdict: "answers", verdicts: ["answers"], calls: 1 });
   });
 });
+
+// Live run `run-mv5uu9g1-9d80deea` (lane C round 10, trial of revision 3): one call said no, reading the start view's
+// pagination as the read's page; the other said yes, reading "14 of 14 results" and no pagination in the end view. Only
+// the no's reading reached the model, which then hunted for pages that did not exist (t477). A split now carries both.
+describe("a split verification carries both readings, each its own call's", () => {
+  const no = { expected: "Every result of the filtered list, all of its pages.", observed: "The start view shows pages 2 to 5, which were never read.", changed: "Make the next-page step press the pagination link." };
+  const yes = { expected: "The filtered list's rows that meet the conditions.", observed: "The end view shows 14 of 14 results and no pagination, so the one page is the whole list.", changed: "Nothing to change." };
+  const saidNo = (): AutomationStudioResultVerification => automationStudioResultVerdict({ summary, diagnosis: { answersRequest: "no", ...no }, basis: "model" });
+  const saidYes = (): AutomationStudioResultVerification => automationStudioResultVerdict({ summary, diagnosis: { answersRequest: "yes", ...yes }, basis: "model" });
+
+  it("keeps what a yes compared, screened, and never its advice", () => {
+    expect(saidYes().answeredReading).toEqual({ expected: yes.expected, observed: yes.observed });
+    // A credential-shaped sentence is dropped whole, as a no's is (`../judgement-screen.ts`).
+    const secret = automationStudioResultVerdict({ summary, diagnosis: { answersRequest: "yes", expected: "use sk-abcd1234efgh5678ijkl9012mnop to sign in", observed: "14 of 14 rows" }, basis: "model" });
+    expect(secret.answeredReading).toEqual({ observed: "14 of 14 rows" });
+    expect(automationStudioResultVerdict({ summary, diagnosis: { answersRequest: "yes" }, basis: "model" })).not.toHaveProperty("answeredReading");
+  });
+
+  it("no then yes, and yes then no, carry the no's reading and the yes's side by side", () => {
+    for (const [first, second, confirmAnswer] of [[saidNo(), saidYes(), false], [saidYes(), saidNo(), true]] as const) {
+      const agreed = automationStudioResultVerificationAgreement({ first, second, confirmAnswer });
+      expect(agreed).toMatchObject({ verdict: "unsure", basis: "model_disagreed" });
+      expect(agreed.unconfirmedReading).toEqual({ expected: no.expected, observed: no.observed, advice: no.changed });
+      expect(agreed.answeredReading).toEqual({ expected: yes.expected, observed: yes.observed });
+      expect(automationStudioResultVerificationFailsRun(agreed)).toBe(false);
+    }
+  });
+
+  it("carries no yes reading where nobody said yes, or the yes went unconfirmed by a non-answer", () => {
+    expect(automationStudioResultVerificationAgreement({ first: saidNo(), second: unavailable() })).not.toHaveProperty("answeredReading");
+    expect(automationStudioResultVerificationAgreement({ first: saidYes(), second: said("unknown"), confirmAnswer: true })).not.toHaveProperty("answeredReading");
+  });
+});

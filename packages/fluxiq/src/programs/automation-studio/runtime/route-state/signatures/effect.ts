@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioHostRuntimeBoundary } from "../../host-runtime.ts";
+import type { AutomationStudioHostRuntimeBoundary, AutomationStudioRouteEffectSighting } from "../../host-runtime.ts";
 import { automationStudioReadRouteSignature, type AutomationStudioRouteSignatureReading } from "./value.ts";
 
 /** Whether a step's recorded effect is on the page now, and why not when it is not. */
@@ -48,4 +48,27 @@ export function automationStudioRouteEffectHolds(
     return { holds: false, reason: "The host could not test the step's effect against the page." };
   }
   return answer === true ? { holds: true } : { holds: false, reason: "The page does not show the step's recorded effect." };
+}
+
+/**
+ * Whether a lasting step's recorded effect appeared on the page observed just
+ * after it answered success (t476). Only the host can say, and only its
+ * `not_seen` judges anything: with no host to ask, a host that throws, or any
+ * answer but the three, the sighting is `unknown`, and a step is never counted
+ * as not done on a question nobody answered.
+ */
+export function automationStudioRouteEffectSeen(
+  hostRuntime: AutomationStudioHostRuntimeBoundary | undefined,
+  effect: JsonObject,
+  observed: JsonObject
+): AutomationStudioRouteEffectSighting {
+  const seen = hostRuntime?.routeEffectSeen;
+  if (!seen) return "unknown";
+  let answer: unknown;
+  try {
+    answer = seen.call(hostRuntime, effect, observed);
+  } catch {
+    return "unknown";
+  }
+  return answer === "seen" || answer === "not_seen" ? answer : "unknown";
 }

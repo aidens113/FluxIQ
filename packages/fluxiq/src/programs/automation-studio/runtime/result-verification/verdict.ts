@@ -58,6 +58,7 @@ import {
 } from "./contracts.ts";
 import { automationStudioResultFailureRecord } from "./core-observation.ts";
 import { automationStudioResultReadSentence } from "./read-account/index.ts";
+import { automationStudioResultScreenedJudgement } from "./judgement-screen.ts";
 import { automationStudioResultRepairDirective } from "./repair-directive.ts";
 import { automationStudioResultCheckedRows, automationStudioResultLeftOutRowsUnaccounted } from "./request-rows/index.ts";
 
@@ -137,13 +138,17 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
         checked: unaccounted.map(unaccountedLine)
       }));
     }
+    // What the yes compared, screened as a no's is: a split shows it beside the no's (`./agreement.ts`, t477).
+    const read = automationStudioResultScreenedJudgement({ expected: input.diagnosis?.expected, observed: input.diagnosis?.observed }).judgement;
+    const answeredReading = { ...(read?.expected ? { expected: read.expected } : {}), ...(read?.observed ? { observed: read.observed } : {}) };
     return {
       schemaVersion: "automation-studio.result-verification.v1",
       verdict,
       basis: "model",
       code: codes.answers,
       reason: "The result was judged to answer the request.",
-      observation
+      observation,
+      ...(Object.keys(answeredReading).length ? { answeredReading } : {})
     };
   }
   if (verdict === "does_not_answer") {

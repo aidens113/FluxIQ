@@ -828,7 +828,16 @@ outcome then says `lastingAct: "landed"` or `"uncertain"`. A graph run's
 effect check reads the node's expected state; a node that declares none (a step
 written without `done when:`) is asked of the host's optional `actLanded`
 (`defensive/host-act-landed.ts`, t430), which judges the act from the page and
-answers `unknown` when the page cannot say. Which acts commit is the producer's
+answers `unknown` when the page cannot say. A lasting step without `done when:`
+whose act answered **success** is held to the effect its build recorded
+(`metadata.routeSignatures.effect`, t476): the route state is observed and the
+host's optional `routeEffectSeen` asked, again until the node's wait ceiling,
+and only its `not_seen` -- nothing the recorded act brought is on the page --
+fails the attempt as `core.step.effect_not_seen` (`output_not_observed`, stage
+`verification`, not retryable), a failure found after acting, so the act is not
+made again and a trial does not report it among the acts it left
+(`executor/node-execution/recorded-effect.ts`). `seen`, `unknown`, no host, no
+effect, or a failed observation leave the attempt as its act answered. Which acts commit is the producer's
 statement (`effect: "ambiguous"`): a step's `consequences: none` never unlocks
 a second act after one (Core 61f6adbf did so and was withdrawn in t430, because
 a model under-declares). Nodes whose act does not last keep t355's retries

@@ -12,6 +12,7 @@ export {
   automationStudioNodeRouteSignatures,
   automationStudioReadRouteSignature,
   automationStudioRouteEffectHolds,
+  automationStudioRouteEffectSeen,
   automationStudioRouteSignaturesValue,
   automationStudioSignRouteEffect,
   automationStudioSignRouteState,

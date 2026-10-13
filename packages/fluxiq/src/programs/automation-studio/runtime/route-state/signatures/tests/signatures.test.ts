@@ -10,6 +10,7 @@ import {
   automationStudioCompareRouteSignatures,
   automationStudioNodeRouteSignatures,
   automationStudioRouteEffectHolds,
+  automationStudioRouteEffectSeen,
   automationStudioRouteSignaturesValue,
   automationStudioSignRouteEffect,
   automationStudioSignRouteState
@@ -100,5 +101,16 @@ describe("step effects", () => {
     expect(automationStudioRouteEffectHolds(host({ routeEffectHolds: () => "yes" as unknown as boolean }), { e: 1 }, observed).holds).toBe(false);
     expect(automationStudioRouteEffectHolds(host({ routeEffectHolds: () => { throw new Error("no"); } }), { e: 1 }, observed)).toEqual({ holds: false, reason: "The host could not test the step's effect against the page." });
     expect(automationStudioRouteEffectHolds(undefined, { e: 1 }, observed)).toEqual({ holds: false, reason: "The host cannot tell whether a step's effect is on the page." });
+  });
+
+  // t476: only the host's `not_seen` judges a step not done, so anything else it could say is `unknown`.
+  it("says an effect was not seen only on the host's own answer", () => {
+    const observed = { page: { controls: "Add to cart" } };
+    expect(automationStudioRouteEffectSeen(host({ routeEffectSeen: () => "not_seen" }), { e: 1 }, observed)).toBe("not_seen");
+    expect(automationStudioRouteEffectSeen(host({ routeEffectSeen: () => "seen" }), { e: 1 }, observed)).toBe("seen");
+    expect(automationStudioRouteEffectSeen(host({ routeEffectSeen: () => "no" as unknown as "seen" }), { e: 1 }, observed)).toBe("unknown");
+    expect(automationStudioRouteEffectSeen(host({ routeEffectSeen: () => { throw new Error("no"); } }), { e: 1 }, observed)).toBe("unknown");
+    expect(automationStudioRouteEffectSeen(host({}), { e: 1 }, observed)).toBe("unknown");
+    expect(automationStudioRouteEffectSeen(undefined, { e: 1 }, observed)).toBe("unknown");
   });
 });
