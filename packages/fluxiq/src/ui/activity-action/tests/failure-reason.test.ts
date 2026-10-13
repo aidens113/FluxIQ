@@ -179,13 +179,13 @@ describe("activityActionFailureReason: a call never sent is no page miss (R2-U-6
 // quantity box put "1" back -- read "Clear field · Didn't work: the step wasn't
 // accepted", as if it had been refused.
 describe("a step that ran and whose effect did not show", () => {
-  it("says the site set the box back for a typing step, and a list's words for a read", () => {
-    expect(activityActionFailureReason("web.action.rejected.output_not_observed", undefined, "type")).toBe("it ran, but the site set the box back");
-    expect(activityActionFailureReason("web.action.rejected", "output_not_observed", "type")).toBe("it ran, but the site set the box back");
+  it("says the text did not change for a typing step, never a box set back, and a list's words for a read", () => {
+    expect(activityActionFailureReason("web.action.rejected.output_not_observed", undefined, "type")).toBe("it ran, but the text there didn't change the way it should have");
+    expect(activityActionFailureReason("web.action.rejected", "output_not_observed", "type")).toBe("it ran, but the text there didn't change the way it should have");
     expect(activityActionFailureReason("web.validation.output_not_observed", undefined, "read")).toBe("it ran, but didn't find the rows it should have");
     expect(activityActionFailureReason("web.validation.state_mismatch", undefined, "click")).toBe("it ran, but the page didn't change the way it should have");
     for (const kind of ["type", "read", "click", undefined] as const) {
-      expect(activityActionFailureReason("web.action.rejected.output_not_observed", undefined, kind)).not.toMatch(/accepted|allowed/u);
+      expect(activityActionFailureReason("web.action.rejected.output_not_observed", undefined, kind)).not.toMatch(/accepted|allowed|set .* back|box/u);
     }
   });
 

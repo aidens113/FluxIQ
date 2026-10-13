@@ -12,6 +12,7 @@ export { ACTIVITY_ACTION_REFUSAL_WORDS } from "./refusal-words.ts";
 export { ACTIVITY_RESULT_CHECK_LABELS } from "./result-check-labels.ts";
 export { activityActionReplayFailing } from "./replay-failing.ts";
 export { activityActionSentences } from "./sentences.ts";
+export { activityActionSkipped } from "./skipped.ts";
 export { activityActionTested } from "./tested.ts";
 export type { ActivityAction, ActivityActionEvent, ActivityActionKind, ActivityActionOutcome, ActivityActionVerb } from "./types.ts";
 export { activityActionVerb } from "./verb.ts";

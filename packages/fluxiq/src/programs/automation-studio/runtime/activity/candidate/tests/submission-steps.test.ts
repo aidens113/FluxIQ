@@ -20,3 +20,18 @@ describe("a refused submission", () => {
       .toBe("a repeat was written where the Flow can't run it");
   });
 });
+
+// Round 12, lane B build 2 (`run-mv636xvb-e1426db1`, defect 4): the same Flow sent
+// again read "Not done: some steps weren't written in a way the Flow can run".
+describe("a submission refused as the same Flow sent again", () => {
+  it("says the same Flow was sent again unchanged, with no step to fix", () => {
+    const again = declined({}, ["candidate.unchanged_submission"]);
+    expect(again).toMatchObject({ status: "failed", part: "Declined", unchanged: true, words: "it was the same Flow as the one already saved, sent again unchanged, so nothing new was saved" });
+    expect(declined({}, ["candidate.unchanged_after_no"])?.words).toBe("it was the same Flow the check had already found doesn't do what was asked, sent again unchanged, so it wasn't saved again");
+    expect(again?.words).not.toMatch(/written|to fix/u);
+  });
+
+  it("marks no other refusal unchanged", () => {
+    expect(declined({}, ["flow_script.repeat_invalid"])?.unchanged).toBeUndefined();
+  });
+});

@@ -3,4 +3,5 @@
 export * from "./pace-keeper.ts";
 export * from "./pace-metadata.ts";
 export * from "./run-wait.ts";
+export * from "./sustainable-pace.ts";
 export * from "./timed-pause.ts";

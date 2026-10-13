@@ -23,7 +23,7 @@ afterEach(() => unsubscribe());
 const inBuild = (fn: () => void) => runWithAutomationStudioActivity({ kind: "build", id: "b-recovering", projectId: "p1" }, async () => fn());
 
 describe("emitAutomationStudioActivityStepRecovering", () => {
-  it("settles a clear step the site set back with a box's words", async () => {
+  it("settles a clear step whose text did not change in plain words", async () => {
     await inBuild(() => emitAutomationStudioActivityStepRecovering({ nodeId: "n9", label: "clear the quantity field", definitionId: "web.output.dom-clear", parameters: { element: { role: "spinbutton", accessibleName: "Quantity" } }, failureCode: "web.validation.output_not_observed" }));
     expect(seen).toHaveLength(1);
     expect(seen[0]).toMatchObject({
@@ -33,7 +33,7 @@ describe("emitAutomationStudioActivityStepRecovering", () => {
     });
     const card = activityActionOf(seen[0]!);
     expect(card?.outcome).toBe("failed");
-    expect(card?.why).toBe("it ran, but the site set the box back");
+    expect(card?.why).toBe("it ran, but the text there didn't change the way it should have");
   });
 
   it("keeps the page's words for a step that types nothing", async () => {

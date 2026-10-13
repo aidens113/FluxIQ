@@ -31,6 +31,45 @@ describe("the pace keeper", () => {
     expect(keeper.summary()).toEqual([{ nodeId: "act", paceMs: AUTOMATION_STUDIO_MAX_LEARNED_PACE_MS, learnedMs: AUTOMATION_STUDIO_MAX_LEARNED_PACE_MS, raisedCount: 3, waitedMs: 0 }]);
   });
 
+  it("learns the spacing the earlier starts and the refusal imply, not the one hinted wait (t485, D1)", () => {
+    // A site allowing three acts in any 15 s: starts 4.5 s apart, the fourth refused and told to wait 1.5 s.
+    const keeper = automationStudioPaceKeeper();
+    for (const at of [0, 4_500, 9_000, 13_500]) keeper.started(node(), at);
+    // 15 s over the three acts it let through is 5 s each, and the pace keeps a tenth above it.
+    expect(keeper.learn(node(), 1_500, 13_500)).toBe(5_500);
+  });
+
+  it("learns the cooldown a lone earlier start implies", () => {
+    const keeper = automationStudioPaceKeeper();
+    for (const at of [0, 1_000]) keeper.started(node(), at);
+    // Let through at 0, refused at 1 s until 10 s: one act per 10 s.
+    expect(keeper.learn(node(), 9_000, 1_000)).toBe(11_000);
+  });
+
+  it("keeps the hint when no earlier start explains the refusal, and backs off on a further one", () => {
+    const keeper = automationStudioPaceKeeper();
+    keeper.started(node(), 0);
+    expect(keeper.learn(node(), 2_000, 0)).toBe(2_000);
+    keeper.started(node(), 2_000);
+    keeper.started(node(), 4_000);
+    // Refused again: the pace in force was not enough, so it grows by half at least.
+    expect(keeper.learn(node(), 500, 4_000)).toBe(3_000);
+  });
+
+  it("reads the refusal's time from the run's clock when the caller gives none", async () => {
+    const keeper = automationStudioPaceKeeper();
+    let t = 0;
+    const wait = async (ms: number) => {
+      t += ms;
+    };
+    for (const at of [0, 4_500, 9_000, 13_500]) {
+      t = at;
+      await keeper.before(node(), () => t, wait);
+      keeper.started(node(), at);
+    }
+    expect(keeper.learn(node(), 1_500)).toBe(5_500);
+  });
+
   it("never lowers an authored pace past the learned ceiling, and ignores a hint that is no wait", () => {
     const keeper = automationStudioPaceKeeper();
     const slow = node({ paceMs: 90_000 });

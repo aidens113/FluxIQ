@@ -131,7 +131,10 @@ describe("the words a paging loop says", () => {
     const pass = (n: number) => [`Running step 3 of 5: Reading page ${n}`, `Running step 4 of 5: Clicking “Next” on page ${n}`];
     expect(said()).toEqual([
       "Running step 1 of 5: Typing into “Search”",
-      ...[1, 2, 3, 4, 5].flatMap((n) => ["Running step 2 of 5", ...pass(n)]),
+      // The loop's head is said once: coming back to it after a pass said its
+      // lower number again ("Step 4" then "Step 2"; round 12, lane D).
+      "Running step 2 of 5",
+      ...[1, 2, 3, 4, 5].flatMap((n) => pass(n)),
       "The list ended after 5 pages",
       "Running step 5 of 5: Save the rows"
     ]);
@@ -147,8 +150,7 @@ describe("the words a paging loop says", () => {
     expect(said()).toEqual([
       "Running step 1 of 5: Typing into “Search”",
       "Running step 2 of 5", "Running step 3 of 5: Reading page 1", "Running step 4 of 5: Clicking “Next” on page 1",
-      "Running step 2 of 5", "Running step 3 of 5: Reading page 2", "Running step 4 of 5: Clicking “Next” on page 2",
-      "Running step 2 of 5",
+      "Running step 3 of 5: Reading page 2", "Running step 4 of 5: Clicking “Next” on page 2",
       "The loop stopped at its most passes (2 pages)",
       "Running step 5 of 5: Save the rows"
     ]);

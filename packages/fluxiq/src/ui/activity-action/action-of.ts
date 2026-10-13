@@ -3,6 +3,7 @@ import { activityActionFailureReason } from "./failure-reason.ts";
 import { activityActionRecordOf } from "./record.ts";
 import { activityActionRefusal } from "./refusal.ts";
 import { activityActionReplayFailing } from "./replay-failing.ts";
+import { activityActionSkipped } from "./skipped.ts";
 import { activityActionTested } from "./tested.ts";
 import { ACTIVITY_RESULT_CHECK_LABELS } from "./result-check-labels.ts";
 import { activityActionResultCheckRow } from "./result-check-row.ts";
@@ -484,7 +485,9 @@ export function activityActionOf(event: ActivityActionEvent): ActivityAction | n
   const testing = kind !== "test" && testStep(event, detail, detail.ref ? CORE_TOOL_KINDS.get(detail.ref) : undefined);
   // What a test did with the step, when it did not simply do it again: a test
   // step is named by its action (`testing`), and one that names none by the verb of its title.
-  const tested = outcome === "done" && record.resultCode && !refusal ? activityActionTested(record.resultCode, { excused: record.excused, kind: kind === "test" ? kindOfTitle(detail.title) : kind }) : null;
+  // A run step skipped rather than run says so, and why, from its row's closed `skipped` (`./skipped.ts`).
+  const skipped = outcome === "done" && !refusal ? activityActionSkipped(detail.skipped) : null;
+  const tested = skipped ?? (outcome === "done" && record.resultCode && !refusal ? activityActionTested(record.resultCode, { excused: record.excused, kind: kind === "test" ? kindOfTitle(detail.title) : kind }) : null);
   const result = resultOf(event, detail, kind, outcome, record);
   const resent = kind === "draft" && submitted && refusal?.rerun === true;
   const name = resent ? RESENT_NAME : act.verb === undefined ? undefined : ACTIVITY_ACTION_VERB_NAMES[act.verb];

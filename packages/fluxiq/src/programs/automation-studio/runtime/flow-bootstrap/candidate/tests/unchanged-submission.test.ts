@@ -10,7 +10,8 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
-import { AutomationStudioFlowCandidateSubmissionController, automationStudioCandidateSubmissionRefusal } from "../index.ts";
+import type { AutomationStudioFlowBuildPlan } from "../../plan/index.ts";
+import { AutomationStudioFlowCandidateSubmissionController, automationStudioCandidateSameBehaviour, automationStudioCandidateSubmissionRefusal, automationStudioCandidateUnchangedRefusal } from "../index.ts";
 
 const definition: AutomationStudioNodeDefinition = {
   schemaVersion: "0.1", id: "domain.demo.inspect", version: "1.0.0", label: "Inspect", description: "Inspect one value", category: "action",
@@ -132,5 +133,62 @@ describe("an unchanged resubmission after a refusal", () => {
     const back = await controller.submit(script("hello"), { refuted: (digest) => (digest === first.digest ? { said: "judge said no" } : undefined) });
     expect(back).toMatchObject({ ok: false, revision: 1, check: { issueCodes: ["candidate.unchanged_after_no"], feedback: { judged: { said: "judge said no" } } } });
     expect(controller.latest()).toBeUndefined();
+  });
+});
+
+// A Flow reworded and nothing else (t485, N1 of `run-mv636xyp-2e4fe54d`):
+// revisions 2 to 4 changed only the Flow's title and step labels, and each was
+// accepted as a new revision and trialled. Its steps do what they did, so it
+// is the same Flow by what it does, though not word for word.
+function worded(title: string, step: string, text = "hello"): JsonObject {
+  return { summary: title, flow: [`flow: ${title}`, `step: ${step}`, "  node: domain.demo.inspect", `  text: ${text}`].join("\n") };
+}
+
+describe("a reworded resubmission", () => {
+  it("does what the revision before it did when only the Flow's and its steps' names differ", async () => {
+    const before = await accepted(new AutomationStudioFlowCandidateSubmissionController(submission), worded("Inspect", "inspect the value"));
+    const reworded = await accepted(new AutomationStudioFlowCandidateSubmissionController(submission), worded("Inspect the greeting", "read the greeting it shows"));
+
+    expect(reworded.digest).not.toBe(before.digest);
+    expect(automationStudioCandidateSameBehaviour(before.buildPlan, reworded.buildPlan)).toBe(true);
+  });
+
+  it("does something else when a step's value differs, however it is named", async () => {
+    const before = await accepted(new AutomationStudioFlowCandidateSubmissionController(submission), worded("Inspect", "inspect the value"));
+    const changed = await accepted(new AutomationStudioFlowCandidateSubmissionController(submission), worded("Inspect", "inspect the value", "goodbye"));
+
+    expect(automationStudioCandidateSameBehaviour(before.buildPlan, changed.buildPlan)).toBe(false);
+  });
+
+  it("is refused by the controller as reworded, and the revision it rewords stands with its own names", async () => {
+    const controller = new AutomationStudioFlowCandidateSubmissionController(submission);
+    const first = await accepted(controller, worded("Inspect", "inspect the value"));
+    const again = await controller.submit(worded("Inspect the greeting", "read the greeting it shows"));
+
+    expect(again).toMatchObject({ ok: false, revision: 1, check: { issueCodes: ["candidate.unchanged_submission"], feedback: { reworded: true, revision: 1, digest: first.digest } } });
+    expect(controller.latest()).toMatchObject({ revision: 1, digest: first.digest });
+    // A real change after it is still a new revision.
+    expect(await controller.submit(worded("Inspect", "inspect the value", "goodbye"))).toMatchObject({ ok: true, candidate: { revision: 3 } });
+  });
+
+  it("counts a record-output label as display words, but a changed datasetId as a changed Flow", () => {
+    const listing = (recordOutput: JsonObject): AutomationStudioFlowBuildPlan => ({
+      plan: { schemaVersion: "0.1", router: { name: "Read", rules: [], fallback: { kind: "subflow", targetSubflowKey: "primary" } }, subflows: [{ key: "primary", name: "Primary", role: "primary",
+        nodes: [{ key: "list", definitionId: "web.output.dom-extract_list", definitionVersion: "1.0.0", label: "read the list", parameters: { recordOutput } }], edges: [] }] },
+      risk: "low", subflows: []
+    });
+    const saved = { datasetId: "read-the-list-s1", label: "Read the list", schema: { schemaVersion: "0.1", fields: [] }, writeMode: "append" };
+
+    expect(automationStudioCandidateSameBehaviour(listing(saved), listing({ ...saved, label: "The rows read" }))).toBe(true);
+    expect(automationStudioCandidateSameBehaviour(listing(saved), listing({ ...saved, datasetId: "the-rows-read-s1" }))).toBe(false);
+  });
+
+  it("is refused saying only names changed, so the standing revision and its trial still answer", () => {
+    const check = automationStudioCandidateUnchangedRefusal({ standing: { revision: 2, digest: "digest.2" }, lastTrial: undefined, refuted: undefined, reworded: true });
+
+    expect(check.issueCodes).toEqual(["candidate.unchanged_submission"]);
+    expect(check.feedback).toMatchObject({ unchanged: true, reworded: true, revision: 2 });
+    expect(String(check.feedback.instruction)).toContain("only names");
+    expect(String(check.feedback.instruction)).toContain("test it with core.test_candidate");
   });
 });

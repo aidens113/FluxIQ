@@ -2,7 +2,9 @@
 // M"), the row that settles a failed one as its recovery opens, the row that
 // says how one recovery on it settled (the layers the client closed among
 // them), the row that says a step was skipped rather than run, and the
-// numbers a step carries in "Step N of M".
+// numbers a step carries in "Step N of M", and whether a step is said as the
+// run reaches it.
+export { automationStudioActivityStepAnnounced } from "./announced.ts";
 export { automationStudioActivityStepNumbers } from "./numbers.ts";
 export { emitAutomationStudioActivityStepInterference } from "./interference.ts";
 export { emitAutomationStudioActivityStepRecovering } from "./recovering.ts";

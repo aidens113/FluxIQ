@@ -37,8 +37,12 @@ const STORED = /(\d+)(?: records?)? stored/u;
  * that would store 30 rows, 3 of them twice.
  */
 const WOULD_STORE = /(\d+)(?: records?)? would be stored/u;
-/** How many record sets a run wrote and, for more than one, each one's rows: "across 2 record sets (4, 4 rows)" (`./verdict.ts`). */
-const SETS = /\bstored, across (\d+) record sets?(?: \(([\d, ]+) rows\))?/u;
+/**
+ * How many record sets a run wrote and, for more than one, each one's rows and
+ * whether they are the same rows: "across 2 record sets (4, 4 rows; the same
+ * rows in each)", "(4, 4 rows; 6 distinct)" (`./verdict.ts`).
+ */
+const SETS = /\bstored, across (\d+) record sets?(?: \(([\d, ]+) rows(?:; (the same rows in each|\d+ distinct))?\))?/u;
 /**
  * How many datasets a build's Flow would write, or record sets a run wrote,
  * right after that count (`./verdict.ts`): "…, in 0 datasets", "…, across 0
@@ -80,7 +84,7 @@ function rowsWords(observation: string): string[] {
   const count = Number(match[1]);
   if (count === 0) return ["No rows came back."];
   const sets = SETS.exec(observation);
-  if (sets && Number(sets[1]) > 1) return [setsWords(Number(sets[1]), sets[2])];
+  if (sets && Number(sets[1]) > 1) return [setsWords(Number(sets[1]), sets[2], sets[3])];
   return [`${count} ${count === 1 ? "row" : "rows"} came back.`];
 }
 
@@ -90,13 +94,25 @@ function rowsWords(observation: string): string[] {
  * two steps are not twice the rows (live run `run-mv5jnc5m-a47c3e59`: "8 rows
  * came back" of 4 requests stored by the listing and again by the final read).
  * Without the per-set counts (`./verdict.ts`, `eachSet`), only the sets are said.
+ *
+ * **The same rows in every set are said once (t482).** Live run
+ * `run-mv636xyp-2e4fe54d` stored the same 4 requests from the listing and from
+ * the read of the accepted ones, and "4 rows came back, in each of 2 record
+ * sets" read as two answers. Where Core could tell (`./verdict.ts`,
+ * `distinctRows`), the card says one answer, or how many distinct rows the sets
+ * hold together; where it could not, each set's count, never "in each of".
  */
-function setsWords(sets: number, each: string | undefined): string {
+function setsWords(sets: number, each: string | undefined, rowsTold: string | undefined): string {
   const counts = each?.split(", ").map(Number).filter((rows) => Number.isInteger(rows)) ?? [];
   if (counts.length !== sets) return `Rows were stored in ${sets} record sets.`;
   const rows = (n: number) => `${n} ${n === 1 ? "row" : "rows"}`;
-  if (counts.every((n) => n === counts[0])) return `${rows(counts[0]!)} came back, in each of ${sets} record sets.`;
-  return `Rows came back in ${sets} record sets: ${counts.slice(0, -1).join(", ")} and ${counts.at(-1)} rows.`;
+  const perSet = `${counts.slice(0, -1).join(", ")} and ${counts.at(-1)} rows`;
+  if (rowsTold === "the same rows in each") return `${rows(counts[0]!)} came back (the same rows in ${sets === 2 ? "both" : `all ${sets}`} record sets).`;
+  const distinct = rowsTold === undefined ? undefined : Number.parseInt(rowsTold, 10);
+  const total = counts.reduce((sum, n) => sum + n, 0);
+  if (distinct === total) return `Rows came back in ${sets} record sets: ${perSet}, no row in more than one set.`;
+  if (distinct !== undefined && Number.isSafeInteger(distinct)) return `${rows(distinct)} came back across ${sets} record sets (${perSet}, some rows in more than one set).`;
+  return `Rows came back in ${sets} record sets: ${perSet}.`;
 }
 
 /** The model's sentences a person may read, joined, or nothing when none survives. */
