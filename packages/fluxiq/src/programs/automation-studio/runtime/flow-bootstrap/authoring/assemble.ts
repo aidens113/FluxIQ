@@ -56,17 +56,16 @@ import type {
   AutomationStudioFlowBootstrapPlan,
   AutomationStudioFlowBootstrapSubflow
 } from "../plan/index.ts";
-import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS } from "../plan/index.ts";
-import type { AutomationStudioFlowBootstrapRouteCondition } from "../plan/index.ts";
+import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS, automationStudioMatchWrittenParameterName, type AutomationStudioFlowBootstrapRouteCondition } from "../plan/index.ts";
 import { combineAutomationStudioRouteConditions, readAutomationStudioRouteCondition } from "./condition.ts";
 import type { AutomationStudioFlowBootstrapIssueLocator, AutomationStudioFlowScript, AutomationStudioFlowScriptBlock, AutomationStudioFlowScriptStep } from "./contracts.ts";
 import { isAuthoringConsequenceKey, readAuthoringConsequences } from "./consequences.ts";
 import { authoringError, authoringWarning } from "./issue.ts";
 import { authoringKey, authoringSymbol } from "./keys.ts";
-import { automationStudioMatchWrittenParameterName } from "../plan/index.ts";
+import { automationStudioFlowBootstrapWordInstead } from "../parameter-words/index.ts";
 import { matchAuthoringDefinition, matchAuthoringParameter, matchAuthoringParameterContaining, matchAuthoringPort } from "./matching.ts";
 import { normaliseAuthoringNodeParameters } from "./normalise.ts";
-import { authoringNestedValue, authoringParameterValue, authoringSetAtPath, isJsonObject } from "./values.ts";
+import { authoringNestedValue, authoringParameterValue, authoringSetAtPath, authoringWrittenValue, isJsonObject } from "./values.ts";
 import { routeAutomationStudioFlowScriptRepeats } from "./draft-routing.ts";
 import {
   automationStudioFlowBootstrapSubflowRequires,
@@ -569,7 +568,7 @@ function buildNode(input: {
         // **This is the second reader that had to learn it.** A Flow script
         // reaches this one and never `./normalise.ts`, so teaching only that
         // one left the live creation path refusing exactly as it had.
-        const near = automationStudioMatchWrittenParameterName(head, text, input.definition, claimedParameterIds(input.step.entries, input.definition));
+        const near = automationStudioMatchWrittenParameterName(head, authoringWrittenValue(text), input.definition, claimedParameterIds(input.step.entries, input.definition)); // read for its shape: a word never fits an object (t514)
         const resolved = near && input.definition.parameters.find((candidate) => candidate.id === near.id);
         if (resolved) {
           parameter = resolved;
@@ -584,7 +583,7 @@ function buildNode(input: {
         const declared = readAuthoringConsequences(text);
         if (declared) consequences = declared;
         else issues.push(authoringError("bootstrap.invalid_consequences", "Step consequences must name the permission classes, or none.", `${input.path}.consequences`));
-      } else issues.push(authoringError("bootstrap.unknown_parameter", "Node parameter is not declared by its definition.", `${input.path}.parameters.${head}`));
+      } else issues.push({ ...authoringError("bootstrap.unknown_parameter", "Node parameter is not declared by its definition.", `${input.path}.parameters.${head}`), ...(segments.length === 1 ? automationStudioFlowBootstrapWordInstead({ key: head, word: text, definition: input.definition, as: "unknown_key" }) : {}) }); // the line its word belongs in (t514)
       continue;
     }
     // A value written as a binding -- `$row.<field>`, `$input.<name> = <test>`,

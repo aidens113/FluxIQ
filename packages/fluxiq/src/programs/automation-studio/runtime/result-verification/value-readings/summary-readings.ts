@@ -15,9 +15,19 @@
 // condition grammar (`parseAutomationStudioRecordCondition`) on the column the
 // read account already names (`../read-account/condition.ts`); a condition in a
 // spelling only the domain reads is not said.
+//
+// **A sort key the answer's columns leave out (t515).** Its column is in no
+// stored row, so `./sort-reading.ts` has nothing to read. Core recorded the
+// sort's reading of it before the columns were applied
+// (`processAutomationStudioRecordRows`, `hiddenSortKeys`), and that record is
+// said in its place, on the same terms: only where the summary carries rows,
+// never the page's text, and the column is never added to the answer. The
+// record itself is Core's bookkeeping and is taken off `processing` always, so
+// no judge is shown it raw.
 
 import {
   AUTOMATION_STUDIO_RECORD_SORT_ORDERS,
+  type AutomationStudioRecordProcessingHiddenSortKey,
   AUTOMATION_STUDIO_RECORD_SORT_TYPES,
   parseAutomationStudioRecordCondition,
   type AutomationStudioRecordCondition,
@@ -26,6 +36,7 @@ import {
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary } from "../contracts.ts";
+import type { AutomationStudioResultSortRead } from "../record-set-summary.ts";
 import { automationStudioResultReadConditionColumn, automationStudioResultReadParameters } from "../read-account/index.ts";
 import { automationStudioResultConditionReadings, type AutomationStudioResultReadCell } from "./condition-readings.ts";
 import { automationStudioResultRecordOutputs } from "./record-outputs.ts";
@@ -39,6 +50,13 @@ const ROW_VALUE = /^(.+?) — ([\p{L}\p{N}_.$@-]{1,64}): (.*)$/su;
 const NOT_A_VALUE: ReadonlySet<string> = new Set(["(no value)", "(withheld)"]);
 /** The keys that name what a read's condition tests, which Core's grammar names by `field`. */
 const NAMING_KEYS: ReadonlySet<string> = new Set(["field", "read"]);
+const DAY_MS = 86_400_000;
+const HIDDEN_ORDER_WORDS: Record<AutomationStudioRecordProcessingHiddenSortKey["kind"], Record<AutomationStudioRecordSortKey["order"], string>> = {
+  date: { desc: "newest first", asc: "oldest first" },
+  number: { desc: "highest first", asc: "lowest first" },
+  text: { desc: "Z to A", asc: "A to Z" }
+};
+const HIDDEN_KIND_WORDS: Record<AutomationStudioRecordProcessingHiddenSortKey["kind"], string> = { date: "a date", number: "a number", text: "text" };
 
 /** The reads and record sets, copied where a reading is said; each unchanged where none is. `now` anchors relative dates. */
 export function automationStudioResultValueReadings(input: {
@@ -75,12 +93,18 @@ function withReadReadings(read: AutomationStudioResultReadAccount, sets: readonl
   return changed ? { ...read, conditions } : read;
 }
 
-function withAnswerReadings(set: AutomationStudioResultRecordSetSummary, nodes: readonly AutomationStudioFlowNode[], now: number): AutomationStudioResultRecordSetSummary {
+function withAnswerReadings(summarized: AutomationStudioResultRecordSetSummary, nodes: readonly AutomationStudioFlowNode[], now: number): AutomationStudioResultRecordSetSummary {
+  const { set, hidden } = withoutHiddenSortKeys(summarized);
   const process = nodes.flatMap((node) => automationStudioResultRecordOutputs(node.parameterValues)).find((output) => output.datasetId === set.datasetId && output.process)?.process;
   const rows = set.sampleRows ?? [];
-  if (!process || !rows.length) return set;
-  const sortRead = automationStudioResultSortReadings(sortKeys(process.sort), rows, now);
-  const where = Array.isArray(process.where) ? process.where : [];
+  if (!rows.length || (!process && !hidden.length)) return set;
+  const keys = process ? sortKeys(process.sort) : [];
+  const stored = automationStudioResultSortReadings(keys, rows, now);
+  const sortRead = [
+    ...stored.map((read) => ({ read, position: keys.findIndex((key) => key.field === read.field) })),
+    ...hidden.filter((key) => !stored.some((read) => read.field === key.field)).map((key) => ({ read: hiddenSortRead(key, set.processing?.kept ?? rows.length), position: key.position }))
+  ].sort((one, other) => one.position - other.position).map((entry) => entry.read);
+  const where = process && Array.isArray(process.where) ? process.where : [];
   let conditionsChanged = false;
   const conditions = set.processing?.conditions?.map((entry, index) => {
     const authored = where[index];
@@ -98,6 +122,40 @@ function withAnswerReadings(set: AutomationStudioResultRecordSetSummary, nodes: 
     ...(conditionsChanged && set.processing && conditions ? { processing: { ...set.processing, conditions } } : {}),
     ...(sortRead.length ? { sortRead } : {})
   };
+}
+
+/** The set with Core's record of its hidden sort keys taken off its processing account (header), and that record. */
+function withoutHiddenSortKeys(set: AutomationStudioResultRecordSetSummary): { set: AutomationStudioResultRecordSetSummary; hidden: AutomationStudioRecordProcessingHiddenSortKey[] } {
+  if (!set.processing || !Object.hasOwn(set.processing, "hiddenSortKeys")) return { set, hidden: [] };
+  const { hiddenSortKeys, ...processing } = set.processing;
+  return { set: { ...set, processing }, hidden: Array.isArray(hiddenSortKeys) ? hiddenSortKeys : [] };
+}
+
+/** A hidden sort key said as `./sort-reading.ts` says a stored one, on the answer's `kept` rows, with no cell text. */
+function hiddenSortRead(key: AutomationStudioRecordProcessingHiddenSortKey, kept: number): AutomationStudioResultSortRead {
+  const first = key.position === 0;
+  const lead = `${first ? "Core sorts this answer by" : "Then, among rows the keys before tie, by"} ${key.field}, ${HIDDEN_ORDER_WORDS[key.kind][key.order]}, reading ${key.field} as ${HIDDEN_KIND_WORDS[key.kind]}: ${key.read} of ${kept} rows state one`;
+  const rest = key.read < kept ? `; the other ${kept - key.read} state none and come last` : "";
+  const hiddenWords = ` ${key.field} is not one of the answer's columns: Core read it on the stored rows before leaving it out`;
+  const order = key.inOrder === undefined ? "." : key.inOrder ? ", and the answer's rows were in that order." : ", and the answer's rows were not in that order.";
+  const readings = key.readings?.length ? ` Read, in row order: ${hiddenReadingsOf(key.readings, key.kind, kept)}.` : "";
+  return { field: key.field, ...(key.inOrder !== undefined ? { inOrder: key.inOrder } : {}), said: `${lead}${rest}.${hiddenWords}${order}${readings}` };
+}
+
+/** The recorded readings in row order: a date as its day (with the time where two share one), a number as itself. */
+function hiddenReadingsOf(readings: readonly (number | null)[], kind: AutomationStudioRecordProcessingHiddenSortKey["kind"], kept: number): string {
+  const instants = readings.filter((value): value is number => typeof value === "number");
+  const withTime = kind === "date" && instants.some((one, index) => instants.some((other, at) => at !== index && one !== other && Math.floor(one / DAY_MS) === Math.floor(other / DAY_MS)));
+  const shown = readings.map((value) => (value === null ? `no ${kind}` : kind === "date" ? dayText(value, withTime) : String(value)));
+  const more = kept - shown.length;
+  return `${shown.join("; ")}${more > 0 ? `; and ${more} more ${more === 1 ? "row" : "rows"}` : ""}`;
+}
+
+function dayText(instant: number, withTime: boolean): string {
+  const date = new Date(instant);
+  if (Number.isNaN(date.getTime())) return "no date";
+  const iso = date.toISOString();
+  return withTime ? `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC` : iso.slice(0, 10);
 }
 
 /** An authored condition in Core's grammar, testing `column`; `undefined` for one Core's grammar does not read. */

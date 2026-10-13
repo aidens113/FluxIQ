@@ -46,6 +46,23 @@
 // are in the stored result, and the re-author followed that reading and threw
 // away the answer it held. So a refutation carries `repair.checked`: Core's lines
 // on each row the judgement names, in Core's words (`request-rows/checked-rows.ts`).
+//
+// **And a yes over any row a condition alone left out quotes the request's own
+// words that exclude it (t515).** Live run `run-mv6v2hx5-f448e662`: a request
+// listed one exclusion, a revision's second condition left out a row it never
+// excludes, and both build-test judges said yes, naming the row and calling it
+// "an accessory". Where the caller gives the request's wording (`wording`),
+// each such row has to stand in a sentence of the reply that quotes words of
+// the request excluding it, and not only the words it searched by
+// (`request-rows/unquoted-rows.ts`); a yes that leaves one without is not
+// taken, as above, and `repair.checked` names the rows in Core's words.
+//
+// **A yes that says the Flow needs a change is coded so (t515).** The same
+// run's playback check answered yes with `patchNeeded: true`, and the run was
+// recorded confirmed. A yes stays a yes here -- a build's two yeses still finish
+// it, its advice unconfirmed (`flow-bootstrap/unfinished-build/`
+// `finishing-verdict.ts`, cause 10) -- but carries `answersWithChangeAdvised`,
+// and a runtime check's single yes so coded is not confirmed (`agreement.ts`).
 
 import type { AutomationStudioLlmDiagnosisFields } from "../llm/index.ts";
 import {
@@ -63,8 +80,11 @@ import { automationStudioResultRepairDirective } from "./repair-directive.ts";
 import {
   automationStudioResultCheckedRows,
   automationStudioResultLeftOutRowsUnaccounted,
+  automationStudioResultLeftOutRowsUnquoted,
   automationStudioResultLeftOutStatingAKeptNumber,
-  type AutomationStudioRequestRowsKeptNumberLeftOut
+  type AutomationStudioRequestRowsKeptNumberLeftOut,
+  type AutomationStudioRequestRowsUnquoted,
+  type AutomationStudioRequestWording
 } from "./request-rows/index.ts";
 
 /**
@@ -75,6 +95,8 @@ import {
  */
 export const AUTOMATION_STUDIO_RESULT_VERDICT_CODES = Object.freeze({
   answers: "core.result.answers_request",
+  /** A yes whose same reply said the Flow needs a change (`patchNeeded: true`, header): not confirmed as a runtime check's single yes (`agreement.ts`). */
+  answersWithChangeAdvised: "core.result.answers_with_change_advised",
   doesNotAnswer: "core.result.does_not_answer_request",
   unsure: "core.result.verdict_unsure",
   silent: "core.result.verdict_absent",
@@ -112,6 +134,13 @@ export type AutomationStudioResultVerdictInput = {
    * person reads says what happened in words instead.
    */
   failureCode?: string | undefined;
+  /**
+   * The request as the judge read it (`request-rows/request-wording.ts`): where
+   * given, a yes over a row a condition alone left out has to quote, beside
+   * that row, the request's own words that exclude it (header, t515). Absent,
+   * a yes is read as before.
+   */
+  wording?: AutomationStudioRequestWording | undefined;
 };
 
 /**
@@ -137,13 +166,14 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
   const keptNumber = automationStudioResultLeftOutStatingAKeptNumber(input.summary);
   if (verdict === "answers") {
     const unaccounted = automationStudioResultLeftOutRowsUnaccounted(input.summary, replyText(input));
-    if (unaccounted.length || keptNumber.length) {
+    const unquoted = input.wording ? withoutUnaccounted(automationStudioResultLeftOutRowsUnquoted(input.summary, replyText(input), input.wording), unaccounted) : [];
+    if (unaccounted.length || keptNumber.length || unquoted.length) {
       // Core's words only: the yes's own prose argues the opposite of the verdict it now carries.
-      return failed("does_not_answer", "model", codes.doesNotAnswer, refusedYesReason(unaccounted.length > 0, keptNumber.length > 0), observation, automationStudioResultRepairDirective({
+      return failed("does_not_answer", "model", codes.doesNotAnswer, refusedYesReason(unaccounted.length > 0, keptNumber.length > 0, unquoted.length > 0), observation, automationStudioResultRepairDirective({
         summary: input.summary,
         leftOutUnaccounted: unaccounted,
         leftOutKeptNumber: keptNumber,
-        checked: [...unaccounted.map(unaccountedLine), ...keptNumber.map(keptNumberLine)]
+        checked: [...unaccounted.map(unaccountedLine), ...unquoted.map(unquotedLine), ...keptNumber.map(keptNumberLine)]
       }));
     }
     // What the yes compared, screened as a no's is: a split shows it beside the no's (`./agreement.ts`, t477).
@@ -153,7 +183,8 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
       schemaVersion: "automation-studio.result-verification.v1",
       verdict,
       basis: "model",
-      code: codes.answers,
+      // A yes that also said the Flow needs a change is not a clean pass (header, t515).
+      code: input.diagnosis?.patchNeeded === true ? codes.answersWithChangeAdvised : codes.answers,
       reason: "The result was judged to answer the request.",
       observation,
       ...(Object.keys(answeredReading).length ? { answeredReading } : {})
@@ -215,11 +246,36 @@ function unaccountedLine(entry: AutomationStudioResultLeftOutNamingTheItem): str
 }
 
 /** Why a yes was not taken, by what Core found it passed over. */
-function refusedYesReason(unaccounted: boolean, keptNumber: boolean): string {
-  const naming = "without saying why the request excludes each row a condition alone left out that names the item asked for";
-  const number = "over rows a text condition alone left out that state a number the same condition kept on another row";
-  const said = unaccounted && keptNumber ? `${naming}, and ${number}` : unaccounted ? naming : number;
-  return `The result was judged to answer the request ${said}, so it is not taken as an answer.`;
+function refusedYesReason(unaccounted: boolean, keptNumber: boolean, unquoted: boolean): string {
+  const said = [
+    ...(unaccounted ? ["without saying why the request excludes each row a condition alone left out that names the item asked for"] : []),
+    ...(unquoted ? ["without quoting, beside each row a condition alone left out, words of the request that exclude it"] : []),
+    ...(keptNumber ? ["over rows a text condition alone left out that state a number the same condition kept on another row"] : [])
+  ];
+  return `The result was judged to answer the request ${said.join(", and ")}, so it is not taken as an answer.`;
+}
+
+/**
+ * Core's line for one condition's left-out rows a yes did not quote the
+ * request's excluding words beside (`request-rows/unquoted-rows.ts`). Worded
+ * "left out by condition", not "the condition": `request-rows/`
+ * `checked-rows-named.ts` reads rows after "the condition" as rows the request
+ * asks for, which a repair's rerun is then measured against; these rows are
+ * only rows the yes did not account for, not rows Core says are wanted.
+ */
+function unquotedLine(entry: AutomationStudioRequestRowsUnquoted): string {
+  const where = entry.step !== undefined ? `Step ${entry.step}` : `Read ${entry.nodeId ?? "(unnamed)"}`;
+  const one = entry.rows.length === 1;
+  return `The check answered yes without quoting, beside ${one ? "this row" : "each of these rows"}, words of the request that exclude ${one ? "it" : "each"}; ${one ? "it was" : "they were"} left out by condition "${entry.condition}" alone (${where}) -- ${entry.rows.join(" | ")}. A row the request's own words do not exclude is one it asks for.`;
+}
+
+/** The unquoted rows less those the named-rows check already reported for the same condition: one line per row is enough. */
+function withoutUnaccounted(unquoted: AutomationStudioRequestRowsUnquoted[], unaccounted: readonly AutomationStudioResultLeftOutNamingTheItem[]): AutomationStudioRequestRowsUnquoted[] {
+  return unquoted.flatMap((entry) => {
+    const said = new Set(unaccounted.filter((other) => other.step === entry.step && other.nodeId === entry.nodeId && other.condition === entry.condition).flatMap((other) => other.rows));
+    const rows = entry.rows.filter((row) => !said.has(row));
+    return rows.length ? [{ ...entry, rows }] : [];
+  });
 }
 
 /** Core's line for one text condition's left-out rows stating a number it kept, as `repair.checked` carries it to a build's repair. */

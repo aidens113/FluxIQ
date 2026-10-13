@@ -40,7 +40,7 @@ export function refusalTestRegistry(extra: readonly AutomationStudioNodeDefiniti
     source: { kind: "importer", domainId: "web-automation", packageId: "@fluxiq-web-extension/domain", implementationKey: "web.dom.next_page" },
     outputAction: { fixedOutputId: "web.dom.next_page" },
     outputs: [...click.outputs, { id: "ended", label: "Ended", valueType: "any", role: "branch" }],
-    parameters: [{ id: "nextPage", label: "Next Page", valueType: "object", allowStateBinding: true }, ...click.parameters.filter((parameter) => parameter.id !== "selector")]
+    parameters: [{ id: "nextPage", label: "Next Page", valueType: "object", example: { list: "extraction.1", control: "t9" }, allowStateBinding: true }, ...click.parameters.filter((parameter) => parameter.id !== "selector")]
   });
   for (const definition of extra) registry.register(definition);
   return registry;

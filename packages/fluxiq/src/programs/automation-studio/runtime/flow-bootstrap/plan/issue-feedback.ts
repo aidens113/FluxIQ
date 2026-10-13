@@ -54,11 +54,21 @@
 // domain sentence's "write one of those instead" is the fix breadth wave 1
 // (`run-mv6qrbgx-06151cdb`) was wrongly given, so an issue whose code is in
 // `AUTHORED_CODES` keeps its message and carries `field` and `valid` beside it.
+//
+// **A word under the wrong key is answered with its line (t514).** Social gate
+// run `run-mv6v2jh4-69244ffb` wrote `state: absent` on a wait step and was
+// refused a bare `bootstrap.handle_unresolved` at the step's parameters; it
+// sent the same script until the build ended. An issue that says what to write
+// instead (`instead`, from `../parameter-words/word-instead.ts`) carries it, and
+// an unresolved handle that is a word one of the node's parameters takes is
+// answered with that line. Each issue about one of a node's parameters names
+// the node (`node`), so the model can ask `core.describe_nodes` what it takes.
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
 import type { AutomationStudioNodeDefinition, AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapIssueDetail } from "./contracts.ts";
 import { automationStudioFlowBootstrapParameterText } from "./parameter-text.ts";
+import { automationStudioFlowBootstrapWordInstead } from "../parameter-words/index.ts";
 import { automationStudioFlowBootstrapRecordOutputContract } from "./record-output-contract.ts";
 import { AUTOMATION_STUDIO_ROUTE_CONDITION_FORM } from "./route-condition.ts";
 
@@ -161,6 +171,10 @@ const AUTHORED_CODES: ReadonlySet<string> = new Set([
   // (`../../llm/harness-options/plan-parameter-resolution.ts`, t432): a fixed
   // sentence that quotes nothing and says to name it by its handle.
   "bootstrap.target_not_a_handle",
+  // A handle nothing resolved (`../../llm/harness-options/plan-parameter-resolution.ts`,
+  // t514): Core's sentence names only the parameter holding it and the token
+  // the model wrote there, each an identifier.
+  "bootstrap.handle_unresolved",
   // A record output's processing naming a field it does not keep
   // (`./record-output-contract.ts`, t489): Core's sentence names only the field
   // ids the model wrote in that record output and the ids its schema stores,
@@ -240,21 +254,39 @@ export function automationStudioFlowBootstrapIssueFeedback(input: {
       ...(AUTHORED_CODES.has(issue.code) && issue.message ? { message: issue.message, ...(detail ?? {}) }
         : detail ? { message: automationStudioFlowBootstrapIssueDetailSentence(issue.code, detail), ...detail } : {})
     };
-    const instead = insteadOf(issue, input.plan, instructed);
+    const target = issue.path ? parameterTarget(issue.path, issue.code) : undefined;
+    const definition = target ? definitionAt(input, target) : undefined;
+    const instead = insteadOf(issue, input.plan, instructed) ?? wordInstead(issue, input.plan, target, definition);
     if (instead) entry.instead = instead;
+    // The node to ask `core.describe_nodes` about, for an issue about one of its parameters (header, t514).
+    if (definition && NODE_NAMED_CODES.has(issue.code)) entry.node = definition.id;
     if (ROUTE_CODES.has(issue.code)) {
       return { ...entry, accepted: { condition: AUTOMATION_STUDIO_ROUTE_CONDITION_FORM } };
     }
-    const target = issue.path ? parameterTarget(issue.path, issue.code) : undefined;
     const handles = issue.path && HANDLE_ISSUE.test(issue.code) ? handlesAt(input.plan, issue.path, issue.code) : [];
     if (handles.length) entry.handles = handles;
     if (!target || described.has(target.key)) return entry;
-    const definition = definitionAt(input, target);
     const accepted = definition ? acceptedShape(definition, target) : undefined;
     if (!accepted) return entry;
     described.add(target.key);
     return { ...entry, accepted };
   });
+}
+
+/** The issues about one of a node's parameters that name the node, for `core.describe_nodes` (header, t514). */
+const NODE_NAMED_CODES: ReadonlySet<string> = new Set(["bootstrap.unknown_parameter", "bootstrap.invalid_parameter_value", "bootstrap.handle_unresolved"]);
+const UNRESOLVED_CODE = "bootstrap.handle_unresolved";
+
+/**
+ * What to write instead of a word under the wrong key (header, t514): the
+ * issue's own sentence, where the check that raised it wrote one, or, for a
+ * handle nothing resolved, the line the node takes that token in as a word.
+ */
+function wordInstead(issue: AutomationStudioFlowBootstrapIssue, plan: unknown, target: ParameterTarget | undefined, definition: AutomationStudioNodeDefinition | undefined): string | undefined {
+  if (typeof issue.instead === "string" && issue.instead) return issue.instead;
+  if (issue.code !== UNRESOLVED_CODE || !issue.path || !target || target.undeclared || !definition) return undefined;
+  const word = handlesAt(plan, issue.path, issue.code)[0]?.handle;
+  return typeof word === "string" ? automationStudioFlowBootstrapWordInstead({ key: target.parameterId, word, definition, as: "unresolved_handle" }).instead : undefined;
 }
 
 /** Codes saying a step's consequences are undeclared, from any domain (`web.step.consequences_undeclared`, `web.step.expected.consequences_classes_or_none`). */

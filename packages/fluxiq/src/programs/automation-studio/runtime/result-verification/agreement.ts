@@ -25,10 +25,32 @@
 // followed them. A double no's reading that denies the order of a column every
 // record set's `sortRead` says is in order (`./value-readings/order-claim.ts`)
 // is labelled contradicted, as a reading about pages is.
+//
+// **A no whose advice adds an exclusion the request never states is marked,
+// and asked once more (t515).** Live run `run-mv6v2hx5-f448e662`: over a
+// correct revision one call said yes and the other no, advising a condition
+// "excluding accessories such as" a row the request never excludes. The split
+// handed the builder that advice alone (`unconfirmedReading`), it followed, and
+// the next revision lost a row the request asks for. Where the caller gives the
+// request's wording, a split's no whose advice excludes by words of its own the
+// request never says (`request-rows/unstated-exclusions.ts`) has its advice
+// labelled so, as t501 labels a reading, and
+// `automationStudioResultVerificationReaskContradicted` asks that call once
+// more with the exclusion named. The rule stands: its new answer takes its
+// place, so a yes there beside the other yes is two yeses.
+//
+// **A runtime check's single yes that said the Flow needs a change is not
+// confirmed (t515).** The same run's playback check answered yes with
+// `patchNeeded: true`, and the run was recorded confirmed: "Passed". Such a yes
+// (`answersWithChangeAdvised`, `./verdict.ts`) is recorded unsure
+// (`model_unconfirmed`): not confirmed, not failed, and nothing repaired on its
+// advice. A build test's two yeses are untouched: its yes's advice stays
+// unconfirmed (`../flow-bootstrap/unfinished-build/finishing-verdict.ts`).
 
 import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioResultVerdict, AutomationStudioResultVerification } from "./contracts.ts";
 import { automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./read-account/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "./repair-directive.ts";
+import { automationStudioRequestUnstatedExclusions, type AutomationStudioRequestWording } from "./request-rows/index.ts";
 import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS as UNSETTLED } from "./unsettled/index.ts";
 import { automationStudioResultOrderClaimContradicted } from "./value-readings/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "./verdict.ts";
@@ -56,6 +78,13 @@ export type AutomationStudioResultVerificationAgreementInput = {
    * against on a double no (t511). Absent, no reading is marked for order.
    */
   recordSets?: readonly AutomationStudioResultRecordSetSummary[] | undefined;
+  /**
+   * The request as the judges read it (`request-rows/request-wording.ts`): what
+   * a split's no's advice is held to, and its call asked once more where the
+   * advice excludes by words the request never states (t515). Absent, no
+   * advice is marked.
+   */
+  wording?: AutomationStudioRequestWording | undefined;
 };
 
 /** How a verification reads a first answer: whether a `yes` is confirmed too. */
@@ -78,13 +107,23 @@ export function automationStudioResultVerificationAskAgain(first: AutomationStud
  * ignored.
  */
 export function automationStudioResultVerificationAgreement(input: AutomationStudioResultVerificationAgreementInput): AutomationStudioResultVerification {
+  return agree(input);
+}
+
+/** The agreement, `reasked` naming the call a split's no was asked again for (t515), so its mark says so. */
+function agree(input: AutomationStudioResultVerificationAgreementInput, reasked?: 1 | 2): AutomationStudioResultVerification {
   const { first, second } = input;
   if (!second && first.basis === "model" && first.verdict === "answers" && input.confirmAnswer === true) {
     return { schemaVersion: first.schemaVersion, verdict: "unsure", basis: "model_unconfirmed", code: AUTOMATION_STUDIO_RESULT_VERDICT_CODES.unconfirmed, reason: `This result was checked once: the first answer was that it does what was asked, but the required confirming check was not supplied. ${UNSETTLED.model_unconfirmed.run}`, observation: first.observation, verdicts: [first.verdict], calls: 1 };
   }
-  if (!second || !automationStudioResultVerificationAskAgain(first, { confirmAnswer: input.confirmAnswer })) return { ...first, verdicts: [first.verdict], calls: 1 };
+  if (!second || !automationStudioResultVerificationAskAgain(first, { confirmAnswer: input.confirmAnswer })) {
+    // A runtime check's single yes that said the Flow needs a change is not confirmed (header, t515).
+    if (first.basis === "model" && first.verdict === "answers" && first.code === AUTOMATION_STUDIO_RESULT_VERDICT_CODES.answersWithChangeAdvised) return changeAdvised(first);
+    return { ...first, verdicts: [first.verdict], calls: 1 };
+  }
   const verdicts: AutomationStudioResultVerdict[] = [first.verdict, second.verdict];
   const codes = AUTOMATION_STUDIO_RESULT_VERDICT_CODES;
+  const weigh = { wording: input.wording, reasked };
   if (first.verdict === "answers") {
     // A confirmation that never came back usable confirms nothing (run-mux6nxst-c9bca37c): the yes is unconfirmed.
     if (second.basis === "model_unavailable") {
@@ -94,7 +133,7 @@ export function automationStudioResultVerificationAgreement(input: AutomationStu
     if (second.verdict !== "does_not_answer") {
       return { ...unsettled(first, second, "model_unconfirmed", codes.unconfirmed, `This result was checked twice with the same evidence: the first answer was that it does what was asked, and the confirming check gave ${said(second)} (${second.code}). ${UNSETTLED.model_unconfirmed.run}`, verdicts), ...contradictedUnsure(2, second, input.reads) };
     }
-    return unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was that it does what was asked, the second that it does not. ${UNSETTLED.model_disagreed.run}`, verdicts);
+    return unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was that it does what was asked, the second that it does not. ${UNSETTLED.model_disagreed.run}`, verdicts, weigh);
   }
   if (first.verdict === "does_not_answer" && second.verdict === "does_not_answer") {
     // Both readings, each its own call's and labelled so (`bothReadings`):
@@ -114,7 +153,7 @@ export function automationStudioResultVerificationAgreement(input: AutomationStu
     };
   }
   if (second.verdict === "answers") {
-    return { ...unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was ${said(first)}, the second that it does. ${UNSETTLED.model_disagreed.run}`, verdicts), ...contradictedUnsure(1, first, input.reads) };
+    return { ...unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was ${said(first)}, the second that it does. ${UNSETTLED.model_disagreed.run}`, verdicts, weigh), ...contradictedUnsure(1, first, input.reads) };
   }
   return unsettled(first, second, "model_unconfirmed", codes.unconfirmed, `This result was checked twice with the same evidence, and neither answer was that it does what was asked, nor were both that it does not: the first was ${said(first)}, the second ${said(second)} (${second.code}). ${UNSETTLED.model_unconfirmed.run}`, verdicts);
 }
@@ -130,17 +169,66 @@ export function automationStudioResultVerificationAgreement(input: AutomationStu
  */
 export async function automationStudioResultVerificationReaskContradicted(input: AutomationStudioResultVerificationAgreementInput & {
   settled: AutomationStudioResultVerification;
-  ask: (recheck: string) => Promise<AutomationStudioResultVerification>;
+  /** Asks call `call` once more, its copy carrying `recheck`. */
+  ask: (recheck: string, call: 1 | 2) => Promise<AutomationStudioResultVerification>;
 }): Promise<AutomationStudioResultVerification> {
   const { settled, second } = input;
+  if (!second) return settled;
   const marked = settled.contradictedUnsure;
-  if (!marked || marked.reasked || !second) return settled;
-  const reasked = await input.ask(recheckWords(marked.record));
+  if (!marked) return reaskUnstatedExclusion(input, settled, second);
+  if (marked.reasked) return settled;
+  const reasked = await input.ask(recheckWords(marked.record), marked.call);
   const verdicts: AutomationStudioResultVerdict[] = [...(settled.verdicts ?? []), reasked.verdict];
   const done = { call: marked.call, record: marked.record, reasked: true as const };
   if (reasked.basis !== "model") return { ...settled, verdicts, calls: 3, contradictedUnsure: done };
   const again = automationStudioResultVerificationAgreement({ ...input, first: marked.call === 1 ? reasked : input.first, second: marked.call === 2 ? reasked : second });
   return { ...again, verdicts, calls: 3, contradictedUnsure: done };
+}
+
+/**
+ * The one re-ask of a split's no whose advice adds an exclusion the request
+ * never states (header, t515): that call is asked once more with the
+ * exclusion named, and its answer takes its place under the same rule. A
+ * re-ask that did not come back usable leaves `settled` as it was. Nothing is
+ * asked without the request's wording, or where the no's exclusions are stated.
+ */
+async function reaskUnstatedExclusion(
+  input: Parameters<typeof automationStudioResultVerificationReaskContradicted>[0],
+  settled: AutomationStudioResultVerification,
+  second: AutomationStudioResultVerification
+): Promise<AutomationStudioResultVerification> {
+  const unstated = settled.basis === "model_disagreed" ? unstatedExclusion(input.first, second, input.wording) : undefined;
+  if (!unstated) return settled;
+  const reasked = await input.ask(exclusionRecheckWords(unstated.exclusions), unstated.call);
+  const verdicts: AutomationStudioResultVerdict[] = [...(settled.verdicts ?? []), reasked.verdict];
+  if (reasked.basis !== "model") return { ...settled, verdicts, calls: 3 };
+  const again = agree({ ...input, first: unstated.call === 1 ? reasked : input.first, second: unstated.call === 2 ? reasked : second }, unstated.call);
+  return { ...again, verdicts, calls: 3 };
+}
+
+/** The call of a split that said no, and the exclusions its advice adds that the request never states; nothing without both. */
+function unstatedExclusion(
+  first: AutomationStudioResultVerification,
+  second: AutomationStudioResultVerification,
+  wording: AutomationStudioRequestWording | undefined
+): { call: 1 | 2; exclusions: string[] } | undefined {
+  if (!wording) return undefined;
+  const call = first.verdict === "does_not_answer" ? 1 : second.verdict === "does_not_answer" ? 2 : undefined;
+  if (!call) return undefined;
+  const exclusions = automationStudioRequestUnstatedExclusions((call === 1 ? first : second).repair?.judgement?.advice, wording);
+  return exclusions.length ? { call, exclusions } : undefined;
+}
+
+/** What a split's no asked again is told (header, t515): Core's words and the advice's own exclusions, naming no site or task. */
+function exclusionRecheckWords(exclusions: readonly string[]): string {
+  return "This same evidence was judged before, and that answer advised leaving out rows by words the request never states as an exclusion: "
+    + `${quotedExclusions(exclusions)}. `
+    + "A request excludes only what its own words state; the words it searches or navigates by say where to look and exclude nothing. "
+    + "Answer again from the evidence, and answer no over a row the result keeps only where words of the request exclude it, quoting them.";
+}
+
+function quotedExclusions(exclusions: readonly string[]): string {
+  return exclusions.map((exclusion) => `"${exclusion}"`).join(", ");
 }
 
 /** What a call asked again is told (header, t503): Core's words, naming no site or task. */
@@ -167,6 +255,8 @@ function said(verification: AutomationStudioResultVerification): string {
   if (verification.basis === "model_unavailable") return "no answer, because the check did not come back usable";
   if (verification.basis === "model_silent") return "no answer, because the reply gave none";
   if (verification.verdict === "does_not_answer" && passedOverRows(verification)) return "that it does what was asked, without saying why the rows a condition alone left out that name the item asked for are excluded";
+  // A yes `verdict.ts` did not take for want of the request's own words beside a left-out row (t515): its reason, Core's, says so.
+  if (verification.verdict === "does_not_answer" && verification.repair?.judgement === undefined && verification.reason.includes("without quoting")) return "that it does what was asked, without quoting the request's words that exclude each row a condition alone left out";
   if (verification.verdict === "does_not_answer") return "that it does not do what was asked";
   if (verification.verdict === "answers") return "that it does what was asked";
   return "that it could not be told";
@@ -202,11 +292,45 @@ function unsettled(
   basis: "model_disagreed" | "model_unconfirmed",
   code: string,
   reason: string,
-  verdicts: AutomationStudioResultVerdict[]
+  verdicts: AutomationStudioResultVerdict[],
+  weigh: { wording?: AutomationStudioRequestWording | undefined; reasked?: 1 | 2 | undefined } = {}
 ): AutomationStudioResultVerification {
-  const reading = unconfirmedReading(first) ?? unconfirmedReading(second);
+  const read = unconfirmedReading(first) ?? unconfirmedReading(second);
+  // A split's no whose advice adds an exclusion the request never states, marked so (header, t515).
+  const unstated = basis === "model_disagreed" ? unstatedExclusion(first, second, weigh.wording) : undefined;
+  const reading = read && unstated ? { ...read, advice: markedAdvice(unstated, read.advice ?? "", weigh.reasked === unstated.call) } : read;
   const answered = basis === "model_disagreed" ? answeredReadingOf(first) ?? answeredReadingOf(second) : undefined;
   return { schemaVersion: first.schemaVersion, verdict: "unsure", basis, code, reason, observation: first.observation, verdicts, calls: 2, ...(reading ? { unconfirmedReading: reading } : {}), ...(answered ? { answeredReading: answered } : {}) };
+}
+
+/**
+ * A split's no's advice, labelled as adding an exclusion the request never
+ * states (header, t515), as t501 labels a reading: its call, Core's words and
+ * the exclusions, then the advice in its own words, unchanged.
+ */
+function markedAdvice(unstated: { call: 1 | 2; exclusions: readonly string[] }, advice: string, reasked: boolean): string {
+  const again = reasked ? "; asked once more with this named, it advised the same" : "";
+  return `Judge call ${unstated.call} (Core's check: this advice adds an exclusion the request never states, ${quotedExclusions(unstated.exclusions)}, and a request excludes only what its own words state, so do not add it unless the request's words say so${again}): ${advice}`;
+}
+
+/**
+ * A runtime check's single yes that said the Flow needs a change (header,
+ * t515): unsure and unconfirmed, keeping what the yes compared, with no
+ * failure record and no repair, so it neither confirms nor fails the run.
+ */
+function changeAdvised(first: AutomationStudioResultVerification): AutomationStudioResultVerification {
+  const answered = answeredReadingOf(first);
+  return {
+    schemaVersion: first.schemaVersion,
+    verdict: "unsure",
+    basis: "model_unconfirmed",
+    code: AUTOMATION_STUDIO_RESULT_VERDICT_CODES.answersWithChangeAdvised,
+    reason: `This result was checked once: the answer was that it does what was asked, but the same answer said the Flow needs a change, so it is not taken as a clean pass. ${UNSETTLED.model_unconfirmed.run}`,
+    observation: first.observation,
+    verdicts: [first.verdict],
+    calls: 1,
+    ...(answered ? { answeredReading: answered } : {})
+  };
 }
 
 /** What a call that judged `answers` compared, copied; nothing for any other call or an empty reading. */
