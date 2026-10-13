@@ -61,11 +61,10 @@ import { automationStudioResultReadAloneRows } from "./alone-rows.ts";
 import { automationStudioResultReadConditionColumn, automationStudioResultReadConditionText } from "./condition.ts";
 import { automationStudioResultReadDedupe } from "./dedupe.ts";
 import { automationStudioResultReadLoopedAccount } from "./looped-account.ts";
+import { automationStudioResultReadParameters } from "./read-parameters.ts";
 import { automationStudioResultReadLoopPasses } from "./loop-passes.ts";
 import { automationStudioResultReadStoredColumns } from "./stored-columns.ts";
 
-/** The members that mark an object as a read's own parameters. */
-const READ_PARAMETER_KEYS = ["where", "paginate", "dedupe", "fields"];
 /** A closed word the read reports, as extraction-summary.ts admits them. */
 const STOP_WORD = /^[a-z_]{1,40}$/u;
 /** The paging modes that move to another page, lower-cased. */
@@ -141,7 +140,7 @@ function account(
   node: AutomationStudioFlowNode | undefined,
   deniedKeys: readonly string[] | undefined
 ): AutomationStudioResultReadAccount {
-  const authored = node && deniedKeys ? readParameters(node.parameterValues) : undefined;
+  const authored = node && deniedKeys ? automationStudioResultReadParameters(node.parameterValues) : undefined;
   const stop = typeof extraction.paginationStop === "string" && STOP_WORD.test(extraction.paginationStop) ? extraction.paginationStop : undefined;
   const itemsSeen = count(extraction.itemsSeen);
   const filter = isRecord(extraction.conditions) ? extraction.conditions : undefined;
@@ -252,13 +251,6 @@ function withTestedValue(rows: JsonValue | undefined, tested: string | undefined
 function labelledBy(rows: JsonValue | undefined, tested: string | undefined): boolean {
   if (tested === undefined || !Array.isArray(rows) || rows.length === 0) return false;
   return rows.every((row) => isRecord(row) && Object.keys(row)[0] === tested);
-}
-
-/** The read's own parameters: the step's, or the one object inside them that holds what a read is authored with. */
-function readParameters(parameters: JsonObject | undefined): JsonObject | undefined {
-  if (!parameters) return undefined;
-  const candidates = [parameters, ...Object.values(parameters).filter(isRecord)];
-  return candidates.find((candidate) => READ_PARAMETER_KEYS.some((key) => Object.hasOwn(candidate, key)));
 }
 
 /** The first bound a paging setting states (`maxPages`, or its equivalent for a mode that loads rather than turns pages). */

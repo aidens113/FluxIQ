@@ -18,11 +18,19 @@
 // asks that call once more with the record named. The rule above stands: what
 // the re-asked call answers takes its place, so a yes there beside the other
 // yes is two yeses, and anything else leaves the verdict unsure.
+//
+// **A reading that denies an order Core found is marked the same way (t511).**
+// Live run `run-mv6qr7fk-77f30b49`: both judges, four times, called an answer
+// Core had sorted by date, newest first, "not newest-first", and the repair
+// followed them. A double no's reading that denies the order of a column every
+// record set's `sortRead` says is in order (`./value-readings/order-claim.ts`)
+// is labelled contradicted, as a reading about pages is.
 
-import type { AutomationStudioResultReadAccount, AutomationStudioResultVerdict, AutomationStudioResultVerification } from "./contracts.ts";
+import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioResultVerdict, AutomationStudioResultVerification } from "./contracts.ts";
 import { automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./read-account/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "./repair-directive.ts";
 import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS as UNSETTLED } from "./unsettled/index.ts";
+import { automationStudioResultOrderClaimContradicted } from "./value-readings/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "./verdict.ts";
 
 /** What one call that judged `does_not_answer` said. */
@@ -42,6 +50,12 @@ export type AutomationStudioResultVerificationAgreementInput = {
    * is marked.
    */
   reads?: readonly AutomationStudioResultReadAccount[] | undefined;
+  /**
+   * The judged result's record sets (`AutomationStudioRunResultSummary.recordSets`):
+   * each one's `sortRead` is what a reading that denies an order is weighed
+   * against on a double no (t511). Absent, no reading is marked for order.
+   */
+  recordSets?: readonly AutomationStudioResultRecordSetSummary[] | undefined;
 };
 
 /** How a verification reads a first answer: whether a `yes` is confirmed too. */
@@ -89,7 +103,7 @@ export function automationStudioResultVerificationAgreement(input: AutomationStu
     // the first blamed paging against the record, the second named the two
     // stored rows that were wrong, and only the first was forwarded.
     return {
-      ...bothReadings(first, second, input.reads),
+      ...bothReadings(first, second, input.reads, input.recordSets),
       // Nothing about the steps: this file reads only the two verdicts, and a
       // build's test can pass with a step it excused failing. "Although every
       // step of the run succeeded" was said above "Step 15 (×) failed" (t193
@@ -216,11 +230,13 @@ function unconfirmedReading(verification: AutomationStudioResultVerification): J
   return Object.keys(reading).length ? reading : undefined;
 }
 
-/** One call's reading as the repair is told it, and whether Core's record contradicts it. */
-type Weighed = { call: 1 | 2; verification: AutomationStudioResultVerification; reading: JudgeReading; contradicted: boolean };
+/** One call's reading as the repair is told it, and, where Core's record contradicts it, what the reading says of itself. */
+type Weighed = { call: 1 | 2; verification: AutomationStudioResultVerification; reading: JudgeReading; contradicted: boolean; because?: string };
 
 /** What a reading marked contradicted says of itself, after its call's number. */
 const CONTRADICTED = "contradicted by Core's record: every read's own account says its list ended with no further page, so what this reading says about more pages is mistaken";
+/** What a reading that denies an order Core found says of itself (t511). */
+const CONTRADICTED_ORDER = "contradicted by Core's record: Core sorted the answer itself, and its sortRead says how it read the sorted column and that the rows are in that order, so what this reading says about the order is mistaken";
 
 /**
  * The refutation two calls that both said no come to (t501, D1).
@@ -237,13 +253,19 @@ const CONTRADICTED = "contradicted by Core's record: every read's own account sa
  * construction; `checked` lines are Core's checks of the rows each reading
  * names, so both calls' are kept. The failure record is the leading call's.
  */
-function bothReadings(first: AutomationStudioResultVerification, second: AutomationStudioResultVerification, reads: readonly AutomationStudioResultReadAccount[] | undefined): AutomationStudioResultVerification {
+function bothReadings(
+  first: AutomationStudioResultVerification,
+  second: AutomationStudioResultVerification,
+  reads: readonly AutomationStudioResultReadAccount[] | undefined,
+  recordSets: readonly AutomationStudioResultRecordSetSummary[] | undefined
+): AutomationStudioResultVerification {
   const weighed: Weighed[] = [];
   for (const [call, verification] of [[1, first], [2, second]] as const) {
     const reading = verification.repair?.judgement;
     if (!reading || !(reading.expected || reading.observed || reading.advice)) continue;
     if (weighed.some((other) => sameWords(other.reading, reading))) continue;
-    weighed.push({ call, verification, reading, contradicted: contradictsPagingRecord(reading, reads) });
+    const because = contradictsPagingRecord(reading, reads) ? CONTRADICTED : contradictsOrderRecord(reading, recordSets) ? CONTRADICTED_ORDER : undefined;
+    weighed.push({ call, verification, reading, contradicted: because !== undefined, ...(because ? { because } : {}) });
   }
   if (!weighed.some((one) => one.contradicted) && weighed.length < 2) return weighed[0]?.verification ?? first;
   const ordered = [...weighed.filter((one) => !one.contradicted), ...weighed.filter((one) => one.contradicted)];
@@ -252,7 +274,7 @@ function bothReadings(first: AutomationStudioResultVerification, second: Automat
     const saying = ordered.filter((one) => one.reading[field]);
     // A field both calls worded alike is said once, unlabelled.
     if (saying.length > 1 && saying.every((one) => one.reading[field] === saying[0]!.reading[field])) return saying[0]!.reading[field];
-    const parts = saying.map((one) => `Judge call ${one.call}${one.contradicted ? ` (${CONTRADICTED})` : ""}: ${one.reading[field]}`);
+    const parts = saying.map((one) => `Judge call ${one.call}${one.because ? ` (${one.because})` : ""}: ${one.reading[field]}`);
     return parts.length ? parts.join(" ") : undefined;
   };
   const expected = labelled("expected");
@@ -313,6 +335,11 @@ function contradictsPagingRecord(reading: JudgeReading, reads: readonly Automati
   const listEnded = paging.every((read) => read.stop !== undefined && !read.truncated && automationStudioResultReadStop(read) === "list_ended");
   if (!listEnded) return false;
   return [reading.expected, reading.observed, reading.advice].some((text) => typeof text === "string" && MORE_PAGES.test(text));
+}
+
+/** Whether a reading denies an order every record set's own sort reading says the rows have (`./value-readings/order-claim.ts`, t511). */
+function contradictsOrderRecord(reading: JudgeReading, recordSets: readonly AutomationStudioResultRecordSetSummary[] | undefined): boolean {
+  return [reading.expected, reading.observed, reading.advice].some((text) => automationStudioResultOrderClaimContradicted(text, recordSets));
 }
 
 /** The reads that follow pages: authored to, or read more than one page or loop pass. */

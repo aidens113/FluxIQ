@@ -42,6 +42,8 @@ export type AutomationStudioResultProcessingCondition = {
   alone: number;
   leftOutOnlyByThis?: string[];
   testedLabel?: true;
+  /** How Core read the tested value on a few rows the answer kept (`./value-readings/`, t511). */
+  valuesRead?: string[];
 };
 
 /** A record set's processing account as the judge is shown it: the store's counts and passes, and each condition said (`processing-account.ts`). */

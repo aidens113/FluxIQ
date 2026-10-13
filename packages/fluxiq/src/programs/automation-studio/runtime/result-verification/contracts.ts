@@ -18,6 +18,7 @@
 
 import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
+import type { AutomationStudioResultRecordSetSummary } from "./record-set-summary.ts";
 import type { AutomationStudioResultProcessingAccount } from "./processing-account.ts";
 // The bounds live in `runtime/loop-limits/`, which neither this directory nor
 // the harness owns. This file used to re-export them so a reader of the contract
@@ -33,6 +34,9 @@ import type { AutomationStudioResultProcessingAccount } from "./processing-accou
 // made five of this directory's seven test suites fail to load at all on a
 // `runtime/llm` module cycle none of them touch. A contract should cost its
 // readers nothing to read.
+
+// One record set as the verification reads it, and its sort as Core read it (`./record-set-summary.ts`).
+export type { AutomationStudioResultRecordSetSummary, AutomationStudioResultSortRead } from "./record-set-summary.ts";
 
 /**
  * The verdict on whether a finished run's result answers the request.
@@ -71,42 +75,6 @@ export type AutomationStudioResultVerdictBasis =
    * That is not proof the run failed.
    */
   | "model_unconfirmed";
-
-/** One record set the run stored, as the verification reads it. */
-export type AutomationStudioResultRecordSetSummary = {
-  datasetId: string;
-  label?: string;
-  /** Rows stored. Zero is the finding that produced this module. */
-  recordCount: number;
-  /** Rows the record schema refused. Every row refused leaves `recordCount` zero. */
-  refusedCount: number;
-  /** True when the run returned more rows than the record output keeps. */
-  truncated: boolean;
-  /** The stored schema's field ids, in schema order, bounded by `maxColumns`. */
-  columns: string[];
-  /** True when the column list was cut. */
-  columnsWithheld: boolean;
-  /**
-   * Stored rows Core read back for its own required-value check: at most
-   * `maxRowsCheckedPerSet`, so fewer than `recordCount` on a large set, and 0
-   * when the set's rows or its schema could not be read.
-   */
-  rowsChecked: number;
-  /** Of `rowsChecked`, the rows carrying no value for a field the set's own schema declares required. */
-  rowsMissingRequired: number;
-  /** The required field ids some checked row lacked, in schema order, bounded by `maxColumns`. Ids, never values. */
-  missingRequiredColumns: string[];
-  /** A few stored rows, each value bounded. Absent when the set stored none. */
-  sampleRows?: JsonObject[];
-  /**
-   * What the run's end made of the rows the set collected (read-list design
-   * 5.2): the rows above are its answer, and this says how many were
-   * collected, how many repeated an earlier row, were left out by a condition
-   * over stored columns or past its limit, and each pass's rows, and per
-   * condition the rows it alone left out (`processing-account.ts`, t493).
-   */
-  processing?: AutomationStudioResultProcessingAccount;
-};
 
 /**
  * One step of the Flow that produced the result, as the judgement reads it.
@@ -248,7 +216,15 @@ export type AutomationStudioResultReadAccount = {
    * label, and two non-Plus pairs naming a charging case were flagged as the
    * item asked for (`request-rows/left-out-naming-the-item.ts`).
    */
-  conditions?: Array<{ condition?: string; rejected?: number; alone?: number; leftOutOnlyByThis?: string[]; leftOutObservations?: Array<AutomationStudioResultConditionObservation | null>; testedLabel?: true }>;
+  conditions?: Array<{
+    condition?: string; rejected?: number; alone?: number; leftOutOnlyByThis?: string[]; leftOutObservations?: Array<AutomationStudioResultConditionObservation | null>; testedLabel?: true;
+    /**
+     * How Core read the tested value on a few rows the condition kept and left
+     * out (`./value-readings/`, t511): the number a bound compared, or the part
+     * of the text a text test matched. Absent where no such row is known.
+     */
+    valuesRead?: string[];
+  }>;
   /** True when every row failed the conditions and the read answered with the unfiltered rows instead. */
   unfiltered?: boolean;
   /**
