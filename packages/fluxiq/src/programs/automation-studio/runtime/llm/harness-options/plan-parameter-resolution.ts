@@ -90,26 +90,6 @@
 // is not kept. An effect only ever skips: state routing goes on along the
 // step's own success edge when the page shows it, and never runs a completed
 // lasting act again because of one (`../../executor/state-routing/repeated-act.ts`).
-//
-// **A candidate's handle comes from the page its step runs on (t486).** Lane B
-// (`run-mv636xvb-e1426db1`) submitted a step that named a control printed only
-// on another page than the one the steps around it act on, and it was taken:
-// it ran only because both pages shared one layout. With the view history,
-// each handle says which page printed it, so a step is refused
-// (`bootstrap.handle.other_page`), naming both pages, when the page it runs on
-// is plain from the script and is not that page. It is plain only in one
-// shape: the step has one way in and one way out, both plain success edges,
-// from a step that leaves by no other edge and to a step reached by no other;
-// both of those steps' handles were printed on one page; the step's own were
-// all printed elsewhere (a location without its query or fragment, so a choice
-// that only rewrites the query, as picking an option may, leaves the same
-// page); and the step's views are newer than every view of
-// both neighbours, so the build saw its page only after it had learned theirs.
-// The last test is what keeps a real round trip -- a step that goes back to
-// the page it came from, learned in that order -- from being refused. Anything
-// else (a branch, a join, a first or last step, a neighbour with no handle, a
-// neighbour that may move the page and stay) leaves the page undecided, and
-// nothing is refused.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
@@ -139,9 +119,7 @@ export const AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES = Object.freeze({
   /** The step would do something lasting that neither the instruction nor the person's permission allows. */
   permission: "bootstrap.step_permission_required",
   /** A fact the model wrote names its element by something other than a handle (header, t432). */
-  notAHandle: "bootstrap.target_not_a_handle",
-  /** A step's handle was printed on another page than the one the steps around it act on (header, t486). */
-  otherPage: "bootstrap.handle.other_page"
+  notAHandle: "bootstrap.target_not_a_handle"
 } as const);
 
 /** What the model is told about a fact naming its element by anything but a handle: Core's own words, quoting nothing (header). */
@@ -263,78 +241,8 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
       for (const view of outcome.handleViews ?? []) handleViews.push({ node: ref, handle: view.handle, view: view.view, location: view.location });
     }
   }
-  if (input.handleReach !== undefined) issues.push(...otherPageIssues(plan, handleViews));
   if (issues.length) return { ok: false, issues };
   return input.handleReach === undefined ? { ok: true, plan, resolvedNodeKeys } : { ok: true, plan, resolvedNodeKeys, handleViews };
-}
-
-/**
- * The steps whose handles were printed on another page than the one they run
- * on, where that page is plain from the script (header, t486): one issue per
- * step, on its parameters, naming the location that printed the step's
- * handles and the one it runs at. Core's own words call a page a location.
- */
-function otherPageIssues(plan: AutomationStudioFlowBootstrapPlan, handleViews: readonly AutomationStudioFlowBootstrapPlanHandleView[]): AutomationStudioFlowBootstrapIssue[] {
-  const viewsOf = new Map<string, AutomationStudioFlowBootstrapPlanHandleView[]>();
-  for (const view of handleViews) viewsOf.set(view.node, [...(viewsOf.get(view.node) ?? []), view]);
-  const issues: AutomationStudioFlowBootstrapIssue[] = [];
-  for (const [subflowIndex, subflow] of plan.subflows.entries()) {
-    for (const [nodeIndex, node] of subflow.nodes.entries()) {
-      const own = viewsOf.get(`${subflow.key}.${node.key}`);
-      if (!own?.length) continue;
-      const before = onlyNeighbour(subflow.edges, node.key, "in");
-      const after = onlyNeighbour(subflow.edges, node.key, "out");
-      if (!before || !after) continue;
-      const previous = viewsOf.get(`${subflow.key}.${before}`) ?? [];
-      const next = viewsOf.get(`${subflow.key}.${after}`) ?? [];
-      const shared = previous.length && next.length ? oneLocation([...previous, ...next]) : undefined;
-      if (shared === undefined || own.some((view) => locationRoot(view.location) === shared)) continue;
-      const newest = Math.max(...[...previous, ...next].map((view) => view.view));
-      if (own.some((view) => view.view <= newest)) continue;
-      const handles = [...new Set(own.map((view) => view.handle))];
-      const printedAt = [...new Set(own.map((view) => view.location))];
-      const runsAt = previous[0]!.location;
-      issues.push({
-        severity: "error",
-        code: AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.otherPage,
-        path: `plan.subflows.${subflowIndex}.nodes.${nodeIndex}.parameters`,
-        message: `${handles.length === 1 ? "The handle" : "The handles"} ${handles.join(", ")} of this step ${handles.length === 1 ? "was" : "were"} printed in a view of ${printedAt.join(" and ")}, but the step runs at ${runsAt}, where the step before it and the step after it act. `
-          + `Take the handle from a view of the location this step runs at (${runsAt}): look there and copy the handle its view prints for the control. If the control is not there, the step belongs where the Flow is at ${printedAt[0]}, or is not needed.`
-      });
-    }
-  }
-  return issues;
-}
-
-/**
- * The one node `key` is joined to on `side`, when that is plain: exactly one
- * edge on that side, a `success` edge, and the node at its other end joined by
- * no other edge on the facing side. Otherwise nothing.
- */
-function onlyNeighbour(edges: readonly AutomationStudioFlowBootstrapPlan["subflows"][number]["edges"][number][], key: string, side: "in" | "out"): string | undefined {
-  const near = (edge: (typeof edges)[number]) => (side === "in" ? edge.target.nodeKey : edge.source.nodeKey);
-  const far = (edge: (typeof edges)[number]) => (side === "in" ? edge.source.nodeKey : edge.target.nodeKey);
-  const mine = edges.filter((edge) => near(edge) === key);
-  if (mine.length !== 1 || mine[0]!.source.portId !== "success") return undefined;
-  const other = far(mine[0]!);
-  return edges.filter((edge) => far(edge) === other).length === 1 ? other : undefined;
-}
-
-/** The one location every view was printed at (`locationRoot`), or nothing when they name more than one. */
-function oneLocation(views: readonly AutomationStudioFlowBootstrapPlanHandleView[]): string | undefined {
-  const roots = new Set(views.map((view) => locationRoot(view.location)));
-  return roots.size === 1 ? [...roots][0] : undefined;
-}
-
-/**
- * A location without its query or fragment, in the generic syntax every
- * scheme of location shares (RFC 3986): what follows the first `?` or `#` is
- * dropped, so a choice that only rewrites the query is the same place
- * (header). A location with neither is itself.
- */
-function locationRoot(location: string): string {
-  const cut = location.search(/[?#]/u);
-  return cut === -1 ? location : location.slice(0, cut);
 }
 
 /**
