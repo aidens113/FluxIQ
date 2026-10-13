@@ -41,10 +41,10 @@ export function StudioStartJourney(props: {
     {props.intent ? <section aria-label="Start an automation" style={{ flexShrink: 0, padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
       <h2>{props.intent === "describe" ? "Describe an automation" : props.intent === "demonstrate" ? "Show FluxIQ how" : "Extract data from this page"}</h2>
       <p>{props.intent === "describe"
-        ? "Create an automation, select a model in Settings, then describe the website task in Steps. Review the suggested change before applying it."
+        ? "Create an automation and write the website task in Instructions. You can attach a described recording as supporting evidence. Select a model in Settings, then build and test the automation in Steps."
         : props.intent === "demonstrate"
-          ? "Connect and select a browser in Connected browsers, then choose Start recording when you are ready."
-          : "Open the extension on the target page and choose extraction. Select a table or list and inspect its preview there. Core does not extract the page from this link."}</p>
+          ? "Connect and select a browser in Connected browsers, then choose Start recording and describe what the demonstration shows. Stop the recording, create an automation, and write the task in Instructions. Attach the recording as optional support, then build and test in Steps."
+          : "Open the extension on the target page and choose extraction. Select a table or list and inspect its preview there. Write what the automation should collect in Instructions; a described recording can support that task. Build and test the scraper in Steps."}</p>
       {props.state === "catalog" ? <p>Choose a project below, or create one, to keep this automation's work together.</p> : null}
       {props.state === "restoring" ? <p role="status">Opening your project. Your linked workspace will be restored before the next step.</p> : null}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

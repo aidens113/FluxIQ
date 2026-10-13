@@ -1,7 +1,7 @@
 # MVP Final Month Plan - Core implementation
 
 Status: Active
-Status detail: t460 published; B/D provider-free repair replays passed; t461 witnesses/order passed independent checks and bounded headed proof; t461 integrated downstream493b1749/Core1f6580bb; new .25 ready preflights next.
+Status detail: Instruction-led authority, long-path storage and truthful learned-state summaries integrated; current adaptation/breadth qualification and release journey remain open.
 Created: 2026-10-06
 Last updated: 2026-10-13
 Owner: Codex senior supervisor
@@ -15,7 +15,7 @@ Related: [authoring](./flow-authoring-and-defensive-runtime-plan.md), [version h
 
 **October 13 continuation.** User directs execution through MVP completion. Instruction-led t519 is pushed to both dev branches (Core63692096/downstream7b416b99); t516/t517 are also delivered. Every existing automation needs explicit written task instructions before its next run; recordings are described optional evidence. Historical recording-only conversion is retired. Downstream adaptation-and-breadth-plan owns the next gate and current mvp-final-month-plan owns worker dispatch. t520 extracts only the generic native SQLite long-path opener and meaningful existing-parent regression from parked t518, because instruction bootstrap/run/recovery also use it. Remaining t518 stays unmerged/unpushed. No user-panel management or full suites are authorized by this continuation.
 
-The active execution order is downstream `docs/working/live-testing-handoff-audit-2026-10-11.md`.
+The active execution order is downstream `docs/working/mvp-final-month-plan.md` and its adaptation/breadth gate. Supervisor corrected the onboarding journey to require actual Instructions for every start option and explain described optional evidence; existing actions/lifecycle guards stay intact. Supervisor observed all17 owning entry tests and current web types pass after refreshing the changed Core library; onboarding copy is verified for delivery.
 
 t460 final-slot/replay-settlement repairs are independently accepted and pushed at Core563c37bd/
 downstreamd18a3268 (latest doc head). Separate provider-disabled B/D repair probes passed their original
