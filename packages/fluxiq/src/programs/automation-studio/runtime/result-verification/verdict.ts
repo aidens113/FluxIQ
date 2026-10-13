@@ -60,7 +60,12 @@ import { automationStudioResultFailureRecord } from "./core-observation.ts";
 import { automationStudioResultReadSentence } from "./read-account/index.ts";
 import { automationStudioResultScreenedJudgement } from "./judgement-screen.ts";
 import { automationStudioResultRepairDirective } from "./repair-directive.ts";
-import { automationStudioResultCheckedRows, automationStudioResultLeftOutRowsUnaccounted } from "./request-rows/index.ts";
+import {
+  automationStudioResultCheckedRows,
+  automationStudioResultLeftOutRowsUnaccounted,
+  automationStudioResultLeftOutStatingAKeptNumber,
+  type AutomationStudioRequestRowsKeptNumberLeftOut
+} from "./request-rows/index.ts";
 
 /**
  * Core's codes for a verdict a model call reached, or failed to. The last two
@@ -128,14 +133,17 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
     };
   }
   const verdict = automationStudioResultVerdictFromDiagnosis(input.diagnosis);
+  // Rows a text condition left out though it kept their number on another row: Core's to see, whatever was judged (t478).
+  const keptNumber = automationStudioResultLeftOutStatingAKeptNumber(input.summary);
   if (verdict === "answers") {
     const unaccounted = automationStudioResultLeftOutRowsUnaccounted(input.summary, replyText(input));
-    if (unaccounted.length) {
+    if (unaccounted.length || keptNumber.length) {
       // Core's words only: the yes's own prose argues the opposite of the verdict it now carries.
-      return failed("does_not_answer", "model", codes.doesNotAnswer, "The result was judged to answer the request without saying why the request excludes each row a condition alone left out that names the item asked for, so it is not taken as an answer.", observation, automationStudioResultRepairDirective({
+      return failed("does_not_answer", "model", codes.doesNotAnswer, refusedYesReason(unaccounted.length > 0, keptNumber.length > 0), observation, automationStudioResultRepairDirective({
         summary: input.summary,
         leftOutUnaccounted: unaccounted,
-        checked: unaccounted.map(unaccountedLine)
+        leftOutKeptNumber: keptNumber,
+        checked: [...unaccounted.map(unaccountedLine), ...keptNumber.map(keptNumberLine)]
       }));
     }
     // What the yes compared, screened as a no's is: a split shows it beside the no's (`./agreement.ts`, t477).
@@ -166,7 +174,9 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
         ...(input.diagnosis?.stillAchievable !== undefined ? { stillAchievable: input.diagnosis.stillAchievable } : {})
       },
       // Each row the judgement names, checked against what the run holds (live run `run-muw60j7c-bb7c9a62`, C-5).
-      checked: automationStudioResultCheckedRows(input.summary, replyText(input))
+      checked: automationStudioResultCheckedRows(input.summary, replyText(input)),
+      // Core's own finding beside the judgement's: the repair has the rows whoever saw them.
+      leftOutKeptNumber: keptNumber
     }));
   }
   const silent = input.basis === "model_silent" || input.diagnosis?.answersRequest === undefined;
@@ -201,6 +211,21 @@ function replyText(input: AutomationStudioResultVerdictInput): string {
 function unaccountedLine(entry: AutomationStudioResultLeftOutNamingTheItem): string {
   const where = entry.step !== undefined ? `Step ${entry.step}` : `Read ${entry.nodeId ?? "(unnamed)"}`;
   return `The check answered yes without accounting for ${entry.rows.length === 1 ? "this row" : "these rows"} the condition "${entry.condition}" (${where}) alone left out, which name "${entry.item}" first and ${entry.also.map((phrase) => `"${phrase}"`).join(", ")} only after it: ${entry.rows.join("; ")}.`;
+}
+
+/** Why a yes was not taken, by what Core found it passed over. */
+function refusedYesReason(unaccounted: boolean, keptNumber: boolean): string {
+  const naming = "without saying why the request excludes each row a condition alone left out that names the item asked for";
+  const number = "over rows a text condition alone left out that state a number the same condition kept on another row";
+  const said = unaccounted && keptNumber ? `${naming}, and ${number}` : unaccounted ? naming : number;
+  return `The result was judged to answer the request ${said}, so it is not taken as an answer.`;
+}
+
+/** Core's line for one text condition's left-out rows stating a number it kept, as `repair.checked` carries it to a build's repair. */
+function keptNumberLine(entry: AutomationStudioRequestRowsKeptNumberLeftOut): string {
+  const range = entry.low === entry.high ? String(entry.low) : `${entry.low} to ${entry.high}`;
+  const rows = entry.rows.map((row, index) => `${row} (states ${entry.numbers[index]})`).join("; ");
+  return `The check answered yes though the condition "${entry.condition}" (Read ${entry.nodeId}) kept rows stating ${range} and alone left out ${entry.rows.length === 1 ? "this row, which states" : "these rows, which state"} a number in that range: ${rows}.`;
 }
 
 /** The judgement's advice: what it said changed, or failing that what its reply said at all. */

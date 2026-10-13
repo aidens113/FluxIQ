@@ -6,12 +6,14 @@
 // a no names (`checked-rows.ts`), and the rows its lines name, per read and
 // condition (`checked-rows-named.ts`, read back from a judgement value by
 // `named-of.ts`); what a rerun of a read did to those rows (`rerun-rows.ts`);
-// and how they are read: words
+// the left-out rows stating a number their text condition kept on another row
+// (`left-out-stating-a-kept-number.ts`, t478); and how they are read: words
 // (`words.ts`), request phrases (`request-phrases.ts`), a summary's reads
 // (`summary-reads.ts`) and how a row is named (`row-naming.ts`).
 export * from "./checked-rows.ts";
 export * from "./checked-rows-named.ts";
 export * from "./left-out-naming-the-item.ts";
+export * from "./left-out-stating-a-kept-number.ts";
 export * from "./named-of.ts";
 export * from "./request-phrases.ts";
 export * from "./rerun-rows.ts";
