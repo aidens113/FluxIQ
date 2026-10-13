@@ -10,7 +10,7 @@ import { createAutomationStudioDeepSeekProvider } from "../deepseek/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema, runAutomationStudioLlmEvidenceLoop } from "../evidence-loop.ts";
 import { runAutomationStudioLlmHarness, type AutomationStudioLlmTaskRequest } from "../harness.ts";
 import { AutomationStudioLlmProviderError } from "../provider-contract.ts";
-import { automationStudioLlmEvidenceContextWindow, type AutomationStudioLlmEvidenceEntry } from "../context-window.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_CURRENT_FLOW_TOOL_ID, automationStudioLlmEvidenceContextWindow, type AutomationStudioLlmEvidenceEntry } from "../context-window.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID } from "../evidence-recall/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID, AutomationStudioLlmDecisionContextRecorder, automationStudioLlmDecisionContextEntry, automationStudioLlmDecisionContextShown } from "../decision-context/index.ts";
 
@@ -382,59 +382,59 @@ describe("what a growing window rewrites between one decision and the next", () 
   }
 });
 
-// One current Flow script in what a decision is shown (t498), marked append-only
-// (t501, W5): an entry once shown is never rewritten, because the provider
-// caches a request by its byte prefix, and rewriting an early submission at
-// each newly accepted revision re-billed everything after it (live runs
-// `run-mv6i27oi-a87fb247` W5, `run-mv6i2akr-516b2f03` D3). The newest accepted
-// submission names, under `supersedes`, every earlier submission whose script
-// it supersedes, and nothing earlier changes.
+// One current Flow in what a decision is shown (t498), named once, at the end
+// (t501, t503). An entry once shown is never rewritten, because the provider
+// caches a request by its byte prefix (live runs `run-mv6i27oi-a87fb247` W5,
+// `run-mv6i2akr-516b2f03` D3). Each submission is labelled by what it was when
+// it was written, never as current; one Core entry after every result,
+// `core.current_flow`, names the newest accepted revision (lane C round 17,
+// `run-mv6lgqi6-4bfab2e1`: four scripts each calling itself current).
 const accepted = (callId: string, revision: number, body: JsonObject = { script: `flow: revision ${revision}` }): AutomationStudioLlmEvidenceEntry =>
-  ({ callId, toolId: "core.submit_candidate", value: { ok: true, status: "draft", revision, digest: `${revision}`.repeat(64), ...body, scriptIs: `Revision ${revision} is your current Flow.`, next: "Test next." } });
-const refused = (callId: string, revision: number, current?: number): AutomationStudioLlmEvidenceEntry =>
+  ({ callId, toolId: "core.submit_candidate", value: { ok: true, status: "draft", revision, digest: `${revision}`.repeat(64), ...body, scriptIs: `Revision ${revision}, as Core accepted it.`, next: "Test next." } });
+const refused = (callId: string, revision: number, latest?: number): AutomationStudioLlmEvidenceEntry =>
   ({ callId, toolId: "core.submit_candidate", value: { ok: false, revision, diagnostics: { code: "flow_bootstrap.completion_refused", issues: [], previous: `flow: refused ${revision}`, instruction: "Correct it." }, issueCodes: ["x.y"], next: "Correct it.",
-    ...(current === undefined ? {} : { current: { revision: current, digest: "d", call: `submit.${current}` }, scriptIs: "This submission was refused." }) } });
+    ...(latest === undefined ? {} : { latestAcceptedWhenSent: { revision: latest, digest: "d", call: `submit.${latest}` }, scriptIs: "This submission was refused." }) } });
 const look = (callId: string): AutomationStudioLlmEvidenceEntry => ({ callId, toolId: "demo.look", value: { script: "a page's own key", ok: true } });
+const currentOf = (window: readonly AutomationStudioLlmEvidenceEntry[]) => window.filter((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_CURRENT_FLOW_TOOL_ID);
 
 describe("a candidate's scripts in the window", () => {
-  it("never rewrites an earlier entry when a new revision is accepted: the request before the new entry is byte for byte the same", () => {
+  it("never rewrites an earlier entry when a new revision is accepted: every result before the new entry is byte for byte the same", () => {
     const before = [accepted("submit.1", 1), look("look.2"), refused("submit.3", 3, 1), look("look.4")];
     const after = [...before, accepted("submit.5", 5)];
     const shownBefore = automationStudioLlmEvidenceContextWindow(structuredClone(before));
     const shownAfter = automationStudioLlmEvidenceContextWindow(structuredClone(after));
-    expect(JSON.stringify(shownAfter.slice(0, before.length))).toBe(JSON.stringify(shownBefore));
+    expect(JSON.stringify(shownAfter.slice(0, before.length))).toBe(JSON.stringify(shownBefore.slice(0, before.length)));
     // And once more, after a later look and another accepted revision.
     const later = [...after, look("look.6"), accepted("submit.7", 7)];
-    expect(JSON.stringify(automationStudioLlmEvidenceContextWindow(structuredClone(later)).slice(0, after.length))).toBe(JSON.stringify(shownAfter));
+    expect(JSON.stringify(automationStudioLlmEvidenceContextWindow(structuredClone(later)).slice(0, after.length))).toBe(JSON.stringify(shownAfter.slice(0, after.length)));
   });
 
-  it("marks on the newest accepted submission every earlier submission whose script it supersedes, and leaves the earlier ones whole", () => {
+  it("appends one entry, last, naming the newest accepted submission as the current Flow, and changes no submission", () => {
     const records = [accepted("submit.1", 1), refused("submit.2", 2, 1), accepted("submit.3", 3), refused("submit.4", 4, 3), look("look.5")];
     const before = structuredClone(records);
     const window = automationStudioLlmEvidenceContextWindow(records);
-    expect(window[0]!.value).toEqual(records[0]!.value);
-    expect(window[1]!.value).toEqual(records[1]!.value);
-    const current = window[2]!.value as JsonObject;
-    expect(Object.keys(current).at(-1)).toBe("supersedes");
-    expect(current).toMatchObject({ script: "flow: revision 3", supersedes: { calls: ["submit.1", "submit.2"] } });
-    expect(String((current.supersedes as JsonObject).note)).toContain("no script or plan in them is your current Flow");
-    // A refusal after the newest accepted revision is labelled by its own result, and another tool's result is never read as a submission.
-    expect(window[3]!.value).toEqual(records[3]!.value);
-    expect(window[4]!.value).toEqual(records[4]!.value);
-    // The loop's own records are never changed.
+    expect(window.slice(0, records.length)).toEqual(before);
+    expect(currentOf(window)).toHaveLength(1);
+    expect(window.at(-1)).toMatchObject({ callId: "core.current_flow", toolId: "core.current_flow", value: { revision: 3, digest: "3".repeat(64), call: "submit.3" } });
+    const instruction = String((window.at(-1)!.value as JsonObject).instruction);
+    expect(instruction).toContain(`Revision 3 (digest ${"3".repeat(64)}) is your current Flow: its whole script is under script in the core.submit_candidate result of call submit.3.`);
+    expect(instruction).toMatch(/never start from one of them/u);
+    // Only that entry calls anything current, and the loop's own records are never changed.
+    expect(window.filter((entry) => JSON.stringify(entry.value).includes("current Flow")).map((entry) => entry.callId)).toEqual(["core.current_flow"]);
     expect(records).toEqual(before);
   });
 
-  it("names, on each accepted submission, only the submissions before it, so a mark once written never changes", () => {
-    const window = automationStudioLlmEvidenceContextWindow([accepted("submit.1", 1, { plan: { schemaVersion: "0.1" } }), accepted("submit.2", 2), accepted("submit.3", 3)]);
-    expect(window[0]!.value).not.toHaveProperty("supersedes");
-    expect(window[0]!.value).toMatchObject({ plan: { schemaVersion: "0.1" } });
-    expect(window[1]!.value).toMatchObject({ supersedes: { calls: ["submit.1"] } });
-    expect(window[2]!.value).toMatchObject({ script: "flow: revision 3", supersedes: { calls: ["submit.1", "submit.2"] } });
-    expect(JSON.stringify(window)).not.toContain("supersededBy");
+  it("names a plan as the current Flow's whole plan, and reads only accepted submissions carrying a script or plan", () => {
+    const planned = automationStudioLlmEvidenceContextWindow([accepted("submit.1", 1), accepted("submit.2", 2, { plan: { schemaVersion: "0.1" } }), look("look.3")]);
+    expect(planned.at(-1)!.value).toMatchObject({ revision: 2, call: "submit.2" });
+    expect(String((planned.at(-1)!.value as JsonObject).instruction)).toContain("its whole plan is under plan");
+    const bare = automationStudioLlmEvidenceContextWindow([accepted("submit.1", 1), accepted("submit.2", 2, { script: undefined as unknown as string })]);
+    expect(bare.at(-1)!.value).toMatchObject({ revision: 1, call: "submit.1" });
+    expect(JSON.stringify(planned)).not.toContain("supersededBy");
+    expect(JSON.stringify(planned)).not.toContain("supersedes");
   });
 
-  it("changes nothing where no submission was accepted", () => {
+  it("adds nothing where no submission was accepted", () => {
     const records = [refused("submit.1", 1), refused("submit.2", 2)];
     expect(automationStudioLlmEvidenceContextWindow(records)).toEqual(records);
   });

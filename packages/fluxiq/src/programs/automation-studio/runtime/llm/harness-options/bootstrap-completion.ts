@@ -238,10 +238,13 @@ const FEEDBACK_INSTRUCTION = "The completed plan was refused and nothing was cre
   //
   // The refusal stays in evidence for every later decision, so the sentence
   // says only what stays true of it: once a later submission is accepted, the
-  // refused script is not the Flow to edit (header, t498).
+  // refused script is not the Flow to edit (header, t498). It names no revision
+  // as current: Core's `core.current_flow` entry alone does (t503,
+  // `../context-window.ts`; lane C round 17 was shown several scripts each
+  // claiming to be current).
   + "Where previous is given, it is the script this call sent, and it was refused: it is no revision, and nothing of it was kept. "
   + "If no submission has been accepted since this one, send it again with only the listed issues corrected: keep every other line exactly as it is, rather than writing the result again from memory. "
-  + "Once a later submission is accepted, that revision is your current Flow: edit its script, never this refused one.";
+  + "Once a later submission is accepted, edit the script of the revision core.current_flow names, never this refused one.";
 
 /** Said first whenever more than one check refused, so the model fixes them together. */
 const SEVERAL_INSTRUCTION = "Every check was run and refusals lists each one that failed: correct all of them before completing again, not only the first.";

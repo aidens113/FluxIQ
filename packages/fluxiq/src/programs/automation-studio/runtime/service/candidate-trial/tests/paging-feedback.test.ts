@@ -41,6 +41,19 @@ describe("the reads of a trial's feedback", () => {
     expect(String(feedback.readings)).toContain("each read's paging is Core's own record of how its paging ended");
   });
 
+  // t503 (`run-mv6lgqi6-4bfab2e1`, trial 3): an unsure about pages beside a yes, contradicted by the record.
+  it("carry a judge call's doubt Core's paging record contradicts, and say to test the same revision again where the yes's evidence holds", () => {
+    const doubtContradicted = "Judge call 1 could not tell, saying the list has pages its read never reached; Core's record says otherwise: Read read read every page (5) and the list ended.";
+    const { verdict, feedback } = automationStudioCandidateTrialFeedback.judged({
+      verdict: { verdict: "unknown", why: "The two checks disagreed.", answeredReading: yes, oneCallSaidYes: true, doubtContradicted, spent },
+      summary: summary([looped]), trialRunId: "trial.3", start: "reset"
+    });
+    expect(verdict).toBe("unsure");
+    expect(feedback).toMatchObject({ code: "candidate.trial_unconfirmed", doubtContradicted });
+    expect(String(feedback.readings)).toContain("doubtContradicted is Core's record against the other call's doubt about pages");
+    expect(String(feedback.readings)).toMatch(/test this same revision again/u);
+  });
+
   it("say a read its page bound stopped was stopped by the bound, not the list", () => {
     const { feedback } = automationStudioCandidateTrialFeedback.judged({ verdict: { verdict: "yes", spent }, summary: summary([bounded]), trialRunId: "trial.2", start: "reset" });
     const [read] = feedback.reads as JsonObject[];

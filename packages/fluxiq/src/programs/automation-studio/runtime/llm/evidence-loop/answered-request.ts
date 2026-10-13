@@ -19,10 +19,11 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID = "core.reques
 const ANSWERED_REQUEST = {
   "llm_evidence_loop.already_answered": "This exact request was already answered, so it was not run again. Its result is the evidence entry named by answeredByCallId: use it, choose a different tool or input, or complete.",
   "llm_evidence_loop.already_observed": "This observation was already made, so it was not run again. Its latest result is the evidence entry named by answeredByCallId: use it, change something first, or complete.",
-  // The wrap-up (`../loop-budget.ts`) offers only finishing tools -- none in
-  // the legacy build, submitting and testing the candidate in candidate mode --
-  // and a call it was not offered used to run anyway: the check was against
-  // the tools the loop could run, not the ones it had offered.
+  // The wrap-up (`../loop-budget.ts`) runs only finishing tools -- none in
+  // the legacy build, which then lists none; submitting and testing the
+  // candidate in candidate mode, which keeps every tool listed (t503, said in
+  // `instruction` below) -- and a call it withheld used to run anyway: the
+  // check was against the tools the loop could run, not the ones it allowed.
   // answeredByCallId is the tool's latest call where there is one, and empty
   // where there is none.
   "llm_evidence_loop.not_offered": "The build is in its last decisions, so only the tools offered now can run and this call was not run. Finish with those: submit and test your Flow if they are offered, then complete; otherwise complete from your draft, or amend it and complete.",
@@ -101,8 +102,9 @@ function instruction(input: { code: AutomationStudioLlmEvidenceAnsweredRequestCo
       ? `The latest accepted candidate has receipt ${JSON.stringify(input.candidate)}. Use core.test_candidate with that exact revision and digest if its trial has not answered yes. Complete only after yes for that exact receipt; a changed submission needs its own trial.`
       : "No accepted candidate receipt is available. Use the existing evidence and correct any submission issues, then submit the whole candidate and test its returned revision and digest. Do not complete an untested candidate.";
     const repeat = input.timesAsked === undefined ? "" : ` This request has been asked ${input.timesAsked} times; repeating it makes no progress.`;
+    // A candidate's wrap-up keeps every tool listed and runs only its finishing ones (`../loop-budget.ts`, t503).
     const happened = input.code === "llm_evidence_loop.not_offered"
-      ? "This call was not offered, so it was not run; use only the tools currently offered."
+      ? "The build is in its last decisions: only core.submit_candidate, core.test_candidate and completing run now. This tool is still listed, but this call was not run."
       : input.code === "llm_evidence_loop.looked_again_unchanged"
         ? "Core looked again and the page was unchanged; the fresh answer is named by answeredByCallId."
         : "This request was already answered and was not run again; its existing answer is named by answeredByCallId.";

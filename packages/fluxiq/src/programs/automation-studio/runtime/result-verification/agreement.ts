@@ -6,9 +6,21 @@
 // and on a split the reading of the call that said yes beside it (t477). Where
 // both said no for different reasons, both readings are carried, and one Core's
 // own record of the reads contradicts is marked so (t501).
+//
+// **An unsure beside a yes is weighed the same way, and asked once more
+// (t503).** Lane C round 17 (`run-mv6lgqi6-4bfab2e1`, trial 3): one call
+// answered unknown because later pages were never read, where every paging
+// read's own account said its list ended; the other said yes. The trial was
+// left unconfirmed and the correct revision retested until the build ran out
+// of time. An unsure call now keeps what it doubted (`unsureReading`,
+// `./verdict.ts`); on such a split, a doubt the record contradicts is marked
+// (`contradictedUnsure`), and `automationStudioResultVerificationReaskContradicted`
+// asks that call once more with the record named. The rule above stands: what
+// the re-asked call answers takes its place, so a yes there beside the other
+// yes is two yeses, and anything else leaves the verdict unsure.
 
 import type { AutomationStudioResultReadAccount, AutomationStudioResultVerdict, AutomationStudioResultVerification } from "./contracts.ts";
-import { automationStudioResultReadStop } from "./read-account/index.ts";
+import { automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./read-account/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "./repair-directive.ts";
 import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS as UNSETTLED } from "./unsettled/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "./verdict.ts";
@@ -66,7 +78,7 @@ export function automationStudioResultVerificationAgreement(input: AutomationStu
     }
     if (second.verdict === "answers") return { ...first, verdicts, calls: 2 };
     if (second.verdict !== "does_not_answer") {
-      return unsettled(first, second, "model_unconfirmed", codes.unconfirmed, `This result was checked twice with the same evidence: the first answer was that it does what was asked, and the confirming check gave ${said(second)} (${second.code}). ${UNSETTLED.model_unconfirmed.run}`, verdicts);
+      return { ...unsettled(first, second, "model_unconfirmed", codes.unconfirmed, `This result was checked twice with the same evidence: the first answer was that it does what was asked, and the confirming check gave ${said(second)} (${second.code}). ${UNSETTLED.model_unconfirmed.run}`, verdicts), ...contradictedUnsure(2, second, input.reads) };
     }
     return unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was that it does what was asked, the second that it does not. ${UNSETTLED.model_disagreed.run}`, verdicts);
   }
@@ -88,9 +100,52 @@ export function automationStudioResultVerificationAgreement(input: AutomationStu
     };
   }
   if (second.verdict === "answers") {
-    return unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was ${said(first)}, the second that it does. ${UNSETTLED.model_disagreed.run}`, verdicts);
+    return { ...unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was ${said(first)}, the second that it does. ${UNSETTLED.model_disagreed.run}`, verdicts), ...contradictedUnsure(1, first, input.reads) };
   }
   return unsettled(first, second, "model_unconfirmed", codes.unconfirmed, `This result was checked twice with the same evidence, and neither answer was that it does what was asked, nor were both that it does not: the first was ${said(first)}, the second ${said(second)} (${second.code}). ${UNSETTLED.model_unconfirmed.run}`, verdicts);
+}
+
+/**
+ * The one re-ask of an unsure call whose doubt Core's record contradicts
+ * (header, t503). `settled` is what the two calls came to; when it marks a
+ * contradicted unsure not yet asked again, `ask` asks that same call once more,
+ * with `recheck` -- Core's words naming the record -- on the copy it is shown,
+ * and its answer takes that call's place under the same rule. A re-ask that
+ * did not come back usable leaves `settled` as it was. Never asked twice: the
+ * outcome is marked `reasked`, and a marked one is returned unchanged.
+ */
+export async function automationStudioResultVerificationReaskContradicted(input: AutomationStudioResultVerificationAgreementInput & {
+  settled: AutomationStudioResultVerification;
+  ask: (recheck: string) => Promise<AutomationStudioResultVerification>;
+}): Promise<AutomationStudioResultVerification> {
+  const { settled, second } = input;
+  const marked = settled.contradictedUnsure;
+  if (!marked || marked.reasked || !second) return settled;
+  const reasked = await input.ask(recheckWords(marked.record));
+  const verdicts: AutomationStudioResultVerdict[] = [...(settled.verdicts ?? []), reasked.verdict];
+  const done = { call: marked.call, record: marked.record, reasked: true as const };
+  if (reasked.basis !== "model") return { ...settled, verdicts, calls: 3, contradictedUnsure: done };
+  const again = automationStudioResultVerificationAgreement({ ...input, first: marked.call === 1 ? reasked : input.first, second: marked.call === 2 ? reasked : second });
+  return { ...again, verdicts, calls: 3, contradictedUnsure: done };
+}
+
+/** What a call asked again is told (header, t503): Core's words, naming no site or task. */
+function recheckWords(record: string): string {
+  return "This same evidence was judged before, and that answer could not tell because it took the list to have pages its read never reached. "
+    + `Core's own record of each paging read says otherwise: ${record} `
+    + "Answer again from the evidence, holding any reading about pages to that record; answer unknown only for a doubt the record does not settle.";
+}
+
+/**
+ * `{ contradictedUnsure }` when `verification` is an unsure a model gave whose
+ * doubt speaks of pages left unread where every paging read's record says its
+ * list ended (`contradictsPagingRecord`), naming the record; nothing otherwise.
+ */
+function contradictedUnsure(call: 1 | 2, verification: AutomationStudioResultVerification, reads: readonly AutomationStudioResultReadAccount[] | undefined): { contradictedUnsure?: NonNullable<AutomationStudioResultVerification["contradictedUnsure"]> } {
+  const doubt = verification.verdict === "unsure" && verification.basis === "model" ? verification.unsureReading : undefined;
+  if (!doubt || !contradictsPagingRecord(doubt, reads)) return {};
+  const record = pagingReads(reads).map((read) => `Read ${read.nodeId} read ${automationStudioResultReadPagesClause(read)}.`).join(" ");
+  return { contradictedUnsure: { call, record } };
 }
 
 /** An answer in Core's own words, as it finishes "the first was ...". */
@@ -253,9 +308,14 @@ const MORE_PAGES = /(?<!\bno\s)(?<!\bno\s\w+\s)\b(?:more|further|remaining|addit
  * record leaves open, nothing is contradicted.
  */
 function contradictsPagingRecord(reading: JudgeReading, reads: readonly AutomationStudioResultReadAccount[] | undefined): boolean {
-  const paging = (reads ?? []).filter((read) => read.paginates === true || read.pagesRead > 1 || (read.keptPerPage?.length ?? 0) > 1);
+  const paging = pagingReads(reads);
   if (!paging.length) return false;
   const listEnded = paging.every((read) => read.stop !== undefined && !read.truncated && automationStudioResultReadStop(read) === "list_ended");
   if (!listEnded) return false;
   return [reading.expected, reading.observed, reading.advice].some((text) => typeof text === "string" && MORE_PAGES.test(text));
+}
+
+/** The reads that follow pages: authored to, or read more than one page or loop pass. */
+function pagingReads(reads: readonly AutomationStudioResultReadAccount[] | undefined): AutomationStudioResultReadAccount[] {
+  return (reads ?? []).filter((read) => read.paginates === true || read.pagesRead > 1 || (read.keptPerPage?.length ?? 0) > 1);
 }

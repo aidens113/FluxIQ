@@ -147,6 +147,12 @@ const UNREAD_SPLIT_NOTE = "The two judge calls disagreed and neither was confirm
   + `Weigh answeredReading by the evidence it names against this trial's own reads, steps and stored rows: ${WEIGH_NOTE}`
   + "Where that evidence supports it, test this same revision again; change the Flow only for a defect that evidence shows.";
 
+/** Added to a split's note when one call's doubt about pages contradicts Core's record (t503, `run-mv6lgqi6-4bfab2e1`). */
+const DOUBT_NOTE = " doubtContradicted is Core's record against the other call's doubt about pages: that doubt is no evidence against the Flow, so where answeredReading's evidence holds, test this same revision again rather than change the Flow's paging.";
+
+/** Said instead when the yes's reading is not carried (a yes whose confirmation could not tell). */
+const DOUBT_ALONE_NOTE = "One judge call said yes and the other could not tell. doubtContradicted is Core's record against the other call's doubt about pages: that doubt is no evidence against the Flow, so test this same revision again rather than change the Flow's paging.";
+
 /** Said once when a read carries its paging account (header, t498). */
 const PAGING_NOTE = "Each read's pagesRead, stop and paging are Core's own record of how that read's paging ended, the same words the judges were shown: a judge's reading that says otherwise about pages is mistaken, so weigh it by that record, never change the Flow's paging on the reading alone.";
 
@@ -189,8 +195,11 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
     }
     if (judged.verdict === "unknown") {
       const split = judged.answeredReading !== undefined;
+      // A doubt about pages Core's record contradicts, in Core's words, and how to weigh it (t503).
+      const doubt = judged.doubtContradicted;
       return { verdict: "unsure", code: "candidate.trial_unconfirmed", feedback: { ...common, code: "candidate.trial_unconfirmed", why: judged.why, ...(judged.unconfirmedReading ? { unconfirmedReading: compact({ ...judged.unconfirmedReading }) } : {}),
-        ...(split ? { answeredReading: compact({ ...judged.answeredReading }), readings: (judged.unconfirmedReading ? SPLIT_NOTE : UNREAD_SPLIT_NOTE) + (paged ? PAGING_SPLIT_NOTE : "") } : {}) } };
+        ...(doubt ? { doubtContradicted: doubt } : {}),
+        ...(split ? { answeredReading: compact({ ...judged.answeredReading }), readings: (judged.unconfirmedReading ? SPLIT_NOTE : UNREAD_SPLIT_NOTE) + (paged ? PAGING_SPLIT_NOTE : "") + (doubt ? DOUBT_NOTE : "") } : doubt ? { readings: DOUBT_ALONE_NOTE } : {}) } };
     }
     return { verdict: "not_judged", code: "candidate.trial_not_judged", feedback: { ...common, code: "candidate.trial_not_judged", why: judged.why } };
   }

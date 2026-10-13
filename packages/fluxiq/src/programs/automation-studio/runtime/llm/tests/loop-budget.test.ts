@@ -306,10 +306,12 @@ describe("a candidate's wrap-up (t383)", () => {
   const offeredIds = (decisionsLeft: number, candidate: boolean) =>
     automationStudioLlmEvidenceLoopWrapUp({ remaining: left(decisionsLeft), canComplete: true, candidate, tools: candidateTools }).offered.map((tool) => tool.toolId);
 
-  it("starts at five decisions left and keeps submission and trial through the last counted decision", () => {
+  // t503 (W6, `run-mv6lgqi6-4bfab2e1` 0051): the wrap-up keeps every tool listed, so the request's head is unchanged,
+  // and withholds the exploring ones where a call is dispatched.
+  it("starts at five decisions left, keeps every tool listed, and runs only submission and trial through the last counted decision", () => {
     expect(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS).toBe(5);
     expect(offeredIds(6, true)).toEqual(["inspect", "core.submit_candidate", "core.test_candidate"]);
-    for (const decisionsLeft of [5, 4, 3, 2, 1]) expect(offeredIds(decisionsLeft, true)).toEqual(["core.submit_candidate", "core.test_candidate"]);
+    for (const decisionsLeft of [5, 4, 3, 2, 1]) expect(offeredIds(decisionsLeft, true)).toEqual(["inspect", "core.submit_candidate", "core.test_candidate"]);
     const wrapUp = automationStudioLlmEvidenceLoopWrapUp({ remaining: left(3), canComplete: true, candidate: true, tools: candidateTools });
     expect(wrapUp).toMatchObject({ wrappingUp: true });
     expect([wrapUp.withholds("inspect"), wrapUp.withholds("core.submit_candidate"), wrapUp.withholds("core.test_candidate")]).toEqual([true, false, false]);
@@ -327,6 +329,7 @@ describe("a candidate's wrap-up (t383)", () => {
     const instruction = (decisionsLeft: number, candidate: boolean) => String(automationStudioLlmEvidenceBudgetEntry(2, left(decisionsLeft), undefined, candidate).value.instruction);
     expect(instruction(8, true)).toMatch(/submit the whole candidate, test that revision, and complete once its trial answers yes\. From 5 decisions left/u);
     expect(instruction(4, true)).toMatch(/submit the whole candidate now with core\.submit_candidate; test that exact revision with core\.test_candidate/u);
+    expect(instruction(4, true)).toMatch(/every other tool is still listed, but a call to one is answered without running/u);
     expect(instruction(1, true)).toMatch(/submitting, testing and completing are still offered/u);
     expect(instruction(1, true)).toMatch(/only after that exact revision's trial answers yes/u);
     expect(instruction(4, false)).toMatch(/^What this exploration has left/u);
@@ -351,7 +354,10 @@ describe("a candidate's wrap-up (t383)", () => {
     expect(result).toMatchObject({ ok: true, result: { revision: 1, digest: "d" } });
     const offered = (call: number) => (decide.mock.calls[call]![0].tools as Array<{ toolId: string }>).map((tool) => tool.toolId);
     expect(offered(0)).toEqual(["inspect", "core.submit_candidate", "core.test_candidate"]);
-    expect(offered(1)).toEqual(["core.submit_candidate", "core.test_candidate"]);
+    // The same tools and the same decision schema on either side of the wrap-up (t503, W6).
+    expect(offered(1)).toEqual(offered(0));
+    expect(JSON.stringify(decide.mock.calls[1]![0].tools)).toBe(JSON.stringify(decide.mock.calls[0]![0].tools));
+    expect(JSON.stringify(decide.mock.calls[2]![0].decisionSchema)).toBe(JSON.stringify(decide.mock.calls[1]![0].decisionSchema));
     expect(budgetOf(decide.mock.calls[1]![0].evidence as Shown[])).toMatchObject({ decisionsLeft: 5, instruction: expect.stringContaining("core.submit_candidate") });
     expect(executeTool.mock.calls.map(([call]) => call.toolId)).toEqual(["inspect", "core.submit_candidate"]);
     expect(result.trace.find((row) => row.iteration === 3)).toMatchObject({ decision: "tool_call", resultCode: "llm_evidence_loop.not_offered" });

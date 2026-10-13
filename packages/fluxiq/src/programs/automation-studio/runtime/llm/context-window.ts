@@ -50,23 +50,30 @@
 // A Core note superseded by a newer one of the same kind still leaves the
 // evidence (`./decision-context/supersede.ts`); a tool's result never does.
 //
-// **One current Flow script (t498), marked append-only (t501).** An accepted
-// candidate submission carries the whole script it accepted, labelled the
-// current Flow, and a refused one may carry the script it sent
+// **One current Flow script, named once, at the end (t498, t501, t503).** An
+// accepted candidate submission carries the whole script it accepted, and a
+// refused one may carry the script it sent
 // (`flow-bootstrap/candidate/authoring-loop.ts`). Live run
 // `run-mv6ff44s-01def7f6` had only a refused script in context and sent it back
 // after a later revision was accepted, so the model must read exactly one
-// script as current. t498 did that by rewriting every older submission in
-// place, which broke the provider's prefix cache at each newly accepted
-// revision: everything after the first rewritten entry was billed again (live
-// runs `run-mv6i27oi-a87fb247` W5 and `run-mv6i2akr-516b2f03` D3, about $0.008
-// a build). So no earlier entry is touched. The newest accepted submission --
-// itself new to the request that first shows it -- carries `supersedes` as its
-// last key: the callIds of every earlier submission whose script, plan or label
-// it supersedes, and a note saying none of those is the current Flow whatever
-// its own label says. Each mark names only submissions before it, so once
-// written it never changes, and every request stays a byte prefix of the next
-// (`candidateScripts`, below).
+// script as current. t498 rewrote every older submission in place, which broke
+// the provider's prefix cache at each newly accepted revision (live runs
+// `run-mv6i27oi-a87fb247` W5 and `run-mv6i2akr-516b2f03` D3, about $0.008 a
+// build). t501 left every entry as written and marked the newest accepted one
+// as superseding the rest; but each entry had been written calling itself
+// "your current Flow", and lane C round 17 (`run-mv6lgqi6-4bfab2e1`, 0051) was
+// shown five scripts, four of them saying so, and a refusal saying "Submit
+// again from revision 4's script". It sent revision 4's script three times.
+//
+// So no entry says what is current. Each submission is labelled when it is
+// written by what it was then -- "Revision N, as Core accepted it", or refused
+// and no revision, naming the revision that was latest when it was sent --
+// which stays true for good, so no entry is ever rewritten. The one claim of
+// which revision is current is a single Core entry, `core.current_flow`, placed
+// last in the window (`currentFlow`, below): it names the newest accepted
+// revision, its digest and the call whose result holds its whole script. Like
+// the history and the budget after it, it is written anew for every request,
+// at the end, so every request's tool results stay a byte prefix of the next.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { automationStudioLlmEvidenceViewGroups, type AutomationStudioLlmEvidenceViewGroup } from "./decision-context/index.ts";
@@ -90,7 +97,9 @@ type ToolViewGroup = AutomationStudioLlmEvidenceViewGroup & { toolId?: string };
  * The evidence one decision is shown: every entry the loop holds, in the order
  * the loop holds them, each whole -- except that in every entry but the newest
  * carrying a view of a kind, that view's keys are replaced by `supersededBy`,
- * naming the next entry that carried a view of the same kind.
+ * naming the next entry that carried a view of the same kind. Once a candidate
+ * submission was accepted, one more entry follows them all:
+ * `core.current_flow`, naming the current revision (header, t503).
  *
  * `observedStateKeys` are the keys of a value that make up a view, as the
  * domain declared them. A plain key is a top-level key of the value, and an
@@ -105,7 +114,13 @@ export function automationStudioLlmEvidenceContextWindow(
   records: readonly AutomationStudioLlmEvidenceEntry[],
   observedStateKeys: readonly string[] = []
 ): AutomationStudioLlmEvidenceEntry[] {
-  const window = candidateScripts(records.map(({ callId, toolId, value }) => ({ callId, toolId, value })));
+  const window = withViewsReplaced(records.map(({ callId, toolId, value }) => ({ callId, toolId, value })), observedStateKeys);
+  const current = currentFlow(window);
+  return current ? [...window, current] : window;
+}
+
+/** The window with every view but the newest of its kind replaced by a reference (above). */
+function withViewsReplaced(window: AutomationStudioLlmEvidenceEntry[], observedStateKeys: readonly string[]): AutomationStudioLlmEvidenceEntry[] {
   const declared = automationStudioLlmEvidenceViewGroups(observedStateKeys);
   if (!declared.length) return window;
   // Held views first, so the result's own view, replaced last, puts its
@@ -133,41 +148,36 @@ export function automationStudioLlmEvidenceContextWindow(
 
 /** The tool whose results carry a candidate's Flow script (`flow-bootstrap/candidate/authoring-loop.ts`). */
 const SUBMIT_CANDIDATE_TOOL_ID = "core.submit_candidate";
-/** What a submission's result says of its script: the script or plan itself, its label, and the revision a refusal names as current. */
-const SCRIPT_KEYS: ReadonlySet<string> = new Set(["script", "plan", "scriptIs", "current"]);
-/** The key an accepted submission names the earlier submissions it supersedes under (header, t501). */
-const AUTOMATION_STUDIO_LLM_EVIDENCE_SUPERSEDES_KEY = "supersedes";
+
+/** The entry that alone names the current Flow (header, t503): Core's own, last in the window. */
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_CURRENT_FLOW_TOOL_ID = "core.current_flow";
 
 /**
- * The window with every accepted submission that has earlier submissions
- * carrying a script, plan or label marked as superseding them (header, t498,
- * t501): `supersedes`, last in its key order, holds their callIds in order and
- * a note. Only the accepted entry is changed, and only from what came before
- * it, so the mark is the same in every request that shows it.
+ * The one entry naming the current Flow (header, t503): the newest accepted
+ * submission that carries its whole script or plan, by revision, digest and
+ * call. Nothing when none was accepted.
  */
-function candidateScripts(window: AutomationStudioLlmEvidenceEntry[]): AutomationStudioLlmEvidenceEntry[] {
-  const earlier: string[] = [];
-  for (const entry of window) {
-    if (entry.toolId !== SUBMIT_CANDIDATE_TOOL_ID || !isJsonObject(entry.value)) continue;
-    const value = entry.value;
-    const accepted = value.ok === true && (value.script !== undefined || value.plan !== undefined);
-    if (accepted && earlier.length) entry.value = { ...value, [AUTOMATION_STUDIO_LLM_EVIDENCE_SUPERSEDES_KEY]: { calls: [...earlier], note: supersedesNote(earlier) } };
-    if (carriesScript(value)) earlier.push(entry.callId);
+function currentFlow(window: readonly AutomationStudioLlmEvidenceEntry[]): AutomationStudioLlmEvidenceEntry | undefined {
+  for (let index = window.length - 1; index >= 0; index -= 1) {
+    const { callId, toolId, value } = window[index]!;
+    if (toolId !== SUBMIT_CANDIDATE_TOOL_ID || !isJsonObject(value) || value.ok !== true) continue;
+    if (typeof value.revision !== "number" || typeof value.digest !== "string") continue;
+    const whole = value.script !== undefined ? "script" : value.plan !== undefined ? "plan" : undefined;
+    if (whole === undefined) continue;
+    return {
+      callId: AUTOMATION_STUDIO_LLM_EVIDENCE_CURRENT_FLOW_TOOL_ID,
+      toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_CURRENT_FLOW_TOOL_ID,
+      value: { revision: value.revision, digest: value.digest, call: callId, instruction: currentFlowInstruction(value.revision, value.digest, callId, whole) }
+    };
   }
-  return window;
+  return undefined;
 }
 
-/** Whether a submission's result says anything of a script: one of `SCRIPT_KEYS`, or a refused script under `diagnostics.previous`. */
-function carriesScript(value: JsonObject): boolean {
-  if (Object.keys(value).some((key) => SCRIPT_KEYS.has(key))) return true;
-  const diagnostics = value.diagnostics;
-  return diagnostics !== undefined && isJsonObject(diagnostics) && diagnostics.previous !== undefined;
-}
-
-/** The note an accepted submission's `supersedes` carries: Core's words, naming the calls it supersedes. */
-function supersedesNote(calls: readonly string[]): string {
-  return `This accepted revision supersedes the core.submit_candidate results ${calls.join(", ")}: no script or plan in them is your current Flow any more, whatever their own scriptIs or current says, and none is to be edited or sent again. `
-    + "This result's script (or plan) is your current Flow until a newer accepted submission names this one under supersedes.";
+/** What the current-Flow entry says, in Core's words: the only place any script is called current. */
+function currentFlowInstruction(revision: number, digest: string, call: string, whole: "script" | "plan"): string {
+  return `Revision ${revision} (digest ${digest}) is your current Flow: its whole ${whole} is under ${whole} in the core.submit_candidate result of call ${call}. `
+    + `Make every change to the Flow by editing that ${whole} and submitting it whole; never write it again from memory. `
+    + "Every other script or plan in the evidence is an earlier revision or a refused submission, kept as a record of what was tried: never start from one of them, and make a refused submission's intended changes again on this one.";
 }
 
 /** The object a group's members sit in: the value itself, or the object it holds under `holder`. */

@@ -23,8 +23,8 @@ function automationStudioCandidateNothingSubmitted(submitId: string, testId: str
 }
 
 /**
- * The Flow an accepted submission is, as the model sent it, labelled the
- * current one with its revision and digest (t498).
+ * The Flow an accepted submission is, as the model sent it, labelled by its
+ * revision and digest (t498), in words that stay true for good (t503).
  *
  * Every decision is a fresh request, and an accepted submission used to come
  * back as a revision, a digest and changed paths only. Live run
@@ -33,39 +33,41 @@ function automationStudioCandidateNothingSubmitted(submitId: string, testId: str
  * word three times after a later revision was accepted, and the repeat guard
  * ended the build. The accepted result now carries the whole script (or the
  * JSON plan) it accepted. It is written once, at the end of the evidence, and
- * never changes after (t501): a newer accepted revision names it under its own
- * `supersedes` instead of rewriting it (`../../llm/context-window.ts`), so every
- * request stays a byte prefix of the next.
+ * never changes after (t501), so every request stays a byte prefix of the next.
+ * It therefore never calls itself the current Flow: once a newer revision is
+ * accepted that would be false, and lane C round 17 (`run-mv6lgqi6-4bfab2e1`)
+ * was shown four scripts each saying so. Which revision is current is said
+ * once, by Core's `core.current_flow` entry at the end of the window
+ * (`../../llm/context-window.ts`).
  */
 function acceptedScript(sent: JsonObject, candidate: Readonly<AutomationStudioFlowCandidate>): JsonObject {
-  const said = `Revision ${candidate.revision} (digest ${candidate.digest}) is your current Flow, the latest you submitted that Core accepted`;
-  if (typeof sent.flow === "string") {
-    return { script: sent.flow, scriptIs: `${said}, and script is its whole text. Make every change to the Flow by editing this script and submitting it whole; never write it again from memory, and never start from a refused script.` };
-  }
-  if (sent.plan !== undefined) {
-    return { plan: sent.plan, scriptIs: `${said}, and plan is its whole JSON plan. Make every change to the Flow by editing this plan and submitting it whole; never write it again from memory, and never start from a refused one.` };
-  }
+  const said = `Revision ${candidate.revision} (digest ${candidate.digest}), as Core accepted it`;
+  if (typeof sent.flow === "string") return { script: sent.flow, scriptIs: `${said}: script is its whole text.` };
+  if (sent.plan !== undefined) return { plan: sent.plan, scriptIs: `${said}: plan is its whole JSON plan.` };
   return {};
 }
 
 /**
  * What a refused submission is, once a revision was accepted before it (t498):
- * no revision, and not the Flow to edit. Its script (`diagnostics.previous`,
- * where the check gave one) stays readable, since its issues name its lines,
- * and is labelled superseded by the current revision, which `current` names
- * with the call whose result holds that revision's whole script. Once a newer
- * revision is accepted, that revision names this call under its `supersedes`,
- * and this result is left as it was sent (`../../llm/context-window.ts`, t501).
- * With nothing accepted before it, `previous`
- * is the only script there is and is corrected as it stands: nothing is added.
+ * no revision. Its script (`diagnostics.previous`, where the check gave one)
+ * stays readable, since its issues name its lines. The label says what was
+ * true when it was written and stays true (t503): the revision Core had
+ * accepted last at that moment, under `latestAcceptedWhenSent` with the call
+ * whose result holds its whole script. It neither calls that revision current
+ * nor says to submit again from it: lane C round 17 (`run-mv6lgqi6-4bfab2e1`)
+ * read "Submit again from revision 4's script" after revision 5 was accepted,
+ * and sent revision 4's script three times. Which revision is current is said
+ * once, at the end of the window (`../../llm/context-window.ts`). With nothing
+ * accepted before it, `previous` is the only script there is and is corrected
+ * as it stands: nothing is added.
  */
 function refusedLabel(last: { revision: number; digest: string } | undefined, acceptedIn: ReadonlyMap<number, string>): JsonObject {
   const call = last ? acceptedIn.get(last.revision) : undefined;
   if (!last || call === undefined) return {};
   return {
-    current: { revision: last.revision, digest: last.digest, call },
-    scriptIs: `This submission was refused and is no revision: the script it sent (previous, under diagnostics, where given) is superseded by revision ${last.revision}, your current Flow, whose whole script is under call ${call}. `
-      + `Submit again from revision ${last.revision}'s script, making again the changes this call meant and correcting the listed issues in them; read previous only to find the lines the issues name.`
+    latestAcceptedWhenSent: { revision: last.revision, digest: last.digest, call },
+    scriptIs: `This submission was refused and is no revision: nothing of it was kept. When it was sent, the latest revision Core had accepted was revision ${last.revision}, whose whole script is under call ${call}. `
+      + "Read previous (under diagnostics, where given) only to find the lines the listed issues name."
   };
 }
 
@@ -113,7 +115,7 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
   } : undefined;
   const gate = new AutomationStudioFlowCandidateTrialGate({ latest: () => controller.latest(), trial: input.trial, signal, ...(reset ? { reset } : {}) });
   const submitId = "core.submit_candidate", testId = AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID;
-  /** The call each accepted revision was submitted in, so a refusal can name where the current script is (t498). */
+  /** The call each accepted revision was submitted in, so a refusal can name where the latest accepted script is (t498). */
   const acceptedIn = new Map<number, string>();
   const tool: AutomationStudioLlmEvidenceTool = {
     toolId: submitId, effect: "observe",
@@ -161,7 +163,7 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
       // rather than made a new revision told to "test next" (t464, `./unchanged-submission.ts`).
       const submitted = await controller.submit(call.value, { trialOf: (candidate) => gate.standing(candidate), refuted: (digest) => gate.refuted(digest) });
       // A refused submission names its way out and counts in the loop's run of refusals of one kind (`./submission-refusal.ts`),
-      // and, once a revision was accepted, names that revision as the Flow to edit (header of `refusedLabel`, t498).
+      // and, once a revision was accepted, names the latest one as it stood when this was sent (header of `refusedLabel`, t498, t503).
       if (!submitted.ok) {
         const refusal = automationStudioCandidateSubmissionRefusal(submitted);
         return { kind: "llm_evidence_tool_execution", effectApplied: false, targetsUnchanged: true, ...refusal, evidence: { ...refusal.evidence, ...refusedLabel(controller.lastAccepted(), acceptedIn) } };
@@ -171,7 +173,7 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
       const evidence: JsonObject = { ok: true, status: "draft", revision: submitted.candidate.revision, digest: submitted.candidate.digest, changedPaths: submitted.candidate.changedPaths, verification: "not_performed", promotionAllowed: false,
         // Which view each target was resolved from, so a step aimed at a control of another page than the one it runs on can be seen (t358).
         ...(submitted.handleViews.length ? { handleViews: submitted.handleViews.map((view) => ({ node: view.node, handle: view.handle, view: view.view, location: view.location })) } : {}),
-        // The whole Flow this revision is, as it was sent, labelled the current one (t498).
+        // The whole Flow this revision is, as it was sent, labelled by its revision (t498, t503).
         ...acceptedScript(call.value, submitted.candidate),
         next: gate.available ? `Test next with ${testId} using exactly {"revision": ${submitted.candidate.revision}, "digest": "${submitted.candidate.digest}"}. Do not complete until that exact revision's trial answers yes. Submitting again makes a new revision that needs its own trial.` : "No trial runner is available here; completing leaves an unverified draft." };
       return { kind: "llm_evidence_tool_execution", evidence, effectApplied: false, targetsUnchanged: true };

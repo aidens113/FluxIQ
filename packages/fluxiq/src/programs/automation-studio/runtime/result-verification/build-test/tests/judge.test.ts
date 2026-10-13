@@ -125,6 +125,20 @@ describe("the verdict mapping", () => {
     expect(verdict.spent.calls).toBe(2);
   });
 
+  // t503 (`run-mv6lgqi6-4bfab2e1`, trial 3): an unsure whose doubt about pages Core's record contradicts, beside a yes, is named so.
+  it("an unsure beside a yes whose doubt about pages Core's record contradicts is unknown, saying so in Core's words", async () => {
+    const record = "Read n2 read every page (5) and the list ended.";
+    const split = { ...answered("unsure", "model_disagreed"), answeredReading: { observed: "13 rows." } };
+    const reasked = await judge(PICKUP_CART, { verify: async () => report({ ...split, contradictedUnsure: { call: 1, record, reasked: true } }, 3) })({ summary: run40Summary() });
+    expect(reasked).toMatchObject({ verdict: "unknown", oneCallSaidYes: true, spent: { calls: 3 } });
+    expect(reasked).toHaveProperty("doubtContradicted");
+    const said = String((reasked as { doubtContradicted?: string }).doubtContradicted);
+    expect(said).toContain(`Judge call 1 could not tell, saying the list has pages its read never reached; Core's record says otherwise: ${record}`);
+    expect(said).toContain("It was asked again with that record named and still could not tell.");
+    // Without the mark, nothing is said.
+    expect(await judge(PICKUP_CART, { verify: async () => report(split, 2) })({ summary: run40Summary() })).not.toHaveProperty("doubtContradicted");
+  });
+
   it("a no the second call did not repeat is unknown", async () => {
     const verdict = await judge(PICKUP_CART, { verify: async () => report(answered("does_not_answer", "model_disagreed"), 2) })({ summary: run40Summary() });
     expect(verdict).toMatchObject({ verdict: "unknown", why: "the reason (model_disagreed)" });

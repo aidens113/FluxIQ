@@ -1,5 +1,6 @@
 // The wrap-up offers no tools, and a tool call made anyway is answered, never
-// run.
+// run. A candidate's wrap-up keeps its tools listed and runs only its
+// finishing ones (t503).
 //
 // The check used to be against the tools the loop could run this iteration,
 // not the ones it had offered, so a model that ignored the wrap-up's schema
@@ -50,6 +51,33 @@ describe("a tool call in the wrap-up", () => {
 
     expect(result).toMatchObject({ ok: true });
     expect(executeTool).toHaveBeenCalledTimes(2);
+  });
+});
+
+// A candidate's wrap-up keeps every tool listed, so the request's head does not
+// change (t503, `../../loop-budget.ts`). A listed exploring tool is still not
+// run there, and the answer says so in those terms: never "use only the tools
+// offered", since the tool it refuses is one of them.
+describe("an exploring call in a candidate's wrap-up", () => {
+  it("is answered as still listed but not run, naming what runs now", async () => {
+    const candidateTools = [tools[0]!, ...["core.submit_candidate", "core.test_candidate"].map((toolId) => ({ toolId, description: "Finish the candidate.", inputSchema: { type: "object" } }))];
+    const executeTool = vi.fn(async ({ toolId }: { toolId: string }) => ({ ran: toolId }));
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "inspect", input: { page: 1 } })
+      // Five decisions left: the wrap-up. The exploring tool is listed and asked; it is not run.
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.2", toolId: "inspect", input: { page: 2 } })
+      .mockResolvedValueOnce({ kind: "complete", result: { revision: 1, digest: "d" } });
+    await runAutomationStudioLlmEvidenceLoop({
+      tools: candidateTools, decide, executeTool, draft: false, discoveryOnly: true, maxIterations: 6, maxToolCalls: 6,
+      completionSchema: { type: "object" }, budget: { maxTotalTokens: 10_000_000 }
+    });
+    expect((decide.mock.calls[1]![0].tools as Array<{ toolId: string }>).map((tool) => tool.toolId)).toContain("inspect");
+    expect(executeTool).toHaveBeenCalledTimes(1);
+    const answered = (decide.mock.calls[2]![0].evidence as Shown[]).find((entry) => entry.toolId === "core.request_check");
+    const said = String(answered?.value.instruction);
+    expect(answered?.value).toMatchObject({ code: "llm_evidence_loop.not_offered", toolId: "inspect" });
+    expect(said).toMatch(/^The build is in its last decisions: only core\.submit_candidate, core\.test_candidate and completing run now\. This tool is still listed, but this call was not run\./u);
+    expect(said).not.toMatch(/not offered|tools currently offered/u);
   });
 });
 

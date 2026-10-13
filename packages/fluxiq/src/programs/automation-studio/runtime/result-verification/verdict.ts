@@ -180,9 +180,10 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
     }));
   }
   const silent = input.basis === "model_silent" || input.diagnosis?.answersRequest === undefined;
-  return silent
-    ? failed(verdict, "model_silent", codes.silent, "The verification call answered without saying whether the result answers the request, so nothing confirmed it.", observation)
-    : failed(verdict, "model", codes.unsure, "The verification call could not tell whether the result answers the request, so nothing confirmed it.", observation);
+  if (silent) return failed(verdict, "model_silent", codes.silent, "The verification call answered without saying whether the result answers the request, so nothing confirmed it.", observation);
+  // What it doubted, screened as a no's reading is: an unsure beside a yes is weighed by it against Core's record (`./agreement.ts`, t503).
+  const doubt = automationStudioResultScreenedJudgement({ expected: input.diagnosis?.expected, observed: input.diagnosis?.observed, advice: advice(input) }).judgement;
+  return { ...failed(verdict, "model", codes.unsure, "The verification call could not tell whether the result answers the request, so nothing confirmed it.", observation), ...(doubt ? { unsureReading: doubt } : {}) };
 }
 
 /**

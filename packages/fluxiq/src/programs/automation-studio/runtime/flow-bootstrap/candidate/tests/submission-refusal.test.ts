@@ -258,6 +258,8 @@ describe("the advice a refused handle is given", () => {
   it("for a reason it has no advice for is the general advice, never another reason's", () => {
     const next = nextOf([{ code: "web.handle.unheard_of", path: "plan.subflows.0.nodes.2.parameters", handles: [{ handle: "t12" }] }]);
     expect(next).toMatch(/^Correct every listed issue in your current Flow's script/u);
+    // Which revision is current, Core's core.current_flow entry alone says (t503): a refusal carries no key of its own for it.
+    expect(next).toContain("the latest accepted revision's, where one was accepted (core.current_flow names it)");
     // Never the refused script as if it were the current one (t498).
     expect(next).not.toMatch(/script you (just )?sent/u);
     for (const words of Object.values(ADVICE_WORDS)) expect(next).not.toContain(words);

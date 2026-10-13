@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { automationStudioResultVerificationAnswers, type AutomationStudioRunResultSummary } from "../contracts.ts";
 import { automationStudioResultVerdict, automationStudioResultVerdictFromDiagnosis } from "../verdict.ts";
+import { automationStudioResultRecordedOutcome } from "../run-record.ts";
 
 // The fail-closed rule, stated once and asserted from every direction.
 //
@@ -144,9 +145,13 @@ describe("automationStudioResultVerdict", () => {
       basis: "model"
     });
     expect(verification.repair).toBeUndefined();
-    const recorded = JSON.stringify(verification);
-    expect(recorded).not.toContain("the table listed every member");
-    expect(recorded).not.toContain("two members");
+    // What it doubted is kept only as `unsureReading` (t503: an unsure beside a yes is
+    // weighed by it, `../agreement.ts`): never in the failure record, and never on a run.
+    expect(verification.unsureReading).toEqual({ expected: "two members", observed: "the table listed every member of the directory" });
+    for (const recorded of [JSON.stringify(verification.failure), JSON.stringify(automationStudioResultRecordedOutcome({ ...verification, performed: true }))]) {
+      expect(recorded).not.toContain("the table listed every member");
+      expect(recorded).not.toContain("two members");
+    }
   });
 
   it("stands on Core's own findings when the judgement says nothing beyond no", () => {
