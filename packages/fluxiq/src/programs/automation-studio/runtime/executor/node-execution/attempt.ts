@@ -115,9 +115,9 @@ export class AutomationStudioNodeAttemptExecution {
         failure: { category: "graph_validation_or_unknown_node", code: "executor.parameter.unresolved_state_path", retryable: false, stage: "dispatch" }
       };
     }
-    const beforeAction = await captureHostState(options, { node: executionNode, attemptId, inputs, point: "before_action" });
+    const beforeAction = await captureHostState(options, { node: executionNode, attemptId, inputs, point: "before_action" }, runState);
     if (definition && node.definitionVersion && node.definitionVersion !== "1.0.0") {
-      return await enrichAttemptWithHostState(executionNode, { attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: options.now?.() ?? Date.now(), status: "failed", route: "failed", inputs, outputs: {}, effects: [], message: `Node ${node.definitionId} pins ${node.definitionVersion}, but built-in version 1.0.0 is available.`, failure: { category: "graph_validation_or_unknown_node", code: "executor.node.definition_version_unavailable", retryable: false, stage: "dispatch" } }, options, beforeAction, hostCapabilities);
+      return await enrichAttemptWithHostState(executionNode, { attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: options.now?.() ?? Date.now(), status: "failed", route: "failed", inputs, outputs: {}, effects: [], message: `Node ${node.definitionId} pins ${node.definitionVersion}, but built-in version 1.0.0 is available.`, failure: { category: "graph_validation_or_unknown_node", code: "executor.node.definition_version_unavailable", retryable: false, stage: "dispatch" } }, options, beforeAction, hostCapabilities, runState);
     }
     // A Call Subflow runs its sibling graph as a frame of this run, never through a host (`../frames/call-subflow.ts`).
     if (node.definitionId === AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID) {
@@ -128,7 +128,7 @@ export class AutomationStudioNodeAttemptExecution {
       }
       // Its `inputs` were resolved above, as every parameter is: each holds the value it gives the child.
       const called = await automationStudioCallSubflow({ node: executionNode, options: this.callFlowChildOptions(options, attemptId) });
-      return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, called.result), ...(called.childTrace ? { childTrace: called.childTrace } : {}), ...(called.subflowTarget ? { subflowTarget: called.subflowTarget } : {}) }, options, beforeAction, hostCapabilities);
+      return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, called.result), ...(called.childTrace ? { childTrace: called.childTrace } : {}), ...(called.subflowTarget ? { subflowTarget: called.subflowTarget } : {}) }, options, beforeAction, hostCapabilities, runState);
     }
     if (!definition?.execute) {
       const native = await (!options.commandRun ? options.nativeNodeExecutor?.({
@@ -151,7 +151,7 @@ export class AutomationStudioNodeAttemptExecution {
         // An importer's definition is the native runtime's, so it says which routes the node declares.
         const target: RecordCaptureTarget = { runState, nodeId: node.id, attemptId, cleared: [], ...(consumer ? { consumer } : {}) };
         const result = await this.dispatchAutomationStudioEffects(native.result, options, withholding, target, this.declaredBranchRoutes(definition?.outputs ?? native.declaredOutputs));
-        return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities);
+        return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities, runState);
       }
       if (options.commandRun && (!options.compositeExecutor || !options.commandRun.acceptsComposite(options.compositeExecutor))) {
         await options.commandRun.stop("executor.unsupported_native_or_composite");
@@ -159,7 +159,7 @@ export class AutomationStudioNodeAttemptExecution {
       }
       const composite = await options.compositeExecutor?.({ node: executionNode, inputs, options: this.callFlowChildOptions(options, attemptId) });
       if (composite) {
-        return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, composite.result), ...(composite.childTrace ? { childTrace: composite.childTrace } : {}), ...(composite.compositeTarget ? { compositeTarget: composite.compositeTarget } : {}) }, options, beforeAction, hostCapabilities);
+        return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, composite.result), ...(composite.childTrace ? { childTrace: composite.childTrace } : {}), ...(composite.compositeTarget ? { compositeTarget: composite.compositeTarget } : {}) }, options, beforeAction, hostCapabilities, runState);
       }
       return await enrichAttemptWithHostState(executionNode, {
         attemptId,
@@ -174,7 +174,7 @@ export class AutomationStudioNodeAttemptExecution {
         effects: [],
         message: `Node definition is not executable: ${node.definitionId}.`,
         failure: { category: "graph_validation_or_unknown_node", code: "executor.node.not_executable", retryable: false, stage: "dispatch" }
-      }, options, beforeAction, hostCapabilities);
+      }, options, beforeAction, hostCapabilities, runState);
     }
     // The node asks the host whether expected state holds; Core names which node
     // and attempt asked, and which snapshot the question is about.
@@ -197,7 +197,7 @@ export class AutomationStudioNodeAttemptExecution {
       let result = await definition.execute(context);
       const target: RecordCaptureTarget = { runState, nodeId: node.id, attemptId, cleared: [], ...(consumer ? { consumer } : {}) };
       result = await this.dispatchAutomationStudioEffects(result, options, withholding, target, this.declaredBranchRoutes(definition.outputs));
-      return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target) }, options, beforeAction, hostCapabilities);
+      return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target) }, options, beforeAction, hostCapabilities, runState);
     } catch (error) {
       await options.commandRun?.stop("executor.attempt_failed");
       // The one place a node's throw becomes an attempt, and therefore the one
@@ -207,7 +207,7 @@ export class AutomationStudioNodeAttemptExecution {
       // no to every one of them. A provider that answered 503, a connection that
       // dropped, an answer that arrived truncated: each ended the run, and that
       // is what this catch exists to stop.
-      return await enrichAttemptWithHostState(executionNode, automationStudioNodeAttemptFailure(node, error, options, attemptNumber, startedAt, inputs), options, beforeAction, hostCapabilities);
+      return await enrichAttemptWithHostState(executionNode, automationStudioNodeAttemptFailure(node, error, options, attemptNumber, startedAt, inputs), options, beforeAction, hostCapabilities, runState);
     }
   }
 
@@ -220,9 +220,10 @@ export class AutomationStudioNodeAttemptExecution {
     attempt: AutomationStudioNodeAttemptTrace,
     options: AutomationStudioGraphExecutionOptions,
     beforeAction: AutomationStudioHostStateSnapshotRef | undefined,
-    hostCapabilities: string[]
+    hostCapabilities: string[],
+    runState: AutomationStudioRunState
   ): Promise<AutomationStudioNodeAttemptTrace> {
-    const enriched = await enrichAttemptWithHostState(node, attempt, options, beforeAction, hostCapabilities);
+    const enriched = await enrichAttemptWithHostState(node, attempt, options, beforeAction, hostCapabilities, runState);
     const judged = await attemptWithHostExpectationEvaluation(node, enriched, options);
     return await automationStudioAttemptWithRecordedEffect(flow, node, judged, options);
   }

@@ -447,6 +447,13 @@ receives the conversation and per-step record counts, and result data is every
 record set, column and stored row the run kept, screened for the domain's
 denied keys and credential-shaped values but not sampled or cut to a size.
 
+A web step's starting capture reuses the page the previous step ended on when no
+other step started in between and that page arrived within 250 ms (t480); the
+host may decline the offer and read the page again. Every step still carries its
+before view, after view, diff, reset address and capture time, so nothing below
+loses evidence; the reuse only removes the second full page read per step, which
+measured about half of a trial run's capture time on lane C (run-mv5yaapy).
+
 Each `flowShape` step also carries `changed`: what this run saw that step change
 where it stayed, one entry per time it ran, in run order, taken from the
 session's own in-memory trace (`stateRefs.stateDiff`) and never from a

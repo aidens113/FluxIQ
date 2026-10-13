@@ -18,7 +18,7 @@ const TEST_CANDIDATE = "core.test_candidate";
  * observed `executeTool`, so the chat showed no card for writing or testing the
  * Flow (t366).
  */
-export function automationStudioActivityCandidateResult(toolId: string, result: unknown): { status: "succeeded" | "failed"; part: "Said" | "Declined"; words: string; outcome: string } | undefined {
+export function automationStudioActivityCandidateResult(toolId: string, result: unknown): { status: "succeeded" | "failed"; part: "Said" | "Declined"; words: string; outcome: string; unconfirmed?: true } | undefined {
   const answer = result && typeof result === "object" && !Array.isArray(result) ? result as { kind?: unknown; resultCode?: unknown; evidence?: unknown } : undefined;
   if (answer?.kind !== "llm_evidence_tool_execution") return undefined;
   if (toolId === SUBMIT_CANDIDATE) {
@@ -33,6 +33,6 @@ export function automationStudioActivityCandidateResult(toolId: string, result: 
   if (!said) return undefined;
   if (said.declined) return { status: "failed", part: "Declined", words: said.words, outcome: "not done" };
   return said.failed
-    ? { status: "failed", part: "Said", words: said.words, outcome: "didn't pass" }
+    ? { status: "failed", part: "Said", words: said.words, outcome: "didn't pass", ...(said.unconfirmed ? { unconfirmed: true as const } : {}) }
     : { status: "succeeded", part: "Said", words: said.words, outcome: "passed" };
 }

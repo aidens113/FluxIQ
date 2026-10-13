@@ -1,5 +1,6 @@
 import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationNodeIterationState } from "../../nodes/index.ts";
+import type { AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
 import type { AutomationStudioGraphExecutionOptions } from "./contracts.ts";
 import { automationStudioDefenceLedger, type AutomationStudioDefenceLedger } from "./defensive/index.ts";
 import { automationStudioPaceKeeper, type AutomationStudioPaceKeeper } from "./pacing/index.ts";
@@ -30,6 +31,12 @@ export type AutomationStudioRunState = {
   defence: AutomationStudioDefenceLedger;
   /** Each node's pace between starts, authored or learned from a wait hint, for this run only (`pacing/pace-keeper.ts`). */
   pace: AutomationStudioPaceKeeper;
+  /**
+   * The page the last node attempt ended on and when Core received it, kept
+   * until the next attempt starts, which is offered it as its own starting page
+   * (`host-state.ts`). Unset when that attempt captured no page.
+   */
+  pageEnded?: { ref: AutomationStudioHostStateSnapshotRef; receivedAt: number } | undefined;
 };
 
 export function automationStudioRunState(options: Pick<AutomationStudioGraphExecutionOptions, "variables"> = {}): AutomationStudioRunState {

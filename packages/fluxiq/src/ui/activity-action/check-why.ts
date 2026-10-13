@@ -11,11 +11,18 @@ const FOUND = /^What it found: /u;
 /** The most of the check's reading a card's reason holds. */
 const MAX_CLAUSE = 140;
 /** A clause's opening words that are no name, said in lower case after "but". */
-const PLAIN_OPENING = /^(?:a|an|the|it|its|this|that|these|those|they|there|some|all|no|none|every|each|only|most|many|one|step|stored|rows?|nothing|several|both|neither)$/iu;
+const PLAIN_OPENING = /^(?:a|an|the|it|its|this|that|these|those|they|there|some|all|no|none|every|each|only|most|many|one|step|stored|rows?|nothing|several|both|neither|two|three|four|five|six|seven|eight|nine|ten)$/iu;
 /** Where a clause joins a second one that only says more: a colon, a semicolon or a dash. */
 const MORE = /\s*(?:[:;](?=\s|$)|\s[–—-]\s)/u;
-/** A stored count alone says what came back, never why the check refused it. */
-const BARE_STORED = /^(?:(?:\d{1,9}|no) (?:rows?|records?) (?:would be )?stored|stored (?:\d{1,9}|no) (?:rows?|records?))$/iu;
+/**
+ * A clause that opens with a stored count restates what came back, never why
+ * the check refused it: alone ("7 rows stored") or going on with what the rows
+ * are ("15 rows stored, deduped by url, all pages read"). Lane C round 11
+ * (`run-mv5yaapy-8c34bf34`, trials 1 and 2) read "15 rows came back, but 15 rows
+ * stored, ..." and "10 rows came back, but 10 rows stored, all satisfying ...",
+ * the second reading as a pass; the reasons were in the next sentence (t480).
+ */
+const OPENS_STORED = /^(?:(?:\d{1,9}|no) (?:rows?|records?) (?:would be )?stored|stored (?:\d{1,9}|no) (?:rows?|records?))(?=$|[\s,])/iu;
 /** Core's own words where the check's reading says nothing a person can read, for one row and for more. */
 const NOT_ANSWERED = { one: "the check found it doesn't answer what you asked", more: "the check found they don't answer what you asked" } as const;
 
@@ -33,7 +40,7 @@ function findingOf(sentence: string | undefined): string | undefined {
     plain = plain.replace(/\s*\([^()]*\)/gu, "");
   }
   const clause = plain.split(MORE)[0]!.replace(/[\s.!?,;:]+$/u, "").trim();
-  if (!clause || clause.length > MAX_CLAUSE || /[()]/u.test(clause) || BARE_STORED.test(clause)) return undefined;
+  if (!clause || clause.length > MAX_CLAUSE || /[()]/u.test(clause) || OPENS_STORED.test(clause)) return undefined;
   const first = /^\S+/u.exec(clause)?.[0] ?? "";
   return PLAIN_OPENING.test(first) ? `${clause.charAt(0).toLowerCase()}${clause.slice(1)}` : clause;
 }
@@ -56,7 +63,10 @@ function findingOf(sentence: string | undefined): string | undefined {
 export function activityActionCheckWhy(text: string | undefined): string | null {
   const sentences = activityActionSentences(text ?? "");
   const count = sentences.map((sentence) => COUNT.exec(sentence)).find((match) => match !== null);
-  const finding = findingOf(sentences.find((sentence) => FOUND.test(sentence)));
+  const found = sentences.findIndex((sentence) => FOUND.test(sentence));
+  // The reading's first sentence, or, where it opens with the stored count, the one after it.
+  const opening = found < 0 ? undefined : sentences[found]!.replace(FOUND, "");
+  const finding = opening === undefined ? undefined : findingOf(OPENS_STORED.test(opening) ? sentences[found + 1] : opening);
   if (!count) return finding ?? null;
   const [, number, rows, how] = count as unknown as [string, string, string, string];
   if (number === "No") return finding ? `No rows ${how}, and ${finding}` : `No rows ${how}`;
