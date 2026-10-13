@@ -786,13 +786,47 @@ Retry waits, pace waits and Wait pauses share one wait,
   the node until the pace has passed since its last start, on every path
   (playback and a build's trial alike); retries of one arrival are not paced,
   since their own wait already honours the hint. After an attempt whose
-  failure carries a wait hint, the run raises that node's pace to at least the
-  hint, and by half again on each further hint, up to 60 s
-  (`AUTOMATION_STUDIO_MAX_LEARNED_PACE_MS`); an authored pace is never
+  failure carries a wait hint, the run raises that node's pace to the spacing
+  the site's limit allows, never to the one hint alone (t485): a hint is how
+  long until the site lets one more act through, not a spacing that holds. The
+  spacing is the one this run's own starts of the node and the refusal imply
+  (`sustainable-pace.ts`), for a limit of N acts in any window W: if the window
+  held the last k acts the site let through, W is when the hint says a place
+  frees less the k-th latest of them; each k that every let-through act is
+  consistent with is tried, and the widest W / k is kept with a tenth's
+  margin, so the true spacing is never undercut by what the run itself saw.
+  The hint counts from when the refused attempt settled
+  (`step-loop/failed-attempt.ts` passes that time), not from after its
+  after-action snapshot. A limit the page states is not read: no record
+  reaching Core carries one (a failure record carries only `retryAfterMs`, a
+  closed layer only its kind and way out), and Core parses no page wording,
+  so refusals are the one source. Only when no earlier start explains the
+  refusal (the node's first act refused) does the pace rise to the hint. Each
+  further hint grows the pace by half again at least, up to
+  60 s (`AUTOMATION_STUDIO_MAX_LEARNED_PACE_MS`); an authored pace is never
   lowered. Each attempt records `pace: { inForceMs, waitedMs, raisedToMs? }`
   and the trace lists each paced node under `trace.pace`. A candidate script
   writes the pace with `repeat pace:`, and promotion keeps a pace a trial
   learned ([LLM Flow Bootstrap Contract](automation-studio/llm-flow-bootstrap.md#script-statements-a-candidate-may-write)).
+- **A passed trial the site asked to slow down completes only once the Flow
+  answers it** (t485; `runtime/flow-bootstrap/candidate/trial-gate.ts`). A
+  trial met a slow-down when its feedback has a step whose `absorbed` entry
+  carries the wait the site asked for, a step `interruptions` entry of kind
+  `rate_limit`, or a learned pace under `paces`; other layers the run closed do
+  not count. The Flow answers it when some node's pace reaches the pace the
+  trial learned for that step (else the longest wait asked), and, when the
+  notice's way out was named (`wayOut`), when it also holds a wait run only
+  after an optional step, joined back into the pass, or a handler. Until then
+  the yes answer names what to add under `slowDown` in place of "Complete
+  now", and completion is refused `candidate.trial_slow_down_unhandled`.
+- **A reworded resubmission costs no trial** (t485;
+  `runtime/flow-bootstrap/candidate/unchanged-submission.ts`). A candidate
+  that differs from the last accepted revision only in display words (the
+  Flow's, its rules' and blocks' names, step labels, a record output's
+  `label`) is refused `candidate.unchanged_submission` with `reworded: true`,
+  and that revision stands with its own names and its trial. A changed
+  record-output `datasetId` is a real change: it decides where results are
+  recorded.
 
 **A lasting act is checked, never blindly repeated** (the user's rule of
 2026-10-07; t359). One owner decides it for every path, graph or not:
