@@ -83,3 +83,42 @@ describe("a check of a step that runs per row", () => {
     expect(undeclared.rows.get("s9")).toEqual(["[withheld]", "[withheld]", "[withheld]"]);
   });
 });
+
+// t482, lane D round 12 (`run-mv62icw0-070f88ad`, D3): the trace a run saves holds a
+// `$datasetRow` marker where each captured row sat, so every pass's row was read as `{}`
+// and the judges were shown four empty rows. A marker is read back as the stored row it
+// stands for where the stored rows still stand in capture order, and named by its place
+// where they do not.
+describe("a check of a step that runs per row, over a saved trace's row markers", () => {
+  const marker = (ordinal: number) => ({ $datasetRow: { datasetId: "requests", ordinal } });
+  const saved: AutomationStudioNodeAttemptTrace[] = [
+    attempt("s7", "succeeded"),
+    pass(marker(2)), attempt("s9", "succeeded"),
+    pass(marker(4)), attempt("s9", "succeeded"),
+    attempt("s8", "succeeded", { route: "done" })
+  ];
+  const stored = ["Tom Becker", "Amara Osei", "Priya Nair", "Jonas Weber"].map((name, index) => ({ name, mutualFriends: `${index + 1} mutual friends` }));
+  const recordSet = (processing?: { collected: number; kept: number }) => ({
+    summary: { runId: "run-1", datasetId: "requests", nodeIds: ["s7"], schemaDigest: "d", recordCount: stored.length, truncated: false, invalidCount: 0, updatedAt: 1,
+      ...(processing ? { processing: { ...processing, duplicates: 0, filteredOut: 0, cut: 0, passes: [] } } : {}) },
+    rows: stored
+  });
+  const withRead = (readSorts: boolean): AutomationStudioFlowNode[] => nodes.map((node) => node.id === "s7"
+    ? { ...node, parameterValues: { extractList: { fields: { name: { kind: "text" } }, ...(readSorts ? { sort: [{ field: "name", order: "asc" }] } : {}) } } }
+    : node);
+  const rowsOf = (sets: ReturnType<typeof recordSet>[], readSorts = false) =>
+    summarizeAutomationStudioRunResult({ recordSets: sets, flowNodes: withRead(readSorts), flowEdges: edges, sessionAttempts: saved, deniedEvidenceKeys: DENIED }).flowShape.find((entry) => entry.nodeId === "s9")!.rowsActedOn;
+
+  it("reads each marker back as the stored row it stands for, by its own fields", () => {
+    expect(rowsOf([recordSet()])).toEqual([stored[1], stored[3]]);
+    // Processed, keeping every row it collected, by a read that declares no sort: still in capture order.
+    expect(rowsOf([recordSet({ collected: 4, kept: 4 })])).toEqual([stored[1], stored[3]]);
+  });
+
+  it("names the row by its place, never as an empty row or another row, where the stored rows may not stand in capture order", () => {
+    const placed = ["row 2 collected into requests", "row 4 collected into requests"];
+    expect(rowsOf([recordSet({ collected: 6, kept: 4 })])).toEqual(placed);
+    expect(rowsOf([recordSet({ collected: 4, kept: 4 })], true)).toEqual(placed);
+    expect(rowsOf([])).toEqual(placed);
+  });
+});

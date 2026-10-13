@@ -6,7 +6,7 @@ import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import { automationStudioFlowScriptWayOutIssues } from "../script-statements/index.ts";
 import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission, AutomationStudioFlowCandidateSubmissionHistory, AutomationStudioCandidateOriginalSourceBinding } from "./contracts.ts";
 import { automationStudioCandidateFingerprint as fingerprint } from "./digest.ts";
-import { automationStudioCandidateUnchangedRefusal } from "./unchanged-submission.ts";
+import { automationStudioCandidateSameBehaviour, automationStudioCandidateUnchangedRefusal } from "./unchanged-submission.ts";
 
 /** Session-local candidates, separate from discovery and the accepted Flow store. */
 export class AutomationStudioFlowCandidateSubmissionController {
@@ -57,6 +57,12 @@ export class AutomationStudioFlowCandidateSubmissionController {
    * that revision stands again: resubmitting it is saying it is the Flow meant.
    * One the judge refuted is named but not reinstated, since it cannot be
    * tested again or completed.
+   *
+   * **The same by what it does, too (t485, N1).** A Flow that differs from the
+   * last accepted revision only in display words -- names and labels -- is
+   * refused as unchanged, saying it was reworded, and that revision stands
+   * with its own names (`automationStudioCandidateSameBehaviour`). A changed
+   * `datasetId` is not a rewording: it decides where results are recorded.
    */
   async submit(result: JsonObject, history: AutomationStudioFlowCandidateSubmissionHistory = {}): Promise<AutomationStudioFlowCandidateSubmission> {
     this.input.signal?.throwIfAborted();
@@ -96,6 +102,8 @@ export class AutomationStudioFlowCandidateSubmissionController {
     // the judge refuted: nothing new to test (header of `submit`).
     const refuted = history.refuted?.(digest);
     if (last && digest === last.digest) return this.sameAsLast(standing, last, history, refuted, text);
+    // The last revision's Flow with only its display words reworded does what it did: no new revision, no new trial (header).
+    if (last && automationStudioCandidateSameBehaviour(last.buildPlan, plan)) return this.sameAsLast(standing, last, history, history.refuted?.(last.digest), undefined, true);
     if (refuted !== undefined) return this.unchanged(standing, undefined, history, refuted);
     const candidate: AutomationStudioFlowCandidate = {
       revision, digest, baseDependencyDigest: this.input.baseDependencyDigest,
@@ -115,8 +123,8 @@ export class AutomationStudioFlowCandidateSubmissionController {
    * `submit`): that revision stands again, unless the judge refuted it, when
    * whatever stood before this submission still does.
    */
-  private sameAsLast(standing: AutomationStudioFlowCandidate | undefined, last: AutomationStudioFlowCandidate, history: AutomationStudioFlowCandidateSubmissionHistory, refuted: JsonObject | undefined, text?: string): AutomationStudioFlowCandidateSubmission {
-    return this.unchanged(refuted === undefined ? structuredClone(last) : standing, last, history, refuted, text);
+  private sameAsLast(standing: AutomationStudioFlowCandidate | undefined, last: AutomationStudioFlowCandidate, history: AutomationStudioFlowCandidateSubmissionHistory, refuted: JsonObject | undefined, text?: string, reworded?: boolean): AutomationStudioFlowCandidateSubmission {
+    return this.unchanged(refuted === undefined ? structuredClone(last) : standing, last, history, refuted, text, reworded);
   }
 
   /**
@@ -124,15 +132,17 @@ export class AutomationStudioFlowCandidateSubmissionController {
    * current revision. `same` is the revision it is the same as, absent when
    * it is a Flow refuted under an earlier one; `refuted` is the judge's
    * finding when the Flow was judged no; `text` replaces the remembered script
-   * when a differently written script read to the same plan.
+   * when a differently written script read to the same plan; `reworded` says
+   * the submission differs from `same` in display words alone.
    */
-  private unchanged(standing: AutomationStudioFlowCandidate | undefined, same: AutomationStudioFlowCandidate | undefined, history: AutomationStudioFlowCandidateSubmissionHistory, refuted: JsonObject | undefined, text?: string): AutomationStudioFlowCandidateSubmission {
+  private unchanged(standing: AutomationStudioFlowCandidate | undefined, same: AutomationStudioFlowCandidate | undefined, history: AutomationStudioFlowCandidateSubmissionHistory, refuted: JsonObject | undefined, text?: string, reworded?: boolean): AutomationStudioFlowCandidateSubmission {
     this.current = standing;
     if (same && text !== undefined) this.currentText = text;
     const check = automationStudioCandidateUnchangedRefusal({
       standing: same ? { revision: same.revision, digest: same.digest } : undefined,
       lastTrial: same ? history.trialOf?.(same) : undefined,
-      refuted
+      refuted,
+      reworded
     });
     return { ok: false, revision: (same ?? standing)?.revision ?? this.revision, check };
   }

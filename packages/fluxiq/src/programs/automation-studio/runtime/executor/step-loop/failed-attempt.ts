@@ -77,7 +77,9 @@ export async function automationStudioStepFailedAttempt(
   // whichever way the ladder goes.
   let fault = automationStudioAssessAttemptFault(attempts[attemptIndex]!, failedNode, now());
   // A failure that asked for a wait raises this node's pace for the rest of the run (`pacing/`), and its attempt says so.
-  const raisedToMs = fault?.hintedWaitMs === undefined ? undefined : runState.pace.learn(failedNode, fault.hintedWaitMs);
+  // Its hint counts from when the refused attempt settled, as the retry wait counts it, not from after its snapshot (t485).
+  const refusedAt = attempts[attemptIndex]!.finishedAt ?? attempts[attemptIndex]!.startedAt;
+  const raisedToMs = fault?.hintedWaitMs === undefined ? undefined : runState.pace.learn(failedNode, fault.hintedWaitMs, refusedAt);
   if (raisedToMs !== undefined) attempts[attemptIndex] = { ...attempts[attemptIndex]!, pace: { ...(attempts[attemptIndex]!.pace ?? { inForceMs: 0, waitedMs: 0 }), raisedToMs } };
   const mayAbsorb = automationStudioRunMayStillAbsorb(runState.defence.runWaitedMs());
   // Settles the step as failed, with its failure's code, so a card can say

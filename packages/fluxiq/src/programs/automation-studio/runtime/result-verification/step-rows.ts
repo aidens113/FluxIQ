@@ -20,6 +20,16 @@
 // holding a denied key or a credential-shaped value is replaced by the
 // marker. The summary then leaves the row the step was written on out of its
 // parameters (`./result-summary.ts`).
+//
+// **A saved trace's row is a marker (t482, D3).** The trace a run saves holds
+// `{ $datasetRow: { datasetId, ordinal } }` wherever a captured row sat
+// (`../executor/record-summary.ts`), and a loop hands its passes the read's
+// rows by reference, so each pass's row there is that marker. Read by its
+// fields it was `{}` -- the only key is `$`-prefixed -- and lane D round 12
+// (`run-mv62icw0-070f88ad`) sent the judges four empty rows. A marker is now
+// read back as the stored row it stands for (`capturedRow`,
+// `./captured-rows.ts`), and where that row cannot be said for certain, it is
+// named by its place among the rows collected rather than sent empty.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { automationStudioActivityLoops } from "../activity/loop/index.ts";
@@ -50,6 +60,8 @@ export function automationStudioResultStepRows(input: {
   flowEdges: readonly { sourceNodeId: string; targetNodeId: string; sourcePortId?: string | undefined }[] | undefined;
   attempts: readonly Attempt[] | undefined;
   deniedEvidenceKeys: readonly string[] | undefined;
+  /** The stored row a captured-row marker stands for, where it is known (`./captured-rows.ts`). Absent, no marker is read back. */
+  capturedRow?: ((datasetId: string, ordinal: number) => JsonObject | undefined) | undefined;
 }): { rowBound: ReadonlySet<string>; rows: ReadonlyMap<string, JsonValue[]>; withheld: boolean } {
   const loops = input.flowEdges ? automationStudioActivityLoops({ nodes: input.flowNodes, edges: input.flowEdges }, FOR_EACH) : [];
   const rowBound = new Set(loops.flatMap((loop) => [...loop.members]));
@@ -64,7 +76,7 @@ export function automationStudioResultStepRows(input: {
   for (const attempt of input.attempts ?? []) {
     const loop = loops.find((entry) => entry.repeatId === attempt.nodeId);
     if (loop && attempt.route === "body") {
-      passes.set(loop.repeatId, { n: (passes.get(loop.repeatId)?.n ?? 0) + 1, row: rowFields(attempt.outputs?.item), at: ++begun });
+      passes.set(loop.repeatId, { n: (passes.get(loop.repeatId)?.n ?? 0) + 1, row: rowFields(attempt.outputs?.item, input.capturedRow), at: ++begun });
       continue;
     }
     if (!rowBound.has(attempt.nodeId) || attempt.status !== "succeeded" || attempt.skipped || attempt.stateHeld) continue;
@@ -93,11 +105,26 @@ export function automationStudioResultStepRows(input: {
   return { rowBound, rows, withheld };
 }
 
-/** A row as its own fields, without what a read mints afresh. */
-function rowFields(item: unknown): JsonValue {
-  if (Array.isArray(item)) return item.map(rowFields);
+/** A row as its own fields, without what a read mints afresh; a captured-row marker read back as its stored row (header). */
+function rowFields(item: unknown, capturedRow?: (datasetId: string, ordinal: number) => JsonObject | undefined): JsonValue {
+  if (Array.isArray(item)) return item.map((entry) => rowFields(entry, capturedRow));
   if (!item || typeof item !== "object") return (item ?? null) as JsonValue;
+  const marker = capturedMarker(item);
+  if (marker) {
+    const stored = capturedRow?.(marker.datasetId, marker.ordinal);
+    return stored ? rowFields(stored) : `row ${marker.ordinal} collected into ${marker.datasetId}`;
+  }
   const fields: JsonObject = {};
-  for (const [key, value] of Object.entries(item)) if (!MINTED_FIELD.test(key)) fields[key] = rowFields(value);
+  for (const [key, value] of Object.entries(item)) if (!MINTED_FIELD.test(key)) fields[key] = rowFields(value, capturedRow);
   return fields;
+}
+
+/** The dataset and place a saved trace's captured-row marker names, when `item` is one and nothing else. */
+function capturedMarker(item: object): { datasetId: string; ordinal: number } | undefined {
+  const keys = Object.keys(item);
+  if (keys.length !== 1 || keys[0] !== "$datasetRow") return undefined;
+  const marker = (item as { $datasetRow?: unknown }).$datasetRow;
+  if (!marker || typeof marker !== "object") return undefined;
+  const { datasetId, ordinal } = marker as { datasetId?: unknown; ordinal?: unknown };
+  return typeof datasetId === "string" && typeof ordinal === "number" && Number.isSafeInteger(ordinal) && ordinal >= 1 ? { datasetId, ordinal } : undefined;
 }

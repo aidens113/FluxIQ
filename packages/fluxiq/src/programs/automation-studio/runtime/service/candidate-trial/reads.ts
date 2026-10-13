@@ -21,10 +21,23 @@
 // no reads at all. A judged trial takes its reads from the judge's summary, an
 // execution-failed one from the run's own read accounts (`./run.ts`), and both
 // are said here the same way.
+//
+// **And the steps that acted on the page before it (t482).** A judged trial's
+// read names them (`narrowedBefore`, `../../result-verification/`
+// `narrowed-before.ts`): their label, the words of the control they pressed or
+// chose, and whether they went to another page. Lane C round 12
+// (`run-mv62icw3-9118516f`) built a Flow whose site filter kept less than the
+// request asked before its read, and neither the judges nor the model could see
+// the rows it removed. `beforeRead` says once what such a step means for the
+// read. An execution-failed trial's reads come from the run record alone and
+// carry none.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../model/index.ts";
 import type { AutomationStudioResultReadAccount } from "../../result-verification/index.ts";
+
+/** What a read's `narrowedBefore` means for it, said to the model once per read that carries one (header). */
+const BEFORE_READ = "These steps acted on the page before this read ran. Rows a step removed on the site (a search, a filter, a category, a sort, an option chosen) never reached the read, so no condition's count shows them. A step whose words keep less than the request asks leaves asked rows out; remove it, or keep exactly the request's terms with a condition on the read.";
 
 /** Each read the trial made: what it saw, kept and rejected, and Core's sentence for it. */
 export function automationStudioTrialReadsFeedback(reads: readonly AutomationStudioResultReadAccount[] | undefined, graph: AutomationStudioFlowArtifact | undefined): JsonObject[] {
@@ -43,7 +56,8 @@ export function automationStudioTrialReadsFeedback(reads: readonly AutomationStu
       kept: read.kept,
       ...(conditions.length ? { conditions } : {}),
       ...(read.unfiltered ? { unfiltered: true } : {}),
-      said: said(read, conditions)
+      said: said(read, conditions),
+      ...(read.narrowedBefore?.length ? { narrowedBefore: read.narrowedBefore.map((step) => ({ ...step })), beforeRead: BEFORE_READ } : {})
     };
   });
 }

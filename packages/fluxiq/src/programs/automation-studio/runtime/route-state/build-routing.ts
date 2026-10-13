@@ -38,6 +38,18 @@ export type AutomationStudioBuildRouting = {
    * and read from cache ever after, and the routing context left behind is
    * constant for the build and goes in front of the window.
    *
+   * **Appended, never inserted (t484).** A situation is placed once, the first
+   * time it is shown, and stays after the same entry on every later decision.
+   * It goes after the call it followed, but never before an entry a previous
+   * decision was already sent unchanged: in front of one it rewrites bytes
+   * the cache already holds. `run-mv62icw0-070f88ad` decision 0041 lost the
+   * cache at 57% that way. The situation after its trial had been observed
+   * after one of the trial's own steps, which no entry names, so it followed
+   * the situation before it, into the middle of the window. A situation whose
+   * call no entry names now follows the newest call in the window -- the one
+   * that ran it, such as the trial -- and every situation stays after all that
+   * happened before it was observed, so "after the call it follows" stays true.
+   *
    * A state value shaped like a credential is withheld, as the packet builder
    * withholds one from the routing context; a key the domain denies refuses the
    * request, as it does in any evidence. `deniedKeys` is the domain's list.
@@ -158,6 +170,10 @@ export async function startAutomationStudioBuildRouting(input: {
   let newest: { callId: string; toolId: string; state?: JsonObject } | undefined;
   let calls = 0;
   let ranSinceObserved = false;
+  // Where each situation was first shown: after the entry with this call id, or `null` before every entry (`shown`).
+  const placed: Array<string | null> = [];
+  // The window the previous decision was shown, each entry as its bytes, before any situation was placed in it.
+  let previouslyShown: string[] = [];
   const contextOf = (seen: ReadonlyArray<{ seen: string; state: JsonObject }>) => buildAutomationStudioFlowBootstrapRoutingContext({
     current: "The Flow is blank: it has no routes and no subflows yet.",
     flowInputs: input.flowInputs.map((port) => ({
@@ -174,19 +190,25 @@ export async function startAutomationStudioBuildRouting(input: {
     context: () => contextOf(observations),
     shown: (evidence, deniedKeys) => {
       const whole = contextOf(observations);
-      // The observation each situation came from: the one after which the context first had it.
-      const anchors: Array<string | undefined> = [];
-      for (let index = 0, had = 0; index < observations.length && anchors.length < whole.situations.length; index += 1) {
-        const situations = contextOf(observations.slice(0, index + 1)).situations.length;
-        if (situations > had) anchors.push(observations[index]!.after);
-        had = situations;
+      const window = evidence.map((entry) => JSON.stringify(entry));
+      if (whole.situations.length > placed.length) {
+        // The call each situation was observed after: that of the observation after which the context first had it.
+        const anchors: Array<string | undefined> = [];
+        for (let index = 0, had = 0; index < observations.length && anchors.length < whole.situations.length; index += 1) {
+          const situations = contextOf(observations.slice(0, index + 1)).situations.length;
+          if (situations > had) anchors.push(observations[index]!.after);
+          had = situations;
+        }
+        const sent = unchangedEntries(previouslyShown, window);
+        for (let index = placed.length; index < whole.situations.length; index += 1) placed.push(firstPlacement(evidence, anchors[index], index, sent));
       }
+      previouslyShown = window;
       const entries = whole.situations.map((situation, index) => ({
         callId: `${AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID}.${index + 1}`,
         toolId: AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID,
         value: { seen: situation.seen, state: Object.fromEntries(Object.entries(situation.state).filter(([, value]) => !screenAutomationStudioLlmEvidence(value, deniedKeys).secretShaped)) } as JsonObject
       }));
-      return { evidence: placedAfterTheirCalls(evidence, entries, anchors), context: { ...whole, situations: [], situationsShown: SITUATIONS_SHOWN } };
+      return { evidence: placedAfterTheirCalls(evidence, entries, placed), context: { ...whole, situations: [], situationsShown: SITUATIONS_SHOWN } };
     },
     recording: <C extends { callId: string; toolId: string; signal?: AbortSignal | undefined }, X>(executeTool: (call: C) => Promise<X>) => async (call: C): Promise<X> => {
       if (pageless.has(call.toolId)) return await executeTool(call);
@@ -248,21 +270,55 @@ export async function startAutomationStudioBuildRouting(input: {
 }
 
 /**
- * The window with each situation entry placed right after the entry of the call
- * it was observed after; the start (no call) before every entry. One whose call
- * is not in the window -- a dry run's, say -- follows the situation before it,
- * so the situations stay in the order they were seen and each stays where it
- * was first placed.
+ * Where a situation goes the first time it is shown: the call id of the entry it
+ * follows, or `null` for before every entry. That is after the call it was
+ * observed after; the start (no call, the first situation) before every entry;
+ * and a situation whose call no entry names -- a step a trial or a dry run ran
+ * inside one call -- after the newest call, the one that ran it. Never in front
+ * of the first `sent` entries, which a previous decision was sent unchanged.
  */
-function placedAfterTheirCalls<E extends { callId: string }, R>(evidence: readonly E[], entries: readonly R[], anchors: ReadonlyArray<string | undefined>): Array<E | R> {
+function firstPlacement(evidence: ReadonlyArray<{ callId: string; toolId: string }>, call: string | undefined, index: number, sent: number): string | null {
+  let newestCall = evidence.length;
+  while (newestCall > 0 && isCoreNote(evidence[newestCall - 1]!)) newestCall -= 1;
+  const named = call === undefined ? -1 : evidence.findIndex((entry) => entry.callId === call);
+  const after = call === undefined && index === 0 ? 0 : named >= 0 ? named + 1 : newestCall;
+  const at = Math.max(after, sent);
+  return at === 0 ? null : evidence[at - 1]!.callId;
+}
+
+/**
+ * An entry Core wrote rather than a call the model made: Core names its own
+ * under their tool id (`core.evidence_history`) or the tool id and a counter
+ * (`core.budget.3`, `core.route_state.2`), where a call carries the id its
+ * decision gave it.
+ */
+function isCoreNote(entry: { callId: string; toolId: string }): boolean {
+  return entry.callId === entry.toolId || entry.callId.startsWith(`${entry.toolId}.`);
+}
+
+/** How many leading entries of `now` the previous decision was sent byte for byte the same. */
+function unchangedEntries(before: readonly string[], now: readonly string[]): number {
+  let count = 0;
+  while (count < before.length && count < now.length && before[count] === now[count]) count += 1;
+  return count;
+}
+
+/**
+ * The window with each situation entry placed after the entry it was first
+ * shown after (`placed`); one placed before every entry goes first. One whose
+ * entry has left the window -- a round's window does not carry the last
+ * round's calls -- follows the situation before it, so the situations stay in
+ * the order they were seen.
+ */
+function placedAfterTheirCalls<E extends { callId: string }, R>(evidence: readonly E[], entries: readonly R[], placed: ReadonlyArray<string | null>): Array<E | R> {
   const present = new Set(evidence.map((entry) => entry.callId));
   const before: R[] = [];
   const after = new Map<string, R[]>();
   let anchor: string | undefined;
   entries.forEach((entry, index) => {
-    const call = anchors[index];
-    if (call !== undefined && present.has(call)) anchor = call;
-    else if (call === undefined && index === 0) anchor = undefined;
+    const call = placed[index];
+    if (call === null) anchor = undefined;
+    else if (call !== undefined && present.has(call)) anchor = call;
     if (anchor === undefined) before.push(entry);
     else after.set(anchor, [...(after.get(anchor) ?? []), entry]);
   });
