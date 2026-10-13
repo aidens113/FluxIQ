@@ -17,6 +17,7 @@ import { describe, expect, it } from "vitest";
 import { automationStudioFlowBootstrapRepairingNotRunSaid } from "../not-done.ts";
 import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplaySignature, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepCarried, type AutomationStudioLlmEvidenceLoopAccounting, type AutomationStudioLlmEvidenceLoopResult } from "../../../llm/index.ts";
+import type { AutomationStudioInstructedActChecklistItem } from "../../instructed-acts/index.ts";
 import {
   automationStudioFlowBootstrapJudgeUnfinished,
   automationStudioFlowBootstrapJudgementProgress,
@@ -183,6 +184,69 @@ describe("a round whose Flow holds steps that never ran in this build", () => {
     const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
 
     expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "not_finished", tried: { noRoute: { kind: "no_progress" } } });
+  });
+});
+
+// t500, F4 (live run `run-mv6i28zl-a53d36db`, lane B round 16): the failed-step re-author's round 1, a
+// repair, swapped one press for another, stalled with the request's acts done still 1 of 8, and a changed
+// Flow counted as progress, so round 2 opened with the same brief until the run's call allowance stopped
+// it. A changed Flow is not a new act. murwcmx2's read above asks for no act, so it is unchanged.
+describe("a repair round that stalls with acts still to do and no new act (run-mv6i28zl, B round 16)", () => {
+  /** Act `a1` is done by the step at position 1; `a2` and `a3` only once a step at position 4 or 5 is in the Flow. */
+  const acts = (steps: readonly AutomationStudioFlowDraftStep[]): AutomationStudioInstructedActChecklistItem[] => {
+    const at = (position: number) => steps.some((step) => step.position === position);
+    return [
+      { id: "a1", verb: "choose", quote: "choose the one I use", done: 1 },
+      { id: "a2", verb: "add", quote: "add the first item", ...(at(4) ? { done: 4 } : {}) },
+      { id: "a3", verb: "add", quote: "add the second item", ...(at(5) ? { done: 5 } : {}) }
+    ];
+  };
+
+  it("ends the build not finished instead of opening another round, though its Flow changed", async () => {
+    const { input, requests } = harness([
+      (request) => stall(request, fixRerun()),
+      // The press is swapped for another: a changed Flow, and still no new act.
+      (request) => stall(request, [...request.repair!.seed.slice(0, 2), ran(3, "d9", { standsFor: "f3", ranWith: { target: "t3b" } })]),
+      () => { throw new Error("a third round must not open"); }
+    ], { checklist: acts });
+
+    const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
+
+    expect(requests).toHaveLength(2);
+    expect(outcome.kind).toBe("unfinished");
+    if (outcome.kind !== "unfinished") return;
+    expect(outcome.ending).toMatchObject({ kind: "not_finished", tried: { rounds: 2, tested: "not_tested", noRoute: { kind: "no_progress" } } });
+    expect(outcome.ending.message).toContain("My last attempt to fix it got no further than the one before");
+    expect(outcome.ending.message).toContain("no more of what you asked has a step than before");
+  });
+
+  it("opens the next round when the stalled repair made a new act", async () => {
+    const { input, requests } = harness([
+      (request) => stall(request, fixRerun()),
+      // Round 1 adds the step that does act a2.
+      (request) => stall(request, [...request.repair!.seed, ran(4, "d12")]),
+      (request) => stall(request, request.repair!.seed.map((each) => structuredClone(each))),
+      () => { throw new Error("a fourth round must not open"); }
+    ], { checklist: acts });
+
+    const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
+
+    // Round 2 opened on round 1's new act, then stalled with none, which ends it.
+    expect(requests).toHaveLength(3);
+    expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "not_finished", tried: { rounds: 3, noRoute: { kind: "no_progress" } } });
+  });
+
+  it("opens the next round when the stalled repair ran a carried step again", async () => {
+    const { input, requests } = harness([
+      (request) => stall(request, fixRerun()),
+      (request) => stall(request, [ran(1, "d10", { standsFor: "f1" }), ...request.repair!.seed.slice(1)]),
+      (request) => stall(request, request.repair!.seed.map((each) => structuredClone(each))),
+      () => { throw new Error("a fourth round must not open"); }
+    ], { checklist: acts });
+
+    await runAutomationStudioFlowBootstrapBuildPhases(input);
+
+    expect(requests).toHaveLength(3);
   });
 });
 

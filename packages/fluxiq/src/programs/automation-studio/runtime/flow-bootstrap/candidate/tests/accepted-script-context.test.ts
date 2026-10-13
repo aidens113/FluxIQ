@@ -69,34 +69,38 @@ describe("the script of the latest accepted revision", () => {
     // Revision 2: its whole script, labelled the current Flow by its number and digest.
     expect(rev2).toMatchObject({ ok: true, revision: 2, script: REV_2 });
     expect(String(rev2.scriptIs)).toContain(`Revision 2 (digest ${String(rev2.digest)}) is your current Flow`);
-    // Revision 1 is not a second current script.
-    expect(rev1).not.toHaveProperty("script");
-    expect(rev1).toMatchObject({ supersededBy: "submit.2" });
+    // Revision 1 stays whole, as first sent (t501: no earlier entry is rewritten), and revision 2 names it as superseded.
+    expect(rev1).toMatchObject({ ok: true, revision: 1, script: REV_1 });
+    expect(rev1).not.toHaveProperty("supersededBy");
+    expect(rev2.supersedes).toMatchObject({ calls: ["submit.1"] });
+    expect(String((rev2.supersedes as JsonObject).note)).toContain("submit.1: no script or plan in them is your current Flow");
+    expect(Object.keys(rev2).at(-1)).toBe("supersedes");
     // Revision 3: refused, and superseded by revision 2 as the Flow to edit.
     expect(rev3).toMatchObject({ ok: false, revision: 3, current: { revision: 2, digest: rev2.digest, call: "submit.2" } });
     expect(String(rev3.scriptIs)).toContain("This submission was refused and is no revision");
     expect(String(rev3.scriptIs)).toContain("superseded by revision 2, your current Flow, whose whole script is under call submit.2");
     // Never "the script you sent" as if it were the current one.
     expect(JSON.stringify(rev3)).not.toMatch(/script you (just )?sent/u);
-    // Only one script is labelled current.
-    expect(decision.filter((entry) => typeof (entry.value as JsonObject | undefined)?.script === "string")).toHaveLength(1);
+    // Exactly one accepted script is not superseded by a later accepted submission: revision 2's.
+    const accepted = decision.filter((entry) => entry.toolId === "core.submit_candidate" && (entry.value as JsonObject).ok === true);
+    const superseded = new Set(accepted.flatMap((entry) => ((entry.value as JsonObject).supersedes as JsonObject | undefined)?.calls as string[] ?? []));
+    expect(accepted.map((entry) => entry.callId).filter((callId) => !superseded.has(callId))).toEqual(["submit.2"]);
   });
 
-  it("supersedes revision 2's script and refused revision 3's once revision 4 is accepted, and shows revision 4 whole", async () => {
+  it("marks revision 2's script and refused revision 3's superseded once revision 4 is accepted, leaving them as sent, and shows revision 4 whole", async () => {
     const seen = await shown([submit("submit.1", REV_1), submit("submit.2", REV_2), submit("submit.3", REV_3), submit("submit.4", REV_4), look, look]);
     const decision = seen[4]!;
     const rev2 = submitted(decision, "submit.2");
     const rev3 = submitted(decision, "submit.3");
     const rev4 = submitted(decision, "submit.4");
-    expect(rev4).toMatchObject({ ok: true, revision: 4, script: REV_4 });
-    expect(rev2).toMatchObject({ supersededBy: "submit.4" });
-    expect(rev2).not.toHaveProperty("script");
-    expect(rev3).toMatchObject({ ok: false, supersededBy: "submit.4" });
-    expect(rev3).not.toHaveProperty("scriptIs");
-    expect(rev3).not.toHaveProperty("current");
-    expect(rev3.diagnostics).not.toHaveProperty("previous");
-    // The refused script's text is nowhere in the decision.
-    expect(JSON.stringify(decision)).not.toContain("only after: older");
+    expect(rev4).toMatchObject({ ok: true, revision: 4, script: REV_4, supersedes: { calls: ["submit.1", "submit.2", "submit.3"] } });
+    expect(String((rev4.supersedes as JsonObject).note)).toContain("This result's script (or plan) is your current Flow");
+    // The earlier submissions are exactly what the decision before revision 4 was shown.
+    const before = seen[3]!;
+    for (const callId of ["submit.1", "submit.2", "submit.3"]) expect(submitted(decision, callId), callId).toEqual(submitted(before, callId));
+    expect(rev2).toMatchObject({ ok: true, revision: 2, script: REV_2 });
+    expect(rev3).toMatchObject({ ok: false, revision: 3, current: { revision: 2, call: "submit.2" } });
+    expect(JSON.stringify(decision)).not.toContain("supersededBy");
   });
 
   it("keeps each stub unchanged from the decision it was written in, so a request stays a prefix of the next until a new revision is accepted", async () => {
@@ -107,6 +111,15 @@ describe("the script of the latest accepted revision", () => {
     expect(submissions(seen[3]!)).toHaveLength(3);
   });
 
+  it("never rewrites an entry already shown when a new revision is accepted, so each request's evidence is a byte prefix of the next", async () => {
+    const seen = await shown([submit("submit.1", REV_1), submit("submit.2", REV_2), submit("submit.3", REV_3), submit("submit.4", REV_4), look, look]);
+    const evidence = (decision: readonly Entry[]) => decision.filter((entry) => !entry.toolId.startsWith("core.") || entry.toolId === "core.submit_candidate");
+    for (let index = 1; index < seen.length; index += 1) {
+      const earlier = evidence(seen[index - 1]!);
+      expect(JSON.stringify(evidence(seen[index]!).slice(0, earlier.length)), `decision ${index + 1}`).toBe(JSON.stringify(earlier));
+    }
+  });
+
   it("hands back the refused script to correct when nothing was accepted before it", async () => {
     const seen = await shown([submit("submit.1", REV_3), look]);
     const rev1 = submitted(seen[1]!, "submit.1");
@@ -115,11 +128,12 @@ describe("the script of the latest accepted revision", () => {
     expect((rev1.diagnostics as JsonObject).previous).toBe(REV_3);
   });
 
-  it("supersedes a refused script that came before any accepted revision once one is accepted", async () => {
+  it("marks a refused script that came before any accepted revision superseded once one is accepted, leaving it as sent", async () => {
     const seen = await shown([submit("submit.1", REV_3), submit("submit.2", REV_2), look, look]);
     const refused = submitted(seen[2]!, "submit.1");
-    expect(refused).toMatchObject({ ok: false, supersededBy: "submit.2" });
-    expect(refused.diagnostics).not.toHaveProperty("previous");
-    expect(submitted(seen[2]!, "submit.2")).toMatchObject({ ok: true, script: REV_2 });
+    expect(refused).toEqual(submitted(seen[1]!, "submit.1"));
+    expect((refused.diagnostics as JsonObject).previous).toBe(REV_3);
+    expect(refused).not.toHaveProperty("supersededBy");
+    expect(submitted(seen[2]!, "submit.2")).toMatchObject({ ok: true, script: REV_2, supersedes: { calls: ["submit.1"] } });
   });
 });
