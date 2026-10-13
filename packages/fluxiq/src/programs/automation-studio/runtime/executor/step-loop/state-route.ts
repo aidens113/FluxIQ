@@ -1,4 +1,5 @@
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
+import { automationStudioNodeRouteSignatures } from "../../route-state/passive/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../contracts.ts";
 import { missingTargetTrace } from "../graph-navigation.ts";
 import { recordRegionTransition } from "../region-execution.ts";
@@ -23,6 +24,16 @@ import type { AutomationStudioStepOutcome } from "./loop-outcome.ts";
  * way retries the step at once (`retry`), and one that routed to a checkpoint
  * moves the run there (`next`). Only when none took the run on does state
  * routing decide.
+ *
+ * A step that recorded its own effect reads the page first (t486): when the
+ * page already shows what the step does (`effect_holds`, a store the site
+ * already remembers), the step is satisfied by state, and retrying it, or
+ * running a handler that clears the way to retry it, could only do it a
+ * second time. So state routing decides before On Retry, and a way on it
+ * finds is taken with no handler run and nothing dispatched again. With no
+ * way on, On Retry dispatches as before, and the decision already made stands
+ * unless a handler ran, which may have moved the page, so the page is read
+ * once more. A step that recorded no effect keeps the order above.
  */
 export async function automationStudioStepStateRoute(
   ctx: AutomationStudioStepLoopContext,
@@ -37,9 +48,16 @@ export async function automationStudioStepStateRoute(
 ): Promise<AutomationStudioStepOutcome> {
   const { flow, options, attempts, now } = ctx;
   const { node, attempt, attemptIndex, regionId } = step;
-  const retried = step.routing ? undefined : await automationStudioStepRetryBeforeRouting(ctx, { node, attempt, attemptIndex, retryPolicy: step.retryPolicy });
-  if (retried && retried.outcome.kind !== "pass") return afterRetryHandler(ctx, step, retried.outcome, retried.incidentId);
-  const routing = step.routing ?? await decideAutomationStudioStateRoute({ flow, node, attempt, attempts, options, guard: ctx.routeGuard });
+  const decide = () => decideAutomationStudioStateRoute({ flow, node, attempt, attempts, options, guard: ctx.routeGuard });
+  // The readiness gate's decision, or the page read first for a step that recorded its own effect.
+  const first = step.routing ?? (automationStudioNodeRouteSignatures(node).effect ? await decide() : undefined);
+  const retried = step.routing || (first && first.kind !== "none") ? undefined : await automationStudioStepRetryBeforeRouting(ctx, { node, attempt, attemptIndex, retryPolicy: step.retryPolicy });
+  if (retried && retried.outcome.kind !== "pass") {
+    // The page was read and showed no way on: the attempt keeps that record under the handler's.
+    if (first) attempts[attemptIndex] = automationStudioStateRoutedAttempt(attempts[attemptIndex]!, first);
+    return afterRetryHandler(ctx, step, retried.outcome, retried.incidentId);
+  }
+  const routing = first && !retried?.outcome.lifecycle ? first : await decide();
   attempts[attemptIndex] = automationStudioStateRoutedAttempt(attempts[attemptIndex]!, routing);
   if (routing.kind !== "none") automationStudioStepStampFailureClass(ctx, attemptIndex, { uncertainAct: false, ...movedBy(routing.kind), onFail: [] }, retried?.incidentId);
   if (routing.kind === "stopped") return { kind: "return", trace: automationStudioEndedTrace(ctx, "failed", node.id, routing.message) };

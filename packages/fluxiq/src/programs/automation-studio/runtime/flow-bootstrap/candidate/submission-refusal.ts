@@ -65,6 +65,13 @@
 // one more would have ended a build that was correcting itself each time. The
 // key now carries the handles each issue refused as well, so only a
 // resubmission refused for the same issue on the same values continues a run.
+//
+// **A handle from another page than its step runs on (t486).** Lane B
+// (`run-mv636xvb-e1426db1`) submitted a step naming a control printed only on
+// another page than the one the steps around it act on. Resolution now refuses
+// it (`bootstrap.handle.other_page`, `../../llm/harness-options/plan-parameter-resolution.ts`,
+// whose issue names both pages), and its advice says to take the handle from a
+// view of the page the step runs on.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowCandidateSubmission } from "./contracts.ts";
@@ -107,6 +114,9 @@ const HANDLE_ADVICE: Readonly<Record<string, (handles: readonly string[]) => str
   extraction_required: () => "A list is read only through its handle, so a read written out by hand is refused: detect the list, then name it by the handle its view printed, with fields naming that list's columns. ",
   // A control named by anything but a handle (t432): an address, an identity or a description of the model's own.
   not_a_handle: () => "A step names a control by something other than a handle. Name every control only by the handle the page view printed for it, copied exactly -- `target: t5` -- and write nothing else about it: no address, no description of the element, no identity of your own. If no view printed the control, look at the page the step runs on first. ",
+  // The step runs on another page than the one that printed its handle (t486); the issue names both pages.
+  other_page: (handles) => `${named(handles, "A handle the step names")} ${handles.length > 1 ? "were" : "was"} printed on another page than the one this step runs on: the steps just before and after it act on a page of their own, so that page is open when the Flow reaches this step. `
+    + "Take the handle from a view of the page this step runs on: look at that page and copy the handle its view prints for the control. If the control is not on that page, move the step to where the Flow is on the page that printed it, or drop the step if the Flow does not need it. ",
   not_a_control: (handles) => `${named(handles, "A handle the step names")} names text the view printed, not a control a press acts on. Copy the handle the view prints for the control itself, or drop the step if the Flow does not need it. `,
   wrong_control: (handles) => `${named(handles, "A handle the step names")} names a known control that this node cannot act on; that does not prove it is the control the instruction needs. `
     + "If this is the intended control, use the node that can act on its kind (an issue names one where known). "
