@@ -62,8 +62,37 @@ describe("the check's card for a run that stored more than one record set", () =
     expect(observed([4])).toBe("4 records stored, across 1 record set; the Flow's steps were web.output.dom-extract_list.");
   });
 
-  it("says the 4 rows of round 8's answer, not 8", () => {
-    expect(automationStudioResultCheckWords(answered(observed([4, 4])))).toBe("4 rows came back, in each of 2 record sets. The result was judged to answer the request.");
+  it("says the 4 rows of round 8's answer, not 8, and each set's count where it cannot tell whether they are the same rows", () => {
+    expect(automationStudioResultCheckWords(answered(observed([4, 4])))).toBe("Rows came back in 2 record sets: 4 and 4 rows. The result was judged to answer the request.");
+  });
+
+  // t482, live run `run-mv636xyp-2e4fe54d`: a listing and a read of the accepted requests stored the same 4 rows, and the
+  // card's "4 rows came back, in each of 2 record sets" read as two answers.
+  const withRows = (sets: Array<{ columns: string[]; rows: Array<Record<string, string>> }>, withheld = false) => automationStudioResultObservation({
+    schemaVersion: "automation-studio.run-result-summary.v1", totalRecordCount: sets.reduce((total, entry) => total + entry.rows.length, 0), totalRefusedCount: 0, totalRowsMissingRequired: 0,
+    recordSetCount: sets.length, recordSets: sets.map((entry, index) => ({ ...set(entry.rows.length), datasetId: `set.${index}`, columns: entry.columns, sampleRows: entry.rows })),
+    flowShape: [{ nodeId: "s6", definitionId: "web.output.dom-extract_list" }], withheld
+  });
+  const people = ["Ada", "Ben", "Cy", "Di"];
+  const listing = { columns: ["name", "detail"], rows: people.map((name) => ({ name, detail: `${name} detail` })) };
+
+  it("says one answer when every set holds the same rows, read by the columns they all store", () => {
+    const same = withRows([listing, { columns: ["name"], rows: people.map((name) => ({ name })) }]);
+    expect(same).toContain("across 2 record sets (4, 4 rows; the same rows in each)");
+    expect(automationStudioResultCheckWords(answered(same))).toBe("4 rows came back (the same rows in both record sets). The result was judged to answer the request.");
+  });
+
+  it("names the distinct rows when the sets differ, and says when none repeats", () => {
+    const overlapping = withRows([listing, { columns: ["name"], rows: ["Ada", "Ben", "Eve", "Fay"].map((name) => ({ name })) }]);
+    expect(overlapping).toContain("(4, 4 rows; 6 distinct)");
+    expect(automationStudioResultCheckWords(answered(overlapping))).toMatch(/^6 rows came back across 2 record sets \(4 and 4 rows, some rows in more than one set\)\. /u);
+    const apart = withRows([listing, { columns: ["name"], rows: ["Eve", "Fay"].map((name) => ({ name })) }]);
+    expect(automationStudioResultCheckWords(answered(apart))).toMatch(/^Rows came back in 2 record sets: 4 and 2 rows, no row in more than one set\. /u);
+  });
+
+  it("does not tell the rows apart when anything was withheld or the sets share no column", () => {
+    expect(withRows([listing, { columns: ["name"], rows: people.map((name) => ({ name })) }], true)).toContain("(4, 4 rows)");
+    expect(withRows([listing, { columns: ["title"], rows: people.map((title) => ({ title })) }])).toContain("(4, 4 rows)");
   });
 
   it("says each set's rows when they differ, and only the sets when not every set was summarized", () => {

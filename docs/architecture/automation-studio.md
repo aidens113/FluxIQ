@@ -470,6 +470,48 @@ judges, shown only status rows and a stale end view, refuted a playback that
 had built exactly what was asked
 (`result-verification/step-changes.ts`).
 
+Each read of the Flow's own nodes also carries `narrowedBefore` (t482): every
+step that acted on the page before that read first ran, in run order -- a
+search, a site filter, a sort, an option chosen, a move to another page --
+each named once by its nodeId, label, the control words it pressed or chose
+(through `llm/model-facing/control-words.ts`, so nothing says how the control
+was found, and none without a denied-keys declaration) and `effect`
+(`new_page`, `same_page`, `already_shown`, or absent where the run recorded no
+page comparison). A step whose page comparison says nothing changed, a skipped
+step, a try that did not settle and another read are left out, and the read's
+own paging runs after its first attempt, so it never names its own next page.
+It exists because a page move carries no `changed` and the rows a site filter
+removes never reach the read, so no condition's `leftOutOnlyByThis` can show
+them: lane C rounds 10 and 12 (`run-mv5uu9g1-9d80deea`,
+`run-mv62icw3-9118516f`) pressed a filter band narrower than the request's
+bound, and every judge named it and said yes over 11 of 13 rows. The result
+judge's instruction now carries the converse of its "no step that could have
+narrowed" rule: a step whose words keep less than the request asks means asked
+rows may be missing although none is listed, so the answer is no and the step
+is named in `changed`; its example is of another kind of site. A judged
+candidate trial's feedback carries the same list per read, with one sentence
+saying what it means (`service/candidate-trial/reads.ts`)
+(`result-verification/narrowed-before.ts`).
+
+A step that runs per row names the rows it acted on (`rowsActedOn`) from the
+session's trace, and the trace a run saves holds a `$datasetRow` marker where
+each captured row sat. A marker is read back as the stored row it stands for
+where the stored rows still stand in capture order -- an unprocessed set, or
+one whose processing kept every row it collected and whose writing steps
+declare no sort -- and is otherwise named by its place among the rows
+collected, never sent as an empty row: lane D round 12
+(`run-mv62icw0-070f88ad`) sent four `{}` rows (`result-verification/`
+`captured-rows.ts`, `step-rows.ts`). A read condition that keeps only the rows
+lacking what its own read finds (`is: absent` over a read no column makes) is
+said by the words that read found on a row it left out -- `the item's text
+"Accept" is absent (a row is kept only when it has no "Accept")` -- rather than
+`the item's text is absent` (`read-account/condition.ts`). And where a run
+stored several record sets, Core's observation says whether they hold the same
+rows, read by the columns every set stores (`; the same rows in each`, `; 6
+distinct`), and the check's card says one answer once ("4 rows came back (the
+same rows in both record sets)") instead of "in each of 2 record sets"
+(`verdict.ts`, `check-words.ts`).
+
 Both judges -- of a finished run and of a build's test -- also get `startView`:
 the same view of the page before what they judge did anything, screened as the
 end view is. For a finished run it is read off the session's trace (the first
