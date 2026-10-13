@@ -4,7 +4,8 @@ import {
   automationStudioRecordAutoSortKind,
   readAutomationStudioRecordDate,
   readAutomationStudioRecordNumber,
-  readAutomationStudioRecordSortValue
+  readAutomationStudioRecordSortValue,
+  sortAutomationStudioRecordRows
 } from "../index.ts";
 
 describe("AUTOMATION_STUDIO_RECORD_VALUE_READING_CASES", () => {
@@ -38,5 +39,28 @@ describe("readAutomationStudioRecordSortValue on stored cells", () => {
     expect(readAutomationStudioRecordSortValue(null, "date", now)).toBeUndefined();
     expect(readAutomationStudioRecordSortValue(undefined, "number", now)).toBeUndefined();
     expect(readAutomationStudioRecordSortValue(true, "text", now)).toBe("true");
+  });
+});
+
+// t510 (F6): a column of times left, or of dates on one day with their times, sorted soonest first.
+describe("sortAutomationStudioRecordRows on times of day and times left", () => {
+  const now = Date.UTC(2026, 9, 6, 12);
+  const rows = (cells: readonly string[]) => cells.map((due) => ({ values: { due } }));
+  const order = (cells: readonly string[]) => sortAutomationStudioRecordRows(rows(cells), [{ field: "due", order: "asc" }], now).map((row) => row.values.due);
+
+  it("orders dates on one day by their times", () => {
+    expect(order(["(Fri 2 Oct, 16:45)", "(Fri 2 Oct, 09:10)", "(Thu 1 Oct, 23:00)"])).toEqual(["(Thu 1 Oct, 23:00)", "(Fri 2 Oct, 09:10)", "(Fri 2 Oct, 16:45)"]);
+  });
+
+  it("orders times left by when they run out, not by their first number", () => {
+    expect(order(["1d 0h left", "5h 12m left", "2d 3h left", "40m left"])).toEqual(["40m left", "5h 12m left", "1d 0h left", "2d 3h left"]);
+  });
+});
+
+// Supervisor decision (t510): a date with no year is the occurrence nearest the read, within six months either way.
+describe("readAutomationStudioRecordDate on a date with no year across the turn of a year", () => {
+  it("reads a date just ahead as next year's and one just past as last year's", () => {
+    expect(readAutomationStudioRecordDate("Jan 2, 09:00", Date.UTC(2026, 11, 30, 12))).toBe(Date.UTC(2027, 0, 2, 9));
+    expect(readAutomationStudioRecordDate("30 Dec", Date.UTC(2027, 0, 3, 12))).toBe(Date.UTC(2026, 11, 30));
   });
 });

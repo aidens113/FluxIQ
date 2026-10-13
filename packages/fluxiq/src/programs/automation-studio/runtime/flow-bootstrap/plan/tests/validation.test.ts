@@ -304,5 +304,8 @@ describe("a record output whose processing names a field it does not keep", () =
     const [issue] = issuesOf(club({ sort: [{ field: "secret", order: "asc" }] }, fields));
     expect(issue).toMatchObject({ code: "record_output.process_excluded_field" });
     expect(issue!.message).toContain("\"secret\"");
+    // t510 (F2): a sort key is kept stored and hidden with process.columns, and the issue names it in its detail.
+    expect(issue!.message).toContain("process.columns");
+    expect(issue!.detail).toEqual({ field: "secret", valid: ["name"] });
   });
 });

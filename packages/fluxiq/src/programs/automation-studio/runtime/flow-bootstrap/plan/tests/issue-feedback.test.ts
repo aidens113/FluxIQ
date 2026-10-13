@@ -274,3 +274,26 @@ describe("the feedback on a domain refusal that names a field", () => {
     expect(feedback[1]).not.toHaveProperty("message");
   });
 });
+
+// t510 (F2): breadth wave 1 (`run-mv6qrbgx-06151cdb`, 0022-0026) sorted on a field it had marked excluded, to keep it
+// out of the answer, and was told to name a stored field instead. From submit to feedback, the refusal now carries the
+// field and the stored ids, and keeps Core's own remedy: a detail never swaps in the domain's "write one of those
+// instead", which is the wrong fix for a sort key.
+describe("the feedback on a sort key the schema excludes, from submit", () => {
+  it("keeps Core's remedy and carries the field and the stored ids", () => {
+    const recordOutput = {
+      datasetId: "tasks",
+      writeMode: "replace",
+      schema: { schemaVersion: "0.1", fields: [{ id: "name", label: "Name", valueType: "string" }, { id: "owner", label: "Owner", valueType: "string" }, { id: "due", label: "Due", valueType: "string", handling: "exclude" }] },
+      process: { sort: [{ field: "due", order: "asc" }], columns: ["name", "owner"] }
+    };
+    const { issues, feedback } = feedbackFor({ extractList, recordOutput });
+    const issue = issues.find((item) => item.code === "record_output.process_excluded_field");
+    expect(issue?.detail).toEqual({ field: "due", valid: ["name", "owner"] });
+    const entry = feedback.find((item) => item.code === "record_output.process_excluded_field");
+    expect(entry).toMatchObject({ field: "due", valid: ["name", "owner"] });
+    expect(entry?.message).toEqual(expect.stringContaining("remove handling \"exclude\""));
+    expect(entry?.message).toEqual(expect.stringContaining("process.columns"));
+    expect(entry?.message).not.toEqual(expect.stringContaining("write one of those instead"));
+  });
+});
