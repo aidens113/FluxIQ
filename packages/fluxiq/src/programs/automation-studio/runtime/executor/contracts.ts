@@ -13,9 +13,12 @@ import type { AutomationStudioHostRuntimeBoundary, AutomationStudioHostStateSnap
 import type { AutomationStudioAskKind, AutomationStudioParkedRun, AutomationStudioParkingPort } from "../parking/index.ts";
 import type { AutomationStudioRunControlGate } from "../run-control/index.ts";
 import type { AutomationStudioRecordedState } from "./recorded-state.ts";
+import type { AutomationStudioClearedLayer } from "./node-execution/index.ts";
 import type { AutomationStudioDefenceSummary, AutomationStudioFaultAssessment } from "./defensive/index.ts";
 import type { AutomationStudioLifecycleEvent } from "../../nodes/control-flow/index.ts";
 import type { AutomationStudioFactTruth, AutomationStudioRouteRefusalGuard, AutomationStudioUnhandledReason } from "./lifecycle/index.ts";
+
+export type { AutomationStudioClearedLayer, AutomationStudioClearedLayerKind } from "./node-execution/index.ts";
 
 export type AutomationStudioGraphRunStatus = "running" | "succeeded" | "failed" | "waiting" | "cancelled";
 
@@ -326,26 +329,6 @@ export type AutomationStudioAttemptRepairTrace = {
   unit: import("./lifecycle-run/index.ts").AutomationStudioRepairUnit;
   outcome: "held" | "dropped" | "none";
   reason: string;
-};
-
-/**
- * What a layer the client closed was: a consent notice, a rate-limit notice,
- * a promotion, an assistant or chat widget, or `dialog` for a layer no
- * classifier named. A closed vocabulary; a robot check is never closed.
- */
-export type AutomationStudioClearedLayerKind = "consent" | "rate_limit" | "promotion" | "assistant" | "dialog";
-
-/**
- * One layer the client closed: its kind, and `control`, the words of the
- * dismiss control it pressed ("Not now"), whitespace-collapsed, with
- * token-shaped runs hidden and held to 40 characters. `control` stays in the
- * trace; the chat never shows it.
- */
-export type AutomationStudioClearedLayer = {
-  kind: AutomationStudioClearedLayerKind;
-  control: string;
-  /** The domain's opaque reference to the control it pressed (t470), handed back for that control's handle (`../service/candidate-trial/interruptions.ts`). */
-  wayOut?: string;
 };
 
 export type AutomationStudioNodeAttemptTrace = {
@@ -773,6 +756,12 @@ export type AutomationStudioGraphExecutionOptions = {
    * adapting run; absent, a true failure ends the run as it always has.
    */
   repairIncident?: import("./lifecycle-run/index.ts").AutomationStudioIncidentRepairCallback;
+  /**
+   * Learning a layer the client's defence closed while a step succeeded, as a
+   * handler of the Flow (t516, `step-loop/incident-repair.ts`). Supplied by the
+   * run session on a run that keeps what it learns; absent, nothing is asked.
+   */
+  learnInterruption?: import("./lifecycle-run/index.ts").AutomationStudioInterruptionLearningCallback;
   approvedRuntimePatchNodeIds?: Iterable<string>;
   recoveryBudget?: AutomationStudioRecoveryBudget;
   /**

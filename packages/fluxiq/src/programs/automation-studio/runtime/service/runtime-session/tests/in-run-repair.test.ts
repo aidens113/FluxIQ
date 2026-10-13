@@ -46,6 +46,20 @@ afterEach(() => {
 });
 
 describe("the in-run repair a run session supplies", () => {
+  it("keeps records for separate incidents distinct at an identical timestamp", async () => {
+    const world = inRunRepairWorld({ scripts: [{ patches: [inRunRepairHandlerPatch()] }, { patches: [inRunRepairHandlerPatch()] }] });
+    bind(world);
+    const first = await repair(world, inRunRepairRequest({ incidentId: "incident.first" }));
+    const second = await repair(world, inRunRepairRequest({ incidentId: "incident.second" }));
+    expect(first.kind).toBe("overlay");
+    expect(second.kind).toBe("overlay");
+    expect(world.adaptations.size).toBe(2);
+    expect(new Set(world.proposals.map((proposal) => proposal.proposalId)).size).toBe(2);
+    for (const proposal of world.proposals) {
+      expect(world.adaptations.get(proposal.sourceAdaptationId!)?.proposalId).toBe(proposal.proposalId);
+    }
+  });
+
   it("runs the diagnosis and then the patch request carrying the unit, its contract and the incident, and answers with the fix overlaid", async () => {
     const world = inRunRepairWorld();
     const context = bind(world);
@@ -112,13 +126,15 @@ describe("the in-run repair a run session supplies", () => {
   });
 
   it("is not supplied at all on a run whose context does not adapt, or whose lane only diagnoses or proposes", () => {
-    for (const behavior of [{ invokeLlm: false }, { createAdaptations: false }]) {
-      const world = inRunRepairWorld({ behavior });
-      const context = bind(world);
-
-      expect(world.graphOptions.repairIncident).toBeUndefined();
-      expect(context).toBe(world.context);
-    }
+    const kept = inRunRepairWorld({ behavior: { createAdaptations: false } });
+    expect(bind(kept)).toBe(kept.context);
+    expect(kept.graphOptions.repairIncident).toBeUndefined();
+    expect(kept.graphOptions.learnInterruption).toBeUndefined();
+    // A run that asks no model repairs nothing at a failing step, and still learns a layer the defence closed (t516).
+    const modelFree = inRunRepairWorld({ behavior: { invokeLlm: false } });
+    expect(bind(modelFree).inRunRepairs).toBeDefined();
+    expect(modelFree.graphOptions.repairIncident).toBeUndefined();
+    expect(modelFree.graphOptions.learnInterruption).toBeTypeOf("function");
     for (const intent of ["diagnosis_only", "diagnose_and_adapt"] as const) {
       const world = inRunRepairWorld();
       const context = bindAutomationStudioInRunRepair({ context: world.context, graphOptions: world.graphOptions, ports: world.ports, runId: IN_RUN_REPAIR_RUN_ID, llmExecution: { actorUserId: "user.test", actorSessionId: "session.test", intent } });

@@ -13,7 +13,8 @@
 // evidence; and supplying an adapting run's in-run repair, the callback the
 // executor asks at a true failure, with the ledger of what it fixed, the one
 // unit each fix may change, and the graph a run that kept a fix is verified
-// against.
+// against; and learning, with no model, a layer the client's defence closed
+// as a handler of the Flow (t516), recorded as such a fix is.
 export * from "./admission.ts";
 export * from "./ending.ts";
 export * from "./parked-wait.ts";
@@ -32,4 +33,7 @@ export * from "./late-action-result.ts";
 export * from "./in-run-repair.ts";
 export * from "./in-run-repair-ledger.ts";
 export * from "./in-run-repair-unit.ts";
+export * from "./in-run-repair-fix-record.ts";
+export * from "./interruption-handler.ts";
+export * from "./interruption-learning.ts";
 export * from "./held-repair-verification.ts";

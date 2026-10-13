@@ -1239,17 +1239,80 @@ the element was left to the output's adapter.
 
 An attempt also records `clearedLayers` when a dispatch says the client closed
 layers the page put over itself while the output ran (state-aware recovery,
-C11): each entry is `{ kind, control }`, where `kind` is a closed word
-(`consent`, `rate_limit`, `promotion`, `assistant` or `dialog`) and `control`
-is the dismiss control's words, whitespace-collapsed, with token-shaped runs
-hidden and held to 40 characters. Core reads the field from the top of the
-dispatch payload, as `clearedLayers: [{ kind, control }]`, the same place it
-reads a dispatched `route` (`runtime/executor/node-execution/cleared-layers.ts`);
-an entry with an unknown kind or unreadable words is dropped, and at most twelve
-are kept from one dispatch. A failed dispatch carries them too. An attempt that
-closed no layer has no field. Each attempt that closed any also says one step
-`interference` recovery row (see the client gateway's activity contract); the
-dismiss words stay on the trace and never reach the chat.
+C11). Each entry is `{ kind, control, name?, controlName?, wayOut?, wayOutDefinitionId? }`:
+
+| Field | What it holds |
+| --- | --- |
+| `kind` | A closed word: `consent`, `rate_limit`, `promotion`, `assistant` or `dialog`. |
+| `control` | The dismiss control's words, whitespace-collapsed, with token-shaped runs hidden and held to 40 characters. |
+| `name` (t516) | The layer's own name, as the client's page view labels the dialog. Bounded the same way, but held to 120 characters. |
+| `controlName` (t516) | The pressed control's own name, bounded as `name` is. |
+| `wayOut` (t470) | The domain's opaque reference to the control it pressed, kept only as a short token. The control's description stays in the domain. |
+| `wayOutDefinitionId` (t516) | The node definition a step pressing that way out runs, as the domain names it. An identifier, kept only beside `wayOut`. |
+
+Core reads the field from the top of the dispatch payload, the same place it
+reads a dispatched `route` (`runtime/executor/node-execution/cleared-layers.ts`):
+
+- An entry with an unknown kind or unreadable words is dropped.
+- At most twelve entries are kept from one dispatch.
+- A failed dispatch carries them too.
+- An attempt that closed no layer has no field.
+
+Each attempt that closed any layer also says one step `interference` recovery
+row (see the client gateway's activity contract). The dismiss words and names
+stay on the trace and never reach the chat.
+
+**A closed layer becomes a handler of the Flow (t516).** The user's rule is
+that an interruption met in a run becomes a branch of the Flow: wait for it,
+dismiss it, return. The client's defence closes such a layer by itself, so the
+step succeeds and no failure ever reaches a repair. Some layers carry both a
+`name` and a way out with its `wayOutDefinitionId`. When a step's verified
+success carries one, the executor asks the run session's `learnInterruption`
+callback (`runtime/executor/step-loop/incident-repair.ts`).
+
+It asks at most once per step and layer name in a run, never inside a handler
+body, and never once the run is cancelled or paused.
+
+No model is called. The session (`runtime/service/runtime-session/interruption-learning.ts`)
+takes these steps:
+
+1. It asks the domain to name the pressed way out by a handle
+   (`clearedControlHandles`).
+2. It proposes an `add_handler` (`interruption-handler.ts`):
+   - the event is `before` that step, scoped to that step;
+   - `when` is `{ fact: "dialog", op: "visible", value: <name> }`;
+   - the one step presses the way out by `wayOutDefinitionId` and the handle,
+     and declares no lasting consequence;
+   - `completionCheck` is the same dialog `absent`;
+   - `then` is `resume`.
+3. The domain resolves the step's handle from the Flow's view history, as a
+   build's step is resolved. A domain may reconstruct that view directly from
+   the recorded dismissal, so playback needs no preceding exploration look.
+4. The handler then takes the in-run repair's own path: preflight, overlay,
+   review record, adaptation and promotion gate.
+
+The handler writes no wait (supervisor, 2026-10-13). It fires when the dialog
+is visible as the step starts. The defence remains the backup for a layer that
+opens later.
+
+The executor holds the overlay for the rest of the frame and stamps the step's
+attempt with the repair. The run lists the repair in `trace.repairs`, so the
+run's judged end settles it as it settles any held fix: applied to the saved
+Flow when the run is judged to answer.
+
+The run detail carries two interventions, a `diagnosis` and a `runtime_patch`.
+Both have `validation.ok: true`, are marked `deterministic`, and name no
+provider. It also carries the patch attempt (`preflightOk: true`) and the
+adaptation id. The validation marks mean the dismissal resolved and the
+handler passed structural preflight; they do not claim the new handler body
+has executed. Its held adaptation still awaits the judged whole run.
+Several layers closed by one attempt have distinct repair, adaptation and
+proposal identities, even when learned in the same millisecond. A failed,
+refuted or unjudged run leaves each adaptation unapplied and reviewable.
+
+A run that keeps adaptations gets the callback whether or not its context
+invokes a model. A dry run gets none, and so does a lane that only diagnoses or
+proposes.
 
 The trace a run persists withholds every value that run resolved out of a
 parameter state binding, and every input the run was given. `runAutomationStudioGraph`
