@@ -1798,6 +1798,15 @@ decision recorded before this rule carries no `applied` and was applied when it
 was made). An unapplied patch keeps its trial evidence and its `validated`
 status, and a person can still apply it through review.
 
+The run panel uses the server's `summary.durableBehaviorChanged` when reading a
+run back after a timeout or reconnect. It does not derive learning from created
+adaptation IDs or automatic-approval intent. A missing summary flag stays
+unknown; an explicitly false flag explains that no change was kept. A true
+flag says that this run kept a change for future runs, covering runtime patches,
+in-run handlers and kept reauthoring, without claiming a later run reused it.
+The adaptation's own details remain the authority for proposed, waiting,
+held-back and applied decisions.
+
 Build and re-author repairs are gated separately, by a whole-Flow run judged on
 the Flow as it finally stands (t244).
 

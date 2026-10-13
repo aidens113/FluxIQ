@@ -154,7 +154,7 @@ describe("Run and test mounted diagnosis authorization", () => {
     expect(runtimeCommands.start).not.toHaveBeenCalled();
     const rendered = JSON.stringify(renderer.toJSON());
     expect(rendered).not.toContain("more than 100,000 tokens");
-    expect(rendered).toContain("Ready for review");
+    expect(rendered).toContain("Changes were recorded, but this run did not keep a change for future runs.");
     expect(rendered).toContain("Review adaptation.target-fix");
     expect(rendered).toContain('"Durable"');
     expect(rendered).toContain('"no"');

@@ -198,3 +198,9 @@ Earlier receipts preserved intact in [the foundation archive](./mvp-final-month-
 - Changed: paired t520 normalizes only native SQLite constructor paths (read/write and pinned read-only), preserving repository/pool identities and POSIX behavior. It imports no retired recording conversion contracts or graph changes from t518.
 - Validation: worker reproduced SQLITE_CANTOPEN before the fix; supervisor independently reviewed the two-file diff and observed repository/pool13/13 pass, including existing-parent >300-character write/fresh-reopen/read-only behavior. Final source/test types, narrow public-library build and structure audit passed.
 - Outcome: accepted after independent narrow gates; paired dev integration precedes live qualification.
+
+### 2026-10-13 - t521 truthful durable learning read-back
+- Agent: Codex senior supervisor; bounded UI worker codex-t517.
+- Changed: timeout/reconnect read-back uses the server durableBehaviorChanged summary, retaining unknown when absent; post-run copy distinguishes kept versus unkept or unknown changes instead of claiming all repairs need approval. Server's documented legacy semantics remain unchanged.
+- Validation: nine worker fail-first regressions reproduced. Root independently reviewed source/test changes and observed initial29pass/1obsolete-copy failure; corrected focused15/15 passed. Original Review action and no-grant assertions remain. Web type correction stays in the new test; final web types and structure audit passed.
+- Outcome: accepted after focused tests/types/audit; paired integration follows. Actual later reuse remains the live adaptation gate's proof.
