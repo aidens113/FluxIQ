@@ -170,7 +170,6 @@ describe("Automation Studio Subflow-scoped node adaptations", () => {
       patch: [{ kind: "edit_action_target", targetId: "action.typed", summary: "Use the new canonical target.", after: { selector: "#new" } }]
     });
 
-    vi.spyOn(service as any, "synchronizeCanonicalFlowGraphProjection").mockRejectedValueOnce(new Error("injected projection failure"));
     const applied = await service.reviewFlowAdaptation({ projectId: project.id, flowId: parent.flowId, adaptationId: "adaptation.typed", action: "apply" });
     expect(applied).toMatchObject({ status: "applied", metadata: { graphRevisionTargetFlowId: graphFlowId, appliedRevision: 3 } });
     await expect(service.getFlow(project.id, graphFlowId)).resolves.toMatchObject({

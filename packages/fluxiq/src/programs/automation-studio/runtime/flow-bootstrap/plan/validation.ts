@@ -42,7 +42,7 @@ import { layoutNodes } from "./layout.ts";
 import { correctAutomationStudioFlowBootstrapPlanNames } from "./name-correction.ts";
 import type { AutomationStudioFlowBootstrapNameAssumption } from "./name-correction-assumption.ts";
 import { parseAutomationStudioFlowBootstrapPlan } from "./parsing.ts";
-import { automationStudioFlowBootstrapRecordOutputIssueMessage, automationStudioFlowBootstrapRecordOutputIssues } from "./record-output-contract.ts";
+import { automationStudioFlowBootstrapRecordOutputIssueDetail, automationStudioFlowBootstrapRecordOutputIssueMessage, automationStudioFlowBootstrapRecordOutputIssues } from "./record-output-contract.ts";
 import { deriveRisk } from "./risk.ts";
 import { automationStudioFlowBootstrapRouteIssues } from "./route-validation.ts";
 import {
@@ -280,10 +280,14 @@ function declaredOutputIds(registry: AutomationStudioNodeRegistry, resolution: A
 // a missing or null record output, and the other nodes save nothing on null.
 // So each code is one the run would have failed with, and a record output
 // accepted here is one the run accepts. A refusal about a field names it and
-// the ids the schema stores, in Core's own sentence (t489, F4).
+// the ids the schema stores, in Core's own sentence (t489, F4), and carries
+// them as its detail, `{field, valid}`, the shape a domain's refusal has (t510).
 function recordOutputIssues(value: JsonValue | undefined, definition: AutomationStudioNodeDefinition, path: string): AutomationStudioFlowBootstrapIssue[] {
-  return automationStudioFlowBootstrapRecordOutputIssues(definition, value)
-    .map((code) => error(code, automationStudioFlowBootstrapRecordOutputIssueMessage(code, value) ?? "Record output does not satisfy the record-set contract.", path));
+  return automationStudioFlowBootstrapRecordOutputIssues(definition, value).map((code) => {
+    const issue = error(code, automationStudioFlowBootstrapRecordOutputIssueMessage(code, value) ?? "Record output does not satisfy the record-set contract.", path);
+    const detail = automationStudioFlowBootstrapRecordOutputIssueDetail(code, value);
+    return detail ? { ...issue, detail } : issue;
+  });
 }
 
 const CONTRACT_FAILED = "bootstrap.parameter_contract_failed";

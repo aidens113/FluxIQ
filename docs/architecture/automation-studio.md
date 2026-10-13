@@ -1449,6 +1449,31 @@ plain object is refused rather than recorded as applied, and so is any
 promotion never applies an adaptation; see
 [What the shipped app reaches](#what-the-shipped-app-reaches).
 
+An apply is durably saved, or it fails and says why. Both paths stamp the node
+a patch writes and record the revision the apply produced:
+
+- **The typed store's graph patch.** After the patch commits, review writes the
+  canonical graph through to the Flow document
+  (`synchronizeCanonicalFlowGraphProjection`). If that write fails, the store
+  rolls the graph patch back and records an `apply_failed` audit event
+  (`withdrawUnwrittenApply`). The adaptation is left `reverted`, and the apply
+  throws "was not applied: the updated Flow could not be written (...)". A
+  runtime promotion records that as `notAppliedReason: "apply_failed"`. If the
+  rollback fails too, the error says the graph holds a change the document does
+  not. The applied revision is the patch's new graph revision.
+- **The file-backed applier.** It writes a node patch with
+  `runtime/service/adaptations/graph-flow-patch.ts`, which stamps the node's
+  `metadata.adaptationIds` as the typed store does. Every Flow it saves (the
+  target graph, the Flow's own or a Subflow's, and the parent Flow that lists
+  `appliedAdaptationIds`) goes through `saveFlowOrRestore`. A save that fails
+  part-way, with its cached copy written and its document not, is undone from
+  the Flow as it was before the change, and only then does the failure
+  propagate. A failed apply therefore leaves neither a half-written graph nor a
+  parent that claims the change. The stored `appliedRevision` is the newest
+  revision in the target graph's chain once the applying save has run. A graph
+  with no revision chain has no revision to name, so none is recorded. Recording
+  the base revision would read as "applied, nothing changed" (t508).
+
 ### Repairing a true failure in the run
 
 A model repairs a Flow in the run, at the step that failed, and the run carries

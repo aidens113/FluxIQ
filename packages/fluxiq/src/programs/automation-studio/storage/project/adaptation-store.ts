@@ -83,11 +83,12 @@ export class AutomationStudioProjectAdaptationStore {
     const responseWrite = input.response === undefined ? null : await this.writeArtifact({ adaptationId: input.adaptation.adaptationId, kind: "response", value: input.response, sequence: 0, summary: "LLM response", createdAt: now });
     const evidenceWrite = input.evidence === undefined ? null : await this.writeArtifact({ adaptationId: input.adaptation.adaptationId, kind: "evidence", value: input.evidence, sequence: 0, summary: "Runtime evidence", createdAt: now });
     const statusDetail = adaptationStatusDetail(adaptation, status);
+    const appliedRevision = status === "applied" ? await this.appliedRevisionFor(adaptation, graphTarget.flowId) : null;
     await this.lease.database.transaction(async (sql) => {
       await sql.run(`insert into adaptations (adaptation_id, flow_id, subflow_id, base_revision, proposed_revision, trigger, status, risk_level, approval_mode, patch_object_id, evidence_object_id, created_at_ms, updated_at_ms, reviewed_at_ms, applied_at_ms, source_run_id, author, status_reason, status_detail_json, base_flow_revision, base_router_revision, base_settings_revision, base_instruction_revision, applied_revision, prompt_object_id, response_object_id, rollback_object_id, audit_object_id, patch_digest, evidence_digest, superseded_by_adaptation_id, failure_signature, confidence_tier, origin_entry_point)
         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         on conflict(adaptation_id) do update set failure_signature = excluded.failure_signature, confidence_tier = excluded.confidence_tier, origin_entry_point = excluded.origin_entry_point, subflow_id = excluded.subflow_id, base_revision = excluded.base_revision, proposed_revision = excluded.proposed_revision, trigger = excluded.trigger, status = excluded.status, risk_level = excluded.risk_level, approval_mode = excluded.approval_mode, patch_object_id = excluded.patch_object_id, evidence_object_id = excluded.evidence_object_id, updated_at_ms = excluded.updated_at_ms, reviewed_at_ms = excluded.reviewed_at_ms, applied_at_ms = excluded.applied_at_ms, source_run_id = excluded.source_run_id, author = excluded.author, status_reason = excluded.status_reason, status_detail_json = excluded.status_detail_json, base_flow_revision = excluded.base_flow_revision, base_router_revision = excluded.base_router_revision, base_settings_revision = excluded.base_settings_revision, base_instruction_revision = excluded.base_instruction_revision, applied_revision = excluded.applied_revision, prompt_object_id = coalesce(excluded.prompt_object_id, adaptations.prompt_object_id), response_object_id = coalesce(excluded.response_object_id, adaptations.response_object_id), patch_digest = excluded.patch_digest, evidence_digest = excluded.evidence_digest, superseded_by_adaptation_id = excluded.superseded_by_adaptation_id`,
-        [adaptation.adaptationId, adaptation.flowId, adaptation.subflowId ?? null, baseRevision, positive(adaptation.metadata?.proposedRevision, baseRevision + 1), adaptation.trigger, dbStatus(status), dbRisk(adaptation.riskLevel), approvalMode, patchWrite.objectId, evidenceWrite?.objectId ?? null, adaptation.createdAt, now, reviewedAtFor(status, now), status === "applied" ? now : null, adaptation.sourceRunId ?? null, adaptation.author, input.statusReason ?? "", JSON.stringify(statusDetail), baseRevision, revisions.routerRevision, revisions.settingsRevision, revisions.instructionRevision, status === "applied" ? positive(adaptation.metadata?.appliedRevision, baseRevision) : null, promptWrite?.objectId ?? null, responseWrite?.objectId ?? null, null, null, patchWrite.digest, evidenceWrite?.digest ?? "", stringValue(adaptation.metadata?.supersededByAdaptationId) ?? null, ...matchingParams(adaptation)]
+        [adaptation.adaptationId, adaptation.flowId, adaptation.subflowId ?? null, baseRevision, positive(adaptation.metadata?.proposedRevision, baseRevision + 1), adaptation.trigger, dbStatus(status), dbRisk(adaptation.riskLevel), approvalMode, patchWrite.objectId, evidenceWrite?.objectId ?? null, adaptation.createdAt, now, reviewedAtFor(status, now), status === "applied" ? now : null, adaptation.sourceRunId ?? null, adaptation.author, input.statusReason ?? "", JSON.stringify(statusDetail), baseRevision, revisions.routerRevision, revisions.settingsRevision, revisions.instructionRevision, appliedRevision, promptWrite?.objectId ?? null, responseWrite?.objectId ?? null, null, null, patchWrite.digest, evidenceWrite?.digest ?? "", stringValue(adaptation.metadata?.supersededByAdaptationId) ?? null, ...matchingParams(adaptation)]
       );
       for (const artifact of [patchWrite, promptWrite, responseWrite, evidenceWrite].filter((item): item is WrittenArtifact => Boolean(item))) await this.upsertArtifactRow(sql, adaptation.adaptationId, artifact);
     });
@@ -218,6 +219,18 @@ export class AutomationStudioProjectAdaptationStore {
     } finally {
       await graph.close();
     }
+  }
+
+  /** An apply whose Flow document could not be written: rolled back, with an `apply_failed` event naming why. Returns the apply's error. */
+  async withdrawUnwrittenApply(input: { adaptationId: string; actorId: string; cause: unknown }): Promise<Error> {
+    const reason = `Adaptation ${input.adaptationId} was not applied: the updated Flow could not be written (${input.cause instanceof Error ? input.cause.message : String(input.cause)}).`;
+    try {
+      await this.rollbackAdaptation({ adaptationId: input.adaptationId, actorId: input.actorId, reason: `${reason} Its graph change was rolled back.` });
+    } catch (error) {
+      return new Error(`${reason} Rolling its graph change back failed too (${error instanceof Error ? error.message : String(error)}), so the graph holds a change the Flow document does not.`);
+    }
+    await this.appendAuditEvent({ adaptationId: input.adaptationId, eventType: "apply_failed", actorId: input.actorId, fromStatus: "applied", toStatus: "reverted", reason, detail: {} });
+    return new Error(`${reason} Its graph change was rolled back.`);
   }
 
   async supersedeAdaptation(input: { adaptationId: string; supersededByAdaptationId: string; actorId?: string; reason?: string; changedAt?: number }): Promise<AutomationStudioStoredAdaptationDetail> {
@@ -352,6 +365,14 @@ export class AutomationStudioProjectAdaptationStore {
     const router = await this.lease.database.get<{ revision: number }>("select revision from routers where flow_id = ?", [adaptation.flowId]);
     const instruction = await this.lease.database.get<{ revision: number | null }>("select max(i.revision) as revision from instructions i left join instruction_scopes s on s.instruction_id = i.instruction_id where i.deleted_at_ms is null and (s.flow_id = ? or s.scope_kind in ('global', 'project'))", [adaptation.flowId]);
     return { flowRevision: flow.graph_revision, routerRevision: router?.revision ?? null, settingsRevision: parent.settings_revision ?? null, instructionRevision: instruction?.revision ?? null };
+  }
+
+  // The revision an applied change produced: its graph chain's newest once the applying save ran. With no chain there is
+  // none to name, and none is recorded: the base revision would read as "applied, nothing changed" (t508).
+  private async appliedRevisionFor(adaptation: AutomationStudioFlowAdaptation, graphFlowId: string): Promise<number | null> {
+    if (adaptation.metadata?.appliedRevision !== undefined) return positive(adaptation.metadata.appliedRevision, 1);
+    const latest = await this.lease.database.get<{ revision_number: number | null }>("select max(revision_number) as revision_number from graph_revisions where flow_id = ?", [graphFlowId]);
+    return latest?.revision_number ?? null;
   }
 
   private async graphTransactionTarget(adaptation: AutomationStudioFlowAdaptation): Promise<{ flowId: string }> {

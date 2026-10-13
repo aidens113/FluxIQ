@@ -46,6 +46,14 @@
 // and those names, rebuilt here from the detail alone; the issue's own message
 // is never passed for it. Lane D round 13 (`run-mv66sc3c-c47e74b8`) resent one
 // script until its build ended, told only that its parameters were refused.
+//
+// **Core's own sentence is never swapped for that one (t510).** A record
+// output's processing refusal now carries the same detail
+// (`./record-output-contract.ts`), and its remedy is Core's: a sort key the
+// answer should not show is kept stored and hidden with process.columns. The
+// domain sentence's "write one of those instead" is the fix breadth wave 1
+// (`run-mv6qrbgx-06151cdb`) was wrongly given, so an issue whose code is in
+// `AUTHORED_CODES` keeps its message and carries `field` and `valid` beside it.
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
 import type { AutomationStudioNodeDefinition, AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
@@ -227,9 +235,10 @@ export function automationStudioFlowBootstrapIssueFeedback(input: {
     const entry: JsonObject = {
       code: issue.code,
       ...(issue.path ? { path: printablePath(issue.path) } : {}),
-      // A refusal that named a field is said in Core's sentence, rebuilt here from the detail alone (t489).
-      ...(detail ? { message: automationStudioFlowBootstrapIssueDetailSentence(issue.code, detail), ...detail }
-        : AUTHORED_CODES.has(issue.code) && issue.message ? { message: issue.message } : {})
+      // Core's own sentence is kept, with any detail beside it (t510); a domain's refusal that named a
+      // field is said in Core's sentence, rebuilt here from the detail alone (t489).
+      ...(AUTHORED_CODES.has(issue.code) && issue.message ? { message: issue.message, ...(detail ?? {}) }
+        : detail ? { message: automationStudioFlowBootstrapIssueDetailSentence(issue.code, detail), ...detail } : {})
     };
     const instead = insteadOf(issue, input.plan, instructed);
     if (instead) entry.instead = instead;

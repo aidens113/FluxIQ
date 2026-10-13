@@ -4033,7 +4033,9 @@ export class AutomationStudioService {
       const actorId = input.actorId ?? "reviewer";
       if (input.action === "apply") {
         const applied = await store.applyApprovedAdaptation({ adaptationId: input.adaptationId, actorId, promotionGates: evaluateFlowAdaptationPromotionGates });
-        await this.synchronizeCanonicalFlowGraphProjection(input.projectId, applied.adaptation.adaptation, applied.adaptation.updatedAt).catch(() => undefined);
+        const unwritten = await this.synchronizeCanonicalFlowGraphProjection(input.projectId, applied.adaptation.adaptation, applied.adaptation.updatedAt).then(() => null, (error: unknown) => ({ error }));
+        // A change whose updated Flow could not be written is rolled back and the apply fails, naming why (t508).
+        if (unwritten) throw await store.withdrawUnwrittenApply({ adaptationId: input.adaptationId, actorId, cause: unwritten.error });
         return adaptationFromTypedStoreDetail(applied.adaptation);
       }
       if (input.action === "revert") {
