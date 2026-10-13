@@ -73,9 +73,33 @@ export type AutomationStudioRecordProcessingPass = {
   newRows: number;
 };
 
+/** One row a `where` condition left out, by its label: the first stored column, in schema order, holding text (`field`), and that text. */
+export type AutomationStudioRecordProcessingLeftOutRow = { field: string; label: string };
+
 /**
- * What processing did to one dataset, in counts. `collected` is
- * `filteredOut + duplicates + cut + kept`.
+ * One `where` condition of a processing, and the collected rows it left out
+ * (t493). Live run `run-mv6bg8d8-1a461436`: a condition on the saved answer
+ * left out three items the request asked for, sold with a part it excludes,
+ * and its account said only `filteredOut: 5`, so no judge could see which.
+ * `rejected` counts the collected rows the condition does not hold for;
+ * `alone` the rows of those every other condition holds for, which would be
+ * in the answer but for it. `leftOutOnlyByThis` names those rows, each once,
+ * in capture order, by label: the same rows a list read's account names per
+ * condition. A row with no text in any stored column counts and is not named.
+ */
+export type AutomationStudioRecordProcessingConditionAccount = {
+  /** The stored field the condition tests. */
+  field: string;
+  /** The condition as written, in words (`condition-text.ts`). */
+  condition: string;
+  rejected: number;
+  alone: number;
+  leftOutOnlyByThis: AutomationStudioRecordProcessingLeftOutRow[];
+};
+
+/**
+ * What processing did to one dataset, in counts, and per `where` condition the
+ * rows it alone left out. `collected` is `filteredOut + duplicates + cut + kept`.
  */
 export type AutomationStudioRecordProcessingAccount = {
   collected: number;
@@ -88,4 +112,6 @@ export type AutomationStudioRecordProcessingAccount = {
   /** The `minRows` the answer fell short of, when it did. */
   belowMinRows?: number;
   passes: AutomationStudioRecordProcessingPass[];
+  /** One per `where` condition, in its order; absent when the declaration has none. */
+  conditions?: AutomationStudioRecordProcessingConditionAccount[];
 };

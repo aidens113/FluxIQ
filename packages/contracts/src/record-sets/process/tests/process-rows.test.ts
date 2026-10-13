@@ -158,6 +158,40 @@ describe("processAutomationStudioRecordRows", () => {
     }
   });
 
+  // t493, live run `run-mv6bg8d8-1a461436`: a `where` on the saved answer left out
+  // three items sold with a part the request excludes, and its account said only
+  // `filteredOut: 5`. Each condition now names the rows it alone left out.
+  it("names, per where condition, the rows it alone left out, each once by its label column", () => {
+    const schema: AutomationStudioRecordSchema = { schemaVersion: "0.1", fields: [{ id: "name", label: "Name", valueType: "string" }, { id: "price", label: "Price", valueType: "string" }] };
+    const tips = { name: "Spare Strap for Trail Watch, Silicone, Black", price: "$9" };
+    const dock = { name: "Charging Dock for Trail Watch, White", price: "$19" };
+    const watchA = { name: "Trail Watch 2, GPS, Heart Rate, Charging Dock, Black", price: "$49" };
+    const watchB = { name: "Trail Watch Lite, GPS, Ivory with Charging Dock", price: "$39" };
+    const both = { name: "Charging Dock with Spare Strap bundle", price: "$25" };
+    const kept = { name: "Trail Watch Mini, GPS, Sage", price: "$29" };
+    const collected = [...rows("read", "b1", tips, watchA, kept, dock), ...rows("read", "b2", watchA, watchB, both)];
+    const result = processAutomationStudioRecordRows({
+      rows: collected, schema, now: NOW,
+      process: { where: [{ field: "name", contains: "Spare Strap", not: true }, { field: "name", contains: ["Charging Dock"], not: true }, { field: "price", atMost: 100 }] }
+    });
+    expect(result.rows).toEqual([kept]);
+    expect(result.account).toMatchObject({ collected: 7, filteredOut: 6, kept: 1 });
+    expect(result.account.conditions).toEqual([
+      { field: "name", condition: "name not contains \"Spare Strap\"", rejected: 2, alone: 1, leftOutOnlyByThis: [{ field: "name", label: tips.name }] },
+      { field: "name", condition: "name not contains [\"Charging Dock\"]", rejected: 5, alone: 4, leftOutOnlyByThis: [{ field: "name", label: watchA.name }, { field: "name", label: dock.name }, { field: "name", label: watchB.name }] },
+      { field: "price", condition: "price atMost 100", rejected: 0, alone: 0, leftOutOnlyByThis: [] }
+    ]);
+  });
+
+  it("labels a left-out row by its first stored column holding text, and names no condition without a where", () => {
+    const result = processOf(rows("n1", "b1", { title: " ", price: "$30", url: "/x" }, A), { where: [{ field: "price", lessThan: 25 }] });
+    expect(result.account.conditions).toEqual([
+      { field: "price", condition: "price lessThan 25", rejected: 2, alone: 2, leftOutOnlyByThis: [{ field: "price", label: "$30" }, { field: "title", label: "Alpha" }] }
+    ]);
+    expect(processOf(rows("n1", "b1", A, B)).account).not.toHaveProperty("conditions");
+    expect(processOf(rows("n1", "b1", A, B), { where: [] }).account).not.toHaveProperty("conditions");
+  });
+
   it("leaves its input unmodified", () => {
     const collected = rows("n1", "b1", B, A);
     const snapshot = structuredClone(collected);

@@ -17,6 +17,7 @@ import {
   RUN_MUW60J7C_PAIRS_LEFT_OUT, RUN_MUW60J7C_REQUEST, RUN_MUW60J7C_RESULT_JUDGE, RUN_MUW60J7C_TEST_JUDGE,
   runMuw60j7cRunSummary, runMuw60j7cTestSummary
 } from "../request-rows/tests/run-muw60j7c.ts";
+import { RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT, runMv6bg8d8RunSummary } from "../request-rows/tests/run-mv6bg8d8.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict } from "../verdict.ts";
 import { verifyAutomationStudioRunResult } from "../verify.ts";
 
@@ -117,5 +118,44 @@ describe("a no whose rows the result contradicts (C-5)", () => {
     expect(misread.join("\n")).toContain("(B07Z1RZGJG) is in the result");
     // The result judge is shown the flagged rows too.
     expect(seen[0]?.context.resultSummary?.leftOutNamingTheItem?.[0]?.rows).toEqual(RUN_MUW60J7C_PAIRS_LEFT_OUT);
+  });
+});
+
+// t493, live run `run-mv6bg8d8-1a461436` (round 14, steps 0047, 0048 and 0064):
+// the saved answer's `process.where` alone left out three pairs sold with a
+// charging case, and four judges said yes over "5 filtered out as accessories".
+describe("a yes over rows the saved answer's processing alone left out (t493)", () => {
+  const judged = () => automationStudioResultSummaryWithLeftOutNamingTheItem(runMv6bg8d8RunSummary(), [instruction]);
+
+  it("is refused when it does not name them, and the refusal names each row and the processing condition", () => {
+    const observed = "Read all 5 pages; 17 rows kept, 2 duplicates, 5 filtered out as accessories, 10 stored. The result satisfies the request.";
+    const verification = automationStudioResultVerdict({ summary: judged(), diagnosis: { answersRequest: "yes", observed }, basis: "model" });
+    expect(verification.verdict).toBe("does_not_answer");
+    expect(verification.code).toBe(AUTOMATION_STUDIO_RESULT_VERDICT_CODES.doesNotAnswer);
+    const finding = verification.repair?.findings.find((candidate) => candidate.code === FINDING);
+    expect(finding?.detail).toContain("recordOutput.process.where name not contains \"Charging Case\"");
+    const fix = verification.repair?.fix.join("\n") ?? "";
+    for (const row of RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT) {
+      expect(fix).toContain(row);
+      expect(verification.repair?.checked?.join("\n")).toContain(row);
+    }
+  });
+
+  it("stands when it names each row and says why the request excludes it", () => {
+    const observed = `${RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT.join("; ")}: each is excluded because ...`;
+    expect(automationStudioResultVerdict({ summary: judged(), diagnosis: { answersRequest: "yes", observed }, basis: "model" }).verdict).toBe("answers");
+  });
+
+  it("is refused through the result judge too, whose request lists the rows and carries no testedLabel", async () => {
+    const yes = { summary: "yes", diagnosis: { answersRequest: "yes", observed: "5 filtered out as accessories, 10 stored." } };
+    const { provider, seen } = scripted([yes]);
+    const report = await verifyAutomationStudioRunResult({ projectId: "project-1", flowId: "flow-1", runId: "run-1", summary: runMv6bg8d8RunSummary(), instructions: [instruction], deniedEvidenceKeys: [], provider });
+    expect(report.outcome.performed && report.outcome.verdict).toBe("does_not_answer");
+    expect(seen.length).toBeGreaterThan(0);
+    for (const request of seen) {
+      expect(JSON.stringify(request)).not.toContain("testedLabel");
+      expect(request.context.resultSummary?.leftOutNamingTheItem?.flatMap((entry) => entry.rows)).toEqual(RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT);
+      expect(request.context.resultSummary?.recordSets[0]?.processing?.conditions?.[1]?.leftOutOnlyByThis).toContain(RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT[0]);
+    }
   });
 });

@@ -12,9 +12,9 @@ import { automationStudioResultSummaryWithoutTestedLabel } from "./without-teste
 
 /** Add paging words without turning uncertain stop evidence into completeness, and drop each condition's `testedLabel`. */
 export function automationStudioResultSummaryWithPagingWords(summary: AutomationStudioRunResultSummary): AutomationStudioRunResultSummary {
-  if (!summary.reads?.length) return summary;
   const shown = automationStudioResultSummaryWithoutTestedLabel(summary);
-  return { ...shown, reads: (shown.reads ?? []).map(forJudge) };
+  if (!shown.reads?.length) return shown;
+  return { ...shown, reads: shown.reads.map(forJudge) };
 }
 
 function forJudge(read: AutomationStudioResultReadAccount): AutomationStudioResultReadAccount & { paging: string } {

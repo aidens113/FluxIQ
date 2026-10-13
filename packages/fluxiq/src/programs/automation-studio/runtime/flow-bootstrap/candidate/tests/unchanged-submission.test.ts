@@ -183,6 +183,24 @@ describe("a reworded resubmission", () => {
     expect(automationStudioCandidateSameBehaviour(listing(saved), listing({ ...saved, datasetId: "the-rows-read-s1" }))).toBe(false);
   });
 
+  // t493, live run `run-mv6bg8d8-1a461436` (D2): rev 5 was a Flow the judge had refuted (rev 2) with only its
+  // `datasetId` renamed. Where a run saves its rows cannot change which rows it keeps, so set against a refuted
+  // Flow the datasetId is set aside; against one that was not refuted it stays a change (t485).
+  it("sets a datasetId aside when asked, as it is against a refuted Flow, and nothing else", () => {
+    const listing = (recordOutput: JsonObject): AutomationStudioFlowBuildPlan => ({
+      plan: { schemaVersion: "0.1", router: { name: "Read", rules: [], fallback: { kind: "subflow", targetSubflowKey: "primary" } }, subflows: [{ key: "primary", name: "Primary", role: "primary",
+        nodes: [{ key: "list", definitionId: "web.output.dom-extract_list", definitionVersion: "1.0.0", label: "read the list", parameters: { recordOutput } }], edges: [] }] },
+      risk: "low", subflows: []
+    });
+    const saved = { datasetId: "rows", label: "Rows", schema: { schemaVersion: "0.1", fields: [] }, writeMode: "append", process: { where: [{ field: "name", contains: "Dock", not: true }] } };
+    const renamed = { ...saved, datasetId: "rows-renamed" };
+
+    expect(automationStudioCandidateSameBehaviour(listing(saved), listing(renamed))).toBe(false);
+    expect(automationStudioCandidateSameBehaviour(listing(saved), listing(renamed), { datasetId: "set_aside" })).toBe(true);
+    expect(automationStudioCandidateSameBehaviour(listing(saved), listing({ ...renamed, writeMode: "replace" }), { datasetId: "set_aside" })).toBe(false);
+    expect(automationStudioCandidateSameBehaviour(listing(saved), listing({ ...renamed, process: { where: [] } }), { datasetId: "set_aside" })).toBe(false);
+  });
+
   it("is refused saying only names changed, so the standing revision and its trial still answer", () => {
     const check = automationStudioCandidateUnchangedRefusal({ standing: { revision: 2, digest: "digest.2" }, lastTrial: undefined, refuted: undefined, reworded: true });
 
@@ -190,5 +208,34 @@ describe("a reworded resubmission", () => {
     expect(check.feedback).toMatchObject({ unchanged: true, reworded: true, revision: 2 });
     expect(String(check.feedback.instruction)).toContain("only names");
     expect(String(check.feedback.instruction)).toContain("test it with core.test_candidate");
+  });
+});
+
+// t493, live run `run-mv6bg8d8-1a461436` (D2): the judge refuted revision 2, the same Flow sent again was refused,
+// and then sent once more with only its record output's `datasetId` renamed; that became revision 5 and was tried
+// and judged yes on the same evidence. Against a refuted Flow the rename is no change; against a Flow that was not
+// refuted it still is (t485).
+describe("a refuted Flow resubmitted with only its datasetId renamed", () => {
+  const collect: AutomationStudioNodeDefinition = { ...definition, id: "domain.demo.collect", label: "Collect", description: "Collect rows",
+    parameters: [...definition.parameters, { id: "recordOutput", label: "Record output", valueType: "object" }] };
+  const collecting = { ...submission, registry: new AutomationStudioNodeRegistry([definition, collect]) };
+  const saving = (dataset: string, text = "hello"): JsonObject => ({ summary: "Collect", flow: ["flow: Collect", "step: collect the rows", "  node: domain.demo.collect", `  text: ${text}`, `  recordOutput: {"datasetId": "${dataset}"}`].join("\n") });
+
+  it("is answered unchanged_after_no and not made a revision, though another revision stood since", async () => {
+    const controller = new AutomationStudioFlowCandidateSubmissionController(collecting);
+    const refutedFlow = await accepted(controller, saving("rows"));
+    const later = await accepted(controller, saving("rows", "goodbye"));
+    const history = { refuted: (digest: string) => (digest === refutedFlow.digest ? { said: "judge said no" } : undefined) };
+    const renamed = await controller.submit(saving("rows-renamed"), history);
+    expect(renamed).toMatchObject({ ok: false, check: { issueCodes: ["candidate.unchanged_after_no"], feedback: { code: "candidate.unchanged_after_no", judged: { said: "judge said no" } } } });
+    if (!renamed.ok) expect(String(renamed.check.feedback?.instruction)).toContain("where it saves its rows");
+    expect(controller.matches(later)).toBe(true);
+  });
+
+  it("is a new revision when the Flow it renames was not refuted", async () => {
+    const controller = new AutomationStudioFlowCandidateSubmissionController(collecting);
+    await accepted(controller, saving("rows"));
+    await accepted(controller, saving("rows", "goodbye"));
+    expect(await controller.submit(saving("rows-renamed"), { refuted: () => undefined })).toMatchObject({ ok: true, candidate: { revision: 3 } });
   });
 });

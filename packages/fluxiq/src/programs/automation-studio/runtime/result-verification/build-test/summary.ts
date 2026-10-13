@@ -318,8 +318,10 @@ export function automationStudioBuildTestResultSummary(input: {
   if (ended?.withheld) withheld = true;
   const started = input.startView ? automationStudioResultEndView(input.startView, denied) : undefined;
   if (started?.withheld) withheld = true;
+  // The start view before what varies per test, as a finished run's summary places it (`../result-summary.ts`, t493).
   return {
     schemaVersion: "automation-studio.run-result-summary.v1",
+    ...(started?.endView ? { startView: started.endView } : {}),
     totalRecordCount: 0,
     totalRefusedCount: 0,
     totalRowsMissingRequired: 0,
@@ -328,8 +330,7 @@ export function automationStudioBuildTestResultSummary(input: {
     flowShape: shape.flowShape,
     withheld: withheld || shape.withheld,
     buildTest,
-    ...(ended?.endView ? { endView: ended.endView } : {}),
-    ...(started?.endView ? { startView: started.endView } : {})
+    ...(ended?.endView ? { endView: ended.endView } : {})
   };
 }
 

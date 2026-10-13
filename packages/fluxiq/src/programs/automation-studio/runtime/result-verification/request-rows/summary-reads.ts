@@ -20,10 +20,27 @@
 // column was not stored -- live run `run-mux6naez-6c20f26e` stored name, price,
 // rating and url, and its `plus is present` rows, so said, were taken as tests
 // of the name.
+//
+// **A record set's processing conditions are its read's conditions too (t493).**
+// Live run `run-mv6bg8d8-1a461436` put its name exclusion on the saved answer,
+// `recordOutput.process.where`, rather than on the read, and three items sold
+// with a charging case were left out where nothing here looked. Each record
+// set's processing says, per `where` condition, the rows it alone left out
+// (`../processing-account.ts`); those conditions join the read whose passes
+// collected the set (`processing.passes[].node`), named
+// `recordOutput.process.where <wording>` so every line that names the
+// condition says where to change it, and with the set's own `testedLabel`.
+// Where no read account names that node, the set is a read of its own, its
+// stored rows kept. So the flag, the check of a yes and the check of a no read
+// a processed-out row exactly as they read a row the read itself left out.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioResultProcessingCondition } from "../processing-account.ts";
 import type { AutomationStudioRequestRowsCondition, AutomationStudioRequestRowsRead, AutomationStudioRequestRowsStored } from "./types.ts";
+
+/** How a processing condition is named among a read's conditions (header): where the Flow writes it. */
+const PROCESSING_CONDITION = "recordOutput.process.where";
 
 /** A left-out row said with the value its condition tested after its label (`../read-account/alone-rows.ts`). */
 const TESTED_VALUE = /^(.+?) — (?:\(withheld\)|[\p{L}\p{N}_.$@-]{1,64}: .*)$/su;
@@ -52,7 +69,25 @@ export function automationStudioRequestRowsReads(summary: AutomationStudioRunRes
     const leftOut = new Set(conditions.flatMap((entry) => entry.labels));
     reads.push(read({ nodeId: account.nodeId }, storedLabels.filter((label) => !leftOut.has(label)), storedLabels, conditions));
   }
+  for (const set of summary.recordSets) {
+    const conditions = processingConditions(set.processing?.conditions);
+    if (!conditions.length) continue;
+    const nodes = (set.processing?.passes ?? []).map((pass) => pass.node);
+    const collecting = reads.find((candidate) => candidate.nodeId !== undefined && nodes.includes(candidate.nodeId));
+    if (collecting) {
+      collecting.conditions.push(...conditions);
+      collecting.labels = unique([...collecting.labels, ...conditions.flatMap((entry) => entry.labels)]);
+    } else {
+      reads.push(read({ nodeId: nodes[0] ?? set.datasetId }, storedRows(set).map((row) => row.label), storedLabels, conditions));
+    }
+  }
   return { reads, stored };
+}
+
+/** A record set's processing conditions that left rows out alone, each named where the Flow writes it (header). */
+function processingConditions(conditions: readonly AutomationStudioResultProcessingCondition[] | undefined): AutomationStudioRequestRowsCondition[] {
+  return (conditions ?? []).flatMap((entry, index) =>
+    entry.leftOutOnlyByThis?.length ? [condition(`${PROCESSING_CONDITION} ${entry.condition ?? `condition ${index + 1}`}`, entry.leftOutOnlyByThis, entry.testedLabel === true)] : []);
 }
 
 /** A left-out row's label: the row as given, less the tested value said after it. */

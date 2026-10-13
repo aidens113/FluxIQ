@@ -37,6 +37,16 @@
 // revision in place would either void that verdict or leave a digest that no
 // longer names its plan. The standing revision keeps its own names. A renamed
 // step key is not a name here: edges and bindings read it, so it is a change.
+//
+// **Against a refuted Flow, a renamed `datasetId` is no change (t493,
+// supervisor policy).** Live run `run-mv6bg8d8-1a461436` (D2): the judge
+// refuted revision 2; the same Flow sent again was refused as
+// `unchanged_after_no`, and then sent once more with only its `datasetId`
+// renamed, which made it revision 5, re-tried and judged yes on the same
+// evidence. Where a run saves its rows cannot change which rows it keeps, so a
+// rename cannot answer a judge's no. Compared with a refuted Flow the
+// `datasetId` is set aside (`{ datasetId: "set_aside" }`); compared with a
+// revision that was not refuted it is still a change, as t485 decided.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowBuildPlan } from "../plan/index.ts";
@@ -45,30 +55,33 @@ import type { AutomationStudioCandidateTrialResult, AutomationStudioFlowCandidat
 /** The parameter a step keeps its rows by, and its one display-only word; its `datasetId` decides where rows go (header). */
 const RECORD_OUTPUT = "recordOutput";
 const RECORD_OUTPUT_NAMES: readonly string[] = ["label"];
+/** Where a record output saves its rows: set aside only against a refuted Flow (header). */
+const RECORD_OUTPUT_DATASET = "datasetId";
 
-/** Whether two plans do the same when run: equal once every name is set aside (header). */
-export function automationStudioCandidateSameBehaviour(a: AutomationStudioFlowBuildPlan, b: AutomationStudioFlowBuildPlan): boolean {
-  return canonical(behaviourOf(a)) === canonical(behaviourOf(b));
+/** Whether two plans do the same when run: equal once every name is set aside, and the `datasetId` too where asked, as against a refuted Flow (header). */
+export function automationStudioCandidateSameBehaviour(a: AutomationStudioFlowBuildPlan, b: AutomationStudioFlowBuildPlan, options: { datasetId?: "compared" | "set_aside" } = {}): boolean {
+  const names = options.datasetId === "set_aside" ? [...RECORD_OUTPUT_NAMES, RECORD_OUTPUT_DATASET] : RECORD_OUTPUT_NAMES;
+  return canonical(behaviourOf(a, names)) === canonical(behaviourOf(b, names));
 }
 
 /** The plan with its names set aside: what a run of it does (header). */
-function behaviourOf(buildPlan: AutomationStudioFlowBuildPlan): JsonValue {
+function behaviourOf(buildPlan: AutomationStudioFlowBuildPlan, names: readonly string[]): JsonValue {
   const plan = buildPlan.plan;
   return {
     router: { ...plan.router, name: "", rules: plan.router.rules.map((rule) => ({ ...rule, name: "" })) },
     subflows: plan.subflows.map((subflow) => ({
       ...subflow,
       name: "",
-      nodes: subflow.nodes.map(({ label: _label, ...node }) => ({ ...node, ...(node.parameters ? { parameters: unnamedParameters(node.parameters) } : {}) }))
+      nodes: subflow.nodes.map(({ label: _label, ...node }) => ({ ...node, ...(node.parameters ? { parameters: unnamedParameters(node.parameters, names) } : {}) }))
     })),
     ...(plan.metadata ? { metadata: plan.metadata } : {})
   } as unknown as JsonValue;
 }
 
-function unnamedParameters(parameters: JsonObject): JsonObject {
+function unnamedParameters(parameters: JsonObject, names: readonly string[]): JsonObject {
   const output = parameters[RECORD_OUTPUT];
   if (!output || typeof output !== "object" || Array.isArray(output)) return parameters;
-  return { ...parameters, [RECORD_OUTPUT]: Object.fromEntries(Object.entries(output).filter(([key]) => !RECORD_OUTPUT_NAMES.includes(key))) };
+  return { ...parameters, [RECORD_OUTPUT]: Object.fromEntries(Object.entries(output).filter(([key]) => !names.includes(key))) };
 }
 
 /** JSON object key order never changes what a plan does. */
@@ -89,6 +102,8 @@ export function automationStudioCandidateUnchangedRefusal(input: {
   lastTrial: AutomationStudioCandidateTrialResult | undefined;
   /** The judge's finding, when this exact Flow was judged no. */
   refuted: JsonObject | undefined;
+  /** Set when the submission differs from the refuted Flow only in its record output's `datasetId` (header, t493). */
+  datasetRenamed?: boolean | undefined;
   /** Set when the submission differs from `standing` in its names alone (header). */
   reworded?: boolean | undefined;
 }): Extract<AutomationStudioFlowCandidateSubmission, { ok: false }>["check"] {
@@ -99,7 +114,9 @@ export function automationStudioCandidateUnchangedRefusal(input: {
     ? `Nothing the Flow does changed: this is the Flow of revision ${standing.revision} with only names reworded (the Flow's, its steps' or its saved list's), which no run acts on, so it was not made a new revision and revision ${standing.revision} keeps its own names`
     : standing
       ? `Nothing changed: this is the Flow of revision ${standing.revision}, word for word or step for step, so it was not made a new revision`
-      : "Nothing changed: this is the same Flow as one the judge already refuted, so it was not made a new revision";
+      : refuted && input.datasetRenamed === true
+        ? "Nothing the Flow does changed: this is a Flow the judge already refuted with only where it saves its rows (its datasetId) renamed, which cannot change which rows it keeps, so it was not made a new revision"
+        : "Nothing changed: this is the same Flow as one the judge already refuted, so it was not made a new revision";
   return {
     ok: false,
     issueCodes: [code],
