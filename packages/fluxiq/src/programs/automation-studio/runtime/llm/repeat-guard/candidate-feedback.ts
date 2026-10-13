@@ -19,6 +19,13 @@
 // what failed is under its `lastTrial`, or `judged` after a no. So every
 // refused submission's note names the call that was refused, and one with no
 // issues says where that refusal put what failed and what to change.
+//
+// **The note repeats the exact fix (t514).** Social gate run
+// `run-mv6v2jh4-69244ffb` (0087-0091) sent its refused script three more times
+// and was told only to change the lines its issues named; the build ended. A
+// refused submission's note now says again, with each line and step, the fix
+// each issue carried (`instead`), and points to `core.describe_nodes` -- with
+// the node ids the issues name (`node`) -- for what a step's node takes.
 
 import type { JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceRepeatedOutcome } from "./outcomes.ts";
@@ -49,10 +56,43 @@ const HANDLE_UNSHOWN = "You already made this exact call -- the same tool with t
   + "Once a call has shown it, this same call may be made again with the handle exactly as shown.";
 
 /** A refused submission sent again, whose refusal listed issues; `call` is the refused call's id. */
-function refusedSubmission(call: string): string {
+function refusedSubmission(call: string, issues: readonly JsonValue[]): string {
   return `You already submitted this exact candidate -- the same script, word for word -- in call ${call}, and it was refused (sameAsCall, then.resultCode). `
     + "It was the same script, so it was not checked again: it is refused for the same issues, listed under issues as that refusal gave them. "
-    + "Change the lines those issues name (each names its step and line where the refusal gave them, and what to write instead where it knows), keep every other line as it is, and submit the whole candidate again.";
+    + "Change the lines those issues name (each names its step and line where the refusal gave them, and what to write instead where it knows), keep every other line as it is, and submit the whole candidate again."
+    + exactFixes(issues) + describeNodes(issues);
+}
+
+/** An identifier a refusal's issue names: a node id, quoted back as written. */
+const NODE_ID = /^[A-Za-z0-9_.:-]{1,200}$/u;
+/** The longest a step's own words are quoted back. */
+const STEP_WORDS_LIMIT = 120;
+
+/**
+ * Each issue's own fix, said again with its line and step (header, t514): the
+ * `instead` the refusal carried, which is Core's sentence.
+ */
+function exactFixes(issues: readonly JsonValue[]): string {
+  const fixes = new Set<string>();
+  for (const issue of issues) {
+    if (!isObject(issue) || typeof issue.instead !== "string" || !issue.instead.trim()) continue;
+    const line = typeof issue.line === "number" ? `line ${issue.line}` : undefined;
+    const step = typeof issue.step === "string" && issue.step.trim() ? JSON.stringify(issue.step.replace(/\s+/gu, " ").trim().slice(0, STEP_WORDS_LIMIT)) : undefined;
+    const place = [line, step].filter(Boolean).join(", ");
+    fixes.add(`${place ? `${place}: ` : ""}${issue.instead.trim()}`);
+  }
+  return fixes.size ? ` The fix ${fixes.size === 1 ? "that refusal gave is" : "those refusals gave are"}: ${[...fixes].join(" ")}` : "";
+}
+
+/** Where to learn what a node takes (header, t514): `core.describe_nodes`, with the nodes the issues name. */
+function describeNodes(issues: readonly JsonValue[]): string {
+  const nodes = [...new Set(issues.flatMap((issue) => isObject(issue) && typeof issue.node === "string" && NODE_ID.test(issue.node) ? [issue.node] : []))];
+  if (!nodes.length) return " If you are not sure what a step's node takes, call core.describe_nodes with the node id its node: line names before you submit again: it lists every parameter the node takes and in what form.";
+  return ` If you are not sure what ${nodes.length === 1 ? "that step's node takes" : "those steps' nodes take"}, call core.describe_nodes with ids ${JSON.stringify(nodes)} before you submit again: it lists every parameter the node takes and in what form.`;
+}
+
+function isObject(value: JsonValue): value is { [key: string]: JsonValue } {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** A submission refused as unchanged, sent again: its refusal named no issues, only what failed last (header, t489). */
@@ -92,7 +132,7 @@ export function automationStudioLlmEvidenceCandidateRepeatInstruction(input: {
   const { toolId, earlier, inARow, maxInARow } = input;
   if (toolId === SUBMIT_CANDIDATE) {
     if (earlier.outcome !== "failed") return { instruction: ACCEPTED_SUBMISSION + ending(inARow, maxInARow, "it") };
-    if (earlier.issues) return { instruction: refusedSubmission(earlier.callId) + ending(inARow, maxInARow, "it"), issues: structuredClone(earlier.issues) };
+    if (earlier.issues) return { instruction: refusedSubmission(earlier.callId, earlier.issues) + ending(inARow, maxInARow, "it"), issues: structuredClone(earlier.issues) };
     const said = earlier.resultCode !== undefined && UNCHANGED_CODES.has(earlier.resultCode) ? unchangedSubmission(earlier.callId) : refusedWithoutIssues(earlier.callId);
     return { instruction: said + ending(inARow, maxInARow, "it") };
   }
