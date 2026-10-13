@@ -175,14 +175,39 @@ describe("site reset ledger", () => {
         return { moved: true, differs: ["h1 slide 2", "clickable + covered-by t9"] };
       }
     };
-    expect(await ledger.beforeTrial(checks, undefined, { startReset: true })).toEqual({ kind: "admit" });
+    // Every act the hook took back is answered, kept ones too; the act no control takes back (act-4) is not the hook's to absorb (t504).
+    expect(await ledger.beforeTrial(checks, undefined, { startReset: true })).toEqual({ kind: "admit", absorbedByStartReset: [
+      { act: "act-1", did: "press \"Save\" button", call: "call.1" },
+      { act: "act-2", did: "press \"Save\" button", call: "call.2" },
+      { act: "act-3", did: "press \"Save\" button", call: "call.3" },
+      { act: "act-5", did: "trial step 1 demo.press" }
+    ] });
     expect(looked).toBe(0);
     expect(ledger.inPlace()).toEqual([]);
     for (const act of ["act-1", "act-2", "act-3", "act-5"]) expect(ledger.claim(act)).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_unknown_act" } });
     // A later act made after the hook is the reset's again, without a hook.
     ledger.explored(acted("call.6", ["create_new"]));
     expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-6" }] } });
+    // Only what was still on the site: the acts the first hook took back are not answered twice.
+    expect(await ledger.beforeTrial(checks, undefined, { startReset: true })).toEqual({ kind: "admit", absorbedByStartReset: [{ act: "act-6", did: "press \"Save\" button", call: "call.6" }] });
+    // A hook with nothing of the build on the site says nothing.
     expect(await ledger.beforeTrial(checks, undefined, { startReset: true })).toEqual({ kind: "admit" });
+  });
+
+  // Lane D round 17 (`run-mv6lgt3s-c3aa6fac`): an exploration press acted on the wrong row of a list, became act-1,
+  // and the Lab's start hook then marked it undone with no record: no trial evidence and no run record said it existed.
+  it("names each exploration act a start hook absorbed, with what it did and the call that made it, and never one the model already undid (t504)", async () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.explored(acted("call.archive", ["modify_existing"], {}, { item: "row:1" }));
+    ledger.placed("act-1", { state: { page: "inbox" }, location: "https://site.test/inbox", changed: ["row 1 archived"] });
+    ledger.explored(acted("call.label", ["create_new"]));
+    ledger.placed("act-2", { state: { page: "inbox" }, location: "https://site.test/inbox", changed: ["label added"] });
+    // The model undid act-2 itself, and its page no longer shows it.
+    ledger.explored(acted("call.unlabel", ["delete"], { undoes: "act-2" }));
+    const compareAt = async (place: AutomationStudioSiteResetPlace): Promise<AutomationStudioSiteResetComparison> => ({ moved: true, differs: place.changed.includes("row 1 archived") ? ["row 1 archived"] : [] });
+    expect(await ledger.beforeTrial({ compare: back, compareAt })).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-1" }] } });
+    const decision = await ledger.beforeTrial({ compare: back, compareAt }, undefined, { startReset: true });
+    expect(decision).toEqual({ kind: "admit", absorbedByStartReset: [{ act: "act-1", did: "press \"Save\" button", call: "call.archive" }] });
   });
 
   it("refuses a claim on an unknown act, a malformed value, or an act that cannot be undone, listing the acts that may be", () => {

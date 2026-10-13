@@ -108,6 +108,13 @@ export type AutomationStudioCandidateTrialResult = {
   trialRunId?: string;
   /** The trial's lasting acts that landed, whatever its verdict (t462). Absent when it made none or ran nothing. */
   acts?: AutomationStudioCandidateTrialAct[];
+  /**
+   * Every act of the build a deployment's start hook took back before this
+   * trial or an earlier one (t504): its id, what it did, and the exploration
+   * call that made it. Set by the trial gate on the result it keeps, never
+   * read from a port; absent when no hook took back anything of the build.
+   */
+  absorbedByStartReset?: Array<{ act: string; did: string; call?: string }>;
 };
 
 /**

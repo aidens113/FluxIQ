@@ -69,6 +69,16 @@
 // put back (`startReset`), so every act of this build counts undone and the
 // model is asked to undo nothing the hook already undid (t479).
 //
+// **What a start hook took back is said, never erased (t504).** Lane D round 17
+// (`run-mv6lgt3s-c3aa6fac`) pressed one row's control while exploring; the
+// hook took that act back and nothing the trial answered or the build kept
+// said it had existed. The acts the hook absorbed before a trial are answered
+// in that trial's evidence as `absorbedByStartReset`, by what each did and the
+// exploration call that made it, and the result this gate keeps for each trial
+// (`standing`, the build's record of its trials) carries every act a hook
+// absorbed during the build so far, so one absorbed before an earlier
+// revision's trial is not lost. Whether the trial is admitted does not change.
+//
 // **A yes the site asked to slow down completes only once the Flow answers it
 // (t485; user, 2026-10).** Lane D round 12 (`run-mv62icw0-070f88ad`, D2): a
 // trial passed after the site refused one act and asked the run to slow down,
@@ -99,7 +109,7 @@ import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvi
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS } from "../plan/index.ts";
 import { automationStudioCandidateStartedWithSaid } from "./started-with.ts";
-import type { AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
+import type { AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialAct, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialResult, type AutomationStudioCandidateTrialVerdict, type AutomationStudioFlowCandidate } from "./contracts.ts";
 
 export const AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID = "core.test_candidate";
@@ -171,6 +181,8 @@ export class AutomationStudioFlowCandidateTrialGate {
   private readonly repeatedFailures = new Map<string, JsonObject>();
   /** What each passed revision met that its Flow does not answer yet (header); absent when nothing. */
   private readonly slowDowns = new Map<string, JsonObject[]>();
+  /** Every act of this build a start hook took back so far, in the order it was absorbed (header, t504). */
+  private readonly absorbed: AutomationStudioSiteResetNamedAct[] = [];
   private readonly fallbackSignal = new AbortController().signal;
 
   constructor(private readonly input: {
@@ -218,11 +230,14 @@ export class AutomationStudioFlowCandidateTrialGate {
     signal.throwIfAborted();
     // Not a trial: the model is told what to put back, and the identical test after it reaches this gate again (header).
     if (reset?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: reset.evidence, effectApplied: reset.moved, targetsUnchanged: !reset.moved, resultCode: reset.evidence.code, resultReason: RETEST_REASON };
+    // What the hook took back before this trial is recorded at once, whatever the trial then answers (header, t504).
+    const absorbed = reset?.kind === "admit" ? (reset.absorbedByStartReset ?? []).map(namedAct) : [];
+    this.absorbed.push(...absorbed);
     this.trials.set(key(latest), tried + 1);
     const answer = await this.ask(trial, latest, signal, reset?.kind === "admit" ? automationStudioCandidateStartedWithSaid(reset.startedWith) : []);
     signal.throwIfAborted();
     const leftOnSite = this.input.reset?.trialRan(answer.acts ?? [], answer.trialRunId);
-    this.verdicts.set(key(answer), answer);
+    this.verdicts.set(key(answer), this.absorbed.length > 0 ? { ...answer, absorbedByStartReset: this.absorbed.map(namedAct) } : answer);
     if (answer.verdict === "no") this.closedDigests.set(answer.digest, answer.feedback);
     const repeatedStep = this.recordStop(answer);
     const slowDown = answer.verdict === "yes" ? unhandledSlowDowns(answer.feedback, latest) : [];
@@ -236,7 +251,8 @@ export class AutomationStudioFlowCandidateTrialGate {
       ...(slowDown.length ? { slowDown } : {}),
       ...(TRANSIENT.has(answer.verdict) ? { retestsLeft } : {}),
       ...(reset?.kind === "admit" && reset.startedWith ? { startedWith: reset.startedWith } : {}),
-      ...(leftOnSite?.length ? { leftOnSite: leftOnSite.map((act) => ({ act: act.act, did: act.did, ...(act.call ? { call: act.call } : {}) })) } : {})
+      ...(absorbed.length ? { absorbedByStartReset: absorbed } : {}),
+      ...(leftOnSite?.length ? { leftOnSite: leftOnSite.map(namedAct) } : {})
     };
     // The trial ran on the target, so whatever it touched may have moved. A transient verdict with a re-test left says
     // so in its reason, so the identical request to test again is never refused as a repeat (header).
@@ -339,6 +355,11 @@ function trialActs(value: unknown): AutomationStudioCandidateTrialAct[] {
     if ((entry.label !== undefined && typeof entry.label !== "string") || (entry.control !== undefined && typeof entry.control !== "string")) return [];
     return [{ step: entry.step, definitionId: entry.definitionId, ...(entry.label ? { label: entry.label } : {}), ...(entry.control ? { control: entry.control } : {}), consequences: [...new Set(entry.consequences as AutomationStudioCandidateTrialAct["consequences"])] }];
   });
+}
+
+/** One act of the build as a trial's answer names it: its id, what it did, and the exploration call that made it; never what the reset last saw of it. */
+function namedAct(act: AutomationStudioSiteResetNamedAct): { act: string; did: string; call?: string } {
+  return { act: act.act, did: act.did, ...(act.call ? { call: act.call } : {}) };
 }
 
 function key(receipt: { revision: number; digest: string }): string { return `${receipt.revision}\n${receipt.digest}`; }
