@@ -50,16 +50,18 @@ describe("the order of a DeepSeek evidence-loop request", () => {
     const second = await userMessage(loopRequest(2, evidence(3)));
 
     const shared = commonPrefixLength(first, second);
-    // Identical up to the digit of the counter; only the output schema follows
-    // it, and it is the same on both calls. The tools and a routing context that
-    // lists no situations sit in front of the window (W2 round 2, t193). That is
-    // the whole claim: the prefix is contiguous and nothing that could have been
-    // reused sits behind it.
+    // Identical up to the digit of the counter, and nothing follows it but the
+    // objects it closes. The tools and a routing context that lists no
+    // situations sit in front of the window (W2 round 2, t193), and the output
+    // schema in front of the task's context (t484: behind the window it was
+    // read uncached on every decision, half of `run-mv62icw0-070f88ad`'s cost).
+    // That is the whole claim: the prefix is contiguous and nothing that could
+    // have been reused sits behind it.
     expect(first.slice(0, shared)).toMatch(/"iteration":$/u);
-    expect(first.slice(shared)).toMatch(/^\d+\}\},"outputSchema":/u);
+    expect(first.slice(shared)).toMatch(/^\d+\}\}\}$/u);
     expect(first.slice(shared + 1)).toBe(second.slice(shared + 1));
     // Every constant part is inside it, in the order it is written.
-    const offsets = ['"taskKind"', '"instructions"', '"policyGates"', '"flowBootstrap"', '"nodeCatalog"', '"evidenceLoop"', '"tools"', '"evidence"'].map((key) => {
+    const offsets = ['"taskKind"', '"outputSchema"', '"instructions"', '"policyGates"', '"flowBootstrap"', '"nodeCatalog"', '"evidenceLoop"', '"tools"', '"evidence"'].map((key) => {
       const at = first.indexOf(key);
       expect(at, key).toBeGreaterThan(-1);
       expect(at, key).toBeLessThan(shared);

@@ -19,8 +19,15 @@
 // window, and the routing context's situations are entries of the window, each
 // placed after the call it followed. So a request is a prefix of the next
 // through every settled entry and through all of that, except where the tools
-// were withdrawn, which costs one call. The output schema stays behind the
-// window: it changes more often, and in front each change would cost it all.
+// were withdrawn, which costs one call.
+//
+// The output schema (t484) sits in front of the task's context. Behind the
+// window it followed the newest entry, so it was read uncached on every
+// decision: about half of `run-mv62icw0-070f88ad`'s cost. Measured over the
+// recorded lab builds, it changed between 6.4% of consecutive decisions on this
+// evidence-guided path, mostly with the tools, and 3.2% on the candidate path.
+// So a request is a prefix of the next through the whole window, except where
+// the offer changed: then the miss starts in the schema, once.
 //
 // A domain that declares which keys of a result are its view of the target
 // has every view but the newest replaced by a reference (B1,
@@ -70,6 +77,8 @@ describe("the cached prefix of a build's decisions", () => {
     // The situations now arrive as window entries, one more as each call reaches a new page; the routing context lists none.
     expect(changed((payload) => payload.context.evidenceLoop.evidence.filter((entry) => entry.toolId === ROUTE_STATE).length), "the window gains route states").toBe(true);
     for (const request of sent) {
+      // The schema in front of the task's context, and so of the window.
+      expect(Object.keys(request.payload)).toEqual(["taskKind", "promptVersion", "expectedOutput", "outputSchema", "context"]);
       expect(request.payload.context.routing, "no routing context behind the window").toBeUndefined();
       expect(request.payload.context.flowBootstrap?.routing?.situations).toEqual([]);
       expect(request.payload.context.flowBootstrap?.routing?.situationsShown).toMatch(/core\.route_state/u);
@@ -85,15 +94,16 @@ describe("the cached prefix of a build's decisions", () => {
       // call was shown of them the later one is shown too, in the same place.
       expect(shared, `call ${index} -> ${index + 1}: tool results kept`).toBe(earlier.payload.context.evidenceLoop.evidence.filter(isToolResult).length);
       const matched = commonPrefixLength(prompt(earlier), prompt(later));
-      if (toolsChanged(earlier, later)) {
-        // The tools were withdrawn: the miss starts there, in front of the window, once.
-        expect(matched, `call ${index} -> ${index + 1}: the prefix reaches the tools`).toBeGreaterThanOrEqual(earlier.system.length + 1 + earlier.user.indexOf('"tools"'));
+      const offerChanged = offerChangeStart(earlier, later);
+      if (offerChanged !== undefined) {
+        // The offer changed (completion or amending offered or withdrawn, the tools withdrawn): the miss starts there, in front of the window, once.
+        expect(matched, `call ${index} -> ${index + 1}: the prefix reaches the changed offer`).toBeGreaterThanOrEqual(offerChanged);
         continue;
       }
       const mustMatch = earlier.system.length + 1 + endOfEntry(earlier, shared);
       expect(matched, `call ${index} -> ${index + 1}: first difference at ${matched}, inside ${pathAt(earlier, matched)}; must match through ${mustMatch}`).toBeGreaterThanOrEqual(mustMatch);
-      // The node catalog and the tools are inside it.
-      for (const key of ['"nodeCatalog"', '"tools"']) expect(prompt(earlier).indexOf(key), `call ${index} -> ${index + 1}: ${key} in the prefix`).toBeLessThan(matched);
+      // The output schema, the node catalog and the tools are inside it.
+      for (const key of ['"outputSchema"', '"nodeCatalog"', '"tools"']) expect(prompt(earlier).indexOf(key), `call ${index} -> ${index + 1}: ${key} in the prefix`).toBeLessThan(matched);
     }
   }, 60_000);
 
@@ -121,9 +131,13 @@ describe("the cached prefix of a build's decisions", () => {
       const view = evidence.findIndex((entry) => isObject(entry.value) && "elements" in entry.value);
       const settled = view < 0 ? evidence.filter(isToolResult).length : view;
       expect(JSON.stringify(later.payload.context.evidenceLoop.evidence.slice(0, settled)), `call ${index} -> ${index + 1}: entries before the view unchanged`).toBe(JSON.stringify(evidence.slice(0, settled)));
-      if (toolsChanged(earlier, later)) continue;
-      const mustMatch = earlier.system.length + 1 + endOfEntry(earlier, settled);
       const matched = commonPrefixLength(prompt(earlier), prompt(later));
+      const offerChanged = offerChangeStart(earlier, later);
+      if (offerChanged !== undefined) {
+        expect(matched, `call ${index} -> ${index + 1}: the prefix reaches the changed offer`).toBeGreaterThanOrEqual(offerChanged);
+        continue;
+      }
+      const mustMatch = earlier.system.length + 1 + endOfEntry(earlier, settled);
       expect(matched, `call ${index} -> ${index + 1}: first difference at ${matched}, inside ${pathAt(earlier, matched)}; must match through ${mustMatch}`).toBeGreaterThanOrEqual(mustMatch);
     }
     // The window grows by a reference per step, not by a page: the last request
@@ -141,9 +155,18 @@ const ROUTE_STATE = "core.route_state";
 /** A tool's result, or a route state: entries written once, where they happened, and never changed. */
 function isToolResult(entry: SentEntry): boolean { return !entry.toolId.startsWith("core.") || entry.toolId === ROUTE_STATE; }
 
-/** Whether the offered tools changed between two requests (withdrawn in the wrap-up). */
-function toolsChanged(earlier: Sent, later: Sent): boolean {
-  return JSON.stringify(earlier.payload.context.evidenceLoop.tools) !== JSON.stringify(later.payload.context.evidenceLoop.tools);
+/**
+ * Where in the earlier prompt the later one may first differ when the offer
+ * changed between them, or undefined when it did not. The output schema is
+ * written first and the tools after the head, so a changed schema -- which
+ * every change of the tools also is -- may differ from inside it, past its
+ * key; changed tools alone, from their key.
+ */
+function offerChangeStart(earlier: Sent, later: Sent): number | undefined {
+  const at = (key: string) => earlier.system.length + 1 + earlier.user.indexOf(key) + key.length;
+  if (JSON.stringify(earlier.payload.outputSchema) !== JSON.stringify(later.payload.outputSchema)) return at('"outputSchema":');
+  if (JSON.stringify(earlier.payload.context.evidenceLoop.tools) !== JSON.stringify(later.payload.context.evidenceLoop.tools)) return at('"tools":');
+  return undefined;
 }
 
 /** How many entries from the start the two windows share byte for byte, counting only up to the last tool result. */
