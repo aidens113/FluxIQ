@@ -473,6 +473,17 @@ describe("activityActionOf: a refuted check says how many rows and why (R2-U-1)"
       .toBe("7 rows came back, but the filter omitted relevant documents");
   });
 
+  // Lane C round 11 (`run-mv5yaapy-8c34bf34`, trials 1 and 2, t480): the reading opened by restating the count,
+  // so the card read "15 rows came back, but 15 rows stored, ..." and the second "..., but 10 rows stored, all satisfying ...".
+  it("reads the next sentence when the check's reading opens with the stored count", () => {
+    const first = `15 rows came back. ${VERDICT} What it found: 15 rows stored, deduped by url, all pages read (pages 1 to 5). Two accessories were kept: Replacement Ear Tips and a Charging Case Replacement.`;
+    expect(activityActionOf(check(first))?.why).toBe("15 rows came back, but two accessories were kept");
+    const second = `10 rows came back. ${VERDICT} What it found: 10 rows stored, all satisfying Plus, rating ≥ 4, price < 50, non-sponsored. The name exclusion dropped three earbuds sold with a Wireless Charging Case.`;
+    expect(activityActionOf(check(second))?.why).toBe("10 rows came back, but the name exclusion dropped three earbuds sold with a Wireless Charging Case");
+    // With nothing after the count, Core's own words, never the count again.
+    expect(activityActionOf(check(`10 rows came back. ${VERDICT} What it found: 10 rows stored, all satisfying Plus.`))?.why).toBe("10 rows came back, but the check found they don't answer what you asked");
+  });
+
   it("leaves a check with no count and no finding to Core's own sentence, and an unconfirmed one alone", () => {
     expect(activityActionOf(check("Two checks disagreed."))?.why).toBeNull();
     expect(activityActionOf(check(`82 rows would be stored. ${VERDICT}`, ACTIVITY_RESULT_CHECK_LABELS.unconfirmed))).toMatchObject({ why: null, unconfirmed: true });

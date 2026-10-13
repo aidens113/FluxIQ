@@ -88,8 +88,14 @@ function stepsSaid(feedback: Record<string, unknown>): string | undefined {
   return [...said, ...more, counts].filter(Boolean).join("; ") || undefined;
 }
 
-/** The test's verdict and its steps in words, or why it ran nothing; nothing for an answer of another shape. */
-export function automationStudioActivityCandidateTrialWords(result: { resultCode?: unknown; evidence?: unknown }): { failed: boolean; declined: boolean; words: string } | undefined {
+/**
+ * The test's verdict and its steps in words, or why it ran nothing; nothing for
+ * an answer of another shape. `unconfirmed` marks a test that ran but whose
+ * result nobody could confirm either way -- its checks disagreed, or could not
+ * tell, or none was asked -- so what is said after it never claims the test
+ * showed the Flow wrong (lane C round 11, `run-mv5yaapy-8c34bf34`, t480).
+ */
+export function automationStudioActivityCandidateTrialWords(result: { resultCode?: unknown; evidence?: unknown }): { failed: boolean; declined: boolean; unconfirmed?: true; words: string } | undefined {
   const evidence = objectOf(result.evidence);
   if (!evidence) return undefined;
   const verdict = evidence.verdict;
@@ -103,7 +109,7 @@ export function automationStudioActivityCandidateTrialWords(result: { resultCode
   const after = (head: string): string => (steps ? `${head}: ${steps}` : head);
   if (verdict === "yes") return { failed: false, declined: false, words: after("the test passed and the Flow did what you asked") };
   if (verdict === "no") return { failed: true, declined: false, words: after("the Flow ran, but it didn't do what you asked") };
-  if (verdict === "unsure" || verdict === "not_judged") return { failed: true, declined: false, words: after("the Flow ran, but whether it did what you asked couldn't be confirmed") };
+  if (verdict === "unsure" || verdict === "not_judged") return { failed: true, declined: false, unconfirmed: true, words: after("the Flow ran, but whether it did what you asked couldn't be confirmed") };
   const code = typeof feedback.code === "string" ? feedback.code : "";
   // A run that stopped between steps names no failed step: its counts alone would read as the reason.
   const anyFailed = Array.isArray(feedback.steps) && feedback.steps.some((step) => objectOf(step)?.status === "failed");

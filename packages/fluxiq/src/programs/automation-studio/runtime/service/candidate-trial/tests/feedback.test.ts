@@ -289,4 +289,26 @@ describe("an unsure trial whose judges split", () => {
     expect(feedback).not.toHaveProperty("answeredReading");
     expect(feedback).not.toHaveProperty("readings");
   });
+
+  // Lane C round 11 (`run-mv5yaapy-8c34bf34`, trial 3): one call could not tell, the other said yes. The note
+  // named "the call that said no" and its `unconfirmedReading`, neither of which the feedback carried (t480).
+  it("names only the readings it carries when the other call could not tell", () => {
+    const { verdict, feedback } = automationStudioCandidateTrialFeedback.judged({ verdict: { verdict: "unknown", why: "The first was that it could not be told, the second that it does.", answeredReading: yes, oneCallSaidYes: true, spent }, summary, trialRunId: "trial.3", start: "reset" });
+    expect(verdict).toBe("unsure");
+    expect(feedback).toMatchObject({ code: "candidate.trial_unconfirmed", answeredReading: yes });
+    expect(feedback).not.toHaveProperty("unconfirmedReading");
+    const readings = String(feedback.readings);
+    expect(readings).not.toMatch(/unconfirmedReading|said no/u);
+    expect(readings).toContain("named no defect");
+    expect(readings).toContain("test this same revision again");
+    // Every key the note names is one the feedback carries.
+    for (const key of readings.match(/\b[a-z]+Reading\b/gu) ?? []) expect(feedback, key).toHaveProperty(key);
+  });
+
+  it("names the no's reading where the feedback carries one", () => {
+    const { feedback } = automationStudioCandidateTrialFeedback.judged({ verdict: { verdict: "unknown", why: "The two checks disagreed.", unconfirmedReading: no, answeredReading: yes, oneCallSaidYes: true, spent }, summary, trialRunId: "trial.4", start: "reset" });
+    const readings = String(feedback.readings);
+    for (const key of readings.match(/\b[a-z]+Reading\b/gu) ?? []) expect(feedback, key).toHaveProperty(key);
+    expect(readings).toContain("unconfirmedReading is what the call that said no compared");
+  });
 });

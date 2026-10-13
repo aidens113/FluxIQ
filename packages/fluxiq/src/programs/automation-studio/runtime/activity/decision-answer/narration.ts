@@ -46,6 +46,13 @@ const REFUSED: Readonly<Record<string, string>> = Object.freeze({
   [TEST_CANDIDATE]: "The test of the whole Flow didn't go through, so it showed nothing about this version."
 });
 const TEST_FAILED = "The AI model expected this version to do what was asked, but the test showed it doesn't yet.";
+/**
+ * Said of a test that ran but whose result could not be confirmed either way
+ * (t480): lane C round 11 (`run-mv5yaapy-8c34bf34`, trial 3) said the test
+ * "showed it doesn't yet" when its two checks had disagreed, and the model then
+ * tested the same version again.
+ */
+const TEST_UNCONFIRMED = "The AI model expected this version to do what was asked, and the test couldn't confirm whether it does.";
 
 /**
  * A call's identity for "sent again unchanged": its tool and its input as
@@ -59,13 +66,14 @@ function keyOf(call: Call): string {
 /**
  * One loop's narration: `decided` as `decide` returns (says the reason now, or
  * holds it); `ran` as the held call starts; `ended` as a candidate's own call
- * ends -- `failed` when Core refused it (`declined`) or its test did not pass
- * (`failed`); `unrun` when the loop moved on, or stalled, without running it.
+ * ends -- `failed` when Core refused it (`declined`), its test did not pass
+ * (`failed`), or its test's result could not be confirmed either way
+ * (`unconfirmed`); `unrun` when the loop moved on, or stalled, without running it.
  */
 export function automationStudioActivityNarration(): {
   decided(thought: Thought, call: Call | undefined): void;
   ran(call: Call): void;
-  ended(call: Call, failed: "declined" | "failed" | undefined): void;
+  ended(call: Call, failed: "declined" | "failed" | "unconfirmed" | undefined): void;
   unrun(): void;
 } {
   const decided = new Set<string>();
@@ -94,7 +102,8 @@ export function automationStudioActivityNarration(): {
       if (!held || !same(call)) return;
       const { thought } = held;
       held = undefined;
-      say(thought, failed === undefined ? undefined : failed === "failed" && call.toolId === TEST_CANDIDATE ? TEST_FAILED : REFUSED[call.toolId] ?? NOT_RUN);
+      const tested = failed === "failed" ? TEST_FAILED : failed === "unconfirmed" ? TEST_UNCONFIRMED : undefined;
+      say(thought, failed === undefined ? undefined : tested !== undefined && call.toolId === TEST_CANDIDATE ? tested : REFUSED[call.toolId] ?? NOT_RUN);
     },
     unrun: () => {
       if (!held) return;

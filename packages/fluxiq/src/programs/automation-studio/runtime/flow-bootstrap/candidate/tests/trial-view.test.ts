@@ -3,7 +3,13 @@
 // trial moved the browser to a filtered page and the model held only handles
 // from the page before it).
 import { describe, expect, it, vi } from "vitest";
-import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/evidence-loop.ts";
+import { automationStudioActionPermissionDenied } from "../../../action-permissions/index.ts";
+import { createAutomationStudioDeepSeekProvider } from "../../../llm/deepseek/index.ts";
+import type { JsonValue } from "../../../../../../core/index.ts";
+import { buildAutomationStudioLlmEvidenceLoopDecisionSchema, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/evidence-loop.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../../llm/harness.ts";
+import { packAutomationStudioLlmContext } from "../../../llm/harness/index.ts";
+import { automationStudioLlmNodeDescriptions, automationStudioLlmRunNodeDescribingFailures } from "../../../llm/node-tools/index.ts";
 import { automationStudioCandidateTrialView } from "../index.ts";
 
 const look: AutomationStudioLlmEvidenceTool = { toolId: "core.run_node", description: "Run a node", inputSchema: { type: "object" }, effect: "mutate", perCallEffect: true, initialObservation: { input: { node: "web.inspect" }, arrival: { node: "web.navigate" } } };
@@ -41,3 +47,95 @@ describe("the page a trial left", () => {
     await expect(automationStudioCandidateTrialView({ answer: trial(true), tools: [look], executeTool: async () => { throw new Error("aborted"); }, callId: "test.6", signal: stop.signal })).rejects.toThrow("aborted");
   });
 });
+
+// Lane C round 11 (`run-mv5yaapy-8c34bf34`, 0029, t480): the first look after a
+// trial described the domain's look node, and the definition went into the
+// request's head because its `describedNodes` sat under `pageAfterTrial`, where
+// the request does not look for it. 51,218 of 55,058 input tokens missed the
+// provider's cache on that one decision.
+describe("the look after a trial and the provider's cache", () => {
+  const AND = "builtin.logic.and";
+  const OR = "builtin.logic.or";
+
+  it("names the node the look described on the trial's answer, not inside its page", async () => {
+    const executeTool = vi.fn(async () => ({ kind: "llm_evidence_tool_execution", evidence: { page: "results", describedNodes: [OR] }, effectApplied: false }));
+    const answered = await automationStudioCandidateTrialView({ answer: trial(true), tools: [look], executeTool, callId: "test.7" });
+
+    expect(answered.evidence).toMatchObject({ describedNodes: [OR], pageAfterTrial: { page: "results" } });
+    expect((answered.evidence as { pageAfterTrial: object }).pageAfterTrial).not.toHaveProperty("describedNodes");
+  });
+
+  it("leaves every byte the decision before the trial sent in front of its window unchanged, and shows the definition once", async () => {
+    const memory = automationStudioLlmNodeDescriptions({ resolution: GLOBAL_RESOLUTION });
+    const library = automationStudioLlmRunNodeDescribingFailures(async (input) => ({
+      kind: "llm_evidence_tool_execution",
+      evidence: { ok: true, ran: input.value.node as string, page: { url: "https://example.test/", title: "A page" } },
+      effectApplied: false
+    }), memory);
+    const executeTool: AutomationStudioLlmEvidenceLoopInput["executeTool"] = async (call) =>
+      await library({ projectId: "project.one", flowId: "flow.one", callId: call.callId, optionId: call.toolId, value: call.value, permission: automationStudioActionPermissionDenied });
+    const evidenceOf = (result: unknown): JsonValue => (result as AutomationStudioLlmEvidenceToolExecutionResult).evidence;
+    const window: Window = [{ callId: "initial.core.run_node", toolId: "core.run_node", value: evidenceOf(await executeTool({ callId: "initial.core.run_node", toolId: "core.run_node", value: { node: AND, parameters: {}, consequences: [] } })) }];
+    const first = await userMessage(packedRequest(1, window, memory.ids()));
+
+    const lookOn: AutomationStudioLlmEvidenceTool = { ...look, initialObservation: { input: { node: OR, parameters: {}, consequences: [] } } };
+    const answered = await automationStudioCandidateTrialView({ answer: trial(true), tools: [lookOn], executeTool, callId: "call.1" });
+    window.push({ callId: "call.1", toolId: "core.test_candidate", value: answered.evidence });
+    const second = await userMessage(packedRequest(2, window, memory.ids()));
+
+    expect(memory.ids()).toContain(OR);
+    const end = first.indexOf('],"iteration":', first.indexOf('"evidence":'));
+    expect(end).toBeGreaterThan(0);
+    expect(second.slice(0, end)).toBe(first.slice(0, end));
+    expect(second.split(JSON.stringify(memory.definition(OR))).length - 1).toBe(1);
+  });
+});
+
+const GLOBAL_RESOLUTION = { scope: { kind: "global" as const } };
+const loopTools = [
+  { toolId: "core.run_node", description: "Run one node from the library against the page.", inputSchema: { type: "object" } },
+  { toolId: "core.test_candidate", description: "Test the draft from the start.", inputSchema: { type: "object" } }
+];
+const completionSchema = { type: "object" } as const;
+
+/** A decision's evidence window, in the order the calls ran. */
+type Window = Array<{ callId: string; toolId: string; value: JsonValue }>;
+
+/** An evidence decision packed by Core's own packer from a window and the build's described ids. */
+function packedRequest(iteration: number, gathered: Window, describedNodeIds: readonly string[]): AutomationStudioLlmTaskRequest {
+  const evidenceLoop = { iteration, tools: loopTools, evidence: structuredClone(gathered), decisionSchema: buildAutomationStudioLlmEvidenceLoopDecisionSchema(loopTools, completionSchema, true, false), completionSchema, canComplete: true };
+  const context = packAutomationStudioLlmContext({ taskKind: "evidence_tool_decision", projectId: "project.one", flowId: "flow.one", instructions: [], deniedEvidenceKeys: [], evidenceLoop, flowBootstrap: { resolution: GLOBAL_RESOLUTION, describedNodeIds } });
+  return {
+    requestId: "request.evidence.1",
+    idempotencyKey: "request.evidence.1",
+    timeoutMs: 20_000,
+    estimatedInputTokens: 100,
+    taskKind: "evidence_tool_decision",
+    promptVersion: context.promptVersion,
+    expectedOutput: "evidence_tool_decision",
+    tokenLimits: { maxInputTokens: 48_000, maxOutputTokens: 4_000, maxTotalTokens: 52_000 },
+    maxEstimatedCostUsd: 0.25,
+    deniedEvidenceKeys: [],
+    context
+  };
+}
+
+/** The user message one request would put on the wire, read from the outbound body itself. */
+async function userMessage(request: AutomationStudioLlmTaskRequest): Promise<string> {
+  let outbound = "";
+  const provider = createAutomationStudioDeepSeekProvider({
+    now: () => Date.UTC(2026, 8, 30, 2),
+    secretReference: { kind: "secret_reference", id: "secret:deepseek" },
+    resolveSecret: async (input) => {
+      outbound = input.outboundBody;
+      return "test-secret";
+    },
+    fetchImpl: (async () => new Response(JSON.stringify({
+      choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ kind: "evidence_tool_decision", summary: "Enough.", decision: { kind: "complete", result: {} } }) } }],
+      usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 }
+    }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch
+  });
+  await provider.runTask(request);
+  const body = JSON.parse(outbound) as { messages: Array<{ role: string; content: string }> };
+  return body.messages.find((message) => message.role === "user")!.content;
+}

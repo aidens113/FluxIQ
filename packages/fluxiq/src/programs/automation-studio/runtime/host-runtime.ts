@@ -37,6 +37,13 @@ export type AutomationStudioHostRuntimeActionContext = {
   node: AutomationStudioFlowNode;
   attemptId: string;
   inputs: Readonly<Record<string, JsonValue>>;
+  /**
+   * On a `before_action` capture: the snapshot this host returned for the page
+   * the run's previous attempt ended on, offered only when no other attempt
+   * started since and it arrived moments ago (`executor/host-state.ts`). A host
+   * may return it as this capture instead of reading the same page again; one
+   * that ignores it captures as before.
+   */
   previousStateRef?: AutomationStudioHostStateSnapshotRef;
 };
 

@@ -77,7 +77,10 @@
 // Only the no reached the model, which then hunted for pages that did not
 // exist. An unsure trial whose calls split now carries the yes's reading too
 // (`answeredReading`), beside the no's (`unconfirmedReading`), with a note
-// saying neither was confirmed and how to weigh them.
+// saying neither was confirmed and how to weigh them. Where the other call
+// gave no reading of a defect -- it could not tell, as in lane C round 11
+// (`run-mv5yaapy-8c34bf34`, trial 3) -- the note names only the yes's reading
+// and says the other named no defect, rather than a no it does not carry (t480).
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../../../model/index.ts";
@@ -98,10 +101,24 @@ import { automationStudioTrialTargetOnPage } from "./target-on-page.ts";
 /** The handle the domain named each pressed way out by, keyed by the client's reference (`./interruptions.ts`). */
 type WayOutHandles = Readonly<Record<string, string>>;
 
-/** What the model is told when the two judge calls split (header, t477). */
+/** How to weigh a split's readings, said after which readings it carries (header, t477). */
+const WEIGH_NOTE = "a start view is the page before the Flow's first step, and a list read ran on the page its own steps reached. ";
+
+/** What the model is told when one judge call said no and the other yes (header, t477). */
 const SPLIT_NOTE = "The two judge calls disagreed and neither was confirmed: unconfirmedReading is what the call that said no compared, answeredReading what the call that said yes compared. "
-  + "Weigh each by the evidence it names against this trial's own reads, steps and stored rows: a start view is the page before the Flow's first step, and a list read ran on the page its own steps reached. "
+  + `Weigh each by the evidence it names against this trial's own reads, steps and stored rows: ${WEIGH_NOTE}`
   + "Change the Flow only for what that evidence supports; where it supports the yes, test this same revision again.";
+
+/**
+ * What the model is told when one call said yes and the other gave no reading
+ * of a defect (header, t480): it could not tell, or said no without saying what
+ * was wrong. Lane C round 11 (`run-mv5yaapy-8c34bf34`, trial 3) split unknown
+ * against yes, and the note spoke of a no and an `unconfirmedReading` the
+ * feedback did not carry.
+ */
+const UNREAD_SPLIT_NOTE = "The two judge calls disagreed and neither was confirmed: answeredReading is what the call that said yes compared; the other call named no defect, so it gives no evidence to weigh. "
+  + `Weigh answeredReading by the evidence it names against this trial's own reads, steps and stored rows: ${WEIGH_NOTE}`
+  + "Where that evidence supports it, test this same revision again; change the Flow only for a defect that evidence shows.";
 
 /** The most steps a feedback lists; a longer Flow says how many it left out. */
 const MAX_STEPS = 40;
@@ -134,7 +151,7 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
     if (judged.verdict === "unknown") {
       const split = judged.answeredReading !== undefined;
       return { verdict: "unsure", code: "candidate.trial_unconfirmed", feedback: { ...common, code: "candidate.trial_unconfirmed", why: judged.why, ...(judged.unconfirmedReading ? { unconfirmedReading: compact({ ...judged.unconfirmedReading }) } : {}),
-        ...(split ? { answeredReading: compact({ ...judged.answeredReading }), readings: SPLIT_NOTE } : {}) } };
+        ...(split ? { answeredReading: compact({ ...judged.answeredReading }), readings: judged.unconfirmedReading ? SPLIT_NOTE : UNREAD_SPLIT_NOTE } : {}) } };
     }
     return { verdict: "not_judged", code: "candidate.trial_not_judged", feedback: { ...common, code: "candidate.trial_not_judged", why: judged.why } };
   }

@@ -104,6 +104,18 @@ describe("a test whose result contradicts the model (lane D)", () => {
     expect(JSON.stringify(seen)).not.toContain("5+ mutual friends");
   });
 
+  // Lane C round 11 (`run-mv5yaapy-8c34bf34`, trial 3, t480): the two checks split, unknown against yes, and the
+  // chat said the test "showed it doesn't yet"; the model then tested the same version again.
+  it("says the test could not confirm it, never that it showed the Flow wrong, when the checks did not settle", async () => {
+    for (const verdict of ["unsure", "not_judged"]) {
+      seen = [];
+      await run(ran({ ok: false, verdict, feedback: { steps: [] } }));
+      expect(thoughts().map(([, text]) => text), verdict).toEqual(["The AI model expected this version to do what was asked, and the test couldn't confirm whether it does."]);
+      expect(JSON.stringify(seen), verdict).not.toContain("showed it doesn't yet");
+      expect(JSON.stringify(seen), verdict).not.toContain("5+ mutual friends");
+    }
+  });
+
   it("is said as the model said it when the test passed", async () => {
     await run(ran({ ok: true, verdict: "yes", revision: 2, digest: "b".repeat(64), trialRunId: "run.trial-1", feedback: { steps: [] } }));
     expect(thoughts().map(([, text]) => text)).toEqual(["Testing, which now confirms only requests with 5+ mutual friends."]);
