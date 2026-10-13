@@ -78,6 +78,49 @@ describe("site reset ledger", () => {
     expect(ledger.target("act-1", aim([], { item: "row:tom" }))).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_wrong_target" } });
   });
 
+  // Lane B round 11 (`run-mv5yaapd-ad19eaae`): an Add to cart in no row, undone by Remove on the cart's only line -- the
+  // soap the cart held before the build -- because a one-line list names no row and two missing items compared equal.
+  it("admits an undo on the act's own item only on a positive match: a token missing on either side never matches (t479)", async () => {
+    const unmatched: Array<[AutomationStudioSiteResetSpot, AutomationStudioSiteResetSpot]> = [
+      [{}, {}],
+      [{}, { item: "line:soap" }],
+      [{ item: "page-add" }, {}],
+      [{ dialog: "dialog:cart" }, { dialog: "dialog:cart" }],
+      [{ item: "row:a" }, { item: "row:a", dialog: "dialog:x" }],
+      [{ item: "row:a", dialog: "dialog:x" }, { item: "row:a" }]
+    ];
+    for (const [spot, control] of unmatched) {
+      for (const consequences of [["modify_existing"], ["delete"]] as AutomationStudioActionConsequence[][]) {
+        const ledger = new AutomationStudioSiteResetLedger();
+        ledger.explored(acted("call.add", ["create_new"], {}, spot));
+        expect(ledger.target("act-1", aim(consequences, control))).toMatchObject({ kind: "refused", evidence: { ok: false, code: "candidate.undo_wrong_target", act: "act-1", cannotUndo: [{ act: "act-1" }] } });
+        // No positively identified reverse: the act is kept, and the trial runs with it, saying so.
+        expect(ledger.inPlace()).toEqual([]);
+        expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1" }] } });
+      }
+    }
+    // Present and equal, in the same dialog or in none: the act's own item.
+    for (const spot of [{ item: "row:a" }, { item: "row:a", dialog: "dialog:x" }]) {
+      const ledger = new AutomationStudioSiteResetLedger();
+      ledger.explored(acted("call.confirm", ["modify_existing"], {}, spot));
+      expect(ledger.target("act-1", aim(["modify_existing"], { ...spot }))).toEqual({ kind: "admit", on: "own", allowed: [] });
+    }
+  });
+
+  it("follows an undo with one lasting press in a dialog only: the site's one confirmation spends the chain (t479)", () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.explored(acted("call.confirm", ["modify_existing"], {}, { item: "row:amara" }));
+    expect(ledger.target("act-1", aim(["modify_existing"], { item: "row:amara" }))).toMatchObject({ kind: "admit", on: "own" });
+    ledger.explored(acted("call.undo", ["modify_existing"], { undoes: "act-1", on: "own" }));
+    // An acknowledgement that changes nothing lasting does not spend it.
+    expect(ledger.target("act-1", aim([], { dialog: "dialog:confirm" }))).toEqual({ kind: "admit", on: "follow_up", allowed: [] });
+    ledger.explored(acted("call.ok", [], { undoes: "act-1", on: "follow_up" }));
+    expect(ledger.target("act-1", aim(["modify_existing"], { dialog: "dialog:confirm" }))).toEqual({ kind: "admit", on: "follow_up", allowed: [] });
+    ledger.explored(acted("call.yes", ["modify_existing"], { undoes: "act-1", on: "follow_up" }));
+    // A second lasting press in a dialog -- another line of an open drawer -- is not that undo's confirmation.
+    expect(ledger.target("act-1", aim(["modify_existing"], { dialog: "dialog:drawer" }))).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_wrong_target" } });
+  });
+
   it("admits a dialog the site opens to confirm an undo only after that undo landed on the act's own or created item (t475)", () => {
     const ledger = new AutomationStudioSiteResetLedger();
     ledger.explored(acted("call.add", ["create_new"]));
@@ -109,33 +152,37 @@ describe("site reset ledger", () => {
     expect(await ledger.beforeTrial(back)).toEqual({ kind: "admit" });
   });
 
-  it("after a start hook, counts acts no longer seen undone with no undo asked, kept ones too, and asks only for what is still seen (t475)", async () => {
+  // Lane B round 11 (`run-mv5yaapd-ad19eaae`): after the hook, a look on each act's own page still saw a rotating
+  // carousel and a chat card's cover, the model was asked to undo them, and it removed the soap instead.
+  it("after a start hook, counts every act undone, kept ones too, and asks the model for nothing, whatever a look would still see (t479)", async () => {
     const ledger = new AutomationStudioSiteResetLedger();
     ledger.explored(acted("call.1", ["modify_existing"]));
-    ledger.placed("act-1", { state: { page: "a" }, location: "https://site.test/a", changed: ["new: done 1"] });
-    ledger.explored(acted("call.2", ["modify_existing"]));
-    ledger.placed("act-2", { state: { page: "b" }, location: "https://site.test/b", changed: ["new: done 2"] });
+    ledger.placed("act-1", { state: { page: "a" }, location: "https://site.test/a", changed: ["h1 slide 2"] });
+    ledger.explored(acted("call.2", ["create_new"]));
+    ledger.placed("act-2", { state: { page: "b" }, location: "https://site.test/b", changed: ["clickable + covered-by t9"] });
+    ledger.explored(acted("call.3", ["modify_existing"], {}, { item: "row:a" }));
+    ledger.target("act-3", aim(["delete"], { item: "row:b" }));
+    ledger.explored(acted("call.4", ["send_or_publish"]));
     ledger.trialRan([{ step: 1, definitionId: "demo.press", consequences: ["create_new"] }], "trial.1");
-    // act-2 survived the hook on its own page; act-1 and the trial's act-3 did not.
-    const compareAt = async (place: AutomationStudioSiteResetPlace) => ({ moved: true, differs: place.location.endsWith("/b") ? ["new: done 2"] : [] });
-    let compared = 0;
-    const compare = async () => {
-      compared += 1;
-      return { moved: true, differs: [] };
+    let looked = 0;
+    const checks = {
+      compare: async () => {
+        looked += 1;
+        return { moved: true, differs: ["h1 slide 2"] };
+      },
+      compareAt: async () => {
+        looked += 1;
+        return { moved: true, differs: ["h1 slide 2", "clickable + covered-by t9"] };
+      }
     };
-    expect(await ledger.beforeTrial({ compare, compareAt }, undefined, { startReset: true })).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-2", stillThere: ["new: done 2"] }] } });
-    expect(compared).toBe(1);
-    // A start that still differs does not vouch for an act with no page.
-    const other = new AutomationStudioSiteResetLedger();
-    other.trialRan([{ step: 1, definitionId: "demo.press", consequences: ["create_new"] }], "trial.1");
-    expect(await other.beforeTrial(async () => ({ moved: true, differs: ["new: line"] }), undefined, { startReset: true })).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-1" }] } });
-    // A kept act the hook put back is no longer said to be in place.
-    const kept = new AutomationStudioSiteResetLedger();
-    kept.explored(acted("call.1", ["modify_existing"], {}, { item: "row:a" }));
-    kept.target("act-1", aim(["delete"], { item: "row:b" }));
-    expect(await kept.beforeTrial(back)).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1" }] } });
-    kept.trialRan([], "trial.1");
-    expect(await kept.beforeTrial(back, undefined, { startReset: true })).toEqual({ kind: "admit" });
+    expect(await ledger.beforeTrial(checks, undefined, { startReset: true })).toEqual({ kind: "admit" });
+    expect(looked).toBe(0);
+    expect(ledger.inPlace()).toEqual([]);
+    for (const act of ["act-1", "act-2", "act-3", "act-5"]) expect(ledger.claim(act)).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_unknown_act" } });
+    // A later act made after the hook is the reset's again, without a hook.
+    ledger.explored(acted("call.6", ["create_new"]));
+    expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-6" }] } });
+    expect(await ledger.beforeTrial(checks, undefined, { startReset: true })).toEqual({ kind: "admit" });
   });
 
   it("refuses a claim on an unknown act, a malformed value, or an act that cannot be undone, listing the acts that may be", () => {

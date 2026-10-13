@@ -136,7 +136,8 @@ export class AutomationStudioSiteResetStartCheck {
     await (live.sleep ?? pause)(live.settleMs, signal);
     const again = await this.read(start, signal);
     if ("unread" in again) return first;
-    if (first.location === again.location) {
+    // The same page only when both reads named it: two unknown locations are not one page (t479).
+    if (first.location !== undefined && first.location === again.location) {
       for (const entry of vanished(first.differs, again.differs)) this.liveDiffers.add(entry);
       for (const line of [...vanished(first.lines?.added ?? [], again.lines?.added ?? []), ...vanished(first.lines?.gone ?? [], again.lines?.gone ?? [])]) this.liveLines.add(line);
     }

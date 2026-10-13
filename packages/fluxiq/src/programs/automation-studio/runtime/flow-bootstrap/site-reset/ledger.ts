@@ -24,6 +24,19 @@
 //   (`run-mv5tusge-1400ddf7`, `run-mv5upw4g-2482be12`) aimed Delete and
 //   Confirm on other requests' rows under `undoes`; only an over-declared
 //   `delete` stopped a Confirm on a row the build never touched.
+// - **Only a positive identity match is the act's own item (t479).** The act's
+//   item token and the control's must both be present and equal; a token
+//   missing on either side is never a match, whatever else agrees. Lane B
+//   round 11 (`run-mv5yaapd-ad19eaae`) undid an Add to cart that sat in no
+//   row by pressing Remove on the cart's only line -- the dish soap the cart
+//   held before the build -- because a one-line list names no row, and two
+//   missing items compared equal. A dialog alone is no identity either: a
+//   drawer can hold several lines no token tells apart. Where no reverse is
+//   positively identified, the act is kept (`startedWith.cannotUndo`).
+// - **One lasting press per confirmation (t479).** A dialog control with no
+//   item follows an undo that landed on the act's own or created item only
+//   once with a lasting class: the site's one confirmation. After it, the
+//   chain is spent, and a further lasting press in a dialog is refused.
 // - **Removing without asking is allowed only on what the act created
 //   (t475).** An item counts as created only when the act's own page showed
 //   it just after the act and no read of this build had seen it before
@@ -61,11 +74,16 @@
 // again, and every trial runs with it in place, saying so under
 // `startedWith.cannotUndo` (`./trial-policy.ts`).
 //
-// **A start hook runs first (t475).** When the deployment's start hook has just
-// put the site back (`startReset`), every act is looked for on its own page,
-// or, with no page of its own, against the start, and counted undone where it
-// is no longer seen -- with no call from the model. Only what is still seen is
-// asked for. Kept acts too: a site put back no longer holds them.
+// **A start hook's reset asks the model for nothing (t475, t479).** When the
+// deployment's start hook has just put the site back (`startReset`), every act
+// of this build, kept ones too, counts undone, nothing is compared, and the
+// trial runs. The hook is the deployment's own reset of the whole site; what a
+// look after it still sees is content that changes by itself, a cover the
+// runtime closed during the act, or a gap in the hook -- never something the
+// model can put back better. t475 looked again on each act's own page and
+// asked for what it still saw: lane B round 11 (`run-mv5yaapd-ad19eaae`) was
+// asked to undo a rotating carousel and a chat card's cover, and that ask is
+// what drove the removal of the dish soap.
 //
 // A phase runs from the build's start, or from one trial to the next. The
 // policy before a trial (`./trial-policy.ts`) reads it.
@@ -167,7 +185,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     if (declared.effect === "observe") return { kind: "admit", on: "moving", allowed: [] };
     const { item, dialog } = declared.control;
     if (item !== undefined && act.createdItems.includes(item)) return { kind: "admit", on: "created", allowed: act.spent ? [] : ["delete"] };
-    if (act.spot && item === act.spot.item && dialog === act.spot.dialog) return { kind: "admit", on: "own", allowed: [] };
+    if (act.spot && sameItem(act.spot, declared.control)) return { kind: "admit", on: "own", allowed: [] };
     if (item === undefined && dialog !== undefined && act.chain) return { kind: "admit", on: "follow_up", allowed: act.chain === "created" && !act.spent ? ["delete"] : [] };
     if (item === undefined && dialog === undefined && declared.consequences.length === 0) return { kind: "admit", on: "moving", allowed: [] };
     act.kept = true;
@@ -188,9 +206,11 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       if (!call.landed || act.spent || !declared?.permitted || declared.effect !== "mutate") return;
       act.attempts += 1;
       act.undoneBy = call.callId;
-      if (call.on === "own" || call.on === "created") act.chain = call.on;
       const unasked = call.on === "created" || (call.on === "follow_up" && act.chain === "created");
       if (unasked && declared.consequences.includes("delete")) act.spent = true;
+      if (call.on === "own" || call.on === "created") act.chain = call.on;
+      // The site's one confirmation of that undo is given: no further lasting dialog press follows from it (header, t479).
+      else if (call.on === "follow_up" && declared.consequences.some((consequence) => UNDOABLE.has(consequence) || IRREVERSIBLE.has(consequence))) act.chain = undefined;
       return;
     }
     if (!call.landed || !declared?.permitted || declared.effect !== "mutate") return;
@@ -237,8 +257,8 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
    * The reset before a trial: acts named under `cannotUndo` kept, every act
    * still to undo looked for on its own page, then the policy applied to this
    * phase. `checks.compare` is asked only when it is needed, and once. After a
-   * start hook (`startReset`), kept acts are looked for too, and an act with
-   * no page of its own counts undone on a start that no longer differs.
+   * start hook (`startReset`), every act counts undone and the trial runs, with
+   * nothing compared or asked (header, t479).
    */
   async beforeTrial(checks: AutomationStudioSiteResetChecks | AutomationStudioSiteResetChecks["compare"], cannotUndo?: readonly string[], options: AutomationStudioSiteResetBeforeTrialOptions = {}): Promise<AutomationStudioSiteResetDecision> {
     const asked: AutomationStudioSiteResetChecks = typeof checks === "function" ? { compare: checks } : checks;
@@ -250,19 +270,23 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       // Only an act the reset has already asked for: the model has seen it listed, and had the chance to try.
       if (act && this.toUndo(act) && act.askedFor > 0) act.kept = true;
     }
-    const reset = options.startReset === true;
+    if (options.startReset === true) {
+      // The hook put the whole site back: no act of this build is on it, and the model is asked for nothing (header).
+      for (const act of this.acts) {
+        if (!act.undoable || act.undone) continue;
+        act.undone = true;
+        delete act.stillThere;
+      }
+      this.phase = { recorded: 0, refusals: 0, startDiffersSent: false };
+      return { kind: "admit" };
+    }
     let moved = false;
-    for (const act of this.acts.filter((entry) => reset ? entry.undoable && !entry.undone : this.toUndo(entry))) {
+    for (const act of this.acts.filter((entry) => this.toUndo(entry))) {
       const looked = act.place && asked.compareAt ? await asked.compareAt(act.place) : undefined;
       moved = moved || looked?.moved === true;
       if (looked?.differs && act.place) {
         act.stillThere = this.stillThere(act, act.place, looked);
         if (!act.stillThere.length) act.undone = true;
-      } else if (reset) {
-        // No page of its own to look on: the hook's start vouches for it, unless the start still differs.
-        const begun = await compare();
-        moved = moved || begun.moved;
-        if (!begun.differs?.length) act.undone = true;
       } else if (act.attempts > 0 && act.undoChanged !== false) {
         act.undone = true;
       }
@@ -328,6 +352,16 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     this.next += 1;
     this.phase = { ...this.phase, recorded: this.phase.recorded + 1 };
   }
+}
+
+/**
+ * Whether `control` sits on the item `spot` names, by a positive match (header,
+ * t479): both item tokens present and equal, in the same dialog or in none. A
+ * token missing on either side is never a match.
+ */
+function sameItem(spot: AutomationStudioSiteResetSpot, control: AutomationStudioSiteResetSpot): boolean {
+  if (spot.item === undefined || control.item === undefined || spot.item !== control.item) return false;
+  return (spot.dialog ?? null) === (control.dialog ?? null);
 }
 
 /** An act as the model is shown it. */

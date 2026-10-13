@@ -174,6 +174,21 @@ describe("site reset start check", () => {
     expect(ran).toEqual(["site-reset.1.arrival", "site-reset.2.arrival"]);
   });
 
+  it("takes nothing for live content between two reads that name no location: they are not shown to be one page (t479)", async () => {
+    let n = 0;
+    const binding = {
+      startState: async (input: { start?: JsonObject }) => {
+        n += 1;
+        const added = input.start && n === 1 ? ["line on another page"] : [];
+        return { state: { n }, differs: added.map((line) => `new: ${line}`), lines: { gone: [], added } };
+      }
+    };
+    const check = new AutomationStudioSiteResetStartCheck({ binding, projectId: "p", flowId: "f", tools: [runNode], executeTool: async () => ({}), liveCheck: { settleMs: 0 } });
+    expect(await check.settled({ n: 0 })).toMatchObject({ differs: [] });
+    n = 0;
+    expect(await check.read({ n: 0 })).toMatchObject({ differs: ["new: line on another page"] });
+  });
+
   it("never takes an act's effect that is slow to appear for live content (t475)", async () => {
     let n = 0;
     const binding = {

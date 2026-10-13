@@ -224,3 +224,55 @@ describe("automationStudioResultVerdict", () => {
     expect(JSON.stringify(verification)).not.toContain("data-testid");
   });
 });
+
+// t478, lane D round 11 (`run-mv5yaapw-6d20d23d`): three judges named the row a
+// digit pattern left out, read it as below the threshold, and said yes. A text
+// condition that kept a number on one row and left it out on another is Core's
+// to see, so a yes over such a row is not taken, and a no carries the finding.
+describe("a yes over a left-out row stating a number its text condition kept", () => {
+  const condition = "replies matches [\"([3-9]|[1-9][0-9]+) replies\"]";
+  const contradicted: AutomationStudioRunResultSummary = {
+    ...summary,
+    totalRecordCount: 2,
+    recordSets: [{
+      datasetId: "threads", recordCount: 2, refusedCount: 0, truncated: false, columns: ["topic", "replies"], columnsWithheld: false,
+      rowsChecked: 2, rowsMissingRequired: 0, missingRequiredColumns: [],
+      sampleRows: [{ topic: "Pruning roses", replies: "14 replies" }, { topic: "Seed swap", replies: "3 replies" }],
+      processing: { collected: 2, duplicates: 0, filteredOut: 0, cut: 0, kept: 2, passes: [{ node: "n2", pass: 1, rows: 2, newRows: 2 }] }
+    }],
+    reads: [{
+      nodeId: "n2", definitionId: "extract", pagesRead: 1, truncated: false, kept: 2,
+      conditions: [{ condition, rejected: 2, alone: 2, leftOutOnlyByThis: ["Compost bins — replies: Dana Ruiz and 4 others", "Rain barrels — replies: 1 reply"] }]
+    }]
+  };
+
+  it("is refused even when the yes names the row, and the repair is told the rows, their numbers and the change", () => {
+    const verification = automationStudioResultVerdict({
+      summary: contradicted,
+      diagnosis: { answersRequest: "yes", observed: "Compost bins has fewer than three replies, so it is correctly left out" },
+      basis: "model"
+    });
+    expect(verification.verdict).toBe("does_not_answer");
+    expect(verification.code).toBe("core.result.does_not_answer_request");
+    expect(verification.reason).toBe("The result was judged to answer the request over rows a text condition alone left out that state a number the same condition kept on another row, so it is not taken as an answer.");
+    expect(verification.repair?.findings[0]).toEqual({
+      code: "result.left_out_stating_a_kept_number",
+      detail: `Read n2: the condition "${condition}" kept rows stating 3 to 14 and alone left out a row that states a number in that range, so it compared characters, not the number: Compost bins — replies: Dana Ruiz and 4 others (states 5).`
+    });
+    expect(verification.repair?.fix[0]).toContain("write the threshold the request asks for as a bound on that column (atLeast, atMost, greaterThan or lessThan)");
+    expect(verification.repair?.checked).toEqual([
+      `The check answered yes though the condition "${condition}" (Read n2) kept rows stating 3 to 14 and alone left out this row, which states a number in that range: Compost bins — replies: Dana Ruiz and 4 others (states 5).`
+    ]);
+    expect(automationStudioResultVerificationAnswers(verification)).toBe(false);
+  });
+
+  it("carries the same finding beside a no's own reading", () => {
+    const verification = automationStudioResultVerdict({ summary: contradicted, diagnosis: { answersRequest: "no" }, basis: "model" });
+    expect(verification.repair?.findings.map((finding) => finding.code)).toContain("result.left_out_stating_a_kept_number");
+  });
+
+  it("takes a yes where the text condition left out only numbers outside the range it kept", () => {
+    const reads = [{ ...contradicted.reads![0]!, conditions: [{ condition, rejected: 1, alone: 1, leftOutOnlyByThis: ["Rain barrels — replies: 1 reply"] }] }];
+    expect(automationStudioResultVerdict({ summary: { ...contradicted, reads }, diagnosis: { answersRequest: "yes" }, basis: "model" }).verdict).toBe("answers");
+  });
+});
