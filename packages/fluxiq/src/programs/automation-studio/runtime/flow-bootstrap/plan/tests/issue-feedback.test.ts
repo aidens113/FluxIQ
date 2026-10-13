@@ -85,12 +85,14 @@ describe("the feedback on a refused plan", () => {
     expect(feedback).toEqual([{
       code: "bootstrap.invalid_parameter_value",
       path: "plan.subflows.0.nodes.0.parameters.extractList",
+      // The node to ask core.describe_nodes about (t514).
+      node: "web.output.dom-extract_list",
       accepted: {
         parameter: "extractList",
         type: "object",
         required: true,
         description: expect.stringContaining("item: CSS selector of each record"),
-        example: { item: "li.product", fields: { name: ".name", price: ".price", url: "a@href" }, paginate: { mode: "next", next: "a.next", maxPages: 5 }, minItems: 1 }
+        example: { handle: "extraction.1", fields: { name: ".name", price: ".price", url: "a@href" }, paginate: { mode: "next", next: "a.next", maxPages: 5 }, minItems: 1 }
       }
     }]);
   });
@@ -107,6 +109,7 @@ describe("the feedback on a refused plan", () => {
     expect(feedback).toEqual([{
       code: "bootstrap.unknown_parameter",
       path: "plan.subflows.0.nodes.0.parameters.screenshot",
+      node: "web.output.dom-extract_list",
       accepted: { parameters: ["extractList", "timeoutMs", "recordOutput", "expectedState"] }
     }]);
   });

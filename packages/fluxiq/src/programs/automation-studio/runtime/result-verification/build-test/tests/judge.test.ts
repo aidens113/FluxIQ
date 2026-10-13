@@ -337,7 +337,7 @@ describe("run murwcmx2: a build's yes is confirmed by a second call", () => {
     answersRequest: "no",
     expected: "Every wireless earbuds pair under $50; an item sold with a charging case is still earbuds.",
     observed: "Three earbuds listed 'with Wireless Charging Case' were left out by the name condition.",
-    changed: "Narrow the name condition so it excludes only accessory items."
+    changed: "Narrow the name condition so it keeps the earbuds sold with a charging case."
   };
   const answering = (...diagnoses: Record<string, unknown>[]): { provider: AutomationStudioLlmProvider; seen: AutomationStudioLlmTaskRequest[] } => {
     const seen: AutomationStudioLlmTaskRequest[] = [];

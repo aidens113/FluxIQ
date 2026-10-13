@@ -27,6 +27,15 @@
 // rows a list read's account names per condition, so a judge reads both alike.
 // Every such row is named, as a read names every one; the collected rows are
 // already bounded by the dataset's own row limit.
+//
+// **A sort key the answer's `columns` leave out is recorded before they do
+// (t515).** Live run `run-mv6v2kzn-d593231f` sorted its answer newest first by
+// a date column it did not show, and the order was right and checked by
+// nothing a judge could see; the model then added the column nobody asked for.
+// So each such key's reading -- what the sort read it as, on how many rows,
+// whether the rows run in its order (first key), and a few rows' values, never
+// text -- goes on the account (`hiddenSortKeys`). The column stays stored and
+// hidden; a re-processing still has it, and it is never forced into the answer.
 
 import { cellOf } from "./cell-text.ts";
 import { automationStudioRecordConditionHolds } from "./condition-holds.ts";
@@ -34,14 +43,22 @@ import { automationStudioRecordConditionText } from "./condition-text.ts";
 import { AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS } from "./processing-vocabulary.ts";
 import { automationStudioRecordRowIdentity } from "./row-identity.ts";
 import { sortAutomationStudioRecordRows } from "./sort-rows.ts";
+import { automationStudioRecordAutoSortKind, readAutomationStudioRecordSortValue } from "./sort-value.ts";
 import type { AutomationStudioRecordSchema } from "../schema.ts";
 import type {
   AutomationStudioRecordCondition,
   AutomationStudioRecordProcessing,
   AutomationStudioRecordProcessingAccount,
   AutomationStudioRecordProcessingConditionAccount,
-  AutomationStudioRecordProcessingPass
+  AutomationStudioRecordProcessingHiddenSortKey,
+  AutomationStudioRecordProcessingPass,
+  AutomationStudioRecordSortKey
 } from "./types.ts";
+
+/** The most answer rows whose hidden sort value is recorded per key. */
+const HIDDEN_SORT_READINGS = 4;
+/** Text compared as the sort compares it (`sort-rows.ts`). */
+const ORDER_COLLATOR = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
 
 /** One collected row: its stored values, the node that wrote it, and the batch (one pass's attempt) it was written in. */
 export type AutomationStudioRecordCollectedRow = {
@@ -100,6 +117,8 @@ export function processAutomationStudioRecordRows(input: AutomationStudioRecordP
     passes: passesOf(input.rows, process.dedupe === false || process.dedupe === undefined ? wholeRow : process.dedupe.by)
   };
   if (where.length) account.conditions = conditionAccounts(where, input.rows, failed, (process.columns ?? stored));
+  const hiddenSortKeys = hiddenSortKeysOf(process.sort ?? [], process.columns, distinct, limited, input.now);
+  if (hiddenSortKeys.length) account.hiddenSortKeys = hiddenSortKeys;
   if (rows.length === 0) account.keptNone = true;
   const minRows = process.minRows ?? AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.minRowsDefault;
   if (rows.length < minRows) account.belowMinRows = minRows;
@@ -138,6 +157,49 @@ function labelOf(values: Readonly<Record<string, unknown>>, fields: readonly str
     if (typeof cell === "string" && cell.trim()) return { field, label: cell };
   }
   return undefined;
+}
+
+/**
+ * Each sort key `columns` leave out, read as the sort read it: its kind decided
+ * over the rows it sorted (`sort-rows.ts`), its values on the answer's rows in
+ * answer order (header).
+ */
+function hiddenSortKeysOf(
+  keys: readonly AutomationStudioRecordSortKey[],
+  columns: readonly string[] | undefined,
+  sorted: readonly AutomationStudioRecordCollectedRow[],
+  answer: readonly AutomationStudioRecordCollectedRow[],
+  now: number
+): AutomationStudioRecordProcessingHiddenSortKey[] {
+  if (columns === undefined) return [];
+  return keys.flatMap((key, position): AutomationStudioRecordProcessingHiddenSortKey[] => {
+    if (columns.includes(key.field)) return [];
+    const kind = key.as === undefined || key.as === "auto" ? automationStudioRecordAutoSortKind(sorted.map((row) => cellOf(row.values, key.field)), now) : key.as;
+    const values = answer.map((row) => readAutomationStudioRecordSortValue(cellOf(row.values, key.field), kind, now));
+    const read = values.filter((value) => value !== undefined).length;
+    return [{
+      field: key.field,
+      position,
+      order: key.order,
+      kind,
+      read,
+      ...(position === 0 ? { inOrder: inKeyOrder(values, key.order) } : {}),
+      ...(kind === "text" ? {} : { readings: values.slice(0, HIDDEN_SORT_READINGS).map((value) => (typeof value === "number" ? value : null)) })
+    }];
+  });
+}
+
+/** Whether `values` run in `order`, every unread value after every read one. */
+function inKeyOrder(values: ReadonlyArray<number | string | undefined>, order: AutomationStudioRecordSortKey["order"]): boolean {
+  for (let index = 1; index < values.length; index += 1) {
+    const before = values[index - 1];
+    const after = values[index];
+    if (after === undefined) continue;
+    if (before === undefined) return false;
+    const compared = typeof before === "number" && typeof after === "number" ? before - after : ORDER_COLLATOR.compare(String(before), String(after));
+    if (order === "desc" ? compared < 0 : compared > 0) return false;
+  }
+  return true;
 }
 
 function answerRow(values: Readonly<Record<string, unknown>>, columns: readonly string[] | undefined): Record<string, unknown> {

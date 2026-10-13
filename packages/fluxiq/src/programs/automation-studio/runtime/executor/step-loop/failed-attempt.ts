@@ -156,7 +156,7 @@ export async function automationStudioStepFailedAttempt(
     }
     automationStudioStepStampFailureClass(ctx, attemptIndex, { uncertainAct: false, movedBy: onRetry.kind === "resume" ? "on_retry" : "retry", onFail: [] }, incidentId);
     automationStudioRecordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, ctx.arrival.attempts, fault, "retried", wait.waitMs);
-    ctx.pendingRetry = { attemptNumber: ctx.arrival.attempts + 1, maxAttempts: retryPolicy.maxAttempts, backoffMs: wait.waitMs, rung: ladder.rung, previousAttemptId: attempt.attemptId, ...(hint ? { hintedWaitMs: hint.askedMs, creditedMs: hint.creditedMs } : {}) };
+    ctx.pendingRetry = { attemptNumber: ctx.arrival.attempts + 1, maxAttempts: retryPolicy.maxAttempts, backoffMs: wait.waitMs, rung: ladder.rung, previousAttemptId: attempt.attemptId, ...(hint ? { hintedWaitMs: hint.askedMs, creditedMs: hint.creditedMs } : {}), ...(attempt.failure?.certainNoEffect ? { repress: true as const } : {}) };
     await options.commandRun?.checkpoint();
     await automationStudioRunWait(options, wait.waitMs);
     await options.commandRun?.checkpoint();

@@ -924,7 +924,9 @@ A node's act lasts when either source says so:
   take is made again like any transient failure (t361; t355 had cleared
   `retryable` for those at verification and confirmation).
 
-After a failure, a lasting act keeps the first attempt and three retries only
+The failure contract additionally accepts `certainNoEffect: true` only on a retryable record with `effect: "unacted"`; any other combination is rejected by the parser. This producer statement means the observed settled state proves no effect, rather than merely that dispatch failed. A lasting node gets exactly one re-press, recorded as `retry.repress: true` on the second attempt, on graph and outside-graph paths. If it still fails, default continuation stops the run for both explicit mutating metadata and declared lasting consequences. Authored failure routes, lifecycle handlers and explicit optional/continue choices retain their existing precedence. Non-lasting nodes keep three retries.
+
+After any other failure, a lasting act keeps the first attempt and three retries only
 when the failure shows the act did not happen (`effect: "unacted"`, or the
 fault was found while resolving the target). Otherwise the retry is refused and
 the assessment carries `actUncertain`: a graph run that stops on it says

@@ -9,7 +9,7 @@
 // "not newest-first". The model followed them into two regressions. The order
 // claim's marking is tested beside the other contradicted readings
 // (`../../tests/agreement-both-readings.test.ts`).
-import { readAutomationStudioRecordNumber, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation-studio";
+import { processAutomationStudioRecordRows, readAutomationStudioRecordNumber, type AutomationStudioRecordProcessing, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation-studio";
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../../model/index.ts";
@@ -102,6 +102,30 @@ describe("the judge's summary says how values were read", () => {
     }]);
   });
 
+  // t515 (live run `run-mv6v2kzn-d593231f`): the answer was sorted newest first
+  // by `posted`, which its `columns` leave out, and no judge was shown the order
+  // Core read. Core's record of the sort, kept before the columns were applied,
+  // is said instead; the column is never added to the answer.
+  it("says the sort of a key the answer's columns leave out, from Core's record, and never adds the column", () => {
+    const result = hiddenPostedSummary([]);
+    const set = result.recordSets[0]!;
+    expect(set.sortRead).toEqual([{
+      field: "posted",
+      inOrder: true,
+      said: "Core sorts this answer by posted, newest first, reading posted as a date: 3 of 3 rows state one. posted is not one of the answer's columns: Core read it on the stored rows before leaving it out, and the answer's rows were in that order. Read, in row order: 2026-10-13; 2026-10-10; 2026-10-04."
+    }]);
+    expect(set.sampleRows?.length).toBe(3);
+    expect(set.sampleRows?.some((row) => Object.hasOwn(row, "posted"))).toBe(false);
+    expect(set.processing).not.toHaveProperty("hiddenSortKeys");
+  });
+
+  it("says nothing of a hidden sort key without a denied-keys declaration, and never passes Core's record on", () => {
+    const set = hiddenPostedSummary(undefined).recordSets[0]!;
+    expect(set.sortRead).toBeUndefined();
+    expect(set.processing).toBeDefined();
+    expect(set.processing).not.toHaveProperty("hiddenSortKeys");
+  });
+
   it("says nothing of values without a denied-keys declaration", () => {
     const bare = summarizeAutomationStudioRunResult({
       recordSets: [{ summary: datasetSummary({ datasetId: "roles", recordCount: 3 }), schema, rows }],
@@ -113,3 +137,20 @@ describe("the judge's summary says how values were read", () => {
     expect(JSON.stringify(bare)).not.toContain("valuesRead");
   });
 });
+
+/** The rows answered with `posted` sorted newest first and left out by `columns`, as the store would hold them. */
+function hiddenPostedSummary(deniedEvidenceKeys: string[] | undefined): AutomationStudioRunResultSummary {
+  const process: AutomationStudioRecordProcessing = { sort: [{ field: "posted", order: "desc" }], columns: ["title", "salary"] };
+  const shuffled = [rows[1]!, rows[2]!, rows[0]!];
+  const answered = processAutomationStudioRecordRows({ rows: shuffled.map((values) => ({ values, nodeId: READ_ID, batchKey: "b1" })), schema, process, now: NOW });
+  const node = readNode();
+  const recordOutput = (node.parameterValues as { recordOutput: JsonObject }).recordOutput;
+  recordOutput.process = process as unknown as JsonObject;
+  return summarizeAutomationStudioRunResult({
+    recordSets: [{ summary: datasetSummary({ datasetId: "roles", recordCount: 3, processing: answered.account }), schema, rows: answered.rows as JsonObject[] }],
+    flowNodes: [node],
+    actionAttempts: [readAttempt()],
+    ...(deniedEvidenceKeys ? { deniedEvidenceKeys } : {}),
+    now: NOW
+  });
+}

@@ -42,7 +42,7 @@ const nextPage: AutomationStudioNodeDefinition = {
   source: { kind: "importer", domainId: "web-automation", packageId: "@fluxiq-web-extension/domain", implementationKey: "web.dom.next_page" },
   outputAction: { fixedOutputId: "web.dom.next_page" },
   parameters: [
-    { id: "nextPage", label: "Next page", valueType: "object", ui: { control: "value" } },
+    { id: "nextPage", label: "Next page", valueType: "object", example: { list: "extraction.1", control: "t9" }, ui: { control: "value" } },
     { id: "timeoutMs", label: "Timeout", valueType: "number", defaultValue: 30_000 }
   ],
   outputs: [...click.outputs, ENDED_OUTPUT]

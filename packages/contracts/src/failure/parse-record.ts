@@ -8,7 +8,7 @@ import {
   type AutomationStudioFailureStage
 } from "./record.ts";
 
-const RECORD_FIELDS: ReadonlySet<string> = new Set(["category", "code", "retryable", "stage", "expected", "actual", "evidenceDigest", "effect", "retryAfterMs"]);
+const RECORD_FIELDS: ReadonlySet<string> = new Set(["category", "code", "retryable", "stage", "expected", "actual", "evidenceDigest", "effect", "retryAfterMs", "certainNoEffect"]);
 const FAILURE_STAGES: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_FAILURE_STAGES);
 const FAILURE_EFFECTS: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_FAILURE_EFFECTS);
 const CODE_PATTERN = /^[A-Za-z0-9._:-]+$/u;
@@ -43,7 +43,8 @@ const TARGET_RESOLUTION_ONLY: ReadonlySet<AutomationStudioAdaptiveFailureClass> 
  * `external_side_effect_denied`, `auth_required`, and
  * `user_intervention_required` are never retryable; `target_not_found` and
  * `target_ambiguous` may name only the `target_resolution` stage; a
- * `retryAfterMs` wait belongs only on a retryable record.
+ * `retryAfterMs` wait belongs only on a retryable record; `certainNoEffect`
+ * is only `true`, and only on a retryable record whose effect is `unacted`.
  */
 export function parseAutomationStudioFailureRecord(value: unknown): AutomationStudioFailureRecord | null {
   try {
@@ -55,7 +56,7 @@ export function parseAutomationStudioFailureRecord(value: unknown): AutomationSt
 
 function parseRecord(value: unknown): AutomationStudioFailureRecord | null {
   if (!isPlainRecord(value) || !Object.keys(value).every((key) => RECORD_FIELDS.has(key))) return null;
-  const { category, code, retryable, stage, expected, actual, evidenceDigest, effect, retryAfterMs } = value;
+  const { category, code, retryable, stage, expected, actual, evidenceDigest, effect, retryAfterMs, certainNoEffect } = value;
   if (!isAutomationStudioAdaptiveFailureClass(category)) return null;
   if (typeof code !== "string" || code.length > AUTOMATION_STUDIO_FAILURE_RECORD_LIMITS.codeMaxLength || !CODE_PATTERN.test(code)) return null;
   if (retryable !== true && retryable !== false) return null;
@@ -68,6 +69,7 @@ function parseRecord(value: unknown): AutomationStudioFailureRecord | null {
   if (retryable && NEVER_RETRYABLE.has(category)) return null;
   if (stage !== undefined && TARGET_RESOLUTION_ONLY.has(category) && stage !== "target_resolution") return null;
   if (retryAfterMs !== undefined && !retryable) return null;
+  if (certainNoEffect !== undefined && (certainNoEffect !== true || effect !== "unacted" || !retryable)) return null;
   return {
     category,
     code,
@@ -77,7 +79,8 @@ function parseRecord(value: unknown): AutomationStudioFailureRecord | null {
     ...(actual !== undefined ? { actual } : {}),
     ...(evidenceDigest !== undefined ? { evidenceDigest } : {}),
     ...(effect !== undefined ? { effect } : {}),
-    ...(retryAfterMs !== undefined ? { retryAfterMs } : {})
+    ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+    ...(certainNoEffect === true ? { certainNoEffect } : {})
   };
 }
 

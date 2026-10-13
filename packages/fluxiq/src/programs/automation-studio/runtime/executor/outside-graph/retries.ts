@@ -97,12 +97,15 @@ export async function automationStudioDispatchWithNodeRetries<T>(input: {
   const delay = input.delay ?? unreferencedDelay;
   const faults: AutomationStudioFaultAssessment[] = [];
   let waitedMs = 0;
+  // Whether this attempt makes the act once more after one that certainly changed nothing (t517), as a graph run marks it.
+  let repress = false;
   for (let attempt = 1; ; attempt += 1) {
     const startedAt = now();
     const result = await input.dispatch(attempt);
     const reading = input.read(result);
     if (reading.ok || !reading.failure) return { result, attempts: attempt, waitedMs, faults };
-    const assessed = automationStudioAssessAttemptFault(failedAttempt(input.node, attempt, startedAt, reading.failure), input.node, now());
+    const assessed = automationStudioAssessAttemptFault(failedAttempt(input.node, attempt, startedAt, reading.failure, repress), input.node, now());
+    repress = reading.failure.certainNoEffect === true;
     // A lasting act whose failure left its effect unknown is checked, never blindly repeated (t359).
     const settled = assessed?.actUncertain ? await automationStudioRunEffectCheck(input.checkEffect, result, attempt) : undefined;
     if (assessed && (settled === "landed" || settled === "unknown")) {
@@ -124,9 +127,11 @@ export async function automationStudioDispatchWithNodeRetries<T>(input: {
   }
 }
 
-/** The attempt as the graph executor would have traced it, which is all the assessment reads. */
-function failedAttempt(node: AutomationStudioFlowNode, attempt: number, startedAt: number, failure: AutomationStudioFailureRecord): AutomationStudioNodeAttemptTrace {
-  return { attemptId: `${node.id}.attempt.${attempt}`, nodeId: node.id, definitionId: node.definitionId, startedAt, status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], failure };
+/** The attempt as the graph executor would have traced it, which is all the assessment reads; `repress` as `retry.repress` marks it. */
+function failedAttempt(node: AutomationStudioFlowNode, attempt: number, startedAt: number, failure: AutomationStudioFailureRecord, repress: boolean): AutomationStudioNodeAttemptTrace {
+  const traced: AutomationStudioNodeAttemptTrace = { attemptId: `${node.id}.attempt.${attempt}`, nodeId: node.id, definitionId: node.definitionId, startedAt, status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], failure };
+  if (!repress) return traced;
+  return { ...traced, retry: { attemptNumber: attempt, maxAttempts: AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY.maxAttempts, backoffMs: 0, rung: "retry_node", previousAttemptId: `${node.id}.attempt.${attempt - 1}`, repress: true } };
 }
 
 function unreferencedDelay(ms: number): Promise<void> {

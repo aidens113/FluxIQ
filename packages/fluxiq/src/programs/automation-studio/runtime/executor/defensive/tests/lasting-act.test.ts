@@ -18,6 +18,12 @@ const AFTER_DISPATCH: AutomationStudioFailureRecord = { category: "action_failed
 const LOST_CONFIRMATION: AutomationStudioFailureRecord = { category: "output_not_observed", code: "web.validation.output_not_observed", retryable: true, stage: "verification" };
 const NOT_FOUND: AutomationStudioFailureRecord = { category: "target_not_found", code: "web.target.not_found", retryable: true, stage: "target_resolution" };
 const BUSY: AutomationStudioFailureRecord = { category: "action_failed", code: "web.action.rate_limited", retryable: true, stage: "execution", effect: "unacted" };
+const IGNORED: AutomationStudioFailureRecord = { category: "action_failed", code: "web.action.no_effect", retryable: true, stage: "execution", effect: "unacted", certainNoEffect: true };
+
+/** The attempt that was itself the press made once more after a press that certainly changed nothing. */
+function repressed(failure: AutomationStudioFailureRecord): AutomationStudioNodeAttemptTrace {
+  return { ...failed(failure), attemptId: "add.attempt.2", retry: { attemptNumber: 2, maxAttempts: 4, backoffMs: 250, rung: "retry_node", previousAttemptId: "add.attempt.1", repress: true } };
+}
 
 describe("whether a node's act lasts", () => {
   it("reads the step's declared consequences, where an empty declaration is the step saying none", () => {
@@ -49,6 +55,19 @@ describe("a failed lasting act", () => {
       expect(assessed?.disposition).toBe("retry");
       expect(assessed?.actUncertain).toBeUndefined();
     }
+  });
+
+  it("is pressed once more, and only once, when its press certainly changed nothing (t517)", () => {
+    const first = automationStudioAssessAttemptFault(failed(IGNORED), lasting);
+    expect(first).toMatchObject({ disposition: "retry", effect: "unacted" });
+    expect(first?.actUncertain).toBeUndefined();
+    const again = automationStudioAssessAttemptFault(repressed(IGNORED), lasting);
+    expect(again).toMatchObject({ disposition: "refuse", effect: "unacted" });
+    expect(again?.actUncertain).toBeUndefined();
+    expect(again?.reason).toContain("add makes a lasting act");
+    // A press that is not lasting, and any other unacted failure, keep their retries.
+    expect(automationStudioAssessAttemptFault(repressed(IGNORED), webNode())?.disposition).toBe("retry");
+    expect(automationStudioAssessAttemptFault(repressed(BUSY), lasting)?.disposition).toBe("retry");
   });
 
   it("is heard from the producer when the node declares nothing", () => {

@@ -450,11 +450,7 @@ export type AutomationStudioNodeAttemptTrace = {
    * that was then dispatched anyway keeps the record of that consultation.
    */
   stateRouting?: AutomationStudioStateRoutingRecord;
-  /**
-   * Which attempt of this node this is, and why it was attempted again. Present
-   * from the second attempt onwards, so a trace says plainly that the ladder,
-   * not the Flow, put the node back on the page.
-   */
+  /** Which attempt of this node this is, and why: present from the second on, so a trace says the ladder, not the Flow, put the node back on the page. */
   retry?: {
     attemptNumber: number;
     maxAttempts: number;
@@ -467,6 +463,8 @@ export type AutomationStudioNodeAttemptTrace = {
     hintedWaitMs?: number;
     /** How much of that hint had already passed when the failed attempt settled and the wait began (`defensive/credited-hint.ts`). */
     creditedMs?: number;
+    /** The act made once more after an attempt that certainly changed nothing (`certainNoEffect`, t517); a lasting act only once (`defensive/assess.ts`). */
+    repress?: true;
   };
   /**
    * The pace this node's start was held to (`pacing/pace-keeper.ts`):

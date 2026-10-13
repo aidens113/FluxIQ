@@ -23,7 +23,8 @@ const expectedState = value("expectedState", "Expected State", {
 });
 const timeoutMs = number("timeoutMs", "Timeout", 10_000);
 const elementTarget = (selectorRequired: boolean): AutomationNodeParameter[] => [
-  value("target", "Adapted Target"),
+  // The domain declares a handle reference as its example (t432), which is what says it takes one (t514).
+  value("target", "Adapted Target", { example: { handle: "t5" } }),
   text("selector", "Selector", selectorRequired ? { required: true } : {}),
   value("element", "Element"),
   value("visualTarget", "Visual Target"),
@@ -34,7 +35,8 @@ const extractList: AutomationNodeParameter[] = [
   value("extractList", "List", {
     required: true,
     description: "{ item, fields, paginate?, minItems?, maxItems? }. item: CSS selector of each record. fields: { key: \"css\" (text) | \"css@attr\" | \"column:Header\" (table cell) | { kind: text|attribute|link|value|column, selector?, attribute?, header?, required?: false } }; keys use A-Za-z0-9_-; field selectors are read inside each item. paginate: { mode: \"next\", next: css, maxPages } | { mode: \"loadMore\", control: css, maxPages } | { mode: \"scroll\", maxScrolls } | { mode: \"numbered\", pages: css, maxPages }, at most 50. minItems: default 1; 0 allows an empty list. maxItems: at most 1000.",
-    example: { item: "li.product", fields: { name: ".name", price: ".price", url: "a@href" }, paginate: { mode: "next", next: "a.next", maxPages: 5 }, minItems: 1 }
+    // Led by the list's handle, as the domain's example is since the list became a handle (t432); it is what says the parameter takes one (t514).
+    example: { handle: "extraction.1", fields: { name: ".name", price: ".price", url: "a@href" }, paginate: { mode: "next", next: "a.next", maxPages: 5 }, minItems: 1 }
   }),
   { ...timeoutMs, description: "Milliseconds for the whole read. Left at the default, it grows with the pages the list may read." },
   { id: "recordOutput", label: "Save extracted records", valueType: "json", defaultValue: null, allowStateBinding: false, description: "The dataset the rows are saved into. Leave empty to save every field of the list under a dataset named after its fields.", ui: { control: "record-output" } }
