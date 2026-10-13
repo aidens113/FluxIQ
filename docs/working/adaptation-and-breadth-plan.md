@@ -21,6 +21,14 @@ Related: [MVP final month](./mvp-final-month-plan.md), [state-aware recovery](./
 
 ## Work Ledger
 
+### 2026-10-13 - Native SQLite long-path approval failure corrected
+
+- Agent: Codex supervisor; downstream live-debug worker.
+- Findings: both provider-free approvals returned SQLITE_CANTOPEN. The subflow-summary owner constructs project/runtime/sqlite/global.sqlite through generic SQLiteRepository, beyond Windows' native open limit in the isolated nested workspace.
+- Changed: generic repository native read/write and read-only opens use path.toNamespacedPath; durable paths and pool identity keep the existing form. No migration or protocol change.
+- Validation: native 351-character probe fails raw/passes namespaced; owning write/reopen/read-only regression fails first, then storage/pool files pass 13 tests. Core source tsc, audit and fluxiq library build exit 0. No full suites.
+- Outcome: source frozen for two fresh downstream headed provider-free controls; browser results pending. Neither dev has been pushed.
+
 ### 2026-10-13 - t516 independent validation and live contract correction
 
 - Agent: Codex senior supervisor.
