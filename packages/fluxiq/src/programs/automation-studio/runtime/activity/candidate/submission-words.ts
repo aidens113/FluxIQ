@@ -19,6 +19,17 @@ const OWN: Readonly<Record<string, string>> = Object.freeze({
   "candidate.loop_or_binding_refused": "a repeat, or a value that changes as the Flow runs, wasn't written in a way the Flow can run",
   "candidate.superseded_submission": "newer steps were sent while these were being checked"
 });
+/**
+ * A Flow sent again with nothing in it changed (`candidate.unchanged_submission`,
+ * `candidate.unchanged_after_no`, `../../flow-bootstrap/candidate/unchanged-submission.ts`):
+ * nothing was wrong with how its steps were written. It matched no reason and
+ * read "some steps weren't written in a way the Flow can run" (round 12, lane B
+ * build 2, `run-mv636xvb-e1426db1`, defect 4).
+ */
+const UNCHANGED: Readonly<Record<string, string>> = Object.freeze({
+  "candidate.unchanged_submission": "it was the same Flow as the one already saved, sent again unchanged, so nothing new was saved",
+  "candidate.unchanged_after_no": "it was the same Flow the check had already found doesn't do what was asked, sent again unchanged, so it wasn't saved again"
+});
 const FALLBACK = "some steps weren't written in a way the Flow can run";
 const ACCEPTED = "the steps were accepted";
 
@@ -26,17 +37,21 @@ const objectOf = (value: unknown): Record<string, unknown> | undefined => (value
 
 /**
  * Accepted (`Said`), or declined with why and how many steps are to be fixed
- * (`Declined`); nothing for evidence of another shape. Why is what the issues
+ * (`Declined`), or declined as the same Flow sent again (`unchanged`, with no
+ * step to fix); nothing for evidence of another shape. Why is what the issues
  * say in their own words where they say anything (`../wording/issue-words.ts`,
  * t378), else the refusal's family; how many counts distinct steps, never
  * issues: lane B's card read "4 things to fix" for two steps.
  */
-export function automationStudioActivityCandidateSubmissionWords(evidence: unknown): { declined: boolean; words: string } | undefined {
+export function automationStudioActivityCandidateSubmissionWords(evidence: unknown): { declined: boolean; words: string; unchanged?: true } | undefined {
   const answer = objectOf(evidence);
   if (answer?.ok === true) return { declined: false, words: ACCEPTED };
   if (answer?.ok !== false) return undefined;
   const diagnostics = objectOf(answer.diagnostics) ?? {};
   const issueCodes = Array.isArray(answer.issueCodes) ? answer.issueCodes.filter((code): code is string => typeof code === "string") : [];
+  // The same Flow sent again is said as that alone: no step of it is to fix.
+  const unchanged = [diagnostics.code, ...issueCodes].find((code): code is string => typeof code === "string" && Object.prototype.hasOwnProperty.call(UNCHANGED, code));
+  if (unchanged !== undefined) return { declined: true, words: UNCHANGED[unchanged]!, unchanged: true };
   const own = [diagnostics.code, ...issueCodes].map((code) => (typeof code === "string" ? OWN[code] : undefined)).filter((words): words is string => words !== undefined);
   const tally = automationStudioActivityRefusalTally(diagnostics, issueCodes);
   const reasons = [...new Set([...(tally.reasons.length ? tally.reasons : automationStudioActivityCheckRefusalReasons(diagnostics)), ...own])];

@@ -11,21 +11,22 @@ const TEST_CANDIDATE = "core.test_candidate";
  * (t373): its status, the record part its words go in (`Said` for a call that
  * ran, `Declined` for one Core refused before doing any of it; the shared card
  * reads both, `../../../../ui/activity-action/record.ts`), those words, and the
- * few words the row's status sentence ends with. Nothing for any other tool, or for an
+ * few words the row's status sentence ends with, and `unchanged` on a submission
+ * refused as the same Flow sent again. Nothing for any other tool, or for an
  * answer of another shape, whose row is said as before.
  *
  * Before t373 neither call had a row: the authoring loop ran both outside the
  * observed `executeTool`, so the chat showed no card for writing or testing the
  * Flow (t366).
  */
-export function automationStudioActivityCandidateResult(toolId: string, result: unknown): { status: "succeeded" | "failed"; part: "Said" | "Declined"; words: string; outcome: string; unconfirmed?: true } | undefined {
+export function automationStudioActivityCandidateResult(toolId: string, result: unknown): { status: "succeeded" | "failed"; part: "Said" | "Declined"; words: string; outcome: string; unconfirmed?: true; unchanged?: true } | undefined {
   const answer = result && typeof result === "object" && !Array.isArray(result) ? result as { kind?: unknown; resultCode?: unknown; evidence?: unknown } : undefined;
   if (answer?.kind !== "llm_evidence_tool_execution") return undefined;
   if (toolId === SUBMIT_CANDIDATE) {
     const said = automationStudioActivityCandidateSubmissionWords(answer.evidence);
     if (!said) return undefined;
     return said.declined
-      ? { status: "failed", part: "Declined", words: said.words, outcome: "not done" }
+      ? { status: "failed", part: "Declined", words: said.words, outcome: "not done", ...(said.unchanged ? { unchanged: true as const } : {}) }
       : { status: "succeeded", part: "Said", words: said.words, outcome: "done" };
   }
   if (toolId !== TEST_CANDIDATE) return undefined;

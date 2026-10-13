@@ -49,7 +49,8 @@ export type ActivityActionOutcome = "working" | "done" | "failed" | "waiting";
  * or null; never a result code. `tested` is set only on a step a test of the
  * Flow did not simply do again, and says what it did instead, in words a card
  * shows in place of "Done" ("Checked, not pressed", "Already done on the
- * site", "Skipped: not there, optional"; `./tested.ts`).
+ * site", "Skipped: not there, optional"; `./tested.ts`), and on a run step
+ * skipped rather than run says why (`./skipped.ts`).
  */
 export type ActivityAction = {
   kind: ActivityActionKind;
@@ -127,6 +128,12 @@ export type ActivityActionEvent = {
      * is marked from this row alone.
      */
     resolution?: string | undefined;
+    /**
+     * On a `step` row for a run step skipped rather than run, why
+     * (`ClientGatewayActivitySkip`): its card says so in place of "Done"
+     * (`./skipped.ts`).
+     */
+    skipped?: { reason?: unknown } | undefined;
   } | undefined;
   /**
    * `row`: the plain name of the row a step inside a repeat acted on ("Jonas

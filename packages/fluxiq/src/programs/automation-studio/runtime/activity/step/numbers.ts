@@ -1,5 +1,10 @@
 /** A Merge joins paths; a person never sees it as a step of their Flow. */
 const MERGE_DEFINITION_ID = "builtin.control.merge";
+/**
+ * The routes that leave a loop: a loop head's `done` and a Repeat's last step's
+ * `ended` (`nodes/control-flow/for-each.ts`, `repeat.ts`, `loop.ts`).
+ */
+const LOOP_EXIT_PORTS: ReadonlySet<string> = new Set(["done", "ended"]);
 
 /**
  * The number each step of a Flow carries in "Step N of M", and M.
@@ -15,18 +20,24 @@ const MERGE_DEFINITION_ID = "builtin.control.merge";
  * `startNodeId` along the edges, in reverse post-order, so every step comes
  * after every step with an edge into it, both sides of a fork come before the
  * Merge that joins them, and an edge back to an earlier step (a loop) changes
- * no number. Nodes the walk does not reach follow in list order.
+ * no number. Nodes the walk does not reach follow in list order. A route that
+ * leaves a loop is walked first, so what comes after the loop is numbered after
+ * the loop's own steps: the step after a For Each read "Step 6 of 8" after its
+ * body's "Step 8 of 8", and the counter ran backwards (round 12, lane D,
+ * `run-mv62icw0-070f88ad`).
  *
  * A Merge ("Join paths") is not counted: it does nothing a person could see,
  * so it has no number (`numberOf` is undefined) and is not in `count`.
  */
 export function automationStudioActivityStepNumbers(flow: {
   nodes: readonly { id: string; definitionId: string }[];
-  edges: readonly { sourceNodeId: string; targetNodeId: string }[];
+  edges: readonly { sourceNodeId: string; targetNodeId: string; sourcePortId?: string | undefined }[];
 }, startNodeId: string | undefined): { count: number; numberOf: (nodeId: string) => number | undefined } {
   const known = new Set(flow.nodes.map((node) => node.id));
   const next = new Map<string, string[]>();
-  for (const edge of flow.edges) {
+  // Routes out of a loop first: the walk lists what it reaches first last.
+  const exitsFirst = [...flow.edges.filter((edge) => LOOP_EXIT_PORTS.has(edge.sourcePortId ?? "")), ...flow.edges.filter((edge) => !LOOP_EXIT_PORTS.has(edge.sourcePortId ?? ""))];
+  for (const edge of exitsFirst) {
     if (!known.has(edge.sourceNodeId) || !known.has(edge.targetNodeId)) continue;
     next.set(edge.sourceNodeId, [...(next.get(edge.sourceNodeId) ?? []), edge.targetNodeId]);
   }

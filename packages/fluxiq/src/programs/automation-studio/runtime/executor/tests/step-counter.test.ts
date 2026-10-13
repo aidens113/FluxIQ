@@ -91,6 +91,33 @@ describe("the step counter a person reads in playback", () => {
   });
 });
 
+// Round 12, lane D (`run-mv62icw0-070f88ad`, screenshots 00010 and 00011): the
+// counter read "Step 8 of 8" on the loop's last step, then "Step 6 of 8" while
+// the result was checked, as the run came back to the For Each to leave the
+// loop and said its lower number again. A loop's head is said once.
+describe("the step counter around a loop", () => {
+  const constant = (id: string, value: unknown = id): AutomationStudioFlowNode => ({ id, definitionId: "builtin.data.constant", parameterValues: { value } } as AutomationStudioFlowNode);
+  const looped = flowOf(
+    [constant("list", [1, 2]), merge("head"), { id: "each", definitionId: "builtin.control.for-each" }, constant("confirm"), constant("wait"), constant("final")],
+    [edge("list", "success", "head", "branches"), edge("list", "value", "each", "items"), edge("head", "success", "each"),
+      edge("each", "body", "confirm"), edge("confirm", "success", "wait"), edge("wait", "success", "head", "branches"), edge("each", "done", "final")]
+  );
+
+  it("says the loop's head once and never its lower number after the loop's last step", async () => {
+    const trace = await inRun(looped, { startNodeId: "list" });
+
+    expect(trace.status).toBe("succeeded");
+    // The run came back to the head after each pass and once more to leave.
+    expect(trace.attempts.filter((attempt) => attempt.nodeId === "each")).toHaveLength(3);
+    const said = running().map(([node, index]) => [node, index]);
+    expect(said.filter(([node]) => node === "each")).toHaveLength(1);
+    expect(said.at(-1)).toEqual(["final", 5]);
+    // After the last pass's last step, nothing lower than it is said.
+    const lastWait = said.map(([node]) => node).lastIndexOf("wait");
+    for (const [, index] of said.slice(lastWait)) expect(index).toBeGreaterThanOrEqual(said[lastWait]![1] as number);
+  });
+});
+
 describe("the rows a failed step's recovery opens with", () => {
   it("say no bare \"Recovery started\" row beside the thought that says what recovery chose", async () => {
     await inRun(flow, { effectDispatcher: flakyOnce("coupon") });

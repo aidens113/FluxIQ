@@ -334,7 +334,7 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
         const named = namedAtEnd(input.describeCall, call, described);
         // Saving or testing a candidate's steps ends with its own words and status: a test the judge refused is no "done" (t373).
         const candidate = automationStudioActivityCandidateResult(call.toolId, result);
-        narration.ended(call, candidate?.status !== "failed" ? undefined : candidate.part === "Declined" ? "declined" : candidate.unconfirmed ? "unconfirmed" : "failed");
+        narration.ended(call, candidate?.status !== "failed" ? undefined : candidate.unchanged ? "unchanged" : candidate.part === "Declined" ? "declined" : candidate.unconfirmed ? "unconfirmed" : "failed");
         toolActivity(call, candidate?.status ?? "succeeded", { ...ended, reason: causes.of(call, ended), ...answered }, list === undefined ? named : { ...named, list }, said, excusable, candidate);
         return result;
       } catch (error) {

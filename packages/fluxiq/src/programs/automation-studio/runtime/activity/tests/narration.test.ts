@@ -47,6 +47,25 @@ function loopInput(decisions: unknown[], results: unknown[]): AutomationStudioLl
   };
 }
 
+// Round 12, lane B build 2 (`run-mv636xvb-e1426db1`, defect 4): a script spelled
+// differently from the saved one but the same Flow step for step was refused as
+// unchanged, and read "it was refused, so it is not what the Flow does".
+describe("a Flow Core refused as the one already saved, sent again unchanged", () => {
+  it("is said as the same steps sent again, never as steps refused", async () => {
+    const unchanged = ran({ ok: false, issueCodes: ["candidate.unchanged_submission"], feedback: { ok: false, code: "candidate.unchanged_submission", unchanged: true } });
+    const observed = observeAutomationStudioEvidenceLoop(loopInput([submit("submit-1", "Submitting the fixed Flow with the quantity step changed.")], [unchanged]));
+    await inScope(async () => {
+      const first = await observed.decide(request(1));
+      await observed.executeTool({ callId: "submit-1", toolId: "core.submit_candidate", value: (first as { input: JsonObject }).input });
+    });
+    expect(thoughts().map(([, text]) => text)).toEqual(["The AI model sent the same steps again, unchanged, so the Flow stays as it was."]);
+    const text = JSON.stringify(seen);
+    expect(text).not.toContain("weren't written in a way the Flow can run");
+    expect(text).not.toContain("it was refused, so it is not what the Flow does");
+    expect(text).toContain("it was the same Flow as the one already saved, sent again unchanged, so nothing new was saved");
+  });
+});
+
 describe("a whole Flow sent again unchanged (lane C)", () => {
   it("never repeats the model's claim: the refused Flow and each unchanged resend are said in Core's words", async () => {
     const claim = "Resubmitting the corrected Flow: the repeat now sits on the read step with repeat while: next.";

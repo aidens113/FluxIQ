@@ -45,6 +45,15 @@ const REFUSED: Readonly<Record<string, string>> = Object.freeze({
   [SUBMIT_CANDIDATE]: "The AI model sent a version of the Flow's steps, but it was refused, so it is not what the Flow does.",
   [TEST_CANDIDATE]: "The test of the whole Flow didn't go through, so it showed nothing about this version."
 });
+/**
+ * Said of a Flow Core refused as the one already saved, sent again unchanged
+ * (`candidate.unchanged_submission`). "it was refused, so it is not what the
+ * Flow does" said its steps were wrong, when they were the Flow's own steps
+ * already (round 12, lane B build 2, `run-mv636xvb-e1426db1`, defect 4). Its
+ * input may differ from the first sending in how it is spelled, so `AGAIN`,
+ * which needs the same input, does not catch it.
+ */
+const UNCHANGED = "The AI model sent the same steps again, unchanged, so the Flow stays as it was.";
 const TEST_FAILED = "The AI model expected this version to do what was asked, but the test showed it doesn't yet.";
 /**
  * Said of a test that ran but whose result could not be confirmed either way
@@ -66,14 +75,15 @@ function keyOf(call: Call): string {
 /**
  * One loop's narration: `decided` as `decide` returns (says the reason now, or
  * holds it); `ran` as the held call starts; `ended` as a candidate's own call
- * ends -- `failed` when Core refused it (`declined`), its test did not pass
+ * ends -- `failed` when Core refused it (`declined`), refused it as the same
+ * Flow sent again unchanged (`unchanged`), its test did not pass
  * (`failed`), or its test's result could not be confirmed either way
  * (`unconfirmed`); `unrun` when the loop moved on, or stalled, without running it.
  */
 export function automationStudioActivityNarration(): {
   decided(thought: Thought, call: Call | undefined): void;
   ran(call: Call): void;
-  ended(call: Call, failed: "declined" | "failed" | "unconfirmed" | undefined): void;
+  ended(call: Call, failed: "declined" | "unchanged" | "failed" | "unconfirmed" | undefined): void;
   unrun(): void;
 } {
   const decided = new Set<string>();
@@ -103,7 +113,7 @@ export function automationStudioActivityNarration(): {
       const { thought } = held;
       held = undefined;
       const tested = failed === "failed" ? TEST_FAILED : failed === "unconfirmed" ? TEST_UNCONFIRMED : undefined;
-      say(thought, failed === undefined ? undefined : tested !== undefined && call.toolId === TEST_CANDIDATE ? tested : REFUSED[call.toolId] ?? NOT_RUN);
+      say(thought, failed === undefined ? undefined : failed === "unchanged" ? UNCHANGED : tested !== undefined && call.toolId === TEST_CANDIDATE ? tested : REFUSED[call.toolId] ?? NOT_RUN);
     },
     unrun: () => {
       if (!held) return;

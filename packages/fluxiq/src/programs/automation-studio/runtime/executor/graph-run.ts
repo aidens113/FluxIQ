@@ -40,7 +40,7 @@ import {
 import { AUTOMATION_STUDIO_REQUIRED_OUTCOME_UNKNOWN } from "./command-scope/index.ts";
 import { automationStudioTraceWithholding, automationStudioWithholdRunInputs, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
-import { automationStudioActivityHold, automationStudioActivityLoopWords, automationStudioActivityStepNumbers, emitAutomationStudioActivityStep } from "../activity/index.ts";
+import { automationStudioActivityHold, automationStudioActivityLoopWords, automationStudioActivityStepAnnounced, automationStudioActivityStepNumbers, emitAutomationStudioActivityStep } from "../activity/index.ts";
 
 /**
  * What each saved trace this module returned withheld by value, keyed by that
@@ -385,7 +385,7 @@ async function executeAutomationStudioGraph(
       const { remainingMs, retryPolicy, recordedState, paced, readiness } = arrived;
       const node: AutomationStudioFlowNode = currentNode;
       const stepNumber = stepNumbers.numberOf(node.id);
-      if (stepNumber !== undefined) emitAutomationStudioActivityStep({ index: stepNumber, count: stepNumbers.count, nodeId: node.id, label: node.label, definitionId: node.definitionId, parameters: node.parameterValues, pass: loopWords.passOf(node.id, attempts) });
+      if (stepNumber !== undefined && automationStudioActivityStepAnnounced(node, attempts)) emitAutomationStudioActivityStep({ index: stepNumber, count: stepNumbers.count, nodeId: node.id, label: node.label, definitionId: node.definitionId, parameters: node.parameterValues, pass: loopWords.passOf(node.id, attempts) });
       let notShown: AutomationStudioNodeAttemptTrace | undefined = readiness?.satisfied === false && readiness.checkedConditionCount > 0 ? automationStudioNotShownAttempt(node, `${node.id}.attempt.${ctx.nextAttemptNumber()}`, now()) : undefined;
       // On Retry before safe state routing; a handler that cleared the way lets the node run now (`step-loop/could-not-run-retry.ts`).
       const cleared: AutomationStudioStepLifecycleOutcome | undefined = notShown ? (await automationStudioStepRetryBeforeRouting(ctx, { node, attempt: notShown, attemptIndex: undefined, retryPolicy }))?.outcome : undefined;

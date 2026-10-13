@@ -26,13 +26,18 @@ describe("a candidate build's tools in the chat", () => {
       "Testing the submitted Flow revision 2 to verify it collects the coupon and adds three to the cart.",
       "Revision 7 fixes the coupon step; submitting the candidate again.",
       "Submitting candidate (revision 3) with the popup steps removed.",
-      "The candidate's coupon step failed in rev 4, so I'll check the item page again."
+      "The candidate's coupon step failed in rev 4, so I'll check the item page again.",
+      // Round 12 (lanes B and D): "Testing revision 3 of the Flow, which ..." read "Testing of the Flow, which ...".
+      "Testing revision 3 of the Flow, which fixes the size step.",
+      "Revision 2 of the candidate adds a wait."
     ].map((text) => automationStudioActivityReasonText(text, 240, { decision: true }));
     expect(reasons).toEqual([
       "Testing the submitted Flow to verify it collects the coupon and adds three to the cart.",
       "This version fixes the coupon step; submitting the Flow again.",
       "Submitting the Flow with the popup steps removed.",
-      "The Flow's coupon step failed in this version, so I'll check the item page again."
+      "The Flow's coupon step failed in this version, so I'll check the item page again.",
+      "Testing the Flow, which fixes the size step.",
+      "The Flow adds a wait."
     ]);
     for (const said of reasons) expect(said ?? "").not.toMatch(TOOL_NAMES);
   });

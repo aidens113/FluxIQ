@@ -131,9 +131,9 @@ describe("activityActionOf: outcome and why", () => {
     ["failed with no code", tool("Clicking on the page", undefined, "failed"), "failed", null],
     ["a not_found code", tool("Clicking “Buy”", "Result: web.target.not_found · Node: web.output.dom-click"), "failed", "FluxIQ couldn't find it where it was saved"],
     // R4a moment 08: a clear the site undid is said of the box, never as a refusal.
-    ["a clear the site undid", tool("Clearing “Quantity”", "Result: web.action.rejected.output_not_observed · Node: web.output.dom-clear"), "failed", "it ran, but the site set the box back"],
+    ["a clear the site undid", tool("Clearing “Quantity”", "Result: web.action.rejected.output_not_observed · Node: web.output.dom-clear"), "failed", "it ran, but the text there didn't change the way it should have"],
     // R4a attempt 2 (`run-mv2pgqkj-f3552c70`, trial 3): the code the clear step really returned read "done".
-    ["a clear whose effect never showed", tool("Clearing “Quantity”", "Result: web.validation.output_not_observed · Node: web.output.dom-clear"), "failed", "it ran, but the site set the box back"],
+    ["a clear whose effect never showed", tool("Clearing “Quantity”", "Result: web.validation.output_not_observed · Node: web.output.dom-clear"), "failed", "it ran, but the text there didn't change the way it should have"],
     ["a timeout code", tool("Waiting for the page", "Result: web.wait.timeout · Node: web.output.wait"), "failed", "the page took too long"],
     ["a replay that changed", tool("Clicking “Next”", "Result: core.replay.changed", "succeeded", RUN_NODE, "verifying"), "failed", "it did nothing this time, where it did something before"],
     ["a replay the site remembered (t193)", tool("Clicking “Set as my store”", "Result: core.replay.remembered · Node: web.output.dom-click", "succeeded", RUN_NODE, "verifying"), "done", null],
