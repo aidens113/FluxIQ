@@ -65,6 +65,20 @@
 // one more would have ended a build that was correcting itself each time. The
 // key now carries the handles each issue refused as well, so only a
 // resubmission refused for the same issue on the same values continues a run.
+//
+// **An unknown column names the names it can use, and a stale detection says
+// so (t502).** Lane D round 16 (`run-mv6i2akr-516b2f03`, D1) wrote a column key
+// inside a read's `fields` that it had built from the page after an act; the
+// read's detection, taken before the act, had no such column. The advice said
+// the list's handle was right and changing it would not help, when a fresh
+// detection -- a new handle -- was exactly the fix. The advice for
+// `unknown_field` now quotes the names the issues say the step can use
+// (`valid`, Core's own detail, `../plan/issue-feedback.ts`). And where the
+// domain's refusal also gives `columns_changed` -- its evidence that the name
+// is one of the list's own columns with a part changed, so the items changed
+// since the detection -- the advice no longer calls the handle right, and says
+// to detect the list again. That reason is read from the refusal, never
+// guessed here; with no such issue the advice is the one t383 gave.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowCandidateSubmission } from "./contracts.ts";
@@ -91,12 +105,38 @@ function named(handles: readonly string[], none: string): string {
   return handles.length === 0 ? none : `${handles.length === 1 ? "The handle" : "The handles"} ${handles.join(", ")}`;
 }
 
+/** What the refusal's issues said beside their reasons: every reason given, the names the step wrote that were refused (`field`), and the names it can use (`valid`), each once, in order. */
+type ReasonEvidence = { reasons: ReadonlySet<string>; fields: readonly string[]; valid: readonly string[] };
+
+/** A name an issue's detail may carry, as Core keeps it (`../plan/issue-feedback.ts`): identifier characters only. */
+const DETAIL_NAME = /^[A-Za-z0-9_.:-]{1,200}$/u;
+/** The most names one advice quotes; the issues list every one. */
+const NAMES_QUOTED = 24;
+
+/** The names quoted, at most `NAMES_QUOTED` of them, with how many more the issues list. */
+function quoted(names: readonly string[]): string {
+  const shown = names.slice(0, NAMES_QUOTED).map((name) => JSON.stringify(name)).join(", ");
+  return names.length > NAMES_QUOTED ? `${shown}, and ${names.length - NAMES_QUOTED} more the issues list` : shown;
+}
+
+/** The unknown-column advice (t383, t502): what was refused, the names it can use, and -- unless the refusal says the items changed since the detection -- that the list's handle is right. */
+function unknownFieldAdvice(handles: readonly string[], said: ReasonEvidence): string {
+  const changed = said.reasons.has("columns_changed");
+  const opening = changed ? "A column the step names"
+    : `${handles.length ? `The list ${handles.join(", ")} is right, so changing its handle will not help` : "The list's handle is right"}: a column the step names`;
+  const names = !said.valid.length ? ""
+    : changed ? `The columns the list had when it was detected are ${quoted(said.valid)}. `
+    : `The names this step can use there are ${quoted(said.valid)}. `;
+  return `${opening}, in its fields or in a condition (where), is neither one the list's detection printed nor a key this same step keeps in its own fields. ${names}`
+    + (changed ? "" : "A condition reads only its own step's row, so a key another step keeps is not one of its columns. Name the column by a key the detection printed for this list, or by a key this step's fields keep -- adding the column to this step's fields first if it is not there -- or drop the condition. ");
+}
+
 /**
  * The advice for each reason a handle is refused, keyed by the reason after
  * `.handle.`. Each is true of that reason alone; tokens quoted are handles the
- * model itself wrote.
+ * model itself wrote, and names an issue's own detail carried (t502).
  */
-const HANDLE_ADVICE: Readonly<Record<string, (handles: readonly string[]) => string>> = Object.freeze({
+const HANDLE_ADVICE: Readonly<Record<string, (handles: readonly string[], said: ReasonEvidence) => string>> = Object.freeze({
   unknown: (handles) => `${named(handles, "A handle the step names")} ${handles.length > 1 ? "do" : "does"} not name one control in any view this build was shown, so copying ${handles.length > 1 ? "them" : "it"} again will be refused again. `
     + "A step may name a control from any view this build printed, on any page it visited, copied exactly as that view printed it; a handle no view printed, or written from memory, cannot be a step's target. "
     + "To act on a control on the page this step runs on, look at that page (go there, then capture it) and copy the handle that view prints for the control; "
@@ -115,8 +155,10 @@ const HANDLE_ADVICE: Readonly<Record<string, (handles: readonly string[]) => str
   wrong_control: (handles) => `${named(handles, "A handle the step names")} names a known control that this node cannot act on; that does not prove it is the control the instruction needs. `
     + "If this is the intended control, use the node that can act on its kind (an issue names one where known). "
     + "If it is a different control, keep the intended action and copy the observed handle for the control that action needs. Recheck the step's purpose against the control's words and kind before changing either. ",
-  unknown_field: (handles) => `${handles.length ? `The list ${handles.join(", ")} is right, so changing its handle will not help` : "The list's handle is right"}: a column the step names, in its fields or in a condition (where), is neither one the list's detection printed nor a key this same step keeps in its own fields. `
-    + "A condition reads only its own step's row, so a key another step keeps is not one of its columns. Name the column by a key the detection printed for this list, or by a key this step's fields keep -- adding the column to this step's fields first if it is not there -- or drop the condition. "
+  unknown_field: unknownFieldAdvice,
+  // The domain's evidence that the detection is out of date (header, t502): the name is one of the list's columns with a part changed.
+  columns_changed: (handles, said) => `${said.fields.length ? `The name ${quoted(said.fields)} is` : "The column the step names is"} one of ${handles.length ? `the list ${handles.join(", ")}'s` : "the list's"} own columns with a part changed, and that list's detection has no such column: the list's items have changed since it was detected (a press or other act on the page often adds or replaces a column), so another of its old columns would read something else. `
+    + "Detect the list again on the page as it is when the step runs, then name the list by the handle that detection prints and the column by a key it prints. "
 });
 
 /** The reasons whose refused handle may be text an act removed, or a control only a replaced view printed (header). */
@@ -216,17 +258,21 @@ function issuesOf(feedback: JsonObject): JsonObject[] {
  * no issue gives a reason this module has advice for.
  */
 function handleAdvice(feedback: JsonObject): string {
-  const byReason = new Map<string, Set<string>>();
+  const byReason = new Map<string, { handles: Set<string>; fields: Set<string>; valid: Set<string> }>();
   for (const issue of issuesOf(feedback)) {
     const reason = typeof issue.code === "string" ? HANDLE_ISSUE.exec(issue.code)?.[1] : undefined;
     if (reason === undefined || !Object.hasOwn(HANDLE_ADVICE, reason)) continue;
-    const found = byReason.get(reason) ?? new Set<string>();
+    const found = byReason.get(reason) ?? { handles: new Set<string>(), fields: new Set<string>(), valid: new Set<string>() };
     byReason.set(reason, found);
     const handles: JsonValue[] = Array.isArray(issue.handles) ? issue.handles : [];
     for (const entry of handles) {
-      if (entry && typeof entry === "object" && !Array.isArray(entry) && typeof entry.handle === "string" && CLOSED_CODE.test(entry.handle)) found.add(entry.handle);
+      if (entry && typeof entry === "object" && !Array.isArray(entry) && typeof entry.handle === "string" && CLOSED_CODE.test(entry.handle)) found.handles.add(entry.handle);
     }
+    if (typeof issue.field === "string" && DETAIL_NAME.test(issue.field)) found.fields.add(issue.field);
+    const valid: JsonValue[] = Array.isArray(issue.valid) ? issue.valid : [];
+    for (const name of valid) if (typeof name === "string" && DETAIL_NAME.test(name)) found.valid.add(name);
   }
-  const advice = [...byReason].map(([reason, handles]) => HANDLE_ADVICE[reason]!([...handles])).join("");
+  const reasons: ReadonlySet<string> = new Set(byReason.keys());
+  const advice = [...byReason].map(([reason, found]) => HANDLE_ADVICE[reason]!([...found.handles], { reasons, fields: [...found.fields], valid: [...found.valid] })).join("");
   return [...byReason.keys()].some((reason) => ACTED_CONTROL_REASONS.has(reason)) ? advice + ACTED_CONTROL : advice;
 }

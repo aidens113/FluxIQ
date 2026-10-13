@@ -131,7 +131,8 @@ const ADVICE_WORDS = {
   not_a_handle: "names a control by something other than a handle",
   not_a_control: "not a control a press acts on",
   wrong_control: "does not prove it is the control the instruction needs",
-  unknown_field: "neither one the list's detection printed nor a key this same step keeps"
+  unknown_field: "neither one the list's detection printed nor a key this same step keeps",
+  columns_changed: "have changed since it was detected"
 } as const;
 
 describe("the advice a refused handle is given", () => {
@@ -162,6 +163,62 @@ describe("the advice a refused handle is given", () => {
     expect(next).not.toContain(ADVICE_WORDS.unknown);
     // Said once, though two issues give the reason.
     expect(next.split(ADVICE_WORDS.unknown_field)).toHaveLength(2);
+  });
+
+  // Lane D round 16 (`run-mv6i2akr-516b2f03`, D1): a column name inside `fields` was refused with no names, and the
+  // advice said the list's handle was right when a fresh detection was the fix (t502). Generic names only.
+  it("for an unknown column names the names the step can use, once each, from the issues that carry them", () => {
+    const list = [{ handle: "extraction.4" }];
+    const at = { path: "plan.subflows.0.nodes.3.parameters", step: "read the rows", line: 12 };
+    const next = nextOf([
+      { code: "web.handle.unknown_field", ...at, handles: list, field: "colour", valid: ["row_title", "row_price"] },
+      { code: "web.handle.unknown_field:extractList.fields.1", ...at, handles: list },
+      { code: "web.handle.unknown_field", ...at, handles: list, field: "size", valid: ["row_price", "row_link"] }
+    ]);
+    expect(next).toContain("The list extraction.4 is right, so changing its handle will not help");
+    expect(next).toContain('The names this step can use there are "row_title", "row_price", "row_link"');
+    expect(next.split('"row_price"')).toHaveLength(2);
+  });
+
+  it("for an unknown column whose refusal says the items changed since the detection points to a fresh detection", () => {
+    const list = [{ handle: "extraction.6" }];
+    const at = { path: "plan.subflows.0.nodes.5.parameters", step: "read the handled rows", line: 20 };
+    const after = "li_card_div_status_label";
+    const next = nextOf([
+      { code: "web.handle.unknown_field", ...at, handles: list, field: after, valid: ["li_card_h3_title", "li_card_div_action_label"] },
+      { code: "web.handle.unknown_field:extractList.fields.2", ...at, handles: list },
+      { code: "web.handle.columns_changed", ...at, handles: list, field: after }
+    ]);
+    expect(next).not.toContain("will not help");
+    expect(next).not.toContain("is right");
+    expect(next).toContain(`"${after}"`);
+    expect(next).toContain("Detect the list again on the page as it is when the step runs");
+    expect(next).toContain("extraction.6");
+    // The old detection's columns are still said, as what that handle reads.
+    expect(next).toContain('"li_card_h3_title", "li_card_div_action_label"');
+    expect(next.indexOf("Detect the list again")).toBeLessThan(next.indexOf("submit the whole candidate again"));
+  });
+
+  it("reaches the model from a domain's refused answer through Core's own issue feedback, names and evidence intact", async () => {
+    const after = "li_card_div_status_label";
+    const refusing = {
+      resolvePlanNodeParameters: async () => ({
+        status: "refused" as const,
+        issueCodes: ["web.handle.unknown_field", "web.handle.unknown_field:target"],
+        issues: [
+          { code: "web.handle.unknown_field", field: after, valid: ["li_card_h3_title", "li_card_div_action_label"] },
+          { code: "web.handle.columns_changed", field: after }
+        ]
+      })
+    };
+    const refused = await new AutomationStudioFlowCandidateSubmissionController({ ...submission, binding: refusing }).submit(candidate(["t925"]));
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    const next = String(automationStudioCandidateSubmissionRefusal(refused).evidence.next);
+    expect(next).toContain(`The name "${after}" is one of the list t925's own columns`);
+    expect(next).toContain("Detect the list again");
+    expect(next).toContain('"li_card_h3_title", "li_card_div_action_label"');
+    expect(next).not.toContain("will not help");
   });
 
   it("gives each reason of a mixed refusal its own advice, naming only that reason's handles", () => {
