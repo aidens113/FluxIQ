@@ -6,6 +6,14 @@ import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioFlowCandidateDraftStore, type AutomationStudioFlowCandidateDraftRecord } from "../../candidate-drafts/index.ts";
 import { blankFixture, caller, judgeReply, mockProvider, plan } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 
+/** The fixture plan with its end step under another key: a change in what the Flow is, not only in its names (t485). */
+function revisedPlan() {
+  const base = plan(), [subflow] = base.subflows;
+  return { ...base, subflows: [{ ...subflow!,
+    nodes: subflow!.nodes.map((node) => node.key === "end" ? { ...node, key: "finish" } : node),
+    edges: [{ key: "start_finish", source: { nodeKey: "start", portId: "next" }, target: { nodeKey: "finish", portId: "in" } }] }] };
+}
+
 function draftStore(service: AutomationStudioService) { return (service as unknown as { candidateDrafts: AutomationStudioFlowCandidateDraftStore }).candidateDrafts; }
 
 describe("candidate facade uses the actual service", () => {
@@ -24,8 +32,9 @@ describe("candidate facade uses the actual service", () => {
       const evidence = request.context.evidenceLoop?.evidence ?? [];
       const latest = [...evidence].reverse().find((entry) => entry.toolId === "core.submit_candidate")?.value as { revision?: number; digest?: string } | undefined;
       const decision = calls === 1 ? { kind: "tool_call", callId: "wrong-turn", toolId: "inspect", input: { area: "wrong" } }
-        // Revision 2 changes the router's name: the same Flow sent again is no new revision (t464).
-        : calls < 4 ? { kind: "tool_call", callId: `submit-${calls}`, toolId: "core.submit_candidate", input: { summary: `complete revision ${calls - 1}`, plan: calls === 2 ? plan() : { ...plan(), router: { ...plan().router, name: "Instruction router, revised" } } } }
+        // Revision 2 renames its end step's key, which edges read: the same Flow sent again is no new revision (t464),
+        // and neither is one with only names reworded (t485), so a renamed router would not be a revision 2.
+        : calls < 4 ? { kind: "tool_call", callId: `submit-${calls}`, toolId: "core.submit_candidate", input: { summary: `complete revision ${calls - 1}`, plan: calls === 2 ? plan() : revisedPlan() } }
         : calls === 4 ? { kind: "tool_call", callId: "test-2", toolId: "core.test_candidate", input: { revision: latest?.revision, digest: latest?.digest } }
         : { kind: "complete", result: { revision: latest?.revision, digest: latest?.digest } };
       if (calls === 5) { stale = ending === "stale"; if (ending === "cancel") service.buildCancellation.cancel(projectId, flowId); }
