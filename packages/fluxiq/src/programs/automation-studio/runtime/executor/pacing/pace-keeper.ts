@@ -11,9 +11,21 @@
 // `./pace-metadata.ts`). And a failure that carries a wait hint -- the
 // producer's `retryAfterMs`, a transport's Retry-After, whatever the fault
 // assessment read into `hintedWaitMs` -- raises the node's pace for the rest of
-// the run to at least that hint, and each further hinted failure grows it by
-// half again, up to `AUTOMATION_STUDIO_MAX_LEARNED_PACE_MS`. Nothing here reads
-// a domain's code: a hint is a hint, from whichever producer.
+// the run, and each further hinted failure grows it by half again at least, up
+// to `AUTOMATION_STUDIO_MAX_LEARNED_PACE_MS`. Nothing here reads a domain's
+// code: a hint is a hint, from whichever producer.
+//
+// **What it rises to is the spacing the limit allows, not the one hint
+// (t485).** A hint is how long until the site lets one more act through; lane D
+// round 12 (`run-mv62icw0-070f88ad`, D1) learned 4.5 s from one where the page
+// allowed three acts in 15 s, and playback was refused again. So the pace rises
+// to the spacing this run's own starts and the refusal imply
+// (`./sustainable-pace.ts`); only when no start explains the refusal -- the
+// node's first act refused, say -- does it rise to the hint alone. The hint
+// counts from the refusal, so its time is the caller's: when the refused
+// attempt settled (`../step-loop/failed-attempt.ts`). Without one, it is the
+// run's clock as `before` was handed it, which errs towards a longer pace. No
+// limit a page states is read: no record reaching Core carries one.
 //
 // The pace holds a node's *arrivals*, not the retries of one arrival: those
 // wait under the defensive policy's own bound, which already honours the hint
@@ -22,6 +34,7 @@
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace, AutomationStudioNodePace } from "../contracts.ts";
 import { automationStudioAuthoredPaceMs } from "./pace-metadata.ts";
+import { automationStudioSustainablePaceMs } from "./sustainable-pace.ts";
 
 /**
  * The longest pace a run learns from hints. It matches the longest hint the
@@ -35,7 +48,13 @@ export const AUTOMATION_STUDIO_MAX_LEARNED_PACE_MS = 60_000;
 /** How much a further hinted failure grows a pace that was already in force. */
 const GROWTH = 1.5;
 
-type NodePaceState = { authoredMs?: number; paceMs: number; raisedCount: number; waitedMs: number; lastStartAt?: number };
+/** The most starts of one node kept to infer a limit from; a limit that needs more is answered by growth. */
+const MAX_STARTS_KEPT = 32;
+
+/** One start of a node, and whether the site refused it. */
+type Start = { at: number; refused: boolean };
+
+type NodePaceState = { authoredMs?: number; paceMs: number; raisedCount: number; waitedMs: number; lastStartAt?: number; starts: Start[] };
 
 /** The run's paces, one entry per node it met. */
 export type AutomationStudioPaceKeeper = {
@@ -43,25 +62,28 @@ export type AutomationStudioPaceKeeper = {
   before(node: AutomationStudioFlowNode, now: () => number, wait: (ms: number) => Promise<void>): Promise<NonNullable<AutomationStudioNodeAttemptTrace["pace"]> | undefined>;
   /** Notes that the node was dispatched at `at`. */
   started(node: AutomationStudioFlowNode, at: number): void;
-  /** Raises the node's pace after a failure that asked for `hintMs`; answers the pace now in force when it rose. */
-  learn(node: AutomationStudioFlowNode, hintMs: number): number | undefined;
+  /** Raises the node's pace after its latest start was refused at `refusedAt` with `hintMs` (header); answers the pace now in force when it rose. */
+  learn(node: AutomationStudioFlowNode, hintMs: number, refusedAt?: number): number | undefined;
   /** Every node held to a pace, for the trace; nothing when none was. */
   summary(): AutomationStudioNodePace[] | undefined;
 };
 
 export function automationStudioPaceKeeper(): AutomationStudioPaceKeeper {
   const nodes = new Map<string, NodePaceState>();
+  // The run's clock, as `before` is handed it: when a caller does not say when a refusal was answered (header).
+  let clock: (() => number) | undefined;
   const stateOf = (node: AutomationStudioFlowNode): NodePaceState => {
     let state = nodes.get(node.id);
     if (!state) {
       const authoredMs = automationStudioAuthoredPaceMs(node);
-      state = { ...(authoredMs === undefined ? {} : { authoredMs }), paceMs: authoredMs ?? 0, raisedCount: 0, waitedMs: 0 };
+      state = { ...(authoredMs === undefined ? {} : { authoredMs }), paceMs: authoredMs ?? 0, raisedCount: 0, waitedMs: 0, starts: [] };
       nodes.set(node.id, state);
     }
     return state;
   };
   return {
     async before(node, now, wait) {
+      clock = now;
       const state = stateOf(node);
       if (!state.paceMs) return undefined;
       const dueMs = state.lastStartAt === undefined ? 0 : Math.max(0, Math.round(state.lastStartAt + state.paceMs - now()));
@@ -72,14 +94,23 @@ export function automationStudioPaceKeeper(): AutomationStudioPaceKeeper {
       return { inForceMs: state.paceMs, waitedMs: dueMs };
     },
     started(node, at) {
-      stateOf(node).lastStartAt = at;
+      const state = stateOf(node);
+      state.lastStartAt = at;
+      state.starts.push({ at, refused: false });
+      if (state.starts.length > MAX_STARTS_KEPT) state.starts.shift();
     },
-    learn(node, hintMs) {
+    learn(node, hintMs, refusedAt) {
       if (!(Number.isFinite(hintMs) && hintMs > 0)) return undefined;
       const state = stateOf(node);
-      // A pace already in force was not enough, so it grows; a hint is the floor either way.
+      // The start refused is the node's latest; the site let the others through.
+      const latest = state.starts.at(-1);
+      if (latest) latest.refused = true;
+      const at = refusedAt ?? clock?.() ?? latest?.at;
+      const letThrough = state.starts.filter((start) => !start.refused).map((start) => start.at);
+      const sustainable = at === undefined ? undefined : automationStudioSustainablePaceMs({ letThrough, freeAt: at + hintMs });
+      // A pace already in force was not enough, so it grows; the hint alone stands only when no start explains the refusal (header).
       const grown = Math.ceil(state.paceMs * GROWTH);
-      const next = Math.max(state.authoredMs ?? 0, Math.min(AUTOMATION_STUDIO_MAX_LEARNED_PACE_MS, Math.max(Math.round(hintMs), grown)));
+      const next = Math.max(state.authoredMs ?? 0, Math.min(AUTOMATION_STUDIO_MAX_LEARNED_PACE_MS, Math.max(sustainable ?? Math.round(hintMs), grown)));
       if (next <= state.paceMs) return undefined;
       state.paceMs = next;
       state.raisedCount += 1;

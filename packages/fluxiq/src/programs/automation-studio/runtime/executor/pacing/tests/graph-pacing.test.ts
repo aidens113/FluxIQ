@@ -50,6 +50,41 @@ function dispatcher(clock: { t: number }, refusals: Record<number, number>) {
   return { calls, dispatch };
 }
 
+/** Start, a list, a For Each over it whose body is `act` and then a pause of `seconds`, then End. */
+function loopWithPause(items: number[], node: AutomationStudioFlowNode, seconds: number): AutomationStudioFlowDocument {
+  return flowOf([
+    { id: "start", definitionId: "builtin.control.start" },
+    { id: "list", definitionId: "builtin.data.constant", parameterValues: { value: items } },
+    { id: "each", definitionId: "builtin.control.for-each" },
+    node,
+    { id: "pause", definitionId: "builtin.timing.wait", parameterValues: { duration: seconds, unit: "seconds" } },
+    { id: "end", definitionId: "builtin.control.end" }
+  ], [edge("start", "success", "list"), edge("list", "success", "each"), edge("list", "value", "each", "items"), edge("each", "body", "act"), edge("act", "success", "pause"), edge("pause", "success", "each"), edge("each", "done", "end")]);
+}
+
+/**
+ * A site that lets through at most `acts` acts in any `windowMs`: an act over
+ * it is refused, with a hint of how long until the oldest act in the window
+ * leaves it, counted from when the refusal is answered. `refused` lists when
+ * each refused act was made.
+ */
+function rollingLimit(clock: { t: number }, limit: { acts: number; windowMs: number; takesMs: number }) {
+  const accepted: number[] = [];
+  const refused: number[] = [];
+  const dispatch: NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]> = () => {
+    const at = clock.t;
+    clock.t += limit.takesMs;
+    const inWindow = accepted.filter((started) => started > at - limit.windowMs);
+    if (inWindow.length < limit.acts) {
+      accepted.push(at);
+      return { status: "success", route: "success", outputs: { ok: true } };
+    }
+    refused.push(at);
+    return { status: "failed", route: "failed", outputs: {}, failure: slowDown(Math.max(100, inWindow[0]! + limit.windowMs - clock.t)) };
+  };
+  return { dispatch, refused };
+}
+
 describe("a Wait node pauses and the run goes on", () => {
   const waitFlow = flowOf([
     { id: "wait", definitionId: "builtin.timing.wait", parameterValues: { duration: 2, unit: "seconds" } },
@@ -123,11 +158,44 @@ describe("a node's pace between starts", () => {
     expect(trace.status).toBe("succeeded");
     expect(acts.map((attempt) => attempt.status)).toEqual(["succeeded", "failed", "succeeded", "failed", "succeeded", "succeeded"]);
     // retry, pace, retry, pace: the retries of one arrival are never paced on top of their own wait.
-    expect(clock.waits).toEqual([2_000, 1_000, 2_000, 2_000]);
-    expect(acts[1]?.pace).toEqual({ inForceMs: 0, waitedMs: 0, raisedToMs: 2_000 });
-    expect(acts[3]?.pace).toEqual({ inForceMs: 2_000, waitedMs: 1_000, raisedToMs: 3_000 });
-    expect(acts[5]?.pace).toEqual({ inForceMs: 3_000, waitedMs: 2_000 });
-    expect(trace.pace).toEqual([{ nodeId: "act", paceMs: 3_000, learnedMs: 3_000, raisedCount: 2, waitedMs: 3_000 }]);
+    // The first refusal (at 11 s, free at 14 s) after one act let through at 10 s implies one act per 4 s, 4.4 s with
+    // its margin (t485); the second is answered by growth, half again of the pace in force.
+    expect(clock.waits).toEqual([2_000, 3_400, 2_000, 5_600]);
+    expect(acts[1]?.pace).toEqual({ inForceMs: 0, waitedMs: 0, raisedToMs: 4_400 });
+    expect(acts[3]?.pace).toEqual({ inForceMs: 4_400, waitedMs: 3_400, raisedToMs: 6_600 });
+    expect(acts[5]?.pace).toEqual({ inForceMs: 6_600, waitedMs: 5_600 });
+    expect(trace.pace).toEqual([{ nodeId: "act", paceMs: 6_600, learnedMs: 6_600, raisedCount: 2, waitedMs: 9_000 }]);
+  });
+
+  it("learns a pace the site's limit allows, so one refusal is the last (t485, D1)", async () => {
+    const { clock, options } = simulated();
+    // At most three acts in any 15 s; each pass acts for 0.5 s and then pauses 4 s, so the fourth act is refused.
+    const site = rollingLimit(clock, { acts: 3, windowMs: 15_000, takesMs: 500 });
+    const trace = await runAutomationStudioGraph(loopWithPause([1, 2, 3, 4, 5, 6, 7, 8], act(), 4), { ...options, effectDispatcher: site.dispatch });
+
+    expect(trace.status).toBe("succeeded");
+    // The hint asked for 1 s; 15 s over the three acts let through is 5 s each, held with a tenth to spare.
+    expect(site.refused).toEqual([23_500]);
+    expect(trace.pace).toEqual([expect.objectContaining({ nodeId: "act", paceMs: 5_500, learnedMs: 5_500, raisedCount: 1 })]);
+  });
+
+  it("counts the hint from when the refused attempt settled, not from after its slow snapshot (t485)", async () => {
+    const { clock, options } = simulated();
+    const site = rollingLimit(clock, { acts: 3, windowMs: 15_000, takesMs: 500 });
+    // The refused attempt's after-action snapshot takes 3 s, as lane D measured 2.7-4.6 s; read from then, the window would look 3 s longer.
+    let seenRefusals = 0;
+    const hostRuntime = { captureStateSnapshot: (input: { point: string }) => {
+      if (input.point === "after_action" && site.refused.length > seenRefusals) {
+        seenRefusals = site.refused.length;
+        clock.t += 3_000;
+      }
+      return undefined;
+    } } as unknown as NonNullable<AutomationStudioGraphExecutionOptions["hostRuntime"]>;
+    const trace = await runAutomationStudioGraph(loopWithPause([1, 2, 3, 4, 5, 6, 7, 8], act(), 4), { ...options, effectDispatcher: site.dispatch, hostRuntime });
+
+    expect(trace.status).toBe("succeeded");
+    expect(site.refused).toEqual([23_500]);
+    expect(trace.pace).toEqual([expect.objectContaining({ nodeId: "act", paceMs: 5_500, raisedCount: 1 })]);
   });
 
   it("leaves a node with no pace and no hint unpaced, and the trace says nothing of pace", async () => {

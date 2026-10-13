@@ -69,6 +69,26 @@
 // put back (`startReset`), so every act of this build counts undone and the
 // model is asked to undo nothing the hook already undid (t479).
 //
+// **A yes the site asked to slow down completes only once the Flow answers it
+// (t485; user, 2026-10).** Lane D round 12 (`run-mv62icw0-070f88ad`, D2): a
+// trial passed after the site refused one act and asked the run to slow down,
+// the run closed the site's notice by its way out, and the answer said
+// "Complete now", so the saved Flow had no step for the notice and no wait. A
+// trial met such an interruption when its feedback says the site asked the
+// run to slow down: a step's `absorbed` entry carrying the wait the site asked
+// for (`askedWaitMs`), a step's `interruptions` entry of kind `rate_limit`, or
+// a pace the run learned under `paces`. Other layers the run closed (a consent
+// banner, a promotion, a chat panel) asked for no slowing down and do not
+// count. The Flow answers it when some node's pace is at least the one asked
+// for -- the pace the run learned for that step, else the longest wait the
+// site asked -- and, when the notice's way out was named (`wayOut`), when it
+// also holds a wait run only after an optional step (the dismiss, its
+// `only after:` wait and the join back into the pass), or a handler. A notice
+// with no named way out was closed by the run and takes no step
+// (`../plan/flow-script-format.ts`), so the pace alone answers it. Until then
+// the yes stands, but the answer and the completion rule name what to add,
+// under `slowDown`, and completion is refused `candidate.trial_slow_down_unhandled`.
+//
 // With no port injected the test tool says `candidate.trial_unavailable` and
 // completion keeps its old meaning: the latest valid submission ends as an
 // unverified draft, which is all a deployment without a trial runner can make.
@@ -77,6 +97,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS } from "../plan/index.ts";
 import { automationStudioCandidateStartedWithSaid } from "./started-with.ts";
 import type { AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialAct, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialResult, type AutomationStudioCandidateTrialVerdict, type AutomationStudioFlowCandidate } from "./contracts.ts";
@@ -110,6 +131,24 @@ function stillNotFoundInstruction(step: OnPageStep): string {
   return `${named(step)} could not find its control where it was saved in two trials, though one like it was on the page both times, so testing this revision again would fail the same way. Do not repeat acts on that control. Change that step, or the steps that lead to it, submit the whole candidate, then test the new revision.`;
 }
 
+/** The nodes a Flow answers a slow-down with (header): a wait, and the join an optional step's way past meets at. */
+const WAIT_NODE_ID = "builtin.timing.wait";
+const MERGE_NODE_ID = "builtin.control.merge";
+
+/** What the model is told when a passed trial met a slow-down the Flow does not answer yet (header). */
+function slowDownInstruction(unhandled: readonly JsonObject[]): string {
+  const said = unhandled.map((entry) => {
+    const needs: string[] = [];
+    if (typeof entry.paceAtLeastMs === "number") needs.push(`\`repeat pace:\` of at least ${seconds(entry.paceAtLeastMs)} on the first step of the span it repeats in`);
+    if (typeof entry.wayOut === "string" && typeof entry.waitAtLeastMs === "number") {
+      needs.push(`right after it, inside the span, an \`optional: yes\` step that presses ${entry.wayOut}, and directly after that a \`builtin.timing.wait\` step with \`only after:\` naming it that waits at least ${seconds(entry.waitAtLeastMs)}, so a pass that meets the notice dismisses it, waits and goes on with the loop (or one handler covering the step that does the same)`);
+    }
+    const label = typeof entry.label === "string" ? ` (${JSON.stringify(entry.label)})` : "";
+    return `${typeof entry.step === "number" ? `Step ${entry.step}` : "A step"}${label} needs ${needs.join(", and ")}.`;
+  });
+  return `The trial passed, but the site asked the run to slow down, and this Flow does not answer that itself yet, so this revision cannot complete. ${said.join(" ")} Change the Flow, submit the whole candidate, then test the new revision, and complete only after a yes for it.`;
+}
+
 /** Verdicts after which the same revision may be tested again, within the bound. */
 const TRANSIENT: ReadonlySet<AutomationStudioCandidateTrialVerdict> = new Set(["unsure", "not_judged", "execution_failed"]);
 
@@ -130,6 +169,8 @@ export class AutomationStudioFlowCandidateTrialGate {
   private readonly stoppedAt = new Map<string, Set<string>>();
   /** Revisions that stopped at the same step twice, with that step: they are not tested again. */
   private readonly repeatedFailures = new Map<string, JsonObject>();
+  /** What each passed revision met that its Flow does not answer yet (header); absent when nothing. */
+  private readonly slowDowns = new Map<string, JsonObject[]>();
   private readonly fallbackSignal = new AbortController().signal;
 
   constructor(private readonly input: {
@@ -184,11 +225,15 @@ export class AutomationStudioFlowCandidateTrialGate {
     this.verdicts.set(key(answer), answer);
     if (answer.verdict === "no") this.closedDigests.set(answer.digest, answer.feedback);
     const repeatedStep = this.recordStop(answer);
+    const slowDown = answer.verdict === "yes" ? unhandledSlowDowns(answer.feedback, latest) : [];
+    if (slowDown.length) this.slowDowns.set(key(answer), slowDown);
     const retestsLeft = TRANSIENT.has(answer.verdict) && !repeatedStep ? AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION - (tried + 1) : 0;
     const evidence: JsonObject = {
       ok: answer.verdict === "yes", verdict: answer.verdict, revision: answer.revision, digest: answer.digest,
-      ...(answer.trialRunId ? { trialRunId: answer.trialRunId } : {}), feedback: answer.feedback, instruction: repeatedStep ? repeatedInstruction(answer) : standingInstruction(answer, retestsLeft > 0),
+      ...(answer.trialRunId ? { trialRunId: answer.trialRunId } : {}), feedback: answer.feedback,
+      instruction: repeatedStep ? repeatedInstruction(answer) : slowDown.length ? slowDownInstruction(slowDown) : standingInstruction(answer, retestsLeft > 0),
       ...(repeatedStep ? { failedStep: repeatedStep } : {}),
+      ...(slowDown.length ? { slowDown } : {}),
       ...(TRANSIENT.has(answer.verdict) ? { retestsLeft } : {}),
       ...(reset?.kind === "admit" && reset.startedWith ? { startedWith: reset.startedWith } : {}),
       ...(leftOnSite?.length ? { leftOnSite: leftOnSite.map((act) => ({ act: act.act, did: act.did, ...(act.call ? { call: act.call } : {}) })) } : {})
@@ -202,6 +247,8 @@ export class AutomationStudioFlowCandidateTrialGate {
   completion(receipt: { revision: number; digest: string }): AutomationStudioLlmEvidenceCompletionCheck {
     if (!this.input.trial) return { ok: true };
     const answer = this.verdicts.get(key(receipt));
+    const slowDown = this.slowDowns.get(key(receipt));
+    if (answer?.verdict === "yes" && slowDown) return refusal("candidate.trial_slow_down_unhandled", slowDownInstruction(slowDown), { verdict: answer.verdict, slowDown });
     if (answer?.verdict === "yes") return { ok: true };
     const closed = this.closedDigests.get(receipt.digest);
     if (closed) return refusal("candidate.trial_unchanged_after_no", "This exact Flow was judged no and has not changed. Change it to address that feedback, submit it, test the new revision, and complete only after a yes.", { previousFeedback: closed });
@@ -339,6 +386,66 @@ function standingInstruction(answer: AutomationStudioCandidateTrialResult, retes
 function repeatedInstruction(answer: AutomationStudioCandidateTrialResult | undefined): string {
   const onPage = onPageStep(answer);
   return onPage ? stillNotFoundInstruction(onPage) : SAME_FAILURE_INSTRUCTION;
+}
+
+/** One step a trial listed, with the paces the run learned for it; a learned pace whose step is not listed stands alone. */
+type SteppedPaces = JsonObject & { learned: JsonObject[] };
+
+/**
+ * Each step of a passed trial the site asked to slow down that the Flow does
+ * not answer yet (header): its number and label, `paceAtLeastMs` when no
+ * node's pace reaches the one asked, and `wayOut` with `waitAtLeastMs` when the
+ * notice's way out was named and the Flow holds neither a wait after an
+ * optional step nor a handler.
+ */
+function unhandledSlowDowns(feedback: JsonObject, candidate: AutomationStudioFlowCandidate): JsonObject[] {
+  const steps = objects(feedback.steps);
+  const paces = objects(feedback.paces);
+  const metSlowDown = paces.length > 0 || steps.some((step) => objects(step.absorbed).some((entry) => positive(entry.askedWaitMs)) || objects(step.interruptions).some((layer) => layer.kind === "rate_limit"));
+  // A trial that met none is a plain yes, and its plan is not read.
+  if (!metSlowDown) return [];
+  const subflows = candidate.buildPlan.plan.subflows;
+  const longestPace = Math.max(0, ...subflows.flatMap((subflow) => subflow.nodes.map((node) => node.paceMs ?? 0)));
+  const dismissesAndWaits = subflows.some((subflow) => waitAfterOptional(subflow) || subflow.nodes.some((node) => node.definitionId === AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS.handler));
+  const sameStep = (pace: JsonObject, step: JsonObject) => pace.definitionId === step.definitionId && pace.label === step.label && pace.control === step.control;
+  const listed: SteppedPaces[] = steps.map((step) => ({ ...step, learned: paces.filter((pace) => sameStep(pace, step)) }));
+  const alone: SteppedPaces[] = paces.filter((pace) => !steps.some((step) => sameStep(pace, step))).map((pace) => ({ ...(typeof pace.label === "string" ? { label: pace.label } : {}), learned: [pace] }));
+  return [...listed, ...alone].flatMap((step): JsonObject[] => {
+    const asked = objects(step.absorbed).map((entry) => entry.askedWaitMs).filter(positive);
+    const learned = step.learned.map((pace) => pace.paceMs).filter(positive);
+    const wayOut = objects(step.interruptions).filter((layer) => layer.kind === "rate_limit").map((layer) => layer.wayOut).find((handle): handle is string => typeof handle === "string" && handle !== "");
+    const paceAtLeastMs = Math.max(0, ...(learned.length ? learned : asked));
+    const needsPace = paceAtLeastMs > 0 && longestPace < Math.floor(paceAtLeastMs / 100) * 100;
+    const needsBranch = wayOut !== undefined && !dismissesAndWaits;
+    if (!needsPace && !needsBranch) return [];
+    const waitAtLeastMs = Math.max(0, ...asked) || paceAtLeastMs;
+    return [{
+      ...(typeof step.step === "number" ? { step: step.step } : {}),
+      ...(typeof step.label === "string" ? { label: step.label } : {}),
+      ...(needsPace ? { paceAtLeastMs } : {}),
+      ...(needsBranch ? { wayOut, waitAtLeastMs } : {})
+    }];
+  });
+}
+
+/** Whether a subflow holds a wait run only after an optional step: one that follows a step whose way past joins the pass again. */
+function waitAfterOptional(subflow: AutomationStudioFlowCandidate["buildPlan"]["plan"]["subflows"][number]): boolean {
+  const byKey = new Map(subflow.nodes.map((node) => [node.key, node]));
+  const optional = new Set(subflow.edges.filter((edge) => edge.source.portId === "failed" && byKey.get(edge.target.nodeKey)?.definitionId === MERGE_NODE_ID).map((edge) => edge.source.nodeKey));
+  return subflow.edges.some((edge) => optional.has(edge.source.nodeKey) && edge.source.portId !== "failed" && byKey.get(edge.target.nodeKey)?.definitionId === WAIT_NODE_ID);
+}
+
+function objects(value: unknown): JsonObject[] {
+  return Array.isArray(value) ? value.filter(isJsonObject) : [];
+}
+
+function positive(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+/** A wait as the model reads it, in seconds rounded up to a tenth, so writing the number said is always enough. */
+function seconds(ms: number): string {
+  return `${(Math.ceil(ms / 100) / 10).toFixed(1)} s`;
 }
 
 function refused(code: string, instruction: string, detail: JsonObject = {}): AutomationStudioLlmEvidenceToolExecutionResult {
