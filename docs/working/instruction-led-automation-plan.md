@@ -1,7 +1,7 @@
 # Instruction-Led Automation Authority
 
-Status: Active
-Status detail: Implementation independently verified; paired dev integration and artifact refresh pending.
+Status: Complete
+Status detail: Paired dev implementation pushed; main artifacts refreshed and validation recorded.
 Created: 2026-10-13
 Last updated: 2026-10-13
 Owner: Codex senior supervisor
@@ -11,18 +11,15 @@ Related: [adaptation contracts](./adaptation-and-breadth-plan.md)
 
 ## Current State
 
-- User requires explicit instructions for all automations, including existing automations before their next run. Recordings cannot independently define an automation and need descriptions of what they demonstrate.
-- Core owns durable FlowInstructions, recording metadata, build authority and execution gates. Downstream owns browser UI/domain/Lab changes; the paired plan owns coordination and briefs.
-- Reuse active FlowInstruction inventory and existing instruction authority. Inspect direct recording proposal approval, persisted execution/resume/scheduling and legacy-flow migration before editing.
-- Empty drafts remain editable. Recording descriptions do not substitute for task instructions. No automatic inferred task or test-only execution bypass.
-- Previous t516/t517 are merged locally; t518 remains separately committed/unpushed with a remaining recorded-only social failure. New requirement takes precedence; no fresh recording-only runs are planned.
-- Paired task roots are C:/Users/osrs_/FluxStuff/fxwork/t519/{!FluxIQ,!FluxIQWebExtension}; branch task/t519-instruction-led-automations. Core worker exclusively owns packages/contracts, packages/fluxiq and packages/client-gateway-websocket; UI worker owns apps/web. Supervisor owns authored architecture and paired documents.
-- Source discovery found persisted deterministic run/resume and recording/policy approval bypasses. The paired downstream plan contains written implementation briefs before dispatch. Proposed public codes are automation.instructions_required, automation.instruction_led_authoring_required, recording.description_required and recording.supporting_evidence_invalid.
-- Preserve legitimate legacy written Flow-owned task instructions without requiring a new origin marker. Reject known model/inferred suggestions; adding actual instructions to a preserved graph does not retroactively verify its build. No new model call is required merely to reuse a valid deterministic Flow.
-- Core implementation includes admission on run/queue/resume/build/apply/publish and repair, explicit task-save/edit for populated Flows, closed errorCode, retired recording/policy activation, required description create/start/update and bounded supplementary method context. Nullable migration 0026 carries descriptions through typed summary/index projections without reading raw timelines.
-- Supervisor independently observed Core source+test types and public-library builds, 72 narrowed tests including real legacy deterministic runs and durable summary reopen; web 146 tests and typecheck passed. Native Chromium description helper was exercised downstream on company-website; full paired browser/model build and Firefox behavior are not claimed.
-- New source audit cycles/packing were corrected. Focused instructionAuthority collaborator owns readiness/assert/resume through typed ports, with no growth or removal of existing facade APIs. Generated index is refreshed and baseline shrank to 1156 entries (5 lowered, 3 removed), with no source violation or baseline increase. Neither dev is pushed yet.
-- Final supervisor validation totals 116 distinct Core cases across selections (including malformed API bodies, actual no-model legacy runs, missing/unreadable resume sessions, proposal refusal and summary migration). Web 147 distinct cases and touched types passed; failed optional evidence loading preserves unknown links. Downstream affected lifecycle 291 cases, narrow Lab/domain/contract checks and Chrome/Edge/Firefox bundles passed. Full suites and live provider/full paired browser runs were not used.
+- Explicit durable Flow-owned written task instructions are mandatory before build, activation, persisted run, queue, resume and repair, including existing automations before their next run and no-model execution.
+- Legitimate legacy written task instructions remain valid without a new origin marker; known model/inferred-only suggestions cannot grant authority. Saving actual instructions preserves the existing graph/history without claiming its old build was verified against them.
+- Core owns admission, readiness diagnostics, durable task editing and optional described recording links. Recording descriptions never substitute for instructions. Raw recording/policy executable approval is retired; empty drafts and diagnostic access remain available.
+- Nullable migration 0026 preserves legacy recordings and carries descriptions through durable summary/index projections without raw timeline reads. New starts and attached finalized project-owned evidence require descriptions. Supplementary context is bounded ordered registered method types plus description, not replayed targets/values.
+- Paired t519 is merged into dev: Core ead8998f and downstream 4a034e88. Task worktrees are reclaimed through owning helpers. Existing facade APIs are preserved and the focused instructionAuthority collaborator owns readiness/assert/resume.
+- Supervisor independently observed 116 distinct narrow Core cases, 147 distinct web cases and touched source/test type checks passing. Downstream narrow domain/Lab/contract checks, 291 affected extension cases and Chrome/Edge/Firefox bundles passed. Both final integration structure audits passed; baselines only shrank.
+- Native Chromium description helper passed 8 assertions on company-website downstream. Full paired recording/build/replay, live provider generation and Firefox live behavior were not exercised. No full suite or user-panel launch was used.
+- Earlier t516/t517 are included in paired dev delivery. Separate t518 remains committed locally, unmerged and unpushed with its unresolved social replay Flow failure preserved. No recorded-only relaunch is planned.
+- Both dev implementation branches are pushed: Core ead8998f and downstream 4a034e88. Main contracts, framework, gateway libraries/server artifact, domain and Chrome/Edge/Firefox extension artifacts rebuilt successfully. Restart the existing panel and reload the extension to use them; no panel was started or restarted by the agent.
 
 ## Work Ledger
 
@@ -53,3 +50,17 @@ Related: [adaptation contracts](./adaptation-and-breadth-plan.md)
 - Changed: verified collaborator ownership, source-origin no-mutation defense, server rejection of nonstring instruction bodies and preservation of unknown UI attachments on optional evidence-load failure.
 - Validation: root affected Core 42/42 plus final public service 14/14 passed, completing 116 distinct Core cases across checks. Final Core source/test type and public-library builds passed; web 146/146, post-transport 49/49 and task-editor 4/4 passed with overlap (147 distinct), with final types. Downstream narrow gates and browser bundles passed; native Chromium modal checked on company-website.
 - Outcome: Accepted implementation; only final documentation indices/lowered baselines, paired integration and push remain. No full suite, paid provider, full paired recording/build/replay or Firefox live claim.
+
+### 2026-10-13 - Paired integration verified
+
+- Agent: Codex senior supervisor.
+- Changed: merged downstream task t519 as 4a034e88, then Core as ead8998f; reclaimed both clean task worktrees through owning helpers. Preserved unrelated user edits and separate t518.
+- Validation: both integration structure audits passed. Core's older task helper defaults to the prohibited full suite, so its exported finish operation received the real narrow structure-audit check; no full suite was run or reported as passing. All preceding focused types/tests were independently observed. Fetched origin/dev in both repositories; neither remote was ahead.
+- Outcome: accepted paired integration; final main artifact refresh and paired dev push pending.
+
+### 2026-10-13 - Delivered on both dev branches
+
+- Agent: Codex senior supervisor.
+- Changed: pushed Core dev through ead8998f and downstream dev through 4a034e88 as one paired implementation unit, including earlier integrated t516/t517. Separate t518 stays unmerged/unpushed.
+- Validation: main contracts, fluxiq, client-gateway-websocket, native gateway server artifact, domain and extension builds passed; extension verified Chrome/Edge, Firefox and e2e-chromium bundles. Both git pushes returned success. No generated artifacts, user data or unrelated .clinerules edit were staged.
+- Outcome: Complete. Final documentation/index delivery follows in this same unit. Focused checks and native modal validation establish the reported scope; full paired browser replay and Firefox live behavior remain unexercised.
