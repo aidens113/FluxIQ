@@ -216,7 +216,9 @@ describe("resolving a generated plan's parameters through the bound domain", () 
     ["swaps in another reference", () => ({ status: "resolved", parameters: { item: { handle: "record.total" } } }), CODES.unresolved]
   ])("refuses the node when the domain %s", async (_label, resolver, code) => {
     const result = await resolve(plan({ item: { handle: "record.row" } }, {}), resolver);
-    expect(result).toMatchObject({ ok: false, issues: expect.arrayContaining([{ severity: "error", code, message: expect.any(String), path: "plan.subflows.0.nodes.1.parameters" }]) });
+    // A handle left unresolved is refused at the parameter that holds it (t514); every other refusal, at the parameters.
+    const path = code === CODES.unresolved ? "plan.subflows.0.nodes.1.parameters.item" : "plan.subflows.0.nodes.1.parameters";
+    expect(result).toMatchObject({ ok: false, issues: expect.arrayContaining([{ severity: "error", code, message: expect.any(String), path }]) });
   });
 
   it("gives the domain a copy, so changing what it was handed changes nothing", async () => {

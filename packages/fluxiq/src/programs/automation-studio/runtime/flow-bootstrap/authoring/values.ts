@@ -3,9 +3,17 @@
 // The model writes text, and a parameter wants a boolean, a number, a list or
 // an object. Every conversion here is one a reader would make without being
 // told: `no` is false, `1, 2` is a list, `{...}` that parses is the object it
-// spells, and a bare name where an object belongs is the handle the evidence
+// spells, and a bare name where a handle belongs is the handle the evidence
 // issued. A value this module cannot read is returned as `undefined`, and the
 // caller refuses the parameter naming the shape it accepts -- it never guesses.
+//
+// **A bare word is a handle only where a handle belongs (t514).** It used to
+// be one under any object parameter, so `absent`, written under the parameter
+// that says what the page shows after a step, became `{ handle: "absent" }`,
+// a handle no view printed, and plan resolution refused the step without
+// naming why (`run-mv6v2jh4-69244ffb`, step 0083). A parameter takes a handle
+// when its declared example is one (`../parameter-words/`); under any
+// other object parameter a bare word is a value it cannot read.
 //
 // A value written inside one pair of quote marks is the text inside them
 // (`./quoted-value.ts`, t464): `value: "2"` sends 2, never the three characters
@@ -14,6 +22,7 @@
 // `authoringNestedValue`, which reads a quoted item as its text the same way.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { isAutomationNodeParameterStateBinding, type AutomationNodeParameter } from "../../../nodes/index.ts";
+import { automationStudioParameterTakesHandle } from "../parameter-words/index.ts";
 import { authoringKey } from "./keys.ts";
 import { authoringQuotedValue } from "./quoted-value.ts";
 
@@ -55,7 +64,7 @@ export function authoringParameterValue(text: string, parameter: AutomationNodeP
     case "number": return numberValue(authoringQuotedValue(text) ?? text);
     case "array": return listValue(text);
     case "object":
-    case "json": return objectValue(text);
+    case "json": return objectValue(text, parameter);
     default: return authoringQuotedValue(text) ?? text;
   }
 }
@@ -139,17 +148,33 @@ function listValue(text: string): JsonValue[] {
   return items.length ? items.map((item) => authoringNestedValue(item)) : [];
 }
 
-function objectValue(text: string): JsonValue | undefined {
+function objectValue(text: string, parameter: AutomationNodeParameter): JsonValue | undefined {
   const parsed = jsonValue(text);
   if (parsed !== undefined) return parsed;
   if (!text) return {};
+  const pairs = pairsValue(text);
+  if (pairs !== undefined) return pairs;
+  // A bare word is a handle only under a parameter that takes one (header, t514).
+  return isAuthoringHandleToken(text) && automationStudioParameterTakesHandle(parameter) ? { [AUTOMATION_STUDIO_AUTHORING_HANDLE_KEY]: text } : undefined;
+}
+
+/** `a=1, b=two` read as the object it spells, when every item is a pair. */
+function pairsValue(text: string): JsonObject | undefined {
   const pairs = text.split(/\s*,\s*/u).map((item) => PAIR.exec(item.trim()));
-  if (pairs.length && pairs.every((pair) => pair !== null)) {
-    const object: JsonObject = {};
-    for (const pair of pairs) object[pair![1]!] = authoringNestedValue(pair![2]!.trim());
-    return object;
-  }
-  return isAuthoringHandleToken(text) ? { [AUTOMATION_STUDIO_AUTHORING_HANDLE_KEY]: text } : undefined;
+  if (!pairs.length || pairs.some((pair) => pair === null)) return undefined;
+  const object: JsonObject = {};
+  for (const pair of pairs) object[pair![1]!] = authoringNestedValue(pair![2]!.trim());
+  return object;
+}
+
+/**
+ * A value written under a key no parameter is called, read for its shape alone,
+ * so the near-name fallback can tell an object from a word (t514,
+ * `../plan/name-correction.ts`): JSON or `a=1, b=two` is the object it spells,
+ * and anything else is read as `authoringNestedValue` reads it.
+ */
+export function authoringWrittenValue(text: string): JsonValue {
+  return jsonValue(text) ?? pairsValue(text.trim()) ?? authoringNestedValue(text);
 }
 
 /** Text read as the state binding it spells, when it spells one and nothing else. */

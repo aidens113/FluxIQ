@@ -304,6 +304,13 @@ export type AutomationStudioFlowBootstrapIssue = {
    * the model is told them in Core's own sentence (`./issue-feedback.ts`).
    */
   detail?: AutomationStudioFlowBootstrapIssueDetail;
+  /**
+   * What to write instead, in Core's own sentence, where the node's own schema
+   * says (t514, `../parameter-words/word-instead.ts`): it quotes only the key and
+   * word the model wrote, each an identifier, and the line the node takes the
+   * word in. The model is told it as the issue's `instead` (`./issue-feedback.ts`).
+   */
+  instead?: string;
 };
 
 /** The field a refusal named and the names that can be used instead (`AutomationStudioFlowBootstrapIssue.detail`). */
