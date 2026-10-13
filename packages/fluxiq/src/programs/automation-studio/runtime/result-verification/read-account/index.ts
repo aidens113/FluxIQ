@@ -18,6 +18,7 @@ export * from "./judge-paging.ts";
 export * from "./loop-passes.ts";
 export * from "./looped-account.ts";
 export * from "./page-bound-sentence.ts";
+export * from "./read-parameters.ts";
 export * from "./pages-clause.ts";
 export * from "./emptied-columns.ts";
 export * from "./sentence.ts";

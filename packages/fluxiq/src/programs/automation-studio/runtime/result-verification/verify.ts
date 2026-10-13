@@ -186,7 +186,7 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
     return said({ outcome: { ...automationStudioResultVerificationAgreement({ first }), performed: true }, interventions });
   }
   const second = await askCheck(request, provider, 2, interventions);
-  const input = { first, second, confirmAnswer, reads: request.summary.reads };
+  const input = { first, second, confirmAnswer, reads: request.summary.reads, recordSets: request.summary.recordSets };
   const settled = automationStudioResultVerificationAgreement(input);
   // A contradicted unsure beside a yes is asked once more, with Core's record named (header, t503).
   const outcome = await automationStudioResultVerificationReaskContradicted({

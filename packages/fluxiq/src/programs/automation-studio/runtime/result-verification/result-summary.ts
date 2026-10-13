@@ -79,6 +79,14 @@
 // **And each read names the steps that acted on the page before it**
 // (`narrowedBefore`, t482, `./narrowed-before.ts`): a site filter's lost rows
 // never reach the read, so no condition's left-out rows can show them.
+//
+// **And how Core read the values its conditions and sort compared** (t511,
+// `./value-readings/`): per condition, the number a bound read or the part of
+// the text a text test found, on a few kept and left-out rows (`valuesRead`),
+// and per record set, what each sort key read its column as and whether the
+// rows are in that order (`sortRead`). Live run `run-mv6qr7fk-77f30b49`'s judges
+// never saw "£72k" read as 72, and four times called a date-sorted answer
+// unsorted.
 
 import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
@@ -97,6 +105,7 @@ import { automationStudioResultProcessingAccount } from "./processing-account.ts
 import { automationStudioResultReadAccounts } from "./read-account/index.ts";
 import { automationStudioResultStepChanges } from "./step-changes.ts";
 import { automationStudioResultStepRows } from "./step-rows.ts";
+import { automationStudioResultValueReadings } from "./value-readings/index.ts";
 
 /** Stands in, in a row, for a value shaped like a credential or carrying a denied key. */
 const WITHHELD_VALUE = "[withheld]";
@@ -178,6 +187,8 @@ export type AutomationStudioRunResultSummaryInput = {
    * no declaration was made, and no row is carried at all.
    */
   deniedEvidenceKeys?: readonly string[] | undefined;
+  /** The instant relative dates are read against for `sortRead` (`./value-readings/`). Absent, the time the summary is made. */
+  now?: number | undefined;
 };
 
 /**
@@ -191,11 +202,11 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
   const totalRecordCount = input.recordSets.reduce((total, set) => total + safeCount(set.summary.recordCount), 0);
   const totalRefusedCount = input.recordSets.reduce((total, set) => total + safeCount(set.summary.invalidCount), 0);
   let withheld = false;
-  const recordSets: AutomationStudioResultRecordSetSummary[] = [];
+  const summarizedSets: AutomationStudioResultRecordSetSummary[] = [];
   for (const set of input.recordSets) {
     const summarized = summarizedRecordSet(set, input.deniedEvidenceKeys);
     if (summarized.withheld) withheld = true;
-    recordSets.push(summarized.summary);
+    summarizedSets.push(summarized.summary);
   }
   const flowNodes = input.flowEdges ? inRunOrder(input.flowNodes ?? [], input.flowEdges) : input.flowNodes ?? [];
   const changes = automationStudioResultStepChanges(input.sessionAttempts, input.deniedEvidenceKeys);
@@ -226,10 +237,14 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
   const own = accounted.reads.filter((read) => flowNodes.some((node) => node.id === read.nodeId && node.definitionId === read.definitionId));
   const narrowed = automationStudioResultNarrowedBefore({ readNodeIds: own.map((read) => read.nodeId), flowNodes, attempts: input.sessionAttempts, deniedEvidenceKeys: input.deniedEvidenceKeys });
   if (narrowed.withheld) withheld = true;
-  const reads = accounted.reads.map((read) => {
+  const narrowedReads = accounted.reads.map((read) => {
     const before = own.includes(read) ? narrowed.byRead.get(read.nodeId) : undefined;
     return before ? { ...read, narrowedBefore: before } : read;
   });
+  // How Core read the values each condition and sort compared (t511), from the rows already screened above.
+  const read = automationStudioResultValueReadings({ reads: narrowedReads, recordSets: summarizedSets, flowNodes, now: input.now ?? Date.now() });
+  const reads = read.reads;
+  const recordSets = read.recordSets;
   // The start view first: every trial of one build starts from the same reset
   // page, so it is the same bytes in each trial judge's request, and only bytes
   // before the first that differ are served from the provider's cache (t493,

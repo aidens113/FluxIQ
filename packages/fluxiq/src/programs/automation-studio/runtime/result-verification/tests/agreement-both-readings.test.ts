@@ -179,3 +179,31 @@ describe("the one re-ask of a contradicted unsure", () => {
     expect(ask).not.toHaveBeenCalled();
   });
 });
+
+// A double no that denies an order Core found is marked the same way (t511).
+// Live run `run-mv6qr7fk-77f30b49`: both judges, four times, called an answer
+// Core had sorted by relative dates, newest first, "not newest-first", and the
+// model followed them. The record is each record set's `sortRead`
+// (`../value-readings/sort-reading.ts`).
+describe("two checks that both said no about an order", () => {
+  const sorted = (inOrder: boolean): AutomationStudioRunResultSummary["recordSets"] => [{
+    datasetId: "roles", recordCount: 3, refusedCount: 0, truncated: false, columns: ["title", "posted"], columnsWithheld: false, rowsChecked: 3, rowsMissingRequired: 0, missingRequiredColumns: [],
+    sortRead: [{ field: "posted", inOrder, said: "Core sorts this answer by posted, newest first, reading posted as a date: 3 of 3 rows state one." }]
+  }];
+  const orderNo = (observed: string): AutomationStudioResultVerification =>
+    automationStudioResultVerdict({ summary, diagnosis: { answersRequest: "no", expected: "Newest first.", observed, changed: "Sort by another column." }, basis: "model" });
+
+  it("marks a reading that denies the order of a column Core found in order", () => {
+    const claim = "The sort on the posted string is not newest-first.";
+    const agreed = automationStudioResultVerificationAgreement({ first: orderNo(claim), second: orderNo(claim), recordSets: sorted(true) });
+    expect(agreed.verdict).toBe("does_not_answer");
+    expect(agreed.repair?.judgement?.observed).toMatch(/^Judge call 1 \(contradicted by Core's record: Core sorted the answer itself[^)]*\): The sort on the posted string/u);
+  });
+
+  it("marks nothing where Core found the rows out of order, or the reading names a column the answer is not sorted by", () => {
+    const claim = "The rows are not sorted newest first by posted.";
+    expect(automationStudioResultVerificationAgreement({ first: orderNo(claim), second: orderNo(claim), recordSets: sorted(false) }).repair?.judgement?.observed).toBe(claim);
+    const other = "The rows are not sorted by salary.";
+    expect(automationStudioResultVerificationAgreement({ first: orderNo(other), second: orderNo(other), recordSets: sorted(true) }).repair?.judgement?.observed).toBe(other);
+  });
+});
