@@ -37,18 +37,41 @@ export function automationStudioFlowBootstrapRouteIssues(plan: AutomationStudioF
     }
     conditions.set(key, index);
   }
-  const reached = new Set(plan.router.rules.map((rule) => rule.targetSubflowKey));
-  if (plan.router.fallback.kind === "subflow") reached.add(plan.router.fallback.targetSubflowKey);
-  // A part is reached by the step that calls it, and the recovery Subflow by
-  // the handlers it registers, never by the router (contract C1, C4).
-  for (const subflow of plan.subflows) for (const node of subflow.nodes) {
-    const called = node.parameters?.subflowId;
-    if (node.definitionId === AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS.callSubflow && typeof called === "string") reached.add(called);
-    if (subflow.role === "recovery" && node.definitionId === AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS.handler) reached.add(subflow.key);
-  }
+  const reached = reachedSubflows(plan, issues);
   for (const [index, subflow] of plan.subflows.entries()) {
     if (reached.has(subflow.key)) continue;
-    issues.push(error("bootstrap.subflow_unreachable", "No route and no fallback runs this Subflow, so its steps could never run.", `plan.subflows.${index}`));
+    issues.push(error("bootstrap.subflow_unreachable", "No route, fallback, registered recovery handler or call from a reachable Subflow runs this Subflow, so its steps could never run.", `plan.subflows.${index}`));
   }
   return issues;
+}
+
+/** Calls contribute reachability only when their caller is itself reached. */
+function reachedSubflows(plan: AutomationStudioFlowBootstrapPlan, issues: AutomationStudioFlowBootstrapIssue[]): Set<string> {
+  const declared = new Set(plan.subflows.map((subflow) => subflow.key));
+  const calls = new Map<string, string[]>();
+  const roots = plan.router.rules.map((rule) => rule.targetSubflowKey);
+  if (plan.router.fallback.kind === "subflow") roots.push(plan.router.fallback.targetSubflowKey);
+  for (const [subflowIndex, subflow] of plan.subflows.entries()) {
+    const targets: string[] = [];
+    for (const [nodeIndex, node] of subflow.nodes.entries()) {
+      if (subflow.role === "recovery" && node.definitionId === AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS.handler) roots.push(subflow.key);
+      if (node.definitionId !== AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS.callSubflow) continue;
+      const called = node.parameters?.subflowId;
+      if (called === undefined) continue; // The required parameter is validated by the node's contract.
+      if (typeof called !== "string" || !declared.has(called)) {
+        issues.push(error("bootstrap.unknown_call_target", "Call Subflow must name a Subflow key declared in this candidate plan.", `plan.subflows.${subflowIndex}.nodes.${nodeIndex}.parameters.subflowId`));
+        continue;
+      }
+      targets.push(called);
+    }
+    calls.set(subflow.key, targets);
+  }
+  const reached = new Set<string>();
+  for (let cursor = 0; cursor < roots.length; cursor += 1) {
+    const key = roots[cursor]!;
+    if (!declared.has(key) || reached.has(key)) continue;
+    reached.add(key);
+    roots.push(...calls.get(key) ?? []);
+  }
+  return reached;
 }

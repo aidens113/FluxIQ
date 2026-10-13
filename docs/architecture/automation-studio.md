@@ -690,7 +690,15 @@ ids and wiring. Plan validation (`plan/route-validation.ts`) refuses a rule
 with no condition (`bootstrap.route_condition_missing`: it would always hold,
 so nothing after it could run), two rules testing the same thing
 (`bootstrap.route_shadowed`), a condition the router cannot evaluate, and a
-Subflow no rule and no fallback reaches (`bootstrap.subflow_unreachable`).
+Subflow no entry route, fallback, registered recovery handler or transitive call
+from one of those roots reaches (`bootstrap.subflow_unreachable`). Helper graphs
+do not need their own Router rules. Candidate calls must name a literal key
+declared in that same candidate (`bootstrap.unknown_call_target`); call input
+bindings remain available. Disconnected helper components cannot make themselves
+reachable by mentioning each other. This static traversal terminates cycles but
+does not replace runtime recursion limits or prove that every applicable entry
+case executes correctly. Distinct overlapping Router conditions retain their
+ordered semantics; validation does not run a general condition solver.
 A Flow build is shown `flowBootstrap.routing` (`plan/routing-context.ts`): how
 the router decides, the Flow's current structure, every path a condition can
 test with its description, and the distinct states the host observed -- where
