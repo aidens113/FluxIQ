@@ -6,7 +6,7 @@ import { commitAutomationStudioMutation, subscribeToAutomationStudioMutations } 
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
-const ready = { loading: false, instructions: [{ status: "active" }], router: null, subflowTotal: 0, error: "" };
+const ready = { loading: false, instructionReadiness: { ready: true, instructionIds: ["task.one"] }, instructions: [{ status: "active" }], router: null, subflowTotal: 0, error: "" };
 const flow = {
   flowId: "flow.inputs",
   name: "Input Flow",
@@ -62,10 +62,10 @@ describe("runtime run-input interactions", () => {
   it("shows linked onboarding, retry, and blocks stale/error readiness", async () => {
     const issues = runtimeFlowReadinessIssues({ ...flow, nodes: [] }, { instructions: [], router: null, subflowTotal: 0, error: "" });
     expect(issues).toEqual([
-      { label: "Add at least one active instruction.", action: "Open Instructions", target: "instructions" },
+      { label: "Author task instructions before running this automation.", action: "Open Instructions", target: "instructions" },
       { label: "Add runnable Nodes or create a subflow.", action: "Open Subflows", target: "subflows" }
     ]);
-    expect(runtimeFlowReadinessIssues({ ...flow, nodes: [] }, { instructions: [{ status: "active" }], router: { rules: [] }, subflowTotal: 1, error: "" })).toEqual([
+    expect(runtimeFlowReadinessIssues({ ...flow, nodes: [] }, { instructionReadiness: { ready: true, instructionIds: ["task.one"] }, instructions: [{ status: "active" }], router: { rules: [] }, subflowTotal: 1, error: "" })).toEqual([
       { label: "Connect an active Router path to a subflow.", action: "Open Router", target: "router" }
     ]);
     expect(parseRuntimeRunInputDocument("[]")).toEqual({ ok: false, error: "Advanced inputs must be a JSON object." });
@@ -83,24 +83,23 @@ describe("runtime run-input interactions", () => {
     await act(async () => renderer.unmount());
   });
 
-  it("allows a saved graph to run without instructions when No LLM intervention is selected", () => {
+  it("requires task instructions for a saved graph in every run mode", () => {
     const context = { instructions: [], router: null, subflowTotal: 0, error: "" };
     expect(runtimeFlowReadinessIssues(flow, context, "fully_adaptive")).toEqual([
-      { label: "Add at least one active instruction.", action: "Open Instructions", target: "instructions" }
+      { label: "Author task instructions before running this automation.", action: "Open Instructions", target: "instructions" }
     ]);
-    expect(runtimeFlowReadinessIssues(flow, context, "no_llm_intervention")).toEqual([]);
+    expect(runtimeFlowReadinessIssues(flow, context, "no_llm_intervention")).toEqual(runtimeFlowReadinessIssues(flow, context, "fully_adaptive"));
   });
 
-  it("enables the Run control after selecting No LLM intervention for an instruction-free graph", async () => {
+  it("keeps Run disabled after selecting No LLM intervention for an instruction-free graph", async () => {
     const onRun = vi.fn();
     let renderer!: ReactTestRenderer;
-    const readiness = { loading: false, instructions: [], router: null, subflowTotal: 0, error: "" };
+    const readiness = { instructionReadiness: { ready: false, instructionIds: [] }, loading: false, instructions: [], router: null, subflowTotal: 0, error: "" };
     await act(async () => { renderer = create(<Harness onRun={onRun} readiness={readiness} flowOverride={{ ...flow, interface: { inputs: [] } }} />); });
     expect(button(renderer, "Run")?.props.disabled).toBe(true);
     await act(async () => button(renderer, "No LLM intervention")!.props.onClick());
-    expect(button(renderer, "Run")?.props.disabled).toBe(false);
-    await act(async () => button(renderer, "Run")!.props.onClick());
-    expect(onRun).toHaveBeenCalledWith("no_llm_intervention");
+    expect(button(renderer, "Run")?.props.disabled).toBe(true);
+    expect(onRun).not.toHaveBeenCalled();
     await act(async () => renderer.unmount());
   });
 

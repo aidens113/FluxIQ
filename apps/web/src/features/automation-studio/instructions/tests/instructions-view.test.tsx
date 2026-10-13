@@ -3,6 +3,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 
+const taskTransport = { post: vi.fn(async () => ({ ok: true, payload: { ready: false, instructionIds: [], recordings: [] } })) };
+vi.mock("../../data/use-program-transport", () => ({ useProgramTransport: () => taskTransport }));
+
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams()
 }));

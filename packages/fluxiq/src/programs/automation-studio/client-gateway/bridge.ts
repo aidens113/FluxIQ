@@ -1,3 +1,4 @@
+import { requiredRecordingDescription } from "../runtime/service/instruction-led/index.ts";
 import type {
   ClientGatewayActionCommand,
   ClientGatewayActionResult,
@@ -35,6 +36,7 @@ export type ClientRecordingContextProvider = (input: {
 }) => ClientRecordingContext | Promise<ClientRecordingContext>;
 
 export type StartClientRecordingInput = {
+  description?: string;
   sessionId: string;
   projectId?: string | null;
   taskId?: string;
@@ -117,6 +119,7 @@ export class AutomationStudioClientGatewayBridge {
   }
 
   async startRecording(input: StartClientRecordingInput) {
+    requiredRecordingDescription(input.description);
     const session = this.session(input.sessionId);
     // Taken before the first await: what the client sent before this start never lands in its recording.
     const received = this.writeOrder.settled(this.recordingOwnerKey(session));
@@ -128,6 +131,7 @@ export class AutomationStudioClientGatewayBridge {
     const recording = await this.automationStudio.createRecording({
       ...(projectId !== undefined ? { projectId } : {}),
       recordingId,
+      ...(input.description !== undefined ? { description: input.description } : {}),
       ...(input.taskId ? { taskId: input.taskId } : {}),
       environment: {
         id: `client.${session.clientId}`,
@@ -320,6 +324,10 @@ export class AutomationStudioClientGatewayBridge {
   }
 
   private async openClientRecording(session: ClientGatewaySession, input: ClientGatewayStartRecordingRequest, pending: PendingClientStart) {
+    if (typeof input.description !== "string" || !input.description.trim() || input.description.trim().length > 4000) {
+      await this.gateway.sendError(session.sessionId, { code: "recording.description_required", message: "Describe what this recording demonstrates before starting it." });
+      return null;
+    }
     const context = await this.resolveClientRecordingContext(session, input);
     if (!context.ok) {
       await this.gateway.sendError(session.sessionId, {
@@ -335,6 +343,7 @@ export class AutomationStudioClientGatewayBridge {
     const recording = await this.automationStudio.createRecording({
       projectId,
       recordingId: input.recordingId,
+      ...(input.description !== undefined ? { description: input.description } : {}),
       ...(taskId !== undefined ? { taskId } : {}),
       ...(input.startedAt !== undefined ? { startedAt: input.startedAt } : {}),
       environment: input.environment

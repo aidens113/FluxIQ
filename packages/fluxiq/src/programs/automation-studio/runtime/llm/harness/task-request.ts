@@ -389,5 +389,7 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
     wait?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   };
   now?: () => number;
+  /** Untrusted demonstrations beside, never replacing, authoritative instruction resolution. */
+  supplementaryRecordings?: JsonObject[];
   metadata?: JsonObject;
 };

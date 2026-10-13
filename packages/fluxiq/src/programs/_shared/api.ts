@@ -49,7 +49,8 @@ export type ProgramApiResponse<TPayload = unknown> = {
   ok: boolean;
   payload?: TPayload;
   error?: string;
-  errorCode?: "authorization.required" | "authorization.forbidden" | "endpoint.not_found";
+  /** Program-owned closed codes; carriers are bounded at the registry. */
+  errorCode?: string;
 };
 
 export type ProgramApiHandler<TRequest = unknown, TResponse = unknown> = (
@@ -127,7 +128,9 @@ export class GlobalProgramApiRegistry {
         }
         return (await registration.handler(request)) as ProgramApiResponse<TResponse>;
       } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        const diagnostic = error instanceof Error ? (error as Error & { diagnostic?: unknown }).diagnostic : undefined;
+        const code = diagnostic && typeof diagnostic === "object" ? (diagnostic as { code?: unknown }).code : undefined;
+        return { ok: false, error: error instanceof Error ? error.message : String(error), ...(typeof code === "string" && /^[a-z][a-z0-9_.]{0,99}$/u.test(code) ? { errorCode: code } : {}) };
       }
     });
     recordProgramEndpointPerformance({

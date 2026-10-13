@@ -5,6 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, ArrowDown, ArrowUp, Plus, Search, Workflow } from "lucide-react";
 import { commitAutomationStudioMutation } from "../stores/mutation-transaction-store";
 
+import { TaskInstructionsPanel } from "./TaskInstructionsPanel";
+
 const WORKBENCH_PAGE_SIZE = 25;
 
 import { readInstructionDirectoryUrlState, type InstructionDirectoryState } from "./instruction-directory-model";
@@ -272,6 +274,7 @@ export function InstructionsViewContent(props: InstructionsViewProps & { command
           ? <div className="automation-instruction-target-stack"><label><span>Target level</span><select aria-label="Target level" value={draftInstruction.errorTargetKind} onChange={(event) => setDraftInstruction((current) => ({ ...current, errorTargetKind: event.target.value as InstructionDraft["errorTargetKind"], subflowId: "", nodeId: "" }))}><option value="flow">Entire Flow</option><option value="subflow">Specific subflow</option>{draftInstruction.scopeKind === "on_error" ? <option value="node">Specific node</option> : null}</select></label>{draftInstruction.errorTargetKind === "subflow" ? <Combobox disabled={scopeTargetsLoading} {...(scopeTargetError || scopeTargetsError ? { error: scopeTargetError || scopeTargetsError } : {})} label="Applies to" onChange={(subflowId) => setDraftInstruction((current) => ({ ...current, subflowId }))} options={subflowOptions} placeholder={scopeTargetsLoading ? "Loading subflows" : "Search subflows"} value={draftInstruction.subflowId} /> : draftInstruction.errorTargetKind === "node" ? <Combobox {...(scopeTargetError ? { error: scopeTargetError } : {})} label="Applies to" onChange={(nodeId) => setDraftInstruction((current) => ({ ...current, nodeId }))} options={nodeOptions} placeholder="Search nodes" value={draftInstruction.nodeId} /> : <div className="automation-instruction-scope-summary"><Workflow size={16} aria-hidden /><div><strong>{props.flow?.name ?? "Current Flow"}</strong><span>No narrower object target</span></div></div>}</div>
           : <div className="automation-instruction-scope-summary"><Workflow size={16} aria-hidden /><div><strong>{draftInstruction.scopeKind === "global" ? "All projects and Flows" : draftInstruction.scopeKind === "project" ? "Current project" : props.flow?.name ?? "Current Flow"}</strong><span>{draftInstruction.scopeKind === "global" ? "Framework-wide guidance" : draftInstruction.scopeKind === "project" ? "Inherited by Flows in this project" : "Applies throughout this Flow"}</span></div></div>;
   return (<>
+    {props.projectId && flowId && props.commands.taskInstructions ? <TaskInstructionsPanel commands={props.commands.taskInstructions} flowId={flowId} projectId={props.projectId} onSaved={() => void loadInstructions(page.offset)} /> : null}
     <section className="automation-runs-workspace automation-instructions-shell">
       <header>
         <div><strong>Instructions</strong><span>Scoped guidance for generation, runtime, errors, and review</span></div>

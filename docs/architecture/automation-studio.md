@@ -1,7 +1,7 @@
 # Automation Studio Architecture
 
-Automation Studio is the FluxIQ authoring surface for recordings, learned task
-models, generated policy graphs, and runtime debugging. It is a global
+Automation Studio is the FluxIQ authoring surface for explicit task instructions,
+supporting recordings, generated policy graphs, and runtime debugging. It is a global
 framework program, but it must remain domain-neutral. Host projects provide the
 signals, actions, events, capabilities, recordings, generated policies, and
 runtime adapters for their own domains.
@@ -11,7 +11,7 @@ runtime adapters for their own domains.
 Automation Studio separates evidence from interpretation:
 
 ```text
-Raw Recording
+Explicit Task Instructions + Described Supporting Recording
   -> Normalized Timeline
   -> Signal Mining
      -> facts
@@ -23,7 +23,10 @@ Raw Recording
   -> Runtime Execution + Training Data
 ```
 
-The raw recording is immutable evidence. Normalization, mining, policy
+The task instructions define the automation. A recording is supplementary
+evidence and cannot independently authorize an executable Flow or reusable
+node. Its description explains what it demonstrates; that description is
+separate from the task instructions. Normalization, mining, policy
 generation, AI proposals, and runtime training create new artifacts that point
 back to earlier evidence with stable references. This lets a host project
 improve miners or regenerate policies without recapturing the task.
@@ -45,29 +48,37 @@ returns silently. The result carries an issue naming the recording and the
 number of entries it was built from, and the stored proposal is stamped with
 `metadata.recordingOpenAtGeneration` and
 `metadata.recordingEntryCountAtGeneration`, so the caveat outlives the
-response. A proposal built this way is not merely short — it looks finished, so
-a reviewer can approve a Flow missing whatever the recorder had not yet
-delivered. Neither field appears for a finalized recording.
+response. These proposals are inspectable diagnostics, not a recording-only
+executable approval path. Neither field appears for a finalized recording.
 
-### Deterministic recording-derived Subflows
+### Instruction authority and recording migration
 
-The Recording Timeline exposes a direct **Generate Subflow** operation for a
-finalized recording. The operator selects a destination Flow and authorizes the
-mutation; Core runs the registered domain mapper, approves the resulting direct
-proposal, and writes executable `builtin.policy.action` nodes into the
-destination Flow's primary Subflow graph. Core keeps the top-level orchestration
-Flow graph-empty. If its Router already has a fallback Subflow, generation
-reuses that exact Subflow instead of selecting or creating an unrelated child.
+Every executable automation requires current, active, nonempty task instructions
+owned by its Flow. Build and persisted execution enforce this at Core's service
+boundary, including deterministic reuse and resume. An empty editable draft,
+recording timeline, proposal diagnostic or internal graph primitive does not
+establish user automation authority.
 
-Generated action nodes retain immutable recording/proposal evidence and use a
-340-pixel horizontal interval so standard node cards do not overlap. Repeating
-generation may replace only an empty graph or a graph composed entirely of
-unedited recording-derived nodes and edges. Any manual provenance or foreign
-graph member makes replacement fail closed. After a permitted replacement,
-Core reconciles the canonical Flow document into the project SQL graph index,
-removing stale indexed nodes and edges before adding the current graph. This
-keeps the paged Nodes viewport, execution document, and persisted source in
-agreement even when the viewport was materialized before regeneration.
+`service.instructionAuthority` owns durable readiness, admission and resume
+checks through typed storage/control ports. The `get-flow-instruction-readiness`
+endpoint exposes the result without returning instruction bodies. Recording
+descriptions also live in nullable typed summary storage (migration 0026), so
+the optional evidence picker does not hydrate captured timelines.
+
+New recordings require an explicit description. Legacy recordings remain
+readable and can receive a description without changing their captured evidence;
+they cannot become unnamed supplemental build inputs. Instruction-led authoring
+selects the steps needed for the written task rather than reproducing every
+demonstrated retry or extra action. Direct recording/policy proposal activation
+into executable Flows or reusable nodes is retired.
+
+Existing automations with no task instructions must receive them before their
+next run. Their graphs and history remain available. Legitimate existing written
+Flow-owned instructions remain compatible; adding instructions to an old graph
+does not retroactively verify that graph against the task. Known inferred/model
+suggestions need explicit adoption, and recording descriptions cannot grant
+authority. A valid deterministic run requires no new model call just to reuse
+the saved automation.
 
 ## Folder Ownership
 

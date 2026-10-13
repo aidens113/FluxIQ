@@ -57,7 +57,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_EXPLORE: AutomationStudioConversatio
     // not replace it, whatever goal the model wrote: it states no goal at all
     // (`../instructions/says-what-to-do.ts`).
     if (said?.saysWhatToDo) {
-      const saved = await context.port.call("save-flow-generation-instruction", { projectId: context.projectId, flowId, authSessionId: context.sessionId, instruction: said.text });
+      const saved = await context.port.call("save-flow-generation-instruction", { projectId: context.projectId, flowId, authSessionId: context.sessionId, instruction: said.text, ...(said.from === "argument" ? { instructionSource: "conversation_argument" } : {}) });
       if (!saved.ok) return progress.failed(automationStudioConversationCallCause("saving what it should do", saved));
       progress.carry({ instructionFrom: said.from });
       progress.landed(said.from === "person" ? "saved what it should do" : `saved what it should do, ${AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS}`);

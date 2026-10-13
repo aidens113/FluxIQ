@@ -1,7 +1,7 @@
 export const recordingPageSize = 25;
 export const recordingTimelineWindowSize = 200;
 
-export type RecordingActionKind = "rename" | "note" | "marker" | "finalize" | "delete";
+export type RecordingActionKind = "rename" | "description" | "note" | "marker" | "finalize" | "delete";
 
 export type RecordingPage = {
   recordings: any[];
@@ -15,6 +15,7 @@ export function initialRecordingPage(recordings: any[]): RecordingPage {
 }
 
 export function recordingDialogCopy(kind: RecordingActionKind): { title: string; description: string; action: string; fieldLabel?: string } {
+  if (kind === "description") return { title: "Describe recording", description: "Explain what this demonstration shows. This is supporting evidence, separate from automation task instructions.", action: "Save description", fieldLabel: "Recording description" };
   if (kind === "rename") return { title: "Rename recording", description: "Choose the friendly name shown in recording history.", action: "Rename", fieldLabel: "Name" };
   if (kind === "note") return { title: "Add note", description: "Attach a note to the selected recording event.", action: "Add note", fieldLabel: "Note" };
   if (kind === "marker") return { title: "Add marker", description: "Mark the selected point in the recording timeline.", action: "Add marker", fieldLabel: "Label" };

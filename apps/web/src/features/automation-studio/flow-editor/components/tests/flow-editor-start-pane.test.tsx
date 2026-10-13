@@ -11,13 +11,13 @@ vi.mock("../../../runtime", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../runtime")>()),
   useRuntimeExecutionCommands: () => runtimeCommands
 }));
-vi.mock("../../../data/use-program-transport", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../data/use-program-transport")>()),
+vi.mock("../../../data/use-program-transport", () => ({
   useProgramTransport: () => transport
 }));
 
 const transport = { get: vi.fn(), post: vi.fn() };
 const runtimeCommands = {
+  taskInstructions: transport,
   loadReadiness,
   generateBootstrap: vi.fn(),
   saveGenerationInstruction: vi.fn(),
@@ -50,14 +50,14 @@ describe("the Flow editor's start pane", () => {
       const failure = { ok: false, payload: { diagnostic: { code: "flow_bootstrap.provider_timeout" } } };
       runtimeCommands.saveGenerationInstruction.mockResolvedValue({ ok: true, payload: { instruction: { status: "active" } } });
       runtimeCommands.generateFromWebsite.mockResolvedValue(failure);
-      transport.post.mockImplementation(async (endpoint: string) => endpoint === "save-flow-instruction"
+      transport.post.mockImplementation(async (endpoint: string) => endpoint === "get-flow-instruction-readiness" ? { ok: true, payload: { ready: false, instructionIds: [] } } : endpoint === "list-recordings" ? { ok: true, payload: { recordings: [] } } : endpoint === "save-flow-instruction"
         ? { ok: true, payload: { instruction: { instructionId: "instruction.improvement", status: "active" } } } : failure);
       const navigate = vi.fn();
       const renderer = await mount(kind === "blank" ? {} : { router: { routerId: "r" }, subflowTotal: 1 }, navigate);
-      await act(async () => renderer.root.findByType("textarea").props.onChange({ target: { value: "Keep my request" } }));
+      await act(async () => renderer.root.findAllByType("textarea").find((node) => node.props["aria-label"] !== "Automation task")!.props.onChange({ target: { value: "Keep my request" } }));
       await act(async () => renderer.root.findAllByType("button").find((node) => node.children.includes(kind === "blank" ? "Explore and create proposal" : "Improve automation"))!.props.onClick());
       expect(navigate).not.toHaveBeenCalled();
-      expect(renderer.root.findByType("textarea").props.value).toBe("Keep my request");
+      expect(renderer.root.findAllByType("textarea").find((node) => node.props["aria-label"] !== "Automation task")!.props.value).toBe("Keep my request");
       expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(1);
       expect(renderer.root.findAllByType("button").some((node) => node.children.includes("Review suggested change"))).toBe(false);
       await act(async () => renderer.unmount());
@@ -66,11 +66,11 @@ describe("the Flow editor's start pane", () => {
       const proposed = { ok: true, payload: { adaptation: { flowId: flow.flowId, adaptationId: `proposal.${kind}`, status: "proposed" } } };
       runtimeCommands.saveGenerationInstruction.mockResolvedValue({ ok: true, payload: { instruction: { status: "active" } } });
       runtimeCommands.generateFromWebsite.mockResolvedValue(proposed);
-      transport.post.mockImplementation(async (endpoint: string) => endpoint === "save-flow-instruction"
+      transport.post.mockImplementation(async (endpoint: string) => endpoint === "get-flow-instruction-readiness" ? { ok: true, payload: { ready: false, instructionIds: [] } } : endpoint === "list-recordings" ? { ok: true, payload: { recordings: [] } } : endpoint === "save-flow-instruction"
         ? { ok: true, payload: { instruction: { instructionId: "instruction.improvement", status: "active" } } } : proposed);
       const navigate = vi.fn();
       const renderer = await mount(kind === "blank" ? {} : { router: { routerId: "r" }, subflowTotal: 1 }, navigate);
-      await act(async () => renderer.root.findByType("textarea").props.onChange({ target: { value: "Do the job" } }));
+      await act(async () => renderer.root.findAllByType("textarea").find((node) => node.props["aria-label"] !== "Automation task")!.props.onChange({ target: { value: "Do the job" } }));
       const action = kind === "blank" ? "Explore and create proposal" : "Improve automation";
       await act(async () => renderer.root.findAllByType("button").find((node) => node.children.includes(action))!.props.onClick());
       expect(navigate).toHaveBeenCalledWith(flow.flowId, `proposal.${kind}`);

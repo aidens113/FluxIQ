@@ -17,14 +17,16 @@ export function listRuntimeRuns(api: ProgramCommandTransport, payload: Record<st
 }
 
 export async function getRuntimeFlowReadiness(api: ProgramCommandTransport, payload: { projectId: string; flowId: string }) {
-  const [instructions, router, subflows] = await Promise.all([
+  const [instructions, router, subflows, authority] = await Promise.all([
     api.post<{ instructions?: any[]; page?: { total?: number } }>("list-flow-instructions", { ...payload, status: "active", limit: 1, offset: 0 }),
     api.post<{ router?: any }>("get-flow-router-summary", payload),
-    api.post<{ page?: { total?: number } }>("list-flow-subflows", { ...payload, limit: 1, offset: 0, status: "active" })
+    api.post<{ page?: { total?: number } }>("list-flow-subflows", { ...payload, limit: 1, offset: 0, status: "active" }),
+    api.post<{ ready: boolean; instructionIds: string[]; diagnostic?: { code: string; message: string } }>("get-flow-instruction-readiness", payload)
   ]);
-  const error = [instructions, router, subflows].find((result) => !result.ok)?.error ?? "";
+  const error = [instructions, router, subflows, authority].find((result) => !result.ok)?.error ?? "";
   return {
     error,
+    instructionReadiness: authority.payload ?? { ready: false, instructionIds: [] },
     instructions: instructions.payload?.instructions ?? [],
     router: router.payload?.router ?? null,
     subflowTotal: subflows.payload?.page?.total ?? 0

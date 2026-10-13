@@ -1,23 +1,28 @@
 import { randomUUID } from "node:crypto";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import { stableJson } from "../index.ts";
+import { AutomationInstructionError, automationInstructionTasks } from "../instruction-led/index.ts";
 import { requiredBootstrapCommandId } from "./field-readings.ts";
 
 /** Canonical generation-goal persistence, retaining unchanged draft dependencies. */
 export async function saveAutomationStudioFlowGenerationGoal(
-  input: { projectId: string; flowId: string; instruction: string },
+  input: { projectId: string; flowId: string; instruction: string; linkedRecordingIds?: string[]; instructionSource?: "conversation_argument"; instructionId?: string },
   owner: {
     assertTarget(projectId: string, flowId: string): Promise<unknown>;
+    get?(projectId: string, instructionId: string): Promise<AutomationStudioFlowInstruction | null>;
     instructions(projectId: string, flowId: string): Promise<AutomationStudioFlowInstruction[]>;
     save(projectId: string, instruction: AutomationStudioFlowInstruction): Promise<AutomationStudioFlowInstruction>;
   }
 ): Promise<AutomationStudioFlowInstruction> {
+    if (input.instructionSource === "conversation_argument") throw new AutomationInstructionError("automation.instructions_required");
     const projectId = requiredBootstrapCommandId(input.projectId, "project");
     const flowId = requiredBootstrapCommandId(input.flowId, "Flow");
     const body = typeof input.instruction === "string" ? input.instruction.trim() : "";
     if (!body || body.length > 4_000) throw new Error("Flow generation instruction must contain 1 to 4,000 characters.");
     await owner.assertTarget(projectId, flowId);
-    const existing = (await owner.instructions(projectId, flowId)).find((item) => item.metadata?.source === "evidence_guided_generation");
+    const inventory = await owner.instructions(projectId, flowId);
+    const existing = input.instructionId ? await owner.get?.(projectId, input.instructionId) : inventory.find(item => ["evidence_guided_generation", "conversation_argument"].includes(String(item.metadata?.source))) ?? automationInstructionTasks(inventory, projectId, flowId)[0];
+    if (input.instructionId && (!existing || existing.scope.kind !== "flow" || existing.scope.projectId !== projectId || existing.scope.flowId !== flowId)) throw new Error("Automation task instruction belongs to another owner or is missing.");
     const now = Date.now();
     const instruction: AutomationStudioFlowInstruction = {
       schemaVersion: "0.1",
@@ -30,9 +35,9 @@ export async function saveAutomationStudioFlowGenerationGoal(
       requirement: "required",
       tags: ["generation"],
       linkedRunIds: existing?.linkedRunIds ?? [], linkedAdaptationIds: existing?.linkedAdaptationIds ?? [],
-      linkedRecordingIds: existing?.linkedRecordingIds ?? [], linkedSubflowIds: existing?.linkedSubflowIds ?? [],
+      linkedRecordingIds: input.linkedRecordingIds ?? existing?.linkedRecordingIds ?? [], linkedSubflowIds: existing?.linkedSubflowIds ?? [],
       createdAt: existing?.createdAt ?? now, updatedAt: now,
-      metadata: { source: "evidence_guided_generation" }
+      metadata: { source: input.instructionSource ?? "evidence_guided_generation", taskInstruction: true }
     };
     // Supplying the same goal must preserve the saved draft's dependency digest.
     // Compare every effective field; disabled or changed goals still take the normal write path.

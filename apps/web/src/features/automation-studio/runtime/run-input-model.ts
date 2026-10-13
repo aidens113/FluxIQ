@@ -73,10 +73,10 @@ export function runtimeTypedInputErrors(flow: any, values: Record<string, any>):
 
 export type RuntimeReadinessIssue = { label: string; action: string; target: "instructions" | "router" | "nodes" | "subflows" };
 
-export function runtimeFlowReadinessIssues(flow: any, context: { instructions: any[]; router: any | null; subflowTotal: number; error: string }, mode: AutomationRuntimeUiRunMode = "fully_adaptive"): RuntimeReadinessIssue[] {
+export function runtimeFlowReadinessIssues(flow: any, context: { instructions: any[]; router: any | null; subflowTotal: number; error: string; instructionReadiness?: { ready: boolean; instructionIds: string[] } }, mode: AutomationRuntimeUiRunMode = "fully_adaptive"): RuntimeReadinessIssue[] {
   const issues: RuntimeReadinessIssue[] = [];
   if (context.error) return issues;
-  if (mode !== "no_llm_intervention" && !context.instructions.some((instruction) => instruction.status === "active")) issues.push({ label: "Add at least one active instruction.", action: "Open Instructions", target: "instructions" });
+  if (context.instructionReadiness?.ready !== true) issues.push({ label: "Author task instructions before running this automation.", action: "Open Instructions", target: "instructions" });
   const hasGraph = (flow?.nodes?.length ?? 0) > 0;
   const hasRoute = (context.router?.rules?.some((rule: any) => rule.status === "active") ?? false) || Boolean(context.router?.fallback);
   if (!hasGraph && context.subflowTotal === 0) {

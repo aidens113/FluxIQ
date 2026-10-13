@@ -147,7 +147,13 @@ export function useClientGatewayController(props: { active: boolean; projectId: 
     if (actionType && !actionTypes.includes(actionType) || !actionType && actionTypes.length) setActionType(actionTypes[0] ?? "");
   }, [actionType, actionTypes]);
 
+  const [recordingDescription, setRecordingDescription] = useState("");
+
   const requestAuthorization = (kind: ClientActionKind, trustedClientId?: string) => {
+    if (kind === "start" && (!recordingDescription.trim() || recordingDescription.trim().length > 4000)) {
+      setStatus("Describe this recording in 1-4000 characters before starting.");
+      return;
+    }
     setPendingAction({ kind, ...(trustedClientId ? { trustedClientId } : {}) });
     setCredentials({ password: "", pin: "", totp: "" });
     setAuthorizationError("");
@@ -155,13 +161,21 @@ export function useClientGatewayController(props: { active: boolean; projectId: 
 
   const authorizeAction = async () => {
     if (!pendingAction || !selectedSession && pendingAction.kind !== "revoke") return;
+    if (pendingAction.kind === "start" && (!recordingDescription.trim() || recordingDescription.trim().length > 4000)) {
+      setAuthorizationError("Describe this recording in 1-4000 characters before starting.");
+      return;
+    }
     setAuthorizationBusy(true);
     setAuthorizationError("");
     try {
       if (pendingAction.kind === "start" && selectedSession) {
         setStatus("Starting client recording...");
-        const result = await port.startRecording({ sessionId: selectedSession.sessionId, projectId: props.projectId, authorizationPin: credentials.pin });
-        setStatus(result.ok ? "Recording " + (result.payload?.recording?.recordingId ?? "started") + "." : result.error ?? "Recording could not start.");
+        const result = await port.startRecording({ sessionId: selectedSession.sessionId, projectId: props.projectId, description: recordingDescription.trim(), authorizationPin: credentials.pin });
+        if (!result.ok) {
+          setAuthorizationError(result.error ?? "Recording could not start. Your description is still here.");
+          return;
+        }
+        setStatus("Recording " + (result.payload?.recording?.recordingId ?? "started") + ".");
       }
       if (pendingAction.kind === "stop" && selectedSession) {
         setStatus("Stopping client recording...");
@@ -209,6 +223,8 @@ export function useClientGatewayController(props: { active: boolean; projectId: 
   };
 
   return {
+    recordingDescription,
+    setRecordingDescription,
     snapshot,
     sessions,
     selectedSession,

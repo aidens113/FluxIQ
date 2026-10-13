@@ -18,6 +18,7 @@ export type AppendRecordingEntryRequest = RecordingProjectRequest & {
 export type UpdateRecordingRequest = RecordingProjectRequest & {
   recordingId: string;
   name?: unknown;
+  description?: unknown;
   archived?: unknown;
 };
 

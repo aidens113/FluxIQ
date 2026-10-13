@@ -114,3 +114,9 @@ describe("global program API registry classification", () => {
     expect(authorizeSessionPin).not.toHaveBeenCalled();
   });
 });
+
+it("preserves only bounded opt-in program-owned closed errors", async () => {
+  const registry = new GlobalProgramApiRegistry();
+  registry.register({ programId: "automation-studio", endpoint: "closed-refusal", permission: "programs.write", classification: "authoring", handler: () => { throw Object.assign(new Error("Write explicit instructions."), { diagnostic: { code: "automation.instructions_required", privateValue: "never carried" } }); } });
+  expect(await registry.call({ programId: "automation-studio", endpoint: "closed-refusal", scope: {}, actor, payload: {} })).toEqual({ ok: false, error: "Write explicit instructions.", errorCode: "automation.instructions_required" });
+});

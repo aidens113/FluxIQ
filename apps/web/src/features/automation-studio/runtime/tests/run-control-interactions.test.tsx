@@ -42,7 +42,7 @@ function fakeCore() {
     }
   });
   const commands = {
-    loadReadiness: vi.fn(async () => ({ loading: false, instructions: [{ status: "active" }], router: null, subflowTotal: 0, error: "" })),
+    loadReadiness: vi.fn(async () => ({ loading: false, instructionReadiness: { ready: true, instructionIds: ["task.one"] }, instructions: [{ status: "active" }], router: null, subflowTotal: 0, error: "" })),
     start: vi.fn(async () => ({ ok: true, payload: { runtimeSession: { runId: "run.live" } } })),
     execute: vi.fn(() => new Promise((resolve) => { finish = resolve; })),
     cancel: vi.fn(async () => ({ ok: true })),

@@ -30,4 +30,7 @@ export type FlowChangeProposalRequest = FlowIdProjectRequest & {
 export type SaveFlowGenerationInstructionRequest = FlowIdProjectRequest & {
   authSessionId: string;
   instruction: string;
+  linkedRecordingIds?: string[];
+  instructionSource?: "conversation_argument";
+  instructionId?: string;
 };

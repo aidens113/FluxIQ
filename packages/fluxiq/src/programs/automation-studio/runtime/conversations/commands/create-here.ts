@@ -60,7 +60,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     progress.carry({ flowId });
     progress.landed(`created the Flow "${name}"`);
 
-    const saved = await context.port.call("save-flow-generation-instruction", { projectId: context.projectId, flowId, authSessionId: context.sessionId, instruction });
+    const saved = await context.port.call("save-flow-generation-instruction", { projectId: context.projectId, flowId, authSessionId: context.sessionId, instruction, ...(said.from === "argument" ? { instructionSource: "conversation_argument" } : {}) });
     if (!saved.ok) return progress.failed(automationStudioConversationCallCause("saving what it should do", saved));
     progress.carry({ instructionFrom: said.from });
     progress.landed(said.from === "person" ? "saved what it should do" : `saved what it should do, ${AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS}`);

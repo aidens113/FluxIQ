@@ -50,6 +50,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_IMPROVE: AutomationStudioConversatio
     const flowId = automationStudioConversationCommandText(args, "flowId");
     if (!flowId) return progress.failed("I could not tell which Flow it is about");
     const said = await automationStudioConversationCommandInstruction(context, AUTOMATION_STUDIO_CONVERSATION_IMPROVE.capability, args, "change");
+    if (said?.from === "argument") return progress.failed("Write explicit instructions before building the automation");
     if (!said) return progress.failed("I was not told what should change");
     progress.carry({ flowId });
 

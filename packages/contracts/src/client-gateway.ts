@@ -55,6 +55,7 @@ export type ClientGatewayRecordingEvent = {
 };
 
 export type ClientGatewayStartRecordingRequest = {
+  description?: string;
   projectId?: string | null;
   recordingId: string;
   taskId?: string;

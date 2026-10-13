@@ -10,7 +10,7 @@
 import React from "react";
 import type { RunControlHandle } from "./useRunControl";
 
-export function RunControlBar(props: { control: RunControlHandle }) {
+export function RunControlBar(props: { control: RunControlHandle; onOpenInstructions?(): void }) {
   const { control } = props;
   if (!control.available) return null;
   const state = control.answer?.live ? control.answer.runControl?.state ?? null : null;
@@ -22,7 +22,7 @@ export function RunControlBar(props: { control: RunControlHandle }) {
       <div>
         <strong>{progress?.label ?? "Running"}</strong>
         <span>{progress?.detail ?? (state === "running" ? "Pause between steps at any time, or take control of the page." : "")}</span>
-        {control.error ? <span role="alert">{control.error}</span> : null}
+        {control.error ? <><span role="alert">{control.error}</span>{props.onOpenInstructions ? <button className="button" onClick={props.onOpenInstructions} type="button">Open task Instructions</button> : null}</> : null}
       </div>
       {state === "running" ? <>
         <button className="button" disabled={!control.canPause} onClick={() => void control.pause(false)} type="button">Pause</button>

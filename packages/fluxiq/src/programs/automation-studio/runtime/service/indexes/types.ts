@@ -78,7 +78,7 @@ export type AutomationStudioAdaptationPolicySummary = {
 };
 
 export type RecordingIndex = {
-  recordings: { recordingId: string; taskId?: string; startedAt: number; endedAt?: number; updatedAt: number; eventCount?: number; noteCount?: number }[];
+  recordings: { recordingId: string; description?: string; taskId?: string; startedAt: number; endedAt?: number; updatedAt: number; eventCount?: number; noteCount?: number }[];
   normalizedTimelines: { normalizedTimelineId: string; recordingId: string; generatedAt: number }[];
 };
 

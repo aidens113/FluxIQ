@@ -13,6 +13,7 @@ export function recordingSummaryFromSession(recording: RecordingSession, project
   return {
     id: recording.recordingId,
     title,
+    ...(recording.description !== undefined ? { description: recording.description } : {}),
     status: recording.endedAt === undefined ? "recording" : "completed",
     projectId,
     taskId: recording.taskId ?? null,

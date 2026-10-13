@@ -1,6 +1,10 @@
-import { bindTrustedModuleIdentity, type TrustedModuleBuildIdentity } from "../../../runtime/build-identity/modules/index.ts"; import { readCoreRuntimeBuildIdentity } from "../../../runtime/build-identity/index.ts"; import { createHash, randomUUID } from "node:crypto";
+import { AutomationInstructionError, AutomationStudioInstructionAuthority, requiredRecordingDescription, supportingAutomationRecordings, instructionBoundRunGate } from "./service/instruction-led/index.ts";
+import { bindTrustedModuleIdentity, type TrustedModuleBuildIdentity } from "../../../runtime/build-identity/modules/index.ts";
+import { readCoreRuntimeBuildIdentity } from "../../../runtime/build-identity/index.ts";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import path from "node:path"; import { AutomationStudioCommandContextController } from "./service/command-context/index.ts";
+import path from "node:path";
+import { AutomationStudioCommandContextController } from "./service/command-context/index.ts";
 import { AutomationStudioCommandExecutionController, AutomationStudioRequiredCommandRun } from "./service/command-execution/index.ts";
 import type { AutomationStudioRuntimeSessionRunInput } from "./service/runtime-session/index.ts";
 import type { AutomationStudioSnapshot } from "../api/index.ts";
@@ -391,6 +395,13 @@ export class AutomationStudioService {
   private readonly runtimeAbortControllers = new Map<string, AbortController>(); readonly buildCancellation = new AutomationStudioBuildCancellation(); readonly coreRuntimeBuildIdentity = readCoreRuntimeBuildIdentity();
   /** Live runs a person can pause, take over and resume; read by the run-control endpoints. */
   readonly runControl = new AutomationStudioRunControlRegistry();
+  readonly instructionAuthority = new AutomationStudioInstructionAuthority({
+    getFlow: (projectId, flowId) => this.getFlow(projectId, flowId),
+    assertOwnedSubflowGraph: (projectId, flow) => this.flowWriter.assertOwnedSubflowGraph(projectId, flow),
+    instructions: async (projectId, flowId) => (await this.bootstrapInstructionInventory.read(projectId, flowId, true)).instructions,
+    session: (projectId, runId) => this.getRuntimeSession(projectId, runId),
+    resume: (projectId, runId, input) => this.runControl.resume(projectId, runId, input)
+  });
   private readonly adaptiveRuntimeAdmissions = new Set<string>();
   private readonly parkedRunExpiry = new AutomationStudioParkedRunExpiry(new AutomationStudioOrphanedRunSweep({ // A project's sessions are read only after the runs a dead process left `running` are ended (`service/runtime-session/orphaned-run-sweep.ts`).
     read: (projectId, runId) => this.summaries.getRuntimeSession(projectId, runId),
@@ -568,6 +579,7 @@ export class AutomationStudioService {
     return (index.recordings ?? []).map((item) => summaryRecordingSession({
       schemaVersion: "0.1",
       recordingId: item.recordingId,
+      ...(item.description !== undefined ? { description: item.description } : {}),
       ...(item.taskId !== undefined ? { taskId: item.taskId } : {}),
       startedAt: item.startedAt,
       ...(item.endedAt !== undefined ? { endedAt: item.endedAt } : {}),
@@ -596,6 +608,7 @@ export class AutomationStudioService {
     const recordings = ordered.slice(offset, offset + limit).map((item) => summaryRecordingSession({
       schemaVersion: "0.1",
       recordingId: item.recordingId,
+      ...(item.description !== undefined ? { description: item.description } : {}),
       ...(item.taskId !== undefined ? { taskId: item.taskId } : {}),
       startedAt: item.startedAt,
       ...(item.endedAt !== undefined ? { endedAt: item.endedAt } : {}),
@@ -691,7 +704,8 @@ export class AutomationStudioService {
 
   async createRecording(input: CreateRecordingSessionInput & { projectId?: string | null; domainId?: string | null }): Promise<RecordingSession> {
     await this.ready;
-    const created = createRecordingSession({ ...input, environment: { ...input.environment, domainId: input.domainId ?? input.environment?.domainId ?? null } });
+    const description = requiredRecordingDescription(input.description);
+    const created = createRecordingSession({ ...input, description, environment: { ...input.environment, domainId: input.domainId ?? input.environment?.domainId ?? null } });
     const recording = input.projectId
       ? { ...created, metadata: { ...(created.metadata ?? {}), projectId: input.projectId } }
       : created;
@@ -886,7 +900,7 @@ export class AutomationStudioService {
     return normalized;
   }
 
-  async updateRecording(input: { projectId?: string | null; recordingId: string; name?: unknown; archived?: unknown }): Promise<RecordingSession> {
+  async updateRecording(input: { projectId?: string | null; recordingId: string; name?: unknown; description?: unknown; archived?: unknown }): Promise<RecordingSession> {
     return await this.locks.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
       const recording = await this.getRecordingSession(input.recordingId, input.projectId);
       const metadata = {
@@ -894,7 +908,7 @@ export class AutomationStudioService {
         ...(typeof input.name === "string" ? { name: input.name.trim() } : {}),
         ...(typeof input.archived === "boolean" ? { archived: input.archived } : {})
       };
-      const next = { ...recording, metadata };
+      const next = { ...recording, metadata, ...(input.description !== undefined ? { description: requiredRecordingDescription(input.description) } : {}) };
       await this.recordings.savePublic(next, input.projectId, (projectId, stored) => this.writeProjectRecordingSession(projectId, stored));
       return next;
     });
@@ -1123,7 +1137,7 @@ export class AutomationStudioService {
   }
 
   async approvePolicyProposal(input: { projectId: string; proposalId: string; targetFlowId?: string; targetTaskId?: string; policyOverride?: PolicyGraph; requireExistingFlow?: boolean; requireExistingTask?: boolean }): Promise<PolicyProposalArtifact> {
-    return await this.proposalApproval.approvePolicyProposal(input);
+    throw new AutomationInstructionError("automation.instruction_led_authoring_required");
   }
 
   async replayPolicyAgainstRecording(input: { projectId: string; recordingId: string; policyId?: string }): Promise<ReplayResultArtifact> {
@@ -1503,6 +1517,16 @@ export class AutomationStudioService {
         if (pending) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.pending_adaptation_exists");
         failureCode = "flow_bootstrap.instruction_resolution_failed";
         const inventory = await this.bootstrapInstructionInventory.read(projectId, flowId, authoringMode === "candidate"), instructions = inventory.instructions;
+        await this.instructionAuthority.assert(projectId, flowId);
+        const supplementaryRecordings = await supportingAutomationRecordings(projectId, instructions, id => this.getRecordingSession(id, projectId), (domain, entry) => {
+          const io = this.ioRuntime?.io;
+          if (entry.type === "action" && entry.outputId && io?.hasOutput(domain, entry.outputId)) return entry.outputId;
+          if (entry.type === "domain_event") {
+            const input = io?.getInput(domain, entry.eventType);
+            if (input?.definition.role === "action" && input.definition.outputId && io?.hasOutput(domain, input.definition.outputId)) return input.definition.outputId;
+          }
+          return undefined;
+        });
         // A repair's brief rides beside the Flow's own instructions on every call the model sees, and nowhere else: not in the authority, the permission gate or the stored adaptation (`recovery/refuted-result/brief.ts`).
         const promptInstructions = repairBrief ? { instructions: [...instructions, repairBrief] } : { instructions }; // Whole: no instruction token budget (2026-09-30).
         failureCode = "flow_bootstrap.bootstrap_context_failed";
@@ -1523,7 +1547,7 @@ export class AutomationStudioService {
           throw flowBootstrapPhaseFailure("provider_resolution", undefined, "flow_bootstrap.provider_resolution_invalid");
         }
         failureStage = "pre_provider_validation"; failureCode = "flow_bootstrap.pre_provider_validation_failed";
-        const runHarness: typeof this.runFlowBootstrapLlmHarness = async (request) => { try { return await this.runFlowBootstrapLlmHarness(request); } catch (error) { throw new AutomationStudioFlowBootstrapGenerationError(automationStudioFlowBootstrapFailureDiagnosticOf(error, "provider_request")); } };
+        const runHarness: typeof this.runFlowBootstrapLlmHarness = async (request) => { try { return await this.runFlowBootstrapLlmHarness({ ...request, ...(supplementaryRecordings.length && request.metadata?.source !== "instructionAuthority" ? { supplementaryRecordings } : {}) }); } catch (error) { throw new AutomationStudioFlowBootstrapGenerationError(automationStudioFlowBootstrapFailureDiagnosticOf(error, "provider_request")); } };
         let generatedSummary: string;
         let buildPlan: AutomationStudioFlowBuildPlan;
         let evidenceTrace: AutomationStudioLlmEvidenceLoopTrace[] | undefined; let buildJudged: AutomationStudioFlowBootstrapFinishingVerdict | undefined; // The yes the build finished on, recorded on its proposal (`flow-bootstrap/unfinished-build/finishing-verdict.ts`, cause R2).
@@ -1723,6 +1747,7 @@ export class AutomationStudioService {
         });
       });
     } catch (error) {
+      if (error instanceof AutomationInstructionError) throw error;
       throw automationStudioFlowBootstrapGenerationCatch(error, failureStage, failureAccounting, failureCode, buildProviderCalls?.());
     }
   };
@@ -1828,6 +1853,7 @@ export class AutomationStudioService {
     actorId?: string;
     reason?: string;
   }): Promise<AutomationStudioBootstrapAdaptation> {
+    if (input.action === "approve" || input.action === "apply") await this.instructionAuthority.assert(input.projectId, input.flowId);
     return await this.locks.withBootstrapAdaptationLock(input.projectId, input.flowId, async () => {
       const adaptation = await this.getFlowBootstrapAdaptation(input.projectId, input.flowId, input.adaptationId);
       if (!adaptation) throw new Error(`Unknown Flow Bootstrap adaptation: ${input.adaptationId}`);
@@ -1950,6 +1976,7 @@ export class AutomationStudioService {
 
   /** Publishes an immutable interface snapshot; Call Flow execution is introduced later. */
   async publishFlow(input: { projectId: string; flowId: string; version: string; flowDigest?: string; publishedBy?: string; changelog?: string }): Promise<AutomationStudioFlowArtifact> {
+    await this.instructionAuthority.assert(input.projectId, input.flowId);
     const flow = await this.getFlow(input.projectId, input.flowId);
     const now = Date.now();
     const availablePublications = await this.catalogue.listFlowPublicationRecords(input.projectId);
@@ -2116,74 +2143,7 @@ export class AutomationStudioService {
       await this.recordings.writePipelineArtifact(input.projectId, "recordingFlowProposals", rejected.proposalId, rejected as unknown as JsonObject);
       return { proposal: rejected };
     }
-    if (!input.destination) throw new Error("An approval destination is required.");
-    let flow: AutomationStudioFlowArtifact | undefined;
-    let destination: RecordingFlowProposalDestination;
-    let approvedDefinitions: AutomationStudioNodeDefinition[] | undefined;
-    if (input.destination.kind === "flow") {
-      const created = !input.destination.flowId;
-      flow = input.destination.flowId
-        ? await this.getFlow(input.projectId, input.destination.flowId)
-        : await this.createFlow({ projectId: input.projectId, name: input.destination.name?.trim() || `Recorded flow ${new Date(original.generatedAt).toLocaleString()}` });
-      const proposalTarget = await this.flowSubflowMigration.ensureProposalPrimarySubflow(flow);
-      flow = proposalTarget.parentFlow;
-      let savedGraphFlow: AutomationStudioFlowArtifact;
-      if (input.policyOverride) {
-        const projected = policyGraphToAutomationStudioFlow(withPolicyOutgoingEdges(input.policyOverride), {
-          flowId: proposalTarget.graphFlow.flowId,
-          existingFlow: canonicalFlowDocument(proposalTarget.graphFlow),
-          proposalId: checked.proposalId,
-          recordingId: checked.recordingId
-        });
-        savedGraphFlow = await this.saveFlow({ projectId: input.projectId, flow: {
-          ...proposalTarget.graphFlow,
-          nodes: projected.nodes,
-          edges: projected.edges,
-          evidenceReferences: uniqueEvidenceReferences([...(proposalTarget.graphFlow.evidenceReferences ?? []), ...(input.policyOverride.sourceEvidence ?? [])]),
-          publication: { status: "draft" },
-          metadata: {
-            ...(proposalTarget.graphFlow.metadata ?? {}),
-            source: "recording_flow_proposal",
-            lastProposalId: checked.proposalId,
-            lastRecordingId: checked.recordingId,
-            mapperId: checked.mapper.id,
-            mapperVersion: checked.mapper.version
-          }
-        } });
-      } else {
-        const proposalBase = input.destination.writeMode === "replace_recording_derived"
-          ? recordingProposalReplacementBase(proposalTarget.graphFlow)
-          : proposalTarget.graphFlow;
-        savedGraphFlow = await this.saveFlow({ projectId: input.projectId, flow: appendRecordingProposalToFlow(proposalBase, checked) });
-      }
-      await this.flows.replaceFlowGraphIndex(input.projectId, savedGraphFlow);
-      flow = await this.saveFlow({ projectId: input.projectId, flow: {
-        ...flow,
-        publication: { status: "draft" },
-        metadata: {
-          ...(flow.metadata ?? {}),
-          source: "recording_flow_proposal",
-          lastProposalId: checked.proposalId,
-          lastRecordingId: checked.recordingId,
-          mapperId: checked.mapper.id,
-          mapperVersion: checked.mapper.version
-        }
-      } });
-      destination = { kind: "flow", flowId: flow.flowId, created, ...(input.destination.writeMode ? { writeMode: input.destination.writeMode } : {}) };
-    } else {
-      const nodeDestination = input.destination;
-      approvedDefinitions = checked.candidates.map((candidate) => recordingCandidateDefinition(checked, candidate, nodeDestination.visibility));
-      destination = { kind: "node", visibility: nodeDestination.visibility, definitionIds: approvedDefinitions.map((definition) => definition.id) };
-    }
-    const approved: RecordingFlowProposalArtifact = {
-      ...checked,
-      status: "approved",
-      ...(approvedDefinitions ? { approvedDefinitions } : {}),
-      review: { decision: "approved", reviewedAt: now, ...(input.reviewerId ? { reviewerId: input.reviewerId } : {}), ...(input.notes ? { notes: input.notes } : {}), destination },
-      updatedAt: now
-    };
-    await this.recordings.writePipelineArtifact(input.projectId, "recordingFlowProposals", approved.proposalId, approved as unknown as JsonObject);
-    return { proposal: approved, ...(flow ? { flow } : {}) };
+    throw new AutomationInstructionError("automation.instruction_led_authoring_required");
   }
 
   async listRecordingDerivedNodeDefinitions(projectId: string): Promise<AutomationStudioNodeDefinition[]> {
@@ -2418,6 +2378,7 @@ export class AutomationStudioService {
     authorizedDomainIds?: string[];
     metadata?: JsonObject;
   }): Promise<AutomationStudioRuntimeSession> {
+    await this.instructionAuthority.assert(input.projectId, input.flowId ?? input.flow?.flowId);
     const canonical = input.projectId && input.flowId
       ? await this.getFlow(input.projectId, input.flowId).catch(() => undefined)
       : undefined;
@@ -2461,7 +2422,7 @@ export class AutomationStudioService {
    */
   private recoveryPorts(context: AutomationStudioRuntimeAdaptationContext | null): AutomationStudioRuntimeRecoveryPorts {
     return {
-      ...(this.llmProviderResolver ? { resolveLlmProvider: this.llmProviderResolver } : {}), ...(this.resultCheckProviderResolver ? { resolveUnattendedRepairAuthority: async () => await resolveAutomationStudioUnattendedRepairAuthority({ context, nowMs: Date.now(), resolveStandingProvider: (request) => this.resultCheckProviderResolver!(request) }) } : {}),
+      ...(this.llmProviderResolver ? { resolveLlmProvider: async request => { await this.instructionAuthority.assert(request.projectId, request.flowId); return await this.llmProviderResolver!(request); } } : {}), ...(this.resultCheckProviderResolver ? { resolveUnattendedRepairAuthority: async () => await resolveAutomationStudioUnattendedRepairAuthority({ context, nowMs: Date.now(), resolveStandingProvider: async request => { await this.instructionAuthority.assert(request.projectId, request.flowId); return await this.resultCheckProviderResolver!(request); } }) } : {}),
       ...(this.llmEvidenceRuntime ? { llmEvidenceRuntime: this.llmEvidenceRuntime } : {}),
       reusableLlmContextEnabled: this.reusableLlmContextEnabled,
       flowInstructionSet: (request) => this.getFlowInstructionSet(request),
@@ -2484,6 +2445,7 @@ export class AutomationStudioService {
   // The re-run both repairs end in, in `./service/runtime-adaptation/repair-rerun.ts`:
   // `resume` picks up where a patched step failed, `start` runs a Flow an edit changed.
   private async rerunAfterRepair(input: Omit<Parameters<typeof rerunAutomationStudioSessionAfterRepair>[0], "ports">): ReturnType<typeof rerunAutomationStudioSessionAfterRepair> {
+    await this.instructionAuthority.assert(input.projectId, input.adaptationContext.flowId);
     return await rerunAutomationStudioSessionAfterRepair({ ...input, ports: {
       getFlowSubflow: (projectId, flowId, subflowId) => this.getFlowSubflow(projectId, flowId, subflowId),
       getFlow: (projectId, flowId) => this.getFlow(projectId, flowId),
@@ -2498,6 +2460,9 @@ export class AutomationStudioService {
   }
 
   async runRuntimeSession(input: AutomationStudioRuntimeSessionRunInput): Promise<AutomationStudioRuntimeSession> {
+    const continued = input.projectId && input.runId ? await this.getRuntimeSession(input.projectId, input.runId) : null;
+    if (continued && (input.flowId && input.flowId !== continued.flowId || input.flow && input.flow.flowId !== continued.flowId)) throw new AutomationInstructionError("automation.instructions_required");
+    await this.instructionAuthority.assert(input.projectId, continued?.flowId ?? input.flowId ?? input.flow?.flowId);
     const commands = new AutomationStudioRequiredCommandRun(input, Boolean(this.projectDatabasePool)), requiredCommands = commands.required;
     return await programStateConnections.keepWhile(() => withAutomationStudioProjectDatabaseHeld({ pool: this.runtimeProjectDatabasePool, projects: this.projects }, input.projectId, () => withAutomationStudioRunActivity({ projectId: input.projectId, flowId: input.flowId ?? input.flow?.flowId }, async () => await automationStudioLabFlowPurse({ store: this.creationSpends, projectId: input.projectId, flowId: input.flowId ?? input.flow?.flowId, interpretationCostUsd: input.interpretationCostUsd } /* A Lab-scoped run draws on its Flow's one purse (t438, `service/runtime-adaptation/flow-spend.ts`). */, async () => {
     // The run executes under the mode and the authorizations its caller asked
@@ -2563,7 +2528,7 @@ export class AutomationStudioService {
     if (adaptationContext) runResultCheck = automationStudioRunResultCheck({ context: adaptationContext, nowMs: Date.now() });
     if (input.projectId) {
       this.runtimeAbortControllers.set(`${input.projectId}:${session.runId}`, abortController);
-      graphOptions.runControl = this.runControl.open(input.projectId, session.runId, abortController.signal);
+      graphOptions.runControl = instructionBoundRunGate(this.runControl.open(input.projectId, session.runId, abortController.signal), () => this.instructionAuthority.assert(input.projectId, session!.flowId));
       await this.writeRuntimeSession(input.projectId, {
         ...session,
         status: "running", startedAt: session.startedAt ?? startedAt,
@@ -3273,6 +3238,8 @@ export class AutomationStudioService {
     return { deletedSubflowId: input.subflowId, deletedGraphFlowId: existing.graphFlowId };
   }
   async saveFlowInstruction(projectId: string, instruction: AutomationStudioFlowInstruction): Promise<AutomationStudioFlowInstruction> {
+    if (!instruction.body?.trim() || !instruction.title?.trim() || ("projectId" in instruction.scope && instruction.scope.projectId !== projectId)) throw new AutomationInstructionError("automation.instructions_required");
+    if ("flowId" in instruction.scope) await this.getFlow(projectId, instruction.scope.flowId);
     const summary = instructionSummaryFromInstruction(instruction);
     const filePath = summary.flowId ? this.flowPaths.flowInstructionFile(projectId, summary.flowId, instruction.instructionId) : this.projectPaths.projectInstructionFile(projectId, instruction.instructionId);
     await this.projects.ensureProjectStructure(projectId);
@@ -3283,9 +3250,14 @@ export class AutomationStudioService {
     return instruction;
   }
 
-  async saveFlowGenerationInstruction(input: { projectId: string; flowId: string; instruction: string }): Promise<AutomationStudioFlowInstruction> {
+  async saveFlowGenerationInstruction(input: { projectId: string; flowId: string; instruction: string; linkedRecordingIds?: string[]; instructionSource?: "conversation_argument"; instructionId?: string }): Promise<AutomationStudioFlowInstruction> {
+    if (input.linkedRecordingIds !== undefined) {
+      if (!Array.isArray(input.linkedRecordingIds) || input.linkedRecordingIds.some(id => typeof id !== "string" || !id.trim())) throw new AutomationInstructionError("recording.supporting_evidence_invalid");
+      await supportingAutomationRecordings(input.projectId, [{ linkedRecordingIds: input.linkedRecordingIds }], id => this.getRecordingSession(id, input.projectId));
+    }
     return await saveAutomationStudioFlowGenerationGoal(input, {
-      assertTarget: (projectId, flowId) => assertAutomationStudioBootstrapTarget({ projectId, flowId, mode: "create", getFlow: (p, f) => this.getFlow(p, f), representation: (flow) => this.flowWriter.persistedFlowRepresentation(flow), hasRouter: async (p, f) => Boolean(await this.getFlowRouter(p, f)), subflowCount: async (p, f) => (await this.listFlowSubflowSummaries({ projectId: p, flowId: f, limit: 1, offset: 0 })).total }),
+      assertTarget: async (projectId, flowId) => { const flow = await this.getFlow(projectId, flowId); if (flow.metadata?.subflowGraph === true) throw new AutomationInstructionError("automation.instructions_required"); return flow; },
+      get: (projectId, instructionId) => this.getFlowInstruction(projectId, instructionId),
       instructions: (projectId, flowId) => this.getAllFlowInstructionsForBootstrap(projectId, flowId),
       save: (projectId, instruction) => this.saveFlowInstruction(projectId, instruction)
     });
@@ -4265,6 +4237,7 @@ export class AutomationStudioService {
     await this.indexes.writeRecordingIndex(projectId, (index) => ({
       recordings: upsertBy(index.recordings ?? [], "recordingId", {
         recordingId: recording.recordingId,
+        ...(recording.description !== undefined ? { description: recording.description } : {}),
         ...(recording.taskId !== undefined ? { taskId: recording.taskId } : {}),
         startedAt: recording.startedAt,
         ...(recording.endedAt !== undefined ? { endedAt: recording.endedAt } : {}),
@@ -4283,6 +4256,7 @@ export class AutomationStudioService {
     await this.indexes.writeRecordingIndex(projectId, (index) => ({
       recordings: upsertBy(index.recordings ?? [], "recordingId", {
         recordingId: recording.recordingId,
+        ...(recording.description !== undefined ? { description: recording.description } : {}),
         ...(recording.taskId !== undefined ? { taskId: recording.taskId } : {}),
         startedAt: recording.startedAt,
         ...(recording.endedAt !== undefined ? { endedAt: recording.endedAt } : {}),

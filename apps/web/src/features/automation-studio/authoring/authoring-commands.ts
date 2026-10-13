@@ -1,5 +1,5 @@
 import type { ProgramCommandTransport } from "../data/program-transport";
-import { saveFlowInstruction } from "../instructions";
+import { saveFlowInstruction } from "../instructions/instruction-commands";
 import { WEBSITE_EXPLORATION_OVERALL_TIMEOUT_MS } from "./blank-flow-authoring-model";
 import { improvementInstruction } from "./existing-flow-improvement";
 import { screenFlowAuthoringResponse, type FlowAuthoringPayload } from "./flow-authoring-response";
@@ -12,9 +12,7 @@ export function generateFlowBootstrapAdaptation(api: ProgramCommandTransport, pa
   return api.post<{ adaptation?: { projectId?: string; flowId?: string; adaptationId?: string; status?: string } }>("generate-flow-bootstrap-adaptation", payload);
 }
 
-export function saveFlowGenerationInstruction(api: ProgramCommandTransport, payload: { projectId: string; flowId: string; instruction: string }) {
-  return api.post<{ instruction?: { instructionId?: string; status?: string } }>("save-flow-generation-instruction", payload);
-}
+export { saveTaskInstruction as saveFlowGenerationInstruction } from "../instructions/save-task-instruction";
 
 /**
  * Builds a blank Flow by exploring the website. How it is authored is Core's

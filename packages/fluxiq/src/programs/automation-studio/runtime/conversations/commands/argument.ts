@@ -46,6 +46,7 @@ export async function automationStudioConversationCommandInstruction(
     ? await context.host.personWords({ projectId: context.projectId, conversationId: context.conversationId, answerTurnId: context.answerTurnId, capability })
     : null;
   if (words) return { text: words.text, from: "person", saysWhatToDo: words.saysWhatToDo };
+  if (context.answerTurnId) return null;
   const argument = automationStudioConversationCommandText(args, name);
   return argument ? { text: argument, from: "argument", saysWhatToDo: true } : null;
 }

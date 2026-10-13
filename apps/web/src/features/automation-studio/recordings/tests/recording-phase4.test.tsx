@@ -19,6 +19,23 @@ function ControllerHarness(props: { input: Parameters<typeof useRecordingActionC
 afterEach(() => vi.useRealTimers());
 
 describe("recording Phase 4 interactions", () => {
+  it("edits legacy description independently of name and notes, rejecting blank input", async () => {
+    let controller!: ReturnType<typeof useRecordingActionController>;
+    let renderer!: ReactTestRenderer;
+    const update = vi.fn().mockResolvedValue(undefined);
+    const note = vi.fn();
+    const input = { selectedEntry: null, selectedRecording: { recordingId: "recording.legacy", metadata: { name: "Legacy title" } }, onAppendRecordingMarker: vi.fn(), onAppendRecordingNote: note, onDeleteRecording: vi.fn(), onFinalizeRecording: vi.fn(), onRefreshRecordings: vi.fn(), onUpdateRecording: update };
+    await act(async () => { renderer = create(<ControllerHarness input={input} capture={(next) => { controller = next; }} />); });
+    await act(async () => controller.open("description"));
+    expect(controller.value).toBe("");
+    await act(async () => controller.submit());
+    expect(update).not.toHaveBeenCalled();
+    await act(async () => controller.setValue("  Demonstration of reading a reference page.  "));
+    await act(async () => controller.submit());
+    expect(update).toHaveBeenCalledWith("recording.legacy", { description: "Demonstration of reading a reference page." }, "");
+    expect(note).not.toHaveBeenCalled();
+    await act(async () => renderer.unmount());
+  });
   it("ticks only for an active recording and cleans up its timer", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(10_000);

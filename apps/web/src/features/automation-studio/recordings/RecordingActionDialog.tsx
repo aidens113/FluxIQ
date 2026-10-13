@@ -28,7 +28,7 @@ export function RecordingActionDialogContent(props: Parameters<typeof RecordingA
   return <>
       <div className="dialog-form">
         {props.error ? <p className="automation-runtime-message" role="alert">{props.error}</p> : null}
-        {copy.fieldLabel ? <Field {...(props.error && !props.value.trim() ? { error: props.error } : {})} label={copy.fieldLabel} required>{props.kind === "note" ? <textarea data-autofocus rows={4} value={props.value} onChange={(event) => props.onValue(event.target.value)} /> : <input data-autofocus value={props.value} onChange={(event) => props.onValue(event.target.value)} />}</Field> : null}
+        {copy.fieldLabel ? <Field {...(props.error && !props.value.trim() ? { error: props.error } : {})} label={copy.fieldLabel} required>{(props.kind === "note" || props.kind === "description") ? <textarea maxLength={props.kind === "description" ? 4000 : undefined} data-autofocus rows={4} value={props.value} onChange={(event) => props.onValue(event.target.value)} /> : <input data-autofocus value={props.value} onChange={(event) => props.onValue(event.target.value)} />}</Field> : null}
         {props.kind === "delete" ? <>
           <Field {...(props.error && props.value.trim() ? { error: props.error } : {})} hint="Deleting a recording cannot be undone, so it asks for your PIN." label="Security PIN" required><input autoComplete="off" data-autofocus={!copy.fieldLabel} inputMode="numeric" type="password" value={props.pin} onChange={(event) => props.onPin(event.target.value.replace(/\D/g, "").slice(0, 12))} /></Field>
           <p className="automation-runtime-message">No PIN yet? <a href={AUTOMATION_IDENTITY_ACCESS_HREF}>Set one up in Account and access</a>.</p>
