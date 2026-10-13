@@ -37,7 +37,7 @@ function session(status: AutomationStudioRuntimeSession["status"]): AutomationSt
 function world(status: AutomationStudioRuntimeSession["status"] | null = "running") {
   const runControl = new AutomationStudioRunControlRegistry();
   const state = { status };
-  const service = { runControl, getRuntimeSession: async (_projectId: string, runId: string) => state.status && runId === "run.one" ? session(state.status) : null };
+  const service = { runControl, instructionAuthority: { resume: async (projectId: string, runId: string, input: { afterManualAction?: boolean; note?: string }) => state.status && runId === "run.one" ? runControl.resume(projectId, runId, input) : null }, getRuntimeSession: async (_projectId: string, runId: string) => state.status && runId === "run.one" ? session(state.status) : null };
   const registry = new GlobalProgramApiRegistry();
   registerAutomationStudioApi(registry, service as never);
   const call = (endpoint: string, payload: unknown, as: ProgramApiActor = actor) => registry.call({ programId: "automation-studio", endpoint, scope: {}, actor: as, payload });
@@ -145,6 +145,7 @@ describe("pausing a real service run", () => {
     cleanups.push(cleanup);
     const project = await service.createProject({ name: "Run Control" });
     const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.run-control" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Calculate the requested constant." });
     const registry = new GlobalProgramApiRegistry();
     registerAutomationStudioApi(registry, service);
     const call = (endpoint: string, payload: unknown) => registry.call<unknown, any>({ programId: "automation-studio", endpoint, scope: {}, actor, payload });

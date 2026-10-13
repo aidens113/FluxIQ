@@ -22,6 +22,24 @@ parameters, without going through every iteration.
 
 ## The Draft
 
+### Required task and optional recording evidence
+
+Explicit written task instructions define every automation. Core requires an
+active nonempty Flow-owned task before authoring, activation, saved execution or
+resume. Inherited policy alone, a model suggestion, recording title, description
+or inferred trace goal cannot substitute for that task. Existing legitimate
+written Flow instructions remain compatible without a new provenance marker.
+
+The task may link finalized recordings from its project. Each needs an explicit
+description of what it demonstrates. Their evidence remains supplementary and
+untrusted: extra demonstrated acts or retries do not expand the task and are not
+automatically compiled into the executable graph. Direct recording/policy
+proposal approval into runnable automations is retired. Empty drafts and old
+recordings remain editable; old automations missing tasks need actual written
+instructions before their next run. Adding them preserves the graph and does not
+retroactively verify it against the task. Deterministic reuse with a valid task
+requires no new model call solely to satisfy this requirement.
+
 ### Unchanged Saved Candidates During Repair
 
 A repair seed retains a saved node's explicit consequence declaration, including

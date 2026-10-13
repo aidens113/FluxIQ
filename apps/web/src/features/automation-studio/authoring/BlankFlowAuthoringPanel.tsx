@@ -61,7 +61,7 @@ function generationFailureReason(result: any, mode: "build" | "explore"): string
 
 export type BlankFlowAuthoringCommands = {
   generateBootstrap(payload: { projectId: string; flowId: string; permittedConsequences?: string[] }): Promise<any>;
-  saveGenerationInstruction(payload: { projectId: string; flowId: string; instruction: string }): Promise<any>;
+  saveGenerationInstruction(payload: { projectId: string; flowId: string; instruction: string; instructionId?: string; linkedRecordingIds?: string[] }): Promise<any>;
   generateFromWebsite(payload: { projectId: string; flowId: string; permittedConsequences?: string[] }): Promise<any>;
 };
 

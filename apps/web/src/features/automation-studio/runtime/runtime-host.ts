@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import type { ProgramCommandTransport } from "../data/program-transport";
 import { useProgramTransport } from "../data/use-program-transport";
 import { cancelRuntimeSession, executeRuntimeSession, exportRuntimeRunAudit, getRuntimeRunControl, pauseRuntimeSession, resumeRuntimeSession, startRuntimeSession } from "./run-commands";
 import { getRuntimeFlowReadiness, getRuntimeRunActionDetail, getRuntimeRunDetail, getRuntimeRunEventDetail, listRuntimeRunActions, listRuntimeRunEvents, listRuntimeRuns } from "./run-queries";
@@ -48,11 +49,12 @@ export type RuntimeDetailCommands = {
 };
 
 export type RuntimeExecutionCommands = {
+  taskInstructions?: Pick<ProgramCommandTransport, "post">;
   loadReadiness(payload: { projectId: string; flowId: string }): ReturnType<typeof getRuntimeFlowReadiness>;
   start(payload: Record<string, any>): ReturnType<typeof startRuntimeSession>;
   execute(payload: Record<string, any>): ReturnType<typeof executeRuntimeSession>;
   generateBootstrap(payload: { projectId: string; flowId: string; permittedConsequences?: string[] }): ReturnType<typeof generateFlowBootstrapAdaptation>;
-  saveGenerationInstruction(payload: { projectId: string; flowId: string; instruction: string }): ReturnType<typeof saveFlowGenerationInstruction>;
+  saveGenerationInstruction(payload: { projectId: string; flowId: string; instruction: string; instructionId?: string; linkedRecordingIds?: string[] }): ReturnType<typeof saveFlowGenerationInstruction>;
   generateFromWebsite(payload: { projectId: string; flowId: string; permittedConsequences?: string[] }): ReturnType<typeof generateFlowFromWebsiteExplorationAdaptation>;
   cancel(payload: { projectId: string; runId: string }): ReturnType<typeof cancelRuntimeSession>;
   /**
@@ -98,6 +100,7 @@ export function useRuntimeDetailCommands(): RuntimeDetailCommands {
 export function useRuntimeExecutionCommands(): RuntimeExecutionCommands {
   const transport = useProgramTransport("automation-studio");
   return useMemo(() => ({
+    taskInstructions: transport,
     loadReadiness: (payload) => getRuntimeFlowReadiness(transport, payload),
     start: (payload) => startRuntimeSession(transport, payload),
     execute: (payload) => executeRuntimeSession(transport, payload),

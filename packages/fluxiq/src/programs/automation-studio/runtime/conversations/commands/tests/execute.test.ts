@@ -119,7 +119,7 @@ describe("conversation commands", () => {
 
     const execution = await executeAutomationStudioConversationCommand({
       command: command("flow.createHere"),
-      context: contextFor(conversations, conversationId, port),
+      context: contextFor(conversations, conversationId, port, await personAsked(conversations, conversationId, "Find the cheapest blue kettle. Then tell me its price.")),
       arguments: { instruction: "Find the cheapest blue kettle. Then tell me its price." }
     });
     expect(execution).toMatchObject({ capabilityId: "flow.createHere", status: "started" });
@@ -132,7 +132,7 @@ describe("conversation commands", () => {
       { endpoint: "review-flow-adaptation", payload: { projectId: PROJECT, flowId: "flow.kettle", adaptationId: "adaptation.1", action: "approve" } },
       { endpoint: "review-flow-adaptation", payload: { projectId: PROJECT, flowId: "flow.kettle", adaptationId: "adaptation.1", action: "apply" } }
     ]);
-    const [result] = await turnsOf(conversations, conversationId);
+    const result = (await turnsOf(conversations, conversationId)).find(turn => turn.attachment?.kind === AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT);
     expect(result?.author).toBe("automation");
     expect(result?.attachment).toEqual({ kind: AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT, ref: "flow.createHere" });
     // The site is named by its name; no address, query or fragment reaches the thread (UI D9).
@@ -357,7 +357,7 @@ describe("conversation commands", () => {
       "generate-flow-bootstrap-adaptation": () => ({ ok: true, payload: { adaptation: { adaptationId: "adaptation.extend", status: "proposed" } } }),
       "review-flow-adaptation": REVIEW_OK
     });
-    const context = contextFor(conversations, conversationId, port);
+    const context = contextFor(conversations, conversationId, port, await personAsked(conversations, conversationId, "Also check the second page of results."));
 
     await executeAutomationStudioConversationCommand({ command: command("flow.improve"), context, arguments: { flowId: "flow.kettle", change: "Also check the second page of results." } });
     await automationStudioConversationCommandWork.idle();
@@ -370,7 +370,7 @@ describe("conversation commands", () => {
     expect(calls[1]).toEqual({ endpoint: "generate-flow-bootstrap-adaptation", payload: { projectId: PROJECT, flowId: "flow.kettle", authSessionId: "session.person", evidenceGuided: true, mode: "extend" } });
     expect(calls.map((call) => call.endpoint)).not.toContain("review-flow-adaptation");
 
-    const [result, question] = await turnsOf(conversations, conversationId);
+    const [result, question] = (await turnsOf(conversations, conversationId)).filter(turn => turn.attachment || turn.ask);
     expect(result?.attachment).toEqual({ kind: AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT, ref: "flow.improve" });
     expect(question?.ask).toMatchObject({ kind: "confirm", parks: false, status: "pending", consequences: ["modify_existing"] });
     expect(question?.ask?.askId.startsWith(AUTOMATION_STUDIO_CONVERSATION_COMMAND_ASK_PREFIX)).toBe(true);
@@ -417,10 +417,10 @@ describe("conversation commands", () => {
     const conversations = openConversations();
     const conversationId = await chat(conversations);
     const { port, calls } = fakePort({ "save-flow-generation-instruction": () => ({ ok: true }) });
-    const execution = await executeAutomationStudioConversationCommand({ command: command("flow.describe"), context: contextFor(conversations, conversationId, port), arguments: { flowId: "flow.kettle", instruction: "Check kettle prices daily" } });
+    const execution = await executeAutomationStudioConversationCommand({ command: command("flow.describe"), context: contextFor(conversations, conversationId, port, await personAsked(conversations, conversationId, "Check kettle prices daily")), arguments: { flowId: "flow.kettle", instruction: "Check kettle prices daily" } });
     expect(execution).toEqual({ capabilityId: "flow.describe", status: "done", summary: "Saved what this Flow should do.", flowId: "flow.kettle" });
     expect(calls).toEqual([{ endpoint: "save-flow-generation-instruction", payload: { projectId: PROJECT, flowId: "flow.kettle", authSessionId: "session.person", instruction: "Check kettle prices daily" } }]);
-    expect((await turnsOf(conversations, conversationId))[0]?.attachment).toEqual({ kind: AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT, ref: "flow.describe" });
+    expect((await turnsOf(conversations, conversationId)).find(turn => turn.attachment?.kind === AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT)?.attachment).toEqual({ kind: AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT, ref: "flow.describe" });
   });
 
   it("explores onto a blank Flow and applies, and says so when the Flow is not blank", async () => {
@@ -521,7 +521,7 @@ describe("conversation commands", () => {
     it.each(["flow.createHere", "flow.explore", "flow.improve"])("%s saves a draft reference with no apply or confirmation", async (id) => {
       const conversations = openConversations(), conversationId = await chat(conversations);
       const { port, calls } = fakePort({ "create-flow": () => ({ ok: true, payload: { flow: { flowId: "flow.draft" } } }), "save-flow-generation-instruction": () => ({ ok: true }), "save-flow-instruction": () => ({ ok: true }), "generate-flow-bootstrap-adaptation": CANDIDATE_BUILD_OK });
-      await executeAutomationStudioConversationCommand({ command: command(id), context: contextFor(conversations, conversationId, port, { interpretationCostUsd: 0.005 }), arguments: { flowId: "flow.draft", instruction: "Find products", change: "Find products", name: "Draft" } });
+      await executeAutomationStudioConversationCommand({ command: command(id), context: contextFor(conversations, conversationId, port, { interpretationCostUsd: 0.005, ...await personAsked(conversations, conversationId, "Find products") }), arguments: { flowId: "flow.draft", instruction: "Find products", change: "Find products", name: "Draft" } });
       await automationStudioConversationCommandWork.idle();
       const build = calls.find((call) => call.endpoint === "generate-flow-bootstrap-adaptation");
       expect(build?.payload).toMatchObject({ authoringMode: "candidate", evidenceGuided: true, authSessionId: "session.person", interpretationCostUsd: 0.005 });
@@ -535,7 +535,7 @@ describe("conversation commands", () => {
     it("a failed candidate build reports saved progress without claiming verified website actions", async () => {
       const conversations = openConversations(), conversationId = await chat(conversations);
       const { port, calls } = fakePort({ "save-flow-instruction": () => ({ ok: true }), "generate-flow-bootstrap-adaptation": () => ({ ok: false, error: "Provider stopped before submission" }) });
-      await executeAutomationStudioConversationCommand({ command: command("flow.improve"), context: contextFor(conversations, conversationId, port), arguments: { flowId: "flow.original", change: "Find more products" } });
+      await executeAutomationStudioConversationCommand({ command: command("flow.improve"), context: contextFor(conversations, conversationId, port, await personAsked(conversations, conversationId, "Find more products")), arguments: { flowId: "flow.original", change: "Find more products" } });
       await automationStudioConversationCommandWork.idle();
       const text = (await turnsOf(conversations, conversationId)).map((turn) => turn.text).join(" ");
       expect(text).toContain("saved what should change as an instruction");
@@ -559,7 +559,7 @@ describe("conversation commands", () => {
     const run = async (id: string, build: Handler) => {
       const conversations = openConversations(), conversationId = await chat(conversations);
       const { port, calls } = fakePort(handlers(build));
-      await executeAutomationStudioConversationCommand({ command: command(id), context: contextFor(conversations, conversationId, port), arguments: { flowId: "flow.draft", instruction: "Find products", change: "Find products", name: "Draft" } });
+      await executeAutomationStudioConversationCommand({ command: command(id), context: contextFor(conversations, conversationId, port, await personAsked(conversations, conversationId, "Find products")), arguments: { flowId: "flow.draft", instruction: "Find products", change: "Find products", name: "Draft" } });
       await automationStudioConversationCommandWork.idle();
       const turns = await turnsOf(conversations, conversationId);
       return { calls, turns, text: turns.map((turn) => turn.text).join(" ") };

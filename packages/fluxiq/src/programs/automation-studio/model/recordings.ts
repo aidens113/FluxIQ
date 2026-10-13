@@ -20,6 +20,8 @@ export type RecordingNote = {
 export type RecordingSession = {
   schemaVersion: AutomationStudioSchemaVersion;
   recordingId: string;
+  /** What the demonstration shows; absent only on legacy recordings. */
+  description?: string;
   taskId?: string;
   startedAt: number;
   endedAt?: number;

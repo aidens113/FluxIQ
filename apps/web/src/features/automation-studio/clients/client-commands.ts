@@ -1,6 +1,6 @@
 import type { ClientGatewayApi } from "./client-api-types";
 
-export function startClientRecording(api: ClientGatewayApi, input: { sessionId: string; projectId: string | null; authorizationPin: string }) {
+export function startClientRecording(api: ClientGatewayApi, input: { sessionId: string; projectId: string | null; description: string; authorizationPin: string }) {
   return api.post<any>("start-client-recording", input);
 }
 

@@ -64,8 +64,9 @@ export function ClientGatewayView(props: { active: boolean; projectId: string | 
         </section>
         <section className="automation-client-panel">
           <header><Radio size={14} aria-hidden /><strong>Recording</strong></header>
+          <Field label="Recording description" required hint="Describe this demonstration. Automation instructions are authored separately."><textarea maxLength={4000} rows={3} value={controller.recordingDescription} onChange={(event) => controller.setRecordingDescription(event.target.value)} /></Field>
           <div className="inline-actions">
-            <button className="button" disabled={!controller.selectedSession || Boolean(controller.selectedSession?.activeRecordingId)} onClick={() => controller.requestAuthorization("start")} type="button">Start</button>
+            <button className="button" disabled={!controller.selectedSession || Boolean(controller.selectedSession?.activeRecordingId) || !controller.recordingDescription.trim()} onClick={() => controller.requestAuthorization("start")} type="button">Start</button>
             <button className="button" disabled={!controller.selectedSession || !controller.selectedSession?.activeRecordingId} onClick={() => controller.requestAuthorization("stop")} type="button">Stop</button>
             <button className="button" disabled={!controller.selectedSession} onClick={() => void controller.captureSnapshot()} type="button">Snapshot</button>
           </div>

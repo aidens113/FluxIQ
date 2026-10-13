@@ -42,7 +42,7 @@ function button(renderer: ReactTestRenderer, text: string) {
 
 function commands(overrides: Record<string, unknown> = {}) {
   return {
-    loadReadiness: vi.fn(async () => ({ loading: false, instructions: [{ status: "active" }], router: null, subflowTotal: 0, error: "" })),
+    loadReadiness: vi.fn(async () => ({ loading: false, instructionReadiness: { ready: true, instructionIds: ["task.one"] }, instructions: [{ status: "active" }], router: null, subflowTotal: 0, error: "" })),
     start: vi.fn(async () => ({ ok: true, payload: { runtimeSession: { runId: "run.one" } } })),
     execute: vi.fn(async () => ({ ok: true, payload: { runtimeSession: { runId: "run.one", status: "failed" } } })),
     cancel: vi.fn(async () => ({ ok: true })),

@@ -16,6 +16,7 @@ export type ApiResponse<T = unknown> = {
   aborted?: boolean;
   status?: number;
   code?: string;
+  errorCode?: string;
   fieldErrors?: ApiFieldErrors;
   retryable?: boolean;
   /** The endpoint refused because the caller must re-prove its credentials.
@@ -225,11 +226,15 @@ export function normalizeProgramApiResponse<T>(result: ApiResponse<T> | undefine
     return { ...result, ok: true, status: response.status, ...(requestId ? { requestId } : {}) };
   }
   const status = response.status;
+  const diagnostic = (result?.payload as { diagnostic?: { code?: unknown } } | undefined)?.diagnostic;
+  const closedCodes = ["automation.instructions_required", "automation.instruction_led_authoring_required", "recording.description_required", "recording.supporting_evidence_invalid"];
+  const authorityCode = result?.errorCode ?? diagnostic?.code;
+  const diagnosticCode = typeof authorityCode === "string" && closedCodes.includes(authorityCode) ? authorityCode : undefined;
   return {
     ...result,
     ok: false,
     status,
-    code: result?.code ?? defaultProgramApiErrorCode(status),
+    code: diagnosticCode ?? result?.code ?? defaultProgramApiErrorCode(status),
     retryable: result?.retryable ?? (status === 408 || status === 425 || status === 429 || status >= 500),
     error: result?.error ?? (status === 401 ? "Authentication is required." : "Program response could not be read."),
     ...(requestId ? { requestId } : {})

@@ -20,7 +20,7 @@ describe("Client Gateway large-project behavior", () => {
       post: vi.fn().mockResolvedValue({ ok: false, error: "client.record permission required" })
     };
     await expect(startClientRecording(api, {
-      sessionId: "session.00000", projectId: "project.large", authorizationPin: "1234"
+      sessionId: "session.00000", projectId: "project.large", description: "Demonstration of reading a reference page.", authorizationPin: "1234"
     })).resolves.toEqual({ ok: false, error: "client.record permission required" });
   });
 

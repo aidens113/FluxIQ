@@ -33,7 +33,7 @@ const flow = {
     }
   }
 };
-const readiness = { loading: false, instructions: [{ instructionId: "instruction.one", status: "active" }], router: null, subflowTotal: 0, error: "" };
+const readiness = { instructionReadiness: { ready: true, instructionIds: ["instruction.one"] }, loading: false, instructions: [{ instructionId: "instruction.one", status: "active" }], router: null, subflowTotal: 0, error: "" };
 const explorationFlow = { ...flow, metadata: { ...flow.metadata, llmExecutionSettings: { ...flow.metadata.llmExecutionSettings, tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 4_000, maxTotalTokens: 12_000 }, maxCalls: 4 } } };
 // A build names only the Flow: nothing is preflighted, issued or confirmed first.
 const buildPayload = { projectId: "project.one", flowId: "flow.blank" };
@@ -118,9 +118,9 @@ describe("blank Flow instruction authoring", () => {
   it("offers a build for a blank Flow with a model key, naming only the Flow", () => {
     expect(blankFlowAuthoringRequest("project.one", flow, readiness)).toEqual({ ok: true, payload: buildPayload });
     expect(blankFlowAuthoringRequest("project.one", { ...flow, nodes: [{ id: "start" }] }, readiness).ok).toBe(false);
-    expect(blankFlowAuthoringRequest("project.one", flow, { ...readiness, instructions: [] }).ok).toBe(false);
-    expect(blankFlowExplorationRequest("project.one", flow, { ...readiness, instructions: [] })).toEqual({ ok: true, payload: buildPayload });
-    expect(blankFlowExplorationRequest("project.one", { ...flow, metadata: { ...flow.metadata, llmExecutionSettings: undefined } }, { ...readiness, instructions: [] }).ok).toBe(true);
+    expect(blankFlowAuthoringRequest("project.one", flow, { ...readiness, instructionReadiness: { ready: false, instructionIds: [] }, instructions: [] }).ok).toBe(false);
+    expect(blankFlowExplorationRequest("project.one", flow, { ...readiness, instructionReadiness: { ready: false, instructionIds: [] }, instructions: [] })).toEqual({ ok: true, payload: buildPayload });
+    expect(blankFlowExplorationRequest("project.one", { ...flow, metadata: { ...flow.metadata, llmExecutionSettings: undefined } }, { ...readiness, instructionReadiness: { ready: false, instructionIds: [] }, instructions: [] }).ok).toBe(true);
     // Saved per-call limits no longer gate a build: nothing compares them before the call.
     expect(blankFlowAuthoringRequest("project.one", explorationFlow, readiness)).toEqual({ ok: true, payload: buildPayload });
     expect(blankFlowAuthoringRequest("project.one", { ...flow, metadata: { ...flow.metadata, llmExecutionSettings: undefined } }, readiness).ok).toBe(true);
@@ -195,7 +195,7 @@ describe("blank Flow instruction authoring", () => {
   });
 
   it("tells the user what bounds an exploration instead of promising a call count", async () => {
-    const { renderer } = await mount(commands(), vi.fn(), { ...readiness, instructions: [] });
+    const { renderer } = await mount(commands(), vi.fn(), { ...readiness, instructionReadiness: { ready: false, instructionIds: [] }, instructions: [] });
     const bounds = renderer.root.findAllByType("small").map((node) => renderedText(node)).find((text) => text.includes("spending limit"));
     expect(bounds).toBe("The model is asked as many times as the exploration needs. It stops when it has a proposal, when it stops making progress, or at the spending limit set for this automation, whichever comes first.");
     expect(renderedText(renderer.toJSON())).not.toMatch(/Up to \d+ model calls/u);
@@ -203,7 +203,7 @@ describe("blank Flow instruction authoring", () => {
   });
 
   it("offers website exploration before a Flow has an active instruction", async () => {
-    const { renderer } = await mount(commands(), vi.fn(), { ...readiness, instructions: [] }, flow);
+    const { renderer } = await mount(commands(), vi.fn(), { ...readiness, instructionReadiness: { ready: false, instructionIds: [] }, instructions: [] }, flow);
     expect(button(renderer, "Explore and create proposal")).toBeDefined();
     expect(button(renderer, "Build proposal from active instructions")).toBeUndefined();
     await act(async () => renderer.unmount());

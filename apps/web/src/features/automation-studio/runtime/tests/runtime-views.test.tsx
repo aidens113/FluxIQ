@@ -355,7 +355,7 @@ describe("Automation Runtime workspace", () => {
     expect(runtimeFlowInputPorts(flow)).toHaveLength(4);
     expect(runtimeTypedInputErrors(flow, { attempts: 2, approved: true, context: { source: "test" } })).toEqual(["Email is required."]);
     expect(runtimeFlowReadinessIssues(flow, { instructions: [], router: null, subflowTotal: 0, error: "" }).map((issue) => issue.action)).toEqual(["Open Instructions", "Open Subflows"]);
-    expect(runtimeFlowReadinessIssues(flow, { instructions: [{ status: "active" }], router: { rules: [] }, subflowTotal: 2, error: "" }).map((issue) => issue.action)).toEqual(["Open Router"]);
+    expect(runtimeFlowReadinessIssues(flow, { instructionReadiness: { ready: true, instructionIds: ["task.one"] }, instructions: [{ status: "active" }], router: { rules: [] }, subflowTotal: 2, error: "" }).map((issue) => issue.action)).toEqual(["Open Router"]);
   });
 
   it("checks instruction readiness with one filtered active row beyond the old 100-item page", async () => {

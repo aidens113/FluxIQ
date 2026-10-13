@@ -7,6 +7,7 @@ import { diffStateSnapshots } from "./state-diff.ts";
 
 export type CreateRecordingSessionInput = {
   recordingId: string;
+  description?: string;
   taskId?: string;
   startedAt?: number;
   environment?: Partial<EnvironmentDescriptor>;
@@ -35,6 +36,7 @@ export function createRecordingSession(input: CreateRecordingSessionInput): Reco
   return {
     schemaVersion: "0.1",
     recordingId: input.recordingId,
+    ...(input.description !== undefined ? { description: input.description } : {}),
     ...(input.taskId !== undefined ? { taskId: input.taskId } : {}),
     startedAt,
     environment,

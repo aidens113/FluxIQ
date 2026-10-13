@@ -318,7 +318,8 @@ describe("the extension's chat, end to end in Core", () => {
     expect(response?.execution).toMatchObject({ capabilityId: "flow.describe", status: "done" });
     const page = await world.service.listFlowInstructionSummaries({ projectId: world.project.id, flowId: flow.flowId, status: "active" }) as unknown as { instructions: Array<{ instructionId: string }> };
     const bodies = await Promise.all(page.instructions.map(async (entry) => (await world!.service.getFlowInstruction(world!.project.id, entry.instructionId))?.body));
-    expect(bodies).toContain("Find every kettle under 30 dollars.");
+    expect(bodies).toContain("It should find kettles");
+    expect(bodies).not.toContain("Find every kettle under 30 dollars.");
   }, 60_000);
 
   it("explores and builds a blank automation it is told about, and applies it", async () => {

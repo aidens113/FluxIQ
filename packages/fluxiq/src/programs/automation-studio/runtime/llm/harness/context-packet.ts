@@ -94,6 +94,7 @@ export type AutomationStudioLlmContextPacket = {
     completionSchema: JsonObject;
     canComplete: boolean;
   };
+  supplementaryRecordings?: JsonObject[];
   policyGates?: JsonObject;
   metadata?: JsonObject;
 };
@@ -388,6 +389,7 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     ...(input.reusableContext ? { reusableContext: sanitizeReusableLlmContextPacket(input.reusableContext, deniedEvidenceKeys) } : {}),
     ...(input.subflows?.length ? { subflows: input.subflows.map(compactSubflowForLlm) } : {}),
     ...(input.availableActions?.length ? { availableActions: [...input.availableActions] } : {}),
+    ...(input.supplementaryRecordings?.length ? { supplementaryRecordings: input.supplementaryRecordings } : {}),
     ...(flowBootstrap ? { flowBootstrap } : {}),
     ...(input.taskKind === "evidence_tool_decision" && input.evidenceLoop ? { evidenceLoop: packEvidenceLoop(input.evidenceLoop, deniedEvidenceKeys) } : {}),
     ...(input.metadata ? { metadata: input.metadata } : {})

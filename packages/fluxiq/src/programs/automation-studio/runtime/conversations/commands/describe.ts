@@ -4,7 +4,7 @@
 // `save-flow-generation-instruction`, which is quick, so it answers in the
 // request rather than in the background.
 
-import { automationStudioConversationCommandText } from "./argument.ts";
+import { automationStudioConversationCommandText, automationStudioConversationCommandInstruction } from "./argument.ts";
 import type { AutomationStudioConversationCommand } from "./command.ts";
 import { automationStudioConversationCallCause, automationStudioConversationCommandProgress } from "./progress.ts";
 
@@ -29,11 +29,12 @@ export const AUTOMATION_STUDIO_CONVERSATION_DESCRIBE: AutomationStudioConversati
   async run(context, args) {
     const progress = automationStudioConversationCommandProgress(TITLE, context.keyLocked);
     const flowId = automationStudioConversationCommandText(args, "flowId");
-    const instruction = automationStudioConversationCommandText(args, "instruction");
+    const said = await automationStudioConversationCommandInstruction(context, AUTOMATION_STUDIO_CONVERSATION_DESCRIBE.capability, args, "instruction");
+    const instruction = said?.text;
     if (!flowId) return progress.failed("I could not tell which Flow it is about");
     if (!instruction) return progress.failed("I was not told what the Flow should do");
     progress.carry({ flowId });
-    const saved = await context.port.call("save-flow-generation-instruction", { projectId: context.projectId, flowId, authSessionId: context.sessionId, instruction });
+    const saved = await context.port.call("save-flow-generation-instruction", { projectId: context.projectId, flowId, authSessionId: context.sessionId, instruction, ...(said?.from === "argument" ? { instructionSource: "conversation_argument" } : {}) });
     if (!saved.ok) return progress.failed(automationStudioConversationCallCause("saving what it should do", saved));
     return progress.succeeded("Saved what this Flow should do.");
   }

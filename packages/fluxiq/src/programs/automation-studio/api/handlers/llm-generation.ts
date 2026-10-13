@@ -54,11 +54,11 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
       if (!request.actor) return { ok: false, error: "Flow generation instruction is unavailable." };
       const payload = request.payload && typeof request.payload === "object" && !Array.isArray(request.payload)
         ? request.payload as Record<string, unknown> : {};
-      if (Object.keys(payload).some((key) => !["projectId", "flowId", "authSessionId", "instruction"].includes(key))) return { ok: false, error: "Flow generation instruction request contains unsupported fields." };
+      if (Object.keys(payload).some((key) => !["projectId", "flowId", "authSessionId", "instruction", "linkedRecordingIds", "instructionSource", "instructionId"].includes(key))) return { ok: false, error: "Flow generation instruction request contains unsupported fields." };
       if (payload.authSessionId !== request.actor.sessionId) return { ok: false, error: "Authorization session mismatch." };
       const instruction = typeof payload.instruction === "string" ? payload.instruction.trim() : "";
       if (!instruction || instruction.length > 4_000) return { ok: false, error: "Flow generation instruction must contain 1 to 4,000 characters." };
-      const saved = await service.saveFlowGenerationInstruction({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), instruction });
+      const saved = await service.saveFlowGenerationInstruction({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), instruction, ...(typeof payload.instructionId === "string" ? { instructionId: payload.instructionId } : {}), ...(payload.linkedRecordingIds !== undefined ? { linkedRecordingIds: payload.linkedRecordingIds as string[] } : {}), ...(payload.instructionSource === "conversation_argument" ? { instructionSource: "conversation_argument" as const } : {}) });
       return { ok: true, payload: { instruction: { instructionId: saved.instructionId, status: saved.status, updatedAt: saved.updatedAt } } };
     }
   });

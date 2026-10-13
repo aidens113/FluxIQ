@@ -22,7 +22,7 @@ export function RecordingListView(props: {
           const noteCount = recording.metadata?.noteCount ?? recording.notes?.length ?? 0;
           return (
             <button key={recording.recordingId} onClick={() => props.onOpen(recording.recordingId)} type="button">
-              <span><strong>{recording.metadata?.name ?? recording.recordingId}</strong><small>{recording.recordingId}</small></span>
+              <span><strong>{recording.metadata?.name ?? recording.recordingId}</strong><small>{recording.description || "Description required before attachment"}</small></span>
               <span>{recording.endedAt ? "Finalized" : "Open"}</span>
               <span>{eventCount} events</span>
               <span>{noteCount} notes</span>

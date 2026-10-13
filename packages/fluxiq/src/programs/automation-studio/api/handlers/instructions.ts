@@ -52,6 +52,10 @@ export function registerInstructionEndpoints(dependencies: AutomationStudioApiDe
       return { ok: true, payload: { instructions: await service.getFlowInstructionSet(input) } };
     }
   });
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowInstructionReadiness, permission: "programs.read", classification: "read", handler: async request => {
+    const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {};
+    return { ok: true, payload: await service.instructionAuthority.readiness({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? "") }) };
+  } });
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowInstruction,
@@ -62,8 +66,8 @@ export function registerInstructionEndpoints(dependencies: AutomationStudioApiDe
       const projectId = String(payload.projectId ?? "");
       const flowId = String(payload.flowId ?? "");
       const now = Date.now();
-      const title = String(payload.title ?? "").trim();
-      const body = String(payload.body ?? "").trim();
+      const title = typeof payload.title === "string" ? payload.title.trim() : "";
+      const body = typeof payload.body === "string" ? payload.body.trim() : "";
       if (!projectId || !flowId) return { ok: false, error: "Project and Flow are required." };
       if (!title || !body) return { ok: false, error: "Instruction title and body are required." };
       const existing = typeof payload.instructionId === "string" && payload.instructionId.trim()
@@ -86,7 +90,7 @@ export function registerInstructionEndpoints(dependencies: AutomationStudioApiDe
         linkedSubflowIds: existing?.linkedSubflowIds ?? [],
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
-        metadata: existing?.metadata ?? {}
+        metadata: { ...(existing?.metadata ?? {}), source: "explicit_instruction", inferred: false, generatedByModel: false }
       };
       return { ok: true, payload: { instruction: await service.saveFlowInstruction(projectId, instruction) } };
     }

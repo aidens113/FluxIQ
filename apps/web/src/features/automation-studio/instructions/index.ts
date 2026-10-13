@@ -4,3 +4,6 @@ export * from "./instruction-directory-model";
 export * from "./instruction-draft-repository";
 export * from "./instruction-model";
 export * from "./instruction-queries";
+
+export { saveTaskInstruction } from "./save-task-instruction";
+export { TaskInstructionsPanel } from "./TaskInstructionsPanel";

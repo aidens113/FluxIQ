@@ -77,7 +77,7 @@ const flow = {
 function commands(overrides: Record<string, unknown> = {}) {
   let runs = 0;
   return {
-    loadReadiness: vi.fn(async () => ({ loading: false, instructions: [{ status: "active" }], router: null, subflowTotal: 0, error: "" })),
+    loadReadiness: vi.fn(async () => ({ loading: false, instructionReadiness: { ready: true, instructionIds: ["task.one"] }, instructions: [{ status: "active" }], router: null, subflowTotal: 0, error: "" })),
     start: vi.fn(async () => ({ ok: true, payload: { runtimeSession: { runId: "run.queued" } } })),
     execute: vi.fn(async () => { runs += 1; return { ok: true, payload: { runtimeSession: { runId: `run.${runs}`, flowId: flow.flowId, status: "failed" } } }; }),
     cancel: vi.fn(async () => ({ ok: true })),

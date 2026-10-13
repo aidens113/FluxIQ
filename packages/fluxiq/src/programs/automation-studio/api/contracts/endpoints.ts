@@ -113,6 +113,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   deleteFlowSubflow: "delete-flow-subflow",
   listFlowInstructions: "list-flow-instructions",
   getFlowInstruction: "get-flow-instruction",
+  getFlowInstructionReadiness: "get-flow-instruction-readiness",
   getFlowInstructionSet: "get-flow-instruction-set",
   saveFlowInstruction: "save-flow-instruction",
   listFlowChangeProposals: "list-flow-change-proposals",

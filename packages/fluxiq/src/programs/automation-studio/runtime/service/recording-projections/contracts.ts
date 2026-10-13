@@ -4,6 +4,7 @@
 export type RecordingSummaryItem = {
   id: string;
   title: string;
+  description?: string;
   status: "recording" | "completed";
   projectId: string;
   taskId: string | null;

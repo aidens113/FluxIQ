@@ -59,6 +59,12 @@ boundary, including deterministic reuse and resume. An empty editable draft,
 recording timeline, proposal diagnostic or internal graph primitive does not
 establish user automation authority.
 
+`service.instructionAuthority` owns durable readiness, admission and resume
+checks through typed storage/control ports. The `get-flow-instruction-readiness`
+endpoint exposes the result without returning instruction bodies. Recording
+descriptions also live in nullable typed summary storage (migration 0026), so
+the optional evidence picker does not hydrate captured timelines.
+
 New recordings require an explicit description. Legacy recordings remain
 readable and can receive a description without changing their captured evidence;
 they cannot become unnamed supplemental build inputs. Instruction-led authoring

@@ -21,6 +21,7 @@ export const blankFlowAuthoringRequestPolicy = Object.freeze({
 });
 
 export type BlankFlowAuthoringReadiness = {
+  instructionReadiness?: { ready: boolean; instructionIds: string[] };
   loading: boolean;
   instructions: any[];
   router: any | null;
@@ -30,7 +31,7 @@ export type BlankFlowAuthoringReadiness = {
 
 function blankFlowRequestBase(projectId: string | null, flow: any, readiness: BlankFlowAuthoringReadiness, requireActiveInstruction: boolean): FlowModelBinding {
   const isBlank = isEmptyOrchestrationParent(flow) && !readiness.router && readiness.subflowTotal === 0;
-  const hasActiveInstruction = readiness.instructions.some((instruction) => instruction?.status === "active");
+  const hasActiveInstruction = readiness.instructionReadiness?.ready === true;
   if (readiness.loading || readiness.error || !isBlank || (requireActiveInstruction && !hasActiveInstruction)) return { ok: false };
   return flowModelBinding(projectId, flow);
 }

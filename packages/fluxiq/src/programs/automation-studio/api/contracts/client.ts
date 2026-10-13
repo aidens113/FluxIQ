@@ -7,6 +7,7 @@ export type RevokeClientTrustRequest = {
 };
 
 export type StartClientRecordingRequest = {
+  description?: string;
   sessionId: string;
   projectId?: string | null;
   taskId?: string;

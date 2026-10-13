@@ -7,19 +7,20 @@ export class AutomationStudioRecordingStreamSummary {
   constructor(private readonly lease: AutomationStudioProjectDatabaseLease) {}
 
   async publish(recording: RecordingSession, proof?: { generation: string; indexed_cursor: number }): Promise<void> {
-    const values = "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?";
+    const values = "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?";
     const source = proof ? `select ${values} where exists (select 1 from recording_stream_heads where recording_id = ? and generation = ? and indexed_cursor = ?
       and indexed_cursor = coalesce((select max(last_sequence) from recording_event_chunks where recording_id = ?), 0))` : `values (${values})`;
     const result = await this.lease.database.run(
-      `insert into recordings (recording_id, name, task_id, domain_id, status, started_at_ms, ended_at_ms, event_count, action_count, state_snapshot_count, updated_at_ms)
+      `insert into recordings (recording_id, name, task_id, domain_id, status, started_at_ms, ended_at_ms, event_count, action_count, state_snapshot_count, updated_at_ms, description)
        ${source}
        on conflict(recording_id) do update set name = excluded.name, task_id = excluded.task_id, domain_id = excluded.domain_id,
          status = excluded.status, ended_at_ms = excluded.ended_at_ms, event_count = excluded.event_count,
-         action_count = excluded.action_count, state_snapshot_count = excluded.state_snapshot_count, updated_at_ms = excluded.updated_at_ms`,
+         action_count = excluded.action_count, state_snapshot_count = excluded.state_snapshot_count, updated_at_ms = excluded.updated_at_ms, description = excluded.description`,
       [recording.recordingId, String(recording.metadata?.name ?? recording.recordingId), recording.taskId ?? null, typeof recording.metadata?.domainId === "string" ? recording.metadata.domainId : null,
         recording.endedAt !== undefined ? "completed" : "recording", recording.startedAt, recording.endedAt ?? null, recording.timeline.length,
         recording.timeline.filter(entryCodec.actionLike).length, recording.timeline.filter(entryCodec.stateLike).length,
         Math.max(recording.endedAt ?? 0, recording.timeline.at(-1)?.timestamp ?? 0, recording.startedAt),
+        recording.description ?? null,
         ...(proof ? [recording.recordingId, proof.generation, proof.indexed_cursor, recording.recordingId] : [])]
     );
     if (!result.changes) throw new Error("Recording completion changed during publication.");

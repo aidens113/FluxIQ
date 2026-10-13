@@ -25,7 +25,7 @@ export function useRecordingActionController(input: {
 
   const open = (nextKind: RecordingActionKind) => {
     setKind(nextKind);
-    setValue(nextKind === "rename" ? input.selectedRecording?.metadata?.name ?? input.selectedRecording?.recordingId ?? "" : "");
+    setValue(nextKind === "description" ? input.selectedRecording?.description ?? "" : nextKind === "rename" ? input.selectedRecording?.metadata?.name ?? input.selectedRecording?.recordingId ?? "" : "");
     setPin("");
     setError("");
   };
@@ -48,11 +48,16 @@ export function useRecordingActionController(input: {
       setError(kind === "rename" ? "Enter a recording name." : kind === "note" ? "Enter note text." : "Enter a marker label.");
       return;
     }
+    if (kind === "description" && (!value.trim() || value.trim().length > 4000)) {
+      setError("Describe this recording in 1-4000 characters.");
+      return;
+    }
     busyRef.current = true;
     setBusy(true);
     setError("");
     const recordingId = input.selectedRecording.recordingId;
     try {
+      if (kind === "description") await input.onUpdateRecording(recordingId, { description: value.trim() }, "");
       if (kind === "rename") await input.onUpdateRecording(recordingId, { name: value.trim() }, "");
       if (kind === "note") await appendRecordingNote(input.onAppendRecordingNote, {
         recordingId,

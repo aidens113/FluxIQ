@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import type { ProgramCommandTransport } from "../data/program-transport";
 import { useProgramTransport } from "../data/use-program-transport";
 import { saveFlowInstruction } from "./instruction-commands";
 import { getFlowInstruction, getFlowInstructionSet, getInstructionScopeRouter, listFlowInstructions, listInstructionScopeSubflows } from "./instruction-queries";
@@ -12,6 +13,7 @@ export type InstructionsViewHostModel = {
 export type InstructionsViewHostCommands = Record<string, never>;
 
 export type InstructionCommands = {
+  taskInstructions?: Pick<ProgramCommandTransport, "post">;
   loadScopeRouter(payload: Record<string, any>): ReturnType<typeof getInstructionScopeRouter>;
   listScopeSubflows(payload: Record<string, any>): ReturnType<typeof listInstructionScopeSubflows>;
   loadEffectiveSet(payload: Record<string, any>): ReturnType<typeof getFlowInstructionSet>;
@@ -23,6 +25,7 @@ export type InstructionCommands = {
 export function useInstructionCommands(): InstructionCommands {
   const transport = useProgramTransport("automation-studio");
   return useMemo(() => ({
+    taskInstructions: transport,
     loadScopeRouter: (payload) => getInstructionScopeRouter(transport, payload),
     listScopeSubflows: (payload) => listInstructionScopeSubflows(transport, payload),
     loadEffectiveSet: (payload) => getFlowInstructionSet(transport, payload),

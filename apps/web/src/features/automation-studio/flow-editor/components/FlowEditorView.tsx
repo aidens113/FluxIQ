@@ -5,6 +5,7 @@ import { Plus, Sparkles } from "lucide-react";
 import type { FlowEditorProps, AutomationGraphSaveResult } from "../flow-editor-types";
 import { useFlowEditorController } from "../hooks";
 import { BlankFlowAuthoringPanel, blankFlowAuthoringRequest, blankFlowExplorationRequest, existingFlowImprovementRequest, ImproveFlowPanel, useFlowImprovementCommands } from "../../authoring";
+import { TaskInstructionsPanel } from "../../instructions/TaskInstructionsPanel";
 import { useRuntimeExecutionCommands } from "../../runtime";
 
 const FlowGraphCanvas = lazy(() => import("./FlowGraphCanvas").then((module) => ({
@@ -31,7 +32,7 @@ export type FlowEditorViewProps = FlowEditorProps & {
   onOpenAdaptation?(flowId: string | undefined, adaptationId: string): void;
 };
 
-type StartPaneReadiness = { loading: boolean; instructions: any[]; router: any | null; subflowTotal: number; error: string };
+type StartPaneReadiness = { loading: boolean; instructions: any[]; router: any | null; subflowTotal: number; error: string; instructionReadiness?: { ready: boolean; instructionIds: string[] } };
 
 const idleReadiness: StartPaneReadiness = { loading: false, instructions: [], router: null, subflowTotal: 0, error: "" };
 
@@ -121,6 +122,7 @@ function FlowEditorStartPane(props: { projectId: string | null; flow: any; onCre
       {readiness.loading
         ? <div className="automation-view-loading"><span aria-hidden className="automation-view-loading-indicator" /><span>Checking this automation...</span></div>
         : null}
+      {props.projectId && flowId && commands.taskInstructions ? <TaskInstructionsPanel commands={commands.taskInstructions} flowId={flowId} onSaved={() => setRevision((value) => value + 1)} projectId={props.projectId} /> : null}
       {canDescribeTheJob
         ? <BlankFlowAuthoringPanel commands={commands} flow={props.flow} {...(props.onOpenAdaptation ? { onOpenAdaptation: props.onOpenAdaptation } : {})} projectId={props.projectId} readiness={readiness} />
         : null}

@@ -34,6 +34,22 @@ Automation Studio consumes the gateway through
 `packages/fluxiq/src/programs/automation-studio/client-gateway/bridge.ts`.
 The bridge converts client messages into canonical Studio artifacts:
 
+Recording start carries an explicit demonstration description, persisted as
+`RecordingSession.description`. Core rejects a missing or blank description at
+the start/create boundary, including server-initiated client capture. Existing
+recordings may lack this field and remain readable; `update-recording` can add
+or edit it without changing their timeline. A recording name or note cannot
+substitute for its description.
+
+Recordings are optional supporting inputs to a Flow's written task. The task's
+instruction inventory links described finalized recordings through
+`linkedRecordingIds`; Core checks the recording's project ownership and evidence
+readiness before authoring. Recording proposal inspection does not authorize
+direct executable Flow or reusable-node activation. Persisted run and resume
+require the owning Flow's current active task instructions even without model
+intervention. Paired clients receive closed diagnostic codes for missing
+instructions or invalid supporting evidence and can open the correct editor.
+
 - `client.recording_event` is accepted only when its `domainId` and `eventType`
   match a registered `RecordingDomainDefinition`; accepted events become
   `domain_event` timeline entries and may derive observations, state deltas,

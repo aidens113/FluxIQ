@@ -108,7 +108,7 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
   const [lastMode, setLastMode] = useState<AutomationRuntimeUiRunMode>("fully_adaptive");
   const [runPermission, setRunPermission] = useState<RunPermissionContext | null>(null);
   const runGenerationRef = useRef(0);
-  const [readiness, setReadiness] = useState<{ loading: boolean; instructions: any[]; router: any | null; subflowTotal: number; error: string }>({ loading: false, instructions: [], router: null, subflowTotal: 0, error: "" });
+  const [readiness, setReadiness] = useState<{ loading: boolean; instructions: any[]; router: any | null; subflowTotal: number; error: string; instructionReadiness?: { ready: boolean; instructionIds: string[] } }>({ loading: false, instructions: [], router: null, subflowTotal: 0, error: "" });
   const readinessRequestGateRef = useRef<ReturnType<typeof createRuntimeReadinessRequestGate> | null>(null);
   const studioRuntimeActionId = React.useId();
   if (!readinessRequestGateRef.current) readinessRequestGateRef.current = createRuntimeReadinessRequestGate();
@@ -223,7 +223,7 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
         await readRunPermission(generation, { ...ranWith, runId });
         return;
       }
-      if (!requestWasCutShort(result)) { setRunningMode(null); setRunError("The LLM-assisted run could not be completed."); return; }
+      if (!requestWasCutShort(result)) { setRunningMode(null); setRunError(result.code === "automation.instructions_required" || result.code === "automation.instruction_led_authoring_required" ? "Author task instructions in Instructions before running this automation." : "The LLM-assisted run could not be completed."); return; }
       rememberLocalRun(newRunId);
       setLiveRunId(newRunId);
       const runDetail = await readRunBack(generation, newRunId);
@@ -326,8 +326,8 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
         onOpenLiveLog={() => activeRunId && setLiveRunId(activeRunId)}
         {...(props.onOpenReadinessTarget ? { onOpenTarget: props.onOpenReadinessTarget } : {})}
       />
-      {controlledRunId ? <RunControlBar control={runControl} /> : null}
-      {runError ? <p className="automation-runtime-message" role="alert">{runError}</p> : null}
+      {controlledRunId ? <RunControlBar control={runControl} {...(props.onOpenReadinessTarget ? { onOpenInstructions: () => props.onOpenReadinessTarget?.("instructions") } : {})} /> : null}
+      {runError ? <div role="alert"><p className="automation-runtime-message">{runError}</p>{props.onOpenReadinessTarget ? <button className="button" onClick={() => props.onOpenReadinessTarget?.("instructions")} type="button">Open task Instructions</button> : null}</div> : null}
       {lastRun ? <RuntimePostRunSummary result={lastRun} {...(props.onOpenAdaptation ? { onOpenAdaptation: props.onOpenAdaptation } : {})} {...(runPermission && runPermission.runId === lastRun.runtimeSession?.runId ? { permission: {
         runDetail: runPermission.runDetail,
         busy: Boolean(runningMode),
@@ -360,7 +360,7 @@ export function RuntimeRunControlPanel(props: {
   inputText: string;
   maxSteps: string;
   runningMode: string | null;
-  readiness: { loading: boolean; instructions: any[]; router: any | null; subflowTotal: number; error: string };
+  readiness: { loading: boolean; instructions: any[]; router: any | null; subflowTotal: number; error: string; instructionReadiness?: { ready: boolean; instructionIds: string[] } };
   activeRunId: string | null;
   activeRunStartedAt: number | null;
   canRetry: boolean;

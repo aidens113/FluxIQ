@@ -81,7 +81,7 @@ export function registerRunControlEndpoints(dependencies: AutomationStudioApiDep
       if (!target) return { ok: false, error: "Resuming a run needs its project and run IDs." };
       if (payload.afterManualAction !== undefined && typeof payload.afterManualAction !== "boolean") return { ok: false, error: "afterManualAction must be true or false." };
       const note = text(payload.note);
-      const control = runControl()?.resume(target.projectId, target.runId, { afterManualAction: payload.afterManualAction === true, ...(note ? { note } : {}) }) ?? null;
+      const control = await service.instructionAuthority.resume(target.projectId, target.runId, { afterManualAction: payload.afterManualAction === true, ...(note ? { note } : {}) });
       return { ok: true, payload: await answer(target, control, true) };
     }
   });
