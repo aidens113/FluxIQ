@@ -58,6 +58,8 @@ const HAVE: Readonly<Record<string, string>> = { is: "has", are: "have", was: "h
  * revision 2" reached the chat (t362, `run-muyrpbnk-fef374e7`).
  */
 const REVISION = /\s*\(?\b(?:rev(?:ision)?s?\.?)\s*#?\d+(?:\s*(?:,|and|or|to|-|–)\s*#?\d+)*\)?/giu;
+/** The noun a revision number numbers, when it follows one: "the Flow revision 2", "candidate (revision 3)". */
+const REVISION_NOUN = /\b(?:flows?|plans?|scripts?|drafts?|candidates?|versions?)\s*\(?$/iu;
 /**
  * A revision named as a part "of" the Flow: "Testing revision 3 of the Flow,
  * which ..." lost only its number and read "Testing of the Flow, which ..."
@@ -97,12 +99,21 @@ export function automationStudioActivityPersonWords(text: string): string {
   return text
     .replace(REVISION_OF, (found: string, owner: string, offset: number, whole: string) => (determined(whole, offset) ? found : cased(found, owner.toLowerCase())))
     .replace(REVISION, (found: string, offset: number, whole: string) => {
-      // Said as "this version" where the sentence needs a noun -- its subject, or after a preposition -- and left out after the noun it numbers ("the Flow revision 2").
+      // Left out only after the noun it numbers ("the Flow revision 2"). Anywhere
+      // else the sentence needs a noun there: as its subject, after a preposition,
+      // or as a verb's object. "Testing revision 3, which keeps ..." read "Testing,
+      // which keeps ..." (C1 of round 15, `run-mv6eq0m8-3fe9dc47`); it is "Testing
+      // this version, which keeps ...". After a word that already says which ("the
+      // latest revision 4") it is the version alone.
       const before = whole.slice(0, offset);
-      if (/(?:^|[.!?;:]\s*)$/u.test(before)) return `${/^\s/u.test(found) && before ? " " : ""}${/[;:]\s*$/u.test(before) ? "this" : "This"} version`;
-      if (/\b(?:in|of|for|from|on|with|to|at|by|than)$/iu.test(before.trimEnd())) return " this version";
-      return "";
+      const space = /^\s/u.test(found) && before ? " " : "";
+      if (/(?:^|[.!?;:]\s*)$/u.test(before)) return `${space}${/[;:]\s*$/u.test(before) ? "this" : "This"} version`;
+      if (REVISION_NOUN.test(before.trimEnd())) return "";
+      if (DETERMINER.test(`${before.trimEnd()} `) || /\b(?:the|an?|this|that|its|their|my|our|your)\s+[\w-]+\s*$/iu.test(before)) return `${space}version`;
+      return `${space}this version`;
     })
+    // A revision with no number is a version to the person: "test the new revision" (C2 of round 15).
+    .replace(/\brevision(s?)\b/giu, (found: string, plural: string) => cased(found, `version${plural}`))
     .replace(CANDIDATE, (found: string, plural: string, owner: string | undefined, offset: number, whole: string) => cased(found, `${determined(whole, offset) ? "" : "the "}Flow${plural}${owner ?? ""}`))
     .replace(LIST_HANDLE, (found: string) => cased(found, "list"))
     .replace(CONTROL_HANDLE, (found: string, control: string, plural: string) => `${control}${plural}`)

@@ -11,6 +11,12 @@ import type { AutomationStudioLlmTaskRequest } from "../task-request.ts";
 // instructions, policy -- was billed again. A judge is a one-shot call, so
 // its cache is only ever another judge's prefix: what is the same for every
 // judge of one build has to come before anything that is not.
+//
+// B3 and W3 of round 15 (t495): with the run id after the policy, each
+// trial's first judge still parted at the run id, which sat in front of the
+// result summary, and so in front of its start view -- the page every trial
+// of one build starts from, about 1k tokens of the same bytes. Everything
+// that varies per trial now follows the start view.
 
 const INSTRUCTION: AutomationStudioFlowInstruction = {
   schemaVersion: "0.1",
@@ -40,25 +46,30 @@ const POLICY = {
   requireApprovalForExternalSideEffects: true
 } as unknown as NonNullable<AutomationStudioLlmHarnessInput["policy"]>;
 
+const STABLE_KEYS = ['"taskKind"', '"outputSchema"', '"context"', '"projectId"', '"flowId"', '"instructions"', '"policyGates"', '"resultSummary"', '"startView"'];
+
 describe("the bytes two judges of one build share", () => {
-  it("keeps everything a trial judge has in common with the next one in front of the trial's own run id and result", async () => {
-    const first = await userMessage(judge({ runId: "build-test.27ed1565-c9a5-499b-9e01-a4fd11581582", rows: 2 }));
-    const second = await userMessage(judge({ runId: "build-test.034dea80-dc3e-4e8d-a4f1-da57e842d71c", rows: 1 }));
-    expectStableHead(first, second, ['"taskKind"', '"outputSchema"', '"context"', '"projectId"', '"flowId"', '"instructions"', '"policyGates"']);
+  it("keeps everything a trial judge has in common with the next one, the start view included, in front of the trial's own run id and result", async () => {
+    const first = await userMessage(judge({ runId: "build-test.27ed1565-c9a5-499b-9e01-a4fd11581582", rows: 2, subflowId: "subflow.trial-1", nodeId: "node.read-1" }));
+    const second = await userMessage(judge({ runId: "build-test.034dea80-dc3e-4e8d-a4f1-da57e842d71c", rows: 1, subflowId: "subflow.trial-2", nodeId: "node.read-2" }));
+    expectStableHead(first, second, STABLE_KEYS);
   });
 
   it("does the same for the result check of two runs of one Flow", async () => {
     const first = await userMessage(judge({ runId: "424050ec-0507-4852-a3ca-9fa1bde88901", rows: 4, subflowId: "subflow.main", actions: 3 }));
     const second = await userMessage(judge({ runId: "9b1f0c2e-77aa-4e0d-9a51-2c6c0d1e3f40", rows: 3, subflowId: "subflow.main", actions: 5 }));
-    expectStableHead(first, second, ['"taskKind"', '"outputSchema"', '"context"', '"projectId"', '"flowId"', '"instructions"', '"policyGates"']);
+    expectStableHead(first, second, STABLE_KEYS);
   });
 
-  it("still carries the run id, the part and the node, after the stable head", async () => {
+  it("still carries the run id, the part, the node and the actions, after the policy and the result summary", async () => {
     const message = await userMessage(judge({ runId: "run.one", rows: 1, subflowId: "subflow.main", nodeId: "node.read", actions: 1 }));
     const context = (JSON.parse(message) as { context: Record<string, unknown> }).context;
     expect(context).toMatchObject({ runId: "run.one", subflowId: "subflow.main", nodeId: "node.read" });
     const keys = Object.keys(context);
-    for (const id of ["runId", "subflowId", "nodeId"]) expect(keys.indexOf(id), id).toBeGreaterThan(keys.indexOf("policyGates"));
+    for (const id of ["runId", "subflowId", "nodeId", "recentActions"]) {
+      expect(keys.indexOf(id), id).toBeGreaterThan(keys.indexOf("policyGates"));
+      expect(keys.indexOf(id), id).toBeGreaterThan(keys.indexOf("resultSummary"));
+    }
   });
 });
 
@@ -72,16 +83,26 @@ function expectStableHead(first: string, second: string, stableKeys: readonly st
     return at;
   });
   expect(offsets).toEqual([...offsets].sort((left, right) => left - right));
-  // The policy is the last stable part, and it is whole inside the shared prefix.
-  const context = (JSON.parse(first) as { context: Record<string, unknown> }).context;
-  const policyEnd = first.indexOf('"policyGates":') + '"policyGates":'.length + JSON.stringify(context.policyGates).length;
-  expect(shared).toBeGreaterThanOrEqual(policyEnd);
-  // And they part inside the run id, the first thing that names this call.
-  const runIdValue = first.indexOf('"runId":"') + '"runId":"'.length;
-  expect(runIdValue).toBeGreaterThan(policyEnd);
-  expect(shared).toBeGreaterThanOrEqual(runIdValue);
-  expect(shared).toBeLessThan(first.indexOf('"', runIdValue));
+  // The start view is the last stable part, and it is whole inside the shared prefix.
+  const context = (JSON.parse(first) as { context: { resultSummary: { startView: unknown } } }).context;
+  const startViewEnd = first.indexOf('"startView":') + '"startView":'.length + JSON.stringify(context.resultSummary.startView).length;
+  expect(shared).toBeGreaterThanOrEqual(startViewEnd);
+  // And nothing that names this call, or counts what it found, comes before it.
+  for (const key of ['"runId":', '"subflowId":', '"nodeId":', '"recentActions":', '"totalRecordCount":']) {
+    const at = first.indexOf(key);
+    if (at > -1) expect(at, key).toBeGreaterThan(startViewEnd);
+  }
 }
+
+/** The page each trial of one build starts from: the same bytes in every trial's summary. */
+const START_VIEW = {
+  after: 0,
+  view: {
+    url: "https://tools.example/garden",
+    title: "Garden tools",
+    text: Array.from({ length: 40 }, (_, index) => `Hand trowel model ${index + 1} at ${(9 + index / 4).toFixed(2)} dollars, add to basket`).join("\n")
+  }
+};
 
 function judge(input: { runId: string; rows: number; subflowId?: string; nodeId?: string; actions?: number }): AutomationStudioLlmTaskRequest {
   const harness: AutomationStudioLlmHarnessInput = {
@@ -97,6 +118,7 @@ function judge(input: { runId: string; rows: number; subflowId?: string; nodeId?
     ...(input.actions ? { runDetail: runDetail(input.runId, input.actions) } : {}),
     resultSummary: {
       schemaVersion: "automation-studio.run-result-summary.v1",
+      startView: START_VIEW,
       totalRecordCount: input.rows,
       totalRefusedCount: 0,
       totalRowsMissingRequired: 0,
