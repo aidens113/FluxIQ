@@ -63,6 +63,12 @@
 // (`../../executor/graph-navigation/zero-pass-loop.ts`) -- and is said as one,
 // never as a fault in the Flow's connections.
 //
+// **What was stored names the rows the saved answer's processing dropped
+// (t493).** Live run `run-mv6bg8d8-1a461436`'s `recordOutput.process.where`
+// left out rows the request asked for, and the feedback said only how many rows
+// were stored. A judged trial's `stored.processedOut` names, per processing
+// condition, the rows it alone left out (`./processed-out.ts`).
+//
 // **A failed run says what its reads kept too, and blames no wiring a loop
 // with no passes explains (t474).** Lane D round 9 (`run-mv5q4j2n-25784472`,
 // revs 5 to 15) split one condition that accepts either form into two that
@@ -102,6 +108,7 @@ import { automationStudioTrialCheckStepFeedback } from "./check-step.ts";
 import { automationStudioTrialExecutedSteps } from "./executed-steps.ts";
 import { automationStudioTrialFailureHappened } from "./happened.ts";
 import { automationStudioTrialInterruptions } from "./interruptions.ts";
+import { automationStudioTrialProcessedOutFeedback } from "./processed-out.ts";
 import { automationStudioTrialReadsFeedback } from "./reads.ts";
 import { automationStudioTrialStepIssues } from "./step-issues.ts";
 import { automationStudioTrialTargetOnPage } from "./target-on-page.ts";
@@ -151,7 +158,10 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
     const judged = input.verdict;
     // What each list read saw, kept and rejected: a read that kept no rows is said as a valid outcome of its conditions (`./reads.ts`, t466).
     const reads = automationStudioTrialReadsFeedback(input.summary.reads, input.graph);
-    const common: JsonObject = { trialRunId: input.trialRunId, start: input.start, stored: { rows: input.summary.totalRecordCount, refused: input.summary.totalRefusedCount, missingRequired: input.summary.totalRowsMissingRequired }, ...(reads.length ? { reads } : {}), ...steps(input.trace, input.graph, input.wayOuts) };
+    // The rows the saved answer's processing alone left out, by label (`./processed-out.ts`, t493).
+    const processedOut = automationStudioTrialProcessedOutFeedback(input.summary);
+    const stored: JsonObject = { rows: input.summary.totalRecordCount, refused: input.summary.totalRefusedCount, missingRequired: input.summary.totalRowsMissingRequired, ...(processedOut ? { processedOut } : {}) };
+    const common: JsonObject = { trialRunId: input.trialRunId, start: input.start, stored, ...(reads.length ? { reads } : {}), ...steps(input.trace, input.graph, input.wayOuts) };
     if (judged.verdict === "yes") return { verdict: "yes", feedback: { ...common, judge: "The trial was judged twice to do what the instruction asks." } };
     if (judged.verdict === "no") {
       return { verdict: "no", code: "candidate.trial_judged_no", feedback: { ...common, code: "candidate.trial_judged_no", judge: compact({ expected: judged.expected, observed: judged.observed, advice: judged.advice, stillAchievable: judged.stillAchievable }), ...(judged.findings.length ? { findings: [...judged.findings] } : {}), ...(judged.fix?.length ? { fix: [...judged.fix] } : {}), ...(judged.checked?.length ? { checked: [...judged.checked] } : {}) } };

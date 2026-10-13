@@ -17,14 +17,31 @@
 // `where` over a column the answer drops. One edge is not closed: an `auto` sort
 // key decides its kind over the rows it sorts, so a column whose values read as
 // both numbers and dates may decide differently over the shorter answer.
+//
+// **Each `where` condition names the rows it alone left out (t493).** Live run
+// `run-mv6bg8d8-1a461436`: `name not contains "Charging Case"` on the saved
+// answer left out three items sold with a charging case beside two real
+// accessories, the account said `filteredOut: 5`, and four judges read that as
+// five accessories. A row every other condition keeps is named under the
+// condition that left it out, by its label (`labelOf`), each label once: the
+// rows a list read's account names per condition, so a judge reads both alike.
+// Every such row is named, as a read names every one; the collected rows are
+// already bounded by the dataset's own row limit.
 
 import { cellOf } from "./cell-text.ts";
 import { automationStudioRecordConditionHolds } from "./condition-holds.ts";
+import { automationStudioRecordConditionText } from "./condition-text.ts";
 import { AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS } from "./processing-vocabulary.ts";
 import { automationStudioRecordRowIdentity } from "./row-identity.ts";
 import { sortAutomationStudioRecordRows } from "./sort-rows.ts";
 import type { AutomationStudioRecordSchema } from "../schema.ts";
-import type { AutomationStudioRecordProcessing, AutomationStudioRecordProcessingAccount, AutomationStudioRecordProcessingPass } from "./types.ts";
+import type {
+  AutomationStudioRecordCondition,
+  AutomationStudioRecordProcessing,
+  AutomationStudioRecordProcessingAccount,
+  AutomationStudioRecordProcessingConditionAccount,
+  AutomationStudioRecordProcessingPass
+} from "./types.ts";
 
 /** One collected row: its stored values, the node that wrote it, and the batch (one pass's attempt) it was written in. */
 export type AutomationStudioRecordCollectedRow = {
@@ -57,7 +74,9 @@ export function processAutomationStudioRecordRows(input: AutomationStudioRecordP
   const identityKey = process.dedupe === false ? undefined : process.dedupe?.by ?? wholeRow;
 
   const where = process.where ?? [];
-  const matching = input.rows.filter((row) => where.every((condition) => automationStudioRecordConditionHolds(condition, cellOf(row.values, condition.field))));
+  // Which conditions each row fails, by position: a row failing none is in the answer's running.
+  const failed = input.rows.map((row) => where.flatMap((condition, index) => automationStudioRecordConditionHolds(condition, cellOf(row.values, condition.field)) ? [] : [index]));
+  const matching = input.rows.filter((_row, index) => failed[index]!.length === 0);
 
   const seen = new Set<string>();
   const distinct = identityKey === undefined ? matching : matching.filter((row) => {
@@ -80,10 +99,45 @@ export function processAutomationStudioRecordRows(input: AutomationStudioRecordP
     kept: rows.length,
     passes: passesOf(input.rows, process.dedupe === false || process.dedupe === undefined ? wholeRow : process.dedupe.by)
   };
+  if (where.length) account.conditions = conditionAccounts(where, input.rows, failed, (process.columns ?? stored));
   if (rows.length === 0) account.keptNone = true;
   const minRows = process.minRows ?? AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.minRowsDefault;
   if (rows.length < minRows) account.belowMinRows = minRows;
   return { rows, account };
+}
+
+/** Each condition's rejected and alone counts, and the rows it alone left out, each label once, in capture order (header). */
+function conditionAccounts(
+  where: readonly AutomationStudioRecordCondition[],
+  rows: readonly AutomationStudioRecordCollectedRow[],
+  failed: readonly (readonly number[])[],
+  labelFields: readonly string[]
+): AutomationStudioRecordProcessingConditionAccount[] {
+  return where.map((condition, index) => {
+    const account: AutomationStudioRecordProcessingConditionAccount = { field: condition.field, condition: automationStudioRecordConditionText(condition), rejected: 0, alone: 0, leftOutOnlyByThis: [] };
+    const named = new Set<string>();
+    rows.forEach((row, at) => {
+      const fails = failed[at]!;
+      if (!fails.includes(index)) return;
+      account.rejected += 1;
+      if (fails.length !== 1) return;
+      account.alone += 1;
+      const label = labelOf(row.values, labelFields);
+      if (label === undefined || named.has(label.label)) return;
+      named.add(label.label);
+      account.leftOutOnlyByThis.push(label);
+    });
+    return account;
+  });
+}
+
+/** A row's label: its first stored column, in schema order, holding text -- the column a stored row is labelled by where it is judged. */
+function labelOf(values: Readonly<Record<string, unknown>>, fields: readonly string[]): { field: string; label: string } | undefined {
+  for (const field of fields) {
+    const cell = cellOf(values, field);
+    if (typeof cell === "string" && cell.trim()) return { field, label: cell };
+  }
+  return undefined;
 }
 
 function answerRow(values: Readonly<Record<string, unknown>>, columns: readonly string[] | undefined): Record<string, unknown> {

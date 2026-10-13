@@ -12,6 +12,7 @@ import {
   RUN_MUW60J7C_FILTERED_READ, RUN_MUW60J7C_PAIRS_LEFT_OUT, RUN_MUW60J7C_REQUEST,
   runMuw60j7cRunSummary, runMuw60j7cTestSummary
 } from "./run-muw60j7c.ts";
+import { RUN_MV6BG8D8_ACCESSORIES, RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT, RUN_MV6BG8D8_READ, runMv6bg8d8RunSummary } from "./run-mv6bg8d8.ts";
 
 describe("rows a condition alone left out that name the asked item", () => {
   it("flags the build test's three pairs and not its two accessories (step 0031)", () => {
@@ -97,5 +98,30 @@ describe("rows a condition alone left out that name the asked item", () => {
     }
     // The run's own summary keeps it for every later reader.
     expect(summary).toEqual(before);
+  });
+});
+
+// t493, live run `run-mv6bg8d8-1a461436` (round 14): the same three pairs were
+// left out by the saved answer's `process.where`, not by the read, and the guard
+// read only the read's conditions. Four judges said yes over `filteredOut: 5`.
+describe("rows the saved answer's processing alone left out", () => {
+  it("flags the three pairs a `not contains` processing condition left out, under the read that collected them, and not the two accessories", () => {
+    const flagged = automationStudioResultLeftOutNamingTheItem(runMv6bg8d8RunSummary(), RUN_MUW60J7C_REQUEST);
+    expect(flagged).toEqual([
+      { nodeId: RUN_MV6BG8D8_READ, condition: "recordOutput.process.where name not contains \"Charging Case\"", item: "wireless earbuds", also: ["charging cases"], rows: RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT }
+    ]);
+    const said = JSON.stringify(flagged);
+    for (const accessory of Object.values(RUN_MV6BG8D8_ACCESSORIES)) expect(said).not.toContain(accessory);
+  });
+
+  it("still flags them where no read account names the node that collected the set", () => {
+    const { reads: _reads, ...summary } = runMv6bg8d8RunSummary();
+    expect(automationStudioResultLeftOutNamingTheItem(summary, RUN_MUW60J7C_REQUEST).flatMap((entry) => entry.rows)).toEqual(RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT);
+  });
+
+  it("flags nothing for a processing condition that tested another column", () => {
+    const summary = runMv6bg8d8RunSummary();
+    for (const condition of summary.recordSets[0]!.processing!.conditions!) delete condition.testedLabel;
+    expect(automationStudioResultLeftOutNamingTheItem(summary, RUN_MUW60J7C_REQUEST)).toEqual([]);
   });
 });

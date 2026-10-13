@@ -35,6 +35,7 @@ export * from "./contracts.ts";
 export * from "./core-observation.ts";
 export * from "./deadline.ts";
 export * from "./narrowed-before.ts";
+export * from "./processing-account.ts";
 export * from "./read-account/index.ts";
 export * from "./repair-directive.ts";
 export * from "./request-rows/index.ts";

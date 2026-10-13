@@ -16,8 +16,9 @@
 // is what any medium's extraction produces -- and nothing in this file knows
 // where the values came from.
 
-import type { AutomationStudioFailureRecord, AutomationStudioRecordProcessingAccount } from "@fluxiq/contracts/automation-studio";
+import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
+import type { AutomationStudioResultProcessingAccount } from "./processing-account.ts";
 // The bounds live in `runtime/loop-limits/`, which neither this directory nor
 // the harness owns. This file used to re-export them so a reader of the contract
 // had them in hand, and no longer does: `result-summary.ts`, the module that
@@ -101,10 +102,10 @@ export type AutomationStudioResultRecordSetSummary = {
    * What the run's end made of the rows the set collected (read-list design
    * 5.2): the rows above are its answer, and this says how many were
    * collected, how many repeated an earlier row, were left out by a condition
-   * over stored columns or past its limit, and each pass's rows. Absent for a
-   * set the run did not process.
+   * over stored columns or past its limit, and each pass's rows, and per
+   * condition the rows it alone left out (`processing-account.ts`, t493).
    */
-  processing?: AutomationStudioRecordProcessingAccount;
+  processing?: AutomationStudioResultProcessingAccount;
 };
 
 /**

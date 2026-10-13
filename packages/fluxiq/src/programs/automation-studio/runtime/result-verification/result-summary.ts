@@ -49,7 +49,10 @@
 // **And each record set says how its collected rows became its answer**
 // (`processing`, read-list design 5.2): rows collected, repeats, rows a
 // condition over stored columns or the limit left out, and each pass's rows.
-// Counts and node ids, as the store holds them.
+// Counts and node ids, as the store holds them -- and, per `where` condition,
+// the rows it alone left out, by label, screened as the rows are
+// (`./processing-account.ts`, t493): live run `run-mv6bg8d8-1a461436`'s judges
+// read `filteredOut: 5` as five accessories, three of them the item asked for.
 //
 // **And the page as it stood before the run did anything** (`startView`), by
 // the domain's declared view keys and screened exactly as the end view is. A
@@ -90,6 +93,7 @@ import type {
 } from "./contracts.ts";
 import { automationStudioResultCapturedRows } from "./captured-rows.ts";
 import { automationStudioResultNarrowedBefore } from "./narrowed-before.ts";
+import { automationStudioResultProcessingAccount } from "./processing-account.ts";
 import { automationStudioResultReadAccounts } from "./read-account/index.ts";
 import { automationStudioResultStepChanges } from "./step-changes.ts";
 import { automationStudioResultStepRows } from "./step-rows.ts";
@@ -226,8 +230,13 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
     const before = own.includes(read) ? narrowed.byRead.get(read.nodeId) : undefined;
     return before ? { ...read, narrowedBefore: before } : read;
   });
+  // The start view first: every trial of one build starts from the same reset
+  // page, so it is the same bytes in each trial judge's request, and only bytes
+  // before the first that differ are served from the provider's cache (t493,
+  // from t492's measurement). Everything after it varies per trial.
   return {
     schemaVersion: "automation-studio.run-result-summary.v1",
+    ...(started?.endView ? { startView: started.endView } : {}),
     totalRecordCount,
     totalRefusedCount,
     totalRowsMissingRequired: recordSets.reduce((total, set) => total + set.rowsMissingRequired, 0),
@@ -236,8 +245,7 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
     ...(reads.length ? { reads } : {}),
     flowShape,
     withheld,
-    ...(ended?.endView ? { endView: ended.endView } : {}),
-    ...(started?.endView ? { startView: started.endView } : {})
+    ...(ended?.endView ? { endView: ended.endView } : {})
   };
 }
 
@@ -387,6 +395,7 @@ function summarizedRecordSet(
   const columns = (set.schema?.fields ?? []).map((field) => field.id);
   const rows = set.rows ?? [];
   const screened = deniedEvidenceKeys === undefined ? undefined : screenedRows(rows, columns, deniedEvidenceKeys);
+  const processing = set.summary.processing ? automationStudioResultProcessingAccount(set.summary.processing, deniedEvidenceKeys) : undefined;
   const summary: AutomationStudioResultRecordSetSummary = {
     datasetId: set.summary.datasetId,
     ...(set.summary.label ? { label: set.summary.label } : {}),
@@ -397,11 +406,11 @@ function summarizedRecordSet(
     columnsWithheld: false,
     ...requiredValueCheck(set),
     ...(screened && screened.rows.length ? { sampleRows: screened.rows } : {}),
-    // How the collected rows became the answer, in counts and node ids (read-list design 5.2): a copy, never the store's own.
-    ...(set.summary.processing ? { processing: { ...set.summary.processing, passes: set.summary.processing.passes.map((pass) => ({ ...pass })) } } : {})
+    // How the collected rows became the answer (read-list design 5.2), and per condition the rows it alone left out, screened (t493): a copy, never the store's own.
+    ...(processing ? { processing: processing.processing } : {})
   };
   const unsent = deniedEvidenceKeys === undefined && rows.length > 0;
-  return { summary, withheld: summary.truncated || unsent || (screened?.withheld ?? false) };
+  return { summary, withheld: summary.truncated || unsent || (screened?.withheld ?? false) || (processing?.withheld ?? false) };
 }
 
 /**

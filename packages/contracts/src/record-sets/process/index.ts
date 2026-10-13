@@ -1,9 +1,10 @@
 // Barrel for record processing: the `process` declaration a record output
 // carries, its parser, the value readers it shares with the downstream domain
 // and their parity table, and the pure function that turns a dataset's
-// collected rows into its answer. `cell-text.ts` is internal and not
-// re-exported.
+// collected rows into its answer and the account of it, a condition said in
+// words. `cell-text.ts` is internal and not re-exported.
 export * from "./condition-holds.ts";
+export * from "./condition-text.ts";
 export * from "./parse-condition.ts";
 export * from "./parse-processing.ts";
 export * from "./process-rows.ts";

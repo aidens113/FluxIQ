@@ -128,6 +128,22 @@ describe("the page the run started on", () => {
   const started = (attempts: AutomationStudioNodeAttemptTrace[], fields: { observedStateKeys?: readonly string[]; deniedEvidenceKeys?: readonly string[] } = { observedStateKeys: ["page"], deniedEvidenceKeys: DENIED }) =>
     summarizeAutomationStudioRunResult({ recordSets: [], sessionAttempts: attempts, ...fields });
 
+  // t493, from t492's judge-cache measurement: every trial of one build starts
+  // from the same reset page, and the provider caches only a request's leading
+  // bytes, so the start view goes before everything a trial changes.
+  it("comes before every per-trial count and row, so two trials' summaries share their leading bytes through it", () => {
+    const trial = (stored: number) => summarizeAutomationStudioRunResult({
+      recordSets: [{ summary: { runId: `run-${stored}`, datasetId: "rows", nodeIds: ["s2"], schemaDigest: "d", recordCount: stored, truncated: false, invalidCount: 0, updatedAt: stored } }],
+      sessionAttempts: opened({ documentChanged: true, locationChanged: true }), observedStateKeys: ["page"], deniedEvidenceKeys: DENIED
+    });
+    const [first, second] = [JSON.stringify(trial(10)), JSON.stringify(trial(16))];
+    expect(first).not.toBe(second);
+    const through = first.indexOf(JSON.stringify({ view: { page: START } })) + JSON.stringify({ view: { page: START } }).length;
+    expect(through).toBeGreaterThan(JSON.stringify({ view: { page: START } }).length);
+    expect(second.slice(0, through)).toBe(first.slice(0, through));
+    expect(Object.keys(trial(10)).slice(0, 2)).toEqual(["schemaVersion", "startView"]);
+  });
+
   it("is the page the first step that saw the page left, when that step moved to another document, by the declared view keys", () => {
     const summary = started(opened({ documentChanged: true, locationChanged: true }));
     expect(summary.startView).toEqual({ view: { page: START } });

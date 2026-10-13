@@ -13,6 +13,8 @@ export class AutomationStudioFlowCandidateSubmissionController {
   private revision = 0;
   private current: AutomationStudioFlowCandidate | undefined;
   private previous: AutomationStudioFlowCandidate | undefined;
+  /** Every revision accepted in this session, oldest first: what a renamed refuted Flow is found among (t493). */
+  private readonly accepted: AutomationStudioFlowCandidate[] = [];
   /** The current revision's Flow as the script reader reads it (`submissionText`), to tell an unchanged resubmission (t464). */
   private currentText: string | undefined;
   private readonly originalSource: AutomationStudioCandidateOriginalSourceBinding | undefined;
@@ -63,6 +65,14 @@ export class AutomationStudioFlowCandidateSubmissionController {
    * refused as unchanged, saying it was reworded, and that revision stands
    * with its own names (`automationStudioCandidateSameBehaviour`). A changed
    * `datasetId` is not a rewording: it decides where results are recorded.
+   *
+   * **Except against a refuted Flow (t493, supervisor policy).** Live run
+   * `run-mv6bg8d8-1a461436` (D2) renamed only the `datasetId` of a Flow the
+   * judge had refuted two revisions earlier, and it was accepted, tried and
+   * judged yes on the same evidence. A submission the same as any revision
+   * accepted in this session whose digest the judge refuted, once the
+   * `datasetId` is set aside too, is refused as `unchanged_after_no`: where a
+   * run saves its rows cannot change which rows it keeps.
    */
   async submit(result: JsonObject, history: AutomationStudioFlowCandidateSubmissionHistory = {}): Promise<AutomationStudioFlowCandidateSubmission> {
     this.input.signal?.throwIfAborted();
@@ -105,6 +115,9 @@ export class AutomationStudioFlowCandidateSubmissionController {
     // The last revision's Flow with only its display words reworded does what it did: no new revision, no new trial (header).
     if (last && automationStudioCandidateSameBehaviour(last.buildPlan, plan)) return this.sameAsLast(standing, last, history, history.refuted?.(last.digest), undefined, true);
     if (refuted !== undefined) return this.unchanged(standing, undefined, history, refuted);
+    // A refuted Flow with only where it saves its rows renamed: still refuted (header).
+    const renamedRefuted = this.renamedRefuted(plan, history);
+    if (renamedRefuted !== undefined) return this.unchanged(standing, undefined, history, renamedRefuted, undefined, undefined, true);
     const candidate: AutomationStudioFlowCandidate = {
       revision, digest, baseDependencyDigest: this.input.baseDependencyDigest,
       status: "draft", summary: verdict.summary, buildPlan: plan,
@@ -113,9 +126,20 @@ export class AutomationStudioFlowCandidateSubmissionController {
     };
     this.current = structuredClone(candidate);
     this.previous = structuredClone(candidate);
+    this.accepted.push(structuredClone(candidate));
     this.currentText = text;
     const handleViews = (verdict.handleViews ?? []).map((view) => ({ node: view.node, handle: view.handle, view: view.view, location: view.location }));
     return { ok: true, candidate, handleViews };
+  }
+
+  /** The judge's finding for an accepted revision the plan matches once its `datasetId` is set aside, the latest first; none when no such revision was refuted. */
+  private renamedRefuted(plan: AutomationStudioFlowCandidate["buildPlan"], history: AutomationStudioFlowCandidateSubmissionHistory): JsonObject | undefined {
+    if (!history.refuted) return undefined;
+    for (const earlier of [...this.accepted].reverse()) {
+      const judged = history.refuted(earlier.digest);
+      if (judged !== undefined && automationStudioCandidateSameBehaviour(earlier.buildPlan, plan, { datasetId: "set_aside" })) return judged;
+    }
+    return undefined;
   }
 
   /**
@@ -133,16 +157,18 @@ export class AutomationStudioFlowCandidateSubmissionController {
    * it is a Flow refuted under an earlier one; `refuted` is the judge's
    * finding when the Flow was judged no; `text` replaces the remembered script
    * when a differently written script read to the same plan; `reworded` says
-   * the submission differs from `same` in display words alone.
+   * the submission differs from `same` in display words alone; `datasetRenamed`
+   * that it differs from a refuted Flow only in where it saves its rows.
    */
-  private unchanged(standing: AutomationStudioFlowCandidate | undefined, same: AutomationStudioFlowCandidate | undefined, history: AutomationStudioFlowCandidateSubmissionHistory, refuted: JsonObject | undefined, text?: string, reworded?: boolean): AutomationStudioFlowCandidateSubmission {
+  private unchanged(standing: AutomationStudioFlowCandidate | undefined, same: AutomationStudioFlowCandidate | undefined, history: AutomationStudioFlowCandidateSubmissionHistory, refuted: JsonObject | undefined, text?: string, reworded?: boolean, datasetRenamed?: boolean): AutomationStudioFlowCandidateSubmission {
     this.current = standing;
     if (same && text !== undefined) this.currentText = text;
     const check = automationStudioCandidateUnchangedRefusal({
       standing: same ? { revision: same.revision, digest: same.digest } : undefined,
       lastTrial: same ? history.trialOf?.(same) : undefined,
       refuted,
-      reworded
+      reworded,
+      datasetRenamed
     });
     return { ok: false, revision: (same ?? standing)?.revision ?? this.revision, check };
   }
