@@ -67,7 +67,15 @@
 // parameters named the row it was written on -- lane D round 10's Confirm step
 // carried the listing's first row, one its condition left out, and the judge
 // read the step as pressing Confirm on every row -- so that row's identity
-// (`ROW_PLACE`) is left out of them, and `perRow` says why.
+// (`ROW_PLACE`) is left out of them, and `perRow` says why. A saved trace
+// holds a marker where a captured row was, so each pass's row is read back
+// from the stored rows where they still stand in capture order
+// (`./captured-rows.ts`, t482): lane D round 12 (`run-mv62icw0-070f88ad`, D3)
+// sent four rows as `{}`.
+//
+// **And each read names the steps that acted on the page before it**
+// (`narrowedBefore`, t482, `./narrowed-before.ts`): a site filter's lost rows
+// never reach the read, so no condition's left-out rows can show them.
 
 import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
@@ -80,6 +88,8 @@ import type {
   AutomationStudioResultRecordSetSummary,
   AutomationStudioRunResultSummary
 } from "./contracts.ts";
+import { automationStudioResultCapturedRows } from "./captured-rows.ts";
+import { automationStudioResultNarrowedBefore } from "./narrowed-before.ts";
 import { automationStudioResultReadAccounts } from "./read-account/index.ts";
 import { automationStudioResultStepChanges } from "./step-changes.ts";
 import { automationStudioResultStepRows } from "./step-rows.ts";
@@ -187,7 +197,9 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
   const changes = automationStudioResultStepChanges(input.sessionAttempts, input.deniedEvidenceKeys);
   if (changes.withheld) withheld = true;
   // A run's own rows, per step that runs per row (t475); a summary of no run names none.
-  const perRow = input.sessionAttempts ? automationStudioResultStepRows({ flowNodes, flowEdges: input.flowEdges, attempts: input.sessionAttempts, deniedEvidenceKeys: input.deniedEvidenceKeys }) : undefined;
+  // A saved trace holds a marker where a captured row was, so a pass's row is read back from the stored rows where they stand in capture order (`./captured-rows.ts`, t482).
+  const capturedRow = automationStudioResultCapturedRows(input.recordSets, flowNodes);
+  const perRow = input.sessionAttempts ? automationStudioResultStepRows({ flowNodes, flowEdges: input.flowEdges, attempts: input.sessionAttempts, deniedEvidenceKeys: input.deniedEvidenceKeys, capturedRow }) : undefined;
   if (perRow?.withheld) withheld = true;
   const flowShape = flowNodes.map((node) => {
     const changed = changes.byNode.get(node.id);
@@ -206,6 +218,14 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
   // How each list read went (`read-account/`): pages, why paging stopped, and
   // what each condition rejected, so a judge is not shown a step's name alone.
   const accounted = automationStudioResultReadAccounts({ actionAttempts: input.actionAttempts, flowNodes, deniedEvidenceKeys: input.deniedEvidenceKeys });
+  // And the steps that acted on the page before each read (`./narrowed-before.ts`, t482), for a read of this Flow's own nodes.
+  const own = accounted.reads.filter((read) => flowNodes.some((node) => node.id === read.nodeId && node.definitionId === read.definitionId));
+  const narrowed = automationStudioResultNarrowedBefore({ readNodeIds: own.map((read) => read.nodeId), flowNodes, attempts: input.sessionAttempts, deniedEvidenceKeys: input.deniedEvidenceKeys });
+  if (narrowed.withheld) withheld = true;
+  const reads = accounted.reads.map((read) => {
+    const before = own.includes(read) ? narrowed.byRead.get(read.nodeId) : undefined;
+    return before ? { ...read, narrowedBefore: before } : read;
+  });
   return {
     schemaVersion: "automation-studio.run-result-summary.v1",
     totalRecordCount,
@@ -213,7 +233,7 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
     totalRowsMissingRequired: recordSets.reduce((total, set) => total + set.rowsMissingRequired, 0),
     recordSetCount: input.recordSets.length,
     recordSets,
-    ...(accounted.reads.length ? { reads: accounted.reads } : {}),
+    ...(reads.length ? { reads } : {}),
     flowShape,
     withheld,
     ...(ended?.endView ? { endView: ended.endView } : {}),

@@ -113,3 +113,27 @@ describe("an execution-failed trial's reads and graph ending", () => {
     expect(String(ending.instruction)).toContain("Check the Flow's connections");
   });
 });
+
+// t482, lane C round 12 (`run-mv62icw3-9118516f`): a site filter that kept less than the request asked ran before the
+// read, and the rows it removed reached neither the judges nor the model. A judged trial's read now carries the steps
+// that acted on the page before it, and says once what such a step means for the read.
+describe("a trial's read, with the steps that acted on the page before it", () => {
+  const before = [
+    { nodeId: "s3", label: "show books only", control: "Books", effect: "new_page" as const },
+    { nodeId: "s4", label: "choose the publication years", control: "2010 and later", effect: "new_page" as const }
+  ];
+
+  it("names each step by its label, its control's words and its effect, and says rows it removed never reached the read", () => {
+    const [read] = automationStudioTrialReadsFeedback([listing(4, { narrowedBefore: before })], graph);
+    expect(read!.narrowedBefore).toEqual(before);
+    expect(read!.beforeRead).toContain("never reached the read");
+    expect(read!.beforeRead).toContain("keep less than the request asks");
+    expect(read!.said).toBe("The read saw 8 rows and kept 4. A row is kept only when it passes every one of its 2 conditions (a row can fail more than one): mutualFriends matches a bare count of five or more rejected 4; mutualFriends matches a named friend and others rejected 7.");
+  });
+
+  it("says nothing of steps before a read that carries none", () => {
+    const [read] = automationStudioTrialReadsFeedback([listing(4)], graph);
+    expect(read).not.toHaveProperty("narrowedBefore");
+    expect(read).not.toHaveProperty("beforeRead");
+  });
+});

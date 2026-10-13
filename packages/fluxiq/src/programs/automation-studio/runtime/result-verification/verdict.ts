@@ -275,7 +275,27 @@ export function automationStudioResultObservation(summary: AutomationStudioRunRe
  */
 function eachSet(summary: AutomationStudioRunResultSummary): string {
   if (summary.recordSetCount < 2 || summary.recordSets.length !== summary.recordSetCount) return "";
-  return ` (${summary.recordSets.map((set) => set.recordCount).join(", ")} rows)`;
+  const distinct = distinctRows(summary);
+  const same = distinct !== undefined && summary.recordSets.every((set) => set.recordCount === distinct);
+  const told = distinct === undefined ? "" : same ? "; the same rows in each" : `; ${distinct} distinct`;
+  return ` (${summary.recordSets.map((set) => set.recordCount).join(", ")} rows${told})`;
+}
+
+/**
+ * How many distinct rows the record sets hold together, each row read by the
+ * columns every set stores (t482): live run `run-mv636xyp-2e4fe54d`'s card
+ * said "4 rows came back, in each of 2 record sets" of a listing and a read of
+ * the same 4 requests. `undefined` where it cannot be told: no column every
+ * set stores, a set whose rows were not all sent, or anything withheld.
+ */
+function distinctRows(summary: AutomationStudioRunResultSummary): number | undefined {
+  if (summary.withheld) return undefined;
+  const sets = summary.recordSets;
+  if (sets.some((set) => set.truncated || set.columnsWithheld || (set.sampleRows?.length ?? 0) !== set.recordCount)) return undefined;
+  const shared = sets[0]!.columns.filter((column) => sets.every((set) => set.columns.includes(column)));
+  if (!shared.length) return undefined;
+  const keys = new Set(sets.flatMap((set) => (set.sampleRows ?? []).map((row) => JSON.stringify(shared.map((column) => row[column] ?? null)))));
+  return keys.size;
 }
 
 /** "30 records would be stored": every row of every dataset a build's Flow would write, which the card says as rows that would be stored. */
