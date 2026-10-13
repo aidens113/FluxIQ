@@ -131,7 +131,9 @@ const ADVICE_WORDS = {
   not_a_handle: "names a control by something other than a handle",
   not_a_control: "not a control a press acts on",
   wrong_control: "does not prove it is the control the instruction needs",
-  unknown_field: "neither one the list's detection printed nor a key this same step keeps"
+  unknown_field: "neither one the list's detection printed nor a key this same step keeps",
+  // t486: a handle printed on another page than the one its step runs on.
+  other_page: "printed on another page than the one this step runs on"
 } as const;
 
 describe("the advice a refused handle is given", () => {
@@ -215,4 +217,13 @@ it("does not claim a known control is the intended control when its node is inco
   expect(next).toContain("If this is the intended control");
   expect(next).toContain("If it is a different control");
   expect(next).not.toMatch(/the handle is right|Keep the handle/u);
+});
+
+// t486 (run-mv636xvb, defect 1): Core's own refusal of a handle from another page than its step runs on.
+it("tells a step whose handle came from another page to take it from the page the step runs on", () => {
+  const next = nextOf([{ code: "bootstrap.handle.other_page", path: "plan.subflows.0.nodes.10.parameters", line: 14, step: "set the amount", handles: [{ handle: "t90" }] }]);
+  expect(next).toMatch(/^The refused step is line 14, "set the amount": /u);
+  expect(next).toContain(`The handle t90 was ${"printed on another page than the one this step runs on"}`);
+  expect(next).toContain("Take the handle from a view of the page this step runs on");
+  expect(next).toMatch(/submit the whole candidate again/u);
 });

@@ -11,7 +11,10 @@ import { automationStudioStepOnRetry } from "./on-retry.ts";
  * routing: the Flow's declared way past an optional step comes first and is
  * left to state routing, and a step with no attempt left is not retried, so
  * neither dispatches. Otherwise the retry handlers in scope run first, and
- * state routing runs only when none of them took the run on.
+ * state routing runs only when none of them took the run on. A failed step
+ * that recorded its own effect is the exception: `./state-route.ts` reads the
+ * page before calling this, and a page that already shows a way on (the step's
+ * effect, above all) never gets here (t486).
  *
  * `attemptIndex` names the failed attempt when the step was dispatched; a
  * readiness gate that did not hold has none, and the handler's record then

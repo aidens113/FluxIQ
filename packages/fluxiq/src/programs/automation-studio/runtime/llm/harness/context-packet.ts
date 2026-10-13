@@ -174,7 +174,48 @@ export type AutomationStudioLlmRecentActionContext = Pick<AutomationStudioFlowRu
    * judge being given the same fact.
    */
   recordCount?: number;
+  /**
+   * `false` when the run passed the step over instead of running it (`skipped`):
+   * the step did nothing on the page, whatever `status` says. Absent on a step
+   * that ran, and on one whose recorded state held after it failed, where
+   * whether it acted is not known.
+   */
+  acted?: false;
+  /** Why the run passed the step over, as closed words and node or attempt ids (t486). */
+  skipped?: AutomationStudioLlmRecentActionSkip;
+  /**
+   * The state evidence on which the step counts as done without having been
+   * seen to do it (t486). Never page text.
+   *
+   * - `page_showed_step_effect`: the step could not run, and the host found
+   *   the step's own recorded effect already on the page (state routing
+   *   `effect_holds`), so the run went on as if it had run. It did not act.
+   * - `recorded_state_held`: the step failed, and the state it was recorded to
+   *   produce already held (`stateHeld`), so the run went on down `success`.
+   */
+  satisfiedByState?: AutomationStudioLlmRecentActionSatisfiedByState;
 };
+
+/**
+ * Why a step was passed over, as a recent action carries it:
+ *
+ * - `state_routed`: the step could not run and the run went on at `toNodeId`,
+ *   `forward` or `backward`, on what the page showed;
+ * - `target_absent`: a sometimes-present step that was not on the page,
+ *   `notDone` when it does a lasting act that was therefore not done;
+ * - `already_done`: a lasting act this run completed earlier, at
+ *   `doneByAttemptId`, and did not do again.
+ *
+ * The run's own codes and a row's label stay on the run detail.
+ */
+export type AutomationStudioLlmRecentActionSkip =
+  | { reason: "state_routed"; toNodeId: string; direction: "forward" | "backward" }
+  | { reason: "target_absent"; notDone?: true }
+  | { reason: "already_done"; doneByAttemptId: string };
+
+export type AutomationStudioLlmRecentActionSatisfiedByState = "page_showed_step_effect" | "recorded_state_held";
+
+const SATISFIED_BY_STATE: ReadonlySet<string> = new Set<AutomationStudioLlmRecentActionSatisfiedByState>(["page_showed_step_effect", "recorded_state_held"]);
 
 /**
  * Every field a recent action may carry. The `satisfies` clause is the point:
@@ -194,7 +235,10 @@ const RECENT_ACTION_FIELDS = {
   durationMs: true,
   comparisonStatus: true,
   failureCategory: true,
-  recordCount: true
+  recordCount: true,
+  acted: true,
+  skipped: true,
+  satisfiedByState: true
 } as const satisfies Record<keyof AutomationStudioLlmRecentActionContext, true>;
 const RECENT_ACTION_FIELD_NAMES: ReadonlySet<string> = new Set(Object.keys(RECENT_ACTION_FIELDS));
 
@@ -215,8 +259,24 @@ export function isAutomationStudioLlmRecentActionContext(value: unknown): value 
   // A count is an integer or it is not carried. A float, a negative or a string
   // would be a number the projection did not produce.
   if (action.recordCount !== undefined && (!Number.isSafeInteger(action.recordCount) || (action.recordCount as number) < 0)) return false;
+  if (action.acted !== undefined && action.acted !== false) return false;
+  if (action.skipped !== undefined && !isRecentActionSkip(action.skipped)) return false;
+  if (action.satisfiedByState !== undefined && (typeof action.satisfiedByState !== "string" || !SATISFIED_BY_STATE.has(action.satisfiedByState))) return false;
   return action.durationMs === undefined
     || (Number.isSafeInteger(action.durationMs) && (action.durationMs as number) >= 0 && (action.durationMs as number) <= 86_400_000);
+}
+
+/** Whether a value is a skip exactly as `recentActionSkip` projects one: its reason's fields only, each an id or a closed word. */
+function isRecentActionSkip(value: unknown): value is AutomationStudioLlmRecentActionSkip {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const skip = value as Record<string, unknown>;
+  const keys = Object.keys(skip);
+  const only = (allowed: readonly string[]): boolean => keys.every((key) => allowed.includes(key));
+  const id = (text: unknown): boolean => typeof text === "string" && text.length >= 1 && text.length <= 200;
+  if (skip.reason === "state_routed") return only(["reason", "toNodeId", "direction"]) && id(skip.toNodeId) && (skip.direction === "forward" || skip.direction === "backward");
+  if (skip.reason === "target_absent") return only(["reason", "notDone"]) && (skip.notDone === undefined || skip.notDone === true);
+  if (skip.reason === "already_done") return only(["reason", "doneByAttemptId"]) && id(skip.doneByAttemptId);
+  return false;
 }
 
 export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarnessInput): AutomationStudioLlmContextPacket {
@@ -597,8 +657,36 @@ function compactRecentActionForLlm(action: AutomationStudioFlowRunActionAttemptR
     // a metadata bag is host-written, so anything else there is not a count.
     ...(Number.isSafeInteger(action.metadata?.recordCount) && (action.metadata!.recordCount as number) >= 0
       ? { recordCount: action.metadata!.recordCount as number }
-      : {})
+      : {}),
+    // A step passed over did not act, and is shown so (t486): a result check
+    // once read a skipped step's bare `status: succeeded` as the step
+    // "succeeding on the third" attempt. It counts as done only on the state
+    // evidence named here.
+    ...passedOver(action)
   };
+}
+
+/** What a recent action says of a step the run passed over, or counted as done on the page's state; nothing for a step that ran. */
+function passedOver(action: AutomationStudioFlowRunActionAttemptRecord): Pick<AutomationStudioLlmRecentActionContext, "acted" | "skipped" | "satisfiedByState"> {
+  const skipped = recentActionSkip(action.skipped);
+  const satisfiedByState: AutomationStudioLlmRecentActionSatisfiedByState | undefined = skipped?.reason === "state_routed" && action.stateRouting?.outcome === "effect_holds"
+    ? "page_showed_step_effect"
+    : !skipped && action.stateHeld ? "recorded_state_held" : undefined;
+  return {
+    ...(skipped ? { acted: false as const, skipped } : {}),
+    ...(satisfiedByState ? { satisfiedByState } : {})
+  };
+}
+
+/** A stored skip, parsed again, as closed words and ids; anything else is no skip. */
+function recentActionSkip(skipped: AutomationStudioFlowRunActionAttemptRecord["skipped"]): AutomationStudioLlmRecentActionSkip | undefined {
+  if (!skipped) return undefined;
+  const projected: AutomationStudioLlmRecentActionSkip | undefined = skipped.reason === "state_routed"
+    ? { reason: "state_routed", toNodeId: skipped.toNodeId, direction: skipped.direction }
+    : skipped.reason === "target_absent"
+      ? { reason: "target_absent", ...(skipped.notDone === true ? { notDone: true as const } : {}) }
+      : skipped.reason === "already_done" ? { reason: "already_done", doneByAttemptId: skipped.attemptId } : undefined;
+  return projected && isRecentActionSkip(projected) ? projected : undefined;
 }
 
 function compactSubflowForLlm(subflow: AutomationStudioFlowSubflow): NonNullable<AutomationStudioLlmContextPacket["subflows"]>[number] {
