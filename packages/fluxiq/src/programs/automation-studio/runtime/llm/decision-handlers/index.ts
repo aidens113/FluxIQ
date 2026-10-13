@@ -16,4 +16,5 @@ export * from "./refused-repeat.ts";
 export * from "./rerun-result.ts";
 export * from "./searching.ts";
 export * from "./second-copy.ts";
+export * from "./stall-recovery.ts";
 export * from "./types.ts";

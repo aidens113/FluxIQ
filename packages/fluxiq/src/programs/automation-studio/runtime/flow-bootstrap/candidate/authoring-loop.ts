@@ -6,7 +6,9 @@ import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIP
 import type { AutomationStudioCandidateTrialPort, AutomationStudioFlowCandidate } from "./contracts.ts";
 import { AutomationStudioFlowCandidateSubmissionController } from "./submission.ts";
 import { automationStudioCandidateSubmissionRefusal } from "./submission-refusal.ts";
+import { automationStudioCandidateStallRetest } from "./stall-retest.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, AutomationStudioFlowCandidateTrialGate } from "./trial-gate.ts";
+import { automationStudioCandidateTrialView } from "./trial-view.ts";
 
 /** The loop's opening call, which takes the target to the build's start (`../../llm/evidence-loop.ts`). */
 const OPENING_CALL = "initial.";
@@ -84,13 +86,16 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
   };
   const discovery: AutomationStudioLlmEvidenceLoopInput = {
     ...input.loop, ...(signal ? { signal } : {}), draft: false, dryRun: false, discoveryOnly: true,
+    // A stall tests the latest revision instead of ending the build, while it can still be tested (`./stall-retest.ts`, t477).
+    recoverStall: automationStudioCandidateStallRetest(gate),
     tools: [...input.loop.tools.filter((item) => item.toolId !== "core.run_flow" && item.toolId !== submitId && item.toolId !== testId).map((item) => reset ? automationStudioSiteResetUndoesTool(item) : item), tool, gate.tool],
     completionSchema: { type: "object", properties: { revision: { type: "integer" }, digest: { type: "string" } }, required: ["revision", "digest"], additionalProperties: false },
     executeTool: async (call) => {
       // The start is read once, right after the opening call, or before the first later call when there was none (`../site-reset/start-check.ts`).
       const opening = call.callId.startsWith(OPENING_CALL);
       if (startCheck && !opening) await startCheck.capture(call.signal ?? signal);
-      if (call.toolId === testId) return gate.test(call.value, call.signal);
+      // A trial leaves the target where the model has not looked: its answer carries the page it left (`./trial-view.ts`, t477).
+      if (call.toolId === testId) return automationStudioCandidateTrialView({ answer: await gate.test(call.value, call.signal), tools: input.loop.tools, executeTool: (look) => input.loop.executeTool(look), callId: call.callId, signal: call.signal ?? signal });
       if (call.toolId !== submitId) {
         // A call that makes or undoes an act is read around, so the reset can look for it on its own page (`../site-reset/act-places.ts`).
         const ran = ledger && startCheck && !opening

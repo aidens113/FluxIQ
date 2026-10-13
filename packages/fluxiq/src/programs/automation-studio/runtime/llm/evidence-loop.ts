@@ -8,18 +8,15 @@ import {
   automationStudioFlowDraftStepIsProposable, automationStudioFlowDraftStepWordsOf, automationStudioFlowDraftSetRoutePlaces,
   type AutomationStudioFlowDraftStep
 } from "../flow-draft/index.ts";
-// The record of every decision and what the loop answered it, and what one
-// decision is shown beside the window (`decision-context/`).
+// The record of every decision and what the loop answered it, and what one decision is shown beside the window (`decision-context/`).
 import {
   AutomationStudioLlmDecisionContextRecorder,
   automationStudioLlmDecisionContextShown,
   automationStudioLlmDecisionContextSignature,
   automationStudioLlmDecisionContextSupersede
 } from "./decision-context/index.ts";
-// What the loop does with each kind of answer it gives the model -- a
-// completion, an amendment, a failed call, a request answered from what it
-// holds -- each handed the loop's state as one context object
-// (`decision-handlers/`).
+// What the loop does with each kind of answer it gives the model -- a completion, an amendment, a failed call, a request
+// answered from what it holds -- each handed the loop's state as one context object (`decision-handlers/`).
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_WITHDRAWN_CODE,
   automationStudioLlmEvidenceAnswerCheck,
@@ -441,12 +438,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
     accounting.toolCalls += 1;
     accounting.evidenceBytes += evidenceBytes;
     const record = callRecord(tool, decision.input, execution);
-    // A look the domain refused looked at nothing, so it did not answer the
-    // request it was registered against and the identical retry must be run
-    // rather than answered from it (`repeat-policy.ts` says why this is the
-    // look and never the action). Both doors have to open: the request's own
-    // signature, and the tool's latest observation for this epoch -- leaving
-    // either shut answers the retry from a refusal carrying nothing.
+    // A look the domain refused looked at nothing, so it did not answer the request it was registered against and the identical
+    // retry is not answered from it (`repeat-policy.ts` says why this is the look and never the action); the repeat guard refuses
+    // it on an unchanged page instead (`repeat-guard/outcomes.ts`). Both doors have to open: the request's own signature, and the
+    // tool's latest observation for this epoch -- leaving either shut answers the retry from a refusal carrying nothing.
     const lookRefused = automationStudioLlmEvidenceLookWasRefused({ evidence: value, effect: record.effect, effectApplied });
     if (lookRefused) answeredRequests.delete(toolRequestSignature);
     if (stateAfter !== undefined) handling.callStates.set(callId, stateAfter);
@@ -520,9 +515,12 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // Looks in a row with nothing done between: told at five, the round stalled at eight (`decision-handlers/searching.ts`).
     const searching = automationStudioLlmEvidenceSearchingWithoutActing(handling, iteration);
     if (searching?.kind === "end") return searching.result;
+    if (searching?.kind === "recover") return recover(iteration, searching.call); // A stall the caller can still recover from runs that call instead (t477).
     if (searching) { if (input.propagateDecisionErrors) throw searching.error; return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting); }
     return undefined;
   };
+  // The move a stall is recovered with, run as the loop's own call (`decision-handlers/stall-recovery.ts`, t477).
+  const recover = (iteration: number, call: ToolCall): Promise<AutomationStudioLlmEvidenceLoopResult | undefined> => runCall(iteration, call.callId, call, toolsById.get(call.toolId)!, automationStudioLlmEvidenceRequestSignature({ tool: toolsById.get(call.toolId)!, mutationEpoch: counters.mutationEpoch, attemptEpoch: counters.attemptEpoch, input: call.input }));
   const initialTool = input.tools.find((tool) => tool.initialObservation);
   // A draft already holding the Flow (a repair's, a re-author's) opens with the look where the test left the page, never the arrival (run 38 C3), and
   // the look carries the Flow's calls as written under `held`, so the domain keeps where the build arrived and the addresses it held (C8).
@@ -767,6 +765,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
       const next = automationStudioLlmEvidenceHandleRefusedRepeat(handling, iteration, decision, triedHere);
       if (next.kind === "stalled") { if (input.propagateDecisionErrors) throw next.error; return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting); }
       if (next.kind === "end") return next.result;
+      const recovered = next.kind === "recover" ? await recover(iteration, next.call) : undefined;
+      if (recovered) return recovered;
       continue;
     }
     if (!rerunning && (answeredBy !== undefined || reobservation || withheld)) {

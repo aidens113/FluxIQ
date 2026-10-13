@@ -120,6 +120,12 @@ export type AutomationStudioBuildTestVerdict =
      */
     unconfirmedReading?: { expected?: string; observed?: string; advice?: string };
     /**
+     * Only on an `unknown` whose two calls split (`model_disagreed`): what the
+     * call that said yes compared (`AutomationStudioResultVerification.answeredReading`),
+     * so the build is shown both readings and the evidence each relied on (t477).
+     */
+    answeredReading?: { expected?: string; observed?: string };
+    /**
      * Only on an `unknown` whose two calls disagreed because one said the test
      * does what was asked (`model_disagreed`): the pair, never its words. What a
      * build measures a repair after a `no` by (`judge_no_longer_refutes`,
@@ -259,7 +265,9 @@ export function automationStudioBuildTestJudge(deps: {
     }
     // An unsettled check keeps the reading of the call that judged no (live run murwcmx2: the repair was told only "unverified").
     const reading = outcome.unconfirmedReading;
-    return { verdict: "unknown", why: outcome.reason, ...carried, ...(reading ? { unconfirmedReading: { ...reading } } : {}), ...(outcome.basis === "model_disagreed" ? { oneCallSaidYes: true as const } : {}), spent };
+    // ...and on a split, the yes's beside it, so the build sees what each relied on (t477).
+    const answered = outcome.basis === "model_disagreed" ? outcome.answeredReading : undefined;
+    return { verdict: "unknown", why: outcome.reason, ...carried, ...(reading ? { unconfirmedReading: { ...reading } } : {}), ...(answered ? { answeredReading: { ...answered } } : {}), ...(outcome.basis === "model_disagreed" ? { oneCallSaidYes: true as const } : {}), spent };
   };
 }
 

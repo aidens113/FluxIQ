@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../../model/index.ts";
 import type { AutomationStudioGraphExecutionTrace } from "../../../executor/index.ts";
+import type { AutomationStudioRunResultSummary } from "../../../result-verification/index.ts";
 import { automationStudioCandidateTrialFeedback } from "../index.ts";
 
 // Lane A round 4 (`run-muyrpbnk-fef374e7`, 0032 and 0048): the model was told only "step 2, dom-click, failed,
@@ -262,5 +263,30 @@ describe("trial feedback for a skipped step", () => {
   it("says only that the step was skipped for a dismissal", () => {
     const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph, trace: skipped(false) });
     expect((feedback.steps as JsonObject[])[0]!.skipped).toBe("Its control was not on the page, so the step was skipped.");
+  });
+});
+
+// Lane C round 10 (`run-mv5uu9g1-9d80deea`, trial of revision 3): the two judge calls split, and only the no's reading --
+// pages 2-5 of the start view never read -- reached the model, which hunted for pagination the filtered page did not have.
+// The yes's reading, 14 of 14 results with no pagination in the end view, now reaches it beside the no's (t477).
+describe("an unsure trial whose judges split", () => {
+  const summary: AutomationStudioRunResultSummary = { schemaVersion: "automation-studio.run-result-summary.v1", totalRecordCount: 11, totalRefusedCount: 7, totalRowsMissingRequired: 0, recordSetCount: 1, recordSets: [], flowShape: [], withheld: false };
+  const spent = { inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0, calls: 2 };
+  const no = { expected: "Every listing on every page.", observed: "The start view shows pages 2 to 5, never read.", advice: "Press the next-page link." };
+  const yes = { expected: "The filtered listings that meet the conditions.", observed: "The end view shows 14 of 14 results and no pagination." };
+
+  it("shows the model both readings, with how to weigh them", () => {
+    const { verdict, feedback } = automationStudioCandidateTrialFeedback.judged({ verdict: { verdict: "unknown", why: "The two checks disagreed.", unconfirmedReading: no, answeredReading: yes, oneCallSaidYes: true, spent }, summary, trialRunId: "trial.1", start: "reset" });
+    expect(verdict).toBe("unsure");
+    expect(feedback).toMatchObject({ code: "candidate.trial_unconfirmed", unconfirmedReading: no, answeredReading: yes });
+    expect(String(feedback.readings)).toContain("a start view is the page before the Flow's first step");
+    expect(String(feedback.readings)).toContain("test this same revision again");
+  });
+
+  it("says nothing of a yes where no call said one", () => {
+    const { feedback } = automationStudioCandidateTrialFeedback.judged({ verdict: { verdict: "unknown", why: "Unconfirmed.", unconfirmedReading: no, spent }, summary, trialRunId: "trial.2", start: "reset" });
+    expect(feedback).toMatchObject({ unconfirmedReading: no });
+    expect(feedback).not.toHaveProperty("answeredReading");
+    expect(feedback).not.toHaveProperty("readings");
   });
 });
