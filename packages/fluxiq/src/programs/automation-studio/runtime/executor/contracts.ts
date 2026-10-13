@@ -463,7 +463,7 @@ export type AutomationStudioNodeAttemptTrace = {
     hintedWaitMs?: number;
     /** How much of that hint had already passed when the failed attempt settled and the wait began (`defensive/credited-hint.ts`). */
     creditedMs?: number;
-    /** The act made once more after an attempt that certainly changed nothing (`certainNoEffect`, t517); a lasting act only once (`defensive/assess.ts`). */
+    /** A retry after an attempt that certainly changed nothing; the ordinary retry budget and lasting-effect safety gates still apply. */
     repress?: true;
   };
   /**

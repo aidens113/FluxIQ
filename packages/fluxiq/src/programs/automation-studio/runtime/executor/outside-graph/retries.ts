@@ -97,7 +97,7 @@ export async function automationStudioDispatchWithNodeRetries<T>(input: {
   const delay = input.delay ?? unreferencedDelay;
   const faults: AutomationStudioFaultAssessment[] = [];
   let waitedMs = 0;
-  // Whether this attempt makes the act once more after one that certainly changed nothing (t517), as a graph run marks it.
+  // Whether this attempt retries a confirmed no-effect attempt, as a graph run marks it.
   let repress = false;
   for (let attempt = 1; ; attempt += 1) {
     const startedAt = now();

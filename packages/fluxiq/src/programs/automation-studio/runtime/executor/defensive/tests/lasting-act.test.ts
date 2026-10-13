@@ -57,14 +57,13 @@ describe("a failed lasting act", () => {
     }
   });
 
-  it("is pressed once more, and only once, when its press certainly changed nothing (t517)", () => {
+  it("keeps the ordinary retry budget when each press certainly changed nothing", () => {
     const first = automationStudioAssessAttemptFault(failed(IGNORED), lasting);
     expect(first).toMatchObject({ disposition: "retry", effect: "unacted" });
     expect(first?.actUncertain).toBeUndefined();
     const again = automationStudioAssessAttemptFault(repressed(IGNORED), lasting);
-    expect(again).toMatchObject({ disposition: "refuse", effect: "unacted" });
+    expect(again).toMatchObject({ disposition: "retry", effect: "unacted" });
     expect(again?.actUncertain).toBeUndefined();
-    expect(again?.reason).toContain("add makes a lasting act");
     // A press that is not lasting, and any other unacted failure, keep their retries.
     expect(automationStudioAssessAttemptFault(repressed(IGNORED), webNode())?.disposition).toBe("retry");
     expect(automationStudioAssessAttemptFault(repressed(BUSY), lasting)?.disposition).toBe("retry");
