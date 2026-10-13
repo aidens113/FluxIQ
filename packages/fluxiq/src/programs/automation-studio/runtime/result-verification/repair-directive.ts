@@ -49,6 +49,7 @@ import type {
   AutomationStudioRunResultSummary
 } from "./contracts.ts";
 import { automationStudioResultReadEmptiedColumns } from "./read-account/index.ts";
+import type { AutomationStudioRequestRowsKeptNumberLeftOut } from "./request-rows/index.ts";
 
 /** Core's stable codes for what it found wrong with a result. */
 export const AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES = Object.freeze({
@@ -83,7 +84,15 @@ export const AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES = Object.freeze({
    * that name the asked item first (`request-rows/`, live run
    * `run-muw60j7c-bb7c9a62`): set only where `verdict.ts` does not take that yes.
    */
-  leftOutNamingTheItem: "result.left_out_naming_the_item"
+  leftOutNamingTheItem: "result.left_out_naming_the_item",
+  /**
+   * Rows a text condition alone left out that state a number within the range
+   * the rows it kept state (`request-rows/left-out-stating-a-kept-number.ts`,
+   * t478, live run `run-mv5yaapw-6d20d23d`): the condition read characters, not
+   * the number. Set where `verdict.ts` refuses a yes over them, and beside a no's
+   * own findings.
+   */
+  leftOutStatingAKeptNumber: "result.left_out_stating_a_kept_number"
 } as const);
 
 // **Whole.** Every finding, every fix line, every column and every word of the
@@ -118,6 +127,13 @@ export type AutomationStudioResultRepairDirectiveInput = {
    * request's other phrases and the rows, so the repair has the rows themselves.
    */
   leftOutUnaccounted?: readonly AutomationStudioResultLeftOutNamingTheItem[] | undefined;
+  /**
+   * The rows a text condition left out though they state a number it kept on
+   * another row (`request-rows/left-out-stating-a-kept-number.ts`): each
+   * condition becomes a finding and a fix line naming the rows, their numbers
+   * and the range the condition kept, and asking for a bound in its place.
+   */
+  leftOutKeptNumber?: readonly AutomationStudioRequestRowsKeptNumberLeftOut[] | undefined;
   /** Core's check of the rows the judgement names (`request-rows/checked-rows.ts`), carried as `checked`. */
   checked?: readonly string[] | undefined;
 };
@@ -132,10 +148,12 @@ export type AutomationStudioResultRepairDirectiveInput = {
  */
 export function automationStudioResultRepairDirective(input: AutomationStudioResultRepairDirectiveInput): AutomationStudioResultRepairDirective {
   const unaccounted = input.leftOutUnaccounted ?? [];
+  const keptNumber = input.leftOutKeptNumber ?? [];
   // The rows a yes passed over first: they are the most concrete thing wrong, and what the repair acts on.
-  const findings = [...unaccounted.map(unaccountedFinding), ...automationStudioResultRepairFindings(input.summary)];
+  const findings = [...unaccounted.map(unaccountedFinding), ...keptNumber.map(keptNumberFinding), ...automationStudioResultRepairFindings(input.summary)];
   const fix = [
     ...unaccounted.map(unaccountedFix),
+    ...keptNumber.map(keptNumberFix),
     ...findings
       .map((finding) => fixLine(finding, input.summary))
       .filter((line): line is string => line !== undefined)
@@ -166,6 +184,31 @@ function unaccountedFinding(entry: AutomationStudioResultLeftOutNamingTheItem): 
 /** What to do about one condition's flagged rows: decide each by the request, and change the condition that left out the ones it asks for. */
 function unaccountedFix(entry: AutomationStudioResultLeftOutNamingTheItem): string {
   return `Decide row by row whether the request excludes each row the condition "${entry.condition}" (${leftOutWhere(entry)}) alone left out that names "${entry.item}" first and ${quotedList(entry.also)} after it -- an item sold with or including something the request leaves out is still the item -- and change that condition so it keeps the rows the request asks for: ${entry.rows.join("; ")}.`;
+}
+
+/**
+ * The finding for one text condition's left-out rows that state a number it
+ * kept on another row, in Core's words: where, the condition, the range its
+ * kept rows state, and each row with its number.
+ */
+function keptNumberFinding(entry: AutomationStudioRequestRowsKeptNumberLeftOut): AutomationStudioResultRepairFinding {
+  return {
+    code: AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES.leftOutStatingAKeptNumber,
+    detail: `Read ${entry.nodeId}: the condition "${entry.condition}" kept rows stating ${keptRange(entry)} and alone left out ${entry.rows.length === 1 ? "a row that states" : `${entry.rows.length} rows that state`} a number in that range, so it compared characters, not the number: ${statedRows(entry)}.`
+  };
+}
+
+/** What to do about it: compare the number with a bound on the same column, and keep the rows the request asks for. */
+function keptNumberFix(entry: AutomationStudioRequestRowsKeptNumberLeftOut): string {
+  return `The condition "${entry.condition}" (Read ${entry.nodeId}) is a text test over a number: it kept rows stating ${keptRange(entry)} and left out ${statedRows(entry)}. A text test reads characters, not the number a value states; write the threshold the request asks for as a bound on that column (atLeast, atMost, greaterThan or lessThan), which reads each value's number, and decide each of these rows by its number.`;
+}
+
+function keptRange(entry: AutomationStudioRequestRowsKeptNumberLeftOut): string {
+  return entry.low === entry.high ? String(entry.low) : `${entry.low} to ${entry.high}`;
+}
+
+function statedRows(entry: AutomationStudioRequestRowsKeptNumberLeftOut): string {
+  return entry.rows.map((row, index) => `${row} (states ${entry.numbers[index]})`).join("; ");
 }
 
 /** Where a flagged condition is: the test's step, or the run's read node. */

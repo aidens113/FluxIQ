@@ -62,3 +62,19 @@ export type AutomationStudioRequestRowsNamed = {
 
 /** What a rerun of a read did to the rows Core's check named (`rerun-rows.ts`): the ones it keeps, the ones still left out, and Core's sentence saying so. */
 export type AutomationStudioRequestRowsAfterRerun = { kept: string[]; stillLeftOut: string[]; said: string };
+
+/**
+ * One text condition's left-out rows that state a number within the range of
+ * numbers the rows it kept state (`left-out-stating-a-kept-number.ts`, t478).
+ * `low` and `high` are the lowest and highest number a kept row states; `rows`
+ * the rows as the read gave them, and `numbers` the number each states, in the
+ * same order.
+ */
+export type AutomationStudioRequestRowsKeptNumberLeftOut = {
+  nodeId: string;
+  condition: string;
+  low: number;
+  high: number;
+  rows: string[];
+  numbers: number[];
+};
