@@ -42,7 +42,7 @@ describe("site reset trial policy", () => {
     if (answer.kind !== "refuse") return;
     const instruction = String(answer.evidence.instruction);
     expect(instruction).toContain("\"undoes\": \"<act>\"");
-    expect(instruction).toContain("needs no permission and is not a repeat");
+    expect(instruction).toContain("Removing only what the act created needs no permission");
     expect(instruction).toContain("Do not change anything that was there before the build began");
     expect(instruction).toContain("test the same revision again");
     expect(instruction).not.toMatch(/\b(cart|product|basket|checkout|store|shop)\b/iu);

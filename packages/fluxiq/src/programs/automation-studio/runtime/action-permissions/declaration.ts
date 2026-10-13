@@ -76,7 +76,15 @@ export type AutomationStudioActionEffect = "observe" | "mutate";
  */
 export type AutomationStudioActionDeclaration = {
   consequences: readonly AutomationStudioActionConsequence[];
-  control: { name: string; kind?: string };
+  /**
+   * `item` and `dialog` are optional opaque tokens for where the control sits:
+   * the item -- a row, card or list item -- and the dialog, as the domain tells
+   * two of them apart (t475). Core compares them only for equality, never
+   * shows them, and reads them only to tie an undo of a build's own act to
+   * that act's own item (`../flow-bootstrap/site-reset/`). Absent: the control
+   * sits in no item, or in no dialog. A domain sends a digest, never the words.
+   */
+  control: { name: string; kind?: string; item?: string; dialog?: string };
   verb: string;
   effect?: AutomationStudioActionEffect;
 };
@@ -126,6 +134,9 @@ export type AutomationStudioReadActionDeclaration = {
   consequences: AutomationStudioActionConsequence[];
   controlName: string;
   controlKind: string | null;
+  /** The opaque item and dialog tokens the domain gave the control; null where it gave none. */
+  controlItem: string | null;
+  controlDialog: string | null;
   verb: string;
   /** Stated or, where the domain said nothing, `mutate`. */
   effect: AutomationStudioActionEffect;
@@ -134,6 +145,8 @@ export type AutomationStudioReadActionDeclaration = {
 const VERB = /^[a-z]{2,20}(?: [a-z]{2,20})?$/;
 const KIND = /^[a-z][a-z -]{0,31}$/;
 const MAX_NAME_INPUT = 2_000;
+/** An opaque place token: a digest, so short; nothing longer is one. */
+const PLACE_TOKEN = /^[A-Za-z0-9:_-]{1,128}$/;
 
 /**
  * Read a declaration, or throw. Structure is checked here and nowhere else;
@@ -146,9 +159,13 @@ export function readAutomationStudioActionDeclaration(value: unknown): Automatio
   if (!Array.isArray(consequences) || consequences.length > 10) throw new AutomationStudioActionDeclarationError("consequences_missing");
   if (!consequences.every(isAutomationStudioActionConsequence)) throw new AutomationStudioActionDeclarationError("consequence_unrecognised");
   const control = value.control;
-  if (!isRecord(control) || !hasOnlyFields(control, ["name", "kind"])) throw new AutomationStudioActionDeclarationError("control_shape");
+  if (!isRecord(control) || !hasOnlyFields(control, ["name", "kind", "item", "dialog"])) throw new AutomationStudioActionDeclarationError("control_shape");
   if (typeof control.name !== "string" || !control.name.trim() || control.name.length > MAX_NAME_INPUT) throw new AutomationStudioActionDeclarationError("control_name_invalid");
   if (control.kind !== undefined && (typeof control.kind !== "string" || !KIND.test(control.kind))) throw new AutomationStudioActionDeclarationError("control_kind_invalid");
+  for (const key of ["item", "dialog"] as const) {
+    const token = control[key];
+    if (token !== undefined && (typeof token !== "string" || !PLACE_TOKEN.test(token))) throw new AutomationStudioActionDeclarationError("control_place_invalid");
+  }
   if (typeof value.verb !== "string" || !VERB.test(value.verb)) throw new AutomationStudioActionDeclarationError("verb_invalid");
   // Fail closed on a word Core does not know rather than reading it as
   // `mutate`: a domain that meant to say something about its action and
@@ -158,6 +175,8 @@ export function readAutomationStudioActionDeclaration(value: unknown): Automatio
     consequences: [...new Set(consequences as AutomationStudioActionConsequence[])],
     controlName: control.name.replace(/\s+/gu, " ").trim(),
     controlKind: typeof control.kind === "string" ? control.kind : null,
+    controlItem: typeof control.item === "string" ? control.item : null,
+    controlDialog: typeof control.dialog === "string" ? control.dialog : null,
     verb: value.verb,
     effect: value.effect ?? "mutate"
   };

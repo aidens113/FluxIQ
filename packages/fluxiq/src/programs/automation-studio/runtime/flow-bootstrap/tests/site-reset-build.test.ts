@@ -4,7 +4,9 @@
 // through the wrapper. Only the domain, the model and the trial runner are
 // stand-ins. The domain behaves as a real one does: it knows nothing of
 // `undoes`, refuses any input key it does not take, puts every lasting act to
-// the permission check first, and acts only on a yes.
+// the permission check first, with the opaque token of the item its control
+// sits in (t475), and acts only on a yes. Its reads list the items on the page
+// by the same tokens.
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -12,7 +14,7 @@ import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } fro
 import type { AutomationStudioActionConsequence, AutomationStudioActionDeclarationRecord } from "../../action-permissions/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../../llm/index.ts";
 import { automationStudioFlowBootstrapActionPermissions } from "../action-permissions.ts";
-import { AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, runAutomationStudioFlowCandidateAuthoringLoop, type AutomationStudioCandidateTrialRequest, type AutomationStudioCandidateTrialResult } from "../candidate/index.ts";
+import { AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, runAutomationStudioFlowCandidateAuthoringLoop, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialRequest } from "../candidate/index.ts";
 import { AutomationStudioSiteResetLedger } from "../site-reset/index.ts";
 
 const definition: AutomationStudioNodeDefinition = {
@@ -36,12 +38,15 @@ const runNode: AutomationStudioLlmEvidenceTool = {
 /** The only keys the stand-in domain takes on a call, as a real domain's input schema would. */
 const DOMAIN_KEYS = ["node", "parameters", "consequences"];
 /** The control each node presses; every name is shown to the model by the opening look. */
-const CONTROLS: Readonly<Record<string, string>> = { "demo.add": "Add", "demo.remove": "Remove", "demo.edit": "Edit" };
+const CONTROLS: Readonly<Record<string, string>> = { "demo.add": "Add", "demo.remove": "Remove", "demo.edit": "Edit", "demo.confirm": "Confirm", "demo.decline": "Delete" };
+/** The site's one page. */
+const PAGE = "https://site.test/page";
 
 type Entry = { callId: string; toolId: string; value: unknown };
 type Step = (evidence: readonly Entry[]) => JsonObject;
 type Decision = Awaited<ReturnType<Parameters<typeof runAutomationStudioFlowCandidateAuthoringLoop>[0]["loop"]["decide"]>>;
 type Verdict = { permitted: boolean; missing?: readonly string[]; requestId?: string | null };
+type Site = { lines: string[]; requests: Record<string, "pending" | "accepted" | "removed">; title: string; next: number };
 
 const latestOf = (toolId: string, evidence: readonly Entry[]) => [...evidence].reverse().find((entry) => entry.toolId === toolId)?.value as JsonObject | undefined;
 const receipt = (evidence: readonly Entry[]) => {
@@ -49,17 +54,32 @@ const receipt = (evidence: readonly Entry[]) => {
   return { revision: value.revision as number, digest: value.digest as string };
 };
 const node = (callId: string, name: string, consequences: AutomationStudioActionConsequence[], extra: JsonObject = {}): Step => () => ({ kind: "tool_call", toolId: "core.run_node", callId, input: { node: name, parameters: {}, consequences, ...extra } });
-const add = (callId: string) => node(callId, "demo.add", ["create_new"]);
+/** Adds a new line to the list, with the page's own Add button (in no item). */
+const add = (callId: string, extra: JsonObject = {}) => node(callId, "demo.add", ["create_new"], extra);
+/** Renames the page: a lasting change on a control in no item. */
 const edit = (callId: string) => node(callId, "demo.edit", ["modify_existing"]);
-const remove = (callId: string, undoes?: string, line?: string) => node(callId, "demo.remove", ["delete"], { ...(undoes ? { undoes } : {}), ...(line ? { parameters: { line } } : {}) });
-/** Going to another page: it acts, and declares nothing lasting. */
-const go = (callId: string, undoes?: string) => node(callId, "demo.go", [], undoes ? { undoes } : {});
+/** Removes one line by its own Remove button, which sits in that line. */
+const remove = (callId: string, line: string, undoes?: string) => node(callId, "demo.remove", ["delete"], { parameters: { line }, ...(undoes ? { undoes } : {}) });
+/** Confirms one request by the Confirm button in its row. */
+const confirm = (callId: string, row: string) => node(callId, "demo.confirm", ["modify_existing"], { parameters: { row } });
+/** The Delete button in one request's row. */
+const decline = (callId: string, row: string, consequences: AutomationStudioActionConsequence[], undoes?: string) => node(callId, "demo.decline", consequences, { parameters: { row }, ...(undoes ? { undoes } : {}) });
 const submit = (callId: string): Step => () => ({ kind: "tool_call", toolId: "core.submit_candidate", callId, input: plan });
-const test = (callId: string): Step => (evidence) => ({ kind: "tool_call", toolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, callId, input: receipt(evidence) });
+const test = (callId: string, cannotUndo?: string[]): Step => (evidence) => ({ kind: "tool_call", toolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, callId, input: { ...receipt(evidence), ...(cannotUndo ? { cannotUndo } : {}) } });
 
-/** A site whose lines added by the build are counted, behind the real ledger and permission wrapper. */
+/** What the stand-in domain reads of the page: its lines, and the item tokens its declarations use. */
+function view(site: Site): { lines: string[]; items: string[] } {
+  const rows = Object.entries(site.requests);
+  return {
+    lines: [`title ${site.title}`, ...site.lines.map((line) => `line ${line}`), ...rows.map(([row, status]) => `request ${row} ${status}`)],
+    items: [...site.lines.map((line) => `line:${line}`), ...rows.filter(([, status]) => status !== "removed").map(([row]) => `row:${row}`)]
+  };
+}
+
+/** A site with a line that was there before the build and four pending requests, behind the real ledger and permission wrapper. */
 function build() {
-  const state = { lines: 0, inputs: [] as JsonObject[], acted: [] as string[], starts: [] as Array<JsonObject | undefined>, compared: [] as string[][], said: [] as string[] };
+  const site: Site = { lines: ["before"], requests: { tom: "pending", amara: "pending", lin: "pending", marta: "pending" }, title: "Home", next: 1 };
+  const state = { site, inputs: [] as JsonObject[], acted: [] as string[], said: [] as string[] };
   const ledger = new AutomationStudioSiteResetLedger();
   let requests = 0;
   const wrapper = automationStudioFlowBootstrapActionPermissions({
@@ -75,49 +95,70 @@ function build() {
       const unknown = Object.keys(call.value).filter((key) => !DOMAIN_KEYS.includes(key));
       if (unknown.length) return { kind: "llm_evidence_tool_execution", effectApplied: false, evidence: { ok: false, code: "input.unknown_keys", keys: unknown } };
       const name = String(call.value.node);
+      const parameters = (call.value.parameters ?? {}) as JsonObject;
       const consequences = (call.value.consequences ?? []) as AutomationStudioActionConsequence[];
-      // As the web domain does, every call that declares (an empty list too) is put to the gate, with what the node does to the page.
+      const item = typeof parameters.line === "string" ? `line:${parameters.line}` : typeof parameters.row === "string" ? `row:${parameters.row}` : undefined;
+      // As the web domain does, every call that declares (an empty list too) is put to the gate, with what the node does to the page and where its control sits.
       if (Array.isArray(call.value.consequences)) {
-        const verdict = await call.permission!({ consequences, control: { name: CONTROLS[name] ?? name, kind: "button" }, verb: "press", effect: name === "demo.look" ? "observe" : "mutate" }) as Verdict;
+        const verdict = await call.permission!({ consequences, control: { name: CONTROLS[name] ?? name, kind: "button", ...(item ? { item } : {}) }, verb: "press", effect: name === "demo.look" ? "observe" : "mutate" }) as Verdict;
         if (!verdict.permitted) return { kind: "llm_evidence_tool_execution", effectApplied: false, evidence: { ok: false, code: "permission_required", missing: [...(verdict.missing ?? [])], requestId: verdict.requestId ?? null } };
       }
       state.acted.push(name);
-      if (consequences.includes("create_new")) state.lines += 1;
-      if (consequences.includes("delete")) state.lines -= 1;
-      return { kind: "llm_evidence_tool_execution", effectApplied: name !== "demo.look", evidence: { ok: true, lines: state.lines, controls: Object.values(CONTROLS) } };
+      if (name === "demo.add" && parameters.broken !== true) site.lines.push(`added-${site.next++}`);
+      if (name === "demo.remove") site.lines = site.lines.filter((line) => line !== parameters.line);
+      if (name === "demo.edit") site.title = "Renamed";
+      if (name === "demo.confirm") site.requests[String(parameters.row)] = "accepted";
+      if (name === "demo.decline") site.requests[String(parameters.row)] = "removed";
+      return { kind: "llm_evidence_tool_execution", effectApplied: name !== "demo.look", evidence: { ok: true, lines: [...site.lines], requests: { ...site.requests }, controls: Object.values(CONTROLS) } };
     }
   });
   const binding = {
     startState: async (input: { start?: JsonObject }) => {
-      state.starts.push(input.start);
-      const differs = input.start && input.start.lines !== state.lines ? [`${state.lines} lines where the start had ${String(input.start.lines)}`] : [];
-      if (input.start) state.compared.push(differs);
-      return { state: { lines: state.lines }, differs };
-    }
+      const now = view(site);
+      const was = Array.isArray(input.start?.lines) ? (input.start!.lines as string[]) : undefined;
+      const gone = was ? was.filter((line) => !now.lines.includes(line)) : [];
+      const added = was ? now.lines.filter((line) => !was.includes(line)) : [];
+      return { state: { lines: now.lines }, differs: [...gone.map((line) => `gone: ${line}`), ...added.map((line) => `new: ${line}`)], location: PAGE, lines: { gone, added }, items: now.items };
+    },
+    runsNodes: { arrival: { node: "demo.go", parameter: "to" }, runnable: ["demo.go"] }
   };
   return { state, ledger, wrapper, binding };
 }
 
-/** The trial runner: each trial adds one line through the Flow's own step, and reports that act. */
-const portOf = (asked: AutomationStudioCandidateTrialRequest[], state: { lines: number }) => async (request: AutomationStudioCandidateTrialRequest): Promise<AutomationStudioCandidateTrialResult> => {
-  asked.push(request);
-  state.lines += 1;
-  return { revision: request.revision, digest: request.digest, verdict: "unsure", feedback: { said: "unsure" }, trialRunId: `trial.${asked.length}`, acts: [{ step: 1, definitionId: definition.id, label: "Inspect", consequences: ["create_new"] }] };
-};
+/** The trial runner: each trial adds one line through the Flow's own step, and reports that act. With `hook`, its start hook puts the site back first. */
+function portOf(asked: AutomationStudioCandidateTrialRequest[], site: Site, hook?: { put: Site; ran: number }): AutomationStudioCandidateTrialPort {
+  const port: AutomationStudioCandidateTrialPort = async (request) => {
+    asked.push(request);
+    site.lines.push(`trial-${asked.length}`);
+    return { revision: request.revision, digest: request.digest, verdict: "unsure", feedback: { said: "unsure" }, trialRunId: `trial.${asked.length}`, acts: [{ step: 1, definitionId: definition.id, label: "Inspect", consequences: ["create_new"] }] };
+  };
+  if (hook) {
+    port.prepareStart = async () => {
+      hook.ran += 1;
+      site.lines = [...hook.put.lines];
+      site.requests = { ...hook.put.requests };
+      site.title = hook.put.title;
+      return "reset";
+    };
+  }
+  return port;
+}
 
-async function run(steps: Step[]) {
-  const site = build();
+async function run(steps: Step[], options: { hook?: boolean } = {}) {
+  const built = build();
   const asked: AutomationStudioCandidateTrialRequest[] = [];
   const seen: Entry[][] = [];
+  const hook = options.hook ? { put: structuredClone(built.state.site), ran: 0 } : undefined;
   let index = 0;
   const outcome = await runAutomationStudioFlowCandidateAuthoringLoop({
-    submission: { projectId: "project.test", flowId: "flow.test", registry, resolution, baseDependencyDigest: "accepted.base", binding: site.binding },
-    trial: { candidateId: "candidate.reset", port: portOf(asked, site.state) },
-    siteReset: site.ledger,
+    submission: { projectId: "project.test", flowId: "flow.test", registry, resolution, baseDependencyDigest: "accepted.base", binding: built.binding },
+    trial: { candidateId: "candidate.reset", port: portOf(asked, built.state.site, hook) },
+    siteReset: built.ledger,
+    siteResetSettleMs: 0,
     loop: {
       tools: [runNode], maxIterations: steps.length, maxToolCalls: steps.length + 2,
       unusableDecisions: { maxConsecutive: steps.length, maxInARow: steps.length, stalled: () => new Error("stalled") },
-      executeTool: site.wrapper.executeTool,
+      executeTool: built.wrapper.executeTool,
       decide: async ({ evidence }) => {
         seen.push(evidence.map((entry) => ({ ...entry })));
         const step = steps[index++];
@@ -126,7 +167,7 @@ async function run(steps: Step[]) {
       }
     }
   }).catch((error: unknown) => ({ error }));
-  return { ...site, outcome, seen, asked };
+  return { ...built, outcome, seen, asked, hook };
 }
 
 const undoRecords = (records: readonly AutomationStudioActionDeclarationRecord[]) => records.filter((record) => record.undoes !== undefined);
@@ -136,18 +177,16 @@ describe("a candidate build puts the site back before each trial, through the re
     const { seen, asked, state } = await run([add("call.add"), submit("call.submit"), test("call.test"), submit("call.again")]);
     expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)).toMatchObject({
       ok: false, code: "candidate.trial_reset_required",
-      actsToUndo: [{ act: "act-1", did: "press \"Add\" button", call: "call.add" }],
-      differs: ["1 lines where the start had 0"]
+      actsToUndo: [{ act: "act-1", did: "press \"Add\" button", call: "call.add", stillThere: ["line added-1"] }]
     });
     expect(asked).toHaveLength(0);
-    expect(state.lines).toBe(1);
+    expect(state.site.lines).toEqual(["before", "added-1"]);
   });
 
-  it("removes the act by naming it: the domain never sees `undoes`, the delete is not asked about, and the trial then runs", async () => {
-    const { seen, asked, state, wrapper } = await run([add("call.add"), submit("call.submit"), test("call.test.1"), remove("call.undo", "act-1"), test("call.test.2"), submit("call.again")]);
-    expect(latestOf("core.run_node", seen[4]!)).toMatchObject({ ok: true, lines: 0 });
+  it("removes the line the act created by naming it: the domain never sees `undoes`, the delete is not asked about, and the trial then runs", async () => {
+    const { seen, asked, state, wrapper } = await run([add("call.add"), submit("call.submit"), test("call.test.1"), remove("call.undo", "added-1", "act-1"), test("call.test.2"), submit("call.again")]);
+    expect(latestOf("core.run_node", seen[4]!)).toMatchObject({ ok: true, lines: ["before"] });
     expect(state.inputs.every((value) => !Object.prototype.hasOwnProperty.call(value, "undoes"))).toBe(true);
-    expect(state.acted).toContain("demo.remove");
     expect(wrapper.request()).toBeUndefined();
     expect(undoRecords(wrapper.declarations())).toEqual([expect.objectContaining({ consequences: ["delete"], permitted: true, undoes: "act-1", control: { name: "Remove", kind: "button" } })]);
     const ran = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)!;
@@ -155,76 +194,124 @@ describe("a candidate build puts the site back before each trial, through the re
     expect(ran.startedWith).toBeUndefined();
     expect(ran.leftOnSite).toEqual([{ act: "act-2", did: "trial step 1 \"Inspect\"" }]);
     expect(asked).toHaveLength(1);
-    // Read once at the start, then compared before each test: still one line over, then back as it was.
-    // Read in place around the add and the undo, too (t471): before the act with no start, after it against what it found.
-    expect(state.starts).toEqual([undefined, undefined, { lines: 0 }, { lines: 0 }, undefined, { lines: 1 }, { lines: 0 }]);
-    expect(state.compared).toEqual([["1 lines where the start had 0"], ["1 lines where the start had 0"], ["0 lines where the start had 1"], []]);
   });
 
-  it("still asks about a delete on something the build did not create, and does not act", async () => {
-    const { seen, state, wrapper } = await run([add("call.add"), submit("call.submit"), remove("call.remove"), submit("call.again")]);
-    expect(latestOf("core.run_node", seen[3]!)).toMatchObject({ ok: false, code: "permission_required", missing: ["delete"], requestId: "permission-request:1" });
-    expect(wrapper.request()).toMatchObject({ requestId: "permission-request:1", missing: ["delete"] });
+  // Lane B round 10 (`run-mv5tusj4-b7ee0630`): the reset removed the line the cart held before the build began, twice,
+  // unasked, under the acts of two adds. The safety rule (t475): the reset can only ever remove the line the build added.
+  it("never removes the line that was there before the build: under the add's act it is refused unrun, and the act is kept", async () => {
+    const { seen, asked, state, wrapper } = await run([
+      add("call.add"), submit("call.submit"), test("call.test.1"), remove("call.undo.before", "before", "act-1"), test("call.test.2"), submit("call.again")
+    ]);
+    const refused = latestOf("core.run_node", seen[4]!)!;
+    expect(refused).toMatchObject({ ok: false, code: "candidate.undo_wrong_target", act: "act-1", cannotUndo: [{ act: "act-1" }] });
+    expect(String(refused.instruction)).toContain("never acts on another item");
     expect(state.acted).not.toContain("demo.remove");
-    expect(state.lines).toBe(1);
+    expect(wrapper.request()).toBeUndefined();
+    expect(undoRecords(wrapper.declarations())).toEqual([]);
+    // The act is kept at that first refusal: the next test runs the trial with it in place, and says so.
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)).toMatchObject({ verdict: "unsure", trialRunId: "trial.1", startedWith: { cannotUndo: [{ act: "act-1" }] } });
+    expect(asked).toHaveLength(1);
+    expect(state.site.lines).toEqual(["before", "added-1", "trial-1"]);
+  });
+
+  it("removes the added line unasked once, then refuses the earlier line named under the same act, and asks about it named under none", async () => {
+    const { seen, state, wrapper } = await run([
+      add("call.add"), submit("call.submit"), test("call.test.1"), remove("call.undo", "added-1", "act-1"), remove("call.undo.again", "before", "act-1"),
+      remove("call.remove.before", "before"), submit("call.again")
+    ]);
+    expect(latestOf("core.run_node", seen[4]!)).toMatchObject({ ok: true, lines: ["before"] });
+    expect(latestOf("core.run_node", seen[5]!)).toMatchObject({ ok: false, code: "candidate.undo_already_done", act: "act-1", undoneBy: "call.undo" });
+    expect(latestOf("core.run_node", seen[6]!)).toMatchObject({ ok: false, code: "permission_required", missing: ["delete"], requestId: "permission-request:1" });
+    expect(wrapper.request()).toMatchObject({ missing: ["delete"] });
+    expect(state.site.lines).toEqual(["before"]);
+  });
+
+  it("refuses unrun a removal under an act that only changed something on a control in no item, and keeps that act", async () => {
+    const { seen, state, wrapper } = await run([edit("call.edit"), remove("call.remove", "before", "act-1"), submit("call.submit")]);
+    expect(latestOf("core.run_node", seen[2]!)).toMatchObject({ ok: false, code: "candidate.undo_wrong_target", act: "act-1" });
+    expect(state.inputs.every((value) => !Object.prototype.hasOwnProperty.call(value, "undoes"))).toBe(true);
+    expect(wrapper.request()).toBeUndefined();
+    expect(state.acted).toContain("demo.edit");
+    expect(state.acted).not.toContain("demo.remove");
     expect(undoRecords(wrapper.declarations())).toEqual([]);
   });
 
-  it("still asks about a delete that names an act which only modified something", async () => {
-    const { seen, state, wrapper } = await run([edit("call.edit"), remove("call.remove", "act-1"), submit("call.submit")]);
-    expect(latestOf("core.run_node", seen[2]!)).toMatchObject({ ok: false, code: "permission_required", missing: ["delete"] });
-    expect(state.inputs.every((value) => !Object.prototype.hasOwnProperty.call(value, "undoes"))).toBe(true);
-    expect(wrapper.request()?.missing).toEqual(["delete"]);
-    expect(state.acted).toContain("demo.edit");
-    expect(state.acted).not.toContain("demo.remove");
-    expect(undoRecords(wrapper.declarations())).toEqual([expect.objectContaining({ consequences: ["delete"], permitted: false, missing: ["delete"], undoes: "act-1" })]);
+  it("records no act for an add whose page shows nothing new, so the trial runs without asking for an undo", async () => {
+    const { seen, asked } = await run([add("call.add", { parameters: { broken: true } }), submit("call.submit"), test("call.test"), submit("call.again")]);
+    const ran = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)!;
+    expect(ran).toMatchObject({ verdict: "unsure", trialRunId: "trial.1" });
+    expect(ran.startedWith).toBeUndefined();
+    expect(asked).toHaveLength(1);
   });
 
-  it("refuses the next test after a trial until the trial's own act is undone", async () => {
-    const { seen, asked, state, wrapper } = await run([
-      add("call.add"), submit("call.submit"), test("call.test.1"), remove("call.undo.1", "act-1"), test("call.test.2"),
-      test("call.test.3"), remove("call.undo.2", "act-2"), test("call.test.4"), submit("call.again")
+  it("keeps a trial's own act when the model aims its undo at a line it cannot be tied to, and runs the next trial with it", async () => {
+    const { seen, asked, state } = await run([
+      add("call.add"), submit("call.submit"), test("call.test.1"), remove("call.undo.1", "added-1", "act-1"), test("call.test.2"),
+      test("call.test.3"), remove("call.undo.2", "trial-1", "act-2"), test("call.test.4"), submit("call.again")
     ]);
     expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)).toMatchObject({ trialRunId: "trial.1" });
-    const refused = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[6]!)!;
-    expect(refused).toMatchObject({ ok: false, code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-2", did: "trial step 1 \"Inspect\"" }], differs: ["1 lines where the start had 0"] });
-    // A trial's act was made by no exploration call, so it names none.
-    expect((refused.actsToUndo as JsonObject[])[0]!.call).toBeUndefined();
-    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[8]!)).toMatchObject({ verdict: "unsure", trialRunId: "trial.2", leftOnSite: [{ act: "act-3" }] });
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[6]!)).toMatchObject({ ok: false, code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-2", did: "trial step 1 \"Inspect\"" }] });
+    // A trial's act has no item of its own Core can tie a control to: refused unrun, and kept.
+    expect(latestOf("core.run_node", seen[7]!)).toMatchObject({ ok: false, code: "candidate.undo_wrong_target", act: "act-2" });
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[8]!)).toMatchObject({ verdict: "unsure", trialRunId: "trial.2", startedWith: { cannotUndo: [{ act: "act-2" }] } });
     expect(asked).toHaveLength(2);
-    expect(wrapper.request()).toBeUndefined();
-    expect(undoRecords(wrapper.declarations()).map((record) => record.undoes)).toEqual(["act-1", "act-2"]);
-    expect(state.lines).toBe(1);
+    expect(state.site.lines).toEqual(["before", "trial-1", "trial-2"]);
   });
 
-  // Lane B round 9 (`run-mv5q4j33-d04ac463`, t471): two lines added, then a go to the page they are on under the first
-  // line's act, then each line removed under its own act declaring `delete`. The go used to spend the first act's one
-  // unasked removal, so removing that line was asked about. Then the line that was there before, named under an act
-  // already undone, was asked about and sent again until the build ended; it is now refused unrun as already undone.
-  it("removes two added lines once each unasked after a go under one of them, and refuses an act named again", async () => {
-    const { seen, asked, state, wrapper } = await run([
-      add("call.add.1"), add("call.add.2"), submit("call.submit"), test("call.test.1"),
-      go("call.go", "act-1"), remove("call.undo.2", "act-2", "second"), remove("call.undo.1", "act-1", "first"),
-      remove("call.undo.again", "act-2", "before"), test("call.test.2"), remove("call.remove.before", undefined, "before"), submit("call.again")
+  // Lane D round 10 (`run-mv5tusge-1400ddf7`, `run-mv5upw4g-2482be12`): requests confirmed while exploring; no control
+  // takes a confirmation back, and the model aimed Delete and Confirm at another request's row under `undoes`.
+  it("lane D: two confirms no control reverses; an undo on another row is refused unrun, and the trial runs with both kept", async () => {
+    const { seen, asked, state, wrapper, outcome } = await run([
+      confirm("call.confirm.1", "amara"), confirm("call.confirm.2", "lin"), submit("call.submit"), test("call.test.1"),
+      decline("call.undo.tom", "tom", ["delete"], "act-1"), decline("call.undo.marta", "marta", [], "act-2"),
+      test("call.test.2"), submit("call.again")
     ]);
     expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[4]!)).toMatchObject({ code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-1" }, { act: "act-2" }] });
-    expect(latestOf("core.run_node", seen[6]!)).toMatchObject({ ok: true, lines: 1 });
-    expect(latestOf("core.run_node", seen[7]!)).toMatchObject({ ok: true, lines: 0 });
-    // Named again after its line is gone: refused before the domain sees it, naming the call that undid it.
-    expect(latestOf("core.run_node", seen[8]!)).toMatchObject({ ok: false, code: "candidate.undo_already_done", act: "act-2", undoneBy: "call.undo.2", actsToUndo: [] });
-    expect(state.inputs.filter((value) => (value.parameters as JsonObject | undefined)?.line === "before")).toHaveLength(1);
-    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[9]!)).toMatchObject({ verdict: "unsure", trialRunId: "trial.1" });
+    expect(latestOf("core.run_node", seen[5]!)).toMatchObject({ ok: false, code: "candidate.undo_wrong_target", act: "act-1" });
+    // Declaring nothing lasting does not make another row's control an undo either.
+    expect(latestOf("core.run_node", seen[6]!)).toMatchObject({ ok: false, code: "candidate.undo_wrong_target", act: "act-2" });
+    expect(state.site.requests).toEqual({ tom: "pending", amara: "accepted", lin: "accepted", marta: "pending" });
+    expect(wrapper.request()).toBeUndefined();
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[7]!)).toMatchObject({ verdict: "unsure", trialRunId: "trial.1", startedWith: { cannotUndo: [{ act: "act-1" }, { act: "act-2" }] } });
     expect(asked).toHaveLength(1);
-    // A removal no act of this build covers is still asked about, and not done.
-    expect(latestOf("core.run_node", seen[10]!)).toMatchObject({ ok: false, code: "permission_required", missing: ["delete"], requestId: "permission-request:1" });
-    expect(undoRecords(wrapper.declarations()).map((record) => [record.undoes, record.permitted])).toEqual([["act-1", true], ["act-2", true], ["act-1", true]]);
-    expect(state.inputs.every((value) => !Object.prototype.hasOwnProperty.call(value, "undoes"))).toBe(true);
-    // The trial's own line is the one left.
-    expect(state.lines).toBe(1);
+    // The build went on: every scripted decision was asked for, and nothing ended it on the refusals.
+    expect(seen).toHaveLength(8);
+    expect(outcome).toMatchObject({ loop: { code: "llm_evidence_loop.iteration_limit" } });
+  });
+
+  it("lane D: an undo on the act's own row is admitted but removes nothing unasked; refused, the act is kept and the model is told plainly", async () => {
+    const { seen, asked, state, wrapper } = await run([
+      confirm("call.confirm", "amara"), submit("call.submit"), test("call.test.1"), decline("call.undo", "amara", ["delete"], "act-1"), test("call.test.2"), submit("call.again")
+    ]);
+    const refused = latestOf("core.run_node", seen[4]!)!;
+    expect(refused).toMatchObject({ ok: false, code: "candidate.undo_refused", act: "act-1", refusal: { code: "permission_required", missing: ["delete"] } });
+    expect(String(refused.instruction)).toContain("this act stays as it is");
+    expect(wrapper.request()?.missing).toEqual(["delete"]);
+    expect(state.site.requests.amara).toBe("accepted");
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)).toMatchObject({ verdict: "unsure", startedWith: { cannotUndo: [{ act: "act-1" }] } });
+    expect(asked).toHaveLength(1);
+  });
+
+  // Lane D round 10 (`run-mv5tusge-1400ddf7`): with the Lab's fixture reset, the gate still asked the model to undo,
+  // eight calls, and the hook then put the site back anyway. The hook now runs first, and the check after it is clean.
+  it("runs the deployment's start hook before the check, so a clean start is confirmed with no undo asked of the model", async () => {
+    const { seen, asked, state, hook } = await run([
+      confirm("call.confirm", "amara"), add("call.add"), submit("call.submit"), test("call.test.1"), test("call.test.2"), submit("call.again")
+    ], { hook: true });
+    const first = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[4]!)!;
+    expect(first).toMatchObject({ verdict: "unsure", trialRunId: "trial.1" });
+    expect(first.startedWith).toBeUndefined();
+    // The trial's own act is gone once the hook runs again, so the second test runs too.
+    const second = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)!;
+    expect(second).toMatchObject({ verdict: "unsure", trialRunId: "trial.2" });
+    expect(second.startedWith).toBeUndefined();
+    expect(asked).toHaveLength(2);
+    expect(hook?.ran).toBe(2);
+    expect(state.site.lines).toEqual(["before", "trial-2"]);
   });
 
   it("raises no cross-check finding for the undo records", async () => {
-    const { wrapper, state } = await run([add("call.add"), submit("call.submit"), test("call.test.1"), remove("call.undo", "act-1"), test("call.test.2"), submit("call.again")]);
+    const { wrapper, state } = await run([add("call.add"), submit("call.submit"), test("call.test.1"), remove("call.undo", "added-1", "act-1"), test("call.test.2"), submit("call.again")]);
     const others = wrapper.declarations().filter((record) => record.undoes === undefined);
     expect(undoRecords(wrapper.declarations())).toHaveLength(1);
     const crossCheck = await wrapper.crossCheck();

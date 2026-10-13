@@ -80,4 +80,40 @@ describe("site reset reads around an act", () => {
     expect(h.placed).toEqual([]);
     expect(h.seen).toEqual([]);
   });
+
+  it("tells the ledger an act whose page shows nothing new had no effect, and keeps no place for it (t475)", async () => {
+    const noEffect: string[] = [];
+    const reads = [at("https://site.test/item"), at("https://site.test/item")];
+    await automationStudioSiteResetPlacedCall({
+      call: { callId: "add", toolId: "core.run_node", value: { node: "demo.press", consequences: ["create_new"] } },
+      ledger: { actOf: () => "act-1", placed: () => { throw new Error("no place for an act with no effect"); }, undoSeen: () => undefined, noEffect: (act) => { noEffect.push(act); } },
+      reader: { read: async () => reads.shift() ?? { unread: "no_answer" } },
+      run: async () => "ran"
+    });
+    expect(noEffect).toEqual(["act-1"]);
+  });
+
+  it("counts as created only the items the page shows after the act that no read of the build had seen, reading after it settled (t475)", async () => {
+    const placed: AutomationStudioSiteResetPlace[] = [];
+    const reads: AutomationStudioSiteResetRead[] = [
+      { ...at("https://site.test/basket"), items: ["line:before"] },
+      { ...at("https://site.test/basket", ["new line"]), items: ["line:before", "line:seen-elsewhere", "line:added"] }
+    ];
+    let settled = 0;
+    await automationStudioSiteResetPlacedCall({
+      call: { callId: "add", toolId: "core.run_node", value: { node: "demo.press", consequences: ["create_new"] } },
+      ledger: { actOf: () => "act-1", placed: (_act, place) => { placed.push(place); }, undoSeen: () => undefined },
+      reader: {
+        read: async () => reads.shift() ?? { unread: "no_answer" },
+        settled: async () => {
+          settled += 1;
+          return reads.shift() ?? { unread: "no_answer" };
+        },
+        seenItems: () => new Set(["line:before", "line:seen-elsewhere"])
+      },
+      run: async () => "ran"
+    });
+    expect(settled).toBe(1);
+    expect(placed).toEqual([{ state: { page: "https://site.test/basket" }, location: "https://site.test/basket", changed: ["new line"], lines: { gone: [], added: ["new line"] }, created: ["line:added"] }]);
+  });
 });

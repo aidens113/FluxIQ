@@ -4,6 +4,7 @@
 export * from "./act-places.ts";
 export * from "./contracts.ts";
 export * from "./ledger.ts";
+export * from "./settle-ms.ts";
 export * from "./start-check.ts";
 export * from "./trial-policy.ts";
 export * from "./undoes-tool.ts";

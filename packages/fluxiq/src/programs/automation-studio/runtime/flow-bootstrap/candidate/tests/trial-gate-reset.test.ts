@@ -79,7 +79,7 @@ async function run(steps: Step[], port: (request: AutomationStudioCandidateTrial
   const outcome = await runAutomationStudioFlowCandidateAuthoringLoop({
     submission: { projectId: "project.test", flowId: "flow.test", registry, resolution, baseDependencyDigest: "accepted.base", binding: fake.binding },
     trial: { candidateId: "candidate.reset", port },
-    ...(options.reset === false ? {} : { siteReset: fake.ledger }),
+    ...(options.reset === false ? {} : { siteReset: fake.ledger, siteResetSettleMs: 0 }),
     loop: {
       tools: [runNode], maxIterations: steps.length, maxToolCalls: steps.length + 2,
       unusableDecisions: { maxConsecutive: steps.length, maxInARow: steps.length, stalled: () => new Error("stalled") },

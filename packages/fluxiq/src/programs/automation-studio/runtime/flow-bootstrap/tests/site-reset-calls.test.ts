@@ -2,29 +2,38 @@
 // (t462): the `undoes` key is read by the ledger and never reaches the domain,
 // a refused claim is answered without running anything, an accepted one lets
 // the gate allow what undoing that act may do, and every call that ran is
-// reported back with whether it landed and what it declared.
+// reported back with whether it landed and what it declared. Since t475 each
+// action an undo puts to the gate is put to the ledger first: a control the
+// ledger refuses is never acted on and nobody is asked.
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioActionDeclaration } from "../../action-permissions/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/index.ts";
 import { automationStudioFlowBootstrapActionPermissions } from "../action-permissions.ts";
-import type { AutomationStudioSiteResetCalls, AutomationStudioSiteResetClaim, AutomationStudioSiteResetExplored } from "../site-reset/index.ts";
+import type { AutomationStudioSiteResetCalls, AutomationStudioSiteResetClaim, AutomationStudioSiteResetExplored, AutomationStudioSiteResetSpot, AutomationStudioSiteResetTarget } from "../site-reset/index.ts";
 
 const REMOVE: AutomationStudioActionDeclaration = { consequences: ["delete"], control: { name: "Remove", kind: "button" }, verb: "press" };
 
-/** A ledger that answers claims as scripted and remembers what it was told. */
-function ledger(answer: (undoes: unknown) => AutomationStudioSiteResetClaim) {
+const CREATED: AutomationStudioSiteResetTarget = { kind: "admit", on: "created", allowed: ["delete"] };
+
+/** A ledger that answers claims and targets as scripted and remembers what it was told. */
+function ledger(answer: (undoes: unknown) => AutomationStudioSiteResetClaim, aimed: (act: string, control: AutomationStudioSiteResetSpot) => AutomationStudioSiteResetTarget = () => CREATED) {
   const claims: unknown[] = [];
+  const targets: Array<[string, AutomationStudioSiteResetSpot]> = [];
   const explored: AutomationStudioSiteResetExplored[] = [];
   const calls: AutomationStudioSiteResetCalls = {
     claim: (undoes) => {
       claims.push(undoes);
       return answer(undoes);
     },
+    target: (act, declared) => {
+      targets.push([act, declared.control]);
+      return aimed(act, declared.control);
+    },
     explored: (call) => { explored.push(call); }
   };
-  return { calls, claims, explored };
+  return { calls, claims, targets, explored };
 }
 
 /** A build whose stand-in domain declares what the call carries, and answers with what the test scripts. */
@@ -49,7 +58,7 @@ function build(options: { siteReset?: AutomationStudioSiteResetCalls; answer?: (
   return { permissions, seen, call };
 }
 
-const DELETE_OK: AutomationStudioSiteResetClaim = { kind: "undo", undo: { act: "act-1", allowed: ["delete"] } };
+const DELETE_OK: AutomationStudioSiteResetClaim = { kind: "undo", undo: { act: "act-1", allowed: [] } };
 
 describe("a candidate build's undo through the permission wrapper", () => {
   it("strips `undoes`, lets the undo delete unasked, and reports it landed with its declaration", async () => {
@@ -68,8 +77,48 @@ describe("a candidate build's undo through the permission wrapper", () => {
       undoes: "act-1",
       // Never shown to the model in this stand-in, so the name is withheld as the gate would withhold it.
       declared: { permitted: true, effect: "mutate", consequences: ["delete"], control: { name: null, kind: "button" }, verb: "press" },
+      on: "created",
       landed: true
     }]);
+  });
+
+  it("passes the control's item and dialog tokens to the ledger before the gate, and never to a person (t475)", async () => {
+    const reset = ledger(() => DELETE_OK);
+    const run = build({ siteReset: reset.calls });
+    const placed = { ...REMOVE, control: { ...REMOVE.control, item: "item:abc", dialog: "dialog:def" } };
+    await run.call("call.1", { declaration: placed as unknown as JsonObject, undoes: "act-1" });
+
+    expect(reset.targets).toEqual([["act-1", { item: "item:abc", dialog: "dialog:def" }]]);
+    expect(reset.explored[0]?.declared?.control).toEqual({ name: null, kind: "button", item: "item:abc", dialog: "dialog:def" });
+  });
+
+  it("refuses an undo on a control the ledger refuses, unrun: the domain is told no, nobody is asked, and the model gets the ledger's words (t475)", async () => {
+    const evidence = { ok: false, code: "candidate.undo_wrong_target", act: "act-1" };
+    const reset = ledger(() => DELETE_OK, () => ({ kind: "refused", evidence }));
+    let pressed = 0;
+    const run = build({ siteReset: reset.calls, answer: (permitted) => {
+      if (permitted) pressed += 1;
+      return { kind: "llm_evidence_tool_execution", evidence: permitted ? { ok: true } : { ok: false, code: "permission_required" }, effectApplied: permitted };
+    } });
+    const execution = await run.call("call.1", { declaration: REMOVE as unknown as JsonObject, undoes: "act-1" });
+
+    expect(pressed).toBe(0);
+    expect(execution).toEqual({ kind: "llm_evidence_tool_execution", evidence, effectApplied: false, targetsUnchanged: true, resultCode: "candidate.undo_wrong_target" });
+    expect(run.permissions.request()).toBeUndefined();
+    expect(run.permissions.declarations()).toEqual([]);
+    expect(reset.explored).toEqual([{ callId: "call.1", toolId: "core.run_node", undoes: "act-1", landed: false }]);
+  });
+
+  it("asks about a removal the ledger admits on the act's own item with nothing unasked, and tells the model plainly when it is refused (t475)", async () => {
+    const reset = ledger(() => DELETE_OK, () => ({ kind: "admit", on: "own", allowed: [] }));
+    const run = build({ siteReset: reset.calls });
+    const execution = await run.call("call.1", { declaration: REMOVE as unknown as JsonObject, undoes: "act-1" });
+
+    expect(run.permissions.request()?.missing).toEqual(["delete"]);
+    expect(execution).toMatchObject({ kind: "llm_evidence_tool_execution", effectApplied: false, resultCode: "candidate.undo_refused",
+      evidence: { ok: false, code: "candidate.undo_refused", act: "act-1", refusal: { ok: false, code: "permission_required" } } });
+    expect(String((execution as { evidence: { instruction: string } }).evidence.instruction)).toContain("this act stays as it is");
+    expect(reset.explored[0]).toMatchObject({ undoes: "act-1", on: "own", declared: { permitted: false }, landed: false });
   });
 
   it("answers a refused claim without running the call", async () => {

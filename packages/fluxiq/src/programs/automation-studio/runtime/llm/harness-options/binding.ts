@@ -62,6 +62,12 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
    * revisited and its undo is judged by what the undo call changed. `lines`
    * gives the same differences as the lines themselves (gone, and new), which
    * Core compares only for equality, to tell which act changed which line.
+   * `items` (t475) are opaque tokens of the items -- rows, cards -- on the
+   * page, in the form an action declaration's `control.item` takes: an item an
+   * act's own page shows after it that no read had seen is one the act
+   * created, and only such an item may be removed by an undo without asking.
+   * A domain also leaves out of `lines` what it knows is not state, such as
+   * which element has focus.
    */
   startState?(input: {
     projectId: string;
@@ -70,7 +76,7 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
     start?: JsonObject;
     permission: AutomationStudioActionPermissionCheck;
     signal?: AbortSignal;
-  }): Promise<{ state: JsonObject; differs: string[]; location?: string; lines?: { gone: string[]; added: string[] } } | undefined>;
+  }): Promise<{ state: JsonObject; differs: string[]; location?: string; lines?: { gone: string[]; added: string[] }; items?: string[] } | undefined>;
   observeResult?(input: {
     projectId: string;
     flowId: string;

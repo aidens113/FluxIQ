@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioActionConsequence } from "../../../action-permissions/index.ts";
-import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetComparison, type AutomationStudioSiteResetExplored, type AutomationStudioSiteResetPlace } from "../index.ts";
+import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetComparison, type AutomationStudioSiteResetExplored, type AutomationStudioSiteResetPlace, type AutomationStudioSiteResetSpot } from "../index.ts";
 
 // The ledger as the permission wrapper and the trial gate drive it: what
 // becomes an act, which claims it accepts, how an act is found undone or
 // kept, and how a trial restarts a phase.
 
-function acted(callId: string, consequences: AutomationStudioActionConsequence[], extra: Partial<AutomationStudioSiteResetExplored> = {}): AutomationStudioSiteResetExplored {
-  return { callId, toolId: "core.run_node", landed: true, declared: { permitted: true, effect: "mutate", consequences, control: { name: "Save", kind: "button" }, verb: "press" }, ...extra };
+function acted(callId: string, consequences: AutomationStudioActionConsequence[], extra: Partial<AutomationStudioSiteResetExplored> = {}, spot: AutomationStudioSiteResetSpot = {}): AutomationStudioSiteResetExplored {
+  return { callId, toolId: "core.run_node", landed: true, declared: { permitted: true, effect: "mutate", consequences, control: { name: "Save", kind: "button", ...spot }, verb: "press" }, ...extra };
 }
+/** What an undo's control declares to the ledger before it acts (t475). */
+const aim = (consequences: AutomationStudioActionConsequence[], control: AutomationStudioSiteResetSpot = {}) => ({ effect: "mutate" as const, consequences, control });
+const UNDO = { kind: "undo", undo: { act: "act-1", allowed: [] } };
 const back = async (): Promise<AutomationStudioSiteResetComparison> => ({ moved: true, differs: [] });
 const unknown = async (): Promise<AutomationStudioSiteResetComparison> => ({ moved: false });
 
@@ -38,13 +41,101 @@ describe("site reset ledger", () => {
     expect(ledger.inPlace()).toEqual([{ act: "act-1", did: "press link", call: "call.1" }]);
   });
 
-  it("allows deleting only when undoing an act that created something", () => {
+  it("grants nothing unasked on a claim: what an undo may do is decided per control (t475)", () => {
     const ledger = new AutomationStudioSiteResetLedger();
     ledger.explored(acted("call.1", ["create_new"]));
     ledger.explored(acted("call.2", ["modify_existing"]));
-    expect(ledger.claim("act-1")).toEqual({ kind: "undo", undo: { act: "act-1", allowed: ["delete"] } });
+    expect(ledger.claim("act-1")).toEqual({ kind: "undo", undo: { act: "act-1", allowed: [] } });
     expect(ledger.claim("act-2")).toEqual({ kind: "undo", undo: { act: "act-2", allowed: [] } });
     expect(ledger.claim(undefined)).toEqual({ kind: "none" });
+  });
+
+  it("allows removing unasked only the item the act created, proven by its own page (t475)", () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.explored(acted("call.add", ["create_new"], {}, { item: "page-add" }));
+    ledger.placed("act-1", { state: {}, location: "https://site.test/basket", changed: ["new: line added"], created: ["line:added"] });
+    expect(ledger.target("act-1", aim(["delete"], { item: "line:added" }))).toEqual({ kind: "admit", on: "created", allowed: ["delete"] });
+    // The act's own control and its item: admitted, nothing unasked.
+    expect(ledger.target("act-1", aim(["delete"], { item: "page-add" }))).toEqual({ kind: "admit", on: "own", allowed: [] });
+    // A move with nothing lasting and no item, and a look anywhere.
+    expect(ledger.target("act-1", aim([]))).toEqual({ kind: "admit", on: "moving", allowed: [] });
+    expect(ledger.target("act-1", { effect: "observe", consequences: [], control: { item: "line:before" } })).toEqual({ kind: "admit", on: "moving", allowed: [] });
+    expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1"]);
+  });
+
+  it("refuses an undo on another item's control, and keeps the act at that first refusal (t475)", () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.explored(acted("call.confirm", ["modify_existing"], {}, { item: "row:amara" }));
+    for (const control of [{ item: "row:tom" }, { item: "row:amara", dialog: "dialog:other" }, {}]) {
+      const fresh = new AutomationStudioSiteResetLedger();
+      fresh.explored(acted("call.confirm", ["modify_existing"], {}, { item: "row:amara" }));
+      const refused = fresh.target("act-1", aim(["delete"], control));
+      expect(refused).toMatchObject({ kind: "refused", evidence: { ok: false, code: "candidate.undo_wrong_target", act: "act-1", cannotUndo: [{ act: "act-1" }] } });
+      expect(fresh.inPlace()).toEqual([]);
+      expect(fresh.claim("act-1")).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_act_kept" } });
+    }
+    // Declaring nothing lasting does not make another row's control an undo.
+    expect(ledger.target("act-1", aim([], { item: "row:tom" }))).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_wrong_target" } });
+  });
+
+  it("admits a dialog the site opens to confirm an undo only after that undo landed on the act's own or created item (t475)", () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.explored(acted("call.add", ["create_new"]));
+    ledger.placed("act-1", { state: {}, location: "https://site.test/basket", changed: ["new: line"], created: ["line:added"] });
+    ledger.explored(acted("call.add.2", ["create_new"]));
+    // Before any undo of act-2 landed, a dialog control is not tied to it.
+    expect(ledger.target("act-2", aim(["delete"], { dialog: "dialog:confirm" }))).toMatchObject({ kind: "refused" });
+    expect(ledger.target("act-1", aim(["delete"], { item: "line:added" }))).toMatchObject({ kind: "admit", on: "created" });
+    ledger.explored(acted("call.remove", [], { undoes: "act-1", on: "created" }));
+    expect(ledger.target("act-1", aim(["delete"], { dialog: "dialog:confirm" }))).toEqual({ kind: "admit", on: "follow_up", allowed: ["delete"] });
+    ledger.explored(acted("call.yes", ["delete"], { undoes: "act-1", on: "follow_up" }));
+    expect(ledger.claim("act-1")).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_already_done", undoneBy: "call.yes" } });
+  });
+
+  it("keeps an act whose undo the gate refused, at once (t475)", () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.explored(acted("call.confirm", ["modify_existing"], {}, { item: "row:amara" }));
+    ledger.explored({ ...acted("call.undo", ["delete"], { undoes: "act-1", on: "own", landed: false }), declared: { permitted: false, effect: "mutate", consequences: ["delete"], control: { name: "Delete", kind: "button", item: "row:amara" }, verb: "press" } });
+    expect(ledger.inPlace()).toEqual([]);
+    expect(ledger.claim("act-1")).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_act_kept" } });
+  });
+
+  it("forgets an act whose page showed nothing of it (t475)", async () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.explored(acted("call.add", ["create_new"]));
+    ledger.noEffect("act-1");
+    expect(ledger.inPlace()).toEqual([]);
+    expect(ledger.claim("act-1")).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_unknown_act" } });
+    expect(await ledger.beforeTrial(back)).toEqual({ kind: "admit" });
+  });
+
+  it("after a start hook, counts acts no longer seen undone with no undo asked, kept ones too, and asks only for what is still seen (t475)", async () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.explored(acted("call.1", ["modify_existing"]));
+    ledger.placed("act-1", { state: { page: "a" }, location: "https://site.test/a", changed: ["new: done 1"] });
+    ledger.explored(acted("call.2", ["modify_existing"]));
+    ledger.placed("act-2", { state: { page: "b" }, location: "https://site.test/b", changed: ["new: done 2"] });
+    ledger.trialRan([{ step: 1, definitionId: "demo.press", consequences: ["create_new"] }], "trial.1");
+    // act-2 survived the hook on its own page; act-1 and the trial's act-3 did not.
+    const compareAt = async (place: AutomationStudioSiteResetPlace) => ({ moved: true, differs: place.location.endsWith("/b") ? ["new: done 2"] : [] });
+    let compared = 0;
+    const compare = async () => {
+      compared += 1;
+      return { moved: true, differs: [] };
+    };
+    expect(await ledger.beforeTrial({ compare, compareAt }, undefined, { startReset: true })).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-2", stillThere: ["new: done 2"] }] } });
+    expect(compared).toBe(1);
+    // A start that still differs does not vouch for an act with no page.
+    const other = new AutomationStudioSiteResetLedger();
+    other.trialRan([{ step: 1, definitionId: "demo.press", consequences: ["create_new"] }], "trial.1");
+    expect(await other.beforeTrial(async () => ({ moved: true, differs: ["new: line"] }), undefined, { startReset: true })).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-1" }] } });
+    // A kept act the hook put back is no longer said to be in place.
+    const kept = new AutomationStudioSiteResetLedger();
+    kept.explored(acted("call.1", ["modify_existing"], {}, { item: "row:a" }));
+    kept.target("act-1", aim(["delete"], { item: "row:b" }));
+    expect(await kept.beforeTrial(back)).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1" }] } });
+    kept.trialRan([], "trial.1");
+    expect(await kept.beforeTrial(back, undefined, { startReset: true })).toEqual({ kind: "admit" });
   });
 
   it("refuses a claim on an unknown act, a malformed value, or an act that cannot be undone, listing the acts that may be", () => {
@@ -95,21 +186,21 @@ describe("site reset ledger", () => {
     const ledger = new AutomationStudioSiteResetLedger();
     ledger.explored(acted("call.1", ["create_new"]));
     // Going to the page the line is on, under the act, spends nothing.
-    ledger.explored(acted("call.go", [], { undoes: "act-1" }));
-    expect(ledger.claim("act-1")).toEqual({ kind: "undo", undo: { act: "act-1", allowed: ["delete"] } });
-    ledger.explored(acted("call.undo", ["delete"], { undoes: "act-1" }));
+    ledger.explored(acted("call.go", [], { undoes: "act-1", on: "moving" }));
+    expect(ledger.claim("act-1")).toEqual(UNDO);
+    ledger.explored(acted("call.undo", ["delete"], { undoes: "act-1", on: "created" }));
     const claim = ledger.claim("act-1");
     expect(claim).toMatchObject({ kind: "refused", evidence: { ok: false, code: "candidate.undo_already_done", act: "act-1", undoneBy: "call.undo", actsToUndo: [] } });
     if (claim.kind === "refused") expect(String(claim.evidence.instruction)).toContain("checked on its own page before the next trial");
   });
 
-  it("leaves an act's removal unspent when the undo only looked, was refused, or put nothing to the gate", () => {
+  it("leaves an act's removal unspent when the undo only looked, put nothing to the gate, or removed on its own item rather than a created one", () => {
     const ledger = new AutomationStudioSiteResetLedger();
     ledger.explored(acted("call.1", ["create_new"]));
     ledger.explored({ ...acted("call.look", ["delete"], { undoes: "act-1" }), declared: { permitted: true, effect: "observe", consequences: [], control: { name: null, kind: null }, verb: "read" } });
-    ledger.explored({ ...acted("call.refused", ["delete"], { undoes: "act-1" }), declared: { permitted: false, effect: "mutate", consequences: ["delete"], control: { name: "Remove", kind: "button" }, verb: "press" } });
     ledger.explored({ callId: "call.bare", toolId: "core.run_node", undoes: "act-1", landed: true });
-    expect(ledger.claim("act-1")).toEqual({ kind: "undo", undo: { act: "act-1", allowed: ["delete"] } });
+    ledger.explored(acted("call.own", ["delete"], { undoes: "act-1", on: "own" }));
+    expect(ledger.claim("act-1")).toEqual(UNDO);
   });
 
   it("counts an act with no page of its own undone only when an undo of it changed the page it ran on and stayed there", async () => {
@@ -210,14 +301,14 @@ describe("site reset ledger", () => {
       }
     };
     expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-1" }, { act: "act-2" }] } });
-    ledger.explored(acted("go-to-basket", [], { undoes: "act-1" }));
-    expect(ledger.claim("act-2")).toEqual({ kind: "undo", undo: { act: "act-2", allowed: ["delete"] } });
-    ledger.explored(acted("remove-second", ["delete"], { undoes: "act-2" }));
+    ledger.explored(acted("go-to-basket", [], { undoes: "act-1", on: "moving" }));
+    expect(ledger.claim("act-2")).toEqual({ kind: "undo", undo: { act: "act-2", allowed: [] } });
+    ledger.explored(acted("remove-second", ["delete"], { undoes: "act-2", on: "created" }));
     site.lines.pop();
     // Only the second line removed: the first act's line is still there, the second's is gone.
     expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-1", stillThere: ["basket: soap,first", "basket: soap"] }] } });
-    expect(ledger.claim("act-1")).toEqual({ kind: "undo", undo: { act: "act-1", allowed: ["delete"] } });
-    ledger.explored(acted("remove-first", ["delete"], { undoes: "act-1" }));
+    expect(ledger.claim("act-1")).toEqual(UNDO);
+    ledger.explored(acted("remove-first", ["delete"], { undoes: "act-1", on: "created" }));
     site.lines.pop();
     // The earlier line, named under either act, is refused unrun.
     expect(ledger.claim("act-1")).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_already_done", undoneBy: "remove-first" } });
@@ -236,7 +327,7 @@ describe("site reset ledger", () => {
     expect(left).toEqual([{ act: "act-3", did: "trial step 3 \"Keep it\" on \"Save\"" }]);
     ledger.explored(acted("call.3", ["modify_existing"]));
     expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-3", "act-5"]);
-    expect(ledger.claim("act-3")).toEqual({ kind: "undo", undo: { act: "act-3", allowed: ["delete"] } });
+    expect(ledger.claim("act-3")).toEqual({ kind: "undo", undo: { act: "act-3", allowed: [] } });
   });
 
   it("is not due before any act, so the trial runs without a comparison", async () => {

@@ -128,4 +128,64 @@ describe("site reset start check", () => {
     expect(await check.compareAt(place)).toEqual({ moved: true });
     expect(refused.asked).toEqual([]);
   });
+
+  it("takes what went away between two reads of an untouched page as live content, and leaves it out from then on (t475)", async () => {
+    // A banner rotating between two slides: each read shows the other one; the act's own line stays.
+    let slide = 0;
+    const binding = {
+      startState: async (input: { start?: JsonObject }) => {
+        slide += 1;
+        const added = input.start ? [`banner slide ${slide % 2}`, "line added"] : [];
+        return { state: { slide }, differs: added.map((line) => `new: ${line}`), location: "https://site.test/a", lines: { gone: [], added }, items: ["line:before"] };
+      },
+      runsNodes: { arrival: { node: "demo.go", parameter: "to" }, runnable: ["demo.go"] }
+    };
+    const slept: number[] = [];
+    const check = new AutomationStudioSiteResetStartCheck({ binding, projectId: "p", flowId: "f", tools: [runNode], executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true }),
+      liveCheck: { settleMs: 1000, sleep: async (ms) => { slept.push(ms); } } });
+    // The slide the first read showed went away by the second: that one is live from now on.
+    const settled = await check.settled({ slide: 0 });
+    expect(settled).toMatchObject({ differs: ["new: banner slide 0", "new: line added"], lines: { gone: [], added: ["banner slide 0", "line added"] }, items: ["line:before"] });
+    expect(slept).toEqual([1000]);
+    // A later single read leaves the banner out too, and so does a comparison at the act's own page.
+    expect(await check.read({ slide: 0 })).toMatchObject({ differs: ["new: line added"], lines: { added: ["line added"] } });
+    expect(await check.compareAt({ state: { slide: 0 }, location: "https://site.test/a", changed: ["new: line added"] })).toEqual({ moved: true, differs: ["new: line added"], lines: { gone: [], added: ["line added"] } });
+    expect(check.seenItems()).toEqual(new Set(["line:before"]));
+  });
+
+  it("reads the start twice when comparing with a live check, and leaves out what went away between the two (t475)", async () => {
+    // A notice rotating through three messages, one per read against the start.
+    let n = 0;
+    const binding = { startState: async (input: { start?: JsonObject }) => {
+      if (!input.start) return { state: { n }, differs: [] };
+      n += 1;
+      return { state: { n }, differs: [`notice ${n % 3}`, "new: line"] };
+    } };
+    const ran: string[] = [];
+    const check = new AutomationStudioSiteResetStartCheck({ binding, projectId: "p", flowId: "f", tools: [runNode], executeTool: async (call) => {
+      ran.push(call.callId);
+      return { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true };
+    }, liveCheck: { settleMs: 0 } });
+    await check.capture();
+    // The first notice went away by itself; the second has not been seen to yet.
+    expect(await check.compare()).toEqual({ moved: true, differs: ["notice 2", "new: line"] });
+    // Read again: that one goes away too, and only the build's line is left.
+    expect(await check.compare()).toEqual({ moved: true, differs: ["new: line"] });
+    expect(ran).toEqual(["site-reset.1.arrival", "site-reset.2.arrival"]);
+  });
+
+  it("never takes an act's effect that is slow to appear for live content (t475)", async () => {
+    let n = 0;
+    const binding = {
+      startState: async (input: { start?: JsonObject }) => {
+        n += 1;
+        // The act's line shows only from the second read on, as a count updated after a short delay does.
+        const added = input.start && n >= 2 ? ["cart 1"] : [];
+        return { state: { n }, differs: added.map((line) => `new: ${line}`), location: "https://site.test/a", lines: { gone: [], added } };
+      }
+    };
+    const check = new AutomationStudioSiteResetStartCheck({ binding, projectId: "p", flowId: "f", tools: [runNode], executeTool: async () => ({}), liveCheck: { settleMs: 0 } });
+    expect(await check.settled({ n: 0 })).toMatchObject({ differs: ["new: cart 1"], lines: { added: ["cart 1"] } });
+    expect(await check.read({ n: 0 })).toMatchObject({ differs: ["new: cart 1"] });
+  });
 });

@@ -61,6 +61,13 @@
 // `documentChanged`; one recorded before that word, `locationChanged`), the
 // page it left, which is the site before any act. A step before it that saw no
 // page (a model or code step) did not change it. Nothing captured, no start.
+//
+// **And a step that runs per row names only the rows it acted on** (t475,
+// `./step-rows.ts`): `rowsActedOn`, each by its own fields. Its authored
+// parameters named the row it was written on -- lane D round 10's Confirm step
+// carried the listing's first row, one its condition left out, and the judge
+// read the step as pressing Confirm on every row -- so that row's identity
+// (`ROW_PLACE`) is left out of them, and `perRow` says why.
 
 import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
@@ -75,13 +82,31 @@ import type {
 } from "./contracts.ts";
 import { automationStudioResultReadAccounts } from "./read-account/index.ts";
 import { automationStudioResultStepChanges } from "./step-changes.ts";
+import { automationStudioResultStepRows } from "./step-rows.ts";
 
 /** Stands in, in a row, for a value shaped like a credential or carrying a denied key. */
 const WITHHELD_VALUE = "[withheld]";
 
-/** One traced attempt, as far as this reads it: its diff, and the domain's view of the page before and after it. */
+/** Says, on a step that runs per row, what its rows and parameters are (header). */
+const PER_ROW = "This step runs once per row of its loop. rowsActedOn lists the rows it acted on in this run, one per pass; the row it was written on is left out of its parameters, and is not a row it acted on.";
+
+/**
+ * The keys under which a step's target names the row it was written on: the
+ * record it sat in and its place in a list or table. Core's own vocabulary for
+ * where a target sits among rows, as the `target` family is for what a repair
+ * addresses (`../llm/harness/evidence-screen.ts`); read only on a step whose
+ * rows this run names.
+ */
+const ROW_PLACE = /^(?:record|row|listposition|tableposition)$/u;
+
+/** One traced attempt, as far as this reads it: its diff, the domain's view of the page before and after it, and how it ended. */
 type TracedAttempt = {
   nodeId: string;
+  route?: string | undefined;
+  status?: string | undefined;
+  outputs?: Readonly<Record<string, unknown>> | undefined;
+  skipped?: unknown;
+  stateHeld?: unknown;
   stateRefs?: { stateDiff?: JsonObject; beforeAction?: { summary?: JsonObject | undefined }; afterAction?: { summary?: JsonObject | undefined } } | undefined;
 };
 
@@ -161,9 +186,17 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
   const flowNodes = input.flowEdges ? inRunOrder(input.flowNodes ?? [], input.flowEdges) : input.flowNodes ?? [];
   const changes = automationStudioResultStepChanges(input.sessionAttempts, input.deniedEvidenceKeys);
   if (changes.withheld) withheld = true;
+  // A run's own rows, per step that runs per row (t475); a summary of no run names none.
+  const perRow = input.sessionAttempts ? automationStudioResultStepRows({ flowNodes, flowEdges: input.flowEdges, attempts: input.sessionAttempts, deniedEvidenceKeys: input.deniedEvidenceKeys }) : undefined;
+  if (perRow?.withheld) withheld = true;
   const flowShape = flowNodes.map((node) => {
     const changed = changes.byNode.get(node.id);
-    return { ...step(node, input.deniedEvidenceKeys), ...(changed ? { changed } : {}) };
+    const bound = perRow?.rowBound.has(node.id) === true;
+    return {
+      ...step(node, input.deniedEvidenceKeys, bound),
+      ...(changed ? { changed } : {}),
+      ...(bound ? { rowsActedOn: [...(perRow?.rows.get(node.id) ?? [])], perRow: PER_ROW } : {})
+    };
   });
   const ended = input.endView ? automationStudioResultEndView(input.endView, input.deniedEvidenceKeys) : undefined;
   if (ended?.withheld || input.endViewUnreadable !== undefined) withheld = true;
@@ -305,15 +338,26 @@ function inRunOrder(nodes: readonly AutomationStudioFlowNode[], edges: readonly 
  * One step, with the name the Flow gave it and, under a declaration, the
  * parameters it was authored with, screened by the repair context's screen.
  */
-function step(node: AutomationStudioFlowNode, deniedEvidenceKeys: readonly string[] | undefined): AutomationStudioResultFlowStepSummary {
+function step(node: AutomationStudioFlowNode, deniedEvidenceKeys: readonly string[] | undefined, perRow = false): AutomationStudioResultFlowStepSummary {
   const named: AutomationStudioResultFlowStepSummary = {
     nodeId: node.id,
     definitionId: node.definitionId,
     ...(node.label ? { label: node.label } : {})
   };
   if (deniedEvidenceKeys === undefined || !node.parameterValues || Object.keys(node.parameterValues).length === 0) return named;
-  const screened = automationStudioScreenedNodeParameters(node.parameterValues, deniedEvidenceKeys);
+  const authored = perRow ? withoutRowPlace(node.parameterValues) : node.parameterValues;
+  const screened = automationStudioScreenedNodeParameters(authored, deniedEvidenceKeys);
   return { ...named, parameters: screened.values, ...(screened.withheld.length ? { parametersWithheld: screened.withheld } : {}) };
+}
+
+/** `parameters` with every value under a row-place key left out, at any depth (header). */
+function withoutRowPlace(parameters: JsonObject): JsonObject {
+  const strip = (value: JsonValue): JsonValue => {
+    if (Array.isArray(value)) return value.map(strip);
+    if (value === null || typeof value !== "object") return value;
+    return Object.fromEntries(Object.entries(value).filter(([key]) => !ROW_PLACE.test(key.toLowerCase().replace(/[^a-z0-9]/gu, ""))).map(([key, child]) => [key, strip(child)]));
+  };
+  return strip(parameters) as JsonObject;
 }
 
 function summarizedRecordSet(

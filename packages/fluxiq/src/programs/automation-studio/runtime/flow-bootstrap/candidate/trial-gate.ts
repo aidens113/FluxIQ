@@ -64,6 +64,11 @@
 // that ran says under `startedWith` what was still in place, and under
 // `leftOnSite` the acts now on the site, the trial's own among them.
 //
+// **A start hook runs before the reset check (t475).** When the trial port has
+// one (`prepareStart`), it runs first, and the reset is told the site was just
+// put back (`startReset`), so it confirms a clean start by looking rather than
+// by asking the model to undo what the hook already undid.
+//
 // With no port injected the test tool says `candidate.trial_unavailable` and
 // completion keeps its old meaning: the latest valid submission ends as an
 // unverified draft, which is all a deployment without a trial runner can make.
@@ -165,7 +170,10 @@ export class AutomationStudioFlowCandidateTrialGate {
     }
     const signal = callSignal ?? this.input.signal ?? this.fallbackSignal;
     signal.throwIfAborted();
-    const reset = await this.input.reset?.beforeTrial(signal, Array.isArray(cannotUndo) ? cannotUndo as string[] : undefined);
+    // The deployment's start hook first, so the check after it finds the site put back (header).
+    const prepared = this.input.reset && trial.port.prepareStart ? await trial.port.prepareStart({ revision: latest.revision, digest: latest.digest, signal }) : "none";
+    signal.throwIfAborted();
+    const reset = await this.input.reset?.beforeTrial(signal, Array.isArray(cannotUndo) ? cannotUndo as string[] : undefined, prepared === "reset" ? { startReset: true } : undefined);
     signal.throwIfAborted();
     // Not a trial: the model is told what to put back, and the identical test after it reaches this gate again (header).
     if (reset?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: reset.evidence, effectApplied: reset.moved, targetsUnchanged: !reset.moved, resultCode: reset.evidence.code, resultReason: RETEST_REASON };

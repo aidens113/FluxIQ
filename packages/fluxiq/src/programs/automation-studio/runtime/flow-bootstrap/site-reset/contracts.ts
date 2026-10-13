@@ -22,6 +22,30 @@ export const AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY = "undoes";
 export type AutomationStudioSiteResetUndo = { act: string; allowed: readonly AutomationStudioActionConsequence[] };
 
 /**
+ * Where a control sits, as the domain declared it (t475): opaque tokens for the
+ * item -- row, card, list item -- and the dialog, compared only for equality.
+ * Absent where the control sits in no item, or in no dialog.
+ */
+export type AutomationStudioSiteResetSpot = { item?: string; dialog?: string };
+
+/**
+ * What an undo call may do to the control the domain is about to act on
+ * (t475), read before the press: admitted with the gated classes it may do
+ * unasked, or refused with the evidence the model is answered with, and the
+ * control is never acted on. `on` says why it was admitted:
+ *
+ * - `created`: an item the act itself made, proven by the act's own page
+ *   before and after it; the one place an unasked removal is allowed.
+ * - `own`: the act's own item and dialog -- the same row, the same layer.
+ * - `follow_up`: a control in a dialog, with no item, after an undo of the
+ *   same act landed on its own or created item: the site asking to confirm.
+ * - `moving`: nothing lasting and no item -- going to a page, opening a view.
+ */
+export type AutomationStudioSiteResetTarget =
+  | { kind: "admit"; on: "created" | "own" | "follow_up" | "moving"; allowed: readonly AutomationStudioActionConsequence[] }
+  | { kind: "refused"; evidence: JsonObject & { code: string } };
+
+/**
  * How the ledger reads a call's `undoes` value: `none` when the call names no
  * act; `refused`, with the evidence the model is answered with instead of the
  * call running, when it names no act of this build that may be undone now; and
@@ -37,8 +61,8 @@ export type AutomationStudioSiteResetDeclared = {
   permitted: boolean;
   effect: AutomationStudioActionEffect;
   consequences: readonly AutomationStudioActionConsequence[];
-  /** The control as the gate carries it to a person: `name` is null where it was withheld. */
-  control: { name: string | null; kind: string | null };
+  /** The control as the gate carries it to a person: `name` is null where it was withheld. `item` and `dialog` are the domain's opaque tokens (t475). */
+  control: { name: string | null; kind: string | null } & AutomationStudioSiteResetSpot;
   verb: string;
 };
 
@@ -52,11 +76,15 @@ export type AutomationStudioSiteResetExplored = {
   declared?: AutomationStudioSiteResetDeclared;
   /** The call applied an effect and did not answer `ok: false`. */
   landed: boolean;
+  /** For an undo, why its control was admitted (`AutomationStudioSiteResetTarget`). */
+  on?: Extract<AutomationStudioSiteResetTarget, { kind: "admit" }>["on"];
 };
 
 /** The ledger, as the build's permission wrapper sees it. */
 export type AutomationStudioSiteResetCalls = {
   claim(undoes: unknown): AutomationStudioSiteResetClaim;
+  /** Asked, for an undo, of each action the domain puts to the gate, before it acts (t475). */
+  target(act: string, declared: { effect: AutomationStudioActionEffect; consequences: readonly AutomationStudioActionConsequence[]; control: AutomationStudioSiteResetSpot }): AutomationStudioSiteResetTarget;
   explored(call: AutomationStudioSiteResetExplored): void;
 };
 
@@ -70,7 +98,14 @@ export type AutomationStudioSiteResetCalls = {
 export type AutomationStudioSiteResetNamedAct = { act: string; did: string; call?: string; stillThere?: string[] };
 
 /** One read of the target where it stands (`startState`): its opaque state, what differs from the state it was given, and where it was read. */
-export type AutomationStudioSiteResetRead = { state: JsonObject; differs: string[]; location?: string; lines?: AutomationStudioSiteResetLines };
+export type AutomationStudioSiteResetRead = {
+  state: JsonObject;
+  differs: string[];
+  location?: string;
+  lines?: AutomationStudioSiteResetLines;
+  /** The opaque tokens of the items -- rows, cards -- on the page, in the same form a declaration's `control.item` takes (t475). */
+  items?: string[];
+};
 
 /** A read, or why there is none: the domain has no `startState`, it answered nothing usable, or reading failed (kept on the start check as `failure`). */
 export type AutomationStudioSiteResetReadAnswer = AutomationStudioSiteResetRead | { unread: "no_reader" | "no_answer" | "failed" };
@@ -81,7 +116,18 @@ export type AutomationStudioSiteResetReadAnswer = AutomationStudioSiteResetRead 
  * domain's words. An undo counts only once those changes are gone from that
  * page; a call that names the act under `undoes` never counts it alone.
  */
-export type AutomationStudioSiteResetPlace = { state: JsonObject; location: string; changed: string[]; lines?: AutomationStudioSiteResetLines };
+export type AutomationStudioSiteResetPlace = {
+  state: JsonObject;
+  location: string;
+  changed: string[];
+  lines?: AutomationStudioSiteResetLines;
+  /**
+   * The items that were on its page after the act and not before it (t475):
+   * the only items an undo of it may remove without asking. Absent when the
+   * domain gives no items, and then nothing is removed unasked.
+   */
+  created?: string[];
+};
 
 /** What the reset may ask of the target before a trial (`./start-check.ts`). */
 export type AutomationStudioSiteResetChecks = {
@@ -128,6 +174,14 @@ export type AutomationStudioSiteResetTrialAct = {
   consequences: readonly AutomationStudioActionConsequence[];
 };
 
+/**
+ * How a trial's start was made (t475). `startReset`: the deployment's start
+ * hook has just put the site back, before the check, so an act no longer seen
+ * on its own page -- or, with no page of its own, on a start that no longer
+ * differs -- counts undone with no call from the model.
+ */
+export type AutomationStudioSiteResetBeforeTrialOptions = { startReset?: boolean };
+
 /** What the trial gate (`../candidate/trial-gate.ts`) is given: asked before each trial, and told what each trial left. */
 export type AutomationStudioSiteResetTrialReset = {
   /**
@@ -135,7 +189,7 @@ export type AutomationStudioSiteResetTrialReset = {
    * offers no way to undo (`core.test_candidate`'s own key): each one the reset
    * already asked for is kept, and the trial runs with it in place (t471).
    */
-  beforeTrial(signal?: AbortSignal, cannotUndo?: readonly string[]): Promise<AutomationStudioSiteResetDecision>;
+  beforeTrial(signal?: AbortSignal, cannotUndo?: readonly string[], options?: AutomationStudioSiteResetBeforeTrialOptions): Promise<AutomationStudioSiteResetDecision>;
   /** Restarts the reset phase and answers the acts now on the site, the trial's own among them (`leftOnSite`). */
   trialRan(acts: readonly AutomationStudioSiteResetTrialAct[], trialRunId?: string): AutomationStudioSiteResetNamedAct[];
 };

@@ -110,4 +110,22 @@ export type AutomationStudioCandidateTrialResult = {
   acts?: AutomationStudioCandidateTrialAct[];
 };
 
-export type AutomationStudioCandidateTrialPort = (request: AutomationStudioCandidateTrialRequest) => Promise<AutomationStudioCandidateTrialResult>;
+/**
+ * How a trial's start was prepared ahead of the reset's check (t475): `reset`
+ * when the deployment's start hook has just put the site back, `failed` when
+ * the hook failed (the trial then answers that without running), and `none`
+ * when no hook ran -- there is none, or the trial is a re-judgement that runs
+ * nothing.
+ */
+export type AutomationStudioCandidateTrialPrepared = "reset" | "failed" | "none";
+
+/**
+ * Runs one trial. `prepareStart`, when the port has a start hook, runs that
+ * hook first, before the trial gate's reset check (t475): the site is put
+ * back, then checked, so a clean start is confirmed with no model call. The
+ * trial of the same revision and digest that follows uses that start and does
+ * not run the hook again.
+ */
+export type AutomationStudioCandidateTrialPort = ((request: AutomationStudioCandidateTrialRequest) => Promise<AutomationStudioCandidateTrialResult>) & {
+  prepareStart?: ((input: { revision: number; digest: string; signal: AbortSignal }) => Promise<AutomationStudioCandidateTrialPrepared>) | undefined;
+};
