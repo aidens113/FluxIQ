@@ -1,7 +1,7 @@
 # Adaptation And Recorded Replay - Core Contracts
 
 Status: Active
-Status detail: t517/t516 merged locally; t518 narrow checks pass, fresh browser controls rejected before replay.
+Status detail: t517/t516 merged locally; t518 crossborder replay passes, store control-edge and social terminal fixes in progress.
 Created: 2026-10-13
 Last updated: 2026-10-13
 Owner: Codex senior supervisor
@@ -10,6 +10,9 @@ Paired document: C:/Users/osrs_/FluxStuff/!FluxIQWebExtension/docs/working/adapt
 Related: [MVP final month](./mvp-final-month-plan.md), [state-aware recovery](./state-aware-recovery-plan.md)
 
 ## Current State
+
+- Current live evidence supersedes the earlier pre-approval notes below: the generic long-path SQLite fix lets both fresh controls approve and execute. Crossborder run-mv70yrj2-bc7f032a passes with zero model calls, with durable effect_holds routing past its obsolete retry. Store complete historical controls now match despite two delayed additions; run-mv72qmg0-b3cfb3f9 refuses unbound_value because generated sequence edges incorrectly enter legacy data input ready. Root changes generation to control input in; 37 owning proposal/dependency tests pass, typecheck correction in progress.
+- Social run-mv71jipp-fa66f988 publishes after certain-no-effect re-press, but its Flow fails an obsolete readiness wait: no recording snapshot follows its final manual action. Paired file-owned workers implement explicit settled producer provenance, complete safe passive-fact effects and guarded existing End routing. Completion requires positive evidence and all required result/value/checkpoint guards; no blind timeout bypass. Neither dev branch is pushed.
 
 - t517 adds optional `certainNoEffect: true` only on retryable, unacted failures. A lasting act gets one re-press; default continuation cannot turn its exhausted failure into success. Authored failure/optional routes retain precedence. Supervisor observed 140 owning executor and 10 contract tests passing after dev integration, source typechecks and public builds. Downstream 302 domain/501 extension tests and source/test typechecks pass; headed Chromium Post harness passes. Full browser gateway/Core playback and Firefox are unverified. Structure gates/integration are next.
 - t516 learns an interruption the client defence closed, without asking a model, when adaptations are kept. Its guarded handler remains held until successful judged completion. Review fixed per-layer/identical-time identity collisions. Supervisor observed 108 combined Core tests, typecheck/build/audit, 16 domain/32 extension tests and owning typechecks. Headed store/social content harness confirms named close receipts after a text-only name fix. Full browser handler execution/persistence remains unverified; serial integration next.
