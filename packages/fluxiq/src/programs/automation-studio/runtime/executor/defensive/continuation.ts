@@ -5,6 +5,7 @@ import { getAutomationNodeDefinition } from "../../../nodes/index.ts";
 import { chooseAutomationStudioEdge } from "../graph-navigation.ts";
 import type { AutomationStudioFaultAssessment } from "./contracts.ts";
 import { automationStudioNodeMutates } from "./node-side-effect.ts";
+import { automationStudioNodeActLasts } from "./lasting-act.ts";
 import { automationStudioOutputReads } from "./output-reads.ts";
 
 /**
@@ -107,8 +108,8 @@ export function automationStudioContinuationAfterFailure(
   if (fault.stage === "confirmation" || fault.stage === "verification") {
     return { continues: false, reason: `${node.id} ran and its result was never confirmed, so what it did is unknown and the steps after it assume it worked.` };
   }
-  if (automationStudioNodeMutates(node)) {
-    return { continues: false, reason: `${node.id} acts outside the run, so what it did before failing is unknown and the steps after it assume it worked.` };
+  if (automationStudioNodeMutates(node) || automationStudioNodeActLasts(node)) {
+    return { continues: false, reason: `${node.id} makes a lasting act that failed, so carrying on would assume it worked without establishing the required effect.` };
   }
   if (carriesAnswer(node)) {
     return { continues: false, reason: `${node.id} captures the records the run was asked for, so carrying on would return a run that succeeded and answered nothing.` };

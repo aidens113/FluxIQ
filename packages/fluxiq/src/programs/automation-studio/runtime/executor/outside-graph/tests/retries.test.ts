@@ -189,6 +189,25 @@ describe("a lasting act run outside a graph run", () => {
     expect(outcome.lastingAct).toBe("uncertain");
   });
 
+  it("is pressed once more, and only once, when its press certainly changed nothing (t517)", async () => {
+    const IGNORED: AutomationStudioFailureRecord = { category: "action_failed", code: "web.action.no_effect", retryable: true, stage: "execution", effect: "unacted", certainNoEffect: true };
+    // The page posts on the second press.
+    const posted = checked([IGNORED], declared);
+    expect((await posted.run).result).toEqual({ ok: true });
+    expect(posted.dispatched).toEqual([1, 2]);
+    // A control that ignores every press is pressed twice, never a third time.
+    const dead = checked([IGNORED, IGNORED, IGNORED, IGNORED], declared);
+    const outcome = await dead.run;
+    expect(dead.dispatched).toEqual([1, 2]);
+    expect(outcome.result).toEqual({ ok: false, failure: IGNORED });
+    expect(outcome.faults.map((fault) => fault.disposition)).toEqual(["retry", "refuse"]);
+    expect(outcome.lastingAct).toBeUndefined();
+    // A press that does not last keeps the first attempt and three retries.
+    const plain = checked([IGNORED, IGNORED, IGNORED, IGNORED], declaredNone);
+    await plain.run;
+    expect(plain.dispatched).toEqual([1, 2, 3, 4]);
+  });
+
   it("leaves a node whose act does not last with the first attempt and three retries", async () => {
     const { run, dispatched, asked } = checked([AMBIGUOUS, AMBIGUOUS, AMBIGUOUS, AMBIGUOUS], declaredNone, "landed");
     const outcome = await run;

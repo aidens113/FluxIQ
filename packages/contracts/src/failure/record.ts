@@ -64,4 +64,13 @@ export type AutomationStudioFailureRecord = {
    * record; the runtime bounds what it honours.
    */
   retryAfterMs?: number;
+  /**
+   * The producer saw, after the act settled, that it certainly changed nothing:
+   * nothing it watches moved, and what was acted on is still there to act on
+   * again -- a button some pages take only as a wake-up on its first press.
+   * Only `true`, and only beside `effect: "unacted"` on a retryable record. Core
+   * makes such a lasting act once more, and only once, rather than repeating it
+   * on every retry (`executor/defensive/assess.ts`).
+   */
+  certainNoEffect?: true;
 };

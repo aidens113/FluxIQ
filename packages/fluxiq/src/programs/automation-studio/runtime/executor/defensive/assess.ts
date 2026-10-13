@@ -69,6 +69,12 @@ export function automationStudioAssessAttemptFault(
   const fault: AutomationStudioFaultAssessment = { ...base, ...(hinted === undefined ? {} : { hintedWaitMs: hinted }) };
   // The effect check already showed this act did not happen (C6 step 4), so it is unacted, whatever the gates below would say.
   if (attempt.effectCheck?.result === "not_landed") return automationStudioFaultNotLanded(fault);
+  // A lasting act the producer saw certainly change nothing (`certainNoEffect`, t517) is made once more, as a
+  // person presses a button again that did nothing -- and only once. This attempt was that act made once more
+  // (`retry.repress`) and changed nothing either, so a third is not made: the page needs something no retry gives it.
+  if (attempt.failure?.certainNoEffect && attempt.retry?.repress && node && automationStudioNodeActLasts(node)) {
+    return { ...fault, disposition: "refuse", reason: `${node.id} makes a lasting act that certainly changed nothing, was made once more, and changed nothing again, so it is not made a third time.` };
+  }
   // An act that answered success, rejected afterwards by the host's verdict on its expected state -- the
   // evaluator's conditions or its step's own facts (t413), stage `verification`: the act happened, so a lasting
   // one is never made again and its outcome is not uncertain -- no effect check, a true failure (`./effect-check.ts`).

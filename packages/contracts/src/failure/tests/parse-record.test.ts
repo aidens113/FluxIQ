@@ -122,6 +122,21 @@ describe("parseAutomationStudioFailureRecord", () => {
     expect(parseAutomationStudioFailureRecord({ ...base, retryable: false, retryAfterMs: 1_000 })).toBeNull();
   });
 
+  it("round-trips a press the producer saw certainly change nothing, only beside a retryable unacted statement", () => {
+    // A press after which, once the page settled, nothing on it had changed and
+    // the control was still there to press (t517).
+    const ignored = { category: "action_failed", code: "web.action.no_effect", retryable: true, stage: "execution", effect: "unacted", certainNoEffect: true };
+    expect(parseAutomationStudioFailureRecord(ignored)).toEqual(ignored);
+    expect(parseAutomationStudioFailureRecord(JSON.parse(JSON.stringify(ignored)))).toEqual(ignored);
+    // Certainty about the act is a statement that it did not happen, which a retry must be able to act on.
+    expect(parseAutomationStudioFailureRecord({ ...ignored, certainNoEffect: false })).toBeNull();
+    expect(parseAutomationStudioFailureRecord({ ...ignored, certainNoEffect: "true" })).toBeNull();
+    expect(parseAutomationStudioFailureRecord({ ...ignored, effect: "ambiguous" })).toBeNull();
+    const { effect: _effect, ...unstated } = ignored;
+    expect(parseAutomationStudioFailureRecord(unstated)).toBeNull();
+    expect(parseAutomationStudioFailureRecord({ ...ignored, retryable: false })).toBeNull();
+  });
+
   it("returns null instead of throwing for hostile inputs", () => {
     const hostile = new Proxy({}, { ownKeys: () => { throw new Error("boom"); } });
     expect(parseAutomationStudioFailureRecord(hostile)).toBeNull();
