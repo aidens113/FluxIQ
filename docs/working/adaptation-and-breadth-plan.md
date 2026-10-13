@@ -1,7 +1,7 @@
 # Adaptation And Recorded Replay - Core Contracts
 
 Status: Active
-Status detail: t517/t516 merged locally; t518 crossborder replay passes, store control-edge and social terminal fixes in progress.
+Status detail: Instruction-led prerequisites pushed; current repair persistence attribution and store candidate exclusion-quotation acceptance are under investigation downstream.
 Created: 2026-10-13
 Last updated: 2026-10-13
 Owner: Codex senior supervisor
@@ -10,6 +10,10 @@ Paired document: C:/Users/osrs_/FluxStuff/!FluxIQWebExtension/docs/working/adapt
 Related: [MVP final month](./mvp-final-month-plan.md), [state-aware recovery](./state-aware-recovery-plan.md)
 
 ## Current State
+
+- Crossborder first current-pair pass now supervisor-qualified: complete immutable history and canonical rollback bind same runnable graph before/after, with independently differing executable parameter hashes; both provider-free reuse proofs pass. Reconstructed proof is explicitly labelled, and attribution/bootstrap suspicion is ruled out. Store judge deficiency involves row-local names/quotations, including short aliases rejected by existing matching bounds; t525 preserves those bounds and adds bounded evidence correction rather than weakening the task/oracle/acceptance. Older P4-held statements below are historical; current dispatch is downstream MVP plan.
+
+- Latest October 13 authority: t516/t517/t519 and extracted generic t520 are delivered/pushed; other t518 changes remain parked. Source frozen at Core `73550acb` / downstream `6a46e66b`. Crossborder instruction-built repair and later zero-call reuse pass, but P4 is held for exact persistence provenance/hash proof. Store trials stored 16 rows, but affirmative judges lacked required exclusion quotations; no Flow was promoted. Downstream owns full debug and dispatch. No unchanged rerun, relaxed gate or recorded-only creation is authorized. Older publishing-waits/terminal-integration-next notes below are historical.
 
 - New user direction takes precedence: [instruction-led automation authority](./instruction-led-automation-plan.md). Every automation needs explicit instructions before execution, including legacy flows; described recordings are supplemental. Paired t518 remains local/unpushed. Latest downstream store control passes with required extraction and zero calls; social page oracle passes but recorded Flow fails. No terminal live success is claimed and no more standalone recording relaunches are planned.
 
