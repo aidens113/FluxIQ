@@ -20,6 +20,7 @@ import { describe, expect, it, vi } from "vitest";
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultReadAccount, type AutomationStudioResultVerification, type AutomationStudioRunResultSummary } from "../contracts.ts";
 import { automationStudioResultVerificationAgreement, automationStudioResultVerificationReaskContradicted } from "../agreement.ts";
 import { automationStudioResultVerdict } from "../verdict.ts";
+import { requestWordsRunSummary, requestWordsWording } from "../request-rows/tests/request-words-fixture.ts";
 
 const summary: AutomationStudioRunResultSummary = {
   schemaVersion: "automation-studio.run-result-summary.v1",
@@ -205,5 +206,69 @@ describe("two checks that both said no about an order", () => {
     expect(automationStudioResultVerificationAgreement({ first: orderNo(claim), second: orderNo(claim), recordSets: sorted(false) }).repair?.judgement?.observed).toBe(claim);
     const other = "The rows are not sorted by salary.";
     expect(automationStudioResultVerificationAgreement({ first: orderNo(other), second: orderNo(other), recordSets: sorted(true) }).repair?.judgement?.observed).toBe(other);
+  });
+});
+
+// On a split, a no whose advice adds an exclusion the request never states is
+// marked so, and that call is asked once more (t515, live run
+// `run-mv6v2hx5-f448e662`, fix 4; the t503 re-ask above). One judge said no
+// over the correct revision, advising a condition "excluding accessories such
+// as" a row the request never excludes; the other said yes. The trial was
+// unsure, the builder was handed the no's advice alone, followed it, and lost a
+// row.
+describe("a split whose no adds an exclusion the request never states (t515)", () => {
+  const ADVICE = "Add a condition to the read that excludes replacement parts such as the Replacement Handle row.";
+  const noAdvising = (changed: string): AutomationStudioResultVerification => automationStudioResultVerdict({
+    summary: requestWordsRunSummary(), basis: "model",
+    diagnosis: { answersRequest: "no", expected: "Only garden tools.", observed: "A replacement handle was stored.", changed }
+  });
+  const yesOver = automationStudioResultVerdict({ summary: requestWordsRunSummary(), basis: "model", diagnosis: { answersRequest: "yes", observed: "Every in-stock result is there." } });
+
+  it("marks the no's advice so, keeping its own words, and stays unsure", () => {
+    const agreed = automationStudioResultVerificationAgreement({ first: noAdvising(ADVICE), second: yesOver, confirmAnswer: true, wording: requestWordsWording() });
+    expect(agreed).toMatchObject({ verdict: "unsure", basis: "model_disagreed", verdicts: ["does_not_answer", "answers"] });
+    const advice = agreed.unconfirmedReading?.advice ?? "";
+    expect(advice).toMatch(/^Judge call 1 \(Core's check: this advice adds an exclusion the request never states/);
+    expect(advice).toContain("\"excludes replacement parts such as the Replacement Handle row\"");
+    expect(advice.endsWith(`: ${ADVICE}`)).toBe(true);
+    // The other call's reading is still beside it (t477).
+    expect(agreed.answeredReading).toEqual({ observed: "Every in-stock result is there." });
+  });
+
+  it("leaves a no whose exclusion the request states, and any split without the request's wording", () => {
+    const stated = automationStudioResultVerificationAgreement({ first: yesOver, second: noAdvising("Add a condition excluding out-of-stock items."), confirmAnswer: true, wording: requestWordsWording() });
+    expect(stated.unconfirmedReading?.advice).toBe("Add a condition excluding out-of-stock items.");
+    const unworded = automationStudioResultVerificationAgreement({ first: noAdvising(ADVICE), second: yesOver, confirmAnswer: true });
+    expect(unworded.unconfirmedReading?.advice).toBe(ADVICE);
+  });
+
+  it("asks the no's call once more with the exclusion named, and a yes there is two yeses", async () => {
+    const input = { first: yesOver, second: noAdvising(ADVICE), confirmAnswer: true, wording: requestWordsWording() };
+    const settled = automationStudioResultVerificationAgreement(input);
+    const ask = vi.fn(async (_recheck: string, _call: 1 | 2) => yesOver);
+    const outcome = await automationStudioResultVerificationReaskContradicted({ ...input, settled, ask });
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(ask.mock.calls[0]![1]).toBe(2);
+    const recheck = ask.mock.calls[0]![0];
+    expect(recheck).toContain("never states");
+    expect(recheck).toContain("\"excludes replacement parts such as the Replacement Handle row\"");
+    expect(outcome).toMatchObject({ verdict: "answers", verdicts: ["answers", "does_not_answer", "answers"], calls: 3 });
+  });
+
+  it("keeps the mark, saying it was asked again, when the call advises the same", async () => {
+    const input = { first: noAdvising(ADVICE), second: yesOver, confirmAnswer: true, wording: requestWordsWording() };
+    const settled = automationStudioResultVerificationAgreement(input);
+    const outcome = await automationStudioResultVerificationReaskContradicted({ ...input, settled, ask: async () => noAdvising(ADVICE) });
+    expect(outcome).toMatchObject({ verdict: "unsure", basis: "model_disagreed", verdicts: ["does_not_answer", "answers", "does_not_answer"], calls: 3 });
+    expect(outcome.unconfirmedReading?.advice).toContain("asked once more with this named, it advised the same");
+  });
+
+  it("asks nothing without the request's wording, or where the no's exclusion is stated", async () => {
+    const ask = vi.fn(async () => yesOver);
+    const unworded = { first: noAdvising(ADVICE), second: yesOver, confirmAnswer: true };
+    await automationStudioResultVerificationReaskContradicted({ ...unworded, settled: automationStudioResultVerificationAgreement(unworded), ask });
+    const stated = { first: noAdvising("Add a condition excluding out-of-stock items."), second: yesOver, confirmAnswer: true, wording: requestWordsWording() };
+    await automationStudioResultVerificationReaskContradicted({ ...stated, settled: automationStudioResultVerificationAgreement(stated), ask });
+    expect(ask).not.toHaveBeenCalled();
   });
 });

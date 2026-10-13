@@ -45,6 +45,19 @@ export function automationStudioRequestRowIds(text: string): string[] {
     .map((run) => run.toUpperCase()))];
 }
 
+/** Words that carry nothing alone; a phrase needs one word that is not among them (`request-phrases.ts`). */
+const EMPTY_WORDS: ReadonlySet<string> = new Set([
+  "a", "an", "the", "of", "in", "on", "at", "to", "by", "for", "from", "with", "without", "and", "or", "nor", "but", "not", "no",
+  "is", "are", "be", "was", "were", "it", "its", "that", "thi", "this", "these", "those", "them", "they", "their", "there",
+  "each", "every", "any", "all", "only", "such", "as", "if", "even", "once", "one", "two", "up", "out", "into", "than", "then",
+  "so", "do", "doe", "does", "what", "which", "who", "whose", "my", "me", "i", "you", "your", "our", "we"
+]);
+
+/** Whether a word, as compared, carries something of its own: it has a letter and is not an empty word. */
+export function automationStudioRequestRowWordCarries(word: string): boolean {
+  return /\p{L}/u.test(word) && !EMPTY_WORDS.has(word);
+}
+
 /** A plural's singular, by its last letter: enough to make "cases" "case" on both sides of a comparison. */
 function singular(word: string): string {
   return word.length > 3 && word.endsWith("s") && !word.endsWith("ss") ? word.slice(0, -1) : word;

@@ -78,3 +78,16 @@ export type AutomationStudioRequestRowsKeptNumberLeftOut = {
   rows: string[];
   numbers: number[];
 };
+
+/**
+ * One condition's left-out rows a yes did not account for by the request's own
+ * words (`unquoted-rows.ts`, t515): rows that condition alone left out of the
+ * result, as the read gave them, that no sentence of the reply both names and
+ * quotes the request's words excluding.
+ */
+export type AutomationStudioRequestRowsUnquoted = {
+  step?: number;
+  nodeId?: string;
+  condition: string;
+  rows: string[];
+};

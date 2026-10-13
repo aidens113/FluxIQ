@@ -23,8 +23,18 @@
 // evidence, each ask a call of its own under the run's budget or the build's
 // purse. Live run `run-mv5q4j5c-49bfb5e2` cut a judge off at 19,985 ms, never
 // asked it again, and re-ran a whole 84-second trial for a 5-second answer. A
-// fault that is not temporary -- a refusal by the purse, a reply that could not
-// be read, a cancellation -- is not asked again.
+// fault that is not temporary -- a refusal by the purse, a refused key, a
+// cancellation -- is not asked again.
+//
+// **A reply that arrived and could not be read is asked again too (t515).**
+// Live run `run-mv6v2kzn-d593231f` step 0088: the result check's one reply
+// looped a sentence until it was cut off at 8,192 tokens
+// (`llm.provider_output_truncated`), was read as no verdict, and failed the
+// run as refuted. Core's own LLM policy calls such a reply a spent call -- the
+// next may succeed (`../llm/failure-disposition.ts`, `spend_call`) -- and so
+// does this check now: any spent call, or a reply the harness could not
+// validate (`llm_output.*`), is asked again under the same bound of
+// `AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK`, one extra ask.
 //
 // **A build's test confirms a `yes` as well (`confirmAnswer`).** The build-test
 // judge's `yes` finishes a build, and in live run murwcmx2 one `yes` to a
@@ -75,6 +85,7 @@
 
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowInstruction, AutomationStudioFlowIntervention, AutomationStudioFlowRunDetail } from "../../model/index.ts";
 import {
+  automationStudioLlmProviderFailureSpendsCall,
   runAutomationStudioLlmHarness,
   type AutomationStudioLlmProvider,
   type AutomationStudioLlmRunBudgetLedger,
@@ -85,7 +96,7 @@ import { automationStudioResultVerificationAgreement, automationStudioResultVeri
 import { automationStudioResultCheckActivity } from "./check-activity.ts";
 import { automationStudioResultCoreObservation } from "./core-observation.ts";
 import { automationStudioResultSummaryWithPagingWords, automationStudioResultSummaryWithUnreadColumns } from "./read-account/index.ts";
-import { automationStudioResultSummaryWithLeftOutNamingTheItem } from "./request-rows/index.ts";
+import { automationStudioRequestWording, automationStudioResultSummaryWithLeftOutNamingTheItem } from "./request-rows/index.ts";
 import { automationStudioResultVerdict } from "./verdict.ts";
 import { emitAutomationStudioActivity } from "../activity/index.ts";
 
@@ -186,12 +197,15 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
     return said({ outcome: { ...automationStudioResultVerificationAgreement({ first }), performed: true }, interventions });
   }
   const second = await askCheck(request, provider, 2, interventions);
-  const input = { first, second, confirmAnswer, reads: request.summary.reads, recordSets: request.summary.recordSets };
+  // The request as the judges read it: a split's no whose advice excludes by words it never states is marked and asked again (t515, `./agreement.ts`).
+  const wording = automationStudioRequestWording(request.instructions, request.summary);
+  const input = { first, second, confirmAnswer, reads: request.summary.reads, recordSets: request.summary.recordSets, wording };
   const settled = automationStudioResultVerificationAgreement(input);
-  // A contradicted unsure beside a yes is asked once more, with Core's record named (header, t503).
+  // A contradicted unsure beside a yes is asked once more, with Core's record named (header, t503); so is a split's no
+  // whose advice adds an exclusion the request never states (t515). The agreement names the call to ask.
   const outcome = await automationStudioResultVerificationReaskContradicted({
     ...input, settled,
-    ask: (recheck) => askCheck({ ...request, summary: { ...request.summary, recheck } }, provider, settled.contradictedUnsure!.call, interventions, true)
+    ask: (recheck, call) => askCheck({ ...request, summary: { ...request.summary, recheck } }, provider, call, interventions, true)
   });
   return said({ outcome: { ...outcome, performed: true }, interventions });
 }
@@ -231,9 +245,10 @@ function said(report: AutomationStudioResultVerificationReport): AutomationStudi
 /**
  * One verification call and the verdict it reached. The second call of a
  * verification is this one repeated: the same request, the same evidence.
- * `temporary` when it gave no reply because of a fault the adapter called
- * temporary -- its deadline passing among them -- and the caller was not
- * cancelled: the one kind of unanswered call that is asked again.
+ * `temporary` when it gave no reply because of a fault that is asked again
+ * (`askAgainAfter`): one the adapter called temporary -- its deadline passing
+ * among them -- or a reply that arrived and could not be read, and the caller
+ * was not cancelled.
  */
 async function askOnce(
   request: AutomationStudioResultVerificationRequest,
@@ -286,13 +301,30 @@ async function askOnce(
     // bounds it; nothing here is required of the model.
     ...(response?.summary ? { summaryText: response.summary } : {}),
     basis: response ? "model" : "model_unavailable",
+    // A yes over a row a condition alone left out quotes, beside it, the request's own words that exclude it (t515, `./verdict.ts`).
+    wording: automationStudioRequestWording(request.instructions, request.summary),
     ...(response ? {} : { failureCode: firstErrorCode(result.diagnostics) })
   });
   // The harness records a call's own metadata, not the caller's, so the
   // intervention is told here which check it was and who asked.
   const intervention = { ...result.intervention, metadata: { ...(result.intervention.metadata ?? {}), source: VERIFICATION_SOURCE, verificationCheck: check, ...(ask > 1 ? { verificationAsk: ask } : {}), ...(reask ? { verificationReask: true } : {}) } };
-  const temporary = !response && request.signal?.aborted !== true && firstError(result.diagnostics)?.metadata?.retryable === true;
+  const temporary = !response && request.signal?.aborted !== true && askAgainAfter(firstError(result.diagnostics));
   return { verification, intervention, temporary };
+}
+
+/**
+ * Whether a call that gave no verdict is asked again (header): a fault the
+ * adapter called temporary, or a call Core's LLM policy calls spent -- the
+ * reply or the network failed, and the next call may succeed -- or a reply the
+ * harness could not validate. Never a refused key, a purse's refusal or a
+ * cancellation.
+ */
+function askAgainAfter(error: { code: string; metadata?: Record<string, unknown> | undefined } | undefined): boolean {
+  if (!error) return false;
+  if (error.metadata?.retryable === true) return true;
+  if (error.code.startsWith("llm_output.")) return true;
+  const status = error.metadata?.providerStatus;
+  return automationStudioLlmProviderFailureSpendsCall({ code: error.code, status: typeof status === "number" ? status : undefined });
 }
 
 /** `{ [key]: value }`, or nothing when the value is undefined, for an optional field that may not be set to `undefined`. */

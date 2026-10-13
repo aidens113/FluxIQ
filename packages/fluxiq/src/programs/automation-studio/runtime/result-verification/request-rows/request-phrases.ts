@@ -11,7 +11,7 @@
 // number -- is not a phrase: a label that happened to say "in the" before its
 // item would otherwise name that first.
 
-import { automationStudioRequestRowWords, type AutomationStudioRequestRowWord } from "./words.ts";
+import { automationStudioRequestRowWordCarries, automationStudioRequestRowWords, type AutomationStudioRequestRowWord } from "./words.ts";
 
 /** A phrase a label names: where it starts in the label's words, and its words as compared. */
 export type AutomationStudioRequestPhrase = { start: number; words: string[] };
@@ -28,14 +28,6 @@ export type AutomationStudioRequestPhrases = {
 
 /** The longest phrase looked for: longer than any item a request names, shorter than its sentences. */
 const LONGEST = 12;
-
-/** Words that carry nothing alone; a phrase needs one word that is not among them. */
-const EMPTY_WORDS: ReadonlySet<string> = new Set([
-  "a", "an", "the", "of", "in", "on", "at", "to", "by", "for", "from", "with", "without", "and", "or", "nor", "but", "not", "no",
-  "is", "are", "be", "was", "were", "it", "its", "that", "thi", "this", "these", "those", "them", "they", "their", "there",
-  "each", "every", "any", "all", "only", "such", "as", "if", "even", "once", "one", "two", "up", "out", "into", "than", "then",
-  "so", "do", "doe", "does", "what", "which", "who", "whose", "my", "me", "i", "you", "your", "our", "we"
-]);
 
 /** The request's phrases, from its whole text. */
 export function automationStudioRequestPhrases(requestText: string): AutomationStudioRequestPhrases {
@@ -78,9 +70,9 @@ function phrasesIn(words: readonly AutomationStudioRequestRowWord[], isPhrase: (
   return found;
 }
 
-/** Whether a run of words carries something of its own: a word with a letter that is not an empty word. */
+/** Whether a run of words carries something of its own: one word that does (`words.ts`). */
 function carries(words: readonly string[]): boolean {
-  return words.some((word) => /\p{L}/u.test(word) && !EMPTY_WORDS.has(word));
+  return words.some(automationStudioRequestRowWordCarries);
 }
 
 function keyOf(words: readonly string[]): string {
