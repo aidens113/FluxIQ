@@ -14,7 +14,9 @@
 // request as a judge's words are read against (`request-wording.ts`), the
 // left-out rows a yes did not name beside a quote of the request's excluding
 // words (`unquoted-rows.ts`), and the exclusions an advice adds that the
-// request never states (`unstated-exclusions.ts`).
+// request never states (`unstated-exclusions.ts`). And Core's short id for a
+// row (`row-id.ts`, t599), said on the judge's copy before each left-out row a
+// judge must still name (`summary-with-row-ids.ts`).
 export * from "./checked-rows.ts";
 export * from "./checked-rows-named.ts";
 export * from "./left-out-naming-the-item.ts";
@@ -23,9 +25,11 @@ export * from "./named-of.ts";
 export * from "./request-phrases.ts";
 export * from "./request-wording.ts";
 export * from "./rerun-rows.ts";
+export * from "./row-id.ts";
 export * from "./row-naming.ts";
 export * from "./summary-reads.ts";
 export * from "./summary-with-left-out-naming-the-item.ts";
+export * from "./summary-with-row-ids.ts";
 export * from "./types.ts";
 export * from "./unaccounted-rows.ts";
 export * from "./unquoted-rows.ts";

@@ -10,13 +10,16 @@
 // read as failing it (`../value-readings/settled-rows.ts`), the one quote of
 // the request stating the bound. Each condition is named `condition N
 // (wording)`, as the summary's own `reads[].conditions[].number` says it.
+// A row may be named by the id the summary shows before it (`[row K4R7M2]`,
+// `../request-rows/row-id.ts`, t599), and a presence test's rows are settled
+// like a bound's: one quote of the request asking for that value.
 
 import type { AutomationStudioResultVerification } from "../contracts.ts";
 import { screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
 
 /** What the recheck asks, said once above Core's lines (header). Written for no site or kind of item. */
 const RECHECK = "Your affirmative judgement lacked required exclusion evidence. Recheck the same request and result; do not change the Flow or invent an exclusion. "
-  + "For every row named below, use its full displayed name or exact distinguishing identifier in a sentence that also quotes in double quotes the request's own words excluding that row. "
+  + "For every row named below, use its full displayed name or exact distinguishing identifier, or the id the summary shows in brackets before it (as in [row K4R7M2]), in a sentence that also quotes in double quotes the request's own words excluding that row. "
   + "Where a line says Core already read a condition's left-out rows as failing its bound, those rows need no quote of their own: quote once, in a sentence that names that condition as the line does, the request's own words stating that bound. "
   + "Search or navigation words alone exclude nothing. If the request does not justify the exclusion, answer no; if evidence is insufficient, answer unknown.";
 

@@ -8,7 +8,15 @@
 // words, because three name a product line, and a read holds many of one line:
 // live run `run-muw60j7c-bb7c9a62`'s "Aurelle Pods Fit" is three rows kept and
 // one left out, and only the whole of the left-out label tells it apart.
+//
+// **Or by Core's short id (t599).** A label whose distinguishing start is ten
+// words long (A8 everything-store `run-mv8id5vg-ed7b89fe`) is named, too, by
+// the six-character id Core gives it (`row-id.ts`), which the judge's copy
+// shows before each left-out row a judge must still name
+// (`summary-with-row-ids.ts`). The id is the label's, so it is counted only
+// where no other row of the read has the same one or holds it in its text.
 
+import { AutomationStudioRequestRowId } from "./row-id.ts";
 import { automationStudioRequestRowIds, automationStudioRequestRowWords } from "./words.ts";
 
 /** The ways a row may be named: the words of its distinguishing prefix, and its own ids. */
@@ -30,7 +38,11 @@ export function automationStudioRequestRowNaming(label: string, pool: readonly s
     }
   }
   const othersText = others.join("\n").toUpperCase();
-  return { prefix, ids: automationStudioRequestRowIds(label).filter((id) => !othersText.includes(id)) };
+  const own = automationStudioRequestRowIds(label).filter((id) => !othersText.includes(id));
+  // Core's short id, unless another row of the read has it too or holds it in its text (header).
+  const core = AutomationStudioRequestRowId.of(label);
+  const shared = othersText.includes(core) || others.some((other) => AutomationStudioRequestRowId.of(other) === core);
+  return { prefix, ids: shared || own.includes(core) ? own : [...own, core] };
 }
 
 /** Whether a text names a row: its distinguishing prefix, word for word, or one of its ids. */

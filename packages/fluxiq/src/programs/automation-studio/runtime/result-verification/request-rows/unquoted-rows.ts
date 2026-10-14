@@ -19,13 +19,20 @@
 // really exclude that row is the judge's to say; that the reason is the
 // request's, and stands beside the row, is what Core checks.
 //
-// **Except the rows Core settled itself (t574).** A row a numeric bound left
-// out whose value Core read as failing that bound
-// (`../value-readings/settled-rows.ts`) needs no quote beside it: Core measured
-// it. What Core did not measure is that the bound is the request's, so a yes
-// still quotes the request once, beside a sentence that names that condition -- its
-// `condition N`, its column, or a number its bound writes -- and a yes that
-// does not is held for that condition alone, its rows marked `bound`.
+// **Except the rows Core settled itself (t574, t599).** A row a numeric bound
+// left out whose value Core read as failing that bound, or a row a presence
+// test left out whose witness found the value absent (or, for `is absent`,
+// present) (`../value-readings/settled-rows.ts`), needs no quote beside it:
+// Core measured it. What Core did not measure is that the condition is the
+// request's, so a yes still quotes the request once, beside a sentence that
+// names that condition -- its `condition N`, its column, or a number its bound
+// writes -- and a yes that does not is held for that condition alone, its rows
+// marked `bound`.
+//
+// **A row is named by Core's short id too (t599, `row-id.ts`)**, which the
+// judge's copy shows before each left-out row (`row-naming.ts`). And the reads
+// that prepared a subflow trial's entry are not this trial's to account for
+// (`summary-reads.ts`): their rows are never held against a yes here.
 //
 // **Quotes are paired as the reply wrote them (t574).** From t570's offline
 // replay of live run `run-mv7vmvhd-b0c18c5a`'s judges: an empty `""` in a

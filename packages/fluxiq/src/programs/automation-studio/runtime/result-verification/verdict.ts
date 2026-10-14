@@ -245,6 +245,9 @@ function callFailureWords(code: string | undefined): string {
   return "the verification call did not come back usable";
 }
 
+/** A presence test as Core names it (`read-account/condition-name.ts`, `read-account/condition.ts`): its wording ends `is present` or `is absent`. */
+const PRESENCE_CONDITION = / is (?:present|absent)\)$/u;
+
 /** Everything the reply said in words: its expected, observed and changed, and its summary. Read for the rows it names, never recorded. */
 function replyText(input: AutomationStudioResultVerdictInput): string {
   const said = [input.diagnosis?.expected, input.diagnosis?.observed, input.diagnosis?.changed, input.summaryText];
@@ -277,11 +280,16 @@ function refusedYesReason(unaccounted: boolean, keptNumber: boolean, unquoted: b
  *
  * Rows Core settled (`bound`, t574) are not asked to be quoted for: Core read
  * each as failing the condition's bound, and the line asks only for the one
- * quote of the request's words stating that bound.
+ * quote of the request's words stating that bound -- or, for a presence test
+ * (t599), asking for what it tests.
  */
 function unquotedLine(entry: AutomationStudioRequestRowsUnquoted): string {
   const where = entry.step !== undefined ? `Step ${entry.step}` : `Read ${entry.nodeId ?? "(unnamed)"}`;
   const one = entry.rows.length === 1;
+  if (entry.bound && PRESENCE_CONDITION.test(entry.condition)) {
+    // A presence test bounds nothing: its rows' witnesses found what the condition leaves out (`./value-readings/settled-rows.ts`, t599).
+    return `The check answered yes without quoting, in a sentence that names ${entry.condition} (${where}), the request's words asking for what that condition tests. Core's read found, on ${one ? "the row" : `each of the ${entry.rows.length} rows`} it alone left out, what that condition leaves out, so no quote is needed beside ${one ? "it" : "them"}; one quote of the request asking for it is. If the request asks no such thing, ${one ? "that row is one" : "those rows are ones"} it asks for.`;
+  }
   if (entry.bound) {
     return `The check answered yes without quoting, in a sentence that names ${entry.condition} (${where}), the request's words that state its bound. Core read ${one ? "the row" : `each of the ${entry.rows.length} rows`} it alone left out as failing that bound, so no quote is needed beside ${one ? "it" : "them"}; one quote of the request stating the bound is. If the request states no such bound, ${one ? "that row is one" : "those rows are ones"} it asks for.`;
   }

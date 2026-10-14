@@ -327,7 +327,13 @@ describe("the judge wording t574 adds", () => {
       code: "core.result.exclusion_evidence_missing", reason: "Unconfirmed.", observation: "One record.", exclusionEvidenceMissing: ["(Core's line)"]
     };
     const recheck = automationStudioResultExclusionEvidenceRecheck(deficient, [])!;
-    for (const text of [presence, settled.settled, recheck, automationStudioResultConditionName(1, undefined)]) guarded(text);
+    // t599: a presence and an absence test's settled sentences, each said with and without a known column.
+    const witnessed = (state: "absent" | "present") => [{ row: "Row A", cell: undefined, witness: state === "absent" ? { source: "read" as const, page: 1, item: 1, state } : { source: "read" as const, page: 1, item: 1, state, value: "Seen" } }];
+    const presenceSettled = [
+      automationStudioResultSettledRows({ condition: { field: "weight", is: "present" }, column: "weight", number: 1, wording: "weight is present", leftOut: witnessed("absent") })!.settled,
+      automationStudioResultSettledRows({ condition: { field: "value", is: "absent" }, column: undefined, number: 2, wording: undefined, leftOut: witnessed("present") })!.settled
+    ];
+    for (const text of [presence, settled.settled, ...presenceSettled, recheck, automationStudioResultConditionName(1, undefined)]) guarded(text);
   });
 });
 
