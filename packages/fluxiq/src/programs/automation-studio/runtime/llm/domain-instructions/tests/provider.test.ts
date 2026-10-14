@@ -47,6 +47,19 @@ describe("automationStudioLlmProviderWithDomainInstructions", () => {
     expect(decorated.estimateCostUsd?.({ inputTokens: 2_000, outputTokens: 0 })).toBe(2);
   });
 
+  // The project supervisor plans and never operates the target (t569): its own instructions, stamped outside the domain's, reach the request in their place.
+  it("keeps the instructions a request already carries, so an outer decorator's role replaces the domain's", async () => {
+    const { provider, ran, measured } = recordingProvider();
+    const role = { domainId: "fluxiq.project-supervisor", version: "role.v1", text: "You plan; builders act." };
+    const domain = automationStudioLlmProviderWithDomainInstructions(provider, INSTRUCTIONS);
+    const outer = automationStudioLlmProviderWithDomainInstructions(domain, role);
+    await outer.runTask(REQUEST);
+    outer.measureInput?.(REQUEST);
+    await domain.runTask(REQUEST);
+    expect(ran.map((request) => request.domainInstructions)).toEqual([role, INSTRUCTIONS]);
+    expect(measured[0]?.domainInstructions).toEqual(role);
+  });
+
   it("does not invent a measure or a price the provider never had", () => {
     const bare: AutomationStudioLlmProvider = { metadata: { provider: "mock", model: "m" }, runTask: async () => ({}) };
     const decorated = automationStudioLlmProviderWithDomainInstructions(bare, INSTRUCTIONS);

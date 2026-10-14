@@ -41,7 +41,6 @@ const START_END = {
   edges: [{ key: "start_end", source: { nodeKey: "start", portId: "next" }, target: { nodeKey: "end", portId: "in" } }]
 };
 const ROUTER = { name: "Main", rules: [], fallback: { kind: "subflow", targetSubflowKey: "main" } };
-const CHECK = { metadata: { "fluxiq.successCheck": [{ fact: "ended", op: "exists" }] } };
 
 type Entry = { callId: string; toolId: string; value: unknown };
 const lastOf = (evidence: readonly Entry[], toolId: string) => [...evidence].reverse().find((entry) => entry.toolId === toolId)?.value as JsonObject | undefined;
@@ -49,7 +48,7 @@ const decision = (decided: JsonObject) => ({ response: { kind: "evidence_tool_de
 
 const PLAN = {
   taskSpec: { parts: [{ id: "p1", quote: { sourceId: "instruction.build", text: TASK }, goalFacts: ["The Flow runs from its start to its end"], lastingActs: ["create_new"] }], notAsked: [] },
-  structurePlan: { plan: { router: ROUTER, subflows: [{ key: "main", name: "Main", role: "primary", ...CHECK }] }, partOf: { main: ["p1"] } }
+  subflows: [{ key: "main", name: "Main", parts: ["p1"] }]
 };
 const BUILD_BRIEF = { kind: "build", subflowKey: "main", parts: ["p1"], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.01, maxIterations: 6, permittedActs: ["create_new"] };
 const RESET_BRIEF = { kind: "reset", subflowKey: "main", parts: [], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.005, maxIterations: 4 };

@@ -12,6 +12,13 @@ import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTria
 export type AutomationStudioSubflowTrialJudgeInput = {
   summary: AutomationStudioRunResultSummary;
   scope: AutomationStudioSubflowScope;
+  /**
+   * The success check the trial is judged against, and whose it is: the
+   * scope's -- the structure plan's -- or, where the plan gives none (the plan
+   * the project supervisor writes; t569), the one the tried proposal carries,
+   * which its builder proposed. Absent when neither has one.
+   */
+  successCheck?: { check: NonNullable<AutomationStudioSubflowScope["successCheck"]>; from: "plan" | "builder" } | undefined;
 };
 
 /**

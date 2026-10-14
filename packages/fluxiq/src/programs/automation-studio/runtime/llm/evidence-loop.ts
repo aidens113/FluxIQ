@@ -18,7 +18,6 @@ import {
 // What the loop does with each kind of answer it gives the model -- a completion, an amendment, a failed call, a request
 // answered from what it holds -- each handed the loop's state as one context object (`decision-handlers/`).
 import {
-  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_WITHDRAWN_CODE,
   automationStudioLlmEvidenceAnswerCheck,
   automationStudioLlmEvidenceAskedAgain, automationStudioLlmEvidenceClaimWrittenAct, automationStudioLlmEvidenceSecondCopyRefused,
   automationStudioLlmEvidenceHandleAmendment, automationStudioLlmEvidenceSettleHeldAmendments,
@@ -26,7 +25,7 @@ import {
   automationStudioLlmEvidenceHandleRefusedRepeat, automationStudioLlmEvidenceRefusedCallRun, automationStudioLlmEvidenceRerunChangedNothing, automationStudioLlmEvidenceSearchingWithoutActing,
   automationStudioLlmEvidenceHandleCompletion,
   automationStudioLlmEvidenceHandleFailedCall,
-  automationStudioLlmEvidenceLookWithdrawal,
+  automationStudioLlmEvidenceLookBudget, automationStudioLlmEvidenceLookWithdrawal,
   automationStudioLlmEvidenceReaskOutcome,
   automationStudioLlmEvidenceShowVerifiedRepeat,
   type AutomationStudioLlmEvidenceAnswerCheckOutcome,
@@ -227,7 +226,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     hook ? { before, after } : { before: execution.stateDigests?.before, after: execution.stateDigests?.after };
   // Looks withdrawn after an ignored redirect (`decision-handlers/look-withdrawal.ts`),
   // only where a decision can be refused without ending the loop.
-  const looks = automationStudioLlmEvidenceLookWithdrawal({ enabled: input.lookWithdrawal !== false && input.unusableDecisions !== undefined, finishing: input.finishingTools });
+  const looks = automationStudioLlmEvidenceLookWithdrawal({ enabled: input.lookWithdrawal !== false && input.unusableDecisions !== undefined, finishing: input.finishingTools, planning: input.planning });
   const accounting = automationStudioLlmEvidenceLoopEmptyAccounting(); const purse = automationStudioLlmEvidenceLoopPurse(input.budget, accounting, input.purse); // Each decision's worst case held against the build's purse, or the loop's own at its cost budget, before it is sent: the only cost authority (`./evidence-loop/cost-purse.ts`).
   // The caller's tools, with `core.run_flow` after them where the loop drafts and runs its dry run: part of the Flow
   // run again, never its test. Fixed for the whole loop, so read once (`./node-tools/loop-tools.ts`).
@@ -447,6 +446,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (stateAfter !== undefined) handling.callStates.set(callId, stateAfter);
     // An action this build saw only look and propose nothing: what withdrawal withholds.
     if (record.effect === "observe" && record.proposes === false) looks.sawLook(tool.toolId, record.actionId);
+    automationStudioLlmEvidenceLookBudget(handling, iteration, { tool, lookedAtNothing: lookRefused }); // A planning loop's looks, counted and withdrawn once spent (t569).
     if (record.effect === "mutate") { counters.attemptEpoch += 1; if (effectApplied) counters.mutationEpoch += 1; }
     // What this call did on the page it found: a call that failed or changed nothing is not made again there; a rerun sent as a check is no attempt of its input (`repeat-guard/outcomes.ts`).
     handling.repeats.recorded({ callId, toolId: decision.toolId, input: decision.input, stateBefore, stateAfter, effect: record.effect, proposes: record.proposes ?? record.effect === "mutate", effectApplied, refused: typeof value === "object" && value !== null && !Array.isArray(value) && value.ok === false, resultCode, resultReason: execution.resultReason, answer: JSON.stringify(value), ...(rerunChecked ? { checked: true } : {}) });
@@ -717,7 +717,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // is the move being taken away (`decision-handlers/look-withdrawal.ts`).
     const asked = rerunning ? undefined : toolsById.get(decision.toolId);
     if (asked && looks.refuses(asked, decision.input, counters.attemptEpoch)) {
-      const issueCodes = [AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_WITHDRAWN_CODE];
+      const issueCodes = [looks.refusalCode(counters.attemptEpoch)];
       // Registered first, so it is always one more step of the run without
       // progress it belongs to rather than the first step of a new one.
       noProgress.sameIssuesAgain(automationStudioLlmUnusableDecisionIssueSet(issueCodes));

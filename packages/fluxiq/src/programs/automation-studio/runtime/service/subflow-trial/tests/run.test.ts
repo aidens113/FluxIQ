@@ -5,6 +5,27 @@ import type { AutomationStudioPrepareCandidateStart } from "../../candidate-tria
 import { runAutomationStudioSubflowTrial } from "../index.ts";
 import { part, subflowTrialFixture as fixture } from "./fixtures.ts";
 
+describe("the success check a partial trial is judged against (t569)", () => {
+  const check = [{ fact: "page.ended", op: "exists" as const }];
+
+  it("is the plan's when the scope has one, said as the plan's", async () => {
+    const f = fixture();
+    const request = f.request();
+    request.scope.successCheck = structuredClone(check);
+    await runAutomationStudioSubflowTrial(request, f.ports);
+    expect(f.judged[0]!.successCheck).toEqual({ check, from: "plan" });
+  });
+
+  it("is the one the tried proposal carries, its builder's, when the plan gives none", async () => {
+    const f = fixture();
+    const request = f.request();
+    request.proposal.subflows[0]!.metadata = { "fluxiq.successCheck": structuredClone(check) };
+    const { record } = await runAutomationStudioSubflowTrial(request, f.ports);
+    expect(record.execution, JSON.stringify(record)).toBe("succeeded");
+    expect(f.judged[0]!.successCheck).toEqual({ check, from: "builder" });
+  });
+});
+
 describe("one subflow partial trial", () => {
   it("runs the predecessor then the brief's subflow under a session marked as a subflow trial, and asks the scoped judge", async () => {
     const f = fixture();

@@ -1,6 +1,6 @@
 // The project supervisor's loop with a stub provider (a scripted list of
 // decisions), a stub dispatcher and a stub whole trial
-// (`./supervisor-fixture.ts`): planning, dispatch order, refusals, triage,
+// (`./supervisor-fixture.ts`, run by `./supervisor-script.ts`): planning, dispatch order, refusals, triage,
 // honest endings, the reset before the whole trial, the reserve, and
 // completion only on a yes for the exact assembled revision.
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
@@ -8,71 +8,16 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../activity/index.ts";
 import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID } from "../../../llm/evidence-loop.ts";
-import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS, runAutomationStudioProjectSupervisorLoop } from "../index.ts";
-import { BUILD, HOST_TOOLS, callable, planInput, project, routed, taskSpecInput, type BuilderPlan } from "./supervisor-fixture.ts";
+import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
+import { BUILD, planInput, project, subflow, taskSpecInput, type BuilderPlan } from "./supervisor-fixture.ts";
+import { FIND, HOLD, NOTE, assembled, brief, call, complete, dispatch, end, lastOf, reset, supervise, test } from "./supervisor-script.ts";
 
-type Entry = { callId: string; toolId: string; value: unknown };
-type Step = (evidence: readonly Entry[]) => JsonObject;
-
-const FIND = "Find the three newest titles by Ada Hart";
-const HOLD = "place a hold on the first one";
-const NOTE = "note the hold's collection shelf";
-
-let calls = 0;
-const call = (toolId: string, input: JsonObject | ((evidence: readonly Entry[]) => JsonObject) = {}): Step => (evidence) => ({ kind: "tool_call", toolId, callId: `c${++calls}`, input: typeof input === "function" ? input(evidence) : input });
-const lastOf = (evidence: readonly Entry[], toolId: string) => [...evidence].reverse().find((entry) => entry.toolId === toolId)?.value as JsonObject | undefined;
-const assembled = (evidence: readonly Entry[]) => lastOf(evidence, IDS.assemble)!.complete as JsonObject;
-const test: Step = call(IDS.testCandidate, assembled);
-const complete: Step = (evidence) => ({ kind: "complete", result: assembled(evidence) });
-const end = (ended: "blocked" | "partial", reason = "The hold control is not on the page."): Step => () => ({ kind: "complete", result: { ended, reason } });
-
-function brief(subflowKey: string, parts: string[], predecessors: string[] = [], extra: JsonObject = {}): JsonObject {
-  return { kind: "build", subflowKey, parts, entry: { caseId: "observed-current", predecessors }, allowanceUsd: 0.05, maxIterations: 20, ...extra };
-}
-const reset = (): JsonObject => ({ kind: "reset", subflowKey: "main", entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.01, maxIterations: 5 });
-const dispatch = (briefs: JsonObject[], reason = "Build the subflows the plan needs."): Step => call(IDS.dispatch, { reason, briefs });
-
-const ONE_PART = planInput([routed()], { main: ["p1"] }, taskSpecInput([["p1", FIND, []]]));
-const TWO_PART = planInput([routed(), callable("find_titles", ["author"], ["titles"]), callable("place_hold", ["titles"], ["shelf"])], { main: [], find_titles: ["p1"], place_hold: ["p2"] }, taskSpecInput([["p1", FIND, []], ["p2", HOLD, ["create_new"]]]));
+const ONE_PART = planInput([subflow("main", ["p1"])], taskSpecInput([["p1", FIND, []]]));
+const TWO_PART = planInput([subflow("find_titles", ["p1"], { inputs: ["author"], outputs: ["titles"] }), subflow("place_hold", ["p2"], { inputs: ["titles"], outputs: ["shelf"] })], taskSpecInput([["p1", FIND, []], ["p2", HOLD, ["create_new"]]]));
 const THREE_PART = planInput(
-  [routed(), callable("find_titles", ["author"], ["titles"]), callable("place_hold", ["titles"], ["shelf"]), callable("note_shelf", ["shelf"], [])],
-  { main: [], find_titles: ["p1"], place_hold: ["p2"], note_shelf: ["p3"] },
+  [subflow("find_titles", ["p1"], { inputs: ["author"], outputs: ["titles"] }), subflow("place_hold", ["p2"], { inputs: ["titles"], outputs: ["shelf"] }), subflow("note_shelf", ["p3"], { inputs: ["shelf"] })],
   taskSpecInput([["p1", FIND, []], ["p2", HOLD, ["create_new"]], ["p3", NOTE, []]])
 );
-
-async function supervise(steps: Step[], built = project()) {
-  let index = 0;
-  const seen: Entry[] = [];
-  /** Every entry any decision was shown, once each, in the order first shown. */
-  const shown = new Map<string, Entry>();
-  const offered: string[][] = [];
-  const outcome = await runAutomationStudioProjectSupervisorLoop({
-    ports: built.ports,
-    loop: {
-      tools: HOST_TOOLS,
-      maxIterations: steps.length,
-      maxToolCalls: steps.length + 2,
-      unusableDecisions: { maxConsecutive: steps.length, maxInARow: steps.length, stalled: () => new Error("stalled") },
-      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true }),
-      decide: async ({ evidence, tools }) => {
-        offered.push(tools.map((tool) => tool.toolId));
-        seen.splice(0, seen.length, ...evidence.map((entry) => ({ callId: entry.callId, toolId: entry.toolId, value: entry.value })));
-        for (const entry of seen) {
-          const key = `${entry.callId}:${JSON.stringify(entry.value)}`;
-          if (!shown.has(key)) shown.set(key, entry);
-        }
-        const step = steps[index++];
-        if (!step) throw new Error("script exhausted");
-        return step(evidence);
-      }
-    }
-  });
-  const summary = await built.record.summary(BUILD);
-  const view = await built.record.read(BUILD);
-  const feedback = [...shown.values()].filter((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID).map((entry) => entry.value as JsonObject);
-  return { outcome, seen, offered, summary, view, feedback, ...built };
-}
 
 describe("the project supervisor", () => {
   it("plans a one-part task as one subflow, briefs it, assembles, tests and completes on the yes", async () => {
@@ -167,7 +112,7 @@ describe("the project supervisor", () => {
   });
 
   it("refuses a plan that leaves a part uncovered, and a dispatch before any plan", async () => {
-    const uncovered = planInput([routed(), callable("find_titles", ["author"], ["titles"])], { main: [], find_titles: ["p1"] }, taskSpecInput([["p1", FIND, []], ["p2", HOLD, ["create_new"]]]));
+    const uncovered = planInput([subflow("find_titles", ["p1"], { inputs: ["author"], outputs: ["titles"] })], taskSpecInput([["p1", FIND, []], ["p2", HOLD, ["create_new"]]]));
     const run = await supervise([dispatch([brief("main", ["p1"])]), call(IDS.writePlan, uncovered), end("blocked")]);
     const dispatched = lastOf(run.seen, IDS.dispatch)!;
     expect(dispatched).toMatchObject({ ok: false, code: "project.plan_missing" });
@@ -182,7 +127,7 @@ describe("the project supervisor", () => {
   });
 
   it("refuses words a part did not copy from the instruction, and a brief whose predecessor is not done", async () => {
-    const invented = planInput([routed()], { main: ["p1"] }, taskSpecInput([["p1", "Find every title ever written", []]]));
+    const invented = planInput([subflow("main", ["p1"])], taskSpecInput([["p1", "Find every title ever written", []]]));
     const run = await supervise([call(IDS.writePlan, invented), call(IDS.writePlan, TWO_PART), dispatch([brief("place_hold", ["p2"], ["find_titles"], { permittedActs: ["create_new"] })]), end("blocked")]);
     const writes = run.seen.filter((entry) => entry.toolId === IDS.writePlan).map((entry) => entry.value as JsonObject);
     expect(writes[0]).toMatchObject({ ok: false, issues: [{ code: "project.quote_not_verbatim", path: "taskSpec.parts.0.quote.text" }] });

@@ -6,9 +6,15 @@ import type { AutomationStudioProjectTaskSpec } from "./task-spec.ts";
 
 // The structure plan: the Flow's shape before any step exists. It is the
 // existing bootstrap plan with every subflow body empty -- each subflow names
-// what it is, its interface and the success check that proves it worked --
-// plus `partOf`, which task-spec parts each subflow carries. Builders fill the
-// bodies; assembly composes them back into one whole plan.
+// what it is, its interface and, when it has one, the success check that
+// proves it worked -- plus `partOf`, which task-spec parts each subflow
+// carries. Builders fill the bodies; assembly composes them back into one
+// whole plan.
+//
+// A subflow may come with no success check (no `metadata`): the plan the
+// supervisor writes leaves proposing one to the subflow's builder
+// (`../supervisor/plan-input.ts`, t569). A `metadata` given still holds a
+// non-empty check, as before.
 //
 // Validation here is what can be checked without a node registry: the shape,
 // the digest, the binding to one task-spec revision, that every part is carried
@@ -125,21 +131,23 @@ function readRouter(value: unknown, path: string, keys: ReadonlySet<string>): Au
 }
 
 function readSubflow(value: unknown, path: string): AutomationStudioFlowBootstrapSubflow {
-  const fields = shape.object(value, path, ["key", "name", "role", "nodes", "edges", "metadata"], ["interface"]);
+  const fields = shape.object(value, path, ["key", "name", "role", "nodes", "edges"], ["interface", "metadata"]);
   if (!Array.isArray(fields.nodes) || !Array.isArray(fields.edges)) return shape.refuse("project.not_array", `${path}.nodes`);
   if (fields.nodes.length || fields.edges.length) return shape.refuse("project.plan_body_not_empty", path);
-  const metadata = shape.object(fields.metadata, `${path}.metadata`, ["fluxiq.successCheck"], ["requires"]);
-  const checks = shape.array(metadata["fluxiq.successCheck"], `${path}.metadata.fluxiq.successCheck`, LIMITS.checks);
-  if (!checks.length) return shape.refuse("project.plan_success_check_missing", `${path}.metadata.fluxiq.successCheck`);
   const subflow: AutomationStudioFlowBootstrapSubflow = {
     key: shape.id(fields.key, `${path}.key`),
     name: shape.text(fields.name, `${path}.name`, 200),
     role: shape.oneOf(fields.role, `${path}.role`, ROLES),
     nodes: [],
-    edges: [],
-    metadata: { "fluxiq.successCheck": checks.map((check, index) => readFact(check, `${path}.metadata.fluxiq.successCheck.${index}`)) }
+    edges: []
   };
-  if (metadata.requires !== undefined) subflow.metadata!.requires = shape.ids(metadata.requires, `${path}.metadata.requires`, LIMITS.requires);
+  if (fields.metadata !== undefined) {
+    const metadata = shape.object(fields.metadata, `${path}.metadata`, ["fluxiq.successCheck"], ["requires"]);
+    const checks = shape.array(metadata["fluxiq.successCheck"], `${path}.metadata.fluxiq.successCheck`, LIMITS.checks);
+    if (!checks.length) return shape.refuse("project.plan_success_check_missing", `${path}.metadata.fluxiq.successCheck`);
+    subflow.metadata = { "fluxiq.successCheck": checks.map((check, index) => readFact(check, `${path}.metadata.fluxiq.successCheck.${index}`)) };
+    if (metadata.requires !== undefined) subflow.metadata.requires = shape.ids(metadata.requires, `${path}.metadata.requires`, LIMITS.requires);
+  }
   if (fields.interface !== undefined) subflow.interface = readAutomationStudioProjectSubflowInterface(fields.interface, `${path}.interface`);
   return subflow;
 }

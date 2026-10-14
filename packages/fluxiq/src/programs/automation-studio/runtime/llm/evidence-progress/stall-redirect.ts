@@ -51,6 +51,14 @@
 // instruction. What the model already has is secondary; what it lacks is the
 // point.
 //
+// **A loop that plans is told its own way forward (t569).** The project
+// supervisor writes no draft and runs no step, so "your draft holds no step
+// ... run a step that produces what the instruction asks for" sends it to do
+// a builder's work with tools it does not have. Where the loop names its way
+// forward (`forward`, from its `planning` input, `./planning-tools.ts`), that
+// is what the redirection says in place of the draft's sentences, with its
+// tool under `next`; every other loop's words are byte for byte as they were.
+//
 // Codes, identifiers and counts only -- no page text, no model words -- which
 // is the same rule every evidence entry Core writes is held to. One exception,
 // the checklist's own sentence about a step named for an act (`todoSaid`): it
@@ -58,6 +66,7 @@
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceLoopAnswerability } from "../evidence-loop/index.ts";
+import type { AutomationStudioLlmEvidencePlanningStep } from "./planning-tools.ts";
 
 /** The evidence entry the loop's no-progress redirection arrives under. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID = "core.no_progress";
@@ -103,6 +112,8 @@ export type AutomationStudioLlmEvidenceStallRedirectInput = {
    * step did instead and where to name the act.
    */
   acts?: JsonValue | undefined;
+  /** A loop that plans: its way forward, said in place of the draft's sentences (`./planning-tools.ts`). */
+  forward?: AutomationStudioLlmEvidencePlanningStep | undefined;
 };
 
 /**
@@ -137,7 +148,7 @@ export function automationStudioLlmEvidenceStallRedirect(input: AutomationStudio
     maxStepsWithoutProgress: input.maxStepsWithoutProgress,
     stepsLeftBeforeStopping: stepsLeft,
     repeatingToolIds: [...new Set(input.repeatingToolIds.filter((toolId) => ISSUE_CODE.test(toolId)))],
-    ...(input.discoveryOnly ? { authoringMode: "candidate", ...(input.candidate ? { candidate: { ...input.candidate } } : {}) } : { draftStepsSoFar: input.proposableSteps }),
+    ...(input.discoveryOnly ? { authoringMode: "candidate", ...(input.candidate ? { candidate: { ...input.candidate } } : {}) } : input.forward ? (input.forward.toolId ? { next: input.forward.toolId } : {}) : { draftStepsSoFar: input.proposableSteps }),
     completionAttempts: input.completionAttempts,
     ...(issueCodes.length ? { lastCompletionIssueCodes: issueCodes } : {}),
     ...(stillMissing ? { stillMissing } : {}),
@@ -218,6 +229,19 @@ function untriedRoutes(owed: readonly string[], stillMissing: "record_producer" 
     + " Submit the whole candidate only once the evidence shows every act the instruction asks for done, using steps that were seen working, then test its returned revision and digest. Do not complete an untested candidate.";
 }
 
+/** A planning loop's redirection: what repeating got it, that looking is withdrawn where it is, and its own way forward. */
+function planningInstruction(input: AutomationStudioLlmEvidenceStallRedirectInput, forward: AutomationStudioLlmEvidencePlanningStep, stepsLeft: number): string {
+  return [
+    `The last ${input.stepsWithoutProgress} steps told you nothing you did not already have.`,
+    input.repeatingToolIds.length
+      ? "The tools named in repeatingToolIds are answering with what they already answered; asking them again will return the same thing again."
+      : "Repeating a request returns the result you already hold.",
+    ...(input.looksWithdrawn ? ["Looking is withdrawn: no look is offered, and one asked for is refused."] : []),
+    forward.instruction,
+    stepsLeft > 0 ? `${stepsLeft} more step(s) without progress and this build stops.` : "This build stops on the next step without progress."
+  ].join(" ");
+}
+
 function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, stepsLeft: number, refused: boolean, stillMissing: "record_producer" | undefined): string {
   if (input.discoveryOnly) {
     const next = input.candidate
@@ -228,6 +252,7 @@ function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, steps
     const looking = input.looksWithdrawn ? " Looking is withdrawn until an action runs; candidate submission and testing remain the finishing path." : "";
     return `The last ${input.stepsWithoutProgress} steps added no new evidence. Repeating the same request returns the answer already held.${looking} ${next} ${stepsLeft} more step(s) without progress stop this build.`;
   }
+  if (input.forward) return planningInstruction(input, input.forward, stepsLeft);
   // What is missing leads, because it is the only sentence here that says what
   // to do next rather than what not to do again.
   const said = stillMissing ? [RECORDS_MISSING] : [];

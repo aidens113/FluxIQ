@@ -33,15 +33,31 @@
 // away. A node never seen to be a look is not withheld: whether a call looks
 // is known only once it has run, and guessing would withhold actions.
 //
+// **A planning loop's look budget (t569).** A loop whose model plans rather
+// than acts (`planning`, `../evidence-progress/planning-tools.ts`) has no action
+// to run that would give looks back, so the redirect rule above is the wrong
+// lever for it: the first live `project` build (`run-mv7t07hx-fe96a174`) made
+// seven finds on an unchanged start page, each with a new query, so none was a
+// repeat and no redirect was ever ignored. Its looks are counted instead --
+// every observe-only call that ran and looked at something -- and once
+// `lookBudget` of them have run, looks are withdrawn for the rest of the loop,
+// the same way: not offered, and refused if asked for, under
+// `llm_evidence_loop.look_budget_spent` so the refusal says why. The loop's own
+// planning tools are never a look and never counted, whatever their effect,
+// and the moment the budget is spent the model is told so and shown its way
+// forward (`automationStudioLlmEvidenceLookBudget`, below).
+//
 // Only a loop that can refuse a decision without ending (`unusableDecisions`)
 // withdraws anything; one that cannot has no way to say "not that" short of
 // stopping. `actionInputKey` is the loop's own data and never leaves it: every
 // offered tool is stripped of it, because provider adapters refuse a tool that
 // carries a key they do not know (`../deepseek/preflight.ts`).
 
-import type { JsonObject } from "../../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import type { AutomationStudioLlmEvidenceEntry } from "../context-window.ts";
 import type { AutomationStudioLlmDecisionContextRecorder } from "../decision-context/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../evidence-loop/index.ts";
+import type { AutomationStudioLlmEvidencePlanningTools } from "../evidence-progress/index.ts";
 import { automationStudioLlmEvidenceFinishingToolIds, type AutomationStudioLlmEvidenceFinishingTools } from "../loop-budget.ts";
 
 /** The issue code a withdrawn look asked for anyway is refused under. */
@@ -49,6 +65,14 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_WITHDRAWN_CODE = "llm_evidence_
 
 /** The code the decision history lists a withdrawal under, beside the redirects. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOKS_WITHDRAWN_CODE = "llm_evidence_loop.looks_withdrawn";
+
+/** The issue code a look asked for after a planning loop's look budget is spent is refused under, and the code of the note that says it is. */
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_BUDGET_SPENT_CODE = "llm_evidence_loop.look_budget_spent";
+
+/** The evidence entry the spent look budget is said under. */
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_BUDGET_TOOL_ID = "core.look_budget";
+
+const LOOK_BUDGET_SPENT = "You have made every look this loop allows, so looking is withdrawn for the rest of it: no look is offered, and one asked for is refused. What you have seen is what you go on from.";
 
 /**
  * A decision that asked again for what the loop holds: withdraws looks when it
@@ -65,6 +89,39 @@ export function automationStudioLlmEvidenceAskedAgain(
   }
 }
 
+/**
+ * One call that ran: counted against a planning loop's look budget when it was
+ * a look that looked at something, and, the moment the budget is spent, the
+ * note that says so, naming the loop's way forward, put in front of the model
+ * and on the decision history beside the redirects.
+ */
+export function automationStudioLlmEvidenceLookBudget(
+  context: {
+    input: { planning?: AutomationStudioLlmEvidencePlanningTools | undefined };
+    looks: AutomationStudioLlmEvidenceLookWithdrawal;
+    history: AutomationStudioLlmDecisionContextRecorder;
+    evidence: AutomationStudioLlmEvidenceEntry[];
+    accountEvidence(value: JsonValue): number;
+  },
+  iteration: number,
+  call: { tool: AutomationStudioLlmEvidenceTool; lookedAtNothing: boolean }
+): void {
+  const planning = context.input.planning;
+  if (!planning || call.lookedAtNothing || !context.looks.looked(call.tool)) return;
+  const next = planning.next();
+  const note: JsonObject = {
+    code: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_BUDGET_SPENT_CODE,
+    lookBudget: planning.lookBudget ?? 0,
+    looksWithdrawn: true,
+    ...(next.toolId ? { next: next.toolId } : {}),
+    instruction: `${LOOK_BUDGET_SPENT} ${next.instruction}`
+  };
+  // Said once: the budget is spent once in a loop, so there is no earlier note of this kind to replace.
+  context.accountEvidence(note);
+  context.evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_BUDGET_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_BUDGET_TOOL_ID, value: note });
+  context.history.record(iteration, { kind: "redirect", code: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOKS_WITHDRAWN_CODE });
+}
+
 export type AutomationStudioLlmEvidenceLookWithdrawal = {
   /** A no-progress redirect was put in front of the model after this iteration's decision. */
   redirectShown(iteration: number): void;
@@ -77,6 +134,14 @@ export type AutomationStudioLlmEvidenceLookWithdrawal = {
   askedAgain(iteration: number, attemptEpoch: number): boolean;
   /** Whether looks are withdrawn in this attempt epoch. */
   active(attemptEpoch: number): boolean;
+  /**
+   * A call of this tool ran and looked at something. True when it is the look
+   * that spent a planning loop's look budget, which withdraws looks for the
+   * rest of the loop; a planning tool or an action never counts.
+   */
+  looked(tool: AutomationStudioLlmEvidenceTool): boolean;
+  /** The issue code a withdrawn look asked for anyway is refused under: why looks are withdrawn now. */
+  refusalCode(attemptEpoch: number): string;
   /** A call of this tool ran the named action and reported it only looked and proposes no step. */
   sawLook(toolId: string, actionId: string): void;
   /** The tools to offer, with looks withdrawn when they are, and never carrying `actionInputKey`. */
@@ -85,13 +150,20 @@ export type AutomationStudioLlmEvidenceLookWithdrawal = {
   refuses(tool: AutomationStudioLlmEvidenceTool, input: JsonObject, attemptEpoch: number): boolean;
 };
 
-export function automationStudioLlmEvidenceLookWithdrawal(input: { enabled: boolean; finishing?: AutomationStudioLlmEvidenceFinishingTools | undefined }): AutomationStudioLlmEvidenceLookWithdrawal {
-  // A loop's own finishing tools are never a look, whatever their effect (t537).
-  const finishing = automationStudioLlmEvidenceFinishingToolIds(input.finishing);
+export function automationStudioLlmEvidenceLookWithdrawal(input: {
+  enabled: boolean;
+  finishing?: AutomationStudioLlmEvidenceFinishingTools | undefined;
+  planning?: Pick<AutomationStudioLlmEvidencePlanningTools, "toolIds" | "lookBudget"> | undefined;
+}): AutomationStudioLlmEvidenceLookWithdrawal {
+  // A loop's own finishing and planning tools are never a look, whatever their effect (t537, t569).
+  const finishing = new Set([...automationStudioLlmEvidenceFinishingToolIds(input.finishing), ...(input.planning?.toolIds ?? [])]);
+  const budget = input.planning?.lookBudget;
   let redirectAt: number | undefined;
   let withdrawnEpoch: number | undefined;
+  let looksRun = 0;
+  const spent = (): boolean => budget !== undefined && looksRun >= budget;
   const looks = new Map<string, Set<string>>();
-  const active = (attemptEpoch: number): boolean => input.enabled && withdrawnEpoch === attemptEpoch;
+  const active = (attemptEpoch: number): boolean => input.enabled && (withdrawnEpoch === attemptEpoch || spent());
   const observeOnly = (tool: AutomationStudioLlmEvidenceTool): boolean =>
     tool.effect !== "mutate" && tool.perCallEffect !== true && !finishing.has(tool.toolId);
   return {
@@ -104,6 +176,14 @@ export function automationStudioLlmEvidenceLookWithdrawal(input: { enabled: bool
       return true;
     },
     active,
+    looked(tool) {
+      if (!input.enabled || budget === undefined || spent() || !observeOnly(tool)) return false;
+      looksRun += 1;
+      return spent();
+    },
+    refusalCode(attemptEpoch) {
+      return input.enabled && spent() && withdrawnEpoch !== attemptEpoch ? AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_BUDGET_SPENT_CODE : AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_WITHDRAWN_CODE;
+    },
     sawLook(toolId, actionId) {
       const seen = looks.get(toolId) ?? new Set<string>();
       seen.add(actionId);

@@ -43,7 +43,7 @@ import {
   type AutomationStudioCandidateTrialPorts,
   type AutomationStudioCandidateTrialStart
 } from "../candidate-trial/index.ts";
-import type { AutomationStudioSubflowTrialPorts, AutomationStudioSubflowTrialRecord } from "./types.ts";
+import type { AutomationStudioSubflowTrialJudgeInput, AutomationStudioSubflowTrialPorts, AutomationStudioSubflowTrialRecord } from "./types.ts";
 
 const NO_SPEND: AutomationStudioSubflowTrialRecord["judge"] = Object.freeze({ calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 });
 
@@ -135,7 +135,8 @@ export async function runAutomationStudioSubflowTrial(request: AutomationStudioS
     const failure = error instanceof Error && error.name ? error.name : "unknown error";
     return answer("not_judged", { code, trialRunId: runId, start: start.status, failure, partial: true, entryPrepared: executed.entryPrepared }, { ...ran, execution: "succeeded", code, judge: { ...NO_SPEND } }, acts);
   }
-  const verdict = await ports.judge({ summary, scope: structuredClone(scope) as AutomationStudioSubflowScope });
+  const successCheck = judgedCheck(scope, proposal);
+  const verdict = await ports.judge({ summary, scope: structuredClone(scope) as AutomationStudioSubflowScope, ...(successCheck ? { successCheck } : {}) });
   signal.throwIfAborted();
   const read = Feedback.judged({ verdict, summary, ...shown });
   const { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } = verdict.spent;
@@ -220,4 +221,11 @@ function answerFor(request: AutomationStudioSubflowTrialRequest) {
     },
     record: { identity: { ...identity }, revision: request.proposal.revision, digest: request.proposal.digest, verdict, ...record }
   });
+}
+
+/** The check the trial is judged against: the plan's, or with none the one the tried proposal's own subflow carries, its builder's (`./types.ts`, t569). */
+function judgedCheck(scope: AutomationStudioSubflowScope, proposal: AutomationStudioSubflowTrialRequest["proposal"]): AutomationStudioSubflowTrialJudgeInput["successCheck"] {
+  if (scope.successCheck?.length) return { check: structuredClone(scope.successCheck), from: "plan" };
+  const proposed = proposal.subflows.find((subflow) => subflow.key === scope.subflowKey)?.metadata?.["fluxiq.successCheck"];
+  return proposed?.length ? { check: structuredClone(proposed), from: "builder" } : undefined;
 }

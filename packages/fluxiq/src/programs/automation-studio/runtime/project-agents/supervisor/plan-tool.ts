@@ -9,8 +9,9 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
 
 /**
  * `project.write_plan` (`write`, once) and `project.amend_plan` (`amend`, a
- * new revision with its reason). The task spec and the structure plan are
- * checked whole before anything is written (`./plan-input.ts`), then written
+ * new revision with its reason). The task spec and the planning format are
+ * checked whole, and the structure plan compiled from them, before anything is
+ * written (`./plan-input.ts`), then written
  * to the build record -- a spec only when it changed -- and an amendment
  * logged as a re-plan. Briefs and proposals made under an earlier plan stop
  * counting by their plan digest (`./state.ts`). The plan goes to the chat as
@@ -35,17 +36,21 @@ export async function automationStudioProjectSupervisorPlanTool(context: Automat
   state.taskSpec = read.taskSpec;
   state.structure = read.structure;
   state.purposes = read.purposes;
+  state.after = read.after;
   const reserveUsd = ports.purse?.keptBackUsd();
   emitAutomationStudioProjectPlanCard({ taskSpec: read.taskSpec, structurePlan: read.structure, purposes: read.purposes, ...(reserveUsd ? { reserveUsd } : {}) });
   return answer.answered({
     ok: true,
     written: mode === "write" ? "plan" : "plan_revision",
     parts: read.taskSpec.parts.map((part) => part.id),
+    // The router runs the one subflow the plan's router falls back to; the reset brief names it.
+    routerRuns: read.structure.plan.router.fallback.kind === "subflow" ? read.structure.plan.router.fallback.targetSubflowKey : null,
     subflows: read.structure.plan.subflows.map((subflow) => ({
       key: subflow.key,
       callable: subflow.interface !== undefined,
       ...(subflow.interface ? { inputs: subflow.interface.inputs.map((port) => port.id), outputs: subflow.interface.outputs.map((port) => port.id) } : {}),
-      parts: [...(read.structure.partOf[subflow.key] ?? [])]
+      parts: [...(read.structure.partOf[subflow.key] ?? [])],
+      ...(read.after[subflow.key]?.length ? { after: [...read.after[subflow.key]!] } : {})
     })),
     next: GUIDANCE.next.afterPlan
   });

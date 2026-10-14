@@ -158,6 +158,27 @@ describe("a subflow builder's scoped submission", () => {
     expect(await codes(controller(scope).submit(script([...OPEN, "done when: text t8 contains \"Elsewhere\""])))).toEqual(["subflow.success_check_changed"]);
   });
 
+  // The plan the project supervisor writes carries no success check (t569): proposing one is the builder's.
+  it("takes the builder's own success check as its subflow's when the scope has none", async () => {
+    const proposed = [{ fact: "text", op: "contains", value: "Elsewhere", target: { handle: "t8" } }];
+    const fromPlan = await controller().submit(jsonPlan([subflow("find_listing", { metadata: { "fluxiq.successCheck": proposed } })]));
+    if (!fromPlan.ok) throw new Error(JSON.stringify(fromPlan.check.feedback));
+    expect(fromPlan.proposal.subflows[0]!.metadata?.["fluxiq.successCheck"]).toEqual(proposed);
+    const fromScript = await controller().submit(script([...OPEN, "done when: text t8 contains \"Elsewhere\""]));
+    if (!fromScript.ok) throw new Error(JSON.stringify(fromScript.check.feedback));
+    expect(fromScript.proposal.subflows[0]!.metadata?.["fluxiq.successCheck"]).toEqual([expect.objectContaining({ fact: "text", op: "contains", value: "Elsewhere" })]);
+    // A callable subflow's, inside its own part before its first step, as the submit tool tells the builder.
+    const lines = callable();
+    lines.splice(lines.findIndex((line) => line.startsWith("  step:")), 0, "  done when: text t8 contains \"Elsewhere\"");
+    const fromPart = await controller(testScope({ interface: interfaceOf })).submit(script(lines));
+    if (!fromPart.ok) throw new Error(JSON.stringify(fromPart.check.feedback));
+    expect(fromPart.proposal.subflows.find((entry) => entry.key === "find_listing")!.metadata?.["fluxiq.successCheck"]).toEqual([expect.objectContaining({ fact: "text", op: "contains", value: "Elsewhere" })]);
+    // And none proposed is none carried.
+    const none = await controller().submit(script([...OPEN]));
+    if (!none.ok) throw new Error(JSON.stringify(none.check.feedback));
+    expect(none.proposal.subflows[0]!.metadata?.["fluxiq.successCheck"]).toBeUndefined();
+  });
+
   it("says the refusal under its own code and clears the standing proposal", async () => {
     const scoped = controller();
     const accepted = await scoped.submit(script([...OPEN]));

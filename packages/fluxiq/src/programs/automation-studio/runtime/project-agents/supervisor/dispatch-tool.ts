@@ -31,7 +31,7 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
   const structure = state.structure;
   const taskSpec = state.taskSpec;
   if (!structure || !taskSpec) return answer.refused("project.plan_missing", GUIDANCE.refusals.noPlan);
-  const read = automationStudioProjectSupervisorBriefInput({ value, structure, taskSpec, nextId: state.briefIds() });
+  const read = automationStudioProjectSupervisorBriefInput({ value, structure, taskSpec, after: state.after, nextId: state.briefIds() });
   if (!read.ok) {
     const survey = read.issues.some((issue) => issue.code === "project.brief_survey_unavailable");
     return answer.refused(survey ? "project.brief_survey_unavailable" : "project.brief_refused", survey ? GUIDANCE.refusals.surveyUnavailable : GUIDANCE.refusals.briefRefused, { issues: read.issues });

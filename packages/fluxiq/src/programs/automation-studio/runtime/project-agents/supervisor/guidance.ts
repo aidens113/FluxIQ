@@ -10,42 +10,59 @@
 // (`./tests/guidance.test.ts`) holds every string here to the lists the in-run
 // repair instruction is held to.
 //
+// **It plans; builders explore and act (t569).** The first live `project`
+// builds (A8 round 1) had the supervisor read the task and then search its
+// start page like a builder -- seven finds and a describe on crossborder, one
+// of them for the word "field" -- with tools that cannot act, and never write a
+// plan. So the guidance says its role plainly, a look budget withdraws its looks
+// after `AUTOMATION_STUDIO_PROJECT_SUPERVISOR_LOOK_BUDGET` of them, and every
+// note the loop puts in front of it names its next planning step (`forward`).
+// And it is asked for a plan it can write: subflows with their parts, the names
+// of the values they take and hand on, and what runs before each -- never
+// Core's raw bootstrap plan, whose router rules, ports and success checks it
+// guessed at and was refused on five times on bigbox (`./plan-input.ts`).
+//
 // No string here names a fingerprint field by name: the supervisor completes
 // and tests with the `complete` object assembly hands it, copied whole.
+import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_LOOK_BUDGET as LOOKS } from "./look-budget.ts";
 
 const READ_TASK = "Read the task: the person's instructions, word for word, under the ids a part names them by; what this build's record already holds; "
   + "and the money this build can still give builders, beside what it keeps back for the judged whole run. Taken once for free before your first decision; its answer stays in your evidence.";
 
 const HOW_TO_WORK = [
-  "You supervise this build. You never act on the target and never write a step yourself: builders do, one subflow each. You plan, brief, read what comes back, assemble and test. To look at the target before you plan, use the look tools you are offered, which change nothing.",
-  "1. Split the task into parts with project.write_plan. A part is one thing the person asked for, given as their exact words copied from one instruction (its sourceId and the text), with the facts that are true once it is done and the lasting acts it needs. Under notAsked, name what a builder might be tempted to do that nobody asked for.",
-  "2. In the same call, give the structure: one subflow the router runs, and one callable subflow, with an interface, for each part that hands values on or takes them. Every part is carried by at least one subflow (partOf). Leave every body empty; give each subflow its success check.",
-  "3. Send briefs with project.dispatch, one for each subflow a builder makes. A brief names its parts, the subflows that run before it to reach its start (predecessors), its money and its turns, with room for the trials of its subflow. Briefs whose starts do not depend on each other may go in one call.",
+  "You supervise this build. You do not operate the target and you never write a step: builders do, one subflow each, and they are the ones who explore the target, find what the task names and act on it. You plan, brief, read what comes back, assemble and test.",
+  `Plan from the task and a short look. The start page as the build found it is already in your evidence, and you may make at most ${LOOKS} more looks with the look tools, which change nothing; after them looking is withdrawn for the rest of the build. Something the task names that the start page does not show is not yours to find: finding it is what a builder's part is for.`,
+  "1. Write the plan with project.write_plan, once. taskSpec splits the task into parts: a part is one thing the person asked for, given as their exact words copied from one instruction (its sourceId and the text), with the facts that are true once it is done and the lasting acts it needs. Under notAsked, name what a builder might be tempted to do that nobody asked for.",
+  "2. In the same call, subflows: one for each piece of work a builder makes, as {key, name, purpose, parts, inputs, outputs, after}. parts are the ids of the parts it carries; inputs are the values it takes and outputs the values it hands on, by name; after names the subflows that must run before it. A one-part task is one subflow with no inputs or outputs. Core writes the Flow's shape from this, and each builder proposes how its own subflow shows it is done.",
+  "3. Send briefs with project.dispatch, one for each subflow. A brief names its parts, its money and its turns, with room for the trials of its subflow; what runs before it is the plan's after unless you say otherwise. Briefs whose starts do not depend on each other may go in one call.",
   "4. Read each return. Done carries a proposal. Partial or blocked carries the builder's reason: send a changed brief, change the plan with project.amend_plan, or end honestly.",
-  "5. Once every subflow is done, call project.assemble. Core joins the proposals into one Flow: the router-run subflow calls the callable ones in order, each input taken from the earlier output of the same name.",
+  "5. Once every subflow is done, call project.assemble. Core joins the proposals into one Flow: the subflow the router runs calls the others in order, each input taken from the earlier output of the same name.",
   "6. Test that exact Flow with core.test_candidate. If this build left lasting acts on the target, first dispatch a reset brief, which puts the target back the way the build found it.",
   "7. Complete with the complete object project.assemble returned, and only after its test answered yes. If the task cannot be finished, complete with ended (blocked or partial) and your reason, once a brief has come back blocked or partial or a whole test has not passed."
 ].join("\n");
 
 const EXAMPLE = "An example from a lending library's catalogue: \"Find the three newest titles by Ada Hart and place a hold on the first.\" "
   + "Parts: p1 \"Find the three newest titles by Ada Hart\" (fact: three titles are read), p2 \"place a hold on the first\" (fact: that title shows a hold; lasting act: create_new). "
-  + "Subflows: main, run by the router, carrying no part itself; find_titles, callable, with input author and output titles, carrying p1; place_hold, callable, with input titles, carrying p2. "
-  + "Briefs: find_titles with no predecessors, then place_hold with predecessors [find_titles]. Assembly makes main call find_titles, then place_hold, passing titles on.";
+  + "The catalogue's start page shows a search field and no titles by her, so finding them is p1's builder's work, not a look of yours. "
+  + "Subflows: find_titles with parts [p1] and outputs [titles]; place_hold with parts [p2], inputs [titles] and after [find_titles]. "
+  + "Core adds the subflow the router runs, which calls find_titles and then place_hold, passing titles on. Briefs: find_titles, then place_hold.";
 
-const WRITE_PLAN = "Write the task spec and the structure plan, once. taskSpec: parts, each {id, its words as {sourceId, text} with text copied exactly from that instruction, goalFacts, lastingActs}, and notAsked. "
-  + "structurePlan: plan, the Flow bootstrap plan with every subflow's nodes and edges empty and its metadata \"fluxiq.successCheck\" set, a callable subflow carrying an interface; and partOf, every subflow key to the part ids it carries. "
-  + "purposes: optional, one line per subflow key, for the chat. Core checks that every part's text is in its instruction exactly as written, that every part is carried, and the router; a refusal lists every issue by its path. "
+const WRITE_PLAN = "Write the task spec and the plan, once. taskSpec: parts, each {id, its words as {sourceId, text} with text copied exactly from that instruction, goalFacts, lastingActs}, and notAsked. "
+  + "subflows: each {key, name, purpose, parts, inputs, outputs, after} and nothing else. key: lower case letters, digits, _ or -, starting with a letter. parts: the part ids it carries; every part is carried by at least one subflow. "
+  + "inputs and outputs: the names of the values it takes and hands on, each letters and digits starting lower case. after: the keys of the subflows that run before it. One subflow with no inputs or outputs is the one the router runs; otherwise Core adds that one, and it calls the others. "
+  + "Core writes the Flow's shape from these and checks that every part's text is in its instruction exactly as written and that every part is carried; a refusal lists every issue by its path in what you sent. "
   + "Change a plan already written with project.amend_plan.";
 
 const AMEND_PLAN = "Replace the plan with a new revision: the fields of project.write_plan, plus reason. Briefs and proposals made under the old plan no longer count, so send new briefs for every subflow the new plan needs.";
 
 const DISPATCH = "Send one or more briefs to builders and wait for every return. Each brief: kind (build, repair, or reset, which puts the target back the way this build found it before the whole test), subflowKey, "
-  + "parts it carries, entry {caseId, predecessors: the subflows whose proposals run first to reach its start}, allowanceUsd (its money, out of what can still be given), maxIterations (its turns, with room for the trials of its subflow, which count among them), permittedActs (only lasting acts its parts ask for), "
-  + "optional recordingExcerpt, and failingReceipt for a repair. A reset carries no parts and permits no act; its subflowKey is the subflow the whole test starts in. Core fills in the plan, the interface and the brief id. "
+  + "parts it carries, allowanceUsd (its money, out of what can still be given), maxIterations (its turns, with room for the trials of its subflow, which count among them), permittedActs (only lasting acts its parts ask for), "
+  + "optional entry {caseId, predecessors: the subflows whose proposals run first to reach its start}, which is observed-current and the plan's after for that subflow when left out; optional recordingExcerpt, and failingReceipt for a repair. "
+  + "A reset carries no parts and permits no act; its subflowKey is the subflow the router runs, as project.write_plan answered. Core fills in the plan, the interface and the brief id. "
   + "A predecessor must be done already or be sent in the same call; a brief whose predecessor comes back blocked is not started and comes back blocked too. reason says why you send them. Briefs that do not depend on each other may run at once. A reset comes back done, with no proposal, once nothing of this build is left to undo. "
   + "The answer is every return: done, partial or blocked, the builder's reason, what it spent, and any interface change it asks for.";
 
-const ASSEMBLE = "Join the plan and every subflow's latest done proposal into one whole Flow, and submit it. The router-run subflow with no proposal of its own calls every callable subflow in the order their starts depend on each other, "
+const ASSEMBLE = "Join the plan and every subflow's latest done proposal into one whole Flow, and submit it. The subflow the router runs, with no proposal of its own, calls every other subflow in the order their starts depend on each other, "
   + "each input taken from the latest earlier output of the same name, or else from the Flow's own value of that name. The answer is the new revision with a complete object to test and complete with, or every reason it could not be assembled. "
   + "Assembling again makes a new revision that needs its own test.";
 
@@ -60,24 +77,52 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
   /** The read_task answer's way of working and its example. */
   howToWork: HOW_TO_WORK,
   example: EXAMPLE,
+  /**
+   * The supervisor's own system instructions, in place of the bound domain's,
+   * whose words tell a builder how to operate the target (`./system-instructions.ts`):
+   * its role, and one line naming the kind of host the build runs on, `{domainId}`
+   * filled in with the bound domain's id.
+   */
+  system: Object.freeze({
+    role: "You are the project supervisor of a FluxIQ build. You plan the Flow the person asked for and hand its parts to builder agents: each builder explores the target, acts on it and writes one subflow. "
+      + "You do not operate the target and you never write a step. Your own tools write the plan, brief the builders, assemble their subflows into one Flow and test it; your look tools only look, and only a few times. "
+      + "Plan from the task and a short look, brief the builders, read what each hands back, assemble, test, and complete only on a yes for the exact revision you assembled, or end honestly with your reason. "
+      + "Be efficient: every build has a small cost ceiling.",
+    host: "This build runs on the host of the domain \"{domainId}\": the builders act on it through their own tools, and you see it only through your look tools."
+  }),
+  /** The subflow Core adds for the router to run when the plan has several: its name and its line in the chat. */
+  router: Object.freeze({ name: "Main", purpose: "Runs each of the other subflows in turn, passing each value on by name." }),
   /** What each answer says to do next. */
   next: Object.freeze({
-    afterPlan: "Send briefs for the subflows with project.dispatch, those with no predecessors first.",
+    afterPlan: "Send briefs for the subflows with project.dispatch, those with nothing to run after first.",
     afterReturnsDone: "Every brief sent came back done. Send briefs for any subflow still without a done proposal, or call project.assemble once every one has one.",
     afterReturnsNotDone: "A brief came back partial or blocked. Read its reason: send a changed brief for that subflow, change the plan with project.amend_plan, or end honestly.",
     afterReset: "The reset came back. Test the latest assembled Flow with core.test_candidate.",
     afterAssemble: "Test this exact Flow next with core.test_candidate, passing the complete object above. Do not complete until its test answered yes."
   }),
+  /**
+   * The way forward the loop's own notes name -- the spent look budget, the
+   * searching note, the no-progress redirect -- by where the build stands
+   * (`./planning.ts`).
+   */
+  forward: Object.freeze({
+    writePlan: "Write the plan now with project.write_plan, from the task and what you have seen. Do not look further: what the start page does not show is a builder's to find, so make it a part and brief a builder for it.",
+    dispatch: "Send briefs with project.dispatch for every subflow that has no done proposal yet, those with nothing to run after first. Builders explore and act; you do not.",
+    assemble: "Every subflow has a done proposal: join them into one Flow with project.assemble.",
+    test: "Test the latest assembled Flow with core.test_candidate, passing the complete object project.assemble returned.",
+    changeAfterNo: "The latest whole test did not answer yes: send a changed brief with project.dispatch for the subflow the judge's reasons point to, or change the plan with project.amend_plan, then assemble and test again.",
+    complete: "The latest assembled Flow's test answered yes: complete with the complete object project.assemble returned."
+  }),
   /** The words of each refusal. */
   refusals: Object.freeze({
     planExists: "A plan is already written. Change it with project.amend_plan, saying why.",
-    noPlan: "There is no plan yet. Write the task spec and the structure plan with project.write_plan first.",
-    planRefused: "The plan was not written: every listed issue says what to correct, by its path. Send the whole plan again with each one corrected.",
+    noPlan: "There is no plan yet. Write the task spec and the subflows with project.write_plan first.",
+    planRefused: "The plan was not written: every listed issue says what to correct, by its path in what you sent. Send the whole plan again with each one corrected.",
     briefRefused: "No brief was sent: every listed issue names the brief and what to correct. Send the briefs again with each one corrected.",
     predecessorNotDone: "A brief names a predecessor that has no done proposal and is not sent in the same call. Send that subflow's brief first, or in the same call.",
     dispatchCycle: "The briefs' predecessors make a circle, so none of them can start. Give each brief only subflows that come before it.",
     allowanceUnavailable: "The briefs ask for more money than can still be given out, which is shown with what they ask. Give them less, or send fewer at once.",
-    surveyUnavailable: "A survey brief cannot run here yet. Look at the target with the look tools you are offered, then send build briefs.",
+    surveyUnavailable: "A survey brief cannot run here yet. Send build briefs: each builder explores what its own parts need.",
     dispatchFailed: "The briefs could not be run, so no return came back. Try again, or end honestly if it keeps failing.",
     assembleRefused: "The Flow could not be assembled: every listed issue names the subflow and why. Send the briefs it needs, or change the plan, then assemble again.",
     composedRefused: "The assembled Flow was refused, as listed. Change the subflow an issue names with a new brief, or change the plan, then assemble again.",

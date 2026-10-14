@@ -5,7 +5,8 @@
 // content-free build trace read off each row (`progress-trace.ts`) with the
 // opt-in dump of what each decision was shown (`decision-dump.ts`), and the
 // same trace's lines for a build's steps outside its loop (`build-trace.ts`),
-// and the count of decisions in a row refused for one reason (`refusal-run.ts`).
+// and the count of decisions in a row refused for one reason (`refusal-run.ts`),
+// and what a loop that plans names as its way forward (`planning-tools.ts`).
 //
 // Moved out of `../evidence-loop/` when that directory passed Core's 25-file
 // limit (t208). Every name is still published from `../evidence-loop/index.ts`,
@@ -14,6 +15,7 @@ export * from "./authored-progress.ts";
 export * from "./build-trace.ts";
 export * from "./decision-dump.ts";
 export * from "./no-progress.ts";
+export * from "./planning-tools.ts";
 export * from "./progress.ts";
 export * from "./progress-trace.ts";
 export * from "./refusal-run.ts";

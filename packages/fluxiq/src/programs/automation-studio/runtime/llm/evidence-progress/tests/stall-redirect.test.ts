@@ -195,3 +195,33 @@ describe("the stall note of a loop with its own finishing tools", () => {
     expect(note()).toContain("Use core.test_candidate with that exact revision");
   });
 });
+
+// A loop that plans rather than acts (t569): the project supervisor of
+// `run-mv7t07hx-fe96a174` writes no draft and runs no step, so the draft's
+// sentences sent it to do a builder's work. Its own way forward is said instead.
+describe("the stall note of a loop that plans", () => {
+  const base = { stepsWithoutProgress: 3, maxStepsWithoutProgress: 8, repeatingToolIds: ["web.find_on_page"], proposableSteps: 0, completionAttempts: 0, lastIssueCodes: [], canComplete: true };
+  const forward = { toolId: "plan.write", instruction: "Write the plan now with plan.write." };
+
+  it("says its way forward, with its tool under next, in place of the draft's sentences", () => {
+    const note = automationStudioLlmEvidenceStallRedirect({ ...base, looksWithdrawn: true, forward });
+    expect(note).toMatchObject({ code: "llm_evidence_loop.no_progress", next: "plan.write", looksWithdrawn: true, stepsLeftBeforeStopping: 5 });
+    expect(note).not.toHaveProperty("draftStepsSoFar");
+    expect(note.instruction).toBe("The last 3 steps told you nothing you did not already have. "
+      + "The tools named in repeatingToolIds are answering with what they already answered; asking them again will return the same thing again. "
+      + "Looking is withdrawn: no look is offered, and one asked for is refused. Write the plan now with plan.write. 5 more step(s) without progress and this build stops.");
+  });
+
+  it("leaves out next when the way forward names no tool, and says so on the last step", () => {
+    const note = automationStudioLlmEvidenceStallRedirect({ ...base, stepsWithoutProgress: 8, forward: { instruction: "Complete now." } });
+    expect(note).not.toHaveProperty("next");
+    expect(String(note.instruction)).toMatch(/Complete now\. This build stops on the next step without progress\.$/u);
+  });
+
+  it("leaves every other loop's note as it was", () => {
+    const note = automationStudioLlmEvidenceStallRedirect(base);
+    expect(note).toMatchObject({ draftStepsSoFar: 0 });
+    expect(note).not.toHaveProperty("next");
+    expect(String(note.instruction)).toContain("Your draft holds no step that could be proposed yet");
+  });
+});

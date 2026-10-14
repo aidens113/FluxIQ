@@ -18,7 +18,10 @@
 //   subflow, as written or as the proposal keys it;
 // - a callable subflow's inputs and outputs are the scope's by name, every
 //   output bound; a router-run one declares none; and the success check, when
-//   written, is the scope's -- one that writes none carries the plan's.
+//   the scope has one, is the scope's -- written exactly, or left out and
+//   carried. When the scope has none (the plan the project supervisor writes
+//   carries none; t569), proposing one is the builder's: the check it writes,
+//   by `done when:` or a JSON plan's metadata, becomes its subflow's.
 //
 // What passes is exactly a probe plan -- the target and its parts, with the
 // router's fallback at the target, or for a callable target at one call of it
@@ -80,6 +83,8 @@ export class AutomationStudioSubflowScopedSubmissionController {
   private readonly instructionText: string;
   /** The proposal each accepted whole-probe revision is, by the probe's candidate digest. */
   private readonly proposals = new Map<string, AutomationStudioSubflowProposal>();
+  /** The success check a builder proposed in a JSON plan, which the plan reader does not keep, by the probe's candidate digest (header). */
+  private readonly proposedChecks = new Map<string, NonNullable<AutomationStudioSubflowScope["successCheck"]>>();
   private current: AutomationStudioSubflowProposal | undefined;
 
   constructor(private readonly input: {
@@ -119,6 +124,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
     }
     const submitted = await this.inner.submit(read.probe, this.candidateHistory(history));
     this.input.submission.signal?.throwIfAborted();
+    if (submitted.ok && read.proposedCheck) this.proposedChecks.set(submitted.candidate.digest, read.proposedCheck);
     const latest = this.inner.latest();
     this.current = latest ? this.proposalOf(latest) : undefined;
     if (!submitted.ok) return submitted;
@@ -130,7 +136,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
    * existing checks run on: the submission itself, or for a callable subflow
    * its script with the call that runs it (`./callable-target.ts`).
    */
-  private read(result: JsonObject): { issues: ScopeIssue[]; probe: JsonObject } {
+  private read(result: JsonObject): { issues: ScopeIssue[]; probe: JsonObject; proposedCheck?: NonNullable<AutomationStudioSubflowScope["successCheck"]> } {
     const issues: ScopeIssue[] = [];
     if (typeof result.flow === "string") {
       for (const block of parseAutomationStudioFlowScript(result.flow).script.blocks) {
@@ -150,15 +156,16 @@ export class AutomationStudioSubflowScopedSubmissionController {
     const accepted = acceptAutomationStudioFlowBootstrapResult({ result: probe, registry: this.input.submission.registry, resolution: this.input.submission.resolution, instructionText: this.instructionText });
     // A submission that cannot be read is refused by the probe's own checks, with every issue named.
     if (!accepted.ok) return { issues, probe };
-    return { issues: [...issues, ...this.planIssues(accepted.plan, result)], probe };
+    const read = this.planIssues(accepted.plan, result);
+    return { issues: [...issues, ...read.issues], probe, ...(read.proposedCheck ? { proposedCheck: read.proposedCheck } : {}) };
   }
 
-  private planIssues(plan: AutomationStudioFlowBootstrapPlan, result: JsonObject): ScopeIssue[] {
+  private planIssues(plan: AutomationStudioFlowBootstrapPlan, result: JsonObject): { issues: ScopeIssue[]; proposedCheck?: NonNullable<AutomationStudioSubflowScope["successCheck"]> } {
     const issues: ScopeIssue[] = plan.router.rules.map((rule, index) => ({ code: "subflow.router_rule_refused", path: `plan.router.rules.${index}`, message: `The router rule "${rule.name}" routes a situation to "${rule.targetSubflowKey}". A subflow builder writes no router rule: write this subflow and the parts it calls, and no situation.` }));
     const contract = this.scope.interface;
     const entry = entryOf(plan);
     const target = contract ? plan.subflows.find((subflow) => subflow.key === this.scope.subflowKey) : entry;
-    if (!target) return [...issues, { code: "subflow.target_missing", path: "plan.router.fallback", message: `No steps stand outside every block. Write the steps of "${this.scope.subflowKey}" outside every block, and its helpers as parts they call.` }];
+    if (!target) return { issues: [...issues, { code: "subflow.target_missing", path: "plan.router.fallback", message: `No steps stand outside every block. Write the steps of "${this.scope.subflowKey}" outside every block, and its helpers as parts they call.` }] };
     if (!contract && target.key !== this.scope.subflowKey && this.siblings.has(target.key)) issues.push(foreign(target.key, "plan.router.fallback"));
     const parts = calledParts(plan, target.key);
     plan.subflows.forEach((subflow, index) => {
@@ -175,10 +182,12 @@ export class AutomationStudioSubflowScopedSubmissionController {
     }
     const sentMetadata = isObject(sent?.metadata) ? sent.metadata : undefined;
     const written = target.metadata?.["fluxiq.successCheck"] ?? sentMetadata?.["fluxiq.successCheck"];
-    if (written !== undefined && canonical(written) !== canonical(this.scope.successCheck ?? null)) {
-      issues.push({ code: "subflow.success_check_changed", path: `plan.subflows.${plan.subflows.indexOf(target)}.metadata`, message: `This subflow's success check is the structure plan's and cannot change here: ${JSON.stringify(this.scope.successCheck ?? null)}. Leave out \`done when:\` for it, or write exactly that.` });
+    // The scope's check, when it has one, is the plan's and cannot change; with none, the builder's own is its proposal (header).
+    if (this.scope.successCheck !== undefined && written !== undefined && canonical(written) !== canonical(this.scope.successCheck)) {
+      issues.push({ code: "subflow.success_check_changed", path: `plan.subflows.${plan.subflows.indexOf(target)}.metadata`, message: `This subflow's success check is the structure plan's and cannot change here: ${JSON.stringify(this.scope.successCheck)}. Leave out \`done when:\` for it, or write exactly that.` });
     }
-    return issues;
+    const proposedCheck = this.scope.successCheck === undefined && Array.isArray(written) && written.length ? structuredClone(written) as NonNullable<AutomationStudioSubflowScope["successCheck"]> : undefined;
+    return { issues, ...(proposedCheck ? { proposedCheck } : {}) };
   }
 
   /** Whether a helper part's key, as written or as the proposal keys it, is another subflow's of the structure plan. */
@@ -189,7 +198,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
   /**
    * The probe's revision as this brief's proposal: the target keyed as the
    * scope's, carrying its interface (outputs bound as the part wrote them) and
-   * success check, then its helper parts re-keyed under it (`./part-keys.ts`).
+   * success check -- the scope's, or with none the one the builder proposed -- then its helper parts re-keyed under it (`./part-keys.ts`).
    * The target's step and derived dataset ids follow the scope's key too
    * where the probe wrote it under another (a router-run entry as `main`).
    */
@@ -203,7 +212,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
     if (!written) throw new Error("subflow.probe_target_missing");
     const target: AutomationStudioFlowBootstrapSubflow = { ...structuredClone(written), key: this.scope.subflowKey };
     if (contract) target.interface = boundInterface(contract, written.interface);
-    const successCheck = target.metadata?.["fluxiq.successCheck"] ?? this.scope.successCheck;
+    const successCheck = target.metadata?.["fluxiq.successCheck"] ?? this.scope.successCheck ?? this.proposedChecks.get(candidate.digest);
     if (successCheck) target.metadata = { ...target.metadata, "fluxiq.successCheck": structuredClone(successCheck) };
     const parts = plan.subflows.filter((subflow) => subflow !== written && !(contract && subflow === entry));
     const subflows = automationStudioSubflowRekeyedParts(target, parts, { targetWrittenKey: written.key });

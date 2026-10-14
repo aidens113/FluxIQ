@@ -24,6 +24,8 @@ export function automationStudioLlmEvidenceRedirectFacts(input: {
     answerability: input.answerability,
     looksWithdrawn: input.looksWithdrawn,
     actsMissing: config.draft ? config.draft.actsMissing?.(steps) : undefined,
-    acts: config.draft ? config.draft.acts?.(steps) : undefined
+    acts: config.draft ? config.draft.acts?.(steps) : undefined,
+    // A loop that plans names its own way forward, asked now (`./planning-tools.ts`, t569).
+    ...(config.planning ? { forward: config.planning.next() } : {})
   };
 }
