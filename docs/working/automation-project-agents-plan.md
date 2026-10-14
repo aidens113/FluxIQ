@@ -526,6 +526,33 @@ Briefs A5a, A5b, A5c, the sweep fixture groups, the recording delete retry and t
   the look tools withdrawn after the budget and a redirect naming the plan, and a stub that then writes the plan
   proceeds to dispatch; candidate loop tests unchanged; the guidance guard test; narrow checks. No live run.
 
+### Brief: project-calls-and-brief-defaults
+- Repository: FluxIQ Core, the paired worktree the dispatch prompt names. Before A8 resumes.
+- Task: A8 round 1 after t569 (run-mv7vk3ol-9e11b266 crossborder, run-mv7vl89u-917d62a6 bigbox; steps under
+  `C:/Users/osrs_/FluxStuff/lab-runs/2026-10-14/`): the supervisor now plans and dispatches, and builders act, but
+  both builds ended `flow_bootstrap.run_budget_calls_exhausted` at about $0.07-0.08 of $0.25, bigbox before any
+  builder submitted. (1) Calls: an allowance reserves dollars but not calls (t534 open question), so one builder
+  spends the run's calls and its own wrap-up never triggers. Carve each brief's call cap from the parent purse's
+  remaining calls the way dollars are carved (never from what assembly, the whole trial and judging keep back), and
+  have the builder loop's wrap-up and budget notes read its own allowance, so a builder submits before its share
+  ends (`llm/build-purse/` allowance book, `service/project-build/` where allowances and loop limits are set,
+  `flow-bootstrap/subflow-candidate/builder-loop.ts`). (2) Core sizes briefs: when the supervisor gives no
+  `allowanceUsd`/calls, split what can still be given out over the briefs being sent and those the plan has not yet
+  dispatched; the supervisor may still lower one; `project.allowance_unavailable` should no longer be reachable by
+  guessing (it was hit twice). (3) Core derives each brief's `permittedActs` from its parts' lasting acts
+  (`project.brief_act_not_asked` was hit three times); the supervisor no longer writes them. (4) A builder's brief
+  shows the exact `input:` and `output:` lines its part must declare, by name (`subflow.interface_input_mismatch`:
+  "collect_coupon is given exactly itemUrl; this part declares no value").
+- Required reads: the two runs' steps (supervisor dispatch calls and results, the builder refusals), the Core plan's
+  Contracts (Allowance), `llm/build-purse/`, `service/project-build/`, `project-agents/{supervisor,dispatch}/`,
+  `flow-bootstrap/subflow-candidate/builder-loop.ts`.
+- Owns: the files named and their tests; `project-agents/contracts/subflow-brief.ts` if a field becomes optional; report.
+- Must not touch: `service.ts` beyond one in-place line if unavoidable (say so); `flow-bootstrap/candidate/**`.
+- Definition of done: a stub test where three builders share a 64-call build: each gets a call share, each wraps up and
+  submits within it, and calls remain for assembly and the whole trial; briefs sent without allowances get sizes that
+  fit; permitted acts come from parts; the brief shows interface lines; candidate builds' purse behaviour unchanged.
+  The whole project-agents, project-build, build-purse, subflow-candidate sets; check; audit. No live run.
+
 ## Work Ledger
 
 Earlier entries are in [the ledger archive](./automation-project-agents-plan/archive/2026-10-13-ledger.md).
