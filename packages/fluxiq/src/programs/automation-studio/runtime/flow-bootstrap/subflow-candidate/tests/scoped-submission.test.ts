@@ -32,6 +32,11 @@ function callable(change: { input?: string; output?: string | undefined } = {}):
     "    node: web.dom.extract_list",
     "    extractList: extraction.1",
     "    extractList.minItems: 0",
+    // Every input it declares is read (`../callable-target.ts`, t581).
+    "  step: type the query",
+    "    node: web.dom.type",
+    "    selector: .search",
+    `    text: $input.${change.input ?? "query"}`,
     "end",
     ...part()
   ];
@@ -208,6 +213,61 @@ describe("a subflow builder's scoped submission", () => {
     expect(a.proposal.digest).not.toBe(b.proposal.digest);
     expect(first.matches({ revision: b.proposal.revision, digest: b.proposal.digest })).toBe(false);
     expect(second.matches({ revision: a.proposal.revision, digest: a.proposal.digest })).toBe(false);
+  });
+
+  // A8 bigbox (t581): the refusal's `previous` was Core's probe, and two builders resent its lines.
+  it("shows a refused callable subflow the script it sent, never the probe Core checked", async () => {
+    const lines = callable();
+    // A press that declares nothing it causes: the probe's own checks refuse it.
+    lines.splice(lines.indexOf("end"), 0, "  step: press the sort", "    node: web.dom.click", "    selector: .sort");
+    const sent = script(lines);
+    const refused = await controller(testScope({ interface: interfaceOf })).submit(sent);
+    if (refused.ok) throw new Error("expected a refusal");
+    expect(refused.check.issueCodes).not.toContain("subflow.scope_refused");
+    expect(refused.check.feedback?.previous).toBe(sent.flow);
+    expect(JSON.stringify(refused.check.feedback)).not.toContain("subflow-probe-call");
+  });
+
+  // A8 bigbox (t581): revision 4 of a store-switching subflow read a list and switched nothing.
+  it("refuses a revision that drops the lasting act an accepted revision of its brief did, and keeps refusing none to a brief that never did one", async () => {
+    const act = ["step: choose the listing", "  node: web.dom.click", "  selector: .choose", "  consequences: modify_existing"];
+    const scoped = controller();
+    const first = await scoped.submit(script([...OPEN, ...act]));
+    expect(first.ok, JSON.stringify(first)).toBe(true);
+    const dropped = await scoped.submit(script([...OPEN, ...callPart(), ...part()]));
+    if (dropped.ok) throw new Error("expected a refusal");
+    expect(dropped.check.issueCodes).toEqual(["subflow.lasting_act_dropped"]);
+    expect(JSON.stringify(dropped.check.feedback)).toContain("did a lasting act (modify_existing)");
+    // The act kept, the revision stands.
+    expect((await scoped.submit(script([...OPEN, ...act, "step: open the listings again", "  node: web.browser.navigate", "  url: https://listings.test/all"]))).ok).toBe(true);
+    // A brief whose revisions never did one is asked for none.
+    const reading = controller();
+    expect((await reading.submit(script([...OPEN]))).ok).toBe(true);
+    expect((await reading.submit(script([...OPEN, ...callPart(), ...part()]))).ok).toBe(true);
+  });
+
+  // A8 bigbox (t581): later subflows declared `storeName`, as the plan gave it, and none of their steps read it.
+  it("refuses a callable part that declares an input none of its lines reads, naming it, and counts a fact or a call that gives it on as a read", async () => {
+    const scope = testScope({ interface: interfaceOf });
+    const unread = callable().filter((line) => !line.includes("$input.query") && line !== "  step: type the query" && line !== "    node: web.dom.type" && line !== "    selector: .search");
+    const refused = await controller(scope).submit(script(unread));
+    if (refused.ok) throw new Error("expected a refusal");
+    expect(refused.check.issueCodes).toEqual(["subflow.input_unread"]);
+    expect(refused.check.feedback).toMatchObject({ issues: [{ code: "subflow.input_unread", path: "flow.line.3", message: expect.stringContaining("The input \"query\" at line 3 is declared, and no line of this part reads it.") }] });
+    // Read by a `done when:` fact.
+    const fact = [...unread];
+    fact.splice(fact.indexOf("  step: open the listings"), 0, "  done when: value t8 is $input.query");
+    const byFact = await controller(scope).submit(script(fact));
+    expect(byFact.ok, JSON.stringify(byFact)).toBe(true);
+    // Given on to a part it calls, which reads it as its own.
+    const given = unread.map((line) => line === "  step: run subflow narrow" ? "  step: run narrow\n    call: narrow\n    query: $input.query" : line)
+      .map((line) => line === "part narrow: narrow the listing" ? "part narrow: narrow the listing\n  input: query" : line)
+      .map((line) => line === "    consequences: none" ? "    consequences: none\n  step: type it\n    node: web.dom.type\n    selector: .search\n    text: $input.query" : line);
+    const byCall = await controller(scope).submit(script(given));
+    expect(byCall.ok, JSON.stringify(byCall)).toBe(true);
+    // A longer name that starts with it is no read of it.
+    const longer = unread.map((line) => line === "    url: https://listings.test/all" ? "    url: $input.queryText" : line);
+    expect(await codes(controller(scope).submit(script(longer)))).toContain("subflow.input_unread");
   });
 
   it("refuses a scope whose own key is a sibling's", () => {

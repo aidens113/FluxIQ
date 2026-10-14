@@ -39,7 +39,24 @@
 // assembles them; and the digest binds the brief, so
 // two controllers never match each other's receipts. It grants neither
 // execution nor promotion.
-import type { JsonObject } from "../../../../../core/index.ts";
+//
+// **A refusal shows the script the builder sent (t581).** A callable
+// subflow's checks run on the probe, its script with a call appended
+// (`./callable-target.ts`), and the existing check returns the script it read
+// as `previous`, which a builder is told to resend with only the listed issues
+// fixed. On the A8 bigbox run two builders did exactly that and were refused
+// `subflow.steps_outside_part` for Core's own probe lines. Every copy of the
+// probe in a refusal is now the script as sent.
+//
+// **A revision keeps its brief's lasting act (t581).** Once a revision of this
+// brief Core accepted declared a lasting act (a step whose `consequences` name
+// one), a revision that declares none is refused
+// `subflow.lasting_act_dropped`: on the A8 bigbox run a store-switching
+// subflow's revision 4 read a list and switched nothing. A brief may only do
+// the acts its parts ask (`project-agents/supervisor/brief-input.ts`, the
+// permission gate holds a submission to them), so an act an accepted revision
+// did is one its parts ask for, and a subflow without any cannot do them.
+import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { acceptAutomationStudioFlowBootstrapResult, parseAutomationStudioFlowScript } from "../authoring/index.ts";
 import {
   AutomationStudioFlowCandidateSubmissionController,
@@ -86,6 +103,8 @@ export class AutomationStudioSubflowScopedSubmissionController {
   /** The success check a builder proposed in a JSON plan, which the plan reader does not keep, by the probe's candidate digest (header). */
   private readonly proposedChecks = new Map<string, NonNullable<AutomationStudioSubflowScope["successCheck"]>>();
   private current: AutomationStudioSubflowProposal | undefined;
+  /** The lasting consequences the accepted revisions of this brief declared, in the order first seen (header). */
+  private readonly lasting: string[] = [];
 
   constructor(private readonly input: {
     scope: AutomationStudioSubflowScope;
@@ -127,8 +146,10 @@ export class AutomationStudioSubflowScopedSubmissionController {
     if (submitted.ok && read.proposedCheck) this.proposedChecks.set(submitted.candidate.digest, read.proposedCheck);
     const latest = this.inner.latest();
     this.current = latest ? this.proposalOf(latest) : undefined;
-    if (!submitted.ok) return submitted;
-    return { ok: true, proposal: structuredClone(this.proposalOf(submitted.candidate)) };
+    if (!submitted.ok) return read.probe === result ? submitted : asSent(submitted, read.probe, result);
+    const proposal = this.proposalOf(submitted.candidate);
+    for (const consequence of lastingOf(proposal.subflows)) if (!this.lasting.includes(consequence)) this.lasting.push(consequence);
+    return { ok: true, proposal: structuredClone(proposal) };
   }
 
   /**
@@ -187,6 +208,11 @@ export class AutomationStudioSubflowScopedSubmissionController {
       issues.push({ code: "subflow.success_check_changed", path: `plan.subflows.${plan.subflows.indexOf(target)}.metadata`, message: `This subflow's success check is the structure plan's and cannot change here: ${JSON.stringify(this.scope.successCheck)}. Leave out \`done when:\` for it, or write exactly that.` });
     }
     const proposedCheck = this.scope.successCheck === undefined && Array.isArray(written) && written.length ? structuredClone(written) as NonNullable<AutomationStudioSubflowScope["successCheck"]> : undefined;
+    // The subflow and the parts it calls, never a callable target's probe call (header).
+    if (this.lasting.length && !lastingOf([target, ...plan.subflows.filter((subflow) => parts.has(subflow.key))]).length) {
+      issues.push({ code: "subflow.lasting_act_dropped", path: "flow", message: `An earlier revision of "${this.scope.subflowKey}" that Core accepted did a lasting act (${this.lasting.join(", ")}), and this one does none, so it cannot do what its parts ask. `
+        + "Keep the step that does the act, its consequences declared, and change only what the last refusal or trial feedback names. If the act cannot be done here, end the brief honestly instead." });
+    }
     return { issues, ...(proposedCheck ? { proposedCheck } : {}) };
   }
 
@@ -239,6 +265,30 @@ export class AutomationStudioSubflowScopedSubmissionController {
     };
     return adapted;
   }
+}
+
+/**
+ * A refusal of a callable subflow's probe as the builder is shown it: every
+ * copy of the probe script -- the check's `previous` above all -- is the
+ * script the builder sent (header).
+ */
+function asSent(submitted: Extract<AutomationStudioFlowCandidateSubmission, { ok: false }>, probe: JsonObject, sent: JsonObject): Extract<AutomationStudioFlowCandidateSubmission, { ok: false }> {
+  const probed = probe.flow;
+  const written = sent.flow;
+  if (typeof probed !== "string" || typeof written !== "string" || !submitted.check.feedback) return submitted;
+  return { ...submitted, check: { ...submitted.check, feedback: replaced(submitted.check.feedback, probed, written) as JsonObject } };
+}
+
+function replaced(value: JsonValue, from: string, to: string): JsonValue {
+  if (value === from) return to;
+  if (Array.isArray(value)) return value.map((entry) => replaced(entry, from, to));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, replaced(entry as JsonValue, from, to)]));
+  return value;
+}
+
+/** The lasting consequences these subflows' steps declare, in order: a step's `consequences` naming any (`[]` and none say nothing lasting). */
+function lastingOf(subflows: readonly AutomationStudioFlowBootstrapSubflow[]): string[] {
+  return [...new Set(subflows.flatMap((subflow) => subflow.nodes.flatMap((node) => node.consequences ?? [])))];
 }
 
 /** A partial verdict as the unchanged-submission rule reads a trial: the probe's revision and digest, the verdict and its feedback. */

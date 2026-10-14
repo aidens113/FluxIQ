@@ -10,6 +10,15 @@
 // Numbers alone were not read: run 37's repair (t193, bigbox) completed six
 // times over one draft, rewording only its summary, so the feedback also says
 // in words that the draft, not the result, is what has to change (`sentAgain`).
+//
+// Those words are a draft's. A loop with no draft -- a subflow builder, whose
+// completion is a receipt its trial gate answers -- gives its own: its check's
+// refusal carries them under `AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY`,
+// which is taken off before the model sees the refusal and said, after the
+// same first sentence in a completion's terms, only when the same refusal comes
+// again (A8 bigbox run, t581: builders were told to "run the step that is
+// missing, or amend the steps they name", which no builder can). A refusal
+// without it reads exactly as before.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_PAGE_TOOL_ID, AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID } from "../../flow-draft/index.ts";
 import {
@@ -24,6 +33,13 @@ import {
   type AutomationStudioLlmEvidenceLoopDecision
 } from "../evidence-loop/index.ts";
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext, AutomationStudioLlmEvidenceDecisionNext } from "./types.ts";
+
+/**
+ * The key a completion check's refusal may carry its own sent-again words
+ * under (header): a string, said instead of the draft's when the refusal comes
+ * again, and never shown as it is.
+ */
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY = "sentAgainInstead";
 
 /** Answers one `complete` decision. Throws where the loop propagates decision errors. */
 export async function automationStudioLlmEvidenceHandleCompletion(
@@ -51,13 +67,14 @@ export async function automationStudioLlmEvidenceHandleCompletion(
     return end("llm_evidence_loop.invalid_decision");
   }
   if (attempt.kind === "ended") return end(attempt.code);
+  const { said: refusal, own } = ownSentAgain(attempt.kind === "refused" ? attempt.feedback : undefined);
   const repeat = context.history.record(iteration, {
     kind: "completion",
     signature: automationStudioLlmDecisionContextSignature(decision),
     draftRevision: context.draftRevision(),
     accepted: attempt.kind === "accepted",
     issueCodes: attempt.kind === "refused" ? attempt.issueCodes : [],
-    ...(attempt.kind === "refused" && attempt.feedback ? { feedback: attempt.feedback } : {}),
+    ...(refusal ? { feedback: refusal } : {}),
     dryRun: dryRunSaid(context.dryRunSeen)
   });
   const answered = attempt.answerability ? { answerability: attempt.answerability } : {};
@@ -68,8 +85,8 @@ export async function automationStudioLlmEvidenceHandleCompletion(
   }
   if (!input.unusableDecisions) return end("llm_evidence_loop.invalid_decision");
   // The model is told why before it is asked again; the dry run showed its own.
-  if (attempt.feedback) {
-    const feedback: JsonObject = repeat && repeat.times >= 2 ? sentAgain(attempt.feedback, repeat.iterations[0]!, repeat.times) : attempt.feedback;
+  if (refusal) {
+    const feedback: JsonObject = repeat && repeat.times >= 2 ? sentAgain(refusal, repeat.iterations[0]!, repeat.times, own) : refusal;
     context.accountEvidence(feedback);
     evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, value: feedback });
   }
@@ -81,14 +98,25 @@ export async function automationStudioLlmEvidenceHandleCompletion(
 }
 
 /** The feedback of a result sent again over the same draft, marked so; a key the check already wrote is left as it wrote it. */
-function sentAgain(feedback: JsonObject, sameAsIteration: number, timesSent: number): JsonObject {
+function sentAgain(feedback: JsonObject, sameAsIteration: number, timesSent: number, own: string | undefined): JsonObject {
   return {
     ...feedback,
     ...("sameAsIteration" in feedback ? {} : { sameAsIteration }),
     ...("timesSent" in feedback ? {} : { timesSent }),
-    ...("sentAgain" in feedback ? {} : { sentAgain: SENT_AGAIN(sameAsIteration, timesSent) })
+    ...("sentAgain" in feedback ? {} : { sentAgain: own === undefined ? SENT_AGAIN(sameAsIteration, timesSent) : `${OWN_SENT_AGAIN(sameAsIteration, timesSent)}${own}` })
   };
 }
+
+/** A refusal as the model is shown it, with the check's own sent-again words taken off (header). */
+function ownSentAgain(feedback: JsonObject | undefined): { said: JsonObject | undefined; own: string | undefined } {
+  if (!feedback || !(AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY in feedback)) return { said: feedback, own: undefined };
+  const { [AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY]: own, ...said } = feedback;
+  return { said, own: typeof own === "string" && own.trim() ? own.trim() : undefined };
+}
+
+/** The first sentence of a refusal sent again, in a completion's terms rather than a draft's (header). */
+const OWN_SENT_AGAIN = (sameAsIteration: number, timesSent: number): string =>
+  `This completion was refused for these same reasons at decision ${sameAsIteration}, and this is attempt ${timesSent}. `;
 
 /** Says why a result over an unchanged draft is refused again, and what would change the answer. */
 const SENT_AGAIN = (sameAsIteration: number, timesSent: number): string =>
