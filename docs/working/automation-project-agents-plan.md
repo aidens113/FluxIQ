@@ -616,6 +616,14 @@ Earlier entries are in [the ledger archive](./automation-project-agents-plan/arc
 - Validation: `npx tsc --noEmit -p tsconfig.json` -> exit 0; vitest over `project-agents` and `service/project-build` -> 31 files, 202 passed (the new t575 case ran: 1 passed); `pnpm structure:check` -> passed (353 warnings, 1156 baselined); Core finish `pnpm check` -> passed; merged `8a0ac284`
 - Outcome: Accepted
 
+### 2026-10-14 — The judge sees a called part's read (t574)
+- Agent: worker t574-a8-judge-evidence (with one follow-up round); supervisor verified and integrated
+- Changed: a read under Call Subflow is matched to its own graph's node, in subflow trials and in whole runs whose root calls parts (`result-verification/called-nodes.ts`, the run's own Subflow source at the attempt's id and revision; otherwise counts only); conditions numbered and named `condition N (wording)` everywhere; Core settles left-out rows whose value it reads as a number failing a numeric-only bound (`value-readings/settled-rows.ts`), and a yes quotes that bound once; presence tests show kept and left-out values; quote pairing accepts empty pairs and adjacent sentences naming no rows; the judge's instruction (`llm/diagnosis-instructions.ts`) says so, with a guard test against scenario words; one in-place line in `service.ts` (`verifyRunResult` passes `calledGraphs`)
+- Why: the downstream audit `a8-everything-store-judge-audit.md` found 3 of 5 subflow-trial verdicts wrong in run-mv7vor5f-ea4d08b4, two on exactly the oracle's rows, because the judge got no wording or tested values
+- Validation: after merging dev into the branch: `npx tsc --noEmit -p tsconfig.json` -> exit 0; vitest over result-verification, candidate-trial, subflow-trial, llm, unfinished-build, refuted-result, project-agents, project-build -> 353 files, 3251 passed; `pnpm structure:check` -> passed (356 warnings, 1156 baselined); Core finish `pnpm check` -> passed; merged `3b5fa22a`. Worker's offline replay of run-mv7vmvhd-b0c18c5a step 0072 -> `"verdict":"answers"` (held before)
+- Outcome: Accepted. Every change agreed before A8 round one's relaunch is merged
+- Follow-up: re-ask a no whose named row Core's `checked` refutes (audit point 5, not built); a kept in-run repair that changes a part's graph leaves that part's reads at counts only
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
