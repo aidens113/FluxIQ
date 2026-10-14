@@ -80,6 +80,20 @@
 // window, so the head of the request does not change. A draft loop's wrap-up
 // still offers no tools: its schema then holds completion and amendments
 // only, which is what makes it finish.
+//
+// **A loop may count calls too (t570).** A subflow builder spends a share of
+// the build's calls carved for its brief (`./build-purse/allowance-book.ts`),
+// and each trial it makes spends its judge's calls from that same share. With
+// nothing counting them its wrap-up came only from its iterations, and on A8
+// round 1 a builder's share ran out first: refused
+// `llm_budget.run_call_limit` before it ever submitted. A budget that names
+// `countCalls` counts the calls its purse can still hold
+// (`purse.callsLeft`), less the calls it keeps for its finishing trials'
+// judges, as one more bound: one decision is one call, a trial's judge calls
+// leave the count as they are spent, and the wrap-up starts while a
+// submission, its trial and the completion still fit. As with cost the count
+// is never none: the purse decides. A budget without it -- every candidate
+// build's -- counts as before.
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceLoopBudgetBound } from "./evidence-loop/index.ts";
@@ -131,6 +145,13 @@ export type AutomationStudioLlmEvidenceLoopBudget = {
   maxDurationMs?: number;
   /** The clock; `Date.now` when absent. */
   now?: () => number;
+  /**
+   * Count the calls the purse can still hold as a bound (header, t570),
+   * keeping `keptForFinishing` of them back for the judges of the trials the
+   * wrap-up makes. Absent, calls are not counted here: the purse refuses a
+   * call past its cap, as before.
+   */
+  countCalls?: { keptForFinishing: number };
 };
 
 /** What the loop has spent so far. */
@@ -161,7 +182,7 @@ export type AutomationStudioLlmEvidenceLoopSpending = {
    * (`keptBackUsd`, t254) count, and nothing else is held back. Absent, the
    * count reads `maxCostUsd` and `estimatedCostUsd`.
    */
-  purse?: { ceilingUsd: number; spentUsd: number; pendingUsd: number; keptBackUsd?: number };
+  purse?: { ceilingUsd: number; spentUsd: number; pendingUsd: number; keptBackUsd?: number; callsLeft?: number };
 };
 
 /** What is left, this decision included. Only the bounds the budget names appear. */
@@ -179,6 +200,8 @@ export type AutomationStudioLlmEvidenceLoopRemaining = {
   tokensLeft?: number;
   costLeftUsd?: number;
   secondsLeft?: number;
+  /** The calls the purse can still hold, when the budget counts calls (header, t570). */
+  callsLeft?: number;
 };
 
 /** Floating-point slack, as the purse allows, so money for exactly one worst case counts it. */
@@ -263,6 +286,12 @@ export function automationStudioLlmEvidenceLoopRemaining(budget: AutomationStudi
     counts.push(["cost", Math.max(1, counted)]);
     remaining.costLeftUsd = Math.max(0, Math.floor(costLeft * 10_000) / 10_000);
   }
+  if (budget.countCalls && spent.purse?.callsLeft !== undefined) {
+    // One decision is one call; the finishing trials' judges are kept back. Never none: the purse decides.
+    const callsLeft = Math.max(0, spent.purse.callsLeft);
+    counts.push(["calls", Math.max(1, callsLeft - Math.max(0, budget.countCalls.keptForFinishing))]);
+    remaining.callsLeft = callsLeft;
+  }
   if (budget.maxDurationMs !== undefined) {
     const msLeft = budget.maxDurationMs - spent.elapsedMs;
     const averageMs = spent.decisions ? spent.elapsedMs / spent.decisions : 0;
@@ -306,5 +335,6 @@ export function automationStudioLlmEvidenceBudgetEntry(
 export function automationStudioLlmEvidenceLoopBudgetValid(budget: AutomationStudioLlmEvidenceLoopBudget): boolean {
   const bounds = [budget.maxTotalTokens, budget.maxTokensPerDecision, budget.maxCostUsd, budget.maxDurationMs];
   return bounds.every((bound) => bound === undefined || (typeof bound === "number" && Number.isFinite(bound) && bound > 0))
-    && (budget.now === undefined || typeof budget.now === "function");
+    && (budget.now === undefined || typeof budget.now === "function")
+    && (budget.countCalls === undefined || (Number.isSafeInteger(budget.countCalls.keptForFinishing) && budget.countCalls.keptForFinishing >= 0));
 }

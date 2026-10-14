@@ -57,13 +57,13 @@ const BRIEF_INPUT: JsonObject = {
     subflowKey: TEXT,
     parts: TEXTS,
     entry: { type: "object", properties: { caseId: TEXT, predecessors: TEXTS }, additionalProperties: false },
+    // Core sizes each brief and permits its parts' acts (`./brief-sizing.ts`, t570): these only lower its share.
     allowanceUsd: { type: "number" },
     maxIterations: { type: "integer" },
-    permittedActs: { type: "array", items: { type: "string", enum: [...AUTOMATION_STUDIO_ACTION_CONSEQUENCES] } },
     recordingExcerpt: TEXT,
     failingReceipt: { type: "object" }
   },
-  required: ["kind", "subflowKey", "allowanceUsd", "maxIterations"],
+  required: ["kind", "subflowKey"],
   additionalProperties: false
 };
 

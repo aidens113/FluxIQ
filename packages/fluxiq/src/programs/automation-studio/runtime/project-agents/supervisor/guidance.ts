@@ -34,7 +34,7 @@ const HOW_TO_WORK = [
   `Plan from the task and a short look. The start page as the build found it is already in your evidence, and you may make at most ${LOOKS} more looks with the look tools, which change nothing; after them looking is withdrawn for the rest of the build. Something the task names that the start page does not show is not yours to find: finding it is what a builder's part is for.`,
   "1. Write the plan with project.write_plan, once. taskSpec splits the task into parts: a part is one thing the person asked for, given as their exact words copied from one instruction (its sourceId and the text), with the facts that are true once it is done and the lasting acts it needs. Under notAsked, name what a builder might be tempted to do that nobody asked for.",
   "2. In the same call, subflows: one for each piece of work a builder makes, as {key, name, purpose, parts, inputs, outputs, after}. parts are the ids of the parts it carries; inputs are the values it takes and outputs the values it hands on, by name; after names the subflows that must run before it. A one-part task is one subflow with no inputs or outputs. Core writes the Flow's shape from this, and each builder proposes how its own subflow shows it is done.",
-  "3. Send briefs with project.dispatch, one for each subflow. A brief names its parts, its money and its turns, with room for the trials of its subflow; what runs before it is the plan's after unless you say otherwise. Briefs whose starts do not depend on each other may go in one call.",
+  "3. Send briefs with project.dispatch, one for each subflow. A brief names its subflow and its parts; Core gives it its share of the money and calls left and permits exactly the lasting acts its parts ask for. What runs before it is the plan's after unless you say otherwise. Briefs whose starts do not depend on each other may go in one call.",
   "4. Read each return. Done carries a proposal. Partial or blocked carries the builder's reason: send a changed brief, change the plan with project.amend_plan, or end honestly.",
   "5. Once every subflow is done, call project.assemble. Core joins the proposals into one Flow: the subflow the router runs calls the others in order, each input taken from the earlier output of the same name.",
   "6. Test that exact Flow with core.test_candidate. If this build left lasting acts on the target, first dispatch a reset brief, which puts the target back the way the build found it.",
@@ -56,9 +56,10 @@ const WRITE_PLAN = "Write the task spec and the plan, once. taskSpec: parts, eac
 const AMEND_PLAN = "Replace the plan with a new revision: the fields of project.write_plan, plus reason. Briefs and proposals made under the old plan no longer count, so send new briefs for every subflow the new plan needs.";
 
 const DISPATCH = "Send one or more briefs to builders and wait for every return. Each brief: kind (build, repair, or reset, which puts the target back the way this build found it before the whole test), subflowKey, "
-  + "parts it carries, allowanceUsd (its money, out of what can still be given), maxIterations (its turns, with room for the trials of its subflow, which count among them), permittedActs (only lasting acts its parts ask for), "
-  + "optional entry {caseId, predecessors: the subflows whose proposals run first to reach its start}, which is observed-current and the plan's after for that subflow when left out; optional recordingExcerpt, and failingReceipt for a repair. "
-  + "A reset carries no parts and permits no act; its subflowKey is the subflow the router runs, as project.write_plan answered. Core fills in the plan, the interface and the brief id. "
+  + "parts it carries, optional entry {caseId, predecessors: the subflows whose proposals run first to reach its start}, which is observed-current and the plan's after for that subflow when left out; optional recordingExcerpt, and failingReceipt for a repair. "
+  + "A reset carries no parts and permits no act; its subflowKey is the subflow the router runs, as project.write_plan answered. Core fills in the plan, the interface and the brief id, "
+  + "permits each brief exactly the lasting acts its parts ask for, and gives it its share of the money and calls still to give, split over the briefs sent and the subflows still without a done proposal. "
+  + "allowanceUsd and maxIterations are optional and only lower a brief's share. The answer says what each brief was given. "
   + "A predecessor must be done already or be sent in the same call; a brief whose predecessor comes back blocked is not started and comes back blocked too. reason says why you send them. Briefs that do not depend on each other may run at once. A reset comes back done, with no proposal, once nothing of this build is left to undo. "
   + "The answer is every return: done, partial or blocked, the builder's reason, what it spent, and any interface change it asks for.";
 
@@ -121,7 +122,7 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     briefRefused: "No brief was sent: every listed issue names the brief and what to correct. Send the briefs again with each one corrected.",
     predecessorNotDone: "A brief names a predecessor that has no done proposal and is not sent in the same call. Send that subflow's brief first, or in the same call.",
     dispatchCycle: "The briefs' predecessors make a circle, so none of them can start. Give each brief only subflows that come before it.",
-    allowanceUnavailable: "The briefs ask for more money than can still be given out, which is shown with what they ask. Give them less, or send fewer at once.",
+    allowanceUnavailable: "What this build can still give out, shown here, is too little for every brief that still needs a share to finish. Send fewer briefs at once, or end honestly.",
     surveyUnavailable: "A survey brief cannot run here yet. Send build briefs: each builder explores what its own parts need.",
     dispatchFailed: "The briefs could not be run, so no return came back. Try again, or end honestly if it keeps failing.",
     assembleRefused: "The Flow could not be assembled: every listed issue names the subflow and why. Send the briefs it needs, or change the plan, then assemble again.",
