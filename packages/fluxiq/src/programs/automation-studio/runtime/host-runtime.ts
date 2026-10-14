@@ -2,6 +2,7 @@ import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../model/index.ts";
 import type { AutomationNodeExpectationEvaluation, AutomationNodeExpectationEvaluationContext, AutomationNodeExpectationEvaluator } from "../nodes/index.ts";
 import type { AutomationStudioFactCondition, AutomationStudioFactTruth } from "./executor/lifecycle/index.ts";
+import type { AutomationStudioHostResourcePort } from "./project-agents/host-resources/index.ts";
 
 export type AutomationStudioHostRuntimeCapability =
   | "action-dispatch"
@@ -85,6 +86,15 @@ export type AutomationStudioHostRouteStatePath = {
 
 export type AutomationStudioHostRuntimeBoundary = {
   capabilities: Iterable<AutomationStudioHostRuntimeCapability | string>;
+  /**
+   * The host resources agents act through -- a browser context, a device --
+   * and how many may be held at once (automation-project-agents-plan, `Host
+   * resources and concurrency`). Core's scheduler grants leases through it and
+   * every host command an agent issues carries its lease. A host declaring a
+   * capacity above 1 guarantees its resources share no lasting state. Without
+   * it, Core has no resource to lease and stamps no lease on any command.
+   */
+  hostResources?: AutomationStudioHostResourcePort;
   /**
    * The state a Router's `state.*` conditions read, observed now: the host's
    * bounded, sanitized view of where a run stands before any step has run.

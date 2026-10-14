@@ -3,7 +3,8 @@ import type {
   ClientGatewayActionCommand,
   ClientGatewayActionResponse,
   ClientGatewayActionResult,
-  ClientGatewayReconcileAnswer
+  ClientGatewayReconcileAnswer,
+  ClientGatewaySession
 } from "@fluxiq/contracts/client-gateway";
 import type { JsonObject } from "../../core/index.ts";
 import type { ClientGatewayAuditLog } from "./audit-log.ts";
@@ -18,6 +19,7 @@ import type { ClientGatewayServiceOptions } from "./types.ts";
 import type { ClientGatewayActionResultReading } from "./action-result-reading.ts";
 import { ClientGatewayCommandHistory, type ClientGatewayLateActionResult, type ClientGatewayLateActionResultListener } from "./command-history.ts";
 import { ClientGatewayCommandReconciler, clientGatewayReconciledResult } from "./command-reconcile/index.ts";
+import { clientGatewayHostLeaseRefusal, clientGatewayHostLeaseStamp, type ClientGatewayHostLeaseRefusalCode } from "./host-lease/index.ts";
 
 /** What became of a client's action result. `late`: it answered a command Core no longer awaited, and went to the run's evidence. */
 export type ClientGatewayResultDisposition = "settled" | "unknown_command" | "wrong_session" | "suppressed" | "late";
@@ -30,6 +32,7 @@ type CommandCollaborators = {
   events: ClientGatewayEventBus;
   resolveCommandLedger?: ClientGatewayServiceOptions["resolveCommandLedger"];
   commandOwner?: ClientGatewayServiceOptions["commandOwner"];
+  hostLease?: ClientGatewayServiceOptions["hostLease"];
 };
 
 /**
@@ -42,6 +45,7 @@ export class ClientGatewayCommands {
   private readonly history: ClientGatewayCommandHistory;
   private readonly reconciler: ClientGatewayCommandReconciler;
   private readonly commandOwner: ClientGatewayServiceOptions["commandOwner"];
+  private readonly hostLease: ClientGatewayServiceOptions["hostLease"];
   private closed = false;
   private readonly config: ClientGatewayConfig;
   private readonly sessions: ClientGatewaySessionRegistry;
@@ -57,6 +61,7 @@ export class ClientGatewayCommands {
     this.history = new ClientGatewayCommandHistory(collaborators.config.now);
     this.reconciler = new ClientGatewayCommandReconciler({ sessions: this.sessions, transport: this.transport, audit: this.audit, answerMs: collaborators.config.reconcileAnswerMs });
     this.commandOwner = collaborators.commandOwner;
+    this.hostLease = collaborators.hostLease;
   }
 
   async startRecording(sessionId: string, input: { recordingId: string; projectId?: string | null; taskId?: string; domainId?: string }): Promise<void> {
@@ -83,11 +88,15 @@ export class ClientGatewayCommands {
 
   executeAction(sessionId: string, command: ClientGatewayActionCommand): ClientGatewayActionResponse;
   executeAction(sessionId: string, command: ClientGatewayActionCommand, options: ClientGatewayDurableActionOptions): ClientGatewayDurableActionResponse;
-  executeAction(sessionId: string, command: ClientGatewayActionCommand, options?: ClientGatewayDurableActionOptions): ClientGatewayActionResponse | ClientGatewayDurableActionResponse {
+  executeAction(sessionId: string, input: ClientGatewayActionCommand, options?: ClientGatewayDurableActionOptions): ClientGatewayActionResponse | ClientGatewayDurableActionResponse {
     if (this.closed) throw new Error("client_gateway.closed");
-    if (arguments.length > 2) return this.executeDurable(sessionId, command, options!);
+    if (arguments.length > 2) return this.executeDurable(sessionId, input, options!);
     const session = this.sessions.requireReady(sessionId);
     const commandId = randomUUID();
+    // The lease of the scope dispatching it (`./host-lease/`); a stale or foreign one is refused here, unsent.
+    const leased = clientGatewayHostLeaseStamp(input, this.hostLease, sessionId);
+    if (leased.refused) return this.refuseForLease({ sessionId, session, commandId, command: input, code: leased.refused });
+    const command = leased.command;
     this.history.opened({ commandId, sessionId, clientId: session.clientId, actionType: command.actionType, durable: false, owner: this.readOwner() });
     const message = this.transport.message("server.execute_action", { ...command, commandId }, session);
     // The client is sent the command's own timeout, unchanged, and reports its
@@ -194,6 +203,13 @@ export class ClientGatewayCommands {
       }
     );
     return response;
+  }
+
+  /** A command refused over its host lease: never sent nor remembered as sent, answered at once with the client's own failure for it. */
+  private refuseForLease(input: { sessionId: string; session: ClientGatewaySession; commandId: string; command: ClientGatewayActionCommand; code: ClientGatewayHostLeaseRefusalCode }): ClientGatewayActionResponse {
+    const message = this.transport.message("server.execute_action", { ...input.command, commandId: input.commandId }, input.session);
+    this.audit.record("command.host_lease_refused", "An action command was refused before it was sent: its host lease was not current.", { sessionId: input.sessionId, commandId: input.commandId, actionType: input.command.actionType, code: input.code });
+    return { commandId: input.commandId, message, result: Promise.resolve(clientGatewayHostLeaseRefusal(input.commandId, input.code)) };
   }
 
   private async settleLate(senderSessionId: string, reading: ClientGatewayActionResultReading): Promise<ClientGatewayResultDisposition> {

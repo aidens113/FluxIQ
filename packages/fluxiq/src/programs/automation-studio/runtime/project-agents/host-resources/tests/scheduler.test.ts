@@ -349,6 +349,20 @@ describe("host-resource port contract", () => {
     await expect(scheduler.acquire(builder("b"))).rejects.toThrow(AutomationStudioHostResourcePortContractError);
   });
 
+  it("carries the grant's session onto the lease, and leaves it off a grant without one", async () => {
+    const withSession = new AutomationStudioHostResourceScheduler(port({ acquire: () => ({ resourceKey: "resource-1", epoch: 1, sessionId: "session.a" }) }));
+    expect(await withSession.acquire(builder("a"))).toEqual({ resourceKey: "resource-1", epoch: 1, sessionId: "session.a", holder: builder("a") });
+    const lease = await new AutomationStudioHostResourceScheduler(port({})).acquire(builder("a"));
+    expect(Object.hasOwn(lease, "sessionId")).toBe(false);
+  });
+
+  it("refuses a grant whose session id is not a non-empty string", async () => {
+    for (const sessionId of ["", 7]) {
+      const scheduler = new AutomationStudioHostResourceScheduler(port({ acquire: () => ({ resourceKey: "resource-1", epoch: 1, sessionId: sessionId as string }) }));
+      await expect(scheduler.acquire(builder("a"))).rejects.toThrow(AutomationStudioHostResourcePortContractError);
+    }
+  });
+
   it("refuses a reissue whose epoch does not rise", async () => {
     const scheduler = new AutomationStudioHostResourceScheduler(port({}));
     const lease = await scheduler.acquire(builder("a"));
