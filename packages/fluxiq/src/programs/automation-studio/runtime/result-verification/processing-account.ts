@@ -21,6 +21,9 @@
 // (`./read-account/accounts.ts`), so `./request-rows/` may flag those rows as
 // it flags a read's. A processing condition only tests stored columns, so the
 // column is always there to compare.
+//
+// **`number`** is the condition's place in `process.where`, from 1: the index
+// every line names it by (`./read-account/condition-name.ts`, t574).
 
 import type { AutomationStudioRecordProcessingAccount, AutomationStudioRecordProcessingConditionAccount } from "@fluxiq/contracts/automation-studio";
 import { screenAutomationStudioLlmEvidence } from "../llm/index.ts";
@@ -37,6 +40,8 @@ import { screenAutomationStudioLlmEvidence } from "../llm/index.ts";
  * (`read-account/without-tested-label.ts`).
  */
 export type AutomationStudioResultProcessingCondition = {
+  /** Its place in `process.where`, counting from 1 (header); absent only on a condition built by hand. */
+  number?: number;
   condition?: string;
   rejected: number;
   alone: number;
@@ -58,10 +63,10 @@ const WITHHELD_LABEL = "(withheld)";
 export function automationStudioResultProcessingAccount(account: AutomationStudioRecordProcessingAccount, deniedKeys: readonly string[] | undefined): { processing: AutomationStudioResultProcessingAccount; withheld: boolean } {
   const { conditions, passes, ...counts } = account;
   let withheld = false;
-  const said = conditions?.map((entry) => {
+  const said = conditions?.map((entry, index) => {
     const one = condition(entry, deniedKeys);
     if (one.withheld) withheld = true;
-    return one.condition;
+    return { number: index + 1, ...one.condition };
   });
   return { processing: { ...counts, passes: passes.map((pass) => ({ ...pass })), ...(said ? { conditions: said } : {}) }, withheld };
 }

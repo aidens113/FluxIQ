@@ -25,13 +25,13 @@ describe("the rows a judgement names, checked against what the run holds", () =>
   });
 
   it("says which named rows each condition really left out alone, and never calls those misread", () => {
-    const plus = checked.find((line) => line.includes("\"plus is present\""));
+    const plus = checked.find((line) => line.includes("(plus is present)"));
     expect(plus).toContain("Kinetra Run Wireless Earbuds, Bluetooth 5.3 Headphones with 60H Playtime, IPX7 Waterproof, LED Power Display, Graphite (B0FLQUDT3X)");
     expect(plus).toContain("Aurelle Pods Fit Wireless Earbuds, Bluetooth 5.3 Headphones with 30H Playtime, Touch Control, Deep Bass, Sage (B0PXG323U8)");
     expect(plus).not.toContain("B0J5MCMBAY");
-    const name = checked.find((line) => line.includes("\"name not contains"));
+    const name = checked.find((line) => line.includes("(name not contains"));
     expect(name).toContain("Lumo Audio Drift Pro Wireless Earbuds, Bluetooth 5.3 Headphones with 60H Playtime, Wireless Charging Case, Touch Control, White");
-    const sponsored = checked.find((line) => line.includes("\"sponsored is absent\""));
+    const sponsored = checked.find((line) => line.includes("(sponsored is absent)"));
     expect(sponsored).toContain("(B0DPN4ANC7)");
     expect(sponsored).toContain("(B0KRUNHK42)");
     expect(checked.filter((line) => line.includes("misread")).join("\n")).not.toMatch(/B0FLQUDT3X|B0PXG323U8|B0DPN4ANC7/u);
@@ -68,12 +68,12 @@ describe("the rows the checked lines name, per read and condition", () => {
     expect(alone.length).toBeGreaterThan(0);
     expect(named).toHaveLength(alone.length);
     for (const line of alone) {
-      const entry = named.find((candidate) => line.startsWith(`Read ${candidate.nodeId}: the condition "${candidate.condition}"`));
+      const entry = named.find((candidate) => line.startsWith(`Read ${candidate.nodeId}: the ${candidate.condition}`));
       expect(entry, line).toBeDefined();
       expect(entry!.rows.map((row) => row.label)).toEqual(listed(line));
       for (const row of entry!.rows) for (const id of row.ids ?? []) expect(line).toContain(`${row.label} (${id}`);
     }
-    const sponsored = named.find((entry) => entry.condition === "sponsored is absent");
+    const sponsored = named.find((entry) => entry.condition.endsWith("(sponsored is absent)"));
     expect(sponsored?.rows.flatMap((row) => row.ids ?? [])).toEqual(expect.arrayContaining(["B0DPN4ANC7", "B0KRUNHK42"]));
     // A row the lines call misread is named by no condition.
     expect(JSON.stringify(named)).not.toContain("B0J5MCMBAY");
@@ -83,7 +83,7 @@ describe("the rows the checked lines name, per read and condition", () => {
     const summary = runMuw60j7cTestSummary();
     const lines = automationStudioResultCheckedRows(summary, `The name condition alone excluded genuine earbuds: ${RUN_MUW60J7C_PAIRS_LEFT_OUT.join("; ")}.`);
     expect(lines.join("\n")).toContain("Step 10: the condition \"name\"");
-    expect(automationStudioResultCheckedRowsNamed(summary, lines)).toEqual([{ step: 10, condition: "name", rows: RUN_MUW60J7C_PAIRS_LEFT_OUT.map((label) => ({ label })) }]);
+    expect(automationStudioResultCheckedRowsNamed(summary, lines)).toEqual([{ step: 10, condition: "condition \"name\"", rows: RUN_MUW60J7C_PAIRS_LEFT_OUT.map((label) => ({ label })) }]);
   });
 
   it("are none for no lines, and never a label that only starts a listed one", () => {
@@ -143,7 +143,7 @@ describe("a judgement's left-out words and labels, read for what they say of the
   it("gives a mention of the longer title to that row, never to the stored row its title starts with", () => {
     const lines = automationStudioResultCheckedRows(summary(), `One backpack was left out by the name condition alone: "${BLUE_WITH_BAG}".`);
     expect(lines.filter((line) => line.includes("misread"))).toEqual([]);
-    expect(lines).toEqual([`Read node.read: the condition "name not matches "Carry Bag"" alone left out this row the check names: ${BLUE_WITH_BAG}.`]);
+    expect(lines).toEqual([`Read node.read: the condition 1 (name not matches "Carry Bag") alone left out this row the check names: ${BLUE_WITH_BAG}.`]);
   });
 
   it("still names the shorter stored row where the judgement names it alone", () => {

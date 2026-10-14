@@ -4,7 +4,13 @@
 
 /** One condition of a read, with the rows it alone left out. */
 export type AutomationStudioRequestRowsCondition = {
-  /** The condition as the read names it: a field key in a test, the authored wording in a run, else `condition N`. */
+  /**
+   * The condition as every line names it (`../read-account/condition-name.ts`,
+   * t574): `condition N (wording)` in a run, N its place in the authored
+   * `where` from 1; in a test, `condition N (field)` where the replay numbered
+   * it, else `condition "field"`. A saved answer's is prefixed
+   * `recordOutput.process.where`.
+   */
   condition: string;
   /** The rows as the read gave them: `label — column: value` where it said the tested value. */
   rows: string[];
@@ -20,6 +26,13 @@ export type AutomationStudioRequestRowsCondition = {
    * present` over a Flow storing name, price, rating and url).
    */
   testedLabel: boolean;
+  /**
+   * The rows Core settled itself (`../value-readings/settled-rows.ts`, t574):
+   * their labels, and the word runs a sentence names this condition by -- its
+   * `condition N`, its column, and the numbers its bound writes. A yes need
+   * not quote beside these rows, only once beside a naming of the condition.
+   */
+  settled?: { labels: string[]; names: string[][] };
 };
 
 /** One list read, as the rows a summary holds for it. */
@@ -90,4 +103,10 @@ export type AutomationStudioRequestRowsUnquoted = {
   nodeId?: string;
   condition: string;
   rows: string[];
+  /**
+   * True when the rows are ones Core settled (t574): the yes did not quote,
+   * in any sentence naming this condition, the request's words stating its
+   * bound. Absent for rows the yes did not quote beside.
+   */
+  bound?: true;
 };

@@ -74,6 +74,7 @@ import {
   type AutomationStudioResultRepairHistoryEntry,
   type AutomationStudioResultRepairOutcome
 } from "../recovery/refuted-result/index.ts";
+import { automationStudioResultCalledNodes, type AutomationStudioResultCalledGraphSource } from "./called-nodes.ts";
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerificationOutcome, type AutomationStudioRunResultSummary } from "./contracts.ts";
 import { automationStudioResultCoreObservation, automationStudioResultFailureRecord } from "./core-observation.ts";
 import { automationStudioResultVerificationWithinDeadline } from "./deadline.ts";
@@ -227,6 +228,13 @@ export type AutomationStudioRuntimeSessionVerificationInput = {
   session: AutomationStudioRuntimeSession;
   /** The Flow that ran, for its authored shape. */
   flow?: AutomationStudioFlowDocument | undefined;
+  /**
+   * The run's own Subflow source (the executor's `subflowGraphs`), for each
+   * part a Call Subflow step ran to be read at the revision it ran, so a part's
+   * read reaches the judge by its own authored node (`./called-nodes.ts`,
+   * t574). Absent, a part's read is told by its counts.
+   */
+  calledGraphs?: AutomationStudioResultCalledGraphSource | undefined;
   subflowId?: string | undefined;
   policy?: AutomationStudioAdaptationPolicy | undefined;
   maxEstimatedCostUsd?: number | undefined;
@@ -507,12 +515,16 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
   const runDetail = await input.ports.getFlowRunDetail(input.projectId, session.runId);
   const read = input.ports.readEndView;
   const ended = await automationStudioResultEndViewRead(read && (() => read({ projectId: input.projectId, runId: session.runId, flowId: session.flowId })));
+  const attempts = runDetail?.actionAttempts ? attemptsOfThisSession(runDetail.actionAttempts, session) : undefined;
+  // Each part a Call Subflow step ran, at the revision it ran, so a part's read is told by its own node (`./called-nodes.ts`, t574).
+  const calledNodes = attempts ? await automationStudioResultCalledNodes(attempts, input.calledGraphs) : undefined;
   const summary = summarizeAutomationStudioRunResult({
     recordSets,
     // In the order the Flow runs them, never as its store lists the nodes (s1, s10, s11 ... s9: run-murwd8le's Cause 8).
     ...(input.flow ? { flowNodes: input.flow.nodes, flowEdges: input.flow.edges } : {}),
     ...ended,
-    ...(runDetail?.actionAttempts ? { actionAttempts: attemptsOfThisSession(runDetail.actionAttempts, session) } : {}),
+    ...(attempts ? { actionAttempts: attempts } : {}),
+    ...(calledNodes?.size ? { calledNodes } : {}),
     // What each step changed, and the page the run started on, from this session's trace in memory (run-muw5zv4m-52d83027, run-mux6pndp-16feb842).
     ...(session.trace ? { sessionAttempts: session.trace.attempts, ...(input.ports.observedStateKeys ? { observedStateKeys: input.ports.observedStateKeys } : {}) } : {}),
     ...(input.ports.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: input.ports.deniedEvidenceKeys } : {})

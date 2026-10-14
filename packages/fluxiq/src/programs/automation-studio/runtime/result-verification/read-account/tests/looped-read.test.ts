@@ -73,8 +73,8 @@ describe("a read that ran as the passes of a loop", () => {
       paginates: true,
       dedupes: false,
       conditions: [
-        { condition: "sponsored is absent", rejected: 15, alone: 15, leftOutOnlyByThis: ["Left A", "Left C"] },
-        { condition: "rating atLeast 4", rejected: 5, alone: 0 }
+        { number: 1, condition: "sponsored is absent", rejected: 15, alone: 15, leftOutOnlyByThis: ["Left A", "Left C"] },
+        { number: 2, condition: "rating atLeast 4", rejected: 5, alone: 0 }
       ],
       attempts: 5,
       keptPerPage: [3, 3, 3, 2, 2]
@@ -98,7 +98,7 @@ describe("a read that ran as the passes of a loop", () => {
     const reads = automationStudioResultReadAccounts({ actionAttempts: [...attempts, { ...outside, nodeId: "later" }], deniedEvidenceKeys: [] }).reads;
     expect(reads.find((read) => read.nodeId === "later")).toEqual({
       nodeId: "later", definitionId: "opaque.read", pagesRead: 1, truncated: false, itemsSeen: 9, kept: 7,
-      conditions: [{ rejected: 1, alone: 1 }, { rejected: 1, alone: 0 }]
+      conditions: [{ number: 1, rejected: 1, alone: 1 }, { number: 2, rejected: 1, alone: 0 }]
     });
   });
 

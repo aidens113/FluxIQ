@@ -10,7 +10,8 @@ import { RUN_MUW60J7C_PAIRS_LEFT_OUT } from "./run-muw60j7c.ts";
 const [LUMO, AURELLE, TREVIO] = RUN_MUW60J7C_PAIRS_LEFT_OUT as [string, string, string];
 
 /** The judgement's named rows: step 9's name condition, the three pairs sold with a charging case. */
-const NAMED: AutomationStudioRequestRowsNamed[] = [{ step: 9, condition: "name", rows: [{ label: LUMO }, { label: AURELLE }, { label: TREVIO }] }];
+// Named as Core's lines name a build test's unnumbered condition (`../summary-reads.ts`, t574).
+const NAMED: AutomationStudioRequestRowsNamed[] = [{ step: 9, condition: "condition \"name\"", rows: [{ label: LUMO }, { label: AURELLE }, { label: TREVIO }] }];
 
 /** Ten rows the first test kept, none of them named. */
 const KEPT_BEFORE = Array.from({ length: 10 }, (_, index) => `Kept Pair ${index + 1} Wireless Earbuds, Bluetooth 5.3 Headphones, Black`);

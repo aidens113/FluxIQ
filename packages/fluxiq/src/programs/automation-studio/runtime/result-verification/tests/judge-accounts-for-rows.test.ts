@@ -133,7 +133,7 @@ describe("a yes over rows the saved answer's processing alone left out (t493)", 
     expect(verification.verdict).toBe("does_not_answer");
     expect(verification.code).toBe(AUTOMATION_STUDIO_RESULT_VERDICT_CODES.doesNotAnswer);
     const finding = verification.repair?.findings.find((candidate) => candidate.code === FINDING);
-    expect(finding?.detail).toContain("recordOutput.process.where name not contains \"Charging Case\"");
+    expect(finding?.detail).toContain("recordOutput.process.where condition 2 (name not contains \"Charging Case\")");
     const fix = verification.repair?.fix.join("\n") ?? "";
     for (const row of RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT) {
       expect(fix).toContain(row);

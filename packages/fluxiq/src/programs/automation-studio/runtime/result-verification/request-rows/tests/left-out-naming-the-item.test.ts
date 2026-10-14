@@ -17,13 +17,13 @@ import { RUN_MV6BG8D8_ACCESSORIES, RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT, RUN_MV6BG
 describe("rows a condition alone left out that name the asked item", () => {
   it("flags the build test's three pairs and not its two accessories (step 0031)", () => {
     expect(automationStudioResultLeftOutNamingTheItem(runMuw60j7cTestSummary(), RUN_MUW60J7C_REQUEST)).toEqual([
-      { step: 10, condition: "name", item: "wireless earbuds", also: ["charging cases"], rows: RUN_MUW60J7C_PAIRS_LEFT_OUT }
+      { step: 10, condition: "condition \"name\"", item: "wireless earbuds", also: ["charging cases"], rows: RUN_MUW60J7C_PAIRS_LEFT_OUT }
     ]);
   });
 
   it("flags the same pairs on the finished run's read, by its node (step 0039)", () => {
     expect(automationStudioResultLeftOutNamingTheItem(runMuw60j7cRunSummary(), RUN_MUW60J7C_REQUEST)).toEqual([
-      { nodeId: RUN_MUW60J7C_FILTERED_READ, condition: "name not contains [\"ear tips\", \"charging case\", \"eartips\"]", item: "wireless earbuds", also: ["charging cases"], rows: RUN_MUW60J7C_PAIRS_LEFT_OUT }
+      { nodeId: RUN_MUW60J7C_FILTERED_READ, condition: "condition 5 (name not contains [\"ear tips\", \"charging case\", \"eartips\"])", item: "wireless earbuds", also: ["charging cases"], rows: RUN_MUW60J7C_PAIRS_LEFT_OUT }
     ]);
   });
 
@@ -48,7 +48,7 @@ describe("rows a condition alone left out that name the asked item", () => {
 
   it("never flags a condition that tested another column, though its rows name the item first", () => {
     const flagged = automationStudioResultLeftOutNamingTheItem(runMuw60j7cTestSummary(), RUN_MUW60J7C_REQUEST);
-    expect(flagged.map((entry) => entry.condition)).toEqual(["name"]);
+    expect(flagged.map((entry) => entry.condition)).toEqual(["condition \"name\""]);
   });
 
   it("flags nothing where the kept rows do not all name one request phrase first", () => {
@@ -74,7 +74,7 @@ describe("rows a condition alone left out that name the asked item", () => {
     plus.leftOutOnlyByThis = [...plus.leftOutOnlyByThis!, "Zephyrline Z1 Wireless Earbuds, Bluetooth 5.3 Headphones with 60H Playtime, Wireless Charging Case, Ear Hooks for Running, Midnight Blue"];
     const expected = automationStudioResultLeftOutNamingTheItem(summary, RUN_MUW60J7C_REQUEST);
     expect(expected).toEqual([
-      { nodeId: RUN_MUW60J7C_FILTERED_READ, condition: "name not contains [\"ear tips\", \"charging case\", \"eartips\"]", item: "wireless earbuds", also: ["charging cases"], rows: RUN_MUW60J7C_PAIRS_LEFT_OUT }
+      { nodeId: RUN_MUW60J7C_FILTERED_READ, condition: "condition 5 (name not contains [\"ear tips\", \"charging case\", \"eartips\"])", item: "wireless earbuds", also: ["charging cases"], rows: RUN_MUW60J7C_PAIRS_LEFT_OUT }
     ]);
     const instruction: AutomationStudioFlowInstruction = {
       schemaVersion: "0.1", instructionId: "instruction.flow.goal", title: "Evidence-guided generation goal", body: RUN_MUW60J7C_REQUEST,
@@ -108,7 +108,7 @@ describe("rows the saved answer's processing alone left out", () => {
   it("flags the three pairs a `not contains` processing condition left out, under the read that collected them, and not the two accessories", () => {
     const flagged = automationStudioResultLeftOutNamingTheItem(runMv6bg8d8RunSummary(), RUN_MUW60J7C_REQUEST);
     expect(flagged).toEqual([
-      { nodeId: RUN_MV6BG8D8_READ, condition: "recordOutput.process.where name not contains \"Charging Case\"", item: "wireless earbuds", also: ["charging cases"], rows: RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT }
+      { nodeId: RUN_MV6BG8D8_READ, condition: "recordOutput.process.where condition 2 (name not contains \"Charging Case\")", item: "wireless earbuds", also: ["charging cases"], rows: RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT }
     ]);
     const said = JSON.stringify(flagged);
     for (const accessory of Object.values(RUN_MV6BG8D8_ACCESSORIES)) expect(said).not.toContain(accessory);

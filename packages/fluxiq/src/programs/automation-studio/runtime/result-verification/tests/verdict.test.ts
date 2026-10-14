@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { automationStudioResultVerificationAnswers, automationStudioResultVerificationFailsRun, type AutomationStudioRunResultSummary } from "../contracts.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict, automationStudioResultVerdictFromDiagnosis } from "../verdict.ts";
 import {
-  REQUEST_WORDS_CONDITIONS, REQUEST_WORDS_HANDLE, REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS, requestWordsRunSummary, requestWordsWording
+  REQUEST_WORDS_NAMES, REQUEST_WORDS_HANDLE, REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS, requestWordsRunSummary, requestWordsWording
 } from "../request-rows/tests/request-words-fixture.ts";
 import { automationStudioResultCheckedRowsNamed } from "../request-rows/index.ts";
 import { automationStudioResultRecordedOutcome } from "../run-record.ts";
@@ -266,11 +266,11 @@ describe("a yes over a left-out row stating a number its text condition kept", (
     expect(verification.reason).toBe("The result was judged to answer the request over rows a text condition alone left out that state a number the same condition kept on another row, so it is not taken as an answer.");
     expect(verification.repair?.findings[0]).toEqual({
       code: "result.left_out_stating_a_kept_number",
-      detail: `Read n2: the condition "${condition}" kept rows stating 3 to 14 and alone left out a row that states a number in that range, so it compared characters, not the number: Compost bins — replies: Dana Ruiz and 4 others (states 5).`
+      detail: `Read n2: the condition 1 (${condition}) kept rows stating 3 to 14 and alone left out a row that states a number in that range, so it compared characters, not the number: Compost bins — replies: Dana Ruiz and 4 others (states 5).`
     });
     expect(verification.repair?.fix[0]).toContain("write the threshold the request asks for as a bound on that column (atLeast, atMost, greaterThan or lessThan)");
     expect(verification.repair?.checked).toEqual([
-      `The check answered yes though the condition "${condition}" (Read n2) kept rows stating 3 to 14 and alone left out this row, which states a number in that range: Compost bins — replies: Dana Ruiz and 4 others (states 5).`
+      `The check answered yes though the condition 1 (${condition}) (Read n2) kept rows stating 3 to 14 and alone left out this row, which states a number in that range: Compost bins — replies: Dana Ruiz and 4 others (states 5).`
     ]);
     expect(automationStudioResultVerificationAnswers(verification)).toBe(false);
   });
@@ -309,7 +309,7 @@ describe("a yes over rows a condition alone left out, held to the request's own 
     // The repair is told the row and its condition, in Core's words, and no reading of the yes.
     expect(verification.repair?.judgement).toBeUndefined();
     expect(verification.exclusionEvidenceMissing).toEqual([
-      `The check answered yes without quoting, beside this row, words of the request that exclude it; it was left out by condition "${REQUEST_WORDS_CONDITIONS.handle}" alone (Read read) -- ${REQUEST_WORDS_HANDLE}. A row the request's own words do not exclude is one it asks for.`
+      `The check answered yes without quoting, beside this row, words of the request that exclude it; it was left out by ${REQUEST_WORDS_NAMES.handle} alone (Read read) -- ${REQUEST_WORDS_HANDLE}. A row the request's own words do not exclude is one it asks for.`
     ]);
     // Not rows Core says the request asks for: a repair's rerun is never measured against them.
     expect(automationStudioResultCheckedRowsNamed(requestWordsRunSummary(), verification.repair?.checked ?? [])).toEqual([]);

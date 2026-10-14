@@ -295,9 +295,9 @@ describe("each record set's processing account", () => {
     const summarized = summarizeAutomationStudioRunResult({ recordSets: [input], deniedEvidenceKeys: ["secretNote"] });
     const shown = summarized.recordSets[0]?.processing;
     expect(shown?.conditions).toEqual([
-      { condition: "name not contains \"Dock\"", rejected: 2, alone: 2, leftOutOnlyByThis: ["Trail Watch 2 with Charging Dock", "(withheld)"] },
-      { condition: "price lessThan 50", rejected: 1, alone: 1, leftOutOnlyByThis: ["Trail Watch Pro"] },
-      { rejected: 0, alone: 0 }
+      { number: 1, condition: "name not contains \"Dock\"", rejected: 2, alone: 2, leftOutOnlyByThis: ["Trail Watch 2 with Charging Dock", "(withheld)"] },
+      { number: 2, condition: "price lessThan 50", rejected: 1, alone: 1, leftOutOnlyByThis: ["Trail Watch Pro"] },
+      { number: 3, rejected: 0, alone: 0 }
     ]);
     expect(summarized.withheld).toBe(true);
     expect(shown).toMatchObject({ collected: 4, filteredOut: 3, kept: 1 });
@@ -307,6 +307,6 @@ describe("each record set's processing account", () => {
     expect(processing.conditions[0]!.leftOutOnlyByThis[0]).toEqual({ field: "name", label: "Trail Watch 2 with Charging Dock" });
     // No declaration, no row and no wording: absent means nobody said.
     const undeclared = summarizeAutomationStudioRunResult({ recordSets: [input] }).recordSets[0]?.processing;
-    expect(undeclared?.conditions).toEqual([{ rejected: 2, alone: 2 }, { rejected: 1, alone: 1 }, { rejected: 0, alone: 0 }]);
+    expect(undeclared?.conditions).toEqual([{ number: 1, rejected: 2, alone: 2 }, { number: 2, rejected: 1, alone: 1 }, { number: 3, rejected: 0, alone: 0 }]);
   });
 });

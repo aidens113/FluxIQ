@@ -552,6 +552,47 @@ is shown a read condition's `testedLabel`, Core's own bookkeeping for which
 rows it may flag: the judge's copy and the summary a result repair hands the
 recovery model drop it (`result-verification/read-account/without-tested-label.ts`).
 
+Four things about a read's conditions come from t574 (live run
+`run-mv7vor5f-ea4d08b4`, where three of five subflow-trial verdicts were
+wrong, two of them on exactly the right rows):
+
+- **A read under Call Subflow is told by its own node.** A trial passes the
+  called graph's nodes merged with the root's
+  (`service/candidate-trial/frame-evidence.ts`). A finished run of a root that
+  calls parts reads each Call Subflow attempt's graph through the run's own
+  Subflow source, at the revision the attempt recorded. That source is the
+  executor's `subflowGraphs`, which `runtime/service.ts` passes as
+  `calledGraphs`. The graphs are keyed by that attempt's id
+  (`result-verification/called-nodes.ts`). The part's read is then matched to
+  its node in that graph. It is told by its counts alone in four cases: the
+  graph is not the one that ran, it cannot be read, the node has another
+  definition or condition count, or (with no called graph) the root frame ran a
+  step of the same id (`read-account/accounts.ts`). Value readings use the very
+  node the account was told by.
+- **One index per condition.** Every condition carries `number`, its place in
+  the authored `where` counting from 1. Core's lines, the recheck, the repair's
+  findings and the builder's trial feedback all name it `condition N (wording)`
+  (`read-account/condition-name.ts`). A witness under a condition drops the
+  domain's 0-based `conditionIndex`.
+- **Core settles rows a numeric bound left out.** Take a condition that
+  compares only numbers. A row it alone left out is settled where its tested
+  value reads as a number that fails the bound by the domain's own semantics
+  (`value-readings/settled-rows.ts`). The condition then carries
+  `leftOutSettled` and a `settled` sentence. A yes need not quote the request
+  beside those rows, but it quotes the request's words stating the bound once,
+  in or beside a sentence naming the condition (`request-rows/unquoted-rows.ts`).
+  Rows left out by text or presence conditions, and rows stating no number,
+  are still quoted row by row.
+- **A presence test says both sides.** A presence test is `is: present` and
+  nothing else. It carries a `presence` sentence: its read found a value on
+  every kept row, with one such value, and none on each row it alone left out.
+  Each of those rows is written `label — column: (no value)`
+  (`read-account/presence.ts`).
+
+A yes's quotes are paired as written. An empty `""` is a quotation of
+nothing, and no sentence breaks inside a quotation. A quote in the sentence
+beside a row counts only when that sentence names no row of its own.
+
 A `does_not_answer` verdict carries
 `automation-studio.result-repair-directive.v1`: Core-authored coded findings and
 fix lines, plus optional screened judgement fields `expected`, `observed`, and

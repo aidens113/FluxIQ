@@ -14,7 +14,8 @@
 // is downgraded with, `../verdict.ts`), and a build's judge holds them and the
 // summary but not the judge's reply they were matched in. So a row is taken as
 // named for a condition exactly when a line naming its read (`Step N`, `Read
-// <node>`) and that condition (`the condition "..."`) lists the row's whole
+// <node>`) and that condition (`the condition N (...)`, its one name,
+// `../read-account/condition-name.ts`) lists the row's whole
 // label as one of its rows -- after `: ` or `; `, and followed by the line's end,
 // `;`, `.`, ` —` (the tested value) or ` (` with the ids it was named by or
 // "also in the result". A label that only starts another label is not it. The
@@ -38,7 +39,7 @@ export function automationStudioResultCheckedRowsNamed(summary: AutomationStudio
     const lines = checked.filter((line) => namesRead(line, read));
     if (!lines.length) continue;
     for (const condition of read.conditions) {
-      const mention = `the condition "${condition.condition}"`;
+      const mention = `the ${condition.condition}`;
       const rows: AutomationStudioRequestRowsNamed["rows"] = [];
       for (const label of [...new Set(condition.labels)]) {
         let found = false;

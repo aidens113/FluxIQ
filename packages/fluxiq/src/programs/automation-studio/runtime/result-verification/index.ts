@@ -29,6 +29,7 @@
 // keeps one.
 
 export * from "./build-test/index.ts";
+export * from "./called-nodes.ts";
 export * from "./captured-rows.ts";
 export * from "./check-activity.ts";
 export * from "./contracts.ts";

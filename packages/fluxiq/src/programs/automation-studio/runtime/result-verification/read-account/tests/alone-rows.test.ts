@@ -31,6 +31,7 @@ describe("the rows a condition removed by itself", () => {
     const { reads } = automationStudioResultReadAccounts({ actionAttempts: [playedBack(RUN_15_ALONE)], flowNodes: [earbudsNode()], deniedEvidenceKeys: [] });
     const accessoryRule = reads[0]?.conditions?.[3];
     expect(accessoryRule).toEqual({
+      number: 4,
       condition: "name not contains [\"ear tips\", \"charging case\"]",
       rejected: 16,
       alone: 5,
@@ -83,8 +84,8 @@ describe("the rows a condition removed by itself", () => {
     expect(reads[0]?.conditions?.map((condition) => condition.leftOutOnlyByThis)).toEqual([
       ["Budget Earbuds — rating: (no value)"],
       ["Jonas Weber — mutualFriends: Aisha Khan and 4 other mutual friends"],
-      // A column the row does not hold says no value at all.
-      ["No Seller Earbuds"],
+      // A presence test's row, which does not hold the column, is said as found empty (t574, `presence.ts`).
+      ["No Seller Earbuds — seller: (no value)"],
       ["Gift Earbuds — price: (withheld)"]
     ]);
     expect(JSON.stringify(reads)).not.toContain("sk-live");
@@ -106,15 +107,17 @@ describe("the rows a condition removed by itself", () => {
     ];
     const { reads } = automationStudioResultReadAccounts({ actionAttempts: [playedBack(aloneRows)], flowNodes: [byKey], deniedEvidenceKeys: [] });
     const conditions = reads[0]?.conditions ?? [];
-    // Every row is said by its label alone, the tested cell of plus and sponsored not being stored.
-    expect(conditions.slice(0, 3).map((condition) => condition.leftOutOnlyByThis?.every((row) => !row.includes(" — ")))).toEqual([true, true, true]);
+    // Every row is said by its label alone, the tested cell of plus and sponsored not being stored -- but for
+    // the presence test's, now said as its read found them: empty (t574, `presence.ts`), still not a test of the label.
+    expect(conditions[0]?.leftOutOnlyByThis?.every((row) => row.endsWith(" — plus: (no value)"))).toBe(true);
+    expect(conditions.slice(1, 3).map((condition) => condition.leftOutOnlyByThis?.every((row) => !row.includes(" — ")))).toEqual([true, true]);
     expect(conditions.map((condition) => condition.testedLabel)).toEqual([undefined, undefined, true, undefined]);
   });
 
   it("are not carried where the domain declared no keys, like the wording beside them", () => {
     const { reads } = automationStudioResultReadAccounts({ actionAttempts: [playedBack(RUN_15_ALONE)], flowNodes: [earbudsNode()] });
     expect(JSON.stringify(reads)).not.toContain("Lumo");
-    expect(reads[0]?.conditions?.[3]).toEqual({ rejected: 16, alone: 5 });
+    expect(reads[0]?.conditions?.[3]).toEqual({ number: 4, rejected: 16, alone: 5 });
   });
 
   it("are absent from a read that sent none, which still says its counts", () => {

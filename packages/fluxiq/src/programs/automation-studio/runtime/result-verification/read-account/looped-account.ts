@@ -85,13 +85,19 @@ function mergedConditions(passes: readonly AutomationStudioResultReadAccount[]):
       }))
       : undefined;
     const withRows = each.filter(({ entry }) => entry.leftOutOnlyByThis?.length).map(({ entry }) => entry);
+    // A presence test's sentence where every pass that left rows out said one: from a pass that kept rows, as the wording is.
+    const presence = withRows.length && withRows.every((entry) => entry.presence !== undefined)
+      ? (each.find(({ entry, kept }) => kept > 0 && entry.presence !== undefined) ?? each.find(({ entry }) => entry.presence !== undefined))?.entry.presence
+      : undefined;
     merged.push({
+      number: each.find(({ entry }) => entry.number !== undefined)?.entry.number ?? index + 1,
       ...(condition !== undefined ? { condition } : {}),
       ...(rejected !== undefined ? { rejected } : {}),
       ...(alone !== undefined && (rejected === undefined || alone <= rejected) ? { alone } : {}),
       ...(leftOut.length ? { leftOutOnlyByThis: leftOut } : {}),
       ...(observations ? { leftOutObservations: observations } : {}),
-      ...(withRows.length && withRows.every((entry) => entry.testedLabel) ? { testedLabel: true as const } : {})
+      ...(withRows.length && withRows.every((entry) => entry.testedLabel) ? { testedLabel: true as const } : {}),
+      ...(presence !== undefined ? { presence } : {})
     });
   }
   return merged;

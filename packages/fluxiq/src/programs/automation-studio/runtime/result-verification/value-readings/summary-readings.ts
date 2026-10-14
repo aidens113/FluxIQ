@@ -1,7 +1,9 @@
 // A run summary's reads and record sets with Core's readings of their values
 // (t511): each read condition's and saved-answer condition's `valuesRead`
-// (`./condition-readings.ts`) and each record set's `sortRead`
-// (`./sort-reading.ts`).
+// (`./condition-readings.ts`), each record set's `sortRead`
+// (`./sort-reading.ts`), and the rows a read's numeric bound left out that
+// Core settles itself, `leftOutSettled` and `settled` (`./settled-rows.ts`,
+// t574).
 //
 // **Where the rows come from.** Only from what the summary already carries,
 // screened: a read's kept rows are the stored rows of the record sets its step
@@ -40,6 +42,7 @@ import type { AutomationStudioResultSortRead } from "../record-set-summary.ts";
 import { automationStudioResultReadConditionColumn, automationStudioResultReadParameters } from "../read-account/index.ts";
 import { automationStudioResultConditionReadings, type AutomationStudioResultReadCell } from "./condition-readings.ts";
 import { automationStudioResultRecordOutputs } from "./record-outputs.ts";
+import { automationStudioResultSettledRows } from "./settled-rows.ts";
 import { automationStudioResultSortReadings } from "./sort-reading.ts";
 
 /** What a screened cell reads as in a summary row (`../result-summary.ts`). */
@@ -61,17 +64,26 @@ const HIDDEN_KIND_WORDS: Record<AutomationStudioRecordProcessingHiddenSortKey["k
 /** The reads and record sets, copied where a reading is said; each unchanged where none is. `now` anchors relative dates. */
 export function automationStudioResultValueReadings(input: {
   reads: readonly AutomationStudioResultReadAccount[];
+  /**
+   * The node each read was told by, aligned with `reads` (`../read-account/accounts.ts`, t574).
+   * Given, a read is read by its own node, or by none; absent, by the node of its id and definition in `flowNodes`.
+   */
+  authoredNodes?: ReadonlyArray<AutomationStudioFlowNode | undefined> | undefined;
   recordSets: readonly AutomationStudioResultRecordSetSummary[];
   flowNodes: readonly AutomationStudioFlowNode[];
   now: number;
 }): { reads: AutomationStudioResultReadAccount[]; recordSets: AutomationStudioResultRecordSetSummary[] } {
-  const recordSets = input.recordSets.map((set) => withAnswerReadings(set, input.flowNodes, input.now));
-  const reads = input.reads.map((read) => withReadReadings(read, input.recordSets, input.flowNodes));
+  // A saved answer's processing is declared on the node that writes it, which for a called part is a node of its own graph.
+  const declaring = [...input.flowNodes, ...(input.authoredNodes ?? []).filter((node): node is AutomationStudioFlowNode => node !== undefined && !input.flowNodes.includes(node))];
+  const recordSets = input.recordSets.map((set) => withAnswerReadings(set, declaring, input.now));
+  const reads = input.reads.map((read, index) => {
+    const node = input.authoredNodes ? input.authoredNodes[index] : input.flowNodes.find((candidate) => candidate.id === read.nodeId && candidate.definitionId === read.definitionId);
+    return withReadReadings(read, input.recordSets, node?.definitionId === read.definitionId ? node : undefined);
+  });
   return { reads, recordSets };
 }
 
-function withReadReadings(read: AutomationStudioResultReadAccount, sets: readonly AutomationStudioResultRecordSetSummary[], nodes: readonly AutomationStudioFlowNode[]): AutomationStudioResultReadAccount {
-  const node = nodes.find((candidate) => candidate.id === read.nodeId && candidate.definitionId === read.definitionId);
+function withReadReadings(read: AutomationStudioResultReadAccount, sets: readonly AutomationStudioResultRecordSetSummary[], node: AutomationStudioFlowNode | undefined): AutomationStudioResultReadAccount {
   const authored = automationStudioResultReadParameters(node?.parameterValues);
   if (!node || !authored || !read.conditions?.length) return read;
   const written = Array.isArray(authored.where) ? authored.where : [];
@@ -84,11 +96,14 @@ function withReadReadings(read: AutomationStudioResultReadAccount, sets: readonl
     const condition = column === undefined ? undefined : asRecordCondition(written[index], column);
     if (!condition || column === undefined) return entry;
     const kept = read.unfiltered ? [] : writes.flatMap((set) => keptCells(set, column));
-    const leftOut = (entry.leftOutOnlyByThis ?? []).flatMap((row) => leftOutCell(row, column) ?? []);
+    const paired = (entry.leftOutOnlyByThis ?? []).map((row) => ({ row, cell: leftOutCell(row, column) }));
+    const leftOut = paired.flatMap(({ cell }) => cell ?? []);
     const valuesRead = automationStudioResultConditionReadings({ condition, column, kept, leftOut });
-    if (!valuesRead.length) return entry;
+    // The rows a numeric bound left out whose values Core read as failing it: settled, never quoted for row by row (`./settled-rows.ts`, t574).
+    const settled = read.unfiltered ? undefined : automationStudioResultSettledRows({ condition, column, number: entry.number ?? index + 1, wording: entry.condition, leftOut: paired });
+    if (!valuesRead.length && !settled) return entry;
     changed = true;
-    return { ...entry, valuesRead };
+    return { ...entry, ...(valuesRead.length ? { valuesRead } : {}), ...(settled ?? {}) };
   });
   return changed ? { ...read, conditions } : read;
 }

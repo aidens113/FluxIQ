@@ -170,6 +170,13 @@ export type AutomationStudioRunResultSummaryInput = {
    */
   actionAttempts?: readonly AutomationStudioFlowRunActionAttemptRecord[] | undefined;
   /**
+   * The nodes of each graph a Call Subflow step ran, keyed by that Call Subflow
+   * attempt's `attemptId`, for a part's read to be told by its own node
+   * (`read-account/accounts.ts`, t574). Absent, a part's read is matched in
+   * `flowNodes`, as a trial's merged graph allows.
+   */
+  calledNodes?: ReadonlyMap<string, readonly AutomationStudioFlowNode[]> | undefined;
+  /**
    * This session's traced attempts, in the order they ran, for what each step
    * changed (`./step-changes.ts`) and the page the run started on. Absent, no
    * step says what it changed and there is no start.
@@ -232,7 +239,7 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
   if (started?.withheld) withheld = true;
   // How each list read went (`read-account/`): pages, why paging stopped, and
   // what each condition rejected, so a judge is not shown a step's name alone.
-  const accounted = automationStudioResultReadAccounts({ actionAttempts: input.actionAttempts, flowNodes, deniedEvidenceKeys: input.deniedEvidenceKeys });
+  const accounted = automationStudioResultReadAccounts({ actionAttempts: input.actionAttempts, flowNodes, deniedEvidenceKeys: input.deniedEvidenceKeys, ...(input.calledNodes ? { calledNodes: input.calledNodes } : {}) });
   // And the steps that acted on the page before each read (`./narrowed-before.ts`, t482), for a read of this Flow's own nodes.
   const own = accounted.reads.filter((read) => flowNodes.some((node) => node.id === read.nodeId && node.definitionId === read.definitionId));
   const narrowed = automationStudioResultNarrowedBefore({ readNodeIds: own.map((read) => read.nodeId), flowNodes, attempts: input.sessionAttempts, deniedEvidenceKeys: input.deniedEvidenceKeys });
@@ -242,7 +249,8 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
     return before ? { ...read, narrowedBefore: before } : read;
   });
   // How Core read the values each condition and sort compared (t511), from the rows already screened above.
-  const read = automationStudioResultValueReadings({ reads: narrowedReads, recordSets: summarizedSets, flowNodes, now: input.now ?? Date.now() });
+  // Each read by the very node it was told by (t574): a part's read is never matched again by id among the root's nodes.
+  const read = automationStudioResultValueReadings({ reads: narrowedReads, authoredNodes: accounted.authoredNodes, recordSets: summarizedSets, flowNodes, now: input.now ?? Date.now() });
   const reads = read.reads;
   const recordSets = read.recordSets;
   // The start view first: every trial of one build starts from the same reset

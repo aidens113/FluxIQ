@@ -21,9 +21,10 @@ const listing = (kept: number, extra: Partial<AutomationStudioResultReadAccount>
 describe("a trial's list reads, for the model", () => {
   it("says a read that kept no rows saw rows, that its conditions must all hold, and what each rejected", () => {
     const [read] = automationStudioTrialReadsFeedback([listing(0)], graph);
+    // Each condition by its one name, its number and wording, as the judge's copy and Core's lines say it (t574).
     expect(read).toMatchObject({ nodeId: "s6", label: "read the requests", seen: 8, kept: 0, conditions: [
-      { condition: "mutualFriends matches a bare count of five or more", rejected: 4, rejectedByItself: 1 },
-      { condition: "mutualFriends matches a named friend and others", rejected: 7, rejectedByItself: 4 }
+      { condition: "condition 1 (mutualFriends matches a bare count of five or more)", rejected: 4, rejectedByItself: 1 },
+      { condition: "condition 2 (mutualFriends matches a named friend and others)", rejected: 7, rejectedByItself: 4 }
     ] });
     const said = read!.said as string;
     expect(said).toContain("The read saw 8 rows and kept none.");
@@ -36,7 +37,7 @@ describe("a trial's list reads, for the model", () => {
 
   it("says only the counts for a read that kept rows", () => {
     const [read] = automationStudioTrialReadsFeedback([listing(4)], graph);
-    expect(read!.said).toBe("The read saw 8 rows and kept 4. A row is kept only when it passes every one of its 2 conditions (a row can fail more than one): mutualFriends matches a bare count of five or more rejected 4; mutualFriends matches a named friend and others rejected 7.");
+    expect(read!.said).toBe("The read saw 8 rows and kept 4. A row is kept only when it passes every one of its 2 conditions (a row can fail more than one): condition 1 (mutualFriends matches a bare count of five or more) rejected 4; condition 2 (mutualFriends matches a named friend and others) rejected 7.");
   });
 
   it("says a read with no conditions by its counts alone, and nothing for a trial with no reads", () => {
@@ -128,7 +129,7 @@ describe("a trial's read, with the steps that acted on the page before it", () =
     expect(read!.narrowedBefore).toEqual(before);
     expect(read!.beforeRead).toContain("never reached the read");
     expect(read!.beforeRead).toContain("keep less than the request asks");
-    expect(read!.said).toBe("The read saw 8 rows and kept 4. A row is kept only when it passes every one of its 2 conditions (a row can fail more than one): mutualFriends matches a bare count of five or more rejected 4; mutualFriends matches a named friend and others rejected 7.");
+    expect(read!.said).toBe("The read saw 8 rows and kept 4. A row is kept only when it passes every one of its 2 conditions (a row can fail more than one): condition 1 (mutualFriends matches a bare count of five or more) rejected 4; condition 2 (mutualFriends matches a named friend and others) rejected 7.");
   });
 
   it("says nothing of steps before a read that carries none", () => {

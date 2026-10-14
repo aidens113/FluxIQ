@@ -71,7 +71,8 @@ describe("the repair brief", () => {
     expect(brief.body).toContain(`How the read went: Step ${EARBUDS_NODE_ID} read 5 pages of at most 5, paging stopped on page_limit and kept 8 of 56 items seen.`);
     expect(brief.body).toContain("It already follows pages");
     expect(brief.body).toContain("It already keeps one row per url.");
-    expect(brief.body).toContain("attribute data-sponsored is absent rejected 13 rows; rating atLeast 4 rejected 20 rows; price lessThan 50 rejected 27 rows; name not contains [\"ear tips\", \"charging case\"] rejected 16 rows");
+    // Each condition by its number and wording, the one name every line gives it (t574).
+    expect(brief.body).toContain("condition 1 (attribute data-sponsored is absent) rejected 13 rows; condition 2 (rating atLeast 4) rejected 20 rows; condition 3 (price lessThan 50) rejected 27 rows; condition 4 (name not contains [\"ear tips\", \"charging case\"]) rejected 16 rows");
     expect(brief.body).toContain("change that setting or condition in place instead of adding a step for it");
     for (const locator of EARBUDS_LOCATORS) expect(brief.body).not.toContain(locator);
   });

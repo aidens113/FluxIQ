@@ -29,8 +29,9 @@ describe("the rows a saved answer's processing alone left out, for the model", (
   it("names each processing condition's rows, with its wording and counts, and says how to read them", () => {
     const told = automationStudioTrialProcessedOutFeedback(summary());
     expect(told?.conditions).toEqual([
-      { dataset: "watches", condition: "name not contains \"Spare Strap\"", rejected: 1, rejectedByItself: 1, rows: ["Spare Strap for Trail Watch"] },
-      { dataset: "watches", condition: "name not contains \"Charging Dock\"", rejected: 2, rejectedByItself: 2, rows: LEFT_OUT }
+      // Each by its number and wording, as every line names it (t574).
+      { dataset: "watches", condition: "condition 1 (name not contains \"Spare Strap\")", rejected: 1, rejectedByItself: 1, rows: ["Spare Strap for Trail Watch"] },
+      { dataset: "watches", condition: "condition 2 (name not contains \"Charging Dock\")", rejected: 2, rejectedByItself: 2, rows: LEFT_OUT }
     ]);
     expect(told?.said).toContain("recordOutput.process.where");
     expect(JSON.stringify(told)).not.toContain("testedLabel");

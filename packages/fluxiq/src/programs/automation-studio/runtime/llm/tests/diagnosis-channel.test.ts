@@ -391,3 +391,36 @@ describe("the judge's rule for a step before a read that keeps less than asked",
     expect(said).toContain("library");
   });
 });
+
+// t574 (live run `run-mv7vor5f-ea4d08b4`): a correct yes was held for not quoting the request beside 37 left-out rows,
+// most of them settled by a numeric bound's own values; judges matched rows to the wrong numbering of conditions, and
+// read a presence test's left-out rows as a broken read. Core settles those rows and the judge is told so.
+const settledRule = (): string => {
+  const at = AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION.indexOf("The rows in a condition's leftOutSettled");
+  return AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION.slice(at, AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION.indexOf("which is not a broken read.", at) + "which is not a broken read.".length);
+};
+
+describe("the judge's rule for rows Core settled, numbered conditions and presence tests", () => {
+  it("is told to every result judge, of a finished run and of a build's test, after the quote-every-row rule it qualifies", () => {
+    for (const buildTest of [false, true]) {
+      const prompt = automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest });
+      expect(prompt.indexOf("leftOutSettled")).toBeGreaterThan(prompt.indexOf("a yes that leaves any such row without its quote is not taken as a yes"));
+      expect(prompt).toContain(settledRule());
+    }
+  });
+
+  it("says settled rows need no quote each, that the bound is quoted once, how conditions are named, and what presence means", () => {
+    const said = settledRule();
+    expect(said).toContain("none needs a quote beside it");
+    expect(said).toContain("a yes quotes once, in a sentence that names that condition, the request's words stating the bound");
+    expect(said).toContain("where the request states no such bound, those rows are ones it asks for");
+    expect(said).toContain("Core names it condition N (wording) wherever it names it");
+    expect(said).toContain("each written with (no value): such a row lacks what the condition looks for");
+  });
+
+  it("teaches nothing a Lab scenario could be passed by: no price, currency, shop, product, rating or marker of one", () => {
+    const said = settledRule();
+    expect(said).not.toMatch(/[$€£]|\bprice|\bunder\b|\bcart\b|\bstore\b|\bshop|earbud|friend|job|listing|rating|\bplus\b|sponsor|mutual/iu);
+    expect(said).toContain("library");
+  });
+});

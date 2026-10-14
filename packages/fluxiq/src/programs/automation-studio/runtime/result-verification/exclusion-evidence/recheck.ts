@@ -1,13 +1,29 @@
+// The recheck a yes is asked again with when it lacked the exclusion evidence
+// `../request-rows/unquoted-rows.ts` holds it to (t515).
+//
+// **Only the rows still to argue (t574).** Live run `run-mv7vor5f-ea4d08b4`'s
+// recheck listed all 37 rows six conditions left out, most of them rows a
+// rating or price bound left out with values that settle them, and it turned
+// the one correct yes into a no. The lines below it are Core's
+// (`../verdict.ts`): rows left out by a text or presence condition, each to be
+// named beside a quote of the request, and, for a numeric bound whose rows Core
+// read as failing it (`../value-readings/settled-rows.ts`), the one quote of
+// the request stating the bound. Each condition is named `condition N
+// (wording)`, as the summary's own `reads[].conditions[].number` says it.
+
 import type { AutomationStudioResultVerification } from "../contracts.ts";
 import { screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
+
+/** What the recheck asks, said once above Core's lines (header). Written for no site or kind of item. */
+const RECHECK = "Your affirmative judgement lacked required exclusion evidence. Recheck the same request and result; do not change the Flow or invent an exclusion. "
+  + "For every row named below, use its full displayed name or exact distinguishing identifier in a sentence that also quotes in double quotes the request's own words excluding that row. "
+  + "Where a line says Core already read a condition's left-out rows as failing its bound, those rows need no quote of their own: quote once, in a sentence that names that condition as the line does, the request's own words stating that bound. "
+  + "Search or navigation words alone exclude nothing. If the request does not justify the exclusion, answer no; if evidence is insufficient, answer unknown.";
 
 /** Correct only a deficient explanation, using the same screened evidence and existing ask allowance. */
 export function automationStudioResultExclusionEvidenceRecheck(verification: AutomationStudioResultVerification, deniedKeys: readonly string[] | undefined): string | undefined {
   if (!verification.exclusionEvidenceMissing?.length || deniedKeys === undefined) return undefined;
-  const recheck = [
-    "Your affirmative judgement lacked required exclusion evidence. Recheck the same request and result; do not change the Flow or invent an exclusion. For every row named below, use its full displayed name or exact distinguishing identifier in a sentence that also quotes in double quotes the request's own words excluding that row. Search or navigation words alone exclude nothing. If the request does not justify the exclusion, answer no; if evidence is insufficient, answer unknown.",
-    ...verification.exclusionEvidenceMissing
-  ].join("\n");
+  const recheck = [RECHECK, ...verification.exclusionEvidenceMissing].join("\n");
   const screened = screenAutomationStudioLlmEvidence({ recheck }, deniedKeys);
   return screened.deniedKey || screened.secretShaped ? undefined : recheck;
 }

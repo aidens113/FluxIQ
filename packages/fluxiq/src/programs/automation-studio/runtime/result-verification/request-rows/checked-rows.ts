@@ -118,7 +118,7 @@ function lines(named: readonly Named[], reads: readonly AutomationStudioRequestR
     }
   }
   const alone = [...byCondition.values()].map((entry) =>
-    `${entry.where}: the condition "${entry.condition}" alone left out ${entry.rows.length === 1 ? "this row" : "these rows"} the check names: ${entry.rows.join("; ")}.`);
+    `${entry.where}: the ${entry.condition} alone left out ${entry.rows.length === 1 ? "this row" : "these rows"} the check names: ${entry.rows.join("; ")}.`);
   return [...misread, ...alone];
 }
 

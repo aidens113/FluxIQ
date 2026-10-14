@@ -1,7 +1,9 @@
 // How each list read of a run went: the account the judgement and the
 // re-author are shown (`accounts.ts`), the condition wording inside it
 // (`condition.ts`), how its `dedupe` reads (`dedupe.ts`), the rows a
-// condition removed by itself (`alone-rows.ts`),
+// condition removed by itself (`alone-rows.ts`), the one name every line
+// gives a condition (`condition-name.ts`), what a presence test found on both
+// sides (`presence.ts`),
 // Core's sentence for it (`sentence.ts`), what stopped its paging (`stop.ts`),
 // whether its step ran as the passes of a loop (`loop-passes.ts`) and the one
 // account every pass adds up to (`looped-account.ts`),
@@ -13,6 +15,7 @@
 export * from "./accounts.ts";
 export * from "./alone-rows.ts";
 export * from "./condition.ts";
+export * from "./condition-name.ts";
 export * from "./dedupe.ts";
 export * from "./judge-paging.ts";
 export * from "./loop-passes.ts";
@@ -20,6 +23,7 @@ export * from "./looped-account.ts";
 export * from "./page-bound-sentence.ts";
 export * from "./read-parameters.ts";
 export * from "./pages-clause.ts";
+export * from "./presence.ts";
 export * from "./emptied-columns.ts";
 export * from "./sentence.ts";
 export * from "./stop.ts";
