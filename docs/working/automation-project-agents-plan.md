@@ -186,6 +186,16 @@ Validated with the existing plan validation and route validation (t531
 reachability) before any brief is dispatched. Every part is covered by at
 least one subflow; an uncovered part refuses the plan.
 
+**How data crosses subflows (decided 2026-10-13, from t537).** Only through
+callable parts, as the script grammar already allows: a subflow that takes
+or hands back values has an `interface` and is a `part`, which its builder
+writes as `part <key>:` with `input:` and `output: <name> = $step...` lines,
+so its outputs are bound. A Router-run subflow has no interface; for a
+multi-part task its body is the sequence of `call:` steps the supervisor
+writes at assembly, passing each part's outputs to the next by name. A
+builder's own helper parts are re-keyed `<subflowKey>-<label>` in its
+proposal, so two briefs never collide at assembly.
+
 **Subflow brief** — `{ briefId, kind: build|survey|repair, planDigest,
 subflowKey, parts[], interface, entry: { caseId, predecessors[] },
 allowanceUsd, maxIterations, permittedActs[], recordingExcerpt?,
