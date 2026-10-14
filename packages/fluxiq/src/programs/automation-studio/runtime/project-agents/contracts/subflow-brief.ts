@@ -1,5 +1,6 @@
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { AutomationStudioFlowBootstrapInterface } from "../../flow-bootstrap/plan/index.ts";
+import { automationStudioProjectAskedActs } from "./asked-acts.ts";
 import { automationStudioProjectDigest } from "./digest.ts";
 import { automationStudioProjectJsonShape as shape, type AutomationStudioProjectParse } from "./json-shape.ts";
 import { readAutomationStudioProjectReceiptRef, type AutomationStudioProjectReceiptRef } from "./receipt-ref.ts";
@@ -14,8 +15,9 @@ import type { AutomationStudioProjectTaskSpec } from "./task-spec.ts";
 // A brief is bound to one structure-plan digest. It may only name parts the
 // plan gives its subflow, must repeat that subflow's interface exactly, may
 // only name predecessors the plan declares, and may only permit lasting acts
-// its own parts ask for -- so a brief cannot widen what a builder may do
-// beyond what the person asked.
+// the task asks for, and none when its own parts only read
+// (`asked-acts.ts`) -- so a brief cannot widen what a builder may do beyond
+// what the person asked.
 
 /**
  * `reset` returns the site to the state the build started from, through the
@@ -73,7 +75,7 @@ export const automationStudioProjectSubflowBrief = Object.freeze({
     for (const [index, predecessor] of brief.entry.predecessors.entries()) {
       if (predecessor === brief.subflowKey || !declared.has(predecessor)) issues.push({ code: "project.brief_predecessor_invalid", path: `brief.entry.predecessors.${index}` });
     }
-    const asked = new Set(taskSpec.parts.filter((part) => brief.parts.includes(part.id)).flatMap((part) => part.lastingActs));
+    const asked = new Set<string>(automationStudioProjectAskedActs(taskSpec, brief.parts));
     for (const [index, act] of brief.permittedActs.entries()) {
       if (!asked.has(act)) issues.push({ code: "project.brief_act_not_asked", path: `brief.permittedActs.${index}` });
     }
