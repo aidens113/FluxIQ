@@ -4,6 +4,7 @@ export * from "./extraction-summary.ts";
 export * from "./failure-counts.ts";
 export * from "./frame-attempts.ts";
 export * from "./host-target-resolution.ts";
+export * from "./instruction-scope-kind.ts";
 export * from "./ordering.ts";
 export * from "./recovery-trace.ts";
 export * from "./run-audit.ts";

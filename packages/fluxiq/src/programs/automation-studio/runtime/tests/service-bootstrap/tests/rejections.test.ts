@@ -253,8 +253,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       projectId: project.id,
       flowId: flow.flowId,
       caller: caller()
-    // Since t519 the instruction authority refuses a build with no active, in-scope instruction before Flow Bootstrap's own check.
-    })).rejects.toMatchObject({ name: "AutomationInstructionError", diagnostic: { code: "automation.instructions_required" } });
+    // The instruction authority refuses a build with no active, in-scope instruction (t519), as a Flow Bootstrap refusal (t558).
+    })).rejects.toThrow("Flow Bootstrap generation failed (flow_bootstrap.active_instructions_required).");
     expect(resolver).not.toHaveBeenCalled();
     expect(providerRun).not.toHaveBeenCalled();
     await expectNoTopology(instance, project.id, flow.flowId);

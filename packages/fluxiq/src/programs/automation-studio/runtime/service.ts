@@ -14,7 +14,6 @@ import {
   appendRecordingNote,
   automationStudioFlowRepresentationKind,
   createAutomationStudioFixture,
-  createBlankAutomationStudioFlow,
   createBlankAutomationStudioFlowArtifact,
   withAutomationStudioFlowRepresentation,
   createPublishedFlowSnapshot,
@@ -1518,7 +1517,7 @@ export class AutomationStudioService {
         if (pending) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.pending_adaptation_exists");
         failureCode = "flow_bootstrap.instruction_resolution_failed";
         const inventory = await this.bootstrapInstructionInventory.read(projectId, flowId, authoringMode !== undefined), instructions = inventory.instructions;
-        await this.instructionAuthority.assert(projectId, flowId);
+        if (!(await this.instructionAuthority.readiness({ projectId, flowId })).ready) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.active_instructions_required"); // The authority's refusal, as the Flow Bootstrap diagnostic (stage, no provider call, accounting) the API, chat and Lab classify builds by (t558).
         const supplementaryRecordings = await supportingAutomationRecordings(projectId, instructions, id => this.getRecordingSession(id, projectId), (domain, entry) => {
           const io = this.ioRuntime?.io;
           if (entry.type === "action" && entry.outputId && io?.hasOutput(domain, entry.outputId)) return entry.outputId;
@@ -2317,20 +2316,6 @@ export class AutomationStudioService {
 
   async deleteProjectArtifact(input: { projectId: string; kind: AutomationStudioProjectArtifactKind; artifactId: string; deleteOwnedArtifacts?: boolean }): Promise<{ deleted: boolean; projectId: string; kind: AutomationStudioProjectArtifactKind; artifactId: string; deletedArtifactIds: string[] }> {
     return await this.projectArtifacts.deleteProjectArtifact(input);
-  }
-
-  /** @deprecated Creates an owner-bound compatibility Flow. Use createFlow() for new work. */
-  async createDefaultFlow(input: { projectId: string; ownerKind: "task" | "routine"; ownerId: string; name: string; description?: string }): Promise<AutomationStudioFlowDocument> {
-    await this.legacy.assertLegacyWriteAllowed(input.projectId);
-    const flow = createBlankAutomationStudioFlow({
-      flowId: `${input.ownerKind}.${safeSegment(input.ownerId)}.flow`,
-      ownerKind: input.ownerKind,
-      ownerId: input.ownerId,
-      name: input.name,
-      ...(input.description ? { description: input.description } : {})
-    });
-    await this.saveProjectArtifact({ projectId: input.projectId, kind: "flow", artifact: flow });
-    return flow;
   }
 
   async listProjectNormalizedTimelines(projectId: string): Promise<NormalizedTimeline[]> {

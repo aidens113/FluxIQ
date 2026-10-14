@@ -13,6 +13,9 @@ export class AutomationStudioRequiredCommandRun {
   constructor(input: { commandOutcomeMode?: "required"; projectId?: string | null; adaptiveMode?: AutomationStudioRuntimeInterventionMode }, storageAvailable: boolean) {
     if (input.commandOutcomeMode !== undefined && input.commandOutcomeMode !== "required") throw new Error("command_execution.invalid_mode");
     this.required = input.commandOutcomeMode === "required";
+    // Kept on purpose (t558): `runRuntimeSession` refuses a run with no project, or on a service with no storage
+    // (no Flow can be stored there), at the instruction gate first, but a required run's durable command outcomes
+    // need both, and this class holds that rule itself rather than leaning on what its caller checks first.
     if (this.required && (!input.projectId || !storageAvailable)) throw new Error("command_execution.storage_required");
     if (this.required && input.adaptiveMode !== undefined && input.adaptiveMode !== "no_llm_intervention") throw new Error("command_execution.adaptive_mode_unsupported");
   }

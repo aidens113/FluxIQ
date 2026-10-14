@@ -30,6 +30,7 @@ import { type AutomationStudioProjectStore, withAutomationStudioProjectDatabaseH
 import type { AutomationStudioServiceIndexes } from "../indexes/index.ts";
 import type { AutomationStudioFlowMutations, AutomationStudioFlowStore } from "../flows/index.ts";
 import { AutomationStudioSqlSummaryPaging } from "./sql-paging.ts";
+import { automationStudioInstructionListingScopeKind as listingKind } from "./instruction-scope-kind.ts";
 import { SUBFLOW_SUMMARY_MIGRATION_IO_CONCURRENCY, instructionSummaryFromInstruction, runtimeSessionToFlowRunDetail, runtimeSummaryFromSession } from "./conversions.ts";
 import type { AutomationStudioAdaptationSummary, AutomationStudioInstructionSummary, AutomationStudioRouterSummary, AutomationStudioSubflowSummary } from "../indexes/index.ts";
 import { mapWithConcurrency, uniqueStrings } from "../collections.ts";
@@ -482,31 +483,34 @@ export class AutomationStudioSummaryStore {
     const search = input.search?.trim().toLowerCase();
     // A Subflow reads its own Flow's flow-scoped instructions and no other Flow's, as project SQL does (t544).
     const subflowOwner = input.subflowId ? await this.subflowOwnerFlowId(input.projectId, input.subflowId) : null;
-    const matchesScope = (item: AutomationStudioInstructionSummary) =>
-      (!input.flowId || item.flowId === input.flowId || item.scopeKind === "global" || item.scopeKind === "project")
-      && (!input.subflowId || item.subflowId === input.subflowId || item.scopeKind === "project" || item.scopeKind === "global" || (item.scopeKind === "flow" && subflowOwner !== null && item.flowId === subflowOwner));
+    // Kinds compare, scope and sort as project SQL stores them, on every path (`./instruction-scope-kind.ts`).
+    const scopeKind = input.scopeKind ? listingKind.key(input.scopeKind) : undefined;
+    const matchesScope = (item: AutomationStudioInstructionSummary, kind = listingKind.key(item.scopeKind)) =>
+      (!input.flowId || item.flowId === input.flowId || kind === "global" || kind === "project")
+      && (!input.subflowId || item.subflowId === input.subflowId || kind === "project" || kind === "global" || (kind === "flow" && subflowOwner !== null && item.flowId === subflowOwner));
+    const reported = (item: AutomationStudioInstructionSummary): AutomationStudioInstructionSummary => ({ ...item, scopeKind: listingKind.reported(item.scopeKind) });
     if (!this.paths.root) {
       const index = await this.indexes.readFlowInstructionIndex(input.projectId);
       const scoped = (index.instructions ?? []).filter((item) => matchesScope(item)
         && (!input.status || item.status === input.status)
-        && (!input.scopeKind || item.scopeKind === input.scopeKind)
+        && (!scopeKind || listingKind.key(item.scopeKind) === scopeKind)
         && (!input.requirement || item.requirement === input.requirement)
         && (!search || item.title.toLowerCase().includes(search) || item.instructionId.toLowerCase().includes(search)));
       const direction = input.direction === "asc" ? 1 : -1;
       scoped.sort((left, right) => {
         const comparison = input.sort === "title" ? left.title.localeCompare(right.title)
           : input.sort === "status" ? left.status.localeCompare(right.status)
-          : input.sort === "scope" ? left.scopeKind.localeCompare(right.scopeKind)
+          : input.sort === "scope" ? listingKind.key(left.scopeKind).localeCompare(listingKind.key(right.scopeKind))
           : input.sort === "priority" ? left.priority - right.priority
           : left.updatedAt - right.updatedAt;
         return comparison * direction || left.instructionId.localeCompare(right.instructionId);
       });
-      return { instructions: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
+      return { instructions: scoped.slice(offset, offset + limit).map(reported), total: scoped.length, limit, offset };
     }
     const typedPage = await this.flows.tryWithFlowResourceRepository(input.projectId, async (repository) => await repository.listInstructionSummariesPage({
       ...(input.flowId ? { flowId: input.flowId } : {}),
       ...(input.subflowId ? { subflowId: input.subflowId } : {}),
-      ...(input.scopeKind ? { scopeKind: sqlInstructionScopeKind(input.scopeKind) } : {}),
+      ...(scopeKind ? { scopeKind: sqlInstructionScopeKind(scopeKind) } : {}),
       ...(input.status ? { status: sqlInstructionStatus(input.status) } : {}),
       ...(input.requirement ? { requirement: sqlInstructionRequirement(input.requirement) } : {}),
       ...(search ? { search } : {}),
@@ -520,19 +524,20 @@ export class AutomationStudioSummaryStore {
     const repository = this.flowInstructionSummaryRepository(input.projectId);
     const clauses: string[] = [];
     const params: unknown[] = [];
-    if (input.flowId) { clauses.push("(json_extract(data, '$.flowId') = ? or json_extract(data, '$.scopeKind') in ('global', 'project'))"); params.push(input.flowId); }
-    if (input.subflowId) { clauses.push("(json_extract(data, '$.subflowId') = ? or json_extract(data, '$.scopeKind') in ('global', 'project') or (json_extract(data, '$.scopeKind') = 'flow' and json_extract(data, '$.flowId') = ?))"); params.push(input.subflowId, subflowOwner); }
+    const kind = listingKind.sqlKey("json_extract(data, '$.scopeKind')");
+    if (input.flowId) { clauses.push(`(json_extract(data, '$.flowId') = ? or ${kind} in ('global', 'project'))`); params.push(input.flowId); }
+    if (input.subflowId) { clauses.push(`(json_extract(data, '$.subflowId') = ? or ${kind} in ('global', 'project') or (${kind} = 'flow' and json_extract(data, '$.flowId') = ?))`); params.push(input.subflowId, subflowOwner); }
     if (input.status) { clauses.push("json_extract(data, '$.status') = ?"); params.push(input.status); }
-    if (input.scopeKind) { clauses.push("json_extract(data, '$.scopeKind') = ?"); params.push(input.scopeKind); }
+    if (scopeKind) { clauses.push(`${kind} = ?`); params.push(scopeKind); }
     if (input.requirement) { clauses.push("json_extract(data, '$.requirement') = ?"); params.push(input.requirement); }
     if (search) { clauses.push("(lower(json_extract(data, '$.title')) like ? or lower(json_extract(data, '$.instructionId')) like ?)"); params.push("%" + search + "%", "%" + search + "%"); }
     const where = clauses.length ? "where " + clauses.join(" and ") : "";
-    const sortColumn = input.sort === "title" ? "lower(json_extract(data, '$.title'))" : input.sort === "status" ? "json_extract(data, '$.status')" : input.sort === "scope" ? "json_extract(data, '$.scopeKind')" : input.sort === "priority" ? "cast(json_extract(data, '$.priority') as integer)" : "updated_at_ms";
+    const sortColumn = input.sort === "title" ? "lower(json_extract(data, '$.title'))" : input.sort === "status" ? "json_extract(data, '$.status')" : input.sort === "scope" ? kind : input.sort === "priority" ? "cast(json_extract(data, '$.priority') as integer)" : "updated_at_ms";
     const direction = input.direction === "asc" ? "asc" : "desc";
     const result = await repository.transaction({}, async (transaction) => {
       const totalRow = await transaction.get<{ total: number }>("select count(*) as total from " + repository.tableName + " " + where, params);
       const rows = await transaction.all<{ data: string }>("select data from " + repository.tableName + " " + where + " order by " + sortColumn + " " + direction + ", id asc limit ? offset ?", [...params, limit, offset]);
-      return { total: totalRow?.total ?? 0, items: rows.map((row) => JSON.parse(row.data) as unknown as AutomationStudioInstructionSummary) };
+      return { total: totalRow?.total ?? 0, items: rows.map((row) => reported(JSON.parse(row.data) as unknown as AutomationStudioInstructionSummary)) };
     });
     return { instructions: result.items, total: result.total, limit, offset };
   }

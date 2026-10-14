@@ -30,10 +30,13 @@ describe("AutomationStudioService recording persistence", () => {
     await rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
   });
 
-  it("stores project artifacts and runtime sessions in project folders", async () => {
+  it("stores Flows and runtime sessions in project folders", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Runtime Project" });
-    const flow = await service.createDefaultFlow({ projectId: project.id, ownerKind: "routine", ownerId: "routine.runtime", name: "Runtime Flow" });
+    // A canonical Flow with written instructions: since t519 a run needs both. The owner-bound
+    // compatibility Flow this test once used could hold no instructions and was retired (t558).
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.runtime", name: "Runtime Flow" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Produce the constant value once." });
     const runnableGraph = {
       nodes: [
         { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
@@ -45,18 +48,15 @@ describe("AutomationStudioService recording persistence", () => {
         { id: "constant.end", sourceNodeId: "constant", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }
       ]
     };
-    await service.saveProjectArtifact({ projectId: project.id, kind: "flow", artifact: { ...flow, ...runnableGraph } });
-    // The run is of a canonical Flow with written instructions: since t519 a run needs both, and the owner-bound artifact above can hold no instructions.
-    const runnable = await service.createFlow({ projectId: project.id, flowId: "flow.runtime", name: "Runtime Flow" });
-    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: runnable.flowId, instruction: "Produce the constant value once." });
-    await installPrimaryRouter(service, project.id, runnable.flowId, runnableGraph);
+    await installPrimaryRouter(service, project.id, flow.flowId, runnableGraph);
 
-    const run = await service.runRuntimeSession({ projectId: project.id, flowId: runnable.flowId });
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
     const reloaded = createService({ dataDir: tempRoot, seedFixture: false });
-    const artifacts = await reloaded.listProjectArtifacts(project.id);
+    const flows = await reloaded.listFlows(project.id);
     const runs = await reloaded.listRuntimeSessions(project.id);
 
-    expect(artifacts.flows).toHaveLength(1);
+    expect(flows.map((entry) => entry.flow.flowId)).toContain(flow.flowId);
+    await expect(reloaded.getFlow(project.id, flow.flowId)).resolves.toMatchObject({ flowId: flow.flowId, name: "Runtime Flow" });
     expect(run.status).toBe("succeeded");
     expect(runs[0]).toMatchObject({ runId: run.runId, status: "succeeded" });
 
@@ -244,7 +244,7 @@ describe("AutomationStudioService recording persistence", () => {
   it("streams a bounded deep page from a persisted 10,000-action run", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Ten Thousand Actions" });
-    const flow = await service.createDefaultFlow({ projectId: project.id, ownerKind: "routine", ownerId: "routine.ten-thousand-actions", name: "Ten Thousand Actions Flow" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.ten-thousand-actions", name: "Ten Thousand Actions Flow" });
     const fixture = createAutomationStudioFlowExpansionFixture(75_000);
     const actions = Array.from({ length: 10_000 }, (_, index) => ({
       ...(fixture.runDetail.actionAttempts ?? [])[0]!,
