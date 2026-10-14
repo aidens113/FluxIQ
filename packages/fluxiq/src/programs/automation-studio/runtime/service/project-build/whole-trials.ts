@@ -4,6 +4,7 @@ import type { AutomationStudioSiteResetProjectLedger } from "../../flow-bootstra
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider } from "../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../../result-verification/index.ts";
 import { automationStudioCandidateTrialPort, type AutomationStudioCandidateTrialPorts } from "../candidate-trial/index.ts";
+import { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER } from "./supervisor-ledger.ts";
 import { automationStudioProjectBuildTrialReads } from "./trial-reads.ts";
 
@@ -17,7 +18,8 @@ import { automationStudioProjectBuildTrialReads } from "./trial-reads.ts";
 // the project ledger, every lasting act a whole trial reports is recorded in
 // the supervisor's own ledger of it, so the build's snapshot -- which the
 // supervisor's trial refusal and a reset brief read -- holds it until a reset
-// has undone it (A5a report, open question 3).
+// has undone it (A5a report, open question 3), and written into the build
+// record with each step's classes (`./acts-record.ts`).
 
 /** What every trial is run with, from the service: the run, its session and its reads, without the judge. */
 export type AutomationStudioProjectBuildTrialEnvironment = Omit<AutomationStudioCandidateTrialPorts, "judge" | "execute" | "readEndView" | "clearedControlHandles" | "deniedEvidenceKeys">;
@@ -37,11 +39,15 @@ export function automationStudioProjectBuildWholeTrials(input: {
   const { projectId, flowId } = environment;
   const judge = automationStudioBuildTestJudge({ provider: input.judge.provider, timeoutMs: input.judge.timeoutMs, instructions: input.judge.instructions, deniedEvidenceKeys: binding.deniedEvidenceKeys, projectId, flowId, signal: input.judge.signal });
   const trials = automationStudioCandidateTrialPort(input.candidateId, { ...environment, ...automationStudioProjectBuildTrialReads(binding, projectId, flowId), judge });
-  if (!input.ledger) return trials;
-  const supervisor = input.ledger.forBrief(AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER);
+  const ledger = input.ledger;
+  if (!ledger) return trials;
+  const supervisor = ledger.forBrief(AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER);
   const run: AutomationStudioCandidateTrialPort = async (request) => {
     const result = await trials.port(request);
-    if (result.acts?.length) supervisor.trialRan(result.acts, result.trialRunId);
+    if (result.acts?.length) {
+      supervisor.trialRan(result.acts, result.trialRunId);
+      AutomationStudioProjectBuildActsRecord.of(ledger).trialRan(result.acts, result.trialRunId);
+    }
     return result;
   };
   // The start hook stays on the port, so the supervisor's trial gate runs it before each whole trial as a candidate build's does.

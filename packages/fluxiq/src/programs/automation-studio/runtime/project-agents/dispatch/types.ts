@@ -35,6 +35,18 @@ export type AutomationStudioProjectBriefPortRequest = {
 };
 
 /**
+ * A brief's own ending, which stops its loop and not only its next call: a
+ * step the person was asked to permit and did not (a plan step refused, which
+ * the loop cannot see into), or a check only a person could pass that was not
+ * passed. `signal` aborts when either happens; `reason` then says which, in
+ * plain words, and the brief comes back `blocked` with it.
+ */
+export type AutomationStudioProjectBriefEnding = {
+  signal: AbortSignal;
+  reason(): string | undefined;
+};
+
+/**
  * A build or repair brief's surroundings: the loop's harness tools,
  * routing, permissions and person-needed wiring (`loop`), the candidate
  * submission's domain surroundings (`submission`) and the partial-trial port
@@ -46,6 +58,8 @@ export type AutomationStudioProjectBuilderPorts = {
   submission: Omit<BuilderInput["submission"], "signal">;
   trial?: AutomationStudioSubflowTrialPort | undefined;
   observe?: BuilderInput["observe"];
+  /** The brief's permission and person-needed ending; absent, only the build's cancellation stops its loop. */
+  ended?: AutomationStudioProjectBriefEnding | undefined;
 };
 
 /**
@@ -56,6 +70,8 @@ export type AutomationStudioProjectBuilderPorts = {
 export type AutomationStudioProjectResetPorts = {
   loop: Omit<AutomationStudioLlmEvidenceLoopInput, "draft" | "dryRun" | "discoveryOnly" | "finishingTools" | "fullRunRequired" | "completionSchema" | "checkCompletion" | "callScope" | "signal" | "purse" | "maxIterations">;
   remainingActs?: (() => Promise<readonly AutomationStudioSiteResetNamedAct[]>) | undefined;
+  /** As a builder's: the reset's own permission and person-needed ending. */
+  ended?: AutomationStudioProjectBriefEnding | undefined;
 };
 
 /** Makes each brief's ports once its lease is held. */

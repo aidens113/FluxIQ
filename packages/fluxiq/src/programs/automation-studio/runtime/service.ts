@@ -184,7 +184,7 @@ import {
   AutomationStudioProjectArtifactStore,
   AutomationStudioNormalizationReview,
   AutomationStudioFlowRunAudit,
-  AutomationStudioRecordingDeletion,
+  AutomationStudioRecordingDeletion, removePathWithRetry,
   type AutomationPipelineArtifacts,
   type ReplayResultArtifact,
   recordingTimelineForProposalMapping, openRecordingProposalNotice, recordingProposalForMapper, appendRecordingProposalToFlow, recordingCandidateDefinition, materializeRecordingNode,
@@ -231,7 +231,7 @@ import type { IoRegistry } from "../../../io/index.ts";
 import type { RuntimeService } from "../../../runtime/index.ts";
 import { automationStudioRunEndViewReader } from "./service/end-view/index.ts";
 import { promoteAutomationStudioCandidateTrial, type AutomationStudioPrepareCandidateStart } from "./service/candidate-trial/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER, automationStudioProjectBuildWholeTrials, promoteAutomationStudioProjectBuild, runAutomationStudioProjectBuild, type AutomationStudioProjectBuildTrialEnvironment } from "./service/project-build/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER, AutomationStudioProjectBuildPermissions, automationStudioProjectBuildWholeTrials, promoteAutomationStudioProjectBuild, runAutomationStudioProjectBuild, type AutomationStudioProjectBuildTrialEnvironment } from "./service/project-build/index.ts";
 import {
   type CanonicalAutomationStudioRepositories,
   createCanonicalAutomationStudioMemoryRepositories,
@@ -939,10 +939,10 @@ export class AutomationStudioService {
           const live = await this.recordingDeletion.collectLiveProjectObjectReferences(input.projectId);
           await this.objectStore.deleteRecordingObjects(input.projectId, input.recordingId, live);
           await ProgramJsonStore.deletePath(this.recordingPaths.recordingSessionDirectory(input.projectId, input.recordingId));
-          await rm(this.recordingPaths.recordingSessionDirectory(input.projectId, input.recordingId), { recursive: true, force: true });
+          await removePathWithRetry(this.recordingPaths.recordingSessionDirectory(input.projectId, input.recordingId));
           await this.recordingDeletion.pruneUnreferencedProjectObjects(input.projectId);
         } else {
-          await rm(this.recordingPaths.recordingSessionDirectory(input.projectId, input.recordingId), { recursive: true, force: true });
+          await removePathWithRetry(this.recordingPaths.recordingSessionDirectory(input.projectId, input.recordingId));
         }
         await this.recordings.deleteOrphanedPhysicalRecordingSessionDirectories(input.projectId);
       }
@@ -1604,7 +1604,7 @@ export class AutomationStudioService {
           });
           // Saved as a draft whatever the verdict; only a standing yes for its exact revision and digest is proposed, through the legacy create path and its base-digest check (D2), and the chat approves and applies it as a legacy proposal (`service/candidate-trial/promotion.ts`).
           const draft = generated.record, promoted = await (project ? promoteAutomationStudioProjectBuild.bind(undefined, project) : promoteAutomationStudioCandidateTrial)({ record: draft, standing: generated.trial, trials: trials.records(), readAuthoritative: () => this.candidateDrafts.getAuthoritative(projectId, flowId), currentBinding: () => this.getLlmExecutionBinding(projectId, flowId), signal,
-            propose: async (proposal) => { failureStage = "persistence"; failureCode = "flow_bootstrap.persistence_failed"; const outcome = await automationStudioBootstrapPermissionOutcome(permissions, () => authority.usage.calls); this.buildCancellation.checkpoint(); return await this.createFlowBootstrapAdaptation({ projectId, flowId, ...proposal, accounting: draft.accounting, ...outcome, actorId: caller.actorUserId }); } });
+            propose: async (proposal) => { failureStage = "persistence"; failureCode = "flow_bootstrap.persistence_failed"; const outcome = await automationStudioBootstrapPermissionOutcome(project ? AutomationStudioProjectBuildPermissions.of(project).view(permissions) : permissions, () => authority.usage.calls); this.buildCancellation.checkpoint(); return await this.createFlowBootstrapAdaptation({ projectId, flowId, ...proposal, accounting: draft.accounting, ...outcome, actorId: caller.actorUserId }); } });
           if (promoted.status === "proposed") { creation.ended(); return { projectId, flowId, adaptationId: promoted.adaptation.adaptationId, status: "proposed", riskLevel: promoted.adaptation.riskLevel, sourceInstructionIds: [...promoted.adaptation.sourceInstructionIds], baseDependencyDigest: promoted.adaptation.baseDependencyDigest, baseSettingsRevision: promoted.adaptation.baseSettingsRevision, accounting: structuredClone(draft.accounting), ...(promoted.adaptation.permissionRequest ? { permissionRequest: structuredClone(promoted.adaptation.permissionRequest) } : {}), candidate: promoted.candidate }; }
           return { projectId, flowId, status: "draft", candidateId: draft.candidateId, revision: draft.candidate.revision, digest: draft.candidate.digest, sourceInstructionIds: [...draft.sourceInstructionIds], baseDependencyDigest: draft.candidate.baseDependencyDigest, baseSettingsRevision: draft.baseSettingsRevision, accounting: structuredClone(draft.accounting), verification: "not_performed", promotionAllowed: false, trial: promoted.trial };
         }

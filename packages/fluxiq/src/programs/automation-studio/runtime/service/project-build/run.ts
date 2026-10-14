@@ -1,11 +1,11 @@
 import { observeAutomationStudioEvidenceLoop } from "../../activity/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapEvidenceLoopFailure, flowBootstrapEvidenceUnusableDecisionFailure, flowBootstrapPhaseFailure } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
-import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES } from "../../llm/build-purse/index.ts";
 import { automationStudioProjectActiveInstructionSources, automationStudioProjectDigest, automationStudioProjectHostLeaseScope, createAutomationStudioProjectDispatcher, runAutomationStudioProjectSupervisorLoop, type AutomationStudioProjectBuildRef } from "../../project-agents/index.ts";
 import { automationStudioCandidateStallCode } from "../candidate-failure/index.ts";
 import type { AutomationStudioFlowCandidateDraftRecord } from "../candidate-drafts/index.ts";
 import { automationStudioFlowBootstrapUnusableDecisions, type generateAutomationStudioFlowCandidateDraft } from "../flow-bootstrap-commands/index.ts";
+import { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
 import { automationStudioProjectBuildBriefCalls } from "./brief-calls.ts";
 import { automationStudioProjectBuildBriefPorts } from "./brief-ports.ts";
 import { AutomationStudioProjectBuildDecisions } from "./decisions.ts";
@@ -13,6 +13,7 @@ import { automationStudioProjectBuildDraftRecord } from "./draft-record.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_LOCAL_HOST } from "./local-host.ts";
 import { AutomationStudioProjectBuildProposals } from "./proposals.ts";
 import { automationStudioProjectBuildRecords } from "./records.ts";
+import { AUTOMATION_STUDIO_PROJECT_BUILD_RESERVE } from "./reserve.ts";
 import { automationStudioProjectBuildSubflowTrials } from "./subflow-trials.ts";
 import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 
@@ -39,12 +40,16 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // candidate build does: the loop's own failure, or Core's account of the
 // ending. A cancel is a cancel. Only a written Flow from nothing: a repair's
 // re-author is refused until A7.
+//
+// The supervisor keeps back the judged whole run and one repair round
+// (`./reserve.ts`), which no brief's allowance can be carved from. Every
+// lasting act the project ledger records is written into the build record as
+// it is recorded (`./acts-record.ts`); the build waits for those writes before
+// it saves its draft, so a record that could not be written fails the build as
+// a dispatcher's record write does.
 
 type DraftInput = Parameters<typeof generateAutomationStudioFlowCandidateDraft>[0];
 type DraftResult = { record: AutomationStudioFlowCandidateDraftRecord; trial: AutomationStudioCandidateTrialResult | undefined };
-
-/** The judge calls judging the whole candidate takes at most, kept back from every builder: a first answer and a second (`result-verification/verify.ts`). */
-const JUDGING_CALLS = 2;
 
 export async function runAutomationStudioProjectBuild(project: AutomationStudioProjectBuildPorts, draft: DraftInput): Promise<DraftResult> {
   if (project.repair) throw new Error("Project authoring cannot repair a run yet.");
@@ -62,10 +67,12 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   const judge = { provider: draft.harness.provider, timeoutMs: draft.harness.timeoutMs, signal: draft.loop.signal };
   const subflowTrials = automationStudioProjectBuildSubflowTrials({ ref, environment: project.trialEnvironment, binding, judge, records, proposals, leases: automationStudioProjectHostLeaseScope(host).scheduler, running: () => running });
   const decisions = new AutomationStudioProjectBuildDecisions(draft, () => [draft.trialSpend?.(), subflowTrials.spent()]);
+  const acts = AutomationStudioProjectBuildActsRecord.of(project.ledger);
+  acts.bind(records, ref);
   const accounting = () => decisions.accounting();
   const dispatch = createAutomationStudioProjectDispatcher({
     record: { store: records, ref }, purse, cancellation: project.cancellation, host, ledger: project.ledger,
-    ports: automationStudioProjectBuildBriefPorts({ project, draft, decisions, subflowTrial: subflowTrials.port, accounting }),
+    ports: automationStudioProjectBuildBriefPorts({ project, draft, decisions, subflowTrial: subflowTrials.port, accounting, acts }),
     maxCalls: automationStudioProjectBuildBriefCalls
   });
   const sources = automationStudioProjectActiveInstructionSources(project.instructions);
@@ -81,7 +88,7 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
       build: ref, record: records, instructionDigest: automationStudioProjectDigest("project.instructions.v1", sources), sources, dispatch,
       proposals: (proposal) => proposals.byRef(proposal), projectLedger: project.ledger, submission: draft.submission,
       trial: { candidateId, port: draft.trial }, purse,
-      reserve: { calls: JUDGING_CALLS, unpriced: { inputTokens: AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES.judgeInputTokens, outputTokens: AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES.judgeReplyTokens } },
+      reserve: { calls: AUTOMATION_STUDIO_PROJECT_BUILD_RESERVE.calls, unpriced: { ...AUTOMATION_STUDIO_PROJECT_BUILD_RESERVE.unpriced } },
       ...(draft.loop.signal ? { signal: draft.loop.signal } : {})
     },
     loop: { ...loop, unusableDecisions, decide: decide(undefined) },
@@ -92,6 +99,9 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   const spent = accounting();
   draft.progress(spent, "post_provider_validation");
   if (outcome.ending?.outcome === "cancelled" || draft.loop.signal?.aborted) throw new DOMException("Build stopped. The Flow was not promoted.", "AbortError");
+  // The whole trials' acts, recorded under the supervisor, are written last of all (`./acts-record.ts`).
+  acts.sync();
+  await acts.flushed();
   const candidate = outcome.candidate;
   if (!candidate) {
     if (outcome.loop && !outcome.loop.ok) throw draft.ending(outcome.loop, spent) ?? flowBootstrapEvidenceLoopFailure(outcome.loop, spent);

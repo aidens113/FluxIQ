@@ -7,7 +7,7 @@ import { automationStudioProjectDispatchEnding as ending, type AutomationStudioP
 import { AutomationStudioProjectDispatchReceipts } from "./receipts.ts";
 import { runAutomationStudioProjectResetLoop } from "./reset-loop.ts";
 import type { AutomationStudioProjectDispatchScope } from "./scope.ts";
-import type { AutomationStudioProjectDispatcherInput } from "./types.ts";
+import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectDispatcherInput } from "./types.ts";
 
 // One brief, from its turn to its return (automation-project-agents-plan,
 // `Concurrent dispatch`): a child of the supervisor's cancellation scope, then
@@ -20,8 +20,24 @@ import type { AutomationStudioProjectDispatcherInput } from "./types.ts";
 //
 // Every ending is a return. Only a failed write to the build record is not:
 // it is the record's failure, not the builder's, and it is thrown.
+//
+// **A brief's own ending stops its loop.** The ports a brief is given may
+// carry its permission and person-needed ending (`ended`): a plan step the
+// person did not permit, refused inside the submission's completion check the
+// loop cannot see into, or a check only a person could pass. Its signal joins
+// the loop's own, so the loop stops at its next turn instead of asking the
+// model again for what no answer can fix, and the brief comes back `blocked`
+// with the ending's reason, whatever proposal it had (t551) -- except a reset
+// that left nothing of the build in place, which did its one job and is
+// `done`. The build's own cancellation is not this: a stopped build ends every
+// brief as stopped.
 
 type Role = "builder" | "repair";
+
+/** What a return's reason may hold (`contracts/builder-return.ts`). */
+const MAX_REASON = 2000;
+/** A reset's `done`, as `./ending.ts` words it. */
+const RESET_DONE = "Every lasting act this build made is undone; the site is as the build found it.";
 
 /** A failed build-record write, carried past the brief's own catch. */
 class RecordWriteFailure extends Error {
@@ -88,25 +104,57 @@ async function run(input: {
   if (brief.kind === "reset") {
     const ports = await dispatcher.ports.reset(request);
     const remainingActs = ports.remainingActs ?? (async () => dispatcher.ledger.snapshot().acts.filter((act) => act.inPlace).map((act) => ({ act: act.act, did: act.did })));
-    const loop = await runAutomationStudioProjectResetLoop({ brief, ports, remainingActs, allowance, signal, callScope });
-    return ending.reset(brief, loop, await remainingActs(), { ...spend, trials: receipts.list() });
+    const loop = await untilEnded(signal, ports.ended, (stop) => runAutomationStudioProjectResetLoop({ brief, ports, remainingActs, allowance, signal: stop, callScope }));
+    if ("ended" in loop) {
+      // A reset that left nothing of the build in place did its one job, however its loop was stopped.
+      if (!(await remainingActs()).length) return endedAs(brief, "done", RESET_DONE, { ...spend, trials: receipts.list() });
+      return endedAs(brief, "blocked", loop.ended, { ...spend, trials: receipts.list() });
+    }
+    return ending.reset(brief, loop.ran, await remainingActs(), { ...spend, trials: receipts.list() });
   }
   const ports = await dispatcher.ports.builder(request);
   const runBuilder = dispatcher.runBuilder ?? runAutomationStudioSubflowBuilderLoop;
   const accepted = (proposal: Readonly<AutomationStudioSubflowProposal>) => {
     spend.accepted = proposal;
   };
-  const outcome = await runBuilder({
-    loop: { ...ports.loop, maxIterations: brief.maxIterations, signal, purse: allowance },
+  const outcome = await untilEnded(signal, ports.ended, (stop) => runBuilder({
+    loop: { ...ports.loop, maxIterations: brief.maxIterations, signal: stop, purse: allowance },
     scope: mapped.scope,
     siblings: mapped.siblings,
-    submission: { ...ports.submission, signal },
+    submission: { ...ports.submission, signal: stop },
     ...(ports.trial ? { trial: { port: receipts.wrap(ports.trial) } } : {}),
     ...(callScope !== undefined ? { callScope } : {}),
     ...(ports.observe ? { observe: ports.observe } : {}),
     accepted
-  });
-  return ending.built(brief, outcome, { ...spend, trials: receipts.list() });
+  }));
+  if ("ended" in outcome) return endedAs(brief, "blocked", outcome.ended, { ...spend, trials: receipts.list() });
+  return ending.built(brief, outcome.ran, { ...spend, trials: receipts.list() });
+}
+
+/**
+ * Runs `work` under the brief's signal joined with its own ending's. When the
+ * ending fired and the build was not stopped, the brief ended on it, whether
+ * the loop then returned or threw; otherwise the loop's own result stands.
+ */
+async function untilEnded<T>(signal: AbortSignal, ended: AutomationStudioProjectBriefEnding | undefined, work: (stop: AbortSignal) => Promise<T>): Promise<{ ran: T } | { ended: string }> {
+  if (!ended) return { ran: await work(signal) };
+  const own = () => (ended.signal.aborted && !signal.aborted ? ended.reason() ?? "The brief needed the person, and the person's answer did not let it go on." : undefined);
+  let ran: T;
+  try {
+    ran = await work(AbortSignal.any([signal, ended.signal]));
+  } catch (error) {
+    const reason = own();
+    if (reason !== undefined) return { ended: reason };
+    throw error;
+  }
+  const reason = own();
+  return reason !== undefined ? { ended: reason } : { ran };
+}
+
+/** A brief its own ending stopped: `blocked` with that ending's reason (a reset that left nothing in place, `done`), any proposal it had still named. */
+function endedAs(brief: AutomationStudioProjectSubflowBrief, outcome: "done" | "blocked", reason: string, spend: AutomationStudioProjectDispatchSpend): AutomationStudioProjectBuilderReturn {
+  const returned = ending.thrown(brief, undefined, false, spend);
+  return { ...returned, outcome, reason: reason.length > MAX_REASON ? `${reason.slice(0, MAX_REASON - 3)}...` : reason };
 }
 
 async function recorded(write: () => Promise<void>): Promise<void> {

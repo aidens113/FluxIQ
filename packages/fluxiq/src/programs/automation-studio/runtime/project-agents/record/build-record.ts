@@ -45,10 +45,32 @@ export type AutomationStudioProjectBuildRecord = {
   /** Receipts the supervisor's own whole-candidate trials produced; builders' trials are in their returns. */
   receipts: Array<{ recordedAt: number; briefId?: string; receipt: AutomationStudioProjectReceiptRef }>;
   allowances: Array<{ recordedAt: number; role: AutomationStudioProjectAgentRole; briefId?: string; usd: number }>;
-  /** The project's lasting-act ledger: one writer, every entry attributed to the brief that acted. */
-  lastingActs: Array<{ recordedAt: number; briefId: string; consequence: AutomationStudioActionConsequence; description: string }>;
+  /** The project's lasting-act ledger: one writer, every act of the build with the agent that made it and its lasting classes. */
+  lastingActs: AutomationStudioProjectBuildLastingAct[];
   decisions: Array<{ recordedAt: number; entry: AutomationStudioProjectDecisionLogEntry }>;
   ending?: AutomationStudioProjectBuildEnding;
+};
+
+/**
+ * Who made a lasting act: the supervisor (its whole-candidate trials), or the
+ * brief whose builder, repair or reset made it, under the role that brief ran as.
+ */
+export type AutomationStudioProjectBuildActOwner = { role: "supervisor" } | { role: Exclude<AutomationStudioProjectAgentRole, "supervisor">; briefId: string };
+
+/**
+ * One lasting act of the build, as the project ledger recorded it
+ * (`flow-bootstrap/site-reset/project-ledger.ts`): its id, unique across the
+ * build; what it did; who made it; every lasting class it declared, whether or
+ * not its brief was permitted it (the person's own instruction can permit an
+ * act too); and whether the site's own controls can undo it.
+ */
+export type AutomationStudioProjectBuildLastingAct = {
+  recordedAt: number;
+  act: string;
+  owner: AutomationStudioProjectBuildActOwner;
+  consequences: AutomationStudioActionConsequence[];
+  description: string;
+  undoable: boolean;
 };
 
 /** One brief's return file. Written once. */

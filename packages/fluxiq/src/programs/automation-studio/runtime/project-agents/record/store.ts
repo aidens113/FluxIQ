@@ -1,5 +1,4 @@
 import type { JsonObject } from "../../../../../core/index.ts";
-import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../service/paths/index.ts";
 import {
   automationStudioProjectBuilderReturn,
@@ -19,7 +18,7 @@ import {
   type AutomationStudioProjectSubflowBrief,
   type AutomationStudioProjectTaskSpec
 } from "../contracts/index.ts";
-import type { AutomationStudioProjectBuildEnding, AutomationStudioProjectBuildRecord, AutomationStudioProjectBuildRecordView, AutomationStudioProjectBuildRef, AutomationStudioProjectBuildReturnRecord, AutomationStudioProjectBuildSummary } from "./build-record.ts";
+import type { AutomationStudioProjectBuildEnding, AutomationStudioProjectBuildLastingAct, AutomationStudioProjectBuildRecord, AutomationStudioProjectBuildRecordView, AutomationStudioProjectBuildRef, AutomationStudioProjectBuildReturnRecord, AutomationStudioProjectBuildSummary } from "./build-record.ts";
 import { automationStudioProjectBuildRecordParser as parser } from "./build-record-parser.ts";
 import { AutomationStudioProjectBuildDocuments } from "./documents.ts";
 import { AutomationStudioProjectRecordRefusal } from "./refusal.ts";
@@ -189,14 +188,17 @@ export class AutomationStudioProjectBuildRecordStore {
     });
   }
 
-  /** A lasting act a brief's builder made, in the project's one ledger. The act must be one the brief permits. */
-  async recordLastingAct(input: AutomationStudioProjectBuildRef, entry: { briefId: string; consequence: AutomationStudioActionConsequence; description: string }): Promise<void> {
-    const consequence = take(shape.parse(() => shape.oneOf(entry.consequence, "lastingAct.consequence", AUTOMATION_STUDIO_ACTION_CONSEQUENCES)));
-    const description = take(shape.parse(() => shape.text(entry.description, "lastingAct.description", 500)));
+  /**
+   * A lasting act of the build, as the project's one ledger recorded it: by
+   * the supervisor's whole trials, or by a recorded brief, whatever permitted
+   * it -- the brief, or the person's own instruction. Each act id once.
+   */
+  async recordLastingAct(input: AutomationStudioProjectBuildRef, entry: Omit<AutomationStudioProjectBuildLastingAct, "recordedAt">): Promise<void> {
     await this.change(input, (record, at) => {
-      const brief = knownBrief(record, entry.briefId);
-      if (!brief.permittedActs.includes(consequence)) throw new AutomationStudioProjectRecordRefusal("project.act_not_permitted", "lastingAct.consequence");
-      record.lastingActs.push({ recordedAt: at, briefId: brief.briefId, consequence, description });
+      if (entry.owner.role !== "supervisor") knownBrief(record, entry.owner.briefId);
+      if (record.lastingActs.some((recorded) => recorded.act === entry.act)) throw new AutomationStudioProjectRecordRefusal("project.duplicate", "lastingAct.act");
+      // The whole record is validated as it is written (`change`), this entry with it.
+      record.lastingActs.push({ recordedAt: at, act: entry.act, owner: structuredClone(entry.owner), consequences: [...entry.consequences], description: entry.description, undoable: entry.undoable });
     });
   }
 

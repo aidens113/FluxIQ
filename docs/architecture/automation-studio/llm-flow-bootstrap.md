@@ -82,6 +82,28 @@ the Lab comparison (A8) shows it at least matches `candidate`; the default stays
   its own ledger from the project ledger, and the build's subflow trial port.
   Each brief's allowance caps its calls at three per decision, so its subflow
   trials' judges (a first answer and a confirmation) never starve its decisions.
+- **A brief's own ending stops its loop (t551).** A plan step the person did
+  not permit -- refused inside the submission's completion check, which the
+  loop cannot see -- or a check only a person could pass that was not passed
+  aborts the brief's `ended` signal (`service/project-build/brief-ports.ts`). The
+  dispatcher joins it to the loop's and the submission's signals
+  (`project-agents/dispatch/run-brief.ts`), so the loop stops at its next turn
+  instead of asking the model again, and the brief comes back `blocked` with the
+  reason (the missing classes, the control and the request; or the check's
+  code), naming any proposal it had. A reset whose ending fired but that left
+  nothing of the build in place comes back `done`. A build stop is still a stop.
+- **Permissions at promotion (t551).** Every brief's gate is registered with the
+  build (`service/project-build/permissions.ts`), and the proposal's permission
+  outcome reads the build's gate with every brief gate's answers in it: every
+  declaration (the briefs' in the order their gates were made, then the build's
+  own), the latest standing request of any gate, the instruction's one read,
+  and Core's cross-check of all declarations together. A person's no to a
+  builder's step is seen at promotion as a candidate build's own is.
+- **The supervisor's reserve (t551).** The purse keeps back the judged whole run
+  and one repair round -- the repaired Flow judged again -- at the judge's own
+  reserve pricing: four judge calls (`service/project-build/reserve.ts`). No
+  brief's allowance can be carved from it; a repair brief's decisions and its
+  own subflow trial are its allowance's.
 - **Host resources.** One scheduler per host-resource port: the domain's
   (`hostResources`), whose capacity sets how many builders run at once -- the web
   domain declares 1 -- or, for a domain that declares none, one local resource.
@@ -93,6 +115,23 @@ the Lab comparison (A8) shows it at least matches `candidate`; the default stays
   while any is in place and briefs a reset; a reset's undo of an act is put to
   the ledger that owns it, and the reset completes once every such ledger, having
   looked again on each act's own page, holds none in place.
+- **Each builder act is placed (t551),** as a candidate build's is: a builder's
+  call that makes a lasting act is read just before and just after it, in
+  place, through the brief's own start check (`flow-bootstrap/site-reset/act-places.ts`),
+  so the act keeps its page, what it changed there and the items it created. A
+  reset can then remove what an act created even when its control sat in no
+  item -- an Add to cart that adds a line to the cart drawer -- and never the
+  line that was there before the build. A reset's undo is read around the same
+  way, and what it did is told to the act's owner (`service/project-build/reset-calls.ts`).
+- **Acts in the build record (t551).** Every act the project ledger records is
+  written into the build record's `lastingActs` as it is recorded
+  (`service/project-build/acts-record.ts`), one writer per ledger: its id, what
+  it did, its owner -- the supervisor (whole trials), or the brief under the
+  role it ran as -- every lasting class it declared, whether or not its brief
+  was permitted it, and whether the site can undo it. So the record names every
+  act of the build after a restart. The build waits for those writes before it
+  saves its draft; a write that fails for a reason other than the record's own
+  refusal fails the build.
 - **How it ends.** On a yes for the latest assembled revision the assembled
   candidate is saved as the Flow's candidate draft and promoted by the
   candidate's own promotion, after which the build record ends `promoted`. A
