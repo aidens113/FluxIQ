@@ -22,8 +22,8 @@ type Entry = { callId: string; toolId: string; value: unknown };
 /** What each builder writes, by subflow: the router-run one outside every block, the callable ones as their part. */
 const SCRIPTS: Record<string, string> = {
   list_seeds: ["flow: List the seeds", "step: open the catalogue", "  node: web.browser.navigate", "  url: https://garden.test/seeds"].join("\n"),
-  open_packet: ["flow: Open the packet", "part open_packet: open the packet page", "  input: packet", "  step: open the packet", "    node: web.browser.navigate", "    url: https://garden.test/packet", "end"].join("\n"),
-  plant_packet: ["flow: Plant the packet", "part plant_packet: add the packet to the list", "  input: packet", "  step: open the list", "    node: web.browser.navigate", "    url: https://garden.test/list", "end"].join("\n")
+  open_packet: ["flow: Open the packet", "part open_packet: open the packet page", "  input: packet", "  step: open the packet", "    node: web.browser.navigate", "    url: https://garden.test/packet", "  step: type the packet", "    node: web.dom.type", "    selector: .packet", "    text: $input.packet", "end"].join("\n"),
+  plant_packet: ["flow: Plant the packet", "part plant_packet: add the packet to the list", "  input: packet", "  step: open the list", "    node: web.browser.navigate", "    url: https://garden.test/list", "  step: type the packet", "    node: web.dom.type", "    selector: .packet", "    text: $input.packet", "end"].join("\n")
 };
 
 const look: AutomationStudioLlmEvidenceTool = { toolId: "web.page.read", description: "Read the page", effect: "observe", inputSchema: { type: "object", properties: { at: { type: "integer" } } } };
