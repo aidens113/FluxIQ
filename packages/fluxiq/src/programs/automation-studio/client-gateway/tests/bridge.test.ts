@@ -54,7 +54,7 @@ describe("AutomationStudioClientGatewayBridge", () => {
     const session = gateway.connect();
     await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId: "extension.io", clientType: "extension", name: "Extension" }));
     await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "", { approvedByUserId: "user.test" });
-    const recording = await bridge.startRecording({ sessionId: session.sessionId, domainId: "extension.example" });
+    const recording = await bridge.startRecording({ description: "Shows the steps the automation repeats.", sessionId: session.sessionId, domainId: "extension.example" });
 
     await gateway.receive(session.sessionId, clientMessage("client.recording_event", {
       domainId: "extension.example",
@@ -117,7 +117,7 @@ describe("AutomationStudioClientGatewayBridge", () => {
     }));
     await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "", { approvedByUserId: "user.test" });
 
-    const recording = await bridge.startRecording({ sessionId: session.sessionId, taskId: "task.sample" });
+    const recording = await bridge.startRecording({ description: "Shows the steps the automation repeats.", sessionId: session.sessionId, taskId: "task.sample" });
     await gateway.receive(session.sessionId, clientMessage("client.recording_event", {
       domainId: "example.domain",
       eventType: "signal.observed",
@@ -137,7 +137,7 @@ describe("AutomationStudioClientGatewayBridge", () => {
     const session = gateway.connect();
     await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId: "worker.test", clientType: "worker", name: "Worker" }));
     await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "", { approvedByUserId: "user.test" });
-    const recording = await bridge.startRecording({ sessionId: session.sessionId });
+    const recording = await bridge.startRecording({ description: "Shows the steps the automation repeats.", sessionId: session.sessionId });
 
     const resultPromise = bridge.executeAction(session.sessionId, { actionType: "sample.action", parameters: { targetId: "target.1" } });
     const command = gateway.outbound(session.sessionId).find((message) => message.type === "server.execute_action");
@@ -193,7 +193,7 @@ describe("AutomationStudioClientGatewayBridge", () => {
     const session = gateway.connect();
     await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId: "extension.domain", clientType: "extension", name: "Domain extension" }));
     await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "", { approvedByUserId: "user.test" });
-    const recording = await bridge.startRecording({ sessionId: session.sessionId });
+    const recording = await bridge.startRecording({ description: "Shows the steps the automation repeats.", sessionId: session.sessionId });
 
     await gateway.receive(session.sessionId, clientMessage("client.recording_event", {
       domainId: "example.remote",
@@ -232,7 +232,7 @@ describe("AutomationStudioClientGatewayBridge", () => {
       const automationStudio = new AutomationStudioService({ seedFixture: false });
       const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio });
       const session = await pairedSession(gateway, "worker.snapshot-first");
-      const recording = await bridge.startRecording({ sessionId: session.sessionId });
+      const recording = await bridge.startRecording({ description: "Shows the steps the automation repeats.", sessionId: session.sessionId });
 
       await gateway.receive(session.sessionId, stateSnapshot(2));
       const result = bridge.executeAction(session.sessionId, { actionType: "sample.action" });
@@ -261,7 +261,7 @@ describe("AutomationStudioClientGatewayBridge", () => {
     await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "", { approvedByUserId: "user.test" });
 
     await gateway.receive(session.sessionId, clientMessage("client.start_recording", {
-      recordingId: "recording.client-start",
+      recordingId: "recording.client-start", description: "Shows the steps the automation repeats.",
       startedAt: 1,
       initialState: { timestamp: 1, namespaces: {} },
       metadata: { domainId: "example.lifecycle" }
@@ -298,7 +298,7 @@ describe("AutomationStudioClientGatewayBridge", () => {
     await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "", { approvedByUserId: "user.test" });
 
     await gateway.receive(session.sessionId, clientMessage("client.start_recording", {
-      recordingId: "recording.buffered",
+      recordingId: "recording.buffered", description: "Shows the steps the automation repeats.",
       startedAt: 1,
       initialState: { timestamp: 1, namespaces: {} }
     }));
@@ -330,7 +330,7 @@ describe("AutomationStudioClientGatewayBridge", () => {
     await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "", { approvedByUserId: "user.test" });
 
     await gateway.receive(session.sessionId, clientMessage("client.start_recording", {
-      recordingId: "recording.blocked",
+      recordingId: "recording.blocked", description: "Shows the steps the automation repeats.",
       startedAt: 1,
       initialState: { timestamp: 1, namespaces: {} }
     }));
@@ -348,7 +348,7 @@ it("reports a client action that arrives after its recording was finalized", asy
     const session = gateway.connect();
     await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId: "extension.late", clientType: "extension", name: "Late extension" }));
     await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "", { approvedByUserId: "user.test" });
-    const recording = await bridge.startRecording({ sessionId: session.sessionId, domainId: "extension.example" });
+    const recording = await bridge.startRecording({ description: "Shows the steps the automation repeats.", sessionId: session.sessionId, domainId: "extension.example" });
     await bridge.stopRecording(session.sessionId);
 
     await gateway.receive(session.sessionId, clientMessage("client.recording_event", {
@@ -379,7 +379,7 @@ it("reports a client action that arrives after its recording was finalized", asy
     const session = gateway.connect();
     await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId: "extension.trickle", clientType: "extension", name: "Trickle extension" }));
     await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "", { approvedByUserId: "user.test" });
-    await bridge.startRecording({ sessionId: session.sessionId, recordingId: "recording.trickle", domainId: "extension.example" });
+    await bridge.startRecording({ description: "Shows the steps the automation repeats.", sessionId: session.sessionId, recordingId: "recording.trickle", domainId: "extension.example" });
     await bridge.stopRecording(session.sessionId);
 
     for (let index = 0; index < 2; index += 1) {
@@ -628,7 +628,7 @@ it("reports a client action that arrives after its recording was finalized", asy
     const first = gateway.connect();
     await gateway.receive(first.sessionId, clientMessage("client.hello", { clientId: "worker.continuity", clientType: "worker", name: "Continuity worker" }));
     await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "", { approvedByUserId: "user.continuity" });
-    await bridge.startRecording({ sessionId: first.sessionId, recordingId: "recording.continuity" });
+    await bridge.startRecording({ description: "Shows the steps the automation repeats.", sessionId: first.sessionId, recordingId: "recording.continuity" });
     gateway.disconnect(first.sessionId);
 
     const second = gateway.connect();
@@ -669,7 +669,7 @@ async function recordingClient(clientId: string, stopDrainMs = 0) {
   const automationStudio = new AutomationStudioService({ seedFixture: false });
   const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio, io: lateEventIoRegistry(), stopDrainMs });
   const session = await pairedSession(gateway, clientId);
-  const recording = await bridge.startRecording({ sessionId: session.sessionId, domainId: "extension.example" });
+  const recording = await bridge.startRecording({ description: "Shows the steps the automation repeats.", sessionId: session.sessionId, domainId: "extension.example" });
   return { gateway, automationStudio, bridge, session, recording };
 }
 
@@ -765,7 +765,7 @@ async function clientStartInFlight(clientId: string, options: { refuse?: boolean
   }
   const session = await pairedSession(gateway, clientId);
   const recordingId = `recording.${clientId}`;
-  const starting = gateway.receive(session.sessionId, clientMessage("client.start_recording", { recordingId, domainId: "extension.example", initialState: { timestamp: 1, namespaces: {} } }));
+  const starting = gateway.receive(session.sessionId, clientMessage("client.start_recording", { description: "Shows the steps the automation repeats.", recordingId, domainId: "extension.example", initialState: { timestamp: 1, namespaces: {} } }));
   await reached;
   return { gateway, automationStudio, session, projectId: project.id, recordingId, starting, release: () => release() };
 }

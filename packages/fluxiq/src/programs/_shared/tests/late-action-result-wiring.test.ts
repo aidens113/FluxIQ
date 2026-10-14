@@ -71,6 +71,7 @@ describe("a late result for an ordinary command, through the host", () => {
     const studio = runtime.automationStudio;
     const project = await studio.createProject({ name: "Late wiring" });
     const flow = await createRunnableCanonicalFlow(studio, project.id, { flowId: "flow.late-wiring" });
+    await studio.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Calculate the requested constant." });
     const session = await studio.startRuntimeSession({ projectId: project.id, flowId: flow.flowId });
     const before = await studio.getFlowRunDetail(project.id, session.runId);
     const sessionId = await pairedClient(runtime);
@@ -96,6 +97,7 @@ describe("a late result for an ordinary command, through the host", () => {
     const studio = runtime.automationStudio;
     const project = await studio.createProject({ name: "Late unowned" });
     const flow = await createRunnableCanonicalFlow(studio, project.id, { flowId: "flow.late-unowned" });
+    await studio.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Calculate the requested constant." });
     const session = await studio.startRuntimeSession({ projectId: project.id, flowId: flow.flowId });
     const sessionId = await pairedClient(runtime);
 
