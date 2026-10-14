@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS } from "../../../flow-bootstrap/subflow-candidate/index.ts";
 import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
 import { gardenBuild, REF } from "../../dispatch/tests/dispatch-fixture.ts";
 import { automationStudioProjectSupervisorBriefSizing } from "../brief-sizing.ts";
 
@@ -28,6 +29,15 @@ describe("Core's sizing of a dispatch's briefs", () => {
     // A subflow with a done proposal needs no share.
     const later = automationStudioProjectSupervisorBriefSizing({ sent: [{ kind: "build", subflowKey: "plant_packet" }], purse, structure, done: new Set(["list_seeds", "open_packet"]), supervisorCalls: 4 });
     expect(later).toEqual({ ok: true, sizes: [{ allowanceUsd: 0.125, maxIterations: 27, maxCalls: 27 }] });
+  });
+
+  it("never gives a brief more turns than its builder's loop takes, and keeps the rest of a large share's calls (t577)", async () => {
+    const structure = await gardenStructure();
+    const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.25, maxCalls: 250 });
+    purse.keepBackCallsFromAllowances(10);
+    const sized = automationStudioProjectSupervisorBriefSizing({ sent: [{ kind: "build", subflowKey: "plant_packet", maxIterations: 200 }], purse, structure, done: new Set(["list_seeds", "open_packet"]), supervisorCalls: 4 });
+    // One brief and the finishing share of 240 calls: 120 calls, but the loop refuses more than its own turns.
+    expect(sized).toEqual({ ok: true, sizes: [{ allowanceUsd: 0.125, maxIterations: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations, maxCalls: 120 }] });
   });
 
   it("gives a reset the calls kept back for the finishing, less the supervisor's own last decisions", async () => {

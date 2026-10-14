@@ -1,6 +1,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import type { AutomationStudioProjectStructurePlan } from "../contracts/index.ts";
 
 // Core sizes each brief it dispatches (t570). On A8 round 1 the supervisor
@@ -30,8 +31,13 @@ import type { AutomationStudioProjectStructurePlan } from "../contracts/index.ts
 const MIN_RESET_CALLS = 2;
 /** A brief's turns where the purse caps no calls and the supervisor gave none. */
 const DEFAULT_ITERATIONS = 30;
-/** The most turns a brief may be given (`../contracts/subflow-brief.ts`). */
-const MAX_ITERATIONS = 1000;
+/**
+ * The most turns a brief may be given: the builder's evidence loop's own (`../../loop-limits/evidence-loop.ts`),
+ * which refuses a longer one as `llm_evidence_loop.invalid_configuration` before its first call. A share of more
+ * calls than this keeps its calls for its trials' judges (t577: at a 250-call purse, A8's builders were sized 77
+ * turns and every one stopped unasked).
+ */
+const MAX_ITERATIONS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations;
 /** The money no brief is given less than. */
 const MIN_USD = 1e-6;
 
