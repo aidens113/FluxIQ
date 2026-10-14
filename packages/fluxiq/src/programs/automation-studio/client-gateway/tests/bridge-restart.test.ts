@@ -61,7 +61,7 @@ describe("AutomationStudioClientGatewayBridge, when a client restarts recording"
     const stopping = client.gateway.receive(client.sessionId, clientMessage("client.stop_recording", { recordingId: client.recordingId }));
     const starting = starter === "client"
       ? client.gateway.receive(client.sessionId, startMessage("recording.next"))
-      : client.bridge.startRecording({ sessionId: client.sessionId, recordingId: "recording.next", projectId: client.projectId, domainId: "extension.example" });
+      : client.bridge.startRecording({ description: "Shows the steps the automation repeats.", sessionId: client.sessionId, recordingId: "recording.next", projectId: client.projectId, domainId: "extension.example" });
     // Long enough for a start that did not wait to open its recording while the click is held.
     await Promise.race([starting, new Promise((resolve) => setTimeout(resolve, 300))]);
     appending.release();
@@ -139,7 +139,7 @@ function clientMessage<TType extends ClientGatewayClientMessage["type"]>(
 }
 
 function startMessage(recordingId: string) {
-  return clientMessage("client.start_recording", { recordingId, domainId: "extension.example", initialState: { timestamp: 1, namespaces: {} } });
+  return clientMessage("client.start_recording", { description: "Shows the steps the automation repeats.", recordingId, domainId: "extension.example", initialState: { timestamp: 1, namespaces: {} } });
 }
 
 function clickMessage() {
