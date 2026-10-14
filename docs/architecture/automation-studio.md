@@ -1446,11 +1446,16 @@ with `automationStudioAttemptInputs(attempts, index)` against the whole attempt
 list; the executed trace, which live-patch and a Call Flow parent read, keeps
 whole `inputs`. Traces saved before this hold whole `inputs` and no `inputsSince`,
 and read back unchanged. The shared form never leaves Core: every endpoint that answers
-with a saved trace -- `get-runtime-session`, `list-runtime-sessions`,
+with a saved trace -- `get-runtime-session`,
 `start-`, `run-` and `cancel-runtime-session`, `get-flow-run-detail` (a repair's
 `completedTrace`) and `export-flow-run-audit` -- hands its answer through
 `automationStudioWithWholeAttemptInputs` (`node-execution/whole-inputs.ts`), so a
 client reads each attempt's whole `inputs` and no `inputsSince`.
+
+`list-runtime-sessions` answers no trace (t604): one page of bounded summaries (ids, status, times, the
+small fields a list needs), filtered by Flow, run, build or `statuses`, newest queued first, with a `limit` and a
+cursor to the next page; a full session is read by id with `get-runtime-session`. A body the route cannot serialise
+answers a coded JSON 500 and the server keeps serving. The extension's Stop asks only for runs that are not over.
 
 Whether an expected state actually holds is the host's decision, not Core's. A
 host runtime boundary may bind `expectationEvaluator(conditions, mode,

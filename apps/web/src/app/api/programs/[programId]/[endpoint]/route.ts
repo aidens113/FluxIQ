@@ -16,6 +16,7 @@ import {
   withProgramAuthSession,
 } from "../../../../../lib/program-route";
 import { pairedClientProjectDomainRefusal, type PairedClientProjectDomainRefusal } from "../../../../../lib/paired-client-project-domain";
+import { programJsonResponse } from "../../../../../lib/program-json-response";
 
 type RouteParams = {
   params: Promise<{
@@ -137,7 +138,7 @@ function withoutAuthSession(payload: unknown): unknown {
 
 function respond(programId: string, endpoint: string, response: Awaited<ReturnType<FluxIQ["programs"]["api"]["call"]>>, caller: RouteCaller) {
   const body = caller.kind === "person" ? withWebRuntimeStatus(programId, endpoint, response, caller.userId) : projectPairedClientResponse(programId, endpoint, response);
-  return NextResponse.json(body, { status: programResponseStatus(response) });
+  return programJsonResponse(programId, endpoint, body, programResponseStatus(response));
 }
 
 function refuse(status: 401 | 403, error: string, errorCode?: "authorization.forbidden" | PairedClientProjectDomainRefusal["errorCode"]) {

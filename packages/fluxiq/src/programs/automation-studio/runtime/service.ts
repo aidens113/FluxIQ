@@ -149,7 +149,7 @@ import {
   AutomationStudioSummaryStore,
   instructionSummaryFromInstruction,
   runtimeSessionToFlowRunDetail,
-  type AutomationStudioAdaptationSummaryPage,
+  type AutomationStudioAdaptationSummaryPage, type AutomationStudioRuntimeSessionListingOptions,
   type AutomationStudioFlowRunSummaryPage,
   flowPublicationId,
   AutomationStudioFlowMutations,
@@ -2703,7 +2703,7 @@ export class AutomationStudioService {
     return (await Promise.all(sessions.map((session) => this.parkedRunExpiry.expire(projectId, session.runId)))).filter((session): session is AutomationStudioRuntimeSession => session !== null);
   }
 
-  async listRuntimeSessionSummaries(projectId: string, options: { limit?: unknown; offset?: unknown } = {}): Promise<AutomationStudioRuntimeRunSummaryPage> {
+  async listRuntimeSessionSummaries(projectId: string, options: AutomationStudioRuntimeSessionListingOptions = {}): Promise<AutomationStudioRuntimeRunSummaryPage> {
     const page = await this.summaries.listRuntimeSessionSummaries(projectId, options);
     await Promise.all(page.runs.filter((run) => run.status === "waiting" || run.status === "running").map((run) => this.parkedRunExpiry.expire(projectId, run.runId))); // A running row is read through the expiry too, which ends a run a dead process left before it is listed.
     return await this.summaries.listRuntimeSessionSummaries(projectId, options);
