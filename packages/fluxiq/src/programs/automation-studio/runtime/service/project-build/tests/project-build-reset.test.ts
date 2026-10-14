@@ -21,6 +21,12 @@
 // In both, the builder makes its act after its own subflow trial passed: a
 // builder's trial now undoes the build's acts first (t578), so an act made
 // before it would be undone there, not left for the supervisor's whole trial.
+//
+// The builder's part asks a lasting act, so its subflow declares the step that
+// does it, as a real script must (t597). Its own trial of that step is the
+// build's first act (act-1), and its explored press the second (act-2). A
+// trial step names no item, so no control here takes it back: the reset
+// undoes act-2 and names act-1 under `cannotUndo`.
 
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import os from "node:os";
@@ -38,6 +44,7 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/ind
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
+import { automationStudioTestDeclaredStepResolution } from "./declared-step-resolution.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -46,11 +53,6 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(
 
 /** The fixture instruction's words (`blankFixture`). */
 const TASK = "Create a deterministic Start to End Flow.";
-const START_END = {
-  nodes: [{ key: "start", definitionId: "builtin.control.start", definitionVersion: "1.0.0" }, { key: "end", definitionId: "builtin.control.end", definitionVersion: "1.0.0" }],
-  edges: [{ key: "start_end", source: { nodeKey: "start", portId: "next" }, target: { nodeKey: "end", portId: "in" } }]
-};
-const ROUTER = { name: "Main", rules: [], fallback: { kind: "subflow", targetSubflowKey: "main" } };
 
 type Entry = { callId: string; toolId: string; value: unknown };
 const lastOf = (evidence: readonly Entry[], toolId: string) => [...evidence].reverse().find((entry) => entry.toolId === toolId)?.value as JsonObject | undefined;
@@ -62,7 +64,14 @@ const PLAN = {
 };
 const BUILD_BRIEF = { kind: "build", subflowKey: "main", parts: ["p1"], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.01, maxIterations: 12, permittedActs: ["create_new"] };
 const RESET_BRIEF = { kind: "reset", subflowKey: "main", parts: [], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.005, maxIterations: 4 };
-const SUBMISSION = { summary: "Build the main subflow", plan: { schemaVersion: "0.1", router: ROUTER, subflows: [{ key: "main", name: "Main", role: "primary", ...START_END }] } };
+/**
+ * The builder's subflow. Its part asks a lasting act, so the step that does it declares it, as a real script must (t597):
+ * on the recipe site, which has no nodes of its own, a short wait stands for the save; in the shop, its own Add to cart.
+ */
+const RECIPE_SUBMISSION = { flow: ["flow: Main", "step save: save the recipe", "  node: builtin.timing.wait", "  duration: 1", "  unit: milliseconds", "  consequences: create_new"].join("\n") };
+/** The same subflow with its save's step declaring nothing lasting. */
+const UNDECLARED_RECIPE_SUBMISSION = { flow: ["flow: Main", "step save: save the recipe", "  node: builtin.timing.wait", "  duration: 1", "  unit: milliseconds"].join("\n") };
+const CART_SUBMISSION = { flow: ["flow: Main", "step add: add it to the cart", "  node: domain.example.add-to-cart", "  consequences: create_new"].join("\n") };
 
 /** The build record's main file, read off disk as a restarted Core would find it. */
 async function storedRecord(dataDir: string): Promise<JsonObject> {
@@ -98,13 +107,19 @@ function supervisorDecision(step: number, evidence: readonly Entry[], ends = fal
   }
 }
 
-async function recipeBuild(options: { ends?: boolean } = {}) {
+/**
+ * `undeclaredFirst`: the builder first sends its subflow with the save's step declaring nothing lasting, as A8 launch 7's
+ * dependent builders did (t594), and only then the declared one.
+ */
+async function recipeBuild(options: { ends?: boolean; undeclaredFirst?: boolean } = {}) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-project-build-reset-"));
   /** The person's recipe box: one recipe was there before the build. */
   const box = new Set(["recipe:lentil-soup"]);
   const pressed: string[] = [];
   const boxWhenWholeJudged: string[][] = [];
   const supervisorSaw: Record<number, readonly Entry[]> = {};
+  /** The builder's evidence at its latest decision. */
+  const builderSaw: Entry[] = [];
   let supervisorDecisions = 0;
   const provider = mockProvider(async (request) => {
     const loop = request.context.evidenceLoop;
@@ -126,13 +141,16 @@ async function recipeBuild(options: { ends?: boolean } = {}) {
     if (properties.summary !== undefined && properties.subflowKey === undefined) {
       // The reset agent: undo the build's own save, named by its act, then complete; where the build ends instead, it finds no way to.
       if (options.ends) return decision({ kind: "tool_call", callId: `look.${evidence.length}`, toolId: "inspect", input: { at: evidence.length } });
-      if (!lastOf(evidence, "press")) return decision({ kind: "tool_call", callId: "undo.save", toolId: "press", input: { control: "Unsave", item: "recipe:herb-bread", undoes: "act-1" } });
-      return decision({ kind: "complete", result: { summary: "The recipe this build saved is out of the box again." } });
+      // act-1 is the builder's own trial of its save, which names no recipe, so no control here takes it back (t597).
+      if (!lastOf(evidence, "press")) return decision({ kind: "tool_call", callId: "undo.save", toolId: "press", input: { control: "Unsave", item: "recipe:herb-bread", undoes: "act-2" } });
+      return decision({ kind: "complete", result: { summary: "The recipe this build saved is out of the box again.", cannotUndo: ["act-1"] } });
     }
     const subflowKey = (properties.subflowKey as JsonObject | undefined)?.const as string;
+    builderSaw.splice(0, builderSaw.length, ...evidence.map((entry) => structuredClone(entry)));
     const submitted = lastOf(evidence, "core.submit_subflow");
     const tested = lastOf(evidence, "core.test_subflow");
-    if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: "submit", toolId: "core.submit_subflow", input: SUBMISSION });
+    if (!submitted && options.undeclaredFirst) return decision({ kind: "tool_call", callId: "submit.undeclared", toolId: "core.submit_subflow", input: UNDECLARED_RECIPE_SUBMISSION });
+    if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: "submit", toolId: "core.submit_subflow", input: RECIPE_SUBMISSION });
     if (tested?.verdict !== "yes") return decision({ kind: "tool_call", callId: "test", toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } });
     // The save comes after the builder's own passing trial, which would otherwise have it undone first (t578), so it is still on the site for the whole trial.
     if (!lastOf(evidence, "press")) return decision({ kind: "tool_call", callId: "save", toolId: "press", input: { control: "Save", item: "recipe:herb-bread" } });
@@ -141,7 +159,7 @@ async function recipeBuild(options: { ends?: boolean } = {}) {
   const serviceOptions: AutomationStudioServiceOptions = {
     dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 80, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: {
-      domainId: "isolated", deniedEvidenceKeys: [],
+      domainId: "isolated", deniedEvidenceKeys: [], resolvePlanNodeParameters: automationStudioTestDeclaredStepResolution,
       tools: [
         { toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" },
         { toolId: "press", description: "Press a control on one recipe", inputSchema: { type: "object", properties: { control: { type: "string" }, item: { type: "string" } } }, effect: "mutate" }
@@ -169,7 +187,7 @@ async function recipeBuild(options: { ends?: boolean } = {}) {
   const { project, flow } = await blankFixture(service);
   const record = () => storedRecord(dataDir);
   return {
-    box, pressed, boxWhenWholeJudged, supervisorSaw, record,
+    box, pressed, boxWhenWholeJudged, supervisorSaw, builderSaw, record,
     build: () => service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project" })
   };
 }
@@ -180,8 +198,8 @@ describe("a project build whose builder leaves a lasting act", () => {
     const result = await run.build();
     if (result.status !== "proposed") throw new Error(`expected a proposal, got ${JSON.stringify(result)}`);
 
-    // The first whole trial was refused, naming the builder's act still on the site.
-    expect(lastOf(run.supervisorSaw[5]!, "core.test_candidate")).toMatchObject({ ok: false, code: "project.trial_reset_required", actsInPlace: [{ act: "act-1" }] });
+    // The first whole trial was refused, naming the builder's acts still on the site: its own trial of the save (t597), and its save.
+    expect(lastOf(run.supervisorSaw[5]!, "core.test_candidate")).toMatchObject({ ok: false, code: "project.trial_reset_required", actsInPlace: [{ act: "act-1", did: "trial step 1 \"save the recipe\"" }, { act: "act-2", did: "press button" }] });
     // The reset brief came back done, and nothing of the build was left in place.
     expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "done" }], lastingActsInPlace: 0 });
     // It pressed only the build's own recipe: the one saved before the build is still in the box.
@@ -191,9 +209,31 @@ describe("a project build whose builder leaves a lasting act", () => {
     expect(run.boxWhenWholeJudged).toEqual([["recipe:lentil-soup"], ["recipe:lentil-soup"]]);
     expect(lastOf(run.supervisorSaw[7]!, "core.test_candidate")).toMatchObject({ verdict: "yes" });
 
-    // The builder's act is in the build record, with the class it declared (the control's name withheld, as the model was never shown it).
+    // The builder's acts are in the build record, with the class each declared (the control's name withheld, as the model was never
+    // shown it), and so is the judged whole run's own save, the supervisor's (t597).
     const stored = await run.record();
-    expect(stored.lastingActs).toEqual([{ recordedAt: expect.any(Number), act: "act-1", owner: { role: "builder", briefId: expect.any(String) }, consequences: ["create_new"], description: "act-1: press button", undoable: true }]);
+    expect(stored.lastingActs).toEqual([
+      { recordedAt: expect.any(Number), act: "act-1", owner: { role: "builder", briefId: expect.any(String) }, consequences: ["create_new"], description: "act-1: trial step 1 \"save the recipe\"", undoable: true },
+      { recordedAt: expect.any(Number), act: "act-2", owner: { role: "builder", briefId: expect.any(String) }, consequences: ["create_new"], description: "act-2: press button", undoable: true },
+      { recordedAt: expect.any(Number), act: "act-3", owner: { role: "supervisor" }, consequences: ["create_new"], description: "act-3: trial step 1 \"save the recipe\"", undoable: true }
+    ]);
+  });
+
+  // t594 fix 8 was dormant until the dispatcher's scope carried each part's lasting acts (t597, `project-agents/dispatch/scope.ts`).
+  it("refuses a builder's subflow that declares no lasting act its part asks for, through the real dispatch, and accepts it declared", async () => {
+    const run = await recipeBuild({ undeclaredFirst: true });
+    const result = await run.build();
+    if (result.status !== "proposed") throw new Error(`expected a proposal, got ${JSON.stringify(result)}`);
+
+    const refused = run.builderSaw.find((entry) => entry.callId === "submit.undeclared")!.value as JsonObject;
+    expect(refused).toMatchObject({ ok: false });
+    expect(JSON.stringify(refused)).toContain("subflow.lasting_act_missing");
+    expect(JSON.stringify(refused)).toContain("ask for a lasting act (create_new)");
+    // Nothing of the refused one was kept: the accepted revision is the declared one, and it is the one tried.
+    const accepted = run.builderSaw.find((entry) => entry.callId === "submit")!.value as JsonObject;
+    expect(accepted).toMatchObject({ ok: true });
+    expect(accepted.script).toContain("consequences: create_new");
+    expect(run.builderSaw.find((entry) => entry.toolId === "core.test_subflow")!.value).toMatchObject({ verdict: "yes", revision: accepted.revision });
   });
 
   // A failed build's chat said nothing of what the supervisor's ending names still on the target (t586, t590).
@@ -219,7 +259,8 @@ describe("a project build whose builder leaves a lasting act", () => {
     const result = await run.build();
     if (result.status !== "proposed") throw new Error(`expected a proposal, got ${JSON.stringify(result)}`);
 
-    expect(lastOf(run.supervisorSaw[5]!, "core.test_candidate")).toMatchObject({ ok: false, code: "project.trial_reset_required", actsInPlace: [{ act: "act-1" }] });
+    // The builder's own trial of its add (t597), and its add.
+    expect(lastOf(run.supervisorSaw[5]!, "core.test_candidate")).toMatchObject({ ok: false, code: "project.trial_reset_required", actsInPlace: [{ act: "act-1", did: "trial step 1 \"add it to the cart\"" }, { act: "act-2", did: "press \"Add to cart\" button" }] });
     expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "done" }], lastingActsInPlace: 0 });
     // The add, then the removal of the very line it created; the domain never saw `undoes`.
     expect(run.acted).toEqual(["add herb-tea", "remove herb-tea"]);
@@ -229,11 +270,15 @@ describe("a project build whose builder leaves a lasting act", () => {
     // From its first decision the reset was told its task, not the person's: the act, how it was done, and its page.
     const task = run.resetFirstInstructions();
     expect(task).toContain("This brief is a reset, not a build");
-    expect(task).toContain("act-1: ");
+    expect(task).toContain("act-2: ");
     expect(task).toContain(`made on the page ${PRODUCT_PAGE}`);
     expect(task).not.toContain(TASK);
     const stored = await run.record();
-    expect(stored.lastingActs).toMatchObject([{ act: "act-1", owner: { role: "builder" }, consequences: ["create_new"], undoable: true }]);
+    expect(stored.lastingActs).toMatchObject([
+      { act: "act-1", owner: { role: "builder" }, consequences: ["create_new"], undoable: true },
+      { act: "act-2", owner: { role: "builder" }, consequences: ["create_new"], undoable: true },
+      { act: "act-3", owner: { role: "supervisor" }, consequences: ["create_new"], undoable: true }
+    ]);
   });
 });
 
@@ -278,6 +323,7 @@ function shopDomain(cart: string[]) {
     deniedEvidenceKeys: [],
     tools: [{ toolId: "shop.look", description: "Look at the page.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
     runsNodes: { arrival: { node: GO, parameter: "to" } },
+    resolvePlanNodeParameters: automationStudioTestDeclaredStepResolution,
     startState: async (input: { start?: JsonObject }) => {
       const now = read();
       const was = Array.isArray(input.start?.lines) ? (input.start!.lines as string[]) : undefined;
@@ -313,8 +359,9 @@ type ResetScript = (n: number, evidence: readonly Entry[]) => JsonObject;
 
 /** The reset agent of the cases above: remove the line the build added, naming its act, then complete. */
 const UNDO_THE_ADD: ResetScript = (n) => n === 1
-  ? { kind: "tool_call", callId: "undo.add", toolId: "core.run_node", input: { node: REMOVE, parameters: { line: "herb-tea" }, consequences: ["delete"], undoes: "act-1" } }
-  : { kind: "complete", result: { summary: "The line this build added is out of the cart again." } };
+  ? { kind: "tool_call", callId: "undo.add", toolId: "core.run_node", input: { node: REMOVE, parameters: { line: "herb-tea" }, consequences: ["delete"], undoes: "act-2" } }
+  // act-1 is the builder's own trial of its add, which names no cart line, so no control here takes it back (t597).
+  : { kind: "complete", result: { summary: "The line this build added is out of the cart again.", cannotUndo: ["act-1"] } };
 
 async function cartBuild(resetScript: ResetScript = UNDO_THE_ADD, options: { startLocation?: string } = {}) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-project-build-cart-"));
@@ -356,7 +403,7 @@ async function cartBuild(resetScript: ResetScript = UNDO_THE_ADD, options: { sta
     const subflowKey = (properties.subflowKey as JsonObject | undefined)?.const as string;
     const submitted = lastOf(evidence, "core.submit_subflow");
     const tested = lastOf(evidence, "core.test_subflow");
-    if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: "submit", toolId: "core.submit_subflow", input: SUBMISSION });
+    if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: "submit", toolId: "core.submit_subflow", input: CART_SUBMISSION });
     if (tested?.verdict !== "yes") return decision({ kind: "tool_call", callId: "test", toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } });
     // After its own passing trial, as in the case above (t578).
     if (!ranNode) return decision({ kind: "tool_call", callId: "add", toolId: "core.run_node", input: { node: ADD, parameters: {}, consequences: ["create_new"] } });
@@ -393,7 +440,7 @@ describe("a project build told where it starts", () => {
     expect(steps[0]).toMatchObject({ definitionId: GO, status: "succeeded" });
     expect(feedback.phaseStart).toMatchObject({ phase: "whole_trial", startHook: "none", arrival: "loaded", standsOn: `the build's start location (${start})` });
     // The reset's own start told it what was still on the site.
-    expect(run.resetSaw.evidence[0]?.value).toMatchObject({ phaseStart: { phase: "reset", startHook: "none", stillOnSite: [{ act: "act-1" }] } });
+    expect(run.resetSaw.evidence[0]?.value).toMatchObject({ phaseStart: { phase: "reset", startHook: "none", stillOnSite: [{ act: "act-1" }, { act: "act-2" }] } });
   });
 });
 
@@ -439,12 +486,13 @@ describe("a reset brief", () => {
 
   it("refuses an undo aimed at another item in a reset's words: undo another act or name it under cannotUndo, never test again", async () => {
     const run = await cartBuild((n) => n === 1
-      ? { kind: "tool_call", callId: "undo.wrong", toolId: "core.run_node", input: { node: REMOVE, parameters: { line: "dish-soap" }, consequences: ["delete"], undoes: "act-1" } }
+      ? { kind: "tool_call", callId: "undo.wrong", toolId: "core.run_node", input: { node: REMOVE, parameters: { line: "dish-soap" }, consequences: ["delete"], undoes: "act-2" } }
       : { kind: "complete", result: { summary: "The act this build made cannot be undone here." } });
     await run.build().catch(() => undefined);
 
     const refused = run.resetSaw.evidence.find((entry) => entry.callId === "undo.wrong")!.value as JsonObject;
-    expect(refused).toMatchObject({ ok: false, code: "candidate.undo_wrong_target", act: "act-1" });
+    // act-2 is the builder's add (act-1 its trial of it, t597): the dish soap's line is not its own.
+    expect(refused).toMatchObject({ ok: false, code: "candidate.undo_wrong_target", act: "act-2" });
     expect(refused.instruction).toBe(AUTOMATION_STUDIO_SITE_RESET_WORDS.wrongTarget("reset"));
     expect(refused).not.toHaveProperty("outsideBrief");
     // The dish soap the cart held before the build was never touched.
