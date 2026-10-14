@@ -1,7 +1,7 @@
 # Automation Project Agents Plan
 
 Status: Active
-Status detail: A1-A4, A3b, A6 and the paired W1/W2 delivered and pushed 2026-10-13; A5a/A5b in progress; A5c, A7, A8 follow. User decision 2026-10-13: concurrent agents in Core, the extension sets one at a time.
+Status detail: A1-A6 with W1-W4 delivered and pushed 2026-10-13 (mode project opt-in); hardening before A8 in progress; A7 and A8 follow. User decision 2026-10-13: concurrent agents in Core, the extension sets one at a time.
 Created: 2026-10-13
 Last updated: 2026-10-13
 Owner: Senior supervisor agent
@@ -51,7 +51,7 @@ and promotion gate, site-control preparation) and held-topology units 1-4
 observed-current case does not need them for creation; post-run repair of a
 multi-subflow Flow does need held-topology.
 
-**Delivered on dev (2026-10-13, supervisor-verified, pushed):** A1 contracts and build record (t533); A2 allowances, per-run refusal, cancellation tree, retry jitter (t534); A3 host-resource scheduler (t535); A3b + W1 lease stamped on every host command, strict per session, web capacity 1, leased tab (t536, paired); A4a builder scope with bound callable parts and its own wrap-up tools (t537); A4b partial subflow trial, project ledger, trial admission (t538); A6 + W2/W3 agent attribution, project cards, chat lanes, Lab index columns (t539, paired); builder contract, `reset` brief kind and dispatch port (t540). Nothing is wired into `service.ts` yet, so no build behaves differently. **In progress:** A5a supervisor loop and A5b dispatcher (parallel worktrees), and a fix-forward of 42 tests that already failed on Core dev (stale fixtures after t519). **Next:** A5c wiring (`service/project-build/`, authoring mode `project`, net-zero `service.ts` lines), then A8 Lab comparison (paid). Notes for A5: the supervisor's decisions and judge get their own purse run frame; one scheduler per host port; `callScope` only above capacity 1; never start builders through `generateFlowBootstrapAdaptationInternal` (its generation lock is not re-entrant); open trial sessions through `admitAutomationStudioBuildTrialSession`; the whole trial needs a `reset` brief when the project ledger holds acts; `purse.ts` is 476 lines (advisory).
+**Delivered on dev (2026-10-13, supervisor-verified, pushed):** every unit A1-A6 with W1-W4: contracts and build record, allowances and cancellation tree, host-resource scheduler and lease on every command (web capacity 1), builder scope and partial subflow trial, agent attribution and chat cards, the project supervisor, the dispatcher, and the wiring: a build in authoring mode `project` runs the supervisor and its builders; `candidate` stays the default, so ordinary builds are unchanged. Also merged today: the fix-forward of every failure the two sweeps found (Core 305, downstream 31), a product fix for instructions leaking across Flows, and bounded retries on recording directory removal; the confirming Core sweep had one failure of 11207, since fixed. **In progress:** project-build-hardening, the gaps A5c reported, before any paid run. **Next:** A8 Lab comparison (nine paid runs, at most $2.25, needs the user's go-ahead), then A7 re-author triage and the follow-ups A9-A19.
 
 **Not claimed:** that agents fix wrong judgements, that any unit exists, or
 that a multi-agent build has run.
@@ -548,6 +548,31 @@ Briefs t533-t539 (units A1, A2, A3, A3b, A4a, A4b, A6) were delivered and moved 
   `project-agents/`, `flow-bootstrap/`, `llm/`.
 - Definition of done: the new tests; `assets.test.ts` and the tests beside the changed files pass; check; audit; diff check.
 
+### Brief: project-build-hardening
+- Repository: FluxIQ Core, the paired worktree the dispatch prompt names.
+- Task: close the gaps A5c reported (`reports/t549-a5c-wiring.md`) before any paid run of mode `project`.
+  (1) A builder's permission ending (the person declined, or its ask ended the brief) must end that builder's
+  loop, not only its tool calls: combine the per-brief gate's ending into the loop's signal in the dispatcher
+  (`project-agents/dispatch/run-brief.ts`), and come back `blocked` with the reason. (2) The permission outcome at
+  promotion must include every builder gate's answers, not only the build-level gate's
+  (`service/project-build/promote.ts` and where the gates are made): a declined act anywhere in the build is seen
+  at promotion exactly as the candidate path sees its own. (3) The supervisor's reserve covers the judged whole run
+  and one repair round (plan: Invariants), sized from the judge's existing reserve pricing; allowances can never
+  be carved from it. (4) A service-level test with a stub provider and stub host where builders leave lasting acts:
+  the supervisor's whole trial is refused until a reset brief runs, the reset brief undoes exactly the build's acts
+  (never a pre-existing one) and returns done, then the whole trial runs. (5) `runtime/service.ts` `deleteRecording`
+  (~941, ~944) removes its session directory through `removePathWithRetry` (`service/recordings/directory-removal.ts`):
+  in place, net zero lines, no packing. (6) Write the project ledger's acts into the build record as they are recorded
+  (`record.lastingActs`), so the record is complete after a restart.
+- Required reads: the A5c report; this document's Invariants and Contracts; the files named above.
+- Owns: `project-agents/dispatch/run-brief.ts` and its tests; `service/project-build/**`; the two lines in
+  `runtime/service.ts`; the record store's lasting-act write if needed (`project-agents/record/store.ts`) and its
+  tests; `docs/working/automation-project-agents-plan/reports/<your label>.md`.
+- Must not touch: `flow-bootstrap/**`, `llm/**`, `activity/**`, `project-agents/{supervisor,contracts,host-resources}/**`
+  (report a contract change instead of making it).
+- Definition of done: tests for (1)-(4) and (6); the tests beside each changed file; `project-agents` and
+  `service/project-build` suites; check; audit (service.ts lines unchanged); diff check.
+
 ## Work Ledger
 
 ### 2026-10-13 — Plan written from three discovery reports
@@ -685,6 +710,22 @@ Briefs t533-t539 (units A1, A2, A3, A3b, A4a, A4b, A6) were delivered and moved 
 - Validation: from `fxwork/sweep-1010/!FluxIQ/packages/fluxiq` on `a2cc2a52`, `pnpm.cmd exec vitest run --reporter=dot` -> "Test Files 1 failed | 1211 passed | 3 skipped (1215)", "Tests 1 failed | 11199 passed | 7 skipped (11207)"; the failure, `assets.test.ts` EPERM on rmdir of a recording batch's `derived` directory under load, passed 3 of 3 alone
 - Outcome: Accepted; the EPERM is a product robustness defect (no bounded retry on a Windows directory removal), dispatched as recording-delete-windows-retry
 - Follow-up: A19 recording-delete-windows-retry
+
+### 2026-10-13 — Recording directory removal retries (t550)
+- Agent: worker t550-recording-delete-retry; supervisor verified and integrated
+- Changed: new `service/recordings/directory-removal.ts` (`removePathWithRetry`: EPERM, EBUSY, EACCES, ENOTEMPTY, six retries, about 0.8 s, then the last error); `recordings/{deletion,store,index}.ts`, `object-documents.ts`
+- Why: the confirming sweep's one failure, a recording batch delete hitting EPERM under load
+- Validation: vitest `service/recordings`, `tests/service-recordings`, `object-documents` -> 16 files, 129 passed; after merging dev 128 passed; check exit 0; audit exit 0 (one baseline entry lowered); Core finish `pnpm check` passed, merged `26ee74d2`
+- Outcome: Accepted
+- Follow-up: `service.ts` `deleteRecording` still calls `rm` without the retry (in project-build-hardening)
+
+### 2026-10-13 — A5c wiring and W4 Lab support (t549, paired)
+- Agent: workers t549-a5c-wiring, t549-w4-lab-project-mode (each with a supervisor follow-up); supervisor verified and integrated
+- Changed: Core `service/project-build/` (16 files), in-place `service.ts` edits (20 lines, still 4333), mode `project` through generation request, API, chat build, permissions; downstream Lab readiness, outcome reading, start hook, per-role spend in the run snapshot
+- Why: units A5c and W4: a build in mode `project` runs the supervisor and the real dispatcher; `candidate` stays the default
+- Validation: Core vitest over project-build, flow-bootstrap-commands, llm-generation, conversations commands, project-agents, flow-bootstrap, authoring-mode, service-bootstrap -> 236 files, 2657 passed, 2 skipped (pre-existing); check exit 0; audit exit 0; after merging dev, project-build + project-agents + recordings -> 236 passed. Downstream after rebuilding Core: test-runner check passed; readiness, draft, spend, lane, chat, environment, mode tests -> 65 passed; both finishes passed, merged Core `f15acaff` / downstream `c966d3cc`
+- Outcome: Accepted, opt-in. Not exercised: a live run, the web domain's real host port, a reset brief end to end through the service
+- Follow-up: project-build-hardening before A8 (builder permission endings, permission outcome at promotion, repair-round reserve, reset end to end, `deleteRecording` retry, ledger acts in the build record)
 
 ## Open Questions
 
