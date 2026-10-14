@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { AutomationStudioHostLeaseScope, AutomationStudioHostResourceScheduler } from "../../../project-agents/host-resources/index.ts";
+import { StubHost } from "../../../project-agents/host-resources/tests/stub-host.ts";
+import type { AutomationStudioPrepareCandidateStart } from "../../candidate-trial/index.ts";
 import { runAutomationStudioSubflowTrial } from "../index.ts";
 import { part, subflowTrialFixture as fixture } from "./fixtures.ts";
 
@@ -96,5 +99,21 @@ describe("one subflow partial trial", () => {
     f.ports.processDatasets = async () => { controller.abort(new Error("cancelled")); };
     await expect(runAutomationStudioSubflowTrial(f.request(controller.signal), f.ports)).rejects.toThrow("cancelled");
     expect(f.judged).toHaveLength(1);
+  });
+
+  it("hands the start hook the brief's host lease under one, and no lease outside any (A11)", async () => {
+    const seen: Array<Parameters<AutomationStudioPrepareCandidateStart>[0]> = [];
+    const f = fixture();
+    f.ports.prepareStart = async (input) => {
+      seen.push(input);
+      return { reset: input.lease?.resourceKey ?? "everything" };
+    };
+    const leases = new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler(new StubHost({ capacity: 2 })));
+    const leased = await leases.run({ role: "subflow_builder", briefId: "brief.add" }, async (lease) => ({ lease, outcome: await runAutomationStudioSubflowTrial(f.request(), f.ports) }));
+    expect(seen[0]!.lease).toEqual(leased.lease);
+    expect(leased.outcome.record.start).toEqual({ status: "reset", result: { reset: leased.lease.resourceKey } });
+    const bare = await runAutomationStudioSubflowTrial(f.request(), f.ports);
+    expect("lease" in seen[1]!).toBe(false);
+    expect(bare.record.start).toEqual({ status: "reset", result: { reset: "everything" } });
   });
 });
