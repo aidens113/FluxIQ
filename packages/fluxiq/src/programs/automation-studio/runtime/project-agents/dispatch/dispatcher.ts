@@ -1,5 +1,5 @@
 import type { AutomationStudioProjectBuilderReturn } from "../contracts/index.ts";
-import { AutomationStudioProjectRecordRefusal } from "../record/index.ts";
+import { AutomationStudioProjectRecordRefusal, type AutomationStudioProjectBuildRecordView } from "../record/index.ts";
 import { automationStudioProjectDispatchDependencies } from "./dependencies.ts";
 import { automationStudioProjectDispatchEnding as ending } from "./ending.ts";
 import { automationStudioProjectHostLeaseScope } from "./host-lease.ts";
@@ -12,9 +12,19 @@ import type { AutomationStudioProjectDispatcherInput } from "./types.ts";
 // (automation-project-agents-plan, `Concurrent dispatch`; port in `./port.ts`).
 //
 // - **Dependency order.** A brief starts once every brief of the dispatch whose
-//   subflow its entry names among its predecessors has ended (`./dependencies.ts`).
-//   One whose predecessor ended `blocked` does not start: its entry cannot be
-//   prepared, and it ends `blocked` saying which. Briefs in a ring of waits end
+//   subflow its entry names among its predecessors has ended (`./dependencies.ts`),
+//   and starts only when each of them came back `done` with a proposal -- the
+//   only return whose trial answered yes (`./ending.ts`). A subflow's trial
+//   reaches its entry by running its predecessors' passing proposals
+//   (`service/project-build/proposals.ts`), so a brief whose predecessor ended
+//   `partial`, `blocked`, or `done` with no proposal does not start: every trial
+//   it ran would answer `subflow.trial_predecessor_missing`. It ends `blocked`,
+//   naming the predecessor and why. A predecessor that is not in this dispatch
+//   is read off the build record instead: it counts once an earlier brief of
+//   its subflow came back `done` with a proposal, and until then its dependent
+//   ends `blocked` at once. Such an earlier pass counts for a predecessor in
+//   this dispatch too, as the trial port keeps a subflow's latest passing
+//   proposal whatever a later brief of it returns. Briefs in a ring of waits end
 //   `blocked` at once.
 // - **Concurrency up to the host's capacity.** Briefs whose waits are over ask
 //   the one scheduler of the host port for a lease (`./host-lease.ts`) in the
@@ -47,17 +57,29 @@ export function createAutomationStudioProjectDispatcher(input: AutomationStudioP
     }
     const mapped = request.briefs.map((brief) => automationStudioProjectDispatchScope(view.record, brief));
     const { waitsOn, cyclic } = automationStudioProjectDispatchDependencies(request.briefs);
+    const earlier = earlierReturns(view);
+    const dispatched = new Set(request.briefs.map((brief) => brief.subflowKey));
     const leases = automationStudioProjectHostLeaseScope(input.host);
     const ended = request.briefs.map(() => deferred<AutomationStudioProjectBuilderReturn>());
     const turn = async (index: number): Promise<AutomationStudioProjectBuilderReturn> => {
       const brief = request.briefs[index]!;
       if (cyclic.has(index)) return ending.notStarted(brief, "This brief and another of the same dispatch each wait for the other's subflow, so neither can start.");
+      const absent = brief.entry.predecessors.find((key) => key !== brief.subflowKey && !dispatched.has(key) && !earlier.passed.has(key));
+      if (absent !== undefined) {
+        const last = earlier.latest.get(absent);
+        const why = last ? `its latest brief, ${last.briefId}, ${unpassed(last)}` : "no brief of it has returned in this build";
+        return ending.notStarted(brief, `Subflow ${absent}, which this subflow starts after, is not in this dispatch and has no proposal whose trial answered yes: ${why}. So this subflow's entry cannot be prepared and its trials could not run.`);
+      }
       const before = await untilEnded(waitsOn[index]!.map((at) => ended[at]!.promise), stop);
       if (before === "stopped") return ending.notStarted(brief, "The build was stopped before this brief's turn came.");
-      const blockedBy = waitsOn[index]!.find((_, at) => before[at]!.outcome === "blocked");
-      if (blockedBy !== undefined) {
-        const predecessor = request.briefs[blockedBy]!;
-        return ending.notStarted(brief, `Brief ${predecessor.briefId} for subflow ${predecessor.subflowKey}, which this subflow starts after, ended blocked, so this subflow's entry cannot be prepared.`);
+      const settled = new Set(waitsOn[index]!.flatMap((at, position) => (passed(before[position]!) ? [request.briefs[at]!.subflowKey] : [])));
+      const unready = waitsOn[index]!.findIndex((at) => {
+        const key = request.briefs[at]!.subflowKey;
+        return !settled.has(key) && !earlier.passed.has(key);
+      });
+      if (unready !== -1) {
+        const predecessor = request.briefs[waitsOn[index]![unready]!]!;
+        return ending.notStarted(brief, `Brief ${predecessor.briefId} for subflow ${predecessor.subflowKey}, which this subflow starts after, ${unpassed(before[unready]!)}, so this subflow's entry cannot be prepared and its trials could not run.`);
       }
       return await runAutomationStudioProjectDispatchBrief({ dispatcher: input, brief, mapped: mapped[index]!, leases, stop });
     };
@@ -79,6 +101,43 @@ export function createAutomationStudioProjectDispatcher(input: AutomationStudioP
     if (failed) throw failed.reason;
     return { returns: settled.map((result) => (result as PromiseFulfilledResult<AutomationStudioProjectBuilderReturn>).value) };
   };
+}
+
+/** A predecessor's return a dependent can start after: done, with the proposal its trial answered yes for. */
+function passed(returned: AutomationStudioProjectBuilderReturn): boolean {
+  return returned.outcome === "done" && returned.proposal !== undefined;
+}
+
+/** The returns earlier dispatches wrote, by subflow: which subflows passed, and each one's latest return. */
+function earlierReturns(view: AutomationStudioProjectBuildRecordView): { passed: Set<string>; latest: Map<string, AutomationStudioProjectBuilderReturn> } {
+  const subflowOf = new Map(view.record.briefs.map((entry) => [entry.brief.briefId, entry.brief.subflowKey]));
+  const passedKeys = new Set<string>();
+  const latest = new Map<string, AutomationStudioProjectBuilderReturn>();
+  for (const entry of [...view.returns].sort((a, b) => a.recordedAt - b.recordedAt)) {
+    const key = subflowOf.get(entry.briefId);
+    if (key === undefined) continue;
+    latest.set(key, entry.builderReturn);
+    if (passed(entry.builderReturn)) passedKeys.add(key);
+  }
+  return { passed: passedKeys, latest };
+}
+
+/** Why a predecessor's return holds its dependents back, in plain words, with its own reason. */
+function unpassed(returned: AutomationStudioProjectBuilderReturn): string {
+  const why = returned.outcome === "done"
+    ? "ended done without a proposal of its subflow"
+    : returned.outcome === "partial"
+      ? returned.proposal
+        ? `ended partial: its revision ${returned.proposal.revision} stands, but no trial of it answered yes`
+        : "ended partial with no proposal of its subflow"
+      : "ended blocked";
+  return `${why} (${clipped(returned.reason)})`;
+}
+
+const MAX_PREDECESSOR_REASON = 600;
+
+function clipped(reason: string): string {
+  return reason.length > MAX_PREDECESSOR_REASON ? `${reason.slice(0, MAX_PREDECESSOR_REASON - 3)}...` : reason;
 }
 
 /** The predecessors' returns once all have ended, or `"stopped"` when the signal aborts first. */

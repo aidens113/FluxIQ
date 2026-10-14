@@ -81,6 +81,12 @@ export class AutomationStudioProjectSupervisorState {
     });
   }
 
+  /** Whether the latest brief sent was a reset and its return came back, done or not: the build tried to undo its acts after its last other brief. */
+  resetCameBackLast(): boolean {
+    const latest = this.briefs.at(-1);
+    return latest?.kind === "reset" && this.returns.has(latest.briefId);
+  }
+
   /** Whether any brief came back done. */
   anyDone(): boolean {
     return [...this.returns.values()].some((returned) => returned.outcome === "done");
