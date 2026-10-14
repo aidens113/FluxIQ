@@ -48,11 +48,13 @@
 // page. An arrival node the registry does not offer refuses the trial
 // (`subflow.execution_arrival_unavailable`) before anything runs. Without
 // `arrival` the root is as it was, and the run starts where the tab stands.
+// The step is the one every phase of a project build arrives by, the
+// assembled Flow's first step included (`./arrival-node.ts`, t593).
 
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { AutomationStudioFlowArtifact, AutomationStudioPublishedFlowSnapshot } from "../../../model/index.ts";
-import { AutomationStudioNodeRegistry, automationNodeStateBinding, type AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
+import { automationNodeStateBinding, type AutomationStudioNodeRegistry, type AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../executor/index.ts";
 import type { AutomationStudioRouterExecutionResult } from "../../router-runtime.ts";
 import {
@@ -63,7 +65,7 @@ import {
   type AutomationStudioFlowBootstrapSubflow,
   type AutomationStudioFlowBuildPlan
 } from "../plan/index.ts";
-import { derivedOutputActionId } from "../authoring/index.ts";
+import { automationStudioArrivalPlanNode } from "./arrival-node.ts";
 import type { AutomationStudioCandidateExecutionReceipt, AutomationStudioCandidateStartReceipt, AutomationStudioCandidateVerificationIdentity } from "./contracts.ts";
 import type { runAutomationStudioDetachedCandidate } from "./detached-execution.ts";
 
@@ -174,7 +176,7 @@ export async function runAutomationStudioDetachedSubflow(input: AutomationStudio
   // predecessors' calls (header).
   const routerRun = target.subflows[0]!.interface === undefined;
   const called = routerRun ? predecessors : [...predecessors, target];
-  const arrival = input.arrival ? arrivalNode(input.arrival, input.registry ?? new AutomationStudioNodeRegistry(), input.resolution) : undefined;
+  const arrival = input.arrival ? automationStudioArrivalPlanNode(input.arrival, input.registry, input.resolution) : undefined;
   if (arrival === null) return refused("subflow.execution_arrival_unavailable");
   // With an arrival the first root always runs: it loads the start page before anything else (header, t578).
   const calls = called.length || arrival ? composedPlan(called, arrival) : undefined;
@@ -312,21 +314,6 @@ function boundTo(identity: AutomationStudioDetachedSubflowIdentity, target: Auto
     && predecessors.length === identity.predecessors.length
     && predecessors.every((predecessor, index) => same(predecessor, identity.predecessors[index]))
     && new Set(keys).size === keys.length;
-}
-
-/**
- * The arrival step (header, t578), or null when the registry offers no such
- * node here, or it declares an output action whose id cannot be derived. A
- * domain node's output action is its command (the web domain's navigation
- * declares a fixed one), derived exactly as a written step's is
- * (`derivedOutputActionId`).
- */
-function arrivalNode(arrival: AutomationStudioDetachedSubflowArrival, registry: AutomationStudioNodeRegistry, resolution: AutomationStudioNodeRegistryResolution): AutomationStudioFlowBootstrapNode | null {
-  const definition = registry.get(arrival.node, resolution);
-  if (!definition) return null;
-  const outputActionId = derivedOutputActionId(definition);
-  if (definition.outputAction && !outputActionId) return null;
-  return { key: "arrival", definitionId: definition.id, definitionVersion: definition.version, parameters: { [arrival.parameter]: arrival.location }, ...(outputActionId ? { outputActionId } : {}), consequences: [] };
 }
 
 /** The throwaway topology: a root that first arrives when told to, then calls each proposal in order -- the predecessors, then a callable target -- with every proposal Subflow beside it (header). */

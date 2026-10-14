@@ -14,11 +14,11 @@ import { automationStudioCandidateStallCode } from "../candidate-failure/index.t
 import { automationStudioFlowBootstrapUnusableDecisions, type generateAutomationStudioFlowCandidateDraft } from "../flow-bootstrap-commands/index.ts";
 import type { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
 import type { AutomationStudioProjectBuildDecisions } from "./decisions.ts";
-import { automationStudioProjectBuildPrepareEntry, type AutomationStudioProjectBuildEntry } from "./entry-preparation.ts";
+import type { AutomationStudioProjectBuildEntry } from "./entry-preparation.ts";
 import { AutomationStudioProjectBuildPermissions } from "./permissions.ts";
+import { AutomationStudioProjectBuildPhaseStart } from "./phase-start.ts";
 import type { AutomationStudioProjectBuildProposals } from "./proposals.ts";
 import { automationStudioProjectBuildResetCalls } from "./reset-calls.ts";
-import { automationStudioProjectBuildTrialReset } from "./trial-reset.ts";
 import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 
 // Each brief's surroundings (unit A5c; the dispatcher's port factory,
@@ -60,14 +60,24 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // once, around the opening call, as there. A reset's undo is read around the
 // same way, and what it did is told to the ledger that owns the act.
 //
+// **Every brief starts from the build's one start (t593).** Before a
+// builder's, a repair's or a reset's first look, the start every phase of the
+// build shares is made (`./phase-start.ts`): the deployment's start hook, the
+// build's acts it took back marked undone in their ledgers, the predecessors'
+// passing proposals run to the entry, and the brief told under `phaseStart`
+// beside its opening look which of these ran and on what page it stands. A
+// builder with no predecessors used to get none of it and explored whatever
+// the last trial left (A8 bigbox `run-mv8c7unr-42a8456d`, brief-4 to brief-10),
+// and a reset never had the hook run for it.
+//
 // **A dependent builder starts at its entry** (t580, bigbox debug fix 8).
 // Before a builder whose subflow has predecessors takes its first look, their
-// latest passing proposals run once (`./entry-preparation.ts`), the way its
-// own trials will reach its entry, and the acts that run lands go into the
-// brief's ledger. Prepared, its opening is a look where they left the site,
-// never the arrival at the build's start, which would walk away from the
-// entry. Either way its opening look says in plain words whether the entry
-// was prepared, and why not when it was not.
+// latest passing proposals run once (`./entry-preparation.ts`, step (d) of the
+// start), the way its own trials will reach its entry, and the acts that run
+// lands go into the brief's ledger. Prepared, its opening is a look where they
+// left the site, never the arrival at the build's start, which would walk away
+// from the entry. Either way its opening look says in plain words whether the
+// entry was prepared, and why not when it was not.
 //
 // **A prepared entry is the builder's arrival** (t585, A8 launch 6). The
 // domain counts a build arrived only once it has gone to the start location,
@@ -80,12 +90,12 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // builder's opening is the arrival itself, as before, and a builder that never
 // arrives is still refused.
 //
-// **Its entry's start hook is the ledger's too** (t585, t578 follow-up). When
-// preparing the entry ran the deployment's start hook, the hook put back every
-// act of this build then on the site, as a trial's start does; each ledger
-// marks those acts undone first (`startReset`), and the opening names them
-// under `absorbedByStartReset`, before the acts the preparation run landed are
-// recorded.
+// **Its start hook is the ledger's too** (t585, t578 follow-up). When the
+// start ran the deployment's start hook, the hook put back every act of this
+// build then on the site, as a trial's start does; each ledger marks those acts
+// undone first (`startReset`), and a dependent's opening names them under
+// `entry.absorbedByStartReset` as well as `phaseStart.putBack`, before the acts
+// the preparation run landed are recorded.
 //
 // **A reset brief is told its task from its first decision** (t585, social
 // debug root cause 2). It used to be sent the person's build instruction and
@@ -118,8 +128,9 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // act was outside its brief and stays on the site until a reset undoes it.
 //
 // **A builder's trial puts the site back first** (t578; user, 2026-10-12). Its
-// subflow trial gate is handed a reset over the project ledger
-// (`./trial-reset.ts`): every lasting act this build made, whichever brief
+// subflow trial gate is handed the build's one reset over the project ledger
+// (`flow-bootstrap/site-reset/project-reset.ts`, through `./phase-start.ts`):
+// every lasting act this build made, whichever brief
 // made it, is undone before the trial, never what was there before the build.
 // The gate runs the deployment's start hook first when the port has one
 // (`prepareStart`, kept through every wrapper), and the trial's own acts go
@@ -197,7 +208,8 @@ export function automationStudioProjectBuildBriefPorts(input: {
     return { loop, permissions, decide, ended: briefEnding(permissions, personNeeded) };
   };
   const { proposals } = input;
-  const arrival = binding.runsNodes?.arrival;
+  // The build's one start, which every brief takes before its first look (header).
+  const phaseStart = new AutomationStudioProjectBuildPhaseStart({ environment: project.trialEnvironment, arrival: binding.runsNodes?.arrival, ledger: project.ledger, proposals });
   return {
     builder: async (request) => {
       // An undo names an act of any brief of this build, and goes to the ledger that owns it; the builder's own acts to its own (header).
@@ -209,10 +221,7 @@ export function automationStudioProjectBuildBriefPorts(input: {
       const reader = new AutomationStudioSiteResetStartCheck({ binding, projectId, flowId, tools: built.loop.tools, executeTool: (call) => built.loop.executeTool(call), liveCheck: { settleMs: AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS } });
       // Whether the start this builder's reader captures at its opening is the build's: nothing of the build on the site by then (header).
       let startIsBuilds = false;
-      const buildReset = automationStudioProjectBuildTrialReset({
-        project: project.ledger, own: request.ledger,
-        checks: (signal) => ({ compare: startIsBuilds ? () => reader.compare(signal) : async () => ({ moved: false }), compareAt: (place) => reader.compareAt(place, signal) })
-      });
+      const buildReset = phaseStart.reset(request.ledger, (signal) => ({ compare: startIsBuilds ? () => reader.compare(signal) : async () => ({ moved: false }), compareAt: (place) => reader.compareAt(place, signal) }));
       const reset: AutomationStudioSiteResetTrialReset = {
         beforeTrial: (signal, cannotUndo, options) => buildReset.beforeTrial(signal, cannotUndo, options),
         trialRan: (acts, trialRunId) => {
@@ -221,21 +230,17 @@ export function automationStudioProjectBuildBriefPorts(input: {
           return left;
         }
       };
-      // Before the first look (header): its predecessors' passing proposals, run once to reach its entry, from the start page.
-      const entry = await automationStudioProjectBuildPrepareEntry({ scope: request.scope, proposals, environment: project.trialEnvironment, signal: request.signal, ...(arrival ? { arrival } : {}) });
-      // The hook it ran put back every act of the build then on the site: each ledger marks them undone before the run's own acts go in (header).
-      const absorbed = entry.kind !== "start" && entry.startReset ? await buildReset.beforeTrial(request.signal, undefined, { startReset: true }) : undefined;
-      if (entry.kind !== "start" && entry.acts.length) {
-        request.ledger.trialRan(entry.acts, entry.runId);
-        input.acts.trialRan(entry.acts, entry.runId);
-      }
+      // Before the first look (header): the build's one start -- the hook, the acts it took back, the predecessors run to the entry.
+      const opensArriving = built.loop.tools.some((tool) => tool.initialObservation?.arrival !== undefined);
+      const started = await phaseStart.explore({ phase: request.brief.kind === "repair" ? "repair" : "builder", scope: request.scope, own: request.ledger, signal: request.signal, openingArrives: opensArriving });
+      const { entry } = started;
       startIsBuilds = !project.ledger.snapshot().acts.some((act) => act.inPlace);
       const placed = placing(built.loop, placedAt(calls, pages), reader, { capture: true, signal: request.signal });
       const tools = placed.tools.map((tool) => automationStudioSiteResetUndoesTool(entry.kind === "prepared" ? lookingInPlace(tool) : tool));
       // Arrived only where there is a start to arrive at: the opening tool declares an arrival (header).
-      const arrived = entry.kind === "prepared" && built.loop.tools.some((tool) => tool.initialObservation?.arrival);
-      const absorbedActs = absorbed?.kind === "admit" ? absorbed.absorbedByStartReset?.map((act) => act.act) : undefined;
-      const loop = told({ ...placed, tools }, { entry: entryNote(request.scope.subflowKey, entry, absorbedActs), permittedActs: request.brief.permittedActs, arrived });
+      const arrived = entry.kind === "prepared" && opensArriving;
+      const absorbedActs = started.record.putBack?.map((act) => act.act);
+      const loop = told({ ...placed, tools }, { start: started.told, entry: entryNote(request.scope.subflowKey, entry, absorbedActs), permittedActs: request.brief.permittedActs, arrived });
       return { loop, submission: { ...submission, permissionFor: built.permissions.planStep }, trial, reset, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...observed, decide: built.decide(observed.completionSchema) }), ended: built.ended };
     },
     reset: async (request) => {
@@ -244,12 +249,14 @@ export function automationStudioProjectBuildBriefPorts(input: {
       const calls: typeof owned = { ...owned, target: (act, declared) => resetWorded(owned.target(act, declared)) };
       // Its task, in place of the person's instruction, with the acts as the ledger holds them at each decision (header).
       const built = await environment(request, calls, () => [resetTask({ projectId, flowId }, project.ledger, pages)]);
+      // Before its first look, the build's one start (header): after the hook there is usually nothing left to undo.
+      const started = await phaseStart.explore({ phase: "reset", scope: request.scope, own: request.ledger, signal: request.signal, openingArrives: built.loop.tools.some((tool) => tool.initialObservation?.arrival !== undefined) });
       const check = new AutomationStudioSiteResetStartCheck({ binding, projectId, flowId, tools: built.loop.tools, executeTool: (call) => built.loop.executeTool(call), liveCheck: { settleMs: AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS } });
       // Its start is not the build's: a reset never captures one, and decides on each act's own page.
       const placed = placing(built.loop, placedAt(calls, pages), check, { capture: false, signal: request.signal });
       // Its run-node calls offer `undoes` and no `write`; a lasting press of its own is told as outside it (header).
       const tools = built.loop.tools.map((tool) => withoutWrite(automationStudioSiteResetUndoesTool(tool)));
-      const loop = observeAutomationStudioEvidenceLoop({ ...told({ ...placed, tools }, { entry: undefined, permittedActs: request.brief.permittedActs, arrived: false, role: "reset" }), decide: built.decide(RESET_COMPLETION) });
+      const loop = observeAutomationStudioEvidenceLoop({ ...told({ ...placed, tools }, { start: started.told, entry: undefined, permittedActs: request.brief.permittedActs, arrived: false, role: "reset" }), decide: built.decide(RESET_COMPLETION) });
       return { loop, remainingActs: (cannotUndo) => remainingActs(project.ledger, check, request.signal, cannotUndo), ended: built.ended };
     }
   };
@@ -348,22 +355,28 @@ function entryNote(subflowKey: string, entry: AutomationStudioProjectBuildEntry,
 
 /** The key Core's opening look of a builder on its prepared entry carries, which the web domain reads as its arrival (header). */
 const ARRIVED_KEY = "arrived";
+/** The key beside a brief's opening look that says how its start was made (header, `./phase-start-told.ts`). */
+const PHASE_START_KEY = "phaseStart";
 
 /**
  * `loop` with Core's own words beside two results (header): the opening's,
- * saying whether the entry was prepared, and a landed call's that declared a
- * lasting act its brief's parts do not ask for. The domain's evidence is kept
- * whole; a key is added beside it, never in its place. `arrived`: the opening
- * call is sent marked as the builder's arrival. `role: "reset"`: a call that
- * names an act under `undoes` is the reset's task, never outside it, and the
- * note speaks to a reset, which writes no subflow.
+ * saying how the brief's start was made (`phaseStart`, t593) and whether the
+ * entry was prepared, and a landed call's that declared a lasting act its
+ * brief's parts do not ask for. The domain's evidence is kept whole; a key is
+ * added beside it, never in its place. `arrived`: the opening call is sent
+ * marked as the builder's arrival. `role: "reset"`: a call that names an act
+ * under `undoes` is the reset's task, never outside it, and the note speaks to
+ * a reset, which writes no subflow.
  */
-function told<L extends { executeTool: Execute }>(loop: L, said: { entry: JsonObject | undefined; permittedActs: readonly string[]; arrived: boolean; role?: "reset" }): L {
+function told<L extends { executeTool: Execute }>(loop: L, said: { start: JsonObject | undefined; entry: JsonObject | undefined; permittedActs: readonly string[]; arrived: boolean; role?: "reset" }): L {
   const inner = loop.executeTool;
   const executeTool: Execute = async (call) => {
     const opening = isOpeningCall(call.callId);
     const ran = await inner(said.arrived && opening ? { ...call, value: { ...call.value, [ARRIVED_KEY]: true } } : call);
-    if (said.entry && opening) return beside(ran, "entry", said.entry);
+    if (opening && (said.start || said.entry)) {
+      const started = said.start ? beside(ran, PHASE_START_KEY, said.start) : ran;
+      return said.entry ? beside(started, "entry", said.entry) : started;
+    }
     if (said.role === "reset" && call.value[AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY] !== undefined) return ran;
     const outside = landedOutside(call.value, ran, said.permittedActs);
     if (!outside.length) return ran;

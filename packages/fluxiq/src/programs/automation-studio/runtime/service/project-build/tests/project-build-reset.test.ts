@@ -316,7 +316,7 @@ const UNDO_THE_ADD: ResetScript = (n) => n === 1
   ? { kind: "tool_call", callId: "undo.add", toolId: "core.run_node", input: { node: REMOVE, parameters: { line: "herb-tea" }, consequences: ["delete"], undoes: "act-1" } }
   : { kind: "complete", result: { summary: "The line this build added is out of the cart again." } };
 
-async function cartBuild(resetScript: ResetScript = UNDO_THE_ADD) {
+async function cartBuild(resetScript: ResetScript = UNDO_THE_ADD, options: { startLocation?: string } = {}) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-project-build-cart-"));
   /** The cart held dish soap before the build. */
   const cart = ["dish-soap"];
@@ -372,9 +372,30 @@ async function cartBuild(resetScript: ResetScript = UNDO_THE_ADD) {
   const { project, flow } = await blankFixture(service, "active", "example");
   return {
     cart, cartWhenWholeJudged, supervisorSaw, acted: domain.acted, inputs: domain.inputs, record: () => storedRecord(dataDir), resetFirstInstructions: () => resetFirst ?? "", resetSaw, builderRunNode: () => builderRunNode,
-    build: () => service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project" })
+    build: () => service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project", ...(options.startLocation ? { startLocation: options.startLocation } : {}) })
   };
 }
+
+// t593, A8 bigbox `run-mv8c7unr-42a8456d`: the whole trial never went to the build's start location. A build told where it
+// starts assembles a Flow whose router-run subflow opens with the arrival, after its Start, so the whole trial -- and a run of
+// the saved Flow on its own -- loads the start location first, and the whole trial says so.
+describe("a project build told where it starts", () => {
+  it("assembles a Flow that loads the start location first, and its whole trial says it did", async () => {
+    const start = "https://shop.test/";
+    const run = await cartBuild(UNDO_THE_ADD, { startLocation: start });
+    const result = await run.build();
+    if (result.status !== "proposed") throw new Error(`expected a proposal, got ${JSON.stringify(result)}`);
+    const judged = lastOf(run.supervisorSaw[7]!, "core.test_candidate")!;
+    expect(judged).toMatchObject({ verdict: "yes" });
+    const feedback = judged.feedback as JsonObject;
+    // The first step after the Start is the arrival, to the start location.
+    const steps = (feedback.steps as JsonObject[]).filter((step) => step.definitionId !== "builtin.control.start");
+    expect(steps[0]).toMatchObject({ definitionId: GO, status: "succeeded" });
+    expect(feedback.phaseStart).toMatchObject({ phase: "whole_trial", startHook: "none", arrival: "loaded", standsOn: `the build's start location (${start})` });
+    // The reset's own start told it what was still on the site.
+    expect(run.resetSaw.evidence[0]?.value).toMatchObject({ phaseStart: { phase: "reset", startHook: "none", stillOnSite: [{ act: "act-1" }] } });
+  });
+});
 
 // A reset is a reset in every word it is shown (t591, social debug fixes 2-4).
 // Its run-node tool offers `undoes` and no `write`. A lasting press of its own

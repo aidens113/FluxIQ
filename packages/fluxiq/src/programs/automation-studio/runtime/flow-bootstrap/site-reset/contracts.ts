@@ -95,8 +95,10 @@ export type AutomationStudioSiteResetCalls = {
  * the model gave that call, so it can find the act in its own evidence.
  * `stillThere` is what the act changed on its own page that is still there,
  * in the domain's words, when the reset went back and looked (t471).
+ * `possible`: it declared no lasting class but had an effect, so it is
+ * possibly lasting and never asked for (`./ledger.ts`, t593).
  */
-export type AutomationStudioSiteResetNamedAct = { act: string; did: string; call?: string; stillThere?: string[] };
+export type AutomationStudioSiteResetNamedAct = { act: string; did: string; call?: string; stillThere?: string[]; possible?: true };
 
 /** One read of the target where it stands (`startState`): its opaque state, what differs from the state it was given, and where it was read. */
 export type AutomationStudioSiteResetRead = {
@@ -175,13 +177,17 @@ export type AutomationStudioSiteResetDecision =
   | { kind: "admit"; startedWith?: JsonObject; absorbedByStartReset?: AutomationStudioSiteResetNamedAct[] }
   | { kind: "refuse"; evidence: JsonObject & { code: string }; moved: boolean };
 
-/** One lasting act a trial made, as the ledger reads it (`AutomationStudioCandidateTrialAct`, `../candidate/contracts.ts`). */
+/**
+ * One lasting act a trial made, as the ledger reads it (`AutomationStudioCandidateTrialAct`, `../candidate/contracts.ts`).
+ * `possible`: its step declared no lasting class but changed its own page, so it is possibly lasting (`./ledger.ts`, t593).
+ */
 export type AutomationStudioSiteResetTrialAct = {
   step: number;
   definitionId: string;
   label?: string;
   control?: string;
   consequences: readonly AutomationStudioActionConsequence[];
+  possible?: true;
 };
 
 /**

@@ -22,6 +22,10 @@
 //   failure is kept and thrown from `flushed()`, never dropped.
 // - **A snapshot for the build record**: every act with its owner, and whether
 //   its brief still has it to undo.
+// - **A brief's ledger records possibly lasting acts** (t593, `./ledger.ts`):
+//   a press with an effect that declared no lasting class. The snapshot marks
+//   each `possible`; it is never in place to undo, so it refuses nothing, and
+//   a phase's start asks the brief's ledger whether it may still be there.
 
 import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetRecordedAct } from "./ledger.ts";
 
@@ -63,7 +67,8 @@ export class AutomationStudioSiteResetProjectLedger {
     const ledger = new AutomationStudioSiteResetLedger({
       owner: briefId,
       nextActId: () => this.nextActId(),
-      sink: (recorded) => this.recorded(briefId, recorded)
+      sink: (recorded) => this.recorded(briefId, recorded),
+      possible: true
     });
     this.briefs.set(briefId, ledger);
     return ledger;
@@ -89,7 +94,7 @@ export class AutomationStudioSiteResetProjectLedger {
   }
 
   private recorded(briefId: string, recorded: AutomationStudioSiteResetRecordedAct): void {
-    this.acts.push({ act: recorded.act, did: recorded.did, ...(recorded.call !== undefined ? { call: recorded.call } : {}), owner: briefId, ref: recorded.ref, undoable: recorded.undoable });
+    this.acts.push({ act: recorded.act, did: recorded.did, ...(recorded.call !== undefined ? { call: recorded.call } : {}), owner: briefId, ref: recorded.ref, undoable: recorded.undoable, ...(recorded.possible ? { possible: true as const } : {}) });
     const persist = this.persist;
     if (!persist) return;
     const snapshot = this.snapshot();

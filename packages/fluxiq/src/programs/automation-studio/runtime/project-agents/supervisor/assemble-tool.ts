@@ -1,5 +1,6 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioSubflowProposal } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import { automationStudioArrivalPlanNode } from "../../flow-bootstrap/verification/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import { automationStudioProjectAssembly } from "./assembly.ts";
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
@@ -15,6 +16,10 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
  * candidate's controller as a composed submission
  * (`AutomationStudioFlowCandidateSubmissionController.submitComposed`). The
  * answer carries the `complete` object the model tests and completes with.
+ *
+ * The Flow's router-run subflows open with the arrival at the build's start
+ * location (t593, `./assembly.ts`): the domain's arrival node, from the same
+ * submission surroundings the controller checks the Flow with.
  */
 export async function automationStudioProjectSupervisorAssembleTool(context: AutomationStudioProjectSupervisorContext, value: JsonObject): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
   const { ports, state, controller, gate } = context;
@@ -31,7 +36,7 @@ export async function automationStudioProjectSupervisorAssembleTool(context: Aut
     predecessors.set(subflowKey, brief.entry.predecessors);
     from.push({ subflowKey, briefId: brief.briefId, revision: named.revision });
   }
-  const assembled = automationStudioProjectAssembly({ structure, proposals, predecessors, kept: state.keptFromEarlierPlans() });
+  const assembled = automationStudioProjectAssembly({ structure, proposals, predecessors, kept: state.keptFromEarlierPlans(), arrival: arrivalOf(ports.submission) });
   if (!assembled.ok) return answer.refused("project.assemble_refused", GUIDANCE.refusals.assembleRefused, { issues: assembled.issues });
   const summary = typeof value.summary === "string" && value.summary.trim() ? value.summary.trim() : `A Flow of ${structure.plan.subflows.length} subflows, assembled from their builders' proposals.`;
   const submitted = await controller.submitComposed({ plan: assembled.assembled.plan, summary }, { trialOf: (candidate) => gate.standing(candidate), refuted: (digest) => gate.refuted(digest) });
@@ -54,4 +59,11 @@ export async function automationStudioProjectSupervisorAssembleTool(context: Aut
     promotionAllowed: false,
     next: GUIDANCE.next.afterAssemble
   });
+}
+
+/** The arrival step the assembled Flow opens with (header): none without a declared arrival node and a start location; null when the registry cannot give it. */
+function arrivalOf(submission: AutomationStudioProjectSupervisorContext["ports"]["submission"]) {
+  const declared = submission.binding?.runsNodes?.arrival;
+  const location = submission.startLocation?.trim();
+  return declared && location ? automationStudioArrivalPlanNode({ ...declared, location }, submission.registry, submission.resolution) : undefined;
 }

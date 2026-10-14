@@ -6,3 +6,4 @@ export * from "./types.ts";
 export * from "./run.ts";
 export * from "./start.ts";
 export * from "./port.ts";
+export * from "./predecessor-gap.ts";

@@ -8,6 +8,7 @@ import {
   type AutomationStudioFlowBootstrapSubflow
 } from "../../flow-bootstrap/plan/index.ts";
 import { automationStudioSubflowStepId, type AutomationStudioSubflowProposal } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID } from "../../../nodes/control-flow/index.ts";
 import type { AutomationStudioProjectStructurePlan } from "../contracts/index.ts";
 
 /** One reason a Flow could not be assembled, with the subflow it is about. */
@@ -40,6 +41,18 @@ export type AutomationStudioProjectAssembled = {
  *   It keeps the plan's success check, and says it calls parts.
  * - The router is the plan's. The plan says what it requires as every subflow
  *   in it does.
+ * - **Every subflow the router runs opens with the arrival (t593).** Given the
+ *   domain's arrival step (`arrival`, `flow-bootstrap/verification/arrival-node.ts`:
+ *   the build's start location, loaded), it is the first step of the
+ *   router-run subflow assembly writes, and of a proposed router-run subflow
+ *   that does not already open with it: after its Start node, or before the
+ *   one step no edge enters. So the whole trial, and a run of the saved Flow on
+ *   its own, start where the subflows were built and tried, as every subflow
+ *   trial does. On A8 bigbox `run-mv8c7unr-42a8456d` the start hook reset the
+ *   site's server state, nothing reloaded the tab, and the assembled Flow ran
+ *   on the page the last subflow trial left. A domain that declares an arrival
+ *   the registry cannot give (`arrival: null`) refuses assembly, as a subflow
+ *   trial refuses to run without it.
  *
  * A proposal counts when it was made under the plan in force, or under the
  * earlier plan `kept` names for its subflow: the plan in force kept it because
@@ -63,10 +76,13 @@ export function automationStudioProjectAssembly(input: {
   predecessors: ReadonlyMap<string, readonly string[]>;
   /** The plan digest each proposal the plan in force kept from an earlier plan was made under, by subflow key (`./state.ts`, `keptFromEarlierPlans`). */
   kept?: ReadonlyMap<string, string> | undefined;
+  /** The arrival every router-run subflow opens with (header); null when the domain declares one the registry cannot give; absent when there is none. */
+  arrival?: AutomationStudioFlowBootstrapNode | null | undefined;
 }): { ok: true; assembled: AutomationStudioProjectAssembled } | { ok: false; issues: AutomationStudioProjectAssemblyIssue[] } {
   const { structure, proposals } = input;
   const plan = structure.plan;
   const issues: AutomationStudioProjectAssemblyIssue[] = [];
+  if (input.arrival === null) return { ok: false, issues: [{ code: "project.assemble_arrival_unavailable", message: "The domain names a step that goes to the build's start location, but it is not offered here, so the assembled Flow could not start where its subflows were built. This is not the plan's to fix: end the build and say so." }] };
   const unproposed = plan.subflows.filter((subflow) => !subflow.interface && subflow.role !== "recovery" && !proposals.has(subflow.key));
   if (unproposed.length > 1) {
     for (const subflow of unproposed) issues.push({ code: "project.assemble_main_ambiguous", subflowKey: subflow.key, message: `More than one subflow the router runs has no proposal, so assembly cannot tell which one calls the parts. Brief a builder for "${subflow.key}", or change the plan.` });
@@ -94,7 +110,12 @@ export function automationStudioProjectAssembly(input: {
     if (!ordered) return { ok: false, issues: [{ code: "project.assemble_cycle", subflowKey: main.key, message: "The callable subflows' predecessors make a circle, so they have no order to be called in. Change the briefs' predecessors or the plan." }] };
     composed = callsInOrder(main, ordered);
   }
-  const sourced = plan.subflows.flatMap<Sourced>((subflow) => (composed && subflow === main ? [{ subflow: composed.subflow, brief: undefined }] : proposed(subflow.key).map((part) => ({ subflow: structuredClone(part), brief: proposals.get(subflow.key)!.scope.briefId }))));
+  const routerRun = new Set(plan.subflows.filter((subflow) => !subflow.interface && subflow.role !== "recovery").map((subflow) => subflow.key));
+  // Each router-run subflow opens with the arrival (header); a part it calls never does.
+  const arriving = (subflow: AutomationStudioFlowBootstrapSubflow) => (input.arrival && routerRun.has(subflow.key) ? arrivingFirst(subflow, input.arrival) : subflow);
+  const sourced = plan.subflows.flatMap<Sourced>((subflow) => (composed && subflow === main
+    ? [{ subflow: arriving(composed.subflow), brief: undefined }]
+    : proposed(subflow.key).map((part) => ({ subflow: part.key === subflow.key ? arriving(structuredClone(part)) : structuredClone(part), brief: proposals.get(subflow.key)!.scope.briefId }))));
   const subflows = sourced.map(({ subflow }) => subflow);
   const keys = new Set<string>();
   for (const subflow of subflows) {
@@ -199,3 +220,55 @@ function callsInOrder(main: AutomationStudioFlowBootstrapSubflow, callees: reado
 function stepKey(index: number): string {
   return `s${index + 1}`;
 }
+
+/**
+ * `subflow` opening with `arrival` (header): after its one Start node, or
+ * before the one step no edge enters (a Handler is never that step, nor an
+ * End beside others), each edge that left the Start leaving the arrival. As it
+ * was when it already opens with the same step, or has no single first step to
+ * put it before -- a run of it is refused for that by itself.
+ */
+function arrivingFirst(subflow: AutomationStudioFlowBootstrapSubflow, arrival: AutomationStudioFlowBootstrapNode): AutomationStudioFlowBootstrapSubflow {
+  const starts = subflow.nodes.filter((node) => node.definitionId === START_ID);
+  const start = starts.length === 1 ? starts[0] : undefined;
+  const first = start ? undefined : rootOf(subflow);
+  if (!start && !first) return subflow;
+  const leading = start ? subflow.edges.filter((edge) => edge.source.nodeKey === start.key).map((edge) => subflow.nodes.find((node) => node.key === edge.target.nodeKey)) : [first];
+  if (leading.length === 1 && sameStep(leading[0], arrival)) return subflow;
+  const key = freeKey(subflow.nodes.map((node) => node.key), arrival.key);
+  const step: AutomationStudioFlowBootstrapNode = { ...structuredClone(arrival), key };
+  const edgeKeys = subflow.edges.map((edge) => edge.key);
+  if (start) {
+    const out = subflow.edges.find((edge) => edge.source.nodeKey === start.key)?.source.portId ?? "success";
+    const edges = subflow.edges.map((edge) => (edge.source.nodeKey === start.key ? { ...edge, source: { nodeKey: key, portId: "success" } } : edge));
+    const into: AutomationStudioFlowBootstrapEdge = { key: freeKey(edgeKeys, `${key}-in`), source: { nodeKey: start.key, portId: out }, target: { nodeKey: key, portId: "in" } };
+    return { ...subflow, nodes: [...subflow.nodes, step], edges: [into, ...edges] };
+  }
+  const onward: AutomationStudioFlowBootstrapEdge = { key: freeKey(edgeKeys, `${key}-out`), source: { nodeKey: key, portId: "success" }, target: { nodeKey: first!.key, portId: "in" } };
+  return { ...subflow, nodes: [step, ...subflow.nodes], edges: [onward, ...subflow.edges] };
+}
+
+/** The one step no edge from another step enters, not a Handler, an End only when it is the only one; undefined when there is not exactly one. */
+function rootOf(subflow: AutomationStudioFlowBootstrapSubflow): AutomationStudioFlowBootstrapNode | undefined {
+  const entered = new Set(subflow.edges.filter((edge) => edge.source.nodeKey !== edge.target.nodeKey).map((edge) => edge.target.nodeKey));
+  const roots = subflow.nodes.filter((node) => !entered.has(node.key) && node.definitionId !== AUTOMATION_STUDIO_HANDLER_DEFINITION_ID);
+  const startable = roots.some((node) => node.definitionId !== END_ID) ? roots.filter((node) => node.definitionId !== END_ID) : roots;
+  return startable.length === 1 ? startable[0] : undefined;
+}
+
+/** Whether `node` is already the arrival: the same node, going to the same place. */
+function sameStep(node: AutomationStudioFlowBootstrapNode | undefined, arrival: AutomationStudioFlowBootstrapNode): boolean {
+  return node !== undefined && node.definitionId === arrival.definitionId && JSON.stringify(node.parameters ?? {}) === JSON.stringify(arrival.parameters ?? {});
+}
+
+/** `wanted`, or the first `wanted-N` none of `taken` holds. */
+function freeKey(taken: readonly string[], wanted: string): string {
+  const keys = new Set(taken);
+  if (!keys.has(wanted)) return wanted;
+  let index = 2;
+  while (keys.has(`${wanted}-${index}`)) index += 1;
+  return `${wanted}-${index}`;
+}
+
+const START_ID = "builtin.control.start";
+const END_ID = "builtin.control.end";

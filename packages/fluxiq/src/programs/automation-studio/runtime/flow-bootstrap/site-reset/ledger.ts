@@ -88,6 +88,26 @@
 // asked to undo a rotating carousel and a chat card's cover, and that ask is
 // what drove the removal of the dish soap.
 //
+// **A press with an effect but no lasting class is possibly lasting (t593).**
+// A press that declares `none` can still leave something on the site: on A8
+// crossborder `run-mv8c76i3-61b9ca89` a coupon press declared nothing, the
+// coupon stayed collected for every later phase, and the build's ending said
+// nothing of it was left. So where a ledger is asked to (`possible`, which a
+// project build's ledgers are, `./project-ledger.ts`), a landed, permitted
+// `mutate` on a named control that declared no lasting class is recorded too,
+// marked `possible`, and so is a trial step that declared none and changed its
+// own page in place (`possible` on the trial act,
+// `../../service/candidate-trial/landed-acts.ts`). The ledger decides what is
+// done with it, and nothing is refused for it: it is never asked for, never
+// refuses a trial and is never kept; a start hook takes it back as it takes
+// back any act, without naming it among the acts it took back (a build presses
+// many controls that declare `none`, and a list of them all would only be
+// noise beside every trial); the model may still undo it under `undoes`, and
+// the ledger judges that undo as any other; and while it may still be there it
+// is answered under `possiblyInPlace`, so a phase's start can say so
+// (`../../service/project-build/phase-start.ts`). A navigation names no
+// control and is never one.
+//
 // A phase runs from the build's start, or from one trial to the next. The
 // policy before a trial (`./trial-policy.ts`) reads it.
 
@@ -117,6 +137,8 @@ const IRREVERSIBLE: ReadonlySet<AutomationStudioActionConsequence> = new Set(["m
 const MAX_ACT = 9999;
 /** Reset refusals that named an act still there, after which it is kept: the site is taken to offer no way to undo it. */
 const ASKED_BEFORE_KEPT = 2;
+/** What a possibly lasting act's words end with (header, t593). */
+const POSSIBLY_LASTING = "declared no lasting act, but had an effect: possibly lasting";
 
 type Act = {
   id: string;
@@ -149,6 +171,8 @@ type Act = {
   askedFor: number;
   /** The site cannot undo it: every trial runs with it in place. */
   kept: boolean;
+  /** It declared no lasting class, but had an effect: possibly lasting, never asked for (header, t593). */
+  possible: boolean;
 };
 
 /**
@@ -157,7 +181,13 @@ type Act = {
  * Absent, a ledger numbers its own acts from `act-1` and tells no one, as
  * before; a project ledger (`./project-ledger.ts`) sets all three per brief.
  */
-export type AutomationStudioSiteResetLedgerOptions = { owner?: string; nextActId?: () => string | undefined; sink?: (recorded: AutomationStudioSiteResetRecordedAct) => void };
+export type AutomationStudioSiteResetLedgerOptions = {
+  owner?: string;
+  nextActId?: () => string | undefined;
+  sink?: (recorded: AutomationStudioSiteResetRecordedAct) => void;
+  /** Records a press with an effect but no lasting class as possibly lasting (header, t593); absent, it is not recorded, as before. */
+  possible?: boolean;
+};
 
 /** One act as a ledger recorded it, for its sink. */
 export type AutomationStudioSiteResetRecordedAct = AutomationStudioSiteResetNamedAct & { owner?: string; ref: string; undoable: boolean };
@@ -176,7 +206,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     if (undoes === undefined) return { kind: "none" };
     const act = typeof undoes === "string" ? this.acts.find((entry) => entry.id === undoes) : undefined;
     if (act?.kept && !act.undone && act.undoable) return { kind: "refused", evidence: { ok: false, code: "candidate.undo_act_kept", act: act.id, instruction: WORDS.keptAct(), actsToUndo: this.inPlace() } };
-    if (!act || !this.toUndo(act)) {
+    if (!act || !this.claimable(act)) {
       const actsToUndo = this.inPlace();
       return { kind: "refused", evidence: { ok: false, code: "candidate.undo_unknown_act", instruction: WORDS.unknownAct(actsToUndo.length > 0), actsToUndo } };
     }
@@ -196,7 +226,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
    */
   target(actId: string, declared: { effect: AutomationStudioActionEffect; consequences: readonly AutomationStudioActionConsequence[]; control: AutomationStudioSiteResetSpot }): AutomationStudioSiteResetTarget {
     const act = this.acts.find((entry) => entry.id === actId);
-    if (!act || !this.toUndo(act)) {
+    if (!act || !this.claimable(act)) {
       const actsToUndo = this.inPlace();
       return { kind: "refused", evidence: { ok: false, code: "candidate.undo_unknown_act", instruction: WORDS.unknownAct(actsToUndo.length > 0), actsToUndo } };
     }
@@ -215,7 +245,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     const declared = call.declared;
     if (call.undoes !== undefined) {
       const act = this.acts.find((entry) => entry.id === call.undoes);
-      if (!act || !this.toUndo(act)) return;
+      if (!act || !this.claimable(act)) return;
       // An undo the gate refused is not tried again: the act stays, and the trial runs with it (t475).
       if (declared && declared.effect === "mutate" && !declared.permitted) {
         act.kept = true;
@@ -238,7 +268,9 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       ...(declared.control.item !== undefined ? { item: declared.control.item } : {}),
       ...(declared.control.dialog !== undefined ? { dialog: declared.control.dialog } : {})
     };
-    this.record(words.filter((word) => word.trim()).join(" ").trim(), call.callId, declared.consequences, call.callId, spot);
+    // A press on a named control that declared nothing lasting is possibly lasting, where this ledger records those (header).
+    const possible = this.options.possible === true && declared.control.name !== null;
+    this.record(words.filter((word) => word.trim()).join(" ").trim(), call.callId, declared.consequences, call.callId, spot, possible);
   }
 
   /** The act the exploration call `callId` made, if it made one. */
@@ -297,13 +329,15 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
         if (!act.undoable || act.undone) continue;
         act.undone = true;
         delete act.stillThere;
-        absorbed.push(namedAct(act));
+        // A possibly lasting act is taken back unnamed (header).
+        if (!act.possible) absorbed.push(namedAct(act));
       }
       this.phase = { recorded: 0, refusals: 0, startDiffersSent: false };
       return { kind: "admit", ...(absorbed.length > 0 ? { absorbedByStartReset: absorbed } : {}) };
     }
     let moved = false;
-    for (const act of this.acts.filter((entry) => this.toUndo(entry))) {
+    // A possibly lasting act an undo was tried on is judged as any act is, though it is never asked for (header).
+    for (const act of this.acts.filter((entry) => this.claimable(entry))) {
       const looked = act.place && asked.compareAt ? await asked.compareAt(act.place) : undefined;
       moved = moved || looked?.moved === true;
       if (looked?.differs && act.place) {
@@ -312,7 +346,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       } else if (act.attempts > 0 && act.undoChanged !== false) {
         act.undone = true;
       }
-      if (!act.undone && act.askedFor >= ASKED_BEFORE_KEPT) act.kept = true;
+      if (!act.undone && !act.possible && act.askedFor >= ASKED_BEFORE_KEPT) act.kept = true;
     }
     const kept = this.acts.filter((act) => act.undoable && !act.undone && act.kept).map(namedAct);
     const answer = await automationStudioSiteResetTrialPolicy({ phase: { ...this.phase }, inPlace: this.inPlace(), kept, compare });
@@ -333,9 +367,10 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     for (const act of acts) {
       const label = act.label ? JSON.stringify(act.label) : act.definitionId;
       const did = `trial step ${act.step} ${label}${act.control ? ` on ${JSON.stringify(act.control)}` : ""}`;
-      this.record(did, `${trialRunId ?? "trial"}#step-${act.step}`, act.consequences);
+      this.record(did, `${trialRunId ?? "trial"}#step-${act.step}`, act.consequences, undefined, undefined, this.options.possible === true && act.possible === true);
     }
-    return this.acts.filter((act) => act.undoable && !act.undone).map(namedAct);
+    // A possibly lasting act is not answered as left: it is answered under `possiblyInPlace` (header).
+    return this.acts.filter((act) => act.undoable && !act.undone && !act.possible).map(namedAct);
   }
 
   /**
@@ -361,21 +396,34 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     return this.acts.filter((act) => this.toUndo(act)).map(namedAct);
   }
 
+  /** This build's possibly lasting acts that may still be on the site (header, t593): never asked for, each marked `possible`. */
+  possiblyInPlace(): AutomationStudioSiteResetNamedAct[] {
+    return this.acts.filter((act) => act.possible && this.claimable(act)).map(namedAct);
+  }
+
   /** Still on the site, and still the model's to undo. */
   private toUndo(act: Act): boolean {
+    return this.claimable(act) && !act.possible;
+  }
+
+  /** Still on the site, and an undo may name it: a possibly lasting act too, though it is never asked for (header). */
+  private claimable(act: Act): boolean {
     return act.undoable && !act.undone && !act.kept;
   }
 
-  private record(did: string, ref: string, consequences: readonly AutomationStudioActionConsequence[], call?: string, spot?: AutomationStudioSiteResetSpot): void {
+  private record(did: string, ref: string, consequences: readonly AutomationStudioActionConsequence[], call?: string, spot?: AutomationStudioSiteResetSpot, possible = false): void {
     const lasting = consequences.some((consequence) => UNDOABLE.has(consequence) || IRREVERSIBLE.has(consequence));
-    if (!lasting) return;
+    if (!lasting && !possible) return;
     const id = this.options.nextActId ? this.options.nextActId() : this.next <= MAX_ACT ? `act-${this.next}` : undefined;
     if (id === undefined) return;
     const undoable = !consequences.some((consequence) => IRREVERSIBLE.has(consequence));
-    const act: Act = { id, did: did || "an act", ref, ...(call ? { call } : {}), ...(spot ? { spot } : {}), createdItems: [], undoable, undone: false, attempts: 0, spent: false, askedFor: 0, kept: false };
+    // Said as possibly lasting wherever it is named, since some answers carry only what an act did (header).
+    const words = lasting ? did || "an act" : `${did || "an act"} (${POSSIBLY_LASTING})`;
+    const act: Act = { id, did: words, ref, ...(call ? { call } : {}), ...(spot ? { spot } : {}), createdItems: [], undoable, undone: false, attempts: 0, spent: false, askedFor: 0, kept: false, possible: !lasting };
     this.acts.push(act);
     this.next += 1;
-    this.phase = { ...this.phase, recorded: this.phase.recorded + 1 };
+    // A possibly lasting act never makes a reset due: it refuses no trial (header).
+    if (lasting) this.phase = { ...this.phase, recorded: this.phase.recorded + 1 };
     this.options.sink?.({ ...namedAct(act), ...(this.options.owner !== undefined ? { owner: this.options.owner } : {}), ref, undoable });
   }
 }
@@ -392,5 +440,5 @@ function sameItem(spot: AutomationStudioSiteResetSpot, control: AutomationStudio
 
 /** An act as the model is shown it. */
 function namedAct(act: Act): AutomationStudioSiteResetNamedAct {
-  return { act: act.id, did: act.did, ...(act.call ? { call: act.call } : {}), ...(act.stillThere?.length ? { stillThere: [...act.stillThere] } : {}) };
+  return { act: act.id, did: act.did, ...(act.call ? { call: act.call } : {}), ...(act.stillThere?.length ? { stillThere: [...act.stillThere] } : {}), ...(act.possible ? { possible: true as const } : {}) };
 }

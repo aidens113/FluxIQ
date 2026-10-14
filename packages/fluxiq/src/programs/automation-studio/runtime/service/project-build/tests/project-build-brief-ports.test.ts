@@ -147,8 +147,8 @@ describe("a dependent builder's entry", () => {
     await run.run().catch(() => undefined);
 
     const opening = (subflowKey: string) => run.firstSeen[subflowKey]?.[0];
-    // The first builder has no predecessor: it arrives at the start and is told nothing about an entry.
-    expect(opening("first")).toMatchObject({ callId: "initial.look" });
+    // The first builder has no predecessor: it arrives at the start and is told nothing about an entry, only how its start was made (t593).
+    expect(opening("first")).toMatchObject({ callId: "initial.look", value: { phaseStart: { phase: "builder", startHook: "none", arrival: "opening" } } });
     expect((opening("first")!.value as JsonObject).entry).toBeUndefined();
     // The second's opening is a look in place, after the first's passing proposal ran to its end in a session of its own.
     const firstPassed = happened.indexOf("trial of first succeeded");
@@ -219,13 +219,16 @@ describe("a dependent builder's entry", () => {
     });
     await run.run().catch(() => undefined);
 
-    // The second's entry ran the start hook; then the ledger holding the first builder's save marked it undone, before the second builder's first look.
+    // The second's start ran the start hook; the ledger holding the first builder's save marked it undone before its predecessor
+    // ran to its entry (the build's one start, t593: the reset before the entry), and both before the second builder's first look.
     const entryRan = happened.indexOf("entry for second succeeded");
     expect(entryRan).toBeGreaterThan(0);
     const decides = happened.indexOf("second decides");
     expect(decides).toBeGreaterThan(entryRan);
-    expect(happened.slice(entryRan, decides)).toContain(`ledger put back ${JSON.stringify(["act-1"])}, now []`);
-    expect(run.firstSeen.second?.[0]).toMatchObject({ callId: "initial.look", value: { entry: { prepared: true, absorbedByStartReset: ["act-1"] } } });
+    const putBack = happened.indexOf(`ledger put back ${JSON.stringify(["act-1"])}, now []`);
+    expect(putBack, JSON.stringify(happened)).toBeGreaterThan(happened.indexOf("start hook"));
+    expect(putBack).toBeLessThan(entryRan);
+    expect(run.firstSeen.second?.[0]).toMatchObject({ callId: "initial.look", value: { entry: { prepared: true, absorbedByStartReset: ["act-1"] }, phaseStart: { phase: "builder", startHook: "ran", putBack: ["act-1"], arrival: "none", predecessors: { ran: ["first"], prepared: true } } } });
   });
 });
 

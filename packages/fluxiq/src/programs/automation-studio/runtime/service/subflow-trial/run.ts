@@ -7,7 +7,8 @@
 //    earlier plan of the build counts where the build says the plan in force
 //    kept it (`keptUnder`, t590: an amendment that left that subflow as it
 //    was, `project-agents/supervisor/state.ts`); one the amendment changed is
-//    still stale.
+//    still stale. The check is the one a project phase that starts on this
+//    entry makes too (`./predecessor-gap.ts`, t593).
 // 2. The start, exactly as a whole candidate's trial makes it
 //    (`./start.ts`): the deployment's start hook when it has one. When the
 //    subflow trial gate holds the build's site reset, it asks the port to run
@@ -55,6 +56,7 @@ import {
   automationStudioCandidateTrialSummary,
   type AutomationStudioCandidateTrialStart
 } from "../candidate-trial/index.ts";
+import { automationStudioSubflowTrialPredecessorGap } from "./predecessor-gap.ts";
 import { automationStudioSubflowTrialStart } from "./start.ts";
 import type { AutomationStudioSubflowTrialJudgeInput, AutomationStudioSubflowTrialPorts, AutomationStudioSubflowTrialRecord } from "./types.ts";
 
@@ -170,15 +172,11 @@ function proposalOf(scope: AutomationStudioSubflowScope, proposal: Readonly<Auto
     && proposal.subflows[0]?.key === scope.subflowKey;
 }
 
-/** Why the entry cannot be prepared from these proposals, or nothing when it can. */
+/** Why the entry cannot be prepared from these proposals, or nothing when it can (`./predecessor-gap.ts`). */
 function unpreparedEntry(scope: AutomationStudioSubflowScope, predecessors: readonly AutomationStudioSubflowProposal[], keptUnder: AutomationStudioSubflowTrialPorts["keptUnder"]): { code: string; missing?: string[]; stale?: string[] } | undefined {
-  const keys = predecessors.map((predecessor) => predecessor.scope.subflowKey);
-  if (keys.length !== scope.predecessors.length || keys.some((key, index) => key !== scope.predecessors[index])) {
-    return { code: "subflow.trial_predecessor_missing", missing: scope.predecessors.filter((key) => !keys.includes(key)) };
-  }
-  const current = (predecessor: AutomationStudioSubflowProposal) => predecessor.scope.planDigest === scope.planDigest || keptUnder?.(predecessor.scope.subflowKey, predecessor.scope.planDigest, scope.planDigest) === true;
-  const stale = predecessors.filter((predecessor) => predecessor.scope.buildId !== scope.buildId || !current(predecessor)).map((predecessor) => predecessor.scope.subflowKey);
-  return stale.length ? { code: "subflow.trial_predecessor_stale", stale } : undefined;
+  const gap = automationStudioSubflowTrialPredecessorGap(scope, predecessors, keptUnder);
+  if (!gap) return undefined;
+  return "missing" in gap ? { code: "subflow.trial_predecessor_missing", missing: gap.missing } : { code: "subflow.trial_predecessor_stale", stale: gap.stale };
 }
 
 /** What the partial runner is bound to now; null once the build's plan is gone. */

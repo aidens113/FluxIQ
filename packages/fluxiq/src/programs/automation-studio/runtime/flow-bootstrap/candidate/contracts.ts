@@ -96,6 +96,13 @@ export type AutomationStudioCandidateTrialAct = {
   /** The words of the control the step acted on, as the feedback gives them. */
   control?: string;
   consequences: AutomationStudioActionConsequence[];
+  /**
+   * Its step declared no lasting consequence (`consequences` empty) but changed
+   * its own page in place, so it is possibly lasting (t593): a project build's
+   * ledgers record it and never ask for it (`../site-reset/ledger.ts`); a
+   * gate that keeps only declared acts drops it.
+   */
+  possible?: true;
 };
 
 /** What the trial port answers. Only `yes` for the exact latest revision and digest lets the model complete. */
