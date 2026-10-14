@@ -1,7 +1,10 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { emitAutomationStudioProjectBriefCard, emitAutomationStudioProjectReturnCard } from "../../activity/project/index.ts";
+import { automationStudioCandidateSameBehaviour } from "../../flow-bootstrap/candidate/index.ts";
+import type { AutomationStudioFlowBuildPlan } from "../../flow-bootstrap/plan/index.ts";
+import type { AutomationStudioSubflowProposal } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
-import { automationStudioProjectBuilderReturn, type AutomationStudioProjectBuilderReturn, type AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
+import { automationStudioProjectBuilderReturn, automationStudioProjectSubflowBrief, type AutomationStudioProjectBuilderReturn, type AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
 import { AutomationStudioProjectRecordRefusal } from "../record/index.ts";
 import { automationStudioProjectSupervisorBriefInput } from "./brief-input.ts";
 import { automationStudioProjectSupervisorBriefSizing } from "./brief-sizing.ts";
@@ -39,6 +42,34 @@ const EPSILON_USD = 1e-9;
  * left, its reason, and what to do now -- test, since an act a reset tried and
  * could not undo is kept and no longer holds the test back, or end honestly.
  * Anything else sent first, a whole test above all, lets a reset run again.
+ *
+ * **No brief that can only spend on nothing (bigbox and crossborder debug,
+ * t595).** Bigbox `run-mv8c7unr-42a8456d` sent eight repairs after one whole
+ * test failed: each builder wrote the same steps again, each came back done,
+ * and nothing told the supervisor the build had not moved. Crossborder
+ * `run-mv8c76i3-61b9ca89` sent a brief again, unchanged, after it came back
+ * blocked. Three checks now stand in front of the dispatcher:
+ *
+ * - A repair's `failingReceipt` must name a trial that did not pass: the
+ *   latest whole test, whose verdict and what it said Core puts on the brief
+ *   (`failingTrial`, `contracts/subflow-brief.ts`), or a trial a return of
+ *   that subflow listed, other than the yes a done return ended on. Anything
+ *   else is refused by its path, with the whole test's own reference to copy
+ *   when one stands that did not pass.
+ * - A brief for a subflow whose latest brief came back blocked after its
+ *   builder ran, sent with everything it starts from as it stood when that
+ *   return came back -- its kind, parts, entry and its predecessors'
+ *   proposals, excerpt, receipt, and what this build has left on the target
+ *   (`sentKey`) -- is answered
+ *   `project.brief_repeated`: what came back, and to change the brief, amend
+ *   the plan or end honestly.
+ * - A build or repair brief that comes back done with a proposal doing
+ *   exactly what the one it replaces did (`automationStudioCandidateSameBehaviour`,
+ *   names set aside) is said to have changed nothing (`changedNothing`), and a
+ *   further brief of that subflow while the plan and the latest whole test
+ *   stand as they were is answered `project.repair_unchanged`: test the
+ *   latest assembled Flow again where it may be retested, assemble and test
+ *   where nothing is assembled, or else amend the plan or end honestly.
  */
 export async function automationStudioProjectSupervisorDispatchTool(context: AutomationStudioProjectSupervisorContext, value: JsonObject): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
   const { ports, state } = context;
@@ -61,12 +92,18 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
     const survey = read.issues.some((issue) => issue.code === "project.brief_survey_unavailable");
     return answer.refused(survey ? "project.brief_survey_unavailable" : "project.brief_refused", survey ? GUIDANCE.refusals.surveyUnavailable : GUIDANCE.refusals.briefRefused, { issues: read.issues });
   }
-  const order = automationStudioProjectSupervisorDispatchOrder(read.briefs, new Set(state.latestDone().keys()), state.droppedByEarlierPlans());
+  const failing = failingTrials(context, read.briefs);
+  if (failing.issues.length) return answer.refused("project.brief_refused", GUIDANCE.refusals.briefRefused, { issues: failing.issues });
+  const spent = repeatedBrief(context, failing.briefs) ?? unchangedAgain(context, failing.briefs);
+  if (spent) return spent;
+  const order = automationStudioProjectSupervisorDispatchOrder(failing.briefs, new Set(state.latestDone().keys()), state.droppedByEarlierPlans());
   if (!order.ok) return answer.refused(order.code === "cycle" ? "project.dispatch_cycle" : "project.predecessor_not_done", order.code === "cycle" ? GUIDANCE.refusals.dispatchCycle : GUIDANCE.refusals.predecessorNotDone, { issues: order.issues });
   const requestedUsd = order.ordered.reduce((sum, brief) => sum + brief.allowanceUsd, 0);
   const canGiveUsd = ports.purse?.allocatableUsd();
   if (canGiveUsd !== undefined && requestedUsd > canGiveUsd + EPSILON_USD) return answer.refused("project.allowance_unavailable", GUIDANCE.refusals.allowanceUnavailable, { requestedUsd, canGiveUsd });
   const earlier = state.answeredUnderPlan();
+  // Each subflow's proposal a brief may replace, before any of them runs (header).
+  const before = state.latestDone();
   try {
     for (const brief of order.ordered) {
       await ports.record.recordBrief(ports.build, brief);
@@ -102,14 +139,133 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
     const returned = returns[index]!;
     state.resetLeft = returned.outcome === "done" ? undefined : { briefId: brief.briefId, outcome: returned.outcome, reason: returned.reason, left: leftKey(automationStudioProjectSupervisorLeftOnTarget(ports, state)) };
   }
+  // What each brief was sent with, and what stood once every return came back: the same brief sent again with nothing changed since matches it (header).
+  for (const brief of order.ordered) state.sentAs.set(brief.briefId, sentKey(context, brief));
+  const unchanged = await changedNothing(context, order.ordered, returns, before);
   const allDone = returns.every((returned) => returned.outcome === "done");
   const reset = order.ordered.every((brief) => brief.kind === "reset");
   return answer.answered({
     ok: true,
-    returns: order.ordered.map((brief, index) => compact(brief, returns[index]!)),
+    returns: order.ordered.map((brief, index) => compact(brief, returns[index]!, unchanged.get(brief.briefId))),
     lastingActsInPlace: ports.projectLedger.snapshot().acts.filter((act) => act.inPlace).length,
-    next: !allDone ? GUIDANCE.next.afterReturnsNotDone : reset ? GUIDANCE.next.afterReset : GUIDANCE.next.afterReturnsDone
+    next: unchanged.size ? GUIDANCE.next.afterRepairUnchanged : !allDone ? GUIDANCE.next.afterReturnsNotDone : reset ? GUIDANCE.next.afterReset : GUIDANCE.next.afterReturnsDone
   }, { acted: true });
+}
+
+type Issue = { code: string; path: string; why: string } & JsonObject;
+
+/** Each repair's failing receipt checked, and the latest whole test's read onto the brief that names it (header); every issue by its path. */
+function failingTrials(context: AutomationStudioProjectSupervisorContext, briefs: readonly AutomationStudioProjectSubflowBrief[]): { briefs: AutomationStudioProjectSubflowBrief[]; issues: Issue[] } {
+  const { state, controller, gate } = context;
+  const latest = controller.latest();
+  const standing = latest ? gate.standing(latest) : undefined;
+  // The whole test to name instead, when one stands that did not pass.
+  const wholeTest: JsonObject | undefined = latest && standing && standing.verdict !== "yes" ? { kind: "candidate_trial", receiptId: standing.trialRunId ?? `whole-test-${latest.revision}`, digest: latest.digest } : undefined;
+  const issues: Issue[] = [];
+  const refuse = (code: string, path: string, why: string) => {
+    issues.push({ code, path, why, ...(wholeTest ? { wholeTest } : {}) });
+  };
+  const read = briefs.map((brief, index) => {
+    const receipt = brief.failingReceipt;
+    const path = `briefs.${index}.failingReceipt`;
+    if (brief.kind !== "repair" || !receipt) return brief;
+    if (receipt.kind === "candidate_trial") {
+      const names = latest && standing && latest.digest === receipt.digest && (standing.trialRunId === undefined || standing.trialRunId === receipt.receiptId);
+      const trial = names ? automationStudioProjectSubflowBrief.failingTrial(standing) : undefined;
+      if (!names) refuse("project.failing_receipt_not_latest_test", path, GUIDANCE.issues.failingNotLatestTest);
+      else if (!trial) refuse("project.failing_receipt_passed", path, GUIDANCE.issues.failingPassed);
+      return trial ? { ...brief, failingTrial: trial } : brief;
+    }
+    const listed = state.answeredFor(brief.subflowKey).flatMap(({ returned }) => returned.trials.flatMap((trial, at) => (trial.receiptId === receipt.receiptId && trial.digest === receipt.digest ? [{ returned, last: at === returned.trials.length - 1 }] : [])));
+    if (!listed.length) refuse("project.failing_receipt_unknown", path, GUIDANCE.issues.failingUnknown);
+    // The trial a done return ended on is the yes it was done on.
+    else if (listed.every((entry) => entry.last && entry.returned.outcome === "done")) refuse("project.failing_receipt_passed", path, GUIDANCE.issues.failingPassed);
+    return brief;
+  });
+  return { briefs: read, issues };
+}
+
+/** What a brief is sent with and into, as one comparable key (header). */
+function sentKey(context: AutomationStudioProjectSupervisorContext, brief: AutomationStudioProjectSubflowBrief): string {
+  const done = context.state.latestDone();
+  return JSON.stringify({
+    plan: brief.planDigest, kind: brief.kind, subflowKey: brief.subflowKey, parts: [...brief.parts].sort(), caseId: brief.entry.caseId,
+    predecessors: [...brief.entry.predecessors].sort().map((key) => [key, done.get(key)?.brief.briefId ?? null, done.get(key)?.returned.proposal?.revision ?? null]),
+    excerpt: brief.recordingExcerpt ?? null,
+    receipt: brief.failingReceipt ? [brief.failingReceipt.kind, brief.failingReceipt.receiptId, brief.failingReceipt.digest] : null,
+    left: leftKey(automationStudioProjectSupervisorLeftOnTarget(context.ports, context.state))
+  });
+}
+
+/** The refusal of a brief sent again unchanged after its subflow's latest brief came back blocked once its builder ran (header); undefined when none is. */
+function repeatedBrief(context: AutomationStudioProjectSupervisorContext, briefs: readonly AutomationStudioProjectSubflowBrief[]): AutomationStudioLlmEvidenceToolExecutionResult | undefined {
+  const repeated = briefs.flatMap((brief, index) => {
+    const last = brief.kind === "reset" ? undefined : context.state.latestFor(brief.subflowKey);
+    if (!last || last.returned.outcome !== "blocked" || last.returned.calls === 0) return [];
+    const was = context.state.sentAs.get(last.brief.briefId);
+    return was !== undefined && was === sentKey(context, brief) ? [{ path: `briefs.${index}`, subflowKey: brief.subflowKey, lastBrief: { briefId: last.brief.briefId, outcome: last.returned.outcome, reason: last.returned.reason } }] : [];
+  });
+  return repeated.length ? answer.refused("project.brief_repeated", GUIDANCE.refusals.briefRepeated, { repeated }, { retry: true }) : undefined;
+}
+
+/** The refusal of a further brief of a subflow whose latest repair changed nothing, while what stood then stands (header); undefined when none is. */
+function unchangedAgain(context: AutomationStudioProjectSupervisorContext, briefs: readonly AutomationStudioProjectSubflowBrief[]): AutomationStudioLlmEvidenceToolExecutionResult | undefined {
+  const { state, controller, gate } = context;
+  const standing = standingKey(context);
+  const unchanged = briefs.flatMap((brief, index) => {
+    const repair = brief.kind === "reset" ? undefined : state.unchangedRepairs.get(brief.subflowKey);
+    return repair && repair.planDigest === brief.planDigest && repair.standing === standing ? [{ path: `briefs.${index}`, subflowKey: brief.subflowKey, repair: repair.briefId, sameAs: repair.sameAs }] : [];
+  });
+  if (!unchanged.length) return undefined;
+  const latest = controller.latest();
+  const retest = gate.retestable();
+  const instruction = !latest ? GUIDANCE.refusals.repairUnchangedAssemble : "revision" in retest ? GUIDANCE.refusals.repairUnchangedTest : GUIDANCE.refusals.repairUnchangedEnd;
+  const test = latest ? gate.standing(latest) : undefined;
+  return answer.refused("project.repair_unchanged", instruction, { unchanged, ...(latest ? { latestTest: { revision: latest.revision, verdict: test?.verdict ?? "not_tested", ...("revision" in retest ? { trialsSoFar: retest.trials } : {}) } } : {}) }, { retry: true });
+}
+
+/** The latest assembled Flow, its latest whole test and whether it may be tested again, as one comparable key (header). */
+function standingKey(context: AutomationStudioProjectSupervisorContext): string {
+  const latest = context.controller.latest();
+  const standing = latest ? context.gate.standing(latest) : undefined;
+  return JSON.stringify([latest?.revision ?? null, latest?.digest ?? null, standing?.trialRunId ?? null, standing?.verdict ?? null, context.gate.retestable()]);
+}
+
+/**
+ * Each build or repair brief that came back done with a proposal doing exactly
+ * what the one it replaces did, by brief id, with the brief it matches; kept in
+ * the state for the next dispatch's check (header). A done return that changed
+ * something clears its subflow's mark.
+ */
+async function changedNothing(context: AutomationStudioProjectSupervisorContext, briefs: readonly AutomationStudioProjectSubflowBrief[], returns: readonly AutomationStudioProjectBuilderReturn[], before: ReturnType<AutomationStudioProjectSupervisorContext["state"]["latestDone"]>): Promise<Map<string, { briefId: string; revision: number }>> {
+  const { ports, state } = context;
+  const unchanged = new Map<string, { briefId: string; revision: number }>();
+  for (const [index, brief] of briefs.entries()) {
+    const returned = returns[index]!;
+    const prior = before.get(brief.subflowKey);
+    if (brief.kind === "reset" || returned.outcome !== "done" || !returned.proposal) continue;
+    const [now, then] = prior?.returned.proposal ? await Promise.all([proposalOf(ports, brief.briefId, returned), proposalOf(ports, prior.brief.briefId, prior.returned)]) : [undefined, undefined];
+    if (!prior || !now || !then || !automationStudioCandidateSameBehaviour(asPlan(now), asPlan(then))) {
+      state.unchangedRepairs.delete(brief.subflowKey);
+      continue;
+    }
+    const sameAs = { briefId: prior.brief.briefId, revision: prior.returned.proposal!.revision };
+    state.unchangedRepairs.set(brief.subflowKey, { briefId: brief.briefId, sameAs, planDigest: brief.planDigest, standing: standingKey(context) });
+    unchanged.set(brief.briefId, sameAs);
+  }
+  return unchanged;
+}
+
+/** The proposal a done return names, read through the proposals port; undefined when it holds none by that name. */
+async function proposalOf(ports: AutomationStudioProjectSupervisorContext["ports"], briefId: string, returned: AutomationStudioProjectBuilderReturn): Promise<AutomationStudioSubflowProposal | undefined> {
+  const named = returned.proposal!;
+  const proposal = await ports.proposals({ briefId, subflowKey: named.subflowKey, revision: named.revision, digest: named.digest });
+  return proposal && proposal.revision === named.revision && proposal.digest === named.digest ? proposal : undefined;
+}
+
+/** A proposal's subflows as a plan of their own, for the comparison a whole candidate's resubmission is held to (header). */
+function asPlan(proposal: AutomationStudioSubflowProposal): AutomationStudioFlowBuildPlan {
+  return { plan: { schemaVersion: "0.1", router: { name: "", rules: [], fallback: { kind: "subflow", targetSubflowKey: proposal.scope.subflowKey } }, subflows: proposal.subflows.map((subflow) => structuredClone(subflow)) }, risk: "low", subflows: [] };
 }
 
 /** The refusal of a reset sent right after one that came back not done, with what is left unchanged (header); undefined when a reset may run. */
@@ -150,7 +306,7 @@ function blocked(brief: AutomationStudioProjectSubflowBrief, code: string, given
 }
 
 /** What the supervisor reads of a return: never the builder's history. */
-function compact(brief: AutomationStudioProjectSubflowBrief, returned: AutomationStudioProjectBuilderReturn): JsonObject {
+function compact(brief: AutomationStudioProjectSubflowBrief, returned: AutomationStudioProjectBuilderReturn, sameAs?: { briefId: string; revision: number }): JsonObject {
   return {
     briefId: brief.briefId,
     kind: brief.kind,
@@ -160,6 +316,8 @@ function compact(brief: AutomationStudioProjectSubflowBrief, returned: Automatio
     // What Core gave it (`./brief-sizing.ts`).
     given: { allowanceUsd: usd(brief.allowanceUsd), maxIterations: brief.maxIterations, ...(brief.maxCalls !== undefined ? { maxCalls: brief.maxCalls } : {}) },
     ...(returned.proposal ? { proposal: { revision: returned.proposal.revision } } : {}),
+    // A proposal doing exactly what the one it replaces did (header, t595).
+    ...(sameAs ? { changedNothing: { sameAs, instruction: GUIDANCE.issues.changedNothing } } : {}),
     // Each trial's receipt ref, as a repair brief's failingReceipt names one (bigbox debug fix 5, t588).
     trials: returned.trials.map((trial) => ({ kind: trial.kind, receiptId: trial.receiptId, digest: trial.digest })),
     spentUsd: returned.spentUsd,

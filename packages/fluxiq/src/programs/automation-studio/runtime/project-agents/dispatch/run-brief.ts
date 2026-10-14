@@ -1,7 +1,10 @@
-import { runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowProposal, type AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import type { JsonObject } from "../../../../../core/index.ts";
+import { runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowProposal, type AutomationStudioSubflowTrialPort, type AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioLlmBuildPurseScope, type AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
+import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
 import { withAutomationStudioProjectAgent } from "../attribution/index.ts";
-import type { AutomationStudioProjectBuilderReturn, AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
+import { automationStudioProjectSubflowBrief, type AutomationStudioProjectBuilderReturn, type AutomationStudioProjectFailingTrial, type AutomationStudioProjectReceiptRef, type AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
 import type { AutomationStudioHostLeaseScope, AutomationStudioHostResourceLease } from "../host-resources/index.ts";
 import { automationStudioProjectDispatchEnding as ending, type AutomationStudioProjectDispatchSpend } from "./ending.ts";
 import { AutomationStudioProjectDispatchReceipts } from "./receipts.ts";
@@ -31,8 +34,39 @@ import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectDispatc
 // that left nothing of the build in place, which did its one job and is
 // `done`. The build's own cancellation is not this: a stopped build ends every
 // brief as stopped.
+//
+// **A repair builder is shown what failed (bigbox debug fix 2, t595).** Bigbox
+// `run-mv8c7unr-42a8456d` sent eight repairs whose builders were never told
+// which trial they were repairing, and each wrote the same steps again. A
+// repair brief's opening look now carries, beside what the page shows,
+// `repairOf`: the receipt it names and that trial's verdict, the step it
+// stopped at and what it said (`contracts/subflow-brief.ts`, `failingTrial`).
+// The supervisor puts the whole test's on the brief; a subflow trial's is the
+// one this dispatcher saw its builder run, kept for the build by receipt id
+// (`TRIALS`), as the brief's receipts name it (`./receipts.ts`). A receipt
+// whose trial is not held -- one run before this process, say -- is named as
+// such, so the builder is never told a failure it cannot see.
 
 type Role = "builder" | "repair";
+
+/** The most subflow trials one build's memory keeps, the latest first kept. */
+const MAX_TRIALS_KEPT = 200;
+/** The key a repair's failing trial is shown under, beside the opening look's evidence. */
+const REPAIR_KEY = "repairOf";
+const REPAIR_NOTE = "This brief repairs your subflow after the trial named here did not pass: its verdict, the step it stopped at (failedStep: its number, label, node, failure code and what happened) and the rest of what its run and its judge said (said). "
+  + "A whole test's step numbers count every step of the whole Flow in order, not only yours; its label names the step. Find what in your subflow made that happen, change it, submit and test it. "
+  + "A proposal that does exactly what the one before did changes nothing, and the supervisor is told so. If the failure is not in a step of yours -- the run stopped before your subflow, or started somewhere your subflow does not start -- end the brief blocked and say which.";
+const REPAIR_UNHELD_NOTE = "This brief repairs your subflow after the trial named here did not pass, but what that trial said is not held here. Look at what your subflow's steps meet on the page now, change what does not work, submit and test it; "
+  + "a proposal that does exactly what the one before did changes nothing, and the supervisor is told so.";
+const REPAIR_PASSED_NOTE = "This brief repairs your subflow, but the trial named here passed, so it says nothing about what to change. Look at what your subflow's steps meet on the page now; "
+  + "if they still do what your parts ask, end the brief blocked and say that nothing in this subflow failed, rather than write the same steps again.";
+
+/**
+ * Every subflow trial a brief of one build ran, by its receipt id: the
+ * dispatcher's input is made once per build, so this lives exactly as long as
+ * the build's dispatcher (header).
+ */
+const TRIALS = new WeakMap<AutomationStudioProjectDispatcherInput, Map<string, { ref: AutomationStudioProjectReceiptRef; trial: AutomationStudioProjectFailingTrial | undefined }>>();
 
 /** What a return's reason may hold (`contracts/builder-return.ts`). */
 const MAX_REASON = 2000;
@@ -119,12 +153,14 @@ async function run(input: {
   const accepted = (proposal: Readonly<AutomationStudioSubflowProposal>) => {
     spend.accepted = proposal;
   };
+  const repair = repairOf(dispatcher, brief);
+  const loop = repair ? shownAtOpening(ports.loop, repair) : ports.loop;
   const outcome = await untilEnded(signal, ports.ended, (stop) => runBuilder({
-    loop: { ...ports.loop, maxIterations: brief.maxIterations, signal: stop, purse: allowance },
+    loop: { ...loop, maxIterations: brief.maxIterations, signal: stop, purse: allowance },
     scope: mapped.scope,
     siblings: mapped.siblings,
     submission: { ...ports.submission, signal: stop },
-    ...(ports.trial ? { trial: { port: kept(ports.trial, receipts.wrap(ports.trial)), ...(ports.reset ? { reset: ports.reset } : {}) } } : {}),
+    ...(ports.trial ? { trial: { port: kept(ports.trial, remembered(dispatcher, receipts, receipts.wrap(ports.trial))), ...(ports.reset ? { reset: ports.reset } : {}) } } : {}),
     ...(callScope !== undefined ? { callScope } : {}),
     ...(ports.observe ? { observe: ports.observe } : {}),
     accepted
@@ -157,6 +193,55 @@ async function untilEnded<T>(signal: AbortSignal, ended: AutomationStudioProject
 function kept(port: AutomationStudioSubflowTrialPreparingPort, wrapped: AutomationStudioSubflowTrialPreparingPort): AutomationStudioSubflowTrialPreparingPort {
   if (port.prepareStart) wrapped.prepareStart = port.prepareStart;
   return wrapped;
+}
+
+/** `port`, keeping each trial it answers in the build's memory under the receipt id its brief's receipts gave it (header). */
+function remembered(dispatcher: AutomationStudioProjectDispatcherInput, receipts: AutomationStudioProjectDispatchReceipts, port: AutomationStudioSubflowTrialPort): AutomationStudioSubflowTrialPort {
+  return async (request) => {
+    const result = await port(request);
+    const ref = receipts.list().at(-1);
+    if (ref) {
+      const held = TRIALS.get(dispatcher) ?? new Map();
+      TRIALS.set(dispatcher, held);
+      held.set(ref.receiptId, { ref, trial: automationStudioProjectSubflowBrief.failingTrial(result) });
+      while (held.size > MAX_TRIALS_KEPT) held.delete(held.keys().next().value!);
+    }
+    return result;
+  };
+}
+
+/** What a repair brief's builder is shown of the trial it repairs (header); undefined for any other brief. */
+function repairOf(dispatcher: AutomationStudioProjectDispatcherInput, brief: AutomationStudioProjectSubflowBrief): JsonObject | undefined {
+  const receipt = brief.failingReceipt;
+  if (brief.kind !== "repair" || !receipt) return undefined;
+  const named: JsonObject = { kind: receipt.kind, receiptId: receipt.receiptId };
+  const held = receipt.kind === "subflow_trial" ? TRIALS.get(dispatcher)?.get(receipt.receiptId) : undefined;
+  const seen = held?.ref.digest === receipt.digest ? held : undefined;
+  const trial = brief.failingTrial ?? seen?.trial;
+  if (trial) return { receipt: named, ...structuredClone(trial), note: REPAIR_NOTE };
+  return seen ? { receipt: named, verdict: "yes", note: REPAIR_PASSED_NOTE } : { receipt: named, note: REPAIR_UNHELD_NOTE };
+}
+
+type Execute = AutomationStudioLlmEvidenceLoopInput["executeTool"];
+
+/** `loop`, its opening look answered with `said` beside its evidence under `repairOf` (header). */
+function shownAtOpening<L extends { executeTool: Execute }>(loop: L, said: JsonObject): L {
+  const inner = loop.executeTool;
+  const executeTool: Execute = async (call) => {
+    const ran = await inner(call);
+    if (!isOpeningCall(call.callId)) return ran;
+    if (isExecution(ran)) return { ...ran, evidence: isObject(ran.evidence) ? { ...ran.evidence, [REPAIR_KEY]: said } : { [REPAIR_KEY]: said, evidence: ran.evidence } };
+    return isObject(ran) ? { ...ran, [REPAIR_KEY]: said } : { [REPAIR_KEY]: said, evidence: ran };
+  };
+  return { ...loop, executeTool };
+}
+
+function isExecution(ran: unknown): ran is AutomationStudioLlmEvidenceToolExecutionResult {
+  return isObject(ran) && ran.kind === "llm_evidence_tool_execution";
+}
+
+function isObject(value: unknown): value is JsonObject {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 /** A brief its own ending stopped: `blocked` with that ending's reason (a reset that left nothing in place, `done`), any proposal it had still named. */

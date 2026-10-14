@@ -10,7 +10,7 @@
 // which it kept, and the amendment's answer lists what it kept and dropped.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
+import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE, AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
 import { planInput, subflow, taskSpecInput } from "./supervisor-fixture.ts";
 import { FIND, HOLD, NOTE, brief, call, complete, dispatch, end, supervise, test } from "./supervisor-script.ts";
 
@@ -84,5 +84,41 @@ describe("a dispatch around an amended plan", () => {
       proposalsKept: [{ subflowKey: "find_titles", briefId: "brief-1" }],
       proposalsDropped: [{ subflowKey: "place_hold", why: ["its parts changed"] }, { subflowKey: "note_shelf", why: ["it runs after \"place_hold\", which is not kept"] }]
     });
+  });
+
+  // Bigbox `run-mv8c7unr-42a8456d` reworded one part's facts and gave another's words a leading word, and lost a passing proposal (t595).
+  // Its facts are what that proposal's trial was judged against, so facts that changed still drop it (supervisor decision, t595).
+  it("keeps a proposal whose part's words moved by a word at an end, naming it; drops one whose facts changed, or whose words were cut further", async () => {
+    const respoken = (text: string, fact: string) => planInput((TWO.subflows as JsonObject[]), {
+      parts: [{ id: "p1", quote: { sourceId: "instruction.1", text }, goalFacts: [fact], lastingActs: [] }, { id: "p2", quote: { sourceId: "instruction.1", text: HOLD }, goalFacts: [`${HOLD} is done`], lastingActs: [] }],
+      notAsked: ["borrowing any title"]
+    });
+    const amended = (plan: JsonObject) => supervise([
+      call(IDS.writePlan, TWO),
+      dispatch([brief("find_titles", ["p1"])]),
+      call(IDS.amendPlan, { ...plan, reason: "Say the first part more plainly." }),
+      end("blocked")
+    ]);
+    // The words lose their first word; the fact differs only in case and spacing.
+    const reworded = await amended(respoken("the three newest titles by Ada Hart", `  ${FIND.toLowerCase()}   is done `));
+    expect(answersOf(reworded.shown, IDS.amendPlan)[0]).toMatchObject({ ok: true, proposalsKept: [{ subflowKey: "find_titles", briefId: "brief-1", reworded: ["p1"] }], proposalsDropped: [] });
+    // Spacing and case alone are no rewording: kept, and not listed as reworded.
+    const spaced = await amended(respoken(FIND, `${FIND.toUpperCase()}  IS DONE`));
+    expect(answersOf(spaced.shown, IDS.amendPlan)[0]).toMatchObject({ ok: true, proposalsKept: [{ subflowKey: "find_titles", briefId: "brief-1" }], proposalsDropped: [] });
+    expect((answersOf(spaced.shown, IDS.amendPlan)[0]!.proposalsKept as JsonObject[])[0]).not.toHaveProperty("reworded");
+    const facts = await amended(respoken("the three newest titles by Ada Hart", "the three titles are shown on the page"));
+    expect(answersOf(facts.shown, IDS.amendPlan)[0]).toMatchObject({ ok: true, proposalsKept: [], proposalsDropped: [{ subflowKey: "find_titles", why: ["its facts changed"] }] });
+    const cut = await amended(respoken("newest titles by Ada Hart", `${FIND} is done`));
+    expect(answersOf(cut.shown, IDS.amendPlan)[0]).toMatchObject({ ok: true, proposalsKept: [], proposalsDropped: [{ subflowKey: "find_titles", why: ["its parts changed"] }] });
+  });
+
+  // The same run's first amendment was refused with a code and a path and no words (t595).
+  it("refuses an amendment with what each issue means in words", async () => {
+    const run = await supervise([
+      call(IDS.writePlan, TWO),
+      call(IDS.amendPlan, { ...planInput([...(TWO.subflows as JsonObject[]), { key: "extra", name: "Extra", parts: [] }], TWO.taskSpec as JsonObject), reason: "Add a step." }),
+      end("blocked")
+    ]);
+    expect(answersOf(run.shown, IDS.amendPlan)[0]).toMatchObject({ ok: false, code: "project.plan_refused", issues: [{ code: "project.plan_subflow_no_parts", path: "subflows.2.parts", why: GUIDANCE.planIssues["project.plan_subflow_no_parts"] }] });
   });
 });

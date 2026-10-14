@@ -116,4 +116,20 @@ describe("the supervisor's planning format", () => {
       { code: "project.plan_subflow_key", path: "subflows.1.key" }
     ] });
   });
+
+  // Bigbox `run-mv8c7unr-42a8456d` copied Core's router-run subflow back with `parts: []` and was refused (t595).
+  it("leaves out Core's own router subflow sent back with no parts, compiling the plan the model meant, every path still the one sent", () => {
+    const written = [subflow("find_titles", ["p1"], { outputs: ["titles"] }), subflow("place_hold", ["p2"], { inputs: ["titles"], outputs: ["shelf"], after: ["find_titles"] }), subflow("note_shelf", ["p3"], { inputs: ["shelf"], after: ["place_hold"] })];
+    const meant = read(planInput(written, THREE));
+    const copied = read(planInput([{ key: "main", name: "Main", parts: [], inputs: [], outputs: [] }, ...written.map((entry) => ({ ...entry, after: [...((entry.after as string[] | undefined) ?? []), "main"] }))], THREE));
+    if (!meant.ok || !copied.ok) throw new Error(JSON.stringify([meant, copied]));
+    expect(copied.structure.digest).toBe(meant.structure.digest);
+    expect(copied.after).toEqual(meant.after);
+    // An issue in a later subflow names its own index in what was sent.
+    const refused = read(planInput([{ key: "main", name: "Main", parts: [] }, subflow("find_titles", ["p1"], { outputs: ["the titles"] }), ...written.slice(1)], THREE));
+    expect(refused).toEqual({ ok: false, issues: [{ code: "project.plan_port_name", path: "subflows.1.outputs.0" }] });
+    // Any other subflow with no parts is still refused, and so is the router key alone.
+    expect(read(planInput([{ key: "extra", name: "Extra", parts: [] }, ...written], THREE))).toEqual({ ok: false, issues: [{ code: "project.plan_subflow_no_parts", path: "subflows.0.parts" }] });
+    expect(read(planInput([{ key: "main", name: "Main", parts: [] }], ONE))).toEqual({ ok: false, issues: [{ code: "project.plan_subflow_no_parts", path: "subflows.0.parts" }] });
+  });
 });

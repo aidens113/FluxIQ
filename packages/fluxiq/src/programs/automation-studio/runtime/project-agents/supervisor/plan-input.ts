@@ -49,6 +49,16 @@
 //   subflow of its own. Core cannot read which from the words, so the answer
 //   names both and the model amends the plan.
 //
+// **Core's router entry sent back is left out (bigbox debug, t595).** Bigbox
+// `run-mv8c7unr-42a8456d` amended its plan by copying the written plan's
+// answer, which listed the router-run subflow Core had added, `main` with
+// `parts: []`, and was refused `project.plan_subflow_no_parts`. That entry is
+// Core's own, not a subflow the model meant to write, so in a plan of several
+// an entry keyed as Core keys its router subflow (`main` or `main_<n>`) with
+// no parts, inputs or outputs is left out, as is its key from every `after`;
+// Core adds the router subflow again, so the plan is the one the model meant.
+// Every issue still names the path of what was sent.
+//
 // The raw plan is out of the model's reach: a `structurePlan` sent is refused
 // as a field the format does not have. Every refusal names the planning
 // format's own path -- `subflows.1.inputs.0`, never `structurePlan.plan...` --
@@ -68,11 +78,13 @@ import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./gui
 /** One thing that stops a plan being written, by the path of what the model sent. */
 export type AutomationStudioProjectSupervisorInputIssue = { code: string; path: string };
 
-/** A subflow as the supervisor writes it. */
-type Written = { key: string; name: string; purpose?: string; parts: string[]; inputs: string[]; outputs: string[]; after: string[] };
+/** A subflow as the supervisor writes it, and its index in what was sent (`at`), which every issue's path names. */
+type Written = { at: number; key: string; name: string; purpose?: string; parts: string[]; inputs: string[]; outputs: string[]; after: string[] };
 
 /** A subflow's key, as the bootstrap plan's reader takes one (`../../flow-bootstrap/plan/issues.ts`, `symbolic`). */
 const SUBFLOW_KEY = /^[a-z][a-z0-9_-]{0,63}$/u;
+/** The keys Core gives the router-run subflow it adds (`routerKey`). */
+const ROUTER_KEY = /^main(?:_[0-9]+)?$/u;
 /** An interface port's name, as the bootstrap plan's reader takes one (`../../flow-bootstrap/plan/parsing.ts`, `PORT_NAME`). */
 const PORT_NAME = /^[a-z][A-Za-z0-9]{0,31}$/u;
 /** The structure plan holds 40 subflows; Core may add one. */
@@ -98,7 +110,7 @@ export function automationStudioProjectSupervisorPlanInput(value: JsonObject, so
   const structure = automationStudioProjectStructurePlan.parse({ ...structureFields, digest: automationStudioProjectStructurePlan.digest(structureFields) });
   // Core wrote this plan, so a refusal of it is Core's; it is still answered, by the path Core's reader gave.
   if (structure.status === "invalid") return { ok: false, issues: [{ code: structure.code, path: structure.path }] };
-  const index = new Map(written.map((subflow, at) => [subflow.key, at]));
+  const index = new Map(written.map((subflow) => [subflow.key, subflow.at]));
   for (const issue of automationStudioProjectStructurePlan.issues(structure.value, spec.value)) {
     const part = /^structurePlan\.partOf\.([^.]+)\.(\d+)$/u.exec(issue.path);
     const at = part ? index.get(part[1]!) : undefined;
@@ -111,15 +123,15 @@ export function automationStudioProjectSupervisorPlanInput(value: JsonObject, so
 /** Each value no other subflow takes, and each subflow of several that neither acts nor hands anything on (header). */
 function valueWarnings(written: readonly Written[], spec: AutomationStudioProjectTaskSpec): AutomationStudioProjectSupervisorInputIssue[] {
   const warned: AutomationStudioProjectSupervisorInputIssue[] = [];
-  for (const [at, subflow] of written.entries()) {
+  for (const subflow of written) {
     for (const [index, output] of subflow.outputs.entries()) {
-      if (!written.some((other) => other !== subflow && other.inputs.includes(output))) warned.push({ code: "project.plan_value_unused", path: `subflows.${at}.outputs.${index}` });
+      if (!written.some((other) => other !== subflow && other.inputs.includes(output))) warned.push({ code: "project.plan_value_unused", path: `subflows.${subflow.at}.outputs.${index}` });
     }
   }
   if (written.length < 2) return warned;
   const acts = new Map(spec.parts.map((part) => [part.id, part.lastingActs.length > 0]));
-  for (const [at, subflow] of written.entries()) {
-    if (!subflow.outputs.length && subflow.parts.every((part) => !acts.get(part))) warned.push({ code: "project.plan_subflow_constraint", path: `subflows.${at}` });
+  for (const subflow of written) {
+    if (!subflow.outputs.length && subflow.parts.every((part) => !acts.get(part))) warned.push({ code: "project.plan_subflow_constraint", path: `subflows.${subflow.at}` });
   }
   return warned;
 }
@@ -134,44 +146,60 @@ function readSubflows(value: unknown, issues: AutomationStudioProjectSupervisorI
     issues.push({ code: value.length ? "project.too_many" : "project.plan_no_subflows", path: "subflows" });
     return undefined;
   }
+  // Core's own router entry, sent back, is left out (header).
+  const routers = new Set(value.length > 1 ? value.flatMap((raw) => (coresRouter(raw) ? [raw.key as string] : [])) : []);
   const read = value.map((raw, at) => {
-    const parsed = shape.parse(() => readSubflow(raw, `subflows.${at}`));
+    if (routers.size && coresRouter(raw)) return null;
+    const parsed = shape.parse(() => readSubflow(raw, at, routers));
     if (parsed.status === "invalid") issues.push({ code: parsed.code, path: parsed.path });
     return parsed.status === "valid" ? parsed.value : undefined;
   });
-  if (read.some((subflow) => !subflow)) return undefined;
-  const subflows = read as Written[];
-  const keys = new Map<string, number>();
-  for (const [at, subflow] of subflows.entries()) {
-    if (keys.has(subflow.key)) issues.push({ code: "project.duplicate_subflow", path: `subflows.${at}.key` });
-    else keys.set(subflow.key, at);
+  if (read.some((subflow) => subflow === undefined)) return undefined;
+  const subflows = read.filter((subflow): subflow is Written => subflow !== null);
+  if (!subflows.length) {
+    issues.push({ code: "project.plan_no_subflows", path: "subflows" });
+    return undefined;
   }
-  for (const [at, subflow] of subflows.entries()) {
+  const keys = new Map<string, number>();
+  for (const subflow of subflows) {
+    if (keys.has(subflow.key)) issues.push({ code: "project.duplicate_subflow", path: `subflows.${subflow.at}.key` });
+    else keys.set(subflow.key, subflow.at);
+  }
+  for (const subflow of subflows) {
     for (const [index, key] of subflow.after.entries()) {
-      if (key === subflow.key || !keys.has(key)) issues.push({ code: "project.plan_after_unknown", path: `subflows.${at}.after.${index}` });
+      if (key === subflow.key || !keys.has(key)) issues.push({ code: "project.plan_after_unknown", path: `subflows.${subflow.at}.after.${index}` });
     }
   }
   if (!issues.length && circular(subflows)) issues.push({ code: "project.plan_after_cycle", path: "subflows" });
   return issues.length ? undefined : subflows;
 }
 
-/** One subflow as written; throws a refusal for `shape.parse`. */
-function readSubflow(value: unknown, path: string): Written {
+/** One subflow as written, `after` with Core's left-out router keys taken out (header); throws a refusal for `shape.parse`. */
+function readSubflow(value: unknown, at: number, routers: ReadonlySet<string>): Written {
+  const path = `subflows.${at}`;
   const fields = shape.object(value, path, ["key", "name", "parts"], ["purpose", "inputs", "outputs", "after"]);
   const key = shape.id(fields.key, `${path}.key`, 64);
   if (!SUBFLOW_KEY.test(key)) return shape.refuse("project.plan_subflow_key", `${path}.key`);
   const parts = shape.ids(fields.parts, `${path}.parts`, MAX_PARTS);
   if (!parts.length) return shape.refuse("project.plan_subflow_no_parts", `${path}.parts`);
   const subflow: Written = {
+    at,
     key,
     name: shape.text(fields.name, `${path}.name`, 200).trim(),
     parts,
     inputs: ports(fields.inputs, `${path}.inputs`),
     outputs: ports(fields.outputs, `${path}.outputs`),
-    after: fields.after === undefined ? [] : shape.ids(fields.after, `${path}.after`, MAX_SUBFLOWS)
+    after: fields.after === undefined ? [] : shape.ids(fields.after, `${path}.after`, MAX_SUBFLOWS).filter((before) => !routers.has(before))
   };
   if (fields.purpose !== undefined) subflow.purpose = shape.text(fields.purpose, `${path}.purpose`, 500).trim();
   return subflow;
+}
+
+/** Whether `value` is Core's router-run subflow as a plan's answer lists it: keyed as Core keys it, with no parts and no values (header). */
+function coresRouter(value: unknown): value is JsonObject {
+  if (!isObject(value) || typeof value.key !== "string" || !ROUTER_KEY.test(value.key)) return false;
+  const empty = (field: unknown) => field === undefined || (Array.isArray(field) && !field.length);
+  return Array.isArray(value.parts) && !value.parts.length && empty(value.inputs) && empty(value.outputs);
 }
 
 /** The names of an interface side, each a port name, none twice. */

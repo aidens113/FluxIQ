@@ -5,7 +5,7 @@
 // assembled and tested to a yes.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
+import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE, AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
 import { planInput, subflow, taskSpecInput } from "./supervisor-fixture.ts";
 import { FIND, HOLD, NOTE, call, complete, dispatch, lastOf, reset, supervise, test } from "./supervisor-script.ts";
 
@@ -41,11 +41,14 @@ describe("the supervisor plans in its planning format", () => {
       complete
     ]);
     expect(run.outcome.status, JSON.stringify(run.outcome.loop)).toBe("candidate");
-    expect(lastOf(run.seen, IDS.writePlan)).toMatchObject({
+    // Core's own router-run subflow is named, not listed among the model's, so nothing invites copying it back (t595).
+    const written = lastOf(run.seen, IDS.writePlan)!;
+    expect(written.routerAddedByCore).toBe(GUIDANCE.router.addedByCore);
+    expect((written.subflows as JsonObject[]).map((entry) => entry.key)).toEqual(["find_titles", "place_hold", "note_shelf"]);
+    expect(written).toMatchObject({
       ok: true,
       routerRuns: "main",
       subflows: [
-        { key: "main", callable: false, parts: [] },
         { key: "find_titles", callable: true, inputs: ["author"], outputs: ["titles"], parts: ["p1"] },
         { key: "place_hold", callable: true, inputs: ["titles"], outputs: ["shelf"], parts: ["p2"], after: ["find_titles"] },
         { key: "note_shelf", callable: true, inputs: ["shelf"], outputs: [], parts: ["p3"], after: ["place_hold"] }

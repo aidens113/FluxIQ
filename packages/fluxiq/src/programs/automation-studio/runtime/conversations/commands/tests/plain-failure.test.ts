@@ -53,6 +53,21 @@ describe("a failed build's stored answer", () => {
     expect(calls.map((call) => call.endpoint)).not.toContain("save-flow-instruction");
   });
 
+  // Crossborder `run-mv8c76i3-61b9ca89` ended partial and read "what the model wrote could not be used", its stage's words (t595).
+  it("says a project build's supervisor ending for what it was, never by the stage it ended in", () => {
+    const ended = (outcome: string) => automationStudioConversationCallCause("the build", {
+      ok: false,
+      error: "Flow Bootstrap generation failed (flow_bootstrap.post_provider_validation_failed).",
+      payload: { diagnostic: { code: "flow_bootstrap.post_provider_validation_failed", stage: "post_provider_validation", issueCodes: [`project.build_${outcome}`] } }
+    });
+    expect(ended("partial")).toBe("the build failed: the supervisor ended it with only part of the Flow built");
+    expect(ended("blocked")).toBe("the build failed: the supervisor ended it because it could not finish the Flow");
+    expect(ended("partial")).not.toContain("what the model wrote");
+    // The stage's words stay for a failure there that carries no ending of the supervisor's.
+    expect(automationStudioConversationCallCause("the build", { ok: false, error: "x", payload: { diagnostic: { code: "flow_bootstrap.post_provider_validation_failed", stage: "post_provider_validation" } } }))
+      .toBe("the build failed: what the model wrote could not be used");
+  });
+
   it("says a code with no words of its own by its stage, and one with neither as something that went wrong", () => {
     expect(automationStudioConversationCallCause("the build", { ok: false, error: "Flow Bootstrap generation failed (flow_bootstrap.bootstrap_context_failed).", payload: { diagnostic: { code: "flow_bootstrap.bootstrap_context_failed", stage: "pre_provider_validation" } } }))
       .toBe("the build failed: FluxIQ could not set the build up");

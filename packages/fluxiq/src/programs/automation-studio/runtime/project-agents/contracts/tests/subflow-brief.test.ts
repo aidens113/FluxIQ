@@ -57,6 +57,27 @@ describe("subflow brief", () => {
     expect(parse(brief((value) => Object.assign(value, { kind: "survey", parts: [], permittedActs: [] })))).toMatchObject({ status: "valid" });
   });
 
+  // Bigbox `run-mv8c7unr-42a8456d`: a repair's receipt was stored and shown to no builder (t595).
+  it("carries a repair's failing trial as Core read it, and refuses one outside a repair, one that passed or one past its bound", () => {
+    const failingTrial = { verdict: "execution_failed", failedStep: { step: 2, label: "save it", failureCode: "web.target.not_found" }, said: { code: "candidate.trial_execution_failed" } };
+    const repair = (trial: unknown) => brief((value) => Object.assign(value, { kind: "repair", failingReceipt: { kind: "candidate_trial", receiptId: "run-1", digest: "c".repeat(64) }, failingTrial: trial }));
+    expect(parse(repair(failingTrial))).toEqual({ status: "valid", value: repair(failingTrial) });
+    expect(parse(brief((value) => Object.assign(value, { failingTrial })))).toMatchObject({ status: "invalid", code: "project.brief_failing_receipt", path: "brief.failingTrial" });
+    expect(parse(repair({ ...failingTrial, verdict: "yes" }))).toMatchObject({ status: "invalid", code: "project.invalid_choice", path: "brief.failingTrial.verdict" });
+    expect(parse(repair({ ...failingTrial, said: { text: "x".repeat(9000) } }))).toMatchObject({ status: "invalid", code: "project.too_long", path: "brief.failingTrial.said" });
+  });
+
+  it("reads a trial that did not pass into its failing step and the rest of what it said, bounded, and a trial that passed into none", () => {
+    const steps = [{ step: 1, status: "succeeded", definitionId: "web.browser.navigate" }, { step: 2, status: "failed", definitionId: "web.dom.click", label: "save it", failureCode: "web.target.not_found" }];
+    expect(automationStudioProjectSubflowBrief.failingTrial({ verdict: "execution_failed", feedback: { code: "candidate.trial_execution_failed", steps } }))
+      .toEqual({ verdict: "execution_failed", failedStep: steps[1], said: { code: "candidate.trial_execution_failed" } });
+    expect(automationStudioProjectSubflowBrief.failingTrial({ verdict: "no", feedback: { reasons: "The cookbook was not saved." } })).toEqual({ verdict: "no", said: { reasons: "The cookbook was not saved." } });
+    expect(automationStudioProjectSubflowBrief.failingTrial({ verdict: "yes", feedback: {} })).toBeUndefined();
+    // Past its bound, only its plain fields are kept, each text cut short.
+    const long = automationStudioProjectSubflowBrief.failingTrial({ verdict: "no", feedback: { code: "c.d_e", reading: { rows: "x".repeat(9000) }, note: "y".repeat(900) } })!;
+    expect(long.said).toEqual({ code: "c.d_e", note: `${"y".repeat(497)}...` });
+  });
+
   it("refuses a brief written against another plan", () => {
     const replanned = structurePlan((plan) => (plan.partOf.list_soups = ["p1", "p2"]));
     expect(issues(brief(), replanned, taskSpec())).toEqual([{ code: "project.brief_plan_stale", path: "brief.planDigest" }]);
