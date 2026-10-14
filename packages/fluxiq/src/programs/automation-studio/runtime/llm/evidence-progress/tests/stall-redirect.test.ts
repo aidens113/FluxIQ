@@ -182,3 +182,16 @@ describe("a no-candidate stall", () => {
     }
   });
 });
+
+// A discovery-only loop with its own finishing tools is told to test with its own (t537).
+describe("the stall note of a loop with its own finishing tools", () => {
+  const note = (finishing?: { submit: string; test: string }) => String(automationStudioLlmEvidenceStallRedirect({
+    discoveryOnly: true, candidate: { revision: 2, digest: "d".repeat(64) }, stepsWithoutProgress: 3, maxStepsWithoutProgress: 8, repeatingToolIds: [],
+    proposableSteps: 0, completionAttempts: 0, lastIssueCodes: [], canComplete: true, ...(finishing ? { finishing } : {})
+  }).instruction);
+
+  it("names the loop's own test tool, and the candidate's when it names none", () => {
+    expect(note({ submit: "core.submit_subflow", test: "core.test_subflow" })).toContain("Use core.test_subflow with that exact revision");
+    expect(note()).toContain("Use core.test_candidate with that exact revision");
+  });
+});

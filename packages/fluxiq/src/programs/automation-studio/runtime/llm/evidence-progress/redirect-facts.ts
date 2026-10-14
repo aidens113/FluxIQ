@@ -20,7 +20,7 @@ export function automationStudioLlmEvidenceRedirectFacts(input: {
     proposableSteps: steps.filter((step) => step.disposition === "kept" && automationStudioFlowDraftStepIsProposable(step)).length,
     completionAttempts: input.completionAttempts,
     canComplete: input.canComplete,
-    ...(config.discoveryOnly ? { discoveryOnly: true, candidate: automationStudioLlmEvidenceLatestCandidateReceipt(input.evidence) } : {}),
+    ...(config.discoveryOnly ? { discoveryOnly: true, candidate: automationStudioLlmEvidenceLatestCandidateReceipt(input.evidence, config.finishingTools?.submit), finishing: config.finishingTools } : {}),
     answerability: input.answerability,
     looksWithdrawn: input.looksWithdrawn,
     actsMissing: config.draft ? config.draft.actsMissing?.(steps) : undefined,

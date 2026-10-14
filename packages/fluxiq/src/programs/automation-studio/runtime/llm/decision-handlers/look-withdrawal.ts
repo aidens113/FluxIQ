@@ -42,7 +42,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmDecisionContextRecorder } from "../decision-context/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../evidence-loop/index.ts";
-import { CANDIDATE_FINISHING_TOOL_IDS } from "../loop-budget.ts";
+import { automationStudioLlmEvidenceFinishingToolIds, type AutomationStudioLlmEvidenceFinishingTools } from "../loop-budget.ts";
 
 /** The issue code a withdrawn look asked for anyway is refused under. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_WITHDRAWN_CODE = "llm_evidence_loop.look_withdrawn";
@@ -85,13 +85,15 @@ export type AutomationStudioLlmEvidenceLookWithdrawal = {
   refuses(tool: AutomationStudioLlmEvidenceTool, input: JsonObject, attemptEpoch: number): boolean;
 };
 
-export function automationStudioLlmEvidenceLookWithdrawal(input: { enabled: boolean }): AutomationStudioLlmEvidenceLookWithdrawal {
+export function automationStudioLlmEvidenceLookWithdrawal(input: { enabled: boolean; finishing?: AutomationStudioLlmEvidenceFinishingTools | undefined }): AutomationStudioLlmEvidenceLookWithdrawal {
+  // A loop's own finishing tools are never a look, whatever their effect (t537).
+  const finishing = automationStudioLlmEvidenceFinishingToolIds(input.finishing);
   let redirectAt: number | undefined;
   let withdrawnEpoch: number | undefined;
   const looks = new Map<string, Set<string>>();
   const active = (attemptEpoch: number): boolean => input.enabled && withdrawnEpoch === attemptEpoch;
   const observeOnly = (tool: AutomationStudioLlmEvidenceTool): boolean =>
-    tool.effect !== "mutate" && tool.perCallEffect !== true && !CANDIDATE_FINISHING_TOOL_IDS.has(tool.toolId);
+    tool.effect !== "mutate" && tool.perCallEffect !== true && !finishing.has(tool.toolId);
   return {
     redirectShown(iteration) {
       redirectAt = iteration;
