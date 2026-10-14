@@ -40,6 +40,9 @@ async function fixture(operation: (h: Harness) => Promise<void>): Promise<void> 
     const pairing = gateway.snapshot().pairings.find(item => item.requestedBySessionId === client.sessionId)!;
     await gateway.approvePairing(pairing.pairingCode, { approvedByUserId: "synthetic.user" });
     const project = await fluxiq.programs.automationStudio.createProject({ name: "Synthetic required transport", domainId: "synthetic.domain" });
+    // The Flow a run starts is a stored Flow with written instructions, as Core requires since t519.
+    await fluxiq.programs.automationStudio.createFlow({ projectId: project.id, flowId: "flow.transport", name: "Synthetic transport effects" });
+    await fluxiq.programs.automationStudio.saveFlowGenerationInstruction({ projectId: project.id, flowId: "flow.transport", instruction: "Send each synthetic action once." });
     await operation({ fluxiq, projectId: project.id, sends, legacy });
   } finally {
     vi.restoreAllMocks();

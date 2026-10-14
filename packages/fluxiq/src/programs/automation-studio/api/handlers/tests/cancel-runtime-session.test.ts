@@ -85,6 +85,7 @@ describe("the stop endpoint", () => {
     cleanups.push(cleanup);
     const project = await service.createProject({ name: "Stop Endpoint" });
     const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.stop-endpoint" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow once to the end." });
     const registry = registryWith(service);
     const started = await registry.call<unknown, { runtimeSession: { runId: string; status: string } }>({
       programId: "automation-studio",

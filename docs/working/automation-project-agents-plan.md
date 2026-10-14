@@ -357,7 +357,7 @@ Partitioned by file. `service.ts` has one owner at a time (A5 only).
   the newest pending ask), needed above capacity 1. A11: the trial start hook
   takes no lease or context, needed above capacity 1. A12: renamed helper parts
   keep their step ids, so two briefs could derive the same dataset id; check at
-  assembly. A13: `llm/build-purse/purse.ts` is 476 lines (advisory 400).
+  assembly. A13: `llm/build-purse/purse.ts` is 476 lines (advisory 400). A14: the dispatcher returns `survey` briefs blocked; implement a survey run (findings, no proposal) or drop the kind.
 
 Interleaving with the Codex queue: entry-case units 2-3 and held-topology
 units 1-2 touch `service/candidate-trial/`, `service/runtime-adaptation/` and
@@ -628,6 +628,30 @@ Briefs t533-t539 (units A1, A2, A3, A3b, A4a, A4b, A6) were delivered and moved 
 - Validation: the four t543 paths -> 50 passed (was 42 failed); check exit 0; audit passed; merged `1a7d553c`. Sweep on `1a7d553c`: `pnpm.cmd exec vitest run --reporter=dot` -> 66 files / 305 tests failed of 11167, 203 of them the two t519 refusals ([sweep record](./automation-project-agents-plan/sweep-2026-10-13.md))
 - Outcome: Accepted (t543); sweep follow-up dispatched as three groups
 - Follow-up: sweep-fixtures A, B, C
+
+### 2026-10-13 — A5b dispatcher (t542)
+- Agent: worker t542-a5b-dispatcher; supervisor fixed the return contract and integrated
+- Changed: `project-agents/dispatch/` (dependencies, scope, lease scope per host port, run-brief, reset loop, endings, receipts); `contracts/builder-return.ts` accepts a done reset without a proposal and refuses a reset that proposes one
+- Why: unit A5b
+- Validation: `vitest run src/programs/automation-studio/runtime/project-agents` -> 117 passed (reset test unskipped); after merging dev, project-agents + subflow-candidate -> 150 passed; check exit 0; audit exit 0; Core finish `pnpm check` passed, merged `1f747263`
+- Outcome: Accepted. Choices recorded: allowance call cap defaults to the brief's `maxIterations` and counts trial judge calls; a brief after a blocked predecessor is not started; the allowance is carved only once the lease is granted
+- Follow-up: A14 survey briefs come back blocked without running; implement or drop the kind before the supervisor plans one
+
+### 2026-10-13 — A5a project supervisor (t541)
+- Agent: worker t541-a5a-supervisor (one supervisor follow-up); supervisor verified and integrated
+- Changed: `project-agents/supervisor/` (loop, read-task, plan, dispatch, assembly, whole trial, completion, guidance, ports); `flow-bootstrap/candidate/submission.ts` `submitComposed`; `llm/harness-options/bootstrap-completion.ts` exports one check sequence for model-written and composed Flows
+- Why: unit A5a; the follow-up removed a copied completion-check sequence (a later check would have skipped assembled Flows)
+- Validation: vitest `project-agents`, `flow-bootstrap/candidate`, `subflow-candidate`, `llm/harness-options` -> 65 files, 522 passed (supervisor ran it on the final tree and again after merging dev); check exit 0; audit exit 0; diff check clean; Core finish `pnpm check` passed, merged `856b8638`
+- Outcome: Accepted. Known: `supervisor/` holds 20 files (advisory; a kind subfolder breaks the depth limit); the whole trial's own acts are not attributed in the project ledger, so the supervisor demands a reset after any whole trial that left acts (A5c to record them under the supervisor)
+- Follow-up: A5c
+
+### 2026-10-13 — Sweep findings beyond stale fixtures (decisions)
+- Agent: supervisor, from sweep groups A and B
+- Changed: nothing yet; decisions sent to the group workers
+- Why: group A found a product defect: `storage/project/flow-resource-repository.ts` `listInstructionSummariesPage` joins scope clauses with "or" and admits `flow`-scoped instructions of any Flow for a subflow, so another Flow's instruction changes a build's execution digest (supervisor read the query and confirmed). Group B found 19 tests of recording-proposal approval, which t519 retired on purpose
+- Validation: not validated (decisions); the fixes carry their own
+- Outcome: Decided: fix the repository to match the in-memory store's semantics with a regression and a parity test (t544); delete tests whose subject is behaviour after approval, keep one refusal test per retired entry point, list every deletion (t545)
+- Follow-up: verify t544 and t545
 
 ## Open Questions
 

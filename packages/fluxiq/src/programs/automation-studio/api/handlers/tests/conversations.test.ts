@@ -266,7 +266,8 @@ describe("Automation Studio conversation API", () => {
       decision: { kind: "invoke", say: null, invocation: { capabilityId: "flow.describe", title: "Say what a Flow should do", arguments: { flowId: "flow.kettle", instruction: "Check prices" }, confidence: 1, requestedId: null, renamedArguments: {}, droppedArguments: [], asksFirst: false, consequences: [] } },
       source: "model", modelProblem: null, attempts: 1, turnId: "turn.2", askId: null, runNow: true
     };
-    const { registry, conversations } = conversationApi({ respondToPersonTurn: vi.fn().mockResolvedValue({ turn: { turnId: "turn.1" }, response: describeDecision, problem: null }) });
+    // The person's own words are what a command saves (t349); since t519 a model argument cannot stand in for them.
+    const { registry, conversations } = conversationApi({ respondToPersonTurn: vi.fn().mockResolvedValue({ turn: { turnId: "turn.1" }, response: describeDecision, problem: null }), personWords: vi.fn().mockResolvedValue({ text: "Check prices", saysWhatToDo: true }) });
     const saved: Array<{ actor: unknown; payload: unknown }> = [];
     registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowGenerationInstruction, permission: "flows.write", classification: "authoring", handler: (request) => { saved.push({ actor: request.actor, payload: request.payload }); return { ok: true, payload: {} }; } });
     const paired = { sessionId: "client-gateway:gateway.7", userId: "user.writer", roleId: "admin", permissions: ["programs.read" as const, "programs.write" as const, "flows.write" as const] };
@@ -353,7 +354,7 @@ describe("Automation Studio conversation API", () => {
         }
       });
       const runs: unknown[] = [];
-      registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, permission: "runtime.control", classification: "authoring", handler: (request) => { runs.push(request.payload); return { ok: true, payload: { runtimeSession: { runId: "run.1", status: "succeeded" }, terminalReason: "Run completed." } }; } });
+      registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, permission: "runtime.control", classification: "authoring", handler: (request) => { runs.push(request.payload); return { ok: true, payload: { runtimeSession: { runId: "run.1", status: "succeeded" }, terminalReason: "Run completed.", durableBehaviorChanged: false } }; } });
       // The answer names what ran, read from the Flow itself (MVP item 24).
       registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlow, permission: "programs.read", classification: "read", handler: () => ({ ok: true, payload: { flow: { flowId: "flow.kettle", name: "Kettle price checker" } } }) });
       const runner = { ...writeActor, permissions: ["programs.read" as const, "programs.write" as const, "runtime.control" as const] };
@@ -373,7 +374,7 @@ describe("Automation Studio conversation API", () => {
       expect(runs).toEqual([{ projectId: "project.one", flowId: "flow.kettle", runIntent: "explore_and_adapt", resultCheckCallerPays: "repair_checks" }]);
       const turns = (await conversations.getConversation({ projectId: "project.one", conversationId: thread.conversationId }))?.turns ?? [];
       expect(turns.map((turn) => turn.author)).toEqual(["person", "automation", "automation"]);
-      expect(turns[2]).toMatchObject({ text: "\"Kettle price checker\" ran all the way through.", attachment: { kind: AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT, ref: "run.execute" } });
+      expect(turns[2]).toMatchObject({ text: "\"Kettle price checker\" ran all the way through. This run did not keep a change for future runs.", attachment: { kind: AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT, ref: "run.execute" } });
       expect(turns[2]?.text).not.toContain("run.1");
     } finally {
       await pool.closeAll();

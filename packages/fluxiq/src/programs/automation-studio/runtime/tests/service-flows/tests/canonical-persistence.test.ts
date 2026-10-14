@@ -36,6 +36,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
     const domainProject = await service.createProject({ name: "Orders", domainId: "orders" });
     const globalProject = await service.createProject({ name: "Global" });
     const flow = await service.createFlow({ projectId: domainProject.id, flowId: "flow.orders.submit", name: "Submit order" });
+    await service.saveFlowGenerationInstruction({ projectId: domainProject.id, flowId: flow.flowId, instruction: "Submit the order once." });
     await expect(service.createFlow({ projectId: domainProject.id, flowId: flow.flowId, name: "Accidental overwrite" })).rejects.toThrow("already exists");
 
     expect(flow.scope).toEqual({ kind: "domain", domainId: "orders" });
@@ -76,6 +77,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Canonical runtime" });
     const blank = await service.createFlow({ projectId: project.id, flowId: "flow.canonical.runtime", name: "Canonical runtime" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: blank.flowId, instruction: "Produce the constant value once." });
     await installPrimaryRouter(service, project.id, blank.flowId, {
       nodes: [{ id: "start", definitionId: "builtin.control.start" }, { id: "value", definitionId: "builtin.data.constant", parameterValues: { value: "canonical" } }],
       edges: [{ id: "start.value", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "value", targetPortId: "in" }],
@@ -93,10 +95,12 @@ describe("AutomationStudioService canonical Flow persistence", () => {
     const domainProject = await service.createProject({ name: "Orders", domainId: "orders" });
     const globalProject = await service.createProject({ name: "Global orchestrator" });
     const child = await service.createFlow({ projectId: domainProject.id, flowId: "flow.orders.child", name: "Orders child" });
+    await service.saveFlowGenerationInstruction({ projectId: domainProject.id, flowId: child.flowId, instruction: "Start and end once." });
     const childExecutable = await installPrimaryRouter(service, domainProject.id, child.flowId, { nodes: [{ id: "start", definitionId: "builtin.control.start" }, { id: "end", definitionId: "builtin.control.end" }], edges: [{ id: "start.end", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }] });
     const publishedChild = await service.publishFlow({ projectId: domainProject.id, flowId: childExecutable.graph.flowId, version: "1.0.0" });
     expect((publishedChild.publication as any).snapshot.nodes).toEqual(expect.arrayContaining([expect.objectContaining({ definitionId: "builtin.control.start", definitionVersion: "1.0.0" })]));
     const parent = await service.createFlow({ projectId: globalProject.id, flowId: "flow.global.parent", name: "Global parent" });
+    await service.saveFlowGenerationInstruction({ projectId: globalProject.id, flowId: parent.flowId, instruction: "Call the published orders Flow once." });
     const parentExecutable = await installPrimaryRouter(service, globalProject.id, parent.flowId, { nodes: [{ id: "start", definitionId: "builtin.control.start" }, createCallFlowNode({ id: "call", target: { flowId: childExecutable.graph.flowId, version: "1.0.0", scope: { kind: "domain", domainId: "orders" } } })], edges: [{ id: "start.call", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "call", targetPortId: "in" }] });
     await service.saveFlow({ projectId: globalProject.id, flow: { ...parentExecutable.graph, executionDefaults: { authorizedDomainIds: ["orders"] } } });
     expect((await service.inspectFlowDependencies(domainProject.id, childExecutable.graph.flowId)).usedBy).toEqual([]);
@@ -162,6 +166,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
     const domainProject = await service.createProject({ name: "Orders", domainId: "orders" }); const globalProject = await service.createProject({ name: "Global" });
     expect(await service.listNativeNodeDefinitions(domainProject.id)).toMatchObject([{ id: "orders.total" }]); expect(await service.listNativeNodeDefinitions(globalProject.id)).toEqual([]);
     const blank = await service.createFlow({ projectId: domainProject.id, flowId: "flow.orders.native", name: "Native" });
+    await service.saveFlowGenerationInstruction({ projectId: domainProject.id, flowId: blank.flowId, instruction: "Calculate the order total once." });
     await installPrimaryRouter(service, domainProject.id, blank.flowId, { nodes: [{ id: "total", definitionId: "orders.total" }], edges: [] });
     await expect(service.runRuntimeSession({ projectId: domainProject.id, flowId: blank.flowId })).resolves.toMatchObject({ status: "succeeded", trace: { values: { total: 42 } } });
   });
@@ -233,7 +238,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
   it("finalizes recordings idempotently and rejects every later event, note, or marker mutation", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Final recording immutability" });
-    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.final", initialState: { timestamp: 1, namespaces: {} } });
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.final", initialState: { timestamp: 1, namespaces: {} } });
     await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "ready", payload: {}, timestamp: 10 } });
     const first = await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId, endedAt: 20 });
     const second = await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId, endedAt: 999 });

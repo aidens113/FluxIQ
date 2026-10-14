@@ -12,7 +12,7 @@ it("restores the exact ref-only recording body from an equivalent hydrated state
     await fx.setup({ createGitkeep: false, createGuides: false });
     const service = fx.programs.automationStudio;
     const project = await service.createProject({ name: "Unit state normalization" });
-    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.unit", startedAt: 1, initialState: { timestamp: 1, namespaces: {} } });
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.unit", startedAt: 1, initialState: { timestamp: 1, namespaces: {} } });
     const stored = await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "client.state_snapshot", timestamp: 2, payload: { state: { id: "state.unit", timestamp: 2, namespaces: {} } } } });
     const hydrated = await service.getRecordingSession(recording.recordingId, project.id);
     const documents = (service as unknown as { objectDocuments: AutomationStudioObjectDocuments }).objectDocuments;
