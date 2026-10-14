@@ -25,6 +25,30 @@
 // - No success check: proposing how a subflow shows it is done is its
 //   builder's work, not the supervisor's.
 //
+// **What a plan hands on, and what it is for (bigbox debug fix 7).** Bigbox
+// `run-mv8186yr-a385fd3a` planned a value no step of the subflows taking it
+// read, and a fourth subflow for a part that only said what must stay as it
+// was; the value made its producer's builder bind an output it had no step for,
+// and the extra subflow made a builder with nothing to build, which then acted
+// unbriefed. The guidance says when a value is one (a later step uses it) and
+// when a part is a constraint, and the written plan's answer carries two
+// warnings beside it (`warnings`, each by its path):
+//
+// - A value no other subflow takes, `project.plan_value_unused`. A warning,
+//   not a refusal: it may be what the Flow hands back to the person (a value
+//   read for them), and nothing in the plan says which, so only the model can
+//   tell; the answer says to drop it with `project.amend_plan` unless it is
+//   the Flow's result. (Bigbox's value was taken by name by the later
+//   subflows and read by none of their steps: a plan cannot show that, so
+//   there the guidance is what answers it.)
+// - In a plan of several subflows, a subflow none of whose parts has a lasting
+//   act and that hands nothing on is a warning, `project.plan_subflow_constraint`:
+//   it may be a read the person asked for (its rows are the run's dataset),
+//   which a refusal would forbid, or a part whose facts only say what must stay
+//   unchanged -- a constraint for `notAsked` and the judge's checklist, with no
+//   subflow of its own. Core cannot read which from the words, so the answer
+//   names both and the model amends the plan.
+//
 // The raw plan is out of the model's reach: a `structurePlan` sent is refused
 // as a field the format does not have. Every refusal names the planning
 // format's own path -- `subflows.1.inputs.0`, never `structurePlan.plan...` --
@@ -57,7 +81,7 @@ const MAX_PORTS = 40;
 const MAX_PARTS = 50;
 
 export function automationStudioProjectSupervisorPlanInput(value: JsonObject, sources: readonly AutomationStudioProjectInstructionSource[]):
-  | { ok: true; taskSpec: AutomationStudioProjectTaskSpec; structure: AutomationStudioProjectStructurePlan; purposes: Record<string, string>; after: Record<string, string[]> }
+  | { ok: true; taskSpec: AutomationStudioProjectTaskSpec; structure: AutomationStudioProjectStructurePlan; purposes: Record<string, string>; after: Record<string, string[]>; warnings: AutomationStudioProjectSupervisorInputIssue[] }
   | { ok: false; issues: AutomationStudioProjectSupervisorInputIssue[] } {
   const issues: AutomationStudioProjectSupervisorInputIssue[] = Object.keys(value)
     .filter((key) => key !== "taskSpec" && key !== "subflows" && key !== "reason")
@@ -81,7 +105,23 @@ export function automationStudioProjectSupervisorPlanInput(value: JsonObject, so
     issues.push(at === undefined ? issue : { code: issue.code, path: `subflows.${at}.parts.${part![2]}` });
   }
   if (issues.length) return { ok: false, issues };
-  return { ok: true, taskSpec: spec.value, structure: structure.value, purposes: compiled.purposes, after: Object.fromEntries(written.map((subflow) => [subflow.key, [...subflow.after]])) };
+  return { ok: true, taskSpec: spec.value, structure: structure.value, purposes: compiled.purposes, after: Object.fromEntries(written.map((subflow) => [subflow.key, [...subflow.after]])), warnings: valueWarnings(written, spec.value) };
+}
+
+/** Each value no other subflow takes, and each subflow of several that neither acts nor hands anything on (header). */
+function valueWarnings(written: readonly Written[], spec: AutomationStudioProjectTaskSpec): AutomationStudioProjectSupervisorInputIssue[] {
+  const warned: AutomationStudioProjectSupervisorInputIssue[] = [];
+  for (const [at, subflow] of written.entries()) {
+    for (const [index, output] of subflow.outputs.entries()) {
+      if (!written.some((other) => other !== subflow && other.inputs.includes(output))) warned.push({ code: "project.plan_value_unused", path: `subflows.${at}.outputs.${index}` });
+    }
+  }
+  if (written.length < 2) return warned;
+  const acts = new Map(spec.parts.map((part) => [part.id, part.lastingActs.length > 0]));
+  for (const [at, subflow] of written.entries()) {
+    if (!subflow.outputs.length && subflow.parts.every((part) => !acts.get(part))) warned.push({ code: "project.plan_subflow_constraint", path: `subflows.${at}` });
+  }
+  return warned;
 }
 
 /** Every subflow as written, each issue by its path; undefined when any was refused. */
