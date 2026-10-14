@@ -26,6 +26,11 @@ describe("subflow brief", () => {
     expect(parse(value)).toMatchObject({ status: "invalid", code });
   });
 
+  it("refuses more turns than a builder's loop takes (t577)", () => {
+    expect(parse(brief((value) => (value.maxIterations = 64)))).toMatchObject({ status: "valid" });
+    expect(parse(brief((value) => (value.maxIterations = 65)))).toMatchObject({ status: "invalid", code: "project.invalid_count", path: "brief.maxIterations" });
+  });
+
   it("carries Core's call share when it has one, and refuses a share that is no count (t570)", () => {
     expect(parse(brief((value) => (value.maxCalls = 11)))).toEqual({ status: "valid", value: brief((value) => (value.maxCalls = 11)) });
     expect(parse(brief((value) => (value.maxCalls = 0)))).toMatchObject({ status: "invalid", path: "brief.maxCalls" });

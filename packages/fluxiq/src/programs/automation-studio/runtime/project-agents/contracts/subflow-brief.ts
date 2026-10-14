@@ -1,5 +1,6 @@
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { AutomationStudioFlowBootstrapInterface } from "../../flow-bootstrap/plan/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import { automationStudioProjectAskedActs } from "./asked-acts.ts";
 import { automationStudioProjectDigest } from "./digest.ts";
 import { automationStudioProjectJsonShape as shape, type AutomationStudioProjectParse } from "./json-shape.ts";
@@ -52,7 +53,8 @@ export type AutomationStudioProjectSubflowBrief = {
   failingReceipt?: AutomationStudioProjectReceiptRef;
 };
 
-const LIMITS = { parts: 50, predecessors: 40, excerpt: 20_000, iterations: 1000, calls: 10_000 } as const;
+/** `iterations` is the builder loop's own most, so no brief can carry a length its loop refuses (t577). */
+const LIMITS = { parts: 50, predecessors: 40, excerpt: 20_000, iterations: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations, calls: 10_000 } as const;
 
 export const automationStudioProjectSubflowBrief = Object.freeze({
   parse(value: unknown): AutomationStudioProjectParse<AutomationStudioProjectSubflowBrief> {

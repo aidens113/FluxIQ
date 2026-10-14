@@ -1,4 +1,4 @@
-// Three builders sharing one 64-call build (t570): Core sizes each brief's
+// Three builders sharing one 64-call build (t570), and one whose share outgrows its loop's turns (t577): Core sizes each brief's
 // share of the calls and money (`project-agents/supervisor/brief-sizing.ts`),
 // the dispatcher carves each share from the build's purse
 // (`./brief-calls.ts`, `llm/build-purse/`), and each real builder loop counts
@@ -13,6 +13,7 @@ import { automationStudioLlmCurrentBuildPurse } from "../../../llm/build-purse/i
 import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceTool } from "../../../llm/index.ts";
 import { automationStudioProjectSupervisorBriefSizing, type AutomationStudioProjectBuilderPorts, type AutomationStudioProjectSubflowBrief } from "../../../project-agents/index.ts";
 import { gardenBrief, gardenBuild, REF } from "../../../project-agents/dispatch/tests/dispatch-fixture.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
 import { automationStudioProjectBuildBriefCalls } from "../brief-calls.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_FINISHING_CALLS, AUTOMATION_STUDIO_PROJECT_BUILD_RESERVE } from "../reserve.ts";
 
@@ -38,46 +39,51 @@ function spendCall(judge = false): void {
 
 const latest = (evidence: readonly Entry[], toolId: string) => [...evidence].reverse().find((entry) => entry.toolId === toolId)?.value as JsonObject | undefined;
 
+/** A builder whose model explores until its budget says it is wrapping up (or after `looks`), then submits, tests once and completes. */
+function scriptedBuilder(shown: Record<string, string>, budgets: Record<string, JsonObject[]>, looksBeforeSubmit = Number.POSITIVE_INFINITY) {
+  return (request: { brief: AutomationStudioProjectSubflowBrief }): AutomationStudioProjectBuilderPorts => {
+    const key = request.brief.subflowKey;
+    let looks = 0;
+    const trial: AutomationStudioSubflowTrialPort = async (asked) => {
+      // A trial's judge asks twice: a first answer and its confirmation, both on the brief's share.
+      spendCall(true);
+      spendCall(true);
+      return { partial: true, scope: "subflow", identity: { ...asked.proposal.scope }, revision: asked.proposal.revision, digest: asked.proposal.digest, verdict: "yes", feedback: {}, trialRunId: `run.${key}`, entryPrepared: true };
+    };
+    return {
+      loop: {
+        tools: [look], maxToolCalls: 30,
+        unusableDecisions: { maxConsecutive: 5, maxInARow: 5, stalled: () => new Error("stalled") },
+        executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true, page: "the catalogue" }, effectApplied: false, targetsUnchanged: true }),
+        decide: async ({ evidence }) => {
+          spendCall();
+          const budget = latest(evidence, "core.budget");
+          if (budget) (budgets[key] ??= []).push(budget);
+          const wrapping = (budget !== undefined && (budget.decisionsLeft as number) <= 5) || looks >= looksBeforeSubmit;
+          const submitted = latest(evidence, AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID);
+          const tested = latest(evidence, AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID);
+          if (!wrapping) return { kind: "tool_call", toolId: look.toolId, callId: `look.${key}.${++looks}`, input: { at: looks } };
+          if (!submitted) return { kind: "tool_call", toolId: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, callId: `submit.${key}`, input: { flow: SCRIPTS[key]! } };
+          const receipt = { revision: submitted.revision as number, digest: submitted.digest as string };
+          if (!tested) return { kind: "tool_call", toolId: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, callId: `test.${key}`, input: receipt };
+          return { kind: "complete", result: { subflowKey: key, ...receipt } };
+        }
+      },
+      submission: testSubmission(),
+      trial,
+      observe: (loop: AutomationStudioLlmEvidenceLoopInput) => {
+        shown[key] = loop.tools.find((tool) => tool.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!.description;
+        return loop;
+      }
+    };
+  };
+}
+
 describe("three builders on one 64-call build", () => {
   it("each gets a share of the calls, wraps up and submits inside it, and calls remain for assembly and the whole trial", async () => {
     const shown: Record<string, string> = {};
     const budgets: Record<string, JsonObject[]> = {};
-    const builder = (request: { brief: AutomationStudioProjectSubflowBrief }): AutomationStudioProjectBuilderPorts => {
-      const key = request.brief.subflowKey;
-      let looks = 0;
-      const trial: AutomationStudioSubflowTrialPort = async (asked) => {
-        // A trial's judge asks twice: a first answer and its confirmation, both on the brief's share.
-        spendCall(true);
-        spendCall(true);
-        return { partial: true, scope: "subflow", identity: { ...asked.proposal.scope }, revision: asked.proposal.revision, digest: asked.proposal.digest, verdict: "yes", feedback: {}, trialRunId: `run.${key}`, entryPrepared: true };
-      };
-      return {
-        loop: {
-          tools: [look], maxToolCalls: 30,
-          unusableDecisions: { maxConsecutive: 5, maxInARow: 5, stalled: () => new Error("stalled") },
-          executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true, page: "the catalogue" }, effectApplied: false, targetsUnchanged: true }),
-          decide: async ({ evidence }) => {
-            spendCall();
-            const budget = latest(evidence, "core.budget");
-            if (budget) (budgets[key] ??= []).push(budget);
-            const wrapping = budget !== undefined && (budget.decisionsLeft as number) <= 5;
-            const submitted = latest(evidence, AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID);
-            const tested = latest(evidence, AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID);
-            if (!wrapping) return { kind: "tool_call", toolId: look.toolId, callId: `look.${key}.${++looks}`, input: { at: looks } };
-            if (!submitted) return { kind: "tool_call", toolId: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, callId: `submit.${key}`, input: { flow: SCRIPTS[key]! } };
-            const receipt = { revision: submitted.revision as number, digest: submitted.digest as string };
-            if (!tested) return { kind: "tool_call", toolId: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, callId: `test.${key}`, input: receipt };
-            return { kind: "complete", result: { subflowKey: key, ...receipt } };
-          }
-        },
-        submission: testSubmission(),
-        trial,
-        observe: (loop: AutomationStudioLlmEvidenceLoopInput) => {
-          shown[key] = loop.tools.find((tool) => tool.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!.description;
-          return loop;
-        }
-      };
-    };
+    const builder = scriptedBuilder(shown, budgets);
     const build = await gardenBuild({
       capacity: 1, maxCalls: 64, ceilingUsd: 0.25,
       ports: { builder },
@@ -135,5 +141,35 @@ describe("three builders on one 64-call build", () => {
     expect(shown.open_packet).toContain("part open_packet: <what it does>\n  input: packet\n");
     expect(shown.open_packet).toContain("\"Open the first packet's page\"");
     expect(shown.list_seeds).toContain("The router runs it, so it takes no inputs and hands back no outputs");
+  });
+});
+
+describe("one builder on a 250-call build (t577)", () => {
+  it("runs on its loop's own turns when its call share is larger, and keeps the share's calls", async () => {
+    const build = await gardenBuild({
+      capacity: 1, maxCalls: 250, ceilingUsd: 0.25,
+      ports: { builder: scriptedBuilder({}, {}, 2) },
+      briefs: async ({ store, purse }) => {
+        purse.keepBackForJudging({ calls: AUTOMATION_STUDIO_PROJECT_BUILD_RESERVE.calls, unpriced: { ...AUTOMATION_STUDIO_PROJECT_BUILD_RESERVE.unpriced } });
+        purse.keepBackCallsFromAllowances(AUTOMATION_STUDIO_PROJECT_BUILD_FINISHING_CALLS.supervisorCalls + AUTOMATION_STUDIO_PROJECT_BUILD_FINISHING_CALLS.resetCalls);
+        const structure = (await store.read(REF))!.record.plans.at(-1)!.plan;
+        const sizing = automationStudioProjectSupervisorBriefSizing({ sent: [{ kind: "build", subflowKey: "list_seeds" }], purse, structure, done: new Set(["open_packet", "plant_packet"]), supervisorCalls: AUTOMATION_STUDIO_PROJECT_BUILD_FINISHING_CALLS.supervisorCalls });
+        if (!sizing.ok) throw new Error(`sizing refused: ${JSON.stringify(sizing)}`);
+        const size = sizing.sizes[0]!;
+        return [gardenBrief("b-list_seeds", "list_seeds", [], (brief) => {
+          brief.allowanceUsd = size.allowanceUsd;
+          brief.maxIterations = size.maxIterations;
+          brief.maxCalls = size.maxCalls!;
+        })];
+      }
+    });
+    build.dispatcherInput.runBuilder = runAutomationStudioSubflowBuilderLoop;
+    build.dispatcherInput.maxCalls = automationStudioProjectBuildBriefCalls;
+    // A8's crossborder builders were sized 77 turns on a 250-call purse, and the loop refused every one before its first call.
+    expect(build.briefs[0]!.maxCalls).toBeGreaterThan(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations);
+    expect(build.briefs[0]!.maxIterations).toBe(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations);
+    const { returns } = await build.run();
+    expect(returns.map((returned) => [returned.briefId, returned.outcome]), JSON.stringify(returns)).toEqual([["b-list_seeds", "done"]]);
+    expect(returns[0]!.proposal).toBeDefined();
   });
 });
