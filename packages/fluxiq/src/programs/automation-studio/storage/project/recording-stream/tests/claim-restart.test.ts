@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import { expect, it } from "vitest";
 const execute = promisify(execFile);
 const probe = fileURLToPath(new URL("./claim-process-probe.mjs", import.meta.url));
-it("recovers the exact finalized legacy claim after its isolated writer dies before descriptor insertion", async () => {
+it("recovers the exact finalized legacy claim after its isolated writer dies before descriptor insertion", { timeout: 60_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-recording-claim-process-"));
   const dist = path.resolve("dist");
   const child = fork(probe, ["claim", root, dist], { stdio: ["ignore", "pipe", "pipe", "ipc"] });

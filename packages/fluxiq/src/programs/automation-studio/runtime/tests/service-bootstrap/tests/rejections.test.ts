@@ -229,6 +229,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const instance = createService({ resolver });
     const project = await instance.createProject({ name: "Instruction gate" });
     const flow = await instance.createFlow({ projectId: project.id, flowId: "flow.instruction-gate", name: "Blank" });
+    // An instruction is saved only against a Flow that exists, so the out-of-scope one names a real other Flow.
+    if (_label === "out of scope") await instance.createFlow({ projectId: project.id, flowId: "flow.other", name: "Other" });
     if (createInstruction) {
       const now = Date.now();
       await instance.saveFlowInstruction(project.id, {
@@ -251,7 +253,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       projectId: project.id,
       flowId: flow.flowId,
       caller: caller()
-    })).rejects.toThrow("Flow Bootstrap generation failed (flow_bootstrap.active_instructions_required).");
+    // Since t519 the instruction authority refuses a build with no active, in-scope instruction before Flow Bootstrap's own check.
+    })).rejects.toMatchObject({ name: "AutomationInstructionError", diagnostic: { code: "automation.instructions_required" } });
     expect(resolver).not.toHaveBeenCalled();
     expect(providerRun).not.toHaveBeenCalled();
     await expectNoTopology(instance, project.id, flow.flowId);

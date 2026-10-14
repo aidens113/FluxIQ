@@ -14,7 +14,7 @@ describe("Automation Studio IO bridge", () => {
     const io = configuredIo();
     const service = new AutomationStudioService({ seedFixture: false });
     const recording = await service.createRecording({
-      recordingId: "recording.io",
+      recordingId: "recording.io", description: "Shows the steps the automation repeats.",
       startedAt: 1,
       initialState: { timestamp: 1, namespaces: {} }
     });
@@ -51,7 +51,7 @@ describe("Automation Studio IO bridge", () => {
       }
     }));
     const service = new AutomationStudioService({ seedFixture: false });
-    const recording = await service.createRecording({ recordingId: "recording.input-payload", initialState: { timestamp: 1, namespaces: {} } });
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.", recordingId: "recording.input-payload", initialState: { timestamp: 1, namespaces: {} } });
     const recorder = new AutomationStudioIoRecorder({ automationStudio: service, io, domainId: "example" });
 
     await recorder.recordInput(recording.recordingId, "primary-pressed", createEnvelope({ ioId: "primary-pressed", payload: { elementId: "confirm", label: "Confirm" } }));
@@ -77,7 +77,7 @@ describe("Automation Studio IO bridge", () => {
       mode: "stream"
     }));
     const service = new AutomationStudioService({ seedFixture: false });
-    const recording = await service.createRecording({ recordingId: "recording.observations", initialState: { timestamp: 1, namespaces: {} } });
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.", recordingId: "recording.observations", initialState: { timestamp: 1, namespaces: {} } });
     const recorder = new AutomationStudioIoRecorder({ automationStudio: service, io, domainId: "example" });
 
     const state = await recorder.recordInput(recording.recordingId, "current-state", createEnvelope({ ioId: "current-state", payload: { ready: true } }));
@@ -317,7 +317,7 @@ describe("Automation Studio IO bridge", () => {
     const service = new AutomationStudioService({ dataDir: root, seedFixture: false }).bindIoRuntime(io, "example");
     try {
     const project = await service.createProject({ name: "Output validation" });
-    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.unregistered-output", taskId: "task.output-validation", initialState: { timestamp: 1, namespaces: {} } });
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.unregistered-output", taskId: "task.output-validation", initialState: { timestamp: 1, namespaces: {} } });
     await service.appendRecordingEvent({
       projectId: project.id,
       recordingId: recording.recordingId,
@@ -341,7 +341,7 @@ async function identityRecorder(recordingId: string) {
   const io = configuredIo();
   io.registerInput("example", defineInput({ definition: { id: "current-state", title: "Current state", role: "state" }, mode: "stream" }));
   const service = new AutomationStudioService({ seedFixture: false });
-  await service.createRecording({ recordingId, initialState: { timestamp: 1, namespaces: {} } });
+  await service.createRecording({ description: "Shows the steps the automation repeats.", recordingId, initialState: { timestamp: 1, namespaces: {} } });
   return { recorder: new AutomationStudioIoRecorder({ automationStudio: service, io, domainId: "example" }), recordingId };
 }
 

@@ -40,6 +40,11 @@ async function fixture(operation: (h: { fluxiq: FluxIQ; controller: Controller; 
     await gateway.receive(session.sessionId, { id: "hello", protocolVersion: CLIENT_GATEWAY_PROTOCOL_VERSION, timestamp: Date.now(), type: "client.hello", payload: { clientId: "synthetic.client", clientType: "extension", capabilities: [] } });
     const pairing = gateway.snapshot().pairings.find(item => item.requestedBySessionId === session.sessionId)!; await gateway.approvePairing(pairing.pairingCode, { approvedByUserId: "synthetic.user" });
     const project = await program.createProject({ name: "Synthetic actual commands", domainId: "synthetic.domain" });
+    // Each Flow a run starts here is a stored Flow with written instructions, as Core requires since t519.
+    for (const flowId of [flow.flowId, "flow.parent"]) {
+      await program.createFlow({ projectId: project.id, flowId, name: flowId });
+      await program.saveFlowGenerationInstruction({ projectId: project.id, flowId, instruction: "Send each synthetic action once." });
+    }
     const stored = await program.startRuntimeSession({ projectId: project.id, runId: "run.synthetic", flow });
     await operation({ fluxiq, controller, io, runtime, owner: { projectId: project.id, runId: stored.runId, rootFlowId: stored.flowId }, contexts, sends, legacy, acknowledge: value => { ack = value; } });
   } finally {

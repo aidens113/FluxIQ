@@ -109,6 +109,7 @@ async function repairedRun(): Promise<{ service: AutomationStudioService; projec
     flowId: "flow.annotated-repair",
     metadata: { ...adaptive, adaptationPolicySettings: { ...policy, allowModifyActionTargets: false } }
   });
+  await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Divide the numerator by the denominator." });
   const llmExecution = { actorUserId: "user.test", actorSessionId: "session.test", intent: "diagnose_and_adapt" as const };
   const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 }, llmExecution });
   const annotation = annotationOf(await service.getFlowRunDetail(project.id, run.runId));

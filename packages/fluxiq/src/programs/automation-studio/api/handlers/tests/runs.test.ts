@@ -32,6 +32,7 @@ async function runOneDeterministicFlow(service: AutomationStudioService, project
   };
   await service.saveFlow({ projectId, flow: { ...blankGraph, ...graph } });
   await service.setFlowMapFallback({ projectId, flowId: flow.flowId, kind: "subflow", targetSubflowId: subflow.subflowId });
+  await service.saveFlowGenerationInstruction({ projectId, flowId: flow.flowId, instruction: "Produce the constant value once." });
   const run = await service.runRuntimeSession({ projectId, flowId: flow.flowId, adaptiveMode: "deterministic" });
   return run.runId;
 }

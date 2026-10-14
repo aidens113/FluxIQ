@@ -32,6 +32,7 @@ afterEach(async () => {
 async function storedRun(status: "waiting" | "running", parked: boolean): Promise<{ projectId: string; runId: string }> {
   const project = await service.createProject({ name: "Cancel parked run" });
   const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.cancel-parked" });
+  await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow once to the end." });
   const queued = await service.startRuntimeSession({ projectId: project.id, flowId: flow.flowId });
   const file = path.join(tempRoot, "programs", "automation-studio", "projects", project.id, "runtime", "sessions", `${queued.runId}.json`);
   // The program-state envelope the service writes: `{ version: 1, data: { session } }`.

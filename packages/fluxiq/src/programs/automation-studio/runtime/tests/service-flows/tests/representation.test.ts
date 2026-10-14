@@ -29,6 +29,7 @@ describe("Automation Studio Flow representation boundary", () => {
   it("rejects graph saves and patches on newly created orchestration Flows", async () => {
     const project = await service.createProject({ name: "Modern boundary" });
     const parent = await service.createFlow({ projectId: project.id, flowId: "flow.parent", name: "Parent" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: parent.flowId, instruction: "Run the Flow once to the end." });
 
     await expect(service.saveFlow({
       projectId: project.id,
@@ -49,6 +50,7 @@ describe("Automation Studio Flow representation boundary", () => {
   it("runs a dedicated owned Subflow graph through its parent Router and refuses graph hijacking", async () => {
     const project = await service.createProject({ name: "Owned graph" });
     const parent = await service.createFlow({ projectId: project.id, flowId: "flow.parent", name: "Parent" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: parent.flowId, instruction: "Run the Flow once to the end." });
     const unrelated = await service.createFlow({ projectId: project.id, flowId: "flow.unrelated", name: "Unrelated" });
     await expect(service.saveFlowSubflow({
       schemaVersion: "0.1",
@@ -159,6 +161,7 @@ describe("Automation Studio Flow representation boundary", () => {
     });
     const migration = await service.migrateFlows(project.id);
     const saved = await service.getFlow(project.id, migration.outcomes[0]!.flowId);
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: saved.flowId, instruction: "Run the Flow once to the end." });
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: saved.flowId, adaptiveMode: "no_llm_intervention" });
     expect(run.metadata).toMatchObject({ compatibilityDiagnostics: [expect.objectContaining({ code: "flow.legacy_single_graph_execution" })] });
 
@@ -461,6 +464,7 @@ function adaptiveMetadata(): JsonObject {
 
 async function createRoutedGateFlow(service: AutomationStudioService, projectId: string): Promise<string> {
   const parent = await service.createFlow({ projectId, flowId: "flow.live-patch-inputs", name: "Live-patch inputs" });
+  await service.saveFlowGenerationInstruction({ projectId, flowId: parent.flowId, instruction: "Run the Flow once to the end." });
   await service.saveFlow({ projectId, flow: { ...parent, metadata: { ...(parent.metadata ?? {}), ...adaptiveMetadata() } } });
   const subflow = await service.createFlowSubflow({ projectId, flowId: parent.flowId, name: "Primary", role: "primary" });
   const graph = await service.getFlow(projectId, subflow.graphFlowId!);
@@ -477,12 +481,14 @@ async function createLegacyGateFlow(service: AutomationStudioService, projectId:
   });
   const migration = await service.migrateFlows(projectId);
   const legacy = await service.getFlow(projectId, migration.outcomes[0]!.flowId);
+  await service.saveFlowGenerationInstruction({ projectId, flowId: legacy.flowId, instruction: "Run the Flow once to the end." });
   await service.saveFlow({ projectId, flow: { ...legacy, nodes: gateNodes, edges: gateEdges, metadata: { ...(legacy.metadata ?? {}), ...adaptiveMetadata() } } });
   return legacy.flowId;
 }
 
 async function createRoutedFlowTypingBoundInput(service: AutomationStudioService, projectId: string) {
   const parent = await service.createFlow({ projectId, flowId: "flow.run-inputs", name: "Run inputs" });
+  await service.saveFlowGenerationInstruction({ projectId, flowId: parent.flowId, instruction: "Run the Flow once to the end." });
   const subflow = await service.createFlowSubflow({ projectId, flowId: parent.flowId, name: "Primary", role: "primary" });
   const graph = await service.getFlow(projectId, subflow.graphFlowId!);
   await service.saveFlow({

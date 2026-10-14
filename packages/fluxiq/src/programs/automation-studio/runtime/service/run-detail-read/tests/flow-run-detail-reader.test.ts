@@ -40,6 +40,7 @@ afterEach(async () => {
 async function completedRun(service: AutomationStudioService): Promise<{ projectId: string; runId: string }> {
   const project = await service.createProject({ name: "Run detail reads" });
   const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.run-detail-reads" });
+  await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow once to the end." });
   const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
   expect(run.status).toBe("succeeded");
   const stored = await service.getFlowRunDetail(project.id, run.runId);

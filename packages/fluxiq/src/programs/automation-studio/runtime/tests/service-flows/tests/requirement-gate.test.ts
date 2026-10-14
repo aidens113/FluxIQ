@@ -25,6 +25,7 @@ afterEach(async () => {
 
 async function flowRequiring(service: AutomationStudioService, projectId: string, requires: string[] | undefined) {
   const flow = await service.createFlow({ projectId, flowId: "flow.requirement-gate", name: "Requirement gate" });
+  await service.saveFlowGenerationInstruction({ projectId, flowId: flow.flowId, instruction: "Run the Flow once to the end." });
   const subflow = await service.createFlowSubflow({ projectId, flowId: flow.flowId, name: "Primary", role: "primary" });
   const blank = await service.getFlow(projectId, subflow.graphFlowId!);
   await service.saveFlow({

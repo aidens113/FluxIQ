@@ -7,7 +7,8 @@
 // started from it -- is that create-here, explore and improve save what the
 // person wrote, whole; that a request spread over a question and its answer is
 // all saved, and words before something was last done are not; and that a
-// caller with no person turn gets the argument, marked as such.
+// caller with no person turn gets the argument, marked as such, except an
+// improvement, which is refused instead (t519).
 
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -167,10 +168,11 @@ describe("a build's instruction is the person's own words", () => {
     expect(outcome.instructionFrom).toBe("argument");
     expect(outcome.summary).toContain('The Flow "Kettles" has no steps yet, but it keeps the instruction as the request worded it, since no message of yours came with it, so you can build it again.');
 
+    // An improvement is the one command that does not fall back (t519): with no person turn it is refused, and saves nothing.
     const improved = await AUTOMATION_STUDIO_CONVERSATION_COMMANDS.get("flow.improve")!.run(world.context, { flowId: "flow.kettle", change: "Read ratings." });
-    expect(improved.instructionFrom).toBe("argument");
-    expect(improved.summary).toContain("Before that I saved what should change as an instruction on the Flow, as the request worded it, since no message of yours came with it.");
-    expect(world.saved().at(-1)?.payload.body).toBe("Read ratings.");
+    expect(improved.status).toBe("failed");
+    expect(improved.instructionFrom).toBeUndefined();
+    expect(world.saved().map((call) => call.payload.body)).not.toContain("Read ratings.");
 
     // Run through the executor with no turn of Core's to anchor on: the same fallback.
     await executeAutomationStudioConversationCommand({ command: AUTOMATION_STUDIO_CONVERSATION_COMMANDS.get("flow.explore")!, context: world.context, arguments: { flowId: "flow.kettle", instruction: "Collect towel prices." } });

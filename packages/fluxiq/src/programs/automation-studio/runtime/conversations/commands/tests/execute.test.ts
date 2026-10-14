@@ -448,7 +448,7 @@ describe("conversation commands", () => {
     const conversations = openConversations();
     const conversationId = await chat(conversations);
     const { port, calls } = fakePort({
-      "run-runtime-session": () => ({ ok: true, payload: { runtimeSession: { runId: "run.7", status: "failed" }, terminalReason: "The price element never appeared." } })
+      "run-runtime-session": () => ({ ok: true, payload: { runtimeSession: { runId: "run.7", status: "failed" }, terminalReason: "The price element never appeared.", durableBehaviorChanged: false } })
     });
     const execution = await executeAutomationStudioConversationCommand({ command: command("run.execute"), context: contextFor(conversations, conversationId, port), arguments: { flowId: "flow.kettle" } });
     expect(execution.status).toBe("started");
@@ -456,7 +456,7 @@ describe("conversation commands", () => {
     expect(calls).toEqual([{ endpoint: "run-runtime-session", payload: { projectId: PROJECT, flowId: "flow.kettle", runIntent: "explore_and_adapt", resultCheckCallerPays: "repair_checks" } }]);
     const [result] = await turnsOf(conversations, conversationId);
     // No run id and no code in what the thread keeps (t276).
-    expect(result?.text).toBe("The run failed: The price element never appeared.");
+    expect(result?.text).toBe("The run failed: The price element never appeared. This run did not keep a change for future runs.");
     expect(result?.attachment?.ref).toBe("run.execute");
   });
 

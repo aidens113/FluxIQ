@@ -104,18 +104,12 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const pre = createService({ resolver: preResolver });
     const preProject = await pre.createProject({ name: "Pre-provider failure" });
     const preFlow = await pre.createFlow({ projectId: preProject.id, flowId: "flow.pre-failure", name: "Blank" });
-    const preDiagnostic = await rejectedGenerationDiagnostic(pre.generateFlowBootstrapAdaptation({
+    // Since t519 a Flow with no active instruction is refused by the instruction authority, before Flow Bootstrap's own check and any provider.
+    await expect(pre.generateFlowBootstrapAdaptation({
       projectId: preProject.id,
       flowId: preFlow.flowId,
       caller: caller()
-    }));
-    expect(preDiagnostic).toEqual({
-      code: "flow_bootstrap.active_instructions_required",
-      stage: "pre_provider_validation",
-      retryable: false,
-      providerInvocation: "not_attempted",
-      providerResponse: "not_received"
-    });
+    })).rejects.toMatchObject({ name: "AutomationInstructionError", diagnostic: { code: "automation.instructions_required" } });
     expect(preResolver).not.toHaveBeenCalled();
 
     const resolution = createService({

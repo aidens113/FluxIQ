@@ -19,7 +19,7 @@ try {
   if (phase === "claim") {
     const project = await service.createProject({ name: "Unit claim restart" });
     projectId = project.id;
-    const base = await service.createRecording({ projectId, recordingId: "recording.unit", startedAt: 1, initialState: { timestamp: 1, namespaces: {} } });
+    const base = await service.createRecording({ projectId, recordingId: "recording.unit", description: "Shows the steps the automation repeats.", startedAt: 1, initialState: { timestamp: 1, namespaces: {} } });
     full = { ...[0, 1].reduce((recording, i) => appendRecordingEntry(recording, { id: `entry.${i}`, type: "marker", label: `unit ${i}`, timestamp: i + 2 }), base), endedAt: 99 };
     typed = await AutomationStudioProjectRuntimeStreamStore.open({ pool: service.runtimeProjectDatabasePool, projectId });
     chunks = await AutomationStudioProjectEventChunkStore.open({ pool: service.runtimeProjectDatabasePool, projectId });
