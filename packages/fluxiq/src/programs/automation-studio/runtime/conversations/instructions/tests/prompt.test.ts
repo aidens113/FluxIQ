@@ -48,3 +48,19 @@ describe("unfinished creation versus improving applied steps", () => {
     expect(text).not.toContain("uses flow.improve");
   });
 });
+
+describe("the questions waiting in the thread (A10b)", () => {
+  const waitingAsks = [{ askId: "ask.renew", kind: "confirm" as const, question: "Shall I renew the borrowed atlas?", options: [], about: null }];
+
+  it("lists them with their ids but says how to answer one only when ask.answer is offered", () => {
+    const text = instructions({ capabilities: RUN_ONLY, waitingAsks });
+    expect(text).toContain('  - [ask.renew] "Shall I renew the borrowed atlas?" (a yes-or-no question)');
+    expect(text).not.toContain("choose ask.answer");
+    expect(text).toContain("The ids are for you alone: never write one in a reply or a question");
+  });
+
+  it("says nothing of questions when none waits, and says so when they could not be read", () => {
+    expect(instructions({})).not.toContain("question FluxIQ asked");
+    expect(instructions({ waitingAsks: [], waitingAsksWithheld: true })).toContain("Whether any question FluxIQ asked is still waiting could not be read just now. If their message answers one, leave askId out");
+  });
+});

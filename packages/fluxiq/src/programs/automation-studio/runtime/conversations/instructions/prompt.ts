@@ -8,8 +8,9 @@
 // are left out, and the id need not be spelt perfectly.
 
 import { automationStudioPanelCapabilityVocabulary } from "../../panel-capabilities/index.ts";
-import { AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE, AUTOMATION_STUDIO_CONVERSATION_EXPLORE, AUTOMATION_STUDIO_CONVERSATION_IMPROVE, automationStudioConversationPageShown } from "../commands/index.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_ANSWER_ASK, AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE, AUTOMATION_STUDIO_CONVERSATION_EXPLORE, AUTOMATION_STUDIO_CONVERSATION_IMPROVE, automationStudioConversationPageShown } from "../commands/index.ts";
 import type { AutomationStudioConversationDecisionContext } from "./invocation.ts";
+import type { AutomationStudioConversationWaitingAsk } from "./waiting-ask.ts";
 
 const ANSWER_SHAPE = [
   "Answer with one JSON object and nothing else, in one of these three shapes:",
@@ -37,11 +38,50 @@ export function automationStudioConversationInstructions(
   notes: { transcriptWithheld: boolean; domainInstructions?: string | undefined }
 ): string {
   const sections = [automationStudioPanelCapabilityVocabulary(context.capabilities), ...(notes.domainInstructions ? ["", notes.domainInstructions] : []), "", flowSection(context), "", onScreenSection(context)];
+  const waiting = waitingAsksSection(context);
+  if (waiting) sections.push("", waiting);
   const building = buildContinuationGuidance(context);
   if (building) sections.push("", building);
   if (notes.transcriptWithheld) sections.push("", "The earlier part of this conversation could not be read just now, so only the latest message is shown.");
   sections.push("", ANSWER_SHAPE);
   return sections.join("\n");
+}
+
+/**
+ * The questions still waiting for the person, each with its id, and how to
+ * answer one (A10b). With more than one waiting, `ask.answer` refuses an
+ * answer that names none, so the model is shown the ids it must name -- and
+ * told they are for it alone, because the thread keeps no codes (t276) and
+ * the person never sees one. The example is a library's, a kind of site no
+ * realistic scenario uses, so it teaches the choosing and not a task.
+ */
+function waitingAsksSection(context: AutomationStudioConversationDecisionContext): string | null {
+  const asks = context.waitingAsks ?? [];
+  if (!asks.length) return context.waitingAsksWithheld ? "Whether any question FluxIQ asked is still waiting could not be read just now. If their message answers one, leave askId out; FluxIQ says so when it cannot tell which." : null;
+  const lines = [
+    `${asks.length === 1 ? "One question FluxIQ asked in this conversation is" : `${asks.length} questions FluxIQ asked in this conversation are`} still waiting for the person's answer, oldest first, each after its id:`,
+    ...asks.map((ask) => `  - [${ask.askId}] ${waitingAskLine(ask)}`)
+  ];
+  const answer = AUTOMATION_STUDIO_CONVERSATION_ANSWER_ASK.capability.id;
+  if (context.capabilities.some((capability) => capability.id === answer)) {
+    lines.push(
+      `When their message answers one of these, choose ${answer}, pass their words as answer, and put the id of the question it answers in askId.${asks.length > 1 ? " With more than one waiting, an answer without askId settles nothing." : ""}`,
+      "Choose the question by what the message is about: an option it names answers the choice that offers that option; a yes or a no answers the yes-or-no question about the thing it mentions, or the only yes-or-no question waiting when it mentions nothing.",
+      'For example, with a yes-or-no question "Shall I renew the borrowed atlas?" and a choice between "North branch" and "Harbour branch" waiting, "the Harbour one" answers the choice and "yes, renew it" answers the renewal.',
+      "When you cannot tell which question they are answering, ask which one, naming the questions by their own words."
+    );
+  }
+  lines.push("The ids are for you alone: never write one in a reply or a question, because the person never sees them.");
+  return lines.join("\n");
+}
+
+/** One waiting question as the model reads it: the words the person read, and what kind of answer it takes. */
+function waitingAskLine(ask: AutomationStudioConversationWaitingAsk): string {
+  const about = ask.about ? ` about ${ask.about}` : "";
+  const kind = ask.kind === "choice"
+    ? `a choice${about} between ${ask.options.map((option) => `"${option}"`).join(", ")}`
+    : ask.kind === "open" ? `a question${about} that takes their own words` : `a yes-or-no question${about}`;
+  return ask.question ? `"${ask.question}" (${kind})` : kind;
 }
 
 /** Describe only existing offered commands; the service checks target and draft eligibility. */
