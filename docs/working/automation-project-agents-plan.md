@@ -51,12 +51,7 @@ and promotion gate, site-control preparation) and held-topology units 1-4
 observed-current case does not need them for creation; post-run repair of a
 multi-subflow Flow does need held-topology.
 
-**In progress (2026-10-13, user: "go ahead and work"):** A1 (t533), A2 (t534)
-and A3 (t535) dispatched in parallel, each in its own paired worktree under
-`fxwork/t<NNN>/`; briefs under `Worker Briefs`. **Next:** verify each, finish
-the tasks; then A4 (needs A1) and A6 with downstream W2 (needs A1), W1 (needs
-A3); A5 integrates them in `service.ts` under its single owner. The A8 Lab
-comparison per the paired document.
+**Delivered on Core dev (2026-10-13, supervisor-verified):** A1 contracts and build record (t533), A2 allowances, per-run refusal, cancellation tree and retry jitter (t534), A3 host-resource scheduler (t535), and the supervisor-written subflow builder contract (`flow-bootstrap/subflow-candidate/contracts.ts`). Nothing is wired into `service.ts` yet. **In progress:** t536 host lease on commands (A3b Core + W1 downstream, paired), t537 A4a builder scope, t538 A4b partial subflow trial. **Next:** A6 with downstream W2 (activity attribution and chat), then A5 (supervisor loop and the one `service.ts` integration). Notes for A5: give the supervisor's own decisions and judge their own purse run (a builder in the same chain passes its refusal up, t534 report); one scheduler per host port, not per build; pass `callScope` only when capacity is above 1 (the extension matches `initial.<toolId>` exactly); `purse.ts` is 476 lines (advisory), split it if A5 grows it.
 
 **Not claimed:** that agents fix wrong judgements, that any unit exists, or
 that a multi-agent build has run.
@@ -554,6 +549,30 @@ there. Narrow checks only (no full suites): the unit's vitest files from
 - Validation: not validated by tests (planning); `pnpm task start ... --worktree --core` created t533, t534 (observed JSON `"applied":true`)
 - Outcome: Accepted
 - Follow-up: verify t533-t535 reports and checks
+
+### 2026-10-13 — A3 host-resource scheduler (t535)
+- Agent: worker t535-a3-host-resources; supervisor verified and integrated
+- Changed: `project-agents/host-resources/` (types, scheduler, errors, stub host, 20 tests)
+- Why: user decision, concurrent agents in Core with domain-declared capacity
+- Validation: `pnpm.cmd exec vitest run src/programs/automation-studio/runtime/project-agents/host-resources` -> 20 passed; `pnpm.cmd --filter fluxiq check` -> exit 0; `node scripts/structure-audit.mjs` -> passed; Core `pnpm task finish t535` -> `pnpm check` passed, merged `f606cdbc`
+- Outcome: Accepted. Supervisor read the scheduler and kept the port-contract-violation path that does not hand a bad grant back, since releasing it could free another holder's resource
+- Follow-up: none
+
+### 2026-10-13 — A1 contracts and build record (t533)
+- Agent: worker t533-a1-contracts; supervisor verified and integrated
+- Changed: `project-agents/{contracts,record}/`; `project-agents/index.ts` (also exports host-resources)
+- Why: unit A1
+- Validation: `pnpm.cmd exec vitest run src/programs/automation-studio/runtime/project-agents` -> 84 passed after merging dev (64 own + 20 A3); check exit 0; structure audit passed; Core finish -> `pnpm check` passed after regenerating the stale working-doc index, merged `d104cbe3`
+- Outcome: Accepted. Quotes match exactly (kept strict: the instructions are the authority); the structure plan is validated structurally, not by the plan parser that refuses empty bodies
+- Follow-up: none
+
+### 2026-10-13 — A2 allowances, refusal, cancellation, jitter (t534)
+- Agent: worker t534-a2-allowances; supervisor verified and integrated
+- Changed: `llm/build-purse/` (allowance-book, run-frame, purse, run, harness-hold), `llm/provider-retry/` (endpoint-load, jitter), `service/flow-bootstrap-commands/cancellation.ts`
+- Why: unit A2, concurrency-safe budget and cancellation
+- Validation: vitest over every test file naming the purse, provider retry or build cancellation -> 35 files, 334 passed; check exit 0; structure audit passed (advisory: `purse.ts` 476 lines); Core finish -> `pnpm check` passed, merged `b6d67d3e`
+- Outcome: Accepted
+- Follow-up: A5 notes in Current State
 
 ## Open Questions
 
