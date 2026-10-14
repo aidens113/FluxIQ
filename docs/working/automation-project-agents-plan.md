@@ -653,6 +653,14 @@ Briefs t533-t539 (units A1, A2, A3, A3b, A4a, A4b, A6) were delivered and moved 
 - Outcome: Decided: fix the repository to match the in-memory store's semantics with a regression and a parity test (t544); delete tests whose subject is behaviour after approval, keep one refusal test per retired entry point, list every deletion (t545)
 - Follow-up: verify t544 and t545
 
+### 2026-10-13 — Sweep fix-forward merged (t544, t545, t546; downstream t547, t548)
+- Agent: workers t544-sweep-a, t545-sweep-b, t546-sweep-c, t547-domain-sweep, t548-test-runner-sweep; supervisor verified each and integrated
+- Changed: Core: 66 test files brought up to t519/t530; product fix in `storage/project/flow-resource-repository.ts` and `runtime/service/summaries/store.ts` (a subflow listing admitted other Flows' instructions) with regression and parity tests; 11 tests of retired recording approval deleted and 8 cut back, every one listed in `reports/t545-sweep-b.md`. Downstream: 17 domain fixtures; 13 test-runner tests that scanned for the recorded-Flow lane t519 retired; one crossborder welcome-popup race
+- Why: the 2026-10-13 sweeps (Core 305 failed of 11167; downstream domain 17 failed of 2019, test-runner 13, scenario-lab 1, extension 3004 of 3004 passed)
+- Validation: supervisor, each after merging dev: Group A + storage/project + summaries + instruction-led -> 61 files, 415 passed; Group B -> 123 passed; Group C -> 238 passed; domain group -> 100 passed; test-runner group -> 83 passed, crossborder browser paths -> 17 passed; every check and audit exit 0; merged Core `482cd861`, `c51e8639`, `a2cc2a52`, downstream `775d685e`, `f7acb9cf`
+- Outcome: Accepted. A confirming Core sweep is running (the second full Core run today)
+- Follow-up: A15 a build refused for missing instructions no longer carries the Flow Bootstrap diagnostic (stage, provider fields); check the Lab and callers that classify by it. A16 `storage_required` is unreachable through `runRuntimeSession`. A17 `createDefaultFlow` Flows can never hold instructions, so they cannot run; only tests call it — retire it. A18 SQL stores `adaptation_review` scopes as `flow` and `on_error` as `error`, unlike the summary index. Downstream W5 (paired document)
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
