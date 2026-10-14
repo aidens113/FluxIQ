@@ -33,6 +33,7 @@ describe("AutomationStudioService recording persistence", () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Adaptation Review" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.adaptation-review", name: "Adaptation Review Flow" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     const primary = await installPrimaryRouter(service, project.id, flow.flowId, {
         nodes: [
           { id: "expect.ready", definitionId: "builtin.policy.expectation", parameterValues: { timeoutMs: 100 } },
@@ -88,6 +89,7 @@ describe("AutomationStudioService recording persistence", () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Durable Adaptations" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.durable-adaptations", name: "Durable Adaptations Flow" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     const primary = await installPrimaryRouter(service, project.id, flow.flowId, {
         nodes: [
           // A recorded step: the element it acts on travels in the payload it dispatches.
@@ -183,6 +185,7 @@ describe("AutomationStudioService recording persistence", () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Durable Subflow Rollback" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.subflow-rollback", name: "Subflow Rollback Flow" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     const base = {
       schemaVersion: "0.1" as const,
       flowId: flow.flowId,

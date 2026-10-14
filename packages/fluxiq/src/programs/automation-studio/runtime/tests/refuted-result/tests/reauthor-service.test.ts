@@ -489,6 +489,7 @@ describe("refuted-result service composition", () => {
       let overlapFailure: unknown;
       try {
         const other = await harness.service.createFlow({ projectId: harness.projectId, flowId: "flow.public-concurrent", name: "Public concurrent" });
+        await harness.service.saveFlowGenerationInstruction({ projectId: harness.projectId, flowId: other.flowId, instruction: "Return the requested records." });
         await expect(harness.service.generateFlowBootstrapAdaptation({
           projectId: harness.projectId, flowId: other.flowId,
           caller: ACTOR,
@@ -507,8 +508,11 @@ describe("refuted-result service composition", () => {
       // (lane D F43: a re-authored Flow is judged on its own test); its two
       // decisions rerun the carried step and finish (t244); its judge's yes is
       // confirmed by a second call, as a build-finishing yes always is (murwcmx2,
-      // C-H); the repaired run is then verified as before.
-      expect(harness.taskKinds).toEqual(["loop_verification", "loop_verification", "evidence_tool_decision", "evidence_tool_decision", "loop_verification", "loop_verification", "loop_verification"]);
+      // C-H); the repaired run is then verified as before. The other Flow has
+      // written instructions (t519), so its generation reaches the provider,
+      // which this stand-in refuses: those calls are its own, not this run's.
+      expect(harness.taskKinds.filter((kind) => kind !== "flow_bootstrap")).toEqual(["loop_verification", "loop_verification", "evidence_tool_decision", "evidence_tool_decision", "loop_verification", "loop_verification", "loop_verification"]);
+      expect(harness.taskKinds).toContain("flow_bootstrap");
       expect(completed.status).toBe("succeeded");
       const detail = await harness.service.getFlowRunDetail(harness.projectId, completed.runId);
       expect(detail?.metadata?.resultReauthor).toMatchObject({ routed: true, applied: true });

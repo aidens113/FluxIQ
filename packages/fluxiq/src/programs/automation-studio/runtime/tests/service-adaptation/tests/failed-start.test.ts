@@ -38,6 +38,7 @@ afterEach(async () => {
 async function adaptiveFlow(service: AutomationStudioService): Promise<{ projectId: string; flowId: string }> {
   const project = await service.createProject({ name: "Failed start" });
   const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.failed-start", metadata: adaptiveTrainingMetadata() });
+  await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
   return { projectId: project.id, flowId: flow.flowId };
 }
 

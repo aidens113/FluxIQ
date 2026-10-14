@@ -179,6 +179,7 @@ describe("a repaired run's result", () => {
 
     const project = await service.createProject({ name: "Retry verification", domainId: "example" });
     const created = await service.createFlow({ projectId: project.id, flowId: "flow.retry-verification", name: "Retry verification Flow" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: created.flowId, instruction: "Run the Flow's steps in order and return its result." });
     await service.saveFlow({ projectId: project.id, flow: { ...created, metadata: { ...(created.metadata ?? {}), ...adaptiveTrainingMetadata() } } });
     const subflow = await service.createFlowSubflow({ projectId: project.id, flowId: created.flowId, name: "Primary", role: "primary" });
     const graphFlowId = subflow.graphFlowId!;

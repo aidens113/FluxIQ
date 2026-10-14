@@ -428,9 +428,11 @@ export class AutomationStudioProjectFlowResourceRepository {
     const params: unknown[] = [];
     const scopeClauses: string[] = [];
     if (input.flowId) { scopeClauses.push("instruction_id in (select instruction_id from instruction_scopes where flow_id = ? or scope_kind in ('global', 'project'))"); params.push(requiredId(input.flowId, "Flow")); }
-    if (input.subflowId) { scopeClauses.push("instruction_id in (select instruction_id from instruction_scopes where subflow_id = ? or scope_kind in ('global', 'project', 'flow'))"); params.push(requiredId(input.subflowId, "Subflow")); }
+    // A Subflow reads its own instructions, the project's and global ones, and its own Flow's -- never another Flow's (t544).
+    if (input.subflowId) { const subflowId = requiredId(input.subflowId, "Subflow"); scopeClauses.push("instruction_id in (select instruction_id from instruction_scopes where subflow_id = ? or scope_kind in ('global', 'project') or (scope_kind = 'flow' and flow_id = (select parent_flow_id from subflows where subflow_id = ?)))"); params.push(subflowId, subflowId); }
     if (input.scopeKind) { scopeClauses.push("instruction_id in (select instruction_id from instruction_scopes where scope_kind = ?)"); params.push(requiredKind(input.scopeKind, "instruction scope")); }
-    const where = ["i.deleted_at_ms is null", ...(scopeClauses.length ? [`(${scopeClauses.map((clause) => `i.${clause}`).join(" or ")})`] : [])];
+    // Every filter narrows, as the JSON summary store's do: joining them with "or" let one Flow list another's instructions (t544).
+    const where = ["i.deleted_at_ms is null", ...scopeClauses.map((clause) => `i.${clause}`)];
     if (input.status) { where.push("i.status = ?"); params.push(requiredKind(input.status, "instruction status")); }
     if (input.requirement) { where.push("i.requirement = ?"); params.push(requiredKind(input.requirement, "instruction requirement")); }
     if (input.search?.trim()) { where.push("(lower(i.instruction_id) like ? or i.instruction_id in (select instruction_id from instructions_fts where instructions_fts match ?))"); const search = input.search.trim(); params.push(`%${search.toLowerCase()}%`, search); }

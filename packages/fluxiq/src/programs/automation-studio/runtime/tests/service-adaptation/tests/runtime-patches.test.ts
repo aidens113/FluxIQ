@@ -62,6 +62,7 @@ describe("AutomationStudioService recording persistence", () => {
     });
     const project = await service.createProject({ name: "Runtime patch" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.runtime-patch", name: "Runtime patch Flow" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     await service.saveFlow({ projectId: project.id, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() } } });
     await installPrimaryRouter(service, project.id, flow.flowId, {
         nodes: [
@@ -165,6 +166,7 @@ describe("AutomationStudioService recording persistence", () => {
         }
       }
     });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     const subflowSummary = (await service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId })).subflows[0]!;
     const subflow = (await service.getFlowSubflow(project.id, flow.flowId, subflowSummary.subflowId))!;
     const graphBefore = await service.getFlow(project.id, subflow.graphFlowId!);
@@ -248,6 +250,7 @@ describe("AutomationStudioService recording persistence", () => {
     });
     const project = await service.createProject({ name: "Multiple target proposals" });
     const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.multiple-target-proposals", metadata: adaptiveTrainingMetadata() });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     const subflowSummary = (await service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId })).subflows[0]!;
     const subflow = (await service.getFlowSubflow(project.id, flow.flowId, subflowSummary.subflowId))!;
     const graphBefore = await service.getFlow(project.id, subflow.graphFlowId!);

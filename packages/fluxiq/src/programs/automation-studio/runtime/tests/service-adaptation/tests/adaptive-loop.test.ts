@@ -100,6 +100,7 @@ describe("AutomationStudioService recording persistence", () => {
     }).bindNativeNodeRuntime(driftRuntime());
     const project = await service.createProject({ name: "Runtime auto promote", domainId: "example" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.runtime-auto-promote", name: "Runtime auto promote Flow" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     await service.saveFlow({ projectId: project.id, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() } } });
     await installPrimaryRouter(service, project.id, flow.flowId, {
         nodes: [
@@ -186,6 +187,7 @@ describe("AutomationStudioService recording persistence", () => {
     }).bindNativeNodeRuntime(driftRuntime());
     const project = await service.createProject({ name: "Adaptive Loop", domainId: "example" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.adaptive-loop", name: "Adaptive Loop Flow" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     const base = adaptiveTrainingMetadata();
     // A repaired run is checked because it repaired itself; a clean run is not checked before the fifth.
     const resultCheck = {

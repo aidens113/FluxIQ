@@ -56,6 +56,7 @@ describe("AutomationStudioService runtime recovery stages", () => {
     try {
       const project = await service.createProject({ name: "Failing" });
       const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.failing", metadata: adaptiveTrainingMetadata() });
+      await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
       failing = { root, projectId: project.id, flowId: flow.flowId };
     } finally { await service.close(); }
     // An open WAL would make the copy a torn snapshot; closing the service checkpoints and removes it.
@@ -95,6 +96,7 @@ describe("AutomationStudioService runtime recovery stages", () => {
     });
     const project = await service.createProject({ name: "Graph failure" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.graph-failure", name: "Graph failure Flow" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     await service.saveFlow({ projectId: project.id, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() } } });
     await installPrimaryRouter(service, project.id, flow.flowId, {
       nodes: [

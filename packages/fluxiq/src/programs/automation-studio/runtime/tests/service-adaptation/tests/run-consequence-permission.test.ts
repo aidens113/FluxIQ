@@ -133,6 +133,7 @@ async function recover(permittedConsequences?: AutomationStudioActionConsequence
   services.add(service);
   const project = await service.createProject({ name: "Run consequence permission" });
   const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.run-consequence-permission", metadata: adaptiveTrainingMetadata() });
+  await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
   let settled = false;
   // A parked run waits for its answer; this plays the person.
   const answering = answer ? (async () => {
