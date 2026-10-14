@@ -43,6 +43,11 @@ describe("the supervisor's guidance", () => {
     const { dispatch, amendPlan } = AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE.tools;
     expect(dispatch).toContain("trials (a list holding one receipt reference for each trial its builder ran)");
     expect(dispatch).toContain("failingReceipt: one entry of the trials an earlier return of that subflow listed, the object copied whole");
+    // t595: a repair names a trial that did not pass, its builder is shown it, and a brief that changed nothing is said so.
+    expect(dispatch).toContain("It must name a trial that did not pass; its builder is shown what that trial said.");
+    expect(dispatch).toContain("changedNothing");
+    expect(amendPlan).toContain("listed with reworded");
+    expect(amendPlan).toContain("A part whose facts changed drops it");
     expect(amendPlan).toContain("proposalsKept and proposalsDropped");
     expect(amendPlan).not.toContain("so send new briefs for every subflow the new plan needs");
     const schema = automationStudioProjectSupervisorTools().find((tool) => tool.toolId === IDS.dispatch)!.inputSchema as JsonObject;

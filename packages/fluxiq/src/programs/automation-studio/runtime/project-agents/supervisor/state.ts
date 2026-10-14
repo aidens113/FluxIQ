@@ -11,7 +11,17 @@ export type AutomationStudioProjectSupervisorAnswered = { brief: AutomationStudi
 export type AutomationStudioProjectSupervisorCarried = {
   kept: ReadonlyMap<string, AutomationStudioProjectSupervisorAnswered>;
   dropped: ReadonlyMap<string, readonly string[]>;
+  /** Each kept subflow whose parts the amendment only reworded, with those part ids (header, t595). */
+  reworded: ReadonlyMap<string, readonly string[]>;
 };
+
+/**
+ * A repair that came back done with a proposal doing exactly what the one it
+ * replaced did (`./dispatch-tool.ts`, t595): its brief, the brief whose
+ * proposal it matches, and what stood when it came back -- the plan, and the
+ * latest whole test (`standing`, a key the dispatch tool compares).
+ */
+export type AutomationStudioProjectSupervisorUnchangedRepair = { briefId: string; sameAs: { briefId: string; revision: number }; planDigest: string; standing: string };
 
 /** A plan as the supervisor takes it into force: what `project.write_plan` and `project.amend_plan` read. */
 type Adopted = { taskSpec: AutomationStudioProjectTaskSpec; structure: AutomationStudioProjectStructurePlan; purposes: Record<string, string>; after: Record<string, string[]> };
@@ -32,13 +42,27 @@ const PROPOSING: ReadonlySet<AutomationStudioProjectSubflowBrief["kind"]> = new 
  * the build paid to build them again. Now each subflow's latest done proposal
  * from an earlier plan is kept when the plan in force gives that subflow the
  * same key, role, interface and success check, the same parts with the same
- * words, facts and lasting acts, and the same `after` as the predecessors its
+ * lasting acts and words (below, t595), and the same `after` as the predecessors its
  * brief ran after -- and every subflow it runs after is kept too, since a
  * changed predecessor would leave the site somewhere else for it. What is kept
  * is fixed when a plan comes into force (`adopt`), so it never shifts under a
  * dispatch, and counts as done until the subflow is built again under the plan
  * in force. A supervisor started again on a build under way reads no plan's
  * `after` (below), so it keeps nothing an earlier plan made.
+ *
+ * **A part's words moved by a word or two are not a part changed (bigbox
+ * debug, t595).** Bigbox `run-mv8c7unr-42a8456d` amended its plan only to get
+ * past an unchanged assembly: one part's facts reworded ("shown for the
+ * account" to "shown on the site") and another's words given a leading
+ * "then". Both subflows' proposals were dropped, a passing one among them. Its
+ * facts are what the proposal's trial was judged against, so a part whose
+ * facts changed still drops it, said as "its facts changed" (facts compared
+ * trimmed, with case and runs of whitespace set aside); the repair-unchanged
+ * refusal (`./dispatch-tool.ts`) is what removes the model's reason to reword.
+ * Only the part's own text may move: the same instruction, the same lasting
+ * acts and facts, and words that differ by at most `EDGE_WORDS` words at their
+ * ends keep the proposal, and the amendment's answer names those parts under
+ * `reworded`.
  */
 export class AutomationStudioProjectSupervisorState {
   taskSpec: AutomationStudioProjectTaskSpec | undefined;
@@ -65,10 +89,20 @@ export class AutomationStudioProjectSupervisorState {
    * (social debug fix 5, `./dispatch-tool.ts`).
    */
   resetLeft: { briefId: string; outcome: string; reason: string; left: string } | undefined;
+  /**
+   * What each brief this run sent was sent with, and what stood once its
+   * return came back, by brief id, as a key the dispatch tool compares
+   * (`./dispatch-tool.ts`, t595): the same brief sent again after it came back
+   * blocked, with nothing it starts from changed since, is answered without
+   * running. Briefs read from the record have none.
+   */
+  readonly sentAs = new Map<string, string>();
+  /** The latest repair of each subflow that came back unchanged, by subflow key (`AutomationStudioProjectSupervisorUnchangedRepair`). */
+  readonly unchangedRepairs = new Map<string, AutomationStudioProjectSupervisorUnchangedRepair>();
   /** Every plan and task spec this build has had, by digest: what an amendment's comparison reads. */
   private readonly plans = new Map<string, AutomationStudioProjectStructurePlan>();
   private readonly specs = new Map<string, AutomationStudioProjectTaskSpec>();
-  private carried: AutomationStudioProjectSupervisorCarried = { kept: new Map(), dropped: new Map() };
+  private carried: AutomationStudioProjectSupervisorCarried = { kept: new Map(), dropped: new Map(), reworded: new Map() };
 
   /** Reads the record's task specs and plans (the latest in force), every brief and every return written. */
   load(view: AutomationStudioProjectBuildRecordView): void {
@@ -147,6 +181,19 @@ export class AutomationStudioProjectSupervisorState {
     return new Map([...this.carried.dropped].filter(([key]) => !current.has(key)));
   }
 
+  /** The latest build or repair brief of `subflowKey` answered under the plan in force, with its return. */
+  latestFor(subflowKey: string): AutomationStudioProjectSupervisorAnswered | undefined {
+    return this.answeredUnderPlan().filter((answered) => answered.brief.subflowKey === subflowKey && PROPOSING.has(answered.brief.kind)).at(-1);
+  }
+
+  /** Every brief of `subflowKey` answered under any plan, oldest first: what a repair's failing receipt is looked for in. */
+  answeredFor(subflowKey: string): AutomationStudioProjectSupervisorAnswered[] {
+    return this.briefs.flatMap((brief) => {
+      const returned = this.returns.get(brief.briefId);
+      return returned && brief.subflowKey === subflowKey ? [{ brief, returned }] : [];
+    });
+  }
+
   /** Whether any brief, under any plan, came back partial or blocked. */
   anyNotDone(): boolean {
     return this.briefs.some((brief) => {
@@ -178,7 +225,7 @@ export class AutomationStudioProjectSupervisorState {
   /** Which earlier plans' latest done proposals the plan in force keeps, and what changed for each it drops (header). */
   private carry(): AutomationStudioProjectSupervisorCarried {
     const structure = this.structure;
-    if (!structure) return { kept: new Map(), dropped: new Map() };
+    if (!structure) return { kept: new Map(), dropped: new Map(), reworded: new Map() };
     const current = this.doneUnderPlan();
     const earlier = new Map<string, AutomationStudioProjectSupervisorAnswered>();
     for (const brief of this.briefs) {
@@ -186,7 +233,8 @@ export class AutomationStudioProjectSupervisorState {
       const returned = this.returns.get(brief.briefId);
       if (returned?.outcome === "done" && returned.proposal) earlier.set(brief.subflowKey, { brief, returned });
     }
-    const changed = new Map([...earlier].map(([key, answered]) => [key, this.changes(key, answered.brief)]));
+    const compared = new Map([...earlier].map(([key, answered]) => [key, this.changes(key, answered.brief)]));
+    const changed = new Map([...compared].map(([key, found]) => [key, found.why]));
     // A subflow that runs after one that is not kept is not kept either, however far down the chain (header).
     for (let moved = true; moved;) {
       moved = false;
@@ -200,42 +248,80 @@ export class AutomationStudioProjectSupervisorState {
     }
     const kept = new Map<string, AutomationStudioProjectSupervisorAnswered>();
     const dropped = new Map<string, readonly string[]>();
+    const reworded = new Map<string, readonly string[]>();
     for (const [key, answered] of earlier) {
       const why = changed.get(key)!;
       if (why.length) dropped.set(key, why);
       else kept.set(key, answered);
+      const parts = compared.get(key)!.reworded;
+      if (!why.length && parts.length) reworded.set(key, parts);
     }
-    return { kept, dropped };
+    return { kept, dropped, reworded };
   }
 
-  /** What the plan in force changed for `key` against the plan `brief` was built under, in words; empty when nothing did. */
-  private changes(key: string, brief: AutomationStudioProjectSubflowBrief): string[] {
+  /** What the plan in force changed for `key` against the plan `brief` was built under, in words (empty when nothing did), and the parts it only reworded (header). */
+  private changes(key: string, brief: AutomationStudioProjectSubflowBrief): { why: string[]; reworded: string[] } {
     const now = this.structure!;
     const then = this.plans.get(brief.planDigest);
     const ours = now.plan.subflows.find((subflow) => subflow.key === key);
-    if (!ours) return ["it is no longer in the plan"];
+    if (!ours) return { why: ["it is no longer in the plan"], reworded: [] };
     const theirs = then?.plan.subflows.find((subflow) => subflow.key === key);
     const specNow = this.specs.get(now.taskSpecDigest);
     const specThen = then ? this.specs.get(then.taskSpecDigest) : undefined;
-    if (!then || !theirs || !specNow || !specThen) return ["the plan it was built under is not known to this run"];
+    if (!then || !theirs || !specNow || !specThen) return { why: ["the plan it was built under is not known to this run"], reworded: [] };
     const changed: string[] = [];
     if (ours.role !== theirs.role) changed.push("its role changed");
     if (!same(ours.interface, theirs.interface)) changed.push("its inputs or outputs changed");
     if (!same(ours.metadata?.["fluxiq.successCheck"], theirs.metadata?.["fluxiq.successCheck"])) changed.push("its success check changed");
     const partsNow = [...(now.partOf[key] ?? [])].sort();
     const partsThen = [...(then.partOf[key] ?? [])].sort();
-    if (!same(partsNow, partsThen) || partsNow.some((id) => !same(words(specNow, id), words(specThen, id)))) changed.push("its parts changed");
+    const compared = partsNow.map((id) => [id, partChange(specNow, specThen, id)] as const);
+    if (!same(partsNow, partsThen) || compared.some(([, change]) => change === "changed")) changed.push("its parts changed");
+    else if (compared.some(([, change]) => change === "facts")) changed.push("its facts changed");
     const after = this.after[key];
     if (!after) changed.push("what runs before it is not known to this run");
     else if (!same([...new Set(after)].sort(), [...new Set(brief.entry.predecessors)].sort())) changed.push("what runs before it changed");
-    return changed;
+    return { why: changed, reworded: compared.filter(([, change]) => change === "reworded").map(([id]) => id) };
   }
 }
 
-/** A part as a builder was briefed and judged on it: its words, facts and lasting acts. */
-function words(spec: AutomationStudioProjectTaskSpec, id: string): unknown {
-  const part = spec.parts.find((candidate) => candidate.id === id);
-  return part ? { quote: part.quote, goalFacts: part.goalFacts, lastingActs: part.lastingActs } : undefined;
+/** The most words a part's text may gain or lose at its two ends together and still be the same part reworded (header). */
+const EDGE_WORDS = 2;
+
+/**
+ * Whether part `id` is the same in both specs; only its words moved by a word
+ * or two at their ends (`reworded`, header); its facts changed (`facts`); or
+ * otherwise changed: its lasting acts, its instruction, or its words beyond that.
+ */
+function partChange(now: AutomationStudioProjectTaskSpec, then: AutomationStudioProjectTaskSpec, id: string): "same" | "reworded" | "facts" | "changed" {
+  const ours = now.parts.find((part) => part.id === id);
+  const theirs = then.parts.find((part) => part.id === id);
+  if (!ours || !theirs) return "changed";
+  if (!same([...ours.lastingActs].sort(), [...theirs.lastingActs].sort()) || ours.quote.sourceId !== theirs.quote.sourceId) return "changed";
+  const text = ours.quote.text === theirs.quote.text ? "same" : withinEdges(wordsOf(ours.quote.text), wordsOf(theirs.quote.text)) ? "reworded" : "changed";
+  if (text === "changed") return "changed";
+  if (!same(ours.goalFacts.map(fact), theirs.goalFacts.map(fact))) return "facts";
+  return text;
+}
+
+/** A goal fact as compared across plans: trimmed, lower case, each run of whitespace one space. */
+function fact(text: string): string {
+  return text.trim().replace(/\s+/gu, " ").toLowerCase();
+}
+
+/** A text's words, lower case, with no punctuation. */
+function wordsOf(text: string): string[] {
+  return text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+
+/** Whether the shorter word list is the longer one with at most `EDGE_WORDS` words taken off its two ends together. */
+function withinEdges(left: readonly string[], right: readonly string[]): boolean {
+  const [short, long] = left.length <= right.length ? [left, right] : [right, left];
+  if (!short.length || long.length - short.length > EDGE_WORDS) return false;
+  for (let start = 0; start <= long.length - short.length; start += 1) {
+    if (short.every((word, index) => long[start + index] === word)) return true;
+  }
+  return false;
 }
 
 /** Whether two plain values hold the same JSON. */

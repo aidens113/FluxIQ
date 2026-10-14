@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../activity/index.ts";
 import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
+import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE, AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
 import { BUILD, planInput, project, subflow, taskSpecInput, type BuilderPlan } from "./supervisor-fixture.ts";
 import { FIND, HOLD, NOTE, assembled, brief, call, complete, dispatch, end, lastOf, reset, supervise, test } from "./supervisor-script.ts";
 
@@ -118,7 +118,7 @@ describe("the project supervisor", () => {
     expect(dispatched).toMatchObject({ ok: false, code: "project.plan_missing" });
     const written = lastOf(run.seen, IDS.writePlan)!;
     expect(written).toMatchObject({ ok: false, code: "project.plan_refused" });
-    expect(written.issues).toEqual(expect.arrayContaining([{ code: "project.plan_part_uncovered", path: "taskSpec.parts.1" }]));
+    expect(written.issues).toEqual(expect.arrayContaining([{ code: "project.plan_part_uncovered", path: "taskSpec.parts.1", why: GUIDANCE.planIssues["project.plan_part_uncovered"] }]));
     expect(run.dispatched).toHaveLength(0);
     expect(run.summary?.plan).toBeUndefined();
     // Out of turns with nothing built: an honest ending, recorded.

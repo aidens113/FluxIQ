@@ -78,6 +78,7 @@ export function automationStudioConversationCallCause(what: string, response: Au
   const code = typeof diagnostic?.code === "string" ? diagnostic.code : codesIn(response.error ?? "")[0];
   const meant = (code && NO_PROGRESS.test(code) ? refusedWords(diagnostic) ?? neverSubmittedWords(diagnostic) : undefined)
     ?? (code && ITERATION_LIMIT.test(code) ? exhaustedWords(diagnostic?.evidenceLoop?.exhausted) : undefined)
+    ?? supervisorEndingWords(diagnostic)
     ?? (code ? CODE_WORDS.find(([pattern]) => pattern.test(code))?.[1] : undefined)
     ?? (typeof diagnostic?.stage === "string" && Object.hasOwn(STAGE_WORDS, diagnostic.stage) ? STAGE_WORDS[diagnostic.stage] : undefined);
   const said = meant ?? (automationStudioConversationPlainCause(response.error ?? "") || (code ? "something went wrong inside FluxIQ" : "no reason was given"));
@@ -177,6 +178,25 @@ const BUDGET_WORDS: Readonly<Record<string, string>> = Object.freeze({
   calls: "it reached the limit on how many times it may ask the model",
   iterations: "it reached the limit on how many decisions it may make"
 });
+
+/**
+ * A project build's supervisor ending, by the issue code its failure carries
+ * (`service/project-build/run.ts`), in words that finish "failed: ...".
+ * Crossborder `run-mv8c76i3-61b9ca89` ended partial and the person read "The
+ * build failed: what the model wrote could not be used", its stage's words,
+ * since the code it fails under is the stage's own: the model wrote nothing
+ * unusable. Its ending is said for what it was (t595).
+ */
+const SUPERVISOR_ENDING_WORDS: Readonly<Record<string, string>> = Object.freeze({
+  "project.build_partial": "the supervisor ended it with only part of the Flow built",
+  "project.build_blocked": "the supervisor ended it because it could not finish the Flow"
+});
+
+function supervisorEndingWords(diagnostic: Diagnostic | undefined): string | undefined {
+  const codes = Array.isArray(diagnostic?.issueCodes) ? diagnostic.issueCodes : [];
+  const code = codes.find((entry): entry is string => typeof entry === "string" && Object.hasOwn(SUPERVISOR_ENDING_WORDS, entry));
+  return code ? SUPERVISOR_ENDING_WORDS[code] : undefined;
+}
 
 /** What a failure code means, in words that finish "failed: ...". First match wins. */
 const CODE_WORDS: ReadonlyArray<readonly [RegExp, string]> = [
