@@ -49,7 +49,7 @@ export function automationStudioProjectSupervisorCompletion(context: AutomationS
       if (left.note && left.undoable && !context.state.resetCameBackLast() && heldForReset < MAX_HELD_FOR_RESET) {
         heldForReset += 1;
         return refused("project.completion_reset_first", GUIDANCE.completion.resetFirst, {
-          actsInPlace: left.acts.map((act) => ({ act: act.act, did: act.did, brief: act.brief })),
+          actsInPlace: left.acts.filter((act) => act.undoable).map((act) => ({ act: act.act, did: act.did, brief: act.brief })),
           ...(left.lastWholeTrialLeftActs ? { lastWholeTrialLeftActs: true } : {})
         });
       }
