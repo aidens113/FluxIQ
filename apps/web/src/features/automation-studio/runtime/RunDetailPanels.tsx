@@ -194,7 +194,7 @@ export function RuntimeMetricsPanel(props: { summary: any; metrics: Record<strin
       <RuntimeMetric label="Tokens" value={String(props.metrics.tokenCount ?? props.summary.tokenUsage?.totalTokens ?? 0)} />
       <RuntimeMetric label="Cost" value={runtimeCostLabel(props.metrics.estimatedCostUsd ?? props.summary.tokenUsage?.estimatedCostUsd)} />
       <RuntimeMetric label="Adaptations" value={String(props.metrics.adaptationApplyCount ?? props.adaptationCount)} />
-      <RuntimeMetric label="Durable" value={props.metrics.durableBehaviorChanged === true ? "yes" : "no"} />
+      <RuntimeMetric label="Durable" value={props.summary.durableBehaviorChanged === true ? "yes" : props.summary.durableBehaviorChanged === false ? "no" : "unknown"} />
     </div>
   );
 }

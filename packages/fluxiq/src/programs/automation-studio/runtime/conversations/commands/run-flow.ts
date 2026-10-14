@@ -20,6 +20,7 @@
 // starts with it (applied) or it waits for review.
 
 import type { AutomationStudioChangeProposalKind, AutomationStudioFlowAdaptation } from "../../../model/index.ts";
+import { automationStudioDecisionAppliedAutomatically } from "../../durable-behavior/index.ts";
 import { automationStudioConversationCommandText } from "./argument.ts";
 import type { AutomationStudioConversationCommand, AutomationStudioConversationCommandPort } from "./command.ts";
 import { automationStudioConversationCallCause, automationStudioConversationCommandProgress, automationStudioConversationPlainCause } from "./progress.ts";
@@ -64,16 +65,17 @@ export const AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW: AutomationStudioConversati
       return progress.failed(automationStudioConversationCallCause("the run", response));
     }
     const status = typeof answer.runtimeSession?.status === "string" ? answer.runtimeSession.status : "ended";
+    const durable = typeof answer.durableBehaviorChanged === "boolean" ? answer.durableBehaviorChanged : undefined;
     // A run that failed is said in plain words, with no run id and no code, as the thread keeps it (t276).
     if (status === "failed" || status === "cancelled") {
       const why = typeof answer.terminalReason === "string" && answer.terminalReason !== status ? automationStudioConversationPlainCause(answer.terminalReason) : "";
       const ended = status === "failed" ? "failed" : "was cancelled";
-      return { ...progress.failed(`it ${ended}${why ? `: ${why}` : ""}`), summary: `The run ${ended}${why ? `: ${why}` : ""}.` };
+      return { ...progress.failed(`it ${ended}${why ? `: ${why}` : ""}`), summary: `The run ${ended}${why ? `: ${why}` : ""}. ${retentionWords(durable)}` };
     }
     const summary = await runEnding({ port: context.port, projectId: context.projectId, flowId, status, terminalReason: answer.terminalReason });
     const adaptationIds = Array.isArray(answer.createdAdaptationIds) ? answer.createdAdaptationIds.filter((id): id is string => typeof id === "string" && id.length > 0) : [];
     const reauthored = answer.reauthored === "applied" || answer.reauthored === "not_applied" ? answer.reauthored : undefined;
-    const learned = await runLearned({ port: context.port, projectId: context.projectId, flowId, adaptationIds, durableBehaviorChanged: answer.durableBehaviorChanged === true, reauthored });
+    const learned = await runLearned({ port: context.port, projectId: context.projectId, flowId, runId, adaptationIds, durableBehaviorChanged: durable, reauthored });
     return progress.succeeded(learned ? `${summary} ${learned}` : summary);
   }
 };
@@ -130,42 +132,64 @@ const BY_TARGET: Record<AppliedTarget, string> = {
 const REAUTHORED = "it re-wrote some of its steps, and a whole run with them was judged to do what you asked";
 
 /** A re-author that was settled without being kept: the Flow is unchanged by it. */
-const REAUTHOR_NOT_KEPT = "It tried re-writing some of its steps, but a run with them was not judged to do what you asked, so the Flow stays as it was.";
+const REAUTHOR_NOT_KEPT = "It tried re-writing some of its steps, but those rewritten steps were not kept.";
 
 /** What a change that could not be read is called: something changed, and nothing is guessed about what. */
 const UNREAD = "it changed how it runs";
 
-type Learned = { what: string; applied: boolean };
-
 /**
- * The sentences that say what the run's recorded changes taught the Flow, or
- * "" when it recorded none. `durableBehaviorChanged` is the run's own reading
- * of whether a change was applied, used only for a change that cannot be read.
- * That reading also counts a kept re-author, so once the re-author was kept it
- * no longer says whether an unread runtime change was applied, and the unread
- * change is not called applied.
+ * The run's retention flag controls its ending. A current applied status alone
+ * cannot attribute a kind to this run: typed copy additionally needs its own
+ * settled same-run application decision. No exact kept count is guessed.
  */
 async function runLearned(input: {
   port: AutomationStudioConversationCommandPort;
   projectId: string;
   flowId: string;
+  runId?: string | undefined;
   adaptationIds: readonly string[];
-  durableBehaviorChanged: boolean;
+  durableBehaviorChanged: boolean | undefined;
   /** How the run's re-author settled (`run-runtime-session`'s `reauthored`): kept only once a whole re-run with it was judged to answer. */
   reauthored?: "applied" | "not_applied" | undefined;
 }): Promise<string> {
-  const learned: Learned[] = input.reauthored === "applied" ? [{ what: REAUTHORED, applied: true }] : [];
+  const kept: string[] = input.durableBehaviorChanged === true && input.reauthored === "applied" ? [REAUTHORED] : [];
+  const current: string[] = [];
   for (const adaptationId of input.adaptationIds) {
     const response = await input.port.call("get-flow-adaptation", { projectId: input.projectId, flowId: input.flowId, adaptationId });
     const adaptation = response.ok ? (response.payload as { adaptation?: Partial<AutomationStudioFlowAdaptation> | null } | undefined)?.adaptation : undefined;
-    const next = adaptation ? { what: changeWords(adaptation), applied: adaptation.status === "applied" } : { what: UNREAD, applied: input.durableBehaviorChanged && input.reauthored !== "applied" };
-    if (!learned.some((entry) => entry.what === next.what && entry.applied === next.applied)) learned.push(next);
+    const decision = adaptation?.metadata?.approvalDecision;
+    const sameRunApplied = input.durableBehaviorChanged === true && input.runId !== undefined
+      && decision !== null && typeof decision === "object" && !Array.isArray(decision)
+      && decision.judgedRunId === input.runId && decision.applied === true
+      && automationStudioDecisionAppliedAutomatically(decision);
+    if (adaptation?.status === "applied" && sameRunApplied) kept.push(changeWords(adaptation));
+    else {
+      const words = currentChangeWords(adaptation?.status);
+      if (words) current.push(words);
+    }
   }
-  const [only] = learned;
-  if (!only) return input.reauthored === "not_applied" ? REAUTHOR_NOT_KEPT : "";
-  if (learned.length === 1) return `It learned something from this run: ${only.what}. ${only.applied ? "The next run starts with it." : "That waits for your review before a run uses it."}`;
-  const each = learned.map((entry) => `${entry.what.charAt(0).toUpperCase()}${entry.what.slice(1)}, ${entry.applied ? "and the next run starts with it" : "which waits for your review before a run uses it"}.`);
-  return `It learned ${learned.length} things from this run. ${each.join(" ")}`;
+  const changes = [...new Set(kept)];
+  const retention = changes.length
+    ? `It kept a change from this run: ${changes.join("; ")}. The next run starts with it.`
+    : retentionWords(input.durableBehaviorChanged);
+  return [retention, ...new Set(current), ...(input.reauthored === "not_applied" ? [REAUTHOR_NOT_KEPT] : [])].join(" ");
+}
+
+function retentionWords(durable: boolean | undefined): string {
+  if (durable === true) return "This run kept a change for future runs.";
+  if (durable === false) return "This run did not keep a change for future runs.";
+  return "Whether this run kept a change is not available.";
+}
+
+/** Current review state is separate from the run's historical kept change. */
+function currentChangeWords(status: unknown): string | undefined {
+  if (status === "applied") return undefined;
+  if (status === "proposed") return "A recorded change is proposed for review; it has not been kept.";
+  if (status === "validated") return "A recorded change passed validation but was not kept.";
+  if (status === "testing" || status === "validating") return "A recorded change has not finished validation.";
+  if (status === "rejected") return "A recorded change was rejected.";
+  if (status === "disabled" || status === "reverted" || status === "superseded") return "A recorded change is no longer active.";
+  return "The status of a recorded change is not available.";
 }
 
 /** The change in plain words, from its kinds alone. */

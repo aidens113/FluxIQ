@@ -27,14 +27,9 @@ export function isRuntimeJsonRecord(value: unknown): value is Record<string, any
 
 export function runtimeStoryHeadline(runDetail: any): string {
   const summary = runDetail?.summary ?? {};
-  const metrics = isRuntimeJsonRecord(runDetail?.metadata?.adaptiveMetrics) ? runDetail.metadata.adaptiveMetrics : {};
-  if (metrics.deterministicSuccessAfterAdaptation === true) return "FluxIQ adapted the run, retried it, and the deterministic retry succeeded.";
-  if (metrics.durableBehaviorChanged === true) return "FluxIQ created or applied a durable behavior change during this run.";
-  if ((runDetail?.adaptationIds?.length ?? 0) > 0) return "FluxIQ created adaptation evidence for review.";
-  if ((runDetail?.interventions?.length ?? 0) > 0) return "FluxIQ used LLM assistance and preserved the intervention trail.";
-  if (summary.status === "failed") return "The run failed before a durable adaptation was applied.";
-  if (summary.status === "succeeded") return "The run completed deterministically.";
-  return "The run is recorded with compact action and recovery detail.";
+  if (summary.durableBehaviorChanged === true) return "This run kept a change for future runs.";
+  if (summary.durableBehaviorChanged === false) return "This run did not keep a change for future runs.";
+  return "Whether this run kept a change is not available.";
 }
 
 export function runtimeStoryStatusClass(status: unknown): string {
