@@ -30,6 +30,7 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import { ProgramJsonStore } from "../../../../../_shared/storage.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import type { AutomationStudioActionConsequence, AutomationStudioActionDeclaration, AutomationStudioActionPermissionCheck } from "../../../action-permissions/index.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_WORDS, AutomationStudioSiteResetLedger } from "../../../flow-bootstrap/site-reset/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";
@@ -272,7 +273,15 @@ function shopDomain(cart: string[]) {
   return { binding, inputs, acted };
 }
 
-async function cartBuild() {
+/** One decision of the reset agent: its decisions so far (this one counted), and what it sees. */
+type ResetScript = (n: number, evidence: readonly Entry[]) => JsonObject;
+
+/** The reset agent of the cases above: remove the line the build added, naming its act, then complete. */
+const UNDO_THE_ADD: ResetScript = (n) => n === 1
+  ? { kind: "tool_call", callId: "undo.add", toolId: "core.run_node", input: { node: REMOVE, parameters: { line: "herb-tea" }, consequences: ["delete"], undoes: "act-1" } }
+  : { kind: "complete", result: { summary: "The line this build added is out of the cart again." } };
+
+async function cartBuild(resetScript: ResetScript = UNDO_THE_ADD) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-project-build-cart-"));
   /** The cart held dish soap before the build. */
   const cart = ["dish-soap"];
@@ -281,6 +290,11 @@ async function cartBuild() {
   let supervisorDecisions = 0;
   /** The instructions of the reset agent's first request. */
   let resetFirst: string | undefined;
+  let resetDecisions = 0;
+  /** What the reset agent was offered and saw, at its latest request. */
+  const resetSaw: { tools: Array<{ toolId: string; inputSchema: JsonObject }>; completion: JsonObject; evidence: Entry[] } = { tools: [], completion: {}, evidence: [] };
+  /** The builder's run-node tool, as it was offered. */
+  let builderRunNode: JsonObject | undefined;
   const provider = mockProvider(async (request) => {
     if (request.metadata?.source === "instructionAuthority") return decision({ kind: "tool_call", callId: "read", toolId: "none", input: {} });
     if (request.taskKind === "loop_verification") {
@@ -299,9 +313,11 @@ async function cartBuild() {
     const ranNode = lastOf(evidence, "core.run_node");
     if (properties.summary !== undefined && properties.subflowKey === undefined) {
       resetFirst ??= JSON.stringify(request.context.instructions);
-      if (!ranNode) return decision({ kind: "tool_call", callId: "undo.add", toolId: "core.run_node", input: { node: REMOVE, parameters: { line: "herb-tea" }, consequences: ["delete"], undoes: "act-1" } });
-      return decision({ kind: "complete", result: { summary: "The line this build added is out of the cart again." } });
+      resetDecisions += 1;
+      Object.assign(resetSaw, { tools: structuredClone(loop.tools), completion: structuredClone(loop.completionSchema), evidence: evidence.map((entry) => structuredClone(entry)) });
+      return decision(resetScript(resetDecisions, evidence));
     }
+    builderRunNode ??= structuredClone(loop.tools.find((tool) => tool.toolId === "core.run_node")?.inputSchema) as JsonObject | undefined;
     const subflowKey = (properties.subflowKey as JsonObject | undefined)?.const as string;
     const submitted = lastOf(evidence, "core.submit_subflow");
     const tested = lastOf(evidence, "core.test_subflow");
@@ -320,7 +336,64 @@ async function cartBuild() {
   });
   const { project, flow } = await blankFixture(service, "active", "example");
   return {
-    cart, cartWhenWholeJudged, supervisorSaw, acted: domain.acted, inputs: domain.inputs, record: () => storedRecord(dataDir), resetFirstInstructions: () => resetFirst ?? "",
+    cart, cartWhenWholeJudged, supervisorSaw, acted: domain.acted, inputs: domain.inputs, record: () => storedRecord(dataDir), resetFirstInstructions: () => resetFirst ?? "", resetSaw, builderRunNode: () => builderRunNode,
     build: () => service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project" })
   };
 }
+
+// A reset is a reset in every word it is shown (t591, social debug fixes 2-4).
+// Its run-node tool offers `undoes` and no `write`. A lasting press of its own
+// that names no act runs, and is told as outside the reset; an act the site
+// offers no control to reverse is named under `cannotUndo` once the reset was
+// asked for it, and the reset comes back done with that act kept. An undo aimed
+// at another item's control is refused in the reset's words, never "test
+// again".
+describe("a reset brief", () => {
+  it("offers undoes and no write, tells its own lasting press as outside it, and ends done with the acts it names under cannotUndo kept", async () => {
+    const kept = vi.spyOn(AutomationStudioSiteResetLedger.prototype, "beforeTrial");
+    cleanups.push(async () => kept.mockRestore());
+    const run = await cartBuild((n) => {
+      if (n === 1) return { kind: "tool_call", callId: "extra.add", toolId: "core.run_node", input: { node: ADD, parameters: {}, consequences: ["create_new"] } };
+      if (n === 2) return { kind: "complete", result: { summary: "Nothing here can be undone." } };
+      return { kind: "complete", result: { summary: "The site offers no control that takes these back.", cannotUndo: ["act-1", "act-2"] } };
+    });
+    await run.build().catch(() => undefined);
+
+    // Its run-node tool: undoes, and no write; the builder's still had write.
+    const runNode = run.resetSaw.tools.find((tool) => tool.toolId === "core.run_node")!.inputSchema.properties as JsonObject;
+    expect(runNode).toHaveProperty("undoes");
+    expect(runNode).not.toHaveProperty("write");
+    expect((run.builderRunNode()!.properties as JsonObject)).toHaveProperty("write");
+    expect((run.resetSaw.completion.properties as JsonObject)).toHaveProperty("cannotUndo");
+
+    // Its own add ran, as no gate asks about creating, and was told as outside the reset.
+    expect(run.acted).toEqual(["add herb-tea", "add herb-tea"]);
+    const extra = run.resetSaw.evidence.find((entry) => entry.callId === "extra.add")!.value as JsonObject;
+    expect(extra).toMatchObject({ ok: true, outsideBrief: { consequences: ["create_new"] } });
+    expect((extra.outsideBrief as JsonObject).note).toContain("outside this reset");
+    expect((extra.outsideBrief as JsonObject).note).not.toContain("subflow");
+
+    // Its first completion was refused with both acts; the second named them under cannotUndo, which reached the ledgers, and it came back done.
+    expect(JSON.stringify(run.resetSaw.evidence)).toContain("project.reset_acts_in_place");
+    expect(kept.mock.calls.some((call) => JSON.stringify(call[1]) === JSON.stringify(["act-1", "act-2"]))).toBe(true);
+    expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "done" }], lastingActsInPlace: 0 });
+    // Kept, not undone: both lines are still in the cart.
+    expect(run.cart.filter((line) => line === "herb-tea")).toHaveLength(2);
+  });
+
+  it("refuses an undo aimed at another item in a reset's words: undo another act or name it under cannotUndo, never test again", async () => {
+    const run = await cartBuild((n) => n === 1
+      ? { kind: "tool_call", callId: "undo.wrong", toolId: "core.run_node", input: { node: REMOVE, parameters: { line: "dish-soap" }, consequences: ["delete"], undoes: "act-1" } }
+      : { kind: "complete", result: { summary: "The act this build made cannot be undone here." } });
+    await run.build().catch(() => undefined);
+
+    const refused = run.resetSaw.evidence.find((entry) => entry.callId === "undo.wrong")!.value as JsonObject;
+    expect(refused).toMatchObject({ ok: false, code: "candidate.undo_wrong_target", act: "act-1" });
+    expect(refused.instruction).toBe(AUTOMATION_STUDIO_SITE_RESET_WORDS.wrongTarget("reset"));
+    expect(refused).not.toHaveProperty("outsideBrief");
+    // The dish soap the cart held before the build was never touched.
+    expect(run.acted).toEqual(["add herb-tea"]);
+    expect(run.cart).toEqual(["dish-soap", "herb-tea"]);
+    expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "done" }], lastingActsInPlace: 0 });
+  });
+});

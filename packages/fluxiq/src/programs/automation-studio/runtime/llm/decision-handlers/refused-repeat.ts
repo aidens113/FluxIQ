@@ -43,7 +43,9 @@ export function automationStudioLlmEvidenceHandleRefusedRepeat(
   const inARow = context.repeats.refusedAgain(iteration);
   const stop = automationStudioLlmEvidenceRepeatStop(context, inARow, undefined, iteration);
   if (stop) return stop;
-  const note = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: decision.toolId, earlier, inARow, candidate: context.input.discoveryOnly === true });
+  // A loop that drafts nothing -- a project's supervisor, a reset -- is never told a Flow so far is tested and judged (t591).
+  const candidate = context.input.discoveryOnly === true;
+  const note = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: decision.toolId, earlier, inARow, candidate, undrafted: !candidate && context.input.draft === false });
   context.accountEvidence(note);
   automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID);
   evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID, value: note });

@@ -71,7 +71,8 @@ export type AutomationStudioProjectBuilderPorts = {
  */
 export type AutomationStudioProjectResetPorts = {
   loop: Omit<AutomationStudioLlmEvidenceLoopInput, "draft" | "dryRun" | "discoveryOnly" | "finishingTools" | "fullRunRequired" | "completionSchema" | "checkCompletion" | "callScope" | "signal" | "purse" | "maxIterations">;
-  remainingActs?: (() => Promise<readonly AutomationStudioSiteResetNamedAct[]>) | undefined;
+  /** Given the act ids the reset's completion named under `cannotUndo`, kept first where the ledger allows it (`./reset-loop.ts`). */
+  remainingActs?: ((cannotUndo?: readonly string[]) => Promise<readonly AutomationStudioSiteResetNamedAct[]>) | undefined;
   /** As a builder's: the reset's own permission and person-needed ending. */
   ended?: AutomationStudioProjectBriefEnding | undefined;
 };

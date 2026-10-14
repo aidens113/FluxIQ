@@ -94,4 +94,56 @@ describe("a dispatched brief's loop", () => {
     expect(returns[0]).toMatchObject({ briefId: "b-reset", outcome: "done" });
     expect((await build.store.read(REF))!.returns[0]!.builderReturn.outcome).toBe("done");
   });
+
+  it("hands the acts a reset's completion names under cannotUndo to what it asks is left, and ends done once they are kept (t591)", async () => {
+    const asked: Array<readonly string[] | undefined> = [];
+    let kept = false;
+    let step = 0;
+    const reset = (): AutomationStudioProjectResetPorts => ({
+      loop: {
+        tools: [{ toolId: "site.undo", description: "Undo one act", effect: "mutate", inputSchema: { type: "object" } }],
+        unusableDecisions: { maxConsecutive: 3, maxInARow: 3, stalled: () => new Error("the reset stalled") },
+        executeTool: async () => ({ ok: true }),
+        decide: async () => {
+          step += 1;
+          return step === 1
+            ? { kind: "complete", result: { summary: "nothing to undo here" } }
+            : { kind: "complete", result: { summary: "the site offers no control that takes it back", cannotUndo: ["act-1"] } };
+        }
+      },
+      // As the ledger does: an act named under cannotUndo once a refusal asked for it is kept from then on.
+      remainingActs: async (cannotUndo) => {
+        asked.push(cannotUndo);
+        if (asked.length > 1 && cannotUndo?.includes("act-1")) kept = true;
+        return kept ? [] : [{ act: "act-1", did: "press \"Confirm\" button" }];
+      }
+    });
+    const brief = gardenBrief("b-reset", "list_seeds", [], (value) => Object.assign(value, { kind: "reset", parts: [], maxIterations: 4 }));
+    const build = await gardenBuild({ capacity: 1, briefs: [brief], ports: { reset } });
+    const { returns } = await build.run();
+    expect(asked.slice(0, 2)).toEqual([undefined, ["act-1"]]);
+    expect(returns[0]).toMatchObject({ briefId: "b-reset", outcome: "done" });
+  });
+
+  it("tells a reset whose completion is refused when to name an act under cannotUndo (t591)", async () => {
+    const seen: unknown[] = [];
+    const reset = (): AutomationStudioProjectResetPorts => ({
+      loop: {
+        tools: [{ toolId: "site.undo", description: "Undo one act", effect: "mutate", inputSchema: { type: "object" } }],
+        unusableDecisions: { maxConsecutive: 2, maxInARow: 2, stalled: () => new Error("the reset stalled") },
+        executeTool: async () => ({ ok: true }),
+        decide: async ({ evidence }) => {
+          seen.push(...evidence.map((entry) => entry.value));
+          return { kind: "complete", result: { summary: "done" } };
+        }
+      },
+      remainingActs: async () => [{ act: "act-1", did: "press \"Confirm\" button" }]
+    });
+    const brief = gardenBrief("b-reset", "list_seeds", [], (value) => Object.assign(value, { kind: "reset", parts: [], maxIterations: 3 }));
+    const build = await gardenBuild({ capacity: 1, briefs: [brief], ports: { reset } });
+    await build.run();
+    const refusal = JSON.stringify(seen);
+    expect(refusal).toContain("project.reset_acts_in_place");
+    expect(refusal).toContain("complete and name that act under cannotUndo");
+  });
 });

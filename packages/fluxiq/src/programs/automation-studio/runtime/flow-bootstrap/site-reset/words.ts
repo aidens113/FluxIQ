@@ -44,9 +44,20 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
     return "That act is one this build could not undo on this site, so it is kept: every trial runs with it already done, and the judge is told. It was not run. "
       + `Do not try to undo it again; make the call without "${UNDOES}" if it does something else, or test the same revision again.`;
   },
-  /** An undo whose control is not on the act's own item, nor on what it created (t475). */
-  wrongTarget(): string {
-    return "That control is not shown to be on the item this act acted on, nor on anything it created, so it was not touched: an undo never acts on another item, or on one it cannot tell apart. "
+  /**
+   * An undo whose control is not on the act's own item, nor on what it created
+   * (t475). `reset`: said to a reset brief, which has no test to run (t591,
+   * social debug fix 4): it undoes another listed act or completes, naming
+   * under `cannotUndo` an act the site offers no control to reverse.
+   */
+  wrongTarget(role?: "reset"): string {
+    const head = "That control is not shown to be on the item this act acted on, nor on anything it created, so it was not touched: an undo never acts on another item, or on one it cannot tell apart. ";
+    if (role === "reset") {
+      return head
+        + "This act stays as it is and is kept as one this build cannot undo: trials run with it already done, and the judge is told. "
+        + `Do not try to undo it again. Undo another listed act on its own item with "${UNDOES}", or, when no listed act has a control on its own item that reverses it, complete and name those acts under cannotUndo.`;
+    }
+    return head
       + "This act stays as it is and is listed under cannotUndo: the next trial runs with it already done, and the judge is told. "
       + `Do not try to undo it again. Test the same revision again now, or undo another listed act on its own item with "${UNDOES}".`;
   },
