@@ -59,7 +59,7 @@ describe("a replayed list read's rows, as the build-test judge is shown them", (
     expect(summary.withheld).toBe(true);
     expect(JSON.stringify(summary)).not.toContain("sk-live");
     expect(observedOf(summary)).toMatchObject({ readRows: { leftOutOnlyByThis: [{
-      rows: ["Unit alpha", "Unit beta"], observations: [{ conditionIndex: 2, state: "withheld", source: "read", readKind: "attribute", page: 2, item: 7 }, null]
+      number: 3, rows: ["Unit alpha", "Unit beta"], observations: [{ state: "withheld", source: "read", readKind: "attribute", page: 2, item: 7 }, null]
     }] } });
     const legacy = observedOf(judged(answer({ leftOutOnlyByThis: [{ condition: "unit_flag", rows: [{ label: "Unit alpha" }], observations: [null] }] })));
     expect(legacy).toMatchObject({ readRows: { leftOutOnlyByThis: [{ rows: ["Unit alpha"], observations: [null] }] } });
@@ -71,12 +71,15 @@ describe("a replayed list read's rows, as the build-test judge is shown them", (
       { conditionIndex: 0, state: "absent", source: "read", readKind: "attribute", page: 1, item: 2 }
     ];
     const summary = judged(answer({ leftOutOnlyByThis: [{ condition: "unit_flag", conditionIndex: 0, rows: [{ label: "Unit alpha" }, { label: "Unit beta" }], observations }] }));
-    expect(observedOf(summary)).toMatchObject({ readRows: { leftOutOnlyByThis: [{ condition: "unit_flag", conditionIndex: 0, rows: ["Unit alpha", "Unit beta"], observations }] } });
+    // The replay's 0-based index is said as the condition's number, from 1, and its witnesses lose their copy of it (t574).
+    expect(observedOf(summary)).toMatchObject({ readRows: { leftOutOnlyByThis: [{ condition: "unit_flag", number: 1, rows: ["Unit alpha", "Unit beta"], observations: observations.map(({ conditionIndex: _index, ...witness }) => witness) }] } });
+    expect(JSON.stringify(observedOf(summary))).not.toContain("conditionIndex");
   });
   it("retains original condition ordinals for sparse trial groups and refuses a mismatched companion", () => {
     const observation = { conditionIndex: 4, state: "present", value: "14 plus 2", source: "read", readKind: "attribute", page: 2, item: 3 };
     const summary = judged(answer({ leftOutOnlyByThis: [{ condition: "unit_flag", conditionIndex: 4, rows: [{ label: "Unit alpha" }], observations: [observation] }] }));
-    expect(observedOf(summary)).toMatchObject({ readRows: { leftOutOnlyByThis: [{ conditionIndex: 4, observations: [observation] }] } });
+    const { conditionIndex: _index, ...witness } = observation;
+    expect(observedOf(summary)).toMatchObject({ readRows: { leftOutOnlyByThis: [{ number: 5, observations: [witness] }] } });
     const wrong = judged(answer({ leftOutOnlyByThis: [{ condition: "unit_flag", conditionIndex: 1, rows: [{ label: "Unit alpha" }], observations: [observation] }] }));
     expect(JSON.stringify(observedOf(wrong))).not.toContain('"observations"');
   });

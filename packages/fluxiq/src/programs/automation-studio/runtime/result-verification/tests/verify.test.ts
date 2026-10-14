@@ -8,7 +8,7 @@ import { AutomationStudioLlmProviderError, type AutomationStudioLlmProvider, typ
 import { automationStudioResultVerificationDeadlineMs, AUTOMATION_STUDIO_RESULT_VERIFICATION_DEADLINE_MS } from "../deadline.ts";
 import { RUN_MUW60J7C_REQUEST, runMuw60j7cRunSummary } from "../request-rows/tests/run-muw60j7c.ts";
 import {
-  REQUEST_WORDS_CONDITIONS, REQUEST_WORDS_HANDLE, REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS, requestWordsRunSummary
+  REQUEST_WORDS_NAMES, REQUEST_WORDS_HANDLE, REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS, requestWordsRunSummary
 } from "../request-rows/tests/request-words-fixture.ts";
 import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../contracts.ts";
 import { AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK, verifyAutomationStudioRunResult } from "../verify.ts";
@@ -291,7 +291,7 @@ describe("a verification held to the request's own words", () => {
     expect(seen).toHaveLength(4);
     expect(report.outcome).toMatchObject({ performed: true, verdict: "unsure", basis: "model_unconfirmed", code: "core.result.exclusion_evidence_missing" });
     const checked = report.outcome.performed ? report.outcome.exclusionEvidenceMissing ?? [] : [];
-    expect(checked.join("\n")).toContain(`without quoting, beside this row, words of the request that exclude it; it was left out by condition "${REQUEST_WORDS_CONDITIONS.handle}" alone (Read read) -- ${REQUEST_WORDS_HANDLE}`);
+    expect(checked.join("\n")).toContain(`without quoting, beside this row, words of the request that exclude it; it was left out by ${REQUEST_WORDS_NAMES.handle} alone (Read read) -- ${REQUEST_WORDS_HANDLE}`);
   });
 
   it("takes a yes that quotes, beside each left-out row, the request's own excluding words", async () => {

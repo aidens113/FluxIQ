@@ -16,7 +16,7 @@
 // saved answer drops after the run are seen nowhere else.
 
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
+import { automationStudioResultConditionName, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 
 /** What the rows mean and what to do about them, said once (header). No site's words. */
 const PROCESSED_OUT = "Each list below is the rows a read kept and the saved answer then left out by one condition of recordOutput.process.where alone: every other condition kept them, so the run did not store them. "
@@ -26,7 +26,7 @@ const PROCESSED_OUT = "Each list below is the rows a read kept and the saved ans
 /** Each processing condition's rows and Core's sentence for them; nothing when no condition alone left a row out. */
 export function automationStudioTrialProcessedOutFeedback(summary: AutomationStudioRunResultSummary): { conditions: JsonObject[]; said: string } | undefined {
   const conditions = summary.recordSets.flatMap((set) => (set.processing?.conditions ?? []).flatMap((entry, index): JsonObject[] => entry.leftOutOnlyByThis?.length
-    ? [{ dataset: set.datasetId, condition: entry.condition ?? `condition ${index + 1} (wording withheld)`, rejected: entry.rejected, rejectedByItself: entry.alone, rows: [...entry.leftOutOnlyByThis] }]
+    ? [{ dataset: set.datasetId, condition: automationStudioResultConditionName(entry.number ?? index + 1, entry.condition), rejected: entry.rejected, rejectedByItself: entry.alone, rows: [...entry.leftOutOnlyByThis] }]
     : []));
   return conditions.length ? { conditions, said: PROCESSED_OUT } : undefined;
 }

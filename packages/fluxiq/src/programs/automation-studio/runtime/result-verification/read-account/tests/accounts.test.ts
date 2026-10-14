@@ -39,12 +39,13 @@ describe("a read's account", () => {
       dedupeBy: ["url"],
       // It pages with `next`, so it leaves out a row identical to an earlier page's; the record carries no count of them.
       dropsEarlierPageRepeats: true,
+      // Each condition carries its number, from 1: the one index every line names it by (t574).
       conditions: [
-        { condition: "attribute data-sponsored is absent", rejected: 13 },
-        { condition: "rating atLeast 4", rejected: 20 },
-        { condition: "price lessThan 50", rejected: 27 },
+        { number: 1, condition: "attribute data-sponsored is absent", rejected: 13 },
+        { number: 2, condition: "rating atLeast 4", rejected: 20 },
+        { number: 3, condition: "price lessThan 50", rejected: 27 },
         // The read of the name column is the name column's own read, so it is named by the column.
-        { condition: "name not contains [\"ear tips\", \"charging case\"]", rejected: 16 }
+        { number: 4, condition: "name not contains [\"ear tips\", \"charging case\"]", rejected: 16 }
       ]
     }]);
   });
@@ -60,7 +61,7 @@ describe("a read's account", () => {
     const read = node.parameterValues!.extractList as { where: Array<Record<string, unknown>> };
     read.where[3] = { field: "name", contains: [".sponsored-badge", "ear tips"] };
     const { reads } = automationStudioResultReadAccounts({ actionAttempts: [earbudsAttempt()], flowNodes: [node], deniedEvidenceKeys: [] });
-    expect(reads[0]?.conditions?.[3]).toEqual({ condition: "name contains [(withheld), \"ear tips\"]", rejected: 16 });
+    expect(reads[0]?.conditions?.[3]).toEqual({ number: 4, condition: "name contains [(withheld), \"ear tips\"]", rejected: 16 });
   });
 
   // `run-munw7ffn-fe1cecd2`: a condition on the Brightaisle Plus icon's accessible
@@ -70,14 +71,14 @@ describe("a read's account", () => {
     const seen = ["Brightaisle Plus", "4.5 out of 5 stars", null, "Pro Earbuds"];
     const { reads } = automationStudioResultReadAccounts({ actionAttempts: [withSeen(seen)], flowNodes: [plusNode()], deniedEvidenceKeys: [] });
     expect(reads[0]?.conditions).toEqual([
-      { condition: "attribute aria-label (read \"Brightaisle Plus\" on a row it kept) is present", rejected: 13 },
+      { number: 1, condition: "attribute aria-label (read \"Brightaisle Plus\" on a row it kept) is present", rejected: 13 },
       // These three are their columns' own reads, named by the column, whose values are the rows: none is said.
-      { condition: "rating atLeast 4", rejected: 20 },
-      { condition: "price lessThan 50", rejected: 27 },
-      { condition: "name not contains [\"ear tips\", \"charging case\"]", rejected: 16 }
+      { number: 2, condition: "rating atLeast 4", rejected: 20 },
+      { number: 3, condition: "price lessThan 50", rejected: 27 },
+      { number: 4, condition: "name not contains [\"ear tips\", \"charging case\"]", rejected: 16 }
     ]);
     const full = automationStudioResultReadSentence(reads[0]!, "full");
-    expect(full).toContain("attribute aria-label (read \"Brightaisle Plus\" on a row it kept) is present rejected 13 rows");
+    expect(full).toContain("condition 1 (attribute aria-label (read \"Brightaisle Plus\" on a row it kept) is present) rejected 13 rows");
     for (const locator of [...EARBUDS_LOCATORS, ".plus-badge"]) expect(JSON.stringify(reads) + full).not.toContain(locator);
   });
 
@@ -88,7 +89,7 @@ describe("a read's account", () => {
     expect(said("Brightaisle Plus")[0]?.conditions?.[0]?.condition).toBe("attribute aria-label (read \"Brightaisle Plus\" on a row it kept) is present");
     for (const value of [".plus-badge > i", "aria-label=Plus", "sk-abcdefghij0123456789abcdef", "innerHTML", 7]) {
       const reads = said(value);
-      expect(reads[0]?.conditions?.[0], String(value)).toEqual({ condition: "attribute aria-label is present", rejected: 13 });
+      expect(reads[0]?.conditions?.[0], String(value)).toEqual({ number: 1, condition: "attribute aria-label is present", rejected: 13 });
       if (typeof value === "string") expect(JSON.stringify(reads)).not.toContain(value);
     }
   });
@@ -131,7 +132,7 @@ describe("a read's account", () => {
     const full = automationStudioResultReadSentence(reads[0]!, "full");
     expect(full).toContain("It already follows pages");
     expect(full).toContain("It already keeps one row per url.");
-    expect(full).toContain("name not contains [\"ear tips\", \"charging case\"] rejected 16 rows");
+    expect(full).toContain("condition 4 (name not contains [\"ear tips\", \"charging case\"]) rejected 16 rows");
     expect(full).not.toContain("by itself");
   });
 
@@ -143,10 +144,10 @@ describe("a read's account", () => {
     const counted = earbudsAttempt({ metadata: { extraction: { ...extraction, conditions: { ...(extraction.conditions as object), alone: [0, 1, 2, 5] } } } as never });
     const { reads } = automationStudioResultReadAccounts({ actionAttempts: [counted], flowNodes: [earbudsNode()], deniedEvidenceKeys: [] });
     expect(reads[0]?.conditions?.map((condition) => condition.alone)).toEqual([0, 1, 2, 5]);
-    expect(reads[0]?.conditions?.[3]).toEqual({ condition: "name not contains [\"ear tips\", \"charging case\"]", rejected: 16, alone: 5 });
+    expect(reads[0]?.conditions?.[3]).toEqual({ number: 4, condition: "name not contains [\"ear tips\", \"charging case\"]", rejected: 16, alone: 5 });
     expect(automationStudioResultReadSentence(reads[0]!, "brief")).toContain("its 4 conditions rejected 13, 20, 27, 16 rows (by itself: 0, 1, 2, 5)");
     const full = automationStudioResultReadSentence(reads[0]!, "full");
-    expect(full).toContain("name not contains [\"ear tips\", \"charging case\"] rejected 16 rows, 5 of them by itself");
+    expect(full).toContain("condition 4 (name not contains [\"ear tips\", \"charging case\"]) rejected 16 rows, 5 of them by itself");
     expect(full).toContain("a condition with such rows is the first to check");
   });
 
@@ -155,7 +156,7 @@ describe("a read's account", () => {
     const extraction = attempt.metadata!.extraction as Record<string, unknown>;
     const wrong = earbudsAttempt({ metadata: { extraction: { ...extraction, conditions: { ...(extraction.conditions as object), alone: [14, 0, 0, 0] } } } as never });
     const { reads } = automationStudioResultReadAccounts({ actionAttempts: [wrong], flowNodes: [earbudsNode()], deniedEvidenceKeys: [] });
-    expect(reads[0]?.conditions?.[0]).toEqual({ condition: "attribute data-sponsored is absent", rejected: 13 });
+    expect(reads[0]?.conditions?.[0]).toEqual({ number: 1, condition: "attribute data-sponsored is absent", rejected: 13 });
     expect(reads[0]?.conditions?.[1]?.alone).toBe(0);
   });
 });

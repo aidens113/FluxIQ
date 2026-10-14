@@ -21,8 +21,15 @@ it("carries passive observed text and distinct absent/empty states beside saved-
   } };
   const condition = automationStudioResultReadAccounts({ actionAttempts: [attempt], flowNodes: [node], deniedEvidenceKeys: [] }).reads[0]?.conditions?.[0];
   expect(condition?.leftOutOnlyByThis).toEqual(["Unit alpha", "Unit beta", "Unit gamma"]);
-  expect(condition).toMatchObject({ leftOutObservations: observations });
+  // Placed under its condition, a witness drops its own 0-based index: the condition's number is the one index (t574).
+  expect(condition).toMatchObject({ number: 1, leftOutObservations: observations.map(underItsCondition) });
+  expect(JSON.stringify(condition)).not.toContain("conditionIndex");
 });
+
+/** A witness as the account carries it under its condition (t574). */
+function underItsCondition({ conditionIndex: _index, ...witness }: JsonObject): JsonObject {
+  return witness;
+}
 
 function recorded(observations?: JsonObject[], route = "success"): AutomationStudioFlowRunActionAttemptRecord {
   return { attemptId: "unit.read", nodeId: "unit.read", definitionId: "unit.list", order: 1, status: "succeeded", route, startedAt: 1,
@@ -46,7 +53,7 @@ it("screens denied authored helper keys and locator text before model-facing obs
   expect(allowed?.leftOutObservations?.map(entry => entry?.state)).toEqual(["present", "withheld"]);
   expect(JSON.stringify(allowed)).not.toContain("#unit-card");
   const counts = automationStudioResultReadAccounts({ actionAttempts: [read], flowNodes: [authored] }).reads[0]?.conditions?.[0];
-  expect(counts).toEqual({ rejected: 2, alone: 2 });
+  expect(counts).toEqual({ number: 1, rejected: 2, alone: 2 });
 });
 
 it("aggregates actual repeated read passes without deduplicating labels or inventing legacy observations", () => {
@@ -57,9 +64,12 @@ it("aggregates actual repeated read passes without deduplicating labels or inven
   const third = recorded([witness("last pass"), witness("new reading")]);
   const result = automationStudioResultReadAccounts({ actionAttempts: [repeat(0), first, repeat(2), second, repeat(4), third], flowNodes: [authored], deniedEvidenceKeys: [] }).reads[0];
   expect(result?.pagesRead).toBe(3);
-  expect(result?.conditions?.[0]?.leftOutOnlyByThis).toEqual(["Unit alpha", "Unit beta", "Unit alpha", "Unit beta", "Unit alpha", "Unit beta"]);
+  // The pass whose read sent no witness says its presence test's rows as found empty (t574); the others' witnesses say they found a value.
+  expect(result?.conditions?.[0]?.leftOutOnlyByThis).toEqual(["Unit alpha", "Unit beta", "Unit alpha — unit_flag: (no value)", "Unit beta — unit_flag: (no value)", "Unit alpha", "Unit beta"]);
   expect(result?.conditions?.[0]?.leftOutObservations).toEqual([
-    witness("first pass"), { conditionIndex: 0, state: "withheld", source: "read", readKind: "attribute", page: 1, item: 1 },
-    null, null, witness("last pass", 3), witness("new reading", 3)
+    underItsCondition(witness("first pass")), { state: "withheld", source: "read", readKind: "attribute", page: 1, item: 1 },
+    null, null, underItsCondition(witness("last pass", 3)), underItsCondition(witness("new reading", 3))
   ]);
+  // Not every pass said its rows empty, so no presence sentence is said for the whole read.
+  expect(result?.conditions?.[0]).not.toHaveProperty("presence");
 });

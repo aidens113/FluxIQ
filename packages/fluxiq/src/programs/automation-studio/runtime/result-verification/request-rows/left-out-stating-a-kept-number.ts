@@ -34,7 +34,9 @@
 // told the rows, the numbers and the change (`repair-directive.ts`).
 
 import { readAutomationStudioRecordNumber } from "@fluxiq/contracts/automation-studio";
-import type { AutomationStudioResultConditionObservation, AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioResultLeftOutObservation, AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts.ts";
+// The leaf, not the barrel: `../read-account/` reaches `../../llm/`, which reaches this directory, so a value through the barrel would close a module cycle.
+import { automationStudioResultConditionName } from "../read-account/condition-name.ts";
 import { automationStudioRequestRowLabel, automationStudioRequestRowsReads } from "./summary-reads.ts";
 import type { AutomationStudioRequestRowsKeptNumberLeftOut } from "./types.ts";
 
@@ -62,7 +64,7 @@ export function automationStudioResultLeftOutStatingAKeptNumber(summary: Automat
 
 function flagged(read: AutomationStudioResultReadAccount, sets: readonly AutomationStudioResultRecordSetSummary[], inResult: ReadonlySet<string>): AutomationStudioRequestRowsKeptNumberLeftOut[] {
   const found: AutomationStudioRequestRowsKeptNumberLeftOut[] = [];
-  for (const condition of read.conditions ?? []) {
+  for (const [index, condition] of (read.conditions ?? []).entries()) {
     const rows = condition.leftOutOnlyByThis ?? [];
     const wording = condition.condition;
     if (!rows.length || wording === undefined) continue;
@@ -79,7 +81,8 @@ function flagged(read: AutomationStudioResultReadAccount, sets: readonly Automat
       const number = value === undefined ? undefined : readAutomationStudioRecordNumber(value);
       if (number !== undefined && number >= low && number <= high) hit.push({ row, number });
     });
-    if (hit.length) found.push({ nodeId: read.nodeId, condition: wording, low, high, rows: hit.map((entry) => entry.row), numbers: hit.map((entry) => entry.number) });
+    // Named as every line names it (`../read-account/condition-name.ts`, t574).
+    if (hit.length) found.push({ nodeId: read.nodeId, condition: automationStudioResultConditionName(condition.number ?? index + 1, wording), low, high, rows: hit.map((entry) => entry.row), numbers: hit.map((entry) => entry.number) });
   }
   return found;
 }
@@ -144,7 +147,7 @@ function collectedByThisRead(set: AutomationStudioResultRecordSetSummary, nodeId
 }
 
 /** Each left-out row's tested value: the read's own witness where it sent one per row, else the value said after the row's label. */
-function leftOutValues(rows: readonly string[], observations: ReadonlyArray<AutomationStudioResultConditionObservation | null> | undefined): Array<string | undefined> {
+function leftOutValues(rows: readonly string[], observations: ReadonlyArray<AutomationStudioResultLeftOutObservation | null> | undefined): Array<string | undefined> {
   const witnessed = Array.isArray(observations) && observations.length === rows.length ? observations : undefined;
   return rows.map((row, index) => {
     const witness = witnessed?.[index];

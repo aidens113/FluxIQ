@@ -55,7 +55,10 @@
 // each such row has to stand in a sentence of the reply that quotes words of
 // the request excluding it, and not only the words it searched by
 // (`request-rows/unquoted-rows.ts`); a yes that leaves one without is not
-// taken, as above, and `repair.checked` names the rows in Core's words.
+// taken, as above, and `repair.checked` names the rows in Core's words. A row
+// a numeric bound left out whose value Core read as failing it is settled by
+// Core and needs no quote beside it; the yes still quotes, once, the request's
+// words stating that bound (t574, `value-readings/settled-rows.ts`).
 //
 // **A yes that says the Flow needs a change is coded so (t515).** The same
 // run's playback check answered yes with `patchNeeded: true`, and the run was
@@ -251,7 +254,7 @@ function replyText(input: AutomationStudioResultVerdictInput): string {
 /** Core's line for one condition's flagged rows a yes did not name, as `repair.checked` carries it to a build's repair. */
 function unaccountedLine(entry: AutomationStudioResultLeftOutNamingTheItem): string {
   const where = entry.step !== undefined ? `Step ${entry.step}` : `Read ${entry.nodeId ?? "(unnamed)"}`;
-  return `The check answered yes without accounting for ${entry.rows.length === 1 ? "this row" : "these rows"} the condition "${entry.condition}" (${where}) alone left out, which name "${entry.item}" first and ${entry.also.map((phrase) => `"${phrase}"`).join(", ")} only after it: ${entry.rows.join("; ")}.`;
+  return `The check answered yes without accounting for ${entry.rows.length === 1 ? "this row" : "these rows"} the ${entry.condition} (${where}) alone left out, which name "${entry.item}" first and ${entry.also.map((phrase) => `"${phrase}"`).join(", ")} only after it: ${entry.rows.join("; ")}.`;
 }
 
 /** Why a yes was not taken, by what Core found it passed over. */
@@ -271,16 +274,24 @@ function refusedYesReason(unaccounted: boolean, keptNumber: boolean, unquoted: b
  * `checked-rows-named.ts` reads rows after "the condition" as rows the request
  * asks for, which a repair's rerun is then measured against; these rows are
  * only rows the yes did not account for, not rows Core says are wanted.
+ *
+ * Rows Core settled (`bound`, t574) are not asked to be quoted for: Core read
+ * each as failing the condition's bound, and the line asks only for the one
+ * quote of the request's words stating that bound.
  */
 function unquotedLine(entry: AutomationStudioRequestRowsUnquoted): string {
   const where = entry.step !== undefined ? `Step ${entry.step}` : `Read ${entry.nodeId ?? "(unnamed)"}`;
   const one = entry.rows.length === 1;
-  return `The check answered yes without quoting, beside ${one ? "this row" : "each of these rows"}, words of the request that exclude ${one ? "it" : "each"}; ${one ? "it was" : "they were"} left out by condition "${entry.condition}" alone (${where}) -- ${entry.rows.join(" | ")}. A row the request's own words do not exclude is one it asks for.`;
+  if (entry.bound) {
+    return `The check answered yes without quoting, in a sentence that names ${entry.condition} (${where}), the request's words that state its bound. Core read ${one ? "the row" : `each of the ${entry.rows.length} rows`} it alone left out as failing that bound, so no quote is needed beside ${one ? "it" : "them"}; one quote of the request stating the bound is. If the request states no such bound, ${one ? "that row is one" : "those rows are ones"} it asks for.`;
+  }
+  return `The check answered yes without quoting, beside ${one ? "this row" : "each of these rows"}, words of the request that exclude ${one ? "it" : "each"}; ${one ? "it was" : "they were"} left out by ${entry.condition} alone (${where}) -- ${entry.rows.join(" | ")}. A row the request's own words do not exclude is one it asks for.`;
 }
 
 /** The unquoted rows less those the named-rows check already reported for the same condition: one line per row is enough. */
 function withoutUnaccounted(unquoted: AutomationStudioRequestRowsUnquoted[], unaccounted: readonly AutomationStudioResultLeftOutNamingTheItem[]): AutomationStudioRequestRowsUnquoted[] {
   return unquoted.flatMap((entry) => {
+    if (entry.bound) return [entry];
     const said = new Set(unaccounted.filter((other) => other.step === entry.step && other.nodeId === entry.nodeId && other.condition === entry.condition).flatMap((other) => other.rows));
     const rows = entry.rows.filter((row) => !said.has(row));
     return rows.length ? [{ ...entry, rows }] : [];
@@ -291,7 +302,7 @@ function withoutUnaccounted(unquoted: AutomationStudioRequestRowsUnquoted[], una
 function keptNumberLine(entry: AutomationStudioRequestRowsKeptNumberLeftOut): string {
   const range = entry.low === entry.high ? String(entry.low) : `${entry.low} to ${entry.high}`;
   const rows = entry.rows.map((row, index) => `${row} (states ${entry.numbers[index]})`).join("; ");
-  return `The check answered yes though the condition "${entry.condition}" (Read ${entry.nodeId}) kept rows stating ${range} and alone left out ${entry.rows.length === 1 ? "this row, which states" : "these rows, which state"} a number in that range: ${rows}.`;
+  return `The check answered yes though the ${entry.condition} (Read ${entry.nodeId}) kept rows stating ${range} and alone left out ${entry.rows.length === 1 ? "this row, which states" : "these rows, which state"} a number in that range: ${rows}.`;
 }
 
 /** The judgement's advice: what it said changed, or failing that what its reply said at all. */

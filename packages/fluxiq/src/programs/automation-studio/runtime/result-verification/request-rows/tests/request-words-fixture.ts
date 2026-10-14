@@ -4,6 +4,7 @@
 // that states one exclusion, a read whose first condition makes it and whose
 // second leaves out one more row the request never excludes.
 import type { AutomationStudioRunResultSummary } from "../../contracts.ts";
+import { automationStudioResultConditionName } from "../../read-account/index.ts";
 import { automationStudioRequestWording, type AutomationStudioRequestWording } from "../request-wording.ts";
 
 /** The request: one search, one stated exclusion. */
@@ -27,6 +28,9 @@ export const REQUEST_WORDS_HANDLE = "Replacement Handle for Garden Tools, Ash Wo
 
 /** The stated condition and the unstated one, as the read names them. */
 export const REQUEST_WORDS_CONDITIONS = { stock: "stock is present", handle: "name not contains [\"Replacement Handle\"]" };
+
+/** Each condition as every line names it: by its number and wording (t574). */
+export const REQUEST_WORDS_NAMES = { stock: automationStudioResultConditionName(1, REQUEST_WORDS_CONDITIONS.stock), handle: automationStudioResultConditionName(2, REQUEST_WORDS_CONDITIONS.handle) };
 
 /** The run: three rows stored, one left out by each condition alone. */
 export function requestWordsRunSummary(): AutomationStudioRunResultSummary {

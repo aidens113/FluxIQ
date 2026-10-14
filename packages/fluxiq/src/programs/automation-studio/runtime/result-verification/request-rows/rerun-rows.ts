@@ -71,7 +71,7 @@ function keeps(label: string, ids: ReadonlySet<string>, rerun: readonly string[]
 function said(named: readonly AutomationStudioRequestRowsNamed[], kept: readonly string[], stillLeftOut: readonly string[], step: number | undefined): string {
   const total = kept.length + stillLeftOut.length;
   const conditions = [...new Set(named.filter((entry) => entry.rows.length).map((entry) =>
-    `the condition "${entry.condition}" of ${entry.step !== undefined ? `step ${entry.step}` : `read ${entry.nodeId}`}`))].join(" or ");
+    `the ${entry.condition} of ${entry.step !== undefined ? `step ${entry.step}` : `read ${entry.nodeId}`}`))].join(" or ");
   const rerun = step !== undefined ? `This rerun of step ${step}` : "This rerun";
   const head = `Core's check of the Flow's last test named ${total === 1 ? "1 row" : `${total} rows`} that ${conditions} alone left out (judgement.judge.checked). `;
   if (!stillLeftOut.length) {

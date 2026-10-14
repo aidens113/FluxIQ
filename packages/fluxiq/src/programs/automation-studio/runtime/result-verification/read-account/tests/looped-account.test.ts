@@ -10,7 +10,7 @@ it("keeps conflicting repeated-label witnesses in pass order and legacy unknowns
     conditions: [{ rejected: 1, alone: 1, leftOutOnlyByThis: ["Unit alpha"], ...(page === 2 ? {} : { leftOutObservations: [witness(1, page)] }) }]
   }));
   expect(automationStudioResultReadLoopedAccount({ passes, attempts: 3 }).conditions?.[0]).toEqual({
-    rejected: 3, alone: 3, leftOutOnlyByThis: ["Unit alpha", "Unit alpha", "Unit alpha"],
+    number: 1, rejected: 3, alone: 3, leftOutOnlyByThis: ["Unit alpha", "Unit alpha", "Unit alpha"],
     leftOutObservations: [witness(1), null, witness(3)]
   });
   expect(automationStudioResultReadLoopedAccount({ passes: [passes[1]!], attempts: 1 }).conditions?.[0]).not.toHaveProperty("leftOutObservations");

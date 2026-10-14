@@ -65,7 +65,8 @@ describe("a downgraded build-test yes, as the next round reads it", () => {
       expect(checked).toContain(row);
     }
     // The same rows in structured form, per read and condition (live run `run-mux6naez-6c20f26e`, R3-3): what a rerun of the read is compared with.
-    expect(judge.checkedRows).toEqual([{ step: 10, condition: "name", rows: RUN_MUW60J7C_PAIRS_LEFT_OUT.map((label) => ({ label })) }]);
+    // The condition as Core's lines name a test's unnumbered condition (t574, `result-verification/request-rows/summary-reads.ts`).
+    expect(judge.checkedRows).toEqual([{ step: 10, condition: "condition \"name\"", rows: RUN_MUW60J7C_PAIRS_LEFT_OUT.map((label) => ({ label })) }]);
     // What the Flow would store, which the next repair's progress is measured against (`../progress.ts`).
     expect(records).toEqual({ stored: 30, refused: 0, missingRequired: 0 });
   });
@@ -98,7 +99,7 @@ describe("a judged test whose round explored steps the Flow leaves out, as the r
     expect(checked).not.toMatch(/Step 10\b/u);
     expect(fix).toMatch(/\(Step 6\)|^Step 6:/mu);
     expect(fix).not.toMatch(/\(Step 10\)|^Step 10:/mu);
-    expect(judge.checkedRows).toEqual([{ step: 6, condition: "name", rows: RUN_MUW60J7C_PAIRS_LEFT_OUT.map((label) => ({ label })) }]);
+    expect(judge.checkedRows).toEqual([{ step: 6, condition: "condition \"name\"", rows: RUN_MUW60J7C_PAIRS_LEFT_OUT.map((label) => ({ label })) }]);
     expect(judge.testStepIsDraftStep).toEqual({ "6": 2, "7": 3, "8": 4, "9": 5, "10": 6 });
     expect(said).toContain("judgement.judge.testStepIsDraftStep maps each test step number that differs");
     expect(said).toContain("judgement.judge.checkedRows lists the same rows by read and condition");

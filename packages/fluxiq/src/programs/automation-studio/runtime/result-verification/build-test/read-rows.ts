@@ -29,6 +29,11 @@
 // screening, which would otherwise drop a denied column's record silently, or
 // withhold the whole observation -- its counts included -- for one label. A
 // member that is not that shape is left out; the rest of the observation stays.
+//
+// **A condition is numbered as a run's is (t574).** The replay's 0-based
+// `conditionIndex` is sent as `number`, counting from 1, the index every line
+// names a condition by (`../read-account/condition-name.ts`), and its witnesses
+// lose their own copy of it: they sit under the condition they witness.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioResultReadAloneRows } from "../read-account/index.ts";
@@ -67,13 +72,20 @@ function readRows(sent: JsonObject, deniedKeys: readonly string[]): { value: Jso
       observations: conditionIndex !== undefined || unknown ? entry.observations : undefined,
       conditionIndex: conditionIndex ?? 0, evidenceKey: entry.condition, onScreened: values => { observations = values; }
     });
-    return said ? [{ condition: entry.condition, rows: said, ...(conditionIndex !== undefined ? { conditionIndex } : {}), ...(observations ? { observations } : {}), ...notShown(entry.rowsNotShown) }] : [];
+    return said ? [{ ...(conditionIndex !== undefined ? { number: conditionIndex + 1 } : {}), condition: entry.condition, rows: said, ...(observations ? { observations: observations.map(underItsCondition) } : {}), ...notShown(entry.rowsNotShown) }] : [];
   }) : [];
   if (!rows && !conditions.length) return undefined;
   return {
     value: { ...(rows ? { rows, ...notShown(sent.rowsNotShown) } : {}), ...(conditions.length ? { leftOutOnlyByThis: conditions } : {}) },
     withheld
   };
+}
+
+/** A witness under its condition, without its own index (header). */
+function underItsCondition(observation: JsonValue): JsonValue {
+  if (!isObject(observation)) return observation;
+  const { conditionIndex: _index, ...witness } = observation;
+  return witness;
 }
 
 function notShown(value: JsonValue | undefined): { rowsNotShown?: number } {

@@ -47,6 +47,33 @@
 // row it kept** (`stored-columns.ts`, `condition.ts`): a column read only to
 // filter by reaches no row, so that value is the judge's only sight of it.
 //
+// **A called part's read is told by its own authored node too (t574).** A
+// subflow trial runs its part across a Call Subflow boundary, so every read in
+// it has a `parentAttemptId`, and until then such a read was told by its counts
+// alone. Live run `run-mv7vor5f-ea4d08b4`: every subflow trial's judge got no
+// condition wording, no tested value beside a left-out row, no `testedLabel`
+// (so no `leftOutNamingTheItem`) and no dedupe, where the whole-candidate
+// trial of the same read had them all, and three of five verdicts were wrong.
+// The Flow nodes a trial passes hold the called graphs' nodes
+// (`service/candidate-trial/frame-evidence.ts` merges them), so the read's node
+// is found there by its id -- and only where that cannot be another step's:
+// not where the root frame ran a step of the same id, and only for a node of
+// the read's own definition with as many conditions as the read counted. A
+// real run of a Flow whose root calls parts passes only the root's nodes, so
+// its caller reads each called graph at the revision the Call Subflow attempt
+// recorded and passes it keyed by that attempt (`calledNodes`,
+// `../run-outcome.ts`): there the part's read is matched in its own graph, with
+// the same refusals on another definition or condition count.
+//
+// **Each condition carries its number** (`condition-name.ts`, t574): its place
+// in the authored `where`, from 1, the one index every line names it by. A
+// witness placed under it drops the domain's 0-based `conditionIndex`, which
+// the same run's judges read beside Core's "condition 2" as another numbering.
+//
+// **A presence test says what it found on both sides** (`presence.ts`, t574):
+// its sentence, and each row it alone left out said with `(no value)` in the
+// column it tested, where the row does not already say its value.
+//
 // **Every read, every condition and every dedupe key** (user, 2026-09-30:
 // "Remove ANY AND ALL LIMITS ON THE NUMBER OF ELEMENTS PASSED TO MODEL. DO NOT
 // HIDE INFORMATION"). Until then a judge saw four reads, eight conditions each
@@ -56,13 +83,14 @@ import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../model/index.ts";
 import { automationStudioEvidenceKey } from "../../llm/index.ts";
-import type { AutomationStudioResultConditionObservation, AutomationStudioResultReadAccount } from "../contracts.ts";
+import type { AutomationStudioResultConditionObservation, AutomationStudioResultLeftOutObservation, AutomationStudioResultReadAccount } from "../contracts.ts";
 import { automationStudioResultReadAloneRows } from "./alone-rows.ts";
 import { automationStudioResultReadConditionColumn, automationStudioResultReadConditionText } from "./condition.ts";
 import { automationStudioResultReadDedupe } from "./dedupe.ts";
 import { automationStudioResultReadLoopedAccount } from "./looped-account.ts";
 import { automationStudioResultReadParameters } from "./read-parameters.ts";
 import { automationStudioResultReadLoopPasses } from "./loop-passes.ts";
+import { automationStudioResultReadPresence } from "./presence.ts";
 import { automationStudioResultReadStoredColumns } from "./stored-columns.ts";
 
 /** A closed word the read reports, as extraction-summary.ts admits them. */
@@ -79,6 +107,15 @@ export type AutomationStudioResultReadAccountsInput = {
   flowNodes?: readonly AutomationStudioFlowNode[] | undefined;
   /** The bound domain's declared keys. Absent, nothing authored is carried: only counts. */
   deniedEvidenceKeys?: readonly string[] | undefined;
+  /**
+   * The nodes of each graph a Call Subflow step ran, keyed by that Call
+   * Subflow attempt's `attemptId` -- the `parentAttemptId` of every attempt its
+   * frame made -- where the caller read the graph at the revision the run
+   * recorded (`../run-outcome.ts`). A called read whose frame is here is told
+   * by its own graph's node exactly; one whose frame is not falls back to
+   * `flowNodes`, as a trial's merged graph holds the parts' nodes (header).
+   */
+  calledNodes?: ReadonlyMap<string, readonly AutomationStudioFlowNode[]> | undefined;
 };
 
 /**
@@ -87,11 +124,18 @@ export type AutomationStudioResultReadAccountsInput = {
  * read; one that ran as the passes of a loop, with every pass added up.
  *
  * A called part's read (`parentAttemptId`) is a step of its own call: its
- * loops are read from its own frame's attempts, and it is told by its counts
- * alone, because the Flow's authored nodes are not the part's and a part's
- * node can share an id with one of them.
+ * loops are read from its own frame's attempts. It is told by its authored
+ * node: from its own called graph (`calledNodes`) where the caller gave it,
+ * else where the Flow's nodes hold one that can only be its own (header,
+ * t574); by its counts alone where the root frame ran a step of the same id
+ * and no called graph was given, or the node is of another definition or
+ * condition count.
+ *
+ * `authoredNodes` is the node each read was told by, aligned with `reads`, so
+ * a reader of the same reads (`../value-readings/`) uses the very node, never
+ * one found again by id.
  */
-export function automationStudioResultReadAccounts(input: AutomationStudioResultReadAccountsInput): { reads: AutomationStudioResultReadAccount[] } {
+export function automationStudioResultReadAccounts(input: AutomationStudioResultReadAccountsInput): { reads: AutomationStudioResultReadAccount[]; authoredNodes: Array<AutomationStudioFlowNode | undefined> } {
   const latest = new Map<string, { attempt: AutomationStudioFlowRunActionAttemptRecord; extraction: JsonObject; attempts: number }>();
   const run = input.actionAttempts ?? [];
   for (const attempt of run) {
@@ -105,9 +149,20 @@ export function automationStudioResultReadAccounts(input: AutomationStudioResult
     latest.set(key, replaces ? { attempt, extraction, attempts } : { ...previous, attempts });
   }
   const nodes = new Map((input.flowNodes ?? []).map((node) => [node.id, node]));
-  const authored = (attempt: AutomationStudioFlowRunActionAttemptRecord, nodeId: string) => attempt.parentAttemptId === undefined ? nodes.get(nodeId) : undefined;
+  // The steps the root frame ran: a called part's step of the same id is not told by that node (header).
+  const rootSteps = new Set(run.filter((attempt) => attempt.parentAttemptId === undefined).map((attempt) => attempt.nodeId));
+  const authored = (attempt: AutomationStudioFlowRunActionAttemptRecord, nodeId: string, extraction?: JsonObject): AutomationStudioFlowNode | undefined => {
+    if (attempt.parentAttemptId === undefined) return nodes.get(nodeId);
+    // Its own called graph where the caller read it; else the Flow's nodes, unless the root frame ran that id.
+    const called = input.calledNodes?.get(attempt.parentAttemptId);
+    const node = called ? called.find((candidate) => candidate.id === nodeId) : rootSteps.has(nodeId) ? undefined : nodes.get(nodeId);
+    if (!node) return undefined;
+    return extraction === undefined || (node.definitionId === attempt.definitionId && sameConditionCount(node, extraction)) ? node : undefined;
+  };
+  const authoredNodes: Array<AutomationStudioFlowNode | undefined> = [];
   const reads = [...latest.values()].map(({ attempt, extraction, attempts }) => {
-    const node = authored(attempt, attempt.nodeId);
+    const node = authored(attempt, attempt.nodeId, extraction);
+    authoredNodes.push(node);
     // A step that ran as the passes of a loop speaks with every pass (`loop-passes.ts`, `looped-account.ts`), read in its own frame.
     const frame = run.filter((candidate) => candidate.parentAttemptId === attempt.parentAttemptId);
     const loop = automationStudioResultReadLoopPasses(frame, (candidate) => candidate.nodeId === attempt.nodeId && readExtraction(candidate) !== undefined);
@@ -118,7 +173,14 @@ export function automationStudioResultReadAccounts(input: AutomationStudioResult
     });
     return automationStudioResultReadLoopedAccount({ passes, attempts, stop: loop.stop, pageLimit: mostPasses(authored(attempt, loop.repeatNodeId)) });
   });
-  return { reads };
+  return { reads, authoredNodes };
+}
+
+/** Whether a node's authored conditions are as many as the read counted rejections for; true where either is not said. */
+function sameConditionCount(node: AutomationStudioFlowNode, extraction: JsonObject): boolean {
+  const written = automationStudioResultReadParameters(node.parameterValues)?.where;
+  const rejected = isRecord(extraction.conditions) ? extraction.conditions.rejected : undefined;
+  return !Array.isArray(written) || !Array.isArray(rejected) || written.length === rejected.length;
 }
 
 /** The read's own account of itself on an attempt, when it reported one. */
@@ -199,47 +261,64 @@ function conditionAccounts(
   const total = Math.max(rejected.length, written.length);
   const accounts: NonNullable<AutomationStudioResultReadAccount["conditions"]> = [];
   for (let index = 0; index < total; index += 1) {
-    const rows = count(rejected[index]);
+    const rejectedRows = count(rejected[index]);
     const byItself = count(alone[index]);
     const tested = automationStudioResultReadConditionColumn(written[index], columns);
     const authoredCondition = written[index];
     const read = isRecord(authoredCondition) && isRecord(authoredCondition.read) ? authoredCondition.read : undefined;
     const evidenceKey = tested ?? (typeof read?.attribute === "string" ? read.attribute : undefined);
+    // A presence test says what it found on both sides, where it names the column it read and no witness of a row it left out says it found one (`presence.ts`, header).
+    const witnesses = aloneObservations[index];
+    const foundOnLeftOut = Array.isArray(witnesses) && witnesses.some((witness) => isRecord(witness) && witness.state === "present");
+    const presence = deniedKeys && evidenceKey !== undefined && !foundOnLeftOut ? automationStudioResultReadPresence(authoredCondition, deniedKeys, seen[index]) : undefined;
+    const rows = withTestedValue(aloneRows[index], tested, presence ? evidenceKey : undefined);
     let leftOutObservations: Array<AutomationStudioResultConditionObservation | null> | undefined;
     const leftOutOnlyByThis = deniedKeys
-      ? automationStudioResultReadAloneRows(withTestedValue(aloneRows[index], tested), deniedKeys, undefined, { observations: aloneObservations[index], conditionIndex: index, evidenceKey, onScreened: observations => { leftOutObservations = observations; } })
+      ? automationStudioResultReadAloneRows(rows, deniedKeys, undefined, { observations: aloneObservations[index], conditionIndex: index, evidenceKey, onScreened: observations => { leftOutObservations = observations; } })
       : undefined;
     // A presence test of its own read is said by the word it found on a row it left out, screened as those rows are (`condition.ts`, t482 N3).
     const leftOutSeen = leftOutObservations?.find((observation) => observation?.state === "present")?.value;
     const condition = deniedKeys ? automationStudioResultReadConditionText(written[index], columns, deniedKeys, seen[index], stored, leftOutSeen) : undefined;
     accounts.push({
+      number: index + 1,
       ...(condition ? { condition } : {}),
-      ...(rows !== undefined ? { rejected: rows } : {}),
-      ...(byItself !== undefined && (rows === undefined || byItself <= rows) ? { alone: byItself } : {}),
+      ...(rejectedRows !== undefined ? { rejected: rejectedRows } : {}),
+      ...(byItself !== undefined && (rejectedRows === undefined || byItself <= rejectedRows) ? { alone: byItself } : {}),
       ...(leftOutOnlyByThis ? { leftOutOnlyByThis } : {}),
-      ...(leftOutObservations ? { leftOutObservations } : {}),
-      ...(leftOutOnlyByThis?.length && labelledBy(aloneRows[index], tested) ? { testedLabel: true as const } : {})
+      ...(leftOutObservations ? { leftOutObservations: leftOutObservations.map(underItsCondition) } : {}),
+      ...(leftOutOnlyByThis?.length && labelledBy(aloneRows[index], tested) ? { testedLabel: true as const } : {}),
+      ...(presence && leftOutOnlyByThis?.length ? { presence } : {})
     });
   }
   return accounts;
 }
 
+/** A witness as its condition carries it: the condition is the one it sits under, so its own index goes (header). */
+function underItsCondition(observation: AutomationStudioResultConditionObservation | null): AutomationStudioResultLeftOutObservation | null {
+  if (observation === null) return null;
+  const { conditionIndex: _index, ...witness } = observation;
+  return witness;
+}
+
 /**
  * Each stored row cut to its label (its first cell) and, where the row holds
  * the column `tested` names and that is not the label's own, that cell after
- * it. Anything that is not a list of rows comes back as it was, for the screen
- * to refuse.
+ * it. For a presence test, a row that does not hold the column it read
+ * (`presenceKey`) is given it empty, so it is said `(no value)`: the condition
+ * left it out because its read found nothing there. Anything that is not a
+ * list of rows comes back as it was, for the screen to refuse.
  */
-function withTestedValue(rows: JsonValue | undefined, tested: string | undefined): JsonValue | undefined {
+function withTestedValue(rows: JsonValue | undefined, tested: string | undefined, presenceKey?: string): JsonValue | undefined {
   if (!Array.isArray(rows)) return rows;
   return rows.map((row): JsonValue => {
     if (!isRecord(row)) return row;
     const [label] = Object.entries(row);
     if (label === undefined) return row;
     const cut: JsonObject = { [label[0]]: label[1] };
-    if (tested === undefined || tested === label[0] || INDEX_KEY.test(tested) || !Object.hasOwn(row, tested)) return cut;
-    const value = row[tested];
-    return typeof value === "string" ? { ...cut, [tested]: value } : cut;
+    const value = tested !== undefined && Object.hasOwn(row, tested) ? row[tested] : undefined;
+    if (tested !== undefined && tested !== label[0] && !INDEX_KEY.test(tested) && typeof value === "string") return { ...cut, [tested]: value };
+    if (presenceKey === undefined || presenceKey === label[0] || INDEX_KEY.test(presenceKey) || Object.hasOwn(row, presenceKey)) return cut;
+    return { ...cut, [presenceKey]: "" };
   });
 }
 

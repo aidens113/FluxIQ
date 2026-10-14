@@ -24,7 +24,7 @@
 // said to leave them out, with its count where it sent one.
 
 import type { AutomationStudioResultReadAccount } from "../contracts.ts";
-import { automationStudioResultReadPageBoundSentence, automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./index.ts";
+import { automationStudioResultConditionName, automationStudioResultReadPageBoundSentence, automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./index.ts";
 
 /** Core's sentence for how one read went. */
 export function automationStudioResultReadSentence(read: AutomationStudioResultReadAccount, length: "brief" | "full"): string {
@@ -76,7 +76,8 @@ function fullTail(read: AutomationStudioResultReadAccount): string {
   else if (read.dedupes === false) lines.push("It does not deduplicate.");
   const conditions = read.conditions ?? [];
   if (conditions.length) {
-    const said = conditions.map((condition, index) => `${condition.condition ?? `condition ${index + 1} (wording withheld)`} rejected ${condition.rejected ?? "an unreported number of"} rows${condition.alone === undefined ? "" : `, ${condition.alone} of them by itself`}${leftOutOnlyByThis(condition.leftOutOnlyByThis)}`);
+    // Each by the one name every line gives it (`condition-name.ts`, t574).
+    const said = conditions.map((condition, index) => `${automationStudioResultConditionName(condition.number ?? index + 1, condition.condition)} rejected ${condition.rejected ?? "an unreported number of"} rows${condition.alone === undefined ? "" : `, ${condition.alone} of them by itself`}${leftOutOnlyByThis(condition.leftOutOnlyByThis)}`);
     lines.push(`Its conditions, each with the rows it rejected across the whole read (a row can fail more than one): ${said.join("; ")}.`);
     // The rows a condition removed by itself passed every other condition: if the answer lacks rows the request wanted, they are where they went.
     if (conditions.some((condition) => (condition.alone ?? 0) > 0)) {

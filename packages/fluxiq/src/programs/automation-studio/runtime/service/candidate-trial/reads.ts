@@ -34,7 +34,7 @@
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../model/index.ts";
-import type { AutomationStudioResultReadAccount } from "../../result-verification/index.ts";
+import { automationStudioResultConditionName, type AutomationStudioResultReadAccount } from "../../result-verification/index.ts";
 
 /** What a read's `narrowedBefore` means for it, said to the model once per read that carries one (header). */
 const BEFORE_READ = "These steps acted on the page before this read ran. Rows a step removed on the site (a search, a filter, a category, a sort, an option chosen) never reached the read, so no condition's count shows them. A step whose words keep less than the request asks leaves asked rows out; remove it, or keep exactly the request's terms with a condition on the read.";
@@ -44,7 +44,7 @@ export function automationStudioTrialReadsFeedback(reads: readonly AutomationStu
   const labels = new Map((graph?.nodes ?? []).map((node) => [node.id, node.label]));
   return (reads ?? []).map((read) => {
     const conditions = (read.conditions ?? []).map((condition, index) => ({
-      condition: condition.condition ?? `condition ${index + 1} (wording withheld)`,
+      condition: automationStudioResultConditionName(condition.number ?? index + 1, condition.condition),
       ...(condition.rejected !== undefined ? { rejected: condition.rejected } : {}),
       ...(condition.alone !== undefined ? { rejectedByItself: condition.alone } : {})
     }));

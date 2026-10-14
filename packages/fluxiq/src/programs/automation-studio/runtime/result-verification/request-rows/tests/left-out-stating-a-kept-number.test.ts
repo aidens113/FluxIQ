@@ -57,14 +57,14 @@ const LEFT_OUT = ["Budget sheet — editors: Ravi Menon and 3 others", "Meeting 
 describe("automationStudioResultLeftOutStatingAKeptNumber", () => {
   it("flags a left-out row whose stated number lies within the numbers the same text condition kept", () => {
     const found = automationStudioResultLeftOutStatingAKeptNumber(summary([read(PATTERN, LEFT_OUT)], [set(KEPT)]));
-    expect(found).toEqual([{ nodeId: NODE, condition: PATTERN, low: 4, high: 12, rows: ["Budget sheet — editors: Ravi Menon and 3 others"], numbers: [4] }]);
+    expect(found).toEqual([{ nodeId: NODE, condition: `condition 1 (${PATTERN})`, low: 4, high: 12, rows: ["Budget sheet — editors: Ravi Menon and 3 others"], numbers: [4] }]);
   });
 
   it("reads the left-out value from the read's own witness when it sent one per row", () => {
     const witnessed = read(PATTERN, ["Budget sheet", "Meeting notes"]);
     witnessed.conditions![0]!.leftOutObservations = [
-      { conditionIndex: 0, source: "field", page: 1, item: 2, readKind: "text", state: "present", value: "Ravi Menon and 7 others" },
-      { conditionIndex: 0, source: "field", page: 1, item: 3, readKind: "text", state: "present", value: "2 editors" }
+      { source: "field", page: 1, item: 2, readKind: "text", state: "present", value: "Ravi Menon and 7 others" },
+      { source: "field", page: 1, item: 3, readKind: "text", state: "present", value: "2 editors" }
     ];
     expect(automationStudioResultLeftOutStatingAKeptNumber(summary([witnessed], [set(KEPT)]))[0]?.numbers).toEqual([8]);
   });

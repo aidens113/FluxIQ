@@ -173,17 +173,19 @@ export function automationStudioResultRepairDirective(input: AutomationStudioRes
  * The finding for one condition's flagged rows a yes did not name, in Core's
  * words: where, the condition, the item every kept row names first, the
  * request's phrases each row names after it, and the rows as the read gave them.
+ * The condition is said by its one name, `condition N (wording)`
+ * (`./read-account/condition-name.ts`, t574), as every line says it.
  */
 function unaccountedFinding(entry: AutomationStudioResultLeftOutNamingTheItem): AutomationStudioResultRepairFinding {
   return {
     code: AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES.leftOutNamingTheItem,
-    detail: `${leftOutWhere(entry)}: the condition "${entry.condition}" alone left out ${entry.rows.length === 1 ? "a row whose label names" : `${entry.rows.length} rows whose labels name`} "${entry.item}" first, as every kept row does, and ${quotedList(entry.also)} only after it, and the check answered yes without saying why the request excludes ${entry.rows.length === 1 ? "it" : "each"}: ${entry.rows.join("; ")}.`
+    detail: `${leftOutWhere(entry)}: the ${entry.condition} alone left out ${entry.rows.length === 1 ? "a row whose label names" : `${entry.rows.length} rows whose labels name`} "${entry.item}" first, as every kept row does, and ${quotedList(entry.also)} only after it, and the check answered yes without saying why the request excludes ${entry.rows.length === 1 ? "it" : "each"}: ${entry.rows.join("; ")}.`
   };
 }
 
 /** What to do about one condition's flagged rows: decide each by the request, and change the condition that left out the ones it asks for. */
 function unaccountedFix(entry: AutomationStudioResultLeftOutNamingTheItem): string {
-  return `Decide row by row whether the request excludes each row the condition "${entry.condition}" (${leftOutWhere(entry)}) alone left out that names "${entry.item}" first and ${quotedList(entry.also)} after it -- an item sold with or including something the request leaves out is still the item -- and change that condition so it keeps the rows the request asks for: ${entry.rows.join("; ")}.`;
+  return `Decide row by row whether the request excludes each row the ${entry.condition} (${leftOutWhere(entry)}) alone left out that names "${entry.item}" first and ${quotedList(entry.also)} after it -- an item sold with or including something the request leaves out is still the item -- and change that condition so it keeps the rows the request asks for: ${entry.rows.join("; ")}.`;
 }
 
 /**
@@ -194,13 +196,13 @@ function unaccountedFix(entry: AutomationStudioResultLeftOutNamingTheItem): stri
 function keptNumberFinding(entry: AutomationStudioRequestRowsKeptNumberLeftOut): AutomationStudioResultRepairFinding {
   return {
     code: AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES.leftOutStatingAKeptNumber,
-    detail: `Read ${entry.nodeId}: the condition "${entry.condition}" kept rows stating ${keptRange(entry)} and alone left out ${entry.rows.length === 1 ? "a row that states" : `${entry.rows.length} rows that state`} a number in that range, so it compared characters, not the number: ${statedRows(entry)}.`
+    detail: `Read ${entry.nodeId}: the ${entry.condition} kept rows stating ${keptRange(entry)} and alone left out ${entry.rows.length === 1 ? "a row that states" : `${entry.rows.length} rows that state`} a number in that range, so it compared characters, not the number: ${statedRows(entry)}.`
   };
 }
 
 /** What to do about it: compare the number with a bound on the same column, and keep the rows the request asks for. */
 function keptNumberFix(entry: AutomationStudioRequestRowsKeptNumberLeftOut): string {
-  return `The condition "${entry.condition}" (Read ${entry.nodeId}) is a text test over a number: it kept rows stating ${keptRange(entry)} and left out ${statedRows(entry)}. A text test reads characters, not the number a value states; write the threshold the request asks for as a bound on that column (atLeast, atMost, greaterThan or lessThan), which reads each value's number, and decide each of these rows by its number.`;
+  return `The ${entry.condition} (Read ${entry.nodeId}) is a text test over a number: it kept rows stating ${keptRange(entry)} and left out ${statedRows(entry)}. A text test reads characters, not the number a value states; write the threshold the request asks for as a bound on that column (atLeast, atMost, greaterThan or lessThan), which reads each value's number, and decide each of these rows by its number.`;
 }
 
 function keptRange(entry: AutomationStudioRequestRowsKeptNumberLeftOut): string {

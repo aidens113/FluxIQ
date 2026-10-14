@@ -68,7 +68,8 @@ describe("a build test's yes Core did not take, as the build's no", () => {
 // The rows the check named, in structured form beside its lines (live run
 // `run-mux6naez-6c20f26e`, R3-3): what the repair compares a rerun of the read with.
 describe("a build test's no carries the rows Core's check named, per read and condition", () => {
-  const named = [{ step: 10, condition: "name", rows: RUN_MUW60J7C_PAIRS_LEFT_OUT.map((label) => ({ label })) }];
+  // A build test's condition the replay did not number is named `condition "<field>"` (`../../request-rows/summary-reads.ts`, t574).
+  const named = [{ step: 10, condition: "condition \"name\"", rows: RUN_MUW60J7C_PAIRS_LEFT_OUT.map((label) => ({ label })) }];
 
   it("from a yes Core did not take", async () => {
     const verdict = await judged();
