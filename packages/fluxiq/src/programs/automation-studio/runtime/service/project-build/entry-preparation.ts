@@ -3,7 +3,8 @@ import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import type { AutomationStudioCandidateTrialAct } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { runAutomationStudioDetachedSubflow, type AutomationStudioDetachedSubflowIdentity, type AutomationStudioDetachedSubflowProposal } from "../../flow-bootstrap/verification/index.ts";
-import { automationStudioCandidateFrameEvidence, automationStudioCandidateTrialLandedActs, automationStudioCandidateTrialStart } from "../candidate-trial/index.ts";
+import { automationStudioCandidateFrameEvidence, automationStudioCandidateTrialLandedActs, type AutomationStudioCandidateTrialStart } from "../candidate-trial/index.ts";
+import { automationStudioSubflowTrialPredecessorGap } from "../subflow-trial/index.ts";
 import type { AutomationStudioProjectBuildProposals } from "./proposals.ts";
 import type { AutomationStudioProjectBuildTrialEnvironment } from "./whole-trials.ts";
 
@@ -16,20 +17,21 @@ import type { AutomationStudioProjectBuildTrialEnvironment } from "./whole-trial
 // So before a builder whose subflow has predecessors takes its first look,
 // its predecessors' latest passing proposals run once, exactly as its own
 // subflow trial will run them to reach its entry: the same proposals
-// (`./proposals.ts`, only one whose trial answered yes), the same start (the
-// deployment's start hook when it has one, then the arrival at the build's
-// start location, t578), and the same detached runner, with
-// the last predecessor as the run's target and the others before it. Nothing
-// is judged and no model is called: the run only puts the site where this
+// (`./proposals.ts`, only one whose trial answered yes), checked as that trial
+// checks them (`../subflow-trial/predecessor-gap.ts`), the same arrival at the
+// build's start location first (t578), and the same detached runner, with the
+// last predecessor as the run's target and the others before it. Nothing is
+// judged and no model is called: the run only puts the site where this
 // builder's subflow begins. It runs in a runtime session of its own, marked
 // `metadata.entryPreparation`, and every lasting act it lands is handed back
 // so the brief's ledger holds it for a reset, as a trial's are.
 //
-// When the start was the deployment's start hook, the answer says so
-// (`startReset`): the hook put back every act of this build then on the site,
-// so the builder's port marks them undone in their ledgers before it records
-// the acts this run lands (`./brief-ports.ts`, t585). The hook runs even when
-// a predecessor's run then fails, so an unprepared answer says it too.
+// **It is step (d) of the phase's start (t593).** The deployment's start hook
+// and the reset over the build's ledgers come first, once, for every phase
+// alike (`./phase-start.ts`); this is handed the start the hook made and runs
+// nothing when it failed. It used to run the hook itself, so a builder with no
+// predecessors -- which never came here -- explored on whatever the last trial
+// left (A8 bigbox `run-mv8c7unr-42a8456d`).
 //
 // Where it cannot run -- a predecessor has no passing proposal yet, the start
 // failed, or a predecessor's run did not reach its end -- the answer says so
@@ -52,18 +54,20 @@ export type AutomationStudioProjectBuildEntry =
   /** The subflow has no predecessors: the build's start is its entry. */
   | { kind: "start" }
   /** Every predecessor ran to its end, in order. */
-  | { kind: "prepared"; predecessors: string[]; runId: string; acts: AutomationStudioCandidateTrialAct[]; startReset?: true }
-  | { kind: "unprepared"; predecessors: string[]; code: string; missing?: string[]; failed?: string; runId?: string; acts: AutomationStudioCandidateTrialAct[]; startReset?: true };
+  | { kind: "prepared"; predecessors: string[]; runId: string; acts: AutomationStudioCandidateTrialAct[] }
+  | { kind: "unprepared"; predecessors: string[]; code: string; missing?: string[]; failed?: string; runId?: string; acts: AutomationStudioCandidateTrialAct[] };
 
 export async function automationStudioProjectBuildPrepareEntry(input: {
   scope: AutomationStudioSubflowScope;
   /** The build's proposals; `keptUnder` where the build can say which an amendment kept (header), so none is kept without it. */
   proposals: Pick<AutomationStudioProjectBuildProposals, "predecessors"> & Partial<AutomationStudioProjectBuildKeptProposals>;
   environment: AutomationStudioProjectBuildTrialEnvironment;
+  /** The start the phase's start made (header); a failed one runs nothing. */
+  start: AutomationStudioCandidateTrialStart;
   signal: AbortSignal;
   /**
-   * The domain's arrival node (`runsNodes.arrival`). With the environment's
-   * start location, the run goes there first, after the start hook, so it
+   * The domain's arrival node (`runsNodes.arrival`), where the build has a
+   * start location (`./phase-start.ts`). The run goes there first, so it
    * starts on a loaded start page, as a subflow trial does (t578).
    */
   arrival?: { node: string; parameter: string } | undefined;
@@ -71,28 +75,19 @@ export async function automationStudioProjectBuildPrepareEntry(input: {
   execute?: typeof runAutomationStudioDetachedSubflow | undefined;
   newRunId?: (() => string) | undefined;
 }): Promise<AutomationStudioProjectBuildEntry> {
-  const { scope, environment, signal } = input;
+  const { scope, environment, signal, start } = input;
   const predecessors = [...scope.predecessors];
   if (!predecessors.length) return { kind: "start" };
   signal.throwIfAborted();
-  const unprepared = (code: string, extra: { missing?: string[]; failed?: string; runId?: string; acts?: AutomationStudioCandidateTrialAct[]; startReset?: true } = {}): AutomationStudioProjectBuildEntry => ({ kind: "unprepared", predecessors, code, acts: [], ...extra });
+  const unprepared = (code: string, extra: { missing?: string[]; failed?: string; runId?: string; acts?: AutomationStudioCandidateTrialAct[] } = {}): AutomationStudioProjectBuildEntry => ({ kind: "unprepared", predecessors, code, acts: [], ...extra });
   const passing = input.proposals.predecessors(scope);
-  const missing = predecessors.filter((key) => !passing.some((proposal) => proposal.scope.subflowKey === key));
-  if (missing.length) return unprepared("project.entry_predecessor_missing", { missing });
-  const current = (proposal: AutomationStudioSubflowProposal) => proposal.scope.planDigest === scope.planDigest || input.proposals.keptUnder?.(proposal.scope.subflowKey, proposal.scope.planDigest, scope.planDigest) === true;
-  const stale = passing.filter((proposal) => proposal.scope.buildId !== scope.buildId || !current(proposal)).map((proposal) => proposal.scope.subflowKey);
-  if (stale.length) return unprepared("project.entry_predecessor_stale", { missing: stale });
+  // The same check the subflow's own trial makes (header).
+  const gap = automationStudioSubflowTrialPredecessorGap(scope, passing, input.proposals.keptUnder);
+  if (gap) return "missing" in gap ? unprepared("project.entry_predecessor_missing", { missing: gap.missing }) : unprepared("project.entry_predecessor_stale", { missing: gap.stale });
+  if (start.status === "failed") return unprepared(start.code);
 
   const target = passing.at(-1)!;
   const before = passing.slice(0, -1);
-  const start = await automationStudioCandidateTrialStart(
-    { candidateId: `entry.${scope.buildId}.${scope.briefId}`, revision: target.revision, digest: target.digest, signal },
-    { ...environment, judge: async () => { throw new Error("A builder's entry is never judged."); } }
-  );
-  if (start.status === "failed") return unprepared(start.code);
-  // The deployment's start hook ran and put the site back: the builder's ledgers are told so (header).
-  const startReset = start.status === "reset" ? { startReset: true as const } : {};
-
   const runId = input.newRunId?.() ?? `entry-preparation.${randomUUID()}`;
   const marker = { buildId: scope.buildId, briefId: scope.briefId, subflowKey: scope.subflowKey, predecessors: passing.map(ref) };
   const opened = await environment.openSession({ runId, metadata: { entryPreparation: structuredClone(marker) } });
@@ -124,7 +119,7 @@ export async function automationStudioProjectBuildPrepareEntry(input: {
   } catch (error) {
     await environment.writeSession({ ...opened, status: signal.aborted ? "cancelled" : "failed", startedAt, finishedAt: Date.now() });
     if (signal.aborted) throw error;
-    return unprepared("project.entry_run_failed", { runId, ...startReset });
+    return unprepared("project.entry_run_failed", { runId });
   } finally {
     await environment.processDatasets(runId);
   }
@@ -134,10 +129,10 @@ export async function automationStudioProjectBuildPrepareEntry(input: {
   const frames = automationStudioCandidateFrameEvidence(executed.trace?.attempts ?? [], executed.graph, executed.candidateGraphs);
   // Every lasting act that landed, for the brief's ledger: a reset undoes them as it undoes a trial's.
   const acts = automationStudioCandidateTrialLandedActs(executed.trace, frames.graph);
-  if (executed.receipt.status === "succeeded") return { kind: "prepared", predecessors, runId, acts, ...startReset };
+  if (executed.receipt.status === "succeeded") return { kind: "prepared", predecessors, runId, acts };
   // The run's target is the last predecessor, so a target that did not end is that predecessor's failure.
   const failed = executed.failedPredecessor ?? target.scope.subflowKey;
-  return unprepared(executed.code ?? `candidate.trial_${executed.receipt.status}`, { failed, runId, acts, ...startReset });
+  return unprepared(executed.code ?? `candidate.trial_${executed.receipt.status}`, { failed, runId, acts });
 }
 
 const ref = (proposal: Readonly<AutomationStudioSubflowProposal>) => ({ subflowKey: proposal.scope.subflowKey, revision: proposal.revision, digest: proposal.digest });

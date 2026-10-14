@@ -5,6 +5,7 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProv
 import { automationStudioBuildTestJudge } from "../../result-verification/index.ts";
 import { automationStudioCandidateTrialPort, type AutomationStudioCandidateTrialPorts } from "../candidate-trial/index.ts";
 import { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
+import { AutomationStudioProjectBuildPhaseStart } from "./phase-start.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER } from "./supervisor-ledger.ts";
 import { AutomationStudioProjectBuildTaskChecklist } from "./task-checklist.ts";
 import { automationStudioProjectBuildTrialReads } from "./trial-reads.ts";
@@ -27,6 +28,15 @@ import { automationStudioProjectBuildTrialReads } from "./trial-reads.ts";
 // asked for, sent beside the instructions (`./task-checklist.ts`, which says
 // how these trials find the record). A candidate build's judge is sent exactly
 // what it always was.
+//
+// **A project build's whole trial is told its start (t593).** Its feedback says
+// under `phaseStart`, in the words every phase of the build is told
+// (`./phase-start.ts`), whether the deployment's start hook ran and whether
+// the run opened by loading the build's start location -- which the assembled
+// Flow's first step does (`project-agents/supervisor/assembly.ts`). On A8
+// bigbox `run-mv8c7unr-42a8456d` the whole trial was told only `start: reset`
+// while it ran on the page the last subflow trial left. A candidate build's
+// feedback is as it was.
 
 /** What every trial is run with, from the service: the run, its session and its reads, without the judge. */
 export type AutomationStudioProjectBuildTrialEnvironment = Omit<AutomationStudioCandidateTrialPorts, "judge" | "execute" | "readEndView" | "clearedControlHandles" | "deniedEvidenceKeys">;
@@ -53,13 +63,16 @@ export function automationStudioProjectBuildWholeTrials(input: {
   const ledger = input.ledger;
   if (!ledger) return trials;
   const supervisor = ledger.forBrief(AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER);
+  const arrival = AutomationStudioProjectBuildPhaseStart.arrival(binding.runsNodes?.arrival, environment);
   const run: AutomationStudioCandidateTrialPort = async (request) => {
     const result = await trials.port(request);
     if (result.acts?.length) {
       supervisor.trialRan(result.acts, result.trialRunId);
       AutomationStudioProjectBuildActsRecord.of(ledger).trialRan(result.acts, result.trialRunId);
     }
-    return result;
+    // How its start was made, as every phase of the build is told (header).
+    const phaseStart = AutomationStudioProjectBuildPhaseStart.trialStart({ phase: "whole_trial", feedback: result.feedback, arrival, startLocation: environment.startLocation });
+    return { ...result, feedback: { ...result.feedback, phaseStart } };
   };
   // The start hook stays on the port, so the supervisor's trial gate runs it before each whole trial as a candidate build's does.
   const port: AutomationStudioCandidateTrialPort = trials.port.prepareStart ? Object.assign(run, { prepareStart: trials.port.prepareStart }) : run;

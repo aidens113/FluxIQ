@@ -431,3 +431,52 @@ describe("site reset ledger", () => {
     expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-1" }, { act: "act-2" }] } });
   });
 });
+
+// t593, A8 crossborder `run-mv8c76i3-61b9ca89`: a coupon press declared `none`, stayed done on the site, and nothing named it.
+describe("a press with an effect but no lasting class (t593)", () => {
+  /** A press on a named control that declared nothing lasting, and a navigation, which names no control. */
+  const coupon = () => acted("press.coupon", [], {}, {});
+  const navigation = (): AutomationStudioSiteResetExplored => ({ callId: "go.1", toolId: "core.run_node", landed: true, declared: { permitted: true, effect: "mutate", consequences: [], control: { name: null, kind: "page" }, verb: "go to" } });
+
+  it("is recorded as possibly lasting where the ledger is asked to, and never by default", () => {
+    const plain = new AutomationStudioSiteResetLedger();
+    plain.explored(coupon());
+    expect(plain.possiblyInPlace()).toEqual([]);
+    expect(plain.claim("act-1")).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_unknown_act" } });
+
+    const ledger = new AutomationStudioSiteResetLedger({ possible: true });
+    ledger.explored(navigation());
+    ledger.explored(coupon());
+    // The navigation named no control and is no act; the press is act-1, possibly lasting, and never one to undo.
+    expect(ledger.inPlace()).toEqual([]);
+    expect(ledger.possiblyInPlace()).toEqual([{ act: "act-1", did: "press \"Save\" button (declared no lasting act, but had an effect: possibly lasting)", call: "press.coupon", possible: true }]);
+    expect(ledger.actOf("press.coupon")).toBe("act-1");
+  });
+
+  it("refuses no trial and is never kept, however often the reset asks; a trial's possibly lasting step is recorded too, and not answered as left", async () => {
+    const ledger = new AutomationStudioSiteResetLedger({ possible: true });
+    ledger.explored(coupon());
+    for (let ask = 0; ask < 3; ask += 1) expect(await ledger.beforeTrial({ compare: unknown })).toEqual({ kind: "admit" });
+    const left = ledger.trialRan([{ step: 4, definitionId: "demo.press", label: "Get coupons", consequences: [], possible: true }, { step: 5, definitionId: "demo.press", label: "Look", consequences: [] }], "trial.1");
+    expect(left).toEqual([]);
+    expect(ledger.possiblyInPlace().map((act) => act.act)).toEqual(["act-1", "act-2"]);
+    expect(ledger.possiblyInPlace()[1]).toMatchObject({ did: "trial step 4 \"Get coupons\" (declared no lasting act, but had an effect: possibly lasting)", possible: true });
+  });
+
+  it("may still be undone under `undoes`, judged as any undo is, and a start hook takes it back without naming it", async () => {
+    const ledger = new AutomationStudioSiteResetLedger({ possible: true });
+    ledger.explored(coupon());
+    ledger.explored(acted("press.other", [], {}, {}));
+    // The model undoes the first: the claim and its control are admitted as any act's, and a landed undo that changed the page counts.
+    expect(ledger.claim("act-1")).toEqual({ kind: "undo", undo: { act: "act-1", allowed: [] } });
+    expect(ledger.target("act-1", aim([]))).toEqual({ kind: "admit", on: "moving", allowed: [] });
+    ledger.explored(acted("undo.coupon", [], { undoes: "act-1", on: "moving" }));
+    ledger.undoSeen("act-1", true);
+    expect(await ledger.beforeTrial({ compare: unknown })).toEqual({ kind: "admit" });
+    expect(ledger.possiblyInPlace().map((act) => act.act)).toEqual(["act-2"]);
+    // The hook puts the rest back, naming only a lasting act among those it took back.
+    ledger.explored(acted("call.save", ["create_new"]));
+    expect(await ledger.beforeTrial({ compare: unknown }, undefined, { startReset: true })).toEqual({ kind: "admit", absorbedByStartReset: [{ act: "act-3", did: "press \"Save\" button", call: "call.save" }] });
+    expect(ledger.possiblyInPlace()).toEqual([]);
+  });
+});

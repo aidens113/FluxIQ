@@ -5,4 +5,5 @@ export * from "./controller.ts";
 export * from "./detached-execution.ts";
 export * from "./candidate-graphs.ts";
 export * from "./detached-subflow.ts";
+export * from "./arrival-node.ts";
 export * from "./durable-session.ts";

@@ -6,6 +6,7 @@ import { automationStudioBuildTestJudge } from "../../result-verification/index.
 import { admitAutomationStudioBuildTrialSession } from "../runtime-session/index.ts";
 import { automationStudioSubflowTrialPort, type AutomationStudioSubflowTrialJudgeInput } from "../subflow-trial/index.ts";
 import type { AutomationStudioProjectBuildKeptProposals } from "./entry-preparation.ts";
+import { AutomationStudioProjectBuildPhaseStart } from "./phase-start.ts";
 import type { AutomationStudioProjectBuildProposals } from "./proposals.ts";
 import { AutomationStudioProjectBuildTaskChecklist } from "./task-checklist.ts";
 import { automationStudioProjectBuildTrialReads } from "./trial-reads.ts";
@@ -35,6 +36,11 @@ import type { AutomationStudioProjectBuildTrialEnvironment } from "./whole-trial
 //   (`runsNodes.arrival`), and the port keeps the inner port's `prepareStart`,
 //   so a builder's gate runs the deployment's start hook ahead of its site
 //   reset (`flow-bootstrap/subflow-candidate/subflow-trial-gate.ts`).
+// - **The build's one start (t593).** The arrival is the one every phase of
+//   the build takes (`./phase-start.ts`), and each trial's feedback says under
+//   `phaseStart` how its start was made, in the words every phase is told:
+//   whether the hook ran, whether the run opened by loading the start
+//   location, and whether its predecessors ran it to its entry.
 
 export function automationStudioProjectBuildSubflowTrials(input: {
   ref: AutomationStudioProjectBuildRef;
@@ -50,11 +56,13 @@ export function automationStudioProjectBuildSubflowTrials(input: {
   const { ref, environment, binding } = input;
   const { projectId, flowId } = environment;
   const source = { records: input.records, ref };
+  // The arrival every phase of the build takes (header).
+  const arrival = AutomationStudioProjectBuildPhaseStart.arrival(binding.runsNodes?.arrival, environment);
   const trials = automationStudioSubflowTrialPort(ref.buildId, {
     ...environment,
     ...automationStudioProjectBuildTrialReads(binding, projectId, flowId),
     // Every trial's run goes to the build's start first, so it starts on a loaded start page (header, t578).
-    ...(binding.runsNodes?.arrival ? { arrival: { ...binding.runsNodes.arrival } } : {}),
+    ...(arrival ? { arrival } : {}),
     openSession: async ({ runId, metadata }) => await admitAutomationStudioBuildTrialSession({
       knownBuild: (buildId) => buildId === ref.buildId && input.running(),
       leases: input.leases,
@@ -72,7 +80,10 @@ export function automationStudioProjectBuildSubflowTrials(input: {
   const port: AutomationStudioSubflowTrialPreparingPort = async (request) => {
     const result = await trials.port(request);
     input.proposals.trialled(request.scope, request.proposal, result.verdict);
-    return result;
+    // How its start was made, as every phase is told (header).
+    const predecessors = request.scope.predecessors.length ? { keys: request.scope.predecessors, prepared: result.entryPrepared } : undefined;
+    const phaseStart = AutomationStudioProjectBuildPhaseStart.trialStart({ phase: "subflow_trial", feedback: result.feedback, arrival, startLocation: environment.startLocation, predecessors });
+    return { ...result, feedback: { ...result.feedback, phaseStart } };
   };
   // The start hook, ahead of the gate's reset check, is the inner port's (`../subflow-trial/port.ts`).
   if (trials.port.prepareStart) port.prepareStart = trials.port.prepareStart;

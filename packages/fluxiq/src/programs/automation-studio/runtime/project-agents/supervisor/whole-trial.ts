@@ -1,13 +1,6 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { emitAutomationStudioProjectReceiptCard } from "../../activity/project/index.ts";
-import type {
-  AutomationStudioSiteResetBeforeTrialOptions,
-  AutomationStudioSiteResetChecks,
-  AutomationStudioSiteResetDecision,
-  AutomationStudioSiteResetLedger,
-  AutomationStudioSiteResetNamedAct,
-  AutomationStudioSiteResetTrialReset
-} from "../../flow-bootstrap/site-reset/index.ts";
+import { automationStudioSiteResetProjectReset, type AutomationStudioSiteResetChecks, type AutomationStudioSiteResetTrialReset } from "../../flow-bootstrap/site-reset/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";
@@ -50,6 +43,12 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
 // own; after each trial every ledger starts a new phase. Every project ledger
 // is asked per brief (`ports.projectLedger.forBrief`, t590): the rule kept for
 // a stand-in that held only a snapshot is gone with the stand-in.
+//
+// **The reset is the build's one reset (t593).** What every brief's ledger is
+// asked, and how their answers are joined, is the reset every phase of the
+// build shares (`flow-bootstrap/site-reset/project-reset.ts`), asked here with
+// no brief of its own and no look; only the repeated refusal is the
+// supervisor's.
 
 /** A trial's start as the supervisor checks it: no look at the target, which it never acts on (header). */
 const UNLOOKED: AutomationStudioSiteResetChecks = { compare: async () => ({ moved: false }) };
@@ -97,16 +96,8 @@ export class AutomationStudioProjectSupervisorWholeTrial {
 
   /** The build's reset over every brief's ledger (header). */
   private ledgersReset(ledger: AutomationStudioProjectSupervisorPorts["projectLedger"]): AutomationStudioSiteResetTrialReset {
-    /** Every ledger that recorded an act, in the order its first act was recorded. */
-    const ledgers = (): AutomationStudioSiteResetLedger[] => [...new Set(ledger.snapshot().acts.map((act) => act.owner))].map((owner) => ledger.forBrief(owner));
-    const ask = async (signal: AbortSignal | undefined, cannotUndo: readonly string[] | undefined, options: AutomationStudioSiteResetBeforeTrialOptions | undefined): Promise<AutomationStudioSiteResetDecision> => {
-      const decisions: AutomationStudioSiteResetDecision[] = [];
-      for (const each of ledgers()) {
-        signal?.throwIfAborted();
-        decisions.push(await each.beforeTrial(UNLOOKED, cannotUndo, options));
-      }
-      return joined(decisions);
-    };
+    // The build's one reset, with no brief of its own and no look (header).
+    const shared = automationStudioSiteResetProjectReset({ project: ledger, checks: () => UNLOOKED });
     return {
       beforeTrial: async (signal, cannotUndo, options) => {
         const inPlace = ledger.snapshot().acts.filter((act) => act.inPlace);
@@ -114,38 +105,13 @@ export class AutomationStudioProjectSupervisorWholeTrial {
         if (options?.startReset !== true && inPlace.length && this.refusedAtResets !== undefined && this.refusedAtResets === this.resetsBack()) {
           return { kind: "refuse", moved: false, evidence: { ok: false, code: "candidate.trial_reset_required", actsToUndo: inPlace.map((act) => ({ act: act.act, did: act.did })) } };
         }
-        const decision = await ask(signal, cannotUndo, options);
+        const decision = await shared.beforeTrial(signal, cannotUndo, options);
         this.refusedAtResets = decision.kind === "refuse" ? this.resetsBack() : undefined;
         return decision;
       },
-      trialRan: (_acts, trialRunId) => ledgers().flatMap((each) => each.trialRan([], trialRunId))
+      trialRan: (_acts, trialRunId) => shared.trialRan([], trialRunId)
     };
   }
-}
-
-/** Every ledger's answer as one: any refusal refuses, naming every act still to undo; admitted, what each said the trial starts with, together. */
-function joined(decisions: readonly AutomationStudioSiteResetDecision[]): AutomationStudioSiteResetDecision {
-  const refusals = decisions.filter((decision): decision is Extract<AutomationStudioSiteResetDecision, { kind: "refuse" }> => decision.kind === "refuse");
-  if (refusals.length) {
-    const lead = refusals.find((refusal) => refusal.evidence.code === "candidate.trial_reset_required") ?? refusals[0]!;
-    const actsToUndo = refusals.flatMap((refusal) => list(refusal.evidence.actsToUndo));
-    const cannotUndo = refusals.flatMap((refusal) => list(refusal.evidence.cannotUndo));
-    return { kind: "refuse", moved: refusals.some((refusal) => refusal.moved), evidence: { ...lead.evidence, ...(actsToUndo.length ? { actsToUndo } : {}), ...(cannotUndo.length ? { cannotUndo } : {}) } };
-  }
-  const admitted = decisions as ReadonlyArray<Extract<AutomationStudioSiteResetDecision, { kind: "admit" }>>;
-  const absorbed: AutomationStudioSiteResetNamedAct[] = admitted.flatMap((decision) => decision.absorbedByStartReset ?? []);
-  const startedWith = joinedStartedWith(admitted.flatMap((decision) => (decision.startedWith ? [decision.startedWith] : [])));
-  return { kind: "admit", ...(startedWith ? { startedWith } : {}), ...(absorbed.length ? { absorbedByStartReset: absorbed } : {}) };
-}
-
-/** The ledgers' `startedWith` as one: their acts and kept acts listed together, each difference once, the first instruction. */
-function joinedStartedWith(said: readonly JsonObject[]): JsonObject | undefined {
-  if (said.length <= 1) return said[0];
-  const acts = said.flatMap((entry) => list(entry.acts));
-  const cannotUndo = said.flatMap((entry) => list(entry.cannotUndo));
-  const differs = [...new Set(said.flatMap((entry) => list(entry.differs)))];
-  const instruction = said.find((entry) => typeof entry.instruction === "string")?.instruction;
-  return { ...(acts.length ? { acts } : {}), ...(differs.length ? { differs } : {}), ...(cannotUndo.length ? { cannotUndo } : {}), ...(instruction !== undefined ? { instruction } : {}) };
 }
 
 function list(value: JsonValue | undefined): JsonValue[] {

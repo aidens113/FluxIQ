@@ -114,3 +114,17 @@ describe("project site reset ledger", () => {
     expect(alone.inPlace()).toEqual([{ act: "act-1", did: "press \"Save\" button", call: "call.1" }]);
   });
 });
+
+describe("a project build's possibly lasting acts (t593)", () => {
+  it("are recorded by every brief's ledger and marked in the snapshot, never in place to undo", () => {
+    const project = new AutomationStudioSiteResetProjectLedger();
+    const find = project.forBrief("brief.find");
+    find.explored(acted("find.1", []));
+    find.explored(acted("find.2", ["create_new"]));
+    expect(project.snapshot().acts.map((act) => ({ act: act.act, possible: act.possible, inPlace: act.inPlace }))).toEqual([
+      { act: "act-1", possible: true, inPlace: false },
+      { act: "act-2", possible: undefined, inPlace: true }
+    ]);
+    expect(find.possiblyInPlace().map((act) => act.act)).toEqual(["act-1"]);
+  });
+});

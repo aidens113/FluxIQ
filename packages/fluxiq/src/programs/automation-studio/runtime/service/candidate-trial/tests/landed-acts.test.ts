@@ -93,4 +93,19 @@ describe("the lasting acts a trial landed", () => {
     ]), graph);
     expect(acts.map((act) => act.step)).toEqual([5, 7]);
   });
+
+  // t593, A8 crossborder `run-mv8c76i3-61b9ca89`: a coupon press declared `none` and stayed collected for every later phase.
+  it("answers a domain step that declared none and changed its own page as possibly lasting, with no classes; nothing else that declared none", () => {
+    const shown = { stateRefs: { stateDiff: { changed: true, added: "text \"Collected\"", removed: "button \"Get coupons\"", documentChanged: false } } };
+    const moved = { stateRefs: { stateDiff: { changed: true, added: "a new page", documentChanged: true } } };
+    const acts = automationStudioCandidateTrialLandedActs(trace([
+      attempt("look", "succeeded", shown),
+      // Moved to another page, no diff traced, declared nothing at all, or not a press: none is answered.
+      attempt("look", "succeeded", moved),
+      attempt("look", "succeeded"),
+      attempt("plain", "succeeded", shown),
+      attempt("open", "succeeded", shown)
+    ]), graph);
+    expect(acts).toEqual([{ step: 1, definitionId: "web.output.dom-click", label: "Press look", control: "Look", consequences: [], possible: true }]);
+  });
 });

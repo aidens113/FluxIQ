@@ -163,3 +163,49 @@ describe("assembly", () => {
     });
   });
 });
+
+// t593, A8 bigbox `run-mv8c7unr-42a8456d`: the whole trial ran the assembled Flow on the page the last subflow trial left.
+describe("the assembled Flow's arrival", () => {
+  const arrival = { key: "arrival", definitionId: "web.output.browser-navigate", definitionVersion: "1.0.0", parameters: { url: "https://library.test/" }, outputActionId: "browser.navigate", consequences: [] };
+
+  it("opens the router-run subflow assembly writes, so a run of the saved Flow starts where its subflows were built", () => {
+    const parts = [part("find", [], ["titles"]), part("hold", ["titles"], [])];
+    const plan = structure([main, ...parts]);
+    const proposals = new Map(parts.map((subflow) => [subflow.key, proposal(plan, subflow)]));
+    const assembled = automationStudioProjectAssembly({ structure: plan, proposals, predecessors: new Map([["hold", ["find"]]]), arrival });
+    expect(assembled.ok).toBe(true);
+    if (!assembled.ok) return;
+    const [composed, ...called] = assembled.assembled.plan.subflows;
+    // The first step is the arrival, and it goes on to the first call.
+    expect(composed!.nodes[0]).toEqual(arrival);
+    expect(composed!.nodes.slice(1).map((node) => node.key)).toEqual(["s1", "s2"]);
+    expect(composed!.edges.map((edge) => [edge.source.nodeKey, edge.source.portId, edge.target.nodeKey])).toEqual([["arrival", "success", "s1"], ["s1", "success", "s2"]]);
+    // A part it calls begins where the call before it leaves the site, so it never arrives.
+    expect(called.flatMap((subflow) => subflow.nodes.map((node) => node.definitionId))).toEqual(["web.output.browser-navigate", "web.output.browser-navigate"]);
+    expect(called.every((subflow) => !subflow.nodes.some((node) => node.key === "arrival"))).toBe(true);
+    expect(assembled.assembled.composed).toEqual({ subflowKey: "main", calls: ["find", "hold"] });
+  });
+
+  it("goes after a proposed router-run subflow's Start, and leaves one that already opens with it as it was", () => {
+    const plan = structure([main]);
+    const started: AutomationStudioSubflowProposal = { ...proposal(plan, main), subflows: [{ ...main, nodes: [{ key: "start", definitionId: "builtin.control.start", definitionVersion: "1.0.0" }, { key: "end", definitionId: "builtin.control.end", definitionVersion: "1.0.0" }], edges: [{ key: "start_end", source: { nodeKey: "start", portId: "next" }, target: { nodeKey: "end", portId: "in" } }] }] };
+    const assembled = automationStudioProjectAssembly({ structure: plan, proposals: new Map([["main", started]]), predecessors: new Map(), arrival });
+    const subflow = assembled.ok ? assembled.assembled.plan.subflows[0]! : undefined;
+    expect(subflow?.nodes.map((node) => node.key)).toEqual(["start", "end", "arrival"]);
+    expect(subflow?.edges.map((edge) => [edge.source.nodeKey, edge.source.portId, edge.target.nodeKey])).toEqual([["start", "next", "arrival"], ["arrival", "success", "end"]]);
+
+    const arriving: AutomationStudioSubflowProposal = { ...proposal(plan, main), subflows: [{ ...main, nodes: [{ ...arrival, key: "go" }], edges: [] }] };
+    const unchanged = automationStudioProjectAssembly({ structure: plan, proposals: new Map([["main", arriving]]), predecessors: new Map(), arrival });
+    expect(unchanged.ok && unchanged.assembled.plan.subflows[0]!.nodes.map((node) => node.key)).toEqual(["go"]);
+  });
+
+  it("refuses when the domain names an arrival the registry cannot give, and writes none when there is no arrival", () => {
+    const find = part("find", [], []);
+    const plan = structure([main, find]);
+    const proposals = new Map([["find", proposal(plan, find)]]);
+    const refused = automationStudioProjectAssembly({ structure: plan, proposals, predecessors: new Map(), arrival: null });
+    expect(!refused.ok && refused.issues.map((issue) => issue.code)).toEqual(["project.assemble_arrival_unavailable"]);
+    const none = automationStudioProjectAssembly({ structure: plan, proposals, predecessors: new Map() });
+    expect(none.ok && none.assembled.plan.subflows[0]!.nodes.map((node) => node.key)).toEqual(["s1"]);
+  });
+});
