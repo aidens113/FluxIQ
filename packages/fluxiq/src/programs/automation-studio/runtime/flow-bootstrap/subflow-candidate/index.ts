@@ -3,6 +3,7 @@ export * from "./scope-issue.ts";
 export * from "./subflow-digest.ts";
 export * from "./part-keys.ts";
 export * from "./callable-target.ts";
+export * from "./route-outputs.ts";
 export * from "./scoped-submission.ts";
 export * from "./subflow-trial-gate.ts";
 export * from "./role-tools.ts";

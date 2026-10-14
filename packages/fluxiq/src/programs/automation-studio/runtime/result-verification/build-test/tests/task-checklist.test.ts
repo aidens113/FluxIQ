@@ -108,6 +108,19 @@ describe("the build-test judge with a checklist", () => {
     }
   });
 
+  // t594 (A8 launch 7): a subflow's judges, told only its own parts, passed a trial that also did another subflow's lasting press.
+  it("for a subflow trial, names the other subflows' parts as out of its scope and says a step doing one is judged no; a whole trial's section is unchanged", () => {
+    const whole = (automationStudioBuildTestSummaryWithTaskChecklist(summary(), CHECKLIST) as unknown as { taskChecklist: Record<string, unknown> }).taskChecklist;
+    const scoped = (automationStudioBuildTestSummaryWithTaskChecklist(summary(), { ...CHECKLIST, parts: CHECKLIST.parts.slice(1), outOfScope: [{ id: "p1", words: "open the archive index" }] }) as unknown as { taskChecklist: Record<string, unknown> }).taskChecklist;
+    expect(Object.keys(scoped)).toEqual(["supplementary", "asked", "notAsked", "outOfScope"]);
+    expect(scoped.outOfScope).toEqual([{ part: "p1", words: "open the archive index" }]);
+    expect(String(scoped.supplementary).startsWith(String(whole.supplementary))).toBe(true);
+    expect(scoped.supplementary).toContain("is outside this subflow");
+    expect(scoped.supplementary).toContain("answer no");
+    const none = (automationStudioBuildTestSummaryWithTaskChecklist(summary(), { ...CHECKLIST, outOfScope: [] }) as unknown as { taskChecklist: Record<string, unknown> }).taskChecklist;
+    expect(none).toEqual(whole);
+  });
+
   it("leaves the given summary untouched", () => {
     const given = summary();
     const before = JSON.stringify(given);
@@ -128,7 +141,7 @@ describe("the checklist's label", () => {
   const LAB_TASK_WORDS = /friend|earbud|kettle|basket|cart\b|towel|napkin|dish soap|pickup|watchlist|bid\b|auction|coupon|connection|invitation|saved item|classified|giveaway|glaze|moon jar|quote|gas engineer|job|rust role|group post|feed|digest|open day|rating|shirt|colour|size\b|quantity|rate limit|brightaisle|farbazaar|valueridge|kerbfind|guildline|hammerline|circleway|voltbay|tidewell/iu;
 
   it("names none of the ten realistic scenarios, their sites or their tasks", () => {
-    const section = (automationStudioBuildTestSummaryWithTaskChecklist(summary(), { parts: [], notAsked: [] }) as unknown as { taskChecklist: Record<string, unknown> }).taskChecklist;
+    const section = (automationStudioBuildTestSummaryWithTaskChecklist(summary(), { parts: [], notAsked: [], outOfScope: [{ id: "p9", words: "" }] }) as unknown as { taskChecklist: Record<string, unknown> }).taskChecklist;
     const text = `${String(section.supplementary)}\n${Object.keys(section).join("\n")}\n${["part", "words", "goalFacts", "lastingActs"].join("\n")}`;
     for (const scenario of SCENARIOS) {
       expect(text.toLowerCase()).not.toContain(scenario);

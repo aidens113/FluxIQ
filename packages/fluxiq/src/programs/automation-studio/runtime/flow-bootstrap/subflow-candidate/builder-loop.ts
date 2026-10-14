@@ -62,6 +62,17 @@
 // its revisions got (`lastTrial`), so the return can say why. A refusal of its
 // completion sent again is said in a builder's terms, not a draft's
 // (`../../llm/decision-handlers/completion.ts`).
+//
+// **A dependent builder whose part is already done says so (t594).** On A8
+// launch 7 (crossborder) the first subflow also did the next subflow's lasting
+// press, so every prepared entry of the second started with its part already
+// done. Its builders saw that every time, and resubmitted a step that could
+// not be named until the repeat guard ended each brief: nothing told them
+// what to do when their own part is among what came before. A scope with
+// predecessors now opens its brief by saying that a part already done where
+// the subflow starts was done by a subflow before it, and that the brief then
+// ends blocked saying which; and since such a builder has nothing to submit,
+// `ended: "blocked"` is taken from it before anything was submitted or tried.
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceCompletionCheck, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
 import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT } from "../plan/index.ts";
@@ -147,7 +158,7 @@ function successCheckRule(scope: AutomationStudioSubflowScope): string {
 function briefWords(scope: AutomationStudioSubflowScope): string {
   const key = scope.subflowKey;
   const parts = scope.parts.map((part) => `"${part.text}"`).join("; ");
-  const own = `Your brief is the subflow "${key}" alone. It does only ${scope.parts.length === 1 ? "this part" : "these parts"} of the task: ${parts}. Any other part of the task is another builder's subflow: write none of its steps here.`;
+  const own = `Your brief is the subflow "${key}" alone. It does only ${scope.parts.length === 1 ? "this part" : "these parts"} of the task: ${parts}. Any other part of the task is another builder's subflow: write none of its steps here.${alreadyDone(scope)}`;
   const contract = scope.interface;
   if (!contract) return `${own} The router runs it, so it takes no inputs and hands back no outputs: write its steps outside every block, and any helper it needs as a part those steps call.`;
   const inputs = contract.inputs.map((port) => port.id);
@@ -158,6 +169,17 @@ function briefWords(scope: AutomationStudioSubflowScope): string {
   return `${own} Other subflows call it: it ${given} and ${handed}. So write it as one part with exactly these lines, its steps inside, and nothing outside every block:\n${lines.join("\n")}\n`
     +(outputs.length ? "Each output line names one of the part's own steps by its label and the output it binds. " : "")
     + "Any helper it needs is a further part it calls.";
+}
+
+/**
+ * What a dependent builder is told of its part already done at its entry
+ * (header, t594): nothing for a scope with no predecessors.
+ */
+function alreadyDone(scope: AutomationStudioSubflowScope): string {
+  if (!scope.predecessors.length) return "";
+  return ` ${scope.predecessors.length === 1 ? "The subflow" : "The subflows"} ${names(scope.predecessors)} ${scope.predecessors.length === 1 ? "runs" : "run"} before it and ${scope.predecessors.length === 1 ? "leaves" : "leave"} the page where it starts. `
+    + "If the page there already shows what one of its parts asks as done, a subflow before it did that part: write no step for it, and if nothing of this brief is left to do, "
+    + `end the brief: complete with {"ended": "blocked", "reason": "<which part is already done, and which subflow did it>"}, so the plan can change.`;
 }
 
 function names(values: readonly string[]): string {
@@ -208,7 +230,8 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
     if (!ENDING_OUTCOMES.has(result.ended) || !reason || Object.keys(result).some((key) => key !== "ended" && key !== "reason")) {
       return endingRefused(ENDING_SHAPE, "An honest ending is exactly {\"ended\": \"blocked\", \"reason\": \"<why, in a sentence>\"}, or \"partial\" in place of \"blocked\" while a proposal stands, and nothing else.");
     }
-    if (!tried) return endingRefused(ENDING_TOO_SOON, `Nothing of this brief has been submitted or tried yet, so there is nothing to end on. Submit the subflow with ${AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID}${gate.available ? ` and test it with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}` : ""} first.`);
+    // A dependent builder may find its part already done at its entry, with nothing to submit (header, t594).
+    if (!tried && !(result.ended === "blocked" && input.scope.predecessors.length)) return endingRefused(ENDING_TOO_SOON, `Nothing of this brief has been submitted or tried yet, so there is nothing to end on. Submit the subflow with ${AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID}${gate.available ? ` and test it with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}` : ""} first.`);
     const proposal = controller.latest();
     const standing = gate.standing(proposal);
     if (proposal && standing?.verdict === "yes" && standing.entryPrepared) {

@@ -26,6 +26,17 @@
 // refused submission's note now says again, with each line and step, the fix
 // each issue carried (`instead`), and points to `core.describe_nodes` -- with
 // the node ids the issues name (`node`) -- for what a step's node takes.
+//
+// **A subflow builder is told its honest exit (t594).** On A8 launch 7
+// (crossborder) three dependent builders each sent one refused
+// `core.submit_subflow` script three more times, were told to "submit a
+// corrected candidate, or ask the person" -- a builder has no candidate and no
+// person to ask -- and ended on the repeat stall, though the page showed their
+// part already done and a builder may end its brief blocked. A builder's own
+// calls, its submission and its trial, are now answered in a builder's terms:
+// a refused submission sent again with its issues and their fixes, as a
+// candidate's is, and each note names completing with `ended: "blocked"` and
+// the reason as the way out. A candidate's notes are as they were.
 
 import type { JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceRepeatedOutcome } from "./outcomes.ts";
@@ -33,6 +44,10 @@ import { automationStudioLlmEvidenceRepeatPermissionRefused } from "./permission
 
 /** The candidate submission tool (`../../flow-bootstrap/candidate/authoring-loop.ts`), read as a plain string so this module does not reach into the build. */
 const SUBMIT_CANDIDATE = "core.submit_candidate";
+
+/** A subflow builder's submission and trial tools (`../../flow-bootstrap/subflow-candidate/builder-loop.ts`), read as plain strings (header, t594). */
+const SUBMIT_SUBFLOW = "core.submit_subflow";
+const TEST_SUBFLOW = "core.test_subflow";
 
 const SAME_CALL = "You already made this exact call -- the same tool with the same input -- on this exact page, and it did not work then, changed nothing, or ended on the same page as the same call before it (then.outcome). "
   + "Making it again from this page does the same, so it was not run and cost nothing but this decision. "
@@ -116,6 +131,50 @@ const UNCHANGED_CODES: ReadonlySet<string> = new Set(["candidate.unchanged_submi
 const ACCEPTED_SUBMISSION = "You already submitted this exact candidate -- the same script, word for word -- and it was accepted, with the revision and digest it returned (sameAsCall). "
   + "Submitting it again changes nothing, so it was not run. Test that revision, complete with it once its trial answers yes, or submit a changed candidate.";
 
+/** A builder's way out, said after every note for its own calls (header, t594). */
+const BUILDER_WAY_OUT = " If no change you can make here would pass -- what your parts ask already shows as done where your subflow starts, or the site gives no way to do it -- "
+  + "end the brief instead: complete with {\"ended\": \"blocked\", \"reason\": \"<why, in a sentence>\"}, so the plan can change.";
+
+/** A builder's refused submission sent again, with the issues its refusal listed (header, t594). */
+function refusedSubflow(call: string, issues: readonly JsonValue[]): string {
+  return `You already submitted this exact subflow -- the same script, word for word -- in call ${call}, and it was refused (sameAsCall, then.resultCode). `
+    + "It was the same script, so it was not checked again: it is refused for the same issues, listed under issues as that refusal gave them. "
+    + "Change the lines those issues name (each names its step and line where the refusal gave them, and what to write instead where it knows), keep every other line as it is, and submit the whole subflow again."
+    + exactFixes(issues) + describeNodes(issues);
+}
+
+/** A builder's refused submission sent again, whose refusal listed no issues. */
+function refusedSubflowWithoutIssues(call: string): string {
+  return `You already submitted this exact subflow -- the same script, word for word -- in call ${call}, and it was refused (sameAsCall, then.resultCode, then.resultReason). `
+    + `It was the same script, so it was not checked again, and it is refused for the same reason: read its answer in call ${call} for what it names, change what it names, keep every other line as it is, and submit the whole subflow again.`;
+}
+
+const ACCEPTED_SUBFLOW = "You already submitted this exact subflow -- the same script, word for word -- and it was accepted, with the revision and digest it returned (sameAsCall). "
+  + "Submitting it again changes nothing, so it was not run. Test that revision, complete with it once its trial answers yes, or submit a changed subflow.";
+
+const SAME_BUILDER_CALL = "You already made this exact call -- the same tool with the same input -- on this exact page, and it did not work then, changed nothing, or ended on the same page as the same call before it (then.outcome). "
+  + "Making it again from this page does the same, so it was not run and cost nothing but this decision. "
+  + "Do something different instead: look at or search the page for what you need, or submit a corrected subflow. "
+  + "A call that runs after the page has changed is not a repeat.";
+
+/** What happens if a builder sends the same again: this many refused in a row end its brief. */
+function builderEnding(inARow: number, maxInARow: number, what: string): string {
+  if (inARow >= maxInARow - 1) return ` Sending ${what} unchanged again ends this brief where it stands.`;
+  return ` Sending ${what} unchanged again is refused the same way, and ${maxInARow} repeats refused in a row end this brief where it stands.`;
+}
+
+/** The instruction for a builder's own call refused as a repeat (header, t594); undefined for any other call. */
+function builderInstruction(toolId: string, earlier: AutomationStudioLlmEvidenceRepeatedOutcome, inARow: number, maxInARow: number): { instruction: string; issues?: JsonValue[] } | undefined {
+  if (toolId !== SUBMIT_SUBFLOW && toolId !== TEST_SUBFLOW) return undefined;
+  const tail = (what: string) => BUILDER_WAY_OUT + builderEnding(inARow, maxInARow, what);
+  if (earlier.outcome === "same_answer") return { instruction: SAME_LOOK + tail("the same call") };
+  if (earlier.handleUnshown) return { instruction: HANDLE_UNSHOWN + tail("it") };
+  if (toolId === TEST_SUBFLOW) return { instruction: SAME_BUILDER_CALL + tail("this call") };
+  if (earlier.outcome !== "failed") return { instruction: ACCEPTED_SUBFLOW + tail("it") };
+  if (earlier.issues) return { instruction: refusedSubflow(earlier.callId, earlier.issues) + tail("it"), issues: structuredClone(earlier.issues) };
+  return { instruction: refusedSubflowWithoutIssues(earlier.callId) + tail("it") };
+}
+
 /** What happens if the same is sent again: this many refused in a row end the build. */
 function ending(inARow: number, maxInARow: number, what: string): string {
   if (inARow >= maxInARow - 1) return ` Sending ${what} unchanged again ends this build with nothing tested.`;
@@ -130,6 +189,8 @@ export function automationStudioLlmEvidenceCandidateRepeatInstruction(input: {
   maxInARow: number;
 }): { instruction: string; issues?: JsonValue[] } {
   const { toolId, earlier, inARow, maxInARow } = input;
+  const builder = builderInstruction(toolId, earlier, inARow, maxInARow);
+  if (builder) return builder;
   if (toolId === SUBMIT_CANDIDATE) {
     if (earlier.outcome !== "failed") return { instruction: ACCEPTED_SUBMISSION + ending(inARow, maxInARow, "it") };
     if (earlier.issues) return { instruction: refusedSubmission(earlier.callId, earlier.issues) + ending(inARow, maxInARow, "it"), issues: structuredClone(earlier.issues) };

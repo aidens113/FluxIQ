@@ -134,3 +134,54 @@ describe("a repeat of a submission refused as unchanged", () => {
     expect(String(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.submit_candidate", earlier: storedRefusal(), inARow: 1, candidate: true }).instruction)).toContain("submit-2");
   });
 });
+
+// t594, A8 launch 7 (crossborder): three dependent builders each sent one refused `core.submit_subflow` script three more
+// times, told to "submit a corrected candidate, or ask the person", and ended on the stall, though the page showed their part
+// already done and a builder may end its brief blocked. A builder's own calls are answered in its terms, with that way out.
+describe("a repeat of a subflow builder's own call", () => {
+  const SUBFLOW = { flow: "part renew_loan: renew the loan\n  step: press renew\n    node: web.dom.click\n    target: t12\n    consequences: none\nend" };
+  const WAY_OUT = "end the brief instead: complete with {\"ended\": \"blocked\", \"reason\": \"<why, in a sentence>\"}, so the plan can change.";
+  const stored = (answer: object, refused = true) => {
+    const guard = automationStudioLlmEvidenceRepeatGuard();
+    guard.seen("s1");
+    guard.recorded({ callId: "submit-5", toolId: "core.submit_subflow", input: SUBFLOW, effect: "observe", proposes: true, effectApplied: false, refused, resultCode: refused ? "flow_bootstrap.completion_refused" : "core.submit_subflow", answer: JSON.stringify(answer) });
+    return guard.blocks("core.submit_subflow", SUBFLOW)!;
+  };
+  const noteOf = (toolId: string, earlier: ReturnType<typeof stored>, inARow = 1) => automationStudioLlmEvidenceRepeatRefusalNote({ toolId, earlier, inARow, candidate: true });
+
+  it("answers a refused submission sent again with its issues and their fixes, and names ending the brief blocked", () => {
+    const note = noteOf("core.submit_subflow", stored(REFUSAL));
+    const instruction = String(note.instruction);
+    expect(note.issues).toEqual(ISSUES);
+    expect(instruction).toContain("You already submitted this exact subflow");
+    expect(instruction).toContain("submit-5");
+    expect(instruction).toContain("Write `repeat most: 10` under `repeat while`.");
+    expect(instruction).toContain(WAY_OUT);
+    expect(instruction).toContain("3 repeats refused in a row end this brief where it stands.");
+    expect(instruction).not.toMatch(/candidate|ask the person|nothing tested/u);
+    expect(instruction).not.toMatch(LEGACY);
+    expect(String(noteOf("core.submit_subflow", stored(REFUSAL), 2).instruction)).toContain("Sending it unchanged again ends this brief where it stands.");
+  });
+
+  it("names the way out for a refusal with no issues, an accepted submission, a handle never shown, and a trial call", () => {
+    const notes = [
+      noteOf("core.submit_subflow", stored({ ok: false, diagnostics: { code: "subflow.scope_refused" } })),
+      noteOf("core.submit_subflow", stored({ ok: true, digest: "d1" }, false)),
+      noteOf("core.submit_subflow", { callId: "submit-6", outcome: "failed", handleUnshown: true }),
+      noteOf("core.test_subflow", { callId: "test-2", outcome: "failed", resultCode: "subflow.trial_execution_failed" })
+    ];
+    for (const note of notes) {
+      expect(String(note.instruction)).toContain(WAY_OUT);
+      expect(String(note.instruction)).not.toMatch(/ask the person|nothing tested/u);
+      expect(String(note.instruction)).not.toMatch(LEGACY);
+    }
+    expect(String(notes[2]!.instruction)).toContain("First make the call that shows the handle");
+  });
+
+  it("leaves every candidate note as it was", () => {
+    const candidate = String(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.submit_candidate", earlier: storedRefusal(), inARow: 1, candidate: true }).instruction);
+    expect(candidate).not.toContain("ended");
+    const call = String(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, candidate: true, earlier: { callId: "c1", outcome: "failed" } }).instruction);
+    expect(call).toContain("submit a corrected candidate, or ask the person.");
+  });
+});

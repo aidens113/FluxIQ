@@ -29,12 +29,12 @@ const test: Step = (evidence) => ({ kind: "tool_call", toolId: AUTOMATION_STUDIO
 const receipt: Step = (evidence) => ({ kind: "complete", result: { subflowKey: "find_listing", ...receiptOf(evidence) } });
 const end = (result: JsonObject): Step => () => ({ kind: "complete", result });
 
-async function build(steps: Step[], answer: Answer = MISSING) {
+async function build(steps: Step[], answer: Answer = MISSING, scope = testScope()) {
   const observed: AutomationStudioLlmEvidenceLoopInput[] = [];
   const shown: JsonObject[][] = [];
   let index = 0;
   const outcome = await runAutomationStudioSubflowBuilderLoop({
-    scope: testScope(), siblings: [...SIBLINGS], submission: testSubmission(),
+    scope, siblings: [...SIBLINGS], submission: testSubmission(),
     observe: (loop) => {
       observed.push(loop);
       return loop;
@@ -74,7 +74,8 @@ describe("a subflow builder's honest ending", () => {
   });
 
   it("refuses an ending before anything was submitted or tried, one written wrong, and one while a yes stands", async () => {
-    const early = await build([end({ ended: "blocked", reason: WHY }), submit, test, end({ outcome: "blocked", reason: WHY }), end({ ended: "blocked", reason: WHY })]);
+    // A builder with no subflow before it has no prepared entry to find its part done at (t594).
+    const early = await build([end({ ended: "blocked", reason: WHY }), submit, test, end({ outcome: "blocked", reason: WHY }), end({ ended: "blocked", reason: WHY })], MISSING, testScope({ predecessors: [] }));
     expect(early.outcome.ended).toEqual({ outcome: "blocked", reason: WHY });
     const said = JSON.stringify(early.shown.flat());
     expect(said).toContain("subflow.ending_too_soon");
@@ -96,6 +97,26 @@ describe("a subflow builder's honest ending", () => {
     for (const feedback of shown.flat()) expect(feedback).not.toHaveProperty("sentAgainInstead");
     // The first refusal carries no sent-again words at all.
     expect(shown.flat()[0]).not.toHaveProperty("sentAgain");
+  });
+
+  // A8 launch 7 (t594): every prepared entry of a dependent subflow started with its part already done by the subflow before it,
+  // and its builders resubmitted a step that could not be named until the repeat guard ended each brief.
+  it("tells a dependent builder that a part already done at its entry was a subflow before it, and takes its blocked ending before anything was tried", async () => {
+    const DONE = "The page already shows the renewal done where this subflow starts; the subflow before it did that part.";
+    const dependent = await build([end({ ended: "blocked", reason: DONE })]);
+    expect(dependent.outcome.loop.ok, JSON.stringify(dependent.outcome.loop)).toBe(true);
+    expect(dependent.outcome.ended).toEqual({ outcome: "blocked", reason: DONE });
+    expect(JSON.stringify(dependent.shown.flat())).not.toContain("subflow.ending_too_soon");
+    const flow = (dependent.observed[0]!.tools.find((tool) => tool.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!.inputSchema as { properties: { flow: { description: string } } }).properties.flow.description;
+    expect(flow).toContain("The subflow \"sign_in\" runs before it and leaves the page where it starts.");
+    expect(flow).toContain("a subflow before it did that part: write no step for it");
+    expect(flow).toContain("complete with {\"ended\": \"blocked\", \"reason\": \"<which part is already done, and which subflow did it>\"}");
+    // A partial ending still needs something tried, and a builder with no predecessor is told nothing of it.
+    const partial = await build([end({ ended: "partial", reason: DONE }), end({ ended: "blocked", reason: DONE })]);
+    expect(JSON.stringify(partial.shown.flat())).toContain("subflow.ending_too_soon");
+    const first = await build([submit, test, end({ ended: "blocked", reason: WHY })], MISSING, testScope({ predecessors: [] }));
+    const firstFlow = (first.observed[0]!.tools.find((tool) => tool.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!.inputSchema as { properties: { flow: { description: string } } }).properties.flow.description;
+    expect(firstFlow).not.toContain("runs before it");
   });
 
   it("maps a partial ending through, and keeps no ending when the loop did not complete with one", async () => {

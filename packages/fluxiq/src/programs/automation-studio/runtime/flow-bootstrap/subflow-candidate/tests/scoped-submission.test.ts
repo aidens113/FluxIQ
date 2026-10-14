@@ -270,6 +270,45 @@ describe("a subflow builder's scoped submission", () => {
     expect(await codes(controller(scope).submit(script(longer)))).toContain("subflow.input_unread");
   });
 
+  // A8 launch 7 (t594): a first builder bound its output to a click's success port, a route that hands on no value.
+  it("refuses a callable part's output bound to a step's success or failure port, with the way out of ending blocked", async () => {
+    const scope = testScope({ interface: interfaceOf });
+    const press = ["  step press: press the filter", "    node: web.dom.click", "    selector: .filter", "    consequences: none"];
+    const bound = (binding: string) => {
+      const lines = callable({ output: binding });
+      lines.splice(lines.indexOf("end"), 0, ...press);
+      return lines;
+    };
+    for (const port of ["success", "failed"]) {
+      const refused = await controller(scope).submit(script(bound(`count = $step.press.${port}`)));
+      if (refused.ok) throw new Error(`expected a refusal for ${port}`);
+      expect(refused.check.issueCodes, port).toEqual(["subflow.output_not_a_value"]);
+      const said = String(((refused.check.feedback?.issues as JsonObject[] | undefined)?.[0])?.message);
+      expect(said).toContain(`The output "count" is bound to the ${port === "success" ? "success" : "failure"} port "${port}"`);
+      expect(said).toContain("end the brief blocked and name the output, so the plan can change.");
+    }
+    // A value the step makes stands.
+    const kept = await controller(scope).submit(script(bound("count = $step.rows.records")));
+    expect(kept.ok, JSON.stringify(kept)).toBe(true);
+  });
+
+  // A8 launch 7 (t594): a dependent part asked a lasting act, and every submission pressed with `consequences: none`.
+  it("refuses a submission that declares no lasting act when its brief's parts ask for one, and asks nothing of a brief whose parts do not", async () => {
+    const asking = testScope({ parts: [{ partId: "p2", sourceId: "instruction.1", text: "Save the listing to the shortlist", lastingActs: ["create_new"] }] });
+    const refused = await controller(asking).submit(script([...OPEN, ...callPart(), ...part()]));
+    if (refused.ok) throw new Error("expected a refusal");
+    expect(refused.check.issueCodes).toEqual(["subflow.lasting_act_missing"]);
+    const said = JSON.stringify(refused.check.feedback);
+    expect(said).toContain("ask for a lasting act (create_new), and no step of this submission declares one");
+    expect(said).toContain("a subflow before it did it: end the brief blocked and say so");
+    // Declared on the step that does it -- in whatever class the builder judges it -- the submission stands.
+    const act = ["step: save it", "  node: web.dom.click", "  selector: .save", "  consequences: modify_existing"];
+    expect((await controller(asking).submit(script([...OPEN, ...act]))).ok).toBe(true);
+    // Parts that ask for none, or carry no acts at all, are asked nothing.
+    expect((await controller(testScope({ parts: [{ partId: "p1", sourceId: "instruction.1", text: "Find the listings on the listings page", lastingActs: [] }] })).submit(script([...OPEN]))).ok).toBe(true);
+    expect((await controller().submit(script([...OPEN]))).ok).toBe(true);
+  });
+
   it("refuses a scope whose own key is a sibling's", () => {
     expect(() => new AutomationStudioSubflowScopedSubmissionController({ scope: testScope({ subflowKey: "checkout" }), siblings: [...SIBLINGS], submission: testSubmission() })).toThrow("subflow.scope_invalid");
   });
