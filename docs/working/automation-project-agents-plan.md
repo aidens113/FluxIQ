@@ -603,6 +603,14 @@ Earlier entries are in [the ledger archive](./automation-project-agents-plan/arc
 - Outcome: Accepted
 - Follow-up: the web domain writes `spot` and `items` to each step's state diff (t598 live); a structured "judges answered yes" field instead of t601's text match; dispatch returns done whenever a yes stands; a Core wait declaring `create_new` still satisfies the lasting-act check
 
+### 2026-10-14 — After A8 pair 2: interruption repairs (t603), bounded session listing (t604)
+- Agent: workers t603-interruption-repair, t604-bounded-session-listing; supervisor verified, made the extension's Stop ask for active runs only and corrected the listing's architecture text, integrated after pair 2
+- Changed: t603 a repair may name a whole test that passed only on the runtime's own recovery (from the trial gate's record), its builder sees what each unanswered step needs, completion waits for it, and failing that the passing test stands and the person is told the Flow relies on the run's recovery; t604 `list-runtime-sessions` answers bounded, filtered, cursor-paged summaries with no traces, a body too large to send is a coded 500 and the server keeps serving, the Lab asks only for its build, the extension's Stop filters by active statuses
+- Why: pair 2's project social passed its whole test and its rate-limit repair was refused; project everything-store built and applied its Flow and the Lab's listing request crashed on a day of accumulated sessions
+- Validation: t603 after merging dev: tsc exit 0; project-agents, project-build, conversations -> 69 files, 533 passed; audit passed. t604 after merging dev: fluxiq tsc exit 0; api handlers, session-listing, summaries, storage, candidate-trial -> 128 files, 880 passed, 4 skipped; apps/web tsc exit 0, route tests -> 8 files, 96 passed; downstream extension check 0 errors, panel tests -> pass 61; Lab creation tests -> pass 179; both audits passed. Core finishes `pnpm check` -> passed. Merged `790b252a` (t603), `8d6239a8` (t604)
+- Outcome: Accepted
+- Follow-up: only a slow-down notice admits such a repair (closed consent banners do not); subflow trials that passed on the runtime's recovery are not detected
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
