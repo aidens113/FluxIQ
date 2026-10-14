@@ -571,6 +571,14 @@ Earlier entries are in [the ledger archive](./automation-project-agents-plan/arc
 - Outcome: Accepted. t590 (amend keeps unchanged proposals, the chat shows the recorded ending, guidance shapes) and t591 (a reset can name an act it cannot undo) are in flight; launch 7 follows them
 - Follow-up: a hard refusal of new lasting acts during a reset would restrict actions beyond the user's permission rule (open question for the user, not built)
 
+### 2026-10-14 — Amend keeps proposals, endings in Core's words (t590); resets name what they cannot undo (t591)
+- Agent: workers t590-amend-and-chat-ending (three rounds; supervisor wired its last hook and resolved a merge conflict), t591-reset-can-name-irreversible; supervisor verified and integrated
+- Changed: t590 an amend keeps the proposals of subflows it leaves unchanged for dispatch order, entry preparation, the dependent's subflow trial (`keptUnder`) and assembly, and its answer lists kept and dropped; a failed build keeps its own failure code (supervisor decision) and the person is told the ending's kind and Core's list of what is still on the target, never the model's reason (`build-ending.ts`'s rule kept, supervisor decision); ports, guidance and tools describe the current shapes; a repeated reset is answered with what it left. t591 a reset completes with `cannotUndo` (ended done, act kept), its run_node has no `write`, a lasting press without `undoes` is told as outside, reset and repeat wording for loops that draft nothing
+- Why: the A8 launch-six bigbox and social debugs
+- Validation: t591 after merging dev: tsc exit 0; project-agents, project-build, site-reset, llm, flow-bootstrap/candidate -> 261 files, 2449 passed; audit passed. t590 after merging dev: tsc exit 0; project-agents, project-build, subflow-trial, conversations, activity, flow-bootstrap/candidate, site-reset -> 129 files, 1073 passed; audit passed. Core finishes `pnpm check` -> passed. Merged `aa87d9b8` (t591), `998844ce` (t590)
+- Outcome: Accepted. Every fix agreed after launch 6 is merged; A8 round one relaunches as launch 7
+- Follow-up: `state.wholeTrialLeftActs` is never set now and can go once `supervisor/completion.ts:53` stops reading it; no test yet covers Core's note appended to a failure that has its own ending
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
