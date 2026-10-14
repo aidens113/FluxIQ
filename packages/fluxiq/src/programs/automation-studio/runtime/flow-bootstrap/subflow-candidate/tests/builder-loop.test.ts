@@ -14,7 +14,7 @@ const receiptOf = (evidence: readonly Entry[]) => {
   return { revision: value.revision as number, digest: value.digest as string };
 };
 
-async function build(steps: Array<(evidence: readonly Entry[]) => JsonObject>, options: { port?: boolean; callScope?: string } = {}) {
+async function build(steps: Array<(evidence: readonly Entry[]) => JsonObject>, options: { port?: boolean; callScope?: string; scope?: ReturnType<typeof testScope> } = {}) {
   const observed: AutomationStudioLlmEvidenceLoopInput[] = [];
   const executed: string[] = [];
   const offered: string[][] = [];
@@ -27,7 +27,7 @@ async function build(steps: Array<(evidence: readonly Entry[]) => JsonObject>, o
     return step(evidence);
   };
   const outcome = await runAutomationStudioSubflowBuilderLoop({
-    scope: testScope(), siblings: [...SIBLINGS], submission: testSubmission(),
+    scope: options.scope ?? testScope(), siblings: [...SIBLINGS], submission: testSubmission(),
     ...(options.callScope === undefined ? {} : { callScope: options.callScope }),
     observe: (loop) => {
       observed.push(loop);
@@ -67,6 +67,24 @@ describe("a subflow builder's loop", () => {
     expect(outcome.promotionAllowed).toBe(false);
     // Its wrap-up keeps its own two finishing tools running, not the whole candidate's.
     expect(observed[0]!.finishingTools).toEqual({ submit: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, test: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID });
+  });
+
+  // The plan the project supervisor writes gives no success check, which makes proposing one the builder's (t569).
+  it("tells the builder to propose a success check in `done when:` terms when the plan gives none, and that a plan's check is the plan's", async () => {
+    const said = async (scope: ReturnType<typeof testScope>) => {
+      const { observed } = await build([submit], { scope });
+      return observed[0]!.tools.find((tool) => tool.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!.description;
+    };
+    const routed = await said(testScope());
+    expect(routed).toContain("The plan gives it no success check, so propose one with it: a `done when: <fact>` line outside every block, after its last step");
+    expect(routed).toContain("It becomes this subflow's success check, and its trial is judged against it.");
+    expect(routed).not.toContain("success check are the plan's");
+    const part = await said(testScope({ interface: { inputs: [], outputs: [] } }));
+    expect(part).toContain("inside its own `part find_listing:` block, before its first step");
+    const check: NonNullable<ReturnType<typeof testScope>["successCheck"]> = [{ fact: "text", op: "contains", value: "Listings" }];
+    const planned = await said(testScope({ successCheck: check }));
+    expect(planned).toContain("Its inputs, outputs and success check are the plan's; leave them out or write exactly those.");
+    expect(planned).not.toContain("propose one");
   });
 
   it("keeps the opening id exactly `initial.<toolId>` when the dispatcher passes no scope", async () => {

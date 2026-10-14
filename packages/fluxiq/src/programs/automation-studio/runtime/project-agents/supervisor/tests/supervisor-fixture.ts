@@ -20,32 +20,25 @@ export const TASK = "Find the three newest titles by Ada Hart and place a hold o
 export const SOURCES: AutomationStudioProjectInstructionSource[] = [{ sourceId: "instruction.1", text: TASK }];
 export const BUILD = { projectId: "project.test", flowId: "flow.test", buildId: "build.1" };
 
-const SUCCESS = { "fluxiq.successCheck": [{ fact: "saved", op: "exists" }] };
-
 /** One part per entry: id, words copied from the task, lasting acts. */
 export function taskSpecInput(parts: Array<[string, string, string[]]>): JsonObject {
   return { parts: parts.map(([id, text, lastingActs]) => ({ id, quote: { sourceId: "instruction.1", text }, goalFacts: [`${text} is done`], lastingActs })), notAsked: ["borrowing any title"] };
 }
 
-/** A router-run subflow, keyed `main` unless named. */
-export function routed(key = "main"): JsonObject {
-  return { key, name: "Main", role: "primary", metadata: { ...SUCCESS } };
+/** A subflow in the supervisor's planning format (`../plan-input.ts`): its parts, the names it takes and hands on, and what runs before it. */
+export function subflow(key: string, parts: string[], options: { inputs?: string[]; outputs?: string[]; after?: string[] } = {}): JsonObject {
+  return { key, name: key.replace(/_/gu, " "), purpose: `Does ${parts.join(" and ")}.`, parts, ...options };
 }
 
-/** A callable subflow with these inputs and outputs. */
-export function callable(key: string, inputs: string[], outputs: string[]): JsonObject {
-  const port = (id: string) => ({ id, name: id, valueType: { kind: "unknown" } });
-  return { key, name: key.replace(/_/gu, " "), role: "utility", interface: { inputs: inputs.map((id) => ({ ...port(id), required: true })), outputs: outputs.map(port) }, metadata: { ...SUCCESS } };
-}
-
-export function planInput(subflows: JsonObject[], partOf: Record<string, string[]>, spec: JsonObject): JsonObject {
-  const main = subflows.find((subflow) => !subflow.interface)!.key as string;
-  return { taskSpec: spec, structurePlan: { plan: { router: { name: "Library", rules: [], fallback: { kind: "subflow", targetSubflowKey: main } }, subflows }, partOf } };
+/** What `project.write_plan` is sent: the task spec and the subflows, nothing else. */
+export function planInput(subflows: JsonObject[], spec: JsonObject): JsonObject {
+  return { taskSpec: spec, subflows };
 }
 
 /** The script a builder of each subflow writes, by subflow key. */
 const SCRIPTS: Record<string, string[]> = {
   main: ["flow: Find the titles", "step: open the catalogue", "  node: web.browser.navigate", "  url: https://library.test/catalogue"],
+  find_newest: ["flow: Find the newest titles", "step: open the catalogue", "  node: web.browser.navigate", "  url: https://library.test/catalogue"],
   find_titles: ["flow: Find the titles", "part find_titles: find the titles", "  input: author", "  output: titles = $step.rows.records", "  step rows: read the rows", "    node: web.dom.extract_list", "    extractList: extraction.1", "    extractList.minItems: 0", "end"],
   place_hold: ["flow: Place a hold", "part place_hold: place the hold", "  input: titles", "  output: shelf = $step.read.records", "  step: press hold", "    node: web.dom.click", "    selector: .hold", "    consequences: create_new", "  step read: read the shelf", "    node: web.dom.extract_list", "    extractList: extraction.2", "    extractList.minItems: 0", "end"],
   note_shelf: ["flow: Note the shelf", "part note_shelf: note the shelf", "  input: shelf", "  step: open the hold", "    node: web.browser.navigate", "    url: https://library.test/holds", "end"]

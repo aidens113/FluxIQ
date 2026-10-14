@@ -4,7 +4,7 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProv
 import { AutomationStudioHostLeaseScope, type AutomationStudioHostResourceScheduler, type AutomationStudioProjectBuildRecordStore, type AutomationStudioProjectBuildRef } from "../../project-agents/index.ts";
 import { automationStudioBuildTestJudge } from "../../result-verification/index.ts";
 import { admitAutomationStudioBuildTrialSession } from "../runtime-session/index.ts";
-import { automationStudioSubflowTrialPort } from "../subflow-trial/index.ts";
+import { automationStudioSubflowTrialPort, type AutomationStudioSubflowTrialJudgeInput } from "../subflow-trial/index.ts";
 import type { AutomationStudioProjectBuildProposals } from "./proposals.ts";
 import { AutomationStudioProjectBuildTaskChecklist } from "./task-checklist.ts";
 import { automationStudioProjectBuildTrialReads } from "./trial-reads.ts";
@@ -21,7 +21,8 @@ import type { AutomationStudioProjectBuildTrialEnvironment } from "./whole-trial
 //   never opens a session.
 // - **The scoped judge.** The build-test judge, asked about the brief's parts
 //   alone: its instructions are one instruction holding the parts' own words
-//   and the subflow's success check, never the whole task; beside it, the
+//   and the subflow's success check -- the plan's, or where the plan gives
+//   none the one its builder proposed (t569) -- never the whole task; beside it, the
 //   task checklist of those parts and of what nobody asked for (unit A9,
 //   `./task-checklist.ts`).
 // - **Proposals.** Every proposal tried is kept by brief, revision and digest
@@ -53,8 +54,8 @@ export function automationStudioProjectBuildSubflowTrials(input: {
     }, { buildId: ref.buildId, briefId: briefOf(metadata), lease: AutomationStudioHostLeaseScope.current() }),
     predecessorProposals: async (scope) => input.proposals.predecessors(scope),
     currentPlanDigest: async (buildId) => buildId === ref.buildId ? (await input.records.read(ref))?.record.plans.at(-1)?.plan.digest ?? null : null,
-    judge: async ({ summary, scope }) => await automationStudioBuildTestJudge({
-      provider: input.judge.provider, timeoutMs: input.judge.timeoutMs, instructions: [scopeInstruction(scope, projectId, flowId)],
+    judge: async ({ summary, scope, successCheck }) => await automationStudioBuildTestJudge({
+      provider: input.judge.provider, timeoutMs: input.judge.timeoutMs, instructions: [scopeInstruction(scope, successCheck, projectId, flowId)],
       deniedEvidenceKeys: binding.deniedEvidenceKeys, projectId, flowId, signal: input.judge.signal
     })({ summary, taskChecklist: await AutomationStudioProjectBuildTaskChecklist.subflow(source, scope) })
   });
@@ -73,10 +74,12 @@ function briefOf(metadata: Record<string, unknown>): string {
   return typeof briefId === "string" ? briefId : "";
 }
 
-/** The one instruction the scoped judge reads: the brief's parts in the person's own words, and the subflow's success check. */
-function scopeInstruction(scope: AutomationStudioSubflowScope, projectId: string, flowId: string): AutomationStudioFlowInstruction {
+/** The one instruction the scoped judge reads: the brief's parts in the person's own words, and the subflow's success check, saying whose it is. */
+function scopeInstruction(scope: AutomationStudioSubflowScope, successCheck: AutomationStudioSubflowTrialJudgeInput["successCheck"], projectId: string, flowId: string): AutomationStudioFlowInstruction {
   const parts = scope.parts.map((part) => `- ${part.text}`).join("\n");
-  const check = scope.successCheck ? `\nIts success check: ${JSON.stringify(scope.successCheck)}` : "";
+  const check = !successCheck ? "" : successCheck.from === "plan"
+    ? `\nIts success check: ${JSON.stringify(successCheck.check)}`
+    : `\nIts success check, as its builder proposed it (the plan gives none): ${JSON.stringify(successCheck.check)}`;
   return {
     schemaVersion: "0.1", instructionId: `project-scope.${scope.briefId}`, title: `Subflow ${scope.subflowKey}`,
     body: `This trial ran only the subflow "${scope.subflowKey}" of a larger Flow. Judge only whether it did these parts of the task:\n${parts}${check}`,

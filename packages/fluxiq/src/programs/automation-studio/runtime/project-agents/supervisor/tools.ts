@@ -33,11 +33,20 @@ const PLAN_INPUT: JsonObject = {
       required: ["parts"],
       additionalProperties: false
     },
-    structurePlan: { type: "object", properties: { plan: { type: "object" }, partOf: { type: "object" } }, required: ["plan", "partOf"], additionalProperties: false },
-    purposes: { type: "object" },
+    // The planning format (`./plan-input.ts`): Core writes the structure plan from it.
+    subflows: {
+      type: "array",
+      minItems: 1,
+      items: {
+        type: "object",
+        properties: { key: TEXT, name: TEXT, purpose: TEXT, parts: TEXTS, inputs: TEXTS, outputs: TEXTS, after: TEXTS },
+        required: ["key", "name", "parts"],
+        additionalProperties: false
+      }
+    },
     reason: TEXT
   },
-  required: ["taskSpec", "structurePlan"],
+  required: ["taskSpec", "subflows"],
   additionalProperties: false
 };
 
@@ -47,14 +56,14 @@ const BRIEF_INPUT: JsonObject = {
     kind: { type: "string", enum: AUTOMATION_STUDIO_PROJECT_BRIEF_KINDS.filter((kind) => kind !== "survey") },
     subflowKey: TEXT,
     parts: TEXTS,
-    entry: { type: "object", properties: { caseId: TEXT, predecessors: TEXTS }, required: ["caseId", "predecessors"], additionalProperties: false },
+    entry: { type: "object", properties: { caseId: TEXT, predecessors: TEXTS }, additionalProperties: false },
     allowanceUsd: { type: "number" },
     maxIterations: { type: "integer" },
     permittedActs: { type: "array", items: { type: "string", enum: [...AUTOMATION_STUDIO_ACTION_CONSEQUENCES] } },
     recordingExcerpt: TEXT,
     failingReceipt: { type: "object" }
   },
-  required: ["kind", "subflowKey", "entry", "allowanceUsd", "maxIterations"],
+  required: ["kind", "subflowKey", "allowanceUsd", "maxIterations"],
   additionalProperties: false
 };
 
@@ -71,7 +80,7 @@ export function automationStudioProjectSupervisorTools(): AutomationStudioLlmEvi
   return [
     { toolId: IDS.readTask, effect: "observe", description: GUIDANCE.tools.readTask, inputSchema: { type: "object", properties: {}, additionalProperties: false }, initialObservation: { input: {} } },
     { toolId: IDS.writePlan, effect: "observe", description: GUIDANCE.tools.writePlan, inputSchema: PLAN_INPUT },
-    { toolId: IDS.amendPlan, effect: "observe", description: GUIDANCE.tools.amendPlan, inputSchema: { ...PLAN_INPUT, required: ["taskSpec", "structurePlan", "reason"] } },
+    { toolId: IDS.amendPlan, effect: "observe", description: GUIDANCE.tools.amendPlan, inputSchema: { ...PLAN_INPUT, required: ["taskSpec", "subflows", "reason"] } },
     { toolId: IDS.dispatch, effect: "mutate", description: GUIDANCE.tools.dispatch, inputSchema: { type: "object", properties: { reason: TEXT, briefs: { type: "array", minItems: 1, maxItems: 20, items: BRIEF_INPUT } }, required: ["reason", "briefs"], additionalProperties: false } },
     { toolId: IDS.assemble, effect: "observe", description: GUIDANCE.tools.assemble, inputSchema: { type: "object", properties: { summary: TEXT }, additionalProperties: false } },
     {

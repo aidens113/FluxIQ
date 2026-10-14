@@ -1,4 +1,4 @@
-import type { JsonObject } from "../../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import {
   automationStudioProjectSubflowBrief,
   type AutomationStudioProjectStructurePlan,
@@ -10,6 +10,9 @@ import type { AutomationStudioProjectSupervisorInputIssue } from "./plan-input.t
 /** The most briefs one dispatch sends. */
 const MAX_BRIEFS = 20;
 
+/** The entry case of a brief that names none: the page as the build observes it now. */
+const OBSERVED_CURRENT = "observed-current";
+
 /**
  * Reads the briefs `project.dispatch` was sent, each into a whole brief bound
  * to the plan in force: Core fills in the brief's id (`nextId`), the plan's
@@ -19,11 +22,17 @@ const MAX_BRIEFS = 20;
  * its subflow, its predecessors declared, its acts asked for. Every brief's
  * issues are answered, by the brief's place in what was sent. A survey is
  * refused: the dispatcher does not run one yet.
+ *
+ * A brief may leave its entry out, or its predecessors: the entry is then the
+ * observed current page and its predecessors what the plan's `after` says runs
+ * before its subflow (`./plan-input.ts`, t569).
  */
 export function automationStudioProjectSupervisorBriefInput(input: {
   value: JsonObject;
   structure: AutomationStudioProjectStructurePlan;
   taskSpec: AutomationStudioProjectTaskSpec;
+  /** What the plan in force says runs before each subflow, by key. */
+  after?: Readonly<Record<string, readonly string[]>>;
   nextId: () => string;
 }): { ok: true; briefs: AutomationStudioProjectSubflowBrief[]; reason: string } | { ok: false; issues: AutomationStudioProjectSupervisorInputIssue[] } {
   const { value, structure, taskSpec } = input;
@@ -51,6 +60,7 @@ export function automationStudioProjectSupervisorBriefInput(input: {
     if (subflow?.interface) whole.interface = structuredClone(subflow.interface) as unknown as JsonObject;
     if (whole.parts === undefined && written.kind === "reset") whole.parts = [];
     if (whole.permittedActs === undefined) whole.permittedActs = [];
+    whole.entry = entryOf(written.entry, typeof written.subflowKey === "string" ? input.after?.[written.subflowKey] : undefined);
     const parsed = automationStudioProjectSubflowBrief.parse(whole);
     if (parsed.status === "invalid") {
       issues.push({ code: parsed.code, path: parsed.path.replace(/^brief/u, at) });
@@ -61,4 +71,12 @@ export function automationStudioProjectSupervisorBriefInput(input: {
   }
   if (issues.length) return { ok: false, issues };
   return { ok: true, briefs, reason: reason.slice(0, 2000) };
+}
+
+/** The entry as sent, with the observed current page and the plan's `after` filled in where left out; anything else is left for the brief's reader to refuse. */
+function entryOf(sent: JsonValue | undefined, after: readonly string[] | undefined): JsonValue {
+  if (sent === undefined) return { caseId: OBSERVED_CURRENT, predecessors: [...(after ?? [])] };
+  if (!sent || typeof sent !== "object" || Array.isArray(sent)) return sent;
+  const entry = sent as JsonObject;
+  return { ...entry, ...(entry.caseId === undefined ? { caseId: OBSERVED_CURRENT } : {}), ...(entry.predecessors === undefined ? { predecessors: [...(after ?? [])] } : {}) };
 }

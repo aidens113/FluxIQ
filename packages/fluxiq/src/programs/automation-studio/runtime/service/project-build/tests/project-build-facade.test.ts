@@ -29,25 +29,20 @@ const START_END = {
   edges: [{ key: "start_end", source: { nodeKey: "start", portId: "next" }, target: { nodeKey: "end", portId: "in" } }]
 };
 
-/** Each planned subflow's success check, which a builder's proposal carries unchanged; a fresh object each time, as a parsed reply's would be. */
-const checked = () => ({ metadata: { "fluxiq.successCheck": [{ fact: "ended", op: "exists" }] } });
-
 /** What the two-part task spec says nobody asked for (unit A9: every judge is sent it beside the instructions). */
 const NOT_ASKED = "Waiting longer than the Flow needs";
 
 type Shape = "one_part" | "two_parts";
 type Entry = { callId: string; toolId: string; value: unknown };
 
-/** The plan the scripted supervisor writes: one router-run subflow, or a router-run subflow calling two independent parts. */
+/** The plan the scripted supervisor writes in its planning format: one router-run subflow, or two independent parts Core's router-run subflow calls. */
 function planInput(shape: Shape): JsonObject {
-  const router = { name: "Main", rules: [], fallback: { kind: "subflow", targetSubflowKey: "main" } };
   if (shape === "one_part") {
     return {
       taskSpec: { parts: [{ id: "p1", quote: { sourceId: "instruction.build", text: TASK }, goalFacts: ["The Flow runs from its start to its end"], lastingActs: [] }], notAsked: [] },
-      structurePlan: { plan: { router, subflows: [{ key: "main", name: "Main", role: "primary", ...checked() }] }, partOf: { main: ["p1"] } }
+      subflows: [{ key: "main", name: "Main", parts: ["p1"] }]
     };
   }
-  const callable = (key: string) => ({ key, name: key, role: "utility", interface: { inputs: [], outputs: [] }, ...checked() });
   return {
     taskSpec: {
       parts: [
@@ -56,7 +51,7 @@ function planInput(shape: Shape): JsonObject {
       ],
       notAsked: [NOT_ASKED]
     },
-    structurePlan: { plan: { router, subflows: [{ key: "main", name: "Main", role: "primary", ...checked() }, callable("first"), callable("second")] }, partOf: { main: [], first: ["p1"], second: ["p2"] } }
+    subflows: [{ key: "first", name: "first", parts: ["p1"] }, { key: "second", name: "second", parts: ["p2"] }]
   };
 }
 
@@ -66,11 +61,11 @@ function briefs(shape: Shape): JsonObject[] {
 }
 
 /** What a builder submits: for the router-run subflow a plan of a start and an end; for a part, the script of one short wait. */
-function submission(subflowKey: string): JsonObject {
+function submission(subflowKey: string, proposedCheck?: JsonObject[]): JsonObject {
   if (subflowKey !== "main") return { flow: [`flow: ${subflowKey}`, `part ${subflowKey}: carry out its part`, "  step pause: wait briefly", "    node: builtin.timing.wait", "    duration: 1", "    unit: milliseconds", "end"].join("\n") };
   return {
     summary: "Build the main subflow",
-    plan: { schemaVersion: "0.1", router: { name: "Main", rules: [], fallback: { kind: "subflow", targetSubflowKey: "main" } }, subflows: [{ key: "main", name: "Main", role: "primary", ...START_END }] }
+    plan: { schemaVersion: "0.1", router: { name: "Main", rules: [], fallback: { kind: "subflow", targetSubflowKey: "main" } }, subflows: [{ key: "main", name: "Main", role: "primary", ...START_END, ...(proposedCheck ? { metadata: { "fluxiq.successCheck": proposedCheck } } : {}) }] }
   };
 }
 
@@ -99,11 +94,13 @@ class CountingHost implements AutomationStudioHostResourcePort {
   }
 }
 
-async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capacity?: number } = {}) {
+async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capacity?: number; domainText?: string; proposedCheck?: JsonObject[] } = {}) {
   const shape = options.shape ?? "one_part";
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-project-build-facade-"));
   const judged = { whole: [] as AutomationStudioLlmTaskRequest[], subflow: [] as AutomationStudioLlmTaskRequest[] };
   const offered: string[][] = [];
+  /** The system instructions each evidence decision carried, by whether the supervisor or a builder asked. */
+  const instructed: Array<{ supervisor: boolean; instructions: AutomationStudioLlmTaskRequest["domainInstructions"] }> = [];
   let supervisorDecisions = 0;
   const provider = mockProvider(async (request) => {
     if (request.taskKind === "loop_verification") {
@@ -115,6 +112,7 @@ async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capa
     const evidence = loop.evidence as Entry[];
     const tools = loop.tools.map((tool) => tool.toolId);
     offered.push(tools);
+    instructed.push({ supervisor: tools.includes("project.write_plan"), instructions: request.domainInstructions });
     if (tools.includes("project.write_plan")) {
       supervisorDecisions += 1;
       const assembled = lastOf(evidence, "project.assemble")?.complete as JsonObject | undefined;
@@ -132,7 +130,7 @@ async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capa
     const subflowKey = ((loop.completionSchema.properties as JsonObject | undefined)?.subflowKey as JsonObject | undefined)?.const as string;
     const submitted = lastOf(evidence, "core.submit_subflow");
     const tested = lastOf(evidence, "core.test_subflow");
-    if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: `submit-${subflowKey}`, toolId: "core.submit_subflow", input: submission(subflowKey) });
+    if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: `submit-${subflowKey}`, toolId: "core.submit_subflow", input: submission(subflowKey, options.proposedCheck) });
     if (tested?.verdict !== "yes") return decision({ kind: "tool_call", callId: `test-${subflowKey}`, toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } });
     return decision({ kind: "complete", result: { subflowKey, revision: submitted.revision as number, digest: submitted.digest as string } });
   });
@@ -140,7 +138,8 @@ async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capa
   const serviceOptions: AutomationStudioServiceOptions = {
     dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 60, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }],
-      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { seen: true }, effectApplied: false, targetsUnchanged: true }) },
+      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { seen: true }, effectApplied: false, targetsUnchanged: true }),
+      ...(options.domainText ? { systemInstructions: { version: "isolated.v1", text: options.domainText } } : {}) },
     ...(host ? { hostRuntime: { capabilities: [], hostResources: host } } : {})
   };
   const service = new AutomationStudioService(serviceOptions);
@@ -151,7 +150,7 @@ async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capa
   const { project, flow } = await blankFixture(service);
   const proposed = vi.spyOn(service, "createFlowBootstrapAdaptation");
   return {
-    service, projectId: project.id, flowId: flow.flowId, judged, offered, host, proposed,
+    service, projectId: project.id, flowId: flow.flowId, judged, offered, instructed, host, proposed,
     build: (extra: { mode?: "extend" } = {}) => service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project", ...extra })
   };
 }
@@ -170,6 +169,39 @@ describe("a project build through the actual service", () => {
     // The supervisor is offered its own tools and never a builder's; each builder its own, never the supervisor's.
     expect(run.offered.some((tools) => tools.includes("project.dispatch") && !tools.includes("core.submit_subflow"))).toBe(true);
     expect(run.offered.some((tools) => tools.includes("core.submit_subflow") && !tools.includes("project.dispatch"))).toBe(true);
+  });
+
+  // The first live project builds sent the supervisor the web domain's operating text, which undid its role (t569).
+  it("tells the supervisor its own role and host, never the domain's operating text, while builders keep the domain's", async () => {
+    const operating = "You operate a real website in the person's own browser. To reach a thing, use the site's own search and submit it.";
+    const run = await projectBuild({ domainText: operating });
+    const result = await run.build();
+    if (result.status !== "proposed") throw new Error(`expected a proposal, got ${JSON.stringify(result)}`);
+    const supervisor = run.instructed.filter((entry) => entry.supervisor);
+    const builders = run.instructed.filter((entry) => !entry.supervisor);
+    expect(supervisor.length).toBeGreaterThan(0);
+    expect(builders.length).toBeGreaterThan(0);
+    for (const { instructions } of supervisor) {
+      expect(instructions).toMatchObject({ domainId: "fluxiq.project-supervisor", version: "project-supervisor.1" });
+      expect(instructions!.text).toContain("You are the project supervisor of a FluxIQ build");
+      expect(instructions!.text).toContain("You do not operate the target");
+      expect(instructions!.text).toContain("This build runs on the host of the domain \"isolated\"");
+      expect(instructions!.text).not.toContain("You operate a real website");
+      expect(instructions!.text).not.toContain("own search");
+    }
+    for (const { instructions } of builders) expect(instructions).toEqual({ domainId: "isolated", version: "isolated.v1", text: operating });
+  });
+
+  // The plan the supervisor writes gives no success check, so the builder's own is its subflow's, and its trial is judged against it (t569).
+  it("judges a subflow's trial against the success check its builder proposed when the plan gives none", async () => {
+    const proposed = [{ fact: "ended", op: "exists" }];
+    const run = await projectBuild({ proposedCheck: proposed });
+    const result = await run.build();
+    if (result.status !== "proposed") throw new Error(`expected a proposal, got ${JSON.stringify(result)}`);
+    expect(run.judged.subflow.length).toBeGreaterThan(0);
+    for (const request of run.judged.subflow) {
+      expect(JSON.stringify(request.context)).toContain(JSON.stringify(`Its success check, as its builder proposed it (the plan gives none): ${JSON.stringify(proposed)}`).slice(1, -1));
+    }
   });
 
   it("keeps the assembled Flow as a draft when the whole trial is judged no, and proposes nothing", async () => {

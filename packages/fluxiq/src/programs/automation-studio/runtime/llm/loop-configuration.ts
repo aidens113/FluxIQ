@@ -24,6 +24,7 @@ import type { AutomationStudioFlowDraftClaimRefused, AutomationStudioFlowDraftRo
 import { automationStudioFlowDraftCopyScheduledCandidate } from "../flow-draft/scheduled-candidate/index.ts";
 import type { AutomationStudioFlowDraftDryRunGateInput, AutomationStudioFlowDraftTestReport } from "./node-tools/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "./evidence-loop/index.ts";
+import type { AutomationStudioLlmEvidencePlanningTools } from "./evidence-progress/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW } from "./unreadable-reply.ts";
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW,
@@ -52,6 +53,16 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * the candidate's, `core.submit_candidate` and `core.test_candidate`.
    */
   finishingTools?: AutomationStudioLlmEvidenceFinishingTools | undefined;
+  /**
+   * A loop whose model plans and hands the work on rather than acting on the
+   * target (the project supervisor; t569): the tools that move its work
+   * forward, which looks are never withdrawn from; how many looks it may make
+   * before looks are withdrawn for the rest of the loop; and its way forward,
+   * which the no-progress redirect, the searching note and the spent budget's
+   * note name in place of the words that send a builder to act
+   * (`./evidence-progress/planning-tools.ts`). Absent, every note is as it was.
+   */
+  planning?: AutomationStudioLlmEvidencePlanningTools | undefined;
   tools: AutomationStudioLlmEvidenceTool[];
   decide(input: {
     iteration: number;
@@ -508,6 +519,8 @@ export function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): Evid
   if (!Number.isInteger(limits.maxIterations) || limits.maxIterations <= 0 || limits.maxIterations > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations) return undefined;
   if (!Number.isInteger(limits.maxToolCalls) || limits.maxToolCalls <= 0 || limits.maxToolCalls > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls) return undefined;
   if (input.budget && !automationStudioLlmEvidenceLoopBudgetValid(input.budget)) return undefined;
+  const lookBudget = input.planning?.lookBudget;
+  if (lookBudget !== undefined && (!Number.isSafeInteger(lookBudget) || lookBudget < 0)) return undefined;
   if (!Number.isInteger(limits.minToolCalls) || limits.minToolCalls < 0 || limits.minToolCalls > limits.maxToolCalls || limits.minToolCalls >= limits.maxIterations) return undefined;
   if (!Number.isInteger(limits.maxDraftAmendments) || limits.maxDraftAmendments < 0 || limits.maxDraftAmendments > limits.maxIterations) return undefined;
   return limits;

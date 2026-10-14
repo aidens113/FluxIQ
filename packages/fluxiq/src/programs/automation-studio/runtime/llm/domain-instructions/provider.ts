@@ -13,6 +13,13 @@ import type { AutomationStudioLlmTaskDomainInstructions } from "./task-domain-in
  *
  * Absent instructions return the provider itself, unchanged, so a host that
  * binds none sends exactly what it always sent.
+ *
+ * A request that already carries instructions keeps them: an agent whose role
+ * is not the domain's work wraps the domain's provider with its own, outside
+ * this one, and its words reach the system message in place of the domain's
+ * (the project supervisor, which plans and never operates the target:
+ * `../../service/project-build/supervisor-provider.ts`, t569). The innermost
+ * decorator is the domain's, so without such a wrapper nothing changes.
  */
 export function automationStudioLlmProviderWithDomainInstructions(
   provider: AutomationStudioLlmProvider,
@@ -20,7 +27,7 @@ export function automationStudioLlmProviderWithDomainInstructions(
 ): AutomationStudioLlmProvider {
   if (!instructions) return provider;
   const domainInstructions = { domainId: instructions.domainId, version: instructions.version, text: instructions.text };
-  const stamped = (request: AutomationStudioLlmTaskRequest): AutomationStudioLlmTaskRequest => ({ ...request, domainInstructions });
+  const stamped = (request: AutomationStudioLlmTaskRequest): AutomationStudioLlmTaskRequest => ({ ...request, domainInstructions: request.domainInstructions ?? domainInstructions });
   const measureInput = provider.measureInput;
   const estimateCostUsd = provider.estimateCostUsd;
   return {

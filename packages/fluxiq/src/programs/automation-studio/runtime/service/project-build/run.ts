@@ -15,6 +15,7 @@ import { AutomationStudioProjectBuildProposals } from "./proposals.ts";
 import { automationStudioProjectBuildRecords } from "./records.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_RESERVE } from "./reserve.ts";
 import { automationStudioProjectBuildSubflowTrials } from "./subflow-trials.ts";
+import { automationStudioProjectBuildSupervisorProvider } from "./supervisor-provider.ts";
 import { AutomationStudioProjectBuildTaskChecklist } from "./task-checklist.ts";
 import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 
@@ -81,7 +82,10 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   const sources = automationStudioProjectActiveInstructionSources(project.instructions);
   const { purse: _purse, signal: _signal, budget: _budget, ...loop } = draft.loop;
   const maxIterations = loop.maxIterations;
-  const decide = (completionSchema: Parameters<AutomationStudioProjectBuildDecisions["decide"]>[0]["completionSchema"]) => decisions.decide({ runHarness: draft.runHarness, wrapDecision: draft.wrapDecision, completionSchema });
+  // The supervisor's decisions carry its own system instructions, never the domain's operating text (`./supervisor-provider.ts`, t569).
+  const supervisorProvider = automationStudioProjectBuildSupervisorProvider(draft.harness.provider, binding.domainId);
+  const runSupervisorHarness: typeof draft.runHarness = async (request) => await draft.runHarness({ ...request, provider: supervisorProvider });
+  const decide = (completionSchema: Parameters<AutomationStudioProjectBuildDecisions["decide"]>[0]["completionSchema"]) => decisions.decide({ runHarness: runSupervisorHarness, wrapDecision: draft.wrapDecision, completionSchema });
   const unusableDecisions = automationStudioFlowBootstrapUnusableDecisions({
     maxConsecutiveUnusableDecisions: draft.maxConsecutiveUnusableDecisions, maxIterations, callerEnding: (progress) => draft.ending(progress, accounting()),
     stalled: (progress) => flowBootstrapEvidenceUnusableDecisionFailure(progress, accounting(), automationStudioCandidateStallCode(progress.issueCodes))

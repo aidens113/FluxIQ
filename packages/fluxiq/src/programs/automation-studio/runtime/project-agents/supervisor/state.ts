@@ -16,6 +16,13 @@ export class AutomationStudioProjectSupervisorState {
   structure: AutomationStudioProjectStructurePlan | undefined;
   /** The supervisor's own one line per subflow key, for the chat. */
   purposes: Record<string, string> = {};
+  /**
+   * What the plan in force says runs before each subflow, by key: a brief's
+   * predecessors when it gives none (`./brief-input.ts`). Written with the plan
+   * by this run; a supervisor started again on a build under way reads no
+   * plan's `after` from the record, so its briefs name their predecessors.
+   */
+  after: Record<string, string[]> = {};
   readonly briefs: AutomationStudioProjectSubflowBrief[] = [];
   private readonly returns = new Map<string, AutomationStudioProjectBuilderReturn>();
   /** The last whole trial left lasting acts on the target, and no reset brief has come back done since. */

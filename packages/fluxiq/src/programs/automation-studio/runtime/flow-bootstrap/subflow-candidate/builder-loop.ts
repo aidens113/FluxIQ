@@ -41,6 +41,23 @@ export type AutomationStudioSubflowBuilderOutcome = {
   promotionAllowed: false;
 };
 
+/**
+ * What the submit tool says of the subflow's success check (t569). A scope
+ * with one: it is the plan's, as before, byte for byte. A scope with none --
+ * the plan the project supervisor writes gives none -- proposing one is the
+ * builder's, in the script's own `done when:` terms
+ * (`../plan/flow-script-format.ts`): where the line goes for this kind of
+ * subflow, and that it becomes the subflow's check, which its trial is judged
+ * against (`./scoped-submission.ts`, `../../service/subflow-trial/run.ts`).
+ */
+function successCheckRule(scope: AutomationStudioSubflowScope): string {
+  if (scope.successCheck !== undefined) return "Its inputs, outputs and success check are the plan's; leave them out or write exactly those.";
+  const where = scope.interface ? `inside its own \`part ${scope.subflowKey}:\` block, before its first step` : "outside every block, after its last step";
+  return "Its inputs and outputs are the plan's; leave them out or write exactly those. "
+    + `The plan gives it no success check, so propose one with it: a \`done when: <fact>\` line ${where}, saying what the page shows once it worked, for example \`done when: text t11 contains "Booked"\`. `
+    + "It becomes this subflow's success check, and its trial is judged against it.";
+}
+
 export async function runAutomationStudioSubflowBuilderLoop(input: {
   loop: Omit<AutomationStudioLlmEvidenceLoopInput, "draft" | "dryRun" | "checkCompletion" | "completionSchema" | "fullRunRequired" | "discoveryOnly" | "callScope" | "finishingTools">;
   scope: AutomationStudioSubflowScope;
@@ -62,7 +79,7 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   const subflowKey = input.scope.subflowKey;
   const submitTool: AutomationStudioLlmEvidenceTool = {
     toolId: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, effect: "observe",
-    description: `Submit your subflow "${subflowKey}", written as a Flow script under "flow" (its description gives the format and examples), or a JSON plan under "plan". Write its steps outside every block, and any helper it needs as a part those steps call. Write no \`when:\` line and no other subflow: which situation runs which subflow is the structure plan's. Its inputs, outputs and success check are the plan's; leave them out or write exactly those. Static validity returns a draft revision and digest, never acceptance. Correct every diagnostic and resubmit the whole subflow. Then test that exact revision with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}, and complete with the subflowKey, revision and digest only after its trial answers yes.`,
+    description: `Submit your subflow "${subflowKey}", written as a Flow script under "flow" (its description gives the format and examples), or a JSON plan under "plan". Write its steps outside every block, and any helper it needs as a part those steps call. Write no \`when:\` line and no other subflow: which situation runs which subflow is the structure plan's. ${successCheckRule(input.scope)} Static validity returns a draft revision and digest, never acceptance. Correct every diagnostic and resubmit the whole subflow. Then test that exact revision with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}, and complete with the subflowKey, revision and digest only after its trial answers yes.`,
     inputSchema: { type: "object", properties: { flow: { type: "string", description: `This subflow as a script. ${AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT}` }, plan: { type: "object" }, summary: { type: "string" } }, additionalProperties: false }
   };
   const checkCompletion: NonNullable<AutomationStudioLlmEvidenceLoopInput["checkCompletion"]> = async (result) => {

@@ -8,6 +8,9 @@
 // tools: the harness's observe-only tools (`./role-tools.ts`), its own
 // `project.*` tools and the whole candidate's trial (`./tools.ts`), each
 // intercepted in `executeTool`, and its own completion (`./completion.ts`).
+// It plans rather than acts (`./planning.ts`, t569): its own tools are its
+// planning tools, its looks run out after its look budget, and every note the
+// loop gives it names its next planning step rather than an act.
 // Draft and dry run are off -- the supervisor takes no step a Flow could keep
 // -- and it is not discovery-only, which is a candidate builder's mode. No
 // `budget` wrap-up: the purse and `maxIterations` bound it.
@@ -35,6 +38,7 @@ import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_COMPLETION_SCHEMA, automationStudi
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { automationStudioProjectSupervisorDispatchTool } from "./dispatch-tool.ts";
 import { automationStudioProjectSupervisorPlanTool } from "./plan-tool.ts";
+import { automationStudioProjectSupervisorPlanning } from "./planning.ts";
 import type { AutomationStudioProjectSupervisorPorts } from "./ports.ts";
 import { automationStudioProjectSupervisorReadTask } from "./read-task.ts";
 import { automationStudioProjectSupervisorHostTools } from "./role-tools.ts";
@@ -45,7 +49,7 @@ import { automationStudioProjectSupervisorWholeTrial } from "./whole-trial.ts";
 
 /** What the supervisor's loop is given of the evidence loop: everything the supervisor does not set itself. */
 export type AutomationStudioProjectSupervisorLoopInput = Omit<AutomationStudioLlmEvidenceLoopInput,
-  "draft" | "dryRun" | "discoveryOnly" | "checkCompletion" | "completionSchema" | "fullRunRequired" | "budget" | "purse" | "callScope" | "finishingTools" | "signal" | "recoverStall">;
+  "draft" | "dryRun" | "discoveryOnly" | "checkCompletion" | "completionSchema" | "fullRunRequired" | "budget" | "purse" | "callScope" | "finishingTools" | "planning" | "signal" | "recoverStall">;
 
 /** How a supervisor run ended. Never promotion: `candidate` hands the caller a candidate to promote. */
 export type AutomationStudioProjectSupervisorOutcome = {
@@ -92,6 +96,7 @@ export async function runAutomationStudioProjectSupervisorLoop(input: {
     dryRun: false,
     tools: [...automationStudioProjectSupervisorHostTools(input.loop.tools), ...own],
     completionSchema: AUTOMATION_STUDIO_PROJECT_SUPERVISOR_COMPLETION_SCHEMA,
+    planning: automationStudioProjectSupervisorPlanning(context),
     executeTool: async (call) => {
       switch (call.toolId) {
         case IDS.readTask: return automationStudioProjectSupervisorReadTask(context);

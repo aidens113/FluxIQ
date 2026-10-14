@@ -11,6 +11,14 @@ describe("structure plan", () => {
     expect(issues(structurePlan(), taskSpec())).toEqual([]);
   });
 
+  it("reads a subflow with no success check, which its builder proposes (t569)", () => {
+    const plan = structurePlan((draft) => {
+      delete draft.plan.subflows[0]!.metadata;
+    });
+    expect(parse(plan)).toEqual({ status: "valid", value: plan });
+    expect(issues(plan, taskSpec())).toEqual([]);
+  });
+
   it.each([
     ["a non-empty body", (plan: ReturnType<typeof structurePlan>) => plan.plan.subflows[0]!.nodes.push({ key: "n", definitionId: "x", definitionVersion: "1" }), "project.plan_body_not_empty"],
     ["a router rule naming no subflow", (plan: ReturnType<typeof structurePlan>) => (plan.plan.router.rules[0]!.targetSubflowKey = "nowhere"), "project.plan_unknown_subflow"],
