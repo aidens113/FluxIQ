@@ -34,6 +34,7 @@ import type {
   AutomationStudioConversationInterpretation,
   AutomationStudioConversationInvocation
 } from "./decision.ts";
+import type { AutomationStudioConversationWaitingAsk } from "./waiting-ask.ts";
 
 /** The attachment kind that carries an invocation waiting on the person's confirmation. */
 export const AUTOMATION_STUDIO_PANEL_CAPABILITY_ATTACHMENT = "panel-capability";
@@ -49,6 +50,8 @@ export type AutomationStudioConversationResponseWrite = {
   flows: readonly AutomationStudioConversationFlowReference[] | null;
   /** The page the person has open, where a build Core runs starts. Only its site's name is ever said. */
   pageUrl?: string | null;
+  /** The asks the model was shown with their ids (A10b). An id it wrote back into its own words is taken out before the thread keeps them. */
+  waitingAsks?: readonly AutomationStudioConversationWaitingAsk[];
 };
 
 export type AutomationStudioConversationResponseWritten = {
@@ -58,7 +61,7 @@ export type AutomationStudioConversationResponseWritten = {
 };
 
 export async function respondToAutomationStudioConversationTurn(input: AutomationStudioConversationResponseWrite): Promise<AutomationStudioConversationResponseWritten> {
-  const { decision } = input.interpretation;
+  const decision = withoutAskIds(input.interpretation.decision, input.waitingAsks ?? []);
   const base = { projectId: input.projectId, conversationId: input.conversationId, attachment: null };
   if (decision.kind !== "invoke") {
     const words = decision.kind === "reply" ? decision.text : decision.question;
@@ -148,6 +151,22 @@ function readingNotes(invocation: AutomationStudioConversationInvocation): strin
   const dropped = invocation.droppedArguments.filter((name) => !/pin|password|secret|token|authori[sz]ation|credential|__unreadable/iu.test(name));
   if (dropped.length) notes.push(`I left out ${dropped.join(", ")}, which "${invocation.title}" does not take.`);
   return notes.length ? ` ${notes.join(" ")}` : "";
+}
+
+/**
+ * The model's own words with any waiting ask's id replaced by that ask's
+ * question. The model is shown the ids so it can name the ask an answer
+ * settles (`prompt.ts`) and told never to write one for the person; this is
+ * what holds if it does, because the thread keeps no codes (t276). Only the
+ * words written for the person change: the invocation's arguments, which the
+ * person never reads, keep the id `ask.answer` needs.
+ */
+function withoutAskIds(decision: AutomationStudioConversationInterpretation["decision"], asks: readonly AutomationStudioConversationWaitingAsk[]): AutomationStudioConversationInterpretation["decision"] {
+  if (!asks.length) return decision;
+  const clean = (text: string) => asks.reduce((words, ask) => !ask.askId ? words : words.split(ask.askId).join(ask.question ? `"${ask.question}"` : "that question"), text);
+  if (decision.kind === "reply") return { ...decision, text: clean(decision.text) };
+  if (decision.kind === "clarify") return { ...decision, question: clean(decision.question) };
+  return decision.say === null ? decision : { ...decision, say: clean(decision.say) };
 }
 
 function withProblem(text: string, interpretation: AutomationStudioConversationInterpretation): string {

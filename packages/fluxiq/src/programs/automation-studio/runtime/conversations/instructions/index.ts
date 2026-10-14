@@ -3,6 +3,7 @@
 // outcome is written back into the thread.
 export * from "./decision.ts";
 export * from "./model.ts";
+export * from "./waiting-ask.ts";
 export * from "./closest.ts";
 export * from "./flows.ts";
 export * from "./says-what-to-do.ts";

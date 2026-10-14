@@ -34,7 +34,8 @@ import {
   type AutomationStudioConversationInstructionRequest,
   type AutomationStudioConversationModel,
   type AutomationStudioConversationModelTurn,
-  type AutomationStudioConversationOnScreen
+  type AutomationStudioConversationOnScreen,
+  type AutomationStudioConversationWaitingAsk
 } from "./instructions/index.ts";
 import {
   automationStudioConversationWriter,
@@ -344,12 +345,13 @@ export class AutomationStudioConversations {
     const turn = await this.appendTurn(input);
     const earlier = await this.earlierTurns(input, turn.turnId);
     const onScreen = await this.onScreenWithSubject(input);
+    const waiting = await this.waitingAsks(input);
     const interpretation = await interpretAutomationStudioConversationTurn({
       model: this.model,
       message: input.text,
       transcript: earlier.transcript,
       transcriptWithheld: earlier.withheld,
-      context: { projectId: input.projectId, capabilities: input.capabilities, flows: input.flows, onScreen, message: input.text },
+      context: { projectId: input.projectId, capabilities: input.capabilities, flows: input.flows, onScreen, message: input.text, waitingAsks: waiting.asks, waitingAsksWithheld: waiting.withheld },
       domainInstructions: this.domainInstructions(),
       caller: input.caller ?? null,
       ...(input.limits ? { limits: input.limits } : {})
@@ -358,7 +360,7 @@ export class AutomationStudioConversations {
     const { costUsd, ...reading } = interpretation;
     const cost = costUsd === undefined ? {} : { interpretationCostUsd: costUsd };
     try {
-      const written = await respondToAutomationStudioConversationTurn({ host: this, projectId: input.projectId, conversationId: input.conversationId, interpretation, flows: input.flows, pageUrl: onScreen.pageUrl ?? null });
+      const written = await respondToAutomationStudioConversationTurn({ host: this, projectId: input.projectId, conversationId: input.conversationId, interpretation, flows: input.flows, pageUrl: onScreen.pageUrl ?? null, waitingAsks: waiting.asks });
       return { turn, response: { ...reading, ...written }, problem: null, ...cost };
     } catch (error) {
       // The person's turn is stored and the decision was made; only writing
@@ -386,6 +388,37 @@ export class AutomationStudioConversations {
     }
     const subject = thread?.conversation.subject;
     return subject?.kind === "flow" ? { ...input.onScreen, flowId: subject.id } : input.onScreen;
+  }
+
+  /**
+   * The asks still waiting in the thread, oldest first, each with its id and
+   * the words the person read, for the model's own context (A10b): with more
+   * than one waiting, an answer must name the ask it settles, and the model
+   * can name only what it was shown. The ids go to the model and nowhere
+   * else (`instructions/waiting-ask.ts`). A thread whose asks cannot be read
+   * says so (`withheld`), and the model is told: the message is still read,
+   * and `ask.answer` still refuses an answer that names none of several.
+   */
+  private async waitingAsks(input: { projectId: string; conversationId: string }): Promise<{ asks: AutomationStudioConversationWaitingAsk[]; withheld: boolean }> {
+    try {
+      const turns = await this.withStore(input.projectId, (store) => store.recentTurns(input.conversationId, PENDING_ASK_WINDOW));
+      const asks = turns.flatMap((turn): AutomationStudioConversationWaitingAsk[] => {
+        const ask = turn.ask;
+        if (!ask || ask.status !== "pending") return [];
+        const question = turn.text.trim();
+        return [{
+          askId: ask.askId,
+          kind: ask.kind,
+          question: question || null,
+          options: ask.kind === "choice" ? (ask.options ?? []).map((option) => option.label) : [],
+          about: ask.control?.name ?? null
+        }];
+      });
+      return { asks, withheld: false };
+    } catch (error) {
+      // Context, not the message, as with the earlier thread below: the model is told it is missing.
+      return { asks: [], withheld: error !== undefined };
+    }
   }
 
   /** The thread before `turnId`, every turn of it, as the model reads it, or a note that it could not be read. */

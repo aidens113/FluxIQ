@@ -27,6 +27,7 @@ import type {
 } from "./decision.ts";
 import { automationStudioConversationFlowNamed } from "./flows.ts";
 import { automationStudioConversationSaysWhatToDo } from "./says-what-to-do.ts";
+import type { AutomationStudioConversationWaitingAsk } from "./waiting-ask.ts";
 
 /** What Core knows while deciding: the panel's vocabulary, the project's Flows, and what is on screen. */
 export type AutomationStudioConversationDecisionContext = {
@@ -41,6 +42,14 @@ export type AutomationStudioConversationDecisionContext = {
    * (`fillInstructionFromMessage`). Absent, that argument is asked for.
    */
   message?: string;
+  /**
+   * The asks still waiting in the thread, with their ids, for the model to
+   * name the one an answer settles (A10b, `waiting-ask.ts`). Absent or empty,
+   * none is waiting, or the thread could not be read.
+   */
+  waitingAsks?: readonly AutomationStudioConversationWaitingAsk[];
+  /** True when the thread's waiting asks could not be read just now; the model is told so. */
+  waitingAsksWithheld?: boolean;
 };
 
 /** Below this an argument name is not taken as meaning any particular argument. */
