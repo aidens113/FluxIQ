@@ -717,6 +717,44 @@ card keeps its waiting state. A cancelled parked runtime session explicitly
 settles its ask; expiry/removal and cleared-wait propagation gaps are separate
 pending work outside this baseline.
 
+A project build has several agents (the project supervisor, subflow builders,
+repair agents, the validator; `docs/working/automation-project-agents-plan.md`),
+and two optional, additive fields say which one did what (t539):
+
+- `agent: { role, briefId?, subflowName? }` on any event names the agent it
+  comes from. Work runs as one agent inside
+  `withAutomationStudioProjectAgent(agent, fn)` (`runtime/project-agents/attribution/`),
+  which sets the activity agent frame (`runtime/activity/agent.ts`, an
+  AsyncLocalStorage of its own, not a field on the unit-of-work frame a run's
+  bind mutates) and the step log's `role` and `briefId` together, since
+  `runtime/llm/` imports nothing from `runtime/activity/`. The one publish path
+  (`runtime/activity/emit.ts`) stamps it, so no emission site changes; the
+  innermost frame wins, two agents under `Promise.all` keep their own, and an
+  event outside every frame carries no `agent`, exactly as a one-agent build
+  always has. The hub keeps it only in the contract's shape
+  (`runtime/activity/bounded.ts`): an unknown role drops the field, a `briefId`
+  that is not id-shaped or looks like a digest is left out, and `subflowName`
+  is cut to 160 characters.
+- `detail.project` on a `note` row is a card of the supervisor's work: `plan`
+  (the task's parts in the person's own words, each subflow with its one-line
+  purpose and parts, the starting cases, the budget split and the reserve),
+  `brief` ("Building <subflow>: <purpose>", or Surveying, Repairing, with the
+  brief id as the row's `ref`), `return` (outcome, reason, spend, calls and a
+  count of trials) and `receipt` (a subflow or whole-Flow trial and its
+  verdict). The emitters (`runtime/activity/project/`) build each from the
+  project-agent contracts and never put a digest in a title, a ref or a card;
+  the hub rebuilds a card field by field (`runtime/activity/project-card-bounds.ts`),
+  cutting strings to 160 characters (a return's `reason` to 240) and lists to
+  20 entries, keeps it only on a `note` row, and drops one whose kind or closed
+  fields are outside the contract, leaving a plain note.
+
+Core's own web panel ignores both: its reader drops unknown top-level fields
+and treats every `note` row as internal, which is why the cards ride on
+`note`. The step log writes `role` and `briefId` in every step's `meta.json`
+(`null` outside every agent), and `index.md` gains `Role` and `Brief` columns
+after `Kind` once any agent has written a step to the directory; a directory
+no agent wrote to keeps its table exactly as before.
+
 Start/stop recording and action execution are privileged operations and use
 shared PIN authorization. Client-initiated pairing requests can create pending
 display references without PIN because the client still cannot pair until a

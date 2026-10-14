@@ -2,20 +2,40 @@ import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from
 import path from "node:path";
 import { automationStudioLlmStepLogScreen } from "./screen.ts";
 
-/** One completed step as `index.md` lists it. */
-export type AutomationStudioLlmStepLogRow = { step: number; kind: string; tool: string | undefined; summary: string; costUsd: number | undefined };
+/**
+ * One completed step as `index.md` lists it. `role` and `briefId` name the
+ * project agent that made it (`./scope.ts`); a step outside every agent scope
+ * has neither.
+ */
+export type AutomationStudioLlmStepLogRow = {
+  step: number;
+  kind: string;
+  tool: string | undefined;
+  summary: string;
+  costUsd: number | undefined;
+  role?: string | undefined;
+  briefId?: string | undefined;
+};
 
 /** Each directory's rows, read from its completed folders once per process and then kept. */
 const rowsByDirectory = new Map<string, Map<number, AutomationStudioLlmStepLogRow>>();
 
-const HEADER = [
+const PREAMBLE = [
   "# Run steps",
   "",
-  "One row per completed step folder, in step order. A folder is complete once it holds `meta.json`.",
-  "",
-  "| Step | Kind | Tool | Summary | Cost |",
-  "| --- | --- | --- | --- | --- |"
+  "One row per completed step folder, in step order. A folder is complete once it holds `meta.json`."
 ];
+
+/**
+ * The table's head. A directory any project agent wrote a step to also has
+ * `Role` and `Brief` after `Kind`; one no agent wrote to keeps today's table
+ * exactly, so a build with one agent lists its steps as it always has.
+ */
+function header(agents: boolean): string[] {
+  return agents
+    ? ["", "| Step | Kind | Role | Brief | Tool | Summary | Cost |", "| --- | --- | --- | --- | --- | --- | --- |"]
+    : ["", "| Step | Kind | Tool | Summary | Cost |", "| --- | --- | --- | --- | --- |"];
+}
 
 /**
  * Adds a completed step to `index.md` in `directory` and rewrites the file:
@@ -26,8 +46,10 @@ export function automationStudioLlmStepLogListStep(directory: string, row: Autom
   try {
     const rows = rowsOf(directory);
     rows.set(row.step, row);
-    const lines = [...rows.values()].sort((a, b) => a.step - b.step).map(line);
-    const text = automationStudioLlmStepLogScreen(`${[...HEADER, ...lines].join("\n")}\n`).text;
+    const sorted = [...rows.values()].sort((a, b) => a.step - b.step);
+    const agents = sorted.some((listed) => listed.role !== undefined);
+    const lines = sorted.map((listed) => line(listed, agents));
+    const text = automationStudioLlmStepLogScreen(`${[...PREAMBLE, ...header(agents), ...lines].join("\n")}\n`).text;
     const target = path.join(directory, "index.md");
     const temporary = path.join(directory, `.index.md.${process.pid}.${Date.now()}.tmp`);
     try {
@@ -56,7 +78,9 @@ function rowsOf(directory: string): Map<number, AutomationStudioLlmStepLogRow> {
         kind: typeof meta.kind === "string" ? meta.kind : "-",
         tool: typeof meta.toolId === "string" ? meta.toolId : undefined,
         summary: typeof meta.summary === "string" ? meta.summary : "",
-        costUsd: typeof meta.costUsd === "number" ? meta.costUsd : undefined
+        costUsd: typeof meta.costUsd === "number" ? meta.costUsd : undefined,
+        role: typeof meta.role === "string" ? meta.role : undefined,
+        briefId: typeof meta.briefId === "string" ? meta.briefId : undefined
       });
     }
   }
@@ -75,8 +99,9 @@ function readMeta(file: string): Record<string, unknown> | undefined {
   }
 }
 
-function line(row: AutomationStudioLlmStepLogRow): string {
+function line(row: AutomationStudioLlmStepLogRow, agents: boolean): string {
   const cell = (value: string) => value.replace(/[\r\n]+/gu, " ").replace(/\|/gu, "\\|");
   const cost = row.costUsd === undefined ? "-" : `$${row.costUsd.toFixed(6)}`;
-  return `| ${String(row.step).padStart(4, "0")} | ${cell(row.kind)} | ${cell(row.tool ?? "-")} | ${cell(row.summary) || "-"} | ${cost} |`;
+  const agent = agents ? ` ${cell(row.role ?? "-")} | ${cell(row.briefId ?? "-")} |` : "";
+  return `| ${String(row.step).padStart(4, "0")} | ${cell(row.kind)} |${agent} ${cell(row.tool ?? "-")} | ${cell(row.summary) || "-"} | ${cost} |`;
 }

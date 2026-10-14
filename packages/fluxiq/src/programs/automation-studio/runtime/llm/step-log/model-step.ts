@@ -90,11 +90,12 @@ export function automationStudioLlmStepLogModelStep(call: AutomationStudioLlmSte
         provider: call.provider, model: call.model, url: call.url, requestId: call.requestId ?? null, attempt,
         taskKind: call.taskKind, stage: call.stage ?? null, iteration: call.iteration ?? null,
         part: scope?.part ?? null, round: scope?.round ?? null, phase: scope?.phase ?? automationStudioLlmStepLogNaming.phaseOfKind(kind),
+        role: scope?.role ?? null, briefId: scope?.briefId ?? null,
         status: failure ? "error" : "ok", httpStatus: httpStatus ?? null,
         usage: usage ? { inputTokens: usage.inputTokens ?? null, outputTokens: usage.outputTokens ?? null, cacheHitInputTokens: usage.cacheHitInputTokens ?? null, cacheMissInputTokens: usage.cacheMissInputTokens ?? null } : null,
         costUsd: costUsd ?? null, finishReason: finishReason ?? null, error: failure ? { code: failure.code } : null, summary
       });
-      automationStudioLlmStepLogListStep(directory, { step: folder.step, kind, tool: undefined, summary, costUsd });
+      automationStudioLlmStepLogListStep(directory, { step: folder.step, kind, tool: undefined, summary, costUsd, role: scope?.role, briefId: scope?.briefId });
     } catch {
       /* best-effort: a step that cannot be finished never fails the call */
     }

@@ -24,8 +24,11 @@
 //   refusal listed (`steps`) and the entries Core showed the model about it
 //   (`feedback`) -- and `meta.json` (kind `answer`). They carry no provider and
 //   cost nothing.
-// - `meta.json` is written last: a folder with it is complete.
-// - `index.md` in the directory lists every completed step.
+// - `meta.json` is written last: a folder with it is complete. Every kind's
+//   carries `role` and `briefId`: the project agent that made the step
+//   (`automationStudioLlmStepLogScope.agent`), `null` outside every agent.
+// - `index.md` in the directory lists every completed step, with `Role` and
+//   `Brief` columns after `Kind` once any agent has written a step there.
 //
 // No header is ever written and the resolved credential is never handed to the
 // step log; every text is still screened for credential shapes. Every write is

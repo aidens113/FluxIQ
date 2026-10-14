@@ -83,6 +83,7 @@ function toolStep(directory: string, request: ToolRequest): ((result: unknown, e
         step: folder.step, kind, callId, toolId,
         startedAt: new Date(started).toISOString(), finishedAt: new Date(finished).toISOString(), ms: finished - started,
         part: scope?.part ?? null, round: scope?.round ?? null, phase: scope?.phase ?? automationStudioLlmStepLogNaming.phaseOfKind(kind),
+        role: scope?.role ?? null, briefId: scope?.briefId ?? null,
         status: error === undefined ? "ok" : "threw",
         resultCode: typeof execution?.resultCode === "string" ? execution.resultCode : null,
         resultReason: typeof execution?.resultReason === "string" ? execution.resultReason : null,
@@ -95,7 +96,7 @@ function toolStep(directory: string, request: ToolRequest): ((result: unknown, e
         // A repeat's pass: which, of how many, and its row's screened label (`./scope.ts`).
         ...passFields(scope?.pass)
       });
-      automationStudioLlmStepLogListStep(directory, { step: folder.step, kind, tool: toolId, summary, costUsd: undefined });
+      automationStudioLlmStepLogListStep(directory, { step: folder.step, kind, tool: toolId, summary, costUsd: undefined, role: scope?.role, briefId: scope?.briefId });
     } catch {
       /* best-effort: a step that cannot be finished never fails the tool call */
     }
