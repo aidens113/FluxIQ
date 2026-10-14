@@ -47,7 +47,7 @@ describe("AutomationStudioService recording persistence", () => {
   it("keeps lightweight snapshots free of canonical recording payloads", async () => {
     const service = createService({ dataDir: tempRoot });
     const project = await service.createProject({ name: "Snapshot bounds", domainId: "example" });
-    await service.createRecording({
+    await service.createRecording({ description: "Shows the steps the automation repeats.",
       projectId: project.id,
       recordingId: "recording.snapshot-bound",
       domainId: "example",
@@ -65,7 +65,7 @@ describe("AutomationStudioService recording persistence", () => {
   it("normalizes recorded action element targets before storage", async () => {
     const service = createService({ dataDir: tempRoot });
     const project = await service.createProject({ name: "Element targets", domainId: "example" });
-    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.element-target", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.element-target", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
     await service.appendRecordingEvent({
       projectId: project.id,
       recordingId: recording.recordingId,
@@ -109,7 +109,7 @@ describe("AutomationStudioService recording persistence", () => {
       }
     };
 
-    const recording = await service.createRecording({
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.",
       projectId: project.id,
       recordingId: "recording.service-test",
       taskId: "task.service-test",
@@ -149,7 +149,7 @@ describe("AutomationStudioService recording persistence", () => {
   it("persists rapid recording event bursts without colliding JSON temp files", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Event Burst" });
-    const recording = await service.createRecording({
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.",
       projectId: project.id,
       recordingId: "recording.event-burst",
       taskId: "task.event-burst",
@@ -178,7 +178,7 @@ describe("AutomationStudioService recording persistence", () => {
   it("lists project recording summaries without returning screenshot-heavy timelines", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Recording summaries" });
-    const recording = await service.createRecording({
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.",
       projectId: project.id,
       recordingId: "recording.summary-list",
       taskId: "task.summary-list",
@@ -269,7 +269,7 @@ describe("AutomationStudioService recording persistence", () => {
         }
       ]
     });
-    const recording = await service.createRecording({
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.",
       recordingId: "recording.domain-test",
       initialState: { timestamp: 1, namespaces: {} }
     });

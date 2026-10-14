@@ -39,7 +39,7 @@ describe("AutomationStudioService recording persistence", () => {
       seedFixture: false
     });
     const project = await service.createProject({ name: "Snapshot refs" });
-    const recording = await service.createRecording({
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.",
       projectId: project.id,
       recordingId: "recording.snapshot-refs",
       initialState: { timestamp: 1, namespaces: {} }
@@ -87,7 +87,7 @@ describe("AutomationStudioService recording persistence", () => {
       seedFixture: false
     });
     const project = await service.createProject({ name: "Indexed states" });
-    const recording = await service.createRecording({
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.",
       projectId: project.id,
       recordingId: "recording.indexed-states",
       initialState: { timestamp: 1, namespaces: {} }
@@ -132,7 +132,7 @@ describe("AutomationStudioService recording persistence", () => {
       seedFixture: false
     }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
     const project = await service.createProject({ name: "Mapper action state", domainId: "example" });
-    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.mapper-action-state", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.mapper-action-state", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
     await service.appendRecordingEvents({
       projectId: project.id,
       recordingId: recording.recordingId,
@@ -162,7 +162,7 @@ describe("AutomationStudioService recording persistence", () => {
       seedFixture: false
     });
     const project = await service.createProject({ name: "Indexed state lookup" });
-    const recording = await service.createRecording({
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.",
       projectId: project.id,
       recordingId: "recording.indexed-state-lookup",
       initialState: { timestamp: 1, namespaces: {} }
@@ -204,7 +204,7 @@ describe("AutomationStudioService recording persistence", () => {
       seedFixture: false
     });
     const project = await service.createProject({ name: "Timeline event state lookup" });
-    const recording = await service.createRecording({
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.",
       projectId: project.id,
       recordingId: "recording.timeline-event-state",
       initialState: { timestamp: 1, namespaces: {} }
@@ -249,7 +249,7 @@ describe("AutomationStudioService recording persistence", () => {
       seedFixture: false
     });
     const project = await service.createProject({ name: "Repair stale state links" });
-    const recording = await service.createRecording({
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.",
       projectId: project.id,
       recordingId: "recording.stale-state-link",
       initialState: { timestamp: 1, namespaces: {} }
@@ -294,7 +294,7 @@ describe("AutomationStudioService recording persistence", () => {
       seedFixture: false
     });
     const project = await service.createProject({ name: "Missing state refs" });
-    const recording = await service.createRecording({
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.",
       projectId: project.id,
       recordingId: "recording.missing-state-ref",
       initialState: { timestamp: 1, namespaces: {} }

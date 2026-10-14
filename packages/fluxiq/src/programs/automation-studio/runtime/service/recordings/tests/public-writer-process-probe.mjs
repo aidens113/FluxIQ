@@ -17,7 +17,7 @@ try {
   if (phase === "write") {
     const project = await service.createProject({ name: "Unit public writer restart" });
     projectId = project.id;
-    await service.createRecording({ projectId, recordingId: "recording.unit", startedAt: 1, initialState: { timestamp: 1, namespaces: {} } });
+    await service.createRecording({ description: "Shows the steps the automation repeats.", projectId, recordingId: "recording.unit", startedAt: 1, initialState: { timestamp: 1, namespaces: {} } });
     const state = { id: "state.unit", timestamp: 2, namespaces: {} };
     await service.appendRecordingEvent({ projectId, recordingId: "recording.unit", entry: { id: "entry.snapshot", type: "observation", observationType: "client.state_snapshot", timestamp: 2, metadata: { eventId: "event.snapshot" }, payload: { state } } });
     typed = await AutomationStudioProjectRuntimeStreamStore.open({ pool: service.runtimeProjectDatabasePool, projectId });
