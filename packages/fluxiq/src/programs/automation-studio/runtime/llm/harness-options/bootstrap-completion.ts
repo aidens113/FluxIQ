@@ -158,7 +158,7 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioPlanHan
 import { AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY, AUTOMATION_STUDIO_PLAN_NODE_HANDLE_LOCATION_KEY } from "./plan-node-handles.ts";
 import { automationStudioAmendedPlanParameters } from "./amended-plan-parameters.ts";
 import { automationStudioInheritedPlanNodeRefs } from "./inherited-plan-nodes.ts";
-import { resolveAutomationStudioFlowBootstrapPlanParameters, type AutomationStudioFlowBootstrapPlanHandleView } from "./plan-parameter-resolution.ts";
+import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, resolveAutomationStudioFlowBootstrapPlanParameters, type AutomationStudioFlowBootstrapPlanHandleView, type AutomationStudioFlowBootstrapPlanParameterResolution } from "./plan-parameter-resolution.ts";
 import { automationStudioFlowPlanRecordReplaceInRepeatIssues } from "../../flow-bootstrap/script-statements/index.ts";
 
 // `evidence_completion_cannot_answer` is still produced, by the two act rules
@@ -253,7 +253,12 @@ const SEVERAL_INSTRUCTION = "Every check was run and refusals lists each one tha
 const LIMITS_INSTRUCTION = "limitsExceeded names each limit the result is over, its max and the actual value: shorten the summary, or drop or split what that limit counts.";
 
 /** Every check a completed evidence-guided result must pass before it is built. */
-export async function checkAutomationStudioFlowBootstrapCompletion(input: {
+export async function checkAutomationStudioFlowBootstrapCompletion(input: AutomationStudioFlowBootstrapCompletionInput): Promise<AutomationStudioFlowBootstrapCompletionVerdict> {
+  return checkAutomationStudioFlowBootstrapPlanCompletion({ ...input, origin: "model" });
+}
+
+/** What a model's completed result is checked with (`checkAutomationStudioFlowBootstrapCompletion`). */
+export type AutomationStudioFlowBootstrapCompletionInput = {
   result: JsonObject;
   projectId: string;
   flowId: string;
@@ -306,9 +311,48 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
    * as exploration last saw it, as it always has.
    */
   handleReach?: AutomationStudioPlanHandleReach | undefined;
-}): Promise<AutomationStudioFlowBootstrapCompletionVerdict> {
+};
+
+/**
+ * A whole Flow Core composed itself from proposals it had already accepted --
+ * the project supervisor's assembly (`../../project-agents/supervisor/`) --
+ * never one a model wrote. It arrives as a plan, not a reply.
+ */
+export type AutomationStudioFlowBootstrapComposedCompletionInput = Omit<AutomationStudioFlowBootstrapCompletionInput, "result" | "draftSteps" | "routeSignaturesOf" | "handleReach"> & {
+  plan: AutomationStudioFlowBootstrapPlan;
+  summary: string;
+};
+
+/** What a composed Flow's refusal says when a check gives no account of its own (`refused`). */
+const COMPOSED_INSTRUCTION = "Core composed this Flow from the subflows' accepted proposals and the calls between them, and it was refused as listed. Nothing was kept.";
+
+/**
+ * Every completion check, by where the Flow came from (`origin`). One sequence
+ * for both, so a check added to it holds every Flow, and it branches only
+ * where the two differ:
+ *
+ * - **Reading.** A model's result is read from its draft or its reply
+ *   (`fromDraft`, `fromReply`). A composed Flow is already a plan, and is
+ *   never put through the reply reader, which keeps no part's interface and no
+ *   subflow's metadata.
+ * - **Elements.** A model's plan has each element it names by handle resolved
+ *   by the domain, as the model's own writing where it is (t432). A composed
+ *   plan's elements were resolved when each proposal was accepted, and asked
+ *   again as a model's writing a resolved element is refused for not being a
+ *   handle; so a composed plan must name no handle at all, and one that still
+ *   does is refused.
+ * - **Instructed acts.** Their two refusing rules read a model's result and
+ *   draft steps; a composed Flow has neither.
+ *
+ * The plan's parse, the Flow's size limits (a composed Flow's as a plan Core
+ * assembled), registry validation, the looped-replace rule, the capability
+ * notes and the refusal's every-issue account hold both.
+ */
+export async function checkAutomationStudioFlowBootstrapPlanCompletion(
+  input: (AutomationStudioFlowBootstrapCompletionInput & { origin: "model" }) | (AutomationStudioFlowBootstrapComposedCompletionInput & { origin: "composed" })
+): Promise<AutomationStudioFlowBootstrapCompletionVerdict> {
+  if (input.origin === "composed") return checkPlan(input, { ok: true, summary: input.summary, plan: input.plan, issues: [] }, { origin: "composed" });
   const { result } = input;
-  const about = (plan: unknown): RefusalSubject => ({ plan, registry: input.registry, resolution: input.resolution });
   if (!Object.keys(result).length) {
     return refused([{ code: "flow_bootstrap.evidence_completion_wrapper_invalid", issues: [issue("bootstrap.completion_wrapper_invalid", "result")] }]);
   }
@@ -336,9 +380,23 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
     ? fromDraft(draftSteps, result, input.registry, input.resolution, input.instructionText, input.routeSignaturesOf)
     : undefined;
   const accepted = drafted ?? fromReply(result, input.registry, input.resolution, input.instructionText);
+  return checkPlan(input, accepted, { origin: "model", result, drafted, draftSteps, restoredStep });
+}
+
+/** The sequence after a Flow is read (`checkAutomationStudioFlowBootstrapPlanCompletion`'s header says where it branches). */
+async function checkPlan(
+  input: Omit<AutomationStudioFlowBootstrapCompletionInput, "result" | "draftSteps" | "routeSignaturesOf">,
+  accepted: AutomationStudioFlowBootstrapAcceptance,
+  read:
+    | { origin: "composed" }
+    | { origin: "model"; result: JsonObject; drafted: ReturnType<typeof fromDraft> | undefined; draftSteps: readonly AutomationStudioFlowDraftStep[] | undefined; restoredStep: AutomationStudioLlmEvidenceRestoredStep | undefined }
+): Promise<AutomationStudioFlowBootstrapCompletionVerdict> {
+  const about = (plan: unknown): RefusalSubject => ({ plan, registry: input.registry, resolution: input.resolution });
+  const drafted = read.origin === "model" ? read.drafted : undefined;
   // An issue about a normalised plan still carries the path of the plan the
   // model wrote, so the shape a refused parameter accepts is read from that one.
-  const written = typeof result.plan === "object" && result.plan !== null && !Array.isArray(result.plan) ? result.plan : result;
+  const result = read.origin === "model" ? read.result : undefined;
+  const written = result ? (typeof result.plan === "object" && result.plan !== null && !Array.isArray(result.plan) ? result.plan : result) : undefined;
   const failures: CompletionFailure[] = [];
   // The furthest plan the structural checks produced, which is what the
   // capability checks are asked of, and the plan to build when nothing failed.
@@ -358,9 +416,9 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
       failures.push({ code: "flow_bootstrap.evidence_completion_plan_invalid", issues: errors(parsed.issues), about: about(accepted.plan) });
     } else {
       capabilityPlan = parsed.plan;
-      // A plan Core assembled from the draft is held to the Flow's own limits;
+      // A plan Core assembled -- from the draft, or composed from proposals -- is held to the Flow's own limits;
       // one the model wrote, to what one reply may carry (`profile-limits.ts`).
-      const exceeded = automationStudioEvidenceFlowBootstrapLimitsExceeded({ summary: accepted.summary, plan: parsed.plan }, drafted ? "draft" : "reply", input.size);
+      const exceeded = automationStudioEvidenceFlowBootstrapLimitsExceeded({ summary: accepted.summary, plan: parsed.plan }, drafted || read.origin === "composed" ? "draft" : "reply", input.size);
       if (exceeded.length) {
         failures.push({
           code: "flow_bootstrap.evidence_completion_profile_limit_exceeded",
@@ -368,7 +426,8 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
           detail: { key: "limitsExceeded", value: exceeded.map((limit) => ({ ...limit })), instruction: LIMITS_INSTRUCTION }
         });
       }
-      const resolved = await resolveAutomationStudioFlowBootstrapPlanParameters({
+      // A composed plan's elements were resolved with their proposals: it must name no handle left (header).
+      const resolved = read.origin === "composed" ? composedElements(parsed.plan) : await resolveAutomationStudioFlowBootstrapPlanParameters({
         plan: parsed.plan,
         projectId: input.projectId,
         flowId: input.flowId,
@@ -429,12 +488,13 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   // assemble. Only a Flow built from the draft has steps a claim can name.
   // Whether the acts are done is the test's and the judge's, never this check's,
   // save for an act only an optional step does, which no test can show done.
-  const permissions = checkAutomationStudioInstructedActPermissions({ instructionText: input.instructionText, result, draftSteps: drafted ? draftSteps : undefined });
+  // A composed Flow has neither a model's result nor draft steps for them to read (header).
+  const permissions = read.origin === "model" ? checkAutomationStudioInstructedActPermissions({ instructionText: input.instructionText, result: read.result, draftSteps: drafted ? read.draftSteps : undefined }) : { ok: true as const };
   // Read with the host's declared arrival, as the restore above and the checklist read it (t262).
-  const optional = checkAutomationStudioInstructedActsOptionalOnly({
-    instructionText: input.instructionText, result, draftSteps: drafted ? draftSteps : undefined,
+  const optional = read.origin === "model" ? checkAutomationStudioInstructedActsOptionalOnly({
+    instructionText: input.instructionText, result: read.result, draftSteps: drafted ? read.draftSteps : undefined,
     startLocation: input.startLocation, arrival: input.binding?.runsNodes?.arrival
-  });
+  }) : { ok: true as const };
   if (!permissions.ok || !optional.ok) {
     // Filed under the cannot-answer code, as the instructed acts were: the issue codes say which way.
     // One account of the acts, so the two rules never overwrite each other's `missingActs`.
@@ -448,9 +508,9 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
       detail: { key: "missingActs", value: { acts }, instruction }
     });
   }
-  const restoredField = restoredStep ? { restoredStep } : {};
+  const restoredField = read.origin === "model" && read.restoredStep ? { restoredStep: read.restoredStep } : {};
   if (failures.length || !buildPlan || !accepted.ok) {
-    const verdict = refused(failures, accepted.script, answerability, accepted.locator);
+    const verdict = refused(failures, accepted.script, answerability, accepted.locator, read.origin === "composed" ? COMPOSED_INSTRUCTION : FEEDBACK_INSTRUCTION);
     return verdict.ok ? verdict : { ...verdict, check: { ...verdict.check, ...restoredField } };
   }
   const warnings = accepted.issues.filter((item) => item.severity === "warning");
@@ -464,6 +524,21 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
     ...(handleViews ? { handleViews } : {}),
     ...(accepted.locator ? { locator: accepted.locator } : {})
   };
+}
+
+/**
+ * A composed plan's elements as its proposals' domains resolved them
+ * (`checkAutomationStudioFlowBootstrapPlanCompletion`): refused at once where
+ * a handle is still named, since nothing here may resolve one.
+ */
+function composedElements(plan: AutomationStudioFlowBootstrapPlan): AutomationStudioFlowBootstrapPlanParameterResolution {
+  try {
+    assertAutomationStudioFlowBootstrapPlanHandlesResolved(plan);
+  } catch (error) {
+    const said = error instanceof Error ? error.message : String(error);
+    return { ok: false, issues: [issue("bootstrap.composed_handle_unresolved", "plan", `A composed Flow names no handle: every element was resolved when its proposal was accepted. ${said.slice(0, 400)}`)] };
+  }
+  return { ok: true, plan: structuredClone(plan), resolvedNodeKeys: [] };
 }
 
 /** The objects of a list an account carries, as written. */
@@ -600,7 +675,9 @@ function refused(
   failures: readonly CompletionFailure[],
   previousScript?: string,
   answerability?: AutomationStudioLlmEvidenceLoopAnswerability,
-  locator?: AutomationStudioFlowBootstrapIssueLocator
+  locator?: AutomationStudioFlowBootstrapIssueLocator,
+  /** What a failure with no account of its own is answered with: the parameter guidance for a model's Flow, Core's own words for a composed one. */
+  fallback = FEEDBACK_INSTRUCTION
 ): AutomationStudioFlowBootstrapCompletionVerdict {
   const all = failures.length ? failures : [{ code: "flow_bootstrap.evidence_completion_plan_invalid" as const, issues: [issue("bootstrap.invalid_plan", "plan")] }];
   // Every issue, and the refused script however long (2026-09-30): the model
@@ -615,7 +692,7 @@ function refused(
   // is answered with the parameter guidance; each account brings its own.
   const instructions = [...new Set([
     ...(all.length > 1 ? [SEVERAL_INSTRUCTION] : []),
-    ...all.map((failure) => failure.detail?.instruction ?? FEEDBACK_INSTRUCTION)
+    ...all.map((failure) => failure.detail?.instruction ?? fallback)
   ])];
   const previous = previousScript ? { previous: previousScript } : {};
   const baseCheck: Extract<AutomationStudioLlmEvidenceCompletionCheck, { ok: false }> = {

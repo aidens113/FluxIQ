@@ -62,8 +62,11 @@ export {
 } from "./plan-parameter-resolution.ts";
 export {
   checkAutomationStudioFlowBootstrapCompletion,
+  checkAutomationStudioFlowBootstrapPlanCompletion,
   type AutomationStudioFlowBootstrapCompletionFailureCode,
-  type AutomationStudioFlowBootstrapCompletionVerdict
+  type AutomationStudioFlowBootstrapCompletionInput,
+  type AutomationStudioFlowBootstrapCompletionVerdict,
+  type AutomationStudioFlowBootstrapComposedCompletionInput
 } from "./bootstrap-completion.ts";
 export { automationStudioRepeatSuggestion, type AutomationStudioRepeatSuggestion } from "./repeat-suggestion.ts";
 // The instruction's acts as the checklist a Flow Bootstrap's loop shows beside its draft.
