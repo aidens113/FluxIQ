@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { AutomationStudioProjectResetPorts } from "../index.ts";
 import { doneOutcome, gardenBrief, gardenBuild, gate, REF, untilAborted, type BuilderScript } from "./dispatch-fixture.ts";
 
 const read = () => gardenBrief("b-read", "list_seeds");
@@ -96,6 +97,104 @@ describe("the project dispatcher", () => {
     expect(returns[1]).toMatchObject({ briefId: "b-plant", outcome: "blocked", calls: 0 });
     expect(returns[1]!.reason).toContain("Brief b-read for subflow list_seeds");
     expect(build.seen.map((seen) => seen.briefId)).toEqual(["b-read"]);
+  });
+
+  it("does not start a brief whose predecessor ended partial because its trial answered no, and says so", async () => {
+    const build = await gardenBuild({ capacity: 2, briefs: [read(), plant()], scripts: { "b-read": async (input) => {
+      const outcome = await doneOutcome(input);
+      return { ...outcome, trial: { ...outcome.trial!, verdict: "no" } };
+    } } });
+    const { returns } = await build.run();
+    expect(returns[0]).toMatchObject({ briefId: "b-read", outcome: "partial", proposal: { revision: 1 } });
+    expect(returns[1]).toMatchObject({ briefId: "b-plant", outcome: "blocked", calls: 0, spentUsd: 0, trials: [] });
+    expect(returns[1]!.reason).toContain("Brief b-read for subflow list_seeds");
+    expect(returns[1]!.reason).toContain("ended partial: its revision 1 stands, but no trial of it answered yes");
+    expect(returns[1]!.reason).toContain("its latest trial answered no");
+    expect(build.seen.map((seen) => seen.briefId)).toEqual(["b-read"]);
+  });
+
+  it("does not start a brief whose predecessor stands untried", async () => {
+    const build = await gardenBuild({ capacity: 1, briefs: [read(), plant()], scripts: { "b-read": async (input) => {
+      return { ...(await doneOutcome(input)), trial: undefined };
+    } } });
+    const { returns } = await build.run();
+    expect(returns[0]).toMatchObject({ outcome: "partial" });
+    expect(returns[1]).toMatchObject({ briefId: "b-plant", outcome: "blocked", calls: 0 });
+    expect(returns[1]!.reason).toContain("no trial of it answered yes");
+    expect(build.seen.map((seen) => seen.briefId)).toEqual(["b-read"]);
+  });
+
+  it("does not start a brief whose predecessor ended done without a proposal", async () => {
+    const reset = (): AutomationStudioProjectResetPorts => ({
+      loop: {
+        tools: [{ toolId: "site.undo", description: "Undo one act", effect: "mutate", inputSchema: { type: "object" } }],
+        unusableDecisions: { maxConsecutive: 2, maxInARow: 2, stalled: () => new Error("the reset stalled") },
+        executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true }),
+        decide: async () => ({ kind: "complete", result: { summary: "nothing to undo" } })
+      },
+      remainingActs: async () => []
+    });
+    const undo = gardenBrief("b-undo", "list_seeds", [], (value) => Object.assign(value, { kind: "reset", parts: [], maxIterations: 3 }));
+    const build = await gardenBuild({ capacity: 2, briefs: [undo, plant()], ports: { reset } });
+    const { returns } = await build.run();
+    expect(returns[0]).toMatchObject({ briefId: "b-undo", outcome: "done" });
+    expect(returns[0]).not.toHaveProperty("proposal");
+    expect(returns[1]).toMatchObject({ briefId: "b-plant", outcome: "blocked", calls: 0 });
+    expect(returns[1]!.reason).toContain("Brief b-undo for subflow list_seeds, which this subflow starts after, ended done without a proposal of its subflow");
+    expect(build.seen).toEqual([]);
+  });
+
+  it("starts a dependent once its predecessor came back done with a passing trial", async () => {
+    const build = await gardenBuild({ capacity: 2, briefs: [read(), plant()] });
+    const { returns } = await build.run();
+    expect(returns.map((entry) => [entry.briefId, entry.outcome])).toEqual([["b-read", "done"], ["b-plant", "done"]]);
+    expect(build.events).toEqual(["start b-read", "end b-read", "start b-plant", "end b-plant"]);
+  });
+
+  it("does not start a brief whose predecessor is outside the dispatch and has never returned, naming it and why", async () => {
+    const build = await gardenBuild({ capacity: 2, briefs: [read(), plant()] });
+    // No brief of list_seeds has returned yet.
+    const first = await build.run([plant()]);
+    expect(first.returns[0]).toMatchObject({ briefId: "b-plant", outcome: "blocked", calls: 0, spentUsd: 0, trials: [] });
+    expect(first.returns[0]!.reason).toContain("Subflow list_seeds, which this subflow starts after, is not in this dispatch and has no proposal whose trial answered yes: no brief of it has returned in this build.");
+    expect(build.seen).toEqual([]);
+  });
+
+  it("holds back a dependent whose predecessor ended partial in an earlier dispatch", async () => {
+    const failing: BuilderScript = async (input) => {
+      const outcome = await doneOutcome(input);
+      return { ...outcome, trial: { ...outcome.trial!, verdict: "no" } };
+    };
+    const later = gardenBrief("b-plant-2", "plant_packet", ["list_seeds"]);
+    const build = await gardenBuild({ capacity: 2, briefs: [read(), later], scripts: { "b-read": failing } });
+    expect((await build.run([read()])).returns[0]).toMatchObject({ outcome: "partial" });
+    const { returns } = await build.run([later]);
+    expect(returns[0]).toMatchObject({ briefId: "b-plant-2", outcome: "blocked", calls: 0 });
+    expect(returns[0]!.reason).toContain("Subflow list_seeds, which this subflow starts after, is not in this dispatch");
+    expect(returns[0]!.reason).toContain("its latest brief, b-read, ended partial: its revision 1 stands, but no trial of it answered yes");
+    expect(build.seen.map((seen) => seen.briefId)).toEqual(["b-read"]);
+  });
+
+  it("starts a dependent whose predecessor passed in an earlier dispatch", async () => {
+    const later = gardenBrief("b-plant-2", "plant_packet", ["list_seeds"]);
+    const build = await gardenBuild({ capacity: 2, briefs: [read(), later] });
+    await build.run([read()]);
+    const { returns } = await build.run([later]);
+    expect(returns[0]).toMatchObject({ briefId: "b-plant-2", outcome: "done" });
+    expect(build.seen.map((seen) => seen.briefId)).toEqual(["b-read", "b-plant-2"]);
+  });
+
+  it("counts an earlier pass for a predecessor that a later brief of the same dispatch leaves partial", async () => {
+    const retry = gardenBrief("b-read-2", "list_seeds");
+    const later = gardenBrief("b-plant-2", "plant_packet", ["list_seeds"]);
+    const build = await gardenBuild({ capacity: 2, briefs: [read(), retry, later], scripts: { "b-read-2": async (input) => {
+      const outcome = await doneOutcome(input);
+      return { ...outcome, trial: { ...outcome.trial!, verdict: "no" } };
+    } } });
+    await build.run([read()]);
+    const { returns } = await build.run([retry, later]);
+    expect(returns.map((entry) => [entry.briefId, entry.outcome])).toEqual([["b-read-2", "partial"], ["b-plant-2", "done"]]);
+    expect(build.events.indexOf("start b-plant-2")).toBeGreaterThan(build.events.indexOf("end b-read-2"));
   });
 
   it("ends briefs that wait on each other at once instead of waiting forever", async () => {
