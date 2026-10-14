@@ -36,6 +36,16 @@
 //
 // With no port the tool says `subflow.trial_unavailable` and completion needs
 // only the latest valid proposal, which then stands untried.
+//
+// **A yes Core could not confirm is said as one (t601).** On A8 launch 8
+// (everything-store) every judge answered yes on twelve trials whose rows were
+// exactly right, Core held each yes for the exclusion evidence it lacked, and
+// the trial came back `not_judged` with "change and resubmit it if the
+// feedback names a cause": the builder read the hold as a cause and rewrote a
+// correct subflow seven times. A `not_judged` whose reason is that hold now
+// says the judges answered yes and Core could not confirm it, and not to
+// rewrite a subflow whose rows they accepted: test it again, or end the brief
+// partial once the retests run out. Any other `not_judged` is said as before.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import {
@@ -72,6 +82,18 @@ const INSTRUCTIONS: Readonly<Record<AutomationStudioCandidateTrialVerdict, strin
   not_judged: "The trial was not judged, so this revision cannot complete. Test it again, or change and resubmit it if the feedback names a cause in the subflow.",
   execution_failed: "The subflow did not run to its end, so this revision cannot complete. Read the feedback for the step that failed. If trying again may pass, test this same revision again; otherwise correct that step, submit the subflow, then test the new revision."
 });
+
+/**
+ * Said for a `not_judged` the judges answered yes to (header, t601). The
+ * reason Core's result verification gives when it holds a yes for missing
+ * exclusion evidence (`../../result-verification/agreement.ts`,
+ * `../../result-verification/verdict.ts`) is the only thing the trial's
+ * feedback carries of it, under `why`.
+ */
+const YES_UNCONFIRMED = /\bexclusion evidence\b/iu;
+const NOT_JUDGED_AFTER_YES = "The judges answered yes for this revision and none answered no, but Core could not confirm that yes (the feedback's why says what it lacked), so the trial counts as not judged and this revision cannot complete yet. "
+  + "The judges accepted the rows this subflow kept: do not rewrite it or change which rows it keeps. Test this same revision again; if its retests run out held the same way, "
+  + "end the brief: complete with {\"ended\": \"partial\", \"reason\": \"<the judges answered yes and Core could not confirm it>\"}.";
 
 /** Said instead when a predecessor did not run to its end: the target never started where it should. */
 const ENTRY_NOT_PREPARED = "A subflow that runs before this one did not run to its end, so this subflow did not start from its prepared entry and the verdict says nothing about it. Test this revision again; if it keeps failing there, complete with outcome blocked and say why.";
@@ -143,7 +165,7 @@ export class AutomationStudioSubflowTrialGate {
     const evidence: JsonObject = {
       ok: answer.verdict === "yes", partial: true, verdict: answer.verdict, subflowKey: answer.identity.subflowKey, revision: answer.revision, digest: answer.digest,
       entryPrepared: answer.entryPrepared, feedback: answer.feedback, promotionCredit: false,
-      instruction: answer.entryPrepared ? INSTRUCTIONS[answer.verdict] : ENTRY_NOT_PREPARED,
+      instruction: instructionFor(answer),
       ...(reset?.kind === "admit" && reset.startedWith ? { startedWith: reset.startedWith } : {}),
       ...(absorbed.length ? { absorbedByStartReset: absorbed } : {}),
       ...(leftOnSite?.length ? { leftOnSite: leftOnSite.map(namedAct) } : {})
@@ -163,7 +185,7 @@ export class AutomationStudioSubflowTrialGate {
     const closed = this.closedDigests.get(receipt.digest);
     if (closed) return refusal("subflow.trial_unchanged_after_no", "This exact proposal was judged no and has not changed. Change it, submit it, test the new revision, and complete only after a yes.", { previousFeedback: closed });
     if (!answer) return refusal("subflow.trial_required", `Test this proposal first: call ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} with revision ${receipt.revision} and digest ${receipt.digest}, and complete only after it answers yes for that revision and digest.`);
-    return refusal(`subflow.trial_${answer.verdict}`, answer.entryPrepared ? INSTRUCTIONS[answer.verdict] : ENTRY_NOT_PREPARED, { verdict: answer.verdict, entryPrepared: answer.entryPrepared, trialFeedback: answer.feedback });
+    return refusal(`subflow.trial_${answer.verdict}`, instructionFor(answer), { verdict: answer.verdict, entryPrepared: answer.entryPrepared, trialFeedback: answer.feedback });
   }
 
   /** The judge's feedback when a proposal with this digest was judged no; undefined otherwise. */
@@ -203,6 +225,13 @@ export class AutomationStudioSubflowTrialGate {
     if (Array.isArray(result.acts) && result.acts.length) kept.acts = structuredClone(result.acts);
     return kept;
   }
+}
+
+/** What a trial's answer tells the builder to do next (header). */
+function instructionFor(answer: AutomationStudioSubflowTrialResult): string {
+  if (!answer.entryPrepared) return ENTRY_NOT_PREPARED;
+  if (answer.verdict === "not_judged" && typeof answer.feedback.why === "string" && YES_UNCONFIRMED.test(answer.feedback.why)) return NOT_JUDGED_AFTER_YES;
+  return INSTRUCTIONS[answer.verdict];
 }
 
 function key(receipt: { revision: number; digest: string }): string { return `${receipt.revision}\n${receipt.digest}`; }

@@ -73,6 +73,18 @@
 // the subflow starts was done by a subflow before it, and that the brief then
 // ends blocked saying which; and since such a builder has nothing to submit,
 // `ended: "blocked"` is taken from it before anything was submitted or tried.
+//
+// **A passing receipt is the brief done, whatever else it carries (t601).** On
+// A8 launch 8 a builder whose trial answered yes completed four times with its
+// receipt plus `ended: "partial"`, which the completion schema allows beside
+// it; every completion with a key a receipt lacks went to the ending check,
+// which refused it as `subflow.ending_shape` and named only the ending's
+// shape, and the repeat guard ended the brief partial with a yes standing. A
+// completion that names the latest proposal's subflowKey, revision and digest
+// is now read by what Core holds for that proposal: with a yes standing for it
+// it is the receipt, and its `ended` and `reason` are set aside; with none it
+// is the honest ending it also carries. Anything else is refused with the one
+// shape to send: the exact receipt where a yes stands, the ending otherwise.
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceCompletionCheck, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
 import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT } from "../plan/index.ts";
@@ -110,6 +122,7 @@ const ENDING_TOO_SOON = "subflow.ending_too_soon";
 const ENDING_AFTER_YES = "subflow.ending_after_yes";
 const ENDING_OUTCOMES: ReadonlySet<unknown> = new Set(["blocked", "partial"]);
 const RECEIPT_KEYS: ReadonlySet<string> = new Set(["subflowKey", "revision", "digest"]);
+const ENDING_KEYS: ReadonlySet<string> = new Set(["ended", "reason"]);
 const MAX_ENDING_REASON = 2000;
 
 /** How a builder may end its brief without a passing proposal, as its tools and refusals say it (header). */
@@ -224,25 +237,49 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
     }
     return gate.completion({ revision: proposal.revision, digest: proposal.digest });
   };
+  // The latest proposal when a yes stands for it, its entry prepared; undefined otherwise.
+  const passed = (): AutomationStudioSubflowProposal | undefined => {
+    const proposal = controller.latest();
+    const standing = gate.standing(proposal);
+    return proposal && standing?.verdict === "yes" && standing.entryPrepared ? proposal : undefined;
+  };
+  // The one shape to send, by what stands (header, t601): the exact receipt where a yes stands for the latest proposal, the honest ending otherwise.
+  const shapeRefused = (): AutomationStudioLlmEvidenceCompletionCheck => {
+    const proposal = passed();
+    if (proposal) return endingRefused(ENDING_SHAPE, `Revision ${proposal.revision} of this subflow passed its trial, so the brief is done: complete with exactly {"subflowKey": ${JSON.stringify(subflowKey)}, "revision": ${proposal.revision}, "digest": "${proposal.digest}"} and nothing else.`);
+    return endingRefused(ENDING_SHAPE, "No trial answered yes for the latest proposal of this subflow, so this completion can only end the brief: send exactly {\"ended\": \"blocked\", \"reason\": \"<why, in a sentence>\"}, or \"partial\" in place of \"blocked\" while a proposal stands, and nothing else. "
+      + `The receipt -- exactly subflowKey, revision and digest -- is sent only once ${gate.available ? `${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} has answered yes for that revision` : "a proposal stands"}.`);
+  };
   // An honest ending (header): its shape, then only once something was tried and while no yes stands for the latest proposal.
   const endingCheck = (result: JsonObject): AutomationStudioLlmEvidenceCompletionCheck => {
     const reason = typeof result.reason === "string" ? result.reason.trim() : "";
-    if (!ENDING_OUTCOMES.has(result.ended) || !reason || Object.keys(result).some((key) => key !== "ended" && key !== "reason")) {
-      return endingRefused(ENDING_SHAPE, "An honest ending is exactly {\"ended\": \"blocked\", \"reason\": \"<why, in a sentence>\"}, or \"partial\" in place of \"blocked\" while a proposal stands, and nothing else.");
-    }
+    if (!ENDING_OUTCOMES.has(result.ended) || !reason || Object.keys(result).some((key) => !ENDING_KEYS.has(key))) return shapeRefused();
     // A dependent builder may find its part already done at its entry, with nothing to submit (header, t594).
     if (!tried && !(result.ended === "blocked" && input.scope.predecessors.length)) return endingRefused(ENDING_TOO_SOON, `Nothing of this brief has been submitted or tried yet, so there is nothing to end on. Submit the subflow with ${AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID}${gate.available ? ` and test it with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}` : ""} first.`);
-    const proposal = controller.latest();
-    const standing = gate.standing(proposal);
-    if (proposal && standing?.verdict === "yes" && standing.entryPrepared) {
+    const proposal = passed();
+    if (proposal) {
       return endingRefused(ENDING_AFTER_YES, `Revision ${proposal.revision} of this subflow passed its trial, so the brief is done: complete with exactly {"subflowKey": ${JSON.stringify(subflowKey)}, "revision": ${proposal.revision}, "digest": "${proposal.digest}"}.`);
     }
     ended = { outcome: result.ended as "blocked" | "partial", reason: reason.slice(0, MAX_ENDING_REASON) };
     return { ok: true };
   };
+  // A receipt beside an ending (header, t601): read by what Core holds for the proposal it names, never refused for carrying both.
+  const mixedCheck = (result: JsonObject): AutomationStudioLlmEvidenceCompletionCheck => {
+    const proposal = controller.latest();
+    const namesLatest = proposal !== undefined && result.subflowKey === subflowKey && typeof result.revision === "number" && typeof result.digest === "string" && controller.matches({ revision: result.revision, digest: result.digest });
+    if (!namesLatest) return shapeRefused();
+    if (passed()) return gate.completion({ revision: proposal.revision, digest: proposal.digest });
+    return endingCheck(Object.fromEntries(Object.entries(result).filter(([key]) => ENDING_KEYS.has(key))) as JsonObject);
+  };
+  const completionCheck = (result: JsonObject): AutomationStudioLlmEvidenceCompletionCheck => {
+    const keys = Object.keys(result);
+    if (keys.some((key) => !RECEIPT_KEYS.has(key) && !ENDING_KEYS.has(key))) return shapeRefused();
+    const receipt = keys.some((key) => RECEIPT_KEYS.has(key));
+    const ending = keys.some((key) => ENDING_KEYS.has(key));
+    return receipt && ending ? mixedCheck(result) : ending ? endingCheck(result) : receiptCheck(result);
+  };
   const checkCompletion: NonNullable<AutomationStudioLlmEvidenceLoopInput["checkCompletion"]> = async (result) => {
-    // Any key a receipt does not have makes it an ending, however written: the trial gate's own words say "complete with outcome blocked".
-    const check = await (Object.keys(result).some((key) => !RECEIPT_KEYS.has(key)) ? endingCheck(result) : receiptCheck(result));
+    const check = completionCheck(result);
     // A refusal sent again is said in a builder's terms (header).
     return check.ok || !check.feedback ? check : { ...check, feedback: { ...check.feedback, [AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY]: BUILDER_SENT_AGAIN } };
   };
@@ -252,8 +289,8 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
     budget: { ...(input.loop.budget ?? {}), countCalls: { keptForFinishing: AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS } },
     finishingTools: { submit: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, test: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID },
     tools: [...automationStudioSubflowBuilderTools(input.loop.tools), submitTool, gate.tool],
-    // The receipt of the latest proposal, or an honest ending (header).
-    completionSchema: { type: "object", properties: { subflowKey: { type: "string", const: subflowKey }, revision: { type: "integer" }, digest: { type: "string" }, ended: { type: "string", enum: ["blocked", "partial"] }, reason: { type: "string" } }, additionalProperties: false },
+    // The receipt of the latest proposal, or an honest ending (header): either whole, and a passing receipt stands whatever else it carries (t601).
+    completionSchema: completionSchema(subflowKey),
     executeTool: async (call) => {
       if (call.toolId === AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID) {
         const answered = await gate.test(call.value, call.signal);
@@ -288,6 +325,22 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   const loop = await runAutomationStudioLlmEvidenceLoop({ ...(input.observe ? input.observe(discovery) : discovery), checkCompletion });
   const proposal = controller.latest();
   return { loop, proposal, trial: gate.standing(proposal), ...(loop.ok && ended ? { ended } : {}), ...(lastTrial ? { lastTrial } : {}), promotionAllowed: false };
+}
+
+/**
+ * A builder's completion (header, t601): one object holding the receipt or the
+ * honest ending whole, as `checkCompletion` reads it, so the schema and the
+ * check agree that a receipt beside an ending is read by what stands for the
+ * proposal it names.
+ */
+function completionSchema(subflowKey: string): JsonObject {
+  return {
+    type: "object",
+    description: "Either the receipt of the latest proposal once its trial answered yes -- exactly subflowKey, revision and digest -- or an honest ending -- exactly ended and reason. A receipt whose trial answered yes is taken as the brief done whatever else it carries.",
+    properties: { subflowKey: { type: "string", const: subflowKey }, revision: { type: "integer" }, digest: { type: "string" }, ended: { type: "string", enum: ["blocked", "partial"] }, reason: { type: "string" } },
+    anyOf: [{ required: ["subflowKey", "revision", "digest"] }, { required: ["ended", "reason"] }],
+    additionalProperties: false
+  };
 }
 
 /** What a builder is told when the same refusal of its completion comes again (header). */

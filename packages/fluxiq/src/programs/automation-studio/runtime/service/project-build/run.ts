@@ -6,7 +6,8 @@ import {
   flowBootstrapEvidenceUnusableDecisionFailure,
   flowBootstrapPhaseFailure
 } from "../../flow-bootstrap/index.ts";
-import type { AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
+import type { AutomationStudioCandidateTrialResult, AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS } from "../../loop-limits/index.ts";
 import {
   automationStudioProjectActiveInstructionSources,
   automationStudioProjectDigest,
@@ -94,6 +95,17 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // `flow_bootstrap.post_provider_validation_failed` with the issue codes
 // `project.build_time_limit` and `project.build_<outcome>`, and the person is
 // told the recorded ending as for any other.
+//
+// **The time limit is said as the time limit (t601).** Everything-store
+// `run-mv8id5vg` was stopped by it, and its chat row read "The supervisor ended
+// the build: it could not finish the Flow", although the limit ended it and a
+// version of its part had been tested twelve times. A build its time limit
+// stopped says so in Core's words, with what was tested -- how many of the
+// latest plan's subflows passed their own trial, and for each one left how
+// often it was tried and what its last trial answered -- and that no whole
+// Flow was assembled to test, before Core's note of what is left on the target.
+// The trials are counted as the subflow trial port reports them to the build's
+// proposals.
 
 type DraftInput = Parameters<typeof generateAutomationStudioFlowCandidateDraft>[0];
 type DraftResult = { record: AutomationStudioFlowCandidateDraftRecord; trial: AutomationStudioCandidateTrialResult | undefined };
@@ -115,6 +127,14 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   const proposals: AutomationStudioProjectBuildProposals & AutomationStudioProjectBuildKeptProposals = Object.assign(new AutomationStudioProjectBuildProposals(), {
     keptUnder: (subflowKey: string, madeUnder: string, planDigest: string) => kept?.planDigest === planDigest && kept.madeUnder.get(subflowKey) === madeUnder
   });
+  // Each subflow's trials, by its key, as the subflow trial port reports them: what a time limit's words say was tested (header, t601).
+  const trials = new Map<string, Tried>();
+  const trialled = proposals.trialled.bind(proposals);
+  proposals.trialled = (scope, proposal, verdict) => {
+    trialled(scope, proposal, verdict);
+    const seen = trials.get(scope.subflowKey);
+    trials.set(scope.subflowKey, { count: (seen?.count ?? 0) + 1, last: verdict, passed: seen?.passed === true || verdict === "yes" });
+  };
   const { binding } = project;
   let running = true;
   const judge = { provider: draft.harness.provider, timeoutMs: draft.harness.timeoutMs, signal: draft.loop.signal };
@@ -180,7 +200,8 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
     const failure = outcome.loop && !outcome.loop.ok && !outcome.timedOut
       ? draft.ending(outcome.loop, spent) ?? flowBootstrapEvidenceLoopFailure(outcome.loop, spent)
       : new AutomationStudioFlowBootstrapGenerationError({ ...flowBootstrapPhaseFailure("post_provider_validation", spent, "flow_bootstrap.post_provider_validation_failed").diagnostic, issueCodes: [...(outcome.timedOut ? ["project.build_time_limit"] : []), `project.build_${outcome.ending?.outcome ?? "blocked"}`] });
-    throw toldEnding(failure, outcome.ending, left);
+    const timedOut = outcome.timedOut ? timeLimitWords(Object.keys((await records.read(ref))?.record.plans.at(-1)?.plan.partOf ?? {}), trials) : undefined;
+    throw toldEnding(failure, outcome.ending, left, timedOut);
   }
   const current = await draft.currentBinding();
   if (current.executionDigest !== candidate.baseDependencyDigest || current.settingsRevision !== draft.baseSettingsRevision) throw new Error("FLOW_BOOTSTRAP_STALE: Flow or settings changed during candidate generation.");
@@ -204,20 +225,67 @@ const ENDED_WORDS = Object.freeze({
 });
 const NOTHING_LEFT = "Nothing this build did is still on the target.";
 
+/** One subflow's trials: how many ran, what the last answered, and whether any answered yes. */
+type Tried = { count: number; last: AutomationStudioCandidateTrialVerdict; passed: boolean };
+
+/** A subflow's last trial, in words that finish "whose last test ...". */
+const LAST_TRIAL_WORDS: Readonly<Record<AutomationStudioCandidateTrialVerdict, string>> = Object.freeze({
+  yes: "passed",
+  no: "was judged not to do what was asked",
+  unsure: "could not be confirmed",
+  not_judged: "could not be confirmed",
+  execution_failed: "did not run to its end"
+});
+
+/**
+ * What a build its time limit stopped says (header, t601): the limit, then
+ * what was tested of the latest plan's subflows and what is left, in Core's
+ * words alone -- counts and verdicts, never a subflow's name or the model's
+ * reason.
+ */
+function timeLimitWords(subflows: readonly string[], trials: ReadonlyMap<string, Tried>): { title: string; tested: string } {
+  const title = `The build reached its time limit of ${spoken(AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS)} before a whole test of the Flow passed.`;
+  if (!subflows.length) return { title, tested: "No plan of its parts was written, so nothing was tested." };
+  const passed = subflows.filter((key) => trials.get(key)?.passed === true).length;
+  const opening = subflows.length === 1
+    ? `Its one part ${passed ? "passed" : "did not pass"} its own test.`
+    : passed === 0 ? `None of its ${subflows.length} parts passed its own test.` : `Of its ${subflows.length} parts, ${passed} passed ${passed === 1 ? "its" : "their"} own test.`;
+  const left = subflows.filter((key) => trials.get(key)?.passed !== true).map((key) => {
+    const tried = trials.get(key);
+    if (!tried) return "a part never tested";
+    return `a part tested ${tried.count === 1 ? "once" : `${tried.count} times`} whose last test ${LAST_TRIAL_WORDS[tried.last]}`;
+  });
+  const rest = left.length ? ` Left: ${joinedList(left)}.` : "";
+  return { title, tested: `${opening}${rest} The whole Flow was not assembled, so it was never tested as one.` };
+}
+
+function joinedList(items: readonly string[]): string {
+  return items.length <= 1 ? items[0] ?? "" : `${items.slice(0, -1).join("; ")}; and ${items[items.length - 1]}`;
+}
+
+/** A time limit in words: whole minutes where it is some, else seconds (as the supervisor's recorded ending says it). */
+function spoken(ms: number): string {
+  if (ms >= 60_000 && ms % 60_000 === 0) return `${ms / 60_000} minutes`;
+  const seconds = Math.max(1, Math.round(ms / 1_000));
+  return seconds === 1 ? "1 second" : `${seconds} seconds`;
+}
+
 /**
  * What the person is told of the supervisor's recorded ending beside
  * `failure` (header): its code and diagnostic stay; a failure with an ending of
  * its own has Core's note of what is left after its message, and any other is
  * shown the ending's kind and that note as a chat row before it is thrown.
  */
-function toldEnding(failure: Error, recorded: AutomationStudioProjectBuildEnding | undefined, left: { note: string | undefined } | undefined): Error {
+function toldEnding(failure: Error, recorded: AutomationStudioProjectBuildEnding | undefined, left: { note: string | undefined } | undefined, timedOut?: { title: string; tested: string }): Error {
   if (!recorded || (recorded.outcome !== "partial" && recorded.outcome !== "blocked") || !(failure instanceof AutomationStudioFlowBootstrapGenerationError)) return failure;
   const { diagnostic } = failure;
   if (PERSON_CODES.has(diagnostic.code)) return failure;
   const note = left?.note;
   if (diagnostic.ending) return note ? new AutomationStudioFlowBootstrapGenerationError({ ...diagnostic, ending: { ...diagnostic.ending, message: fitted(diagnostic.ending.message, note) } }) : failure;
-  const title = ENDED_WORDS[recorded.outcome];
-  emitAutomationStudioActivity({ phase: "building", label: title, detail: { kind: "note", title, text: note ?? NOTHING_LEFT, status: "failed" } });
+  // The time limit is said as the time limit, with what was tested and is left (header, t601).
+  const title = timedOut?.title ?? ENDED_WORDS[recorded.outcome];
+  const text = timedOut ? `${timedOut.tested} ${note ?? NOTHING_LEFT}` : note ?? NOTHING_LEFT;
+  emitAutomationStudioActivity({ phase: "building", label: title, detail: { kind: "note", title, text, status: "failed" } });
   return failure;
 }
 

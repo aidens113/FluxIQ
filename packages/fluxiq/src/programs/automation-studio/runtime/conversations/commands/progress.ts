@@ -192,8 +192,27 @@ const SUPERVISOR_ENDING_WORDS: Readonly<Record<string, string>> = Object.freeze(
   "project.build_blocked": "the supervisor ended it because it could not finish the Flow"
 });
 
+/**
+ * A project build its time limit stopped (`service/project-build/run.ts`), in
+ * words that finish "failed: ...", ahead of the supervisor's: the limit ended
+ * it, not the supervisor. Everything-store `run-mv8id5vg` was stopped by its
+ * time limit, carried `project.build_time_limit` beside `project.build_blocked`,
+ * and the person read "the supervisor ended it because it could not finish the
+ * Flow" (t601). What was tested and what is left is the build's own chat row
+ * beside it, which knows its trials; these words know only the codes.
+ */
+const TIME_LIMIT = "project.build_time_limit";
+const TIME_LIMIT_WORDS: Readonly<Record<string, string>> = Object.freeze({
+  "project.build_partial": "it reached its time limit before a whole test of the Flow passed, with only part of the Flow built",
+  "project.build_blocked": "it reached its time limit before a whole test of the Flow passed"
+});
+
 function supervisorEndingWords(diagnostic: Diagnostic | undefined): string | undefined {
   const codes = Array.isArray(diagnostic?.issueCodes) ? diagnostic.issueCodes : [];
+  if (codes.includes(TIME_LIMIT)) {
+    const outcome = codes.find((entry): entry is string => typeof entry === "string" && Object.hasOwn(TIME_LIMIT_WORDS, entry));
+    return outcome ? TIME_LIMIT_WORDS[outcome] : "it reached its time limit before a whole test of the Flow passed";
+  }
   const code = codes.find((entry): entry is string => typeof entry === "string" && Object.hasOwn(SUPERVISOR_ENDING_WORDS, entry));
   return code ? SUPERVISOR_ENDING_WORDS[code] : undefined;
 }

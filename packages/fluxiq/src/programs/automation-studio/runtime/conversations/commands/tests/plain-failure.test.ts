@@ -68,6 +68,19 @@ describe("a failed build's stored answer", () => {
       .toBe("the build failed: what the model wrote could not be used");
   });
 
+  // Everything-store `run-mv8id5vg` (t601): its time limit stopped it, and the person read that the supervisor ended it.
+  it("says a project build its time limit stopped as the time limit, ahead of the supervisor's ending", () => {
+    const timed = (codes: string[]) => automationStudioConversationCallCause("the build", {
+      ok: false,
+      error: "Flow Bootstrap generation failed (flow_bootstrap.post_provider_validation_failed).",
+      payload: { diagnostic: { code: "flow_bootstrap.post_provider_validation_failed", stage: "post_provider_validation", issueCodes: codes } }
+    });
+    expect(timed(["project.build_time_limit", "project.build_blocked"])).toBe("the build failed: it reached its time limit before a whole test of the Flow passed");
+    expect(timed(["project.build_time_limit", "project.build_partial"])).toBe("the build failed: it reached its time limit before a whole test of the Flow passed, with only part of the Flow built");
+    expect(timed(["project.build_time_limit"])).toBe("the build failed: it reached its time limit before a whole test of the Flow passed");
+    expect(timed(["project.build_time_limit", "project.build_blocked"])).not.toContain("supervisor");
+  });
+
   it("says a code with no words of its own by its stage, and one with neither as something that went wrong", () => {
     expect(automationStudioConversationCallCause("the build", { ok: false, error: "Flow Bootstrap generation failed (flow_bootstrap.bootstrap_context_failed).", payload: { diagnostic: { code: "flow_bootstrap.bootstrap_context_failed", stage: "pre_provider_validation" } } }))
       .toBe("the build failed: FluxIQ could not set the build up");
