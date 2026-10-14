@@ -200,7 +200,11 @@ proposal, so two briefs never collide at assembly.
 subflowKey, parts[], interface, entry: { caseId, predecessors[] },
 allowanceUsd, maxIterations, permittedActs[], recordingExcerpt?,
 failingReceipt? (repair) }`. At most what the builder needs; never the
-supervisor's handles (packets may be gone).
+supervisor's handles (packets may be gone). `permittedActs` is Core's, not the
+supervisor's (t570): every lasting act the task spec asks for when any of the
+brief's parts acts, none when its parts only read (t575,
+`project-agents/contracts/asked-acts.ts`), so a builder's own reading of its
+press's class need not agree with the label the supervisor filed.
 
 **Builder return** — `{ briefId, outcome: done|partial|blocked, reason,
 proposal?: { subflowKey, revision, digest }, trials: receiptRef[],

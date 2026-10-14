@@ -1,5 +1,6 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import {
+  automationStudioProjectAskedActs,
   automationStudioProjectSubflowBrief,
   type AutomationStudioProjectStructurePlan,
   type AutomationStudioProjectSubflowBrief,
@@ -90,11 +91,10 @@ export function automationStudioProjectSupervisorBriefInput(input: {
   return { ok: true, briefs, reason: reason.slice(0, 2000) };
 }
 
-/** Every lasting act the named parts ask for, once each, in the task spec's order; none when the parts are not a list. */
+/** What a brief over the named parts may permit (`automationStudioProjectAskedActs`); none when the parts are not a list. */
 function askedActs(taskSpec: AutomationStudioProjectTaskSpec, parts: JsonValue | undefined): string[] {
   if (!Array.isArray(parts)) return [];
-  const named = new Set(parts.filter((part): part is string => typeof part === "string"));
-  return [...new Set(taskSpec.parts.filter((part) => named.has(part.id)).flatMap((part) => part.lastingActs))];
+  return automationStudioProjectAskedActs(taskSpec, parts.filter((part): part is string => typeof part === "string"));
 }
 
 /** The entry as sent, with the observed current page and the plan's `after` filled in where left out; anything else is left for the brief's reader to refuse. */
