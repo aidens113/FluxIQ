@@ -587,6 +587,14 @@ Earlier entries are in [the ledger archive](./automation-project-agents-plan/arc
 - Outcome: Accepted. t597 (switch on t594's lasting-act check; endings name possibly lasting presses) is in flight; launch 8 follows it
 - Follow-up: the build record cannot hold possibly lasting acts (its parser refuses an act with no class); router rules that read page state choose before the arrival runs; `site-reset/ledger.ts` at 441 lines (advisory)
 
+### 2026-10-14 — The lasting-act check runs in project builds (t597)
+- Agent: worker t597-lasting-acts-live; supervisor verified and integrated
+- Changed: `project-agents/dispatch/scope.ts` carries each part's `lastingActs`, so `subflow.lasting_act_missing` (t594) runs on the real dispatch path; nine project-build fixtures' stub scripts declare their acts as a real script must; with no start hook, an ending adds "Possibly still on the target, though nothing checked" for possibly lasting presses
+- Why: t594's check was dormant; crossborder's ending said nothing was left when a press probably was
+- Validation: after merging dev: `npx tsc --noEmit -p tsconfig.json` -> exit 0; project-build, project-agents, subflow-candidate, subflow-trial, site-reset -> 60 files, 449 passed; audit passed; Core finish `pnpm check` -> passed; merged `9b4c5a38`. The new end-to-end test fails with the scope line removed
+- Outcome: Accepted. A8 launch 8 runs on this pair
+- Follow-up: on a site with no start hook a trial's act is recorded with no item, so it cannot be undone (t598, in flight, merged after launch 8)
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
