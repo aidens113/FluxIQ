@@ -99,11 +99,25 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_WRAP_UP_DECISIONS = 3;
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS = 5;
 
 /**
+ * The two tools a discovery-only loop finishes with: the one that submits its
+ * result and the one that tries it. A loop names its own (`finishingTools`, a
+ * subflow builder's `core.submit_subflow` and `core.test_subflow`; t537), and
+ * the wrap-up keeps exactly those running and names them in its words.
+ */
+export type AutomationStudioLlmEvidenceFinishingTools = { submit: string; test: string };
+
+/**
  * The tools that finish a candidate (`../flow-bootstrap/candidate/authoring-loop.ts`
  * and `trial-gate.ts` beside it), named as plain strings so this module does
- * not reach into the candidate loop.
+ * not reach into the candidate loop: every loop's finishing tools unless it names its own.
  */
-export const CANDIDATE_FINISHING_TOOL_IDS: ReadonlySet<string> = new Set(["core.submit_candidate", "core.test_candidate"]);
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_CANDIDATE_FINISHING_TOOLS: Readonly<AutomationStudioLlmEvidenceFinishingTools> = Object.freeze({ submit: "core.submit_candidate", test: "core.test_candidate" });
+export const CANDIDATE_FINISHING_TOOL_IDS: ReadonlySet<string> = automationStudioLlmEvidenceFinishingToolIds();
+
+/** The ids of a loop's finishing tools, the candidate's when it names none. */
+export function automationStudioLlmEvidenceFinishingToolIds(tools: AutomationStudioLlmEvidenceFinishingTools = AUTOMATION_STUDIO_LLM_EVIDENCE_CANDIDATE_FINISHING_TOOLS): ReadonlySet<string> {
+  return new Set([tools.submit, tools.test]);
+}
 
 /** The bounds a loop is given, each optional. */
 export type AutomationStudioLlmEvidenceLoopBudget = {
@@ -177,8 +191,12 @@ const BUDGET_INSTRUCTION = "What this exploration has left, this decision includ
 const FINAL_INSTRUCTION = "This is your last decision, so only complete is offered: write the result now from the evidence you have.";
 const WRAP_UP_INSTRUCTION = "Only a few decisions are left, so new tools are no longer offered: complete now from the draft you have. If completing is refused, amend the draft as the refusal says and complete again.";
 const CANDIDATE_BUDGET_INSTRUCTION = `What this exploration has left, this decision included. Plan to finish while it is enough: submit the whole candidate, test that revision, and complete once its trial answers yes. From ${AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS} decisions left only those run, and running out ends the exploration without a result.`;
-const CANDIDATE_FINAL_INSTRUCTION = "The budget counts one decision left; submitting, testing and completing are still offered while the budget permits. If the latest submission is untested, test its exact revision and digest now with core.test_candidate. Complete only after that exact revision's trial answers yes, or no trial runner is available. Never complete an untested revision when a trial runner is available.";
-const CANDIDATE_WRAP_UP_INSTRUCTION = "Only a few decisions are left, so only core.submit_candidate, core.test_candidate and completing run now: every other tool is still listed, but a call to one is answered without running and spends a decision. If your latest Flow is not submitted, submit the whole candidate now with core.submit_candidate; test that exact revision with core.test_candidate; complete with its revision and digest once the trial answers yes. If a submission or a trial is refused, correct what it names, submit again and test the new revision.";
+function candidateFinalInstruction(tools: AutomationStudioLlmEvidenceFinishingTools): string {
+  return `The budget counts one decision left; submitting, testing and completing are still offered while the budget permits. If the latest submission is untested, test its exact revision and digest now with ${tools.test}. Complete only after that exact revision's trial answers yes, or no trial runner is available. Never complete an untested revision when a trial runner is available.`;
+}
+function candidateWrapUpInstruction(tools: AutomationStudioLlmEvidenceFinishingTools): string {
+  return `Only a few decisions are left, so only ${tools.submit}, ${tools.test} and completing run now: every other tool is still listed, but a call to one is answered without running and spends a decision. If your latest Flow is not submitted, submit the whole candidate now with ${tools.submit}; test that exact revision with ${tools.test}; complete with its revision and digest once the trial answers yes. If a submission or a trial is refused, correct what it names, submit again and test the new revision.`;
+}
 
 /** Decisions left from which the loop wraps up: a candidate's wrap-up starts earlier, since it has a submission and a trial to make before it completes. */
 function wrapUpDecisions(candidate: boolean): number {
@@ -200,11 +218,13 @@ export function automationStudioLlmEvidenceLoopWrapUp<Tool extends { toolId: str
   canComplete: boolean;
   candidate: boolean;
   tools: readonly Tool[];
+  /** The candidate loop's finishing tools, which its wrap-up keeps running; the candidate's own when absent. */
+  finishing?: AutomationStudioLlmEvidenceFinishingTools | undefined;
 }): { wrappingUp: boolean; offered: Tool[]; withholds: (toolId: string) => boolean } {
   const left = input.remaining ? input.remaining.decisionsLeft : undefined;
   const wrappingUp = left !== undefined && left <= wrapUpDecisions(input.candidate) && input.canComplete;
   const offered = !wrappingUp || input.candidate ? [...input.tools] : [];
-  const runs: ReadonlySet<string> = input.candidate ? CANDIDATE_FINISHING_TOOL_IDS : new Set();
+  const runs: ReadonlySet<string> = input.candidate ? automationStudioLlmEvidenceFinishingToolIds(input.finishing) : new Set();
   return { wrappingUp, offered, withholds: (toolId) => wrappingUp && !runs.has(toolId) };
 }
 
@@ -262,12 +282,14 @@ export function automationStudioLlmEvidenceBudgetEntry(
   /** Whether the loop is withholding new tools this decision; absent, read from what is left. */
   wrappingUp?: boolean,
   /** Whether the loop authors a candidate (`discoveryOnly`), which finishes by submitting, testing and completing. */
-  candidate = false
+  candidate = false,
+  /** The candidate loop's finishing tools, named in its words; the candidate's own when absent. */
+  finishing: AutomationStudioLlmEvidenceFinishingTools = AUTOMATION_STUDIO_LLM_EVIDENCE_CANDIDATE_FINISHING_TOOLS
 ): { callId: string; toolId: string; value: JsonObject } {
   const { limitedBy: _limitedBy, ...shown } = remaining;
   const wrapping = wrappingUp ?? remaining.decisionsLeft <= wrapUpDecisions(candidate);
   const instruction = candidate
-    ? remaining.decisionsLeft <= 1 ? CANDIDATE_FINAL_INSTRUCTION : wrapping ? CANDIDATE_WRAP_UP_INSTRUCTION : CANDIDATE_BUDGET_INSTRUCTION
+    ? remaining.decisionsLeft <= 1 ? candidateFinalInstruction(finishing) : wrapping ? candidateWrapUpInstruction(finishing) : CANDIDATE_BUDGET_INSTRUCTION
     : remaining.decisionsLeft <= 1 ? FINAL_INSTRUCTION : wrapping ? WRAP_UP_INSTRUCTION : BUDGET_INSTRUCTION;
   return {
     callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID}.${iteration}`,

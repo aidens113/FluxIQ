@@ -71,6 +71,8 @@ export type AutomationStudioLlmEvidenceStallRedirectInput = {
   /** Candidate discovery owns a submitted receipt, never the legacy accumulated draft. */
   discoveryOnly?: boolean;
   candidate?: { revision: number; digest: string } | undefined;
+  /** A discovery-only loop's own submit and test tools, which its words name; the candidate's when absent (t537). */
+  finishing?: { submit: string; test: string } | undefined;
   stepsWithoutProgress: number;
   maxStepsWithoutProgress: number;
   /** The tools whose latest answers gave the loop nothing it did not hold. */
@@ -219,7 +221,7 @@ function untriedRoutes(owed: readonly string[], stillMissing: "record_producer" 
 function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, stepsLeft: number, refused: boolean, stillMissing: "record_producer" | undefined): string {
   if (input.discoveryOnly) {
     const next = input.candidate
-      ? `The latest accepted candidate has receipt ${JSON.stringify(input.candidate)}. Use core.test_candidate with that exact revision and digest if its trial has not answered yes. Complete only after yes for that exact receipt; change and resubmit only when its feedback names a cause in the Flow.`
+      ? `The latest accepted candidate has receipt ${JSON.stringify(input.candidate)}. Use ${input.finishing?.test ?? "core.test_candidate"} with that exact revision and digest if its trial has not answered yes. Complete only after yes for that exact receipt; change and resubmit only when its feedback names a cause in the Flow.`
       : candidateCovered(input, stillMissing)
         ? "No candidate has been accepted. Use the evidence already gathered, correct any named submission issues and submit the whole candidate, then test its returned revision and digest. Do not complete an untested candidate."
         : untriedRoutes(actsMissing(input), stillMissing);

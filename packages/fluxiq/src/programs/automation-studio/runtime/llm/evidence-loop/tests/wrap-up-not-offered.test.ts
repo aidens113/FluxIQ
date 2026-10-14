@@ -8,6 +8,7 @@
 // keep for finishing (found by t173-B, `t173-b-core-tests.md`).
 import { describe, expect, it, vi } from "vitest";
 import { runAutomationStudioLlmEvidenceLoop } from "../../evidence-loop.ts";
+import { automationStudioLlmEvidenceAnsweredRequestNote } from "../answered-request.ts";
 
 const tools = [{ toolId: "inspect", description: "Collect bounded evidence.", inputSchema: { type: "object" } }];
 type Shown = { toolId: string; value: Record<string, unknown> };
@@ -131,5 +132,28 @@ describe("a candidate tool offered in the final counted slot", () => {
     expect(result.trace.some((row) => row.resultCode === "llm_evidence_loop.not_offered")).toBe(false);
     expect(result.trace.at(-1)).toMatchObject({ iteration: 2, decision: "tool_call", toolId: "core.test_candidate", resultCode: "llm_evidence_loop.duration_limit" });
     expect(result.accounting.iterations).toBe(2);
+  });
+});
+
+// The note a discovery-only loop's withheld call is answered with names that
+// loop's own finishing tools (t537): a subflow builder submits and tests with
+// its own, and a loop that names none keeps the candidate's words.
+const note = (finishing?: { submit: string; test: string }) => String(automationStudioLlmEvidenceAnsweredRequestNote({
+  code: "llm_evidence_loop.not_offered", toolId: "inspect", answeredByCallId: "call.1", stepsWithoutProgress: 1, maxStepsWithoutProgress: 8,
+  discoveryOnly: true, candidate: { revision: 2, digest: "d".repeat(64) }, ...(finishing ? { finishing } : {})
+}).instruction);
+
+describe("the answered-request note of a discovery-only loop", () => {
+  it("names the loop's own finishing tools", () => {
+    const said = note({ submit: "core.submit_subflow", test: "core.test_subflow" });
+    expect(said).toContain("only core.submit_subflow, core.test_subflow and completing run now");
+    expect(said).toContain("Use core.test_subflow with that exact revision");
+    expect(said).not.toContain("core.submit_candidate");
+  });
+
+  it("names the candidate's when the loop names none", () => {
+    const said = note();
+    expect(said).toContain("only core.submit_candidate, core.test_candidate and completing run now");
+    expect(said).toContain("Use core.test_candidate with that exact revision");
   });
 });

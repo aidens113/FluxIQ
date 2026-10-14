@@ -56,7 +56,7 @@ import {
   automationStudioLlmEvidenceRedirectFacts,
   automationStudioLlmEvidenceLoopFailure as failure,
   automationStudioLlmEvidenceNoProgress, automationStudioLlmEvidenceRefusalRun,
-  automationStudioLlmEvidenceUnusedCallId, automationStudioLlmEvidenceLoopProgressTrace, automationStudioLlmEvidenceFinalDecisionRow, automationStudioLlmEvidenceLoopPurse,
+  automationStudioLlmEvidenceUnusedCallId, automationStudioLlmEvidenceOpeningCallId, automationStudioLlmEvidenceLoopProgressTrace, automationStudioLlmEvidenceFinalDecisionRow, automationStudioLlmEvidenceLoopPurse,
   type AutomationStudioLlmEvidenceLoopDecision, type AutomationStudioLlmEvidenceTool,
   type AutomationStudioLlmEvidenceLoopExhaustedBound,
   type AutomationStudioLlmEvidenceLoopResult,
@@ -227,7 +227,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     hook ? { before, after } : { before: execution.stateDigests?.before, after: execution.stateDigests?.after };
   // Looks withdrawn after an ignored redirect (`decision-handlers/look-withdrawal.ts`),
   // only where a decision can be refused without ending the loop.
-  const looks = automationStudioLlmEvidenceLookWithdrawal({ enabled: input.lookWithdrawal !== false && input.unusableDecisions !== undefined });
+  const looks = automationStudioLlmEvidenceLookWithdrawal({ enabled: input.lookWithdrawal !== false && input.unusableDecisions !== undefined, finishing: input.finishingTools });
   const accounting = automationStudioLlmEvidenceLoopEmptyAccounting(); const purse = automationStudioLlmEvidenceLoopPurse(input.budget, accounting, input.purse); // Each decision's worst case held against the build's purse, or the loop's own at its cost budget, before it is sent: the only cost authority (`./evidence-loop/cost-purse.ts`).
   // The caller's tools, with `core.run_flow` after them where the loop drafts and runs its dry run: part of the Flow
   // run again, never its test. Fixed for the whole loop, so read once (`./node-tools/loop-tools.ts`).
@@ -530,13 +530,13 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // A build told where its Flow starts opens by going there (F31): its look was refused for not being there yet, and the model's first paid
     // decision was that navigation (`run-muqc07fh-eeffbc86`). The opening call id stays, since the domain keys per-build memory on it. No provider call.
     if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
-    const opening: ToolCall = { kind: "tool_call", callId: `initial.${initialTool.toolId}`, toolId: initialTool.toolId, input: structuredClone(arrival), add: true };
+    const opening: ToolCall = { kind: "tool_call", callId: automationStudioLlmEvidenceOpeningCallId(initialTool.toolId, input.callScope), toolId: initialTool.toolId, input: structuredClone(arrival), add: true };
     const ended = await runCall(0, opening.callId, opening, initialTool, automationStudioLlmEvidenceRequestSignature({ tool: initialTool, mutationEpoch: counters.mutationEpoch, attemptEpoch: counters.attemptEpoch, input: opening.input }));
     if (ended) return ended;
   } else if (initialTool) {
     const initialInput = initialTool.initialObservation!.input;
     if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
-    const callId = `initial.${initialTool.toolId}`;
+    const callId = automationStudioLlmEvidenceOpeningCallId(initialTool.toolId, input.callScope);
     callIds.add(callId);
     let execution: ReturnType<typeof automationStudioLlmEvidenceParseToolExecutionResult> | "threw";
     // Kept so a result that is not one can be refused by name (`./tool-failure.ts`).
@@ -632,7 +632,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     finalDecision = remaining !== undefined && remaining.decisionsLeft === 1 && canComplete;
     // The wrap-up (`./loop-budget.ts`): the last few decisions offer finishing
     // and amending, so a refused completion still has turns to be answered in; a candidate's keeps submitting and testing, without which it cannot complete (t383).
-    const wrapUp = automationStudioLlmEvidenceLoopWrapUp({ remaining, canComplete, candidate: input.discoveryOnly === true, tools: eligibleTools }); const { wrappingUp, offered } = wrapUp;
+    const wrapUp = automationStudioLlmEvidenceLoopWrapUp({ remaining, canComplete, candidate: input.discoveryOnly === true, tools: eligibleTools, finishing: input.finishingTools }); const { wrappingUp, offered } = wrapUp;
     const offers = (): AutomationStudioLlmUnusableDecisionOffers => ({ tools: offered.length > 0, complete: canComplete, amend: canAmend });
     // A reply read and still not a decision this iteration offered (`./evidence-loop/decision-refusal.ts`).
     let refusal: ReturnType<typeof automationStudioLlmEvidenceDecisionRefusal> = undefined;
@@ -640,7 +640,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       canAmend = drafting && !finalDecision && counters.draftAmendments < limits.maxDraftAmendments && draftSteps.some(automationStudioFlowDraftStepIsProposable);
       const decisionSchema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(offered, input.completionSchema, canComplete, canAmend, drafting && authoring);
       // From the second decision, when there is spending to measure it by; the first only when it is the last.
-      const budgetEntry = remaining && (iteration > 1 || wrappingUp) ? automationStudioLlmEvidenceBudgetEntry(iteration, remaining, wrappingUp, input.discoveryOnly === true) : undefined;
+      const budgetEntry = remaining && (iteration > 1 || wrappingUp) ? automationStudioLlmEvidenceBudgetEntry(iteration, remaining, wrappingUp, input.discoveryOnly === true, input.finishingTools) : undefined;
       // Every evidence entry, and beside them the history, the draft and the
       // budget, each whole; the draft measured as it goes out
       // (`decision-context/shown.ts` says why each is where it is).

@@ -69,6 +69,8 @@ export function automationStudioLlmEvidenceAnsweredRequestNote(input: {
   maxStepsWithoutProgress: number;
   discoveryOnly?: boolean;
   candidate?: { revision: number; digest: string } | undefined;
+  /** A discovery-only loop's own submit and test tools, which its words name; the candidate's when absent (t537). */
+  finishing?: { submit: string; test: string } | undefined;
 } & AutomationStudioLlmEvidenceAnsweredRequestRepeat): JsonObject {
   const { timesAsked, askedAt, answeredAt, lastActionBefore, pageUnchanged } = input;
   return {
@@ -96,15 +98,16 @@ export function automationStudioLlmEvidenceAnsweredRequestNote(input: {
  * on it says which ask this is and that the answer will not change until an
  * action runs.
  */
-function instruction(input: { code: AutomationStudioLlmEvidenceAnsweredRequestCode; answeredAt?: number; lastActionBefore?: { iteration: number }; timesAsked?: number; pageUnchanged?: true; discoveryOnly?: boolean; candidate?: { revision: number; digest: string } | undefined }): string {
+function instruction(input: { code: AutomationStudioLlmEvidenceAnsweredRequestCode; answeredAt?: number; lastActionBefore?: { iteration: number }; timesAsked?: number; pageUnchanged?: true; discoveryOnly?: boolean; candidate?: { revision: number; digest: string } | undefined; finishing?: { submit: string; test: string } | undefined }): string {
   if (input.discoveryOnly) {
+    const { submit, test } = input.finishing ?? { submit: "core.submit_candidate", test: "core.test_candidate" };
     const next = input.candidate
-      ? `The latest accepted candidate has receipt ${JSON.stringify(input.candidate)}. Use core.test_candidate with that exact revision and digest if its trial has not answered yes. Complete only after yes for that exact receipt; a changed submission needs its own trial.`
+      ? `The latest accepted candidate has receipt ${JSON.stringify(input.candidate)}. Use ${test} with that exact revision and digest if its trial has not answered yes. Complete only after yes for that exact receipt; a changed submission needs its own trial.`
       : "No accepted candidate receipt is available. Use the existing evidence and correct any submission issues, then submit the whole candidate and test its returned revision and digest. Do not complete an untested candidate.";
     const repeat = input.timesAsked === undefined ? "" : ` This request has been asked ${input.timesAsked} times; repeating it makes no progress.`;
     // A candidate's wrap-up keeps every tool listed and runs only its finishing ones (`../loop-budget.ts`, t503).
     const happened = input.code === "llm_evidence_loop.not_offered"
-      ? "The build is in its last decisions: only core.submit_candidate, core.test_candidate and completing run now. This tool is still listed, but this call was not run."
+      ? `The build is in its last decisions: only ${submit}, ${test} and completing run now. This tool is still listed, but this call was not run.`
       : input.code === "llm_evidence_loop.looked_again_unchanged"
         ? "Core looked again and the page was unchanged; the fresh answer is named by answeredByCallId."
         : "This request was already answered and was not run again; its existing answer is named by answeredByCallId.";

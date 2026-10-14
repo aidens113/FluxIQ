@@ -8,7 +8,7 @@
 // from there.
 
 import { describe, expect, it } from "vitest";
-import { automationStudioLlmEvidenceUnusedCallId } from "../call-id.ts";
+import { automationStudioLlmEvidenceIsOpeningCallId, automationStudioLlmEvidenceOpeningCallId, automationStudioLlmEvidenceUnusedCallId } from "../call-id.ts";
 
 describe("the id an evidence entry is filed under", () => {
   it("is the one asked for when nothing has taken it", () => {
@@ -26,5 +26,28 @@ describe("the id an evidence entry is filed under", () => {
 
     expect(suffixed).toHaveLength(200);
     expect(suffixed.endsWith(".2")).toBe(true);
+  });
+});
+
+describe("the opening call's id (t537)", () => {
+  it("is byte-identical to what it always was without a scope", () => {
+    expect(automationStudioLlmEvidenceOpeningCallId("core.run_node")).toBe("initial.core.run_node");
+  });
+
+  it("carries a scope as a suffix, still an id the provider schema accepts", () => {
+    const scoped = automationStudioLlmEvidenceOpeningCallId("core.run_node", "brief-1");
+    expect(scoped).toBe("initial.core.run_node.brief-1");
+    expect(scoped).toMatch(/^[a-zA-Z0-9_.:-]{1,200}$/u);
+  });
+
+  it("refuses a scope that would break the id or its reading", () => {
+    for (const scope of ["", "a.b", "has space", "x".repeat(41)]) expect(() => automationStudioLlmEvidenceOpeningCallId("core.run_node", scope), scope).toThrow("llm_evidence_loop.call_scope_invalid");
+  });
+
+  it("is recognised scoped or not, and no other id is", () => {
+    expect(automationStudioLlmEvidenceIsOpeningCallId(automationStudioLlmEvidenceOpeningCallId("core.run_node"))).toBe(true);
+    expect(automationStudioLlmEvidenceIsOpeningCallId(automationStudioLlmEvidenceOpeningCallId("core.run_node", "brief-1"))).toBe(true);
+    expect(automationStudioLlmEvidenceIsOpeningCallId("submit.1")).toBe(false);
+    expect(automationStudioLlmEvidenceIsOpeningCallId("dryrun.1.reset")).toBe(false);
   });
 });

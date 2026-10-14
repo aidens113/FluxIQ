@@ -52,7 +52,7 @@ export function automationStudioLlmEvidenceHandleAnsweredRequest(
   const answering = records.find((record) => (record.decision.kind === "call" || record.decision.kind === "look") && record.decision.callId === answeredByCallId);
   const note = automationStudioLlmEvidenceAnsweredRequestNote({
     code, toolId: decision.toolId, answeredByCallId, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress,
-    ...(context.input.discoveryOnly ? { discoveryOnly: true, candidate: automationStudioLlmEvidenceLatestCandidateReceipt(evidence) } : {}),
+    ...(context.input.discoveryOnly ? { discoveryOnly: true, candidate: automationStudioLlmEvidenceLatestCandidateReceipt(evidence, context.input.finishingTools?.submit), finishing: context.input.finishingTools } : {}),
     ...(repeat ? { timesAsked: repeat.times, askedAt: repeat.iterations } : {}),
     ...(answering ? { answeredAt: answering.iteration } : {}),
     ...(context.lastAction ? { lastActionBefore: context.lastAction } : {})

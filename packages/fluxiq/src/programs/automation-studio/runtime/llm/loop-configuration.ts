@@ -16,7 +16,7 @@ import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS,
   AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS
 } from "../loop-limits/index.ts";
-import type { AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
+import type { AutomationStudioLlmEvidenceFinishingTools, AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
 import { automationStudioLlmEvidenceLoopBudgetValid } from "./loop-budget.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 import type { AutomationStudioLlmBuildPurse } from "./build-purse/index.ts";
@@ -40,6 +40,18 @@ export type AutomationStudioLlmEvidenceCallWords = { target?: string | undefined
 export type AutomationStudioLlmEvidenceLoopInput = {
   /** Explicit candidate authoring records discovery evidence without retaining draft steps. */
   discoveryOnly?: true;
+  /**
+   * Suffixes the opening call's id, `initial.<toolId>.<scope>`, for a loop run
+   * beside others for one Flow (a subflow builder, by its brief; t537). Absent,
+   * the id is `initial.<toolId>` byte for byte (`./evidence-loop/call-id.ts`).
+   */
+  callScope?: string | undefined;
+  /**
+   * A discovery-only loop's own submit and test tools, which its wrap-up keeps
+   * running and its notes name (a subflow builder's; t537). Absent, they are
+   * the candidate's, `core.submit_candidate` and `core.test_candidate`.
+   */
+  finishingTools?: AutomationStudioLlmEvidenceFinishingTools | undefined;
   tools: AutomationStudioLlmEvidenceTool[];
   decide(input: {
     iteration: number;
