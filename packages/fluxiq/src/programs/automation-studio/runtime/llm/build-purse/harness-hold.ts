@@ -16,8 +16,9 @@
 import type { AutomationStudioLlmDiagnostic, AutomationStudioLlmProvider } from "../harness/index.ts";
 import { automationStudioLlmCurrentFlowPurse } from "./flow-scope.ts";
 import { automationStudioLlmProjectedCallCostUsd } from "./projected-cost.ts";
-import type { AutomationStudioLlmBuildPurse, AutomationStudioLlmBuildPurseHold, AutomationStudioLlmBuildPurseRefusal } from "./purse.ts";
+import type { AutomationStudioLlmBuildPurse } from "./purse.ts";
 import { automationStudioLlmCurrentBuildPurse } from "./run.ts";
+import type { AutomationStudioLlmBuildPurseHold, AutomationStudioLlmBuildPurseRefusal } from "./types.ts";
 
 type HoldInput = {
   provider: Pick<AutomationStudioLlmProvider, "estimateCostUsd">;
