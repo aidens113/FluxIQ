@@ -75,13 +75,16 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
       const unknownField = Object.keys(payload).find((key) => !FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS.has(key));
       if (unknownField) return { ok: false, error: "Flow bootstrap generation request contains unsupported fields." };
       if (payload.evidenceGuided !== undefined && payload.evidenceGuided !== true) return { ok: false, error: "Flow bootstrap generation request contains an invalid evidence-guided flag." };
-      if (payload.authoringMode !== undefined && ((payload.authoringMode !== "candidate" && payload.authoringMode !== "configured") || payload.evidenceGuided !== true)) return { ok: false, error: "Candidate authoring requires evidence-guided generation." };
+      if (payload.authoringMode !== undefined && ((payload.authoringMode !== "candidate" && payload.authoringMode !== "project" && payload.authoringMode !== "configured") || payload.evidenceGuided !== true)) return { ok: false, error: "Candidate authoring requires evidence-guided generation." };
       // `configured` is how a client that cannot read Core's configuration
       // (the web panel) asks for Core's own authoring mode
       // (`../../model/authoring-mode/`); it is resolved here, once, so the build
       // and the answer below agree on it.
-      let candidateAuthoring: boolean;
-      try { candidateAuthoring = payload.authoringMode === "candidate" || (payload.authoringMode === "configured" && resolveAutomationStudioAuthoringMode() === "candidate"); }
+      let candidateAuthoring: "candidate" | "project" | undefined;
+      try {
+        const mode = payload.authoringMode === "configured" ? resolveAutomationStudioAuthoringMode() : payload.authoringMode;
+        candidateAuthoring = mode === "candidate" || mode === "project" ? mode : undefined;
+      }
       catch (error) { return { ok: false, error: error instanceof Error ? error.message : "Core's authoring mode is misconfigured." }; }
       if (payload.useReusableContext !== undefined && payload.useReusableContext !== true) return { ok: false, error: "Flow bootstrap generation request contains an invalid reusable-context flag." };
       // `extend` improves the Flow as it stands instead of writing one from
@@ -119,7 +122,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
           // permits nothing lasting.
           permittedConsequences,
           ...(payload.evidenceGuided === true ? { evidenceGuided: true as const } : {}),
-          ...(candidateAuthoring ? { authoringMode: "candidate" as const } : {}),
+          ...(candidateAuthoring ? { authoringMode: candidateAuthoring } : {}),
           ...(payload.useReusableContext === true ? { useReusableContext: true as const } : {}),
           ...(payload.mode === "extend" ? { mode: "extend" as const } : {}),
           // Where the Flow starts, when the caller named one. Validated above,

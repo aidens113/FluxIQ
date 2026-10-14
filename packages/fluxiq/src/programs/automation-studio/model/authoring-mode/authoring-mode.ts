@@ -9,6 +9,12 @@
 //   start hook resets the target first. Only a
 //   trial confirmed by two judges can produce a proposed adaptation for the
 //   chat or panel to apply; an unverified draft keeps the Flow unchanged.
+// - `project` (opt-in, automation-project-agents-plan): a project supervisor
+//   breaks the task into parts, plans the Flow's subflows and their
+//   interfaces, dispatches a bounded builder per subflow, assembles their
+//   proposals into one candidate and tests that exact revision; promotion is
+//   the candidate's, unchanged. Until the Lab comparison passes it is never
+//   the default.
 // - `legacy` (explicit opt-out): the evidence-guided build explores, tests and
 //   judges a draft and answers with a proposed adaptation. The chat applies it
 //   onto a blank Flow and asks before applying an improvement; the panel offers
@@ -18,14 +24,14 @@
 // configured product callers resolve this setting instead.
 //
 // Set with `FLUXIQ_AUTHORING_MODE` in the environment of the Core process. A
-// value that is neither mode refuses rather than falling back, so a mistyped
+// value that is none of the modes refuses rather than falling back, so a mistyped
 // setting never silently builds the other way.
 
 /** The variable the Core process reads. */
 export const AUTOMATION_STUDIO_AUTHORING_MODE_ENV = "FLUXIQ_AUTHORING_MODE";
 
 /** Every mode, in the spelling the variable takes. */
-export const AUTOMATION_STUDIO_AUTHORING_MODES = Object.freeze(["legacy", "candidate"] as const);
+export const AUTOMATION_STUDIO_AUTHORING_MODES = Object.freeze(["legacy", "candidate", "project"] as const);
 
 export type AutomationStudioAuthoringMode = (typeof AUTOMATION_STUDIO_AUTHORING_MODES)[number];
 

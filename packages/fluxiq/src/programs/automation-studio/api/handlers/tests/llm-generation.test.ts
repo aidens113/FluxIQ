@@ -116,6 +116,25 @@ describe("Automation Studio LLM execution API", () => {
       vi.unstubAllEnvs();
     }
   });
+  it("resolves a configured project mode to a project build, answered as a candidate build is", async () => {
+    const draft = { projectId: "project", flowId: "flow", status: "draft", candidateId: "candidate", revision: 1, digest: "a".repeat(64), baseDependencyDigest: "base", baseSettingsRevision: 1, sourceInstructionIds: ["instruction"], accounting: { requestId: "request", estimatedInputTokens: 10 }, verification: "not_performed", promotionAllowed: false };
+    const generate = vi.fn().mockResolvedValue(draft), registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, readyLlmApiService({ generateFlowBootstrapAdaptation: generate }) as any);
+    const actor: ProgramApiActor = { sessionId: "session", userId: "user", roleId: "admin", permissions: ["flows.write"] };
+    const request = { programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation, scope: {}, actor, payload: { projectId: "project", flowId: "flow", authSessionId: "session", authoringMode: "configured", evidenceGuided: true } };
+    try {
+      vi.stubEnv("FLUXIQ_AUTHORING_MODE", "project");
+      expect(await registry.call(request)).toMatchObject({ ok: true, payload: { candidate: { candidateId: "candidate", promotionAllowed: false } } });
+      expect(generate).toHaveBeenCalledWith(expect.objectContaining({ authoringMode: "project", evidenceGuided: true }));
+      // Asked for by name, whatever the setting.
+      vi.stubEnv("FLUXIQ_AUTHORING_MODE", "candidate");
+      generate.mockClear();
+      expect(await registry.call({ ...request, payload: { ...request.payload, authoringMode: "project" } })).toMatchObject({ ok: true });
+      expect(generate).toHaveBeenCalledWith(expect.objectContaining({ authoringMode: "project" }));
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
   it("runs a diagnosis_only intent for the signed-in actor, with no grant, and may name the run it continues", async () => {
     const runRuntimeSession = vi.fn().mockResolvedValue({ runId: "run.one", status: "failed" });
     const registry = new GlobalProgramApiRegistry();
