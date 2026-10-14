@@ -463,6 +463,31 @@ Briefs A5a, A5b, A5c, the sweep fixture groups, the recording delete retry and t
 - Must not touch: `project-agents/**`, `service/project-build/**`, `llm/build-purse/**`, `result-verification/**`.
 - Definition of done: tests beside each change; narrow checks; the report lists each item's outcome.
 
+### Brief: A21-instruction-scope-write-error
+- Repository: FluxIQ Core, the paired worktree the dispatch prompt names.
+- Task: t558 found that an instruction whose scope names a node not in `graph_nodes` is silently left out of project
+  SQL: the write's error is swallowed (`runtime/service.ts` ~3249), so a SQL listing omits an instruction the summary
+  index still lists. Find why the write fails (a foreign key to `graph_nodes`?) and make the two stores agree without
+  swallowing anything: either the save refuses a scope that names no node of the Flow, with a clear error, or the
+  scope is stored so that it does not depend on the node row; choose by what the instruction scope contract says
+  (`docs/architecture/automation-studio/`), and say why. Extend the parity test
+  (`runtime/service/summaries/tests/instruction-scope-parity.test.ts`) with this case.
+- Owns: the write path you find, `runtime/service.ts` in place (lines may only go down), the store's tests; report.
+- Must not touch: `project-agents/**`, `service/project-build/**`, `conversations/**`.
+- Definition of done: no swallowed write; parity holds for a node-scoped instruction; tests beside each change; narrow checks.
+
+### Brief: A10b-chat-sees-ask-ids
+- Repository: FluxIQ Core, the paired worktree the dispatch prompt names.
+- Task: since t556 a typed answer that names no ask is refused when more than one ask waits, but Core's chat model
+  never sees ask ids, so it can never name one and a typed answer can settle neither. Give the chat model the waiting
+  asks with their ids in its own context (the conversation's model context, not the thread), so its answer command
+  can name the ask the person meant, and say in its guidance how to choose. The person still never sees an id
+  (t276: no codes in the thread). Guidance examples use a different kind of site than any realistic scenario.
+- Owns: the conversation model context and guidance under `runtime/conversations/` and their tests; report.
+- Must not touch: `project-agents/**`, `service/project-build/**`, `runtime/service.ts`.
+- Definition of done: with two asks waiting, a stub chat model that reads the context names the right ask and the answer
+  settles it; one waiting ask behaves as before; no id appears in any thread text (test); narrow checks.
+
 ## Work Ledger
 
 Earlier entries are in [the ledger archive](./automation-project-agents-plan/archive/2026-10-13-ledger.md).
