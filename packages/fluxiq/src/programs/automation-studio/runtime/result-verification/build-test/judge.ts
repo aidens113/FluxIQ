@@ -74,6 +74,13 @@
 // is sized from it (`../deadline.ts`). A judge whose every call still failed is
 // `not_judged` with the cause -- it says nothing about the Flow -- never
 // `unknown` and never a no.
+//
+// **A project build's judge also reads the task checklist (unit A9).** Given
+// `taskChecklist`, the summary it is sent carries the supervisor's task spec --
+// each part in the instructions' own words, and what nobody asked for -- as a
+// labelled supplementary section (`./task-checklist.ts`); the instructions are
+// still the request. Without one the summary is sent exactly as given, so a
+// candidate build's judge is asked what it always was.
 
 import { randomUUID } from "node:crypto";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowIntervention } from "../../../model/index.ts";
@@ -89,6 +96,7 @@ import {
   type AutomationStudioResultVerificationRequest
 } from "../verify.ts";
 import { automationStudioBuildTestUntestedCarried } from "./summary.ts";
+import { automationStudioBuildTestSummaryWithTaskChecklist, type AutomationStudioBuildTestTaskChecklist } from "./task-checklist.ts";
 
 /** What the judge's calls cost. */
 export type AutomationStudioBuildTestJudgeSpend = {
@@ -175,6 +183,12 @@ export type AutomationStudioBuildTestVerdict =
 export type AutomationStudioBuildTestJudgeInput = {
   summary: AutomationStudioRunResultSummary;
   budget?: { maxCostUsd?: number | undefined } | undefined;
+  /**
+   * A project build's task checklist (`./task-checklist.ts`, unit A9): sent
+   * beside the instructions as a labelled supplementary section, never in
+   * their place. Absent, the judge is sent the summary exactly as given.
+   */
+  taskChecklist?: AutomationStudioBuildTestTaskChecklist | undefined;
 };
 
 /**
@@ -212,6 +226,8 @@ export function automationStudioBuildTestJudge(deps: {
     const purse = automationStudioLlmCurrentBuildPurse();
     const refusedBefore = purse?.refusal;
     const callsBefore = purse?.spentCalls();
+    // What the judge is sent: the summary as given, or with a project build's checklist beside it (unit A9).
+    const judged = input.taskChecklist ? automationStudioBuildTestSummaryWithTaskChecklist(input.summary, input.taskChecklist) : input.summary;
     const bounded = await automationStudioResultVerificationWithinDeadline({
       deadlineMs: deps.deadlineMs ?? automationStudioResultVerificationDeadlineMs(deps.timeoutMs),
       signal: deps.signal,
@@ -219,7 +235,7 @@ export function automationStudioBuildTestJudge(deps: {
         projectId: deps.projectId,
         flowId: deps.flowId,
         runId: `build-test.${randomUUID()}`,
-        summary: input.summary,
+        summary: judged,
         instructions: deps.instructions,
         ...(deps.deniedEvidenceKeys ? { deniedEvidenceKeys: deps.deniedEvidenceKeys } : {}),
         ...(deps.provider ? { provider: deps.provider } : {}),
