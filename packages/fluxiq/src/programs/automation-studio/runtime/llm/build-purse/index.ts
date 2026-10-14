@@ -1,5 +1,6 @@
 // A build's purse: its cost ceiling held against each call's worst case before
 // the call is sent (`./purse.ts` says why a build needs one).
+export * from "./allowance-book.ts";
 export * from "./build-call-reserves.ts";
 export * from "./flow-scope.ts";
 export * from "./harness-hold.ts";

@@ -29,6 +29,7 @@ import { AutomationStudioLlmProviderError, automationStudioLlmSignalTimedOut, no
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../harness.ts";
 import type { AutomationStudioLlmProviderRetryAccount, AutomationStudioLlmProviderRetryAttempt, AutomationStudioLlmProviderRetryStop } from "./account.ts";
 import { automationStudioLlmProviderRetryDecision } from "./decision.ts";
+import { AutomationStudioLlmProviderEndpointLoad, automationStudioLlmProviderEndpointLoad } from "./endpoint-load.ts";
 import { automationStudioLlmProviderRetryHintMs } from "./hint.ts";
 import { AutomationStudioLlmProviderRetryLedger, automationStudioLlmProviderRetryRunLedger } from "./ledger.ts";
 
@@ -40,7 +41,7 @@ export type AutomationStudioLlmProviderCallOutcome = {
   | { ok: false; failure: ReturnType<typeof normalizedAutomationStudioLlmProviderFailure> }
 );
 
-export async function automationStudioLlmProviderCall(input: {
+type AutomationStudioLlmProviderCallInput = {
   provider: AutomationStudioLlmProvider;
   request: AutomationStudioLlmTaskRequest;
   /** The caller's own deadline or cancellation. An aborted signal stops the loop whatever the fault said. */
@@ -54,7 +55,26 @@ export async function automationStudioLlmProviderCall(input: {
   ledger?: AutomationStudioLlmProviderRetryLedger;
   /** How the loop waits. Absent means real time; a test passes one that does not spend it. */
   wait?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
-}): Promise<AutomationStudioLlmProviderCallOutcome> {
+  /** Where calls in flight per endpoint are counted, so a backoff is spread only when the endpoint is shared (`./endpoint-load.ts`). Absent means Core's own. */
+  endpoints?: AutomationStudioLlmProviderEndpointLoad;
+  /** The draw a shared endpoint's backoff is spread by, in [0, 1). Absent means `Math.random`; a test passes a fixed one. */
+  random?: () => number;
+};
+
+export async function automationStudioLlmProviderCall(input: AutomationStudioLlmProviderCallInput): Promise<AutomationStudioLlmProviderCallOutcome> {
+  const endpoints = input.endpoints ?? automationStudioLlmProviderEndpointLoad;
+  const endpoint = AutomationStudioLlmProviderEndpointLoad.key(input.provider.metadata ?? { provider: "" });
+  const leave = endpoints.enter(endpoint);
+  try {
+    return await callWithRetries(input, () => endpoints.shared(endpoint));
+  } finally {
+    leave();
+  }
+}
+
+/** The call's attempts; `shared` says, at each decision, whether another call is in flight against the same endpoint. */
+async function callWithRetries(input: AutomationStudioLlmProviderCallInput, shared: () => boolean): Promise<AutomationStudioLlmProviderCallOutcome> {
+  const random = input.random ?? Math.random;
   const ledger = input.ledger ?? automationStudioLlmProviderRetryRunLedger;
   const wait = input.wait ?? waitForMilliseconds;
   const startedAt = input.now();
@@ -92,7 +112,9 @@ export async function automationStudioLlmProviderCall(input: {
         timeoutMs: input.request.timeoutMs,
         runAddedMs: input.runId ? ledger.addedMs(input.runId) : 0,
         ...(Number.isFinite(maxAttempts) ? { maxAttempts } : {}),
-        ...(hintedWaitMs !== undefined ? { hintedWaitMs } : {})
+        ...(hintedWaitMs !== undefined ? { hintedWaitMs } : {}),
+        // Spread only when other calls share the endpoint; alone, the table's wait exactly (`./limits.ts`).
+        ...(shared() ? { jitter: random() } : {})
       });
       if (!decision.retry) {
         attempts.push(failedAttempt({ attempt, failure, elapsedMs, waitMs: 0 }));

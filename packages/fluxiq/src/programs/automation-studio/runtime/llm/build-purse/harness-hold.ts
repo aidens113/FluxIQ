@@ -7,6 +7,11 @@
 // call, and the other's hold is let go. A refusal by the Flow's purse is also
 // set on the build's purse, so a build ends on cost through the same path it
 // ends on its own ceiling (`./run.ts`).
+//
+// The build's purse may be an allowance carved for one brief (t534); it holds
+// the call against itself and every purse it was carved from (`./purse.ts`),
+// and the Flow's purse is held here only when it is not already among them. An
+// allowance's own refusal says so, with the brief it was carved for.
 
 import type { AutomationStudioLlmDiagnostic, AutomationStudioLlmProvider } from "../harness/index.ts";
 import { automationStudioLlmCurrentFlowPurse } from "./flow-scope.ts";
@@ -36,7 +41,7 @@ export function automationStudioLlmBuildPurseHoldCall(input: HoldInput): { ok: t
   if (!build && !flow) return undefined;
   const builds = build ? holdOn(build, input) : undefined;
   if (builds && !builds.ok) return { ok: false, diagnostic: refusalDiagnostic(builds.refusal, "build") };
-  const flows = flow && flow !== build ? holdOn(flow, input) : undefined;
+  const flows = flow && !carvedFrom(build, flow) ? holdOn(flow, input) : undefined;
   if (flows && !flows.ok) {
     builds?.hold.release();
     // The build ends on cost, as on its own ceiling: its run reads its purse's refusal.
@@ -57,6 +62,14 @@ export function automationStudioLlmBuildPurseHoldCall(input: HoldInput): { ok: t
   };
 }
 
+/** Whether `flow` is `build` or a purse `build` was carved from, and so already held. */
+function carvedFrom(build: AutomationStudioLlmBuildPurse | undefined, flow: AutomationStudioLlmBuildPurse): boolean {
+  for (let purse = build; purse; purse = purse.parent) {
+    if (purse === flow) return true;
+  }
+  return false;
+}
+
 function holdOn(purse: AutomationStudioLlmBuildPurse, input: HoldInput): ReturnType<AutomationStudioLlmBuildPurse["hold"]> {
   const { provider } = input;
   return purse.hold({
@@ -69,17 +82,20 @@ function holdOn(purse: AutomationStudioLlmBuildPurse, input: HoldInput): ReturnT
   });
 }
 
-function refusalDiagnostic(refusal: AutomationStudioLlmBuildPurseRefusal, whose: "build" | "Flow"): AutomationStudioLlmDiagnostic {
-  if (refusal.code === "llm_budget.run_call_limit") return { severity: "error", code: refusal.code, message: `The build limit of ${refusal.maxCalls} logical model calls cannot admit another: ${refusal.spentCalls} sent, ${refusal.pendingCalls} pending, ${refusal.keptBackCalls} kept for judging. It was not sent.`, metadata: { ...refusal } };
+function refusalDiagnostic(refusal: AutomationStudioLlmBuildPurseRefusal, purseWhose: "build" | "Flow"): AutomationStudioLlmDiagnostic {
+  const whose = refusal.allowance ? `allowance for brief ${refusal.allowance.briefId}` : purseWhose;
+  if (refusal.code === "llm_budget.run_call_limit") return { severity: "error", code: refusal.code, message: `The ${refusal.allowance ? whose : "build"} limit of ${refusal.maxCalls} logical model calls cannot admit another: ${refusal.spentCalls} sent, ${refusal.pendingCalls} pending, ${refusal.keptBackCalls} kept for judging. It was not sent.`, metadata: { ...refusal } };
   const cost = refusal.projectedCostUsd !== undefined
     ? ` and this request (${refusal.estimatedInputTokens} input tokens, ${refusal.maxOutputTokens} for the reply) would cost up to ${usd(refusal.projectedCostUsd)}`
     : "";
   const keptBack = refusal.keptBackUsd !== undefined ? `, ${usd(refusal.keptBackUsd)} is kept back for judging the Flow` : "";
+  const allotted = refusal.allottedUsd !== undefined ? `, ${usd(refusal.allottedUsd)} is promised to other briefs` : "";
+  const closed = refusal.closed ? " The allowance is closed." : "";
   return {
     severity: "error",
     code: refusal.code,
-    message: `The ${whose}'s spending limit of ${usd(refusal.ceilingUsd)} cannot pay for this call: ${usd(refusal.spentUsd)} is spent, ${usd(refusal.pendingUsd)} is held for calls in flight${keptBack}${cost}. It was not sent.`,
-    metadata: { ...refusal, ...(whose === "Flow" ? { purse: "flow" } : {}) }
+    message: `The ${whose}'s spending limit of ${usd(refusal.ceilingUsd)} cannot pay for this call: ${usd(refusal.spentUsd)} is spent, ${usd(refusal.pendingUsd)} is held for calls in flight${keptBack}${allotted}${cost}.${closed} It was not sent.`,
+    metadata: { ...refusal, ...(purseWhose === "Flow" ? { purse: "flow" } : {}) }
   };
 }
 
