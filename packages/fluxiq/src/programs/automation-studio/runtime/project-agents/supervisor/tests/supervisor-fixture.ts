@@ -5,8 +5,8 @@
 // submission controller run on fixed scripts, a stub ledger and a stub trial.
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { refusalTestSubmission } from "../../../flow-bootstrap/candidate/tests/refusal-domain-fixture.ts";
-import type { AutomationStudioCandidateTrialPort, AutomationStudioCandidateTrialResult } from "../../../flow-bootstrap/candidate/index.ts";
-import type { AutomationStudioSiteResetProjectSnapshot } from "../../../flow-bootstrap/site-reset/index.ts";
+import type { AutomationStudioCandidateTrialAct, AutomationStudioCandidateTrialPort, AutomationStudioCandidateTrialResult } from "../../../flow-bootstrap/candidate/index.ts";
+import { AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetProjectSnapshot } from "../../../flow-bootstrap/site-reset/index.ts";
 import { AutomationStudioSubflowScopedSubmissionController, type AutomationStudioSubflowProposal } from "../../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioLlmBuildPurse, AutomationStudioLlmBuildPurseJudging } from "../../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../../../llm/evidence-loop.ts";
@@ -64,6 +64,16 @@ export function project(options: {
   onBrief?: (brief: AutomationStudioProjectSubflowBrief) => void;
   /** Run as each whole trial is judged, as its judge would spend. */
   onTrial?: () => void;
+  /**
+   * The build's real lasting-act ledger in place of the stand-in snapshot
+   * (t586): a build brief's act is its subflow trial's, a whole trial's acts
+   * are recorded under the supervisor as the service's trial port records them,
+   * and a reset brief undoes each act in place through the site's own control
+   * (`undoes`, the default) or finds none (`undoes: false`), then checks what
+   * is left as a reset's completion does. `hook`: the trial port has the
+   * deployment's start hook, which puts the whole site back.
+   */
+  ledger?: { hook?: boolean; undoes?: boolean };
 } = {}) {
   const projects = new AutomationStudioProjectPaths(undefined);
   let clock = 1000;
@@ -74,6 +84,19 @@ export function project(options: {
   const attempts = new Map<string, number>();
   const trials: Array<{ revision: number; digest: string }> = [];
   const submission = refusalTestSubmission();
+  const ledger = options.ledger ? new AutomationStudioSiteResetProjectLedger() : undefined;
+  /** How many whole trials had run each time the start hook ran. */
+  const hooks: number[] = [];
+  /** A real reset brief: each act in place undone on its own item where the site has a control, then what is left checked, as its completion is. */
+  const resetOnLedger = async (real: AutomationStudioSiteResetProjectLedger): Promise<boolean> => {
+    const inPlace = real.snapshot().acts.filter((act) => act.inPlace);
+    for (const act of inPlace) {
+      if (options.ledger?.undoes === false) continue;
+      real.forBrief(act.owner).explored({ callId: `undo-${act.act}`, toolId: "core.run_node", undoes: act.act, landed: true, on: "own", declared: { permitted: true, effect: "mutate", consequences: [], control: { name: "Cancel hold", kind: "button" }, verb: "click" } });
+    }
+    for (const owner of new Set(inPlace.map((act) => act.owner))) await real.forBrief(owner).beforeTrial({ compare: async () => ({ moved: false }) });
+    return !real.snapshot().acts.some((act) => act.inPlace);
+  };
   const dispatch: AutomationStudioProjectSupervisorPorts["dispatch"] = async (request) => {
     dispatched.push({ briefs: request.briefs.map((brief) => structuredClone(brief)), signal: request.signal });
     const returns: AutomationStudioProjectBuilderReturn[] = [];
@@ -82,6 +105,11 @@ export function project(options: {
       const attempt = (attempts.get(brief.subflowKey) ?? 0) + 1;
       attempts.set(brief.subflowKey, attempt);
       const outcome = brief.kind === "reset" ? "done" : (options.builder?.(brief, attempt) ?? "done");
+      if (brief.kind === "reset" && ledger) {
+        const undone = await resetOnLedger(ledger);
+        returns.push({ briefId: brief.briefId, outcome: undone ? "done" : "blocked", reason: undone ? "Every act of this build is undone." : "The site offers no control that undoes these acts.", trials: [], spentUsd: 0.001, calls: 2 });
+        continue;
+      }
       if (brief.kind === "reset") {
         for (const act of acts) act.inPlace = false;
         returns.push({ briefId: brief.briefId, outcome: "done", reason: "Every act of this build is undone.", trials: [], spentUsd: 0.001, calls: 2 });
@@ -93,7 +121,8 @@ export function project(options: {
       }
       const proposal = await propose(brief);
       proposals.set(brief.briefId, proposal);
-      if (brief.permittedActs.length) acts.push({ act: `act-${acts.length + 1}`, did: `pressed hold for ${brief.subflowKey}`, owner: brief.briefId, ref: `ref-${acts.length + 1}`, undoable: true, inPlace: true });
+      if (brief.permittedActs.length && ledger) ledger.forBrief(brief.briefId).trialRan([{ step: 1, definitionId: "web.output.dom-click", label: `press hold for ${brief.subflowKey}`, consequences: ["create_new"] }], `trial-${brief.briefId}`);
+      else if (brief.permittedActs.length) acts.push({ act: `act-${acts.length + 1}`, did: `pressed hold for ${brief.subflowKey}`, owner: brief.briefId, ref: `ref-${acts.length + 1}`, undoable: true, inPlace: true });
       returns.push({ briefId: brief.briefId, outcome: "done", reason: "Its trial answered yes.", proposal: { subflowKey: brief.subflowKey, revision: proposal.revision, digest: proposal.digest }, trials: [{ kind: "subflow_trial", receiptId: `trial-${brief.briefId}`, digest: "c".repeat(64) }], spentUsd: 0.02, calls: 6 });
     }
     return { returns };
@@ -121,12 +150,20 @@ export function project(options: {
     if (!submitted.ok) throw new Error(`fixture script refused: ${JSON.stringify(submitted.check.feedback)}`);
     return submitted.proposal;
   }
-  const trialPort: AutomationStudioCandidateTrialPort = async (request) => {
+  const run: AutomationStudioCandidateTrialPort = async (request) => {
     trials.push({ revision: request.revision, digest: request.digest });
     options.onTrial?.();
     const verdict = options.trial?.(trials.length) ?? "yes";
-    return { revision: request.revision, digest: request.digest, verdict, feedback: { said: verdict }, trialRunId: `run-${trials.length}`, ...(options.trialActs ? { acts: [{ step: 1, definitionId: "web.output.dom-click", consequences: ["create_new"] }] } : {}) };
+    const trialActs: AutomationStudioCandidateTrialAct[] = options.trialActs ? [{ step: 1, definitionId: "web.output.dom-click", consequences: ["create_new"] }] : [];
+    // As the service's whole-trial port records them (`service/project-build/whole-trials.ts`).
+    if (ledger && trialActs.length) ledger.forBrief("supervisor").trialRan(trialActs, `run-${trials.length}`);
+    return { revision: request.revision, digest: request.digest, verdict, feedback: { said: verdict }, trialRunId: `run-${trials.length}`, ...(trialActs.length ? { acts: trialActs } : {}) };
   };
+  const prepareStart: NonNullable<AutomationStudioCandidateTrialPort["prepareStart"]> = async () => {
+    hooks.push(trials.length);
+    return "reset";
+  };
+  const trialPort: AutomationStudioCandidateTrialPort = options.ledger?.hook ? Object.assign(run, { prepareStart }) : run;
   const ports: AutomationStudioProjectSupervisorPorts = {
     build: BUILD,
     record,
@@ -134,13 +171,13 @@ export function project(options: {
     sources: SOURCES,
     dispatch,
     proposals: (ref) => proposals.get(ref.briefId),
-    projectLedger: { snapshot: () => ({ acts: structuredClone(acts), nextAct: acts.length + 1 }) },
+    projectLedger: ledger ?? { snapshot: () => ({ acts: structuredClone(acts), nextAct: acts.length + 1 }) },
     submission: { ...submission, instructionText: TASK },
     ...(options.withTrial === false ? {} : { trial: { candidateId: "candidate.1", port: trialPort } }),
     ...(options.purse ? { purse: options.purse } : {}),
     ...(options.reserve ? { reserve: options.reserve } : {})
   };
-  return { ports, record, dispatched, proposals, acts, trials };
+  return { ports, record, dispatched, proposals, acts, trials, ledger, hooks };
 }
 
 /** A tool the harness offers beside the supervisor's: one observe-only look, and some it must not get. */
