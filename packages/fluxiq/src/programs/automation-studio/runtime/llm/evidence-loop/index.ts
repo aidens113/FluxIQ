@@ -17,6 +17,8 @@ export * from "./call-record.ts";
 export * from "../candidate-receipt/index.ts";
 export * from "./completion-attempt.ts";
 export * from "./completion-check.ts";
+// Why a configuration was refused lives beside this directory (`../configuration-issue/`), published here with the result that carries it.
+export * from "../configuration-issue/index.ts";
 export * from "./cost-purse.ts";
 export * from "./decision.ts";
 export * from "./decision-refusal.ts";

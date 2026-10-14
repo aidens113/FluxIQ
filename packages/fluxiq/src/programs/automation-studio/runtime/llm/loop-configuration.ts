@@ -24,6 +24,7 @@ import type { AutomationStudioFlowDraftClaimRefused, AutomationStudioFlowDraftRo
 import { automationStudioFlowDraftCopyScheduledCandidate } from "../flow-draft/scheduled-candidate/index.ts";
 import type { AutomationStudioFlowDraftDryRunGateInput, AutomationStudioFlowDraftTestReport } from "./node-tools/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "./evidence-loop/index.ts";
+import { automationStudioLlmEvidenceLoopConfigurationIssue as issue, type AutomationStudioLlmEvidenceLoopConfigurationIssue } from "./configuration-issue/index.ts";
 import type { AutomationStudioLlmEvidencePlanningTools } from "./evidence-progress/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW } from "./unreadable-reply.ts";
 import {
@@ -486,12 +487,22 @@ export type EvidenceLoopLimits = {
   maxDraftAmendments: number;
 };
 
-export function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): EvidenceLoopLimits | undefined {
+/** Limits the loop cannot run on: the check that refused them, by name (`./configuration-issue/`, t584). */
+export type EvidenceLoopLimitsRefused = { issue: AutomationStudioLlmEvidenceLoopConfigurationIssue };
+
+/**
+ * The loop's limits, or the first check they fail. Each refusal names its
+ * check and the figures it held, so a loop that ends
+ * `llm_evidence_loop.invalid_configuration` says which (t584).
+ */
+export function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): EvidenceLoopLimits | EvidenceLoopLimitsRefused {
   const maxIterations = input.maxIterations ?? 8;
   const unusable = input.unusableDecisions;
   const draft = input.draft === false ? undefined : input.draft;
   if (input.maxStepsWithoutProgress !== undefined && unusable?.maxConsecutive !== undefined
-    && input.maxStepsWithoutProgress !== unusable.maxConsecutive) return undefined;
+    && input.maxStepsWithoutProgress !== unusable.maxConsecutive) {
+    return refused("limits.max_steps_without_progress_agrees", { maxStepsWithoutProgress: input.maxStepsWithoutProgress, unusableMaxConsecutive: unusable.maxConsecutive }, "maxStepsWithoutProgress and unusableDecisions.maxConsecutive are both given and differ.");
+  }
   const maxStepsWithoutProgress = input.maxStepsWithoutProgress ?? unusable?.maxConsecutive
     ?? Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, maxIterations);
   const limits: EvidenceLoopLimits = {
@@ -511,18 +522,47 @@ export function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): Evid
     // corrections for a whole Flow. The run's own budget is what bounds it.
     maxDraftAmendments: Math.min(draft?.maxAmendments ?? 16, maxIterations)
   };
-  if (!Number.isInteger(limits.maxStepsWithoutProgress) || limits.maxStepsWithoutProgress < 1 || limits.maxStepsWithoutProgress > maxIterations) return undefined;
-  if (unusable && (typeof unusable.stalled !== "function"
-    || !Number.isInteger(limits.maxUnusableDecisionsInARow) || limits.maxUnusableDecisionsInARow < limits.maxStepsWithoutProgress
-    || limits.maxUnusableDecisionsInARow > maxIterations
-    || !Number.isInteger(limits.maxUnreadableRepliesInARow) || limits.maxUnreadableRepliesInARow < 1 || limits.maxUnreadableRepliesInARow > maxIterations)) return undefined;
-  if (!Number.isInteger(limits.maxIterations) || limits.maxIterations <= 0 || limits.maxIterations > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations) return undefined;
-  if (!Number.isInteger(limits.maxToolCalls) || limits.maxToolCalls <= 0 || limits.maxToolCalls > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls) return undefined;
-  if (input.budget && !automationStudioLlmEvidenceLoopBudgetValid(input.budget)) return undefined;
-  const lookBudget = input.planning?.lookBudget;
-  if (lookBudget !== undefined && (!Number.isSafeInteger(lookBudget) || lookBudget < 0)) return undefined;
-  if (!Number.isInteger(limits.minToolCalls) || limits.minToolCalls < 0 || limits.minToolCalls > limits.maxToolCalls || limits.minToolCalls >= limits.maxIterations) return undefined;
-  if (!Number.isInteger(limits.maxDraftAmendments) || limits.maxDraftAmendments < 0 || limits.maxDraftAmendments > limits.maxIterations) return undefined;
-  return limits;
+  const issue = limitsIssue(input, limits);
+  return issue ? { issue } : limits;
 }
 
+/** The first check `limits` fail, in the order the loop has always asked them, or none. */
+function limitsIssue(input: AutomationStudioLlmEvidenceLoopInput, limits: EvidenceLoopLimits): EvidenceLoopLimitsRefused["issue"] | undefined {
+  const { maxIterations, maxToolCalls, minToolCalls, maxStepsWithoutProgress, maxUnusableDecisionsInARow, maxUnreadableRepliesInARow, maxDraftAmendments } = limits;
+  const unusable = input.unusableDecisions;
+  const ceiling = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS;
+  if (!Number.isInteger(maxStepsWithoutProgress) || maxStepsWithoutProgress < 1 || maxStepsWithoutProgress > maxIterations) {
+    return issue("limits.max_steps_without_progress", { maxStepsWithoutProgress, maxIterations }, `maxStepsWithoutProgress ${maxStepsWithoutProgress} must be a whole number from 1 to maxIterations ${maxIterations}.`);
+  }
+  if (unusable && typeof unusable.stalled !== "function") return issue("limits.unusable_stalled", {}, "unusableDecisions.stalled is not a function.");
+  if (unusable && (!Number.isInteger(maxUnusableDecisionsInARow) || maxUnusableDecisionsInARow < maxStepsWithoutProgress || maxUnusableDecisionsInARow > maxIterations)) {
+    return issue("limits.max_unusable_decisions_in_a_row", { maxUnusableDecisionsInARow, maxStepsWithoutProgress, maxIterations }, `maxUnusableDecisionsInARow ${maxUnusableDecisionsInARow} must be a whole number from maxStepsWithoutProgress ${maxStepsWithoutProgress} to maxIterations ${maxIterations}.`);
+  }
+  if (unusable && (!Number.isInteger(maxUnreadableRepliesInARow) || maxUnreadableRepliesInARow < 1 || maxUnreadableRepliesInARow > maxIterations)) {
+    return issue("limits.max_unreadable_replies_in_a_row", { maxUnreadableRepliesInARow, maxIterations }, `maxUnreadableRepliesInARow ${maxUnreadableRepliesInARow} must be a whole number from 1 to maxIterations ${maxIterations}.`);
+  }
+  if (!Number.isInteger(maxIterations) || maxIterations <= 0 || maxIterations > ceiling.maxIterations) {
+    return issue("limits.max_iterations", { maxIterations, ceiling: ceiling.maxIterations }, `maxIterations ${maxIterations} must be a whole number from 1 to the loop's ceiling of ${ceiling.maxIterations}.`);
+  }
+  if (!Number.isInteger(maxToolCalls) || maxToolCalls <= 0 || maxToolCalls > ceiling.maxToolCalls) {
+    return issue("limits.max_tool_calls", { maxToolCalls, ceiling: ceiling.maxToolCalls }, `maxToolCalls ${maxToolCalls} must be a whole number from 1 to the loop's ceiling of ${ceiling.maxToolCalls}.`);
+  }
+  const budget = input.budget;
+  if (budget && !automationStudioLlmEvidenceLoopBudgetValid(budget)) {
+    return issue("limits.budget", { maxTotalTokens: budget.maxTotalTokens, maxTokensPerDecision: budget.maxTokensPerDecision, maxCostUsd: budget.maxCostUsd, maxDurationMs: budget.maxDurationMs, keptForFinishing: budget.countCalls?.keptForFinishing },
+      "The budget is refused: each bound given must be a positive finite number, its clock a function, and countCalls.keptForFinishing a whole number of at least 0.");
+  }
+  const lookBudget = input.planning?.lookBudget;
+  if (lookBudget !== undefined && (!Number.isSafeInteger(lookBudget) || lookBudget < 0)) return issue("limits.look_budget", { lookBudget }, `planning.lookBudget ${lookBudget} must be a whole number of at least 0.`);
+  if (!Number.isInteger(minToolCalls) || minToolCalls < 0 || minToolCalls > maxToolCalls || minToolCalls >= maxIterations) {
+    return issue("limits.min_tool_calls", { minToolCalls, maxToolCalls, maxIterations }, `minToolCalls ${minToolCalls} must be a whole number from 0 to maxToolCalls ${maxToolCalls}, and below maxIterations ${maxIterations}.`);
+  }
+  if (!Number.isInteger(maxDraftAmendments) || maxDraftAmendments < 0 || maxDraftAmendments > maxIterations) {
+    return issue("limits.max_draft_amendments", { maxDraftAmendments, maxIterations }, `maxDraftAmendments ${maxDraftAmendments} must be a whole number from 0 to maxIterations ${maxIterations}.`);
+  }
+  return undefined;
+}
+
+function refused(check: string, figures: Readonly<Record<string, unknown>>, words: string): EvidenceLoopLimitsRefused {
+  return { issue: issue(check, figures, words) };
+}
