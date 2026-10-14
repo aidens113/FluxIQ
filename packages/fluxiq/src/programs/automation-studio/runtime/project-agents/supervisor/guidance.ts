@@ -136,6 +136,9 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     afterReturnsDone: "Every brief sent came back done. Send briefs for any subflow still without a done proposal, or call project.assemble once every one has one.",
     afterReturnsNotDone: "A brief came back partial or blocked. Read its reason: send a changed brief for that subflow, change the plan with project.amend_plan, or end honestly.",
     afterReset: "The reset came back. Test the latest assembled Flow with core.test_candidate.",
+    /** After the repair of a whole test that passed only on the run's own recovery came back without the change (`./dispatch-tool.ts`, t603). */
+    afterRecoveryRepairShort: "The repair of the whole test that passed only on the run's own recovery came back without the change, so that test still stands. "
+      + "Complete with the complete object under wholeTestStands: Core completes on that test and tells the person the Flow relies on the run's own recovery. Or send a changed repair brief, if what came back says what to change.",
     afterRepairUnchanged: "A brief came back done with a proposal that does exactly what the one before it did (changedNothing), so the build has not moved and whatever failed before still stands. "
       + "Do not brief that subflow again: test the latest assembled Flow again if its last test may be repeated, change the plan with project.amend_plan if the work is split wrong, or end honestly, with a reset brief first if this build left lasting acts on the target.",
     afterAssemble: "Test this exact Flow next with core.test_candidate, passing the complete object above. Do not complete until its test answered yes."
@@ -184,7 +187,10 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     failingNotLatestTest: "This names a whole test that is not the latest one of the latest assembled Flow. A repair starts from the latest whole test (wholeTest, when one stands that did not pass: copy it whole) or from a trial a return of this subflow listed.",
     failingPassed: "This names a trial that passed, so it says nothing about what to repair. Name the trial that did not pass: the latest whole test (wholeTest, when one stands: copy it whole), or a trial of this subflow that did not pass.",
     failingUnknown: "No return of this subflow listed this trial. Copy one entry of the trials a return of this subflow listed, or name the latest whole test (wholeTest, when one stands that did not pass: copy it whole).",
-    changedNothing: "This proposal does exactly what the one under sameAs did, its names aside: the brief changed nothing, and what failed before still stands."
+    changedNothing: "This proposal does exactly what the one under sameAs did, its names aside: the brief changed nothing, and what failed before still stands.",
+    /** Beside a refused allowance when the call only repaired a whole test that passed on the run's own recovery (`./dispatch-tool.ts`, t603). */
+    recoveryRepairUnaffordable: "This build cannot pay for the repair of the whole test that passed only on the run's own recovery, so that test still stands. "
+      + "Complete with the complete object here: Core completes on that test and tells the person the Flow relies on the run's own recovery."
   }),
   /** What each issue a plan's reading can find says, by its code, beside its path (`./plan-tool.ts`, t595); a code with none here is answered by its code and path alone. */
   planIssues: Object.freeze({
@@ -217,6 +223,10 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     notLatest: "This is not the latest assembled Flow. Complete with exactly the complete object the latest project.assemble returned, after core.test_candidate answered yes for it.",
     shape: "Complete with exactly the complete object of the latest assembly, or with ended (blocked or partial) and reason, and nothing else.",
     endedTooSoon: "No brief has come back blocked or partial and no whole test has failed, so nothing stops this build yet. Keep going: send briefs, assemble and test.",
-    resetFirst: "This build's lasting acts are still on the target, as listed. Before ending, dispatch a reset brief (kind reset, no parts) with project.dispatch to undo them, then end again. If the reset cannot undo them, end anyway: Core names what is left in your reason."
+    resetFirst: "This build's lasting acts are still on the target, as listed. Before ending, dispatch a reset brief (kind reset, no parts) with project.dispatch to undo them, then end again. If the reset cannot undo them, end anyway: Core names what is left in your reason.",
+    /** A whole test that passed only on the run's own recovery, before its repair was tried (`./completion.ts`, t603). */
+    recoveryRepairFirst: "The whole test passed, but its run recovered by itself where the site asked it to slow down (slowDown), and this Flow has no step that does that, so it cannot complete yet. "
+      + "Send a repair brief with project.dispatch for the subflow that holds each step slowDown names, its failingReceipt the wholeTest here copied whole; then assemble and test again. "
+      + "If that repair comes back without the change, or this build cannot pay for it, complete with this same object again: Core then completes on this test and tells the person the Flow relies on the run's own recovery."
   })
 });

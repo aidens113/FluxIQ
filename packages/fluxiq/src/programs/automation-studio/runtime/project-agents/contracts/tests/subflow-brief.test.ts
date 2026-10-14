@@ -78,6 +78,30 @@ describe("subflow brief", () => {
     expect(long.said).toEqual({ code: "c.d_e", note: `${"y".repeat(497)}...` });
   });
 
+  // Social `run-mv8mebid-84ada5bd`: a whole test passed only on the run's own recovery, and its repair was refused (t603).
+  it("carries a pass the run rescued as a failing trial only with its interruptions, and refuses them anywhere else", () => {
+    const rescued = { verdict: "yes", interruptions: [{ step: 3, label: "save it", needs: { paceAtLeastMs: 2000 } }], said: { judge: "yes" } };
+    const repair = (trial: unknown) => brief((value) => Object.assign(value, { kind: "repair", failingReceipt: { kind: "candidate_trial", receiptId: "run-1", digest: "c".repeat(64) }, failingTrial: trial }));
+    expect(parse(repair(rescued))).toEqual({ status: "valid", value: repair(rescued) });
+    expect(parse(repair({ ...rescued, interruptions: [] }))).toMatchObject({ status: "invalid", code: "project.brief_failing_receipt", path: "brief.failingTrial.interruptions" });
+    expect(parse(repair({ ...rescued, verdict: "no" }))).toMatchObject({ status: "invalid", code: "project.brief_failing_receipt", path: "brief.failingTrial.interruptions" });
+    expect(parse(repair({ ...rescued, failedStep: { step: 3 } }))).toMatchObject({ status: "invalid", code: "project.brief_failing_receipt", path: "brief.failingTrial.interruptions" });
+    expect(parse(repair({ ...rescued, interruptions: [{ text: "x".repeat(4000) }] }))).toMatchObject({ status: "invalid", code: "project.too_long", path: "brief.failingTrial.interruptions.0" });
+  });
+
+  it("reads a pass the gate holds back into each step the run recovered at, as its step record has it, and a pass with nothing held back into none", () => {
+    const recovered = { step: 2, definitionId: "web.dom.click", label: "save it", control: "Save", status: "succeeded", absorbed: [{ failureCode: "web.action.rate_limited", askedWaitMs: 3000 }], interruptions: [{ kind: "rate_limit", wayOut: "t9" }] };
+    const feedback = { judge: "yes", steps: [{ step: 1, status: "succeeded", definitionId: "web.browser.navigate" }, recovered], paces: [{ definitionId: "web.dom.click", label: "save it", control: "Save", paceMs: 3200 }] };
+    const unanswered = [{ step: 2, label: "save it", paceAtLeastMs: 3200, wayOut: "t9", waitAtLeastMs: 3000 }];
+    expect(automationStudioProjectSubflowBrief.failingTrial({ verdict: "yes", feedback }, unanswered)).toEqual({
+      verdict: "yes",
+      interruptions: [{ step: 2, label: "save it", definitionId: "web.dom.click", control: "Save", absorbed: recovered.absorbed, interruptions: recovered.interruptions, learned: feedback.paces, needs: { paceAtLeastMs: 3200, wayOut: "t9", waitAtLeastMs: 3000 } }],
+      said: { judge: "yes", paces: feedback.paces }
+    });
+    expect(automationStudioProjectSubflowBrief.failingTrial({ verdict: "yes", feedback }, [])).toBeUndefined();
+    expect(automationStudioProjectSubflowBrief.failingTrial({ verdict: "yes", feedback })).toBeUndefined();
+  });
+
   it("refuses a brief written against another plan", () => {
     const replanned = structurePlan((plan) => (plan.partOf.list_soups = ["p1", "p2"]));
     expect(issues(brief(), replanned, taskSpec())).toEqual([{ code: "project.brief_plan_stale", path: "brief.planDigest" }]);

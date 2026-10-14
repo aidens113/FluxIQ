@@ -56,6 +56,8 @@ export type BuilderPlan = (brief: AutomationStudioProjectSubflowBrief, attempt: 
 export function project(options: {
   builder?: BuilderPlan;
   trial?: (attempt: number) => AutomationStudioCandidateTrialResult["verdict"];
+  /** What each whole trial's feedback says, beyond its verdict (t603); `{ said: <verdict> }` when absent. */
+  trialFeedback?: (attempt: number) => JsonObject;
   trialActs?: boolean;
   withTrial?: boolean;
   purse?: AutomationStudioLlmBuildPurse;
@@ -152,7 +154,7 @@ export function project(options: {
     const trialActs: AutomationStudioCandidateTrialAct[] = options.trialActs ? [{ step: 1, definitionId: "web.output.dom-click", consequences: ["create_new"] }] : [];
     // As the service's whole-trial port records them (`service/project-build/whole-trials.ts`).
     if (trialActs.length) ledger.forBrief("supervisor").trialRan(trialActs, `run-${trials.length}`);
-    return { revision: request.revision, digest: request.digest, verdict, feedback: { said: verdict }, trialRunId: `run-${trials.length}`, ...(trialActs.length ? { acts: trialActs } : {}) };
+    return { revision: request.revision, digest: request.digest, verdict, feedback: options.trialFeedback?.(trials.length) ?? { said: verdict }, trialRunId: `run-${trials.length}`, ...(trialActs.length ? { acts: trialActs } : {}) };
   };
   const prepareStart: NonNullable<AutomationStudioCandidateTrialPort["prepareStart"]> = async () => {
     hooks.push(trials.length);
