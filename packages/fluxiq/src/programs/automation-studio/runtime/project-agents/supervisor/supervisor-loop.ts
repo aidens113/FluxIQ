@@ -80,6 +80,8 @@ export async function runAutomationStudioProjectSupervisorLoop(input: {
   // The judged whole run and one repair round are kept back from every builder's allowance (`Allowance`).
   if (ports.purse && ports.reserve) {
     ports.purse.keepBackForJudging(ports.reserve);
+    // The build's own finishing is kept from every builder's share of the calls, as judging is (t570).
+    if (ports.finishing) ports.purse.keepBackCallsFromAllowances(ports.finishing.supervisorCalls + ports.finishing.resetCalls);
     if (!view?.record.allowances.some((allowance) => allowance.role === "supervisor")) await ports.record.recordAllowance(ports.build, { role: "supervisor", usd: ports.purse.keptBackUsd() });
   }
   const controller = new AutomationStudioFlowCandidateSubmissionController(signal ? { ...ports.submission, signal } : ports.submission);

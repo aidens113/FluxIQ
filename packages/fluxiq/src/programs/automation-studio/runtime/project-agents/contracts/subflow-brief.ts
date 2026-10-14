@@ -37,13 +37,20 @@ export type AutomationStudioProjectSubflowBrief = {
   entry: { caseId: string; predecessors: string[] };
   allowanceUsd: number;
   maxIterations: number;
+  /**
+   * The calls its allowance is carved with, its subflow trials' judges among
+   * them (t570): Core's share of the build's calls, set as the brief is
+   * dispatched. Absent on a brief recorded before Core sized calls.
+   */
+  maxCalls?: number;
+  /** Core's, from the lasting acts its parts ask for (t570); never wider. */
   permittedActs: AutomationStudioActionConsequence[];
   recordingExcerpt?: string;
   /** Repair only: the trial the repair starts from. */
   failingReceipt?: AutomationStudioProjectReceiptRef;
 };
 
-const LIMITS = { parts: 50, predecessors: 40, excerpt: 20_000, iterations: 1000 } as const;
+const LIMITS = { parts: 50, predecessors: 40, excerpt: 20_000, iterations: 1000, calls: 10_000 } as const;
 
 export const automationStudioProjectSubflowBrief = Object.freeze({
   parse(value: unknown): AutomationStudioProjectParse<AutomationStudioProjectSubflowBrief> {
@@ -75,7 +82,7 @@ export const automationStudioProjectSubflowBrief = Object.freeze({
 });
 
 function read(value: unknown): AutomationStudioProjectSubflowBrief {
-  const fields = shape.object(value, "brief", ["briefId", "kind", "planDigest", "subflowKey", "parts", "entry", "allowanceUsd", "maxIterations", "permittedActs"], ["interface", "recordingExcerpt", "failingReceipt"]);
+  const fields = shape.object(value, "brief", ["briefId", "kind", "planDigest", "subflowKey", "parts", "entry", "allowanceUsd", "maxIterations", "permittedActs"], ["interface", "maxCalls", "recordingExcerpt", "failingReceipt"]);
   const kind = shape.oneOf(fields.kind, "brief.kind", AUTOMATION_STUDIO_PROJECT_BRIEF_KINDS);
   const parts = shape.ids(fields.parts, "brief.parts", LIMITS.parts);
   if (kind !== "survey" && kind !== "reset" && !parts.length) return shape.refuse("project.brief_no_parts", "brief.parts");
@@ -99,6 +106,10 @@ function read(value: unknown): AutomationStudioProjectSubflowBrief {
     permittedActs
   };
   if (brief.maxIterations > LIMITS.iterations) return shape.refuse("project.invalid_count", "brief.maxIterations");
+  if (fields.maxCalls !== undefined) {
+    brief.maxCalls = shape.count(fields.maxCalls, "brief.maxCalls", 1);
+    if (brief.maxCalls > LIMITS.calls) return shape.refuse("project.invalid_count", "brief.maxCalls");
+  }
   if (fields.interface !== undefined) brief.interface = readAutomationStudioProjectSubflowInterface(fields.interface, "brief.interface");
   if (fields.recordingExcerpt !== undefined) brief.recordingExcerpt = shape.text(fields.recordingExcerpt, "brief.recordingExcerpt", LIMITS.excerpt);
   if (fields.failingReceipt !== undefined) brief.failingReceipt = readAutomationStudioProjectReceiptRef(fields.failingReceipt, "brief.failingReceipt");
