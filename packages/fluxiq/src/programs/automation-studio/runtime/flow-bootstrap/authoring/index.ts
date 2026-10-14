@@ -20,7 +20,12 @@
 // `instruction-record-columns.ts` publishes one sentence and nothing else: what
 // its matcher found unread, said to the build and the judge, so neither grows a
 // second matcher.
+//
+// `assemble.ts` publishes `derivedOutputActionId` alone: the output action a
+// step gets when nothing names one, which a subflow trial's arrival step needs
+// too (`../verification/detached-subflow.ts`, t578), so there is one rule.
 export * from "./accept.ts";
+export { derivedOutputActionId } from "./assemble.ts";
 export * from "./assembled-record-output.ts";
 export * from "./assemble-draft.ts";
 export * from "./contracts.ts";

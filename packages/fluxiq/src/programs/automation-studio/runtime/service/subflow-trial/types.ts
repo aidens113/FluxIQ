@@ -36,6 +36,14 @@ export type AutomationStudioSubflowTrialPorts = Omit<AutomationStudioCandidateTr
   predecessorProposals(scope: AutomationStudioSubflowScope): Promise<readonly AutomationStudioSubflowProposal[]>;
   /** The build's current structure plan digest; null once the build is gone. Absent, the scope's digest is taken as current. */
   currentPlanDigest?: ((buildId: string) => Promise<string | null>) | undefined;
+  /**
+   * The bound domain's arrival node and the parameter it takes a location
+   * under (`runsNodes.arrival`, t578). With `startLocation`, every trial's run
+   * goes to the start location first, after the start hook and before any
+   * predecessor, so it starts on a loaded start page rather than on the page
+   * a builder left (`./run.ts`). Absent, the run starts where the tab stands.
+   */
+  arrival?: { node: string; parameter: string } | undefined;
   judge(input: AutomationStudioSubflowTrialJudgeInput): Promise<AutomationStudioBuildTestVerdict>;
   /** The partial runner; replaced only by tests. */
   execute?: typeof runAutomationStudioDetachedSubflow | undefined;

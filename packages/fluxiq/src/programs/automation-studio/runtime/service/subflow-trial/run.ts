@@ -5,9 +5,19 @@
 //    (`predecessorProposals`). One missing, or proposed against another plan,
 //    runs nothing: the entry cannot be prepared.
 // 2. The start, exactly as a whole candidate's trial makes it
-//    (`automationStudioCandidateTrialStart`): the deployment's start hook when
-//    it has one. Undoing the build's own acts is the trial gate's, before it
-//    asks; what it could not undo arrives as `startedWith`.
+//    (`./start.ts`): the deployment's start hook when it has one. When the
+//    subflow trial gate holds the build's site reset, it asks the port to run
+//    the hook first (`prepareStart`, `./port.ts`), then undoes the build's
+//    own acts before it asks (`subflow-trial-gate.ts`, t578, as the whole
+//    gate does); that start is handed in here and the hook is not run again,
+//    and what the reset could not undo arrives as `startedWith`. Without the
+//    gate's reset the hook runs here, and nothing undoes the build's acts but
+//    the hook itself.
+//    Then, given the domain's arrival (`arrival`) and a start location, the
+//    run's first step loads the start location in the trial's tab, so the
+//    trial starts on a loaded start page rather than on the page a builder
+//    left (A8 bigbox debug, cause A: the hook reset the fixture's server state
+//    but the tab still showed the builder's last page).
 // 3. A runtime session of its own, marked `metadata.subflowTrial` with the
 //    brief and the proposal it tries. Never `adaptiveRuntime`: a partial trial
 //    is not an adaptive run and is admitted as a build's trial
@@ -38,11 +48,10 @@ import {
   automationStudioCandidateFrameEvidence,
   automationStudioCandidateTrialFeedback as Feedback,
   automationStudioCandidateTrialLandedActs,
-  automationStudioCandidateTrialStart,
   automationStudioCandidateTrialSummary,
-  type AutomationStudioCandidateTrialPorts,
   type AutomationStudioCandidateTrialStart
 } from "../candidate-trial/index.ts";
+import { automationStudioSubflowTrialStart } from "./start.ts";
 import type { AutomationStudioSubflowTrialJudgeInput, AutomationStudioSubflowTrialPorts, AutomationStudioSubflowTrialRecord } from "./types.ts";
 
 const NO_SPEND: AutomationStudioSubflowTrialRecord["judge"] = Object.freeze({ calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 });
@@ -50,13 +59,18 @@ const NO_SPEND: AutomationStudioSubflowTrialRecord["judge"] = Object.freeze({ ca
 /** One partial trial's answer and Core's record of it. */
 export type AutomationStudioSubflowTrialOutcome = { result: AutomationStudioSubflowTrialResult; record: AutomationStudioSubflowTrialRecord };
 
-/** Runs and judges one partial trial (header). */
-export async function runAutomationStudioSubflowTrial(request: AutomationStudioSubflowTrialRequest, ports: AutomationStudioSubflowTrialPorts): Promise<AutomationStudioSubflowTrialOutcome> {
+/**
+ * Runs and judges one partial trial (header). `preparedStart` is the start the
+ * port's `prepareStart` already made for this trial, ahead of the gate's reset
+ * check; given, the hook is not run again.
+ */
+export async function runAutomationStudioSubflowTrial(request: AutomationStudioSubflowTrialRequest, ports: AutomationStudioSubflowTrialPorts, preparedStart?: AutomationStudioCandidateTrialStart): Promise<AutomationStudioSubflowTrialOutcome> {
   const { signal, scope, proposal } = request;
   signal.throwIfAborted();
   const now = ports.now ?? Date.now;
   const answer = answerFor(request);
-  const notRun = { start: { status: "not_run" as const }, execution: "not_run" as const, entryPrepared: false, judge: { ...NO_SPEND } };
+  // A start the hook already made is recorded even when nothing then runs: the site was put back all the same.
+  const notRun = { start: preparedStart ?? { status: "not_run" as const }, execution: "not_run" as const, entryPrepared: false, judge: { ...NO_SPEND } };
   // A proposal of another brief, plan or subflow runs nothing: its receipt would be credited to the wrong scope.
   if (!proposalOf(scope, proposal)) {
     const code = "subflow.trial_identity_mismatch";
@@ -68,7 +82,7 @@ export async function runAutomationStudioSubflowTrial(request: AutomationStudioS
   const identity = await identityOf(scope, proposal, predecessors, ports);
   if (!identity) return answer("execution_failed", { code: "subflow.trial_build_gone", partial: true, entryPrepared: false }, { ...notRun, code: "subflow.trial_build_gone" });
 
-  const start = await automationStudioCandidateTrialStart({ candidateId: `subflow.${scope.buildId}.${scope.briefId}`, revision: proposal.revision, digest: proposal.digest, signal }, startPorts(ports));
+  const start = preparedStart ?? await automationStudioSubflowTrialStart({ scope, revision: proposal.revision, digest: proposal.digest, signal }, ports);
   if (start.status === "failed") return answer("execution_failed", { code: start.code, start: start.status, partial: true, entryPrepared: false }, { ...notRun, start, code: start.code });
 
   const runId = ports.newRunId?.() ?? `subflow-trial.${randomUUID()}`;
@@ -92,6 +106,8 @@ export async function runAutomationStudioSubflowTrial(request: AutomationStudioS
       sourceInstructionIds: [...ports.sourceInstructionIds],
       runId,
       start: receipt,
+      // The start page loaded first, after the hook (header, t578).
+      ...(ports.arrival && ports.startLocation ? { arrival: { ...ports.arrival, location: ports.startLocation } } : {}),
       // The signal rides on the options alone: the runner refuses two different signals.
       options: ports.graphOptions({ runId, signal })
     });
@@ -141,16 +157,6 @@ export async function runAutomationStudioSubflowTrial(request: AutomationStudioS
   const read = Feedback.judged({ verdict, summary, ...shown });
   const { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } = verdict.spent;
   return answer(read.verdict, { ...read.feedback, partial: true, entryPrepared: executed.entryPrepared }, { ...ran, execution: "succeeded", ...(read.code ? { code: read.code } : {}), judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } }, acts);
-}
-
-/**
- * The ports the whole-candidate start reads (the start hook, the project, the
- * Flow and the start location), without this trial's scoped judge and partial
- * runner, which that function never calls.
- */
-function startPorts(ports: AutomationStudioSubflowTrialPorts): AutomationStudioCandidateTrialPorts {
-  const { judge: _judge, execute: _execute, ...shared } = ports;
-  return { ...shared, judge: async () => { throw new Error("A trial's start is never judged."); } };
 }
 
 /** The proposal is bound to exactly this scope and heads with its subflow. */

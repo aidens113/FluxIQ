@@ -1,4 +1,4 @@
-import { runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowProposal } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import { runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowProposal, type AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioLlmBuildPurseScope, type AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
 import { withAutomationStudioProjectAgent } from "../attribution/index.ts";
 import type { AutomationStudioProjectBuilderReturn, AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
@@ -124,7 +124,7 @@ async function run(input: {
     scope: mapped.scope,
     siblings: mapped.siblings,
     submission: { ...ports.submission, signal: stop },
-    ...(ports.trial ? { trial: { port: receipts.wrap(ports.trial) } } : {}),
+    ...(ports.trial ? { trial: { port: kept(ports.trial, receipts.wrap(ports.trial)), ...(ports.reset ? { reset: ports.reset } : {}) } } : {}),
     ...(callScope !== undefined ? { callScope } : {}),
     ...(ports.observe ? { observe: ports.observe } : {}),
     accepted
@@ -151,6 +151,12 @@ async function untilEnded<T>(signal: AbortSignal, ended: AutomationStudioProject
   }
   const reason = own();
   return reason !== undefined ? { ended: reason } : { ran };
+}
+
+/** `wrapped` keeping `port`'s start hook ahead of the gate's reset (`prepareStart`, t578), which a wrapper would otherwise drop. */
+function kept(port: AutomationStudioSubflowTrialPreparingPort, wrapped: AutomationStudioSubflowTrialPreparingPort): AutomationStudioSubflowTrialPreparingPort {
+  if (port.prepareStart) wrapped.prepareStart = port.prepareStart;
+  return wrapped;
 }
 
 /** A brief its own ending stopped: `blocked` with that ending's reason (a reset that left nothing in place, `done`), any proposal it had still named. */

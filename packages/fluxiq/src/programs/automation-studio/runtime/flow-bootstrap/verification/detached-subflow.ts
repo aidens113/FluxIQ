@@ -37,11 +37,22 @@
 // so the trial's steps and acts read across both. A predecessor with no
 // interface is still called (its interface then empty): it prepares the
 // entry and hands nothing on.
+//
+// **The run starts on a loaded start page** (t578; A8 bigbox debug, cause A).
+// Given `arrival` -- the domain's arrival node (`runsNodes.arrival`) and the
+// build's start location -- the first root's first step after its start goes
+// there, before any call, so the trial starts on a page loaded after the
+// deployment's start hook rather than on the page a builder left. A router-run
+// target with no predecessors then still gets a first root, holding only the
+// arrival. The arrival declares no lasting consequence (`[]`): it only loads a
+// page. An arrival node the registry does not offer refuses the trial
+// (`subflow.execution_arrival_unavailable`) before anything runs. Without
+// `arrival` the root is as it was, and the run starts where the tab stands.
 
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { AutomationStudioFlowArtifact, AutomationStudioPublishedFlowSnapshot } from "../../../model/index.ts";
-import { automationNodeStateBinding, type AutomationStudioNodeRegistry, type AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
+import { AutomationStudioNodeRegistry, automationNodeStateBinding, type AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../executor/index.ts";
 import type { AutomationStudioRouterExecutionResult } from "../../router-runtime.ts";
 import {
@@ -52,6 +63,7 @@ import {
   type AutomationStudioFlowBootstrapSubflow,
   type AutomationStudioFlowBuildPlan
 } from "../plan/index.ts";
+import { derivedOutputActionId } from "../authoring/index.ts";
 import type { AutomationStudioCandidateExecutionReceipt, AutomationStudioCandidateStartReceipt, AutomationStudioCandidateVerificationIdentity } from "./contracts.ts";
 import type { runAutomationStudioDetachedCandidate } from "./detached-execution.ts";
 
@@ -102,7 +114,16 @@ export type AutomationStudioDetachedSubflowInput = {
   start: AutomationStudioCandidateStartReceipt;
   options?: AutomationStudioGraphExecutionOptions;
   signal?: AbortSignal;
+  /**
+   * Where the run goes first (header, t578): the domain's arrival node and its
+   * location parameter (`runsNodes.arrival`), with the build's start location.
+   * Absent, the run starts on the page as it stands.
+   */
+  arrival?: AutomationStudioDetachedSubflowArrival | undefined;
 };
+
+/** The arrival step a partial trial opens with (header): the domain's node, the parameter it takes a location under, and the location. */
+export type AutomationStudioDetachedSubflowArrival = { node: string; parameter: string; location: string };
 
 /**
  * A partial run's answer. `graph` is the throwaway root that ran and
@@ -153,7 +174,10 @@ export async function runAutomationStudioDetachedSubflow(input: AutomationStudio
   // predecessors' calls (header).
   const routerRun = target.subflows[0]!.interface === undefined;
   const called = routerRun ? predecessors : [...predecessors, target];
-  const calls = called.length ? composedPlan(called) : undefined;
+  const arrival = input.arrival ? arrivalNode(input.arrival, input.registry ?? new AutomationStudioNodeRegistry(), input.resolution) : undefined;
+  if (arrival === null) return refused("subflow.execution_arrival_unavailable");
+  // With an arrival the first root always runs: it loads the start page before anything else (header, t578).
+  const calls = called.length || arrival ? composedPlan(called, arrival) : undefined;
   if (calls && "unbound" in calls) return refused("subflow.execution_input_unbound");
   const plans = [...(calls ? [calls.plan] : []), ...(routerRun ? [rootPlan(target)] : [])];
   const validated: AutomationStudioFlowBuildPlan[] = [];
@@ -290,8 +314,23 @@ function boundTo(identity: AutomationStudioDetachedSubflowIdentity, target: Auto
     && new Set(keys).size === keys.length;
 }
 
-/** The throwaway topology: a root calling each proposal in order -- the predecessors, then a callable target -- with every proposal Subflow beside it (header). */
-function composedPlan(proposals: readonly AutomationStudioDetachedSubflowProposal[]): { plan: AutomationStudioFlowBootstrapPlan } | { unbound: string } {
+/**
+ * The arrival step (header, t578), or null when the registry offers no such
+ * node here, or it declares an output action whose id cannot be derived. A
+ * domain node's output action is its command (the web domain's navigation
+ * declares a fixed one), derived exactly as a written step's is
+ * (`derivedOutputActionId`).
+ */
+function arrivalNode(arrival: AutomationStudioDetachedSubflowArrival, registry: AutomationStudioNodeRegistry, resolution: AutomationStudioNodeRegistryResolution): AutomationStudioFlowBootstrapNode | null {
+  const definition = registry.get(arrival.node, resolution);
+  if (!definition) return null;
+  const outputActionId = derivedOutputActionId(definition);
+  if (definition.outputAction && !outputActionId) return null;
+  return { key: "arrival", definitionId: definition.id, definitionVersion: definition.version, parameters: { [arrival.parameter]: arrival.location }, ...(outputActionId ? { outputActionId } : {}), consequences: [] };
+}
+
+/** The throwaway topology: a root that first arrives when told to, then calls each proposal in order -- the predecessors, then a callable target -- with every proposal Subflow beside it (header). */
+function composedPlan(proposals: readonly AutomationStudioDetachedSubflowProposal[], arrival?: AutomationStudioFlowBootstrapNode): { plan: AutomationStudioFlowBootstrapPlan } | { unbound: string } {
   const called = proposals.map((proposal) => proposal.subflows[0]!);
   /** Each output id produced so far, and the root value it is kept under. */
   const produced = new Map<string, string>();
@@ -317,7 +356,7 @@ function composedPlan(proposals: readonly AutomationStudioDetachedSubflowProposa
     });
   }
   const start: AutomationStudioFlowBootstrapNode = { key: "start", definitionId: START_ID, definitionVersion: "1.0.0" };
-  const nodes = [start, ...calls];
+  const nodes = [start, ...(arrival ? [arrival] : []), ...calls];
   const root: AutomationStudioFlowBootstrapSubflow = {
     key: ROOT_KEY,
     name: "Subflow trial",

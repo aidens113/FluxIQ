@@ -1,5 +1,5 @@
-import type { AutomationStudioSiteResetLedger, AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetProjectLedger } from "../../flow-bootstrap/site-reset/index.ts";
-import type { AutomationStudioSubflowScope, AutomationStudioSubflowTrialPort, runAutomationStudioSubflowBuilderLoop } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import type { AutomationStudioSiteResetLedger, AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetProjectLedger, AutomationStudioSiteResetTrialReset } from "../../flow-bootstrap/site-reset/index.ts";
+import type { AutomationStudioSubflowScope, AutomationStudioSubflowTrialPreparingPort, runAutomationStudioSubflowBuilderLoop } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/index.ts";
 import type { AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
@@ -56,7 +56,9 @@ export type AutomationStudioProjectBriefEnding = {
 export type AutomationStudioProjectBuilderPorts = {
   loop: Omit<BuilderInput["loop"], "signal" | "purse" | "maxIterations">;
   submission: Omit<BuilderInput["submission"], "signal">;
-  trial?: AutomationStudioSubflowTrialPort | undefined;
+  trial?: AutomationStudioSubflowTrialPreparingPort | undefined;
+  /** The site reset its trial gate asks before each trial: every lasting act of this build undone first (t578). */
+  reset?: AutomationStudioSiteResetTrialReset | undefined;
   observe?: BuilderInput["observe"];
   /** The brief's permission and person-needed ending; absent, only the build's cancellation stops its loop. */
   ended?: AutomationStudioProjectBriefEnding | undefined;
