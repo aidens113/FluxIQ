@@ -196,3 +196,186 @@ Moved from `../../automation-project-agents-plan.md` at the first compaction. Ev
   parses stamped events and project notes. Four narrow checks plus the contracts build and tests.
 - Report to: `docs/working/automation-project-agents-plan/reports/t539-a6-attribution-core.md`
 
+## Second compaction
+
+### Brief: A5a-supervisor
+- Repository: FluxIQ Core, its own paired worktree under `fxwork/` (the dispatch prompt names it).
+- Task: unit A5a, the project supervisor, in new `project-agents/supervisor/`; no `service.ts` change (A5c wires
+  it). (1) `supervisor-loop.ts`: reuse `runAutomationStudioLlmEvidenceLoop` as `flow-bootstrap/candidate/authoring-loop.ts`
+  does (filter host tools, append own tools, intercept in `executeTool`, own `completionSchema`/`checkCompletion`)
+  with `draft:false, dryRun:false`, NOT `discoveryOnly`, and no `budget` wrap-up (the purse and `maxIterations`
+  bound it); its decisions and judge run in their own purse run frame (`llm/build-purse/run.ts`), and inside
+  `withAutomationStudioProjectAgent({role:"supervisor"})`. (2) Tools: `project.read_task` carries
+  `initialObservation` (the free first look: task, instruction sources, build-record summary; no provider call);
+  observe-only domain tools plus `core.describe_nodes`/`core.recall_result` (as `subflow-candidate/role-tools.ts`
+  filters); `project.write_plan` (task spec + structure plan into the build record store, refusals returned as
+  feedback); `project.amend_plan`; `project.dispatch` (records the briefs, then calls
+  `AutomationStudioProjectDispatchPort` from `project-agents/dispatch/port.ts`; `effect:"mutate"` so the repeat
+  guard never answers it from memory); `project.assemble`; `core.test_candidate` (reuse
+  `AutomationStudioFlowCandidateTrialGate`, `effect:"mutate"`); `complete` only on a yes for the exact assembled
+  revision and digest. Before the whole trial, if the project ledger has acts not undone, refuse the trial and
+  name `project.dispatch` with a `reset` brief. (3) `assembly.ts`: compose the plan with each subflow's latest
+  proposal into one `AutomationStudioFlowBootstrapPlan`: callable subflows are parts; the router-run main
+  subflow's body is the sequence of `call:` steps in dependency order, each input bound to the earlier part
+  output of the same name; then submit through a new host-composed seam on
+  `AutomationStudioFlowCandidateSubmissionController` (`flow-bootstrap/candidate/submission.ts`, e.g.
+  `submitComposed`) that runs every completion check except treating the plan as model-written (builders'
+  elements were resolved from handles when they submitted). (4) Cards: emit plan, brief, return and receipt
+  cards through `activity/project/` at each step. (5) `guidance.ts`: the supervisor's instructions in tool
+  descriptions and the read_task answer, examples from a different kind of site than any realistic scenario; a
+  guard test copying the lists in `llm/harness/tests/in-run-repair-slot.test.ts:106-125` (do not reuse fixture
+  text containing "rating"). (6) `ports.ts`: everything the supervisor reaches outside itself, for A5c to build.
+- Required reads: this document's Current State, `Contracts` and the A5 notes there;
+  `flow-bootstrap/candidate/{authoring-loop,submission,trial-gate}.ts`; `project-agents/` (all); `activity/project/`;
+  `flow-bootstrap/subflow-candidate/`; `docs/architecture/code-structure.md`.
+- Owns: new `project-agents/supervisor/` (files above, barrel, `tests/`); the `submitComposed` seam in
+  `flow-bootstrap/candidate/submission.ts` and its test; the export line in `project-agents/index.ts`;
+  `docs/working/automation-project-agents-plan/reports/<your label>.md`.
+- Must not touch: `service.ts`, `project-agents/{contracts,record,host-resources,dispatch,attribution}`,
+  every other `flow-bootstrap/` file, `llm/`, `model/`, `api/`, `conversations/`, `activity/`.
+- Definition of done (stub provider, stub dispatch port): a one-part task gives a one-subflow plan; a three-part
+  plan dispatches briefs in dependency order; an uncovered part refuses; a blocked return leads to a re-brief or
+  an honest ending; outstanding acts force a reset brief before the whole trial; the reserve pays the judged run;
+  completion only on yes for the exact revision; assembly binds part inputs to earlier outputs and passes the
+  composed submission; the guidance guard. Four narrow checks.
+
+### Brief: A5b-dispatcher
+- Repository: FluxIQ Core, its own paired worktree under `fxwork/` (the dispatch prompt names it).
+- Task: unit A5b, the dispatcher implementing `AutomationStudioProjectDispatchPort` (`project-agents/dispatch/port.ts`)
+  in `project-agents/dispatch/`. Dependency order from each brief's `entry.predecessors`; briefs whose entries do
+  not depend on each other run at once, up to the host scheduler's capacity; one scheduler per host port (a
+  WeakMap), never per build. Per brief: an allowance from the build purse (`purse.allowance`, role `builder`,
+  usd and `maxCalls` from the brief), a cancellation child (`buildCancellation.child`), a host lease through
+  `AutomationStudioHostLeaseScope` (`project-agents/host-resources/lease-scope.ts`), attribution through
+  `withAutomationStudioProjectAgent({role, briefId, subflowName})`; run the builder loop
+  (`flow-bootstrap/subflow-candidate/builder-loop.ts`) with a per-brief port factory the caller supplies
+  (harness options, routing, permissions, person-needed, the subflow trial port from `service/subflow-trial/`,
+  the brief's ledger from the project ledger's `forBrief`); pass a `callScope` only when capacity is above 1.
+  A `reset` brief runs the same loop with site-reset tools and completes when the brief's ledger shows every act
+  of the build undone (no proposal). Map every ending to an `AutomationStudioProjectBuilderReturn`: a throw, an
+  allowance refusal or a stop is `blocked` or `partial` with its reason, never the dispatcher's failure; record
+  briefs' returns, allowances and receipts in the build record store. Close each allowance when its brief ends.
+- Required reads: this document's Current State, `Contracts` (Concurrent dispatch) and the A5 notes;
+  `project-agents/` (all); `flow-bootstrap/subflow-candidate/`; `service/subflow-trial/`; `flow-bootstrap/site-reset/project-ledger.ts`;
+  `llm/build-purse/purse.ts` (allowance); `service/flow-bootstrap-commands/cancellation.ts`.
+- Owns: new files in `project-agents/dispatch/` (keep `port.ts` as is unless you report why), barrel, `tests/`;
+  a shared stub host moved to `project-agents/tests/` if you need it; `docs/working/automation-project-agents-plan/reports/<your label>.md`.
+- Must not touch: `service.ts`, `project-agents/{supervisor,contracts,record,host-resources,attribution}`, `llm/`,
+  `flow-bootstrap/`, `service/`.
+- Definition of done: capacity 2 runs two independent briefs at once and a dependent third waits; capacity 1 runs
+  three in order; an allowance refusal or a throwing builder gives a `blocked` return and the rest continue;
+  Flow cancel aborts every builder and every waiter; a builder ending never aborts a sibling; callScope only above
+  capacity 1; a reset brief completes on a clean ledger; returns and allowances land in the record. Four narrow checks.
+
+### Brief: wiring-tests-active-instructions
+- Repository: FluxIQ Core, its own paired worktree under `fxwork/` (the dispatch prompt names it).
+- Task: fix forward 42 tests that fail on Core dev before any project-agents work (supervisor reproduced
+  2026-10-13 from `packages/fluxiq`: `pnpm.cmd exec vitest run src/programs/automation-studio/runtime/service/datasets/tests/service-wiring.test.ts src/programs/automation-studio/runtime/tests/session-recovery/tests/service-wiring.test.ts src/programs/_shared/tests/late-action-result-wiring.test.ts src/programs/automation-studio/client-gateway`
+  -> "Failed Tests 42"). The errors are `AutomationInstructionError` ("Write active instructions…", "Describe what
+  this recording demonstrates…"), most likely since t519 made Flow-owned written instructions mandatory before a
+  run and recordings require a description. Find the change that broke them (git log/bisect on those files'
+  subjects), then fix the fixtures: give the Flows active written instructions and describe the recordings the
+  way the product now requires. Never relax the product gate to make a test pass. If a failure shows a real
+  product defect rather than a stale fixture, stop on that one and report it with the evidence.
+- Required reads: the failing files and their helpers; `docs/working/instruction-led-automation-plan.md` Current State.
+- Owns: the failing test files and test-only helpers or fixtures under `tests/` directories they use;
+  `docs/working/automation-project-agents-plan/reports/<your label>.md`.
+- Must not touch: any file outside a `tests/` directory.
+- Definition of done: the command above passes in full; `pnpm.cmd --filter fluxiq check`; `node scripts/structure-audit.mjs`;
+  `git diff --check`. Report the breaking commit and what each fixture lacked.
+
+### Brief: A5c-wiring
+- Repository: FluxIQ Core, its own paired worktree under `fxwork/` (the dispatch prompt names it).
+- Task: unit A5c, wire the project supervisor into a real build behind authoring mode `project`; `candidate` stays
+  the default. (1) New `service/project-build/`: `runAutomationStudioProjectBuild(ports)` builds the supervisor's
+  ports (A5a `project-agents/supervisor/ports.ts`) and the dispatcher's (A5b) from what the candidate branch of
+  `generateFlowBootstrapAdaptationInternal` already builds (`service.ts:1504-1609`): shared once per build are the
+  activity, cancellation root, project database hold, generation lock, blank-target check, binding, instruction
+  authority, provider, loop limits, creation purse, the project ledger (replacing `:1576`), the whole-candidate trial
+  port and judge (`:1586-1589`), the draft store and promotion (`:1606-1609`, unchanged); per brief are harness
+  options and node descriptions (`:1568`), build routing (`:1561`), the permission gate and person-needed (built
+  inside the brief's cancellation child, `:1577-1581`), the subflow trial port (`service/subflow-trial/`), the
+  brief's ledger (`forBrief`); trial sessions open through `admitAutomationStudioBuildTrialSession`; one host
+  scheduler per host-resources port (`this.hostRuntime?.hostResources`); a new build record store
+  (`AutomationStudioProjectBuildRecordStore(this.projectPaths, this.flowPaths)`). Builders are never started
+  through `generateFlowBootstrapAdaptationInternal` (its generation lock is not re-entrant). (2) `service.ts`:
+  in-place edits only, net zero lines and no packing (it is at its file-lines baseline, 4333): the candidate-only
+  tests become candidate-like for `project`, `:1586-1589` move into the new module, and `:1590` becomes the
+  ternary between `runAutomationStudioProjectBuild` and `generateAutomationStudioFlowCandidateDraft`. (3) Mode
+  `project` through `model/authoring-mode/authoring-mode.ts:28`, `service/flow-bootstrap-commands/{generation-request,contracts}.ts`,
+  `api/contracts/adaptation.ts:137`, `api/handlers/llm-generation.ts`, `conversations/commands/build.ts:100,138`
+  (chat must send a `project` build, not a legacy one), `flow-bootstrap/action-permissions.ts:311`; refuse
+  `project` with `extend` or a repair brief until A7. (4) Export the supervisor from the runtime barrel only if a
+  caller outside Core needs it.
+- Required reads: this document's Current State and A5 notes; the A5a and A5b reports; the lines named above.
+- Owns: the files named above and their tests; `docs/architecture/automation-studio/llm-flow-bootstrap.md` (a
+  section on mode `project`); the report.
+- Must not touch: `project-agents/**` beyond a barrel export line, `flow-bootstrap/subflow-candidate/**`,
+  `service/subflow-trial/**`, `llm/**`, `activity/**`.
+- Definition of done: a service-level test with a stub provider (modelled on
+  `service/flow-bootstrap-commands/tests/candidate-trial-facade.test.ts`) where a `project` build proposes on a
+  judged yes and keeps a draft on no; stub host runtime at capacity 2 and capacity 1; mode parsing and `project`
+  refused with `extend`; existing candidate tests unchanged; `node scripts/structure-audit.mjs` shows `service.ts`
+  lines unchanged; the four narrow checks.
+
+### Brief: sweep-fixtures-{a,b,c}
+- Repository: FluxIQ Core, its own paired worktree under `fxwork/` (the dispatch prompt names it and the group).
+- Task: fix forward one group of the 2026-10-13 sweep's failing test files, listed in
+  [the sweep record](../sweep-2026-10-13.md) (Group A, B or C). Almost every
+  failure is a fixture written before t519 (`18ee3f60`): a Flow with no active written instructions, or a
+  recording started with no description. Fix them the way t543 did (`automation-project-agents-plan/reports/t543-wiring-tests.md`):
+  save the Flow's instructions through the product's own call (`saveFlowGenerationInstruction(...)` or the
+  owning equivalent) and describe each recording, per file; do not change a shared helper that other tests rely
+  on to be refused. Never relax a product gate. Failures that are not this cause ("Unknown Automation Studio
+  Flow" after a refused create is usually the same cause): fix if it is a stale fixture, otherwise stop on that
+  test and report it with the evidence.
+- Required reads: the sweep record; the t543 report; each failing file and its helpers.
+- Owns: the files in your group and test-only helpers under the `tests/` directories they use, if no other
+  group's file uses that helper; `docs/working/automation-project-agents-plan/reports/<your label>.md`.
+- Must not touch: any file outside a `tests/` directory; another group's files.
+- Definition of done: every file in your group passes (`pnpm.cmd exec vitest run <the group's files>` from
+  `packages/fluxiq`, contracts built first); `pnpm.cmd --filter fluxiq check`; `node scripts/structure-audit.mjs`;
+  `git diff --check`. Report per file what it lacked and any test you stopped on.
+
+### Brief: recording-delete-windows-retry
+- Repository: FluxIQ Core, the paired worktree the dispatch prompt names.
+- Task: the confirming sweep (2026-10-13, Core `a2cc2a52`: 1 failed of 11207) failed
+  `runtime/tests/service-recordings/tests/assets.test.ts` > "deletes recording batches with one index and pipeline
+  cleanup pass" with `EPERM: operation not permitted, rmdir '...\recordings\recording.batch-b\derived'`; the file
+  passes 3 of 3 alone. The product's own delete removes the directory while another handle briefly holds it, which
+  Windows reports as EPERM/EBUSY; the delete has no bounded retry. Find the code that removes a recording batch's
+  directories, and make it (and any sibling removal of the same kind) use one bounded-retry removal: reuse an
+  existing Core helper if there is one (search for `maxRetries`, `rm(`, `rmdir`), otherwise add one focused helper in
+  the owning storage area. Never swallow a lasting failure: after the retries a removal that still fails throws as
+  before. Add a test that injects one transient EPERM and one lasting EPERM.
+- Required reads: the failing test, the delete path it exercises, `docs/architecture/code-structure.md`.
+- Owns: the removal code you find and its tests, a new helper if needed; `docs/working/automation-project-agents-plan/reports/<your label>.md`.
+- Must not touch: `runtime/service.ts` (another unit owns it now; if the removal lives there, report instead of editing),
+  `project-agents/`, `flow-bootstrap/`, `llm/`.
+- Definition of done: the new tests; `assets.test.ts` and the tests beside the changed files pass; check; audit; diff check.
+
+### Brief: project-build-hardening
+- Repository: FluxIQ Core, the paired worktree the dispatch prompt names.
+- Task: close the gaps A5c reported (`reports/t549-a5c-wiring.md`) before any paid run of mode `project`.
+  (1) A builder's permission ending (the person declined, or its ask ended the brief) must end that builder's
+  loop, not only its tool calls: combine the per-brief gate's ending into the loop's signal in the dispatcher
+  (`project-agents/dispatch/run-brief.ts`), and come back `blocked` with the reason. (2) The permission outcome at
+  promotion must include every builder gate's answers, not only the build-level gate's
+  (`service/project-build/promote.ts` and where the gates are made): a declined act anywhere in the build is seen
+  at promotion exactly as the candidate path sees its own. (3) The supervisor's reserve covers the judged whole run
+  and one repair round (plan: Invariants), sized from the judge's existing reserve pricing; allowances can never
+  be carved from it. (4) A service-level test with a stub provider and stub host where builders leave lasting acts:
+  the supervisor's whole trial is refused until a reset brief runs, the reset brief undoes exactly the build's acts
+  (never a pre-existing one) and returns done, then the whole trial runs. (5) `runtime/service.ts` `deleteRecording`
+  (~941, ~944) removes its session directory through `removePathWithRetry` (`service/recordings/directory-removal.ts`):
+  in place, net zero lines, no packing. (6) Write the project ledger's acts into the build record as they are recorded
+  (`record.lastingActs`), so the record is complete after a restart.
+- Required reads: the A5c report; this document's Invariants and Contracts; the files named above.
+- Owns: `project-agents/dispatch/run-brief.ts` and its tests; `service/project-build/**`; the two lines in
+  `runtime/service.ts`; the record store's lasting-act write if needed (`project-agents/record/store.ts`) and its
+  tests; `docs/working/automation-project-agents-plan/reports/<your label>.md`.
+- Must not touch: `flow-bootstrap/**`, `llm/**`, `activity/**`, `project-agents/{supervisor,contracts,host-resources}/**`
+  (report a contract change instead of making it).
+- Definition of done: tests for (1)-(4) and (6); the tests beside each changed file; `project-agents` and
+  `service/project-build` suites; check; audit (service.ts lines unchanged); diff check.
+

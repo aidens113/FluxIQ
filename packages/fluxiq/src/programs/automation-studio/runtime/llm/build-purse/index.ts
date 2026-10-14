@@ -9,3 +9,4 @@ export * from "./purse.ts";
 export * from "./call-allowance.ts";
 export * from "./refused.ts";
 export * from "./run.ts";
+export * from "./types.ts";
