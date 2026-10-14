@@ -512,6 +512,25 @@ Briefs t533-t539 (units A1, A2, A3, A3b, A4a, A4b, A6) were delivered and moved 
   refused with `extend`; existing candidate tests unchanged; `node scripts/structure-audit.mjs` shows `service.ts`
   lines unchanged; the four narrow checks.
 
+### Brief: sweep-fixtures-{a,b,c}
+- Repository: FluxIQ Core, its own paired worktree under `fxwork/` (the dispatch prompt names it and the group).
+- Task: fix forward one group of the 2026-10-13 sweep's failing test files, listed in
+  [the sweep record](./automation-project-agents-plan/sweep-2026-10-13.md) (Group A, B or C). Almost every
+  failure is a fixture written before t519 (`18ee3f60`): a Flow with no active written instructions, or a
+  recording started with no description. Fix them the way t543 did (`automation-project-agents-plan/reports/t543-wiring-tests.md`):
+  save the Flow's instructions through the product's own call (`saveFlowGenerationInstruction(...)` or the
+  owning equivalent) and describe each recording, per file; do not change a shared helper that other tests rely
+  on to be refused. Never relax a product gate. Failures that are not this cause ("Unknown Automation Studio
+  Flow" after a refused create is usually the same cause): fix if it is a stale fixture, otherwise stop on that
+  test and report it with the evidence.
+- Required reads: the sweep record; the t543 report; each failing file and its helpers.
+- Owns: the files in your group and test-only helpers under the `tests/` directories they use, if no other
+  group's file uses that helper; `docs/working/automation-project-agents-plan/reports/<your label>.md`.
+- Must not touch: any file outside a `tests/` directory; another group's files.
+- Definition of done: every file in your group passes (`pnpm.cmd exec vitest run <the group's files>` from
+  `packages/fluxiq`, contracts built first); `pnpm.cmd --filter fluxiq check`; `node scripts/structure-audit.mjs`;
+  `git diff --check`. Report per file what it lacked and any test you stopped on.
+
 ## Work Ledger
 
 ### 2026-10-13 — Plan written from three discovery reports
@@ -601,6 +620,14 @@ Briefs t533-t539 (units A1, A2, A3, A3b, A4a, A4b, A6) were delivered and moved 
 - Validation: `node scripts/structure-audit.mjs` -> "structure-audit: passed (348 warning(s), 1156 baselined)." (618 lines after compaction)
 - Outcome: Accepted
 - Follow-up: none
+
+### 2026-10-13 — Stale wiring fixtures fixed (t543); full Core sweep
+- Agent: worker t543-wiring-tests; supervisor verified and integrated; supervisor ran the sweep
+- Changed: five test files (instructions saved, recordings described); new sweep record
+- Why: 42 tests had failed on dev since t519 (`18ee3f60`); a full sweep then measured the rest
+- Validation: the four t543 paths -> 50 passed (was 42 failed); check exit 0; audit passed; merged `1a7d553c`. Sweep on `1a7d553c`: `pnpm.cmd exec vitest run --reporter=dot` -> 66 files / 305 tests failed of 11167, 203 of them the two t519 refusals ([sweep record](./automation-project-agents-plan/sweep-2026-10-13.md))
+- Outcome: Accepted (t543); sweep follow-up dispatched as three groups
+- Follow-up: sweep-fixtures A, B, C
 
 ## Open Questions
 
