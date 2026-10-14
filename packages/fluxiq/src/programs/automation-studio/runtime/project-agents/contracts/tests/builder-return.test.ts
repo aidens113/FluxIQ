@@ -37,4 +37,10 @@ describe("builder return", () => {
   it("accepts a partial or blocked return without a proposal", () => {
     expect(issues(builderReturn((value) => Object.assign(value, { outcome: "blocked", proposal: undefined })), brief())).toEqual([]);
   });
+
+  it("accepts a done reset without a proposal and refuses one that proposes a subflow", () => {
+    const reset = brief((value) => Object.assign(value, { kind: "reset", parts: [], permittedActs: [] }));
+    expect(issues(builderReturn((value) => delete value.proposal), reset)).toEqual([]);
+    expect(issues(builderReturn(), reset).map((issue) => issue.code)).toEqual(["project.return_reset_proposal"]);
+  });
 });
