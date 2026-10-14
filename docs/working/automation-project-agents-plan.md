@@ -542,6 +542,39 @@ there. Narrow checks only (no full suites): the unit's vitest files from
   narrow checks pass.
 - Report to: `docs/working/automation-project-agents-plan/reports/t538-a4b-partial-trial.md`
 
+### Brief: t539-a6-attribution-core
+- Repository: FluxIQ Core, worktree `fxwork/t539/!FluxIQ`, branch `task/t539-agent-attribution-chat`. Paired with W2 (downstream, same task); they merge together.
+- Task: unit A6. Every build activity event carries which agent it comes from, and the supervisor's plan,
+  briefs, returns and receipts reach the chat as cards. The wire types are fixed on the branch
+  (supervisor-written in `packages/contracts/src/client-gateway.ts`): `agent?: ClientGatewayActivityAgent` on
+  `ClientGatewayActivity` and `project?: ClientGatewayActivityProjectCard` on a `note` row's detail; re-export
+  them from `packages/client-gateway-websocket/src/index.ts`. (1) New `activity/agent.ts`: its own
+  AsyncLocalStorage (`runWithAutomationStudioActivityAgent(agent, fn)`, `currentAutomationStudioActivityAgent()`),
+  separate from the scope frame (`bind.ts:12-13` mutates the frame in place). Stamp it in the one publish path,
+  `activity/emit.ts:21`, so no emit site changes; bound it in `activity/bounded.ts` (closed role set, `briefId`
+  id-shaped like `TARGET_ID`, `subflowName` 160, `project` kept only on `note` rows, parts and subflows at most
+  20, strings 160, `reason` 240; `boundedDetail` copies unknown fields unbounded today, so bound these
+  explicitly). (2) New `activity/project/`: emitters for the four cards built from the A1 contracts
+  (`project-agents/contracts/`); never a digest in any title or ref (the extension hides such rows).
+  (3) Step log: `role` and `briefId` in the step-log scope (`llm/step-log/scope.ts`), the three meta writers and
+  two new `index.md` columns (`listing.ts`). (4) New `project-agents/attribution/`
+  (`withAutomationStudioProjectAgent(agent, fn)`) setting both stores, since `llm/` imports nothing from
+  `activity/`. (5) Core's web panel keeps working: it drops unknown top-level fields and ignores `note` rows,
+  which is why the cards ride on `note`.
+- Required reads: this document's `Contracts`; `activity/{emit,bounded,contracts,storage,bind}.ts`;
+  `llm/step-log/{scope,listing,model-step,tool-step,answer-step}.ts`; `apps/web/src/features/automation-studio/conversation/activity/contracts.ts:91-167`.
+- Owns: the files named above, `activity/index.ts`, new dirs with barrels and `tests/`;
+  `docs/architecture/automation-studio/client-gateway.md` (activity section);
+  `docs/working/automation-project-agents-plan/reports/t539-a6-attribution-core.md`.
+- Must not touch: `service.ts`; `project-agents/{contracts,record,host-resources}`; `flow-bootstrap/`;
+  `llm/evidence-loop.ts` and every other `llm/` file but `step-log/`; `client-gateway/service/`; any downstream file.
+- Definition of done: tests: events inside an agent frame are stamped and outside are not; innermost wins; two
+  frames under `Promise.all` stay apart; a run still binds inside an agent frame; bounds drop unknown roles,
+  malformed brief ids and `project` off `note`; the publisher carries `agent` unchanged; each card from A1
+  fixtures with no digest in titles or refs; step-log meta and index columns; Core web panel stream test still
+  parses stamped events and project notes. Four narrow checks plus the contracts build and tests.
+- Report to: `docs/working/automation-project-agents-plan/reports/t539-a6-attribution-core.md`
+
 ## Work Ledger
 
 ### 2026-10-13 — Plan written from three discovery reports
