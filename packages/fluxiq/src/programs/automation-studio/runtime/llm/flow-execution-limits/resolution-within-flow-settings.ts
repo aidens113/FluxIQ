@@ -26,8 +26,10 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_DEFAULT_MAX_ESTIMATED_COST_USD } from "../harness/index.ts";
 import type { AutomationStudioLlmProviderResolution } from "../resolver-contract.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP } from "./run-call-backstop.ts";
 
-const FLOW_MAX_CALLS = 64;
+/** The settings check's own bound (`api/handlers/llm-execution-settings.ts`): Core's runaway backstop (t583). */
+const FLOW_MAX_CALLS = AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP;
 const FLOW_UNSET_CALL_COUNT = 1;
 const FLOW_MAX_COST_USD = 0.25;
 

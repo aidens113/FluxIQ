@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioLlmProvider } from "../../harness.ts";
 import { automationStudioLlmResolutionWithinFlowSettings } from "../resolution-within-flow-settings.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP } from "../run-call-backstop.ts";
 import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS } from "../../session-key-provider.ts";
 
 // The Flow's stored `llmExecutionSettings` were saved and returned but never
@@ -61,7 +62,7 @@ describe("a provider resolution narrowed by the Flow's own spend limits", () => 
   it.each([
     ["absent settings", {}],
     ["settings that are not an object", { llmExecutionSettings: [48] }],
-    ["values outside the settings check's bounds", flow({ maxCalls: 65, maxEstimatedCostUsd: 0.3 })],
+    ["values outside the settings check's bounds", flow({ maxCalls: AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP + 1, maxEstimatedCostUsd: 0.3 })],
     ["values of the wrong type", flow({ maxCalls: "48", maxEstimatedCostUsd: "0.1" })]
   ])("ignores %s", (_label, metadata) => {
     expect(automationStudioLlmResolutionWithinFlowSettings(sessionKeyResolution(), metadata as JsonObject)).toEqual(sessionKeyResolution());

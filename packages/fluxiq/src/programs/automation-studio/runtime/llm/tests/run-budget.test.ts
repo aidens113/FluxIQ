@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP, AutomationStudioLlmRunBudgetLedger } from "../run-budget.ts";
+import { AutomationStudioLlmRunBudgetLedger } from "../run-budget.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP } from "../flow-execution-limits/index.ts";
 
 describe("Automation Studio LLM run budget ledger", () => {
   it("atomically reserves calls and worst-case output, then releases unused capacity on completion", () => {
