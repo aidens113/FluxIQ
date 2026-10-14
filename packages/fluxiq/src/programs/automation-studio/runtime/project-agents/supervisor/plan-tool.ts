@@ -15,7 +15,10 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
  * to the build record -- a spec only when it changed -- and an amendment
  * logged as a re-plan. Briefs and proposals made under an earlier plan stop
  * counting by their plan digest (`./state.ts`). The plan goes to the chat as
- * its card.
+ * its card. A written plan's answer carries the warnings its reading found --
+ * a value no other subflow takes, a subflow that neither acts nor hands
+ * anything on -- each with what to do, and its next step says to amend the
+ * plan if one applies.
  */
 export async function automationStudioProjectSupervisorPlanTool(context: AutomationStudioProjectSupervisorContext, value: JsonObject, mode: "write" | "amend"): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
   const { ports, state } = context;
@@ -52,6 +55,12 @@ export async function automationStudioProjectSupervisorPlanTool(context: Automat
       parts: [...(read.structure.partOf[subflow.key] ?? [])],
       ...(read.after[subflow.key]?.length ? { after: [...read.after[subflow.key]!] } : {})
     })),
-    next: GUIDANCE.next.afterPlan
+    // What the plan was written with but may not mean (`./plan-input.ts`, bigbox debug fix 7): each by its path, with what to do.
+    ...(read.warnings.length ? { warnings: read.warnings.map((warning) => ({ ...warning, instruction: warningText(warning.code) })) } : {}),
+    next: read.warnings.length ? GUIDANCE.next.afterPlanWarned : GUIDANCE.next.afterPlan
   });
+}
+
+function warningText(code: string): string {
+  return code === "project.plan_subflow_constraint" ? GUIDANCE.warnings.constraintSubflow : GUIDANCE.warnings.valueUnused;
 }

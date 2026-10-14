@@ -74,6 +74,40 @@ describe("the supervisor's planning format", () => {
     expect(result).toEqual({ ok: false, issues });
   });
 
+  // Bigbox debug fix 7: warnings, never refusals -- Core cannot tell a value the Flow hands back from one nobody reads,
+  // or a read the person asked for from a part that only says what must stay unchanged (`../plan-input.ts`).
+  it("writes a plan whose every value is taken and every subflow acts or hands on, with no warning", () => {
+    const result = read(planInput([subflow("find_titles", ["p1"], { outputs: ["titles"] }), subflow("place_hold", ["p2"], { inputs: ["titles"], after: ["find_titles"] })], taskSpecInput([["p1", FIND, []], ["p2", HOLD, ["create_new"]]])));
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("warns on a value no other subflow takes, by its path, and still writes the plan", () => {
+    const result = read(planInput([
+      subflow("find_titles", ["p1"], { outputs: ["titles", "branch"] }),
+      subflow("place_hold", ["p2"], { inputs: ["titles"], after: ["find_titles"] })
+    ], taskSpecInput([["p1", FIND, []], ["p2", HOLD, ["create_new"]]])));
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(result.warnings).toEqual([{ code: "project.plan_value_unused", path: "subflows.0.outputs.1" }]);
+    expect(result.structure.plan.subflows.find((entry) => entry.key === "find_titles")!.interface!.outputs.map((port) => port.id)).toEqual(["titles", "branch"]);
+  });
+
+  it("warns on a subflow of several that neither makes a lasting act nor hands anything on, as a constraint it may be", () => {
+    const result = read(planInput([
+      subflow("find_titles", ["p1"], { outputs: ["titles"] }),
+      subflow("place_hold", ["p2"], { inputs: ["titles"], after: ["find_titles"] }),
+      subflow("keep_others", ["p3"], { inputs: ["titles"], after: ["place_hold"] })
+    ], THREE));
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(result.warnings).toEqual([{ code: "project.plan_subflow_constraint", path: "subflows.2" }]);
+  });
+
+  it("never warns a one-subflow plan as a constraint", () => {
+    const result = read(planInput([subflow("find_titles", ["p1"])], ONE));
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(result.warnings).toEqual([]);
+  });
+
   it("answers every subflow's issue and the task spec's together", () => {
     const value = planInput([subflow("find_titles", ["p1"], { outputs: ["the titles"] }), subflow("Place", ["p2"])], taskSpecInput([["p1", "Find every title ever written", []], ["p2", HOLD, []]]));
     expect(read(value)).toEqual({ ok: false, issues: [

@@ -27,7 +27,9 @@
 // briefs and returns. The run ends with a candidate that passed its whole
 // trial, for the caller to promote and then end the record `promoted`, or
 // with an ending it recorded itself: the honest ending the model gave, the
-// money running out, a cancel, or a loop that stopped short.
+// money running out, a cancel, or a loop that stopped short. Every ending
+// names, in Core's words, what this build still has on the target
+// (`./left-on-target.ts`).
 import { AutomationStudioFlowCandidateSubmissionController, AutomationStudioFlowCandidateTrialGate, type AutomationStudioCandidateTrialResult, type AutomationStudioFlowCandidate } from "../../flow-bootstrap/candidate/index.ts";
 import { automationStudioLlmBuildPurseRun, AutomationStudioLlmBuildPurseRefused } from "../../llm/build-purse/index.ts";
 import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceLoopResult } from "../../llm/evidence-loop.ts";
@@ -37,6 +39,7 @@ import { automationStudioProjectSupervisorAssembleTool } from "./assemble-tool.t
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_COMPLETION_SCHEMA, automationStudioProjectSupervisorCompletion, type AutomationStudioProjectSupervisorEnded } from "./completion.ts";
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { automationStudioProjectSupervisorDispatchTool } from "./dispatch-tool.ts";
+import { automationStudioProjectSupervisorLeftOnTarget } from "./left-on-target.ts";
 import { automationStudioProjectSupervisorPlanTool } from "./plan-tool.ts";
 import { automationStudioProjectSupervisorPlanning } from "./planning.ts";
 import type { AutomationStudioProjectSupervisorPorts } from "./ports.ts";
@@ -134,5 +137,7 @@ export async function runAutomationStudioProjectSupervisorLoop(input: {
       : signal?.aborted || stoppedBy === "llm_evidence_loop.cancelled"
         ? { outcome: "cancelled", reason: "The build was cancelled." }
         : { outcome: state.anyDone() ? "partial" : "blocked", reason: `The supervisor stopped before a whole trial passed (${stoppedBy ?? "unknown"}).` };
-  return done("ended", await ports.record.end(ports.build, finished));
+  // An ending the model gave already names what is left (`./completion.ts`); every other ending Core names it in here.
+  const named = finished === ended ? finished : { ...finished, reason: automationStudioProjectSupervisorLeftOnTarget(ports, state).reason(finished.reason) };
+  return done("ended", await ports.record.end(ports.build, named));
 }

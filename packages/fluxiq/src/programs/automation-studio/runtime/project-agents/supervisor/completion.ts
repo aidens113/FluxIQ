@@ -2,6 +2,10 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck } from "../../llm/evidence-loop.ts";
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";
+import { automationStudioProjectSupervisorLeftOnTarget } from "./left-on-target.ts";
+
+/** How many times an ending is held back for a reset before it is let through with what is left named (header). */
+const MAX_HELD_FOR_RESET = 2;
 
 /** An honest ending the model completed with, once the check accepted it. */
 export type AutomationStudioProjectSupervisorEnded = { outcome: "blocked" | "partial"; reason: string };
@@ -21,15 +25,35 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_COMPLETION_SCHEMA: JsonObject 
  * reason -- accepted only once something has stopped the build: a brief came
  * back blocked or partial, or a whole trial did not pass. `ended` is told the
  * ending the check accepted, for the caller to record.
+ *
+ * **An honest ending puts the target back first (bigbox debug fix 10).** Bigbox
+ * `run-mv8186yr-a385fd3a` ended blocked with nine of the build's acts on the
+ * site. While this build's lasting acts are still in place and a reset brief
+ * could undo them, an ending is refused `project.completion_reset_first` until
+ * a reset brief has come back after the build's last other brief. A reset that
+ * came back without undoing everything, acts no reset can undo, or
+ * `MAX_HELD_FOR_RESET` such refusals already given (so a reset that cannot be
+ * sent never holds the build until its ceiling) let the ending through; and
+ * whatever is still left Core names in the ending's reason itself
+ * (`./left-on-target.ts`), so the person is told exactly what is on the target.
  */
 export function automationStudioProjectSupervisorCompletion(context: AutomationStudioProjectSupervisorContext, ended: (ending: AutomationStudioProjectSupervisorEnded) => void): (result: JsonObject) => AutomationStudioLlmEvidenceCompletionCheck {
+  let heldForReset = 0;
   return (result) => {
     const keys = Object.keys(result);
     if (result.ended !== undefined) {
       const reason = typeof result.reason === "string" ? result.reason.trim() : "";
       if ((result.ended !== "blocked" && result.ended !== "partial") || !reason || keys.some((key) => key !== "ended" && key !== "reason")) return refused("project.completion_shape", GUIDANCE.completion.shape);
       if (!context.state.anyNotDone() && !context.state.wholeTrialFailed) return refused("project.completion_ended_too_soon", GUIDANCE.completion.endedTooSoon);
-      ended({ outcome: result.ended, reason: reason.slice(0, 2000) });
+      const left = automationStudioProjectSupervisorLeftOnTarget(context.ports, context.state);
+      if (left.note && left.undoable && !context.state.resetCameBackLast() && heldForReset < MAX_HELD_FOR_RESET) {
+        heldForReset += 1;
+        return refused("project.completion_reset_first", GUIDANCE.completion.resetFirst, {
+          actsInPlace: left.acts.map((act) => ({ act: act.act, did: act.did, brief: act.brief })),
+          ...(left.lastWholeTrialLeftActs ? { lastWholeTrialLeftActs: true } : {})
+        });
+      }
+      ended({ outcome: result.ended, reason: left.reason(reason) });
       return { ok: true };
     }
     const candidate = context.controller.latest();
