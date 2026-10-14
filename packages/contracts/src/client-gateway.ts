@@ -319,6 +319,46 @@ export type ClientGatewayActivitySkip = {
  * never announced is never resolved. A run parked durably is still waiting
  * until it is resumed.
  */
+/**
+ * Which of a build's agents an event comes from (automation-project-agents-plan,
+ * chat presentation). Optional and additive: absent on a build with one agent,
+ * and a client that does not know it reads the event as before. `briefId` is
+ * never a digest; Core bounds `subflowName` to 160 characters.
+ */
+export type ClientGatewayActivityAgent = {
+  role: "supervisor" | "builder" | "repair" | "validator";
+  briefId?: string;
+  subflowName?: string;
+};
+
+/**
+ * On a `note` row only: a card of the supervisor's work. Optional and additive;
+ * a client that does not know it reads the row as a plain note. Core bounds
+ * every string to 160 characters (`reason` to 240) and `parts` and `subflows`
+ * to 20 entries each.
+ */
+export type ClientGatewayActivityProjectCard =
+  | {
+      kind: "plan";
+      parts: Array<{ id: string; words: string }>;
+      subflows: Array<{ key: string; name: string; purpose: string; parts: string[] }>;
+      cases?: Array<{ subflowKey: string; caseId: string }>;
+      budget?: Array<{ subflowKey: string; usd: number }>;
+      reserveUsd?: number;
+    }
+  | {
+      kind: "brief";
+      briefId: string;
+      brief: "build" | "survey" | "repair" | "reset";
+      subflowKey: string;
+      subflowName: string;
+      purpose: string;
+      caseId?: string;
+      allowanceUsd: number;
+    }
+  | { kind: "return"; briefId: string; subflowKey: string; outcome: "done" | "partial" | "blocked"; reason: string; spentUsd: number; calls: number; trials: number }
+  | { kind: "receipt"; briefId?: string; receipt: "subflow_trial" | "candidate_trial"; receiptId: string; verdict: "passed" | "failed" | "unconfirmed" };
+
 export type ClientGatewayActivity = {
   /** Stable id of the unit of work this event belongs to. */
   activityId: string;
@@ -366,7 +406,11 @@ export type ClientGatewayActivity = {
      * plain step that succeeded.
      */
     skipped?: ClientGatewayActivitySkip;
+    /** On a `note` row only: a card of the supervisor's work (plan, brief, return, receipt). */
+    project?: ClientGatewayActivityProjectCard;
   };
+  /** Which of a build's agents the event comes from; absent on a build with one agent. */
+  agent?: ClientGatewayActivityAgent;
   /** The conversation this work speaks through, when it has one. */
   conversationId?: string;
   /**
