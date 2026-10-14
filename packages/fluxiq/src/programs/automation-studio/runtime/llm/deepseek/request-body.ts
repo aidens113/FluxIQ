@@ -373,8 +373,19 @@ const AUTOMATION_STUDIO_DEEPSEEK_NODE_CATALOG_NOTE =
  * and a deeper address on the same site agrees with the start location
  * (`flow-bootstrap/reachability/location-agreement.ts`), so no arrival is put
  * back in front of it.
+ *
+ * **A prepared entry is where its builder begins (t587).** A project builder
+ * whose predecessors Core ran first opens with a look, not the arrival, and that
+ * look's entry says `prepared: true` (`service/project-build/brief-ports.ts`).
+ * The note told it to go to startLocation first, while the entry note said not
+ * to redo what was done: A8 launch 6 (`run-mv85vjqo-4c022aec`, brief-2) was
+ * told both. The note now says a prepared entry is the place to begin, never
+ * to go to startLocation from it, and what to do if an act there is refused
+ * `not_at_start_location`: go to the address of the page shown, which leaves
+ * the build where it was.
  */
 const FLOW_START_LOCATION_NOTE =
-  "The build opened by going to startLocation: the first entry of your evidence is that step, and it is the Flow's first step, already kept. Only if that entry failed, or your evidence does not open with it, must your first call be the node that goes there, with startLocation as its destination; every action is refused until it has run. "
+  "The build opened by going to startLocation: the first entry of your evidence is that step, and it is the Flow's first step, already kept. Only if that entry failed, or your evidence opens with neither it nor an entry Core prepared, must your first call be the node that goes there, with startLocation as its destination; every action is refused until it has run. "
+  + "When your evidence opens instead with a look whose entry says prepared: true, Core already ran what comes before your part, and the page shown is where you begin: do not go to startLocation; if an action there is refused not_at_start_location, first go to the address of the page you are shown, then act. "
   + "Unless the person's instruction names a route to follow (pages, menus or links to go through: then follow it in that order and keep a step in the Flow on each place on it, and once the draft shows route, say with place which steps are on each), the Flow's first step may instead go straight to the address where the work begins, deeper on the same site: once you have seen that address is stable -- the same on every visit, with nothing in it that looks like a session, a token or a one-time value -- rerun step 1 with it, and drop the steps that only travelled there; the completion accepts that only once Core has read that the person named no route. "
   + "Keep every optional dismissal: a banner or popup may be there on the next run however the Flow arrives.";

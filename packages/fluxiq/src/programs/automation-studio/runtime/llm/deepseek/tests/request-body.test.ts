@@ -117,6 +117,21 @@ describe("what a build is told about where its Flow starts", () => {
   });
 });
 
+// A8 launch 6 (`run-mv85vjqo-4c022aec`, brief-2, t587): a prepared builder was told to go to startLocation first by this
+// note and not to redo its predecessors by its entry note. The note now holds for both openings.
+describe("what a build whose entry Core prepared is told about where its Flow starts", () => {
+  it("says a prepared entry is where it begins, never to go to startLocation from it, and how to answer not_at_start_location", () => {
+    const note = (userPayload(evidenceRequest(catalogContext)).context.flowBootstrap as Record<string, unknown>).startLocationNote as string;
+
+    // An unprepared build is still told to go there when its opening arrival failed or is missing.
+    expect(note).toContain("Only if that entry failed, or your evidence opens with neither it nor an entry Core prepared, must your first call be the node that goes there");
+    expect(note).toContain("When your evidence opens instead with a look whose entry says prepared: true");
+    expect(note).toContain("do not go to startLocation");
+    expect(note).toContain("if an action there is refused not_at_start_location, first go to the address of the page you are shown, then act.");
+    expect(note).not.toContain("does not open with it");
+  });
+});
+
 describe("what a one-shot build is shown of the node catalog", () => {
   it("is byte for byte the payload it was before the names-only catalog", () => {
     const request = oneShotRequest();
