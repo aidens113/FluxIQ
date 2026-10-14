@@ -8,7 +8,7 @@ import { readAutomationStudioProjectSubflowInterface } from "./subflow-interface
 import type { AutomationStudioProjectTaskSpec } from "./task-spec.ts";
 
 // A subflow brief: everything one builder needs to build, survey or repair one
-// subflow, and nothing of the supervisor's own state (its handles and packets
+// subflow, or to reset the site before the judged whole run, and nothing of the supervisor's own state (its handles and packets
 // may be gone by the time the builder reads it).
 //
 // A brief is bound to one structure-plan digest. It may only name parts the
@@ -17,7 +17,14 @@ import type { AutomationStudioProjectTaskSpec } from "./task-spec.ts";
 // its own parts ask for -- so a brief cannot widen what a builder may do
 // beyond what the person asked.
 
-export const AUTOMATION_STUDIO_PROJECT_BRIEF_KINDS = Object.freeze(["build", "survey", "repair"] as const);
+/**
+ * `reset` returns the site to the state the build started from, through the
+ * site's own controls, before the judged whole run: it undoes exactly the
+ * lasting acts this build's briefs made and never what was there before (user
+ * rule, 2026-10-12). It carries no parts and permits no acts of its own:
+ * reversing the build's own acts is not a new permission question.
+ */
+export const AUTOMATION_STUDIO_PROJECT_BRIEF_KINDS = Object.freeze(["build", "survey", "repair", "reset"] as const);
 
 export type AutomationStudioProjectSubflowBrief = {
   briefId: string;
@@ -71,7 +78,8 @@ function read(value: unknown): AutomationStudioProjectSubflowBrief {
   const fields = shape.object(value, "brief", ["briefId", "kind", "planDigest", "subflowKey", "parts", "entry", "allowanceUsd", "maxIterations", "permittedActs"], ["interface", "recordingExcerpt", "failingReceipt"]);
   const kind = shape.oneOf(fields.kind, "brief.kind", AUTOMATION_STUDIO_PROJECT_BRIEF_KINDS);
   const parts = shape.ids(fields.parts, "brief.parts", LIMITS.parts);
-  if (kind !== "survey" && !parts.length) return shape.refuse("project.brief_no_parts", "brief.parts");
+  if (kind !== "survey" && kind !== "reset" && !parts.length) return shape.refuse("project.brief_no_parts", "brief.parts");
+  if (kind === "reset" && parts.length) return shape.refuse("project.brief_reset_parts", "brief.parts");
   const entry = shape.object(fields.entry, "brief.entry", ["caseId", "predecessors"]);
   const permittedActs = shape.array(fields.permittedActs, "brief.permittedActs", AUTOMATION_STUDIO_ACTION_CONSEQUENCES.length)
     .map((act, index) => shape.oneOf(act, `brief.permittedActs.${index}`, AUTOMATION_STUDIO_ACTION_CONSEQUENCES));
