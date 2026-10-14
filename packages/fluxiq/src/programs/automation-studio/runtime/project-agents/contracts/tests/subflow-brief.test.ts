@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioProjectSubflowBrief } from "../index.ts";
+import { automationStudioProjectAskedActs, automationStudioProjectSubflowBrief } from "../index.ts";
 import { brief, structurePlan, taskSpec } from "../../tests/fixtures.ts";
 
 const parse = automationStudioProjectSubflowBrief.parse;
@@ -24,6 +24,22 @@ describe("subflow brief", () => {
     const value = brief();
     change(value);
     expect(parse(value)).toMatchObject({ status: "invalid", code });
+  });
+
+  it("carries Core's call share when it has one, and refuses a share that is no count (t570)", () => {
+    expect(parse(brief((value) => (value.maxCalls = 11)))).toEqual({ status: "valid", value: brief((value) => (value.maxCalls = 11)) });
+    expect(parse(brief((value) => (value.maxCalls = 0)))).toMatchObject({ status: "invalid", path: "brief.maxCalls" });
+    expect(parse(brief((value) => (value.maxCalls = 2.5)))).toMatchObject({ status: "invalid", path: "brief.maxCalls" });
+  });
+
+  it("permits a brief whose parts act every act the task asks for, and one whose parts only read none (t575)", () => {
+    const spec = taskSpec((value) => value.parts.push({ id: "p3", quote: { sourceId: "instruction.1", text: "rename the cookbook" }, goalFacts: ["the cookbook has its new name"], lastingActs: ["modify_existing"] }));
+    expect(automationStudioProjectAskedActs(spec, ["p2"])).toEqual(["create_new", "modify_existing"]);
+    expect(automationStudioProjectAskedActs(spec, ["p1"])).toEqual([]);
+    const plan = structurePlan(undefined, spec);
+    // The supervisor filed saving as `create_new`; a builder that reads its press as changing the cookbook is not refused for the label.
+    expect(issues(brief((value) => (value.permittedActs = ["create_new", "modify_existing"]), plan), plan, spec)).toEqual([]);
+    expect(issues(brief((value) => (value.permittedActs = ["move_money"]), plan), plan, spec).map((issue) => issue.code)).toEqual(["project.brief_act_not_asked"]);
   });
 
   it("accepts a reset without parts or acts, and refuses one that names parts", () => {

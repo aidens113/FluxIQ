@@ -9,6 +9,8 @@ import type { AutomationStudioLlmBuildPurseAttribution } from "./allowance-book.
 export type AutomationStudioLlmBuildPurseRefusal = {
   code: "llm_budget.run_call_limit";
   maxCalls: number; spentCalls: number; pendingCalls: number; keptBackCalls: number;
+  /** What open allowances other than the call's own may still call, which the call had to leave (t570). Absent when none may. */
+  allottedCalls?: number;
   /** The allowance that refused, when one did: its figures are the allowance's. */
   allowance?: AutomationStudioLlmBuildPurseAttribution;
 } | AutomationStudioLlmBuildPurseCostRefusal;

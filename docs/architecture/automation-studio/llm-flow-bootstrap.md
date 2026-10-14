@@ -78,7 +78,9 @@ the Lab comparison (A8) shows it at least matches `candidate`; the default stays
   entry: its generation lock is not re-entrant.
 - **Per brief.** Each brief gets its own harness options and node descriptions,
   build routing, permission gate (holding only the acts the brief was
-  permitted, never more than the person permitted the build) and person-needed,
+  permitted, never more than the person permitted the build: every lasting act
+  the task asks for when the brief's parts act, none when they only read, t575)
+  and person-needed,
   its own ledger from the project ledger, and the build's subflow trial port.
   Each brief's allowance caps its calls at three per decision, so its subflow
   trials' judges (a first answer and a confirmation) never starve its decisions.

@@ -34,6 +34,10 @@ export type AutomationStudioProjectProposalRef = { briefId: string; subflowKey: 
  *   decisions and the whole trial's judge run in a run frame of their own; and
  *   the judging it keeps back from every builder's allowance, for the judged
  *   whole run and one repair round.
+ * - `finishing`: the calls kept back from every builder's allowance for the
+ *   build's own finishing (t570): the supervisor's last decisions (assembly,
+ *   the reset's dispatch, the test, the completion) and a reset brief's own,
+ *   which only a reset brief may be given (`./brief-sizing.ts`).
  * - `signal`: the build's cancellation; the supervisor's loop runs under it.
  *
  * On a yes the supervisor writes no ending: the caller promotes the candidate
@@ -51,5 +55,6 @@ export type AutomationStudioProjectSupervisorPorts = {
   trial?: { candidateId: string; port: AutomationStudioCandidateTrialPort } | undefined;
   purse?: AutomationStudioLlmBuildPurse | undefined;
   reserve?: AutomationStudioLlmBuildPurseJudging | undefined;
+  finishing?: { supervisorCalls: number; resetCalls: number } | undefined;
   signal?: AbortSignal | undefined;
 };

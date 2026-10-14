@@ -1,5 +1,6 @@
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { AutomationStudioFlowBootstrapInterface } from "../../flow-bootstrap/plan/index.ts";
+import { automationStudioProjectAskedActs } from "./asked-acts.ts";
 import { automationStudioProjectDigest } from "./digest.ts";
 import { automationStudioProjectJsonShape as shape, type AutomationStudioProjectParse } from "./json-shape.ts";
 import { readAutomationStudioProjectReceiptRef, type AutomationStudioProjectReceiptRef } from "./receipt-ref.ts";
@@ -14,8 +15,9 @@ import type { AutomationStudioProjectTaskSpec } from "./task-spec.ts";
 // A brief is bound to one structure-plan digest. It may only name parts the
 // plan gives its subflow, must repeat that subflow's interface exactly, may
 // only name predecessors the plan declares, and may only permit lasting acts
-// its own parts ask for -- so a brief cannot widen what a builder may do
-// beyond what the person asked.
+// the task asks for, and none when its own parts only read
+// (`asked-acts.ts`) -- so a brief cannot widen what a builder may do beyond
+// what the person asked.
 
 /**
  * `reset` returns the site to the state the build started from, through the
@@ -37,13 +39,20 @@ export type AutomationStudioProjectSubflowBrief = {
   entry: { caseId: string; predecessors: string[] };
   allowanceUsd: number;
   maxIterations: number;
+  /**
+   * The calls its allowance is carved with, its subflow trials' judges among
+   * them (t570): Core's share of the build's calls, set as the brief is
+   * dispatched. Absent on a brief recorded before Core sized calls.
+   */
+  maxCalls?: number;
+  /** Core's, from the lasting acts its parts ask for (t570); never wider. */
   permittedActs: AutomationStudioActionConsequence[];
   recordingExcerpt?: string;
   /** Repair only: the trial the repair starts from. */
   failingReceipt?: AutomationStudioProjectReceiptRef;
 };
 
-const LIMITS = { parts: 50, predecessors: 40, excerpt: 20_000, iterations: 1000 } as const;
+const LIMITS = { parts: 50, predecessors: 40, excerpt: 20_000, iterations: 1000, calls: 10_000 } as const;
 
 export const automationStudioProjectSubflowBrief = Object.freeze({
   parse(value: unknown): AutomationStudioProjectParse<AutomationStudioProjectSubflowBrief> {
@@ -66,7 +75,7 @@ export const automationStudioProjectSubflowBrief = Object.freeze({
     for (const [index, predecessor] of brief.entry.predecessors.entries()) {
       if (predecessor === brief.subflowKey || !declared.has(predecessor)) issues.push({ code: "project.brief_predecessor_invalid", path: `brief.entry.predecessors.${index}` });
     }
-    const asked = new Set(taskSpec.parts.filter((part) => brief.parts.includes(part.id)).flatMap((part) => part.lastingActs));
+    const asked = new Set<string>(automationStudioProjectAskedActs(taskSpec, brief.parts));
     for (const [index, act] of brief.permittedActs.entries()) {
       if (!asked.has(act)) issues.push({ code: "project.brief_act_not_asked", path: `brief.permittedActs.${index}` });
     }
@@ -75,7 +84,7 @@ export const automationStudioProjectSubflowBrief = Object.freeze({
 });
 
 function read(value: unknown): AutomationStudioProjectSubflowBrief {
-  const fields = shape.object(value, "brief", ["briefId", "kind", "planDigest", "subflowKey", "parts", "entry", "allowanceUsd", "maxIterations", "permittedActs"], ["interface", "recordingExcerpt", "failingReceipt"]);
+  const fields = shape.object(value, "brief", ["briefId", "kind", "planDigest", "subflowKey", "parts", "entry", "allowanceUsd", "maxIterations", "permittedActs"], ["interface", "maxCalls", "recordingExcerpt", "failingReceipt"]);
   const kind = shape.oneOf(fields.kind, "brief.kind", AUTOMATION_STUDIO_PROJECT_BRIEF_KINDS);
   const parts = shape.ids(fields.parts, "brief.parts", LIMITS.parts);
   if (kind !== "survey" && kind !== "reset" && !parts.length) return shape.refuse("project.brief_no_parts", "brief.parts");
@@ -99,6 +108,10 @@ function read(value: unknown): AutomationStudioProjectSubflowBrief {
     permittedActs
   };
   if (brief.maxIterations > LIMITS.iterations) return shape.refuse("project.invalid_count", "brief.maxIterations");
+  if (fields.maxCalls !== undefined) {
+    brief.maxCalls = shape.count(fields.maxCalls, "brief.maxCalls", 1);
+    if (brief.maxCalls > LIMITS.calls) return shape.refuse("project.invalid_count", "brief.maxCalls");
+  }
   if (fields.interface !== undefined) brief.interface = readAutomationStudioProjectSubflowInterface(fields.interface, "brief.interface");
   if (fields.recordingExcerpt !== undefined) brief.recordingExcerpt = shape.text(fields.recordingExcerpt, "brief.recordingExcerpt", LIMITS.excerpt);
   if (fields.failingReceipt !== undefined) brief.failingReceipt = readAutomationStudioProjectReceiptRef(fields.failingReceipt, "brief.failingReceipt");

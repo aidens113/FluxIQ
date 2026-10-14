@@ -16,8 +16,30 @@
 //
 // The loop's wrap-up keeps this loop's own finishing tools running and names
 // them (`finishingTools`), not the whole candidate's.
+//
+// **Its budget is its own allowance (t570).** A builder is given no build-wide
+// budget (`service/project-build/brief-ports.ts` takes the build's away), so
+// on A8 round 1 its loop counted nothing: no budget note ever reached the
+// model, no wrap-up began, and builders ended
+// `llm_evidence_loop.iteration_limit` or `llm_budget.run_call_limit` without
+// submitting. Its loop now runs with a budget that counts its turns, the
+// dollars and the calls of the allowance it runs under (`loop.purse`, carved
+// per brief, `../../llm/build-purse/allowance-book.ts`), keeping back the
+// judge calls of the two trials its wrap-up may make
+// (`AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS`), so it is told what is
+// left and wraps up while a submission, its trial and the completion still fit
+// in its own share.
+//
+// **Its brief is in its submit tool (t570).** The builder reads the person's
+// whole instruction, and nothing told it which parts were its own or what
+// lines its part must declare: on A8 round 1 one builder wrote another
+// subflow's part into its own, and another was refused
+// `subflow.interface_input_mismatch` ("collect_coupon is given exactly
+// itemUrl; this part declares no value"). The submit tool now names the
+// brief's parts in the person's words and, for a callable subflow, the exact
+// `part`, `input:` and `output:` lines it must write, by name.
 import type { JsonObject } from "../../../../../core/index.ts";
-import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
 import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT } from "../plan/index.ts";
 import { automationStudioCandidateSubmissionRefusal } from "../candidate/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialPort } from "./contracts.ts";
@@ -27,6 +49,20 @@ import { AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, AutomationStudioSubflowTrialGat
 
 /** The builder's submit tool. */
 export const AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID = "core.submit_subflow";
+
+/**
+ * Calls a builder's budget keeps back from its count of decisions left: the
+ * judge calls of the two trials its wrap-up may make, a first answer and its
+ * confirmation each (`../../result-verification/verify.ts`).
+ */
+export const AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS = 4;
+
+/**
+ * The fewest calls a builder's share can finish in: its wrap-up's decisions
+ * (`../../llm/loop-budget.ts`) and its finishing trials' judges. The project
+ * supervisor never sizes a build brief below it (`../../project-agents/supervisor/brief-sizing.ts`).
+ */
+export const AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS + AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS;
 
 /** The code a completion is refused under when it does not name the latest proposal, or there is none. */
 const LATEST_REQUIRED = "subflow.latest_proposal_required";
@@ -51,11 +87,37 @@ export type AutomationStudioSubflowBuilderOutcome = {
  * against (`./scoped-submission.ts`, `../../service/subflow-trial/run.ts`).
  */
 function successCheckRule(scope: AutomationStudioSubflowScope): string {
-  if (scope.successCheck !== undefined) return "Its inputs, outputs and success check are the plan's; leave them out or write exactly those.";
+  if (scope.successCheck !== undefined) return "Its success check is the plan's; leave out `done when:` for it or write exactly that.";
   const where = scope.interface ? `inside its own \`part ${scope.subflowKey}:\` block, before its first step` : "outside every block, after its last step";
-  return "Its inputs and outputs are the plan's; leave them out or write exactly those. "
-    + `The plan gives it no success check, so propose one with it: a \`done when: <fact>\` line ${where}, saying what the page shows once it worked, for example \`done when: text t11 contains "Booked"\`. `
+  return `The plan gives it no success check, so propose one with it: a \`done when: <fact>\` line ${where}, saying what the page shows once it worked, for example \`done when: text t11 contains "Booked"\`. `
     + "It becomes this subflow's success check, and its trial is judged against it.";
+}
+
+/**
+ * The brief, as the submit tool says it (header, t570): the parts this subflow
+ * does, in the person's own words, and how it is written -- for a callable
+ * subflow the exact `part`, `input:` and `output:` lines, by the names its
+ * interface gives, which is what the scoped submission holds it to
+ * (`./callable-target.ts`).
+ */
+function briefWords(scope: AutomationStudioSubflowScope): string {
+  const key = scope.subflowKey;
+  const parts = scope.parts.map((part) => `"${part.text}"`).join("; ");
+  const own = `Your brief is the subflow "${key}" alone. It does only ${scope.parts.length === 1 ? "this part" : "these parts"} of the task: ${parts}. Any other part of the task is another builder's subflow: write none of its steps here.`;
+  const contract = scope.interface;
+  if (!contract) return `${own} The router runs it, so it takes no inputs and hands back no outputs: write its steps outside every block, and any helper it needs as a part those steps call.`;
+  const inputs = contract.inputs.map((port) => port.id);
+  const outputs = contract.outputs.map((port) => port.id);
+  const lines = [`part ${key}: <what it does>`, ...inputs.map((name) => `  input: ${name}`), ...outputs.map((name) => `  output: ${name} = $step.<label>.<output>`), "  step <label>: <what it does>", "    node: ...", "end"];
+  const given = inputs.length ? `is given exactly ${names(inputs)}` : "is given no value";
+  const handed = outputs.length ? `hands back exactly ${names(outputs)}` : "hands back no value";
+  return `${own} Other subflows call it: it ${given} and ${handed}. So write it as one part with exactly these lines, its steps inside, and nothing outside every block:\n${lines.join("\n")}\n`
+    +(outputs.length ? "Each output line names one of the part's own steps by its label and the output it binds. " : "")
+    + "Any helper it needs is a further part it calls.";
+}
+
+function names(values: readonly string[]): string {
+  return values.map((value) => `"${value}"`).join(", ");
 }
 
 export async function runAutomationStudioSubflowBuilderLoop(input: {
@@ -79,7 +141,7 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   const subflowKey = input.scope.subflowKey;
   const submitTool: AutomationStudioLlmEvidenceTool = {
     toolId: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, effect: "observe",
-    description: `Submit your subflow "${subflowKey}", written as a Flow script under "flow" (its description gives the format and examples), or a JSON plan under "plan". Write its steps outside every block, and any helper it needs as a part those steps call. Write no \`when:\` line and no other subflow: which situation runs which subflow is the structure plan's. ${successCheckRule(input.scope)} Static validity returns a draft revision and digest, never acceptance. Correct every diagnostic and resubmit the whole subflow. Then test that exact revision with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}, and complete with the subflowKey, revision and digest only after its trial answers yes.`,
+    description: `Submit your subflow "${subflowKey}", written as a Flow script under "flow" (its description gives the format and examples)${input.scope.interface ? "" : `, or a JSON plan under "plan"`}. ${briefWords(input.scope)} Write no \`when:\` line and no other subflow: which situation runs which subflow is the structure plan's. ${successCheckRule(input.scope)} Static validity returns a draft revision and digest, never acceptance. Correct every diagnostic and resubmit the whole subflow. Then test that exact revision with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}, and complete with the subflowKey, revision and digest only after its trial answers yes.`,
     inputSchema: { type: "object", properties: { flow: { type: "string", description: `This subflow as a script. ${AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT}` }, plan: { type: "object" }, summary: { type: "string" } }, additionalProperties: false }
   };
   const checkCompletion: NonNullable<AutomationStudioLlmEvidenceLoopInput["checkCompletion"]> = async (result) => {
@@ -94,6 +156,8 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   };
   const discovery: AutomationStudioLlmEvidenceLoopInput = {
     ...input.loop, draft: false, dryRun: false, discoveryOnly: true,
+    // Its turns, its allowance's dollars and its calls, less its finishing trials' judges (header, t570).
+    budget: { ...(input.loop.budget ?? {}), countCalls: { keptForFinishing: AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS } },
     finishingTools: { submit: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, test: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID },
     tools: [...automationStudioSubflowBuilderTools(input.loop.tools), submitTool, gate.tool],
     completionSchema: { type: "object", properties: { subflowKey: { type: "string", const: subflowKey }, revision: { type: "integer" }, digest: { type: "string" } }, required: ["subflowKey", "revision", "digest"], additionalProperties: false },

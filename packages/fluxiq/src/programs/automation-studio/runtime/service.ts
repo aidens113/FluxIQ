@@ -190,7 +190,7 @@ import {
   AutomationStudioProposalApproval,
   clampInteger,
   embedAutomationStudioTaskGraphs, inspectAutomationStudioFlowMigration, type AutomationStudioFlowMigrationInspection, listAutomationStudioProposalSummaries, repairAutomationStudioFlowSummaryMetadataIndex, updateAutomationStudioProject, withAutomationStudioCanonicalFlowHierarchySubflows,
-  canonicalFlowDigest, compareSemanticVersions, countBy, latestByGeneratedAt, nextCategoryOrder, nodeDefinitionScopeAllows, subflowMetadataWithParentCategory,
+  canonicalFlowDigest, compareSemanticVersions, countBy, latestByGeneratedAt, nextCategoryOrder, nodeDefinitionScopeAllows, assertInstructionScopeOwners, subflowMetadataWithParentCategory,
   subflowSummaryFromSql,
   type AutomationStudioInstructionSummaryPage,
   canonicalFlowDocument,
@@ -3224,14 +3224,14 @@ export class AutomationStudioService {
   }
   async saveFlowInstruction(projectId: string, instruction: AutomationStudioFlowInstruction): Promise<AutomationStudioFlowInstruction> {
     if (!instruction.body?.trim() || !instruction.title?.trim() || ("projectId" in instruction.scope && instruction.scope.projectId !== projectId)) throw new AutomationInstructionError("automation.instructions_required");
-    if ("flowId" in instruction.scope) await this.getFlow(projectId, instruction.scope.flowId);
+    await assertInstructionScopeOwners(instruction.scope, { flow: (flowId) => this.getFlow(projectId, flowId), router: (flowId) => this.getFlowRouter(projectId, flowId), subflow: (flowId, subflowId) => this.getFlowSubflow(projectId, flowId, subflowId), subflowPage: (flowId, page) => this.listFlowSubflowSummaries({ projectId, flowId, ...page }) }); // A scope naming no owner of its Flow is refused before any store is written (t571).
     const summary = instructionSummaryFromInstruction(instruction);
     const filePath = summary.flowId ? this.flowPaths.flowInstructionFile(projectId, summary.flowId, instruction.instructionId) : this.projectPaths.projectInstructionFile(projectId, instruction.instructionId);
     await this.projects.ensureProjectStructure(projectId);
+    await this.flows.writeSqlFlowInstruction(projectId, instruction); // First and never swallowed: a refused SQL write leaves no detail or index entry behind.
     await new ProgramJsonStore<JsonObject>(filePath, () => ({})).write(instruction as unknown as JsonObject);
     await this.indexes.writeFlowInstructionIndex(projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, instructions: upsertBy(index.instructions ?? [], "instructionId", { ...summary, projectId }) }));
     await this.summaries.writeFlowInstructionSummary(projectId, { ...summary, projectId });
-    await this.flows.writeSqlFlowInstruction(projectId, instruction).catch(() => undefined);
     return instruction;
   }
 

@@ -418,3 +418,22 @@ describe("a discovery-only loop's own finishing tools (t537)", () => {
     expect(budgetOf(decide.mock.calls[1]![0].evidence as Shown[])).toMatchObject({ instruction: expect.stringContaining("core.submit_subflow") });
   });
 });
+
+describe("a budget that counts calls (t570)", () => {
+  const spent = { decisions: 2, reportedDecisions: 2, totalTokens: 200, estimatedCostUsd: 0.002, elapsedMs: 10, purse: { ceilingUsd: 1, spentUsd: 0.002, pendingUsd: 0, callsLeft: 9 } };
+
+  it("counts the purse's calls less those kept for the finishing trials' judges, and shows them", () => {
+    const remaining = automationStudioLlmEvidenceLoopRemaining({ countCalls: { keptForFinishing: 4 } }, spent, 20);
+    expect(remaining).toMatchObject({ decisionsLeft: 5, limitedBy: "calls", callsLeft: 9 });
+    expect(automationStudioLlmEvidenceBudgetEntry(3, remaining, undefined, true).value).toMatchObject({ decisionsLeft: 5, callsLeft: 9 });
+    // Never none: the purse decides.
+    expect(automationStudioLlmEvidenceLoopRemaining({ countCalls: { keptForFinishing: 4 } }, { ...spent, purse: { ...spent.purse, callsLeft: 2 } }, 20)).toMatchObject({ decisionsLeft: 1, callsLeft: 2 });
+  });
+
+  it("leaves a budget that does not count calls -- every candidate build's -- as it was", () => {
+    const remaining = automationStudioLlmEvidenceLoopRemaining({}, spent, 20);
+    expect(remaining.callsLeft).toBeUndefined();
+    expect(remaining.limitedBy).not.toBe("calls");
+    expect(remaining).toEqual(automationStudioLlmEvidenceLoopRemaining({}, { ...spent, purse: { ceilingUsd: 1, spentUsd: 0.002, pendingUsd: 0 } }, 20));
+  });
+});

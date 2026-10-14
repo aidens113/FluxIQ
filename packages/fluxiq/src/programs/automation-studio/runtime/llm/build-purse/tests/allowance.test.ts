@@ -231,3 +231,58 @@ describe("an allowance under the Flow's purse", () => {
     expect([build.pendingUsd(), allowance.pendingUsd()]).toEqual([0, 0]);
   });
 });
+
+describe("an allowance's calls (t570)", () => {
+  const capped = (purse: AutomationStudioLlmBuildPurse, briefId: string, maxCalls: number, fromKeptBack = false) => purse.allowance({ briefId, role: "builder", usd: 0.01, maxCalls, ...(fromKeptBack ? { fromKeptBack: true } : {}) });
+  const oneCall = (purse: AutomationStudioLlmBuildPurse) => {
+    const held = purse.hold(call(0.0001));
+    if (held.ok) held.hold.settle({ estimatedCostUsd: 0.0001 });
+    return held.ok;
+  };
+
+  it("carves a call cap only from the calls the purse has left, less judging, other open allowances and what it keeps back", () => {
+    const build = new AutomationStudioLlmBuildPurse({ ceilingUsd: 1, maxCalls: 20 });
+    build.keepBackForJudging({ calls: 2, unpriced: { inputTokens: 10, outputTokens: 10 } });
+    build.keepBackCallsFromAllowances(3);
+    for (let index = 0; index < 5; index += 1) expect(oneCall(build)).toBe(true);
+    // 20 - 5 spent - 2 judging - 3 kept back.
+    expect(build.allocatableCalls()).toBe(10);
+    expect(build.allocatableCalls({ fromKeptBack: true })).toBe(13);
+    const first = capped(build, "brief.a", 6);
+    expect(first.ok).toBe(true);
+    expect(build.allocatableCalls()).toBe(4);
+    const refused = capped(build, "brief.b", 5);
+    expect(refused).toMatchObject({ ok: false, refusal: { code: "llm_budget.allowance_unavailable", requestedCalls: 5, allocatableCalls: 4 } });
+    // A reset may take what is kept back for it.
+    expect(capped(build, "brief.reset", 7, true).ok).toBe(true);
+  });
+
+  it("keeps an open allowance's unspent calls from every other call, and gives them back when it closes", () => {
+    const build = new AutomationStudioLlmBuildPurse({ ceilingUsd: 1, maxCalls: 10 });
+    const carved = capped(build, "brief.a", 6);
+    if (!carved.ok) throw new Error("expected an allowance");
+    const sibling = capped(build, "brief.b", 4);
+    if (!sibling.ok) throw new Error("expected an allowance");
+    // The sibling spends its own four; the build's own fifth call and the sibling's fifth both have to leave brief.a's six.
+    for (let index = 0; index < 4; index += 1) expect(oneCall(sibling.allowance)).toBe(true);
+    expect(oneCall(sibling.allowance)).toBe(false);
+    const refused = build.hold(call(0.0001));
+    expect(refused).toMatchObject({ ok: false, refusal: { code: "llm_budget.run_call_limit", maxCalls: 10, spentCalls: 4, allottedCalls: 6 } });
+    expect(carved.allowance.callsLeft()).toBe(6);
+    expect(oneCall(carved.allowance)).toBe(true);
+    expect(carved.allowance.callsLeft()).toBe(5);
+    carved.allowance.close();
+    sibling.allowance.close();
+    expect(build.callsLeft()).toBe(5);
+    expect(oneCall(build)).toBe(true);
+  });
+
+  it("leaves a build with no allowances exactly as it was: its own calls are not held to what it keeps back from allowances", () => {
+    const plain = new AutomationStudioLlmBuildPurse({ ceilingUsd: 1, maxCalls: 3 });
+    const kept = new AutomationStudioLlmBuildPurse({ ceilingUsd: 1, maxCalls: 3 });
+    kept.keepBackCallsFromAllowances(3);
+    expect([1, 2, 3, 4].map(() => [oneCall(plain), oneCall(kept)])).toEqual([[true, true], [true, true], [true, true], [false, false]]);
+    expect(plain.refusal).toEqual(kept.refusal);
+    expect(new AutomationStudioLlmBuildPurse({ ceilingUsd: 1 }).callsLeft()).toBeUndefined();
+  });
+});

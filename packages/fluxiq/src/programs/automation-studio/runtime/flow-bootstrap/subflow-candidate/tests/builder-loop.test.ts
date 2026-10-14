@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../../llm/index.ts";
-import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowTrialRequest } from "../index.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS, AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowTrialRequest } from "../index.ts";
 import { OPEN, SIBLINGS, callPart, part, script, testScope, testSubmission } from "./subflow-fixture.ts";
 
 const look: AutomationStudioLlmEvidenceTool = { toolId: "core.run_node", description: "Run a node", inputSchema: { type: "object" }, effect: "mutate", perCallEffect: true, initialObservation: { input: { node: "web.inspect" } } };
@@ -83,8 +83,28 @@ describe("a subflow builder's loop", () => {
     expect(part).toContain("inside its own `part find_listing:` block, before its first step");
     const check: NonNullable<ReturnType<typeof testScope>["successCheck"]> = [{ fact: "text", op: "contains", value: "Listings" }];
     const planned = await said(testScope({ successCheck: check }));
-    expect(planned).toContain("Its inputs, outputs and success check are the plan's; leave them out or write exactly those.");
+    expect(planned).toContain("Its success check is the plan's; leave out `done when:` for it or write exactly that.");
     expect(planned).not.toContain("propose one");
+  });
+
+  // A8 round 1: a builder wrote another subflow's part into its own, and another declared no `input:` line (t570).
+  it("shows the builder its brief: its parts in the person's words and, for a callable subflow, the exact lines its part declares", async () => {
+    const said = async (scope: ReturnType<typeof testScope>) => {
+      const { observed } = await build([submit], { scope });
+      return observed[0]!.tools.find((tool) => tool.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!.description;
+    };
+    const routed = await said(testScope());
+    expect(routed).toContain("Your brief is the subflow \"find_listing\" alone. It does only this part of the task: \"Find the listings on the listings page\".");
+    expect(routed).toContain("write its steps outside every block");
+    const callable = await said(testScope({ interface: { inputs: [{ id: "listingUrl", name: "Listing URL", valueType: { kind: "unknown" } }], outputs: [{ id: "price", name: "Price", valueType: { kind: "unknown" } }] } }));
+    expect(callable).toContain("it is given exactly \"listingUrl\" and hands back exactly \"price\"");
+    expect(callable).toContain("part find_listing: <what it does>\n  input: listingUrl\n  output: price = $step.<label>.<output>\n");
+    expect(callable).not.toContain("JSON plan");
+  });
+
+  it("counts its allowance's calls in its budget, keeping its finishing trials' judges back", async () => {
+    const { observed } = await build([submit]);
+    expect(observed[0]!.budget).toEqual({ countCalls: { keptForFinishing: AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS } });
   });
 
   it("keeps the opening id exactly `initial.<toolId>` when the dispatcher passes no scope", async () => {

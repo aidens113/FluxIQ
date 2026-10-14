@@ -19,6 +19,13 @@ import { AutomationStudioService } from "../../../service.ts";
 // boundary (`service/summaries/instruction-scope-kind.ts`): each kind is
 // filtered, scoped and sorted as SQL stores it, and reported as SQL reads it
 // back (t558). No stored row changes.
+//
+// A node scope once failed the SQL write whenever its node had no
+// `graph_nodes` row, which the lazily imported graph tables often lack, and
+// the save swallowed the failure (t571). Its node is now checked against the
+// Flow's documents before any store is written, and the SQL row no longer
+// depends on the graph row, so a node-scoped instruction lists on both paths
+// and one naming no node of its Flow is refused and lists on neither.
 
 let tempRoot = "";
 const services: AutomationStudioService[] = [];
@@ -35,16 +42,29 @@ type Filter = { flow?: "a" | "b"; subflow?: "a" | "b"; scopeKind?: string; statu
 
 type Listed = { instructionId: string; scopeKind: string };
 
-async function seeded(service: AutomationStudioService, options: { divergentKinds?: boolean } = {}) {
+async function seeded(service: AutomationStudioService, options: { divergentKinds?: boolean; nodeScoped?: boolean } = {}) {
   services.push(service);
   const project = await service.createProject({ name: "Instruction parity" });
   const flows: Record<"a" | "b", string> = { a: "flow.parity-a", b: "flow.parity-b" };
   const subflows = {} as Record<"a" | "b", string>;
   for (const key of ["a", "b"] as const) {
     await service.createFlow({ projectId: project.id, flowId: flows[key], name: `Parity ${key}` });
-    subflows[key] = (await service.createFlowSubflow({ projectId: project.id, flowId: flows[key], name: `Primary ${key}`, role: "primary" })).subflowId;
+    const subflow = await service.createFlowSubflow({ projectId: project.id, flowId: flows[key], name: `Primary ${key}`, role: "primary" });
+    subflows[key] = subflow.subflowId;
+    // Both graphs hold a `start`: a node id is local to its graph.
+    if (options.nodeScoped) {
+      const blank = await service.getFlow(project.id, subflow.graphFlowId!);
+      await service.saveFlow({ projectId: project.id, flow: { ...blank, nodes: [
+        { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
+        { id: `finish-${key}`, definitionId: "builtin.control.end", parameterValues: { status: "success" } }
+      ], edges: [{ id: `start.finish-${key}`, sourceNodeId: "start", sourcePortId: "success", targetNodeId: `finish-${key}`, targetPortId: "in" }] } });
+    }
   }
   const now = Date.now();
+  const save = async (instructionId: string, scope: AutomationStudioInstructionScope) => await service.saveFlowInstruction(project.id, {
+    schemaVersion: "0.1", instructionId, title: instructionId, body: "Read the listed records.", scope,
+    priority: 100, status: "active", requirement: "required", tags: [], createdAt: now, updatedAt: now
+  });
   const scopes: Array<[string, AutomationStudioInstructionScope]> = [
     ["instruction.project", { kind: "project", projectId: project.id }],
     ["instruction.flow-a", { kind: "flow", projectId: project.id, flowId: flows.a }],
@@ -57,14 +77,15 @@ async function seeded(service: AutomationStudioService, options: { divergentKind
       ["instruction.review-subflow-b", { kind: "adaptation_review", projectId: project.id, flowId: flows.b, subflowId: subflows.b }],
       ["instruction.error-a", { kind: "on_error", projectId: project.id, flowId: flows.a }],
       ["instruction.error-subflow-a", { kind: "on_error", projectId: project.id, flowId: flows.a, subflowId: subflows.a }]
+    ] satisfies Array<[string, AutomationStudioInstructionScope]> : []),
+    ...(options.nodeScoped ? [
+      ["instruction.node-subflow-a", { kind: "node", projectId: project.id, flowId: flows.a, subflowId: subflows.a, nodeId: "finish-a" }],
+      ["instruction.node-a", { kind: "node", projectId: project.id, flowId: flows.a, nodeId: "finish-a" }],
+      ["instruction.node-start-b", { kind: "node", projectId: project.id, flowId: flows.b, subflowId: subflows.b, nodeId: "start" }],
+      ["instruction.error-node-a", { kind: "on_error", projectId: project.id, flowId: flows.a, nodeId: "finish-a" }]
     ] satisfies Array<[string, AutomationStudioInstructionScope]> : [])
   ];
-  for (const [instructionId, scope] of scopes) {
-    await service.saveFlowInstruction(project.id, {
-      schemaVersion: "0.1", instructionId, title: instructionId, body: "Read the listed records.", scope,
-      priority: 100, status: "active", requirement: "required", tags: [], createdAt: now, updatedAt: now
-    });
-  }
+  for (const [instructionId, scope] of scopes) await save(instructionId, scope);
   const page = async (filter: Filter, sort?: "scope"): Promise<Listed[]> => (await service.listFlowInstructionSummaries({
     projectId: project.id,
     ...(filter.flow ? { flowId: flows[filter.flow] } : {}),
@@ -84,7 +105,7 @@ async function seeded(service: AutomationStudioService, options: { divergentKind
   };
   const indexed = async (filter: Filter): Promise<string[]> => await fromIndex(() => list(filter));
   const indexedPage = async (filter: Filter, sort?: "scope"): Promise<Listed[]> => await fromIndex(() => page(filter, sort));
-  return { list, indexed, page, indexedPage };
+  return { list, indexed, page, indexedPage, save, projectId: project.id, flows, subflows };
 }
 
 // A Subflow alone and a Subflow with another Flow are here too: on both paths
@@ -147,5 +168,31 @@ describe("instruction kinds SQL stores under another name", () => {
     // "error" and "on_error" name the same scopes on both paths.
     expect(await found.indexed({ scopeKind: "error" })).toEqual(["instruction.error-a", "instruction.error-subflow-a"]);
     expect(await found.indexed({ scopeKind: "on_error" })).toEqual(["instruction.error-a", "instruction.error-subflow-a"]);
+  });
+});
+
+describe("node-scoped instructions", () => {
+  it("list the same from project SQL and from the summary index", { timeout: 60_000 }, async () => {
+    const found = await seeded(new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }), { nodeScoped: true });
+    const byId = (items: Listed[]) => [...items].sort((left, right) => left.instructionId.localeCompare(right.instructionId));
+    const filters: Filter[] = [...FILTERS, { scopeKind: "node" }, { flow: "a", scopeKind: "node" }, { subflow: "a", scopeKind: "node" }, { flow: "a", scopeKind: "on_error" }];
+    for (const filter of filters) {
+      expect({ filter, items: byId(await found.page(filter)) }).toEqual({ filter, items: byId(await found.indexedPage(filter)) });
+    }
+    expect(await found.list({ scopeKind: "node" })).toEqual(["instruction.node-a", "instruction.node-start-b", "instruction.node-subflow-a"]);
+    expect(await found.list({ flow: "a", scopeKind: "on_error" })).toEqual(["instruction.error-node-a"]);
+  });
+
+  it("refuse a scope naming no node or Subflow of its Flow, and list it on neither path", { timeout: 60_000 }, async () => {
+    const found = await seeded(new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }), { nodeScoped: true });
+    const { projectId, flows, subflows } = found;
+    await expect(found.save("instruction.node-missing", { kind: "node", projectId, flowId: flows.a, nodeId: "node.nowhere" })).rejects.toThrow(/names node node\.nowhere, which is not a node of Flow flow\.parity-a/);
+    // Another Flow's node is not a node of this Flow, nor of its Subflow.
+    await expect(found.save("instruction.node-elsewhere", { kind: "node", projectId, flowId: flows.a, subflowId: subflows.a, nodeId: "finish-b" })).rejects.toThrow(/names node finish-b, which is not a node of Subflow .* of Flow flow\.parity-a/);
+    await expect(found.save("instruction.error-missing", { kind: "on_error", projectId, flowId: flows.a, nodeId: "node.nowhere" })).rejects.toThrow(/names node node\.nowhere/);
+    await expect(found.save("instruction.subflow-elsewhere", { kind: "subflow", projectId, flowId: flows.a, subflowId: subflows.b })).rejects.toThrow(/names Subflow .*, which is not a Subflow of Flow flow\.parity-a/);
+    await expect(found.save("instruction.router-missing", { kind: "router", projectId, flowId: flows.a, routerId: "router.nowhere" })).rejects.toThrow(/names Router router\.nowhere, which is not the Router of Flow flow\.parity-a/);
+    const refused = ["instruction.node-missing", "instruction.node-elsewhere", "instruction.error-missing", "instruction.subflow-elsewhere", "instruction.router-missing"];
+    for (const listed of [await found.list({}), await found.indexed({})]) expect(listed.filter((id) => refused.includes(id))).toEqual([]);
   });
 });

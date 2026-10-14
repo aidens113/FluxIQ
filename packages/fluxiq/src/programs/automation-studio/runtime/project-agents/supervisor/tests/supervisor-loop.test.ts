@@ -190,7 +190,7 @@ describe("the project supervisor", () => {
     expect(run.outcome.ending?.outcome).toBe("blocked");
   });
 
-  it("keeps the judged whole run's reserve from every brief, so the judge is paid after the builders spent", async () => {
+  it("keeps the judged whole run's reserve from every brief and sizes each brief itself, so the judge is paid after the builders spent", async () => {
     const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.5 });
     const price = (input: number, output: number) => (input + output) * 0.0001;
     const primed = purse.hold({ projectedCostUsd: 0.001, estimatedInputTokens: 5, maxOutputTokens: 5, price });
@@ -217,8 +217,10 @@ describe("the project supervisor", () => {
     });
     const run = await supervise([
       call(IDS.writePlan, ONE_PART),
+      // More than its share is lowered to the share, never refused (t570).
       dispatch([brief("main", ["p1"], [], { allowanceUsd: 0.35 })]),
-      dispatch([brief("main", ["p1"], [], { allowanceUsd: 0.29 })]),
+      // No money and no turns: Core gives it its share.
+      dispatch([{ kind: "build", subflowKey: "main", parts: ["p1"] }]),
       call(IDS.assemble),
       test,
       complete
@@ -227,8 +229,13 @@ describe("the project supervisor", () => {
     expect(money.keptBackUsd).toBeCloseTo(0.2, 6);
     expect(money.canGiveUsd).toBeCloseTo(0.299, 6);
     const answers = run.seen.filter((entry) => entry.toolId === IDS.dispatch).map((entry) => entry.value as JsonObject);
-    expect(answers[0]).toMatchObject({ ok: false, code: "project.allowance_unavailable", requestedUsd: 0.35 });
-    expect(answers[1]).toMatchObject({ ok: true });
+    // What can be given (0.299) over this brief and the build's own finishing share.
+    const given = answers.map((answer) => ((answer.returns as JsonObject[])[0]!.given as JsonObject));
+    expect(answers.map((answer) => answer.ok)).toEqual([true, true]);
+    expect(given[0]!.allowanceUsd).toBeCloseTo(0.1495, 6);
+    expect(given[1]!.allowanceUsd).toBeCloseTo((0.5 - 0.1495 - 0.2) / 2, 6);
+    expect(given[1]!.maxIterations).toBe(30);
+    run.dispatched.forEach((request, index) => expect(request.briefs[0]!.allowanceUsd).toBeCloseTo(given[index]!.allowanceUsd as number, 6));
     expect(judged).toEqual([true, true]);
     expect(run.outcome.status).toBe("candidate");
     expect(run.view?.record.allowances[0]).toMatchObject({ role: "supervisor" });

@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
 import { planInput, subflow, taskSpecInput } from "./supervisor-fixture.ts";
-import { FIND, HOLD, NOTE, call, complete, dispatch, lastOf, supervise, test } from "./supervisor-script.ts";
+import { FIND, HOLD, NOTE, call, complete, dispatch, lastOf, reset, supervise, test } from "./supervisor-script.ts";
 
 /** A build brief with no entry: Core fills in the observed current page and the plan's `after`. */
 const build = (subflowKey: string, parts: string[], extra: JsonObject = {}): JsonObject => ({ kind: "build", subflowKey, parts, allowanceUsd: 0.05, maxIterations: 20, ...extra });
@@ -35,6 +35,8 @@ describe("the supervisor plans in its planning format", () => {
       call(IDS.writePlan, plan),
       dispatch([build("note_shelf", ["p3"]), build("place_hold", ["p2"]), build("find_titles", ["p1"])]),
       call(IDS.assemble),
+      // place_hold's part asks for a lasting act, which Core permits it (t570): its act is undone before the whole test.
+      dispatch([reset()], "Put the target back before the whole test."),
       test,
       complete
     ]);
@@ -51,6 +53,8 @@ describe("the supervisor plans in its planning format", () => {
     });
     const sent = run.dispatched[0]!.briefs;
     expect(sent.map((entry) => [entry.subflowKey, entry.entry.predecessors])).toEqual([["find_titles", []], ["place_hold", ["find_titles"]], ["note_shelf", ["place_hold"]]]);
+    // No brief wrote permittedActs: each was permitted exactly what its parts ask for (t570).
+    expect(sent.map((entry) => [entry.subflowKey, entry.permittedActs])).toEqual([["find_titles", []], ["place_hold", ["create_new"]], ["note_shelf", []]]);
     expect(lastOf(run.seen, IDS.assemble)!.calls).toEqual({ subflowKey: "main", inOrder: ["find_titles", "place_hold", "note_shelf"] });
     const main = run.outcome.candidate!.buildPlan.plan.subflows.find((entry) => entry.key === "main")!;
     expect(main.nodes.map((node) => [node.parameters?.subflowId, node.parameters?.inputs])).toEqual([

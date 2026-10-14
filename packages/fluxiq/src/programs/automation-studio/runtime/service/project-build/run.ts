@@ -13,7 +13,7 @@ import { automationStudioProjectBuildDraftRecord } from "./draft-record.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_LOCAL_HOST } from "./local-host.ts";
 import { AutomationStudioProjectBuildProposals } from "./proposals.ts";
 import { automationStudioProjectBuildRecords } from "./records.ts";
-import { AUTOMATION_STUDIO_PROJECT_BUILD_RESERVE } from "./reserve.ts";
+import { AUTOMATION_STUDIO_PROJECT_BUILD_FINISHING_CALLS, AUTOMATION_STUDIO_PROJECT_BUILD_RESERVE } from "./reserve.ts";
 import { automationStudioProjectBuildSubflowTrials } from "./subflow-trials.ts";
 import { automationStudioProjectBuildSupervisorProvider } from "./supervisor-provider.ts";
 import { AutomationStudioProjectBuildTaskChecklist } from "./task-checklist.ts";
@@ -96,6 +96,7 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
       proposals: (proposal) => proposals.byRef(proposal), projectLedger: project.ledger, submission: draft.submission,
       trial: { candidateId, port: draft.trial }, purse,
       reserve: { calls: AUTOMATION_STUDIO_PROJECT_BUILD_RESERVE.calls, unpriced: { ...AUTOMATION_STUDIO_PROJECT_BUILD_RESERVE.unpriced } },
+      finishing: { ...AUTOMATION_STUDIO_PROJECT_BUILD_FINISHING_CALLS },
       ...(draft.loop.signal ? { signal: draft.loop.signal } : {})
     },
     loop: { ...loop, unusableDecisions, decide: decide(undefined) },

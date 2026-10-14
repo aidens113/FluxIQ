@@ -200,7 +200,11 @@ proposal, so two briefs never collide at assembly.
 subflowKey, parts[], interface, entry: { caseId, predecessors[] },
 allowanceUsd, maxIterations, permittedActs[], recordingExcerpt?,
 failingReceipt? (repair) }`. At most what the builder needs; never the
-supervisor's handles (packets may be gone).
+supervisor's handles (packets may be gone). `permittedActs` is Core's, not the
+supervisor's (t570): every lasting act the task spec asks for when any of the
+brief's parts acts, none when its parts only read (t575,
+`project-agents/contracts/asked-acts.ts`), so a builder's own reading of its
+press's class need not agree with the label the supervisor filed.
 
 **Builder return** — `{ briefId, outcome: done|partial|blocked, reason,
 proposal?: { subflowKey, revision, digest }, trials: receiptRef[],
@@ -596,6 +600,21 @@ Earlier entries are in [the ledger archive](./automation-project-agents-plan/arc
 - Validation: Core, after merging dev: result-verification + project-build + project-agents -> 776 passed; subflow-candidate + project-agents + project-build -> 203 passed; conversations commands + candidate-trial + subflow-trial -> 278 passed; every purse test file -> 298 passed; summaries + service-flows + service-bootstrap -> 301 passed; check and audit exit 0 each; merged `b97ebae0`, `caf286d4`, `adf63a5e`, `e8e94d03`, `98df1e07`. Downstream: test-runner -> 1182 passed; test-contracts -> 169 passed; checks and audit passed; merged `148262f1`
 - Outcome: Accepted. A8 is ready; it needs the user's go-ahead
 - Follow-up: A21 an instruction scoped to a node missing from `graph_nodes` is silently left out of project SQL (the write's error is swallowed, `service.ts` ~3249); A10b the chat model never sees ask ids, so with two asks waiting a typed answer cannot settle either; W8 `scenario-lab` identity-drift `repair.ts` is orphaned, `gate.ts` `declaredRepair` is dead, six stale comments (`reports/t559-w7-bench.md`)
+
+### 2026-10-14 — A8 round-one fixes t568-t572
+- Agent: workers t568-lab-chat-unavailable, t569-supervisor-plans-not-explores, t570-project-calls-and-brief-defaults, t571-a21-instruction-scope-write-error, t572-a10b-chat-sees-ask-ids; supervisor verified each and integrated
+- Changed: t568 project SQLite opened through `path.toNamespacedPath` (long Windows paths); t569 the supervisor's own system text, a look budget of about 3 observe calls, and the planning format `subflows: [{ key, name, purpose, parts, inputs, outputs, after }]` Core compiles; t570 builders get a budget (the build's was stripped, so no wrap-up ever ran), a brief's call cap carved like its dollars with calls kept back for judging and finishing, Core-sized briefs (`project-agents/supervisor/brief-sizing.ts`), permitted acts from the parts, exact interface lines in the submit tool; t571 node-scoped instructions reach project SQL (migration `0026_relaxed_instruction_node_guard`, save checks scope owners, no swallowed write); t572 the chat model sees waiting asks with ids, the thread never does
+- Why: A8 round one's four launches, each debugged (paired document, A8 Run Plan); A21 and A10b landed now so every A8 round runs on one frozen pair
+- Validation: t570 in its worktree: `npx tsc --noEmit -p tsconfig.json` -> exit 0; vitest over project-agents, project-build, build-purse, subflow-candidate, loop-budget, flow-bootstrap/candidate -> 61 files, 456 passed; vitest over `runtime/llm` -> 197 files, 1950 passed; audit passed. t571: tsc exit 0; vitest over storage/project, service/summaries, service/flows -> 64 files, 477 passed, 4 skipped; audit passed (1 baseline entry lowered). t572: tsc exit 0; vitest over `runtime/conversations` -> 23 files, 215 passed; audit passed. Each Core finish ran `pnpm check` -> passed. Merges `39976038` (t568), `e56fec59` (t569), `d3462c48`, `d82816d2`, `e3debb51`; t568/t569 detail in their reports
+- Outcome: Accepted. A8 round one relaunches after t574 (judge evidence in subflow trials, from the audit `a8-everything-store-judge-audit.md` in the paired document's reports)
+- Follow-up: t571 found the SQL node table keys a node by id alone, so two Subflow graphs' `start` nodes overwrite each other, and the on_error errorCode mapping disagrees with the accepted-state validator (`reports/t571-a21-instruction-scope-write-error.md`); t572: an id the chat model writes still reaches the client in the response's `decision` (not the thread); t570: crossborder's task spec called Add to cart `modify_existing`, so a press classed `create_new` would go to the person's gate
+
+### 2026-10-14 — Acting briefs may make any act the task asks for (t575)
+- Agent: supervisor (found while reviewing t570's notes; implemented and verified)
+- Changed: `project-agents/contracts/asked-acts.ts` (new): a brief whose parts act permits every lasting act the task spec asks for, one whose parts only read permits none; the brief contract's `brief_act_not_asked` check and the supervisor's brief input both use it
+- Why: a builder could act only if its own reading of a press's class agreed with the supervisor's label in the task spec (t570: crossborder filed Add to cart as `modify_existing`); a mismatch reaches the person's gate, the Lab's person refuses an ask away from the task's point, and a refused act ends the builder; a single-loop build never asks
+- Validation: `npx tsc --noEmit -p tsconfig.json` -> exit 0; vitest over `project-agents` and `service/project-build` -> 31 files, 202 passed (the new t575 case ran: 1 passed); `pnpm structure:check` -> passed (353 warnings, 1156 baselined); Core finish `pnpm check` -> passed; merged `8a0ac284`
+- Outcome: Accepted
 
 ## Open Questions
 
