@@ -179,15 +179,54 @@ describe("the project supervisor", () => {
       test,
       complete,
       test,
+      end("blocked", "The whole test was judged no."),
+      dispatch([reset()], "Put the target back before ending."),
       end("blocked", "The whole test was judged no.")
     ], project({ trial: () => "no", trialActs: true }));
     const codes = run.feedback.map((entry) => entry.code);
-    expect(codes).toEqual(["project.completion_nothing_assembled", "candidate.trial_required", "project.completion_not_latest", "candidate.trial_unchanged_after_no"]);
+    // The ending waits for the reset of what the judged-no trial left (bigbox debug fix 10).
+    expect(codes).toEqual(["project.completion_nothing_assembled", "candidate.trial_required", "project.completion_not_latest", "candidate.trial_unchanged_after_no", "project.completion_reset_first"]);
     // The judged-no trial left its act on the target: the next test asks for a reset first.
     expect(lastOf(run.seen, IDS.testCandidate)).toMatchObject({ ok: false, code: "project.trial_reset_required", lastWholeTrialLeftActs: true });
     expect(run.trials).toHaveLength(1);
     expect(run.outcome.status).toBe("ended");
     expect(run.outcome.ending?.outcome).toBe("blocked");
+  });
+
+  it("holds an honest ending until a reset brief came back, while the build's lasting acts are on the target (bigbox debug fix 10)", async () => {
+    const builder: BuilderPlan = (sent) => (sent.subflowKey === "note_shelf" ? "blocked" : "done");
+    const briefs = [brief("find_titles", ["p1"]), brief("place_hold", ["p2"], ["find_titles"], { permittedActs: ["create_new"] }), brief("note_shelf", ["p3"], ["place_hold"])];
+    const run = await supervise([
+      call(IDS.writePlan, THREE_PART),
+      dispatch(briefs),
+      end("blocked", "The shelf is not shown."),
+      dispatch([reset()], "Put the target back before ending."),
+      end("blocked", "The shelf is not shown.")
+    ], project({ builder }));
+    const held = run.feedback.find((entry) => entry.code === "project.completion_reset_first")!;
+    expect(held.actsInPlace).toEqual([{ act: "act-1", did: "pressed hold for place_hold", brief: "brief-2" }]);
+    expect(run.acts.every((act) => !act.inPlace)).toBe(true);
+    // Nothing is left, so the reason is the model's own.
+    expect(run.outcome.ending).toMatchObject({ outcome: "blocked", reason: "The shelf is not shown." });
+  });
+
+  it("lets an ending with acts still in place through after two holds, and names exactly what is left in its reason", async () => {
+    const builder: BuilderPlan = (sent) => (sent.subflowKey === "note_shelf" ? "blocked" : "done");
+    const briefs = [brief("find_titles", ["p1"]), brief("place_hold", ["p2"], ["find_titles"], { permittedActs: ["create_new"] }), brief("note_shelf", ["p3"], ["place_hold"])];
+    const run = await supervise([call(IDS.writePlan, THREE_PART), dispatch(briefs), end("blocked", "The shelf is not shown."), end("blocked", "The shelf is not shown."), end("blocked", "The shelf is not shown.")], project({ builder }));
+    expect(run.feedback.map((entry) => entry.code)).toEqual(["project.completion_reset_first", "project.completion_reset_first"]);
+    expect(run.acts.filter((act) => act.inPlace)).toHaveLength(1);
+    expect(run.outcome.ending).toMatchObject({ outcome: "blocked", reason: "The shelf is not shown. Still on the target from this build: pressed hold for place_hold." });
+    expect(run.view?.record.ending?.reason).toContain("pressed hold for place_hold");
+  });
+
+  it("answers a written plan with its warnings and says to amend it if one applies (bigbox debug fix 7)", async () => {
+    // The second decision is only there to be shown the plan's answer.
+    const run = await supervise([call(IDS.writePlan, THREE_PART), end("blocked")]);
+    const written = lastOf(run.seen, IDS.writePlan)!;
+    expect(written).toMatchObject({ ok: true, written: "plan" });
+    expect(written.warnings).toEqual([{ code: "project.plan_subflow_constraint", path: "subflows.2", instruction: expect.stringContaining("notAsked") }]);
+    expect(String(written.next)).toContain("project.amend_plan");
   });
 
   it("keeps the judged whole run's reserve from every brief and sizes each brief itself, so the judge is paid after the builders spent", async () => {

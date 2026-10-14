@@ -38,11 +38,25 @@
 // itemUrl; this part declares no value"). The submit tool now names the
 // brief's parts in the person's words and, for a callable subflow, the exact
 // `part`, `input:` and `output:` lines it must write, by name.
+//
+// **It can end its brief honestly (t581).** On the A8 bigbox run every
+// dependent builder's trial answered `subflow.trial_predecessor_missing`, and
+// the trial gate told it to "complete with outcome blocked and say why"; its
+// completion took only `subflowKey`, `revision` and `digest`, so it sent the
+// one receipt four times and the loop stalled. A builder may now complete with
+// `{"ended": "blocked" | "partial", "reason": "..."}` once it has submitted or
+// tried something and no yes stands for its latest proposal; the outcome
+// carries that ending (`ended`) for the brief's return
+// (`../../project-agents/dispatch/ending.ts`), as does the last trial any of
+// its revisions got (`lastTrial`), so the return can say why. A refusal of its
+// completion sent again is said in a builder's terms, not a draft's
+// (`../../llm/decision-handlers/completion.ts`).
 import type { JsonObject } from "../../../../../core/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceCompletionCheck, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
 import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT } from "../plan/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY } from "../../llm/decision-handlers/index.ts";
 import { automationStudioCandidateSubmissionRefusal } from "../candidate/index.ts";
-import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialPort } from "./contracts.ts";
+import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialPort, AutomationStudioSubflowTrialResult } from "./contracts.ts";
 import { automationStudioSubflowBuilderTools } from "./role-tools.ts";
 import { AutomationStudioSubflowScopedSubmissionController } from "./scoped-submission.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, AutomationStudioSubflowTrialGate } from "./subflow-trial-gate.ts";
@@ -67,13 +81,31 @@ export const AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS = AUTOMATION_STUDIO_LLM_E
 /** The code a completion is refused under when it does not name the latest proposal, or there is none. */
 const LATEST_REQUIRED = "subflow.latest_proposal_required";
 
+/** The codes an honest ending is refused under: written wrong, sent before anything was tried, or sent while a yes stands. */
+const ENDING_SHAPE = "subflow.ending_shape";
+const ENDING_TOO_SOON = "subflow.ending_too_soon";
+const ENDING_AFTER_YES = "subflow.ending_after_yes";
+const ENDING_OUTCOMES: ReadonlySet<unknown> = new Set(["blocked", "partial"]);
+const RECEIPT_KEYS: ReadonlySet<string> = new Set(["subflowKey", "revision", "digest"]);
+const MAX_ENDING_REASON = 2000;
+
+/** How a builder may end its brief without a passing proposal, as its tools and refusals say it (header). */
+const HONEST_ENDING = "If nothing this brief can change would make its trial pass -- a subflow before it never prepares its entry, or the site cannot do what its parts ask -- "
+  + "end the brief instead: complete with {\"ended\": \"blocked\", \"reason\": \"<why, in a sentence>\"}, or \"partial\" in place of \"blocked\" while a proposal stands.";
+
 type ScopedInput = ConstructorParameters<typeof AutomationStudioSubflowScopedSubmissionController>[0];
 
-/** What a builder's run ends with: the loop's result, its latest proposal and that proposal's partial verdict. Never promotion. */
+/**
+ * What a builder's run ends with: the loop's result, its latest proposal and
+ * that proposal's partial verdict; the honest ending it completed with, when it
+ * did; and the last trial any revision got, whatever came after. Never promotion.
+ */
 export type AutomationStudioSubflowBuilderOutcome = {
   loop: Awaited<ReturnType<typeof runAutomationStudioLlmEvidenceLoop>>;
   proposal: AutomationStudioSubflowProposal | undefined;
   trial: ReturnType<AutomationStudioSubflowTrialGate["standing"]>;
+  ended?: { outcome: "blocked" | "partial"; reason: string } | undefined;
+  lastTrial?: AutomationStudioSubflowTrialResult | undefined;
   promotionAllowed: false;
 };
 
@@ -139,12 +171,15 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   const controller = new AutomationStudioSubflowScopedSubmissionController({ scope: input.scope, siblings: input.siblings, submission });
   const gate = new AutomationStudioSubflowTrialGate({ scope: input.scope, latest: () => controller.latest(), port: input.trial?.port, signal });
   const subflowKey = input.scope.subflowKey;
+  let tried = false;
+  let lastTrial: AutomationStudioSubflowTrialResult | undefined;
+  let ended: AutomationStudioSubflowBuilderOutcome["ended"];
   const submitTool: AutomationStudioLlmEvidenceTool = {
     toolId: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, effect: "observe",
-    description: `Submit your subflow "${subflowKey}", written as a Flow script under "flow" (its description gives the format and examples)${input.scope.interface ? "" : `, or a JSON plan under "plan"`}. ${briefWords(input.scope)} Write no \`when:\` line and no other subflow: which situation runs which subflow is the structure plan's. ${successCheckRule(input.scope)} Static validity returns a draft revision and digest, never acceptance. Correct every diagnostic and resubmit the whole subflow. Then test that exact revision with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}, and complete with the subflowKey, revision and digest only after its trial answers yes.`,
+    description: `Submit your subflow "${subflowKey}", written as a Flow script under "flow" (its description gives the format and examples)${input.scope.interface ? "" : `, or a JSON plan under "plan"`}. ${briefWords(input.scope)} Write no \`when:\` line and no other subflow: which situation runs which subflow is the structure plan's. ${successCheckRule(input.scope)} Static validity returns a draft revision and digest, never acceptance. Correct every diagnostic and resubmit the whole subflow. Then test that exact revision with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}, and complete with the subflowKey, revision and digest only after its trial answers yes. ${HONEST_ENDING}`,
     inputSchema: { type: "object", properties: { flow: { type: "string", description: `This subflow as a script. ${AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT}` }, plan: { type: "object" }, summary: { type: "string" } }, additionalProperties: false }
   };
-  const checkCompletion: NonNullable<AutomationStudioLlmEvidenceLoopInput["checkCompletion"]> = async (result) => {
+  const receiptCheck = (result: JsonObject): AutomationStudioLlmEvidenceCompletionCheck => {
     const proposal = controller.latest();
     if (!proposal) return { ok: false, issueCodes: [LATEST_REQUIRED], feedback: { code: LATEST_REQUIRED, submitted: false, instruction: `No proposal of this subflow stands, so there is no revision or digest to complete with: never invent them. Submit the subflow with ${AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID}${gate.available ? `, test it with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}` : ""}, then complete with the subflowKey, revision and digest it returned.` } };
     const named = result.subflowKey === subflowKey && typeof result.revision === "number" && typeof result.digest === "string" && Object.keys(result).every((key) => key === "subflowKey" || key === "revision" || key === "digest");
@@ -154,16 +189,47 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
     }
     return gate.completion({ revision: proposal.revision, digest: proposal.digest });
   };
+  // An honest ending (header): its shape, then only once something was tried and while no yes stands for the latest proposal.
+  const endingCheck = (result: JsonObject): AutomationStudioLlmEvidenceCompletionCheck => {
+    const reason = typeof result.reason === "string" ? result.reason.trim() : "";
+    if (!ENDING_OUTCOMES.has(result.ended) || !reason || Object.keys(result).some((key) => key !== "ended" && key !== "reason")) {
+      return endingRefused(ENDING_SHAPE, "An honest ending is exactly {\"ended\": \"blocked\", \"reason\": \"<why, in a sentence>\"}, or \"partial\" in place of \"blocked\" while a proposal stands, and nothing else.");
+    }
+    if (!tried) return endingRefused(ENDING_TOO_SOON, `Nothing of this brief has been submitted or tried yet, so there is nothing to end on. Submit the subflow with ${AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID}${gate.available ? ` and test it with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}` : ""} first.`);
+    const proposal = controller.latest();
+    const standing = gate.standing(proposal);
+    if (proposal && standing?.verdict === "yes" && standing.entryPrepared) {
+      return endingRefused(ENDING_AFTER_YES, `Revision ${proposal.revision} of this subflow passed its trial, so the brief is done: complete with exactly {"subflowKey": ${JSON.stringify(subflowKey)}, "revision": ${proposal.revision}, "digest": "${proposal.digest}"}.`);
+    }
+    ended = { outcome: result.ended as "blocked" | "partial", reason: reason.slice(0, MAX_ENDING_REASON) };
+    return { ok: true };
+  };
+  const checkCompletion: NonNullable<AutomationStudioLlmEvidenceLoopInput["checkCompletion"]> = async (result) => {
+    // Any key a receipt does not have makes it an ending, however written: the trial gate's own words say "complete with outcome blocked".
+    const check = await (Object.keys(result).some((key) => !RECEIPT_KEYS.has(key)) ? endingCheck(result) : receiptCheck(result));
+    // A refusal sent again is said in a builder's terms (header).
+    return check.ok || !check.feedback ? check : { ...check, feedback: { ...check.feedback, [AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY]: BUILDER_SENT_AGAIN } };
+  };
   const discovery: AutomationStudioLlmEvidenceLoopInput = {
     ...input.loop, draft: false, dryRun: false, discoveryOnly: true,
     // Its turns, its allowance's dollars and its calls, less its finishing trials' judges (header, t570).
     budget: { ...(input.loop.budget ?? {}), countCalls: { keptForFinishing: AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS } },
     finishingTools: { submit: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, test: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID },
     tools: [...automationStudioSubflowBuilderTools(input.loop.tools), submitTool, gate.tool],
-    completionSchema: { type: "object", properties: { subflowKey: { type: "string", const: subflowKey }, revision: { type: "integer" }, digest: { type: "string" } }, required: ["subflowKey", "revision", "digest"], additionalProperties: false },
+    // The receipt of the latest proposal, or an honest ending (header).
+    completionSchema: { type: "object", properties: { subflowKey: { type: "string", const: subflowKey }, revision: { type: "integer" }, digest: { type: "string" }, ended: { type: "string", enum: ["blocked", "partial"] }, reason: { type: "string" } }, additionalProperties: false },
     executeTool: async (call) => {
-      if (call.toolId === AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID) return gate.test(call.value, call.signal);
+      if (call.toolId === AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID) {
+        const answered = await gate.test(call.value, call.signal);
+        const trial = answeredTrial(answered, gate);
+        if (trial) {
+          tried = true;
+          lastTrial = trial;
+        }
+        return answered;
+      }
       if (call.toolId !== AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID) return input.loop.executeTool(call);
+      tried = true;
       const submitted = await controller.submit(call.value, { trialOf: (proposal) => gate.standing(proposal), refuted: (digest) => gate.refuted(digest) });
       if (!submitted.ok) {
         const refusal = automationStudioCandidateSubmissionRefusal(submitted);
@@ -185,7 +251,23 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   if (input.callScope !== undefined) discovery.callScope = input.callScope;
   const loop = await runAutomationStudioLlmEvidenceLoop({ ...(input.observe ? input.observe(discovery) : discovery), checkCompletion });
   const proposal = controller.latest();
-  return { loop, proposal, trial: gate.standing(proposal), promotionAllowed: false };
+  return { loop, proposal, trial: gate.standing(proposal), ...(loop.ok && ended ? { ended } : {}), ...(lastTrial ? { lastTrial } : {}), promotionAllowed: false };
+}
+
+/** What a builder is told when the same refusal of its completion comes again (header). */
+const BUILDER_SENT_AGAIN = "The check reads the trial gate's answer for the revision named, not the completion's words, so the same completion gets the same answer. "
+  + `Do what the refusal asks -- test that revision again, or change the subflow, submit it with ${AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID} and test the new revision. ${HONEST_ENDING}`;
+
+/** The partial verdict a test call answered, when it ran a trial: a refused call (wrong receipt, retest limit) ran none. */
+function answeredTrial(answered: Awaited<ReturnType<AutomationStudioSubflowTrialGate["test"]>>, gate: AutomationStudioSubflowTrialGate): AutomationStudioSubflowTrialResult | undefined {
+  const evidence = answered.evidence;
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence) || evidence.partial !== true) return undefined;
+  const { revision, digest } = evidence;
+  return typeof revision === "number" && typeof digest === "string" ? gate.standing({ revision, digest }) : undefined;
+}
+
+function endingRefused(code: string, instruction: string): AutomationStudioLlmEvidenceCompletionCheck {
+  return { ok: false, issueCodes: [code], feedback: { code, instruction } };
 }
 
 /** The subflow an accepted proposal is, as the model sent it, labelled by its revision and digest, in words that stay true (t498, t503). */

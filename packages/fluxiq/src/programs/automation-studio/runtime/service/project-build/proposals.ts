@@ -7,7 +7,8 @@ import type { AutomationStudioProjectProposalRef } from "../../project-agents/in
 // proposal by brief, revision and digest -- always one its trial answered yes
 // for -- and the supervisor's assembly asks for it by that name; a subflow's
 // partial trial runs its predecessors' latest passing proposals to reach its
-// entry.
+// entry, and so does a dependent builder before its first look
+// (`./entry-preparation.ts`, t580).
 
 const key = (briefId: string, revision: number, digest: string): string => JSON.stringify([briefId, revision, digest]);
 

@@ -35,13 +35,13 @@ export function planInput(subflows: JsonObject[], spec: JsonObject): JsonObject 
   return { taskSpec: spec, subflows };
 }
 
-/** The script a builder of each subflow writes, by subflow key. */
+/** The script a builder of each subflow writes, by subflow key; a part reads every input it declares (`flow-bootstrap/subflow-candidate/callable-target.ts`, t581). */
 const SCRIPTS: Record<string, string[]> = {
   main: ["flow: Find the titles", "step: open the catalogue", "  node: web.browser.navigate", "  url: https://library.test/catalogue"],
   find_newest: ["flow: Find the newest titles", "step: open the catalogue", "  node: web.browser.navigate", "  url: https://library.test/catalogue"],
-  find_titles: ["flow: Find the titles", "part find_titles: find the titles", "  input: author", "  output: titles = $step.rows.records", "  step rows: read the rows", "    node: web.dom.extract_list", "    extractList: extraction.1", "    extractList.minItems: 0", "end"],
-  place_hold: ["flow: Place a hold", "part place_hold: place the hold", "  input: titles", "  output: shelf = $step.read.records", "  step: press hold", "    node: web.dom.click", "    selector: .hold", "    consequences: create_new", "  step read: read the shelf", "    node: web.dom.extract_list", "    extractList: extraction.2", "    extractList.minItems: 0", "end"],
-  note_shelf: ["flow: Note the shelf", "part note_shelf: note the shelf", "  input: shelf", "  step: open the hold", "    node: web.browser.navigate", "    url: https://library.test/holds", "end"]
+  find_titles: ["flow: Find the titles", "part find_titles: find the titles", "  input: author", "  output: titles = $step.rows.records", "  step rows: read the rows", "    node: web.dom.extract_list", "    extractList: extraction.1", "    extractList.minItems: 0", "  step: type the author", "    node: web.dom.type", "    selector: .author", "    text: $input.author", "end"],
+  place_hold: ["flow: Place a hold", "part place_hold: place the hold", "  input: titles", "  output: shelf = $step.read.records", "  step: press hold", "    node: web.dom.click", "    selector: .hold", "    consequences: create_new", "  step read: read the shelf", "    node: web.dom.extract_list", "    extractList: extraction.2", "    extractList.minItems: 0", "  step: type the titles", "    node: web.dom.type", "    selector: .titles", "    text: $input.titles", "end"],
+  note_shelf: ["flow: Note the shelf", "part note_shelf: note the shelf", "  input: shelf", "  step: open the hold", "    node: web.browser.navigate", "    url: https://library.test/holds", "  step: type the shelf", "    node: web.dom.type", "    selector: .shelf", "    text: $input.shelf", "end"]
 };
 
 /** What the stub dispatcher answers a brief with: done unless the test says otherwise. */

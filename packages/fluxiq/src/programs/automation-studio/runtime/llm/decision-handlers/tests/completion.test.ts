@@ -13,6 +13,7 @@ import { describe, expect, it, vi } from "vitest";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID, runAutomationStudioLlmEvidenceLoop } from "../../evidence-loop.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../evidence-loop.ts";
 import type { JsonObject } from "../../../../../../core/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY } from "../index.ts";
 
 type Shown = ReadonlyArray<{ callId: string; toolId: string; value: JsonObject }>;
 const shownAt = (decide: { mock: { calls: unknown[][] } }, index: number): Shown => (decide.mock.calls[index]![0] as { evidence: Shown }).evidence;
@@ -94,5 +95,34 @@ describe("a completion's test in the decision history", () => {
     // that refusal, and nothing of the test before it.
     expect(dryRunEntries(shownAt(decide, 3))).toEqual([]);
     expect(shownAt(decide, 3).some((entry) => entry.toolId === "core.completion_check")).toBe(true);
+  });
+});
+
+// A loop with no draft -- a subflow builder -- gives its own sent-again words
+// on its refusal (t581); the draft's ("run the step that is missing, or amend
+// the steps they name") are wrong for it. The words are said only on a repeat
+// and never shown under their key. A refusal without them keeps the draft's
+// (`./decision-context-wiring.test.ts` pins those).
+describe("a completion check's own sent-again words", () => {
+  it("are said after a completion's first sentence when the same refusal comes again, and never shown as they are", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "core.run_node", input: { node: "node.read" } })
+      .mockResolvedValueOnce({ kind: "complete", result: { receipt: 1 } })
+      .mockResolvedValueOnce({ kind: "complete", result: { receipt: 1 } })
+      .mockResolvedValueOnce({ kind: "complete", result: { ended: "blocked" } });
+    const checkCompletion = vi.fn(async (result: JsonObject) => result.ended
+      ? { ok: true as const }
+      : { ok: false as const, issueCodes: ["receipt.untried"], feedback: { code: "receipt.untried", instruction: "Try it first.", [AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY]: "Try it, or end the brief." } });
+    const read = vi.fn(async (): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => ({ kind: "llm_evidence_tool_execution", evidence: { page: "same" }, effectApplied: false, targetsUnchanged: true }));
+
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools: [{ ...tool, effect: "observe" as const, perCallEffect: false }], decide, executeTool: read, checkCompletion, propagateDecisionErrors: true, maxIterations: 6, maxToolCalls: 6, minToolCalls: 1,
+      unusableDecisions: { maxConsecutive: 4, stalled: () => new Error("stalled") }
+    });
+
+    expect(result.ok).toBe(true);
+    const refusals = (index: number) => shownAt(decide, index).filter((entry) => entry.toolId === "core.completion_check").map((entry) => entry.value);
+    expect(refusals(2)).toEqual([{ code: "receipt.untried", instruction: "Try it first." }]);
+    expect(refusals(3).at(-1)).toEqual({ code: "receipt.untried", instruction: "Try it first.", sameAsIteration: 2, timesSent: 2, sentAgain: "This completion was refused for these same reasons at decision 2, and this is attempt 2. Try it, or end the brief." });
   });
 });
