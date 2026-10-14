@@ -33,6 +33,8 @@ export async function supervise(steps: Step[], built = project(), options: {
   maxStepsWithoutProgress?: number;
   /** A stall is thrown out of the loop, as a project build's is (`service.ts`). */
   propagateDecisionErrors?: boolean;
+  /** The run's time limit, when a test sets one short (`../supervisor-loop.ts`, t592). */
+  timeLimit?: { maxMs: number; endingMs: number };
 } = {}) {
   let index = 0;
   const seen: Entry[] = [];
@@ -42,6 +44,7 @@ export async function supervise(steps: Step[], built = project(), options: {
   const guard = options.maxStepsWithoutProgress ?? steps.length;
   const outcome = await runAutomationStudioProjectSupervisorLoop({
     ports: built.ports,
+    ...(options.timeLimit ? { timeLimit: options.timeLimit } : {}),
     loop: {
       tools: options.tools ?? HOST_TOOLS,
       maxIterations: steps.length,

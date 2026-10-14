@@ -22,6 +22,8 @@ export * from "./project-agents/host-resources/index.ts";
 export * from "./io-bridge.ts";
 export * from "./io-policy.ts";
 export * from "./llm/index.ts";
+// A project build's bound, published so a reader that waits for one (the web Lab's chat) waits Core's number (t592).
+export { AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS } from "./loop-limits/index.ts";
 export * from "./panel-capabilities/index.ts";
 export * from "./parking/index.ts";
 export * from "./run-control/index.ts";
