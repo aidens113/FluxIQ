@@ -51,6 +51,20 @@ describe.each([undefined, "", "  ", "candidate"])("candidate authoring mode with
   });
 });
 
+describe("project authoring mode", () => {
+  beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", "project"); });
+
+  it("requests a project build for a creation and a candidate build for an extend, and treats the saved draft as successful authoring", async () => {
+    const { requests, context } = recording({ ok: true, payload: { candidate: CANDIDATE } });
+    expect(await buildAutomationStudioFlowFromConversation(context, { flowId: "flow", mode: "create" })).toMatchObject({ ok: true, status: "draft", candidate: { candidateId: "candidate" } });
+    expect(await buildAutomationStudioFlowFromConversation(context, { flowId: "flow", mode: "extend" })).toMatchObject({ ok: true, status: "draft" });
+    expect(requests.map((request) => request.payload)).toEqual([
+      expect.objectContaining({ evidenceGuided: true, authoringMode: "project" }),
+      expect.objectContaining({ evidenceGuided: true, authoringMode: "candidate", mode: "extend" })
+    ]);
+  });
+});
+
 describe("candidate authoring mode with a trial runner (t340)", () => {
   beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", "candidate"); });
   const PROPOSAL = { status: "proposed", projectId: "project", flowId: "flow", adaptationId: "adaptation.candidate", riskLevel: "low", sourceInstructionIds: ["instruction"], baseDependencyDigest: "base", baseSettingsRevision: 0, accounting: { requestId: "request", estimatedInputTokens: 1 },

@@ -129,12 +129,14 @@ export type GenerateFlowBootstrapAdaptationRequest = FlowIdProjectRequest & {
   permittedConsequences?: AutomationStudioActionConsequence[];
   evidenceGuided?: true;
   /**
-   * `candidate` stores an unverified candidate draft. `configured` asks for
-   * Core's own authoring mode (`FLUXIQ_AUTHORING_MODE`, `model/authoring-mode/`):
-   * a candidate draft in candidate mode, a proposed adaptation in legacy mode.
-   * Absent is a proposed adaptation. Either value requires evidenceGuided:true.
+   * `candidate` stores an unverified candidate draft. `project` builds that
+   * candidate through the project supervisor and its builders, and answers as
+   * a candidate build does. `configured` asks for Core's own authoring mode
+   * (`FLUXIQ_AUTHORING_MODE`, `model/authoring-mode/`): a candidate build in
+   * candidate or project mode, a proposed adaptation in legacy mode. Absent is
+   * a proposed adaptation. Every value requires evidenceGuided:true.
    */
-  authoringMode?: "candidate" | "configured";
+  authoringMode?: "candidate" | "project" | "configured";
   useReusableContext?: true;
   /**
    * Where the Flow this build writes starts, in the bound domain's own

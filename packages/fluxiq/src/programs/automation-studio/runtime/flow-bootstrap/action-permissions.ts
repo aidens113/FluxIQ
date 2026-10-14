@@ -243,7 +243,8 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
    * person that the build's dry-run tests check such a step rather than do it
    * again, and a candidate build has no such tests -- its test runs the whole
    * Flow from its start -- so there the line was untrue and is not said (t370,
-   * lane A round 7 UI). The read still treats the act as lasting either way.
+   * lane A round 7 UI), nor in `project`, whose builds test the same way. The
+   * read still treats the act as lasting either way.
    */
   authoringMode?: AutomationStudioAuthoringMode | undefined;
   /**
@@ -308,7 +309,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
     const unanswered = (automationStudioInstructedActReads(entries) ?? []).filter((act) => act.consequences === null);
     if (unanswered.length && !unansweredSaid) {
       unansweredSaid = true;
-      if (input.authoringMode !== "candidate") await saidUnanswered(input.say, unanswered.map((act) => act.quote));
+      if (input.authoringMode === undefined || input.authoringMode === "legacy") await saidUnanswered(input.say, unanswered.map((act) => act.quote));
     }
     return entries;
   };

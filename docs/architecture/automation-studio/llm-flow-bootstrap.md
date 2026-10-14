@@ -33,8 +33,9 @@ adding an executable binding or granting a positive judgement.
 
 How the product's own creation and improvement builds are authored is one runtime
 setting with one owner, `model/authoring-mode/`: `FLUXIQ_AUTHORING_MODE` in the
-Core process environment, `candidate` (the default) or `legacy`. Any other value
-refuses instead of falling back. Nothing else holds a mode literal of its own.
+Core process environment, `candidate` (the default), `project` (opt-in) or
+`legacy`. Any other value refuses instead of falling back. Nothing else holds a
+mode literal of its own.
 
 - `legacy` is the explicit opt-out for the evidence-guided draft behavior
   (Core `e9b7d691` through the parent of t330's merge `66a310cc`). The chat's
@@ -47,6 +48,59 @@ refuses instead of falling back. Nothing else holds a mode literal of its own.
   submitted revision from its declared start and judges the trial before
   completion can promote through the ordinary proposal path. Without a trial
   runner, completion remains draft-only; a stored draft grants no acceptance.
+- `project` builds that same candidate through agents: a project supervisor
+  plans the Flow's subflows and briefs a bounded builder per subflow, then
+  assembles their proposals and tests the whole candidate. Its result and
+  promotion are the candidate's (below, "Authoring mode `project`").
+
+### Authoring mode `project`
+
+`project` (automation-project-agents-plan, unit A5c) replaces the candidate
+build's single loop with a project supervisor and its builders, behind the same
+generation command, lock, purse, trial runner and promotion. It is opt-in until
+the Lab comparison (A8) shows it at least matches `candidate`; the default stays
+`candidate`.
+
+- **Who asks for it.** A request names `authoringMode: "project"`, or sends
+  `configured` to a Core started with `FLUXIQ_AUTHORING_MODE=project`. The chat's
+  build sends Core's configured mode as it is set, so a project Core builds
+  `flow.createHere` and `flow.explore` in project mode. An extend is not yet a
+  project build's (A7): the request refuses `project` with `mode: "extend"`, so
+  the chat's `flow.improve` sends `candidate` for its extend in a project Core;
+  a repair's re-author is refused in the build itself.
+- **Where it runs.** The candidate branch of `generateFlowBootstrapAdaptationInternal`
+  builds what it always built -- binding, instruction authority, provider, loop
+  limits, creation purse, the build-level permission gate and person-needed, the
+  whole candidate's trial runner and judge (`service/project-build/whole-trials.ts`,
+  shared with `candidate`) -- and hands it, with the project's own ports, to
+  `runAutomationStudioProjectBuild` (`service/project-build/`) instead of the
+  candidate draft generator. Builders are never started through the generation
+  entry: its generation lock is not re-entrant.
+- **Per brief.** Each brief gets its own harness options and node descriptions,
+  build routing, permission gate (holding only the acts the brief was
+  permitted, never more than the person permitted the build) and person-needed,
+  its own ledger from the project ledger, and the build's subflow trial port.
+  Each brief's allowance caps its calls at three per decision, so its subflow
+  trials' judges (a first answer and a confirmation) never starve its decisions.
+- **Host resources.** One scheduler per host-resource port: the domain's
+  (`hostResources`), whose capacity sets how many builders run at once -- the web
+  domain declares 1 -- or, for a domain that declares none, one local resource.
+  A subflow trial opens its session only while its brief holds a current lease
+  (`admitAutomationStudioBuildTrialSession`).
+- **Lasting acts.** The project ledger holds every agent's acts: each builder's
+  exploration acts and its subflow trials' acts in its brief's ledger, and the
+  whole trials' acts under the supervisor. The supervisor refuses a whole trial
+  while any is in place and briefs a reset; a reset's undo of an act is put to
+  the ledger that owns it, and the reset completes once every such ledger, having
+  looked again on each act's own page, holds none in place.
+- **How it ends.** On a yes for the latest assembled revision the assembled
+  candidate is saved as the Flow's candidate draft and promoted by the
+  candidate's own promotion, after which the build record ends `promoted`. A
+  supervisor that ended without that yes keeps its assembled candidate as a
+  draft with nothing to promote; with no assembled candidate the build fails as
+  a candidate build does. The start hook (`prepareStart`) stays on the whole
+  candidate's trial port, so a Lab Core resets the target before each whole
+  trial in project mode as in candidate mode.
 
 ### The site is put back before each trial
 

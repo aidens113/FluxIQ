@@ -14,8 +14,12 @@ export type AutomationStudioGenerateFlowBootstrapAdaptationInput = {
   /** The lasting consequences the person has already allowed this build's actions to have. Absent, none: each is asked about. */
   permittedConsequences?: AutomationStudioActionConsequence[];
   evidenceGuided?: true;
-  /** Opt-in explicit complete candidate submission; static validity remains unverified. */
-  authoringMode?: "candidate";
+  /**
+   * Opt-in explicit complete candidate submission; static validity remains
+   * unverified. `project` builds that candidate through the project supervisor
+   * and its builders (`../project-build/`); its result is a candidate's.
+   */
+  authoringMode?: "candidate" | "project";
   useReusableContext?: true;
   /**
    * What this build does to the Flow. Absent, `create`: a blank Flow, written

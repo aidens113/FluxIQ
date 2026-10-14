@@ -95,9 +95,13 @@ export function automationStudioConversationCandidateKeptSaid(candidate: Automat
  */
 export const AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_JUDGED = "checked it with a test run from the start";
 
-/** True when Core authors candidate drafts instead of proposing adaptations; read each time it matters. */
+/**
+ * True when Core authors candidate drafts instead of proposing adaptations --
+ * in `candidate` mode, and in `project` mode, whose build ends in a candidate
+ * too; read each time it matters.
+ */
 export function automationStudioConversationAuthorsCandidates(): boolean {
-  return resolveAutomationStudioAuthoringMode() === "candidate";
+  return resolveAutomationStudioAuthoringMode() !== "legacy";
 }
 
 export type AutomationStudioConversationBuildResult =
@@ -135,7 +139,8 @@ export async function buildAutomationStudioFlowFromConversation(
     flowId: input.flowId,
     authSessionId: context.sessionId,
     evidenceGuided: true,
-    ...(candidateMode ? { authoringMode: "candidate" } : {}),
+    // Core's configured mode, sent as it is set (`project` builds through the project supervisor). An extend is not yet a project build's (automation-project-agents-plan, A7), so in project mode it is a candidate build.
+    ...(candidateMode ? { authoringMode: input.mode === "extend" ? "candidate" : resolveAutomationStudioAuthoringMode() } : {}),
     // An extend amends the Flow's own steps from where the Flow already
     // starts; the page on screen is a creation's starting point.
     ...(input.mode === "extend" ? { mode: "extend" } : context.startLocation ? { startLocation: context.startLocation } : {}),

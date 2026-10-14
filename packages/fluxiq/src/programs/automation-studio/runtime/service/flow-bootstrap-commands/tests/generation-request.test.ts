@@ -47,3 +47,10 @@ it("candidate authoring is opt-in and requires evidence-guided generation", () =
   expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ authoringMode: "candidate", evidenceGuided: undefined }))).toThrow(/Candidate authoring/);
   expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ authoringMode: "other" }))).toThrow(/Candidate authoring/);
 });
+
+it("project authoring is read as its own mode, requires evidence-guided generation, and refuses an extend until A7", () => {
+  expect(readAutomationStudioFlowBootstrapGenerationRequest(input({ mode: "create", authoringMode: "project" }))).toMatchObject({ mode: "create", authoringMode: "project" });
+  expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ mode: "create", authoringMode: "project", evidenceGuided: undefined }))).toThrow(/Candidate authoring/);
+  expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ authoringMode: "project" }))).toThrow(/Project authoring cannot extend/);
+  expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ authoringMode: "legacy" }))).toThrow(/Candidate authoring/);
+});
