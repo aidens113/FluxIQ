@@ -14,8 +14,13 @@ describe("the dispatch order", () => {
 
   it("refuses a predecessor neither done nor sent with a brief that proposes, and a circle", () => {
     const missing = automationStudioProjectSupervisorDispatchOrder([brief("b", ["a"]), brief("a", [], "reset")], new Set());
-    expect(missing).toEqual({ ok: false, code: "predecessor_not_done", issues: [{ code: "project.predecessor_not_done", path: "briefs.0.entry.predecessors.0" }] });
+    expect(missing).toEqual({ ok: false, code: "predecessor_not_done", issues: [{ code: "project.predecessor_not_done", path: "briefs.0.entry.predecessors.0", predecessor: "a", why: "\"a\" has no done proposal under this plan, and its brief in this call is a reset, which proposes nothing. Send a build or repair brief for \"a\" before this one, or in this same call." }] });
     const circle = automationStudioProjectSupervisorDispatchOrder([brief("a", ["b"]), brief("b", ["a"])], new Set());
     expect(circle.ok === false && circle.code).toBe("cycle");
+  });
+
+  it("says a predecessor whose done proposal was made under an earlier plan was dropped by the amendment (t588)", () => {
+    const amended = automationStudioProjectSupervisorDispatchOrder([brief("b", ["a"])], new Set(), new Set(["a"]));
+    expect(amended.ok === false && amended.issues[0]).toMatchObject({ predecessor: "a", why: expect.stringContaining("proposals made before project.amend_plan no longer count") });
   });
 });
