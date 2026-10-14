@@ -7,7 +7,7 @@ import {
   type AutomationStudioFlowBootstrapPlan,
   type AutomationStudioFlowBootstrapSubflow
 } from "../../flow-bootstrap/plan/index.ts";
-import type { AutomationStudioSubflowProposal } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import { automationStudioSubflowStepId, type AutomationStudioSubflowProposal } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioProjectStructurePlan } from "../contracts/index.ts";
 
 /** One reason a Flow could not be assembled, with the subflow it is about. */
@@ -43,7 +43,11 @@ export type AutomationStudioProjectAssembled = {
  *
  * Refused, with every reason, when a subflow it needs has no proposal, a
  * proposal is for another plan or subflow, more than one router-run subflow
- * has none, the calls' order makes a circle, or two subflows share a key.
+ * has none, the calls' order makes a circle, two subflows share a key, or two
+ * briefs' subflows share a step id (`<subflowKey>-<nodeKey>`) or a record
+ * output's dataset id, so one would save its rows over the other's (t555; the
+ * re-keying already gives derived ones distinct ids, so what is left is a
+ * name both builders wrote). Each such issue names both briefs.
  * Nothing here checks the Flow: the submission controller does, whole.
  */
 export function automationStudioProjectAssembly(input: {
@@ -82,12 +86,15 @@ export function automationStudioProjectAssembly(input: {
     if (!ordered) return { ok: false, issues: [{ code: "project.assemble_cycle", subflowKey: main.key, message: "The callable subflows' predecessors make a circle, so they have no order to be called in. Change the briefs' predecessors or the plan." }] };
     composed = callsInOrder(main, ordered);
   }
-  const subflows = plan.subflows.flatMap((subflow) => (composed && subflow === main ? [composed.subflow] : proposed(subflow.key).map((part) => structuredClone(part))));
+  const sourced = plan.subflows.flatMap<Sourced>((subflow) => (composed && subflow === main ? [{ subflow: composed.subflow, brief: undefined }] : proposed(subflow.key).map((part) => ({ subflow: structuredClone(part), brief: proposals.get(subflow.key)!.scope.briefId }))));
+  const subflows = sourced.map(({ subflow }) => subflow);
   const keys = new Set<string>();
   for (const subflow of subflows) {
     if (keys.has(subflow.key)) issues.push({ code: "project.assemble_key_collision", subflowKey: subflow.key, message: `Two subflows of the assembled Flow are keyed "${subflow.key}". Send a brief again for one of them, or change the plan.` });
     keys.add(subflow.key);
   }
+  if (issues.length) return { ok: false, issues };
+  issues.push(...sharedIds(sourced));
   if (issues.length) return { ok: false, issues };
   const requires = [...new Set([...(plan.metadata?.requires ?? []), ...subflows.flatMap((subflow) => subflow.metadata?.requires ?? [])])];
   const whole: AutomationStudioFlowBootstrapPlan = { schemaVersion: "0.1", router: structuredClone(plan.router), subflows };
@@ -95,6 +102,39 @@ export function automationStudioProjectAssembly(input: {
   const assembled: AutomationStudioProjectAssembled = { plan: whole, flowInputs: composed?.flowInputs ?? [] };
   if (composed) assembled.composed = { subflowKey: composed.subflow.key, calls: composed.calls };
   return { ok: true, assembled };
+}
+
+/** Where an assembled subflow came from: the brief whose proposal holds it, or none for the one assembly wrote. */
+type Sourced = { subflow: AutomationStudioFlowBootstrapSubflow; brief: string | undefined };
+
+/** Each step id and dataset id two briefs' subflows both hold, naming both briefs (header); one subflow's own repeats are its brief's. */
+function sharedIds(sourced: readonly Sourced[]): AutomationStudioProjectAssemblyIssue[] {
+  const issues: AutomationStudioProjectAssemblyIssue[] = [];
+  const steps = new Map<string, Sourced>();
+  const datasets = new Map<string, Sourced>();
+  const named = (source: Sourced) => (source.brief === undefined ? `the calls assembly wrote in "${source.subflow.key}"` : `brief "${source.brief}" ("${source.subflow.key}")`);
+  for (const source of sourced) {
+    for (const node of source.subflow.nodes) {
+      const step = automationStudioSubflowStepId(source.subflow.key, node.key);
+      const earlier = steps.get(step);
+      if (earlier && earlier.brief !== source.brief) issues.push({ code: "project.assemble_step_id_collision", subflowKey: source.subflow.key, message: `The step id "${step}" is held by both ${named(earlier)} and ${named(source)}. Send one of those briefs again, or change the plan.` });
+      else if (!earlier) steps.set(step, source);
+      for (const dataset of datasetIds(node.parameters)) {
+        const first = datasets.get(dataset);
+        if (first && first.brief !== source.brief) issues.push({ code: "project.assemble_dataset_id_collision", subflowKey: source.subflow.key, message: `The dataset "${dataset}" is saved to by both ${named(first)} and ${named(source)}, so one would mix its rows into the other's. Send one of those briefs again with a dataset of its own, or change the plan.` });
+        else if (!first) datasets.set(dataset, source);
+      }
+    }
+  }
+  return issues;
+}
+
+/** The dataset ids a step's record outputs name: any parameter that is an object naming a `datasetId`, Core's own contract. */
+function datasetIds(parameters: JsonObject | undefined): string[] {
+  return Object.values(parameters ?? {}).flatMap((value) => {
+    const id = value && typeof value === "object" && !Array.isArray(value) ? (value as JsonObject).datasetId : undefined;
+    return typeof id === "string" && id.trim() ? [id.trim()] : [];
+  });
 }
 
 /** The subflows a subflow's Call Subflow steps name. */
