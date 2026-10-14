@@ -85,6 +85,15 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // it is recorded (`./acts-record.ts`); the build waits for those writes before
 // it saves its draft, so a record that could not be written fails the build as
 // a dispatcher's record write does.
+//
+// **A build has a time limit (t592).** The supervisor's run is held to Core's
+// `AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS` from its start
+// (`project-agents/supervisor/supervisor-loop.ts`). A build that reaches it
+// with no assembled candidate fails as an ending the supervisor recorded, never
+// as the loop's own cancel, which is what its stopped loop reads as:
+// `flow_bootstrap.post_provider_validation_failed` with the issue codes
+// `project.build_time_limit` and `project.build_<outcome>`, and the person is
+// told the recorded ending as for any other.
 
 type DraftInput = Parameters<typeof generateAutomationStudioFlowCandidateDraft>[0];
 type DraftResult = { record: AutomationStudioFlowCandidateDraftRecord; trial: AutomationStudioCandidateTrialResult | undefined };
@@ -167,9 +176,10 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   await acts.flushed();
   const candidate = outcome.candidate;
   if (!candidate) {
-    const failure = outcome.loop && !outcome.loop.ok
+    // A build its time limit stopped ends as recorded, not as its stopped loop's cancel (header).
+    const failure = outcome.loop && !outcome.loop.ok && !outcome.timedOut
       ? draft.ending(outcome.loop, spent) ?? flowBootstrapEvidenceLoopFailure(outcome.loop, spent)
-      : new AutomationStudioFlowBootstrapGenerationError({ ...flowBootstrapPhaseFailure("post_provider_validation", spent, "flow_bootstrap.post_provider_validation_failed").diagnostic, issueCodes: [`project.build_${outcome.ending?.outcome ?? "blocked"}`] });
+      : new AutomationStudioFlowBootstrapGenerationError({ ...flowBootstrapPhaseFailure("post_provider_validation", spent, "flow_bootstrap.post_provider_validation_failed").diagnostic, issueCodes: [...(outcome.timedOut ? ["project.build_time_limit"] : []), `project.build_${outcome.ending?.outcome ?? "blocked"}`] });
     throw toldEnding(failure, outcome.ending, left);
   }
   const current = await draft.currentBinding();

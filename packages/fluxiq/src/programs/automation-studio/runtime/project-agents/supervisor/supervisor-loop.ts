@@ -42,10 +42,27 @@
 // Core dispatches one itself (`./dispatch-tool.ts`, sized from the purse as
 // any brief is), then records the ending naming what is still left. A thrown
 // stall is then thrown on, so the caller ends the build as it did.
+//
+// **A run has a time limit, and reaching it is an ending too (t592).** A
+// project build ran under no bound of its own: the Lab's chat stopped watching
+// A8 launch 7's builds at a candidate build's deadline while they still worked.
+// The bound is Core's, `AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS`
+// (`../../loop-limits/project-build-duration.ts`, which says what counts), and
+// its clock starts as this function is called, before the record is read. The
+// supervisor's work -- the loop, every builder a dispatch runs and every whole
+// trial -- runs under a signal that aborts `AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_MS`
+// before the bound: a builder in flight is stopped and comes back stopped, as on
+// a cancel, and the loop ends. That is not the person's cancel: the build ends
+// as a guard's stop does, through Core's reset brief and the ending naming what
+// is left, under a second signal that aborts at the bound itself, so even a
+// reset that overruns cannot carry the build past it. The outcome says
+// `timedOut`. A supervisor started again on a build under way starts a clock of
+// its own.
 import { AutomationStudioFlowCandidateSubmissionController, AutomationStudioFlowCandidateTrialGate, type AutomationStudioCandidateTrialResult, type AutomationStudioFlowCandidate } from "../../flow-bootstrap/candidate/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError } from "../../flow-bootstrap/generation-failure/index.ts";
 import { automationStudioLlmBuildPurseRun, AutomationStudioLlmBuildPurseRefused } from "../../llm/build-purse/index.ts";
 import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceLoopResult } from "../../llm/evidence-loop.ts";
+import { AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_MS, AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS } from "../../loop-limits/index.ts";
 import { withAutomationStudioProjectAgent } from "../attribution/index.ts";
 import type { AutomationStudioProjectBuildEnding } from "../record/index.ts";
 import { automationStudioProjectSupervisorAssembleTool } from "./assemble-tool.ts";
@@ -76,18 +93,53 @@ export type AutomationStudioProjectSupervisorOutcome = {
   candidate: AutomationStudioFlowCandidate | undefined;
   trial: AutomationStudioCandidateTrialResult | undefined;
   ending?: AutomationStudioProjectBuildEnding;
+  /** Present when the run reached its time limit before a candidate passed (header). */
+  timedOut?: true;
   promotionAllowed: false;
 };
 
-export async function runAutomationStudioProjectSupervisorLoop(input: {
+/** How long one supervisor run may take, whole, and the last part of that kept for its ending (header). Core's constants unless a test says otherwise. */
+export type AutomationStudioProjectSupervisorTimeLimit = { maxMs: number; endingMs: number };
+
+const TIME_LIMIT: AutomationStudioProjectSupervisorTimeLimit = Object.freeze({ maxMs: AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS, endingMs: AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_MS });
+
+type SupervisorInput = {
   ports: AutomationStudioProjectSupervisorPorts;
   loop: AutomationStudioProjectSupervisorLoopInput;
   /** Wraps the loop's input before it runs, as the candidate loop's `observe` does, for the chat. */
   observe?: ((loop: AutomationStudioLlmEvidenceLoopInput) => AutomationStudioLlmEvidenceLoopInput) | undefined;
-}): Promise<AutomationStudioProjectSupervisorOutcome> {
+  timeLimit?: AutomationStudioProjectSupervisorTimeLimit | undefined;
+};
+
+export async function runAutomationStudioProjectSupervisorLoop(input: SupervisorInput): Promise<AutomationStudioProjectSupervisorOutcome> {
+  // The clock starts here, before the build record is read (header).
+  const clock = startClock(input.timeLimit ?? TIME_LIMIT);
+  try {
+    return await supervise(input, clock);
+  } finally {
+    clock.stop();
+  }
+}
+
+/** The run's two time signals (header): `work` aborts `endingMs` before the bound, `whole` at it. */
+type Clock = { limit: AutomationStudioProjectSupervisorTimeLimit; work: AbortSignal; whole: AbortSignal; stop(): void };
+
+function startClock(limit: AutomationStudioProjectSupervisorTimeLimit): Clock {
+  const work = new AbortController();
+  const whole = new AbortController();
+  const reached = () => new DOMException("The project build reached its time limit.", "TimeoutError");
+  const timers = [setTimeout(() => work.abort(reached()), Math.max(0, limit.maxMs - limit.endingMs)), setTimeout(() => whole.abort(reached()), limit.maxMs)];
+  return { limit, work: work.signal, whole: whole.signal, stop: () => timers.forEach(clearTimeout) };
+}
+
+async function supervise(input: SupervisorInput, clock: Clock): Promise<AutomationStudioProjectSupervisorOutcome> {
   const { ports } = input;
   const signals = [ports.signal, ports.submission.signal].filter((value): value is AbortSignal => value !== undefined);
   const signal = signals.length ? AbortSignal.any(signals) : undefined;
+  // The supervisor's work stops at the work deadline; its ending, at the bound (header). Neither is the person's cancel.
+  const working = AbortSignal.any([...signals, clock.work]);
+  const ending = AbortSignal.any([...signals, clock.whole]);
+  const outOfTime = (at: AbortSignal) => at.aborted && !signal?.aborted;
   const state = new AutomationStudioProjectSupervisorState();
   const view = await ports.record.read(ports.build);
   if (view?.record.ending) throw new Error("project.record_ended");
@@ -104,7 +156,7 @@ export async function runAutomationStudioProjectSupervisorLoop(input: {
   // The whole trial's gate puts the target back as a candidate build's does: start hook first, then the build's ledgers (`./whole-trial.ts`).
   const wholeTrial = new AutomationStudioProjectSupervisorWholeTrial({ ports, state });
   const gate = new AutomationStudioFlowCandidateTrialGate({ latest: () => controller.latest(), trial: ports.trial, signal, reset: wholeTrial.reset });
-  const context: AutomationStudioProjectSupervisorContext = { ports, state, controller, gate, signal };
+  const context: AutomationStudioProjectSupervisorContext = { ports, state, controller, gate, signal: working };
   let ended: AutomationStudioProjectSupervisorEnded | undefined;
   const checkCompletion = automationStudioProjectSupervisorCompletion(context, (ending) => {
     ended = ending;
@@ -143,7 +195,7 @@ export async function runAutomationStudioProjectSupervisorLoop(input: {
     }
   };
   if (ports.purse) loopInput.purse = ports.purse;
-  if (signal) loopInput.signal = signal;
+  loopInput.signal = working;
   const observed = input.observe ? input.observe(loopInput) : loopInput;
   let loop: AutomationStudioLlmEvidenceLoopResult | undefined;
   let outOfMoney = false;
@@ -153,27 +205,38 @@ export async function runAutomationStudioProjectSupervisorLoop(input: {
   } catch (error) {
     if (error instanceof AutomationStudioLlmBuildPurseRefused) outOfMoney = true;
     else if (stall && error === stall.error && !signal?.aborted) stalled = stall;
-    else throw error;
+    else if (!outOfTime(clock.work)) throw error;
   }
   const candidate = controller.latest();
-  const done = (status: "candidate" | "ended", ending?: AutomationStudioProjectBuildEnding): AutomationStudioProjectSupervisorOutcome => ({ loop, status, candidate, trial: gate.standing(candidate), ...(ending ? { ending } : {}), promotionAllowed: false });
+  // Out of time only when the loop did not complete: a completion or an honest ending given just as the work deadline passed stands.
+  const timedOut = !loop?.ok && !outOfMoney && outOfTime(clock.work);
+  const done = (status: "candidate" | "ended", recorded?: AutomationStudioProjectBuildEnding): AutomationStudioProjectSupervisorOutcome => ({ loop, status, candidate, trial: gate.standing(candidate), ...(recorded ? { ending: recorded } : {}), ...(timedOut ? { timedOut: true as const } : {}), promotionAllowed: false });
   if (loop?.ok && !ended) return done("candidate");
   const stoppedBy = loop && !loop.ok ? loop.code : stalled ? stalled.issueCodes[0] ?? "stalled" : undefined;
-  const cancelled = signal?.aborted === true || stoppedBy === "llm_evidence_loop.cancelled";
+  const cancelled = !timedOut && (signal?.aborted === true || stoppedBy === "llm_evidence_loop.cancelled");
   const finished: AutomationStudioProjectSupervisorEnded | { outcome: "cancelled" | "partial" | "blocked"; reason: string } = outOfMoney
     ? { outcome: state.anyDone() ? "partial" : "blocked", reason: "The Flow's spending limit could not pay for the supervisor's next call, so the build stopped before a whole trial passed." }
     : loop?.ok && ended
       ? ended
-      : cancelled
-        ? { outcome: "cancelled", reason: "The build was cancelled." }
-        : { outcome: state.anyDone() ? "partial" : "blocked", reason: `The supervisor stopped before a whole trial passed (${stoppedBy ?? "unknown"}).` };
-  // A guard stopped the loop: the target is put back, where a reset brief still can, before the ending names what is left (header).
-  if (!outOfMoney && !cancelled && finished !== ended && !personEnded(stalled?.error)) await resetBeforeEnding(context);
+      : timedOut
+        ? { outcome: state.anyDone() ? "partial" : "blocked", reason: `The build reached its time limit of ${spoken(clock.limit.maxMs)} before a whole trial passed.` }
+        : cancelled
+          ? { outcome: "cancelled", reason: "The build was cancelled." }
+          : { outcome: state.anyDone() ? "partial" : "blocked", reason: `The supervisor stopped before a whole trial passed (${stoppedBy ?? "unknown"}).` };
+  // A guard or the time limit stopped the loop: the target is put back, where a reset brief still can and inside the bound, before the ending names what is left (header).
+  if (!outOfMoney && !cancelled && finished !== ended && !personEnded(stalled?.error)) await resetBeforeEnding({ ...context, signal: ending }, () => outOfTime(ending));
   // An ending the model gave already names what is left (`./completion.ts`); every other ending Core names it in here.
   const named = finished === ended ? finished : { ...finished, reason: automationStudioProjectSupervisorLeftOnTarget(ports, state).reason(finished.reason) };
-  const ending = await ports.record.end(ports.build, named);
+  const recorded = await ports.record.end(ports.build, named);
   if (stalled) throw stalled.error;
-  return done("ended", ending);
+  return done("ended", recorded);
+}
+
+/** A time limit in words: whole minutes where it is some, else seconds. */
+function spoken(ms: number): string {
+  if (ms >= 60_000 && ms % 60_000 === 0) return `${ms / 60_000} minutes`;
+  const seconds = Math.max(1, Math.round(ms / 1_000));
+  return seconds === 1 ? "1 second" : `${seconds} seconds`;
 }
 
 /** The endings a stall yields to because the person was asked and did not answer yes: no brief is sent past them. */
@@ -192,10 +255,10 @@ const CORE_RESET_REASON = "The supervisor stopped before a whole trial passed, s
  * a reset could still undo an act of this build, none came back after the
  * build's last other brief, a plan is in force and a purse can size it. Its
  * dispatch is the supervisor's own tool, so it is recorded, shown and sized as
- * any brief is; a refusal of it, or a purse that cannot pay for it, leaves the
- * ending to name what is left.
+ * any brief is; a refusal of it, a purse that cannot pay for it, or the run's
+ * bound stopping it, leaves the ending to name what is left.
  */
-async function resetBeforeEnding(context: AutomationStudioProjectSupervisorContext): Promise<void> {
+async function resetBeforeEnding(context: AutomationStudioProjectSupervisorContext, pastTheBound: () => boolean): Promise<void> {
   const { ports, state } = context;
   const structure = state.structure;
   const left = automationStudioProjectSupervisorLeftOnTarget(ports, state);
@@ -209,6 +272,7 @@ async function resetBeforeEnding(context: AutomationStudioProjectSupervisorConte
   try {
     await withAutomationStudioProjectAgent({ role: "supervisor" }, () => automationStudioLlmBuildPurseRun(ports.purse, () => automationStudioProjectSupervisorDispatchTool(context, value)));
   } catch (error) {
-    if (!(error instanceof AutomationStudioLlmBuildPurseRefused)) throw error;
+    // A reset the bound stopped leaves the ending to name what is left, as a refused one does (header).
+    if (!(error instanceof AutomationStudioLlmBuildPurseRefused) && !pastTheBound()) throw error;
   }
 }
