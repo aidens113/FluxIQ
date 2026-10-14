@@ -637,6 +637,22 @@ Briefs t533-t539 (units A1, A2, A3, A3b, A4a, A4b, A6) were delivered and moved 
 - Outcome: Accepted. Choices recorded: allowance call cap defaults to the brief's `maxIterations` and counts trial judge calls; a brief after a blocked predecessor is not started; the allowance is carved only once the lease is granted
 - Follow-up: A14 survey briefs come back blocked without running; implement or drop the kind before the supervisor plans one
 
+### 2026-10-13 — A5a project supervisor (t541)
+- Agent: worker t541-a5a-supervisor (one supervisor follow-up); supervisor verified and integrated
+- Changed: `project-agents/supervisor/` (loop, read-task, plan, dispatch, assembly, whole trial, completion, guidance, ports); `flow-bootstrap/candidate/submission.ts` `submitComposed`; `llm/harness-options/bootstrap-completion.ts` exports one check sequence for model-written and composed Flows
+- Why: unit A5a; the follow-up removed a copied completion-check sequence (a later check would have skipped assembled Flows)
+- Validation: vitest `project-agents`, `flow-bootstrap/candidate`, `subflow-candidate`, `llm/harness-options` -> 65 files, 522 passed (supervisor ran it on the final tree and again after merging dev); check exit 0; audit exit 0; diff check clean; Core finish `pnpm check` passed, merged `856b8638`
+- Outcome: Accepted. Known: `supervisor/` holds 20 files (advisory; a kind subfolder breaks the depth limit); the whole trial's own acts are not attributed in the project ledger, so the supervisor demands a reset after any whole trial that left acts (A5c to record them under the supervisor)
+- Follow-up: A5c
+
+### 2026-10-13 — Sweep findings beyond stale fixtures (decisions)
+- Agent: supervisor, from sweep groups A and B
+- Changed: nothing yet; decisions sent to the group workers
+- Why: group A found a product defect: `storage/project/flow-resource-repository.ts` `listInstructionSummariesPage` joins scope clauses with "or" and admits `flow`-scoped instructions of any Flow for a subflow, so another Flow's instruction changes a build's execution digest (supervisor read the query and confirmed). Group B found 19 tests of recording-proposal approval, which t519 retired on purpose
+- Validation: not validated (decisions); the fixes carry their own
+- Outcome: Decided: fix the repository to match the in-memory store's semantics with a regression and a parity test (t544); delete tests whose subject is behaviour after approval, keep one refusal test per retired entry point, list every deletion (t545)
+- Follow-up: verify t544 and t545
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
