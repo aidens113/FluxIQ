@@ -11,6 +11,12 @@ import type { AutomationStudioProjectResetPorts } from "./types.ts";
 // the site's controls, and no proposal. It may complete only once nothing of
 // this build is left to undo; until then each completion is refused with the
 // acts still in place, so the model is told exactly what is left.
+//
+// The acts are its task from the first decision, not only once a completion
+// is refused (t585, social debug root cause 2): the caller's ports put them in
+// the loop's own instruction, with how each was done and on which page
+// (`service/project-build/brief-ports.ts`). A refusal names what each act
+// changed that is still there, when the reset went back and looked.
 
 /** The code a reset's completion is refused under while acts are still in place. */
 const RESET_INCOMPLETE = "project.reset_acts_in_place";
@@ -40,8 +46,8 @@ export async function runAutomationStudioProjectResetLoop(input: {
         issueCodes: [RESET_INCOMPLETE],
         feedback: {
           code: RESET_INCOMPLETE,
-          actsToUndo: left.map((act) => ({ act: act.act, did: act.did })),
-          instruction: "Some lasting acts this build made are still on the site. Undo each listed act through the site's own controls, naming it under undoes, and leave everything that was there before the build began. Complete once none is left."
+          actsToUndo: left.map((act) => ({ act: act.act, did: act.did, ...(act.stillThere?.length ? { stillThere: [...act.stillThere] } : {}) })),
+          instruction: "Some lasting acts this build made are still on the site. Undo each listed act through the site's own controls, on the page your task names for it, naming it under undoes, and leave everything that was there before the build began. Complete once none is left."
         }
       };
     }

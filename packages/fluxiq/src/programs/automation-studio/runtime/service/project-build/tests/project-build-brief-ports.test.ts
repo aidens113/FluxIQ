@@ -7,7 +7,12 @@
 //    in a session of its own; the second builder then opens with a look where
 //    that left the page, not the arrival at the build's start, and its opening
 //    says the entry was prepared. The first builder, which has no
-//    predecessor, arrives at the start and is told nothing.
+//    predecessor, arrives at the start and is told nothing. The second's
+//    opening look is sent marked `arrived` (t585), so a domain that counts
+//    arrival only from a navigation does not refuse every act on the entry.
+//    When the entry's start hook put back an act the first builder left, each
+//    ledger marks it undone before the second builder looks, and the opening
+//    names it (t585).
 // 2. A brief whose parts ask for no lasting act. The person permitted the
 //    build to delete and to modify, but this brief permits neither: its press
 //    that deletes goes to the person's gate (asked, and declined here), while
@@ -20,6 +25,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence, AutomationStudioActionDeclaration, AutomationStudioActionPermissionCheck } from "../../../action-permissions/index.ts";
+import { AutomationStudioSiteResetLedger } from "../../../flow-bootstrap/site-reset/index.ts";
 import type { AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../../parking/index.ts";
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
@@ -63,6 +69,7 @@ async function build(input: {
   executeTool: (call: { callId: string; toolId: string; value: JsonObject; permission?: AutomationStudioActionPermissionCheck }) => Promise<unknown>;
   builderFirst?: (subflowKey: string, evidence: readonly Entry[]) => JsonObject | undefined;
   permittedConsequences?: AutomationStudioActionConsequence[];
+  prepareStart?: AutomationStudioServiceOptions["prepareCandidateStart"];
 }) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-project-build-brief-ports-"));
   /** Each builder's evidence at its first decision, by subflow. */
@@ -90,7 +97,8 @@ async function build(input: {
   });
   const service = new AutomationStudioService({
     dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 80, maxEstimatedCostUsd: 0.1 }),
-    llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: input.tools, executeTool: input.executeTool } as unknown as NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>
+    llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: input.tools, executeTool: input.executeTool } as unknown as NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>,
+    ...(input.prepareStart ? { prepareCandidateStart: input.prepareStart } : {})
   });
   cleanups.push(async () => {
     await service.close();
@@ -145,13 +153,79 @@ describe("a dependent builder's entry", () => {
     // The second's opening is a look in place, after the first's passing proposal ran to its end in a session of its own.
     const firstPassed = happened.indexOf("trial of first succeeded");
     const entryRan = happened.indexOf("entry for second succeeded");
-    const secondLook = happened.lastIndexOf(`call initial.look ${JSON.stringify({ look: true })}`);
+    const secondLook = happened.lastIndexOf(`call initial.look ${JSON.stringify({ look: true, arrived: true })}`);
     expect(firstPassed).toBeGreaterThanOrEqual(0);
     expect(entryRan).toBeGreaterThan(firstPassed);
     expect(secondLook).toBeGreaterThan(entryRan);
-    expect(happened.filter((line) => line.startsWith("call initial.look"))).toEqual([`call initial.look ${JSON.stringify({ go: "start" })}`, `call initial.look ${JSON.stringify({ look: true })}`]);
+    // Sent marked as the second builder's arrival: its entry was reached from the start (t585).
+    expect(happened.filter((line) => line.startsWith("call initial.look"))).toEqual([`call initial.look ${JSON.stringify({ go: "start" })}`, `call initial.look ${JSON.stringify({ look: true, arrived: true })}`]);
     expect(opening("second")).toMatchObject({ callId: "initial.look", value: { seen: true, entry: { prepared: true } } });
     expect(((opening("second")!.value as JsonObject).entry as JsonObject).note).toContain(`the subflows before yours ("first")`);
+  });
+
+  it("marks the acts its start hook put back undone in their ledgers before the builder looks, and names them at its opening", async () => {
+    const happened: string[] = [];
+    const plan = {
+      taskSpec: {
+        parts: [
+          { id: "p1", quote: { sourceId: "instruction.build", text: "Create a deterministic" }, goalFacts: ["The Flow is deterministic"], lastingActs: ["create_new"] },
+          { id: "p2", quote: { sourceId: "instruction.build", text: "Start to End Flow." }, goalFacts: ["The Flow runs from its start to its end"], lastingActs: [] }
+        ],
+        notAsked: []
+      },
+      subflows: [{ key: "first", name: "first", parts: ["p1"] }, { key: "second", name: "second", parts: ["p2"], after: ["first"] }]
+    };
+    const brief = (subflowKey: string, parts: string[], predecessors: string[], permittedActs: string[]) => ({ kind: "build", subflowKey, parts, entry: { caseId: "observed-current", predecessors }, allowanceUsd: 0.01, maxIterations: 8, permittedActs });
+    const run = await build({
+      plan, briefs: [brief("first", ["p1"], [], ["create_new"]), brief("second", ["p2"], ["first"], [])],
+      tools: [
+        { toolId: "look", description: "Look at the page, or go somewhere first", inputSchema: { type: "object" }, effect: "mutate", perCallEffect: true, initialObservation: { input: { look: true }, arrival: { go: "start" } } },
+        { toolId: "press", description: "Press a control on one list", inputSchema: { type: "object", properties: { control: { type: "string" }, item: { type: "string" } } }, effect: "mutate" }
+      ],
+      executeTool: async (call) => {
+        if (call.toolId !== "press") return { kind: "llm_evidence_tool_execution", evidence: { seen: true }, effectApplied: call.value.go !== undefined, targetsUnchanged: call.value.go === undefined };
+        const declaration: AutomationStudioActionDeclaration = { consequences: ["create_new"], control: { name: "Save", kind: "button", item: "list-1" }, verb: "press", effect: "mutate" };
+        const verdict = await call.permission!(declaration);
+        return { kind: "llm_evidence_tool_execution", evidence: { ok: verdict.permitted }, effectApplied: verdict.permitted, targetsUnchanged: !verdict.permitted };
+      },
+      // The first builder saves once after its own passing trial, so the act is still on the site when the second's entry is prepared.
+      builderFirst: (subflowKey, evidence) => {
+        if (subflowKey === "second" && !happened.includes("second decides")) happened.push("second decides");
+        return subflowKey === "first" && lastOf(evidence, "core.test_subflow")?.verdict === "yes" && !lastOf(evidence, "press")
+          ? { kind: "tool_call", callId: "save", toolId: "press", input: { control: "Save", item: "list-1", consequences: ["create_new"] } }
+          : undefined;
+      },
+      prepareStart: async () => {
+        happened.push("start hook");
+        return { reset: true };
+      }
+    });
+    const service = run.service as unknown as { writeRuntimeSession(projectId: string, session: { status: string; metadata?: JsonObject }, ...rest: unknown[]): Promise<unknown> };
+    const write = service.writeRuntimeSession.bind(service);
+    vi.spyOn(service, "writeRuntimeSession").mockImplementation(async (projectId, session, ...rest) => {
+      const entry = session.metadata?.entryPreparation as JsonObject | undefined;
+      if (entry) happened.push(`entry for ${String(entry.subflowKey)} ${session.status}`);
+      return await write(projectId, session, ...rest);
+    });
+    // Each ledger asked after a start hook: the acts it held in place before, and after.
+    const beforeTrial = AutomationStudioSiteResetLedger.prototype.beforeTrial;
+    const spied = vi.spyOn(AutomationStudioSiteResetLedger.prototype, "beforeTrial");
+    cleanups.push(async () => { spied.mockRestore(); });
+    spied.mockImplementation(async function (this: AutomationStudioSiteResetLedger, ...args: Parameters<typeof beforeTrial>) {
+      const held = this.inPlace().map((act) => act.act);
+      const answer = await beforeTrial.apply(this, args);
+      if (args[2]?.startReset === true) happened.push(`ledger put back ${JSON.stringify(held)}, now ${JSON.stringify(this.inPlace().map((act) => act.act))}`);
+      return answer;
+    });
+    await run.run().catch(() => undefined);
+
+    // The second's entry ran the start hook; then the ledger holding the first builder's save marked it undone, before the second builder's first look.
+    const entryRan = happened.indexOf("entry for second succeeded");
+    expect(entryRan).toBeGreaterThan(0);
+    const decides = happened.indexOf("second decides");
+    expect(decides).toBeGreaterThan(entryRan);
+    expect(happened.slice(entryRan, decides)).toContain(`ledger put back ${JSON.stringify(["act-1"])}, now []`);
+    expect(run.firstSeen.second?.[0]).toMatchObject({ callId: "initial.look", value: { entry: { prepared: true, absorbedByStartReset: ["act-1"] } } });
   });
 });
 

@@ -1,7 +1,9 @@
 // A dependent builder's entry (`../entry-preparation.ts`, t580): its
 // predecessors' latest passing proposals run once, in order, after the start
 // and in a session of their own; where that cannot happen the answer says
-// why. The detached runner and the trial environment are stubs.
+// why. The detached runner and the trial environment are stubs. An answer
+// says when the start was the deployment's start hook (`startReset`, t585), so
+// the builder's ledgers can mark what it put back undone.
 
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope } from "../../../flow-bootstrap/subflow-candidate/index.ts";
@@ -16,16 +18,18 @@ function proposalOf(scope: AutomationStudioSubflowScope, revision: number): Auto
   return { scope: { buildId: scope.buildId, briefId: scope.briefId, planDigest: scope.planDigest, subflowKey: scope.subflowKey }, revision, digest: `${scope.subflowKey}-${revision}`, subflows: [], summary: "", changedPaths: [] };
 }
 
-function harness(options: { startFails?: boolean } = {}) {
+function harness(options: { startFails?: boolean; noHook?: boolean } = {}) {
   const happened: string[] = [];
   const environment = {
     projectId: "project-1", flowId: "flow-1", sourceInstructionIds: ["instruction.build"], resolution: {},
     parentFlow: async () => ({}), currentBaseDigest: async () => "base-1", snapshots: async () => [], deprecatedPublicationIds: async () => [],
-    prepareStart: async () => {
-      happened.push("start");
-      if (options.startFails) throw new Error("The site would not reset.");
-      return {};
-    },
+    ...(options.noHook ? {} : {
+      prepareStart: async () => {
+        happened.push("start");
+        if (options.startFails) throw new Error("The site would not reset.");
+        return {};
+      }
+    }),
     openSession: async ({ runId, metadata }: { runId: string; metadata: Record<string, unknown> }) => {
       happened.push(`open ${JSON.stringify(metadata)}`);
       return { runId, status: "queued", metadata };
@@ -68,7 +72,8 @@ describe("a dependent builder's entry", () => {
     // A later proposal that did not pass is not the one that runs.
     run.proposals.trialled(scopeOf("second", "brief-2"), proposalOf(scopeOf("second", "brief-2"), 4), "no");
     const entry = await run.prepare(scopeOf("third", "brief-3", ["first", "second"]));
-    expect(entry).toEqual({ kind: "prepared", predecessors: ["first", "second"], runId: "entry-run-1", acts: [] });
+    // The start was the deployment's hook, and the answer says so (t585).
+    expect(entry).toEqual({ kind: "prepared", predecessors: ["first", "second"], runId: "entry-run-1", acts: [], startReset: true });
     expect(run.ran).toHaveLength(1);
     expect(run.ran[0]!.target).toMatchObject({ subflowKey: "second", revision: 2 });
     expect(run.ran[0]!.predecessors).toMatchObject([{ subflowKey: "first", revision: 3 }]);
@@ -91,8 +96,17 @@ describe("a dependent builder's entry", () => {
     run.passed("first", "brief-1", 1);
     run.passed("second", "brief-2", 1);
     const entry = await run.prepare(scopeOf("third", "brief-3", ["first", "second"]), run.result("failed", "first"));
-    expect(entry).toMatchObject({ kind: "unprepared", code: "candidate.trial_failed", failed: "first", runId: "entry-run-1" });
+    // The hook ran before the predecessor failed, so the site was still put back.
+    expect(entry).toMatchObject({ kind: "unprepared", code: "candidate.trial_failed", failed: "first", runId: "entry-run-1", startReset: true });
     expect(run.happened.at(-1)).toBe("write failed");
+  });
+
+  it("says nothing of a start hook where the deployment has none", async () => {
+    const run = harness({ noHook: true });
+    run.passed("first", "brief-1", 1);
+    const entry = await run.prepare(scopeOf("second", "brief-2", ["first"]));
+    expect(entry).toMatchObject({ kind: "prepared", runId: "entry-run-1" });
+    expect(entry).not.toHaveProperty("startReset");
   });
 
   it("runs no predecessor when the start failed", async () => {
