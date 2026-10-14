@@ -506,6 +506,65 @@ describe("conversation commands", () => {
     expect(unclear.summary).toContain("could not tell whether that was a yes or a no");
   });
 
+  it("with several questions waiting, settles only the one an answer names and refuses one that names none (A10)", async () => {
+    const conversations = openConversations();
+    const conversationId = await chat(conversations);
+    const { port, calls } = fakePort({
+      "answer-ask": async (payload) => ({ ok: true, payload: { ask: await conversations.answerAsk({ projectId: PROJECT, askId: String(payload.askId), kind: payload.kind as "grant" | "deny" | "choice", ...(typeof payload.value === "string" ? { value: payload.value } : {}) }) } })
+    });
+    const context = contextFor(conversations, conversationId, port);
+    const ask = (askId: string, kind: "confirm" | "choice", text: string, control: string | null = null) => conversations.appendAutomationTurn({
+      projectId: PROJECT, conversationId, text, attachment: null,
+      ask: {
+        askId, kind, parks: true, timeoutMs: null, onTimeout: null, routes: null, consequences: ["modify_existing"], missing: null,
+        control: control ? { name: control, kind: "button" } : null, permissionRequest: null,
+        options: kind === "choice" ? [{ id: "opt.first", label: "The first", route: null }, { id: "opt.second", label: "The second", route: null }] : null
+      }
+    });
+    const answer = (words: string, askId?: string) => executeAutomationStudioConversationCommand({ command: command("ask.answer"), context, arguments: { answer: words, ...(askId ? { askId } : {}) } });
+    const status = async (askId: string) => (await conversations.getAsk({ projectId: PROJECT, askId }))?.status;
+
+    // One question waiting: an answer naming none, or naming one this thread does not have, settles it, as before.
+    await ask("ask.only", "confirm", "May I?");
+    expect(await answer("yes, go ahead", "ask.elsewhere")).toMatchObject({ status: "done", summary: "Answered yes." });
+    expect(calls).toEqual([{ endpoint: "answer-ask", payload: { projectId: PROJECT, askId: "ask.only", kind: "grant" } }]);
+
+    // Two builders asking at once: an answer naming neither settles neither, and says which are waiting.
+    // They are named in their own question words, never by id (t276); each question's own buttons answer it by id.
+    await ask("ask.builder_one", "confirm", "Shall I keep the notes I made?", "Save the list");
+    await ask("ask.builder-two", "choice", "Which of these should I open?");
+    const refused = await answer("yes, go ahead");
+    expect(refused.status).toBe("failed");
+    expect(refused.summary).toBe("2 questions are waiting here, so I could not tell which one this answers: \"Shall I keep the notes I made?\", a yes-or-no question about Save the list; \"Which of these should I open?\", a choice between \"The first\", \"The second\". Answer the one you mean on the question itself. Nothing was changed.");
+    expect(refused.error).toBe("more than one question is waiting in this conversation and the answer did not say which");
+    const misnamed = await answer("yes, go ahead", "ask.elsewhere");
+    expect(misnamed.status).toBe("failed");
+    expect(misnamed.summary).toContain("That question is not in this conversation, and 2 questions are waiting here");
+    // A host that cannot read turns names them by the answer each takes, still with no id.
+    const blindHost: AutomationStudioConversationCommandContext["host"] = {
+      appendAutomationTurn: (input) => conversations.appendAutomationTurn(input),
+      pendingAsks: (input) => conversations.pendingAsks(input),
+      getAsk: (input) => conversations.getAsk(input)
+    };
+    const blind = await executeAutomationStudioConversationCommand({ command: command("ask.answer"), context: { ...context, host: blindHost }, arguments: { answer: "yes" } });
+    expect(blind.summary).toContain("so I could not tell which one this answers: a yes-or-no question about Save the list; a choice between \"The first\", \"The second\". Answer the one you mean on the question itself.");
+    for (const said of [refused, misnamed, blind]) {
+      for (const id of ["ask.builder_one", "ask.builder-two", "ask.elsewhere"]) expect(said.summary).not.toContain(id);
+    }
+    expect((await turnsOf(conversations, conversationId)).map((turn) => turn.text).join("\n")).not.toMatch(/ask\.(?:builder|elsewhere)/u);
+    expect(calls).toHaveLength(1);
+    expect([await status("ask.builder_one"), await status("ask.builder-two")]).toEqual(["pending", "pending"]);
+
+    // Named, the older one is settled although a newer one is waiting.
+    expect(await answer("yes, go ahead", "ask.builder_one")).toMatchObject({ status: "done", summary: "Answered yes." });
+    expect(calls[1]).toEqual({ endpoint: "answer-ask", payload: { projectId: PROJECT, askId: "ask.builder_one", kind: "grant" } });
+    expect(await status("ask.builder-two")).toBe("pending");
+
+    // One left waiting: an answer naming none is that one's again.
+    expect(await answer("the second")).toMatchObject({ status: "done", summary: "Chose \"The second\"." });
+    expect(calls[2]).toEqual({ endpoint: "answer-ask", payload: { projectId: PROJECT, askId: "ask.builder-two", kind: "choice", value: "opt.second" } });
+  });
+
   it("turns a command that throws into a failed result in the thread", async () => {
     const conversations = openConversations();
     const conversationId = await chat(conversations);

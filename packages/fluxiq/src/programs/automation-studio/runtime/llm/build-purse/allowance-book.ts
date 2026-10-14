@@ -6,7 +6,16 @@
 // builder that was given $0.03 can spend $0.03 whatever its siblings and the
 // supervisor do meanwhile. Closing it ends the promise, and what it left goes
 // back to the purse. Spend is attributed to the brief and role that made it.
+//
+// An allowance is a purse whose parent is the purse it was carved from: every
+// call made under it is held against it and against each purse above it, and
+// either refusing refuses the call. It can only be carved from what the parent
+// has left less its judging reserve and less what open allowances still hold.
+// Its refusal is its own, and so is the refusal of each run made under it
+// (`./run-frame.ts`), so concurrent builders end on their own money, never on a
+// sibling's.
 
+import { AUTOMATION_STUDIO_LLM_BUILD_PURSE_EPSILON_USD } from "./epsilon.ts";
 import type { AutomationStudioLlmBuildPurse } from "./purse.ts";
 
 /** Who an allowance was carved for: the agent role and the brief it serves. */
@@ -55,6 +64,22 @@ export class AutomationStudioLlmBuildPurseAllowanceBook {
       if (allowance.attribution?.briefId === briefId) return true;
     }
     return false;
+  }
+
+  /**
+   * Why `request` cannot be carved from `from`, or `undefined` when it can:
+   * refused, in figures, when `usd` is more than `from.allocatableUsd()`, so the
+   * judging reserve is never allocatable. Throws on a request that names no
+   * brief or role, asks a negative or non-finite amount, or names a brief whose
+   * allowance is still open: one open allowance per brief.
+   */
+  carvingRefusal(request: AutomationStudioLlmBuildPurseAllowanceRequest, from: AutomationStudioLlmBuildPurse): AutomationStudioLlmBuildPurseAllowanceRefusal | undefined {
+    if (!request.briefId || !request.role) throw new Error("An allowance must name the brief and the role it is carved for.");
+    if (!Number.isFinite(request.usd) || request.usd < 0) throw new Error("An allowance must be a finite, non-negative amount.");
+    if (this.hasOpen(request.briefId)) throw new Error(`An allowance for brief ${request.briefId} is already open.`);
+    const allocatableUsd = from.allocatableUsd();
+    if (request.usd <= allocatableUsd + AUTOMATION_STUDIO_LLM_BUILD_PURSE_EPSILON_USD) return undefined;
+    return { code: "llm_budget.allowance_unavailable", requestedUsd: request.usd, allocatableUsd, keptBackUsd: from.keptBackUsd(), outstandingUsd: this.outstandingUsd() };
   }
 
   add(allowance: AutomationStudioLlmBuildPurse): void {

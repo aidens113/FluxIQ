@@ -95,6 +95,19 @@ describe("a subflow builder's scoped submission", () => {
     expect(planIssues(answer.proposal.subflows), JSON.stringify(answer.proposal.subflows)).toEqual([]);
   });
 
+  it("renames a router-run entry's derived dataset ids under the scope's key, as a helper part's are", async () => {
+    const read = ["step: read the rows", "  node: web.dom.extract_list", "  extractList: extraction.1", "  extractList.minItems: 0", "  recordOutput.label: Titles", "  recordOutput.schema: title"];
+    const answer = await controller().submit(script([...OPEN, ...read, ...callPart(), ...part()]));
+    expect(answer.ok, JSON.stringify(answer)).toBe(true);
+    if (!answer.ok) return;
+    const datasets = answer.proposal.subflows.flatMap((entry) => entry.nodes.flatMap((node) => Object.values(node.parameters ?? {}).flatMap((value) => {
+      const id = value && typeof value === "object" && !Array.isArray(value) ? (value as JsonObject).datasetId : undefined;
+      return typeof id === "string" ? [{ subflow: entry.key, node: node.key, id }] : [];
+    })));
+    // The script writes its entry as `main`, so authoring derived `titles-main-s2`; the proposal keys it under the scope.
+    expect(datasets).toEqual([{ subflow: "find_listing", node: "s2", id: "titles-find_listing-s2" }]);
+  });
+
   it("refuses a callable subflow's unbound, renamed or extra output, its mismatched inputs, and steps outside its part", async () => {
     const scope = testScope({ interface: interfaceOf });
     expect(await codes(controller(scope).submit(script(callable({ output: undefined }))))).toEqual(["subflow.output_unbound"]);

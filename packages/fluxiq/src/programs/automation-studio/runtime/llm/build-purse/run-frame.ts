@@ -18,7 +18,8 @@
 // split, and a run reads its own.
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { AutomationStudioLlmBuildPurse, AutomationStudioLlmBuildPurseRefusal } from "./purse.ts";
+import type { AutomationStudioLlmBuildPurse } from "./purse.ts";
+import type { AutomationStudioLlmBuildPurseRefusal } from "./types.ts";
 
 /** One scope or run a purse was entered with, and the refusal met inside it. */
 export type AutomationStudioLlmBuildPurseFrame = {

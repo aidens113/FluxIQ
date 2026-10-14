@@ -360,6 +360,14 @@ export type AutomationStudioRunResultSummary = {
    */
   buildTest?: AutomationStudioBuildTestAccount;
   /**
+   * A project build's judge only (unit A9, `build-test/task-checklist.ts`):
+   * the supervisor's task spec as a checklist beside the instructions -- what
+   * they ask, part by part, and what they do not ask -- labelled in its own
+   * `supplementary` text as subordinate to them. Never set on a candidate
+   * build's summary or a finished run's.
+   */
+  taskChecklist?: AutomationStudioResultTaskChecklist;
+  /**
    * A candidate build's trial only (t471): what of the build itself was
    * already on the site when the trial began, because the build could not
    * undo it -- one line per act it had done and per difference from how it
@@ -489,6 +497,19 @@ export type AutomationStudioBuildTestPass = {
  * parameter, declared by its first binding, and the steps that use it.
  */
 export type AutomationStudioBuildTestInput = { name: string; test: JsonValue; steps: number[] };
+
+/**
+ * The task checklist a project build's judge is sent (`taskChecklist`): first
+ * its own label, saying the instructions are the only authority and how the
+ * checklist is used, because the judge's standing instruction does not name
+ * it; then each part the instructions ask for, in their own words, and what
+ * they do not ask for.
+ */
+export type AutomationStudioResultTaskChecklist = {
+  supplementary: string;
+  asked: Array<{ part: string; words: string; goalFacts: string[]; lastingActs: string[] }>;
+  notAsked: string[];
+};
 
 /** A build's test, as its judge reads it: every proposed step in order, and the build's own reading of the instruction's acts. */
 export type AutomationStudioBuildTestAccount = {

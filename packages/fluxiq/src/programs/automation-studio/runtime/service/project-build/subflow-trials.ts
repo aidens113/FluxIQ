@@ -6,6 +6,7 @@ import { automationStudioBuildTestJudge } from "../../result-verification/index.
 import { admitAutomationStudioBuildTrialSession } from "../runtime-session/index.ts";
 import { automationStudioSubflowTrialPort } from "../subflow-trial/index.ts";
 import type { AutomationStudioProjectBuildProposals } from "./proposals.ts";
+import { AutomationStudioProjectBuildTaskChecklist } from "./task-checklist.ts";
 import { automationStudioProjectBuildTrialReads } from "./trial-reads.ts";
 import type { AutomationStudioProjectBuildTrialEnvironment } from "./whole-trials.ts";
 
@@ -20,7 +21,9 @@ import type { AutomationStudioProjectBuildTrialEnvironment } from "./whole-trial
 //   never opens a session.
 // - **The scoped judge.** The build-test judge, asked about the brief's parts
 //   alone: its instructions are one instruction holding the parts' own words
-//   and the subflow's success check, never the whole task.
+//   and the subflow's success check, never the whole task; beside it, the
+//   task checklist of those parts and of what nobody asked for (unit A9,
+//   `./task-checklist.ts`).
 // - **Proposals.** Every proposal tried is kept by brief, revision and digest
 //   (`./proposals.ts`), so the supervisor can assemble a done return's
 //   proposal and a later subflow's trial can run its predecessors' latest
@@ -39,6 +42,7 @@ export function automationStudioProjectBuildSubflowTrials(input: {
 }): ReturnType<typeof automationStudioSubflowTrialPort> {
   const { ref, environment, binding } = input;
   const { projectId, flowId } = environment;
+  const source = { records: input.records, ref };
   const trials = automationStudioSubflowTrialPort(ref.buildId, {
     ...environment,
     ...automationStudioProjectBuildTrialReads(binding, projectId, flowId),
@@ -52,7 +56,7 @@ export function automationStudioProjectBuildSubflowTrials(input: {
     judge: async ({ summary, scope }) => await automationStudioBuildTestJudge({
       provider: input.judge.provider, timeoutMs: input.judge.timeoutMs, instructions: [scopeInstruction(scope, projectId, flowId)],
       deniedEvidenceKeys: binding.deniedEvidenceKeys, projectId, flowId, signal: input.judge.signal
-    })({ summary })
+    })({ summary, taskChecklist: await AutomationStudioProjectBuildTaskChecklist.subflow(source, scope) })
   });
   const port: AutomationStudioSubflowTrialPort = async (request) => {
     const result = await trials.port(request);

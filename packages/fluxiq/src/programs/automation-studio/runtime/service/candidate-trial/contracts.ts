@@ -4,6 +4,7 @@ import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResoluti
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import type { AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
 import type { runAutomationStudioDetachedCandidate } from "../../flow-bootstrap/verification/index.ts";
+import type { AutomationStudioHostResourceLease } from "../../project-agents/host-resources/index.ts";
 import type { AutomationStudioBuildTestJudgeInput, AutomationStudioBuildTestVerdict, AutomationStudioResultEndView, AutomationStudioResultRecordSetInput, AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 
 /**
@@ -12,6 +13,18 @@ import type { AutomationStudioBuildTestJudgeInput, AutomationStudioBuildTestVerd
  * its own fixture reset; a product deployment leaves it unset, and each trial
  * then records `not_reset`. What it answers is recorded with the trial and
  * never shown to the model.
+ *
+ * **Under a host lease it resets only the leased resource** (automation-project-
+ * agents plan, A11). When the trial runs for an agent that holds a host-resource
+ * lease (`project-agents/host-resources/lease-scope.ts`), `lease` is that lease,
+ * and the hook must put back only the resource `lease.resourceKey` names (on the
+ * gateway session `lease.sessionId` names, when set) and nothing another holder
+ * may be using: above capacity 1 two agents hold separate resources at once, and
+ * a reset that reached past its own would undo the other's acts. A lease that is
+ * no longer current never reaches the hook: the trial's start fails first
+ * (`./run.ts`, `automationStudioCandidateTrialStart`). Without a lease -- an
+ * ordinary candidate build, or a host that leases nothing -- `lease` is absent
+ * and the hook resets as it always has.
  */
 export type AutomationStudioPrepareCandidateStart = (input: {
   projectId: string;
@@ -20,6 +33,8 @@ export type AutomationStudioPrepareCandidateStart = (input: {
   revision: number;
   digest: string;
   startLocation?: string;
+  /** The host-resource lease the trial runs under, when it runs under one; the hook resets only that resource (above). */
+  lease?: AutomationStudioHostResourceLease;
   signal: AbortSignal;
 }) => Promise<JsonObject>;
 
