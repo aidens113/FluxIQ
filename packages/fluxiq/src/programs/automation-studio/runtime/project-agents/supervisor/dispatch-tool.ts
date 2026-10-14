@@ -47,7 +47,7 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
     const survey = read.issues.some((issue) => issue.code === "project.brief_survey_unavailable");
     return answer.refused(survey ? "project.brief_survey_unavailable" : "project.brief_refused", survey ? GUIDANCE.refusals.surveyUnavailable : GUIDANCE.refusals.briefRefused, { issues: read.issues });
   }
-  const order = automationStudioProjectSupervisorDispatchOrder(read.briefs, new Set(state.latestDone().keys()));
+  const order = automationStudioProjectSupervisorDispatchOrder(read.briefs, new Set(state.latestDone().keys()), state.doneUnderEarlierPlans());
   if (!order.ok) return answer.refused(order.code === "cycle" ? "project.dispatch_cycle" : "project.predecessor_not_done", order.code === "cycle" ? GUIDANCE.refusals.dispatchCycle : GUIDANCE.refusals.predecessorNotDone, { issues: order.issues });
   const requestedUsd = order.ordered.reduce((sum, brief) => sum + brief.allowanceUsd, 0);
   const canGiveUsd = ports.purse?.allocatableUsd();
@@ -119,7 +119,8 @@ function compact(brief: AutomationStudioProjectSubflowBrief, returned: Automatio
     // What Core gave it (`./brief-sizing.ts`).
     given: { allowanceUsd: usd(brief.allowanceUsd), maxIterations: brief.maxIterations, ...(brief.maxCalls !== undefined ? { maxCalls: brief.maxCalls } : {}) },
     ...(returned.proposal ? { proposal: { revision: returned.proposal.revision } } : {}),
-    trials: returned.trials.length,
+    // Each trial's receipt ref, as a repair brief's failingReceipt names one (bigbox debug fix 5, t588).
+    trials: returned.trials.map((trial) => ({ kind: trial.kind, receiptId: trial.receiptId, digest: trial.digest })),
     spentUsd: returned.spentUsd,
     calls: returned.calls,
     ...(returned.interfaceRequest ? { interfaceRequest: { change: returned.interfaceRequest.change, why: returned.interfaceRequest.why } } : {}),

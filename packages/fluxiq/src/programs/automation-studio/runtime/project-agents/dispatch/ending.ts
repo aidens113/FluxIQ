@@ -1,3 +1,4 @@
+import { parseAutomationStudioFlowBootstrapGenerationError } from "../../flow-bootstrap/generation-failure/index.ts";
 import type { AutomationStudioSiteResetNamedAct } from "../../flow-bootstrap/site-reset/index.ts";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioSubflowBuilderOutcome, AutomationStudioSubflowProposal, AutomationStudioSubflowTrialResult } from "../../flow-bootstrap/subflow-candidate/index.ts";
@@ -20,6 +21,16 @@ import type { AutomationStudioProjectBuilderReturn, AutomationStudioProjectRecei
 // and every return of a brief that did not pass says what its last trial
 // answered: which predecessor's entry was missing, failed or stale, the step
 // that failed and its code, or the judge's words.
+//
+// **A stop names the loop's own ending (t588).** On A8 launch 6 a towels brief
+// came back "The builder failed: Flow Bootstrap generation failed
+// (flow_bootstrap.evidence_repeat_without_progress)" and nothing more, though
+// every call it made had been refused `not_at_start_location`. A loop that
+// stopped -- returned failed, or threw one of Core's own build failures --
+// now says what stopped it: an invalid configuration's check, figures and
+// sentence (t584), the guard's codes, and the calls it stopped on, each by its
+// tool, node and result code and reason, a run of the same answer counted.
+// Codes and ids only: nothing the model wrote.
 
 /** What a return's reason may hold (`contracts/builder-return.ts`). */
 const MAX_REASON = 2000;
@@ -29,6 +40,10 @@ const MAX_ENDING_WORDS = 1000;
 const MAX_QUOTED = 200;
 /** The step kinds a trial runs around the subflow (its start, the call into it): a failure there is the subflow's step failing inside. */
 const FRAME_STEP = /^builtin\.control\./u;
+/** How many of a stopped loop's last answered calls its return names, a run of the same answer said once. */
+const MAX_LAST_CALLS = 8;
+/** A code or id that may be said: no whitespace, so never a sentence the model wrote. */
+const SAYABLE = /^[a-z0-9_.:-]{1,120}$/iu;
 
 /** What a brief spent and tried, whichever way it ended. */
 export type AutomationStudioProjectDispatchSpend = {
@@ -72,7 +87,7 @@ export const automationStudioProjectDispatchEnding = Object.freeze({
       ? "The build was stopped before this brief finished."
       : refusal
         ? `This brief's allowance could not pay for its next call (${refusal.code}).`
-        : `The builder failed: ${errorWords(error)}`;
+        : `The builder failed: ${errorWords(error)}${thrownEnding(error)}`;
     return returned(brief, spend.accepted ? "partial" : "blocked", why, spend, spend.accepted);
   },
 
@@ -108,7 +123,56 @@ function returned(
 function stopReason(loop: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: false }>, allowance: AutomationStudioLlmBuildPurse | undefined): string {
   const refusal = allowance?.refusal;
   if (refusal) return `This brief's allowance could not pay for its next call (${refusal.code}), so the builder stopped.`;
-  return `The builder stopped before completing (${loop.code}).`;
+  return `The builder stopped before completing (${loop.code}).${configurationSaid(loop.configuration)}${guardSaid(loop.exhaustion?.lastIssueCodes)}${callsSaid(loop.trace)}`;
+}
+
+/** One answered call, as a loop's trace row or a stored failure's step holds it. */
+type AnsweredCall = { toolId?: string | undefined; decision?: string | undefined; nodeId?: string | undefined; resultCode?: string | undefined; resultReason?: string | undefined };
+
+/** What one of Core's own build failures says of the loop it ended, or nothing for any other throw (header). */
+function thrownEnding(error: unknown): string {
+  const diagnostic = parseAutomationStudioFlowBootstrapGenerationError(error);
+  if (!diagnostic) return "";
+  return `${guardSaid(diagnostic.issueCodes)}${callsSaid(diagnostic.evidenceLoop?.steps ?? [])}`;
+}
+
+/** The check that refused the loop's configuration, its figures and its sentence (t584). */
+function configurationSaid(configuration: { check: string; values: JsonObject; words: string } | undefined): string {
+  if (!configuration) return "";
+  const figures = Object.entries(configuration.values).map(([name, value]) => `${name} ${JSON.stringify(value)}`).join(", ");
+  return ` Its configuration was refused by the check ${configuration.check}${figures ? ` (${clipped(figures, MAX_QUOTED)})` : ""}: ${clipped(configuration.words, MAX_QUOTED)}`;
+}
+
+/** The codes the guard that stopped the loop recorded the stop under. */
+function guardSaid(codes: readonly string[] | undefined): string {
+  const said = [...new Set((codes ?? []).filter((code) => SAYABLE.test(code)))];
+  return said.length ? ` It was stopped by ${said.join(", ")}.` : "";
+}
+
+/**
+ * The calls the loop stopped on: its last answered ones, most recent first,
+ * each by tool, node, result code and reason, and a run of the same answer
+ * said once with its count -- so "every call was refused not_at_start_location"
+ * reads as such, beside the guard's own refusal of the repeat.
+ */
+function callsSaid(rows: readonly AnsweredCall[]): string {
+  const answered = rows.filter((row) => row.resultCode !== undefined && SAYABLE.test(row.resultCode)).slice(-MAX_LAST_CALLS).reverse();
+  const runs: Array<{ said: string; count: number }> = [];
+  for (const row of answered) {
+    const said = callSaid(row);
+    const last = runs.at(-1);
+    if (last?.said === said) last.count += 1;
+    else runs.push({ said, count: 1 });
+  }
+  if (!runs.length) return "";
+  return ` The calls it stopped on, latest first: ${runs.map((run) => (run.count > 1 ? `${run.said} (${run.count} in a row)` : run.said)).join("; ")}.`;
+}
+
+function callSaid(row: AnsweredCall): string {
+  const tool = [row.toolId, row.decision].find((value): value is string => typeof value === "string" && SAYABLE.test(value)) ?? "a decision";
+  const node = row.nodeId && SAYABLE.test(row.nodeId) ? ` on ${row.nodeId}` : "";
+  const reason = row.resultReason && SAYABLE.test(row.resultReason) ? ` (${row.resultReason})` : "";
+  return `${tool}${node} answered ${row.resultCode}${reason}`;
 }
 
 /**
