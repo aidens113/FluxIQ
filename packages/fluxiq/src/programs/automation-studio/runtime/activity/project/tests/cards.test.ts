@@ -86,6 +86,17 @@ describe("the brief card", () => {
     expect(seen[0]!.detail?.title).toBe("Repairing Save recipe: Fix the save button");
     expectNoDigest(seen[0]!);
   });
+
+  it("says a reset is of the site, not of a subflow", () => {
+    const plan = structurePlan();
+    const reset = brief((value) => Object.assign(value, { kind: "reset", parts: [], permittedActs: [] }), plan);
+    inBuild(() => emitAutomationStudioProjectBriefCard({ brief: reset, structurePlan: plan, taskSpec: taskSpec() }));
+    expect(seen[0]!.phase).toBe("building");
+    expect(seen[0]!.detail?.title).toBe("Resetting the site to where the build started");
+    expect(seen[0]!.label).toBe("Resetting the site to where the build started");
+    expect(seen[0]!.detail?.project).toMatchObject({ kind: "brief", brief: "reset" });
+    expectNoDigest(seen[0]!);
+  });
 });
 
 describe("the return card", () => {
