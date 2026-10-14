@@ -26,6 +26,12 @@ describe("subflow brief", () => {
     expect(parse(value)).toMatchObject({ status: "invalid", code });
   });
 
+  it("carries Core's call share when it has one, and refuses a share that is no count (t570)", () => {
+    expect(parse(brief((value) => (value.maxCalls = 11)))).toEqual({ status: "valid", value: brief((value) => (value.maxCalls = 11)) });
+    expect(parse(brief((value) => (value.maxCalls = 0)))).toMatchObject({ status: "invalid", path: "brief.maxCalls" });
+    expect(parse(brief((value) => (value.maxCalls = 2.5)))).toMatchObject({ status: "invalid", path: "brief.maxCalls" });
+  });
+
   it("accepts a reset without parts or acts, and refuses one that names parts", () => {
     expect(parse(brief((value) => Object.assign(value, { kind: "reset", parts: [], permittedActs: [] })))).toMatchObject({ status: "valid" });
     expect(parse(brief((value) => Object.assign(value, { kind: "reset" })))).toMatchObject({ status: "invalid", code: "project.brief_reset_parts" });

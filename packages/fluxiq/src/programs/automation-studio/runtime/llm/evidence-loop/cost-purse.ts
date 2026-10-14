@@ -31,8 +31,8 @@ export type AutomationStudioLlmEvidenceLoopPurse = {
   readonly refusal: AutomationStudioLlmBuildPurseRefusal | undefined;
   /** The worst case of the last call priced: the least the next, larger one can cost at worst. */
   readonly lastProjectedCostUsd: number | undefined;
-  /** The purse's figures now, for the loop's count of decisions left; undefined without a purse. */
-  figures(): { ceilingUsd: number; spentUsd: number; pendingUsd: number; keptBackUsd: number } | undefined;
+  /** The purse's figures now, for the loop's count of decisions left; undefined without a purse. `callsLeft` only where a purse in its line caps calls. */
+  figures(): { ceilingUsd: number; spentUsd: number; pendingUsd: number; keptBackUsd: number; callsLeft?: number } | undefined;
   /** Ask for a decision under the purse; throws `AutomationStudioLlmBuildPurseRefused` when it was not sent. */
   run<T>(call: () => Promise<T>): Promise<T>;
   /** The refusal a throw carries, when the throw is the purse's refusal. */
@@ -59,7 +59,12 @@ export function automationStudioLlmEvidenceLoopPurse(budget: AutomationStudioLlm
     get refusal() { return purse?.refusal; },
     get lastProjectedCostUsd() { return purse?.lastProjectedCostUsd; },
     // What is kept back for judging the Flow (t254) is the loop's to leave, so its count of decisions left takes it out.
-    figures: () => purse ? { ceilingUsd: purse.ceilingUsd, spentUsd: purse.spentUsd(), pendingUsd: purse.pendingUsd(), keptBackUsd: purse.keptBackUsd() } : undefined,
+    // The calls it can still hold are read too; only a loop whose budget counts calls is bounded by them (`../loop-budget.ts`, t570).
+    figures: () => {
+      if (!purse) return undefined;
+      const callsLeft = purse.callsLeft();
+      return { ceilingUsd: purse.ceilingUsd, spentUsd: purse.spentUsd(), pendingUsd: purse.pendingUsd(), keptBackUsd: purse.keptBackUsd(), ...(callsLeft !== undefined ? { callsLeft } : {}) };
+    },
     run: async (call) => {
       try {
         return await automationStudioLlmBuildPurseRun(purse, call);

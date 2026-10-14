@@ -14,6 +14,20 @@
 // Its refusal is its own, and so is the refusal of each run made under it
 // (`./run-frame.ts`), so concurrent builders end on their own money, never on a
 // sibling's.
+//
+// **Calls are carved the way dollars are (t570).** An allowance used to cap
+// its own calls (`maxCalls`) without taking them from the purse it was carved
+// from, so one builder could spend the build's calls while its own cap still
+// said it had plenty: on A8 round 1 (`run-mv7vl89u-917d62a6`, bigbox) a brief
+// capped at 90 calls was refused `llm_budget.run_call_limit` after 11, the
+// build's 64 spent, and its wrap-up never came. Now a call cap is carved only
+// from the calls the purse has left less its judging reserve, less what open
+// allowances still hold, and less what the purse keeps back from every
+// allowance (`keepBackCallsFromAllowances`: the supervisor's assembly, test and
+// completion, and a reset before the whole test). An open allowance's unspent
+// calls are kept from every other call on the purse, as its dollars are. Only a
+// request that says it is for that finishing work (`fromKeptBack`, a reset
+// brief's) may carve from what is kept back.
 
 import { AUTOMATION_STUDIO_LLM_BUILD_PURSE_EPSILON_USD } from "./epsilon.ts";
 import type { AutomationStudioLlmBuildPurse } from "./purse.ts";
@@ -28,6 +42,8 @@ export type AutomationStudioLlmBuildPurseAttribution = {
 export type AutomationStudioLlmBuildPurseAllowanceRequest = AutomationStudioLlmBuildPurseAttribution & {
   usd: number;
   maxCalls?: number;
+  /** The allowance is for the finishing work the purse keeps calls back for (a reset before the whole test), so it may carve from them. */
+  fromKeptBack?: boolean;
 };
 
 /** Why an allowance could not be carved, in figures. */
@@ -40,6 +56,10 @@ export type AutomationStudioLlmBuildPurseAllowanceRefusal = {
   keptBackUsd: number;
   /** What open allowances still hold of the purse. */
   outstandingUsd: number;
+  /** The calls asked, when the request capped its calls. */
+  requestedCalls?: number;
+  /** The calls the purse could still carve, when it caps its calls: its cap less what is spent, in flight, kept back and promised to open allowances. */
+  allocatableCalls?: number;
 };
 
 /** What one allowance has spent, by the role and brief it was carved for. */
@@ -76,10 +96,18 @@ export class AutomationStudioLlmBuildPurseAllowanceBook {
   carvingRefusal(request: AutomationStudioLlmBuildPurseAllowanceRequest, from: AutomationStudioLlmBuildPurse): AutomationStudioLlmBuildPurseAllowanceRefusal | undefined {
     if (!request.briefId || !request.role) throw new Error("An allowance must name the brief and the role it is carved for.");
     if (!Number.isFinite(request.usd) || request.usd < 0) throw new Error("An allowance must be a finite, non-negative amount.");
+    if (request.maxCalls !== undefined && (!Number.isSafeInteger(request.maxCalls) || request.maxCalls < 1)) throw new Error("An allowance's call cap must be a positive safe integer.");
     if (this.hasOpen(request.briefId)) throw new Error(`An allowance for brief ${request.briefId} is already open.`);
     const allocatableUsd = from.allocatableUsd();
-    if (request.usd <= allocatableUsd + AUTOMATION_STUDIO_LLM_BUILD_PURSE_EPSILON_USD) return undefined;
-    return { code: "llm_budget.allowance_unavailable", requestedUsd: request.usd, allocatableUsd, keptBackUsd: from.keptBackUsd(), outstandingUsd: this.outstandingUsd() };
+    const allocatableCalls = from.allocatableCalls({ fromKeptBack: request.fromKeptBack === true });
+    const usdFits = request.usd <= allocatableUsd + AUTOMATION_STUDIO_LLM_BUILD_PURSE_EPSILON_USD;
+    const callsFit = request.maxCalls === undefined || allocatableCalls === undefined || request.maxCalls <= allocatableCalls;
+    if (usdFits && callsFit) return undefined;
+    return {
+      code: "llm_budget.allowance_unavailable", requestedUsd: request.usd, allocatableUsd, keptBackUsd: from.keptBackUsd(), outstandingUsd: this.outstandingUsd(),
+      ...(request.maxCalls !== undefined ? { requestedCalls: request.maxCalls } : {}),
+      ...(allocatableCalls !== undefined ? { allocatableCalls } : {})
+    };
   }
 
   add(allowance: AutomationStudioLlmBuildPurse): void {
@@ -96,6 +124,15 @@ export class AutomationStudioLlmBuildPurseAllowanceBook {
     let outstanding = 0;
     for (const allowance of this.open) {
       if (allowance !== except) outstanding += allowance.leftUsd();
+    }
+    return outstanding;
+  }
+
+  /** What open allowances other than `except` may still call: each capped one's calls neither settled nor in flight. Kept from every other call on the purse. */
+  outstandingCalls(except?: AutomationStudioLlmBuildPurse): number {
+    let outstanding = 0;
+    for (const allowance of this.open) {
+      if (allowance !== except) outstanding += allowance.unspentCalls() ?? 0;
     }
     return outstanding;
   }

@@ -132,15 +132,20 @@ export function gate(): { opened: Promise<void>; open: () => void } {
 export type GardenBuild = Awaited<ReturnType<typeof gardenBuild>>;
 
 /** A recorded build with `briefs`, a host of `capacity`, and a dispatcher whose builder follows `scripts` by brief id. */
-export async function gardenBuild(options: { capacity: number; briefs: AutomationStudioProjectSubflowBrief[]; ceilingUsd?: number; scripts?: Record<string, BuilderScript>; ports?: Partial<AutomationStudioProjectBriefPortFactory> }) {
+/** Briefs made once the build's record and purse exist, as a supervisor sizes them from the recorded plan (t570). */
+export type GardenBriefs = AutomationStudioProjectSubflowBrief[] | ((context: { store: AutomationStudioProjectBuildRecordStore; purse: AutomationStudioLlmBuildPurse }) => Promise<AutomationStudioProjectSubflowBrief[]>);
+
+export async function gardenBuild(options: { capacity: number; briefs: GardenBriefs; ceilingUsd?: number; maxCalls?: number; scripts?: Record<string, BuilderScript>; ports?: Partial<AutomationStudioProjectBriefPortFactory> }) {
   const projects = new AutomationStudioProjectPaths(undefined);
   const store = new AutomationStudioProjectBuildRecordStore(projects, new AutomationStudioFlowPaths(projects));
   await store.create({ ...REF, instructionDigest: "e".repeat(64), sourceIds: ["instruction.1"] });
   await store.recordTaskSpec(REF, gardenTaskSpec(), [{ sourceId: "instruction.1", text: SOURCE }]);
   await store.recordPlan(REF, gardenPlan());
-  for (const brief of options.briefs) await store.recordBrief(REF, brief);
+  const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: options.ceilingUsd ?? 1, ...(options.maxCalls !== undefined ? { maxCalls: options.maxCalls } : {}) });
+  // A brief may be sized from the recorded plan before it is recorded (`sized`).
+  const sized = typeof options.briefs === "function" ? await options.briefs({ store, purse }) : options.briefs;
+  for (const brief of sized) await store.recordBrief(REF, brief);
   const host = new StubHost({ capacity: options.capacity });
-  const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: options.ceilingUsd ?? 1 });
   const cancellation = new AutomationStudioBuildCancellation();
   const ledger = new AutomationStudioSiteResetProjectLedger();
   const seen: BuilderSeen[] = [];
@@ -175,7 +180,7 @@ export async function gardenBuild(options: { capacity: number; briefs: Automatio
   };
   const dispatch = createAutomationStudioProjectDispatcher(dispatcherInput);
   /** Dispatches inside the supervisor's scope; resolves with the result even when the scope then reports the Flow stopped. */
-  const run = (briefs = options.briefs, signal = new AbortController().signal): Promise<AutomationStudioProjectDispatchResult> => {
+  const run = (briefs = sized, signal = new AbortController().signal): Promise<AutomationStudioProjectDispatchResult> => {
     let result: AutomationStudioProjectDispatchResult | undefined;
     return cancellation.run(REF.projectId, REF.flowId, async () => {
       result = await dispatch({ briefs, signal });
@@ -184,5 +189,5 @@ export async function gardenBuild(options: { capacity: number; briefs: Automatio
       throw error;
     });
   };
-  return { store, host, purse, cancellation, ledger, seen, events, mostAtOnce: () => mostAtOnce, dispatcherInput, run };
+  return { store, host, purse, cancellation, ledger, briefs: sized, seen, events, mostAtOnce: () => mostAtOnce, dispatcherInput, run };
 }

@@ -79,6 +79,8 @@ export class AutomationStudioLlmBuildPurse {
   private lastRefusal: AutomationStudioLlmBuildPurseRefusal | undefined;
   /** Allowances carved from this purse. */
   private readonly allowances = new AutomationStudioLlmBuildPurseAllowanceBook();
+  /** Calls no allowance may be carved from but one for the finishing work they are kept for (`keepBackCallsFromAllowances`). */
+  private allowanceKeptBackCalls = 0;
   private closed = false;
 
   constructor(private readonly options: AutomationStudioLlmBuildPurseOptions, link?: AutomationStudioLlmBuildPurseLink) {
@@ -176,7 +178,7 @@ export class AutomationStudioLlmBuildPurse {
    */
   judgingFits(): boolean {
     if (!this.judgingReserve.isKept()) return true;
-    if (!this.ledger.calls.canHoldAll(this.judgingReserve.calls())) return false;
+    if (!this.ledger.calls.canHoldAll(this.judgingReserve.calls() + this.allowances.outstandingCalls())) return false;
     const holdUsd = this.judgingHoldUsd();
     return holdUsd === undefined || this.spentUsd() + this.pendingUsd() + this.allowances.outstandingUsd() + holdUsd <= this.ceilingUsd + AUTOMATION_STUDIO_LLM_BUILD_PURSE_EPSILON_USD;
   }
@@ -189,6 +191,56 @@ export class AutomationStudioLlmBuildPurse {
    */
   callsFit(calls: number): boolean {
     return this.ledger.calls.canHoldAll(calls);
+  }
+
+  /**
+   * Keep `calls` back from every allowance carved from here on (t570): the
+   * calls the build's own finishing needs -- the supervisor's assembly, test
+   * and completion, and a reset before the whole test -- which no builder's
+   * share may take. Only an allowance asked `fromKeptBack` may carve from them.
+   * The purse's own calls are not held to it: the supervisor spends them.
+   */
+  keepBackCallsFromAllowances(calls: number): void {
+    if (!Number.isSafeInteger(calls) || calls < 0) throw new Error("Calls kept back from allowances must be a non-negative safe integer.");
+    this.allowanceKeptBackCalls = calls;
+  }
+
+  /** What this purse may still call, when it caps its calls: its cap less what is settled and in flight; `undefined` without a cap. */
+  unspentCalls(): number | undefined {
+    const calls = this.ledger.calls;
+    return calls.maxCalls === undefined ? undefined : Math.max(0, calls.maxCalls - calls.spentCalls() - calls.pendingCalls());
+  }
+
+  /**
+   * The calls an allowance could still be carved with: what is unspent, less
+   * the judging reserve's calls, less what open allowances may still call, and
+   * -- unless the allowance is for the finishing work -- less the calls kept
+   * back from allowances. `undefined` where the purse caps no calls.
+   */
+  allocatableCalls(options: { fromKeptBack?: boolean } = {}): number | undefined {
+    const unspent = this.unspentCalls();
+    if (unspent === undefined) return undefined;
+    const keptBack = this.judgingReserve.calls() + this.allowances.outstandingCalls() + (options.fromKeptBack ? 0 : this.allowanceKeptBackCalls);
+    return Math.max(0, unspent - keptBack);
+  }
+
+  /**
+   * The calls a call that is not a judge's can still be held for here and in
+   * every purse above (t570): what a builder's loop counts its decisions left
+   * by (`../evidence-loop/cost-purse.ts`). Each purse's unspent calls, less its
+   * judging reserve and what its other open allowances may still call; the
+   * fewest of them. `undefined` where no purse in the line caps its calls.
+   */
+  callsLeft(): number | undefined {
+    return this.callsLeftFor(undefined);
+  }
+
+  private callsLeftFor(via: AutomationStudioLlmBuildPurse | undefined): number | undefined {
+    const unspent = this.unspentCalls();
+    const own = unspent === undefined ? undefined : Math.max(0, unspent - this.judgingReserve.calls() - this.allowances.outstandingCalls(via));
+    const above = this.parent?.callsLeftFor(this);
+    if (own === undefined) return above;
+    return above === undefined ? own : Math.min(own, above);
   }
 
   /** The provider's price, at the rate in force now, for a request of `inputTokens` and a reply of `outputTokens`, all uncached; `undefined` before any call brought a price, or where it prices nonsense. */
@@ -258,9 +310,11 @@ export class AutomationStudioLlmBuildPurse {
     if (projected !== undefined) this.lastProjectedCostUsd = projected;
     const calls = this.ledger.calls;
     const keptBackCalls = call.judge ? 0 : this.judgingReserve.calls();
-    if (!this.closed && !calls.canHold(keptBackCalls)) {
+    // What the other open allowances may still call is theirs, as their dollars are (t570).
+    const allottedCalls = this.allowances.outstandingCalls(via);
+    if (!this.closed && !calls.canHold(keptBackCalls + allottedCalls)) {
       const allowance = this.attribution ? { allowance: { ...this.attribution } } : {};
-      return this.refuse({ code: "llm_budget.run_call_limit", maxCalls: calls.maxCalls!, spentCalls: calls.spentCalls(), pendingCalls: calls.pendingCalls(), keptBackCalls, ...allowance });
+      return this.refuse({ code: "llm_budget.run_call_limit", maxCalls: calls.maxCalls!, spentCalls: calls.spentCalls(), pendingCalls: calls.pendingCalls(), keptBackCalls, ...(allottedCalls > 0 ? { allottedCalls } : {}), ...allowance });
     }
     const keptBackUsd = call.judge ? 0 : this.keptBackUsd();
     const allottedUsd = this.allowances.outstandingUsd(via);

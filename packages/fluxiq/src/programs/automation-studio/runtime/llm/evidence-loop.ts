@@ -118,7 +118,7 @@ export type { AutomationStudioLlmEvidenceToolFailureCode } from "./tool-failure.
 /** The entry every earlier decision, and what the loop answered it, is shown under. */
 export { AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID } from "./decision-context/index.ts";
 /** The bounds a loop may be given (`budget`), and the entry it shows the model what is left under. */
-export { AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID, type AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
+export { AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, type AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
 
 /** Provider-neutral decision policy for bounded evidence loops, in
  * `evidence-loop-decision.ts` with the rest of the grammar. */
