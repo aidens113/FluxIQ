@@ -94,6 +94,23 @@
 // handle was never shown and which call shows it (`./feedback.ts`). Any other
 // failure stays refused while the page is unchanged, looks or not.
 //
+// **A refusal that named a missing precondition is lifted once a call meets
+// it, whatever the page digest says (t587).** Launch 6 of A8
+// (`run-mv85vjqo-4c022aec`, brief-2, steps 31-43): a prepared builder's search
+// was refused `not_at_start_location` (reason `start_location_not_reached`).
+// The builder then navigated to the start, as the refusal told it to, and the
+// navigation reloaded a page byte-identical to the one before: the digest
+// leaves out how a page was reached. So the now-valid search was keyed on the
+// same page as its failure and refused three times as a repeat, and the round
+// stalled. The failure was about the build's state -- arrived or not -- which
+// no page digest holds. A failure whose code or reason names such a
+// precondition (`PRECONDITIONS`) is lifted, on every page, as soon as a later
+// call that meets it ran and applied its effect; and that call is not recorded
+// as one that changed nothing even when it left the page as it found it, since
+// it changed the build's state. For the start location the call that meets it
+// is any act that ran: the domain refuses every act but the move there until
+// the build has arrived, so an act that ran is the arrival or came after it.
+//
 // **A rerun that changed nothing is keyed on the decision and the draft, not
 // the page.** Live run `run-muwaobm2-882cadd9` (lane A, iterations 17-24) sent
 // one `amend_draft` -- step 14 `rerun` as the Spain press beside `add` or
@@ -187,6 +204,30 @@ import { automationStudioLlmEvidenceSearchStreak, type AutomationStudioLlmEviden
  * since gone (`handle_no_longer_on_page`, `stale_handle`) is not one of them.
  */
 const HANDLE_UNSHOWN = /^(?:handle[_-]?not[_-]?in[_-]?packet|handle[_-]?not[_-]?issued|unknown[_-]?handle)$/iu;
+
+/** A precondition a refusal can name, and the call that meets it (header, t587). */
+type AutomationStudioLlmEvidencePrecondition = {
+  /** Matched against a refused call's result code (its last dotted segment) and its reason. */
+  names: RegExp;
+  /** Whether a call that ran meets it. */
+  met(call: AutomationStudioLlmEvidenceCallOutcome): boolean;
+};
+
+/** Refusals about the build's state rather than the page, lifted by the call that meets them (header). */
+const PRECONDITIONS: readonly AutomationStudioLlmEvidencePrecondition[] = [
+  {
+    // `not_at_start_location` / `start_location_not_reached`: every act but the move there is refused until the build arrives.
+    names: /^(?:not[_-]?at[_-]?start[_-]?location|start[_-]?location[_-]?not[_-]?reached)$/iu,
+    met: (call) => call.effect === "mutate" && !call.refused && call.effectApplied
+  }
+];
+
+/** The preconditions a refused call's code or reason names. */
+function namedPreconditions(call: AutomationStudioLlmEvidenceCallOutcome): AutomationStudioLlmEvidencePrecondition[] {
+  if (!call.refused) return [];
+  const words = [call.resultCode?.split(".").at(-1), call.resultReason].filter((word): word is string => word !== undefined && word !== "");
+  return PRECONDITIONS.filter((precondition) => words.some((word) => precondition.names.test(word)));
+}
 
 /** How an earlier call went, as the model is told it. */
 export type AutomationStudioLlmEvidenceRepeatedOutcome = {
@@ -284,6 +325,19 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
   const answered = new Map<string, string>();
   // Failures on a handle not yet shown, by key, with the page each is on: lifted when a later call there shows something new.
   const unshown = new Map<string, string>();
+  // Failures that named a precondition, by key, with what they named: lifted on every page once a call meets it (header, t587).
+  const awaiting = new Map<string, AutomationStudioLlmEvidencePrecondition[]>();
+  // Lifts every failure a call that ran meets; answers whether it lifted any.
+  const met = (call: AutomationStudioLlmEvidenceCallOutcome): boolean => {
+    let lifted = false;
+    for (const [at, named] of awaiting) {
+      if (!named.some((precondition) => precondition.met(call))) continue;
+      awaiting.delete(at);
+      if (outcomes.get(at)?.outcome === "failed") outcomes.delete(at);
+      lifted = true;
+    }
+    return lifted;
+  };
   const showed = (state: string): void => {
     for (const [at, on] of unshown) {
       if (on !== state) continue;
@@ -327,7 +381,10 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
       if (counted && look && state !== undefined && call.stateAfter === state) searching.looked({ callId: call.callId, toolId: call.toolId, input: call.input });
       else if (counted) searching.acted();
       // A check ran nothing: no outcome of its input to record (run `run-mux74k5q-1c3c2127`, C3).
-      if (state === undefined || call.checked === true) return;
+      if (call.checked === true) return;
+      // A call that met a precondition an earlier refusal named lifted it, wherever that refusal was keyed (header, t587).
+      const metPrecondition = !call.refused && met(call);
+      if (state === undefined) return;
       if (look && !call.refused) {
         const at = key(call.toolId, call.input, state);
         const answer = call.answer === undefined ? undefined : createHash("sha256").update(call.answer).digest("hex");
@@ -341,7 +398,8 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
       // A part run that acted on nothing did not fail: it ran the draft and changed nothing (`same_draft`).
       const runsDraft = options.draftOf?.(call.toolId) !== undefined;
       const failed = call.refused || (call.effect === "mutate" && !call.effectApplied && !runsDraft);
-      const changedNothing = !call.effectApplied || (call.stateAfter !== undefined && call.stateAfter === state);
+      // A call that met a precondition changed the build's state, whatever its page digest says (header, t587).
+      const changedNothing = !call.effectApplied || (!metPrecondition && call.stateAfter !== undefined && call.stateAfter === state);
       const retryLater = automationStudioLlmEvidenceRetriesLater(call.resultCode, call.resultReason);
       const at = key(call.toolId, call.input, state);
       if (!call.refused) showed(state);
@@ -354,6 +412,9 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
       const handleUnshown = failed && HANDLE_UNSHOWN.test(call.resultReason ?? "");
       if (handleUnshown) unshown.set(at, state);
       else unshown.delete(at);
+      const preconditions = namedPreconditions(call);
+      if (preconditions.length) awaiting.set(at, preconditions);
+      else awaiting.delete(at);
       const issues = call.refused ? refusalIssues(call.answer) : undefined;
       outcomes.set(at, {
         callId: call.callId,
