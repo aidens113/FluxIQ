@@ -101,6 +101,7 @@ async function approvalFlow(service: AutomationStudioService, projectId: string,
     }
   });
   await service.setFlowMapFallback({ projectId, flowId: flow.flowId, kind: "subflow", targetSubflowId: subflow.subflowId });
+  await service.saveFlowGenerationInstruction({ projectId, flowId: flow.flowId, instruction: "Send the draft, ask for approval, then act on the answer." });
   return flow;
 }
 

@@ -34,8 +34,7 @@ describe("AutomationStudioService recording persistence", () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Runtime Project" });
     const flow = await service.createDefaultFlow({ projectId: project.id, ownerKind: "routine", ownerId: "routine.runtime", name: "Runtime Flow" });
-    const runnableFlow = {
-      ...flow,
+    const runnableGraph = {
       nodes: [
         { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
         { id: "constant", definitionId: "builtin.data.constant", parameterValues: { value: "ok" } },
@@ -46,9 +45,13 @@ describe("AutomationStudioService recording persistence", () => {
         { id: "constant.end", sourceNodeId: "constant", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }
       ]
     };
-    await service.saveProjectArtifact({ projectId: project.id, kind: "flow", artifact: runnableFlow });
+    await service.saveProjectArtifact({ projectId: project.id, kind: "flow", artifact: { ...flow, ...runnableGraph } });
+    // The run is of a canonical Flow with written instructions: since t519 a run needs both, and the owner-bound artifact above can hold no instructions.
+    const runnable = await service.createFlow({ projectId: project.id, flowId: "flow.runtime", name: "Runtime Flow" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: runnable.flowId, instruction: "Produce the constant value once." });
+    await installPrimaryRouter(service, project.id, runnable.flowId, runnableGraph);
 
-    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: runnable.flowId });
     const reloaded = createService({ dataDir: tempRoot, seedFixture: false });
     const artifacts = await reloaded.listProjectArtifacts(project.id);
     const runs = await reloaded.listRuntimeSessions(project.id);
@@ -65,9 +68,10 @@ describe("AutomationStudioService recording persistence", () => {
   it("pages runtime run summaries from the runtime SQL index without loading traces", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Runtime Pages" });
-    const flow = await service.createDefaultFlow({ projectId: project.id, ownerKind: "routine", ownerId: "routine.runtime-pages", name: "Runtime Pages Flow" });
-    const runnableFlow = {
-      ...flow,
+    // A canonical Flow with written instructions: since t519 a run needs both, and a deprecated owner-bound Flow can hold no instructions.
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.runtime-pages", name: "Runtime Pages Flow" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Produce the constant value once." });
+    const runnableGraph = {
       nodes: [
         { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
         { id: "constant", definitionId: "builtin.data.constant", parameterValues: { value: "ok" } },
@@ -78,7 +82,7 @@ describe("AutomationStudioService recording persistence", () => {
         { id: "constant.end", sourceNodeId: "constant", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }
       ]
     };
-    await service.saveProjectArtifact({ projectId: project.id, kind: "flow", artifact: runnableFlow });
+    await installPrimaryRouter(service, project.id, flow.flowId, runnableGraph);
     const first = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
     await new Promise((resolve) => setTimeout(resolve, 2));
     const second = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
@@ -99,6 +103,7 @@ describe("AutomationStudioService recording persistence", () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Runtime Idempotency" });
     const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.runtime-idempotency" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow once to the end." });
 
     const first = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, idempotencyKey: "submit:123" });
     const second = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, idempotencyKey: "submit:123" });
@@ -112,6 +117,7 @@ describe("AutomationStudioService recording persistence", () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Runtime Cancellation" });
     const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.runtime-cancel" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow once to the end." });
     const queued = await service.startRuntimeSession({ projectId: project.id, flowId: flow.flowId });
 
     const cancelled = await service.cancelRuntimeSession(project.id, queued.runId, "Operator stopped the run.");
@@ -129,6 +135,7 @@ describe("AutomationStudioService recording persistence", () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Adaptive Runtime Concurrency" });
     const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.runtime-concurrency", metadata: adaptiveTrainingMetadata() });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow once to the end." });
     await service.startRuntimeSession({ projectId: project.id, flowId: flow.flowId, metadata: { adaptiveRuntime: true } });
 
     const before = await service.listRuntimeSessions(project.id);
@@ -139,22 +146,19 @@ describe("AutomationStudioService recording persistence", () => {
   it("persists compact action comparisons and recovery ladder records in Flow run detail", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Runtime Recovery Detail" });
-    const flow = await service.createDefaultFlow({ projectId: project.id, ownerKind: "routine", ownerId: "routine.runtime-recovery", name: "Runtime Recovery Flow" });
-    await service.saveProjectArtifact({
-      projectId: project.id,
-      kind: "flow",
-      artifact: {
-        ...flow,
-        nodes: [
-          { id: "divide", definitionId: "builtin.math.divide", parameterValues: {} },
-          { id: "recover", definitionId: "builtin.policy.recovery", parameterValues: { strategy: "retry" } },
-          { id: "end", definitionId: "builtin.control.end", parameterValues: { resultStatus: "success" } }
-        ],
-        edges: [
-          { id: "divide.recover", sourceNodeId: "divide", sourcePortId: "failed", targetNodeId: "recover", targetPortId: "failure" },
-          { id: "recover.end", sourceNodeId: "recover", sourcePortId: "recovered", targetNodeId: "end", targetPortId: "in" }
-        ]
-      }
+    // A canonical Flow with written instructions: since t519 a run needs both, and a deprecated owner-bound Flow can hold no instructions.
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.runtime-recovery", name: "Runtime Recovery Flow" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Divide the numerator by the denominator." });
+    await installPrimaryRouter(service, project.id, flow.flowId, {
+      nodes: [
+        { id: "divide", definitionId: "builtin.math.divide", parameterValues: {} },
+        { id: "recover", definitionId: "builtin.policy.recovery", parameterValues: { strategy: "retry" } },
+        { id: "end", definitionId: "builtin.control.end", parameterValues: { resultStatus: "success" } }
+      ],
+      edges: [
+        { id: "divide.recover", sourceNodeId: "divide", sourcePortId: "failed", targetNodeId: "recover", targetPortId: "failure" },
+        { id: "recover.end", sourceNodeId: "recover", sourcePortId: "recovered", targetNodeId: "end", targetPortId: "in" }
+      ]
     });
 
     const session = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
@@ -196,6 +200,7 @@ describe("AutomationStudioService recording persistence", () => {
     });
     const project = await service.createProject({ name: "Host State Refs" });
     const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.host-state-refs" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow once to the end." });
 
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
     const detail = await service.getFlowRunDetail(project.id, run.runId);
@@ -277,6 +282,7 @@ describe("AutomationStudioService recording persistence", () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Routed Runtime" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.routed-runtime", name: "Routed Flow" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the primary route once." });
     const { subflow, graph } = await installPrimaryRouter(service, project.id, flow.flowId, {
         nodes: [
           { id: "start", definitionId: "builtin.control.start", parameterValues: {} },

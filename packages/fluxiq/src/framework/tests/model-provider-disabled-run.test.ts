@@ -61,6 +61,7 @@ it("executes an ordinary saved native Flow without releasing a retained key or d
         { id: "native.end", sourceNodeId: "native", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }
       ]
     });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Echo the fixture value once." });
     // An ordinary public run, not a direct executor call or an explicit model intent.
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
     const detail = await service.getFlowRunDetail(project.id, run.runId);

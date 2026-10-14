@@ -26,6 +26,8 @@ async function fixture(operation: (h: Harness) => Promise<void>): Promise<void> 
   try {
     const project = await program.createProject({ name: "Synthetic withdraw", domainId: "synthetic.domain" });
     const flow = { schemaVersion: "0.1" as const, flowId: "flow.1", ownerKind: "routine" as const, ownerId: "routine.1", name: "Synthetic root", nodes: [], edges: [], createdAt: 1, updatedAt: 1 };
+    await program.createFlow({ projectId: project.id, flowId: flow.flowId, name: flow.name });
+    await program.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Send the synthetic command once." });
     const session = await program.startRuntimeSession({ projectId: project.id, runId: "run.1", flow });
     const scope = await controller.open({ projectId: project.id, runId: session.runId, rootFlowId: session.flowId });
     const issue = async (ordinal: number, attemptId = "synthetic.attempt.1") => {

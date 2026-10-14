@@ -8,6 +8,7 @@ import { CLIENT_GATEWAY_PROTOCOL_VERSION, ClientGatewayCommandContext } from "..
 import { defineOutput } from "../../../../../../io/index.ts";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument } from "../../../../model/index.ts";
+import { AutomationStudioRequiredCommandRun } from "../index.ts";
 
 const flow: AutomationStudioFlowDocument = { schemaVersion: "0.1", flowId: "flow.production", ownerKind: "routine", ownerId: "routine.synthetic", name: "Synthetic production effects", createdAt: 1, updatedAt: 1, nodes: [
   { id: "first", definitionId: "builtin.policy.action", parameterValues: { outputId: "synthetic.action", parameters: { value: 1 }, timeoutMs: 1000 } },
@@ -27,6 +28,9 @@ async function fixture(mode: "io" | "runtime", operation: (h: { fluxiq: FluxIQ; 
     await gateway.receive(client.sessionId, { id: "hello", protocolVersion: CLIENT_GATEWAY_PROTOCOL_VERSION, timestamp: Date.now(), type: "client.hello", payload: { clientId: "synthetic.client", clientType: "extension", capabilities: [] } });
     const pairing = gateway.snapshot().pairings.find(item => item.requestedBySessionId === client.sessionId)!; await gateway.approvePairing(pairing.pairingCode, { approvedByUserId: "synthetic.user" });
     const project = await fluxiq.programs.automationStudio.createProject({ name: "Synthetic required production", domainId: "synthetic.domain" });
+    // The Flow a run starts is a stored Flow with written instructions, as Core requires since t519.
+    await fluxiq.programs.automationStudio.createFlow({ projectId: project.id, flowId: flow.flowId, name: flow.name });
+    await fluxiq.programs.automationStudio.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Send each synthetic action once." });
     await operation({ fluxiq, projectId: project.id, sends, contexts, legacy, acknowledge: value => { ack = value; } });
   } finally {
     vi.restoreAllMocks(); await fluxiq.close();
@@ -42,7 +46,7 @@ describe("actual runRuntimeSession required-mode production registration", () =>
     expect(h.sends).toHaveLength(2); expect(h.legacy).not.toHaveBeenCalled(); expect(adaptation).not.toHaveBeenCalled();
     expect(h.contexts.map(context => ClientGatewayCommandContext.owner(context).flowId)).toEqual([flow.flowId, flow.flowId]);
     expect(new Set(h.contexts.map(context => ClientGatewayCommandContext.owner(context).invocationId)).size).toBe(2);
-    await expect(program.runRuntimeSession({ projectId: h.projectId, idempotencyKey: "synthetic.required" })).rejects.toThrow("idempotency_mode_mismatch");
+    await expect(program.runRuntimeSession({ projectId: h.projectId, flow, idempotencyKey: "synthetic.required" })).rejects.toThrow("idempotency_mode_mismatch");
     const stored = await program.getRuntimeSession(h.projectId, result.runId); expect(stored?.status).toBe("succeeded");
     await expect(program.runRuntimeSession({ projectId: h.projectId, runId: result.runId, commandOutcomeMode: "required" })).rejects.toThrow();
     await expect(program.runRuntimeSession({ projectId: h.projectId, runId: result.runId })).rejects.toThrow();
@@ -59,7 +63,10 @@ describe("actual runRuntimeSession required-mode production registration", () =>
   }));
   it("invalid/storage/adaptive requests and existing legacy session upgrades refuse before actions", async () => fixture("io", async h => {
     const program = h.fluxiq.programs.automationStudio, start = vi.spyOn(h.fluxiq.programs.automationStudio, "startRuntimeSession");
-    await expect(program.runRuntimeSession({ flow, commandOutcomeMode: "required" })).rejects.toThrow("storage_required");
+    // A run with no project is refused by the instruction gate first (t519); the required-mode storage refusal is pinned on its own.
+    await expect(program.runRuntimeSession({ flow, commandOutcomeMode: "required" })).rejects.toThrow("Write active instructions");
+    expect(() => new AutomationStudioRequiredCommandRun({ commandOutcomeMode: "required" }, true)).toThrow("storage_required");
+    expect(() => new AutomationStudioRequiredCommandRun({ commandOutcomeMode: "required", projectId: h.projectId }, false)).toThrow("storage_required");
     await expect(program.runRuntimeSession({ projectId: h.projectId, flow, commandOutcomeMode: "bad" as "required" })).rejects.toThrow("invalid_mode");
     await expect(program.runRuntimeSession({ projectId: h.projectId, flow, commandOutcomeMode: "required", adaptiveMode: "adaptive" as "no_llm_intervention" })).rejects.toThrow("adaptive_mode_unsupported");
     expect(start).not.toHaveBeenCalled();
