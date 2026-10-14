@@ -72,7 +72,9 @@ function scriptedBuilder(shown: Record<string, string>, budgets: Record<string, 
       submission: testSubmission(),
       trial,
       observe: (loop: AutomationStudioLlmEvidenceLoopInput) => {
-        shown[key] = loop.tools.find((tool) => tool.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!.description;
+        // The brief opens the description of the submit tool's `flow` input (t584).
+        const submit = loop.tools.find((tool) => tool.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!;
+        shown[key] = ((submit.inputSchema.properties as JsonObject).flow as JsonObject).description as string;
         return loop;
       }
     };

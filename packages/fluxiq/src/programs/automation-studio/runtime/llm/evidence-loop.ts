@@ -53,7 +53,7 @@ import {
   automationStudioLlmEvidenceLoopAddUsage,
   automationStudioLlmEvidenceLoopEmptyAccounting,
   automationStudioLlmEvidenceRedirectFacts,
-  automationStudioLlmEvidenceLoopFailure as failure,
+  automationStudioLlmEvidenceLoopFailure as failure, automationStudioLlmEvidenceLoopToolSetIssue,
   automationStudioLlmEvidenceNoProgress, automationStudioLlmEvidenceRefusalRun,
   automationStudioLlmEvidenceUnusedCallId, automationStudioLlmEvidenceOpeningCallId, automationStudioLlmEvidenceLoopProgressTrace, automationStudioLlmEvidenceFinalDecisionRow, automationStudioLlmEvidenceLoopPurse,
   type AutomationStudioLlmEvidenceLoopDecision, type AutomationStudioLlmEvidenceTool,
@@ -233,7 +233,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // The build's lasting acts, read once, whichever of the dry run, a part run or a rerun's put-back first sends steps again (`./node-tools/replay-draft.ts`).
   let lasting: Promise<ReadonlySet<string>> | undefined; const readLasting = input.lastingActs; const lastingActs = readLasting ? () => (lasting ??= readLasting()) : undefined;
   const toolSet = automationStudioLlmEvidenceLoopToolSet({ tools: input.tools, executeTool: input.executeTool, steps: draftSteps, enabled: drafting && input.dryRun !== false, ...(lastingActs ? { lastingActs } : {}), ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}), ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}) });
-  if (!limits || !toolSet) return failure(draftSteps, "llm_evidence_loop.invalid_configuration", trace, accounting);
+  if ("issue" in limits || !toolSet) return failure(draftSteps, "llm_evidence_loop.invalid_configuration", trace, accounting, undefined, undefined, undefined, "issue" in limits ? limits.issue : automationStudioLlmEvidenceLoopToolSetIssue(input.tools)); // Named: the limits' check or the tool set's (`./configuration-issue/`, t584).
   const { runFlow, tools, toolIds, toolsById, mutableTools } = toolSet;
   const callIds = new Set<string>();
   // Each request that ran, by what it asked in which epoch, and the call that

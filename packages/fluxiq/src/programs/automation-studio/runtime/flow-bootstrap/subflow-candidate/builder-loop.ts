@@ -39,6 +39,17 @@
 // brief's parts in the person's words and, for a callable subflow, the exact
 // `part`, `input:` and `output:` lines it must write, by name.
 //
+// **Its brief is in the script's description, not the tool's (t584).** A
+// tool describes itself in at most 2,000 characters
+// (`../../llm/evidence-loop-decision.ts`, and the provider's preflight), and the
+// brief is the person's words, as long as the parts they wrote: on A8 launch 6
+// an everything-store builder with two parts and an `output:` line had a
+// submit description of about 2,150 characters, and its loop refused to start,
+// `llm_evidence_loop.invalid_configuration` with 0 calls, twice. So the tool's
+// own description holds only what is the same for every brief, and the brief
+// opens the description of its `flow` input, beside the script format, which
+// has no such bound and which the tool's description points to.
+//
 // **It can end its brief honestly (t581).** On the A8 bigbox run every
 // dependent builder's trial answered `subflow.trial_predecessor_missing`, and
 // the trial gate told it to "complete with outcome blocked and say why"; its
@@ -178,8 +189,8 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   let ended: AutomationStudioSubflowBuilderOutcome["ended"];
   const submitTool: AutomationStudioLlmEvidenceTool = {
     toolId: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, effect: "observe",
-    description: `Submit your subflow "${subflowKey}", written as a Flow script under "flow" (its description gives the format and examples)${input.scope.interface ? "" : `, or a JSON plan under "plan"`}. ${briefWords(input.scope)} Write no \`when:\` line and no other subflow: which situation runs which subflow is the structure plan's. ${successCheckRule(input.scope)} Static validity returns a draft revision and digest, never acceptance. Correct every diagnostic and resubmit the whole subflow. Then test that exact revision with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}, and complete with the subflowKey, revision and digest only after its trial answers yes. ${HONEST_ENDING}`,
-    inputSchema: { type: "object", properties: { flow: { type: "string", description: `This subflow as a script. ${AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT}` }, plan: { type: "object" }, summary: { type: "string" } }, additionalProperties: false }
+    description: `Submit your subflow "${subflowKey}", written as a Flow script under "flow"${input.scope.interface ? "" : `, or a JSON plan under "plan"`}. The description of "flow" opens with your brief -- the parts of the task this subflow does, in the person's words, and how it is written -- then gives the format and examples: hold whatever you submit to that brief. Write no \`when:\` line and no other subflow: which situation runs which subflow is the structure plan's. ${successCheckRule(input.scope)} Static validity returns a draft revision and digest, never acceptance. Correct every diagnostic and resubmit the whole subflow. Then test that exact revision with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}, and complete with the subflowKey, revision and digest only after its trial answers yes. ${HONEST_ENDING}`,
+    inputSchema: { type: "object", properties: { flow: { type: "string", description: `${briefWords(input.scope)}\nThis subflow as a script. ${AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT}` }, plan: { type: "object" }, summary: { type: "string" } }, additionalProperties: false }
   };
   const receiptCheck = (result: JsonObject): AutomationStudioLlmEvidenceCompletionCheck => {
     const proposal = controller.latest();

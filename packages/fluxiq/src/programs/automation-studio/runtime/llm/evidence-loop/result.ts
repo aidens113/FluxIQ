@@ -8,6 +8,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceLoopAccounting } from "./accounting.ts";
+import type { AutomationStudioLlmEvidenceLoopConfigurationIssue } from "../configuration-issue/index.ts";
 import type { AutomationStudioLlmEvidenceLoopExhaustion } from "./exhaustion.ts";
 import type { AutomationStudioLlmEvidenceLoopTrace } from "./trace.ts";
 import type { AutomationStudioLlmEvidenceLoopUnreadable } from "../unreadable-reply.ts";
@@ -87,6 +88,12 @@ export type AutomationStudioLlmEvidenceLoopResult =
     unreadable?: AutomationStudioLlmEvidenceLoopUnreadable;
     /** Present exactly when the code is `llm_evidence_loop.provider_unavailable`. */
     providerUnavailable?: AutomationStudioLlmEvidenceLoopProviderUnavailable;
+    /**
+     * Present exactly when the code is `llm_evidence_loop.invalid_configuration`:
+     * the check that refused the configuration, its figures and a sentence
+     * (`../configuration-issue/`, t584).
+     */
+    configuration?: AutomationStudioLlmEvidenceLoopConfigurationIssue;
   };
 
 /** A loop that ended without a result, with everything it did up to then. */
@@ -100,7 +107,9 @@ export function automationStudioLlmEvidenceLoopFailure(
   /** How many unreadable replies, for the one code that says they ended it. */
   unreadable?: AutomationStudioLlmEvidenceLoopUnreadable,
   /** How many unanswered calls, for the one code that says the provider stopped answering. */
-  providerUnavailable?: AutomationStudioLlmEvidenceLoopProviderUnavailable
+  providerUnavailable?: AutomationStudioLlmEvidenceLoopProviderUnavailable,
+  /** Which check refused the configuration, for the one code that says one did. */
+  configuration?: AutomationStudioLlmEvidenceLoopConfigurationIssue
 ): AutomationStudioLlmEvidenceLoopResult {
-  return { ok: false, code, trace, steps, accounting, ...(exhaustion ? { exhaustion } : {}), ...(unreadable ? { unreadable } : {}), ...(providerUnavailable ? { providerUnavailable } : {}) };
+  return { ok: false, code, trace, steps, accounting, ...(exhaustion ? { exhaustion } : {}), ...(unreadable ? { unreadable } : {}), ...(providerUnavailable ? { providerUnavailable } : {}), ...(configuration ? { configuration } : {}) };
 }
