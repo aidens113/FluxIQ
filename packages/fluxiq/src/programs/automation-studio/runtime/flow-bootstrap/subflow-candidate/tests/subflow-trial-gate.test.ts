@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AutomationStudioFlowCandidateTrialGate, type AutomationStudioFlowCandidate } from "../../candidate/index.ts";
-import { AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, AutomationStudioSubflowTrialGate, type AutomationStudioSubflowProposal, type AutomationStudioSubflowTrialRequest, type AutomationStudioSubflowTrialResult } from "../index.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, AutomationStudioSubflowTrialGate, type AutomationStudioSubflowProposal, type AutomationStudioSubflowTrialPreparingPort, type AutomationStudioSubflowTrialRequest, type AutomationStudioSubflowTrialResult } from "../index.ts";
 import { testScope } from "./subflow-fixture.ts";
 
 const scope = testScope();
@@ -68,6 +68,80 @@ describe("the subflow trial gate", () => {
     const ran = await gate.test(receipt);
     expect(ran.resultReason).toBe("retry_allowed");
     expect(gate.completion(proposal)).toMatchObject({ ok: false, issueCodes: ["subflow.trial_yes"] });
+  });
+
+  describe("the site put back first, as the whole gate puts it back (t578)", () => {
+    type Reset = NonNullable<ConstructorParameters<typeof AutomationStudioSubflowTrialGate>[0]["reset"]>;
+    function preparing(order: string[], prepared: "reset" | "failed" | "none" = "reset") {
+      const asked: AutomationStudioSubflowTrialRequest[] = [];
+      const port: AutomationStudioSubflowTrialPreparingPort = async (request) => {
+        order.push("trial");
+        asked.push(request);
+        return answer(request, { acts: [{ step: 2, definitionId: "custom.press", consequences: ["create_new"] }], trialRunId: "trial.1" });
+      };
+      port.prepareStart = async (input) => {
+        order.push(`hook ${input.scope.briefId} ${input.revision}`);
+        return prepared;
+      };
+      return { port, asked };
+    }
+
+    it("runs the start hook, then the reset told the site was put back, then the trial; answers what the hook took back and what the trial left", async () => {
+      const order: string[] = [];
+      const { port, asked } = preparing(order);
+      const told: unknown[] = [];
+      const reset: Reset = {
+        beforeTrial: async (_signal, _cannotUndo, options) => {
+          order.push("reset");
+          told.push(options);
+          return { kind: "admit", absorbedByStartReset: [{ act: "act-1", did: "press \"Add\" button", call: "call.4" }] };
+        },
+        trialRan: (acts, trialRunId) => {
+          order.push(`trialRan ${acts.length} ${trialRunId}`);
+          return [{ act: "act-2", did: "trial step 2 custom.press" }];
+        }
+      };
+      const gate = new AutomationStudioSubflowTrialGate({ scope, latest: () => structuredClone(proposal), port, reset });
+      const ran = await gate.test(receipt);
+      expect(order).toEqual([`hook ${scope.briefId} 2`, "reset", "trial", "trialRan 1 trial.1"]);
+      expect(told).toEqual([{ startReset: true }]);
+      expect(asked[0]!.startedWith).toBeUndefined();
+      expect(ran.evidence).toMatchObject({ verdict: "yes", absorbedByStartReset: [{ act: "act-1", did: "press \"Add\" button", call: "call.4" }], leftOnSite: [{ act: "act-2", did: "trial step 2 custom.press" }] });
+    });
+
+    it("runs no trial while the reset refuses: the model is told what to undo, the refusal counts no trial and may be met by testing again", async () => {
+      const order: string[] = [];
+      const { port, asked } = preparing(order, "none");
+      let refusals = 0;
+      const reset: Reset = {
+        beforeTrial: async (_signal, cannotUndo) => {
+          order.push(`reset ${JSON.stringify(cannotUndo ?? [])}`);
+          if (refusals++ === 0) return { kind: "refuse", moved: true, evidence: { ok: false, code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-1", did: "press \"Add\" button" }] } };
+          return { kind: "admit", startedWith: { cannotUndo: [{ act: "act-1", did: "press \"Add\" button" }] } };
+        },
+        trialRan: () => []
+      };
+      const gate = new AutomationStudioSubflowTrialGate({ scope, latest: () => structuredClone(proposal), port, reset });
+      const refused = await gate.test(receipt);
+      expect(refused).toMatchObject({ resultCode: "candidate.trial_reset_required", resultReason: "retry_allowed", effectApplied: true, targetsUnchanged: false, evidence: { actsToUndo: [{ act: "act-1" }] } });
+      expect(order).toEqual([`hook ${scope.briefId} 2`, "reset []"]);
+      expect(gate.standing(proposal)).toBeUndefined();
+      const ran = await gate.test({ ...receipt, cannotUndo: ["act-1"] });
+      expect(order.slice(2)).toEqual([`hook ${scope.briefId} 2`, "reset [\"act-1\"]", "trial"]);
+      // What the trial started with is said to the model and handed to the trial, for its judge.
+      expect(ran.evidence).toMatchObject({ verdict: "yes", startedWith: { cannotUndo: [{ act: "act-1" }] } });
+      expect(asked[0]!.startedWith).toEqual(["already done by this build (act-1): press \"Add\" button"]);
+      expect(gate.completion(proposal)).toEqual({ ok: true });
+    });
+
+    it("refuses a malformed cannotUndo, and without a reset never runs the hook ahead of the trial", async () => {
+      const order: string[] = [];
+      const { port } = preparing(order);
+      const plain = new AutomationStudioSubflowTrialGate({ scope, latest: () => structuredClone(proposal), port });
+      expect((await plain.test({ ...receipt, cannotUndo: "act-1" })).resultCode).toBe("subflow.trial_input_invalid");
+      await plain.test(receipt);
+      expect(order).toEqual(["trial"]);
+    });
   });
 
   it("tests only the latest proposal, and says when no runner is here", async () => {

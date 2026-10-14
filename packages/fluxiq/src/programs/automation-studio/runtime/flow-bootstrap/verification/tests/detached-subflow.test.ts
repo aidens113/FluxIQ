@@ -196,5 +196,44 @@ describe("detached subflow partial trial", () => {
       expect(input.seen).toEqual(["done"]);
       expect(ownSteps(result)).toHaveLength(2);
     });
+
+    it("loads the start location first even with no predecessors, in a first root of its own (t578)", async () => {
+      const input = routerRun(false);
+      const result = await runAutomationStudioDetachedSubflow({ ...input, arrival: { node: "test.echo", parameter: "value", location: "https://start.test/" } });
+      expect(result).toMatchObject({ entryPrepared: true, receipt: { status: "succeeded" } });
+      expect(input.seen).toEqual(["https://start.test/", "done"]);
+      expect(ownSteps(result)).toHaveLength(2);
+    });
+  });
+
+  describe("the start page (t578; A8 bigbox debug, cause A)", () => {
+    const arrival = { node: "test.echo", parameter: "value", location: "https://start.test/" };
+
+    it("goes to the start location before the first predecessor, as the root's first step after its start, declaring nothing lasting", async () => {
+      const { input, seen } = fixture();
+      const result = await runAutomationStudioDetachedSubflow({ ...input, arrival });
+      expect(result).toMatchObject({ partial: true, entryPrepared: true, receipt: { status: "succeeded" } });
+      expect(seen).toEqual(["https://start.test/", "hub", { adding: "hub" }]);
+      const rootSteps = result.trace?.attempts.filter((attempt) => attempt.nodeId.includes(".subflow-trial-root.") && !attempt.subflowTarget) ?? [];
+      expect(rootSteps.map((attempt) => attempt.definitionId)).toEqual(["builtin.control.start", "test.echo"]);
+      const node = result.graph?.nodes.find((candidate) => candidate.id.includes(".subflow-trial-root.") && candidate.definitionId === "test.echo");
+      expect(node?.metadata?.declaredConsequences).toEqual([]);
+    });
+
+    it("does not prepare the entry when the start page could not be loaded, and runs nothing after it", async () => {
+      const { input, seen, failWhen } = fixture();
+      failWhen("https://start.test/");
+      const result = await runAutomationStudioDetachedSubflow({ ...input, arrival });
+      expect(result).toMatchObject({ entryPrepared: false, receipt: { status: "failed" } });
+      expect(result.failedPredecessor).toBeUndefined();
+      expect(seen).toEqual(["https://start.test/"]);
+    });
+
+    it("refuses an arrival node the registry does not offer before anything runs", async () => {
+      const { input, seen } = fixture();
+      const result = await runAutomationStudioDetachedSubflow({ ...input, arrival: { ...arrival, node: "test.nowhere" } });
+      expect(result).toMatchObject({ code: "subflow.execution_arrival_unavailable", entryPrepared: false, receipt: { status: "not_run" } });
+      expect(seen).toEqual([]);
+    });
   });
 });
