@@ -78,11 +78,18 @@ describe("a subflow trial's checklist", () => {
     parts: [{ partId: "p2", sourceId: "instruction", text: "record each volume's title" }]
   });
 
-  it("holds the brief's parts alone, as the task spec its plan names holds them, with the whole task's notAsked", async () => {
+  it("holds the brief's parts, as the task spec its plan names holds them, with the whole task's notAsked and the other parts as out of its scope", async () => {
     expect(await AutomationStudioProjectBuildTaskChecklist.subflow({ records: records(), ref: REF }, scope("plan.1"))).toEqual({
       parts: [{ id: "p2", words: "record each volume's title", goalFacts: ["Every volume's title is recorded"], lastingActs: ["create_new"] }],
-      notAsked: ["An earlier reading"]
+      notAsked: ["An earlier reading"],
+      outOfScope: [{ id: "p1", words: "open the archive index" }]
     });
+  });
+
+  // t594 (A8 launch 7): a first subflow also did the next subflow's lasting press, and its judges, told only its own parts, said yes.
+  it("names no part as out of scope when the brief covers every part of the spec", async () => {
+    const whole: AutomationStudioSubflowScope = { ...scope("plan.2"), parts: [{ partId: "p1", sourceId: "instruction", text: "open the archive index" }, { partId: "p2", sourceId: "instruction", text: "record each volume's title" }] };
+    expect(await AutomationStudioProjectBuildTaskChecklist.subflow({ records: records(), ref: REF }, whole)).not.toHaveProperty("outOfScope");
   });
 
   it("falls back to the brief's own parts and words where the record holds no such spec", async () => {

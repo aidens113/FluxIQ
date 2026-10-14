@@ -94,6 +94,16 @@
 // handle was never shown and which call shows it (`./feedback.ts`). Any other
 // failure stays refused while the page is unchanged, looks or not.
 //
+// **A submission refused on a handle not yet shown is lifted the same way
+// (t594).** A submission's refusal names its handles inside its issues, not in
+// its reason: on A8 launch 7 (crossborder, brief-1, 0029-0033) a builder's
+// script was refused `web.handle.unknown` for a list's extraction handle with
+// no `resultReason`, the detect that minted the handle ran next on the same
+// page, and the identical script, which would now have passed, was refused as
+// a repeat. A refusal whose issue codes name an unknown handle
+// (`<domain>.handle.unknown`, with or without a `:<where>` suffix) counts as
+// one on a handle not yet shown (`UNSHOWN_ISSUE`).
+//
 // **A refusal that named a missing precondition is lifted once a call meets
 // it, whatever the page digest says (t587).** Launch 6 of A8
 // (`run-mv85vjqo-4c022aec`, brief-2, steps 31-43): a prepared builder's search
@@ -204,6 +214,9 @@ import { automationStudioLlmEvidenceSearchStreak, type AutomationStudioLlmEviden
  * since gone (`handle_no_longer_on_page`, `stale_handle`) is not one of them.
  */
 const HANDLE_UNSHOWN = /^(?:handle[_-]?not[_-]?in[_-]?packet|handle[_-]?not[_-]?issued|unknown[_-]?handle)$/iu;
+
+/** An issue code a submission's refusal names a handle no view showed by (header, t594): `web.handle.unknown`, `web.handle.unknown:target`; never `unknown_field`. */
+const UNSHOWN_ISSUE = /^[a-z0-9_-]+\.handle\.unknown(?::.*)?$/iu;
 
 /** A precondition a refusal can name, and the call that meets it (header, t587). */
 type AutomationStudioLlmEvidencePrecondition = {
@@ -409,7 +422,7 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
         outcomes.delete(at);
         return;
       }
-      const handleUnshown = failed && HANDLE_UNSHOWN.test(call.resultReason ?? "");
+      const handleUnshown = failed && (HANDLE_UNSHOWN.test(call.resultReason ?? "") || (call.refused && namesUnshownHandle(call.answer)));
       if (handleUnshown) unshown.set(at, state);
       else unshown.delete(at);
       const preconditions = namedPreconditions(call);
@@ -492,6 +505,16 @@ function refusalIssues(answer: string | undefined): JsonValue[] | undefined {
   if (!isObject(value)) return undefined;
   const issues = isObject(value.diagnostics) && Array.isArray(value.diagnostics.issues) ? value.diagnostics.issues : value.issues;
   return Array.isArray(issues) && issues.length > 0 ? issues as JsonValue[] : undefined;
+}
+
+/** Whether a refusal's issue codes -- its `issueCodes`, or its issues' own codes -- name a handle no view showed (header, t594). */
+function namesUnshownHandle(answer: string | undefined): boolean {
+  const value = parsed(answer);
+  if (!isObject(value)) return false;
+  const listed = Array.isArray(value.issueCodes) ? value.issueCodes : [];
+  const issues = refusalIssues(answer) ?? [];
+  const codes = [...listed, ...issues.map((issue) => isObject(issue) ? issue.code : undefined)];
+  return codes.some((code) => typeof code === "string" && UNSHOWN_ISSUE.test(code));
 }
 
 /** An answer read as JSON; nothing for an answer in plain words. */

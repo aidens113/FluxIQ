@@ -13,6 +13,13 @@ export type AutomationStudioSubflowScopePart = {
   partId: string;
   sourceId: string;
   text: string;
+  /**
+   * The lasting acts the task spec files under this part, when the dispatcher
+   * carries them: a submission of a brief whose parts ask for one and that
+   * declares none is refused (`./scoped-submission.ts`, t594). Absent, nothing
+   * is asked of it.
+   */
+  lastingActs?: readonly string[];
 };
 
 /**

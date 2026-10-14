@@ -56,6 +56,23 @@
 // the acts its parts ask (`project-agents/supervisor/brief-input.ts`, the
 // permission gate holds a submission to them), so an act an accepted revision
 // did is one its parts ask for, and a subflow without any cannot do them.
+//
+// **A brief whose parts ask a lasting act declares one from the first (t594).**
+// On A8 launch 7 (crossborder) a dependent builder's part asked a lasting act
+// and every one of its submissions pressed with `consequences: none`, so no
+// act was recorded, reset or reported. When the scope's parts carry the
+// lasting acts the task spec files under them (`lastingActs`), a submission
+// that declares none is refused `subflow.lasting_act_missing`. Which class a
+// press declares is the builder's judgement, as the permission gate leaves it
+// (`project-agents/contracts/asked-acts.ts`), so only that some act is
+// declared is asked.
+//
+// **An output hands on a value, never a step's route (t594).** On the same run
+// a first builder bound its interface output to a click's success port
+// (`$step.<label>.success`): a routing signal, which says only that the step
+// worked. The next subflow then navigated to it as an address. An output bound
+// to a port whose role is success or failure is refused
+// `subflow.output_not_a_value` (`./route-outputs.ts`).
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { acceptAutomationStudioFlowBootstrapResult, parseAutomationStudioFlowScript } from "../authoring/index.ts";
 import {
@@ -69,6 +86,7 @@ import {
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS, type AutomationStudioFlowBootstrapInterface, type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSubflow } from "../plan/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowScopeIdentity, AutomationStudioSubflowTrialResult } from "./contracts.ts";
 import { automationStudioSubflowCallableProbe } from "./callable-target.ts";
+import { automationStudioSubflowRouteOutputs } from "./route-outputs.ts";
 import { automationStudioSubflowPartKey, automationStudioSubflowRekeyedParts } from "./part-keys.ts";
 import type { AutomationStudioSubflowScopeIssue } from "./scope-issue.ts";
 import { automationStudioSubflowProposalDigest } from "./subflow-digest.ts";
@@ -208,8 +226,15 @@ export class AutomationStudioSubflowScopedSubmissionController {
       issues.push({ code: "subflow.success_check_changed", path: `plan.subflows.${plan.subflows.indexOf(target)}.metadata`, message: `This subflow's success check is the structure plan's and cannot change here: ${JSON.stringify(this.scope.successCheck)}. Leave out \`done when:\` for it, or write exactly that.` });
     }
     const proposedCheck = this.scope.successCheck === undefined && Array.isArray(written) && written.length ? structuredClone(written) as NonNullable<AutomationStudioSubflowScope["successCheck"]> : undefined;
+    if (contract) issues.push(...automationStudioSubflowRouteOutputs(target, this.input.submission));
     // The subflow and the parts it calls, never a callable target's probe call (header).
-    if (this.lasting.length && !lastingOf([target, ...plan.subflows.filter((subflow) => parts.has(subflow.key))]).length) {
+    const declared = lastingOf([target, ...plan.subflows.filter((subflow) => parts.has(subflow.key))]);
+    const asked = [...new Set(this.scope.parts.flatMap((part) => part.lastingActs ?? []))];
+    if (asked.length && !declared.length) {
+      issues.push({ code: "subflow.lasting_act_missing", path: "flow", message: `The parts of "${this.scope.subflowKey}" ask for a lasting act (${asked.join(", ")}), and no step of this submission declares one, so it cannot do what its parts ask. `
+        + "The step that does the act changes the site, and it stays: declare it on that step, `consequences: <act>`, and change nothing else. "
+        + "If the page already shows that act done where this subflow starts, a subflow before it did it: end the brief blocked and say so, so the plan can change." });
+    } else if (this.lasting.length && !declared.length) {
       issues.push({ code: "subflow.lasting_act_dropped", path: "flow", message: `An earlier revision of "${this.scope.subflowKey}" that Core accepted did a lasting act (${this.lasting.join(", ")}), and this one does none, so it cannot do what its parts ask. `
         + "Keep the step that does the act, its consequences declared, and change only what the last refusal or trial feedback names. If the act cannot be done here, end the brief honestly instead." });
     }

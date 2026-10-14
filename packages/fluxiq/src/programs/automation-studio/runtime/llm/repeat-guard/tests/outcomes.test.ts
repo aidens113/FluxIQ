@@ -117,6 +117,31 @@ describe("what a call did on the page it found", () => {
     }
   });
 
+  // A8 launch 7 (t594): a builder's script was refused `web.handle.unknown` with no reason, the detect that minted the handle ran next
+  // on the same page, and the identical script, which would now have passed, was refused as a repeat.
+  it("lifts a submission refused on an unknown handle, named only in its issues, once a later call shows something new; never one refused on a handle's field", () => {
+    const refusal = (codes: string[]) => JSON.stringify({ ok: false, revision: 0, diagnostics: { code: "flow_bootstrap.completion_refused", issues: codes.map((code) => ({ code, path: "flow.line.9" })) }, issueCodes: codes, next: "Look at the page." });
+    const submission = call({ callId: "submit-1", toolId: "core.submit_subflow", input: { flow: "part read_titles: read the titles" }, effect: "observe", proposes: true, resultCode: "flow_bootstrap.completion_refused", resultReason: undefined, answer: refusal(["web.handle.unknown", "web.handle.unknown:extractList"]) });
+    const detect = call({ callId: "detect", toolId: "web.detect_repeating_structure", input: { target: "t21" }, effect: "observe", proposes: false, effectApplied: false, refused: false, resultCode: "web.structure.detected", resultReason: undefined, answer: "{\"extraction\":\"extraction.1\"}" });
+    const guard = automationStudioLlmEvidenceRepeatGuard();
+    guard.recorded(submission);
+    expect(guard.blocks("core.submit_subflow", submission.input)).toMatchObject({ callId: "submit-1", outcome: "failed", handleUnshown: true });
+    guard.recorded(detect);
+    expect(guard.blocks("core.submit_subflow", submission.input)).toBeUndefined();
+    // Named only inside its issues, with no issueCodes list, it is the same.
+    const inIssues = automationStudioLlmEvidenceRepeatGuard();
+    inIssues.recorded({ ...submission, answer: JSON.stringify({ ok: false, diagnostics: { issues: [{ code: "web.handle.unknown:target" }] } }) });
+    expect(inIssues.blocks("core.submit_subflow", submission.input)?.handleUnshown).toBe(true);
+    // A handle that was shown and names an unknown field, or any other refusal, stays refused after the look.
+    for (const codes of [["web.handle.unknown_field", "web.handle.unknown_field:extractList.fields.0"], ["web.handle.unidentifiable", "web.handle.unidentifiable:target"]]) {
+      const other = automationStudioLlmEvidenceRepeatGuard();
+      other.recorded({ ...submission, answer: refusal(codes) });
+      expect(other.blocks("core.submit_subflow", submission.input)?.handleUnshown, codes[0]).toBeUndefined();
+      other.recorded(detect);
+      expect(other.blocks("core.submit_subflow", submission.input)?.callId, codes[0]).toBe("submit-1");
+    }
+  });
+
   it("keeps refusing a handle failure when the later look was refused, answered as before, or on another page, and any other failure after a look", () => {
     const read = call({ callId: "read", input: { extractList: { handle: "extraction.4" } }, resultCode: "web.action.rejected.target_unobserved", resultReason: "handle_not_in_packet" });
     const look = call({ callId: "look", toolId: "look", input: {}, effect: "observe", proposes: false, effectApplied: false, refused: false, resultCode: "web.inspect.succeeded", resultReason: undefined, answer: "page" });

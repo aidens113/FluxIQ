@@ -489,12 +489,18 @@ export type AutomationStudioBuildTestInput = { name: string; test: JsonValue; st
  * its own label, saying the instructions are the only authority and how the
  * checklist is used, because the judge's standing instruction does not name
  * it; then each part the instructions ask for, in their own words, and what
- * they do not ask for.
+ * they do not ask for; for a subflow trial, the parts other subflows do.
  */
 export type AutomationStudioResultTaskChecklist = {
   supplementary: string;
   asked: Array<{ part: string; words: string; goalFacts: string[]; lastingActs: string[] }>;
   notAsked: string[];
+  /**
+   * A subflow trial's only (t594): the other parts of the same instructions,
+   * each another subflow's work, which a step of this trial must not do.
+   * Absent for a whole trial and wherever no other part exists.
+   */
+  outOfScope?: Array<{ part: string; words: string }>;
 };
 
 /** A build's test, as its judge reads it: every proposed step in order, and the build's own reading of the instruction's acts. */

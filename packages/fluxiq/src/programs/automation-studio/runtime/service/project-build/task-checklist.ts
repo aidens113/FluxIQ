@@ -9,8 +9,11 @@ import type { AutomationStudioBuildTestTaskChecklist } from "../../result-verifi
 //   part and everything `notAsked` names.
 // - **A subflow trial** is judged against the brief's parts alone, each as the
 //   task spec the brief's plan names holds it (its goal facts and lasting acts
-//   too), with the whole task's `notAsked`, which binds every subflow. Where the
-//   record has no such spec, the brief's own parts and words.
+//   too), with the whole task's `notAsked`, which binds every subflow, and the
+//   spec's other parts as `outOfScope`: each another subflow's work, which a
+//   step of this trial must not do (t594; A8 launch 7, where a first subflow
+//   also did the next one's press and both judges said yes). Where the record
+//   has no such spec, the brief's own parts and words, and no other part.
 //
 // **How the whole trials find the record.** They are made in the service
 // before the project build's record exists (`./whole-trials.ts`), so the
@@ -37,17 +40,20 @@ export const AutomationStudioProjectBuildTaskChecklist = Object.freeze({
     return spec ? { parts: spec.parts.map(checked), notAsked: [...spec.notAsked] } : undefined;
   },
 
-  /** The checklist a subflow trial is judged against: the brief's parts, under the task spec its plan names, and the whole task's `notAsked`. */
+  /** The checklist a subflow trial is judged against: the brief's parts, under the task spec its plan names, the whole task's `notAsked`, and the spec's other parts as out of this subflow's scope. */
   async subflow(source: Source, scope: AutomationStudioSubflowScope): Promise<AutomationStudioBuildTestTaskChecklist> {
     const record = (await source.records.read(source.ref))?.record;
     const plan = record?.plans.find((entry) => entry.plan.digest === scope.planDigest)?.plan;
     const spec: AutomationStudioProjectTaskSpec | undefined = plan ? record?.taskSpecs.find((entry) => entry.taskSpec.digest === plan.taskSpecDigest)?.taskSpec : undefined;
+    const own = new Set(scope.parts.map((part) => part.partId));
+    const others = (spec?.parts ?? []).filter((part) => !own.has(part.id)).map((part) => ({ id: part.id, words: part.quote.text }));
     return {
       parts: scope.parts.map((part) => {
         const known = spec?.parts.find((candidate) => candidate.id === part.partId);
         return known ? checked(known) : { id: part.partId, words: part.text, goalFacts: [], lastingActs: [] };
       }),
-      notAsked: [...(spec?.notAsked ?? [])]
+      notAsked: [...(spec?.notAsked ?? [])],
+      ...(others.length ? { outOfScope: others } : {})
     };
   }
 });
