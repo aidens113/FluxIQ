@@ -30,7 +30,7 @@ describe("recording restart durability", () => {
     } else service = new AutomationStudioService({ dataDir: root, seedFixture: false });
     services.push(service);
     const project = await service.createProject({ name: "Unit recording" });
-    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.unit", startedAt: 1, initialState: { timestamp: 1, namespaces: {} } });
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.unit", startedAt: 1, initialState: { timestamp: 1, namespaces: {} } });
     const pool = (service as unknown as { runtimeProjectDatabasePool: AutomationStudioProjectDatabasePool }).runtimeProjectDatabasePool;
     return { root, service, project, recording, pool };
   }

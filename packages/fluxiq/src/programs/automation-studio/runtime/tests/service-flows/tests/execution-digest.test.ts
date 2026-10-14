@@ -124,6 +124,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
       const project = await service.createProject({ name: "Published dependency digest" });
 
       const leafParent = await service.createFlow({ projectId: project.id, flowId: "flow.digest.leaf-parent", name: "Leaf parent" });
+      await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: leafParent.flowId, instruction: "Run the Flow once to the end." });
       const leaf = await installPrimaryRouter(service, project.id, leafParent.flowId, {
         nodes: [
           { id: "start", definitionId: "builtin.control.start" },
@@ -134,6 +135,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
       const publishedLeaf = await service.publishFlow({ projectId: project.id, flowId: leaf.graph.flowId, version: "1.0.0" });
 
       const middleParent = await service.createFlow({ projectId: project.id, flowId: "flow.digest.middle-parent", name: "Middle parent" });
+      await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: middleParent.flowId, instruction: "Run the Flow once to the end." });
       const middle = await installPrimaryRouter(service, project.id, middleParent.flowId, {
         nodes: [
           { id: "start", definitionId: "builtin.control.start" },
@@ -144,6 +146,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
       const publishedMiddle = await service.publishFlow({ projectId: project.id, flowId: middle.graph.flowId, version: "1.0.0" });
 
       const root = await service.createFlow({ projectId: project.id, flowId: "flow.digest.root", name: "Root" });
+      await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: root.flowId, instruction: "Run the Flow once to the end." });
       await installPrimaryRouter(service, project.id, root.flowId, {
         nodes: [
           { id: "start", definitionId: "builtin.control.start" },
@@ -193,8 +196,10 @@ describe("AutomationStudioService canonical Flow persistence", () => {
       const globalProject = await service.createProject({ name: "External global publications" });
       const domainProject = await service.createProject({ name: "Domain caller", domainId: "orders" });
       const external = await service.createFlow({ projectId: globalProject.id, flowId: "flow.external-global", name: "External global" });
+      await service.saveFlowGenerationInstruction({ projectId: globalProject.id, flowId: external.flowId, instruction: "Run the Flow once to the end." });
       const publishedExternal = await service.publishFlow({ projectId: globalProject.id, flowId: external.flowId, version: "1.0.0" });
       const caller = await service.createFlow({ projectId: domainProject.id, flowId: "flow.domain-caller", name: "Domain caller" });
+      await service.saveFlowGenerationInstruction({ projectId: domainProject.id, flowId: caller.flowId, instruction: "Run the Flow once to the end." });
       await installPrimaryRouter(service, domainProject.id, caller.flowId, {
         nodes: [createCallFlowNode({ id: "call-external", target: { flowId: external.flowId, version: "1.0.0", scope: { kind: "global" } } })],
         edges: []
@@ -204,6 +209,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
       await expect(service.getLlmExecutionDependencyDigest(domainProject.id, caller.flowId)).resolves.toBe(authorizedDigest);
 
       const unrelated = await service.createFlow({ projectId: globalProject.id, flowId: "flow.unrelated-global", name: "Unrelated global" });
+      await service.saveFlowGenerationInstruction({ projectId: globalProject.id, flowId: unrelated.flowId, instruction: "Run the Flow once to the end." });
       await service.publishFlow({ projectId: globalProject.id, flowId: unrelated.flowId, version: "1.0.0" });
       await expect(service.getLlmExecutionDependencyDigest(domainProject.id, caller.flowId)).resolves.toBe(authorizedDigest);
       const unrelatedRecord = (await service.listFlowPublications(globalProject.id, unrelated.flowId))[0];
@@ -244,24 +250,29 @@ describe("AutomationStudioService canonical Flow persistence", () => {
       const globalProject = await service.createProject({ name: "Global publication universe" });
       const domainProject = await service.createProject({ name: "Domain publication caller", domainId: "billing" });
       const missingCaller = await service.createFlow({ projectId: domainProject.id, flowId: "flow.missing-publication-caller", name: "Missing caller" });
+      await service.saveFlowGenerationInstruction({ projectId: domainProject.id, flowId: missingCaller.flowId, instruction: "Run the Flow once to the end." });
       await installPrimaryRouter(service, domainProject.id, missingCaller.flowId, {
         nodes: [createCallFlowNode({ id: "call-late", target: { flowId: "flow.global-late", version: "1.0.0", scope: { kind: "global" } } })],
         edges: []
       });
       const missingDigest = await service.getLlmExecutionDependencyDigest(domainProject.id, missingCaller.flowId);
       const late = await service.createFlow({ projectId: globalProject.id, flowId: "flow.global-late", name: "Late global" });
+      await service.saveFlowGenerationInstruction({ projectId: globalProject.id, flowId: late.flowId, instruction: "Run the Flow once to the end." });
       await service.publishFlow({ projectId: globalProject.id, flowId: late.flowId, version: "1.0.0" });
       expect(await service.getLlmExecutionDependencyDigest(domainProject.id, missingCaller.flowId)).not.toBe(missingDigest);
 
       const flowA = await service.createFlow({ projectId: globalProject.id, flowId: "flow.cycle-a", name: "Cycle A" });
+      await service.saveFlowGenerationInstruction({ projectId: globalProject.id, flowId: flowA.flowId, instruction: "Run the Flow once to the end." });
       await service.publishFlow({ projectId: globalProject.id, flowId: flowA.flowId, version: "1.0.0" });
       const flowBParent = await service.createFlow({ projectId: globalProject.id, flowId: "flow.cycle-b-parent", name: "Cycle B parent" });
+      await service.saveFlowGenerationInstruction({ projectId: globalProject.id, flowId: flowBParent.flowId, instruction: "Run the Flow once to the end." });
       const flowB = await installPrimaryRouter(service, globalProject.id, flowBParent.flowId, {
         nodes: [createCallFlowNode({ id: "call-a", target: { flowId: flowA.flowId, version: "1.0.0", scope: { kind: "global" } } })],
         edges: []
       });
       await service.publishFlow({ projectId: globalProject.id, flowId: flowB.graph.flowId, version: "1.0.0" });
       const cycleCaller = await service.createFlow({ projectId: domainProject.id, flowId: "flow.cycle-caller", name: "Cycle caller" });
+      await service.saveFlowGenerationInstruction({ projectId: domainProject.id, flowId: cycleCaller.flowId, instruction: "Run the Flow once to the end." });
       await installPrimaryRouter(service, domainProject.id, cycleCaller.flowId, {
         nodes: [createCallFlowNode({ id: "call-a", target: { flowId: flowA.flowId, version: "1.0.0", scope: { kind: "global" } } })],
         edges: []

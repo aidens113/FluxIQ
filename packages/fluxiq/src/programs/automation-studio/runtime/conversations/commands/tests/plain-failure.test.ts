@@ -21,7 +21,8 @@ const BLANK_TARGET: AutomationStudioConversationCommandCallResult = {
   payload: { diagnostic: { code: "flow_bootstrap.blank_target_required", stage: "pre_provider_validation" } }
 };
 
-function run(id: string, handlers: Record<string, (payload: Record<string, unknown>) => AutomationStudioConversationCommandCallResult>, args: Record<string, unknown>) {
+/** `personSaid` is the person's message that started the command, read through the host as a chat turn's words are. */
+function run(id: string, handlers: Record<string, (payload: Record<string, unknown>) => AutomationStudioConversationCommandCallResult>, args: Record<string, unknown>, personSaid?: string) {
   const calls: Array<{ endpoint: string; payload: Record<string, unknown> }> = [];
   const port = {
     async call(endpoint: string, payload: Record<string, unknown>): Promise<AutomationStudioConversationCommandCallResult> {
@@ -29,18 +30,27 @@ function run(id: string, handlers: Record<string, (payload: Record<string, unkno
       return handlers[endpoint]?.(payload) ?? { ok: false, error: `No fake for ${endpoint}.` };
     }
   };
-  const context = { port, host: {}, projectId: "project.plain", conversationId: "conversation.plain", sessionId: "session.person", keyLocked: false, paired: false } as unknown as AutomationStudioConversationCommandContext;
+  const person = personSaid === undefined ? {} : { host: { personWords: async () => ({ text: personSaid, saysWhatToDo: true }) }, answerTurnId: "turn.answer" };
+  const context = { port, host: {}, projectId: "project.plain", conversationId: "conversation.plain", sessionId: "session.person", keyLocked: false, paired: false, ...person } as unknown as AutomationStudioConversationCommandContext;
   return { calls, outcome: AUTOMATION_STUDIO_CONVERSATION_COMMANDS.get(id)!.run(context, args) };
 }
 
 describe("a failed build's stored answer", () => {
   it("says the run-mut6b2re-d0e475d1 refusal in plain words, with how far it got", async () => {
-    const outcome = await run("flow.improve", { "save-flow-instruction": () => ({ ok: true }), "generate-flow-bootstrap-adaptation": () => BLANK_TARGET }, { flowId: "flow.kettle", change: "also pick Spain" }).outcome;
+    // Started by the person's own message, which is what is saved (t349); since t519 an improvement needs it.
+    const outcome = await run("flow.improve", { "save-flow-instruction": () => ({ ok: true }), "generate-flow-bootstrap-adaptation": () => BLANK_TARGET }, { flowId: "flow.kettle", change: "also pick Spain" }, "It should also pick Spain.").outcome;
     expect(outcome.status).toBe("failed");
     expect(outcome.summary).not.toMatch(RAW);
     expect(outcome.error).not.toMatch(RAW);
-    // Run with no person turn behind it, so the words saved are the argument's, and it says so (t349).
-    expect(outcome.summary).toBe('The build failed: FluxIQ could not tell which part of this Flow to build on, as it builds on a Flow with one main part. Before that I saved what should change as an instruction on the Flow, as the request worded it, since no message of yours came with it.');
+    expect(outcome.summary).toBe("The build failed: FluxIQ could not tell which part of this Flow to build on, as it builds on a Flow with one main part. Before that I saved what should change as an instruction on the Flow.");
+  });
+
+  it("refuses an improvement with no person turn behind it before saving anything", async () => {
+    const { calls, outcome } = run("flow.improve", { "save-flow-instruction": () => ({ ok: true }), "generate-flow-bootstrap-adaptation": () => BLANK_TARGET }, { flowId: "flow.kettle", change: "also pick Spain" });
+    const refused = await outcome;
+    expect(refused.status).toBe("failed");
+    expect(refused.summary).not.toMatch(RAW);
+    expect(calls.map((call) => call.endpoint)).not.toContain("save-flow-instruction");
   });
 
   it("says a code with no words of its own by its stage, and one with neither as something that went wrong", () => {
@@ -66,9 +76,9 @@ describe("a failed build's stored answer", () => {
 
 describe("a failed run's stored answer", () => {
   it("names no run id and no code", async () => {
-    const outcome = await run("run.execute", { "run-runtime-session": () => ({ ok: true, payload: { runtimeSession: { runId: "run-muw60j7c-bb7c9a62", status: "failed" }, terminalReason: "core.result.does_not_answer_request" } }) }, { flowId: "flow.kettle" }).outcome;
+    const outcome = await run("run.execute", { "run-runtime-session": () => ({ ok: true, payload: { runtimeSession: { runId: "run-muw60j7c-bb7c9a62", status: "failed" }, terminalReason: "core.result.does_not_answer_request", durableBehaviorChanged: false } }) }, { flowId: "flow.kettle" }).outcome;
     expect(outcome.status).toBe("failed");
-    expect(outcome.summary).toBe("The run failed.");
+    expect(outcome.summary).toBe("The run failed. This run did not keep a change for future runs.");
     expect(outcome.runId).toBe("run-muw60j7c-bb7c9a62");
   });
 });

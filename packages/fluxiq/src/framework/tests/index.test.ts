@@ -120,7 +120,7 @@ describe("FluxIQ", () => {
       const project = await first.programs.automationStudio.createProject({ name: "Importer-owned project" });
       await first.programs.automationStudio.createRecording({
         projectId: project.id,
-        recordingId: "recording.shared",
+        recordingId: "recording.shared", description: "Shows the steps the automation repeats.",
         startedAt: 1,
         initialState: { timestamp: 1, namespaces: {} }
       });

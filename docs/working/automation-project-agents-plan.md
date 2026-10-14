@@ -357,7 +357,7 @@ Partitioned by file. `service.ts` has one owner at a time (A5 only).
   the newest pending ask), needed above capacity 1. A11: the trial start hook
   takes no lease or context, needed above capacity 1. A12: renamed helper parts
   keep their step ids, so two briefs could derive the same dataset id; check at
-  assembly. A13: `llm/build-purse/purse.ts` is 476 lines (advisory 400).
+  assembly. A13: `llm/build-purse/purse.ts` is 476 lines (advisory 400). A14: the dispatcher returns `survey` briefs blocked; implement a survey run (findings, no proposal) or drop the kind.
 
 Interleaving with the Codex queue: entry-case units 2-3 and held-topology
 units 1-2 touch `service/candidate-trial/`, `service/runtime-adaptation/` and
@@ -512,6 +512,25 @@ Briefs t533-t539 (units A1, A2, A3, A3b, A4a, A4b, A6) were delivered and moved 
   refused with `extend`; existing candidate tests unchanged; `node scripts/structure-audit.mjs` shows `service.ts`
   lines unchanged; the four narrow checks.
 
+### Brief: sweep-fixtures-{a,b,c}
+- Repository: FluxIQ Core, its own paired worktree under `fxwork/` (the dispatch prompt names it and the group).
+- Task: fix forward one group of the 2026-10-13 sweep's failing test files, listed in
+  [the sweep record](./automation-project-agents-plan/sweep-2026-10-13.md) (Group A, B or C). Almost every
+  failure is a fixture written before t519 (`18ee3f60`): a Flow with no active written instructions, or a
+  recording started with no description. Fix them the way t543 did (`automation-project-agents-plan/reports/t543-wiring-tests.md`):
+  save the Flow's instructions through the product's own call (`saveFlowGenerationInstruction(...)` or the
+  owning equivalent) and describe each recording, per file; do not change a shared helper that other tests rely
+  on to be refused. Never relax a product gate. Failures that are not this cause ("Unknown Automation Studio
+  Flow" after a refused create is usually the same cause): fix if it is a stale fixture, otherwise stop on that
+  test and report it with the evidence.
+- Required reads: the sweep record; the t543 report; each failing file and its helpers.
+- Owns: the files in your group and test-only helpers under the `tests/` directories they use, if no other
+  group's file uses that helper; `docs/working/automation-project-agents-plan/reports/<your label>.md`.
+- Must not touch: any file outside a `tests/` directory; another group's files.
+- Definition of done: every file in your group passes (`pnpm.cmd exec vitest run <the group's files>` from
+  `packages/fluxiq`, contracts built first); `pnpm.cmd --filter fluxiq check`; `node scripts/structure-audit.mjs`;
+  `git diff --check`. Report per file what it lacked and any test you stopped on.
+
 ## Work Ledger
 
 ### 2026-10-13 — Plan written from three discovery reports
@@ -601,6 +620,38 @@ Briefs t533-t539 (units A1, A2, A3, A3b, A4a, A4b, A6) were delivered and moved 
 - Validation: `node scripts/structure-audit.mjs` -> "structure-audit: passed (348 warning(s), 1156 baselined)." (618 lines after compaction)
 - Outcome: Accepted
 - Follow-up: none
+
+### 2026-10-13 — Stale wiring fixtures fixed (t543); full Core sweep
+- Agent: worker t543-wiring-tests; supervisor verified and integrated; supervisor ran the sweep
+- Changed: five test files (instructions saved, recordings described); new sweep record
+- Why: 42 tests had failed on dev since t519 (`18ee3f60`); a full sweep then measured the rest
+- Validation: the four t543 paths -> 50 passed (was 42 failed); check exit 0; audit passed; merged `1a7d553c`. Sweep on `1a7d553c`: `pnpm.cmd exec vitest run --reporter=dot` -> 66 files / 305 tests failed of 11167, 203 of them the two t519 refusals ([sweep record](./automation-project-agents-plan/sweep-2026-10-13.md))
+- Outcome: Accepted (t543); sweep follow-up dispatched as three groups
+- Follow-up: sweep-fixtures A, B, C
+
+### 2026-10-13 — A5b dispatcher (t542)
+- Agent: worker t542-a5b-dispatcher; supervisor fixed the return contract and integrated
+- Changed: `project-agents/dispatch/` (dependencies, scope, lease scope per host port, run-brief, reset loop, endings, receipts); `contracts/builder-return.ts` accepts a done reset without a proposal and refuses a reset that proposes one
+- Why: unit A5b
+- Validation: `vitest run src/programs/automation-studio/runtime/project-agents` -> 117 passed (reset test unskipped); after merging dev, project-agents + subflow-candidate -> 150 passed; check exit 0; audit exit 0; Core finish `pnpm check` passed, merged `1f747263`
+- Outcome: Accepted. Choices recorded: allowance call cap defaults to the brief's `maxIterations` and counts trial judge calls; a brief after a blocked predecessor is not started; the allowance is carved only once the lease is granted
+- Follow-up: A14 survey briefs come back blocked without running; implement or drop the kind before the supervisor plans one
+
+### 2026-10-13 — A5a project supervisor (t541)
+- Agent: worker t541-a5a-supervisor (one supervisor follow-up); supervisor verified and integrated
+- Changed: `project-agents/supervisor/` (loop, read-task, plan, dispatch, assembly, whole trial, completion, guidance, ports); `flow-bootstrap/candidate/submission.ts` `submitComposed`; `llm/harness-options/bootstrap-completion.ts` exports one check sequence for model-written and composed Flows
+- Why: unit A5a; the follow-up removed a copied completion-check sequence (a later check would have skipped assembled Flows)
+- Validation: vitest `project-agents`, `flow-bootstrap/candidate`, `subflow-candidate`, `llm/harness-options` -> 65 files, 522 passed (supervisor ran it on the final tree and again after merging dev); check exit 0; audit exit 0; diff check clean; Core finish `pnpm check` passed, merged `856b8638`
+- Outcome: Accepted. Known: `supervisor/` holds 20 files (advisory; a kind subfolder breaks the depth limit); the whole trial's own acts are not attributed in the project ledger, so the supervisor demands a reset after any whole trial that left acts (A5c to record them under the supervisor)
+- Follow-up: A5c
+
+### 2026-10-13 — Sweep findings beyond stale fixtures (decisions)
+- Agent: supervisor, from sweep groups A and B
+- Changed: nothing yet; decisions sent to the group workers
+- Why: group A found a product defect: `storage/project/flow-resource-repository.ts` `listInstructionSummariesPage` joins scope clauses with "or" and admits `flow`-scoped instructions of any Flow for a subflow, so another Flow's instruction changes a build's execution digest (supervisor read the query and confirmed). Group B found 19 tests of recording-proposal approval, which t519 retired on purpose
+- Validation: not validated (decisions); the fixes carry their own
+- Outcome: Decided: fix the repository to match the in-memory store's semantics with a regression and a parity test (t544); delete tests whose subject is behaviour after approval, keep one refusal test per retired entry point, list every deletion (t545)
+- Follow-up: verify t544 and t545
 
 ## Open Questions
 

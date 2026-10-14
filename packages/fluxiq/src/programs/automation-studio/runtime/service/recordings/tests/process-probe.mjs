@@ -24,7 +24,7 @@ try {
   if (phase === "write") {
     const project = await service.createProject({ name: "Unit recording durability", domainId: "unit-recording" });
     projectId = project.id;
-    const base = await service.createRecording({ projectId, recordingId: "recording.unit", startedAt: 1, initialState: { timestamp: 1, namespaces: {} } });
+    const base = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId, recordingId: "recording.unit", startedAt: 1, initialState: { timestamp: 1, namespaces: {} } });
     if (mode === "legacy") {
       // Reproduce the historical split via actual owners, never hand-edit database/runtime files.
       const full = finalizeRecordingSession(entries.reduce((recording, entry) => appendRecordingEntry(recording, entry), base), 99);

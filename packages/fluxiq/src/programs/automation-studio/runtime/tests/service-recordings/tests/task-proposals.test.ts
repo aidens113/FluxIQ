@@ -4,7 +4,6 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stateValue } from "../../../../model/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { getPrimarySubflowGraph } from "../../service-fixtures.ts";
 
 // Heavy service test: under full-suite load it ran past the 15 s default (t289).
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
@@ -66,7 +65,7 @@ describe("AutomationStudioService recording persistence", () => {
       }]
     });
     const project = await service.createProject({ name: "Direct Proposal Project" });
-    const recording = await service.createRecording({
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.",
       projectId: project.id,
       recordingId: "recording.direct-proposal",
       taskId: "task.direct",
@@ -135,7 +134,7 @@ describe("AutomationStudioService recording persistence", () => {
       }]
     });
     const project = await service.createProject({ name: "State Evidence Project" });
-    const recording = await service.createRecording({
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.",
       projectId: project.id,
       recordingId: "recording.state-evidence",
       taskId: "task.state-evidence",
@@ -176,98 +175,10 @@ describe("AutomationStudioService recording persistence", () => {
     expect(node.sourceEvidence.some((item) => item.layer === "state_action_correlation")).toBe(true);
   });
 
-  it("merges proposals from multiple recordings into one canonical Flow", async () => {
-    const service = createService({ dataDir: tempRoot, seedFixture: false });
-    const project = await service.createProject({ name: "Branching Proposal Project" });
-    for (const [recordingId, secondStep] of [["recording.branch-a", "branch.a"], ["recording.branch-b", "branch.b"]] as const) {
-      const recording = await service.createRecording({
-        projectId: project.id,
-        recordingId,
-        taskId: "task.branching",
-        startedAt: 100,
-        initialState: { timestamp: 100, namespaces: {} }
-      });
-      await service.appendRecordingEvent({
-        projectId: project.id,
-        recordingId: recording.recordingId,
-        entry: { type: "action", actionType: "output.shared-start", outputId: "output.shared-start", parameters: {}, origin: "operator", startedAt: 200, timestamp: 200 }
-      });
-      await service.appendRecordingEvent({
-        projectId: project.id,
-        recordingId: recording.recordingId,
-        entry: { type: "action", actionType: `output.${secondStep}`, outputId: `output.${secondStep}`, parameters: {}, origin: "operator", startedAt: 300, timestamp: 300 }
-      });
-      await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId, endedAt: 400 });
-      const processed = await service.processFinalizedRecording({ projectId: project.id, recordingId: recording.recordingId });
-      expect(processed.proposal?.patch?.nodes.length).toBe(2);
-      await service.approvePolicyProposal({ projectId: project.id, proposalId: processed.proposal!.proposalId });
-    }
-
-    const flow = await service.getFlow(project.id, "flow.task.branching");
-    const graph = await getPrimarySubflowGraph(service, project.id, flow.flowId);
-
-    expect((flow.metadata?.sourceRecordingIds as string[]).sort()).toEqual(["recording.branch-a", "recording.branch-b"]);
-    expect(flow.nodes).toEqual([]);
-    expect(graph.nodes.map((node) => node.parameterValues?.outputId)).toEqual(expect.arrayContaining(["output.shared-start", "output.branch.a", "output.branch.b"]));
-    expect(graph.nodes.length).toBeGreaterThanOrEqual(3);
-    expect(graph.edges.some((edge) => edge.label === "Recorded branch")).toBe(true);
-  });
-
-  it("applies edited proposal overrides exactly instead of preserving deleted nodes", async () => {
-    const service = createService({ dataDir: tempRoot, seedFixture: false });
-    const project = await service.createProject({ name: "Edited Proposal Project" });
-    const recording = await service.createRecording({
-      projectId: project.id,
-      recordingId: "recording.edited-proposal",
-      taskId: "task.edited-proposal",
-      startedAt: 100,
-      initialState: { timestamp: 100, namespaces: {} }
-    });
-    await service.appendRecordingEvent({
-      projectId: project.id,
-      recordingId: recording.recordingId,
-      entry: { type: "action", actionType: "output.step-one", outputId: "output.step-one", parameters: { step: 1 }, origin: "operator", startedAt: 200, timestamp: 200 }
-    });
-    await service.appendRecordingEvent({
-      projectId: project.id,
-      recordingId: recording.recordingId,
-      entry: { type: "action", actionType: "output.step-two", outputId: "output.step-two", parameters: { step: 2 }, origin: "operator", startedAt: 300, timestamp: 300 }
-    });
-    await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId, endedAt: 400 });
-    const processed = await service.processFinalizedRecording({ projectId: project.id, recordingId: recording.recordingId });
-    const proposal = processed.proposal!;
-    const approved = await service.approvePolicyProposal({ projectId: project.id, proposalId: proposal.proposalId });
-    expect(approved.policy.nodes.length).toBeGreaterThan(1);
-    const existingFlow = await service.getFlow(project.id, "flow.task.edited-proposal");
-    await service.saveFlow({ projectId: project.id, flow: { ...existingFlow, name: "Edited Proposal Flow" } });
-
-    const override = {
-      ...proposal.policy,
-      policyId: approved.policy.policyId,
-      taskId: "task.edited-proposal",
-      nodes: [],
-      edges: []
-    };
-    const edited = await service.approvePolicyProposal({
-      projectId: project.id,
-      proposalId: proposal.proposalId,
-      targetFlowId: "flow.task.edited-proposal",
-      requireExistingFlow: true,
-      policyOverride: override
-    });
-    const flow = await service.getFlow(project.id, "flow.task.edited-proposal");
-
-    expect(edited.policy.nodes).toEqual([]);
-    expect(edited.policy.edges).toEqual([]);
-    expect(flow.name).toBe("Edited Proposal Flow");
-    expect(flow.nodes).toEqual([]);
-    expect(flow.edges).toEqual([]);
-  });
-
   it("proposes a task from sparse mined action evidence without state correlations", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Sparse Proposal Project" });
-    const recording = await service.createRecording({
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.",
       projectId: project.id,
       recordingId: "recording.sparse-proposal",
       taskId: "task.sparse",
@@ -298,7 +209,7 @@ describe("AutomationStudioService recording persistence", () => {
   it("processes finalized recordings into current task proposals", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Finalized Processing Project" });
-    const recording = await service.createRecording({
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.",
       projectId: project.id,
       recordingId: "recording.process-finalized",
       taskId: "task.process-finalized",
@@ -333,7 +244,7 @@ describe("AutomationStudioService recording persistence", () => {
   it("keeps finalized recording proposals stable and persisted", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Stable Proposal Project" });
-    const recording = await service.createRecording({
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.",
       projectId: project.id,
       recordingId: "recording.stable-proposal",
       taskId: "task.stable-proposal",

@@ -27,7 +27,7 @@ describe("recording summaries by domain", () => {
     const desktop = await service.createProject({ name: "Desktop", domainId: "desktop-automation" });
     const unscoped = await service.createProject({ name: "Unscoped" });
     for (const [project, recordingId] of [[web, "recording.web"], [desktop, "recording.desktop"], [unscoped, "recording.unscoped"]] as const) {
-      await service.createRecording({ projectId: project.id, recordingId, startedAt: 1, initialState: { timestamp: 1, namespaces: {} } });
+      await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId, startedAt: 1, initialState: { timestamp: 1, namespaces: {} } });
     }
 
     const ids = async (input: Parameters<AutomationStudioService["listRecordingSummaries"]>[0]) => (await service.listRecordingSummaries(input)).items.map((item) => [item.id, item.projectId]);

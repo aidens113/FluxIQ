@@ -36,7 +36,7 @@ describe("AutomationStudioService recording persistence", () => {
     const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: { "click-mapper": () => ({ outputId: "click", parameters: { target: "submit" }, confidence: 0.9 }) } });
     const service = createService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
     const project = await service.createProject({ name: "Workspace summary", domainId: "example" });
-    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.summary", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.summary", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
     await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" } } });
     await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId });
     const generated = await service.generateRecordingProposal({ projectId: project.id, recordingId: recording.recordingId, mode: "direct" });

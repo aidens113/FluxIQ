@@ -21,6 +21,8 @@ async function fixture(operation: (fluxiq: FluxIQ, owner: { projectId: string; r
   try {
     const project = await fluxiq.programs.automationStudio.createProject({ name: "Synthetic gateway context", domainId: "synthetic.domain" });
     const flow = { schemaVersion: "0.1" as const, flowId: "flow.1", ownerKind: "routine" as const, ownerId: "routine.1", name: "Synthetic queued Flow", nodes: [], edges: [], createdAt: 1, updatedAt: 1 };
+    await fluxiq.programs.automationStudio.createFlow({ projectId: project.id, flowId: flow.flowId, name: flow.name });
+    await fluxiq.programs.automationStudio.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Send the queued command once." });
     const session = await fluxiq.programs.automationStudio.startRuntimeSession({ projectId: project.id, runId: "run.1", flow });
     await operation(fluxiq, { projectId: project.id, runId: session.runId, flowId: session.flowId, invocationId: "invoke.1", attemptId: "node.attempt.1", effectOrdinal: 0 });
   } finally {

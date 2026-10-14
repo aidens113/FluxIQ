@@ -29,12 +29,12 @@ describe("an Automation Studio service with no storage root", () => {
     const listed = await service.listProjects();
     expect(listed.projects.map((item) => item.id)).toContain(project.id);
     // A recording outside any project lives in the in-memory repository.
-    const recording = await service.createRecording({ recordingId: "recording.rootless", startedAt: 1, initialState: { timestamp: 1, namespaces: {} } });
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.", recordingId: "recording.rootless", startedAt: 1, initialState: { timestamp: 1, namespaces: {} } });
     await service.appendRecordingEvent({ recordingId: recording.recordingId, entry: { type: "observation", observationType: "input.state", payload: { value: 1 }, sourceId: "input.state" } as never });
     expect((await service.finalizeRecording({ recordingId: recording.recordingId })).recordingId).toBe("recording.rootless");
     // A project's recording is kept in memory too: the service writes no project
     // files without a root, rather than writing them into the working directory.
-    const projectRecording = await service.createRecording({ projectId: project.id, recordingId: "recording.project", startedAt: 1, initialState: { timestamp: 1, namespaces: {} } });
+    const projectRecording = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.project", startedAt: 1, initialState: { timestamp: 1, namespaces: {} } });
     await service.appendRecordingEvent({ projectId: project.id, recordingId: projectRecording.recordingId, entry: { type: "observation", observationType: "input.state", payload: { value: 2 }, sourceId: "input.state" } as never });
     await service.finalizeRecording({ projectId: project.id, recordingId: projectRecording.recordingId });
     expect(await readdir(cwd)).toEqual([]);
