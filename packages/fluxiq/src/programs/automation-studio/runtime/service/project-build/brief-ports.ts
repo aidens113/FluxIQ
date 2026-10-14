@@ -1,4 +1,5 @@
 import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import { AutomationStudioNodeRegistry } from "../../../nodes/index.ts";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { observeAutomationStudioEvidenceLoop } from "../../activity/index.ts";
@@ -68,6 +69,32 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // entry. Either way its opening look says in plain words whether the entry
 // was prepared, and why not when it was not.
 //
+// **A prepared entry is the builder's arrival** (t585, A8 launch 6). The
+// domain counts a build arrived only once it has gone to the start location,
+// and the opening look re-arms that, so on `run-mv85vjqo-4c022aec` every typed
+// search a builder made on its prepared entry was refused
+// `not_at_start_location`. The steps that reached the entry began at the start
+// location, so where the opening tool declares an arrival, Core's opening look
+// of a prepared builder carries `arrived: true` (the web domain's
+// `node-run/arrival.ts` reads it on that opening id alone). An unprepared
+// builder's opening is the arrival itself, as before, and a builder that never
+// arrives is still refused.
+//
+// **Its entry's start hook is the ledger's too** (t585, t578 follow-up). When
+// preparing the entry ran the deployment's start hook, the hook put back every
+// act of this build then on the site, as a trial's start does; each ledger
+// marks those acts undone first (`startReset`), and the opening names them
+// under `absorbedByStartReset`, before the acts the preparation run landed are
+// recorded.
+//
+// **A reset brief is told its task from its first decision** (t585, social
+// debug root cause 2). It used to be sent the person's build instruction and
+// see the acts only once a completion was refused, so both resets of
+// `run-mv85xmgq-8a6a6f43` set out to build. Its harness now carries one Core
+// instruction in place of the person's: undo these acts, each named with how
+// it was done and the page it was made on (kept from the read around it, by
+// act, for the whole build), and do nothing else.
+//
 // **The brief's permitted acts narrow only what a person is asked about**
 // (t580). `permittedActs` filters the build's permitted consequences, so a
 // brief whose parts ask for no lasting act puts every press that declares
@@ -123,7 +150,9 @@ export function automationStudioProjectBuildBriefPorts(input: {
     maxConsecutiveUnusableDecisions: draft.maxConsecutiveUnusableDecisions, maxIterations, callerEnding: () => undefined,
     stalled: (progress) => flowBootstrapEvidenceUnusableDecisionFailure(progress, input.accounting(), automationStudioCandidateStallCode(progress.issueCodes))
   });
-  const environment = async (request: AutomationStudioProjectBriefPortRequest, siteReset: AutomationStudioSiteResetCalls) => {
+  /** Where each act of the build was made, by act id: the page its read around it found (header). */
+  const pages = new Map<string, string>();
+  const environment = async (request: AutomationStudioProjectBriefPortRequest, siteReset: AutomationStudioSiteResetCalls, task?: () => AutomationStudioFlowInstruction[]) => {
     const registry = draft.submission.registry ?? new AutomationStudioNodeRegistry();
     const nodeDescriptions = automationStudioLlmNodeDescriptions({ registry, resolution });
     const harness = automationStudioHarnessOptionRegistry({ binding, nodeIds: registry.list(resolution).map((definition) => definition.id), startLocation, nodeDescriptions }).evidenceLoopBinding({ projectId, flowId }, { ...resolution, allowSideEffectsWithoutPolicy: true });
@@ -136,7 +165,7 @@ export function automationStudioProjectBuildBriefPorts(input: {
     const denied = binding.deniedEvidenceKeys;
     const runHarness = async (call: AutomationStudioLlmHarnessInput) => {
       const shown = routing.shown(call.evidenceLoop!.evidence, denied);
-      return await project.runHarness({ ...call, evidenceLoop: { ...call.evidenceLoop!, evidence: shown.evidence.map((item) => ({ ...item })) }, flowBootstrap: { ...call.flowBootstrap!, routing: shown.context, describedNodeIds: nodeDescriptions.ids() } });
+      return await project.runHarness({ ...call, ...(task ? { instructions: task() } : {}), evidenceLoop: {...call.evidenceLoop!, evidence: shown.evidence.map((item) => ({ ...item })) }, flowBootstrap: { ...call.flowBootstrap!, routing: shown.context, describedNodeIds: nodeDescriptions.ids() } });
     };
     const decide = (completionSchema: JsonObject | undefined) => input.decisions.decide({ runHarness, wrapDecision: routing.observing, completionSchema });
     const { purse: _purse, signal: _signal, budget: _budget, maxIterations: _maxIterations, tools: _tools, executeTool: _executeTool, nodeOf: _nodeOf, ...limits } = draft.loop;
@@ -170,22 +199,28 @@ export function automationStudioProjectBuildBriefPorts(input: {
       };
       // Before the first look (header): its predecessors' passing proposals, run once to reach its entry, from the start page.
       const entry = await automationStudioProjectBuildPrepareEntry({ scope: request.scope, proposals, environment: project.trialEnvironment, signal: request.signal, ...(arrival ? { arrival } : {}) });
+      // The hook it ran put back every act of the build then on the site: each ledger marks them undone before the run's own acts go in (header).
+      const absorbed = entry.kind !== "start" && entry.startReset ? await buildReset.beforeTrial(request.signal, undefined, { startReset: true }) : undefined;
       if (entry.kind !== "start" && entry.acts.length) {
         request.ledger.trialRan(entry.acts, entry.runId);
         input.acts.trialRan(entry.acts, entry.runId);
       }
       startIsBuilds = !project.ledger.snapshot().acts.some((act) => act.inPlace);
-      const placed = placing(built.loop, calls, reader, { capture: true, signal: request.signal });
+      const placed = placing(built.loop, placedAt(calls, pages), reader, { capture: true, signal: request.signal });
       const tools = placed.tools.map((tool) => automationStudioSiteResetUndoesTool(entry.kind === "prepared" ? lookingInPlace(tool) : tool));
-      const loop = told({ ...placed, tools }, { entry: entryNote(request.scope.subflowKey, entry), permittedActs: request.brief.permittedActs });
+      // Arrived only where there is a start to arrive at: the opening tool declares an arrival (header).
+      const arrived = entry.kind === "prepared" && built.loop.tools.some((tool) => tool.initialObservation?.arrival);
+      const absorbedActs = absorbed?.kind === "admit" ? absorbed.absorbedByStartReset?.map((act) => act.act) : undefined;
+      const loop = told({ ...placed, tools }, { entry: entryNote(request.scope.subflowKey, entry, absorbedActs), permittedActs: request.brief.permittedActs, arrived });
       return { loop, submission: { ...submission, permissionFor: built.permissions.planStep }, trial, reset, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...observed, decide: built.decide(observed.completionSchema) }), ended: built.ended };
     },
     reset: async (request) => {
       const calls = automationStudioProjectBuildResetCalls(project.ledger, request.ledger);
-      const built = await environment(request, calls);
+      // Its task, in place of the person's instruction, with the acts as the ledger holds them at each decision (header).
+      const built = await environment(request, calls, () => [resetTask({ projectId, flowId }, project.ledger, pages)]);
       const check = new AutomationStudioSiteResetStartCheck({ binding, projectId, flowId, tools: built.loop.tools, executeTool: (call) => built.loop.executeTool(call), liveCheck: { settleMs: AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS } });
       // Its start is not the build's: a reset never captures one, and decides on each act's own page.
-      const loop = observeAutomationStudioEvidenceLoop({ ...placing(built.loop, calls, check, { capture: false, signal: request.signal }), tools: built.loop.tools.map(automationStudioSiteResetUndoesTool), decide: built.decide(RESET_COMPLETION) });
+      const loop = observeAutomationStudioEvidenceLoop({ ...placing(built.loop, placedAt(calls, pages), check, { capture: false, signal: request.signal }), tools: built.loop.tools.map(automationStudioSiteResetUndoesTool), decide: built.decide(RESET_COMPLETION) });
       return { loop, remainingActs: () => remainingActs(project.ledger, check, request.signal), ended: built.ended };
     }
   };
@@ -208,6 +243,38 @@ function placing<L extends { executeTool: Execute }>(loop: L, ledger: PlacedLedg
   return { ...loop, executeTool };
 }
 
+/** `ledger`, with the page each act was made on kept in `pages` as the read around it places the act (header). */
+function placedAt<L extends PlacedLedger>(ledger: L, pages: Map<string, string>): L {
+  return { ...ledger, placed: (act, place) => {
+    pages.set(act, place.location);
+    ledger.placed(act, place);
+  } };
+}
+
+/** What a reset brief's model is told is its task (header), in place of the person's instruction; its wording names no site. */
+const RESET_TASK = [
+  "This brief is a reset, not a build: write no Flow and no subflow, and carry out no part of the person's task.",
+  "Your only task is to undo the lasting acts this build made, listed below, each through the site's own controls on the item it acted on, naming the act under `undoes` on the call that undoes it.",
+  "Each act says how it was done and, where it was read, the page it was made on: go there to find it.",
+  "Leave everything that was on the site before the build began, and do nothing else on the site.",
+  "Complete with a one-sentence summary once none of the listed acts is left."
+].join(" ");
+
+/** A reset brief's task as one Core instruction, listing every act of the build still in place now (header). */
+function resetTask(flow: { projectId: string; flowId: string }, ledger: AutomationStudioSiteResetProjectLedger, pages: ReadonlyMap<string, string>): AutomationStudioFlowInstruction {
+  const acts = ledger.snapshot().acts.filter((act) => act.inPlace).map((act) => {
+    const page = pages.get(act.act);
+    return `- ${act.act}: ${act.did}${act.call ? ` (by the build's call ${JSON.stringify(act.call)})` : ""}${page ? `, made on the page ${page}` : ", page not read"}`;
+  });
+  const now = Date.now();
+  return {
+    schemaVersion: "0.1", instructionId: "core.project_reset_task", title: "Reset brief from Core: undo this build's lasting acts",
+    body: [RESET_TASK, "", "Acts to undo:", ...(acts.length ? acts : ["(none left: complete now)"])].join("\n"),
+    scope: { kind: "flow", projectId: flow.projectId, flowId: flow.flowId }, priority: Number.MIN_SAFE_INTEGER, status: "active", requirement: "required", tags: ["generation"],
+    createdAt: now, updatedAt: now, metadata: { source: "core.project_reset" }
+  };
+}
+
 type Tool = AutomationStudioLlmEvidenceLoopInput["tools"][number];
 
 /** A tool whose opening is a look where the page stands, not the arrival at the build's start (header). */
@@ -215,32 +282,42 @@ function lookingInPlace(tool: Tool): Tool {
   return tool.initialObservation?.arrival ? { ...tool, initialObservation: { input: tool.initialObservation.input } } : tool;
 }
 
-/** What a dependent builder's opening look says about its entry; nothing for a subflow the build's start begins. */
-function entryNote(subflowKey: string, entry: AutomationStudioProjectBuildEntry): JsonObject | undefined {
+/**
+ * What a dependent builder's opening look says about its entry; nothing for a
+ * subflow the build's start begins. `absorbed` names the acts of this build
+ * the start hook put back before its predecessors ran (header).
+ */
+function entryNote(subflowKey: string, entry: AutomationStudioProjectBuildEntry, absorbed: readonly string[] | undefined): JsonObject | undefined {
   if (entry.kind === "start") return undefined;
   const names = entry.predecessors.map((key) => `"${key}"`).join(", ");
+  const putBack = absorbed?.length ? { absorbedByStartReset: [...absorbed] } : {};
   if (entry.kind === "prepared") {
-    return { prepared: true, note: `Before this first look, Core ran the passing proposals of the subflows before yours (${names}) once, in order, so the site is where your subflow "${subflowKey}" begins. Explore and build from here; what they did is already done, so do not do it again.` };
+    return { prepared: true, note: `Before this first look, Core ran the passing proposals of the subflows before yours (${names}) once, in order, so the site is where your subflow "${subflowKey}" begins. Explore and build from here; what they did is already done, so do not do it again.`, ...putBack };
   }
   const why = entry.missing?.length
     ? `${entry.missing.map((key) => `"${key}"`).join(", ")} has no proposal whose trial passed yet, so Core could not run it first`
     : entry.failed
       ? `Core ran them to reach your entry, but "${entry.failed}" did not run to its end (${entry.code})`
       : `Core could not run them to reach your entry (${entry.code})`;
-  return { prepared: false, code: entry.code, note: `Your subflow "${subflowKey}" begins where ${names} leave the site, but ${why}. This page is not your subflow's entry: what you see and do here may differ from what your subflow meets when it runs after them.` };
+  return { prepared: false, code: entry.code, note: `Your subflow "${subflowKey}" begins where ${names} leave the site, but ${why}. This page is not your subflow's entry: what you see and do here may differ from what your subflow meets when it runs after them.`, ...putBack };
 }
+
+/** The key Core's opening look of a builder on its prepared entry carries, which the web domain reads as its arrival (header). */
+const ARRIVED_KEY = "arrived";
 
 /**
  * `loop` with Core's own words beside two results (header): the opening's,
  * saying whether the entry was prepared, and a landed call's that declared a
  * lasting act its brief's parts do not ask for. The domain's evidence is kept
- * whole; a key is added beside it, never in its place.
+ * whole; a key is added beside it, never in its place. `arrived`: the opening
+ * call is sent marked as the builder's arrival.
  */
-function told<L extends { executeTool: Execute }>(loop: L, said: { entry: JsonObject | undefined; permittedActs: readonly string[] }): L {
+function told<L extends { executeTool: Execute }>(loop: L, said: { entry: JsonObject | undefined; permittedActs: readonly string[]; arrived: boolean }): L {
   const inner = loop.executeTool;
   const executeTool: Execute = async (call) => {
-    const ran = await inner(call);
-    if (said.entry && isOpeningCall(call.callId)) return beside(ran, "entry", said.entry);
+    const opening = isOpeningCall(call.callId);
+    const ran = await inner(said.arrived && opening ? { ...call, value: { ...call.value, [ARRIVED_KEY]: true } } : call);
+    if (said.entry && opening) return beside(ran, "entry", said.entry);
     const outside = landedOutside(call.value, ran, said.permittedActs);
     if (!outside.length) return ran;
     const asked = said.permittedActs.length ? `they ask only for ${said.permittedActs.join(", ")}` : "they ask for no lasting act";

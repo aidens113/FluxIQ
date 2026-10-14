@@ -14,7 +14,9 @@
 // were placed: a shop's "Add to cart", a control in no item, adds a line to the
 // cart drawer on the product page. The builder's press is read around in place,
 // so the line it created is the act's own; the reset removes that line, and the
-// line the cart held before the build is kept.
+// line the cart held before the build is kept. The reset agent's first
+// request already names that act as its task, how it was done and the page it
+// was made on, in place of the person's build instruction (t585).
 //
 // In both, the builder makes its act after its own subflow trial passed: a
 // builder's trial now undoes the build's acts first (t578), so an act made
@@ -188,6 +190,12 @@ describe("a project build whose builder leaves a lasting act", () => {
     expect(run.inputs.every((value) => !Object.prototype.hasOwnProperty.call(value, "undoes"))).toBe(true);
     expect(run.cart).toEqual(["dish-soap"]);
     expect(run.cartWhenWholeJudged).toEqual([["dish-soap"], ["dish-soap"]]);
+    // From its first decision the reset was told its task, not the person's: the act, how it was done, and its page.
+    const task = run.resetFirstInstructions();
+    expect(task).toContain("This brief is a reset, not a build");
+    expect(task).toContain("act-1: ");
+    expect(task).toContain(`made on the page ${PRODUCT_PAGE}`);
+    expect(task).not.toContain(TASK);
     const stored = await run.record();
     expect(stored.lastingActs).toMatchObject([{ act: "act-1", owner: { role: "builder" }, consequences: ["create_new"], undoable: true }]);
   });
@@ -271,6 +279,8 @@ async function cartBuild() {
   const cartWhenWholeJudged: string[][] = [];
   const supervisorSaw: Record<number, readonly Entry[]> = {};
   let supervisorDecisions = 0;
+  /** The instructions of the reset agent's first request. */
+  let resetFirst: string | undefined;
   const provider = mockProvider(async (request) => {
     if (request.metadata?.source === "instructionAuthority") return decision({ kind: "tool_call", callId: "read", toolId: "none", input: {} });
     if (request.taskKind === "loop_verification") {
@@ -288,6 +298,7 @@ async function cartBuild() {
     const properties = (loop.completionSchema.properties ?? {}) as JsonObject;
     const ranNode = lastOf(evidence, "core.run_node");
     if (properties.summary !== undefined && properties.subflowKey === undefined) {
+      resetFirst ??= JSON.stringify(request.context.instructions);
       if (!ranNode) return decision({ kind: "tool_call", callId: "undo.add", toolId: "core.run_node", input: { node: REMOVE, parameters: { line: "herb-tea" }, consequences: ["delete"], undoes: "act-1" } });
       return decision({ kind: "complete", result: { summary: "The line this build added is out of the cart again." } });
     }
@@ -309,7 +320,7 @@ async function cartBuild() {
   });
   const { project, flow } = await blankFixture(service, "active", "example");
   return {
-    cart, cartWhenWholeJudged, supervisorSaw, acted: domain.acted, inputs: domain.inputs, record: () => storedRecord(dataDir),
+    cart, cartWhenWholeJudged, supervisorSaw, acted: domain.acted, inputs: domain.inputs, record: () => storedRecord(dataDir), resetFirstInstructions: () => resetFirst ?? "",
     build: () => service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project" })
   };
 }

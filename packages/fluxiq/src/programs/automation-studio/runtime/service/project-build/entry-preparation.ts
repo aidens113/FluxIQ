@@ -25,6 +25,12 @@ import type { AutomationStudioProjectBuildTrialEnvironment } from "./whole-trial
 // `metadata.entryPreparation`, and every lasting act it lands is handed back
 // so the brief's ledger holds it for a reset, as a trial's are.
 //
+// When the start was the deployment's start hook, the answer says so
+// (`startReset`): the hook put back every act of this build then on the site,
+// so the builder's port marks them undone in their ledgers before it records
+// the acts this run lands (`./brief-ports.ts`, t585). The hook runs even when
+// a predecessor's run then fails, so an unprepared answer says it too.
+//
 // Where it cannot run -- a predecessor has no passing proposal yet, the start
 // failed, or a predecessor's run did not reach its end -- the answer says so
 // and why, and the builder is told plainly that its entry is not prepared
@@ -35,8 +41,8 @@ export type AutomationStudioProjectBuildEntry =
   /** The subflow has no predecessors: the build's start is its entry. */
   | { kind: "start" }
   /** Every predecessor ran to its end, in order. */
-  | { kind: "prepared"; predecessors: string[]; runId: string; acts: AutomationStudioCandidateTrialAct[] }
-  | { kind: "unprepared"; predecessors: string[]; code: string; missing?: string[]; failed?: string; runId?: string; acts: AutomationStudioCandidateTrialAct[] };
+  | { kind: "prepared"; predecessors: string[]; runId: string; acts: AutomationStudioCandidateTrialAct[]; startReset?: true }
+  | { kind: "unprepared"; predecessors: string[]; code: string; missing?: string[]; failed?: string; runId?: string; acts: AutomationStudioCandidateTrialAct[]; startReset?: true };
 
 export async function automationStudioProjectBuildPrepareEntry(input: {
   scope: AutomationStudioSubflowScope;
@@ -57,7 +63,7 @@ export async function automationStudioProjectBuildPrepareEntry(input: {
   const predecessors = [...scope.predecessors];
   if (!predecessors.length) return { kind: "start" };
   signal.throwIfAborted();
-  const unprepared = (code: string, extra: { missing?: string[]; failed?: string; runId?: string; acts?: AutomationStudioCandidateTrialAct[] } = {}): AutomationStudioProjectBuildEntry => ({ kind: "unprepared", predecessors, code, acts: [], ...extra });
+  const unprepared = (code: string, extra: { missing?: string[]; failed?: string; runId?: string; acts?: AutomationStudioCandidateTrialAct[]; startReset?: true } = {}): AutomationStudioProjectBuildEntry => ({ kind: "unprepared", predecessors, code, acts: [], ...extra });
   const passing = input.proposals.predecessors(scope);
   const missing = predecessors.filter((key) => !passing.some((proposal) => proposal.scope.subflowKey === key));
   if (missing.length) return unprepared("project.entry_predecessor_missing", { missing });
@@ -71,6 +77,8 @@ export async function automationStudioProjectBuildPrepareEntry(input: {
     { ...environment, judge: async () => { throw new Error("A builder's entry is never judged."); } }
   );
   if (start.status === "failed") return unprepared(start.code);
+  // The deployment's start hook ran and put the site back: the builder's ledgers are told so (header).
+  const startReset = start.status === "reset" ? { startReset: true as const } : {};
 
   const runId = input.newRunId?.() ?? `entry-preparation.${randomUUID()}`;
   const marker = { buildId: scope.buildId, briefId: scope.briefId, subflowKey: scope.subflowKey, predecessors: passing.map(ref) };
@@ -103,7 +111,7 @@ export async function automationStudioProjectBuildPrepareEntry(input: {
   } catch (error) {
     await environment.writeSession({ ...opened, status: signal.aborted ? "cancelled" : "failed", startedAt, finishedAt: Date.now() });
     if (signal.aborted) throw error;
-    return unprepared("project.entry_run_failed", { runId });
+    return unprepared("project.entry_run_failed", { runId, ...startReset });
   } finally {
     await environment.processDatasets(runId);
   }
@@ -113,10 +121,10 @@ export async function automationStudioProjectBuildPrepareEntry(input: {
   const frames = automationStudioCandidateFrameEvidence(executed.trace?.attempts ?? [], executed.graph, executed.candidateGraphs);
   // Every lasting act that landed, for the brief's ledger: a reset undoes them as it undoes a trial's.
   const acts = automationStudioCandidateTrialLandedActs(executed.trace, frames.graph);
-  if (executed.receipt.status === "succeeded") return { kind: "prepared", predecessors, runId, acts };
+  if (executed.receipt.status === "succeeded") return { kind: "prepared", predecessors, runId, acts, ...startReset };
   // The run's target is the last predecessor, so a target that did not end is that predecessor's failure.
   const failed = executed.failedPredecessor ?? target.scope.subflowKey;
-  return unprepared(executed.code ?? `candidate.trial_${executed.receipt.status}`, { failed, runId, acts });
+  return unprepared(executed.code ?? `candidate.trial_${executed.receipt.status}`, { failed, runId, acts, ...startReset });
 }
 
 const ref = (proposal: Readonly<AutomationStudioSubflowProposal>) => ({ subflowKey: proposal.scope.subflowKey, revision: proposal.revision, digest: proposal.digest });
