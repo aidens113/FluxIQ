@@ -398,7 +398,7 @@ function quoteIdentifier(value: string): string { return `"${value.replaceAll('"
 function openDatabase(filePath: string, readOnly = false): Promise<sqlite3.Database> {
   return new Promise((resolve, reject) => {
     const mode = readOnly ? sqlite3.OPEN_READONLY : sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE | sqlite3.OPEN_FULLMUTEX;
-    const db = new sqlite3.Database(filePath, mode, (error) => error ? reject(error) : resolve(db));
+    const db = new sqlite3.Database(path.toNamespacedPath(filePath), mode, (error) => error ? reject(error) : resolve(db)); // Windows' extended form: SQLite refuses a nested root's long path otherwise (t568).
   });
 }
 function run(db: sqlite3.Database, sql: string, params: unknown[] = []): Promise<{ changes: number }> { return new Promise((resolve, reject) => db.run(sql, params, function (error) { error ? reject(error) : resolve({ changes: this.changes }); })); }
