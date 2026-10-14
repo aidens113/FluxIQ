@@ -609,6 +609,13 @@ Earlier entries are in [the ledger archive](./automation-project-agents-plan/arc
 - Outcome: Accepted. A8 round one relaunches after t574 (judge evidence in subflow trials, from the audit `a8-everything-store-judge-audit.md` in the paired document's reports)
 - Follow-up: t571 found the SQL node table keys a node by id alone, so two Subflow graphs' `start` nodes overwrite each other, and the on_error errorCode mapping disagrees with the accepted-state validator (`reports/t571-a21-instruction-scope-write-error.md`); t572: an id the chat model writes still reaches the client in the response's `decision` (not the thread); t570: crossborder's task spec called Add to cart `modify_existing`, so a press classed `create_new` would go to the person's gate
 
+### 2026-10-14 — Acting briefs may make any act the task asks for (t575)
+- Agent: supervisor (found while reviewing t570's notes; implemented and verified)
+- Changed: `project-agents/contracts/asked-acts.ts` (new): a brief whose parts act permits every lasting act the task spec asks for, one whose parts only read permits none; the brief contract's `brief_act_not_asked` check and the supervisor's brief input both use it
+- Why: a builder could act only if its own reading of a press's class agreed with the supervisor's label in the task spec (t570: crossborder filed Add to cart as `modify_existing`); a mismatch reaches the person's gate, the Lab's person refuses an ask away from the task's point, and a refused act ends the builder; a single-loop build never asks
+- Validation: `npx tsc --noEmit -p tsconfig.json` -> exit 0; vitest over `project-agents` and `service/project-build` -> 31 files, 202 passed (the new t575 case ran: 1 passed); `pnpm structure:check` -> passed (353 warnings, 1156 baselined); Core finish `pnpm check` -> passed; merged `8a0ac284`
+- Outcome: Accepted
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
