@@ -190,6 +190,8 @@ export class AutomationStudioSubflowScopedSubmissionController {
    * The probe's revision as this brief's proposal: the target keyed as the
    * scope's, carrying its interface (outputs bound as the part wrote them) and
    * success check, then its helper parts re-keyed under it (`./part-keys.ts`).
+   * The target's step and derived dataset ids follow the scope's key too
+   * where the probe wrote it under another (a router-run entry as `main`).
    */
   private proposalOf(candidate: AutomationStudioFlowCandidate): AutomationStudioSubflowProposal {
     const known = this.proposals.get(candidate.digest);
@@ -204,7 +206,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
     const successCheck = target.metadata?.["fluxiq.successCheck"] ?? this.scope.successCheck;
     if (successCheck) target.metadata = { ...target.metadata, "fluxiq.successCheck": structuredClone(successCheck) };
     const parts = plan.subflows.filter((subflow) => subflow !== written && !(contract && subflow === entry));
-    const subflows = automationStudioSubflowRekeyedParts(target, parts);
+    const subflows = automationStudioSubflowRekeyedParts(target, parts, { targetWrittenKey: written.key });
     const submission = this.input.submission;
     const digest = automationStudioSubflowProposalDigest({ scope: this.identity, projectId: submission.projectId, flowId: submission.flowId, baseDependencyDigest: submission.baseDependencyDigest, instructionText: this.instructionText, subflows });
     const proposal: AutomationStudioSubflowProposal = { scope: { ...this.identity }, revision: candidate.revision, digest, subflows, summary: candidate.summary, changedPaths: [...candidate.changedPaths] };

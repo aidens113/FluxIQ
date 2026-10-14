@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmBuildPurseRefusal } from "./purse.ts";
+import type { AutomationStudioLlmBuildPurseRefusal } from "./types.ts";
 
 /**
  * A call the build's purse would not pay for, so it was never sent. Thrown by
