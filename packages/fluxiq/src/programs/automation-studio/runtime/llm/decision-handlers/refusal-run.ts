@@ -14,7 +14,8 @@
 //     searching guard (`./searching.ts`).
 // Anything else decided between two of these breaks the run. At the second
 // the model is told that one more ends this exploration (in candidate mode,
-// that it ends the build with nothing tested); at the third the
+// that it ends the build with nothing tested; in a loop that drafts nothing, that
+// it ends the work with nothing tested or judged); at the third the
 // round stalls the way a run of refused repeats does (`./refused-repeat.ts`):
 // with `unusableDecisions` configured, under the issue code the person's
 // ending reads its reason from (`../../flow-bootstrap/unfinished-build/not-done.ts`).
@@ -66,12 +67,29 @@ export function automationStudioLlmEvidenceRefusedOfAKind(
     refusal,
     inARow,
     maxInARow: AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_SAME_REFUSALS_IN_A_ROW,
-    instruction: input.discoveryOnly === true ? candidateWarning(inARow, reason) : `Your last ${inARow} decisions were refused, or changed nothing, for the same reason (${reason}). One more decision refused for it ends this exploration, and the Flow is then tested and judged as it stands. `
-      + "Do not send another decision of that kind: do what next beside the refusal says instead, run what the Flow still lacks, or complete if the Flow already does what the person asked."
+    instruction: input.discoveryOnly === true ? candidateWarning(inARow, reason) : input.draft === false ? undraftedWarning(inARow, reason) : draftWarning(inARow, reason)
   };
   context.accountEvidence(value);
   evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_REFUSAL_RUN_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_REFUSAL_RUN_TOOL_ID, value });
   return undefined;
+}
+
+/** The warning in draft mode: the round ends and the Flow so far is tested and judged. */
+function draftWarning(inARow: number, reason: string): string {
+  return `Your last ${inARow} decisions were refused, or changed nothing, for the same reason (${reason}). One more decision refused for it ends this exploration, and the Flow is then tested and judged as it stands. `
+    + "Do not send another decision of that kind: do what next beside the refusal says instead, run what the Flow still lacks, or complete if the Flow already does what the person asked.";
+}
+
+/**
+ * The warning in a loop that drafts nothing and authors no candidate
+ * (`draft: false`): a project's supervisor, a reset. Nothing is tested or
+ * judged when its round ends; the loop just ends there (A8 launch 6,
+ * `run-mv85vjqo-4c022aec`, step 107: the supervisor was told the Flow would be
+ * tested and judged, and the build threw instead; t587).
+ */
+function undraftedWarning(inARow: number, reason: string): string {
+  return `Your last ${inARow} decisions were refused, or changed nothing, for the same reason (${reason}). One more decision refused for it ends this work where it stands, with nothing tested or judged. `
+    + "Do not send another decision of that kind: do what next beside the refusal says instead, send the move the refusal names as missing first, or complete with what you can honestly say is done and what is not.";
 }
 
 /**
