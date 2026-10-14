@@ -238,6 +238,9 @@ export class AutomationStudioHostResourceScheduler {
     if (typeof grant?.resourceKey !== "string" || !grant.resourceKey || !Number.isSafeInteger(grant.epoch)) {
       throw new AutomationStudioHostResourcePortContractError("The host resource port granted a lease without a resource key and a whole-number epoch.");
     }
+    if (grant.sessionId !== undefined && (typeof grant.sessionId !== "string" || !grant.sessionId)) {
+      throw new AutomationStudioHostResourcePortContractError("The host resource port granted a lease with a session id that is not a non-empty string.");
+    }
     if (this.held.has(grant.resourceKey)) {
       throw new AutomationStudioHostResourcePortContractError(`The host resource port granted ${grant.resourceKey}, which is already leased.`);
     }
@@ -246,6 +249,6 @@ export class AutomationStudioHostResourceScheduler {
       throw new AutomationStudioHostResourcePortContractError(`The host resource port reissued ${grant.resourceKey} at epoch ${grant.epoch}, not above ${last}.`);
     }
     this.lastEpoch.set(grant.resourceKey, grant.epoch);
-    return Object.freeze({ resourceKey: grant.resourceKey, epoch: grant.epoch, holder });
+    return Object.freeze({ resourceKey: grant.resourceKey, epoch: grant.epoch, ...(grant.sessionId !== undefined ? { sessionId: grant.sessionId } : {}), holder });
   }
 }

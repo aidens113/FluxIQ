@@ -8,3 +8,4 @@ export * from "./attribution/index.ts";
 export * from "./contracts/index.ts";
 export * from "./record/index.ts";
 export * from "./host-resources/index.ts";
+export * from "./dispatch/index.ts";

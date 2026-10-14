@@ -89,12 +89,35 @@ export type ClientGatewaySnapshot = {
   metadata?: JsonObject;
 };
 
+/**
+ * The host lease a command is issued under (automation-project-agents-plan,
+ * `Host resources and concurrency`). Core's gateway stamps it from the
+ * scheduler's scope; a caller never writes it. `resourceKey` is opaque to Core
+ * and names the domain's resource (for the web extension, its automation tab);
+ * `epoch` rises every time the resource is granted again, so a client refuses a
+ * command whose epoch is lower than the highest it has seen for that key.
+ */
+export type ClientGatewayHostLease = {
+  resourceKey: string;
+  epoch: number;
+  holder: { role: string; briefId: string };
+};
+
+/** Failure codes for a command refused because of its host lease; category `blocked_by_capability_or_policy`, effect `unacted`. */
+export const CLIENT_GATEWAY_HOST_LEASE_REFUSAL_CODES = Object.freeze({
+  stale: "host_lease.stale",
+  holderMismatch: "host_lease.holder_mismatch",
+  missing: "host_lease.missing"
+} as const);
+
 export type ClientGatewayActionCommand = {
   actionType: string;
   parameters?: JsonObject;
   target?: JsonObject;
   timeoutMs?: number;
   metadata?: JsonObject;
+  /** Absent when no host lease is in force: the command runs as it always has. */
+  lease?: ClientGatewayHostLease;
 };
 
 /**

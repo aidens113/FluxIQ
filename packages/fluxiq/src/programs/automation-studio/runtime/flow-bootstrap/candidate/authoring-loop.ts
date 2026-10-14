@@ -1,6 +1,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/index.ts";
+import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetLedger, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT } from "../plan/index.ts";
 import type { AutomationStudioCandidateTrialPort, AutomationStudioFlowCandidate } from "./contracts.ts";
@@ -9,9 +10,6 @@ import { automationStudioCandidateSubmissionRefusal } from "./submission-refusal
 import { automationStudioCandidateStallRetest } from "./stall-retest.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, AutomationStudioFlowCandidateTrialGate } from "./trial-gate.ts";
 import { automationStudioCandidateTrialView } from "./trial-view.ts";
-
-/** The loop's opening call, which takes the target to the build's start (`../../llm/evidence-loop.ts`). */
-const OPENING_CALL = "initial.";
 
 /** The code a completion is refused under when it does not name the latest accepted submission, or there is none. */
 const LATEST_REQUIRED = "candidate.latest_submission_required";
@@ -146,7 +144,7 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
     completionSchema: { type: "object", properties: { revision: { type: "integer" }, digest: { type: "string" } }, required: ["revision", "digest"], additionalProperties: false },
     executeTool: async (call) => {
       // The start is read once, right after the opening call, or before the first later call when there was none (`../site-reset/start-check.ts`).
-      const opening = call.callId.startsWith(OPENING_CALL);
+      const opening = isOpeningCall(call.callId);
       if (startCheck && !opening) await startCheck.capture(call.signal ?? signal);
       // A trial leaves the target where the model has not looked: its answer carries the page it left (`./trial-view.ts`, t477).
       if (call.toolId === testId) return automationStudioCandidateTrialView({ answer: await gate.test(call.value, call.signal), tools: input.loop.tools, executeTool: (look) => input.loop.executeTool(look), callId: call.callId, signal: call.signal ?? signal });

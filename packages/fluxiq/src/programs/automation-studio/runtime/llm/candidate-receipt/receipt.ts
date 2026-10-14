@@ -11,10 +11,10 @@ import type { AutomationStudioLlmEvidenceEntry } from "../context-window.ts";
  * submission whose receipt is malformed is never walked past: nothing is
  * invented, and an older receipt is not the current one.
  */
-export function automationStudioLlmEvidenceLatestCandidateReceipt(evidence: readonly AutomationStudioLlmEvidenceEntry[]): { revision: number; digest: string } | undefined {
+export function automationStudioLlmEvidenceLatestCandidateReceipt(evidence: readonly AutomationStudioLlmEvidenceEntry[], submitToolId = "core.submit_candidate"): { revision: number; digest: string } | undefined {
   for (let index = evidence.length - 1; index >= 0; index -= 1) {
     const entry = evidence[index]!;
-    if (entry.toolId !== "core.submit_candidate") continue;
+    if (entry.toolId !== submitToolId) continue;
     const value = entry.value;
     if (typeof value !== "object" || value === null || Array.isArray(value) || value.ok !== true) continue;
     const { revision, digest } = value;

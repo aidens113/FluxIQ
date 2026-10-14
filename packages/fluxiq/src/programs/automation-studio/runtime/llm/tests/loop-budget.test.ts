@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, automationStudioLlmEvidenceBudgetEntry, automationStudioLlmEvidenceLoopRemaining, automationStudioLlmEvidenceLoopWrapUp } from "../loop-budget.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_CANDIDATE_FINISHING_TOOLS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, automationStudioLlmEvidenceBudgetEntry, automationStudioLlmEvidenceLoopRemaining, automationStudioLlmEvidenceLoopWrapUp } from "../loop-budget.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID, runAutomationStudioLlmEvidenceLoop } from "../evidence-loop.ts";
 import { runAutomationStudioLlmHarness, type AutomationStudioLlmProvider } from "../harness.ts";
 
@@ -361,5 +361,60 @@ describe("a candidate's wrap-up (t383)", () => {
     expect(budgetOf(decide.mock.calls[1]![0].evidence as Shown[])).toMatchObject({ decisionsLeft: 5, instruction: expect.stringContaining("core.submit_candidate") });
     expect(executeTool.mock.calls.map(([call]) => call.toolId)).toEqual(["inspect", "core.submit_candidate"]);
     expect(result.trace.find((row) => row.iteration === 3)).toMatchObject({ decision: "tool_call", resultCode: "llm_evidence_loop.not_offered" });
+  });
+});
+
+// A subflow builder is a discovery-only loop whose finishing tools are its own
+// (t537): its wrap-up must keep them running and name them, or a builder near
+// its budget could neither submit nor test. A loop that names none keeps the
+// candidate's, byte for byte.
+describe("a discovery-only loop's own finishing tools (t537)", () => {
+  const builder = { submit: "core.submit_subflow", test: "core.test_subflow" };
+  const builderTools = [
+    { toolId: "inspect", description: "Collect bounded evidence.", inputSchema: { type: "object" } },
+    { toolId: "core.submit_subflow", description: "Submit the subflow.", inputSchema: { type: "object" } },
+    { toolId: "core.test_subflow", description: "Test a submitted revision.", inputSchema: { type: "object" } }
+  ];
+  const left = (decisionsLeft: number) => ({ decisionsLeft, limitedBy: "cost" as const });
+
+  it("keeps the loop's own submit and test running in the wrap-up, and withholds the candidate's", () => {
+    const wrapUp = automationStudioLlmEvidenceLoopWrapUp({ remaining: left(3), canComplete: true, candidate: true, tools: builderTools, finishing: builder });
+    expect(wrapUp.wrappingUp).toBe(true);
+    expect(["inspect", "core.submit_subflow", "core.test_subflow", "core.submit_candidate"].map(wrapUp.withholds)).toEqual([true, false, false, true]);
+  });
+
+  it("leaves the default wrap-up and its words exactly as they were", () => {
+    const byDefault = automationStudioLlmEvidenceLoopWrapUp({ remaining: left(3), canComplete: true, candidate: true, tools: builderTools });
+    expect(["core.submit_candidate", "core.test_candidate", "core.submit_subflow"].map(byDefault.withholds)).toEqual([false, false, true]);
+    for (const decisionsLeft of [8, 4, 1]) {
+      const said = automationStudioLlmEvidenceBudgetEntry(2, left(decisionsLeft), undefined, true);
+      expect(automationStudioLlmEvidenceBudgetEntry(2, left(decisionsLeft), undefined, true, AUTOMATION_STUDIO_LLM_EVIDENCE_CANDIDATE_FINISHING_TOOLS)).toEqual(said);
+    }
+    expect(String(automationStudioLlmEvidenceBudgetEntry(2, left(4), undefined, true).value.instruction)).toBe("Only a few decisions are left, so only core.submit_candidate, core.test_candidate and completing run now: every other tool is still listed, but a call to one is answered without running and spends a decision. If your latest Flow is not submitted, submit the whole candidate now with core.submit_candidate; test that exact revision with core.test_candidate; complete with its revision and digest once the trial answers yes. If a submission or a trial is refused, correct what it names, submit again and test the new revision.");
+  });
+
+  it("names the loop's own tools in its budget words", () => {
+    const said = (decisionsLeft: number) => String(automationStudioLlmEvidenceBudgetEntry(2, left(decisionsLeft), undefined, true, builder).value.instruction);
+    expect(said(4)).toContain("only core.submit_subflow, core.test_subflow and completing run now");
+    expect(said(1)).toContain("now with core.test_subflow");
+    expect(said(4)).not.toContain("core.submit_candidate");
+  });
+
+  it("runs the builder's own submission in the wrap-up and answers an exploring call without running it", async () => {
+    const executeTool = vi.fn(async ({ toolId }: { toolId: string }) => ({ ran: toolId }));
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "inspect", input: { page: 1 } })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.2", toolId: "core.submit_subflow", input: { flow: "a subflow" } })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.3", toolId: "inspect", input: { page: 2 } })
+      .mockResolvedValueOnce({ kind: "complete", result: { revision: 1, digest: "d" } });
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools: builderTools, decide, executeTool, draft: false, discoveryOnly: true, finishingTools: builder, maxIterations: 6, maxToolCalls: 6,
+      completionSchema: { type: "object" }, budget: { maxTotalTokens: 10_000_000 }
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(executeTool.mock.calls.map(([call]) => call.toolId)).toEqual(["inspect", "core.submit_subflow"]);
+    expect(result.trace.find((row) => row.iteration === 3)).toMatchObject({ decision: "tool_call", resultCode: "llm_evidence_loop.not_offered" });
+    expect(budgetOf(decide.mock.calls[1]![0].evidence as Shown[])).toMatchObject({ instruction: expect.stringContaining("core.submit_subflow") });
   });
 });

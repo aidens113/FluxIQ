@@ -16,6 +16,7 @@
 // against; and learning, with no model, a layer the client's defence closed
 // as a handler of the Flow (t516), recorded as such a fix is.
 export * from "./admission.ts";
+export * from "./build-trial-admission.ts";
 export * from "./ending.ts";
 export * from "./parked-wait.ts";
 export * from "./recovery-state.ts";
