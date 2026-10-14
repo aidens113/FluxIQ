@@ -1,19 +1,22 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AutomationStudioNodeRegistry } from "../../../nodes/index.ts";
-import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { observeAutomationStudioEvidenceLoop } from "../../activity/index.ts";
 import { automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapPersonNeeded, flowBootstrapEvidenceUnusableDecisionFailure, type AutomationStudioBootstrapAccounting, type AutomationStudioFlowBootstrapActionPermissions, type AutomationStudioFlowBootstrapPersonNeeded } from "../../flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetCalls, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetProjectLedger } from "../../flow-bootstrap/site-reset/index.ts";
+import type { AutomationStudioCandidateTrialAct } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioSubflowTrialPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
-import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, automationStudioFlowDraftReplayClearedCode, automationStudioHarnessOptionRegistry, automationStudioLlmNodeDescriptions, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmHarnessInput } from "../../llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, automationStudioFlowDraftReplayClearedCode, automationStudioHarnessOptionRegistry, automationStudioLlmNodeDescriptions, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceToolExecutionResult, type AutomationStudioLlmHarnessInput } from "../../llm/index.ts";
 import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectBriefPortFactory, AutomationStudioProjectBriefPortRequest } from "../../project-agents/index.ts";
 import { startAutomationStudioBuildRouting } from "../../route-state/index.ts";
 import { automationStudioCandidateStallCode } from "../candidate-failure/index.ts";
 import { automationStudioFlowBootstrapUnusableDecisions, type generateAutomationStudioFlowCandidateDraft } from "../flow-bootstrap-commands/index.ts";
 import type { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
 import type { AutomationStudioProjectBuildDecisions } from "./decisions.ts";
+import { automationStudioProjectBuildPrepareEntry, type AutomationStudioProjectBuildEntry } from "./entry-preparation.ts";
 import { AutomationStudioProjectBuildPermissions } from "./permissions.ts";
+import { AutomationStudioProjectBuildProposals } from "./proposals.ts";
 import { automationStudioProjectBuildResetCalls } from "./reset-calls.ts";
 import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 
@@ -55,6 +58,25 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // control sat in no item (an Add to cart that adds a line). The start is read
 // once, around the opening call, as there. A reset's undo is read around the
 // same way, and what it did is told to the ledger that owns the act.
+//
+// **A dependent builder starts at its entry** (t580, bigbox debug fix 8).
+// Before a builder whose subflow has predecessors takes its first look, their
+// latest passing proposals run once (`./entry-preparation.ts`), the way its
+// own trials will reach its entry, and the acts that run lands go into the
+// brief's ledger. Prepared, its opening is a look where they left the site,
+// never the arrival at the build's start, which would walk away from the
+// entry. Either way its opening look says in plain words whether the entry
+// was prepared, and why not when it was not.
+//
+// **The brief's permitted acts narrow only what a person is asked about**
+// (t580). `permittedActs` filters the build's permitted consequences, so a
+// brief whose parts ask for no lasting act puts every press that declares
+// moving money, deleting, or sending to the person's gate, whatever the
+// person granted the build. Creating and modifying are asked of nobody
+// (`action-permissions/destructive.ts`, the user's rule of 2026-09-30) and no
+// press is refused beforehand (the user's rule of 2026-10-01), so such a press
+// outside the brief runs; the model is then told, beside its result, that the
+// act was outside its brief and stays on the site until a reset undoes it.
 
 type DraftInput = Parameters<typeof generateAutomationStudioFlowCandidateDraft>[0];
 
@@ -98,20 +120,29 @@ export function automationStudioProjectBuildBriefPorts(input: {
     const loop = { ...limits, tools: harness.tools, observedStateKeys: harness.observedStateKeys, executeTool: routing.recording(personNeeded.executeTool), nodeOf: nodeDescriptions.definition, unusableDecisions: unusable(request.brief.maxIterations), decide: decide(undefined) };
     return { loop, permissions, decide, ended: briefEnding(permissions, personNeeded) };
   };
+  // Every brief's trials pass through its port below, so these are the passing proposals a dependent builder's entry runs.
+  const proposals = new AutomationStudioProjectBuildProposals();
   return {
     builder: async (request) => {
       const built = await environment(request, request.ledger);
       const { instructionText: _instructionText, originalSource: _originalSource, signal: _signal, ...submission } = draft.submission;
+      const landed = (acts: readonly AutomationStudioCandidateTrialAct[] | undefined, runId: string | undefined) => {
+        if (!acts?.length) return;
+        request.ledger.trialRan(acts, runId);
+        input.acts.trialRan(acts, runId);
+      };
       const trial: AutomationStudioSubflowTrialPort = async (trialRequest) => {
         const result = await input.subflowTrial(trialRequest);
-        if (result.acts?.length) {
-          request.ledger.trialRan(result.acts, result.trialRunId);
-          input.acts.trialRan(result.acts, result.trialRunId);
-        }
+        proposals.trialled(trialRequest.scope, trialRequest.proposal, result.verdict);
+        landed(result.acts, result.trialRunId);
         return result;
       };
       const reader = new AutomationStudioSiteResetStartCheck({ binding, projectId, flowId, tools: built.loop.tools, executeTool: (call) => built.loop.executeTool(call), liveCheck: { settleMs: AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS } });
-      const loop = placing(built.loop, request.ledger, reader, { capture: true, signal: request.signal });
+      // Before the first look (header): its predecessors' passing proposals, run once to reach its entry.
+      const entry = await automationStudioProjectBuildPrepareEntry({ scope: request.scope, proposals, environment: project.trialEnvironment, signal: request.signal });
+      if (entry.kind !== "start") landed(entry.acts, entry.runId);
+      const placed = placing(built.loop, request.ledger, reader, { capture: true, signal: request.signal });
+      const loop = told(entry.kind === "prepared" ? { ...placed, tools: placed.tools.map(lookingInPlace) } : placed, { entry: entryNote(request.scope.subflowKey, entry), permittedActs: request.brief.permittedActs });
       return { loop, submission: { ...submission, permissionFor: built.permissions.planStep }, trial, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...observed, decide: built.decide(observed.completionSchema) }), ended: built.ended };
     },
     reset: async (request) => {
@@ -140,6 +171,71 @@ function placing<L extends { executeTool: Execute }>(loop: L, ledger: PlacedLedg
     return ran;
   };
   return { ...loop, executeTool };
+}
+
+type Tool = AutomationStudioLlmEvidenceLoopInput["tools"][number];
+
+/** A tool whose opening is a look where the page stands, not the arrival at the build's start (header). */
+function lookingInPlace(tool: Tool): Tool {
+  return tool.initialObservation?.arrival ? { ...tool, initialObservation: { input: tool.initialObservation.input } } : tool;
+}
+
+/** What a dependent builder's opening look says about its entry; nothing for a subflow the build's start begins. */
+function entryNote(subflowKey: string, entry: AutomationStudioProjectBuildEntry): JsonObject | undefined {
+  if (entry.kind === "start") return undefined;
+  const names = entry.predecessors.map((key) => `"${key}"`).join(", ");
+  if (entry.kind === "prepared") {
+    return { prepared: true, note: `Before this first look, Core ran the passing proposals of the subflows before yours (${names}) once, in order, so the site is where your subflow "${subflowKey}" begins. Explore and build from here; what they did is already done, so do not do it again.` };
+  }
+  const why = entry.missing?.length
+    ? `${entry.missing.map((key) => `"${key}"`).join(", ")} has no proposal whose trial passed yet, so Core could not run it first`
+    : entry.failed
+      ? `Core ran them to reach your entry, but "${entry.failed}" did not run to its end (${entry.code})`
+      : `Core could not run them to reach your entry (${entry.code})`;
+  return { prepared: false, code: entry.code, note: `Your subflow "${subflowKey}" begins where ${names} leave the site, but ${why}. This page is not your subflow's entry: what you see and do here may differ from what your subflow meets when it runs after them.` };
+}
+
+/**
+ * `loop` with Core's own words beside two results (header): the opening's,
+ * saying whether the entry was prepared, and a landed call's that declared a
+ * lasting act its brief's parts do not ask for. The domain's evidence is kept
+ * whole; a key is added beside it, never in its place.
+ */
+function told<L extends { executeTool: Execute }>(loop: L, said: { entry: JsonObject | undefined; permittedActs: readonly string[] }): L {
+  const inner = loop.executeTool;
+  const executeTool: Execute = async (call) => {
+    const ran = await inner(call);
+    if (said.entry && isOpeningCall(call.callId)) return beside(ran, "entry", said.entry);
+    const outside = landedOutside(call.value, ran, said.permittedActs);
+    if (!outside.length) return ran;
+    const asked = said.permittedActs.length ? `they ask only for ${said.permittedActs.join(", ")}` : "they ask for no lasting act";
+    return beside(ran, "outsideBrief", { consequences: outside, note: `This call declared ${outside.join(", ")}, which your brief's parts do not ask for (${asked}). It ran, and it stays on the site as this build's act until a reset undoes it. Write no step of your subflow that does it, and do not do it again.` });
+  };
+  return { ...loop, executeTool };
+}
+
+type Ran = Awaited<ReturnType<Execute>>;
+
+/** The lasting classes `value` declared that `permitted` leaves out, when its call landed: applied an effect and did not refuse itself. */
+function landedOutside(value: JsonObject, ran: Ran, permitted: readonly string[]): string[] {
+  if (!isExecution(ran) || ran.effectApplied !== true || isObject(ran.evidence) && ran.evidence.ok === false) return [];
+  const declared = Array.isArray(value.consequences) ? value.consequences : [];
+  return AUTOMATION_STUDIO_ACTION_CONSEQUENCES.filter((consequence) => declared.includes(consequence) && !permitted.includes(consequence));
+}
+
+/** `ran` with Core's `key` added beside its evidence: in the evidence object, or holding a non-object evidence under `evidence`. */
+function beside(ran: Ran, key: string, value: JsonObject): Ran {
+  if (!isExecution(ran)) return ran;
+  const evidence = isObject(ran.evidence) ? { ...ran.evidence, [key]: value } : { [key]: value, evidence: ran.evidence };
+  return { ...ran, evidence };
+}
+
+function isExecution(ran: Ran): ran is AutomationStudioLlmEvidenceToolExecutionResult {
+  return isObject(ran) && ran.kind === "llm_evidence_tool_execution";
+}
+
+function isObject(value: unknown): value is JsonObject {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 /** The acts still in place once every ledger holding one has looked again on each act's own page. */
