@@ -13,7 +13,7 @@ Related: [MVP final month plan](./mvp-final-month-plan.md), [state-aware recover
 
 ## Current State
 
-**Planned, not built (2026-10-13).** The user asked for "a system of
+**Built; A8 Lab comparison running (2026-10-14).** The user asked for "a system of
 different agents for managing different parts of a automation project ...
 the current one we have for actually building subflows, but that gets spawned
 by a senior supervisor, much like we have in this repo." The evidence for why
@@ -51,10 +51,10 @@ and promotion gate, site-control preparation) and held-topology units 1-4
 observed-current case does not need them for creation; post-run repair of a
 multi-subflow Flow does need held-topology.
 
-**Delivered on dev (2026-10-13, supervisor-verified, pushed):** every unit A1-A6 with W1-W4: contracts and build record, allowances and cancellation tree, host-resource scheduler and lease on every command (web capacity 1), builder scope and partial subflow trial, agent attribution and chat cards, the project supervisor, the dispatcher, and the wiring: a build in authoring mode `project` runs the supervisor and its builders; `candidate` stays the default, so ordinary builds are unchanged. Also merged today: the fix-forward of every failure the two sweeps found (Core 305, downstream 31), a product fix for instructions leaking across Flows, and bounded retries on recording directory removal; the confirming Core sweep had one failure of 11207, since fixed. **Also merged:** the pre-A8 hardening (a refused act ends its builder; promotion reads every brief's answers; the reserve covers the judged run and one repair round; builder acts are placed so a reset can undo an Add to cart; every act in the build record), the judge checklist (A9), distinct ids in assembled Flows (A12), and the follow-ups A10, A11, A13, A15-A18. **Ready, awaiting the user's go-ahead:** A8 Lab comparison (nine paid runs, at most $2.25, about 1.5-2 hours; plan in the paired document). **Next otherwise:** A21, A10b, W8, then A7 re-author triage and A14 surveys, informed by A8.
+**Delivered on dev (2026-10-13, supervisor-verified, pushed):** every unit A1-A6 with W1-W4: contracts and build record, allowances and cancellation tree, host-resource scheduler and lease on every command (web capacity 1), builder scope and partial subflow trial, agent attribution and chat cards, the project supervisor, the dispatcher, and the wiring: a build in authoring mode `project` runs the supervisor and its builders; `candidate` stays the default, so ordinary builds are unchanged. Also merged today: the fix-forward of every failure the two sweeps found (Core 305, downstream 31), a product fix for instructions leaking across Flows, and bounded retries on recording directory removal; the confirming Core sweep had one failure of 11207, since fixed. **Also merged:** the pre-A8 hardening (a refused act ends its builder; promotion reads every brief's answers; the reserve covers the judged run and one repair round; builder acts are placed so a reset can undo an Add to cart; every act in the build record), the judge checklist (A9), distinct ids in assembled Flows (A12), and the follow-ups A10, A11, A13, A15-A18. **Now (2026-10-14):** A8 is running on the user's go-ahead ("Yes go to live tests"); its attempts are in the paired document's A8 Run Plan. Round one in mode `project` exposed, in turn, a long-path SQLite open (t568, merged), a supervisor that explored instead of planning and could not write the raw plan (t569, merged: planning format, look budget), and builds that run out of calls at a third of their dollars (t570, in flight: per-brief call shares, Core-sized allowances, permitted acts from parts, interface lines in the brief, the subflow trial reusing the candidate trial's exclusion evidence). In flight beside it so A8 keeps one frozen pair: A21 (t571), A10b (t572), and W8 downstream (t573). Round one relaunches when all four merge. After A8: A7 re-author triage and A14 surveys; judge reliability on filtered list reads (seen in both modes).
 
-**Not claimed:** that agents fix wrong judgements, that any unit exists, or
-that a multi-agent build has run.
+**Not claimed:** that agents fix wrong judgements, or that a `project` build
+has yet created a Flow live (none has reached its judged whole run).
 
 ---
 
@@ -525,6 +525,33 @@ Briefs A5a, A5b, A5c, the sweep fixture groups, the recording delete retry and t
 - Definition of done: a stub-provider test with the planning format (one-part and three-part tasks) gives valid structure plans and dispatches; a stub-provider test replaying the crossborder run's shape (a supervisor that searches repeatedly) gets
   the look tools withdrawn after the budget and a redirect naming the plan, and a stub that then writes the plan
   proceeds to dispatch; candidate loop tests unchanged; the guidance guard test; narrow checks. No live run.
+
+### Brief: project-calls-and-brief-defaults
+- Repository: FluxIQ Core, the paired worktree the dispatch prompt names. Before A8 resumes.
+- Task: A8 round 1 after t569 (run-mv7vk3ol-9e11b266 crossborder, run-mv7vl89u-917d62a6 bigbox; steps under
+  `C:/Users/osrs_/FluxStuff/lab-runs/2026-10-14/`): the supervisor now plans and dispatches, and builders act, but
+  both builds ended `flow_bootstrap.run_budget_calls_exhausted` at about $0.07-0.08 of $0.25, bigbox before any
+  builder submitted. (1) Calls: an allowance reserves dollars but not calls (t534 open question), so one builder
+  spends the run's calls and its own wrap-up never triggers. Carve each brief's call cap from the parent purse's
+  remaining calls the way dollars are carved (never from what assembly, the whole trial and judging keep back), and
+  have the builder loop's wrap-up and budget notes read its own allowance, so a builder submits before its share
+  ends (`llm/build-purse/` allowance book, `service/project-build/` where allowances and loop limits are set,
+  `flow-bootstrap/subflow-candidate/builder-loop.ts`). (2) Core sizes briefs: when the supervisor gives no
+  `allowanceUsd`/calls, split what can still be given out over the briefs being sent and those the plan has not yet
+  dispatched; the supervisor may still lower one; `project.allowance_unavailable` should no longer be reachable by
+  guessing (it was hit twice). (3) Core derives each brief's `permittedActs` from its parts' lasting acts
+  (`project.brief_act_not_asked` was hit three times); the supervisor no longer writes them. (4) A builder's brief
+  shows the exact `input:` and `output:` lines its part must declare, by name (`subflow.interface_input_mismatch`:
+  "collect_coupon is given exactly itemUrl; this part declares no value").
+- Required reads: the two runs' steps (supervisor dispatch calls and results, the builder refusals), the Core plan's
+  Contracts (Allowance), `llm/build-purse/`, `service/project-build/`, `project-agents/{supervisor,dispatch}/`,
+  `flow-bootstrap/subflow-candidate/builder-loop.ts`.
+- Owns: the files named and their tests; `project-agents/contracts/subflow-brief.ts` if a field becomes optional; report.
+- Must not touch: `service.ts` beyond one in-place line if unavoidable (say so); `flow-bootstrap/candidate/**`.
+- Definition of done: a stub test where three builders share a 64-call build: each gets a call share, each wraps up and
+  submits within it, and calls remain for assembly and the whole trial; briefs sent without allowances get sizes that
+  fit; permitted acts come from parts; the brief shows interface lines; candidate builds' purse behaviour unchanged.
+  The whole project-agents, project-build, build-purse, subflow-candidate sets; check; audit. No live run.
 
 ## Work Ledger
 
