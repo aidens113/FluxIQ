@@ -1,4 +1,4 @@
-import type { AutomationStudioSiteResetCalls, AutomationStudioSiteResetLedger, AutomationStudioSiteResetProjectLedger } from "../../flow-bootstrap/site-reset/index.ts";
+import type { AutomationStudioSiteResetCalls, AutomationStudioSiteResetLedger, AutomationStudioSiteResetPlace, AutomationStudioSiteResetProjectLedger } from "../../flow-bootstrap/site-reset/index.ts";
 
 // What a reset brief's permission gate tells the ledger (unit A5c). A reset
 // undoes acts other agents made -- each builder's, and the supervisor's whole
@@ -10,8 +10,18 @@ import type { AutomationStudioSiteResetCalls, AutomationStudioSiteResetLedger, A
 // the site's one confirmation), and counts it towards the act being undone.
 // A call that names no act is the reset's own, and goes to the reset brief's
 // ledger, which records any lasting act the reset itself made.
+//
+// The same routing serves the reads around each call (`./brief-ports.ts`,
+// `flow-bootstrap/site-reset/act-places.ts`): what an undo did to its page is
+// told to the act's owner, and where an act of the reset's own was made, to the
+// reset's ledger.
 
-export function automationStudioProjectBuildResetCalls(project: AutomationStudioSiteResetProjectLedger, own: AutomationStudioSiteResetLedger): AutomationStudioSiteResetCalls {
+export function automationStudioProjectBuildResetCalls(project: AutomationStudioSiteResetProjectLedger, own: AutomationStudioSiteResetLedger): AutomationStudioSiteResetCalls & {
+  actOf(callId: string): string | undefined;
+  placed(act: string, place: AutomationStudioSiteResetPlace): void;
+  undoSeen(act: string, changedInPlace: boolean): void;
+  noEffect(act: string): void;
+} {
   const owner = (act: unknown): AutomationStudioSiteResetLedger => {
     const found = typeof act === "string" ? project.snapshot().acts.find((entry) => entry.act === act) : undefined;
     return found ? project.forBrief(found.owner) : own;
@@ -19,6 +29,10 @@ export function automationStudioProjectBuildResetCalls(project: AutomationStudio
   return {
     claim: (undoes) => owner(undoes).claim(undoes),
     target: (act, declared) => owner(act).target(act, declared),
-    explored: (call) => owner(call.undoes).explored(call)
+    explored: (call) => owner(call.undoes).explored(call),
+    actOf: (callId) => own.actOf(callId),
+    placed: (act, place) => owner(act).placed(act, place),
+    undoSeen: (act, changedInPlace) => owner(act).undoSeen(act, changedInPlace),
+    noEffect: (act) => owner(act).noEffect(act)
   };
 }

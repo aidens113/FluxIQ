@@ -47,7 +47,7 @@ describe.each([false, true])("the build record on disk (SQLite=%s)", (sqlite) =>
       await writer.recordBrief(ref, brief());
       await writer.recordDecision(ref, { kind: "dispatch", reason: "Saving waits for the list.", briefIds: ["b1"], planDigest: structurePlan().digest });
       await writer.recordAllowance(ref, { role: "builder", briefId: "b1", usd: 0.05 });
-      await writer.recordLastingAct(ref, { briefId: "b1", consequence: "create_new", description: "Saved a soup to the cookbook." });
+      await writer.recordLastingAct(ref, { act: "act-1", owner: { role: "builder", briefId: "b1" }, consequences: ["create_new"], description: "Saved a soup to the cookbook.", undoable: true });
       await writer.recordReturn(ref, builderReturn());
       const summary = await storeAt(root).summary(ref);
       expect(summary).toMatchObject({ briefs: [{ briefId: "b1", current: true, returned: { outcome: "done", spentUsd: 0.02 } }], spentUsd: 0.02, lastingActs: 1, lastDecision: { kind: "dispatch" } });
@@ -136,10 +136,24 @@ describe("the build record's write rules", () => {
     await expect(store.recordReturn(ref, builderReturn((value) => (value.reason = "a second answer")))).rejects.toMatchObject({ code: "project.return_exists" });
   });
 
-  it("keeps lasting acts and allowances attributed to briefs that permit them", async () => {
+  it("keeps every lasting act with its owner and classes, and allowances attributed to briefs", async () => {
     const store = storeAt(undefined);
     await planned(store);
-    await expect(store.recordLastingAct(ref, { briefId: "b2", consequence: "create_new", description: "x" })).rejects.toMatchObject({ code: "project.act_not_permitted" });
+    const act = { act: "act-1", owner: { role: "builder" as const, briefId: "b1" }, consequences: ["create_new" as const], description: "Saved a soup to the cookbook.", undoable: true };
+    await store.recordLastingAct(ref, act);
+    // The supervisor's whole trial, an act the instruction rather than the brief permitted, and one the site cannot undo are all kept.
+    await store.recordLastingAct(ref, { act: "act-2", owner: { role: "supervisor" }, consequences: ["create_new"], description: "trial step 2 \"Save\"", undoable: true });
+    await store.recordLastingAct(ref, { act: "act-3", owner: { role: "builder", briefId: "b1" }, consequences: ["move_money"], description: "press \"Pay\" button", undoable: false });
+    expect((await store.read(ref))!.record.lastingActs.map((entry) => [entry.act, entry.owner, entry.consequences, entry.undoable])).toEqual([
+      ["act-1", { role: "builder", briefId: "b1" }, ["create_new"], true],
+      ["act-2", { role: "supervisor" }, ["create_new"], true],
+      ["act-3", { role: "builder", briefId: "b1" }, ["move_money"], false]
+    ]);
+    await expect(store.recordLastingAct(ref, act)).rejects.toMatchObject({ code: "project.duplicate" });
+    await expect(store.recordLastingAct(ref, { ...act, act: "act-4", owner: { role: "builder", briefId: "b9" } })).rejects.toMatchObject({ code: "project.brief_unknown" });
+    await expect(store.recordLastingAct(ref, { ...act, act: "act-5", consequences: [] })).rejects.toMatchObject({ code: "project.act_without_class" });
+    await expect(store.recordLastingAct(ref, { ...act, act: "step-6" })).rejects.toMatchObject({ code: "project.invalid_act" });
+    await expect(store.recordLastingAct(ref, { ...act, act: "act-7", owner: { role: "supervisor", briefId: "b1" } as unknown as { role: "supervisor" } })).rejects.toMatchObject({ code: "project.act_owner" });
     await expect(store.recordAllowance(ref, { role: "builder", usd: 0.05 })).rejects.toMatchObject({ code: "project.allowance_brief" });
     await expect(store.recordAllowance(ref, { role: "repair", briefId: "b9", usd: 0.05 })).rejects.toMatchObject({ code: "project.brief_unknown" });
   });

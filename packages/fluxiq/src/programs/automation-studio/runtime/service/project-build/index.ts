@@ -8,3 +8,4 @@ export * from "./whole-trials.ts";
 export * from "./supervisor-ledger.ts";
 export * from "./run.ts";
 export * from "./promote.ts";
+export * from "./permissions.ts";

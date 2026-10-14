@@ -11,7 +11,7 @@ import {
   type AutomationStudioProjectParse,
   type AutomationStudioProjectSubflowBrief
 } from "../contracts/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_BUILD_ENDINGS, type AutomationStudioProjectBuildRecord, type AutomationStudioProjectBuildRef, type AutomationStudioProjectBuildReturnRecord } from "./build-record.ts";
+import { AUTOMATION_STUDIO_PROJECT_BUILD_ENDINGS, type AutomationStudioProjectBuildActOwner, type AutomationStudioProjectBuildLastingAct, type AutomationStudioProjectBuildRecord, type AutomationStudioProjectBuildRef, type AutomationStudioProjectBuildReturnRecord } from "./build-record.ts";
 
 // Reads a stored build record back, trusting nothing in it. A record reopened
 // after a restart is re-validated as if each piece were being written now:
@@ -20,6 +20,8 @@ import { AUTOMATION_STUDIO_PROJECT_BUILD_ENDINGS, type AutomationStudioProjectBu
 // every return must answer its brief. An edited file is refused, not repaired.
 
 const LIMITS = { revisions: 200, briefs: 500, entries: 5000, sources: 200 } as const;
+/** An act id as the project ledger numbers it (`flow-bootstrap/site-reset/project-ledger.ts`). */
+const ACT_ID = /^act-[1-9][0-9]{0,3}$/u;
 
 export const automationStudioProjectBuildRecordParser = Object.freeze({
   main(value: unknown, ref: AutomationStudioProjectBuildRef): AutomationStudioProjectParse<AutomationStudioProjectBuildRecord> {
@@ -98,14 +100,7 @@ function readMain(value: unknown, ref: AutomationStudioProjectBuildRef): Automat
       if ((role === "supervisor") !== (entry.briefId === undefined)) return shape.refuse("project.allowance_brief", `${at}.briefId`);
       return entry.briefId === undefined ? allowance : { recordedAt: allowance.recordedAt, role, briefId: knownBrief(entry.briefId, `${at}.briefId`), usd: allowance.usd };
     }),
-    lastingActs: shape.array(fields.lastingActs, "record.lastingActs", LIMITS.entries).map((item, index) => {
-      const at = `record.lastingActs.${index}`;
-      const entry = shape.object(item, at, ["recordedAt", "briefId", "consequence", "description"]);
-      const briefId = knownBrief(entry.briefId, `${at}.briefId`);
-      const consequence = shape.oneOf(entry.consequence, `${at}.consequence`, AUTOMATION_STUDIO_ACTION_CONSEQUENCES);
-      if (!briefs.find((candidate) => candidate.brief.briefId === briefId)!.brief.permittedActs.includes(consequence)) return shape.refuse("project.act_not_permitted", `${at}.consequence`);
-      return { recordedAt: shape.count(entry.recordedAt, `${at}.recordedAt`), briefId, consequence, description: shape.text(entry.description, `${at}.description`, 500) };
-    }),
+    lastingActs: readLastingActs(fields.lastingActs, knownBrief),
     decisions: shape.array(fields.decisions, "record.decisions", LIMITS.entries).map((item, index) => {
       const entry = shape.object(item, `record.decisions.${index}`, ["recordedAt", "entry"]);
       return { recordedAt: shape.count(entry.recordedAt, `record.decisions.${index}.recordedAt`), entry: unwrap(automationStudioProjectDecisionLogEntry.parse(entry.entry)) };
@@ -116,6 +111,29 @@ function readMain(value: unknown, ref: AutomationStudioProjectBuildRef): Automat
     record.ending = { outcome: shape.oneOf(ending.outcome, "record.ending.outcome", AUTOMATION_STUDIO_PROJECT_BUILD_ENDINGS), reason: shape.text(ending.reason, "record.ending.reason", 2000), at: shape.count(ending.at, "record.ending.at") };
   }
   return record;
+}
+
+/** The record's lasting acts: each act id once, each owner a role and, but for the supervisor, a recorded brief, each with at least one lasting class. */
+function readLastingActs(value: unknown, knownBrief: (briefId: unknown, at: string) => string): AutomationStudioProjectBuildLastingAct[] {
+  const seen = new Set<string>();
+  return shape.array(value, "record.lastingActs", LIMITS.entries).map((item, index) => {
+    const at = `record.lastingActs.${index}`;
+    const entry = shape.object(item, at, ["recordedAt", "act", "owner", "consequences", "description", "undoable"]);
+    const act = shape.id(entry.act, `${at}.act`, 12);
+    if (!ACT_ID.test(act)) return shape.refuse("project.invalid_act", `${at}.act`);
+    if (seen.has(act)) return shape.refuse("project.duplicate", `${at}.act`);
+    seen.add(act);
+    const owned = shape.object(entry.owner, `${at}.owner`, ["role"], ["briefId"]);
+    const role = shape.oneOf(owned.role, `${at}.owner.role`, AUTOMATION_STUDIO_PROJECT_AGENT_ROLES);
+    if ((role === "supervisor") !== (owned.briefId === undefined)) return shape.refuse("project.act_owner", `${at}.owner.briefId`);
+    const owner: AutomationStudioProjectBuildActOwner = role === "supervisor" ? { role } : { role, briefId: knownBrief(owned.briefId, `${at}.owner.briefId`) };
+    const consequences = shape.array(entry.consequences, `${at}.consequences`, AUTOMATION_STUDIO_ACTION_CONSEQUENCES.length)
+      .map((consequence, position) => shape.oneOf(consequence, `${at}.consequences.${position}`, AUTOMATION_STUDIO_ACTION_CONSEQUENCES));
+    if (!consequences.length) return shape.refuse("project.act_without_class", `${at}.consequences`);
+    if (new Set(consequences).size !== consequences.length) return shape.refuse("project.duplicate", `${at}.consequences`);
+    if (typeof entry.undoable !== "boolean") return shape.refuse("project.not_boolean", `${at}.undoable`);
+    return { recordedAt: shape.count(entry.recordedAt, `${at}.recordedAt`), act, owner, consequences, description: shape.text(entry.description, `${at}.description`, 500), undoable: entry.undoable };
+  });
 }
 
 function unwrap<T>(parsed: AutomationStudioProjectParse<T>): T {
