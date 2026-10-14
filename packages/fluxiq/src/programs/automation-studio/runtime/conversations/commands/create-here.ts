@@ -19,6 +19,7 @@ import { AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS, automationStudioConversa
 import { AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_JUDGED, automationStudioConversationAuthorsCandidates, automationStudioConversationCandidateDraftSaid, buildAutomationStudioFlowFromConversation } from "./build.ts";
 import type { AutomationStudioConversationCommand } from "./command.ts";
 import { automationStudioConversationSiteName } from "../site-name.ts";
+import type { AutomationStudioCandidateAuthoringResult } from "../../flow-bootstrap/authoring-result/index.ts";
 import { automationStudioConversationCallCause, automationStudioConversationCommandProgress } from "./progress.ts";
 
 const TITLE = "Create an automation here";
@@ -72,7 +73,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     // build this Flow", said the opposite of what had happened (t195,
     // `run-murdouox-c5294247`, UI review).
     if (!built.ok) return progress.failed(built.cause, { ending: built.ending, left: automationStudioConversationCreateHereLeft(name, built, said.from) });
-    if (built.status === "draft") return { ...progress.succeeded(automationStudioConversationCandidateDraftSaid(built.candidate)), candidate: built.candidate };
+    if (built.status === "draft") return { ...progress.succeeded(automationStudioConversationCreateHereDraftSaid(built.candidate)), candidate: built.candidate };
     progress.carry({ adaptationId: built.adaptationId });
     const where = automationStudioConversationSiteName(context.startLocation);
     progress.landed(built.trial ? `explored ${where}, wrote the Flow's steps and test-ran the whole Flow from its start` : `tried the steps on ${where} and worked out which ones work`);
@@ -88,6 +89,24 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
       : `Your automation "${name}" is ready: I tried its steps on ${where} and put the ones that worked into it.`);
   }
 };
+
+/** The code a project build its time limit stopped adds after its kept draft's own trial code (`../../service/project-build/run.ts`, t608). */
+const TIME_LIMIT_CODE = "project.build_time_limit";
+
+/**
+ * What a candidate that stayed a draft says, opening with the time limit when
+ * that is what ended its build (t608). Everything-store `run-mv8p0p7c` reached
+ * its time limit holding an assembled draft, and the person read only "Its test
+ * run from the start was judged not to do what you asked": nothing said the
+ * build ran out of time. The words agree with the build's own chat row and a
+ * failed build's ending (`./progress.ts`): it "reached its time limit before a
+ * whole test of the Flow passed".
+ */
+function automationStudioConversationCreateHereDraftSaid(candidate: AutomationStudioCandidateAuthoringResult): string {
+  const said = automationStudioConversationCandidateDraftSaid(candidate);
+  if (!candidate.trial?.codes.includes(TIME_LIMIT_CODE)) return said;
+  return `The build reached its time limit before a whole test of the Flow passed. ${said.replace(/^Its test run/u, "Its last test run")}`;
+}
 
 /**
  * A new Flow's name, from the opening words of what it should do: cut after

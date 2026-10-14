@@ -28,6 +28,12 @@
 // so raised is not the bytes the trial was judged on, and that is the point:
 // the trial's own learning is what is kept. The audit detail names both what
 // the trial learned (`learnedPaces`) and what was raised (`raisedPaces`).
+//
+// A draft's codes start with its own: the trial's code, or why its yes did not
+// stand. A build that ended for a reason of its own -- a project build its time
+// limit stopped (`../project-build/run.ts`, t608) -- names it in the standing
+// trial's `feedback.endingCodes`, and those codes follow the draft's own, so
+// the code every debug and the Lab read stays first.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioCandidateFingerprint as fingerprint, type AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
@@ -51,7 +57,8 @@ export async function promoteAutomationStudioCandidateTrial(input: {
   signal?: AbortSignal | undefined;
 }): Promise<AutomationStudioCandidatePromotion> {
   const { record, standing } = input, candidate = record.candidate;
-  const draft = (codes: string[]): AutomationStudioCandidatePromotion => ({ status: "draft", trial: { verdict: standing?.verdict ?? "not_tested", ...(standing?.trialRunId ? { runId: standing.trialRunId } : {}), codes } });
+  // The build's own ending codes go after the draft's own code, which stays first (header, t608).
+  const draft = (codes: string[]): AutomationStudioCandidatePromotion => ({ status: "draft", trial: { verdict: standing?.verdict ?? "not_tested", ...(standing?.trialRunId ? { runId: standing.trialRunId } : {}), codes: [...codes, ...endingCodes(standing).filter((code) => !codes.includes(code))] } });
   if (!standing) return draft(["candidate.trial_not_run"]);
   if (standing.revision !== candidate.revision || standing.digest !== candidate.digest) return draft(["candidate.trial_stale_revision"]);
   if (standing.verdict !== "yes") return draft([typeof standing.feedback.code === "string" ? standing.feedback.code : `candidate.trial_${standing.verdict}`]);
@@ -80,6 +87,12 @@ export async function promoteAutomationStudioCandidateTrial(input: {
     throw error;
   }
   return { status: "proposed", adaptation, candidate: generated };
+}
+
+/** The ending codes a build set beside its standing trial's own code (`feedback.endingCodes`, t608): identifiers only, at most four. */
+function endingCodes(standing: AutomationStudioCandidateTrialResult | undefined): string[] {
+  const codes = standing?.feedback.endingCodes;
+  return Array.isArray(codes) ? codes.filter((code): code is string => typeof code === "string" && /^[a-z0-9_.]{1,80}$/u.test(code)).slice(0, 4) : [];
 }
 
 /**

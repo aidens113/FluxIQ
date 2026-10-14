@@ -159,6 +159,62 @@ const AUTHORED_CODES: ReadonlySet<string> = new Set([
   "flow_script.repeat_most_misplaced",
   "flow_script.repeat_pace_misplaced",
   "flow_script.repeat_pace_invalid",
+  // **Every script refusal a builder can meet has its words (t608).** Everything-store
+  // `run-mv8p0p7c` (0153) was refused `flow_script.part_interface_invalid` with a
+  // code, a line and no sentence, resent the same script three times, and the
+  // repeat guard ended its brief. Each sentence below is Core's own
+  // (`../authoring/`, `../script-statements/`): it names the lines, labels,
+  // inputs, outputs, ports and node ids the model itself wrote (a free-text
+  // quote cut to 40-64 characters), never a validator's or a provider's
+  // message, and says what to write instead. A
+  // `way_out_accepts` sentence also quotes the control's words the model was
+  // shown and pressed. `./tests/issue-feedback-words.test.ts` reads every
+  // `flow_script.*` code the source raises and fails on one missing here.
+  "flow_script.part_interface_invalid",
+  "flow_script.call_unavailable",
+  "flow_script.call_situation",
+  "flow_script.call_misplaced",
+  "flow_script.call_unknown_input",
+  "flow_script.call_input_missing",
+  "flow_script.call_cycle",
+  "flow_script.invalid_binding",
+  "flow_script.unknown_port",
+  "flow_script.unknown_label",
+  "flow_script.branch_across_blocks",
+  "flow_script.when_outside_block",
+  "flow_script.checkpoint_invalid",
+  "flow_script.entry_invalid",
+  "flow_script.fact_invalid",
+  "flow_script.handler_unavailable",
+  "flow_script.handler_then_invalid",
+  "flow_script.handler_check_missing",
+  "flow_script.way_out_accepts",
+  // Warnings, never a refusal; their fixed sentences say what was left out.
+  "flow_script.unrecognized_line",
+  "flow_script.run_subflow_ignored",
+  // A subflow builder's submission refused for leaving its brief
+  // (`../subflow-candidate/scoped-submission.ts`, `callable-target.ts`,
+  // `route-outputs.ts`). The scope refusal sends each with its own sentence;
+  // they are listed so that no path that feeds them back here drops it. Each
+  // names only the brief's subflow key, the part, input and output names and
+  // lines the model wrote, the plan's success check and Core's act classes.
+  "subflow.when_refused",
+  "subflow.script_required",
+  "subflow.router_rule_refused",
+  "subflow.target_missing",
+  "subflow.foreign_subflow_refused",
+  "subflow.part_key_collision",
+  "subflow.interface_changed",
+  "subflow.success_check_changed",
+  "subflow.lasting_act_missing",
+  "subflow.lasting_act_dropped",
+  "subflow.steps_outside_part",
+  "subflow.target_part_missing",
+  "subflow.interface_input_mismatch",
+  "subflow.interface_output_mismatch",
+  "subflow.output_unbound",
+  "subflow.input_unread",
+  "subflow.output_not_a_value",
   // An optional step, or a step that runs only after one, where it cannot
   // stand (`../script-statements/guarded-steps.ts`): each sentence is
   // Core's own and names only lines, labels and node ids the model wrote, and
