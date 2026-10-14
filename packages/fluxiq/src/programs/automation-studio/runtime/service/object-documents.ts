@@ -17,6 +17,7 @@ import { compactJsonObject } from "./compact-json.ts";
 import { errorMessage } from "./error-message.ts";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths, AutomationStudioRecordingPaths } from "./paths/index.ts";
 import type { AutomationStudioProjectStore } from "./projects/index.ts";
+import { removePathWithRetry } from "./recordings/directory-removal.ts";
 
 export type AutomationStudioWriteProjectObjectAssetInput = {
   projectId: string;
@@ -116,12 +117,12 @@ export class AutomationStudioObjectDocuments {
     if (legacyPath) paths.push(legacyPath);
     for (const filePath of paths) {
       if (this.objectStore) await ProgramJsonStore.deletePath(filePath);
-      await rm(filePath, { recursive: true, force: true });
+      await removePathWithRetry(filePath);
     }
     if (kind === "policyProposals" || kind === "recordingFlowProposals") {
       const proposalDirectory = path.dirname(this.recordingPaths.recordingPipelineArtifactFile(projectId, recordingId, kind, id));
       if (this.objectStore) await ProgramJsonStore.deletePath(proposalDirectory);
-      await rm(proposalDirectory, { recursive: true, force: true });
+      await removePathWithRetry(proposalDirectory);
     }
   }
 

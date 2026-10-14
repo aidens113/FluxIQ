@@ -1,4 +1,3 @@
-import { rm } from "node:fs/promises";
 import path from "node:path";
 import { ProgramJsonStore, safeSegment } from "../../../../_shared/storage.ts";
 import type { AutomationStudioObjectStore, CanonicalAutomationStudioRepositories, RecordingStateIndexStore } from "../../../storage/index.ts";
@@ -9,6 +8,7 @@ import type { AutomationStudioFacadePorts } from "../facade-ports.ts";
 import type { AutomationStudioServiceIndexes } from "../indexes/index.ts";
 import type { AutomationStudioObjectDocuments } from "../object-documents.ts";
 import type { AutomationStudioProjectPaths, AutomationStudioRecordingPaths } from "../paths/index.ts";
+import { removePathWithRetry } from "./directory-removal.ts";
 import { addAutomationStudioObjectSha256s } from "./object-references.ts";
 import { emptyPipelineArtifactIdSets, PIPELINE_ARTIFACT_IO_CONCURRENCY, pipelineArtifactKinds, type AutomationStudioRecordingStore } from "./store.ts";
 
@@ -94,9 +94,9 @@ export class AutomationStudioRecordingDeletion {
         ]);
       }
       await Promise.all([
-        rm(proposalRoot, { recursive: true, force: true }),
-        rm(derivedDir, { recursive: true, force: true }),
-        rm(sessionDir, { recursive: true, force: true })
+        removePathWithRetry(proposalRoot),
+        removePathWithRetry(derivedDir),
+        removePathWithRetry(sessionDir)
       ]);
     }));
 

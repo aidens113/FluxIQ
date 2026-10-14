@@ -1,3 +1,4 @@
+import { removePathWithRetry } from "./directory-removal.ts";
 import { loadRecordingTimeline } from "./load-timeline.ts";
 import { automationStudioRecordingEntry, AutomationStudioProjectRuntimeStreamStore, type AutomationStudioProjectDatabasePool } from "../../../storage/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -127,7 +128,7 @@ export class AutomationStudioRecordingStore {
     for (const item of index.recordings ?? []) liveRecordingIds.add(safeSegment(item.recordingId));
     await Promise.all(entries
       .filter((entry) => entry.isDirectory() && !liveRecordingIds.has(entry.name))
-      .map((entry) => rm(path.join(sessionsDir, entry.name), { recursive: true, force: true })));
+      .map((entry) => removePathWithRetry(path.join(sessionsDir, entry.name))));
   }
 
   async deletePhysicalJsonFilesMatching(directory: string, predicate: (document: unknown) => boolean): Promise<void> {
