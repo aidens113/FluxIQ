@@ -36,6 +36,7 @@ import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import type { AutomationStudioCandidateTrialAct, AutomationStudioCandidateTrialRequest, AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
 import { runAutomationStudioDetachedCandidate, type AutomationStudioCandidateStartReceipt, type AutomationStudioCandidateVerificationIdentity } from "../../flow-bootstrap/verification/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
+import { AutomationStudioHostLeaseScope } from "../../project-agents/host-resources/index.ts";
 import { automationStudioResultReadAccounts, type AutomationStudioBuildTestVerdict, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord, AutomationStudioCandidateTrialStart, AutomationStudioCandidateTrialUnjudged } from "./contracts.ts";
 import { automationStudioCandidateTrialFeedback as Feedback } from "./feedback.ts";
@@ -158,12 +159,26 @@ async function wayOutHandles(attempts: readonly AutomationStudioNodeAttemptTrace
   return wayOuts.length && ports.clearedControlHandles ? await ports.clearedControlHandles(wayOuts) : {};
 }
 
-/** The trial's start: the deployment's hook when it has one, otherwise the target as it stands. */
+/**
+ * The trial's start: the deployment's hook when it has one, otherwise the
+ * target as it stands.
+ *
+ * Under a host-resource lease (A11) the hook is handed that lease, read from
+ * the lease scope the trial runs in, and resets only the resource it names
+ * (`./contracts.ts`, `AutomationStudioPrepareCandidateStart`). A lease that was
+ * released or reissued is someone else's resource by now, so the hook is not
+ * called and the start fails. Outside any lease scope the hook is called
+ * exactly as before, with no lease.
+ */
 export async function automationStudioCandidateTrialStart(request: Pick<AutomationStudioCandidateTrialRequest, "candidateId" | "revision" | "digest" | "signal">, ports: AutomationStudioCandidateTrialPorts): Promise<AutomationStudioCandidateTrialStart> {
   const hook = ports.prepareStart;
   if (!hook) return { status: "not_reset" };
+  const lease = AutomationStudioHostLeaseScope.current();
+  if (lease && !AutomationStudioHostLeaseScope.gatewaySource.isCurrent(lease)) {
+    return { status: "failed", code: "candidate.trial_start_lease_stale", failure: "the host resource lease this trial ran under is no longer held" };
+  }
   try {
-    const result = await hook({ projectId: ports.projectId, flowId: ports.flowId, candidateId: request.candidateId, revision: request.revision, digest: request.digest, ...(ports.startLocation ? { startLocation: ports.startLocation } : {}), signal: request.signal });
+    const result = await hook({ projectId: ports.projectId, flowId: ports.flowId, candidateId: request.candidateId, revision: request.revision, digest: request.digest, ...(ports.startLocation ? { startLocation: ports.startLocation } : {}), ...(lease ? { lease: structuredClone(lease) } : {}), signal: request.signal });
     return { status: "reset", result: structuredClone(result) };
   } catch (error) {
     if (request.signal.aborted) throw error;

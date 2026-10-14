@@ -36,6 +36,13 @@ export type AutomationStudioConversationCommandHost = {
   pendingAsks(input: { projectId: string; conversationId: string }): Promise<AutomationStudioConversationAsk[]>;
   getAsk(input: { projectId: string; askId: string }): Promise<AutomationStudioConversationAsk | null>;
   /**
+   * One turn of the thread by id, or null when it does not hold it. An ask's
+   * question is its turn's text (`../ask.ts`, `turnId`), so this is how a
+   * command names an ask in the person's own terms rather than by its id
+   * (`answer-ask.ts`, A10). A host without it names asks by kind alone.
+   */
+  getTurn?(input: { projectId: string; conversationId: string; turnId: string }): Promise<AutomationStudioConversationTurn | null>;
+  /**
    * The person's own words that Core's turn `answerTurnId` answered
    * (`../person-words.ts`), and whether they say what to do beyond asking for
    * `capability` (`../instructions/says-what-to-do.ts`); null when no person
