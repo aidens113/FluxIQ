@@ -73,6 +73,25 @@ describe("AutomationStudioProjectDatabasePool", () => {
     await expect(pool.acquire("../outside")).rejects.toThrow(/project ID/);
     await pool.closeAll();
   });
+
+  // A FluxIQ root nested deep enough put `project.sqlite` and its WAL past
+  // Windows' 260-character path limit, which SQLite's default Windows file
+  // layer refuses with SQLITE_CANTOPEN (t568: every chat read of a Lab project
+  // failed). The database is written to as well, so its WAL is created too.
+  it("opens and writes a project database whose path is longer than Windows' 260-character limit", async () => {
+    const deepRoot = path.join(rootDir, "nested-fluxiq-root-".padEnd(120, "x"), "artifacts", "automation-studio");
+    const projectId = "29e679f4-76ae-446c-95bc-cab01141a9fd";
+    const filePath = path.join(deepRoot, "projects", projectId, "project.sqlite");
+    expect(filePath.length).toBeGreaterThan(260);
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir: deepRoot });
+    const lease = await pool.acquire(projectId);
+    expect(lease.database.filePath).toBe(filePath);
+    await lease.database.run("create table items (id text primary key)");
+    await lease.database.run("insert into items (id) values (?)", ["one"]);
+    await expect(lease.database.get<{ count: number }>("select count(*) as count from items")).resolves.toEqual({ count: 1 });
+    await lease.release();
+    await pool.closeAll();
+  });
 });
 
 // The project connection keeps `run` and `all` statements prepared. These cases

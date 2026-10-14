@@ -348,7 +348,14 @@ function normalizeProjectId(projectId: string): string {
 
 function openDatabase(filePath: string, busyTimeoutMs: number): Promise<sqlite3.Database> {
   return new Promise((resolve, reject) => {
-    const handle = new sqlite3.Database(filePath, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE | sqlite3.OPEN_FULLMUTEX, (error) => {
+    // SQLite's default Windows file layer refuses a file whose path, with its
+    // `-journal` or `-wal` suffix, passes Windows' 260-character limit
+    // (SQLITE_CANTOPEN; measured on 3.52.0: a 252-character `project.sqlite`
+    // path already fails). A nested FluxIQ root reaches that (t568: every Lab
+    // chat read failed). Windows' extended path form has no such limit, as the
+    // global store already opens (`sqlite-repository.ts`). The ordinary path
+    // stays the database's identity; on other platforms this is a no-op.
+    const handle = new sqlite3.Database(path.toNamespacedPath(filePath), sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE | sqlite3.OPEN_FULLMUTEX, (error) => {
       if (error) reject(error);
       else {
         handle.serialize();
