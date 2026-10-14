@@ -68,13 +68,20 @@ export function automationStudioLlmProviderRetryDecision(input: {
   runAddedMs: number;
   /** The wait the provider itself asked for, already read from its answer (`hint.ts`). */
   hintedWaitMs?: number;
+  /**
+   * A uniform draw in [0, 1] that spreads the backoff when other calls share
+   * the endpoint (`limits.ts`, `jitterRatio`). Absent, the backoff is the
+   * table's exactly.
+   */
+  jitter?: number;
 }): AutomationStudioLlmProviderRetryDecision {
   const limits = AUTOMATION_STUDIO_LLM_PROVIDER_RETRY_LIMITS;
   if (input.cancelled) return { retry: false, stop: "cancelled" };
   if (!input.retryable || (input.code !== undefined && NEVER_ASKED_AGAIN.has(input.code))) return { retry: false, stop: "not_retryable" };
   const maxAttempts = Math.min(limits.maxAttempts, Math.max(1, Math.trunc(input.maxAttempts ?? limits.maxAttempts)));
   if (input.attempt >= maxAttempts) return { retry: false, stop: "attempts_exhausted" };
-  const backoffMs = limits.backoffMs[Math.min(input.attempt, limits.backoffMs.length) - 1] ?? limits.backoffMs[limits.backoffMs.length - 1] ?? 0;
+  const tableMs = limits.backoffMs[Math.min(input.attempt, limits.backoffMs.length) - 1] ?? limits.backoffMs[limits.backoffMs.length - 1] ?? 0;
+  const backoffMs = Math.round(tableMs * (1 + limits.jitterRatio * unit(input.jitter)));
   const hintedWaitMs = positive(input.hintedWaitMs);
   const waitMs = Math.min(limits.maxWaitMs, Math.max(backoffMs, hintedWaitMs));
   // Projected, not spent: the attempt's own deadline is counted before it runs,
@@ -86,6 +93,11 @@ export function automationStudioLlmProviderRetryDecision(input: {
   // A hint longer than the table is the provider knowing something the table
   // does not; a shorter one is not, so the table still holds the floor.
   return { retry: true, waitMs, waitSource: hintedWaitMs > backoffMs ? "provider_hint" : "backoff" };
+}
+
+/** A draw held to [0, 1]; nothing, or nonsense, is no spread. */
+function unit(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
 }
 
 function positive(value: number | undefined): number {

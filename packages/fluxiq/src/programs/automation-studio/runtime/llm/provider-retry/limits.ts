@@ -33,11 +33,19 @@ export const AUTOMATION_STUDIO_LLM_PROVIDER_RETRY_LIMITS = Object.freeze({
    * The wait before attempt 2 and attempt 3 when the provider asked for none.
    *
    * A second is what a rate limit usually needs, and the second step is a
-   * multiple rather than a repeat so a busy provider gets a widening gap. No
-   * jitter: Core runs one loop against one endpoint, so there is no herd to
-   * spread, and a random wait would make the bound below unverifiable.
+   * multiple rather than a repeat so a busy provider gets a widening gap.
    */
   backoffMs: Object.freeze([1_000, 3_000]),
+  /**
+   * How far a backoff is spread when other calls share the endpoint (t534):
+   * up to this fraction of it, added. One loop against one endpoint has no
+   * herd to spread and waits the table exactly. Concurrent builders do: two
+   * loops that met one rate limit together would otherwise ask again together
+   * and meet it again. The spread is drawn before the wait is decided, so the
+   * bounds below still hold on the wait actually taken: a backoff of 1 s waits
+   * 1 s to 1.5 s, one of 3 s waits 3 s to 4.5 s, never past `maxWaitMs`.
+   */
+  jitterRatio: 0.5,
   /** The most one wait may be, however long a provider's own hint asks for. */
   maxWaitMs: 5_000,
   /** The most wall clock one provider call may take, attempts and waits together. */

@@ -51,12 +51,7 @@ and promotion gate, site-control preparation) and held-topology units 1-4
 observed-current case does not need them for creation; post-run repair of a
 multi-subflow Flow does need held-topology.
 
-**In progress (2026-10-13, user: "go ahead and work"):** A1 (t533), A2 (t534)
-and A3 (t535) dispatched in parallel, each in its own paired worktree under
-`fxwork/t<NNN>/`; briefs under `Worker Briefs`. **Next:** verify each, finish
-the tasks; then A4 (needs A1) and A6 with downstream W2 (needs A1), W1 (needs
-A3); A5 integrates them in `service.ts` under its single owner. The A8 Lab
-comparison per the paired document.
+**Delivered on Core dev (2026-10-13, supervisor-verified):** A1 contracts and build record (t533), A2 allowances, per-run refusal, cancellation tree and retry jitter (t534), A3 host-resource scheduler (t535), and the supervisor-written subflow builder contract (`flow-bootstrap/subflow-candidate/contracts.ts`). Nothing is wired into `service.ts` yet. **In progress:** t536 host lease on commands (A3b Core + W1 downstream, paired), t537 A4a builder scope, t538 A4b partial subflow trial. **Next:** A6 with downstream W2 (activity attribution and chat), then A5 (supervisor loop and the one `service.ts` integration). Notes for A5: give the supervisor's own decisions and judge their own purse run (a builder in the same chain passes its refusal up, t534 report); one scheduler per host port, not per build; pass `callScope` only when capacity is above 1 (the extension matches `initial.<toolId>` exactly); `purse.ts` is 476 lines (advisory), split it if A5 grows it.
 
 **Not claimed:** that agents fix wrong judgements, that any unit exists, or
 that a multi-agent build has run.
@@ -190,6 +185,16 @@ with empty subflow bodies (`nodes`/`edges` empty, `interface` and
 Validated with the existing plan validation and route validation (t531
 reachability) before any brief is dispatched. Every part is covered by at
 least one subflow; an uncovered part refuses the plan.
+
+**How data crosses subflows (decided 2026-10-13, from t537).** Only through
+callable parts, as the script grammar already allows: a subflow that takes
+or hands back values has an `interface` and is a `part`, which its builder
+writes as `part <key>:` with `input:` and `output: <name> = $step...` lines,
+so its outputs are bound. A Router-run subflow has no interface; for a
+multi-part task its body is the sequence of `call:` steps the supervisor
+writes at assembly, passing each part's outputs to the next by name. A
+builder's own helper parts are re-keyed `<subflowKey>-<label>` in its
+proposal, so two briefs never collide at assembly.
 
 **Subflow brief** — `{ briefId, kind: build|survey|repair, planDigest,
 subflowKey, parts[], interface, entry: { caseId, predecessors[] },
@@ -443,6 +448,133 @@ there. Narrow checks only (no full suites): the unit's vitest files from
   waits; stale epoch after release; double release harmless. The four narrow checks pass.
 - Report to: `docs/working/automation-project-agents-plan/reports/t535-a3-host-resources.md`
 
+### Brief: t536-a3b-lease-core
+- Repository: FluxIQ Core, worktree `fxwork/t536/!FluxIQ`, branch `task/t536-host-lease-wire`. Paired with W1 (downstream, same task); they merge together.
+- Task: unit A3b, carry the host lease on every host command. The wire type `lease?` on the execute-action
+  command and the refusal codes are already in `packages/contracts/src/client-gateway.ts` (supervisor-written
+  on this branch; change their shape only with a reason in your report). (1) New
+  `project-agents/host-resources/lease-scope.ts`: a `scheduler.run` variant that puts the lease in an
+  AsyncLocalStorage scope for the work. (2) Core's gateway stamps `lease` from that scope on every command,
+  the way `commandOwner` is stamped (`client-gateway/service/commands.ts:91,209-211`, `service/types.ts:41`,
+  wired at `programs/_shared/runtime.ts:79-87`); a caller-supplied lease that differs from the scope is
+  refused; strict mode: while the port's resource is held, a command without the current lease is refused.
+  A stale lease is refused before sending, with the same failure record the extension uses (`failed`,
+  category `blocked_by_capability_or_policy`, code `host_lease.stale`, retryable false, stage `dispatch`,
+  effect `unacted`). (3) Durable path `service/command-ledger/dispatch.ts`: admit `lease` (allowlist
+  `:186-188`), stamp it before the request digest (`:47`), throw before the claim on a stale lease. (4) Optional
+  `hostResources` port on `AutomationStudioHostRuntimeBoundary` (`runtime/host-runtime.ts:86`).
+- Required reads: this document's `Host resources and concurrency`; `project-agents/host-resources/`;
+  the files named above; `docs/architecture/code-structure.md`.
+- Owns: the files named above, a new `client-gateway/service/host-lease/`, their tests, tests for the contracts
+  type; `docs/working/automation-project-agents-plan/reports/t536-a3b-lease-core.md`.
+- Must not touch: `service.ts`; other `host-resources/` files; `llm/`; `project-agents/{contracts,record}`;
+  `flow-bootstrap/`; `harness-options/binding.ts`; `io-policy.ts`; any downstream file.
+- Definition of done: tests: stamped from scope; no scope gives today's payload byte for byte; stale and
+  forged leases refused unsent with a record that parses as failed and unacted; strict mode; durable digest
+  includes the lease, a malformed lease is `invalid_command`, a stale one throws before the claim; two
+  concurrent scopes on a capacity-2 stub stamp their own leases; a trial run (`runCanonicalAutomationStudioFlow`
+  with stub adapter and host runtime) inside a scope stamps every command. Four narrow checks pass, plus
+  `pnpm.cmd --filter @fluxiq/contracts build` and the contracts tests.
+- Report to: `docs/working/automation-project-agents-plan/reports/t536-a3b-lease-core.md`
+
+### Brief: t537-a4a-builder-scope
+- Repository: FluxIQ Core, worktree `fxwork/t537/!FluxIQ`, branch `task/t537-subflow-builder-scope`
+- Task: unit A4a, the builder side of a subflow builder. Contracts are fixed in
+  `flow-bootstrap/subflow-candidate/contracts.ts` (supervisor-owned; propose changes in your report).
+  In `flow-bootstrap/subflow-candidate/`: `scoped-submission.ts` (a per-brief controller reusing the pieces of
+  `AutomationStudioFlowCandidateSubmissionController`: refuse any Router rule or `when:` line, any subflow but
+  the scope's and its own `part`s, a part key colliding with a sibling, and any change to the scope's
+  `interface` or `successCheck`; then run the existing completion check on a probe plan of the target plus its
+  parts with the router fallback at the target, passing the scope's part quotes as the instruction text);
+  `subflow-digest.ts` (binds buildId, briefId, planDigest, subflowKey and today's fingerprint inputs);
+  `subflow-trial-gate.ts` (asks an `AutomationStudioSubflowTrialPort`, keeps partial verdicts, separate from
+  the whole-candidate gate); `role-tools.ts` (the builder drops `core.run_flow`, `core.submit_candidate`,
+  `core.test_candidate`, `project.*`); `builder-loop.ts` (the candidate loop's discovery mode with these tools,
+  completion `{subflowKey, revision, digest}`). Call ids: `callScope?` on the loop input
+  (`llm/loop-configuration.ts:40`) and a helper in `llm/evidence-loop/call-id.ts`: without a scope the opening
+  id is byte-identical (`initial.<toolId>`), with one it is `initial.<toolId>.<scope>`; use it at
+  `llm/evidence-loop.ts:533,539` and its predicate at `flow-bootstrap/candidate/authoring-loop.ts:14,149`.
+- Required reads: this document's `Contracts`; `flow-bootstrap/candidate/{authoring-loop,submission,digest,trial-gate}.ts`;
+  `llm/harness-options/bootstrap-completion.ts`; `docs/architecture/code-structure.md`.
+- Owns: new files in `flow-bootstrap/subflow-candidate/` with `tests/` and its `index.ts`; the lines named in
+  `llm/evidence-loop.ts`, `llm/loop-configuration.ts` and `authoring-loop.ts`; `llm/evidence-loop/call-id.ts`
+  and its test; `docs/working/automation-project-agents-plan/reports/t537-a4a-builder-scope.md`.
+- Must not touch: `service.ts`, `subflow-candidate/contracts.ts`, every other `flow-bootstrap/candidate/` file
+  (t532 edits them), `verification/`, `site-reset/`, `service/`, `project-agents/`, `llm/build-purse/`.
+- Definition of done: tests: each refusal above; the digest changes with each scope field; two controllers never
+  match receipts; a subflow-gate yes fed to the whole gate's `completion` still answers `candidate.trial_required`;
+  builder tools exclude whole-candidate and `project.*`; opening id unchanged without a scope, suffixed with one,
+  still recognised by the authoring loop; existing evidence-loop and authoring-loop tests pass. Four narrow checks.
+- Report to: `docs/working/automation-project-agents-plan/reports/t537-a4a-builder-scope.md`
+
+### Brief: t538-a4b-partial-trial
+- Repository: FluxIQ Core, worktree `fxwork/t538/!FluxIQ`, branch `task/t538-subflow-partial-trial`
+- Task: unit A4b, the validator side of a subflow builder, implementing `AutomationStudioSubflowTrialPort`
+  from `flow-bootstrap/subflow-candidate/contracts.ts` (import only). (1) New
+  `flow-bootstrap/verification/detached-subflow.ts`: an explicitly partial entry, leaving
+  `detached-execution.ts` and its partial refusal untouched; reuse its identity and freshness checks, plan
+  validation and normalization, the t529 `automationStudioCandidateGraphSource` (no accepted-graph fallback),
+  root invocation and per-graph failed-route budget; run the predecessors' proposals then the target with its
+  interface inputs read from their outputs (a throwaway root graph of Call Subflow steps reuses the C1 boundary
+  and per-frame success check; your choice, say which). A failed predecessor means the target does not run and
+  `entryPrepared` is false. (2) New `service/subflow-trial/` (`run.ts`, `port.ts`, barrel): opens the session
+  with `metadata.subflowTrial = {buildId, briefId, subflowKey, revision, digest}` (never `adaptiveRuntime`),
+  takes injected `predecessorProposals(scope)` and an injected scoped judge, and reuses `candidate-trial`
+  helpers (feedback, summary, landed acts, frame evidence) by import. (3) Project ledger: optional constructor
+  options on `flow-bootstrap/site-reset/ledger.ts` (`owner`, `nextActId`, `sink`; default unchanged) and new
+  `site-reset/project-ledger.ts` whose `forBrief(briefId)` returns a real ledger: globally unique act ids, acts
+  attributed by brief, a brief claims and sees only its own acts (including `stillThere`'s others check), one
+  serialized writer, a snapshot for the build record. (4) New `service/runtime-session/build-trial-admission.ts`:
+  admits a subflow-trial session only for a known build and a current lease (`assertCurrent` from
+  `project-agents/host-resources/`).
+- Required reads: this document's `Contracts`; `flow-bootstrap/verification/{detached-execution,candidate-graphs}.ts`;
+  `service/candidate-trial/{run,port,contracts}.ts`; `flow-bootstrap/site-reset/ledger.ts`; `docs/architecture/code-structure.md`.
+- Owns: the new files above with barrels and `tests/`; `ledger.ts` constructor only; the export lines in
+  `verification/index.ts`, `site-reset/index.ts` and `runtime-session/index.ts`;
+  `docs/working/automation-project-agents-plan/reports/t538-a4b-partial-trial.md`.
+- Must not touch: `detached-execution.ts`, `candidate-graphs.ts`, `service/candidate-trial/*`, `admission.ts`,
+  `service.ts`, `flow-bootstrap/candidate/`, `flow-bootstrap/subflow-candidate/`, `llm/`, `project-agents/`.
+- Definition of done: tests: predecessors then target from the candidate source; a subflow outside the topology
+  fails and accepted graphs are never read (spy); a failed predecessor stops the target; identity or staleness
+  refuses; `detached-execution` still refuses partial options; session metadata and the injected judge; a
+  `partial: true` result with predecessor acts; the project-ledger cases above with the old ledger tests
+  unchanged; admission refuses a stale or missing lease and admits two at once on a capacity-2 stub. Four
+  narrow checks pass.
+- Report to: `docs/working/automation-project-agents-plan/reports/t538-a4b-partial-trial.md`
+
+### Brief: t539-a6-attribution-core
+- Repository: FluxIQ Core, worktree `fxwork/t539/!FluxIQ`, branch `task/t539-agent-attribution-chat`. Paired with W2 (downstream, same task); they merge together.
+- Task: unit A6. Every build activity event carries which agent it comes from, and the supervisor's plan,
+  briefs, returns and receipts reach the chat as cards. The wire types are fixed on the branch
+  (supervisor-written in `packages/contracts/src/client-gateway.ts`): `agent?: ClientGatewayActivityAgent` on
+  `ClientGatewayActivity` and `project?: ClientGatewayActivityProjectCard` on a `note` row's detail; re-export
+  them from `packages/client-gateway-websocket/src/index.ts`. (1) New `activity/agent.ts`: its own
+  AsyncLocalStorage (`runWithAutomationStudioActivityAgent(agent, fn)`, `currentAutomationStudioActivityAgent()`),
+  separate from the scope frame (`bind.ts:12-13` mutates the frame in place). Stamp it in the one publish path,
+  `activity/emit.ts:21`, so no emit site changes; bound it in `activity/bounded.ts` (closed role set, `briefId`
+  id-shaped like `TARGET_ID`, `subflowName` 160, `project` kept only on `note` rows, parts and subflows at most
+  20, strings 160, `reason` 240; `boundedDetail` copies unknown fields unbounded today, so bound these
+  explicitly). (2) New `activity/project/`: emitters for the four cards built from the A1 contracts
+  (`project-agents/contracts/`); never a digest in any title or ref (the extension hides such rows).
+  (3) Step log: `role` and `briefId` in the step-log scope (`llm/step-log/scope.ts`), the three meta writers and
+  two new `index.md` columns (`listing.ts`). (4) New `project-agents/attribution/`
+  (`withAutomationStudioProjectAgent(agent, fn)`) setting both stores, since `llm/` imports nothing from
+  `activity/`. (5) Core's web panel keeps working: it drops unknown top-level fields and ignores `note` rows,
+  which is why the cards ride on `note`.
+- Required reads: this document's `Contracts`; `activity/{emit,bounded,contracts,storage,bind}.ts`;
+  `llm/step-log/{scope,listing,model-step,tool-step,answer-step}.ts`; `apps/web/src/features/automation-studio/conversation/activity/contracts.ts:91-167`.
+- Owns: the files named above, `activity/index.ts`, new dirs with barrels and `tests/`;
+  `docs/architecture/automation-studio/client-gateway.md` (activity section);
+  `docs/working/automation-project-agents-plan/reports/t539-a6-attribution-core.md`.
+- Must not touch: `service.ts`; `project-agents/{contracts,record,host-resources}`; `flow-bootstrap/`;
+  `llm/evidence-loop.ts` and every other `llm/` file but `step-log/`; `client-gateway/service/`; any downstream file.
+- Definition of done: tests: events inside an agent frame are stamped and outside are not; innermost wins; two
+  frames under `Promise.all` stay apart; a run still binds inside an agent frame; bounds drop unknown roles,
+  malformed brief ids and `project` off `note`; the publisher carries `agent` unchanged; each card from A1
+  fixtures with no digest in titles or refs; step-log meta and index columns; Core web panel stream test still
+  parses stamped events and project notes. Four narrow checks plus the contracts build and tests.
+- Report to: `docs/working/automation-project-agents-plan/reports/t539-a6-attribution-core.md`
+
 ## Work Ledger
 
 ### 2026-10-13 — Plan written from three discovery reports
@@ -460,6 +592,30 @@ there. Narrow checks only (no full suites): the unit's vitest files from
 - Validation: not validated by tests (planning); `pnpm task start ... --worktree --core` created t533, t534 (observed JSON `"applied":true`)
 - Outcome: Accepted
 - Follow-up: verify t533-t535 reports and checks
+
+### 2026-10-13 — A3 host-resource scheduler (t535)
+- Agent: worker t535-a3-host-resources; supervisor verified and integrated
+- Changed: `project-agents/host-resources/` (types, scheduler, errors, stub host, 20 tests)
+- Why: user decision, concurrent agents in Core with domain-declared capacity
+- Validation: `pnpm.cmd exec vitest run src/programs/automation-studio/runtime/project-agents/host-resources` -> 20 passed; `pnpm.cmd --filter fluxiq check` -> exit 0; `node scripts/structure-audit.mjs` -> passed; Core `pnpm task finish t535` -> `pnpm check` passed, merged `f606cdbc`
+- Outcome: Accepted. Supervisor read the scheduler and kept the port-contract-violation path that does not hand a bad grant back, since releasing it could free another holder's resource
+- Follow-up: none
+
+### 2026-10-13 — A1 contracts and build record (t533)
+- Agent: worker t533-a1-contracts; supervisor verified and integrated
+- Changed: `project-agents/{contracts,record}/`; `project-agents/index.ts` (also exports host-resources)
+- Why: unit A1
+- Validation: `pnpm.cmd exec vitest run src/programs/automation-studio/runtime/project-agents` -> 84 passed after merging dev (64 own + 20 A3); check exit 0; structure audit passed; Core finish -> `pnpm check` passed after regenerating the stale working-doc index, merged `d104cbe3`
+- Outcome: Accepted. Quotes match exactly (kept strict: the instructions are the authority); the structure plan is validated structurally, not by the plan parser that refuses empty bodies
+- Follow-up: none
+
+### 2026-10-13 — A2 allowances, refusal, cancellation, jitter (t534)
+- Agent: worker t534-a2-allowances; supervisor verified and integrated
+- Changed: `llm/build-purse/` (allowance-book, run-frame, purse, run, harness-hold), `llm/provider-retry/` (endpoint-load, jitter), `service/flow-bootstrap-commands/cancellation.ts`
+- Why: unit A2, concurrency-safe budget and cancellation
+- Validation: vitest over every test file naming the purse, provider retry or build cancellation -> 35 files, 334 passed; check exit 0; structure audit passed (advisory: `purse.ts` 476 lines); Core finish -> `pnpm check` passed, merged `b6d67d3e`
+- Outcome: Accepted
+- Follow-up: A5 notes in Current State
 
 ## Open Questions
 

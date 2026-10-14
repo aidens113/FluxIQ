@@ -8,6 +8,7 @@
 export * from "./account.ts";
 export * from "./call.ts";
 export * from "./decision.ts";
+export * from "./endpoint-load.ts";
 export * from "./hint.ts";
 export * from "./ledger.ts";
 export * from "./limits.ts";
