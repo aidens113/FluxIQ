@@ -117,6 +117,7 @@ describe("AutomationStudioService iterating recovery", () => {
     const service = track(new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }));
     const project = await service.createProject({ name: "Any intent" });
     const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.any-intent", metadata: adaptiveTrainingMetadata() });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     await expect(service.runRuntimeSession({
       projectId: project.id,
       flowId: flow.flowId,
@@ -198,6 +199,7 @@ async function recoveryFixture(intent: AutomationStudioRuntimeSessionLlmIntent) 
   }));
   const project = await service.createProject({ name: `Iterating recovery ${intent}` });
   const flow = await createFailingCanonicalFlow(service, project.id, { flowId: `flow.iterating-${intent.replaceAll("_", "-")}`, metadata: adaptiveTrainingMetadata() });
+  await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
   return {
     taskKinds,
     toolCalls,

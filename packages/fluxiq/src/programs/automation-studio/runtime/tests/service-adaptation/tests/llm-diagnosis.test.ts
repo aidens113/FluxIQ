@@ -34,6 +34,7 @@ describe("AutomationStudioService recording persistence", () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Missing provider" });
     const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.missing-provider", metadata: adaptiveTrainingMetadata() });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
 
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
     const detail = await service.getFlowRunDetail(project.id, run.runId);
@@ -70,6 +71,7 @@ describe("AutomationStudioService recording persistence", () => {
     });
     const project = await service.createProject({ name: "Mock provider" });
     const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.mock-provider", metadata: adaptiveTrainingMetadata() });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
 
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
     const detail = await service.getFlowRunDetail(project.id, run.runId);
@@ -130,6 +132,7 @@ describe("AutomationStudioService recording persistence", () => {
     });
     const project = await service.createProject({ name: "Failure evidence" });
     const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.failure-evidence", metadata: adaptiveTrainingMetadata() });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     const runtimeSubflowId = (await service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId, limit: 10, offset: 0 })).subflows[0]?.subflowId;
     expect(runtimeSubflowId).toBeTruthy();
     await service.putReusableLlmContext({ projectId: project.id, actorId: "fixture", record: {
@@ -194,6 +197,7 @@ describe("AutomationStudioService recording persistence", () => {
     });
     const project = await service.createProject({ name: "Invalid failure evidence" });
     const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.invalid-failure-evidence", metadata: adaptiveTrainingMetadata() });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
 
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
     const detail = await service.getFlowRunDetail(project.id, run.runId);
@@ -224,6 +228,7 @@ describe("AutomationStudioService recording persistence", () => {
     });
     const project = await service.createProject({ name: "Oversized failure evidence" });
     const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.oversized-failure-evidence", metadata: adaptiveTrainingMetadata() });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
 
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
     const detail = await service.getFlowRunDetail(project.id, run.runId);
@@ -255,6 +260,7 @@ describe("AutomationStudioService recording persistence", () => {
     });
     const project = await service.createProject({ name: "Absent target evidence" });
     const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.absent-target-evidence", metadata: adaptiveTrainingMetadata() });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
 
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 }, llmExecution: { actorUserId: "user.test", actorSessionId: "session.test", intent: "diagnose_and_adapt" } });
     const detail = await service.getFlowRunDetail(project.id, run.runId);
@@ -275,6 +281,7 @@ describe("AutomationStudioService recording persistence", () => {
     });
     const project = await service.createProject({ name: "Resolver failure" });
     const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.resolver-failure", metadata: adaptiveTrainingMetadata() });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
     const detail = await service.getFlowRunDetail(project.id, run.runId);
     expect(detail?.metadata).toMatchObject({ llmGate: { invoked: false, code: "llm.provider_resolution_failed" } });
@@ -300,6 +307,7 @@ describe("AutomationStudioService recording persistence", () => {
     });
     const project = await service.createProject({ name: "Diagnosis only" });
     const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.diagnosis-only", metadata: adaptiveTrainingMetadata() });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
 
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 }, adaptiveMode: "manual_approval" });
     const detail = await service.getFlowRunDetail(project.id, run.runId);

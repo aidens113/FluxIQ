@@ -137,6 +137,7 @@ describe("the history a run's adaptation context reads", () => {
     const service = createService();
     const project = await service.createProject({ name: "Run start" });
     const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.run-start-history" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     vi.spyOn(service, "listFlowRunSummaries").mockRejectedValue(new Error("database is locked"));
 
     await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId })).rejects.toThrow("database is locked");

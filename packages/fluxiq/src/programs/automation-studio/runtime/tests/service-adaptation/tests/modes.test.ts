@@ -38,6 +38,7 @@ describe("AutomationStudioService recording persistence", { timeout: 60_000 }, (
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Runtime adaptation context" });
     const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.runtime-context" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
 
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
     const detail = await service.getFlowRunDetail(project.id, run.runId);
@@ -86,6 +87,7 @@ describe("AutomationStudioService recording persistence", { timeout: 60_000 }, (
         }
       }
     });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
 
     await expect(service.resolveRuntimeAdaptationContext({ projectId: project.id, flow })).resolves.toMatchObject({
       settings: { recoveryBudget: { maxRetriesPerAction: 4, maxRecoveryAttemptsPerSubflow: 5, maxReroutesPerRun: 6 } }
@@ -110,6 +112,7 @@ describe("AutomationStudioService recording persistence", { timeout: 60_000 }, (
         }
       }
     });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
 
     const first = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
     const second = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
@@ -141,6 +144,7 @@ describe("AutomationStudioService recording persistence", { timeout: 60_000 }, (
         }
       }
     });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: stableFlow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     const continuousFlow = await createRunnableCanonicalFlow(service, project.id, {
       flowId: "flow.continuous",
       metadata: {
@@ -156,6 +160,7 @@ describe("AutomationStudioService recording persistence", { timeout: 60_000 }, (
         }
       }
     });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: continuousFlow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     await service.saveFlowRunDetail({
       schemaVersion: "0.1",
       summary: {

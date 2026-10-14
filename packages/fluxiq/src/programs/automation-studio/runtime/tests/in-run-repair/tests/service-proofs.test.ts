@@ -175,6 +175,7 @@ async function flow(found: World, nodes: AutomationStudioFlowNode[], edges: Auto
   const blank = await service.getFlow(project.id, graphFlowId);
   await service.saveFlow({ projectId: project.id, flow: { ...blank, nodes, edges } });
   await service.setFlowMapFallback({ projectId: project.id, flowId: created.flowId, kind: "subflow", targetSubflowId: subflow.subflowId });
+  await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: created.flowId, instruction: "Press each control in order and finish." });
   found.readStoredBroken = async () => (await service.getFlow(project.id, graphFlowId)).nodes.find((node) => node.id === "broken")?.parameterValues?.control;
   found.readStoredBrokenNode = async () => (await service.getFlow(project.id, graphFlowId)).nodes.find((node) => node.id === "broken")?.parameterValues;
   return { projectId: project.id, flowId: created.flowId, graphFlowId };

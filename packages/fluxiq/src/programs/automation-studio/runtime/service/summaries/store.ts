@@ -463,6 +463,15 @@ export class AutomationStudioSummaryStore {
     return { subflows: result.items, total: result.total, limit, offset };
   }
 
+  /** The Flow a Subflow belongs to, or null when no store knows it. */
+  private async subflowOwnerFlowId(projectId: string, subflowId: string): Promise<string | null> {
+    if (!this.paths.root) return (await this.indexes.readFlowSubflowIndex(projectId)).subflows?.find((item) => item.subflowId === subflowId)?.flowId ?? null;
+    const owner = await this.flows.tryWithFlowResourceRepository(projectId, async (repository) => (await repository.getSubflow(subflowId))?.parentFlowId ?? null);
+    if (owner) return owner;
+    const summary = await this.flowMutations.flowSubflowSummaryRepository(projectId).get(subflowId);
+    return typeof summary?.data.flowId === "string" ? summary.data.flowId : null;
+  }
+
   async listFlowInstructionSummaries(input: { projectId: string; flowId?: string; subflowId?: string; status?: string; scopeKind?: string; requirement?: string; search?: string; sort?: "updated" | "title" | "status" | "scope" | "priority"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioInstructionSummaryPage> {
     return await this.withProjectDatabaseHeld(input.projectId, () => this.listFlowInstructionSummariesUnheld(input));
   }
@@ -471,9 +480,11 @@ export class AutomationStudioSummaryStore {
     const limit = clampInteger(input.limit, 1, 100, 25);
     const offset = clampInteger(input.offset, 0, 1_000_000, 0);
     const search = input.search?.trim().toLowerCase();
+    // A Subflow reads its own Flow's flow-scoped instructions and no other Flow's, as project SQL does (t544).
+    const subflowOwner = input.subflowId ? await this.subflowOwnerFlowId(input.projectId, input.subflowId) : null;
     const matchesScope = (item: AutomationStudioInstructionSummary) =>
       (!input.flowId || item.flowId === input.flowId || item.scopeKind === "global" || item.scopeKind === "project")
-      && (!input.subflowId || item.subflowId === input.subflowId || item.scopeKind === "flow" || item.scopeKind === "project" || item.scopeKind === "global");
+      && (!input.subflowId || item.subflowId === input.subflowId || item.scopeKind === "project" || item.scopeKind === "global" || (item.scopeKind === "flow" && subflowOwner !== null && item.flowId === subflowOwner));
     if (!this.paths.root) {
       const index = await this.indexes.readFlowInstructionIndex(input.projectId);
       const scoped = (index.instructions ?? []).filter((item) => matchesScope(item)
@@ -510,7 +521,7 @@ export class AutomationStudioSummaryStore {
     const clauses: string[] = [];
     const params: unknown[] = [];
     if (input.flowId) { clauses.push("(json_extract(data, '$.flowId') = ? or json_extract(data, '$.scopeKind') in ('global', 'project'))"); params.push(input.flowId); }
-    if (input.subflowId) { clauses.push("(json_extract(data, '$.subflowId') = ? or json_extract(data, '$.scopeKind') in ('global', 'project', 'flow'))"); params.push(input.subflowId); }
+    if (input.subflowId) { clauses.push("(json_extract(data, '$.subflowId') = ? or json_extract(data, '$.scopeKind') in ('global', 'project') or (json_extract(data, '$.scopeKind') = 'flow' and json_extract(data, '$.flowId') = ?))"); params.push(input.subflowId, subflowOwner); }
     if (input.status) { clauses.push("json_extract(data, '$.status') = ?"); params.push(input.status); }
     if (input.scopeKind) { clauses.push("json_extract(data, '$.scopeKind') = ?"); params.push(input.scopeKind); }
     if (input.requirement) { clauses.push("json_extract(data, '$.requirement') = ?"); params.push(input.requirement); }

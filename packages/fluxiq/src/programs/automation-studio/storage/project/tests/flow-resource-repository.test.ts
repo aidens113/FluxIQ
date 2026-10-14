@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutomationStudioProjectDatabasePool } from "../database.ts";
-import { AutomationStudioProjectFlowResourceRepository } from "../flow-resource-repository.ts";
+import { AutomationStudioProjectFlowResourceRepository, type AutomationStudioSqlInstructionScope } from "../flow-resource-repository.ts";
 import { AutomationStudioProjectFlowResourceMutations } from "../flow-resource-mutations.ts";
 import { CanonicalAuthorityWholeSql, type CanonicalWholeSqlCapability } from "../../canonical-authority/index.ts";
 
@@ -314,3 +314,79 @@ describe("AutomationStudioProjectFlowResourceRepository", () => {
 function baseFlow(flowId: string, name: string, updatedAt: number) {
   return { flowId, parentFlowId: null, owningSubflowId: null, name, description: "", scopeKind: "global" as const, scopeId: null, visibility: "private" as const, origin: "user" as const, sourceMode: "visual" as const, status: "draft" as const, compiledRevision: null, updatedAt };
 }
+
+// The SQL instruction listing's scope filters narrow; they never widen (t544).
+// Its Flow and Subflow filters were joined with "or", and the Subflow filter let
+// in every "flow"-scoped instruction, so listing one Flow's Subflow returned
+// another Flow's instructions too. That changed a Flow's execution digest
+// whenever any other Flow's instruction was saved, which ended an in-flight
+// build on it as stale.
+const INSTRUCTION_PROJECT = "project.instruction-scope";
+
+function scope(scopeKind: AutomationStudioSqlInstructionScope["scopeKind"], ids: { projectId?: string; flowId?: string; subflowId?: string } = {}): AutomationStudioSqlInstructionScope {
+  return { scopeKind, projectId: ids.projectId ?? null, flowId: ids.flowId ?? null, routerId: null, subflowId: ids.subflowId ?? null, nodeId: null, errorCode: null };
+}
+
+async function twoFlows() {
+  const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+  const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool, projectId: INSTRUCTION_PROJECT });
+  for (const key of ["a", "b"]) {
+    await repository.upsertFlow(baseFlow(`flow.${key}`, key, 1));
+    await repository.upsertFlow({ ...baseFlow(`flow.${key}.graph`, `${key} graph`, 1), parentFlowId: `flow.${key}` });
+    await repository.upsertSubflow({ subflowId: `subflow.${key}`, parentFlowId: `flow.${key}`, graphFlowId: `flow.${key}.graph`, parentCategoryId: null, name: key, description: "", role: "primary", status: "active", inputMapping: [], outputMapping: [], approvalOverride: null });
+  }
+  const instructions: Array<[string, AutomationStudioSqlInstructionScope]> = [
+    ["instruction.global", scope("global")],
+    ["instruction.project", scope("project", { projectId: INSTRUCTION_PROJECT })],
+    ["instruction.flow-a", scope("flow", { projectId: INSTRUCTION_PROJECT, flowId: "flow.a" })],
+    ["instruction.flow-b", scope("flow", { projectId: INSTRUCTION_PROJECT, flowId: "flow.b" })],
+    ["instruction.subflow-a", scope("subflow", { projectId: INSTRUCTION_PROJECT, flowId: "flow.a", subflowId: "subflow.a" })],
+    ["instruction.subflow-b", scope("subflow", { projectId: INSTRUCTION_PROJECT, flowId: "flow.b", subflowId: "subflow.b" })]
+  ];
+  for (const [instructionId, instructionScope] of instructions) {
+    await repository.upsertInstruction({ instructionId, title: instructionId, inlineBody: "Read the listed records.", bodyObjectId: null, requirement: "required", status: "active", priority: 100, scopes: [instructionScope], tags: [] });
+  }
+  return {
+    ids: async (filter: Parameters<AutomationStudioProjectFlowResourceRepository["listInstructionSummariesPage"]>[0]) =>
+      (await repository.listInstructionSummariesPage({ ...filter, limit: 100, offset: 0 })).items.map((item) => item.instructionId).sort(),
+    close: async () => {
+      await repository.close();
+      await pool.closeAll();
+    }
+  };
+}
+
+describe("the SQL instruction summary listing's scope filters", () => {
+  beforeEach(async () => {
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-instruction-scope-"));
+  });
+  afterEach(async () => rm(rootDir, { recursive: true, force: true }));
+
+  it("never lists another Flow's instruction for a Flow's Subflow", async () => {
+    const found = await twoFlows();
+    try {
+      const own = ["instruction.flow-a", "instruction.global", "instruction.project", "instruction.subflow-a"];
+      expect(await found.ids({ flowId: "flow.a", subflowId: "subflow.a" })).toEqual(own);
+      // With no Flow named, the Subflow's own Flow is still the only Flow it reads.
+      expect(await found.ids({ subflowId: "subflow.a" })).toEqual(own);
+      expect(await found.ids({ flowId: "flow.b", subflowId: "subflow.b" })).toEqual(["instruction.flow-b", "instruction.global", "instruction.project", "instruction.subflow-b"]);
+    } finally {
+      await found.close();
+    }
+  });
+
+  it("narrows by every filter it is given", async () => {
+    const found = await twoFlows();
+    try {
+      expect(await found.ids({ flowId: "flow.a" })).toEqual(["instruction.flow-a", "instruction.global", "instruction.project", "instruction.subflow-a"]);
+      expect(await found.ids({ flowId: "flow.a", scopeKind: "flow" })).toEqual(["instruction.flow-a"]);
+      expect(await found.ids({ flowId: "flow.a", subflowId: "subflow.a", scopeKind: "subflow" })).toEqual(["instruction.subflow-a"]);
+      // A Subflow of another Flow names nothing that Flow A owns.
+      expect(await found.ids({ flowId: "flow.a", subflowId: "subflow.b" })).toEqual(["instruction.global", "instruction.project"]);
+      expect(await found.ids({ scopeKind: "project" })).toEqual(["instruction.project"]);
+      expect(await found.ids({})).toHaveLength(6);
+    } finally {
+      await found.close();
+    }
+  });
+});
