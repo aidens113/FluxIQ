@@ -595,6 +595,14 @@ Earlier entries are in [the ledger archive](./automation-project-agents-plan/arc
 - Outcome: Accepted. A8 launch 8 runs on this pair
 - Follow-up: on a site with no start hook a trial's act is recorded with no item, so it cannot be undone (t598, in flight, merged after launch 8)
 
+### 2026-10-14 — After launch 8 and round two: t598, t599, t601
+- Agent: workers t598-no-hook-trial-undo, t599-judge-presence-and-predecessors, t601-builder-honest-receipts; read-only debugs of launch 8 (downstream reports); supervisor verified, re-pinned the judge prompts, integrated after round two so both modes ran on one pair
+- Changed: t599 Core settles rows left out by presence and absence conditions it measured, left-out rows carry short ids (`[row XXXXXX]`), a subflow trial's predecessors are setup (no row check holds them; the out-of-scope rule covers only the subflow's own steps), the judge's instruction says so (prompt pins moved by exactly those sentences); t601 a completion naming a passing receipt is done, "not judged" after a yes says not to rewrite, the build time limit has its own chat words; t598 a trial's lasting act carries its spot and created items so a reset can undo it without a start hook (live once the web domain writes the two state-diff keys)
+- Why: launch 8: everything-store's right rows were judged yes 48 times and held (both modes, since t515); social's passing proposal was reported partial and its judges held the predecessor's reads and presses against it
+- Validation: t599 after merging dev: tsc exit 0; result-verification, candidate-trial, subflow-trial, project-build, llm, flow-bootstrap/candidate, subflow-candidate, project-agents -> 360 files, 3305 passed; t601: tsc exit 0; subflow-candidate, conversations, project-build, flow-bootstrap/candidate -> 61 files, 483 passed; t598: tsc exit 0; site-reset, candidate-trial, project-build, project-agents, subflow-trial, candidate, subflow-candidate -> 97 files, 755 passed. Every audit passed; every Core finish `pnpm check` -> passed. Merged `2d675cb2` (t599), `d120c670` (t601), `f9b8e21f` (t598)
+- Outcome: Accepted
+- Follow-up: the web domain writes `spot` and `items` to each step's state diff (t598 live); a structured "judges answered yes" field instead of t601's text match; dispatch returns done whenever a yes stands; a Core wait declaring `create_new` still satisfies the lasting-act check
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
