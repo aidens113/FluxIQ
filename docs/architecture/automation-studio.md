@@ -699,6 +699,15 @@ reachable by mentioning each other. This static traversal terminates cycles but
 does not replace runtime recursion limits or prove that every applicable entry
 case executes correctly. Distinct overlapping Router conditions retain their
 ordered semantics; validation does not run a general condition solver.
+Candidate creation trials select an entry from fresh observed state and run
+its exact unapplied topology. Call Subflow loads only clone-bound, owned sibling
+graphs from that candidate; accepted graphs and caller invocation overrides
+cannot substitute. Each invoked graph keeps its own authored failed-route
+budget with no model or patch allowance. Child read/act/step evidence is
+attributed once per invocation, and learned paces bind to the called graph
+and node. This selected-path receipt does not establish alternate-entry
+coverage or safe whole-topology held re-authoring.
+
 A Flow build is shown `flowBootstrap.routing` (`plan/routing-context.ts`): how
 the router decides, the Flow's current structure, every path a condition can
 test with its description, and the distinct states the host observed -- where
