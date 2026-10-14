@@ -1,8 +1,8 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import { checkAutomationStudioFlowBootstrapCompletion } from "../../llm/harness-options/index.ts";
+import { checkAutomationStudioFlowBootstrapCompletion, checkAutomationStudioFlowBootstrapPlanCompletion, type AutomationStudioFlowBootstrapCompletionVerdict } from "../../llm/harness-options/index.ts";
 import { automationStudioFlowBootstrapIssuePlace, automationStudioFlowBootstrapWrittenPlanBindingIssues, parseAutomationStudioFlowScript, type AutomationStudioFlowBootstrapIssueLocator } from "../authoring/index.ts";
 import { automationStudioInstructedActOptionalScriptIssues } from "../instructed-acts/index.ts";
-import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
+import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import { automationStudioFlowScriptWayOutIssues } from "../script-statements/index.ts";
 import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission, AutomationStudioFlowCandidateSubmissionHistory, AutomationStudioCandidateOriginalSourceBinding } from "./contracts.ts";
 import { automationStudioCandidateFingerprint as fingerprint } from "./digest.ts";
@@ -85,6 +85,28 @@ export class AutomationStudioFlowCandidateSubmissionController {
    * run saves its rows cannot change which rows it keeps.
    */
   async submit(result: JsonObject, history: AutomationStudioFlowCandidateSubmissionHistory = {}): Promise<AutomationStudioFlowCandidateSubmission> {
+    return this.submitChecked(result, history, () => checkAutomationStudioFlowBootstrapCompletion({ ...this.input, result, handleReach: "view_history" }));
+  }
+
+  /**
+   * A whole candidate Core composed itself, never one a model wrote: the
+   * project supervisor's assembly of each subflow builder's latest proposal
+   * with the call steps it writes for the router-run subflow
+   * (`../../project-agents/supervisor/assembly.ts`; automation-project-agents
+   * plan, `Assembly`). It becomes a revision exactly as `submit`'s do -- the
+   * same counter, the same digest, the same unchanged and refuted-Flow rules,
+   * the same trial gate after it -- and runs the completion check's one
+   * sequence as a composed Flow (`checkAutomationStudioFlowBootstrapPlanCompletion`,
+   * whose header says what differs from a model's).
+   */
+  async submitComposed(composed: { plan: AutomationStudioFlowBootstrapPlan; summary: string }, history: AutomationStudioFlowCandidateSubmissionHistory = {}): Promise<AutomationStudioFlowCandidateSubmission> {
+    const plan = structuredClone(composed.plan);
+    const result: JsonObject = { plan: plan as unknown as JsonObject, summary: composed.summary };
+    return this.submitChecked(result, history, () => checkAutomationStudioFlowBootstrapPlanCompletion({ ...this.input, origin: "composed", plan, summary: composed.summary }));
+  }
+
+  /** `submit`'s body, with the completion check it is held to given (`submit`, `submitComposed`). */
+  private async submitChecked(result: JsonObject, history: AutomationStudioFlowCandidateSubmissionHistory, check: () => Promise<AutomationStudioFlowBootstrapCompletionVerdict>): Promise<AutomationStudioFlowCandidateSubmission> {
     this.input.signal?.throwIfAborted();
     const standing = this.current;
     // The last revision accepted: the standing one, or the one a refusal since cleared.
@@ -96,7 +118,7 @@ export class AutomationStudioFlowCandidateSubmissionController {
     this.current = undefined;
     // A candidate is written after exploration, so it may name a control from
     // any view exploration took, not only the page it last saw (t358).
-    const verdict = await checkAutomationStudioFlowBootstrapCompletion({ ...this.input, result, handleReach: "view_history" });
+    const verdict = await check();
     this.input.signal?.throwIfAborted();
     if (!verdict.ok) return { ok: false, revision, check: verdict.check };
     if (revision !== this.revision) return { ok: false, revision, check: { ok: false, issueCodes: ["candidate.superseded_submission"], feedback: { code: "candidate.superseded_submission" } } };
