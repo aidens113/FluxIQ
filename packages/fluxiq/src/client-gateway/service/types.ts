@@ -39,6 +39,15 @@ export type ClientGatewayServiceOptions = {
    * nothing, a late result is still kept from being applied, only unattributed.
    */
   commandOwner?: () => import("./command-history.ts").ClientGatewayCommandOwnerRef | undefined;
+  /**
+   * The host lease the dispatching async context runs under
+   * (automation-project-agents-plan, `Host resources and concurrency`), read as
+   * each action command is dispatched and stamped on it, as `commandOwner` is
+   * read (`./host-lease/`). A command whose lease is stale or not its scope's
+   * own is refused unsent. Unset, no command carries a lease and none is
+   * refused for one.
+   */
+  hostLease?: import("./host-lease/index.ts").ClientGatewayHostLeaseSource;
 };
 
 /**

@@ -88,7 +88,7 @@ export class ClientGatewayService {
     };
     const pairingFlow = new ClientGatewayPairingFlow({ config, pairings, sessions, trustedClients, transport, audit, events, facade });
     const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, facade });
-    const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner });
+    const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner, hostLease: options.hostLease });
 
     this.trustedClients = trustedClients;
     this.audit = audit;
