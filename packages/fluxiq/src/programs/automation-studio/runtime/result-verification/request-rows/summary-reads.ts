@@ -43,13 +43,30 @@
 //
 // **And the rows Core settled** (`../value-readings/settled-rows.ts`, t574):
 // a run's condition carries their labels and the word runs that name it, for
-// `unquoted-rows.ts`.
+// `unquoted-rows.ts`: `condition N`, its column, and the numbers a bound's
+// wording writes -- or, for a presence test (t599), the one column its wording
+// names, and no number, since a presence test bounds nothing.
+//
+// **Not the reads that prepared a subflow trial's entry (t599).** A8 social
+// `run-mv8ic6mk-09bf12ff`: a subflow trial runs its predecessors inside it, so
+// the summary carries their reads too, and every yes over the target was held
+// to quote, beside the predecessor's left-out rows, words that its judge's
+// request -- the target's own parts -- does not hold. Those steps are named in
+// the summary's `taskChecklist.entry` (`../build-test/task-checklist.ts`), each
+// judged in its own trial, so their reads, and the record sets only they
+// collected, are left out here: no check of a judgement's rows holds this
+// trial to them. Only the request's search words are still read from every
+// read (`request-wording.ts`, `withEntry`).
+//
+// **A row may say Core's short id before it** (`row-id.ts`, t599), on the
+// judge's copy: a row is read as its label without it.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts.ts";
 import type { AutomationStudioResultProcessingCondition } from "../processing-account.ts";
 // The leaf, not the barrel: `../read-account/` reaches `../../llm/`, which reaches this directory, so a value through the barrel would close a module cycle.
 import { automationStudioResultConditionName } from "../read-account/condition-name.ts";
+import { AutomationStudioRequestRowId } from "./row-id.ts";
 import type { AutomationStudioRequestRowsCondition, AutomationStudioRequestRowsRead, AutomationStudioRequestRowsStored } from "./types.ts";
 import { automationStudioRequestRowWords } from "./words.ts";
 
@@ -60,10 +77,20 @@ const PROCESSING_CONDITION = "recordOutput.process.where";
 const TESTED_VALUE = /^(.+?) — (?:\(withheld\)|[\p{L}\p{N}_.$@-]{1,64}: .*)$/su;
 /** The column a row said with its tested value names. */
 const TESTED_COLUMN = /^.+? — ([\p{L}\p{N}_.$@-]{1,64}): /su;
+/** A presence test's wording (`../read-account/condition.ts`): its column, what its read found where said, and `is present` or `is absent`. */
+const PRESENCE_WORDING = /^([\p{L}\p{N}_.$@-]{1,64})(?: \(read .*\))? (?:not )?is (?:present|absent)$/su;
 
-/** Every list read a summary holds rows for, and a run's stored rows. */
-export function automationStudioRequestRowsReads(summary: AutomationStudioRunResultSummary): { reads: AutomationStudioRequestRowsRead[]; stored: AutomationStudioRequestRowsStored[] } {
-  const stored = summary.recordSets.flatMap(storedRows);
+/**
+ * Every list read a summary holds rows for, and a run's stored rows. The
+ * reads and record sets of a subflow trial's entry are left out (header)
+ * unless `withEntry` asks for them.
+ */
+export function automationStudioRequestRowsReads(summary: AutomationStudioRunResultSummary, withEntry = false): { reads: AutomationStudioRequestRowsRead[]; stored: AutomationStudioRequestRowsStored[] } {
+  const entrySteps = new Set(withEntry ? [] : summary.taskChecklist?.entry?.steps ?? []);
+  // A record set only the entry's steps collected is the entry's too.
+  const entrySet = (set: AutomationStudioResultRecordSetSummary): boolean => entrySteps.size > 0 && (set.processing?.passes.length ?? 0) > 0 && set.processing!.passes.every((pass) => entrySteps.has(pass.node));
+  const recordSets = summary.recordSets.filter((set) => !entrySet(set));
+  const stored = recordSets.flatMap(storedRows);
   const reads: AutomationStudioRequestRowsRead[] = [];
   for (const step of summary.buildTest?.steps ?? []) {
     const sent = isObject(step.observed) ? step.observed.readRows : undefined;
@@ -81,6 +108,7 @@ export function automationStudioRequestRowsReads(summary: AutomationStudioRunRes
   }
   const storedLabels = unique(stored.map((row) => row.label));
   for (const account of summary.reads ?? []) {
+    if (entrySteps.has(account.nodeId)) continue;
     const conditions = (account.conditions ?? []).flatMap((entry, index) => {
       if (!entry.leftOutOnlyByThis?.length) return [];
       const number = entry.number ?? index + 1;
@@ -90,7 +118,7 @@ export function automationStudioRequestRowsReads(summary: AutomationStudioRunRes
     const leftOut = new Set(conditions.flatMap((entry) => entry.labels));
     reads.push(read({ nodeId: account.nodeId }, storedLabels.filter((label) => !leftOut.has(label)), storedLabels, conditions));
   }
-  for (const set of summary.recordSets) {
+  for (const set of recordSets) {
     const conditions = processingConditions(set.processing?.conditions);
     if (!conditions.length) continue;
     const nodes = (set.processing?.passes ?? []).map((pass) => pass.node);
@@ -111,9 +139,10 @@ function processingConditions(conditions: readonly AutomationStudioResultProcess
     entry.leftOutOnlyByThis?.length ? [condition(`${PROCESSING_CONDITION} ${automationStudioResultConditionName(entry.number ?? index + 1, entry.condition)}`, entry.leftOutOnlyByThis, entry.testedLabel === true)] : []);
 }
 
-/** A left-out row's label: the row as given, less the tested value said after it. */
+/** A left-out row's label: the row as given, less Core's id said before it (header) and the tested value said after it. */
 export function automationStudioRequestRowLabel(row: string): string {
-  return TESTED_VALUE.exec(row)?.[1] ?? row;
+  const unsaid = AutomationStudioRequestRowId.unsaid(row);
+  return TESTED_VALUE.exec(unsaid)?.[1] ?? unsaid;
 }
 
 function read(at: { step: number } | { nodeId: string }, kept: string[], inResult: string[], conditions: AutomationStudioRequestRowsCondition[]): AutomationStudioRequestRowsRead {
@@ -127,13 +156,16 @@ function condition(name: string, rows: string[], testedLabel: boolean, settled?:
 /**
  * The word runs a sentence names a settled condition by: `condition N`, its
  * column (whole, and split where it joins words in camel case), and each number
- * its wording writes -- the bound a quote of the request states.
+ * its wording writes -- the bound a quote of the request states. A presence
+ * test's column is read from its wording where no row says it, and its wording
+ * gives no number: it bounds nothing (header).
  */
 function boundNames(number: number, settledRows: readonly string[], wording: string | undefined): string[][] {
   const names = [wordsOf(`condition ${number}`)];
-  const column = TESTED_COLUMN.exec(settledRows[0] ?? "")?.[1];
+  const presence = PRESENCE_WORDING.exec(wording ?? "")?.[1];
+  const column = TESTED_COLUMN.exec(AutomationStudioRequestRowId.unsaid(settledRows[0] ?? ""))?.[1] ?? presence;
   if (column) names.push(wordsOf(column), wordsOf(column.replace(/(\p{Ll})(\p{Lu})/gu, "$1 $2")));
-  for (const word of wordsOf(wording ?? "")) if (/^\p{N}+$/u.test(word)) names.push([word]);
+  if (presence === undefined) for (const word of wordsOf(wording ?? "")) if (/^\p{N}+$/u.test(word)) names.push([word]);
   const said = new Set<string>();
   return names.filter((name) => {
     const key = name.join(" ");

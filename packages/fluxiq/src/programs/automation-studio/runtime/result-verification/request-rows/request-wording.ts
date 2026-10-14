@@ -71,11 +71,11 @@ export function automationStudioRequestWording(
   };
 }
 
-/** The words of the request phrases every kept row of a read names, over every read that kept rows (header). */
+/** The words of the request phrases every kept row of a read names, over every read that kept rows (header); a subflow trial's entry reads too (`summary-reads.ts`, t599). */
 function searchedWords(requestText: string, summary: AutomationStudioRunResultSummary): Set<string> {
   const phrases = automationStudioRequestPhrases(requestText);
   const searched = new Set<string>();
-  for (const read of automationStudioRequestRowsReads(summary).reads) {
+  for (const read of automationStudioRequestRowsReads(summary, true).reads) {
     let common: Set<string> | undefined;
     for (const label of read.kept) {
       const named = new Set(phrases.phrasesOf(label).map((phrase) => phrase.words.join(" ")));

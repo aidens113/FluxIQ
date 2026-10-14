@@ -501,6 +501,15 @@ export type AutomationStudioResultTaskChecklist = {
    * Absent for a whole trial and wherever no other part exists.
    */
   outOfScope?: Array<{ part: string; words: string }>;
+  /**
+   * A subflow trial's only, where earlier subflows ran in it to prepare its
+   * entry (t599): those subflows, by key, and every step of the trial that is
+   * theirs, by nodeId -- the calls that ran them and their own steps. Each was
+   * judged in its own trial: their reads are no part of this trial's quote
+   * obligation (`./request-rows/summary-reads.ts`) and their presses no
+   * out-of-scope step (`./build-test/task-checklist.ts`). Absent otherwise.
+   */
+  entry?: { subflows: string[]; steps: string[] };
 };
 
 /** A build's test, as its judge reads it: every proposed step in order, and the build's own reading of the instruction's acts. */

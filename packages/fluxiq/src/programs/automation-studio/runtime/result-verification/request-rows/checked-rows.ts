@@ -47,8 +47,13 @@
 // misread which rows were left out, and advice resting on that reading is not
 // supported. And per condition, the named rows that condition really left out
 // alone. Nothing of the judgement is copied but the labels and ids it matched.
+//
+// **And Core's short id (t599).** An id no row holds names the one label whose
+// Core id it is (`row-id.ts`): the judge's copy shows it before each left-out
+// row a judge must still name.
 
 import type { AutomationStudioRunResultSummary } from "../contracts.ts";
+import { AutomationStudioRequestRowId } from "./row-id.ts";
 import { automationStudioRequestRowNaming } from "./row-naming.ts";
 import { automationStudioRequestRowValuesAgree } from "./row-values.ts";
 import { automationStudioRequestRowsReads } from "./summary-reads.ts";
@@ -92,6 +97,8 @@ export function automationStudioResultCheckedRows(summary: AutomationStudioRunRe
       if (MEASURE.test(id) && !wholeCellOfOne(stored, id)) continue;
       const holders = new Set(stored.filter((row) => row.cells.some((cell) => cell.toUpperCase().includes(id))).map((row) => row.label));
       if (!holders.size) for (const label of everyLabel) if (label.toUpperCase().includes(id)) holders.add(label);
+      // An id no row holds may be Core's own for one label (header).
+      if (!holders.size) for (const label of everyLabel) if (AutomationStudioRequestRowId.of(label) === id) holders.add(label);
       // An id more than one row holds names none of them.
       if (holders.size === 1) note([...holders][0]!, id, leftOut);
     }

@@ -41,6 +41,13 @@ import type { AutomationStudioProjectBuildTrialEnvironment } from "./whole-trial
 //   `phaseStart` how its start was made, in the words every phase is told:
 //   whether the hook ran, whether the run opened by loading the start
 //   location, and whether its predecessors ran it to its entry.
+// - **The entry is setup, not this subflow's work (t599).** A trial runs its
+//   predecessors' passing proposals inside it, so its summary carries their
+//   reads and presses (A8 social `run-mv8ic6mk-09bf12ff`: every yes over a
+//   correct read was held to quote for the predecessor's rows, and judges
+//   answered no to the predecessor's presses as out of scope). The judge's
+//   checklist names them (`entry`, `./task-checklist.ts`), and the
+//   instruction no longer says the trial ran only this subflow.
 
 export function automationStudioProjectBuildSubflowTrials(input: {
   ref: AutomationStudioProjectBuildRef;
@@ -72,10 +79,14 @@ export function automationStudioProjectBuildSubflowTrials(input: {
     // A predecessor proposal an amendment kept still prepares the entry (t590).
     keptUnder: (subflowKey, madeUnder, planDigest) => input.proposals.keptUnder?.(subflowKey, madeUnder, planDigest) === true,
     currentPlanDigest: async (buildId) => buildId === ref.buildId ? (await input.records.read(ref))?.record.plans.at(-1)?.plan.digest ?? null : null,
-    judge: async ({ summary, scope, successCheck }) => await automationStudioBuildTestJudge({
-      provider: input.judge.provider, timeoutMs: input.judge.timeoutMs, instructions: [scopeInstruction(scope, successCheck, projectId, flowId)],
-      deniedEvidenceKeys: binding.deniedEvidenceKeys, projectId, flowId, signal: input.judge.signal
-    })({ summary, taskChecklist: await AutomationStudioProjectBuildTaskChecklist.subflow(source, scope) })
+    judge: async ({ summary, scope, successCheck }) => {
+      // The steps that prepared the entry, where predecessors ran in the trial (header, t599).
+      const entry = AutomationStudioProjectBuildTaskChecklist.entry(summary, scope.predecessors.length ? input.proposals.predecessors(scope) : []);
+      return await automationStudioBuildTestJudge({
+        provider: input.judge.provider, timeoutMs: input.judge.timeoutMs, instructions: [scopeInstruction(scope, successCheck, projectId, flowId, entry !== undefined)],
+        deniedEvidenceKeys: binding.deniedEvidenceKeys, projectId, flowId, signal: input.judge.signal
+      })({ summary, taskChecklist: await AutomationStudioProjectBuildTaskChecklist.subflow(source, scope, entry) });
+    }
   });
   const port: AutomationStudioSubflowTrialPreparingPort = async (request) => {
     const result = await trials.port(request);
@@ -97,15 +108,19 @@ function briefOf(metadata: Record<string, unknown>): string {
   return typeof briefId === "string" ? briefId : "";
 }
 
-/** The one instruction the scoped judge reads: the brief's parts in the person's own words, and the subflow's success check, saying whose it is. */
-function scopeInstruction(scope: AutomationStudioSubflowScope, successCheck: AutomationStudioSubflowTrialJudgeInput["successCheck"], projectId: string, flowId: string): AutomationStudioFlowInstruction {
+/** The one instruction the scoped judge reads: the brief's parts in the person's own words, and the subflow's success check, saying whose it is; and, where `entered`, that earlier subflows prepared its entry. */
+function scopeInstruction(scope: AutomationStudioSubflowScope, successCheck: AutomationStudioSubflowTrialJudgeInput["successCheck"], projectId: string, flowId: string, entered: boolean): AutomationStudioFlowInstruction {
   const parts = scope.parts.map((part) => `- ${part.text}`).join("\n");
   const check = !successCheck ? "" : successCheck.from === "plan"
     ? `\nIts success check: ${JSON.stringify(successCheck.check)}`
     : `\nIts success check, as its builder proposed it (the plan gives none): ${JSON.stringify(successCheck.check)}`;
+  // With predecessors whose steps are in the trial, it ran them first to prepare its entry (header, t599).
+  const ran = entered
+    ? `This trial ran the subflow "${scope.subflowKey}" of a larger Flow, after the earlier subflows that prepare its entry (taskChecklist.entry), which are not judged here.`
+    : `This trial ran only the subflow "${scope.subflowKey}" of a larger Flow.`;
   return {
     schemaVersion: "0.1", instructionId: `project-scope.${scope.briefId}`, title: `Subflow ${scope.subflowKey}`,
-    body: `This trial ran only the subflow "${scope.subflowKey}" of a larger Flow. Judge only whether it did these parts of the task:\n${parts}${check}`,
+    body: `${ran} Judge only whether it did these parts of the task:\n${parts}${check}`,
     scope: { kind: "flow", projectId, flowId }, priority: 100, status: "active", requirement: "required", createdAt: 0, updatedAt: 0
   };
 }

@@ -96,7 +96,7 @@ import { automationStudioResultVerificationAgreement, automationStudioResultVeri
 import { automationStudioResultCheckActivity } from "./check-activity.ts";
 import { automationStudioResultCoreObservation } from "./core-observation.ts";
 import { automationStudioResultSummaryWithPagingWords, automationStudioResultSummaryWithUnreadColumns } from "./read-account/index.ts";
-import { automationStudioRequestWording, automationStudioResultSummaryWithLeftOutNamingTheItem } from "./request-rows/index.ts";
+import { automationStudioRequestWording, automationStudioResultSummaryWithLeftOutNamingTheItem, automationStudioResultSummaryWithRowIds } from "./request-rows/index.ts";
 import { automationStudioResultVerdict } from "./verdict.ts";
 import { automationStudioResultExclusionEvidenceRecheck } from "./exclusion-evidence/index.ts";
 import { emitAutomationStudioActivity } from "../activity/index.ts";
@@ -273,11 +273,14 @@ async function askOnce(
   // judge's copy: the verdict is read with the same rows, so a yes is held to
   // the rows the judge was shown. The rows are flagged before the paging words:
   // the paging copy drops each condition's `testedLabel`, which the flagging
-  // reads and the judge is never shown (`run-mux6naez-6c20f26e`).
-  const judged = automationStudioResultSummaryWithPagingWords(automationStudioResultSummaryWithLeftOutNamingTheItem(
+  // reads and the judge is never shown (`run-mux6naez-6c20f26e`). Last, Core's
+  // short id before each left-out row a judge must still name
+  // (`request-rows/summary-with-row-ids.ts`, t599): the judge's copy only, and
+  // the verdict reads the rows without it.
+  const judged = automationStudioResultSummaryWithRowIds(automationStudioResultSummaryWithPagingWords(automationStudioResultSummaryWithLeftOutNamingTheItem(
     automationStudioResultSummaryWithUnreadColumns(request.summary, request.instructions),
     request.instructions
-  ));
+  )));
   const result = await runAutomationStudioLlmHarness({
     taskKind: "loop_verification",
     projectId: request.projectId,

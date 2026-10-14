@@ -6,13 +6,25 @@
 // `leftOutNamingTheItem` that does not name each of them is not a yes.
 // C-5: the result judge said the Plus condition "alone excluded" B0J5MCMBAY and
 // B07Z1RZGJG; both are in the stored result, and the re-author followed it.
+// t599 (A8 everything-store `run-mv8id5vg-ed7b89fe`): 48 yeses over exact
+// answers were held because rows a presence and an absence test alone left
+// out, which Core had measured, were each asked a quote, and labels sharing
+// ten-word starts could not be named; Core now settles those rows and gives a
+// row a judge must still name a short id.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../build-test/index.ts";
 import { automationStudioResultVerificationAgreement } from "../agreement.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "../repair-directive.ts";
-import { automationStudioResultSummaryWithLeftOutNamingTheItem } from "../request-rows/index.ts";
+import {
+  AutomationStudioRequestRowId, automationStudioRequestRowLabel, automationStudioRequestRowNaming, automationStudioRequestWording,
+  automationStudioResultSummaryWithLeftOutNamingTheItem, automationStudioResultSummaryWithRowIds
+} from "../request-rows/index.ts";
+import {
+  PRESENCE_CATALOGUE_INSTRUCTION, PRESENCE_CATALOGUE_KEPT, PRESENCE_CATALOGUE_NO_MEMBER, PRESENCE_CATALOGUE_PROMOTED, PRESENCE_CATALOGUE_SPARE,
+  presenceCatalogueSummary, type PresenceCatalogueWitness
+} from "../request-rows/tests/presence-catalogue.ts";
 import {
   RUN_MUW60J7C_PAIRS_LEFT_OUT, RUN_MUW60J7C_REQUEST, RUN_MUW60J7C_RESULT_JUDGE, RUN_MUW60J7C_TEST_JUDGE,
   runMuw60j7cRunSummary, runMuw60j7cTestSummary
@@ -155,7 +167,85 @@ describe("a yes over rows the saved answer's processing alone left out (t493)", 
     for (const request of seen) {
       expect(JSON.stringify(request)).not.toContain("testedLabel");
       expect(request.context.resultSummary?.leftOutNamingTheItem?.flatMap((entry) => entry.rows)).toEqual(RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT);
-      expect(request.context.resultSummary?.recordSets[0]?.processing?.conditions?.[1]?.leftOutOnlyByThis).toContain(RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT[0]);
+      // The judge's copy says Core's short id before each row a yes must still name (t599, `request-rows/row-id.ts`).
+      const first = RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT[0]!;
+      expect(request.context.resultSummary?.recordSets[0]?.processing?.conditions?.[1]?.leftOutOnlyByThis).toContain(AutomationStudioRequestRowId.said(first, automationStudioRequestRowLabel(first)));
     }
+  });
+});
+
+// t599: the same rules over rows Core measured. A yes quotes each presence
+// condition once and names the text condition's row by its short id.
+describe("a yes over rows a presence or absence test left out, which Core measured (t599)", () => {
+  const catalogue = [PRESENCE_CATALOGUE_INSTRUCTION];
+  const verdictOf = (reply: string, witness?: PresenceCatalogueWitness) => {
+    const summary = presenceCatalogueSummary(witness);
+    return automationStudioResultVerdict({ summary: automationStudioResultSummaryWithLeftOutNamingTheItem(summary, catalogue), diagnosis: { answersRequest: "yes", observed: reply }, basis: "model", wording: automationStudioRequestWording(catalogue, summary) });
+  };
+  const spareId = AutomationStudioRequestRowId.of(PRESENCE_CATALOGUE_SPARE);
+  const PRESENCE = `Condition 1 (member is present) keeps what the request asks for: "with a member price".`;
+  const ABSENCE = `Condition 2 (promoted is absent) does what it says: "leaving out promoted items".`;
+  const TEXT_BY_ID = `Row ${spareId} is a nozzle pack, which the request excludes as "spare parts".`;
+
+  it("are settled from each row's witness, with the sentence of what a yes must still show; the text condition's row is not", () => {
+    const [member, promoted, name] = presenceCatalogueSummary().reads![0]!.conditions!;
+    expect(member!.leftOutSettled).toEqual(PRESENCE_CATALOGUE_NO_MEMBER.map((row) => `${row} — member: (no value)`));
+    expect(member!.settled).toContain("On each row in leftOutSettled the read found no member, so each fails condition 1 (member is present) as written");
+    expect(member!.settled).toContain("quote, once, in a sentence that names condition 1 (member is present) or member, the request's own words asking for only rows that have it");
+    expect(promoted!.leftOutSettled).toEqual(PRESENCE_CATALOGUE_PROMOTED);
+    expect(promoted!.settled).toContain("the read found promoted, so each fails condition 2 (promoted is absent) as written");
+    expect(promoted!.settled).toContain("asking for only rows without it");
+    expect(name!.leftOutSettled).toBeUndefined();
+  });
+
+  it("take a yes that quotes the absence condition once, and the presence one, without a quote beside each row", () => {
+    expect(verdictOf(`${PRESENCE} ${ABSENCE} ${TEXT_BY_ID}`)).toMatchObject({ verdict: "answers" });
+  });
+
+  it("still hold a yes that never quotes the absence condition, asking for that one quote and not for its rows", () => {
+    const held = verdictOf(`${PRESENCE} ${TEXT_BY_ID}`);
+    expect(held).toMatchObject({ verdict: "unsure", code: "core.result.exclusion_evidence_missing" });
+    expect(held.exclusionEvidenceMissing).toHaveLength(1);
+    const [line] = held.exclusionEvidenceMissing!;
+    expect(line).toContain("in a sentence that names condition 2 (promoted is absent)");
+    expect(line).toContain("the request's words asking for what that condition tests");
+    for (const row of PRESENCE_CATALOGUE_PROMOTED) expect(line).not.toContain(row);
+  });
+
+  it("settle nothing where the witness could not read the value: those rows are quoted for row by row, as before", () => {
+    expect(presenceCatalogueSummary({ state: "unavailable" }).reads![0]!.conditions![0]!.leftOutSettled).toBeUndefined();
+    const held = verdictOf(`${PRESENCE} ${ABSENCE} ${TEXT_BY_ID}`, { state: "unavailable" });
+    expect(held).toMatchObject({ verdict: "unsure", code: "core.result.exclusion_evidence_missing" });
+    expect(held.exclusionEvidenceMissing?.join("\n")).toContain(PRESENCE_CATALOGUE_NO_MEMBER[0]);
+  });
+
+  it("show a row a judge must still name with its short id, on the judge's copy only", () => {
+    const summary = presenceCatalogueSummary();
+    const before = structuredClone(summary);
+    const copy = automationStudioResultSummaryWithRowIds(summary);
+    const [member, promoted, name] = copy.reads![0]!.conditions!;
+    expect(name!.leftOutOnlyByThis).toEqual([`[row ${spareId}] ${PRESENCE_CATALOGUE_SPARE}`]);
+    // Settled rows need no naming, so they carry none.
+    expect(member!.leftOutOnlyByThis).toEqual(summary.reads![0]!.conditions![0]!.leftOutOnlyByThis);
+    expect(promoted!.leftOutOnlyByThis).toEqual(PRESENCE_CATALOGUE_PROMOTED);
+    expect(summary).toEqual(before);
+    expect(automationStudioResultSummaryWithRowIds(copy)).toEqual(copy);
+  });
+
+  it("count a naming by that id, and by the old distinguishing prefix; four shared words name nothing", () => {
+    const pool = [...PRESENCE_CATALOGUE_KEPT, ...PRESENCE_CATALOGUE_NO_MEMBER, ...PRESENCE_CATALOGUE_PROMOTED, PRESENCE_CATALOGUE_SPARE];
+    expect(automationStudioRequestRowNaming(PRESENCE_CATALOGUE_SPARE, pool).prefix.length).toBeGreaterThan(6);
+    expect(verdictOf(`${PRESENCE} ${ABSENCE} The ${PRESENCE_CATALOGUE_SPARE.split(",")[0]} is excluded as "spare parts".`).verdict).toBe("answers");
+    const shared = verdictOf(`${PRESENCE} ${ABSENCE} The Hollis Garden Hose Expandable is excluded as "spare parts".`);
+    expect(shared).toMatchObject({ verdict: "unsure", code: "core.result.exclusion_evidence_missing" });
+    expect(shared.exclusionEvidenceMissing?.join("\n")).toContain(PRESENCE_CATALOGUE_SPARE);
+  });
+
+  it("send the result judge the id, and take its yes naming the row by it", async () => {
+    const { provider, seen } = scripted([{ summary: "yes", diagnosis: { answersRequest: "yes", observed: `${PRESENCE} ${ABSENCE} ${TEXT_BY_ID}` } }]);
+    const report = await verifyAutomationStudioRunResult({ projectId: "project-1", flowId: "flow-1", runId: "run-1", summary: presenceCatalogueSummary(), instructions: catalogue, deniedEvidenceKeys: [], provider, confirmAnswer: true });
+    expect(report.outcome.performed && report.outcome.verdict).toBe("answers");
+    expect(seen.length).toBe(2);
+    for (const request of seen) expect(request.context.resultSummary?.reads?.[0]?.conditions?.[2]?.leftOutOnlyByThis).toEqual([`[row ${spareId}] ${PRESENCE_CATALOGUE_SPARE}`]);
   });
 });
