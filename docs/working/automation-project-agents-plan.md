@@ -488,6 +488,44 @@ Briefs A5a, A5b, A5c, the sweep fixture groups, the recording delete retry and t
 - Definition of done: with two asks waiting, a stub chat model that reads the context names the right ask and the answer
   settles it; one waiting ask behaves as before; no id appears in any thread text (test); narrow checks.
 
+### Brief: supervisor-plans-not-explores
+- Repository: FluxIQ Core, the paired worktree the dispatch prompt names. Before A8 resumes.
+- Task: the first live `project` build (run-mv7t07hx-fe96a174, crossborder, 18 steps, $0.0056; steps in
+  `C:/Users/osrs_/FluxStuff/lab-runs/2026-10-14/run-mv7t07hx-fe96a174/steps/`) ended
+  `flow_bootstrap.evidence_repeat_without_progress` / `llm_evidence_loop.searching_without_acting` after the supervisor
+  read the task and then made 7 `web.find_on_page` calls and one `web.describe_element` without ever writing a plan.
+  Its own reasons show it trying to explore like a builder ("I'll type Voltbay into the site's search box (t8)") with
+  only observe tools, using `find_on_page` (one query was just "field") as a stand-in for acting. Fix the supervisor
+  so it plans from a short look and leaves exploring and acting to builders: (1) guidance
+  (`project-agents/supervisor/guidance.ts`, the `project.read_task` answer and the tool descriptions) states its role
+  plainly: it does not operate the site; after the task and at most a couple of looks at the current page it writes
+  the task spec and structure plan, and a part it cannot see from the start page is a builder's to find; examples
+  from a different kind of site than any realistic scenario (keep the guard test); (2) a look budget: after a small
+  number of observe calls (choose and justify, about 3) the observe tools are withdrawn through the loop's existing
+  look withdrawal (`llm/decision-handlers/look-withdrawal.ts` and its input) so only planning, dispatch, assembly and
+  test remain; (3) the stall redirect and the searching-without-acting feedback, when they reach the supervisor,
+  name `project.write_plan` (or the next planning step) as the way forward, through the loop's finishing-tools style
+  input t537 added, not supervisor-specific branches in `llm/`; the candidate loop's wording stays byte-identical.
+- Second defect, from run-mv7t19hg-1d51f430 (bigbox, steps 0025-0034): after the same over-looking the supervisor
+  wrote an excellent task spec (verbatim quotes, goal facts, a sound not-asked list) but every `project.write_plan`
+  was refused (`structurePlan.plan.router` missing, then `subflows.0.callable` unknown): it is asked to write Core's
+  raw `AutomationStudioFlowBootstrapPlan` (router rules, interface ports `{id, name, valueType}`, structured success
+  checks) and guesses. (4) Give the supervisor a planning format it can write and Core compiles
+  (`project-agents/supervisor/plan-input.ts`, `plan-tool.ts` input schema and description): `subflows: [{ key, name,
+  purpose, parts: [partId], inputs: [name], outputs: [name], after: [key] }]` and nothing else. Core builds the
+  structure plan from it: one subflow with no inputs and outputs is the router-run subflow itself; several become
+  callable parts with interfaces built from their names, the router-run body is composed at assembly as now, `partOf`
+  from `parts`, entry predecessors from `after`; a success check is the builder's to propose, not the supervisor's.
+  Refusals name the planning format's own fields. Keep the raw plan path out of the model's reach.
+- Required reads: the run's steps (request/response of 0003, 0011, 0017, and the last), `project-agents/supervisor/`,
+  `llm/evidence-progress/stall-redirect.ts`, `llm/decision-handlers/look-withdrawal.ts`, `llm/loop-budget.ts`.
+- Owns: `project-agents/supervisor/**`; the inputs and wording paths in `llm/evidence-progress/`, `llm/decision-handlers/look-withdrawal.ts`,
+  `llm/loop-configuration.ts` needed for (2)-(3), each with tests; report.
+- Must not touch: `service.ts`, `service/project-build/**` (unless one line to pass the new input; say so), `flow-bootstrap/**`.
+- Definition of done: a stub-provider test with the planning format (one-part and three-part tasks) gives valid structure plans and dispatches; a stub-provider test replaying the crossborder run's shape (a supervisor that searches repeatedly) gets
+  the look tools withdrawn after the budget and a redirect naming the plan, and a stub that then writes the plan
+  proceeds to dispatch; candidate loop tests unchanged; the guidance guard test; narrow checks. No live run.
+
 ## Work Ledger
 
 Earlier entries are in [the ledger archive](./automation-project-agents-plan/archive/2026-10-13-ledger.md).
