@@ -199,13 +199,14 @@ export function automationStudioLlmStepLogAnswer(
         step: folder.step, kind: "answer", iteration: row.iteration, decision: row.decision, toolId: row.toolId ?? null,
         startedAt: at, finishedAt: at, ms: 0,
         part: scope?.part ?? null, round: scope?.round ?? null, phase: scope?.phase ?? "explore",
+        role: scope?.role ?? null, briefId: scope?.briefId ?? null,
         status: "ok", verdict, resultCode: row.resultCode ?? null, resultReason: row.resultReason ?? null,
         summary
       });
       return summary;
     };
     const summary = write();
-    automationStudioLlmStepLogListStep(directory, { step: folder.step, kind: "answer", tool: row.toolId, summary, costUsd: undefined });
+    automationStudioLlmStepLogListStep(directory, { step: folder.step, kind: "answer", tool: row.toolId, summary, costUsd: undefined, role: scope?.role, briefId: scope?.briefId });
     if (amendment) {
       written.set(row, {
         tell: (value) => {

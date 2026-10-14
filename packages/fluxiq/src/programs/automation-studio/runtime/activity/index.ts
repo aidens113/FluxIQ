@@ -1,8 +1,11 @@
 // Barrel for Automation Studio's live activity stream: the hub a build or run
 // publishes to, the scope that says which unit of work an emission belongs to,
 // the emitters, the evidence-loop observer, and the model's stated reason kept
-// beside each decision; and which run the current context belongs to.
+// beside each decision; which run the current context belongs to, and which
+// of a build's agents it works for; and the project cards the supervisor's
+// work is told with.
 export { automationStudioActivityAskPort, automationStudioActivityAskResolution, emitAutomationStudioActivityAskResolved, emitAutomationStudioActivityClearedWait, emitAutomationStudioActivityWaitedOut, emitAutomationStudioActivityWaitingOnAsk } from "./ask/index.ts";
+export { currentAutomationStudioActivityAgent, runWithAutomationStudioActivityAgent } from "./agent.ts";
 export { bindAutomationStudioActivityRun } from "./bind.ts";
 export { boundedAutomationStudioActivity } from "./bounded.ts";
 export { AUTOMATION_STUDIO_BUILD_REQUEST_MAX_CHARS, emitAutomationStudioBuildRequest, withAutomationStudioBuildActivity } from "./build.ts";
@@ -16,6 +19,19 @@ export { automationStudioActivityInBuild } from "./in-build.ts";
 export { AUTOMATION_STUDIO_ACTIVITY_LIMITS } from "./limits.ts";
 export { automationStudioActivityLoopWords, type AutomationStudioActivityLoopPass } from "./loop/index.ts";
 export { observeAutomationStudioEvidenceLoop } from "./observer.ts";
+export {
+  automationStudioProjectCardWords,
+  automationStudioProjectSubflowName,
+  automationStudioProjectSubflowPurpose,
+  emitAutomationStudioProjectBriefCard,
+  emitAutomationStudioProjectPlanCard,
+  emitAutomationStudioProjectReceiptCard,
+  emitAutomationStudioProjectReturnCard,
+  type AutomationStudioProjectBriefCardInput,
+  type AutomationStudioProjectPlanCardInput,
+  type AutomationStudioProjectReceiptCardInput,
+  type AutomationStudioProjectReturnCardInput
+} from "./project/index.ts";
 export { withAutomationStudioRunActivity } from "./run.ts";
 export { automationStudioActivityRunScope } from "./run-scope.ts";
 export { runWithAutomationStudioActivity } from "./scope.ts";

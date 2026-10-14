@@ -24,8 +24,24 @@ export type AutomationStudioLlmStepLogPart = "creation" | "reauthor";
  */
 export type AutomationStudioLlmStepLogPass = { pass: number; of?: number; row?: string };
 
-/** The part, round and phase every step made inside a scope is written with, and the pass a test's call is on. */
-export type AutomationStudioLlmStepLogContext = { round?: number; phase?: AutomationStudioLlmStepLogPhase; part?: AutomationStudioLlmStepLogPart; pass?: AutomationStudioLlmStepLogPass };
+/**
+ * Which of a project build's agents a step is made by: the supervisor, a
+ * subflow builder or a repair agent with the brief it works on, or the
+ * validator. Absent on a build with one agent. Mirrors the activity stream's
+ * agent (`ClientGatewayActivityAgent`); `llm/` imports nothing from
+ * `activity/`, so `project-agents/attribution/` sets both.
+ */
+export type AutomationStudioLlmStepLogAgent = { role: "supervisor" | "builder" | "repair" | "validator"; briefId?: string };
+
+/** The part, round and phase every step made inside a scope is written with, the agent that made it, and the pass a test's call is on. */
+export type AutomationStudioLlmStepLogContext = {
+  round?: number;
+  phase?: AutomationStudioLlmStepLogPhase;
+  part?: AutomationStudioLlmStepLogPart;
+  pass?: AutomationStudioLlmStepLogPass;
+  role?: AutomationStudioLlmStepLogAgent["role"];
+  briefId?: string;
+};
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -49,8 +65,9 @@ function merged(patch: AutomationStudioLlmStepLogContext): AutomationStudioLlmSt
  * sets a scope around each round and each test; the build's caller sets the
  * part around the whole build with `within`. Both merge into the scope already
  * current. The test's walker sets `pass` around each call of a repeat's pass,
- * so the tool step writes which pass and row it was. With the step log off,
- * each just calls `fn`.
+ * so the tool step writes which pass and row it was. A project build sets the
+ * agent around each agent's work with `agent`, so every step says which agent
+ * and brief made it. With the step log off, each just calls `fn`.
  */
 export const automationStudioLlmStepLogScope = {
   /** `fn` under this round and phase, keeping the current part. */
@@ -68,7 +85,19 @@ export const automationStudioLlmStepLogScope = {
     if (!automationStudioLlmStepLogDirectory(env)) return fn();
     return storage.run({ ...merged({}), pass: { ...pass } }, fn);
   },
-  current(): AutomationStudioLlmStepLogContext | undefined {
+  /**
+   * `fn` as the work of one agent, keeping the current part, round and phase.
+   * The innermost agent wins whole: a supervisor inside a builder's scope
+   * carries no brief id of the builder's.
+   */
+  agent<T>(agent: AutomationStudioLlmStepLogAgent, fn: () => T, env: Env = process.env): T {
+    if (!automationStudioLlmStepLogDirectory(env)) return fn();
+    const next: AutomationStudioLlmStepLogContext = { ...merged({}), role: agent.role };
+    if (agent.briefId === undefined) delete next.briefId;
+    else next.briefId = agent.briefId;
+    return storage.run(next, fn);
+  },
+  current():AutomationStudioLlmStepLogContext | undefined {
     return storage.getStore();
   }
 };

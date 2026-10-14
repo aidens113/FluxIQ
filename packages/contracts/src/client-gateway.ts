@@ -294,32 +294,6 @@ export type ClientGatewayActivitySkip = {
 };
 
 /**
- * One activity event: the current status of one unit of work (a build or a
- * run) plus an optional detail row for the chat stream. Bounded, and
- * content-free beyond what the person's own panel already shows: labels and
- * titles are Core's own sentences, the actions a step's own input names, tool
- * and node ids, and authored step labels; never raw evidence a tool gathered,
- * tokens or secrets. A `thought` row's `text` is the model's own stated reason
- * for that step (what it does next, on what, and why) or its diagnosis or
- * verdict, whitespace-collapsed, with token-shaped runs hidden, and bounded
- * (240 characters for a decision's reason). Core truncates `label` to 160
- * characters, `detail.title` to 160, `detail.recovery.subject` and
- * `detail.skipped.subject` to 160 and
- * `detail.text` to 1,000.
- *
- * A wait on the person is one `ask` row pair for one card. The wait opens as
- * `phase: "waiting_permission"`, `detail: { kind: "ask", ref: <askId>,
- * status: "started" }`. When it is settled, Core sends one more `ask` row for
- * the same unit of work with the same `ref` and `title`, the phase the work
- * returns to, `status` `succeeded` (answered, allowed, waited out) or `failed`
- * (declined, timed out, cancelled), `resolution`, and `text`, a sentence such
- * as "You pressed Continue.". A client marks the card from that row alone and
- * never infers the answer from later events. Every wait Core announced gets
- * that row, including one whose work stopped first (`cancelled`); a wait Core
- * never announced is never resolved. A run parked durably is still waiting
- * until it is resumed.
- */
-/**
  * Which of a build's agents an event comes from (automation-project-agents-plan,
  * chat presentation). Optional and additive: absent on a build with one agent,
  * and a client that does not know it reads the event as before. `briefId` is
@@ -359,6 +333,32 @@ export type ClientGatewayActivityProjectCard =
   | { kind: "return"; briefId: string; subflowKey: string; outcome: "done" | "partial" | "blocked"; reason: string; spentUsd: number; calls: number; trials: number }
   | { kind: "receipt"; briefId?: string; receipt: "subflow_trial" | "candidate_trial"; receiptId: string; verdict: "passed" | "failed" | "unconfirmed" };
 
+/**
+ * One activity event: the current status of one unit of work (a build or a
+ * run) plus an optional detail row for the chat stream. Bounded, and
+ * content-free beyond what the person's own panel already shows: labels and
+ * titles are Core's own sentences, the actions a step's own input names, tool
+ * and node ids, and authored step labels; never raw evidence a tool gathered,
+ * tokens or secrets. A `thought` row's `text` is the model's own stated reason
+ * for that step (what it does next, on what, and why) or its diagnosis or
+ * verdict, whitespace-collapsed, with token-shaped runs hidden, and bounded
+ * (240 characters for a decision's reason). Core truncates `label` to 160
+ * characters, `detail.title` to 160, `detail.recovery.subject` and
+ * `detail.skipped.subject` to 160 and
+ * `detail.text` to 1,000.
+ *
+ * A wait on the person is one `ask` row pair for one card. The wait opens as
+ * `phase: "waiting_permission"`, `detail: { kind: "ask", ref: <askId>,
+ * status: "started" }`. When it is settled, Core sends one more `ask` row for
+ * the same unit of work with the same `ref` and `title`, the phase the work
+ * returns to, `status` `succeeded` (answered, allowed, waited out) or `failed`
+ * (declined, timed out, cancelled), `resolution`, and `text`, a sentence such
+ * as "You pressed Continue.". A client marks the card from that row alone and
+ * never infers the answer from later events. Every wait Core announced gets
+ * that row, including one whose work stopped first (`cancelled`); a wait Core
+ * never announced is never resolved. A run parked durably is still waiting
+ * until it is resumed.
+ */
 export type ClientGatewayActivity = {
   /** Stable id of the unit of work this event belongs to. */
   activityId: string;
