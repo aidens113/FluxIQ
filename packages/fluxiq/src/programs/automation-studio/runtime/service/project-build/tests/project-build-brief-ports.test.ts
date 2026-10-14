@@ -29,6 +29,7 @@ import { AutomationStudioSiteResetLedger } from "../../../flow-bootstrap/site-re
 import type { AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../../parking/index.ts";
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
+import { automationStudioTestDeclaredStepResolution } from "./declared-step-resolution.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -45,21 +46,32 @@ type Entry = { callId: string; toolId: string; value: unknown };
 const lastOf = (evidence: readonly Entry[], toolId: string) => [...evidence].reverse().find((entry) => entry.toolId === toolId)?.value as JsonObject | undefined;
 const decision = (decided: JsonObject) => ({ response: { kind: "evidence_tool_decision", summary: "Scripted", decision: decided }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.0001 } });
 
-/** A part's script, one short wait; the router-run subflow's plan, a start and an end. */
-function submission(subflowKey: string): JsonObject {
-  if (subflowKey !== "main") return { flow: [`flow: ${subflowKey}`, `part ${subflowKey}: carry out its part`, "  step pause: wait briefly", "    node: builtin.timing.wait", "    duration: 1", "    unit: milliseconds", "end"].join("\n") };
+/**
+ * A part's script, one short wait; the router-run subflow's plan, a start and an end.
+ * A part that asks a lasting act declares it on its step, as a real script must (t597).
+ */
+function submission(subflowKey: string, asked: readonly string[] = []): JsonObject {
+  const declared = asked.length ? [`    consequences: ${asked.join(", ")}`] : [];
+  if (subflowKey !== "main") return { flow: [`flow: ${subflowKey}`, `part ${subflowKey}: carry out its part`, "  step pause: wait briefly", "    node: builtin.timing.wait", "    duration: 1", "    unit: milliseconds", ...declared, "end"].join("\n") };
   return { summary: "Build the main subflow", plan: { schemaVersion: "0.1", router: { name: "Main", rules: [], fallback: { kind: "subflow", targetSubflowKey: "main" } }, subflows: [{ key: "main", name: "Main", role: "primary", ...START_END }] } };
 }
 
 /** Each builder: its own extra moves first, then submit, test, and complete on a yes. */
-function builderDecision(subflowKey: string, evidence: readonly Entry[], first: (evidence: readonly Entry[]) => JsonObject | undefined): JsonObject {
+function builderDecision(subflowKey: string, evidence: readonly Entry[], first: (evidence: readonly Entry[]) => JsonObject | undefined, asked: readonly string[] = []): JsonObject {
   const own = first(evidence);
   if (own) return own;
   const submitted = lastOf(evidence, "core.submit_subflow");
   const tested = lastOf(evidence, "core.test_subflow");
-  if (submitted?.ok !== true) return { kind: "tool_call", callId: `submit-${subflowKey}`, toolId: "core.submit_subflow", input: submission(subflowKey) };
+  if (submitted?.ok !== true) return { kind: "tool_call", callId: `submit-${subflowKey}`, toolId: "core.submit_subflow", input: submission(subflowKey, asked) };
   if (tested?.verdict !== "yes") return { kind: "tool_call", callId: `test-${subflowKey}`, toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } };
   return { kind: "complete", result: { subflowKey, revision: submitted.revision as number, digest: submitted.digest as string } };
+}
+
+/** The lasting acts the plan's task spec files under a subflow's parts. */
+function askedActs(plan: JsonObject, subflowKey: string): string[] {
+  const spec = plan.taskSpec as { parts: { id: string; lastingActs: string[] }[] };
+  const parts = (plan.subflows as { key: string; parts: string[] }[]).find((subflow) => subflow.key === subflowKey)?.parts ?? [];
+  return [...new Set(spec.parts.filter((part) => parts.includes(part.id)).flatMap((part) => part.lastingActs))];
 }
 
 async function build(input: {
@@ -93,11 +105,11 @@ async function build(input: {
     const subflowKey = ((loop!.completionSchema.properties as JsonObject | undefined)?.subflowKey as JsonObject | undefined)?.const as string;
     firstSeen[subflowKey] ??= evidence.map((entry) => structuredClone(entry));
     latestSeen[subflowKey] = evidence.map((entry) => structuredClone(entry));
-    return decision(builderDecision(subflowKey, evidence, (seen) => input.builderFirst?.(subflowKey, seen)));
+    return decision(builderDecision(subflowKey, evidence, (seen) => input.builderFirst?.(subflowKey, seen), askedActs(input.plan, subflowKey)));
   });
   const service = new AutomationStudioService({
     dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 80, maxEstimatedCostUsd: 0.1 }),
-    llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: input.tools, executeTool: input.executeTool } as unknown as NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>,
+    llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: input.tools, executeTool: input.executeTool, resolvePlanNodeParameters: automationStudioTestDeclaredStepResolution } as unknown as NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>,
     ...(input.prepareStart ? { prepareCandidateStart: input.prepareStart } : {})
   });
   cleanups.push(async () => {
@@ -221,14 +233,16 @@ describe("a dependent builder's entry", () => {
 
     // The second's start ran the start hook; the ledger holding the first builder's save marked it undone before its predecessor
     // ran to its entry (the build's one start, t593: the reset before the entry), and both before the second builder's first look.
+    // The first's part asks a lasting act, so its subflow declares one (t597): its own passing trial left act-1, and its save
+    // after it is act-2; the hook put back both.
     const entryRan = happened.indexOf("entry for second succeeded");
     expect(entryRan).toBeGreaterThan(0);
     const decides = happened.indexOf("second decides");
     expect(decides).toBeGreaterThan(entryRan);
-    const putBack = happened.indexOf(`ledger put back ${JSON.stringify(["act-1"])}, now []`);
+    const putBack = happened.indexOf(`ledger put back ${JSON.stringify(["act-1", "act-2"])}, now []`);
     expect(putBack, JSON.stringify(happened)).toBeGreaterThan(happened.indexOf("start hook"));
     expect(putBack).toBeLessThan(entryRan);
-    expect(run.firstSeen.second?.[0]).toMatchObject({ callId: "initial.look", value: { entry: { prepared: true, absorbedByStartReset: ["act-1"] }, phaseStart: { phase: "builder", startHook: "ran", putBack: ["act-1"], arrival: "none", predecessors: { ran: ["first"], prepared: true } } } });
+    expect(run.firstSeen.second?.[0]).toMatchObject({ callId: "initial.look", value: { entry: { prepared: true, absorbedByStartReset: ["act-1", "act-2"] }, phaseStart: { phase: "builder", startHook: "ran", putBack: ["act-1", "act-2"], arrival: "none", predecessors: { ran: ["first"], prepared: true } } } });
   });
 });
 

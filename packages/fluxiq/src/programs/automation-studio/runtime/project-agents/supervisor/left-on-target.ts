@@ -20,6 +20,18 @@
 // (`ports.leftAtEnding`), so a failed build's chat message can say it without
 // the model's own words, which the reason also holds
 // (`service/project-build/run.ts`).
+//
+// **Possibly lasting presses are named as possibly there (t597).** A press
+// that declared no lasting act but changed its page is recorded as possibly
+// lasting (t593, `flow-bootstrap/site-reset/ledger.ts`): never asked for,
+// never in place. A phase start names the latest of them, but an ending did
+// not, so A8 crossborder's coupon press, which no start hook took back, ended
+// under "Nothing this build did is still on the target". Each brief's ledger
+// answers those it may still hold (`possiblyInPlace`); one a start hook or an
+// undo has since taken back is not among them. They are named apart from the
+// acts in place, as possibly still there and never as there, the latest few by
+// name and the rest counted, as a phase start names them. Nothing asks a reset
+// for them, so they change neither `undoable` nor a reset's due.
 import type { AutomationStudioProjectSupervisorPorts } from "./ports.ts";
 import type { AutomationStudioProjectSupervisorState } from "./state.ts";
 
@@ -27,6 +39,8 @@ import type { AutomationStudioProjectSupervisorState } from "./state.ts";
 export type AutomationStudioProjectSupervisorLeftOnTarget = {
   /** `undoable`: a reset brief may still undo it. */
   acts: Array<{ act: string; did: string; brief: string; undoable: boolean }>;
+  /** Presses that declared no lasting act but changed their page, and may still be on the target (header). */
+  possibly: Array<{ act: string; did: string; brief: string }>;
   lastWholeTrialLeftActs: boolean;
   /** Whether a reset brief could undo any of it. */
   undoable: boolean;
@@ -38,6 +52,9 @@ export type AutomationStudioProjectSupervisorLeftOnTarget = {
 
 /** The longest ending reason the build record keeps. */
 const MAX_REASON = 2000;
+
+/** How many possibly lasting presses are named; the rest are counted (header), as a phase start names them. */
+const MAX_POSSIBLY_NAMED = 10;
 
 export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<AutomationStudioProjectSupervisorPorts, "projectLedger" | "leftAtEnding">, state: Pick<AutomationStudioProjectSupervisorState, "wholeTrialLeftActs">): AutomationStudioProjectSupervisorLeftOnTarget {
   const ledger = ports.projectLedger;
@@ -55,12 +72,31 @@ export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<Automa
   const lastWholeTrialLeftActs = state.wholeTrialLeftActs;
   const lines = acts.map((act) => act.line);
   if (lastWholeTrialLeftActs) lines.push("the acts the last whole test of the Flow made");
-  const note = lines.length ? `Still on the target from this build: ${lines.join("; ")}.` : undefined;
+  const possibly = possiblyLeft(ledger);
+  const named = possibly.slice(-MAX_POSSIBLY_NAMED);
+  const leftOut = possibly.length - named.length;
+  const sentences = [
+    lines.length ? `Still on the target from this build: ${lines.join("; ")}.` : "",
+    named.length ? `Possibly still on the target, though nothing checked: ${named.map((act) => act.did).join("; ")}${leftOut ? `; and ${leftOut} earlier such ${leftOut === 1 ? "press" : "presses"}` : ""}.` : ""
+  ].filter((sentence) => sentence);
+  const note = sentences.length ? sentences.join(" ") : undefined;
   const fitted = note ? note.slice(0, MAX_REASON - 2) : undefined;
   const reason = (said: string) => {
     // The ending is being named: the build hears what is left in Core's words (header).
     ports.leftAtEnding?.({ note });
     return fitted ? `${said.slice(0, MAX_REASON - fitted.length - 1).trimEnd()} ${fitted}`.trim() : said.slice(0, MAX_REASON);
   };
-  return { acts: acts.map(({ line: _line, ...act }) => act), lastWholeTrialLeftActs, undoable: lastWholeTrialLeftActs || acts.some((act) => act.undoable), note, reason };
+  return { acts: acts.map(({ line: _line, ...act }) => act), possibly, lastWholeTrialLeftActs, undoable: lastWholeTrialLeftActs || acts.some((act) => act.undoable), note, reason };
+}
+
+/** Every brief's possibly lasting presses that may still be on the target, in the order the build made them (header). */
+function possiblyLeft(ledger: AutomationStudioProjectSupervisorPorts["projectLedger"]): AutomationStudioProjectSupervisorLeftOnTarget["possibly"] {
+  const acts = ledger.snapshot().acts.filter((act) => act.possible === true);
+  const held = new Map<string, Set<string>>();
+  const holds = (owner: string, act: string): boolean => {
+    let ids = held.get(owner);
+    if (!ids) held.set(owner, ids = new Set(ledger.forBrief(owner).possiblyInPlace().map((entry) => entry.act)));
+    return ids.has(act);
+  };
+  return acts.filter((act) => holds(act.owner, act.act)).map((act) => ({ act: act.act, did: act.did, brief: act.owner }));
 }

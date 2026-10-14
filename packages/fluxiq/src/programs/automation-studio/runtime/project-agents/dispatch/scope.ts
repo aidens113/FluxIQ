@@ -26,7 +26,7 @@ export function automationStudioProjectDispatchScope(record: AutomationStudioPro
   const parts = brief.parts.map((partId, index) => {
     const part = spec.parts.find((candidate) => candidate.id === partId);
     if (!part) throw new AutomationStudioProjectRecordRefusal("project.brief_part_not_carried", `brief.parts.${index}`);
-    return { partId, sourceId: part.quote.sourceId, text: part.quote.text };
+    return { partId, sourceId: part.quote.sourceId, text: part.quote.text, lastingActs: [...part.lastingActs] };
   });
   const scope: AutomationStudioSubflowScope = {
     buildId: record.buildId,
