@@ -32,4 +32,31 @@ describe("the note for a refused repeat", () => {
     expect(String(note.instruction)).toMatch(/change the draft first \(amend_draft/u);
     expect(String(note.instruction)).not.toMatch(/never shown/u);
   });
+
+  // t591 (from t587's note): a loop that drafts nothing -- a project's supervisor, a reset -- has no draft to amend,
+  // and nothing is tested or judged when its round ends.
+  const EARLIER = [
+    { callId: "c1", outcome: "failed", resultCode: "web.action.rejected.target_covered" },
+    { callId: "c2", outcome: "failed", resultCode: "web.action.rejected.permission_required", resultReason: "consequences_declined" },
+    { callId: "c3", outcome: "same_answer" },
+    { callId: "c4", outcome: "failed", resultReason: "handle_not_in_packet", handleUnshown: true }
+  ] as const;
+
+  it("tells a loop that drafts nothing that its work ends with nothing tested or judged, and offers no draft to amend (t591)", () => {
+    for (const earlier of EARLIER) {
+      const said = String(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier, undrafted: true }).instruction);
+      expect(said, earlier.callId).toContain("end this work where it stands, with nothing tested or judged.");
+      expect(said, earlier.callId).not.toMatch(/Flow so far|tested and judged|amend the draft/u);
+    }
+  });
+
+  it("words a drafting loop's note as before, and a candidate's byte for byte whatever the flag (t591)", () => {
+    for (const earlier of EARLIER) {
+      const drafting = String(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier }).instruction);
+      expect(drafting).toContain("end this round, and the Flow so far is then tested and judged.");
+      expect(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier, undrafted: false })).toEqual(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier }));
+      const candidate = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier, candidate: true });
+      expect(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier, candidate: true, undrafted: true })).toEqual(candidate);
+    }
+  });
 });

@@ -4,10 +4,10 @@ import { AutomationStudioNodeRegistry } from "../../../nodes/index.ts";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { observeAutomationStudioEvidenceLoop } from "../../activity/index.ts";
 import { automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapPersonNeeded, flowBootstrapEvidenceUnusableDecisionFailure, type AutomationStudioBootstrapAccounting, type AutomationStudioFlowBootstrapActionPermissions, type AutomationStudioFlowBootstrapPersonNeeded } from "../../flow-bootstrap/index.ts";
-import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetCalls, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetTrialReset } from "../../flow-bootstrap/site-reset/index.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY, AUTOMATION_STUDIO_SITE_RESET_WORDS, AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetCalls, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetTarget, type AutomationStudioSiteResetTrialReset } from "../../flow-bootstrap/site-reset/index.ts";
 import type { AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
-import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, automationStudioFlowDraftReplayClearedCode, automationStudioHarnessOptionRegistry, automationStudioLlmNodeDescriptions, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceToolExecutionResult, type AutomationStudioLlmHarnessInput } from "../../llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, AUTOMATION_STUDIO_NODE_WRITE_KEY, automationStudioFlowDraftReplayClearedCode, automationStudioHarnessOptionRegistry, automationStudioLlmNodeDescriptions, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceToolExecutionResult, type AutomationStudioLlmHarnessInput } from "../../llm/index.ts";
 import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectBriefPortFactory, AutomationStudioProjectBriefPortRequest } from "../../project-agents/index.ts";
 import { startAutomationStudioBuildRouting } from "../../route-state/index.ts";
 import { automationStudioCandidateStallCode } from "../candidate-failure/index.ts";
@@ -95,6 +95,18 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // it was done and the page it was made on (kept from the read around it, by
 // act, for the whole build), and do nothing else.
 //
+// **A reset is a reset in every word it is shown** (t591, social debug fixes
+// 2-4). Its `core.run_node` offers no `write`, since a reset writes no Flow.
+// Its completion may name under `cannotUndo` the acts the site offers no
+// control to reverse, and those reach every ledger before it looks again, so
+// such an act ends the reset kept rather than stalled
+// (`project-agents/dispatch/reset-loop.ts`). An undo aimed at another item's
+// control is refused in a reset's words: undo another listed act, or name it
+// under `cannotUndo`, never "test again", since a reset has no test. A lasting
+// press of its own that names no act under `undoes` runs -- only moving money,
+// deleting and sending are gated -- but it is told beside its result that it
+// was outside the reset, as a builder is told of a press outside its brief.
+//
 // **The brief's permitted acts narrow only what a person is asked about**
 // (t580). `permittedActs` filters the build's permitted consequences, so a
 // brief whose parts ask for no lasting act puts every press that declares
@@ -129,7 +141,19 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 type DraftInput = Parameters<typeof generateAutomationStudioFlowCandidateDraft>[0];
 
 /** The reset loop's completion schema (`project-agents/dispatch/reset-loop.ts`), which its decisions are asked under. */
-const RESET_COMPLETION: JsonObject = { type: "object", properties: { summary: { type: "string" } }, additionalProperties: false };
+const RESET_COMPLETION: JsonObject = {
+  type: "object",
+  properties: {
+    summary: { type: "string" },
+    cannotUndo: {
+      type: "array",
+      uniqueItems: true,
+      items: { type: "string", pattern: "^act-[1-9][0-9]{0,3}$" },
+      description: "Only the listed acts the site offers no control to reverse, after you looked for one on the item each acted on: each is then kept, trials run with it already done, and the judge is told. Never an act you could undo."
+    }
+  },
+  additionalProperties: false
+};
 
 export function automationStudioProjectBuildBriefPorts(input: {
   project: AutomationStudioProjectBuildPorts;
@@ -215,13 +239,18 @@ export function automationStudioProjectBuildBriefPorts(input: {
       return { loop, submission: { ...submission, permissionFor: built.permissions.planStep }, trial, reset, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...observed, decide: built.decide(observed.completionSchema) }), ended: built.ended };
     },
     reset: async (request) => {
-      const calls = automationStudioProjectBuildResetCalls(project.ledger, request.ledger);
+      // An undo aimed at another item is refused in a reset's words (header).
+      const owned = automationStudioProjectBuildResetCalls(project.ledger, request.ledger);
+      const calls: typeof owned = { ...owned, target: (act, declared) => resetWorded(owned.target(act, declared)) };
       // Its task, in place of the person's instruction, with the acts as the ledger holds them at each decision (header).
       const built = await environment(request, calls, () => [resetTask({ projectId, flowId }, project.ledger, pages)]);
       const check = new AutomationStudioSiteResetStartCheck({ binding, projectId, flowId, tools: built.loop.tools, executeTool: (call) => built.loop.executeTool(call), liveCheck: { settleMs: AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS } });
       // Its start is not the build's: a reset never captures one, and decides on each act's own page.
-      const loop = observeAutomationStudioEvidenceLoop({ ...placing(built.loop, placedAt(calls, pages), check, { capture: false, signal: request.signal }), tools: built.loop.tools.map(automationStudioSiteResetUndoesTool), decide: built.decide(RESET_COMPLETION) });
-      return { loop, remainingActs: () => remainingActs(project.ledger, check, request.signal), ended: built.ended };
+      const placed = placing(built.loop, placedAt(calls, pages), check, { capture: false, signal: request.signal });
+      // Its run-node calls offer `undoes` and no `write`; a lasting press of its own is told as outside it (header).
+      const tools = built.loop.tools.map((tool) => withoutWrite(automationStudioSiteResetUndoesTool(tool)));
+      const loop = observeAutomationStudioEvidenceLoop({ ...told({ ...placed, tools }, { entry: undefined, permittedActs: request.brief.permittedActs, arrived: false, role: "reset" }), decide: built.decide(RESET_COMPLETION) });
+      return { loop, remainingActs: (cannotUndo) => remainingActs(project.ledger, check, request.signal, cannotUndo), ended: built.ended };
     }
   };
 }
@@ -257,7 +286,8 @@ const RESET_TASK = [
   "Your only task is to undo the lasting acts this build made, listed below, each through the site's own controls on the item it acted on, naming the act under `undoes` on the call that undoes it.",
   "Each act says how it was done and, where it was read, the page it was made on: go there to find it.",
   "Leave everything that was on the site before the build began, and do nothing else on the site.",
-  "Complete with a one-sentence summary once none of the listed acts is left."
+  "Complete with a one-sentence summary once none of the listed acts is left.",
+  "If the site offers no control on an act's own item that reverses it, do not keep trying and never act on another item instead: complete and name that act under `cannotUndo`, and it is kept as done."
 ].join(" ");
 
 /** A reset brief's task as one Core instruction, listing every act of the build still in place now (header). */
@@ -276,6 +306,20 @@ function resetTask(flow: { projectId: string; flowId: string }, ledger: Automati
 }
 
 type Tool = AutomationStudioLlmEvidenceLoopInput["tools"][number];
+
+/** The run-node tool without `write` (header): a reset writes no Flow. Any other tool unchanged. */
+function withoutWrite(tool: Tool): Tool {
+  const properties = tool.inputSchema.properties;
+  if (tool.toolId !== AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID || !isObject(properties) || !(AUTOMATION_STUDIO_NODE_WRITE_KEY in properties)) return tool;
+  const { [AUTOMATION_STUDIO_NODE_WRITE_KEY]: _write, ...kept } = properties;
+  return { ...tool, inputSchema: { ...tool.inputSchema, properties: kept } };
+}
+
+/** `target` with an undo aimed at another item refused in a reset's words (header); any other answer unchanged. */
+function resetWorded(target: AutomationStudioSiteResetTarget): AutomationStudioSiteResetTarget {
+  if (target.kind !== "refused" || target.evidence.code !== "candidate.undo_wrong_target") return target;
+  return { ...target, evidence: { ...target.evidence, instruction: AUTOMATION_STUDIO_SITE_RESET_WORDS.wrongTarget("reset") } };
+}
 
 /** A tool whose opening is a look where the page stands, not the arrival at the build's start (header). */
 function lookingInPlace(tool: Tool): Tool {
@@ -310,16 +354,22 @@ const ARRIVED_KEY = "arrived";
  * saying whether the entry was prepared, and a landed call's that declared a
  * lasting act its brief's parts do not ask for. The domain's evidence is kept
  * whole; a key is added beside it, never in its place. `arrived`: the opening
- * call is sent marked as the builder's arrival.
+ * call is sent marked as the builder's arrival. `role: "reset"`: a call that
+ * names an act under `undoes` is the reset's task, never outside it, and the
+ * note speaks to a reset, which writes no subflow.
  */
-function told<L extends { executeTool: Execute }>(loop: L, said: { entry: JsonObject | undefined; permittedActs: readonly string[]; arrived: boolean }): L {
+function told<L extends { executeTool: Execute }>(loop: L, said: { entry: JsonObject | undefined; permittedActs: readonly string[]; arrived: boolean; role?: "reset" }): L {
   const inner = loop.executeTool;
   const executeTool: Execute = async (call) => {
     const opening = isOpeningCall(call.callId);
     const ran = await inner(said.arrived && opening ? { ...call, value: { ...call.value, [ARRIVED_KEY]: true } } : call);
     if (said.entry && opening) return beside(ran, "entry", said.entry);
+    if (said.role === "reset" && call.value[AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY] !== undefined) return ran;
     const outside = landedOutside(call.value, ran, said.permittedActs);
     if (!outside.length) return ran;
+    if (said.role === "reset") {
+      return beside(ran, "outsideBrief", { consequences: outside, note: `This call declared ${outside.join(", ")} and named no act under ${AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY}, so it was outside this reset, which only undoes the build's listed acts. It ran, and it stays on the site as this build's act: where the site can undo it, it is listed with the acts to undo. Do nothing on the site but undo the listed acts, and do not do it again.` });
+    }
     const asked = said.permittedActs.length ? `they ask only for ${said.permittedActs.join(", ")}` : "they ask for no lasting act";
     return beside(ran, "outsideBrief", { consequences: outside, note: `This call declared ${outside.join(", ")}, which your brief's parts do not ask for (${asked}). It ran, and it stays on the site as this build's act until a reset undoes it. Write no step of your subflow that does it, and do not do it again.` });
   };
@@ -350,10 +400,14 @@ function isObject(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-/** The acts still in place once every ledger holding one has looked again on each act's own page. */
-async function remainingActs(ledger: AutomationStudioSiteResetProjectLedger, check: AutomationStudioSiteResetStartCheck, signal: AbortSignal): Promise<AutomationStudioSiteResetNamedAct[]> {
+/**
+ * The acts still in place once every ledger holding one has kept the acts the
+ * reset named under `cannotUndo` (each only once it was asked for) and looked
+ * again on each other act's own page.
+ */
+async function remainingActs(ledger: AutomationStudioSiteResetProjectLedger, check: AutomationStudioSiteResetStartCheck, signal: AbortSignal, cannotUndo?: readonly string[]): Promise<AutomationStudioSiteResetNamedAct[]> {
   const owners = [...new Set(ledger.snapshot().acts.filter((act) => act.inPlace).map((act) => act.owner))];
-  for (const owner of owners) await ledger.forBrief(owner).beforeTrial({ compare: () => check.compare(signal), compareAt: (place) => check.compareAt(place, signal) });
+  for (const owner of owners) await ledger.forBrief(owner).beforeTrial({ compare: () => check.compare(signal), compareAt: (place) => check.compareAt(place, signal) }, cannotUndo);
   return ledger.snapshot().acts.filter((act) => act.inPlace).map((act) => ({ act: act.act, did: act.did }));
 }
 

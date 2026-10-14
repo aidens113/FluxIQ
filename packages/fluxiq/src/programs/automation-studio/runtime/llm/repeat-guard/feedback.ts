@@ -98,6 +98,24 @@ function instructionFor(earlier: AutomationStudioLlmEvidenceRepeatedOutcome, rer
   return automationStudioLlmEvidenceRepeatPermissionRefused(earlier) ? PERMISSION_INSTRUCTION : INSTRUCTION;
 }
 
+/**
+ * The words a loop that drafts nothing and authors no candidate (`draft:
+ * false`: a project's supervisor, a reset) is told in place of the draft
+ * mode's (t591, from t587's note): it has no draft to amend, and when its
+ * round ends nothing is tested or judged; the loop just ends there, as the
+ * refusal run's own warning says (`../decision-handlers/refusal-run.ts`).
+ */
+const UNDRAFTED_WORDS: ReadonlyArray<readonly [string, string]> = [
+  ["amend the draft (rerun a step with a corrected argument, mark it optional, or drop it), ", ""],
+  [", or amend the draft so no step needs it", ""],
+  [" end this round, and the Flow so far is then tested and judged.", " end this work where it stands, with nothing tested or judged."]
+];
+
+/** `instruction` worded for a loop that drafts nothing (`UNDRAFTED_WORDS`). */
+function undrafted(instruction: string): string {
+  return UNDRAFTED_WORDS.reduce((words, [said, instead]) => words.split(said).join(instead), instruction);
+}
+
 /** The note shown for one refused repeat. */
 export function automationStudioLlmEvidenceRepeatRefusalNote(input: {
   toolId: string;
@@ -107,6 +125,8 @@ export function automationStudioLlmEvidenceRepeatRefusalNote(input: {
   rerunStep?: number | undefined;
   /** The loop authors a candidate (`discoveryOnly`): no draft, and a stall ends the build untested (`./candidate-feedback.ts`). */
   candidate?: boolean | undefined;
+  /** The loop drafts nothing (`draft: false`) and is no candidate: no draft to amend, and nothing tested or judged when its round ends (`UNDRAFTED_WORDS`). */
+  undrafted?: boolean | undefined;
 }): JsonObject {
   const candidate = input.candidate === true
     ? automationStudioLlmEvidenceCandidateRepeatInstruction({ toolId: input.toolId, earlier: input.earlier, inARow: input.inARow, maxInARow: AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW })
@@ -126,6 +146,6 @@ export function automationStudioLlmEvidenceRepeatRefusalNote(input: {
     ...(candidate?.issues ? { issues: candidate.issues } : {}),
     refusedInARow: input.inARow,
     maxRefusedInARow: AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW,
-    instruction: candidate ? candidate.instruction : instructionFor(input.earlier, input.rerunStep)
+    instruction: candidate ? candidate.instruction : input.undrafted === true ? undrafted(instructionFor(input.earlier, input.rerunStep)) : instructionFor(input.earlier, input.rerunStep)
   };
 }
