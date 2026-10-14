@@ -17,7 +17,8 @@ import type { AutomationStudioProjectBuildTrialEnvironment } from "./whole-trial
 // its predecessors' latest passing proposals run once, exactly as its own
 // subflow trial will run them to reach its entry: the same proposals
 // (`./proposals.ts`, only one whose trial answered yes), the same start (the
-// deployment's start hook when it has one), and the same detached runner, with
+// deployment's start hook when it has one, then the arrival at the build's
+// start location, t578), and the same detached runner, with
 // the last predecessor as the run's target and the others before it. Nothing
 // is judged and no model is called: the run only puts the site where this
 // builder's subflow begins. It runs in a runtime session of its own, marked
@@ -42,6 +43,12 @@ export async function automationStudioProjectBuildPrepareEntry(input: {
   proposals: Pick<AutomationStudioProjectBuildProposals, "predecessors">;
   environment: AutomationStudioProjectBuildTrialEnvironment;
   signal: AbortSignal;
+  /**
+   * The domain's arrival node (`runsNodes.arrival`). With the environment's
+   * start location, the run goes there first, after the start hook, so it
+   * starts on a loaded start page, as a subflow trial does (t578).
+   */
+  arrival?: { node: string; parameter: string } | undefined;
   /** The detached runner; replaced only by tests. */
   execute?: typeof runAutomationStudioDetachedSubflow | undefined;
   newRunId?: (() => string) | undefined;
@@ -90,6 +97,7 @@ export async function automationStudioProjectBuildPrepareEntry(input: {
       sourceInstructionIds: [...environment.sourceInstructionIds],
       runId,
       start: { receiptId: `${runId}.start`, conditionsDigest: `entry-preparation.${start.status}`, preparedAt: startedAt, pageGeneration: 0, subjectStates: [] },
+      ...(input.arrival && environment.startLocation ? { arrival: { ...input.arrival, location: environment.startLocation } } : {}),
       options: environment.graphOptions({ runId, signal })
     });
   } catch (error) {

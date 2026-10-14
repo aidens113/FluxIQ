@@ -63,6 +63,7 @@ import {
   type AutomationStudioFlowBootstrapSubflow,
   type AutomationStudioFlowBuildPlan
 } from "../plan/index.ts";
+import { derivedOutputActionId } from "../authoring/index.ts";
 import type { AutomationStudioCandidateExecutionReceipt, AutomationStudioCandidateStartReceipt, AutomationStudioCandidateVerificationIdentity } from "./contracts.ts";
 import type { runAutomationStudioDetachedCandidate } from "./detached-execution.ts";
 
@@ -313,11 +314,19 @@ function boundTo(identity: AutomationStudioDetachedSubflowIdentity, target: Auto
     && new Set(keys).size === keys.length;
 }
 
-/** The arrival step (header, t578), or null when the registry offers no such node here. */
+/**
+ * The arrival step (header, t578), or null when the registry offers no such
+ * node here, or it declares an output action whose id cannot be derived. A
+ * domain node's output action is its command (the web domain's navigation
+ * declares a fixed one), derived exactly as a written step's is
+ * (`derivedOutputActionId`).
+ */
 function arrivalNode(arrival: AutomationStudioDetachedSubflowArrival, registry: AutomationStudioNodeRegistry, resolution: AutomationStudioNodeRegistryResolution): AutomationStudioFlowBootstrapNode | null {
   const definition = registry.get(arrival.node, resolution);
   if (!definition) return null;
-  return { key: "arrival", definitionId: definition.id, definitionVersion: definition.version, parameters: { [arrival.parameter]: arrival.location }, consequences: [] };
+  const outputActionId = derivedOutputActionId(definition);
+  if (definition.outputAction && !outputActionId) return null;
+  return { key: "arrival", definitionId: definition.id, definitionVersion: definition.version, parameters: { [arrival.parameter]: arrival.location }, ...(outputActionId ? { outputActionId } : {}), consequences: [] };
 }
 
 /** The throwaway topology: a root that first arrives when told to, then calls each proposal in order -- the predecessors, then a callable target -- with every proposal Subflow beside it (header). */

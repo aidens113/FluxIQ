@@ -229,6 +229,8 @@ describe("detached subflow partial trial", () => {
       expect(seen).toEqual(["https://start.test/"]);
     });
 
+    // A domain arrival that declares an output action (as the web domain's does) is covered end to end, through an
+    // importer node and the native runtime, by `service/project-build/tests/project-build-trial-reset.test.ts`.
     it("refuses an arrival node the registry does not offer before anything runs", async () => {
       const { input, seen } = fixture();
       const result = await runAutomationStudioDetachedSubflow({ ...input, arrival: { ...arrival, node: "test.nowhere" } });

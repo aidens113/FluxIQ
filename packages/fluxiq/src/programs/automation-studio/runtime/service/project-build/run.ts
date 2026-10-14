@@ -76,7 +76,7 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   const accounting = () => decisions.accounting();
   const dispatch = createAutomationStudioProjectDispatcher({
     record: { store: records, ref }, purse, cancellation: project.cancellation, host, ledger: project.ledger,
-    ports: automationStudioProjectBuildBriefPorts({ project, draft, decisions, subflowTrial: subflowTrials.port, accounting, acts }),
+    ports: automationStudioProjectBuildBriefPorts({ project, draft, decisions, subflowTrial: subflowTrials.port, proposals, accounting, acts }),
     maxCalls: automationStudioProjectBuildBriefCalls
   });
   const sources = automationStudioProjectActiveInstructionSources(project.instructions);

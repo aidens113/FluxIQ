@@ -56,10 +56,11 @@ import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, runAut
 import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT } from "../plan/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY } from "../../llm/decision-handlers/index.ts";
 import { automationStudioCandidateSubmissionRefusal } from "../candidate/index.ts";
-import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialPort, AutomationStudioSubflowTrialResult } from "./contracts.ts";
+import type { AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
+import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialResult } from "./contracts.ts";
 import { automationStudioSubflowBuilderTools } from "./role-tools.ts";
 import { AutomationStudioSubflowScopedSubmissionController } from "./scoped-submission.ts";
-import { AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, AutomationStudioSubflowTrialGate } from "./subflow-trial-gate.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, AutomationStudioSubflowTrialGate, type AutomationStudioSubflowTrialPreparingPort } from "./subflow-trial-gate.ts";
 
 /** The builder's submit tool. */
 export const AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID = "core.submit_subflow";
@@ -157,7 +158,8 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   scope: AutomationStudioSubflowScope;
   siblings: ScopedInput["siblings"];
   submission: ScopedInput["submission"];
-  trial?: { port: AutomationStudioSubflowTrialPort } | undefined;
+  /** The partial-trial port, and the site reset its gate asks before each trial (`./subflow-trial-gate.ts`, t578). */
+  trial?: { port: AutomationStudioSubflowTrialPreparingPort; reset?: AutomationStudioSiteResetTrialReset | undefined } | undefined;
   /** Suffixes the opening call's id; passed only when builders of one Flow may run at once (header). */
   callScope?: string | undefined;
   /** Told each proposal Core accepted, so a caller whose loop then fails still knows the latest one. */
@@ -169,7 +171,7 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   const signal = signals.length ? AbortSignal.any(signals) : undefined;
   const submission: ScopedInput["submission"] = signal ? { ...input.submission, signal } : input.submission;
   const controller = new AutomationStudioSubflowScopedSubmissionController({ scope: input.scope, siblings: input.siblings, submission });
-  const gate = new AutomationStudioSubflowTrialGate({ scope: input.scope, latest: () => controller.latest(), port: input.trial?.port, signal });
+  const gate = new AutomationStudioSubflowTrialGate({ scope: input.scope, latest: () => controller.latest(), port: input.trial?.port, signal, ...(input.trial?.reset ? { reset: input.trial.reset } : {}) });
   const subflowKey = input.scope.subflowKey;
   let tried = false;
   let lastTrial: AutomationStudioSubflowTrialResult | undefined;

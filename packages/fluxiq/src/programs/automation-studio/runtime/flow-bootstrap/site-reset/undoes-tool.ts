@@ -11,7 +11,7 @@ import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY } from "./contracts.ts";
 const UNDOES: JsonObject = {
   type: "string",
   pattern: "^act-[1-9][0-9]{0,3}$",
-  description: "Only when this call undoes one of this build's own lasting acts before a trial: the act id core.test_candidate listed. "
+  description: "Only when this call undoes one of this build's own lasting acts before a trial: the act id the trial listed (core.test_candidate or core.test_subflow). "
     + "Removing what that act created needs no permission. Never for anything that was there before the build began."
 };
 

@@ -3,9 +3,8 @@ import { AutomationStudioNodeRegistry } from "../../../nodes/index.ts";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { observeAutomationStudioEvidenceLoop } from "../../activity/index.ts";
 import { automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapPersonNeeded, flowBootstrapEvidenceUnusableDecisionFailure, type AutomationStudioBootstrapAccounting, type AutomationStudioFlowBootstrapActionPermissions, type AutomationStudioFlowBootstrapPersonNeeded } from "../../flow-bootstrap/index.ts";
-import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetCalls, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetProjectLedger } from "../../flow-bootstrap/site-reset/index.ts";
-import type { AutomationStudioCandidateTrialAct } from "../../flow-bootstrap/candidate/index.ts";
-import type { AutomationStudioSubflowTrialPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetCalls, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetTrialReset } from "../../flow-bootstrap/site-reset/index.ts";
+import type { AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, automationStudioFlowDraftReplayClearedCode, automationStudioHarnessOptionRegistry, automationStudioLlmNodeDescriptions, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceToolExecutionResult, type AutomationStudioLlmHarnessInput } from "../../llm/index.ts";
 import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectBriefPortFactory, AutomationStudioProjectBriefPortRequest } from "../../project-agents/index.ts";
@@ -16,8 +15,9 @@ import type { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
 import type { AutomationStudioProjectBuildDecisions } from "./decisions.ts";
 import { automationStudioProjectBuildPrepareEntry, type AutomationStudioProjectBuildEntry } from "./entry-preparation.ts";
 import { AutomationStudioProjectBuildPermissions } from "./permissions.ts";
-import { AutomationStudioProjectBuildProposals } from "./proposals.ts";
+import type { AutomationStudioProjectBuildProposals } from "./proposals.ts";
 import { automationStudioProjectBuildResetCalls } from "./reset-calls.ts";
+import { automationStudioProjectBuildTrialReset } from "./trial-reset.ts";
 import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 
 // Each brief's surroundings (unit A5c; the dispatcher's port factory,
@@ -35,7 +35,7 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // - its decisions, under the loop's own completion schema (`./decisions.ts`).
 //
 // A build or repair brief also gets the build's subflow trial port, whose
-// trials' own lasting acts it records in the brief's ledger. A reset brief's
+// trials' own lasting acts its gate records in the brief's ledger. A reset brief's
 // loop offers `undoes` on its run-node calls and completes once the project
 // ledger shows nothing in place: before that answer, every ledger that still
 // holds an act looks again on the act's own page (`beforeTrial`), which is the
@@ -77,6 +77,27 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // press is refused beforehand (the user's rule of 2026-10-01), so such a press
 // outside the brief runs; the model is then told, beside its result, that the
 // act was outside its brief and stays on the site until a reset undoes it.
+//
+// **A builder's trial puts the site back first** (t578; user, 2026-10-12). Its
+// subflow trial gate is handed a reset over the project ledger
+// (`./trial-reset.ts`): every lasting act this build made, whichever brief
+// made it, is undone before the trial, never what was there before the build.
+// The gate runs the deployment's start hook first when the port has one
+// (`prepareStart`, kept through every wrapper), and the trial's own acts go
+// into the brief's ledger there, once, then into the build record. So a
+// builder can carry out an undo without a hook, its run-node calls offer
+// `undoes`, as a candidate build's do, and its gate routes each undo to the
+// ledger that owns the act (`./reset-calls.ts`), as a reset brief's does.
+// A builder's reader keeps the start it saw at its opening; that is the
+// build's start only when nothing of the build was on the site then. A builder
+// that opened after another's act, or on its prepared entry, never compares
+// the whole start against it -- after the undo, that start would differ by the
+// very acts undone, and the model would be asked to put them back -- so its
+// reset judges each act on the act's own page alone, as the ledger does
+// without a start (`flow-bootstrap/site-reset/trial-policy.ts`).
+//
+// The proposals a dependent builder's entry runs are the build's one registry,
+// the one its subflow trials record into (`./subflow-trials.ts`).
 
 type DraftInput = Parameters<typeof generateAutomationStudioFlowCandidateDraft>[0];
 
@@ -88,7 +109,9 @@ export function automationStudioProjectBuildBriefPorts(input: {
   draft: DraftInput;
   decisions: AutomationStudioProjectBuildDecisions;
   /** The build's subflow trial port (`./subflow-trials.ts`). */
-  subflowTrial: AutomationStudioSubflowTrialPort;
+  subflowTrial: AutomationStudioSubflowTrialPreparingPort;
+  /** The build's proposals, which that port records every trial's verdict into. */
+  proposals: AutomationStudioProjectBuildProposals;
   accounting(): AutomationStudioBootstrapAccounting;
   /** Writes the project ledger's acts into the build record as they are recorded. */
   acts: AutomationStudioProjectBuildActsRecord;
@@ -120,30 +143,42 @@ export function automationStudioProjectBuildBriefPorts(input: {
     const loop = { ...limits, tools: harness.tools, observedStateKeys: harness.observedStateKeys, executeTool: routing.recording(personNeeded.executeTool), nodeOf: nodeDescriptions.definition, unusableDecisions: unusable(request.brief.maxIterations), decide: decide(undefined) };
     return { loop, permissions, decide, ended: briefEnding(permissions, personNeeded) };
   };
-  // Every brief's trials pass through its port below, so these are the passing proposals a dependent builder's entry runs.
-  const proposals = new AutomationStudioProjectBuildProposals();
+  const { proposals } = input;
+  const arrival = binding.runsNodes?.arrival;
   return {
     builder: async (request) => {
-      const built = await environment(request, request.ledger);
+      // An undo names an act of any brief of this build, and goes to the ledger that owns it; the builder's own acts to its own (header).
+      const calls = automationStudioProjectBuildResetCalls(project.ledger, request.ledger);
+      const built = await environment(request, calls);
       const { instructionText: _instructionText, originalSource: _originalSource, signal: _signal, ...submission } = draft.submission;
-      const landed = (acts: readonly AutomationStudioCandidateTrialAct[] | undefined, runId: string | undefined) => {
-        if (!acts?.length) return;
-        request.ledger.trialRan(acts, runId);
-        input.acts.trialRan(acts, runId);
-      };
-      const trial: AutomationStudioSubflowTrialPort = async (trialRequest) => {
-        const result = await input.subflowTrial(trialRequest);
-        proposals.trialled(trialRequest.scope, trialRequest.proposal, result.verdict);
-        landed(result.acts, result.trialRunId);
-        return result;
-      };
+      // The build's port as it is, `prepareStart` with it; the trial's acts are recorded once, by the gate's reset below (header).
+      const trial = input.subflowTrial;
       const reader = new AutomationStudioSiteResetStartCheck({ binding, projectId, flowId, tools: built.loop.tools, executeTool: (call) => built.loop.executeTool(call), liveCheck: { settleMs: AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS } });
-      // Before the first look (header): its predecessors' passing proposals, run once to reach its entry.
-      const entry = await automationStudioProjectBuildPrepareEntry({ scope: request.scope, proposals, environment: project.trialEnvironment, signal: request.signal });
-      if (entry.kind !== "start") landed(entry.acts, entry.runId);
-      const placed = placing(built.loop, request.ledger, reader, { capture: true, signal: request.signal });
-      const loop = told(entry.kind === "prepared" ? { ...placed, tools: placed.tools.map(lookingInPlace) } : placed, { entry: entryNote(request.scope.subflowKey, entry), permittedActs: request.brief.permittedActs });
-      return { loop, submission: { ...submission, permissionFor: built.permissions.planStep }, trial, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...observed, decide: built.decide(observed.completionSchema) }), ended: built.ended };
+      // Whether the start this builder's reader captures at its opening is the build's: nothing of the build on the site by then (header).
+      let startIsBuilds = false;
+      const buildReset = automationStudioProjectBuildTrialReset({
+        project: project.ledger, own: request.ledger,
+        checks: (signal) => ({ compare: startIsBuilds ? () => reader.compare(signal) : async () => ({ moved: false }), compareAt: (place) => reader.compareAt(place, signal) })
+      });
+      const reset: AutomationStudioSiteResetTrialReset = {
+        beforeTrial: (signal, cannotUndo, options) => buildReset.beforeTrial(signal, cannotUndo, options),
+        trialRan: (acts, trialRunId) => {
+          const left = buildReset.trialRan(acts, trialRunId);
+          if (acts.length) input.acts.trialRan(acts, trialRunId);
+          return left;
+        }
+      };
+      // Before the first look (header): its predecessors' passing proposals, run once to reach its entry, from the start page.
+      const entry = await automationStudioProjectBuildPrepareEntry({ scope: request.scope, proposals, environment: project.trialEnvironment, signal: request.signal, ...(arrival ? { arrival } : {}) });
+      if (entry.kind !== "start" && entry.acts.length) {
+        request.ledger.trialRan(entry.acts, entry.runId);
+        input.acts.trialRan(entry.acts, entry.runId);
+      }
+      startIsBuilds = !project.ledger.snapshot().acts.some((act) => act.inPlace);
+      const placed = placing(built.loop, calls, reader, { capture: true, signal: request.signal });
+      const tools = placed.tools.map((tool) => automationStudioSiteResetUndoesTool(entry.kind === "prepared" ? lookingInPlace(tool) : tool));
+      const loop = told({ ...placed, tools }, { entry: entryNote(request.scope.subflowKey, entry), permittedActs: request.brief.permittedActs });
+      return { loop, submission: { ...submission, permissionFor: built.permissions.planStep }, trial, reset, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...observed, decide: built.decide(observed.completionSchema) }), ended: built.ended };
     },
     reset: async (request) => {
       const calls = automationStudioProjectBuildResetCalls(project.ledger, request.ledger);

@@ -15,6 +15,10 @@
 // cart drawer on the product page. The builder's press is read around in place,
 // so the line it created is the act's own; the reset removes that line, and the
 // line the cart held before the build is kept.
+//
+// In both, the builder makes its act after its own subflow trial passed: a
+// builder's trial now undoes the build's acts first (t578), so an act made
+// before it would be undone there, not left for the supervisor's whole trial.
 
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import os from "node:os";
@@ -50,7 +54,7 @@ const PLAN = {
   taskSpec: { parts: [{ id: "p1", quote: { sourceId: "instruction.build", text: TASK }, goalFacts: ["The Flow runs from its start to its end"], lastingActs: ["create_new"] }], notAsked: [] },
   subflows: [{ key: "main", name: "Main", parts: ["p1"] }]
 };
-const BUILD_BRIEF = { kind: "build", subflowKey: "main", parts: ["p1"], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.01, maxIterations: 6, permittedActs: ["create_new"] };
+const BUILD_BRIEF = { kind: "build", subflowKey: "main", parts: ["p1"], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.01, maxIterations: 12, permittedActs: ["create_new"] };
 const RESET_BRIEF = { kind: "reset", subflowKey: "main", parts: [], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.005, maxIterations: 4 };
 const SUBMISSION = { summary: "Build the main subflow", plan: { schemaVersion: "0.1", router: ROUTER, subflows: [{ key: "main", name: "Main", role: "primary", ...START_END }] } };
 
@@ -108,9 +112,10 @@ async function recipeBuild() {
     const subflowKey = (properties.subflowKey as JsonObject | undefined)?.const as string;
     const submitted = lastOf(evidence, "core.submit_subflow");
     const tested = lastOf(evidence, "core.test_subflow");
-    if (!lastOf(evidence, "press")) return decision({ kind: "tool_call", callId: "save", toolId: "press", input: { control: "Save", item: "recipe:herb-bread" } });
     if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: "submit", toolId: "core.submit_subflow", input: SUBMISSION });
     if (tested?.verdict !== "yes") return decision({ kind: "tool_call", callId: "test", toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } });
+    // The save comes after the builder's own passing trial, which would otherwise have it undone first (t578), so it is still on the site for the whole trial.
+    if (!lastOf(evidence, "press")) return decision({ kind: "tool_call", callId: "save", toolId: "press", input: { control: "Save", item: "recipe:herb-bread" } });
     return decision({ kind: "complete", result: { subflowKey, revision: submitted.revision as number, digest: submitted.digest as string } });
   });
   const serviceOptions: AutomationStudioServiceOptions = {
@@ -289,9 +294,10 @@ async function cartBuild() {
     const subflowKey = (properties.subflowKey as JsonObject | undefined)?.const as string;
     const submitted = lastOf(evidence, "core.submit_subflow");
     const tested = lastOf(evidence, "core.test_subflow");
-    if (!ranNode) return decision({ kind: "tool_call", callId: "add", toolId: "core.run_node", input: { node: ADD, parameters: {}, consequences: ["create_new"] } });
     if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: "submit", toolId: "core.submit_subflow", input: SUBMISSION });
     if (tested?.verdict !== "yes") return decision({ kind: "tool_call", callId: "test", toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } });
+    // After its own passing trial, as in the case above (t578).
+    if (!ranNode) return decision({ kind: "tool_call", callId: "add", toolId: "core.run_node", input: { node: ADD, parameters: {}, consequences: ["create_new"] } });
     return decision({ kind: "complete", result: { subflowKey, revision: submitted.revision as number, digest: submitted.digest as string } });
   });
   const domain = shopDomain(cart);
