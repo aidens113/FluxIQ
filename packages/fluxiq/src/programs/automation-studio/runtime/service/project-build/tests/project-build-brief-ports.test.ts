@@ -25,7 +25,9 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence, AutomationStudioActionDeclaration, AutomationStudioActionPermissionCheck } from "../../../action-permissions/index.ts";
+import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import { AutomationStudioSiteResetLedger } from "../../../flow-bootstrap/site-reset/index.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import type { AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../../parking/index.ts";
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
@@ -46,14 +48,32 @@ type Entry = { callId: string; toolId: string; value: unknown };
 const lastOf = (evidence: readonly Entry[], toolId: string) => [...evidence].reverse().find((entry) => entry.toolId === toolId)?.value as JsonObject | undefined;
 const decision = (decided: JsonObject) => ({ response: { kind: "evidence_tool_decision", summary: "Scripted", decision: decided }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.0001 } });
 
+/** The stub domain's own save, which a part that asks a lasting act runs (t598: a Core wait declaring one leaves nothing). */
+const SAVE = "domain.isolated.save";
+
 /**
  * A part's script, one short wait; the router-run subflow's plan, a start and an end.
- * A part that asks a lasting act declares it on its step, as a real script must (t597).
+ * A part that asks a lasting act does it with the domain's save, declared on that step, as a real script must (t597).
  */
 function submission(subflowKey: string, asked: readonly string[] = []): JsonObject {
-  const declared = asked.length ? [`    consequences: ${asked.join(", ")}`] : [];
-  if (subflowKey !== "main") return { flow: [`flow: ${subflowKey}`, `part ${subflowKey}: carry out its part`, "  step pause: wait briefly", "    node: builtin.timing.wait", "    duration: 1", "    unit: milliseconds", ...declared, "end"].join("\n") };
+  const step = asked.length ? ["  step save: save it", `    node: ${SAVE}`, `    consequences: ${asked.join(", ")}`] : ["  step pause: wait briefly", "    node: builtin.timing.wait", "    duration: 1", "    unit: milliseconds"];
+  if (subflowKey !== "main") return { flow: [`flow: ${subflowKey}`, `part ${subflowKey}: carry out its part`, ...step, "end"].join("\n") };
   return { summary: "Build the main subflow", plan: { schemaVersion: "0.1", router: { name: "Main", rules: [], fallback: { kind: "subflow", targetSubflowKey: "main" } }, subflows: [{ key: "main", name: "Main", role: "primary", ...START_END }] } };
+}
+
+/** The stub domain's nodes: its save, which succeeds and changes nothing a test reads. */
+function saveRuntime(): AutomationStudioNativeNodeRuntime {
+  const node: AutomationStudioNodeDefinition = {
+    schemaVersion: "0.1", id: SAVE, version: "1.0.0", label: "Save", description: "Save it.", category: "action",
+    source: { kind: "importer", domainId: "isolated", packageId: "isolated.stub", implementationKey: SAVE },
+    availability: { kind: "domain", domainId: "isolated" }, requiredRuntimeCapabilities: ["isolated.actions"], capabilities: { executable: true, codeBacked: true },
+    inputs: [{ id: "in", label: "In", valueType: "any", required: false }], outputs: [{ id: "success", label: "Success", valueType: "any" }], parameters: [],
+    outputAction: { fixedOutputId: SAVE }
+  };
+  return new AutomationStudioNativeNodeRuntime({ permissions: [], runtimeCapabilities: ["isolated.actions"] }).register(
+    { schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "isolated.stub", packageVersion: "1.0.0", domainId: "isolated", nodes: [node] },
+    { packageId: "isolated.stub", packageVersion: "1.0.0", implementations: { [SAVE]: () => ({ status: "success" as const, route: "success", outputs: { success: true } }) } }
+  );
 }
 
 /** Each builder: its own extra moves first, then submit, test, and complete on a yes. */
@@ -112,11 +132,12 @@ async function build(input: {
     llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: input.tools, executeTool: input.executeTool, resolvePlanNodeParameters: automationStudioTestDeclaredStepResolution } as unknown as NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>,
     ...(input.prepareStart ? { prepareCandidateStart: input.prepareStart } : {})
   });
+  service.bindNativeNodeRuntime(saveRuntime());
   cleanups.push(async () => {
     await service.close();
     await rm(dataDir, { recursive: true, force: true });
   });
-  const { project, flow } = await blankFixture(service);
+  const { project, flow } = await blankFixture(service, "active", "isolated");
   return {
     service, firstSeen, latestSeen,
     run: () => service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project", ...(input.permittedConsequences ? { permittedConsequences: input.permittedConsequences } : {}) })

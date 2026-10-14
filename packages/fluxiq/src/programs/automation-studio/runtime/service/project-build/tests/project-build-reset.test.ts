@@ -24,9 +24,18 @@
 //
 // The builder's part asks a lasting act, so its subflow declares the step that
 // does it, as a real script must (t597). Its own trial of that step is the
-// build's first act (act-1), and its explored press the second (act-2). A
-// trial step names no item, so no control here takes it back: the reset
-// undoes act-2 and names act-1 under `cannotUndo`.
+// build's first act (act-1), and its explored press the second (act-2).
+//
+// On the recipe site, which has no start hook, that trial's save is the
+// site's own Save node, and the host runtime's state diff around each step
+// lists the recipes the box showed before and after it (t598). So the trial's
+// act carries the recipe it put in the box, and the reset undoes it by that
+// item, as it undoes the explored save by its own: the whole trial then runs
+// on the box as the build found it. The save is no Core wait: a wait that
+// declares `create_new` acts on nothing outside the run and leaves no act
+// (t598). The shop below has no state diff, so its trial's
+// add names no cart line: no control there takes it back, and the reset
+// names act-1 under `cannotUndo`, as before.
 
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import os from "node:os";
@@ -40,6 +49,7 @@ import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { automationStudioActivityHub } from "../../../activity/index.ts";
 import { parseAutomationStudioFlowBootstrapGenerationError } from "../../../flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS, AutomationStudioSiteResetLedger } from "../../../flow-bootstrap/site-reset/index.ts";
+import type { AutomationStudioHostRuntimeBoundary, AutomationStudioHostStateSnapshotRef } from "../../../host-runtime.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";
@@ -64,13 +74,17 @@ const PLAN = {
 };
 const BUILD_BRIEF = { kind: "build", subflowKey: "main", parts: ["p1"], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.01, maxIterations: 12, permittedActs: ["create_new"] };
 const RESET_BRIEF = { kind: "reset", subflowKey: "main", parts: [], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.005, maxIterations: 4 };
+/** The recipe site's own Save node, which a Flow's run presses (header, t598). */
+const SAVE = "domain.isolated.save-recipe";
+/** The recipe the subflow's save puts in the box; the builder's explored press saves another. */
+const TRIAL_RECIPE = "recipe:rye-loaf";
 /**
  * The builder's subflow. Its part asks a lasting act, so the step that does it declares it, as a real script must (t597):
- * on the recipe site, which has no nodes of its own, a short wait stands for the save; in the shop, its own Add to cart.
+ * on the recipe site its own Save (t598: a Core wait declaring it would leave nothing); in the shop, its own Add to cart.
  */
-const RECIPE_SUBMISSION = { flow: ["flow: Main", "step save: save the recipe", "  node: builtin.timing.wait", "  duration: 1", "  unit: milliseconds", "  consequences: create_new"].join("\n") };
+const RECIPE_SUBMISSION = { flow: ["flow: Main", "step save: save the recipe", `  node: ${SAVE}`, `  recipe: ${TRIAL_RECIPE}`, "  consequences: create_new"].join("\n") };
 /** The same subflow with its save's step declaring nothing lasting. */
-const UNDECLARED_RECIPE_SUBMISSION = { flow: ["flow: Main", "step save: save the recipe", "  node: builtin.timing.wait", "  duration: 1", "  unit: milliseconds"].join("\n") };
+const UNDECLARED_RECIPE_SUBMISSION = { flow: ["flow: Main", "step save: save the recipe", `  node: ${SAVE}`, `  recipe: ${TRIAL_RECIPE}`].join("\n") };
 const CART_SUBMISSION = { flow: ["flow: Main", "step add: add it to the cart", "  node: domain.example.add-to-cart", "  consequences: create_new"].join("\n") };
 
 /** The build record's main file, read off disk as a restarted Core would find it. */
@@ -141,9 +155,10 @@ async function recipeBuild(options: { ends?: boolean; undeclaredFirst?: boolean 
     if (properties.summary !== undefined && properties.subflowKey === undefined) {
       // The reset agent: undo the build's own save, named by its act, then complete; where the build ends instead, it finds no way to.
       if (options.ends) return decision({ kind: "tool_call", callId: `look.${evidence.length}`, toolId: "inspect", input: { at: evidence.length } });
-      // act-1 is the builder's own trial of its save, which names no recipe, so no control here takes it back (t597).
-      if (!lastOf(evidence, "press")) return decision({ kind: "tool_call", callId: "undo.save", toolId: "press", input: { control: "Unsave", item: "recipe:herb-bread", undoes: "act-2" } });
-      return decision({ kind: "complete", result: { summary: "The recipe this build saved is out of the box again.", cannotUndo: ["act-1"] } });
+      // act-2 is the builder's explored save; act-1 its own trial of the save, which carries the recipe that trial put in the box (t598).
+      if (!evidence.some((entry) => entry.callId === "undo.save")) return decision({ kind: "tool_call", callId: "undo.save", toolId: "press", input: { control: "Unsave", item: "recipe:herb-bread", undoes: "act-2" } });
+      if (!evidence.some((entry) => entry.callId === "undo.trial")) return decision({ kind: "tool_call", callId: "undo.trial", toolId: "press", input: { control: "Unsave", item: TRIAL_RECIPE, undoes: "act-1" } });
+      return decision({ kind: "complete", result: { summary: "The recipes this build saved are out of the box again." } });
     }
     const subflowKey = (properties.subflowKey as JsonObject | undefined)?.const as string;
     builderSaw.splice(0, builderSaw.length, ...evidence.map((entry) => structuredClone(entry)));
@@ -180,11 +195,13 @@ async function recipeBuild(options: { ends?: boolean; undeclaredFirst?: boolean 
     } as unknown as NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>
   };
   const service = new AutomationStudioService(serviceOptions);
+  service.bindNativeNodeRuntime(recipeRuntime(box, pressed));
+  service.bindHostRuntime(boxDiffs(box));
   cleanups.push(async () => {
     await service.close();
     await rm(dataDir, { recursive: true, force: true });
   });
-  const { project, flow } = await blankFixture(service);
+  const { project, flow } = await blankFixture(service, "active", "isolated");
   const record = () => storedRecord(dataDir);
   return {
     box, pressed, boxWhenWholeJudged, supervisorSaw, builderSaw, record,
@@ -200,13 +217,15 @@ describe("a project build whose builder leaves a lasting act", () => {
 
     // The first whole trial was refused, naming the builder's acts still on the site: its own trial of the save (t597), and its save.
     expect(lastOf(run.supervisorSaw[5]!, "core.test_candidate")).toMatchObject({ ok: false, code: "project.trial_reset_required", actsInPlace: [{ act: "act-1", did: "trial step 1 \"save the recipe\"" }, { act: "act-2", did: "press button" }] });
-    // The reset brief came back done, and nothing of the build was left in place.
+    // The reset brief came back done, naming nothing it could not undo, and nothing of the build was left in place.
     expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "done" }], lastingActsInPlace: 0 });
-    // It pressed only the build's own recipe: the one saved before the build is still in the box.
-    expect(run.pressed).toEqual(["Save recipe:herb-bread", "Unsave recipe:herb-bread"]);
-    expect([...run.box]).toEqual(["recipe:lentil-soup"]);
-    // The whole trial ran once, after the reset, on the site as the build found it: a first answer and its confirmation.
-    expect(run.boxWhenWholeJudged).toEqual([["recipe:lentil-soup"], ["recipe:lentil-soup"]]);
+    // It pressed only the build's own recipes: the explored save's, on its own item, and the builder's trial's, on the item that
+    // trial's own diff showed it put in the box (t598). The one saved before the build was never touched. Only then did the whole
+    // trial run, saving its recipe again.
+    expect(run.pressed).toEqual([`run Save ${TRIAL_RECIPE}`, "Save recipe:herb-bread", "Unsave recipe:herb-bread", `Unsave ${TRIAL_RECIPE}`, `run Save ${TRIAL_RECIPE}`]);
+    expect([...run.box]).toEqual(["recipe:lentil-soup", TRIAL_RECIPE]);
+    // The whole trial ran once, after the reset, on the site as the build found it, and saved its recipe: a first answer and its confirmation.
+    expect(run.boxWhenWholeJudged).toEqual([["recipe:lentil-soup", TRIAL_RECIPE], ["recipe:lentil-soup", TRIAL_RECIPE]]);
     expect(lastOf(run.supervisorSaw[7]!, "core.test_candidate")).toMatchObject({ verdict: "yes" });
 
     // The builder's acts are in the build record, with the class each declared (the control's name withheld, as the model was never
@@ -251,7 +270,8 @@ describe("a project build whose builder leaves a lasting act", () => {
     expect(told?.detail).toMatchObject({ kind: "note", status: "failed", text: note });
     // The model's own words reach the record, never the person.
     expect(JSON.stringify(seen)).not.toContain(ENDED_REASON);
-    expect([...run.box]).toEqual(["recipe:lentil-soup", "recipe:herb-bread"]);
+    // Its trial's recipe and its explored one, both still there.
+    expect([...run.box]).toEqual(["recipe:lentil-soup", TRIAL_RECIPE, "recipe:herb-bread"]);
   });
 
   it("undoes a cart line a builder's press on an item-less control added, and keeps the line that was there before", async () => {
@@ -287,13 +307,46 @@ const ADD = "domain.example.add-to-cart";
 const REMOVE = "domain.example.remove-line";
 const GO = "domain.example.go";
 
-function shopNode(id: string, label: string, parameters: AutomationStudioNodeDefinition["parameters"]): AutomationStudioNodeDefinition {
+function shopNode(id: string, label: string, parameters: AutomationStudioNodeDefinition["parameters"], domainId = "example", packageId = "example.shop"): AutomationStudioNodeDefinition {
   return {
     schemaVersion: "0.1", id, version: "1.0.0", label, description: `${label} in the shop.`, category: "action",
-    source: { kind: "importer", domainId: "example", packageId: "example.shop", implementationKey: id },
-    availability: { kind: "domain", domainId: "example" }, requiredRuntimeCapabilities: ["example.actions"], capabilities: { executable: true, codeBacked: true },
+    source: { kind: "importer", domainId, packageId, implementationKey: id },
+    availability: { kind: "domain", domainId }, requiredRuntimeCapabilities: [`${domainId}.actions`], capabilities: { executable: true, codeBacked: true },
     inputs: [{ id: "in", label: "In", valueType: "any", required: false }], outputs: [{ id: "success", label: "Success", valueType: "any" }], parameters,
     outputAction: { fixedOutputId: id }
+  };
+}
+
+/** The recipe site's Save, as a Flow's run presses it: it puts its recipe in the box (header, t598). */
+function recipeRuntime(box: Set<string>, pressed: string[]) {
+  const nodes = [shopNode(SAVE, "Save recipe", [{ id: "recipe", label: "Recipe", valueType: "string", required: true }], "isolated", "isolated.recipes")];
+  return new AutomationStudioNativeNodeRuntime({ permissions: [], runtimeCapabilities: ["isolated.actions"] }).register(
+    { schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "isolated.recipes", packageVersion: "1.0.0", domainId: "isolated", nodes },
+    { packageId: "isolated.recipes", packageVersion: "1.0.0", implementations: { [SAVE]: ({ parameters }: { parameters: Readonly<Record<string, unknown>> }) => {
+      box.add(String(parameters.recipe));
+      pressed.push(`run Save ${String(parameters.recipe)}`);
+      return { status: "success" as const, route: "success", outputs: { success: true } };
+    } } }
+  );
+}
+
+/**
+ * The recipe site's host runtime: a snapshot of the box around each step a run takes, and the diff of the two, which
+ * lists the recipes -- each by its own item token -- the box showed before and after the step (header, t598).
+ */
+function boxDiffs(box: Set<string>): AutomationStudioHostRuntimeBoundary {
+  let captured = 0;
+  const shown = (ref: AutomationStudioHostStateSnapshotRef | undefined) => (Array.isArray(ref?.summary?.box) ? ref.summary.box : []) as string[];
+  return {
+    capabilities: [],
+    captureStateSnapshot: ({ attemptId, point }) => {
+      captured += 1;
+      return { stateSnapshotId: `box.${captured}`, stateRef: `box.${captured}@${attemptId}:${point}`, capturedAt: captured, summary: { box: [...box] } };
+    },
+    inspectStateDiff: ({ before, after }) => {
+      const was = shown(before), now = shown(after);
+      return { documentChanged: false, added: now.filter((item) => !was.includes(item)).join("\n"), removed: was.filter((item) => !now.includes(item)).join("\n"), items: { before: was, after: now } };
+    }
   };
 }
 
