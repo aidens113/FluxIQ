@@ -21,12 +21,17 @@ export async function automationStudioProjectSupervisorReadTask(context: Automat
     ok: true,
     instructions: ports.sources.map((source) => ({ sourceId: source.sourceId, text: source.text })),
     buildRecord: summary ? (JSON.parse(JSON.stringify(summary)) as JsonObject) : null,
-    money: purse ? { canGiveUsd: usd(purse.allocatableUsd()), keptBackUsd: usd(purse.keptBackUsd()), leftUsd: usd(purse.leftUsd()) } : null,
+    money: purse ? { canGiveUsd: usd(purse.allocatableUsd()), keptBackUsd: usd(purse.keptBackUsd()), leftUsd: usd(purse.leftUsd()), ...calls(purse.allocatableCalls()) } : null,
     lastingActsInPlace: inPlace,
     howToWork: GUIDANCE.howToWork,
     example: GUIDANCE.example
   };
   return answer.answered(evidence);
+}
+
+/** The calls builders can still be given, where the build caps its calls (t570). */
+function calls(canGive: number | undefined): JsonObject {
+  return canGive === undefined ? {} : { canGiveCalls: canGive };
 }
 
 function usd(value: number): number {

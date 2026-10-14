@@ -4,6 +4,7 @@ import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/e
 import { automationStudioProjectBuilderReturn, type AutomationStudioProjectBuilderReturn, type AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
 import { AutomationStudioProjectRecordRefusal } from "../record/index.ts";
 import { automationStudioProjectSupervisorBriefInput } from "./brief-input.ts";
+import { automationStudioProjectSupervisorBriefSizing } from "./brief-sizing.ts";
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { automationStudioProjectSupervisorDispatchOrder } from "./dispatch-order.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";
@@ -13,7 +14,8 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
 const EPSILON_USD = 1e-9;
 
 /**
- * `project.dispatch`: the briefs are read and checked whole (`./brief-input.ts`),
+ * `project.dispatch`: the briefs are sized by Core from what the purse can
+ * still give (`./brief-sizing.ts`, t570), read and checked whole (`./brief-input.ts`),
  * put in the order their entries need (`./dispatch-order.ts`), held to the money
  * the purse can still give (its judging reserve never among it), recorded in
  * the build record with the decision and its reason, shown in the chat, and
@@ -31,7 +33,16 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
   const structure = state.structure;
   const taskSpec = state.taskSpec;
   if (!structure || !taskSpec) return answer.refused("project.plan_missing", GUIDANCE.refusals.noPlan);
-  const read = automationStudioProjectSupervisorBriefInput({ value, structure, taskSpec, after: state.after, nextId: state.briefIds() });
+  const sent = Array.isArray(value.briefs) ? value.briefs.filter((brief): brief is JsonObject => Boolean(brief) && typeof brief === "object" && !Array.isArray(brief)) : [];
+  // Only a list of objects is sized; anything else is refused by the reading below, by its place.
+  const sizing = ports.purse && Array.isArray(value.briefs) && sent.length === value.briefs.length && sent.length
+    ? automationStudioProjectSupervisorBriefSizing({ sent, purse: ports.purse, structure, done: new Set(state.latestDone().keys()), supervisorCalls: ports.finishing?.supervisorCalls ?? 0 })
+    : undefined;
+  if (sizing && !sizing.ok) {
+    const { ok: _ok, ...figures } = sizing;
+    return answer.refused("project.allowance_unavailable", GUIDANCE.refusals.allowanceUnavailable, { ...figures, canGiveUsd: usd(figures.canGiveUsd) });
+  }
+  const read = automationStudioProjectSupervisorBriefInput({ value, structure, taskSpec, after: state.after, ...(sizing ? { sizes: sizing.sizes } : {}), nextId: state.briefIds() });
   if (!read.ok) {
     const survey = read.issues.some((issue) => issue.code === "project.brief_survey_unavailable");
     return answer.refused(survey ? "project.brief_survey_unavailable" : "project.brief_refused", survey ? GUIDANCE.refusals.surveyUnavailable : GUIDANCE.refusals.briefRefused, { issues: read.issues });
@@ -89,6 +100,10 @@ function answering(brief: AutomationStudioProjectSubflowBrief, given: Automation
   return issue ? blocked(brief, issue.code, parsed.value) : parsed.value;
 }
 
+function usd(value: number): number {
+  return Math.round(value * 1e6) / 1e6;
+}
+
 function blocked(brief: AutomationStudioProjectSubflowBrief, code: string, given?: AutomationStudioProjectBuilderReturn): AutomationStudioProjectBuilderReturn {
   return { briefId: brief.briefId, outcome: "blocked", reason: `The return did not answer this brief (${code}).`, trials: [], spentUsd: given?.spentUsd ?? 0, calls: given?.calls ?? 0 };
 }
@@ -101,6 +116,8 @@ function compact(brief: AutomationStudioProjectSubflowBrief, returned: Automatio
     subflowKey: brief.subflowKey,
     outcome: returned.outcome,
     reason: returned.reason,
+    // What Core gave it (`./brief-sizing.ts`).
+    given: { allowanceUsd: usd(brief.allowanceUsd), maxIterations: brief.maxIterations, ...(brief.maxCalls !== undefined ? { maxCalls: brief.maxCalls } : {}) },
     ...(returned.proposal ? { proposal: { revision: returned.proposal.revision } } : {}),
     trials: returned.trials.length,
     spentUsd: returned.spentUsd,

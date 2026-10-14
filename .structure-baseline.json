@@ -1143,7 +1143,7 @@
     "swallowed-failure": {
       "apps/web/src/features/automation-studio/workspace/cache/backends.ts": 7,
       "packages/fluxiq/src/programs/automation-studio/runtime/service/flows/mutations.ts": 6,
-      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 5,
+      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4,
       "packages/fluxiq/src/programs/automation-studio/runtime/service/summaries/store.ts": 3,
       "packages/fluxiq/src/programs/database-manager/storage/sqlite-repository.ts": 3,
       "apps/web/src/features/automation-studio/flow-editor/palette-preferences-repository.ts": 2,

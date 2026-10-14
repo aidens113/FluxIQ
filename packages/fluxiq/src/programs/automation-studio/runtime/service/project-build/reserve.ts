@@ -20,6 +20,22 @@ import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, type AutomationStudioLlmBuil
 // with the judge calls this build actually makes. Judges draw on it; every
 // other call -- each brief's allowance among them -- must leave it.
 
+// **And the calls of the build's own finishing (t570).** Builders' call shares
+// never take what the build needs after them: the supervisor's assembly, the
+// dispatch of the reset before the whole test, the test and the completion,
+// and the reset brief's own decisions, which only a reset brief is given
+// (`llm/build-purse/purse.ts`, `keepBackCallsFromAllowances`). On A8 round 1
+// (`run-mv7vl89u-917d62a6`) builders spent the build's 64 calls and nothing was
+// left to assemble or test with.
+
+/** The supervisor's own decisions after the last builder: assemble, dispatch the reset, test, complete. */
+const SUPERVISOR_FINISHING_CALLS = 4;
+/** A reset brief's decisions: look, undo the build's acts, and complete. */
+const RESET_CALLS = 6;
+
+/** The calls kept back from every builder's share for the build's own finishing. */
+export const AUTOMATION_STUDIO_PROJECT_BUILD_FINISHING_CALLS: Readonly<{ supervisorCalls: number; resetCalls: number }> = Object.freeze({ supervisorCalls: SUPERVISOR_FINISHING_CALLS, resetCalls: RESET_CALLS });
+
 /** Judge calls one judged whole run takes at most. */
 const JUDGING_CALLS = 2;
 /** Judge calls one repair round's judged whole run takes at most. */

@@ -65,10 +65,12 @@ export async function runAutomationStudioProjectDispatchBrief(input: {
       const signal = dispatcher.cancellation.signal()!;
       return await leases.run({ role, briefId: brief.briefId }, async (lease) => {
         const maxCalls = dispatcher.maxCalls ? dispatcher.maxCalls(brief) : brief.maxIterations;
-        const carved = dispatcher.purse.allowance({ role, briefId: brief.briefId, usd: brief.allowanceUsd, ...(maxCalls !== undefined ? { maxCalls } : {}) });
+        // A reset is the build's own finishing, so it may be carved from the calls kept back for it (t570).
+        const carved = dispatcher.purse.allowance({ role, briefId: brief.briefId, usd: brief.allowanceUsd, ...(maxCalls !== undefined ? { maxCalls } : {}), ...(brief.kind === "reset" ? { fromKeptBack: true } : {}) });
         if (!carved.ok) {
           const { refusal } = carved;
-          return ending.notStarted(brief, `The build's purse could not carve this brief's allowance of $${refusal.requestedUsd.toFixed(4)}: $${refusal.allocatableUsd.toFixed(4)} could still be allotted.`);
+          const calls = refusal.requestedCalls !== undefined && refusal.allocatableCalls !== undefined ? ` and ${refusal.requestedCalls} calls: ${refusal.allocatableCalls} calls could still be allotted` : "";
+          return ending.notStarted(brief, `The build's purse could not carve this brief's allowance of $${refusal.requestedUsd.toFixed(4)}${calls}; $${refusal.allocatableUsd.toFixed(4)} could still be allotted.`);
         }
         spend.allowance = carved.allowance;
         await recorded(() => dispatcher.record.store.recordAllowance(dispatcher.record.ref, { role, briefId: brief.briefId, usd: brief.allowanceUsd }));
