@@ -32,6 +32,9 @@ const START_END = {
 /** Each planned subflow's success check, which a builder's proposal carries unchanged; a fresh object each time, as a parsed reply's would be. */
 const checked = () => ({ metadata: { "fluxiq.successCheck": [{ fact: "ended", op: "exists" }] } });
 
+/** What the two-part task spec says nobody asked for (unit A9: every judge is sent it beside the instructions). */
+const NOT_ASKED = "Waiting longer than the Flow needs";
+
 type Shape = "one_part" | "two_parts";
 type Entry = { callId: string; toolId: string; value: unknown };
 
@@ -51,7 +54,7 @@ function planInput(shape: Shape): JsonObject {
         { id: "p1", quote: { sourceId: "instruction.build", text: "Create a deterministic" }, goalFacts: ["The Flow is deterministic"], lastingActs: [] },
         { id: "p2", quote: { sourceId: "instruction.build", text: "Start to End Flow." }, goalFacts: ["The Flow runs from its start to its end"], lastingActs: [] }
       ],
-      notAsked: []
+      notAsked: [NOT_ASKED]
     },
     structurePlan: { plan: { router, subflows: [{ key: "main", name: "Main", role: "primary", ...checked() }, callable("first"), callable("second")] }, partOf: { main: [], first: ["p1"], second: ["p2"] } }
   };
@@ -187,6 +190,29 @@ describe("a project build through the actual service", () => {
     expect(run.host!.holders).toHaveLength(2);
     expect(run.host!.held).toBe(0);
     expect(run.judged.subflow).toHaveLength(4);
+  });
+
+  it("judges each subflow trial on its brief's part and the whole trial on every part, each beside what nobody asked for", async () => {
+    const run = await projectBuild({ shape: "two_parts", capacity: 1 });
+    const result = await run.build();
+    if (result.status !== "proposed") throw new Error(`expected a proposal, got ${JSON.stringify(result)}`);
+    type Section = { supplementary: string; asked: Array<{ part: string; words: string }>; notAsked: string[] };
+    const sectionOf = (request: AutomationStudioLlmTaskRequest) => (request.context.resultSummary as unknown as { taskChecklist?: Section }).taskChecklist;
+    expect(run.judged.subflow).toHaveLength(4);
+    const judgedParts = new Set<string>();
+    for (const request of run.judged.subflow) {
+      const section = sectionOf(request);
+      expect(section?.supplementary).toContain("The instructions are the only authority");
+      expect(section?.asked).toHaveLength(1);
+      expect(section?.notAsked).toEqual([NOT_ASKED]);
+      judgedParts.add(section!.asked[0]!.part);
+    }
+    expect([...judgedParts].sort()).toEqual(["p1", "p2"]);
+    expect(run.judged.whole).toHaveLength(2);
+    for (const request of run.judged.whole) {
+      expect(sectionOf(request)).toMatchObject({ asked: [{ part: "p1", words: "Create a deterministic" }, { part: "p2", words: "Start to End Flow." }], notAsked: [NOT_ASKED] });
+      expect(JSON.stringify(request.context.instructions)).toContain(TASK);
+    }
   });
 
   it("builds them one at a time on a host of capacity 1", async () => {

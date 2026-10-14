@@ -15,6 +15,7 @@ import { AutomationStudioProjectBuildProposals } from "./proposals.ts";
 import { automationStudioProjectBuildRecords } from "./records.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_RESERVE } from "./reserve.ts";
 import { automationStudioProjectBuildSubflowTrials } from "./subflow-trials.ts";
+import { AutomationStudioProjectBuildTaskChecklist } from "./task-checklist.ts";
 import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 
 // A project build (automation-project-agents-plan, unit A5c): the project
@@ -69,6 +70,8 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   const decisions = new AutomationStudioProjectBuildDecisions(draft, () => [draft.trialSpend?.(), subflowTrials.spent()]);
   const acts = AutomationStudioProjectBuildActsRecord.of(project.ledger);
   acts.bind(records, ref);
+  // The whole trials' judge reads the task checklist from this build's record (unit A9, `./task-checklist.ts`).
+  AutomationStudioProjectBuildTaskChecklist.bind(project.trialEnvironment, { records, ref });
   const accounting = () => decisions.accounting();
   const dispatch = createAutomationStudioProjectDispatcher({
     record: { store: records, ref }, purse, cancellation: project.cancellation, host, ledger: project.ledger,

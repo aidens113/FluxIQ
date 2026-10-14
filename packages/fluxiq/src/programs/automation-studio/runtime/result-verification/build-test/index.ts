@@ -6,7 +6,9 @@
 // step's passes (`pass-lines.ts`), the rows they are named by (`span-rows.ts`)
 // and the inputs the test ran on (`test-inputs.ts`); what the Flow would store,
 // as the test's reads filled it (`stores.ts`); what a checked step did while
-// the build explored it, and the landing its act rests on (`landing.ts`).
+// the build explored it, and the landing its act rests on (`landing.ts`); and a
+// project build's task checklist, sent beside the instructions
+// (`task-checklist.ts`).
 export * from "./change-lines.ts";
 export * from "./judge.ts";
 export * from "./landing.ts";
@@ -16,4 +18,5 @@ export * from "./read-rows.ts";
 export * from "./span-rows.ts";
 export * from "./stores.ts";
 export * from "./summary.ts";
+export * from "./task-checklist.ts";
 export * from "./test-inputs.ts";

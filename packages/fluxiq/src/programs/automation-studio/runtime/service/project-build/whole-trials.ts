@@ -6,6 +6,7 @@ import { automationStudioBuildTestJudge } from "../../result-verification/index.
 import { automationStudioCandidateTrialPort, type AutomationStudioCandidateTrialPorts } from "../candidate-trial/index.ts";
 import { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER } from "./supervisor-ledger.ts";
+import { AutomationStudioProjectBuildTaskChecklist } from "./task-checklist.ts";
 import { automationStudioProjectBuildTrialReads } from "./trial-reads.ts";
 
 // The whole candidate's trial runner and judge, once per build (t340; unit
@@ -20,6 +21,12 @@ import { automationStudioProjectBuildTrialReads } from "./trial-reads.ts";
 // supervisor's trial refusal and a reset brief read -- holds it until a reset
 // has undone it (A5a report, open question 3), and written into the build
 // record with each step's classes (`./acts-record.ts`).
+//
+// **A project build's whole trials are judged against its task checklist**
+// (unit A9): the build record's latest task spec, every part and what nobody
+// asked for, sent beside the instructions (`./task-checklist.ts`, which says
+// how these trials find the record). A candidate build's judge is sent exactly
+// what it always was.
 
 /** What every trial is run with, from the service: the run, its session and its reads, without the judge. */
 export type AutomationStudioProjectBuildTrialEnvironment = Omit<AutomationStudioCandidateTrialPorts, "judge" | "execute" | "readEndView" | "clearedControlHandles" | "deniedEvidenceKeys">;
@@ -37,7 +44,11 @@ export function automationStudioProjectBuildWholeTrials(input: {
 }): AutomationStudioProjectBuildWholeTrials {
   const { environment, binding } = input;
   const { projectId, flowId } = environment;
-  const judge = automationStudioBuildTestJudge({ provider: input.judge.provider, timeoutMs: input.judge.timeoutMs, instructions: input.judge.instructions, deniedEvidenceKeys: binding.deniedEvidenceKeys, projectId, flowId, signal: input.judge.signal });
+  const asked = automationStudioBuildTestJudge({ provider: input.judge.provider, timeoutMs: input.judge.timeoutMs, instructions: input.judge.instructions, deniedEvidenceKeys: binding.deniedEvidenceKeys, projectId, flowId, signal: input.judge.signal });
+  const judge: typeof asked = async (judged) => {
+    const taskChecklist = await AutomationStudioProjectBuildTaskChecklist.whole(environment);
+    return await asked(taskChecklist ? { ...judged, taskChecklist } : judged);
+  };
   const trials = automationStudioCandidateTrialPort(input.candidateId, { ...environment, ...automationStudioProjectBuildTrialReads(binding, projectId, flowId), judge });
   const ledger = input.ledger;
   if (!ledger) return trials;
