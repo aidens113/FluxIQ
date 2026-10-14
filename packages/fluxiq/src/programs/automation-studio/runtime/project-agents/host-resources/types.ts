@@ -13,6 +13,13 @@ export interface AutomationStudioHostResourceHolder {
 export interface AutomationStudioHostResourceGrant {
   readonly resourceKey: string;
   readonly epoch: number;
+  /**
+   * The client gateway session the resource lives on, when the host knows it
+   * (the web port always sets it). Strict lease checks then refuse an unleased
+   * command only to this session; a grant without it is strict for every
+   * session, the conservative reading (`./lease-scope.ts`).
+   */
+  readonly sessionId?: string;
 }
 
 /** A grant bound to the holder it was issued to. Every host command a role issues carries its lease. */

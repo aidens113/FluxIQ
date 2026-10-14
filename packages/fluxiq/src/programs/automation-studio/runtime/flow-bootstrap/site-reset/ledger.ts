@@ -151,10 +151,26 @@ type Act = {
   kept: boolean;
 };
 
+/**
+ * Who a ledger records for, where its `act-N` ids come from (undefined: none
+ * left, nothing more recorded), and who hears each act recorded (unit A4b).
+ * Absent, a ledger numbers its own acts from `act-1` and tells no one, as
+ * before; a project ledger (`./project-ledger.ts`) sets all three per brief.
+ */
+export type AutomationStudioSiteResetLedgerOptions = { owner?: string; nextActId?: () => string | undefined; sink?: (recorded: AutomationStudioSiteResetRecordedAct) => void };
+
+/** One act as a ledger recorded it, for its sink. */
+export type AutomationStudioSiteResetRecordedAct = AutomationStudioSiteResetNamedAct & { owner?: string; ref: string; undoable: boolean };
+
 export class AutomationStudioSiteResetLedger implements AutomationStudioSiteResetCalls {
   private readonly acts: Act[] = [];
   private next = 1;
   private phase: AutomationStudioSiteResetPhase = { recorded: 0, refusals: 0, startDiffersSent: false };
+  private readonly options: AutomationStudioSiteResetLedgerOptions;
+
+  constructor(options: AutomationStudioSiteResetLedgerOptions = {}) {
+    this.options = { ...options };
+  }
 
   claim(undoes: unknown): AutomationStudioSiteResetClaim {
     if (undoes === undefined) return { kind: "none" };
@@ -352,11 +368,15 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
 
   private record(did: string, ref: string, consequences: readonly AutomationStudioActionConsequence[], call?: string, spot?: AutomationStudioSiteResetSpot): void {
     const lasting = consequences.some((consequence) => UNDOABLE.has(consequence) || IRREVERSIBLE.has(consequence));
-    if (!lasting || this.next > MAX_ACT) return;
+    if (!lasting) return;
+    const id = this.options.nextActId ? this.options.nextActId() : this.next <= MAX_ACT ? `act-${this.next}` : undefined;
+    if (id === undefined) return;
     const undoable = !consequences.some((consequence) => IRREVERSIBLE.has(consequence));
-    this.acts.push({ id: `act-${this.next}`, did: did || "an act", ref, ...(call ? { call } : {}), ...(spot ? { spot } : {}), createdItems: [], undoable, undone: false, attempts: 0, spent: false, askedFor: 0, kept: false });
+    const act: Act = { id, did: did || "an act", ref, ...(call ? { call } : {}), ...(spot ? { spot } : {}), createdItems: [], undoable, undone: false, attempts: 0, spent: false, askedFor: 0, kept: false };
+    this.acts.push(act);
     this.next += 1;
     this.phase = { ...this.phase, recorded: this.phase.recorded + 1 };
+    this.options.sink?.({ ...namedAct(act), ...(this.options.owner !== undefined ? { owner: this.options.owner } : {}), ref, undoable });
   }
 }
 

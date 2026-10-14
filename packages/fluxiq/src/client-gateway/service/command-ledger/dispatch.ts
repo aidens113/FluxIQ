@@ -6,6 +6,7 @@ import type { ClientGatewayTransport } from "../transport.ts";
 import type { ClientGatewayEventBus } from "../event-bus.ts";
 import { COMMAND_ANSWER_MARGIN_MS } from "../command-answer-margin.ts";
 import { clientGatewayReconciledResult, clientGatewaySessionAnswersReconcile } from "../command-reconcile/index.ts";
+import { clientGatewayHostLeaseStamp, isClientGatewayHostLease, type ClientGatewayHostLeaseSource } from "../host-lease/index.ts";
 import { ClientGatewayCommandContext } from "./context.ts";
 import { ClientGatewayCommandOutcome } from "./outcome.ts";
 import { ClientGatewayCommandLedgerController as Controller } from "./controller.ts";
@@ -21,7 +22,7 @@ type Entry = {
   context: ClientGatewayCommandContext; observer?: ClientGatewayCommandOutcomeObserver; proof?: object;
   uncertainty?: Promise<void>;
 };
-type Ports = { config: ClientGatewayConfig; sessions: ClientGatewaySessionRegistry; transport: ClientGatewayTransport; events: ClientGatewayEventBus; resolve?: (context: ClientGatewayCommandContext) => Promise<ClientGatewayCommandLedgerLease>; reconcile?: (commandId: string) => Promise<ClientGatewayReconcileAnswer | undefined> };
+type Ports = { config: ClientGatewayConfig; sessions: ClientGatewaySessionRegistry; transport: ClientGatewayTransport; events: ClientGatewayEventBus; resolve?: (context: ClientGatewayCommandContext) => Promise<ClientGatewayCommandLedgerLease>; reconcile?: (commandId: string) => Promise<ClientGatewayReconcileAnswer | undefined>; hostLease?: ClientGatewayHostLeaseSource | undefined };
 /** Explicit trusted gateway dispatch only; existing Flow/domain callers remain on the legacy path. */
 export class ClientGatewayDurableDispatch {
   private static readonly proofs = new WeakMap<object, { entry: Entry; observer: ClientGatewayCommandOutcomeObserver; value: ClientGatewayCommandCompletion }>();
@@ -44,7 +45,8 @@ export class ClientGatewayDurableDispatch {
     if (!options || typeof options !== "object" || Object.getPrototypeOf(options) !== Object.prototype || Reflect.ownKeys(options).some(key => typeof key !== "string" || !["context", "signal"].includes(key)) || !Object.hasOwn(options, "context") || Object.values(Object.getOwnPropertyDescriptors(options)).some(descriptor => !descriptor.enumerable || !Object.hasOwn(descriptor, "value"))) throw new Error("durable_command.invalid_options");
     if (options.signal !== undefined && !(options.signal instanceof AbortSignal)) throw new Error("durable_command.invalid_signal");
     const owner = ClientGatewayCommandContext.owner(options.context);
-    const requestDigest = Controller.digest(input), command = structuredClone(input);
+    const leased = this.stampLease(input, sessionId);
+    const requestDigest = Controller.digest(leased), command = structuredClone(leased);
     this.validateCommand(command); this.freeze(command);
     const session = this.ports.sessions.requireReady(sessionId);
     if (session.projectId && session.projectId !== owner.projectId) throw new Error("durable_command.project_denied");
@@ -182,8 +184,22 @@ export class ClientGatewayDurableDispatch {
     entry.phase = "terminal"; clearTimeout(entry.timer); entry.abort.abort(); entry.reject();
   }
   private notifyUncertainty(entry: Entry, disposition: string): Promise<void> { entry.uncertainty ??= Promise.resolve().then(() => entry.observer!.uncertain(entry.context, disposition)); return entry.uncertainty; }
+  /**
+   * The command as it is digested, claimed and sent: carrying the lease of the
+   * scope dispatching it (`../host-lease/`), so the request digest covers the
+   * lease. A malformed lease is an invalid command; a stale, foreign or missing
+   * one throws here, before anything is claimed.
+   */
+  private stampLease(input: ClientGatewayActionCommand, sessionId: string): ClientGatewayActionCommand {
+    if (!input || typeof input !== "object" || Array.isArray(input)) return input;
+    if (Object.hasOwn(input, "lease") && !isClientGatewayHostLease(input.lease)) throw new Error("durable_command.invalid_command");
+    const leased = clientGatewayHostLeaseStamp(input, this.ports.hostLease, sessionId);
+    if (leased.refused) throw new Error(`durable_command.${leased.refused}`);
+    return leased.command;
+  }
   private validateCommand(command: ClientGatewayActionCommand): void {
-    const fields = ["actionType", "parameters", "target", "timeoutMs", "metadata"];
+    const fields = ["actionType", "parameters", "target", "timeoutMs", "metadata", "lease"];
+    if (command?.lease !== undefined && !isClientGatewayHostLease(command.lease)) throw new Error("durable_command.invalid_command");
     if (!command || typeof command !== "object" || Array.isArray(command) || Object.keys(command).some(key => !fields.includes(key)) || typeof command.actionType !== "string" || !command.actionType.trim() || command.actionType.length > 200 || command.timeoutMs !== undefined && (!Number.isSafeInteger(command.timeoutMs) || command.timeoutMs <= 0 || command.timeoutMs > 2_147_483_647 - COMMAND_ANSWER_MARGIN_MS)) throw new Error("durable_command.invalid_command");
     for (const field of [command.parameters, command.target, command.metadata]) if (field !== undefined && (!field || typeof field !== "object" || Array.isArray(field))) throw new Error("durable_command.invalid_command");
   }

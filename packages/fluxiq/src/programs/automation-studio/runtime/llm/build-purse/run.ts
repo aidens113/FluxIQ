@@ -9,16 +9,17 @@
 // emission site deep in the executor (`../../activity/storage.ts`). A call made
 // outside any purse -- a recovery, a judge, a one-shot build -- sees none and is
 // bounded as before.
+//
+// Each scope and run opens a frame of its own (`./run-frame.ts`), so two runs
+// on one purse at once each read the refusal they met (t534).
 
-import { AsyncLocalStorage } from "node:async_hooks";
 import type { AutomationStudioLlmBuildPurse } from "./purse.ts";
 import { AutomationStudioLlmBuildPurseRefused } from "./refused.ts";
+import { automationStudioLlmBuildPurseCurrentFrame, automationStudioLlmBuildPurseInFrame } from "./run-frame.ts";
 
-const purses = new AsyncLocalStorage<AutomationStudioLlmBuildPurse>();
-
-/** The purse the current call is made under, if any. */
+/** The purse the current call is made under, if any: an allowance, when a builder's call is made under one. */
 export function automationStudioLlmCurrentBuildPurse(): AutomationStudioLlmBuildPurse | undefined {
-  return purses.getStore();
+  return automationStudioLlmBuildPurseCurrentFrame()?.purse;
 }
 
 /**
@@ -32,7 +33,7 @@ export function automationStudioLlmCurrentBuildPurse(): AutomationStudioLlmBuild
  */
 export async function automationStudioLlmBuildPurseScope<T>(purse: AutomationStudioLlmBuildPurse | undefined, call: () => Promise<T>): Promise<T> {
   if (!purse) return await call();
-  return await purses.run(purse, call);
+  return await automationStudioLlmBuildPurseInFrame(purse, false, call);
 }
 
 /**
@@ -40,17 +41,23 @@ export async function automationStudioLlmBuildPurseScope<T>(purse: AutomationStu
  * `AutomationStudioLlmBuildPurseRefused` whatever `call` itself returned or
  * threw: the refusal is the ending, and a caller's reading of the failed
  * result is not. Without a purse, runs `call` as it is.
+ *
+ * The refusal read is this run's own, never a concurrent run's on the same
+ * purse (`./run-frame.ts`).
  */
 export async function automationStudioLlmBuildPurseRun<T>(purse: AutomationStudioLlmBuildPurse | undefined, call: () => Promise<T>): Promise<T> {
   if (!purse) return await call();
-  purse.refusal = undefined;
-  let result: T;
-  try {
-    result = await purses.run(purse, call);
-  } catch (error) {
-    if (purse.refusal) throw new AutomationStudioLlmBuildPurseRefused(purse.refusal);
-    throw error;
-  }
-  if (purse.refusal) throw new AutomationStudioLlmBuildPurseRefused(purse.refusal);
-  return result;
+  return await automationStudioLlmBuildPurseInFrame(purse, true, async () => {
+    let result: T;
+    try {
+      result = await call();
+    } catch (error) {
+      const refusal = purse.refusal;
+      if (refusal) throw new AutomationStudioLlmBuildPurseRefused(refusal);
+      throw error;
+    }
+    const refusal = purse.refusal;
+    if (refusal) throw new AutomationStudioLlmBuildPurseRefused(refusal);
+    return result;
+  });
 }

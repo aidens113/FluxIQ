@@ -9,6 +9,7 @@ export * from "./commands.ts";
 export * from "./config.ts";
 export * from "./declared-domain.ts";
 export * from "./facade-ports.ts";
+export * from "./host-lease/index.ts";
 export * from "./event-bus.ts";
 export * from "./inbound.ts";
 export * from "./lifecycle.ts";
