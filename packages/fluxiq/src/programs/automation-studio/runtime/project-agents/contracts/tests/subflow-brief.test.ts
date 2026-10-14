@@ -26,6 +26,11 @@ describe("subflow brief", () => {
     expect(parse(value)).toMatchObject({ status: "invalid", code });
   });
 
+  it("accepts a reset without parts or acts, and refuses one that names parts", () => {
+    expect(parse(brief((value) => Object.assign(value, { kind: "reset", parts: [], permittedActs: [] })))).toMatchObject({ status: "valid" });
+    expect(parse(brief((value) => Object.assign(value, { kind: "reset" })))).toMatchObject({ status: "invalid", code: "project.brief_reset_parts" });
+  });
+
   it("accepts a repair that names its failing receipt and a survey without parts", () => {
     expect(parse(brief((value) => Object.assign(value, { kind: "repair", failingReceipt: { kind: "subflow_trial", receiptId: "r", digest: "c".repeat(64) } })))).toMatchObject({ status: "valid" });
     expect(parse(brief((value) => Object.assign(value, { kind: "survey", parts: [], permittedActs: [] })))).toMatchObject({ status: "valid" });
