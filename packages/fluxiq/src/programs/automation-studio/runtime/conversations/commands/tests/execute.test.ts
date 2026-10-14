@@ -684,6 +684,18 @@ describe("conversation commands", () => {
         expect(text).not.toContain("is ready");
       }
     });
+
+    // t608 (everything-store `run-mv8p0p7c`): a project build its time limit stopped kept its draft, and the reply said only that the draft was judged no.
+    it("flow.createHere opens a draft its build's time limit kept with the time limit, then what its last test run came to", async () => {
+      const timedOut: Handler = (payload) => {
+        const answer = CANDIDATE_BUILD_OK(payload) as { ok: true; payload: { candidate: Record<string, unknown> } };
+        return { ok: true, payload: { candidate: { ...answer.payload.candidate, trial: { verdict: "no", runId: "trial.1", codes: ["candidate.trial_judged_no", "project.build_time_limit"] } } } };
+      };
+      const { calls, text } = await run("flow.createHere", timedOut);
+      expect(calls.some((call) => call.endpoint === "review-flow-adaptation")).toBe(false);
+      expect(text).toContain("The build reached its time limit before a whole test of the Flow passed. Its last test run from the start was judged not to do what you asked, so nothing was put into the Flow. I kept what I wrote as a draft.");
+      expect(text).not.toContain("is ready");
+    });
   });
 
   it("describes and announces the legacy build as applied or asked about", () => {

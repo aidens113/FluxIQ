@@ -106,6 +106,22 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // Flow was assembled to test, before Core's note of what is left on the target.
 // The trials are counted as the subflow trial port reports them to the build's
 // proposals.
+//
+// **A draft the time limit kept says the time limit too (t608).**
+// Everything-store `run-mv8p0p7c` reached its time limit holding an assembled
+// candidate, so it was saved as a draft and the person read only its standing
+// trial: "Its test run from the start was judged not to do what you asked".
+// Nothing said the build ran out of time. Now a build its time limit stopped
+// with a draft kept shows the same chat row as one with none: the limit, what
+// was tested of the latest plan's subflows, that a whole Flow was assembled and
+// what its last whole test said, and Core's note of what is left on the target.
+// The draft's trial keeps its own code, which every debug and the Lab read
+// (t590); `project.build_time_limit` goes beside it, as the trial's
+// `feedback.endingCodes`, which the promotion adds after the draft's own code
+// (`../candidate-trial/promotion.ts`), so the draft result carries both and
+// the chat's reply opens with the time limit
+// (`conversations/commands/create-here.ts`). Which plan the kept draft was
+// assembled under is not said: the candidate does not record it.
 
 type DraftInput = Parameters<typeof generateAutomationStudioFlowCandidateDraft>[0];
 type DraftResult = { record: AutomationStudioFlowCandidateDraftRecord; trial: AutomationStudioCandidateTrialResult | undefined };
@@ -199,7 +215,7 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
     // A build its time limit stopped ends as recorded, not as its stopped loop's cancel (header).
     const failure = outcome.loop && !outcome.loop.ok && !outcome.timedOut
       ? draft.ending(outcome.loop, spent) ?? flowBootstrapEvidenceLoopFailure(outcome.loop, spent)
-      : new AutomationStudioFlowBootstrapGenerationError({ ...flowBootstrapPhaseFailure("post_provider_validation", spent, "flow_bootstrap.post_provider_validation_failed").diagnostic, issueCodes: [...(outcome.timedOut ? ["project.build_time_limit"] : []), `project.build_${outcome.ending?.outcome ?? "blocked"}`] });
+      : new AutomationStudioFlowBootstrapGenerationError({ ...flowBootstrapPhaseFailure("post_provider_validation", spent, "flow_bootstrap.post_provider_validation_failed").diagnostic, issueCodes: [...(outcome.timedOut ? [TIME_LIMIT_CODE] : []), `project.build_${outcome.ending?.outcome ?? "blocked"}`] });
     const timedOut = outcome.timedOut ? timeLimitWords(Object.keys((await records.read(ref))?.record.plans.at(-1)?.plan.partOf ?? {}), trials) : undefined;
     throw toldEnding(failure, outcome.ending, left, timedOut);
   }
@@ -212,8 +228,20 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   }), draft.loop.signal);
   // Only a completion stands on its yes: a supervisor that ended without completing promotes nothing, whatever its last trial said.
   const trial = outcome.status === "candidate" || outcome.trial?.verdict !== "yes" ? outcome.trial : undefined;
+  // A draft its time limit kept says the time limit, not only its last whole test (header, t608).
+  if (outcome.timedOut && outcome.status === "ended" && outcome.trial?.verdict !== "yes") {
+    const subflows = Object.keys((await records.read(ref))?.record.plans.at(-1)?.plan.partOf ?? {});
+    const words = timeLimitWords(subflows, trials, { tested: trial?.verdict });
+    const title = words.title, text = `${words.tested} ${left?.note ?? NOTHING_LEFT}`;
+    emitAutomationStudioActivity({ phase: "building", label: title, detail: { kind: "note", title, text, status: "failed" } });
+    // The trial's own code stays its code; the time limit goes beside it (header, t608).
+    return { record, trial: trial ? { ...trial, feedback: { ...trial.feedback, endingCodes: [TIME_LIMIT_CODE] } } : undefined };
+  }
   return { record, trial };
 }
+
+/** The code a build its time limit stopped carries: on its failure's issue codes, and as a kept draft's trial code (header, t608). */
+const TIME_LIMIT_CODE = "project.build_time_limit";
 
 /** The questions a stall puts to the person: said as they are (`project-agents/supervisor/supervisor-loop.ts`). */
 const PERSON_CODES: ReadonlySet<string> = new Set(["flow_bootstrap.permission_required", "flow_bootstrap.user_intervention_required"]);
@@ -243,9 +271,15 @@ const LAST_TRIAL_WORDS: Readonly<Record<AutomationStudioCandidateTrialVerdict, s
  * words alone -- counts and verdicts, never a subflow's name or the model's
  * reason.
  */
-function timeLimitWords(subflows: readonly string[], trials: ReadonlyMap<string, Tried>): { title: string; tested: string } {
+function timeLimitWords(subflows: readonly string[], trials: ReadonlyMap<string, Tried>, assembled?: { tested: AutomationStudioCandidateTrialVerdict | undefined }): { title: string; tested: string } {
   const title = `The build reached its time limit of ${spoken(AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS)} before a whole test of the Flow passed.`;
-  if (!subflows.length) return { title, tested: "No plan of its parts was written, so nothing was tested." };
+  // What became of the whole Flow: never assembled, or assembled and kept as a draft with its last whole test (t608).
+  const whole = !assembled
+    ? "The whole Flow was not assembled, so it was never tested as one."
+    : assembled.tested === undefined
+      ? "A whole Flow was assembled and never tested from its start; it is kept as a draft, and nothing was put into the Flow."
+      : `A whole Flow was assembled and tested from its start, and its last whole test ${LAST_TRIAL_WORDS[assembled.tested]}; it is kept as a draft, and nothing was put into the Flow.`;
+  if (!subflows.length) return { title, tested: assembled ? whole : "No plan of its parts was written, so nothing was tested." };
   const passed = subflows.filter((key) => trials.get(key)?.passed === true).length;
   const opening = subflows.length === 1
     ? `Its one part ${passed ? "passed" : "did not pass"} its own test.`
@@ -256,7 +290,7 @@ function timeLimitWords(subflows: readonly string[], trials: ReadonlyMap<string,
     return `a part tested ${tried.count === 1 ? "once" : `${tried.count} times`} whose last test ${LAST_TRIAL_WORDS[tried.last]}`;
   });
   const rest = left.length ? ` Left: ${joinedList(left)}.` : "";
-  return { title, tested: `${opening}${rest} The whole Flow was not assembled, so it was never tested as one.` };
+  return { title, tested: `${opening}${rest} ${whole}` };
 }
 
 function joinedList(items: readonly string[]): string {

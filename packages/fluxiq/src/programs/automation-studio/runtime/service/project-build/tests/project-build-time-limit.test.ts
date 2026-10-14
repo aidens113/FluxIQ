@@ -100,4 +100,57 @@ describe("a project build its time limit stops", () => {
     // The time limit's row is Core's words alone; the brief's own return row may quote its builder.
     expect(JSON.stringify(told)).not.toContain(MODEL_REASON);
   });
+
+  // t608 (everything-store `run-mv8p0p7c`): the limit stopped a build holding an assembled candidate, which was kept as a
+  // draft, and the person was told only that its whole test was judged no. The kept draft says the time limit too.
+  it("keeps an assembled candidate as a draft and says the time limit, what was tested and the last whole test", async () => {
+    let supervisorDecisions = 0;
+    const provider = mockProvider(async (request) => {
+      if (request.taskKind === "loop_verification") return judgeReply(JSON.stringify(request.context).includes("This trial ran only the subflow") ? "yes" : "no");
+      const loop = request.context.evidenceLoop!;
+      const evidence = loop.evidence as Entry[];
+      if (loop.tools.some((tool) => tool.toolId === "project.write_plan")) {
+        supervisorDecisions += 1;
+        if (supervisorDecisions === 1) return decision({ kind: "tool_call", callId: "plan", toolId: "project.write_plan", input: PLAN });
+        if (supervisorDecisions === 2) return decision({ kind: "tool_call", callId: "dispatch", toolId: "project.dispatch", input: { reason: "Build the subflow.", briefs: [BRIEF] } });
+        if (supervisorDecisions === 3) return decision({ kind: "tool_call", callId: "assemble", toolId: "project.assemble", input: {} });
+        const assembled = lastOf(evidence, "project.assemble")?.complete as JsonObject | undefined;
+        if (supervisorDecisions === 4) return decision({ kind: "tool_call", callId: "test", toolId: "core.test_candidate", input: assembled ?? {} });
+        // The whole test was judged no, and the supervisor is still deciding what to change when its time runs out.
+        return await outlivingTheBound();
+      }
+      const submitted = lastOf(evidence, "core.submit_subflow");
+      if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: "submit", toolId: "core.submit_subflow", input: SUBMISSION });
+      if (lastOf(evidence, "core.test_subflow")?.verdict !== "yes") return decision({ kind: "tool_call", callId: "test", toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } });
+      return decision({ kind: "complete", result: { subflowKey: "main", revision: submitted.revision as number, digest: submitted.digest as string } });
+    });
+    const { service, projectId, flowId } = await serviceWith(provider);
+    const seen: ClientGatewayActivity[] = [];
+    const unsubscribe = automationStudioActivityHub.subscribe((event) => seen.push(event));
+    const result = await service.generateFlowBootstrapAdaptation({ projectId, flowId, caller: caller(), evidenceGuided: true, authoringMode: "project" }).finally(unsubscribe);
+    // The draft's trial keeps its own code first, which every debug and the Lab read, and carries the time limit beside it,
+    // which the chat's reply opens with (`conversations/commands/create-here.ts`).
+    expect(result).toMatchObject({ status: "draft", promotionAllowed: false, trial: { verdict: "no", codes: ["candidate.trial_judged_no", "project.build_time_limit"] } });
+    const told = seen.find((event) => event.detail?.title === "The build reached its time limit of 8 seconds before a whole test of the Flow passed.");
+    expect(told?.detail, JSON.stringify(seen.map((event) => event.detail?.title).filter(Boolean))).toMatchObject({
+      kind: "note", status: "failed",
+      text: "Its one part passed its own test. A whole Flow was assembled and tested from its start, and its last whole test was judged not to do what was asked; it is kept as a draft, and nothing was put into the Flow. Nothing this build did is still on the target."
+    });
+  });
 });
+
+/** The service over `provider`, with a blank project and Flow to build. */
+async function serviceWith(provider: ReturnType<typeof mockProvider>) {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-project-build-time-limit-"));
+  const service = new AutomationStudioService({
+    dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 60, maxEstimatedCostUsd: 0.1 }),
+    llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }],
+      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { seen: true }, effectApplied: false, targetsUnchanged: true }) }
+  });
+  cleanups.push(async () => {
+    await service.close();
+    await rm(dataDir, { recursive: true, force: true });
+  });
+  const { project, flow } = await blankFixture(service);
+  return { service, projectId: project.id, flowId: flow.flowId };
+}
