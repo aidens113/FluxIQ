@@ -480,3 +480,46 @@ describe("a press with an effect but no lasting class (t593)", () => {
     expect(ledger.possiblyInPlace()).toEqual([]);
   });
 });
+
+// t598: a trial's act was recorded with no item, so on a site with no start hook every undo of it was refused
+// `candidate.undo_wrong_target`, and what a passing trial left could only be named under `cannotUndo`.
+describe("a trial's act carrying where its step sat and what it made (t598)", () => {
+  const trialActs = [
+    { step: 2, definitionId: "demo.add", label: "Add oat milk", consequences: ["create_new" as const], spot: { item: "card:oat" }, created: ["line:oat-1"] },
+    { step: 3, definitionId: "demo.add", label: "Add jam", consequences: ["create_new" as const] }
+  ];
+
+  it("admits an undo on the item its step created or on its own spot, as an explored act's, and refuses one with neither as before", async () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    expect(ledger.trialRan(trialActs, "trial.1").map((act) => act.act)).toEqual(["act-1", "act-2"]);
+    expect(ledger.target("act-1", aim(["delete"], { item: "line:oat-1" }))).toEqual({ kind: "admit", on: "created", allowed: ["delete"] });
+    expect(ledger.target("act-1", aim(["modify_existing"], { item: "card:oat" }))).toEqual({ kind: "admit", on: "own", allowed: [] });
+    // Another item is not its own: refused unrun, and the act kept at that refusal, as an explored act's is (t475).
+    expect(ledger.target("act-1", aim(["delete"], { item: "line:soap" }))).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_wrong_target", act: "act-1" } });
+    expect(ledger.target("act-2", aim(["delete"], { item: "line:jam" }))).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_wrong_target", act: "act-2" } });
+  });
+
+  it("counts a trial's act undone once its undo landed on the item it created and changed its page, and the next trial runs", async () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.trialRan(trialActs.slice(0, 1), "trial.1");
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-1", did: "trial step 2 \"Add oat milk\"" }] } });
+    expect(ledger.claim("act-1")).toEqual({ kind: "undo", undo: { act: "act-1", allowed: [] } });
+    expect(ledger.target("act-1", aim(["delete"], { item: "line:oat-1" }))).toMatchObject({ kind: "admit", on: "created" });
+    ledger.explored(acted("undo.oat", ["delete"], { undoes: "act-1", on: "created" }, { item: "line:oat-1" }));
+    ledger.undoSeen("act-1", true);
+    expect(await ledger.beforeTrial(back)).toEqual({ kind: "admit" });
+    expect(ledger.inPlace()).toEqual([]);
+    // Its one unasked removal is spent.
+    expect(ledger.target("act-1", aim(["delete"], { item: "line:oat-1" }))).toMatchObject({ kind: "refused" });
+  });
+
+  it("is taken back by a start hook as before, and named among what the hook absorbed", async () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.trialRan(trialActs, "trial.1");
+    expect(await ledger.beforeTrial(back, undefined, { startReset: true })).toEqual({ kind: "admit", absorbedByStartReset: [
+      { act: "act-1", did: "trial step 2 \"Add oat milk\"" },
+      { act: "act-2", did: "trial step 3 \"Add jam\"" }
+    ] });
+    expect(ledger.inPlace()).toEqual([]);
+  });
+});

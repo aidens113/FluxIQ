@@ -29,30 +29,73 @@
 // project build's ledgers record it as possibly lasting and never ask for it
 // (`../../flow-bootstrap/site-reset/ledger.ts`); a ledger that does not record
 // those, and the whole-candidate gate, which keeps declared acts only, drop it.
+//
+// **Where a trial's act sat, and what it made (t598).** A trial's act used to be
+// recorded with no item, so on a site with no start hook every undo of it was
+// refused `candidate.undo_wrong_target` and a reset could only name it under
+// `cannotUndo`: with t597 every passing trial there left one, a list line it
+// added among them. An act made while exploring is tied to its own item by the
+// declaration's `control.item` and by the items its own page showed new
+// (`../../flow-bootstrap/site-reset/act-places.ts`). A trial puts no
+// declaration through the build's gate, so the same two things are read off
+// the step's own state diff, the one the host runtime's `inspectStateDiff`
+// wrote from the snapshots just before and just after it, in the forms a
+// declaration and a `startState` read already take:
+//
+// - `spot`: `{ item?, dialog? }`, the opaque tokens of where the step's control
+//   sat on the page before it;
+// - `items`: `{ before, after }`, the opaque tokens of the items -- rows, cards,
+//   list lines -- each of those two pages listed.
+//
+// The rule is exploration's, positive evidence only (t479): an item is one the
+// step created only when the step stayed on its document, the page before it
+// listed its items, that list lacked the item, and no earlier step of the same
+// trial had shown it. A token that is not a short opaque digest is not one.
+// Absent, the act is recorded as before, with no item.
+//
+// **Core's own steps leave nothing (t598).** A step of one of Core's own nodes
+// that acts on nothing outside the run (`automationStudioNodeSideEffectClass`
+// `none`: a wait, a branch, a variable) is never a lasting act, whatever it
+// declares: a `create_new` on a wait is ignored, not recorded, because nothing
+// on the site carries it and no undo could ever be tied to it. A Core node that
+// does reach outside -- a recorded action (`builtin.policy.action`), a database
+// write -- is read as a domain step is.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../model/index.ts";
 import { automationStudioConsequencesInOrder, isAutomationStudioActionConsequence } from "../../action-permissions/index.ts";
-import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
+import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY, automationStudioNodeSideEffectClass, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import type { AutomationStudioCandidateTrialAct } from "../../flow-bootstrap/candidate/index.ts";
+import type { AutomationStudioSiteResetSpot, AutomationStudioSiteResetTrialActPlace } from "../../flow-bootstrap/site-reset/index.ts";
 import { automationStudioAttemptSettled } from "../../flow-change/index.ts";
 import { automationStudioModelFacingControlWords } from "../../llm/model-facing/index.ts";
 import { automationStudioTrialExecutedSteps } from "./executed-steps.ts";
 
+/** A trial's act, with where its step sat and what it made when its state diff said so (header, t598). */
+export type AutomationStudioCandidateTrialLandedAct = AutomationStudioCandidateTrialAct & AutomationStudioSiteResetTrialActPlace;
+
 /** Each lasting act the trial's steps landed, in the order they ran. */
-export function automationStudioCandidateTrialLandedActs(trace: AutomationStudioGraphExecutionTrace | undefined, graph: AutomationStudioFlowArtifact | undefined): AutomationStudioCandidateTrialAct[] {
+export function automationStudioCandidateTrialLandedActs(trace: AutomationStudioGraphExecutionTrace | undefined, graph: AutomationStudioFlowArtifact | undefined): AutomationStudioCandidateTrialLandedAct[] {
   const nodes = new Map((graph?.nodes ?? []).map((node) => [node.id, node]));
-  const acts: AutomationStudioCandidateTrialAct[] = [];
+  const acts: AutomationStudioCandidateTrialLandedAct[] = [];
+  /** Every item an earlier step's pages listed: none of them is one a later step created (header). */
+  const seen = new Set<string>();
   automationStudioTrialExecutedSteps(trace?.attempts ?? []).forEach(({ attempt }, index) => {
+    const listed = itemsOf(attempt);
+    const created = createdBy(attempt, listed, seen);
+    for (const item of [...(listed?.before ?? []), ...(listed?.after ?? [])]) seen.add(item);
     if (attempt.subflowTarget || attempt.stateHeld || attempt.skipped || automationStudioAttemptSettled(attempt).status !== "succeeded" || noEffectSeen(attempt)) return;
     const node = nodes.get(attempt.nodeId);
-    const declared = node?.metadata?.[AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY];
+    // Core's own step, acting on nothing outside the run, leaves nothing, whatever it declared (header).
+    if (!node || (attempt.definitionId.startsWith(CORE_NODE_PREFIX) && automationStudioNodeSideEffectClass(node) === "none")) return;
+    const declared = node.metadata?.[AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY];
     const consequences = Array.isArray(declared) ? automationStudioConsequencesInOrder(declared.filter(isAutomationStudioActionConsequence)) : [];
     // Declared none, and its own page changed: possibly lasting (header).
-    const possible = !consequences.length && Array.isArray(declared) && declared.length === 0 && !attempt.definitionId.startsWith(CORE_NODE_PREFIX) && changedInPlace(attempt);
+    const possible = !consequences.length && Array.isArray(declared) && declared.length === 0 && changedInPlace(attempt);
     if (!consequences.length && !possible) return;
-    const control = automationStudioModelFacingControlWords(node?.parameterValues);
-    acts.push({ step: index + 1, definitionId: attempt.definitionId, ...(node?.label ? { label: node.label } : {}), ...(control ? { control } : {}), consequences, ...(possible ? { possible: true as const } : {}) });
+    const control = automationStudioModelFacingControlWords(node.parameterValues);
+    const spot = spotOf(attempt);
+    acts.push({ step: index + 1, definitionId: attempt.definitionId, ...(node.label ? { label: node.label } : {}), ...(control ? { control } : {}), consequences, ...(possible ? { possible: true as const } : {}), ...(spot ? { spot } : {}), ...(created.length ? { created } : {}) });
   });
   return acts;
 }
@@ -66,8 +109,53 @@ function noEffectSeen(attempt: AutomationStudioNodeAttemptTrace): boolean {
   return !moved && !written(diff.added) && !written(diff.removed);
 }
 
-/** Core's own nodes, which act on nothing outside the run. */
+/** Core's own nodes; those whose side-effect class is `none` act on nothing outside the run (header). */
 const CORE_NODE_PREFIX = "builtin.";
+/** An opaque place token, in the form a declaration's `control.item` takes (`../../action-permissions/declaration.ts`): a digest, so short. */
+const PLACE_TOKEN = /^[A-Za-z0-9:_-]{1,128}$/u;
+/** More items than any page lists is no list of a page's items. */
+const MAX_ITEMS = 2_000;
+
+/** The diff's `spot`, where it gave a token for the item or the dialog the step's control sat in (header). */
+function spotOf(attempt: AutomationStudioNodeAttemptTrace): AutomationStudioSiteResetSpot | undefined {
+  const spot = attempt.stateRefs?.stateDiff?.spot;
+  if (!isObject(spot)) return undefined;
+  const item = token(spot.item), dialog = token(spot.dialog);
+  return item || dialog ? { ...(item ? { item } : {}), ...(dialog ? { dialog } : {}) } : undefined;
+}
+
+/** The diff's `items`: the tokens the page before the step and the page after it listed; a side not listed is absent (header). */
+function itemsOf(attempt: AutomationStudioNodeAttemptTrace): { before?: string[]; after?: string[] } | undefined {
+  const items = attempt.stateRefs?.stateDiff?.items;
+  if (!isObject(items)) return undefined;
+  const before = tokens(items.before), after = tokens(items.after);
+  return before || after ? { ...(before ? { before } : {}), ...(after ? { after } : {}) } : undefined;
+}
+
+/** The items the step's own page showed new: on the same document, listed after and not before, and shown by no earlier step (header). */
+function createdBy(attempt: AutomationStudioNodeAttemptTrace, listed: { before?: string[]; after?: string[] } | undefined, seen: ReadonlySet<string>): string[] {
+  const diff: JsonObject | undefined = attempt.stateRefs?.stateDiff;
+  if (!diff || !listed?.before || !listed.after) return [];
+  const moved = diff.documentChanged === undefined ? diff.locationChanged === true : diff.documentChanged === true;
+  if (moved) return [];
+  const before = new Set(listed.before);
+  return listed.after.filter((item) => !before.has(item) && !seen.has(item));
+}
+
+function token(value: JsonValue | undefined): string | undefined {
+  return typeof value === "string" && PLACE_TOKEN.test(value) ? value : undefined;
+}
+
+/** Every entry an opaque token, or no list at all: a list with one malformed entry is not read (header). */
+function tokens(value: JsonValue | undefined): string[] | undefined {
+  if (!Array.isArray(value) || value.length > MAX_ITEMS) return undefined;
+  const read = value.map(token);
+  return read.every((entry): entry is string => entry !== undefined) ? [...new Set(read)] : undefined;
+}
+
+function isObject(value: JsonValue | undefined): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 /** The step's own trace shows its page changed where it stood: a diff on the same document that added or removed something (header). */
 function changedInPlace(attempt: AutomationStudioNodeAttemptTrace): boolean {

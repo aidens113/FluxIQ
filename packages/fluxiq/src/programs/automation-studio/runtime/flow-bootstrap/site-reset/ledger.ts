@@ -108,6 +108,17 @@
 // (`../../service/project-build/phase-start.ts`). A navigation names no
 // control and is never one.
 //
+// **A trial's act is tied to its own item too (t598).** A trial's act used to
+// be recorded with no item, so every undo of it was refused
+// `candidate.undo_wrong_target`, and on a site with no start hook what a
+// passing trial left -- with t597, every one of them -- could only be named
+// under `cannotUndo` and stayed on the site. A trial step's act now carries
+// where its control sat and the items its own page showed new, read off that
+// step's state diff (`spot`, `created` on the trial act,
+// `../../service/candidate-trial/landed-acts.ts`), and an undo of it is
+// admitted on them exactly as on an explored act's. Where the diff gave
+// neither, it is recorded as before. A start hook takes it back as before.
+//
 // A phase runs from the build's start, or from one trial to the next. The
 // policy before a trial (`./trial-policy.ts`) reads it.
 
@@ -159,9 +170,9 @@ type Act = {
   spent: boolean;
   /** Its own page before it, and what it changed there. */
   place?: AutomationStudioSiteResetPlace;
-  /** Where the control it acted on sat; absent when that is not known (a trial's act). */
+  /** Where the control it acted on sat; absent when that is not known (a trial's act whose step's diff gave none, t598). */
   spot?: AutomationStudioSiteResetSpot;
-  /** The items it created, as its own page showed them (t475). */
+  /** The items it created, as its own page showed them (t475), a trial step's read off its own diff (t598). */
   createdItems: string[];
   /** In this phase an undo of it landed on its own item (`own`) or on one it created (`created`): a dialog that follows may confirm it. */
   chain?: "own" | "created" | undefined;
@@ -367,7 +378,8 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     for (const act of acts) {
       const label = act.label ? JSON.stringify(act.label) : act.definitionId;
       const did = `trial step ${act.step} ${label}${act.control ? ` on ${JSON.stringify(act.control)}` : ""}`;
-      this.record(did, `${trialRunId ?? "trial"}#step-${act.step}`, act.consequences, undefined, undefined, this.options.possible === true && act.possible === true);
+      // Where its step's control sat and what it made, as exploration records an act (header, t598).
+      this.record(did, `${trialRunId ?? "trial"}#step-${act.step}`, act.consequences, undefined, trialSpot(act.spot), this.options.possible === true && act.possible === true, act.created);
     }
     // A possibly lasting act is not answered as left: it is answered under `possiblyInPlace` (header).
     return this.acts.filter((act) => act.undoable && !act.undone && !act.possible).map(namedAct);
@@ -411,7 +423,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     return act.undoable && !act.undone && !act.kept;
   }
 
-  private record(did: string, ref: string, consequences: readonly AutomationStudioActionConsequence[], call?: string, spot?: AutomationStudioSiteResetSpot, possible = false): void {
+  private record(did: string, ref: string, consequences: readonly AutomationStudioActionConsequence[], call?: string, spot?: AutomationStudioSiteResetSpot, possible = false, created: readonly string[] = []): void {
     const lasting = consequences.some((consequence) => UNDOABLE.has(consequence) || IRREVERSIBLE.has(consequence));
     if (!lasting && !possible) return;
     const id = this.options.nextActId ? this.options.nextActId() : this.next <= MAX_ACT ? `act-${this.next}` : undefined;
@@ -419,7 +431,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     const undoable = !consequences.some((consequence) => IRREVERSIBLE.has(consequence));
     // Said as possibly lasting wherever it is named, since some answers carry only what an act did (header).
     const words = lasting ? did || "an act" : `${did || "an act"} (${POSSIBLY_LASTING})`;
-    const act: Act = { id, did: words, ref, ...(call ? { call } : {}), ...(spot ? { spot } : {}), createdItems: [], undoable, undone: false, attempts: 0, spent: false, askedFor: 0, kept: false, possible: !lasting };
+    const act: Act = { id, did: words, ref, ...(call ? { call } : {}), ...(spot ? { spot } : {}), createdItems: [...new Set(created)], undoable, undone: false, attempts: 0, spent: false, askedFor: 0, kept: false, possible: !lasting };
     this.acts.push(act);
     this.next += 1;
     // A possibly lasting act never makes a reset due: it refuses no trial (header).
@@ -436,6 +448,12 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
 function sameItem(spot: AutomationStudioSiteResetSpot, control: AutomationStudioSiteResetSpot): boolean {
   if (spot.item === undefined || control.item === undefined || spot.item !== control.item) return false;
   return (spot.dialog ?? null) === (control.dialog ?? null);
+}
+
+/** A trial step's spot, copied, or none when it named neither an item nor a dialog. */
+function trialSpot(spot: AutomationStudioSiteResetSpot | undefined): AutomationStudioSiteResetSpot | undefined {
+  if (spot?.item === undefined && spot?.dialog === undefined) return undefined;
+  return { ...(spot.item !== undefined ? { item: spot.item } : {}), ...(spot.dialog !== undefined ? { dialog: spot.dialog } : {}) };
 }
 
 /** An act as the model is shown it. */

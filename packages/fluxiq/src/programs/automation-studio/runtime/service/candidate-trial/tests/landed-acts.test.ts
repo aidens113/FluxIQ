@@ -108,4 +108,44 @@ describe("the lasting acts a trial landed", () => {
     ]), graph);
     expect(acts).toEqual([{ step: 1, definitionId: "web.output.dom-click", label: "Press look", control: "Look", consequences: [], possible: true }]);
   });
+  // t598: a trial's act on a site with no start hook could never be undone by item, so a reset could only name it under cannotUndo.
+  it("carries where its step's control sat and the items its own page showed new, off the step's state diff, on positive evidence only", () => {
+    const diff = (items: JsonObject, extra: JsonObject = {}) => ({ stateRefs: { stateDiff: { added: "line Oat milk", removed: "", documentChanged: false, items, ...extra } } });
+    const acts = automationStudioCandidateTrialLandedActs(trace([
+      // An earlier step's page showed line:soap and line:jam: neither is one a later step created.
+      attempt("open", "succeeded", diff({ before: [], after: ["line:soap", "line:jam"] })),
+      attempt("add", "succeeded", diff({ before: ["line:soap"], after: ["line:soap", "line:jam", "line:oat-1"] }, { spot: { item: "card:oat", dialog: "drawer:cart" } })),
+      // The page before listed no items: nothing is known absent, so nothing is created; the spot still holds.
+      attempt("add", "succeeded", diff({ after: ["line:oat-2"] }, { spot: { item: "card:oat" } })),
+      // Moved to another document: nothing it shows there is its own.
+      attempt("add", "succeeded", diff({ before: [], after: ["line:oat-3"] }, { documentChanged: true, added: "a new page" })),
+      // A malformed token makes the list unread; a malformed spot is no spot.
+      attempt("add", "succeeded", diff({ before: [], after: ["line:oat-4", "not a token!"] }, { spot: { item: 7 } })),
+      attempt("add", "succeeded", diff({ before: ["line:soap"], after: ["line:soap", "line:oat-5"] }))
+    ]), graph);
+    expect(acts.map(({ step, spot, created }) => ({ step, spot, created }))).toEqual([
+      { step: 2, spot: { item: "card:oat", dialog: "drawer:cart" }, created: ["line:oat-1"] },
+      { step: 3, spot: { item: "card:oat" }, created: undefined },
+      { step: 4, spot: undefined, created: undefined },
+      { step: 5, spot: undefined, created: undefined },
+      { step: 6, spot: undefined, created: ["line:oat-5"] }
+    ]);
+    // Without a diff it is recorded as before, with neither.
+    expect(automationStudioCandidateTrialLandedActs(trace([attempt("add", "succeeded")]), graph)).toEqual([{ step: 1, definitionId: "web.output.dom-click", label: "Press add", control: "Add item", consequences: ["create_new"] }]);
+  });
+
+  // t598, t597 open question 3: Core's own nodes act on nothing outside the run.
+  it("never answers a step of Core's own that acts on nothing outside the run, whatever it declared; a Core node that reaches outside is read as any step", () => {
+    const core = {
+      nodes: [
+        { id: "wait", definitionId: "builtin.timing.wait", label: "Wait", parameterValues: { duration: 1 }, metadata: { declaredConsequences: ["create_new"] } },
+        { id: "quiet", definitionId: "builtin.timing.wait", label: "Wait quietly", parameterValues: { duration: 1 }, metadata: { declaredConsequences: [] } },
+        { id: "recorded", definitionId: "builtin.policy.action", label: "Recorded save", parameterValues: { outputId: "web.output.dom-click" }, metadata: { declaredConsequences: ["create_new"] } }
+      ]
+    } as unknown as AutomationStudioFlowArtifact;
+    const changed = { stateRefs: { stateDiff: { added: "text \"Saved\"", removed: "", documentChanged: false } } };
+    const ran = (nodeId: string, definitionId: string): AutomationStudioNodeAttemptTrace => ({ attemptId: `c${++next}`, nodeId, definitionId, startedAt: next, status: "succeeded", inputs: {}, outputs: {}, effects: [], ...changed });
+    const acts = automationStudioCandidateTrialLandedActs(trace([ran("wait", "builtin.timing.wait"), ran("quiet", "builtin.timing.wait"), ran("recorded", "builtin.policy.action")]), core);
+    expect(acts).toEqual([{ step: 3, definitionId: "builtin.policy.action", label: "Recorded save", consequences: ["create_new"] }]);
+  });
 });

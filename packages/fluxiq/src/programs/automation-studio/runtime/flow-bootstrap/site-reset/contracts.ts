@@ -180,6 +180,7 @@ export type AutomationStudioSiteResetDecision =
 /**
  * One lasting act a trial made, as the ledger reads it (`AutomationStudioCandidateTrialAct`, `../candidate/contracts.ts`).
  * `possible`: its step declared no lasting class but changed its own page, so it is possibly lasting (`./ledger.ts`, t593).
+ * Where its step's control sat and the items it made, when the step's state diff said so (t598).
  */
 export type AutomationStudioSiteResetTrialAct = {
   step: number;
@@ -188,7 +189,18 @@ export type AutomationStudioSiteResetTrialAct = {
   control?: string;
   consequences: readonly AutomationStudioActionConsequence[];
   possible?: true;
-};
+} & AutomationStudioSiteResetTrialActPlace;
+
+/**
+ * Where a trial step's act sat, and what it made (t598), read off that step's
+ * own state diff (`../../service/candidate-trial/landed-acts.ts`), so an undo of
+ * a trial's act is tied to its own item exactly as an explored act's is
+ * (`./ledger.ts`, `target`): `spot` the item and dialog its control sat in,
+ * `created` the items its own page showed after it that it had not shown
+ * before. Absent where the diff said nothing of them; then no undo of it can
+ * be tied to an item.
+ */
+export type AutomationStudioSiteResetTrialActPlace = { spot?: AutomationStudioSiteResetSpot; created?: string[] };
 
 /**
  * How a trial's start was made (t475). `startReset`: the deployment's start
