@@ -59,12 +59,65 @@ const adaptation = (adaptationId: string, status: string, kind: string, appliedT
   status,
   diagnosis: "The button with text SECRET-PAGE-TEXT moved to #buy-now-2",
   patch: [{ kind, targetId: "node.buy", summary: "Use selector #buy-now-2", after: { selector: "#buy-now-2" } }],
-  appliedTo
+  appliedTo,
+  metadata: status === "applied" ? { approvalDecision: { autoApply: true, applied: true, judgedRunId: "run.7" } } : {}
 });
 
 const NEVER_SHOWN = ["SECRET-PAGE-TEXT", "#buy-now-2", "selector", "node.buy"];
 
 describe("Run it", () => {
+  it("keeps a generic true without attributing a kind from missing or foreign run proof", async () => {
+    for (const decision of [undefined, { autoApply: true, applied: true, judgedRunId: "run.other" }, { autoApply: true, applied: false, judgedRunId: "run.7" }]) {
+      const { context } = contextWith({ "get-flow": named, "run-runtime-session": ended("succeeded", { createdAdaptationIds: ["a"], durableBehaviorChanged: true }), "get-flow-adaptation": () => ({ ok: true, payload: { adaptation: { ...adaptation("a", "applied", "edit_action_target"), metadata: { approvalDecision: decision } } } }) });
+      const result = await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.kettle" });
+      expect(result.summary).toContain("This run kept a change for future runs.");
+      expect(result.summary).not.toContain("finds the control");
+    }
+  });
+
+  it("names an actually same-run kept handler without a guessed count", async () => {
+    const { context } = contextWith({ "get-flow": named, "run-runtime-session": ended("succeeded", { createdAdaptationIds: ["a"], durableBehaviorChanged: true }), "get-flow-adaptation": () => ({ ok: true, payload: { adaptation: adaptation("a", "applied", "add_handler") } }) });
+    const result = await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.kettle" });
+    expect(result.summary).toContain("way past an interruption");
+    expect(result.summary).toContain("The next run starts with it.");
+    expect(result.summary).not.toMatch(/learned \d|kept \d/i);
+  });
+
+  it.each(["failed", "cancelled"])("keeps %s completion and retention evidence distinct without extra reads", async (status) => {
+    for (const durable of [false, undefined]) {
+      const { context, calls } = contextWith({ "run-runtime-session": ended(status, { ...(durable === undefined ? {} : { durableBehaviorChanged: durable }) }) });
+      const result = await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.kettle" });
+      expect(result.status).toBe("failed");
+      expect(result.summary).toContain(durable === false ? "did not keep" : "not available");
+      expect(calls.map(call => call.endpoint)).toEqual(["run-runtime-session"]);
+    }
+  });
+  it("says authoritative generic retention without an id and keeps missing evidence distinct", async () => {
+    for (const durable of [true, false, undefined]) {
+      const { context } = contextWith({ "get-flow": named, "run-runtime-session": ended("succeeded", { createdAdaptationIds: [], ...(durable === undefined ? {} : { durableBehaviorChanged: durable }) }) });
+      const result = await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.kettle" });
+      expect(result.summary).toContain(durable === true ? "kept a change" : durable === false ? "did not keep" : "not available");
+    }
+  });
+
+  it("does not attribute a current applied record to a false or unproved historical run", async () => {
+    for (const durable of [false, undefined]) {
+      const { context } = contextWith({ "get-flow": named, "run-runtime-session": ended("succeeded", { createdAdaptationIds: ["a"], ...(durable === undefined ? {} : { durableBehaviorChanged: durable }) }), "get-flow-adaptation": () => ({ ok: true, payload: { adaptation: adaptation("a", "applied", "edit_action_target") } }) });
+      const result = await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.kettle" });
+      expect(result.summary).not.toContain("The next run starts with it");
+      expect(result.summary).not.toContain("finds the control");
+    }
+  });
+
+  it("distinguishes a proposed change from rejected and unread changes", async () => {
+    for (const status of ["proposed", "rejected", "unread"]) {
+      const { context } = contextWith({ "get-flow": named, "run-runtime-session": ended("succeeded", { createdAdaptationIds: ["a"], durableBehaviorChanged: false }), "get-flow-adaptation": () => status === "unread" ? { ok: false, error: "unread" } : { ok: true, payload: { adaptation: adaptation("a", status, "edit_action_target") } } });
+      const result = await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.kettle" });
+      expect(result.summary).not.toContain("It learned");
+      expect(result.summary).toContain(status === "proposed" ? "proposed" : status === "rejected" ? "rejected" : "not available");
+      if (status !== "proposed") expect(result.summary).not.toContain("waits for your review");
+    }
+  });
   it("asks a web-panel conversation's run, too, to pay only for the result checks that judge a repair", async () => {
     const { context, calls } = contextWith({ "run-runtime-session": ended("succeeded"), "get-flow": named });
 
@@ -95,7 +148,7 @@ describe("Run it", () => {
 
     const outcome = await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.kettle" });
 
-    expect(outcome).toMatchObject({ status: "done", summary: RAN, runId: "run.7", flowId: "flow.kettle" });
+    expect(outcome).toMatchObject({ status: "done", summary: `${RAN} This run did not keep a change for future runs.`, runId: "run.7", flowId: "flow.kettle" });
     expect(calls.map((call) => call.endpoint)).toEqual(["run-runtime-session", "get-flow"]);
     expect(calls[1]?.payload).toEqual({ projectId: "project.run", flowId: "flow.kettle" });
     for (const word of [...NEVER_IN_ENDING, "end.success", "Run reached"]) expect(outcome.summary).not.toContain(word);
@@ -108,7 +161,7 @@ describe("Run it", () => {
     for (const { context } of [failed, nameless]) {
       const outcome = await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.kettle" });
       expect(outcome.status).toBe("done");
-      expect(outcome.summary).toBe("The Flow ran all the way through.");
+      expect(outcome.summary).toBe("The Flow ran all the way through. Whether this run kept a change is not available.");
     }
   });
 
@@ -117,7 +170,7 @@ describe("Run it", () => {
 
     const outcome = await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.kettle" });
 
-    expect(outcome.summary).toBe('"Kettle prices" stopped to wait for you: It needs you to sign in.');
+    expect(outcome.summary).toBe('"Kettle prices" stopped to wait for you: It needs you to sign in. Whether this run kept a change is not available.');
     for (const word of [...NEVER_IN_ENDING, "core.runtime"]) expect(outcome.summary).not.toContain(word);
   });
 
@@ -126,7 +179,7 @@ describe("Run it", () => {
 
     const outcome = await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.kettle" });
 
-    expect(outcome.summary).toBe('"Kettle prices" stopped before the end.');
+    expect(outcome.summary).toBe('"Kettle prices" stopped before the end. Whether this run kept a change is not available.');
     for (const word of [...NEVER_IN_ENDING, "paused", "node.buy"]) expect(outcome.summary).not.toContain(word);
   });
 
@@ -141,19 +194,19 @@ describe("Run it", () => {
 
     expect(calls[2]).toEqual({ endpoint: "get-flow-adaptation", payload: { projectId: "project.run", flowId: "flow.kettle", adaptationId: "adaptation.1" } });
     expect(outcome.status).toBe("done");
-    expect(outcome.summary).toBe("\"Kettle prices\" ran all the way through. It learned something from this run: it now finds the control it presses a different way. The next run starts with it.");
+    expect(outcome.summary).toBe("\"Kettle prices\" ran all the way through. It kept a change from this run: it now finds the control it presses a different way. The next run starts with it.");
     for (const word of NEVER_SHOWN) expect(outcome.summary).not.toContain(word);
   });
 
   // A re-author (t267 S4) is kept only once a whole re-run with it was judged
   // to answer; it is no flow adaptation, so the run's answer says it apart.
   it("says a re-authored Flow it kept, and that the next run starts with it, reading no adaptation", async () => {
-    const { context, calls } = contextWith({ "get-flow": named, "run-runtime-session": ended("succeeded", { createdAdaptationIds: [], durableBehaviorChanged: false, reauthored: "applied" }) });
+    const { context, calls } = contextWith({ "get-flow": named, "run-runtime-session": ended("succeeded", { createdAdaptationIds: [], durableBehaviorChanged: true, reauthored: "applied" }) });
 
     const outcome = await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.kettle" });
 
     expect(calls.map((call) => call.endpoint)).toEqual(["run-runtime-session", "get-flow"]);
-    expect(outcome.summary).toBe("\"Kettle prices\" ran all the way through. It learned something from this run: it re-wrote some of its steps, and a whole run with them was judged to do what you asked. The next run starts with it.");
+    expect(outcome.summary).toBe("\"Kettle prices\" ran all the way through. It kept a change from this run: it re-wrote some of its steps, and a whole run with them was judged to do what you asked. The next run starts with it.");
   });
 
   it("says a re-author that was not kept left the Flow as it was", async () => {
@@ -161,7 +214,7 @@ describe("Run it", () => {
 
     const outcome = await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.kettle" });
 
-    expect(outcome.summary).toBe("\"Kettle prices\" ran all the way through. It tried re-writing some of its steps, but a run with them was not judged to do what you asked, so the Flow stays as it was.");
+    expect(outcome.summary).toBe("\"Kettle prices\" ran all the way through. Whether this run kept a change is not available. It tried re-writing some of its steps, but those rewritten steps were not kept.");
   });
 
   it("says a change that was not applied waits for the person's review", async () => {
@@ -173,7 +226,7 @@ describe("Run it", () => {
 
     const outcome = await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.kettle" });
 
-    expect(outcome.summary).toBe("\"Kettle prices\" ran all the way through. It learned something from this run: it re-wrote some of its steps. That waits for your review before a run uses it.");
+    expect(outcome.summary).toBe("\"Kettle prices\" ran all the way through. This run did not keep a change for future runs. A recorded change is proposed for review; it has not been kept.");
     for (const word of NEVER_SHOWN) expect(outcome.summary).not.toContain(word);
   });
 
@@ -190,7 +243,7 @@ describe("Run it", () => {
 
     const outcome = await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.kettle" });
 
-    expect(outcome.summary).toBe("\"Kettle prices\" ran all the way through. It learned 2 things from this run. It now finds the control it presses a different way, and the next run starts with it. It changed what it waits to see after a step, which waits for your review before a run uses it.");
+    expect(outcome.summary).toBe("\"Kettle prices\" ran all the way through. It kept a change from this run: it now finds the control it presses a different way. The next run starts with it. A recorded change passed validation but was not kept.");
   });
 
   it("still says it learned something when a change cannot be read, without guessing what", async () => {
@@ -202,7 +255,7 @@ describe("Run it", () => {
 
     const outcome = await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.kettle" });
 
-    expect(outcome.summary).toBe("\"Kettle prices\" ran all the way through. It learned something from this run: it changed how it runs. The next run starts with it.");
+    expect(outcome.summary).toBe("\"Kettle prices\" ran all the way through. This run kept a change for future runs. The status of a recorded change is not available.");
   });
 
   // `durableBehaviorChanged` also counts a kept re-author, so beside one it no
@@ -216,7 +269,7 @@ describe("Run it", () => {
 
     const outcome = await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.kettle" });
 
-    expect(outcome.summary).toBe("\"Kettle prices\" ran all the way through. It learned 2 things from this run. It re-wrote some of its steps, and a whole run with them was judged to do what you asked, and the next run starts with it. It changed how it runs, which waits for your review before a run uses it.");
+    expect(outcome.summary).toBe("\"Kettle prices\" ran all the way through. It kept a change from this run: it re-wrote some of its steps, and a whole run with them was judged to do what you asked. The next run starts with it. The status of a recorded change is not available.");
   });
 
   it("reads no change after a run that failed", async () => {
