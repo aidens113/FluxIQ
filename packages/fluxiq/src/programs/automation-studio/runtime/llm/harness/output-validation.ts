@@ -126,14 +126,39 @@ function validateChangeProposalPatches(patches: AutomationStudioChangeProposalPa
   }
 }
 
+// **A key named `code` is not code (t587).** A8 launch 6 (`run-mv85vjqo-4c022aec`,
+// steps 68-69): the supervisor's dispatch carried `failingReceipt: {code, reason}`,
+// a result code copied from Core's own answers, and was refused
+// `llm_output.executable_code` before it ran. Under a key whose name says only
+// that it may hold code (`code`, `script`), a value is executable content unless
+// it is one plain identifier -- a result code, a dotted id, a slug: letters,
+// digits and `_ . : / -`, nothing else. A number, a boolean or null is no code,
+// and an object or array under the key is searched like any other. Under a key
+// that names a language or a function body, any value but an empty string or
+// null is executable content, as before.
+
+/** Keys whose value may be a code or an id rather than code: executable only when it is not a plain identifier. */
+const MAYBE_CODE_KEYS = new Set(["code", "script"]);
+/** Keys whose value is code by name. */
+const CODE_KEYS = new Set(["functionBody", "javascript", "typescript"]);
+/** One plain identifier: a result code, a dotted id, a slug. */
+const PLAIN_IDENTIFIER = /^[\p{L}\p{N}_.:/-]*$/u;
+
 function containsExecutableCode(value: unknown, seen = new Set<unknown>()): boolean {
   if (!value || typeof value !== "object") return false;
   if (seen.has(value)) return false;
   seen.add(value);
   if (Array.isArray(value)) return value.some((item) => containsExecutableCode(item, seen));
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    if (["code", "script", "functionBody", "javascript", "typescript"].includes(key)) return true;
+    if (CODE_KEYS.has(key) && item !== null && item !== undefined && item !== "") return true;
+    if (MAYBE_CODE_KEYS.has(key) && holdsCodeText(item)) return true;
     if (containsExecutableCode(item, seen)) return true;
   }
   return false;
+}
+
+/** Whether a value under a key that may hold code is code: a string, or a string in an array, that is not one plain identifier. */
+function holdsCodeText(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some((item) => typeof item === "string" && holdsCodeText(item));
+  return typeof value === "string" && value.trim() !== "" && !PLAIN_IDENTIFIER.test(value.trim());
 }

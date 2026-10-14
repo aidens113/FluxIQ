@@ -73,6 +73,23 @@ export class AutomationStudioProjectSupervisorState {
     return done;
   }
 
+  /**
+   * The subflows whose only done proposals were made under an earlier plan:
+   * what a `project.amend_plan` left without one, so a refusal of a brief
+   * waiting on one can say the amendment is why (bigbox debug C4, t588).
+   */
+  doneUnderEarlierPlans(): Set<string> {
+    const digest = this.structure?.digest;
+    const current = this.latestDone();
+    const earlier = new Set<string>();
+    for (const brief of this.briefs) {
+      if (brief.planDigest === digest || current.has(brief.subflowKey) || (brief.kind !== "build" && brief.kind !== "repair")) continue;
+      const returned = this.returns.get(brief.briefId);
+      if (returned?.outcome === "done" && returned.proposal) earlier.add(brief.subflowKey);
+    }
+    return earlier;
+  }
+
   /** Whether any brief, under any plan, came back partial or blocked. */
   anyNotDone(): boolean {
     return this.briefs.some((brief) => {
