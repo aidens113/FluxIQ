@@ -21,7 +21,7 @@ describe("removing a recorded step through the service", () => {
     const service = new AutomationStudioService({ dataDir: root, seedFixture: false });
     services.push(service);
     const project = await service.createProject({ name: "Removal" });
-    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.removal", startedAt: 1, initialState: { timestamp: 1, namespaces: {} } });
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.removal", startedAt: 1, initialState: { timestamp: 1, namespaces: {} } });
     const step = (eventId: string) => ({ type: "observation", observationType: "input.action", payload: { step: eventId }, sourceId: "input.action", metadata: { policyEligible: false, eventId } }) as never;
     await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: step("web.1.100") });
     await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: step("web.2.200") });

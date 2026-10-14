@@ -165,6 +165,7 @@ async function harness(options: { clean?: boolean; schedule?: JsonObject; standi
   const authorization = { authorizedByUserId: "user.aiden", unlockSessionId: "session.unlock.1", keyId: "key.deepseek", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: Date.now() - 1000, expiresAtMs: Date.now() + 24 * 60 * 60 * 1000 };
   const project = await service.createProject({ name: "Caller-paid result check", domainId: "example" });
   const created = await service.createFlow({ projectId: project.id, flowId: "flow.caller-paid-check", name: "Caller-paid check Flow" });
+  await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: created.flowId, instruction: "Run the Flow's steps in order and return its result." });
   await service.saveFlow({
     projectId: project.id,
     flow: { ...created, metadata: { ...(created.metadata ?? {}), ...base, trainingModeSettings: { ...(base.trainingModeSettings as JsonObject), resultCheck: { schedule: options.schedule ?? SEQUENCE_SKIPS_RUN_ONE, ...(options.standing ? { authorization } : {}) } } } }
@@ -279,7 +280,7 @@ describe("the chat's Run it, asked from a session that is not paired", () => {
     const outcome = await runFromChat(found, { paired: false });
 
     expect(outcome.status, outcome.summary).toBe("done");
-    expect(outcome.summary).toBe("\"Caller-paid check Flow\" ran all the way through.");
+    expect(outcome.summary).toBe("\"Caller-paid check Flow\" ran all the way through. This run did not keep a change for future runs.");
     expect(found.callerCalls).toEqual([]);
     expect(found.standingCalls).toEqual([]);
   });

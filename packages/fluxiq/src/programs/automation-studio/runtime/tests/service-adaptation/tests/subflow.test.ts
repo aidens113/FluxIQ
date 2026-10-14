@@ -31,6 +31,7 @@ describe("Automation Studio Subflow-scoped node adaptations", () => {
   it("applies and reverts a parent-scoped adaptation against its explicitly owned Subflow graph", async () => {
     const project = await service.createProject({ name: "Owned adaptation" });
     const parent = await service.createFlow({ projectId: project.id, flowId: "flow.parent", name: "Parent" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: parent.flowId, instruction: "Run the Flow's steps in order and return its result." });
     const subflow = await service.createFlowSubflow({ projectId: project.id, flowId: parent.flowId, name: "Primary", role: "primary" });
     const graph = await service.getFlow(project.id, subflow.graphFlowId!);
     await service.saveFlow({
@@ -113,10 +114,12 @@ describe("Automation Studio Subflow-scoped node adaptations", () => {
   it("fails closed when a modern node adaptation omits or misstates Subflow ownership", async () => {
     const project = await service.createProject({ name: "Ownership failures" });
     const parent = await service.createFlow({ projectId: project.id, flowId: "flow.parent", name: "Parent" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: parent.flowId, instruction: "Run the Flow's steps in order and return its result." });
     const owned = await service.createFlowSubflow({ projectId: project.id, flowId: parent.flowId, name: "Owned", role: "primary" });
     const graph = await service.getFlow(project.id, owned.graphFlowId!);
     await service.saveFlow({ projectId: project.id, flow: { ...graph, nodes: [{ id: "action.submit", definitionId: "example.target-action", parameterValues: { target: { selector: "#old" } } }] } });
     const otherParent = await service.createFlow({ projectId: project.id, flowId: "flow.other", name: "Other" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: otherParent.flowId, instruction: "Run the Flow's steps in order and return its result." });
     const foreign = await service.createFlowSubflow({ projectId: project.id, flowId: otherParent.flowId, name: "Foreign", role: "primary" });
 
     await service.saveFlowAdaptation(adaptationFixture({ projectId: project.id, flowId: parent.flowId, adaptationId: "adaptation.missing" }));
@@ -134,6 +137,7 @@ describe("Automation Studio Subflow-scoped node adaptations", () => {
   it("writes a typed owned-graph adaptation through to artifact reads and routed execution without changing settings", async () => {
     const project = await service.createProject({ name: "Canonical typed adaptation" });
     const parent = await service.createFlow({ projectId: project.id, flowId: "flow.typed-parent", name: "Parent" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: parent.flowId, instruction: "Run the Flow's steps in order and return its result." });
     const subflow = await service.createFlowSubflow({ projectId: project.id, flowId: parent.flowId, name: "Primary", role: "primary" });
     const graphFlowId = subflow.graphFlowId!;
     await service.getFlowGraphViewport({ projectId: project.id, flowId: graphFlowId, bounds: { minX: -100, minY: -100, maxX: 100, maxY: 100 } });
@@ -199,6 +203,7 @@ describe("Automation Studio Subflow-scoped node adaptations", () => {
   it("makes a learned recovery path run on the next run, and takes it away again on revert", async () => {
     const project = await service.createProject({ name: "Deterministic recovery path" });
     const parent = await service.createFlow({ projectId: project.id, flowId: "flow.path-parent", name: "Parent" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: parent.flowId, instruction: "Run the Flow's steps in order and return its result." });
     const subflow = await service.createFlowSubflow({ projectId: project.id, flowId: parent.flowId, name: "Primary", role: "primary" });
     const graphFlowId = subflow.graphFlowId!;
     await service.getFlowGraphViewport({ projectId: project.id, flowId: graphFlowId, bounds: { minX: -500, minY: -500, maxX: 500, maxY: 500 } });
@@ -299,6 +304,7 @@ describe("Automation Studio Subflow-scoped node adaptations", () => {
   it("keeps typed adaptation identity authoritative when canonical detail objects cannot be read", async () => {
     const project = await service.createProject({ name: "Canonical adaptation identity" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.identity", name: "Identity" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     const canonical = {
       ...adaptationFixture({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.canonical" }),
       status: "reverted" as const

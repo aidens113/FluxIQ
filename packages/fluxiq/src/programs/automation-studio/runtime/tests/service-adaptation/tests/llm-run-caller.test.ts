@@ -51,6 +51,7 @@ describe("a run a person asked the model into, with no grant", () => {
     });
     const project = await service.createProject({ name: "Caller diagnosis" });
     const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.caller-diagnosis", metadata: adaptiveTrainingMetadata() });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     const llmExecution = { actorUserId: "user.test", actorSessionId: "session.sensitive", intent: "diagnosis_only" as const };
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 }, llmExecution });
     const detail = await service.getFlowRunDetail(project.id, run.runId);
@@ -129,6 +130,7 @@ describe("a run a person asked the model into, with no grant", () => {
     }).bindIoRuntime(io, "example");
     const project = await service.createProject({ name: "Diagnosis action causality", domainId: "example" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.diagnosis-action-causality", name: "Diagnosis action causality" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     const configured = await service.saveFlow({ projectId: project.id, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() } } });
     const installed = await installPrimaryRouter(service, project.id, configured.flowId, {
       nodes: [
@@ -213,6 +215,7 @@ describe("a run a person asked the model into, with no grant", () => {
     }).bindNativeNodeRuntime(native);
     const project = await service.createProject({ name: "Native diagnosis", domainId: "example" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.native-diagnosis", name: "Native diagnosis" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     const configured = await service.saveFlow({ projectId: project.id, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() } } });
     await installPrimaryRouter(service, project.id, configured.flowId, {
       nodes: [{ id: "native-failure", definitionId: definition.id }],
@@ -252,6 +255,7 @@ describe("a run a person asked the model into, with no grant", () => {
     }).bindIoRuntime(io, "example");
     const project = await service.createProject({ name: "Staged model run", domainId: "example" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.staged-model-run", name: "Staged model run" });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     const configured = await service.saveFlow({ projectId: project.id, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() } } });
     await installPrimaryRouter(service, project.id, configured.flowId, {
       nodes: [{ id: "click", definitionId: "builtin.policy.action", parameterValues: { outputId: "click", parameters: {} } }],
@@ -298,6 +302,7 @@ describe("a run a person asked the model into, with no grant", () => {
       flowId: "flow.atomic-llm-budget",
       metadata: adaptiveTrainingMetadata()
     });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
 
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
     const detail = await service.getFlowRunDetail(project.id, run.runId);

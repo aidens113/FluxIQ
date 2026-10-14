@@ -1,5 +1,6 @@
 export * from "./candidate-definitions.ts";
 export * from "./deletion.ts";
+export * from "./directory-removal.ts";
 export * from "./entry-removal.ts";
 export * from "./normalization-review.ts";
 export * from "./object-references.ts";

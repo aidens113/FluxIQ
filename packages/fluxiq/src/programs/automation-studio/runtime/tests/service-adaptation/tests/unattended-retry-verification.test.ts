@@ -225,6 +225,7 @@ async function harness(options: {
   const authorization = "authorization" in options ? options.authorization : standingAuthorization();
   const project = await service.createProject({ name: "Unattended retry", domainId: "example" });
   const created = await service.createFlow({ projectId: project.id, flowId: "flow.unattended-retry", name: "Unattended retry Flow" });
+  await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: created.flowId, instruction: "Run the Flow's steps in order and return its result." });
   await service.saveFlow({
     projectId: project.id,
     flow: {

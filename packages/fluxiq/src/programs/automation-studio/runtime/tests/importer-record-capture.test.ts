@@ -116,6 +116,7 @@ async function extractionFlow(service: AutomationStudioService, projectId: strin
     }
   });
   await service.setFlowMapFallback({ projectId, flowId: flow.flowId, kind: "subflow", targetSubflowId: subflow.subflowId });
+  await service.saveFlowGenerationInstruction({ projectId, flowId: flow.flowId, instruction: "Read every item of the list." });
   return flow;
 }
 

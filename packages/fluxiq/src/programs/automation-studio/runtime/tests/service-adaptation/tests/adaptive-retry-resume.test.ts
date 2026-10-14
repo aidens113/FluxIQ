@@ -116,6 +116,7 @@ async function runChargingFlow(input: { flowId: string; driftParameterValues: Re
   }).bindNativeNodeRuntime(nativeRuntime);
   const project = await service.createProject({ name: "Resume retry", domainId: "example" });
   const flow = await service.createFlow({ projectId: project.id, flowId: input.flowId, name: "Resume retry Flow" });
+  await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
   await service.saveFlow({ projectId: project.id, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() } } });
   await installPrimaryRouter(service, project.id, flow.flowId, {
     nodes: [

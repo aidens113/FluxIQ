@@ -31,7 +31,7 @@ describe("proposals built from a recording that is still open", () => {
 
   it("says the recording was unfinalized, in the result and on the stored proposal", async () => {
     const project = await service.createProject({ name: "Open recording proposal", domainId: "example" });
-    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.still-open", domainId: "example", startedAt: 100, initialState: { timestamp: 100, namespaces: {} } });
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.still-open", domainId: "example", startedAt: 100, initialState: { timestamp: 100, namespaces: {} } });
     await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" }, timestamp: 200, monotonicOffsetMs: 100 } });
 
     const open = await service.createRecordingFlowProposals({ projectId: project.id, recordingId: recording.recordingId });
@@ -47,7 +47,7 @@ describe("proposals built from a recording that is still open", () => {
 
   it("says nothing of the sort once the recording is finalized", async () => {
     const project = await service.createProject({ name: "Finalized recording proposal", domainId: "example" });
-    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.closed", domainId: "example", startedAt: 100, initialState: { timestamp: 100, namespaces: {} } });
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.closed", domainId: "example", startedAt: 100, initialState: { timestamp: 100, namespaces: {} } });
     await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" }, timestamp: 200, monotonicOffsetMs: 100 } });
     await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId, endedAt: 300 });
 
@@ -60,7 +60,7 @@ describe("proposals built from a recording that is still open", () => {
 
   it("reports the open recording on the cached-proposal path too", async () => {
     const project = await service.createProject({ name: "Cached open proposal", domainId: "example" });
-    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.cached-open", domainId: "example", startedAt: 100, initialState: { timestamp: 100, namespaces: {} } });
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.cached-open", domainId: "example", startedAt: 100, initialState: { timestamp: 100, namespaces: {} } });
     await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" }, timestamp: 200, monotonicOffsetMs: 100 } });
 
     const first = await service.createRecordingFlowProposals({ projectId: project.id, recordingId: recording.recordingId });

@@ -108,7 +108,7 @@ describe("AutomationStudioService recording persistence", () => {
         }]
       }
     } satisfies StateSnapshot;
-    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.with-screenshot", initialState: { timestamp: 0, namespaces: {} } });
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.with-screenshot", initialState: { timestamp: 0, namespaces: {} } });
     await service.appendRecordingEvent({
       projectId: project.id,
       recordingId: recording.recordingId,
@@ -130,7 +130,7 @@ describe("AutomationStudioService recording persistence", () => {
       seedFixture: false
     });
     const project = await service.createProject({ name: "Recording directory cleanup" });
-    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.with-leftovers", initialState: { timestamp: 0, namespaces: {} } });
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.with-leftovers", initialState: { timestamp: 0, namespaces: {} } });
     const sessionDir = path.join(tempRoot, "artifacts", "automation-studio", "projects", project.id, "recordings", recording.recordingId);
     await mkdir(path.join(sessionDir, "objects"), { recursive: true });
     await mkdir(path.join(sessionDir, "derived", "custom"), { recursive: true });
@@ -154,7 +154,7 @@ describe("AutomationStudioService recording persistence", () => {
       seedFixture: false
     });
     const project = await service.createProject({ name: "Shared pipeline cleanup" });
-    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.shared-artifacts", initialState: { timestamp: 0, namespaces: {} } });
+    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.shared-artifacts", initialState: { timestamp: 0, namespaces: {} } });
     const projectDir = path.join(tempRoot, "artifacts", "automation-studio", "projects", project.id);
     const sharedFact = path.join(projectDir, "pipeline", "shared", "evidence", "facts", "fact.stale.json");
     const pipelineIndex = path.join(projectDir, "indexes", "pipeline.json");
@@ -185,9 +185,9 @@ describe("AutomationStudioService recording persistence", () => {
   it("deletes recording batches with one index and pipeline cleanup pass", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Batch cleanup" });
-    const first = await service.createRecording({ projectId: project.id, recordingId: "recording.batch-a", initialState: { timestamp: 0, namespaces: {} } });
-    const second = await service.createRecording({ projectId: project.id, recordingId: "recording.batch-b", initialState: { timestamp: 0, namespaces: {} } });
-    const kept = await service.createRecording({ projectId: project.id, recordingId: "recording.batch-kept", initialState: { timestamp: 0, namespaces: {} } });
+    const first = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.batch-a", initialState: { timestamp: 0, namespaces: {} } });
+    const second = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.batch-b", initialState: { timestamp: 0, namespaces: {} } });
+    const kept = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.batch-kept", initialState: { timestamp: 0, namespaces: {} } });
     const projectDir = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
     const sharedFactsDir = path.join(projectDir, "pipeline", "shared", "evidence", "facts");
     await mkdir(sharedFactsDir, { recursive: true });
@@ -231,8 +231,8 @@ describe("AutomationStudioService recording persistence", () => {
         }]
       }
     } satisfies StateSnapshot;
-    const deleted = await service.createRecording({ projectId: project.id, recordingId: "recording.deleted", initialState: state });
-    await service.createRecording({ projectId: project.id, recordingId: "recording.kept", initialState: state });
+    const deleted = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.deleted", initialState: state });
+    await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.kept", initialState: state });
 
     await service.deleteRecording({ projectId: project.id, recordingId: deleted.recordingId });
 

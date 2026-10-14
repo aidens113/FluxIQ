@@ -531,6 +531,23 @@ Briefs t533-t539 (units A1, A2, A3, A3b, A4a, A4b, A6) were delivered and moved 
   `packages/fluxiq`, contracts built first); `pnpm.cmd --filter fluxiq check`; `node scripts/structure-audit.mjs`;
   `git diff --check`. Report per file what it lacked and any test you stopped on.
 
+### Brief: recording-delete-windows-retry
+- Repository: FluxIQ Core, the paired worktree the dispatch prompt names.
+- Task: the confirming sweep (2026-10-13, Core `a2cc2a52`: 1 failed of 11207) failed
+  `runtime/tests/service-recordings/tests/assets.test.ts` > "deletes recording batches with one index and pipeline
+  cleanup pass" with `EPERM: operation not permitted, rmdir '...\recordings\recording.batch-b\derived'`; the file
+  passes 3 of 3 alone. The product's own delete removes the directory while another handle briefly holds it, which
+  Windows reports as EPERM/EBUSY; the delete has no bounded retry. Find the code that removes a recording batch's
+  directories, and make it (and any sibling removal of the same kind) use one bounded-retry removal: reuse an
+  existing Core helper if there is one (search for `maxRetries`, `rm(`, `rmdir`), otherwise add one focused helper in
+  the owning storage area. Never swallow a lasting failure: after the retries a removal that still fails throws as
+  before. Add a test that injects one transient EPERM and one lasting EPERM.
+- Required reads: the failing test, the delete path it exercises, `docs/architecture/code-structure.md`.
+- Owns: the removal code you find and its tests, a new helper if needed; `docs/working/automation-project-agents-plan/reports/<your label>.md`.
+- Must not touch: `runtime/service.ts` (another unit owns it now; if the removal lives there, report instead of editing),
+  `project-agents/`, `flow-bootstrap/`, `llm/`.
+- Definition of done: the new tests; `assets.test.ts` and the tests beside the changed files pass; check; audit; diff check.
+
 ## Work Ledger
 
 ### 2026-10-13 — Plan written from three discovery reports
@@ -652,6 +669,22 @@ Briefs t533-t539 (units A1, A2, A3, A3b, A4a, A4b, A6) were delivered and moved 
 - Validation: not validated (decisions); the fixes carry their own
 - Outcome: Decided: fix the repository to match the in-memory store's semantics with a regression and a parity test (t544); delete tests whose subject is behaviour after approval, keep one refusal test per retired entry point, list every deletion (t545)
 - Follow-up: verify t544 and t545
+
+### 2026-10-13 — Sweep fix-forward merged (t544, t545, t546; downstream t547, t548)
+- Agent: workers t544-sweep-a, t545-sweep-b, t546-sweep-c, t547-domain-sweep, t548-test-runner-sweep; supervisor verified each and integrated
+- Changed: Core: 66 test files brought up to t519/t530; product fix in `storage/project/flow-resource-repository.ts` and `runtime/service/summaries/store.ts` (a subflow listing admitted other Flows' instructions) with regression and parity tests; 11 tests of retired recording approval deleted and 8 cut back, every one listed in `reports/t545-sweep-b.md`. Downstream: 17 domain fixtures; 13 test-runner tests that scanned for the recorded-Flow lane t519 retired; one crossborder welcome-popup race
+- Why: the 2026-10-13 sweeps (Core 305 failed of 11167; downstream domain 17 failed of 2019, test-runner 13, scenario-lab 1, extension 3004 of 3004 passed)
+- Validation: supervisor, each after merging dev: Group A + storage/project + summaries + instruction-led -> 61 files, 415 passed; Group B -> 123 passed; Group C -> 238 passed; domain group -> 100 passed; test-runner group -> 83 passed, crossborder browser paths -> 17 passed; every check and audit exit 0; merged Core `482cd861`, `c51e8639`, `a2cc2a52`, downstream `775d685e`, `f7acb9cf`
+- Outcome: Accepted. A confirming Core sweep is running (the second full Core run today)
+- Follow-up: A15 a build refused for missing instructions no longer carries the Flow Bootstrap diagnostic (stage, provider fields); check the Lab and callers that classify by it. A16 `storage_required` is unreachable through `runRuntimeSession`. A17 `createDefaultFlow` Flows can never hold instructions, so they cannot run; only tests call it — retire it. A18 SQL stores `adaptation_review` scopes as `flow` and `on_error` as `error`, unlike the summary index. Downstream W5 (paired document)
+
+### 2026-10-13 — Confirming Core sweep
+- Agent: supervisor
+- Changed: nothing
+- Why: confirm dev after the fix-forward (second full Core run today)
+- Validation: from `fxwork/sweep-1010/!FluxIQ/packages/fluxiq` on `a2cc2a52`, `pnpm.cmd exec vitest run --reporter=dot` -> "Test Files 1 failed | 1211 passed | 3 skipped (1215)", "Tests 1 failed | 11199 passed | 7 skipped (11207)"; the failure, `assets.test.ts` EPERM on rmdir of a recording batch's `derived` directory under load, passed 3 of 3 alone
+- Outcome: Accepted; the EPERM is a product robustness defect (no bounded retry on a Windows directory removal), dispatched as recording-delete-windows-retry
+- Follow-up: A19 recording-delete-windows-retry
 
 ## Open Questions
 
