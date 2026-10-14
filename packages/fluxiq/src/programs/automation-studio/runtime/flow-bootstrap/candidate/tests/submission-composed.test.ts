@@ -1,8 +1,9 @@
 // The composed seam of the candidate submission controller (`submitComposed`):
-// a whole Flow Core assembled from proposals it had already accepted, checked
-// as a plan without the reply reader (which keeps no part interface) and
-// without element resolution (every element was resolved when its proposal
-// was accepted).
+// a whole Flow Core assembled from proposals it had already accepted, held to
+// the completion check's one sequence as a composed Flow
+// (`checkAutomationStudioFlowBootstrapPlanCompletion`): no reply reader (which
+// keeps no part interface) and no element resolution (every element was
+// resolved when its proposal was accepted).
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../../plan/index.ts";
@@ -76,8 +77,9 @@ describe("a composed candidate", () => {
     const refused = await controller().submitComposed({ plan, summary: "Find the titles" });
     expect(refused.ok).toBe(false);
     if (refused.ok) return;
-    expect(refused.check.issueCodes).toEqual(["candidate.composed_handle_unresolved"]);
-    expect(refused.check.feedback.code).toBe("candidate.composed_refused");
+    expect(refused.check.issueCodes).toEqual(["bootstrap.composed_handle_unresolved"]);
+    expect(refused.check.feedback).toMatchObject({ code: "flow_bootstrap.completion_refused", refusal: "flow_bootstrap.evidence_completion_parameters_unresolved" });
+    expect(String(refused.check.feedback.instruction)).toContain("Core composed this Flow");
   });
 
   it("refuses a composed Flow the plan's validation refuses, every issue by its path", async () => {
@@ -88,7 +90,7 @@ describe("a composed candidate", () => {
     expect(refused.ok).toBe(false);
     if (refused.ok) return;
     expect(refused.check.issueCodes.length).toBeGreaterThan(0);
-    expect(refused.check.feedback.code).toBe("candidate.composed_refused");
+    expect(refused.check.feedback).toMatchObject({ code: "flow_bootstrap.completion_refused", refusal: "flow_bootstrap.evidence_completion_plan_invalid" });
     expect(JSON.stringify(refused.check.feedback.issues)).toContain("plan.subflows");
   });
 });

@@ -1,16 +1,9 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, checkAutomationStudioFlowBootstrapCompletion, type AutomationStudioFlowBootstrapPlanHandleView } from "../../llm/harness-options/index.ts";
+import { checkAutomationStudioFlowBootstrapCompletion, checkAutomationStudioFlowBootstrapPlanCompletion, type AutomationStudioFlowBootstrapCompletionVerdict } from "../../llm/harness-options/index.ts";
 import { automationStudioFlowBootstrapIssuePlace, automationStudioFlowBootstrapWrittenPlanBindingIssues, parseAutomationStudioFlowScript, type AutomationStudioFlowBootstrapIssueLocator } from "../authoring/index.ts";
 import { automationStudioInstructedActOptionalScriptIssues } from "../instructed-acts/index.ts";
-import {
-  automationStudioEvidenceFlowBootstrapLimitsExceeded,
-  parseAutomationStudioFlowBootstrapPlan,
-  validateAutomationStudioFlowBootstrapPlan,
-  type AutomationStudioFlowBootstrapIssue,
-  type AutomationStudioFlowBootstrapPlan,
-  type AutomationStudioFlowBuildPlan
-} from "../plan/index.ts";
-import { automationStudioFlowPlanRecordReplaceInRepeatIssues, automationStudioFlowScriptWayOutIssues } from "../script-statements/index.ts";
+import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
+import { automationStudioFlowScriptWayOutIssues } from "../script-statements/index.ts";
 import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission, AutomationStudioFlowCandidateSubmissionHistory, AutomationStudioCandidateOriginalSourceBinding } from "./contracts.ts";
 import { automationStudioCandidateFingerprint as fingerprint } from "./digest.ts";
 import { automationStudioCandidateSameBehaviour, automationStudioCandidateUnchangedRefusal } from "./unchanged-submission.ts";
@@ -102,18 +95,18 @@ export class AutomationStudioFlowCandidateSubmissionController {
    * (`../../project-agents/supervisor/assembly.ts`; automation-project-agents
    * plan, `Assembly`). It becomes a revision exactly as `submit`'s do -- the
    * same counter, the same digest, the same unchanged and refuted-Flow rules,
-   * the same trial gate after it -- and runs every completion check but the
-   * two that hold the plan to being the model's own writing (header of
-   * `checkComposed`).
+   * the same trial gate after it -- and runs the completion check's one
+   * sequence as a composed Flow (`checkAutomationStudioFlowBootstrapPlanCompletion`,
+   * whose header says what differs from a model's).
    */
   async submitComposed(composed: { plan: AutomationStudioFlowBootstrapPlan; summary: string }, history: AutomationStudioFlowCandidateSubmissionHistory = {}): Promise<AutomationStudioFlowCandidateSubmission> {
     const plan = structuredClone(composed.plan);
     const result: JsonObject = { plan: plan as unknown as JsonObject, summary: composed.summary };
-    return this.submitChecked(result, history, async () => checkComposed({ plan, summary: composed.summary, registry: this.input.registry, resolution: this.input.resolution, size: this.input.size }));
+    return this.submitChecked(result, history, () => checkAutomationStudioFlowBootstrapPlanCompletion({ ...this.input, origin: "composed", plan, summary: composed.summary }));
   }
 
   /** `submit`'s body, with the completion check it is held to given (`submit`, `submitComposed`). */
-  private async submitChecked(result: JsonObject, history: AutomationStudioFlowCandidateSubmissionHistory, check: () => Promise<CheckedSubmission>): Promise<AutomationStudioFlowCandidateSubmission> {
+  private async submitChecked(result: JsonObject, history: AutomationStudioFlowCandidateSubmissionHistory, check: () => Promise<AutomationStudioFlowBootstrapCompletionVerdict>): Promise<AutomationStudioFlowCandidateSubmission> {
     this.input.signal?.throwIfAborted();
     const standing = this.current;
     // The last revision accepted: the standing one, or the one a refusal since cleared.
@@ -211,92 +204,6 @@ export class AutomationStudioFlowCandidateSubmissionController {
     });
     return { ok: false, revision: (same ?? standing)?.revision ?? this.revision, check };
   }
-}
-
-/** What `submitChecked` reads of a completion check: what it accepted, or the refusal handed back as it stands. */
-type CheckedSubmission =
-  | { ok: true; summary: string; buildPlan: AutomationStudioFlowBuildPlan; locator?: AutomationStudioFlowBootstrapIssueLocator | undefined; handleViews?: AutomationStudioFlowBootstrapPlanHandleView[] | undefined }
-  | { ok: false; check: Extract<AutomationStudioFlowCandidateSubmission, { ok: false }>["check"] };
-
-/** The code a composed candidate is refused under; each issue carries its own. */
-const COMPOSED_REFUSED = "candidate.composed_refused";
-
-/**
- * The completion checks of a Flow Core composed from proposals it had already
- * accepted (`submitComposed`).
- *
- * It runs what `checkAutomationStudioFlowBootstrapCompletion` runs on a plan,
- * in its order: the plan's own parse, the Flow's size limits as for a plan
- * Core assembled, the plan's validation against the node library, and the
- * rule against a looped step that replaces the run's rows; `submitChecked`
- * then runs the binding check as for any submission. Two steps of that check
- * are left out, because both hold the plan to being the model's own writing,
- * which this one is not:
- *
- * - **The reply reader.** It reads a model's JSON plan, and keeps no part's
- *   interface and no subflow's metadata, so a composed Flow read through it
- *   would lose every part's inputs and outputs and every success check.
- * - **Element resolution.** Every element of a proposal was named by a handle
- *   when its builder submitted it, and its domain resolved that handle then;
- *   asked again, as written by a model, a resolved element is refused for
- *   not being a handle. So a composed plan must name no handle at all, and one
- *   that still does is refused here instead of resolved.
- *
- * The instructed-act checks read a build's draft steps, which a composed
- * Flow has none of, and the capability notes are information for a judge,
- * not refusals; neither has anything to say here.
- */
-function checkComposed(input: {
-  plan: AutomationStudioFlowBootstrapPlan;
-  summary: string;
-  registry: ConstructorParameters<typeof AutomationStudioFlowCandidateSubmissionController>[0]["registry"];
-  resolution: ConstructorParameters<typeof AutomationStudioFlowCandidateSubmissionController>[0]["resolution"];
-  size?: ConstructorParameters<typeof AutomationStudioFlowCandidateSubmissionController>[0]["size"];
-}): CheckedSubmission {
-  const parsed = parseAutomationStudioFlowBootstrapPlan(input.plan, input.size);
-  const parseErrors = parsed.issues.filter((issue) => issue.severity === "error");
-  if (!parsed.plan || parseErrors.length) return composedRefusal(parseErrors.length ? parseErrors : [composedIssue("bootstrap.invalid_plan", "plan", "The composed plan could not be read.")]);
-  const exceeded = automationStudioEvidenceFlowBootstrapLimitsExceeded({ summary: input.summary, plan: parsed.plan }, "draft", input.size);
-  if (exceeded.length) return composedRefusal(exceeded.map((limit) => composedIssue("bootstrap.completion_profile_limit_exceeded", limit.path, `The composed Flow is over one of its limits (${limit.path}).`)));
-  try {
-    assertAutomationStudioFlowBootstrapPlanHandlesResolved(parsed.plan);
-  } catch (error) {
-    const said = error instanceof Error ? error.message : String(error);
-    return composedRefusal([composedIssue("candidate.composed_handle_unresolved", "plan", `A composed Flow names no handle: every element was resolved when its proposal was accepted. ${said.slice(0, 400)}`)]);
-  }
-  let validated: ReturnType<typeof validateAutomationStudioFlowBootstrapPlan>;
-  try {
-    validated = validateAutomationStudioFlowBootstrapPlan({ plan: parsed.plan, registry: input.registry, resolution: input.resolution, ...(input.size ? { size: input.size } : {}) });
-  } catch {
-    // A check that throws refuses the plan under a code of its own, as the completion check does.
-    return composedRefusal([composedIssue("bootstrap.validation_failed", "plan", "The composed plan could not be validated.")]);
-  }
-  if (!validated.ok || !validated.validated) return composedRefusal(validated.issues.filter((issue) => issue.severity === "error"));
-  const replacing = automationStudioFlowPlanRecordReplaceInRepeatIssues({ plan: validated.validated.plan, registry: input.registry, resolution: input.resolution });
-  if (replacing.length) return composedRefusal(replacing);
-  return { ok: true, summary: input.summary, buildPlan: validated.validated };
-}
-
-function composedIssue(code: string, path: string, message: string): AutomationStudioFlowBootstrapIssue {
-  return { severity: "error", code, path, message };
-}
-
-/** A composed Flow refused, every issue with its code, path and Core's own sentence. */
-function composedRefusal(issues: readonly AutomationStudioFlowBootstrapIssue[]): Extract<CheckedSubmission, { ok: false }> {
-  const listed = issues.length ? issues : [composedIssue(COMPOSED_REFUSED, "plan", "The composed plan was refused.")];
-  return {
-    ok: false,
-    check: {
-      ok: false,
-      issueCodes: [...new Set(listed.map((issue) => issue.code))],
-      feedback: {
-        ok: false,
-        code: COMPOSED_REFUSED,
-        issues: listed.map((issue) => (issue.path === undefined ? { code: issue.code, message: issue.message } : { code: issue.code, path: issue.path, message: issue.message })),
-        instruction: "Core composed this Flow from the subflows' accepted proposals and the calls between them, and it was refused as listed. Nothing was kept."
-      }
-    }
-  };
 }
 
 /**

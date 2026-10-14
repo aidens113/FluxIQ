@@ -85,8 +85,7 @@ function answering(brief: AutomationStudioProjectSubflowBrief, given: Automation
   if (!given) return blocked(brief, "project.return_missing");
   const parsed = automationStudioProjectBuilderReturn.parse(JSON.parse(JSON.stringify(given)));
   if (parsed.status === "invalid") return blocked(brief, parsed.code);
-  // A reset completes with nothing to propose (A5b), which the return contract reads as a done build without one.
-  const issue = automationStudioProjectBuilderReturn.issues(parsed.value, brief).find((found) => !(brief.kind === "reset" && found.code === "project.return_done_without_proposal"));
+  const issue = automationStudioProjectBuilderReturn.issues(parsed.value, brief)[0];
   return issue ? blocked(brief, issue.code, parsed.value) : parsed.value;
 }
 
