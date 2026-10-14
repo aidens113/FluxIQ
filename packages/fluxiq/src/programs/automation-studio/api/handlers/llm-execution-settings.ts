@@ -2,13 +2,15 @@
 // provider and model, and hold every limit inside its bound.
 
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD } from "../../model/index.ts";
-import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST, automationStudioDeepSeekModelRefusal, isAutomationStudioDeepSeekModel } from "../../runtime/index.ts";
+import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST, AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP, automationStudioDeepSeekModelRefusal, isAutomationStudioDeepSeekModel } from "../../runtime/index.ts";
 import { boundedWholeNumber } from "./bounded-whole-number.ts";
 
-// The most provider calls a Flow may pin. The run's own budget, and the Flow's
-// `adaptationPolicySettings.maxEstimatedCostUsdPerRun`, are what actually bound
-// spend.
-const FLOW_LLM_EXECUTION_MAX_CALLS = 64;
+// The most provider calls a Flow may pin: Core's own runaway backstop
+// (`AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP`). The run's own budget, and the
+// Flow's `adaptationPolicySettings.maxEstimatedCostUsdPerRun`, are what actually
+// bound spend. It was a second 64 until t583, and A8's first created project
+// Flow was refused its settings for pinning the Lab's 250.
+const FLOW_LLM_EXECUTION_MAX_CALLS = AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP;
 
 export function assertFlowLlmExecutionSettings(metadata: Record<string, unknown>): void {
   if (metadata.llmProvider !== undefined && metadata.llmProvider !== "deepseek") throw new Error("Only DeepSeek is supported for live LLM execution.");
