@@ -1,6 +1,7 @@
 // Covers handlers/runtime-sessions.ts, runtime-execution.ts and runs.ts: a
 // saved trace keeps each value once (`runtime/executor/node-execution/shared-inputs.ts`),
-// and no client is ever answered with that form (t377).
+// and no client is ever answered with that form (t377). A listing carries no
+// trace at all since t604; reading a session by id does.
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -64,10 +65,12 @@ describe("an answer carrying a saved trace", () => {
     expectWhole(payload.runtimeSession.trace.attempts, executed);
   });
 
-  it("hands them to a client listing runtime sessions", async () => {
-    const { executed, stored } = await threeStepRun();
-    const payload = await call({ listRuntimeSessions: vi.fn(async () => [session(stored)]) }, AUTOMATION_STUDIO_ENDPOINTS.listRuntimeSessions, { projectId: "project.one" });
-    expectWhole(payload.runtimeSessions[0].trace.attempts, executed);
+  it("is never handed to a client listing runtime sessions, which reads a run's trace by id (t604)", async () => {
+    const listRuntimeSessions = vi.fn();
+    const listRuntimeSessionSummaries = vi.fn(async () => ({ runs: [{ runId: "run.one", targetKind: "flow", targetId: "flow.answers", status: "succeeded", queuedAt: 1, updatedAt: 1 }], total: 1, limit: 25, offset: 0, nextCursor: null }));
+    const payload = await call({ listRuntimeSessions, listRuntimeSessionSummaries }, AUTOMATION_STUDIO_ENDPOINTS.listRuntimeSessions, { projectId: "project.one" });
+    expect(payload.runtimeSessions[0]).not.toHaveProperty("trace");
+    expect(listRuntimeSessions).not.toHaveBeenCalled();
   });
 
   it("hands them to a client that ran or stopped the run", async () => {

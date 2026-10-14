@@ -24,6 +24,7 @@ export * from "./paths/index.ts";
 export * from "./proposals/index.ts";
 export * from "./projects/index.ts";
 export * from "./recordings/index.ts";
+export * from "./session-listing/index.ts";
 export * from "./stable-json.ts";
 export * from "./summaries/index.ts";
 export * from "./ui-cache.ts";

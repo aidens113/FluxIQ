@@ -141,13 +141,32 @@ export type AutomationStudioRuntimeRunSummary = {
   attemptCount?: number;
   effectCount?: number;
   updatedAt: number;
+  /** The candidate a trial session tested, from its `metadata.candidateTrial`: closed scalars only, never the candidate itself. */
+  candidateTrial?: AutomationStudioRuntimeRunCandidateTrial;
+  /** The summary shape this row was written with; a row older than the current one is rewritten from its session (t604). */
+  summaryVersion?: number;
 };
 
+/** The scalar fields of a candidate trial session's `metadata.candidateTrial` (`runtime/service/candidate-trial/run.ts`). */
+export type AutomationStudioRuntimeRunCandidateTrial = {
+  candidateId: string;
+  revision?: number;
+  digest?: string;
+  start?: string;
+  execution?: string;
+  code?: string;
+};
+
+/**
+ * One page of run summaries, newest queued first. `nextCursor` reads the page
+ * after this one with the same filter; `null` on the last page (t604).
+ */
 export type AutomationStudioRuntimeRunSummaryPage = {
   runs: AutomationStudioRuntimeRunSummary[];
   total: number;
   limit: number;
   offset: number;
+  nextCursor: string | null;
 };
 
 export type AutomationStudioRuntimeSummaryIndex = {

@@ -28,6 +28,7 @@ import { automationStudioRunStop } from "./run-stop.ts";
 import { automationStudioRunDetailSkipped } from "./skipped.ts";
 import { automationStudioRunDetailStateRouting } from "./state-routing.ts";
 import { automationStudioRunDetailStepCount } from "./step-count.ts";
+import { AUTOMATION_STUDIO_RUNTIME_SUMMARY_VERSION, automationStudioRuntimeSummaryCandidateTrial } from "../session-listing/index.ts";
 
 // Converting a runtime session into the run detail, summaries and intervention
 // records that the summary indexes and the public run views are built from.
@@ -140,6 +141,7 @@ export function runtimeSessionToFlowRunDetail(session: AutomationStudioRuntimeSe
 
 export function runtimeSummaryFromSession(session: AutomationStudioRuntimeSession): AutomationStudioRuntimeRunSummary {
   const updatedAt = session.finishedAt ?? session.startedAt ?? session.queuedAt ?? Date.now();
+  const candidateTrial = automationStudioRuntimeSummaryCandidateTrial(session.metadata);
   return {
     runId: session.runId,
     targetKind: session.targetKind,
@@ -151,7 +153,9 @@ export function runtimeSummaryFromSession(session: AutomationStudioRuntimeSessio
     ...(session.flowId ? { flowId: session.flowId } : {}),
     attemptCount: automationStudioRunDetailStepCount(automationStudioRunDetailAttemptsInRunOrder(session.trace?.attempts ?? [])),
     effectCount: session.trace?.effects?.length ?? 0,
-    updatedAt
+    updatedAt,
+    ...(candidateTrial ? { candidateTrial } : {}),
+    summaryVersion: AUTOMATION_STUDIO_RUNTIME_SUMMARY_VERSION
   };
 }
 

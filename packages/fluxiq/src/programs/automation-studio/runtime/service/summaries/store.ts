@@ -1,10 +1,11 @@
-import type { AutomationStudioRuntimeRunSummary, AutomationStudioRuntimeRunSummaryPage } from "../../../storage/index.ts";
+import type { AutomationStudioRuntimeRunSummaryPage } from "../../../storage/index.ts";
 import type { AutomationStudioBootstrapAdaptationStore } from "../bootstrap-adaptations.ts";
 import { compareFlowAdaptationSummaries, compareFlowRunSummaries } from "./ordering.ts";
 import { bootstrapAdaptationSummary } from "./conversions.ts";
 import { adaptationSummaryFromTypedStore } from "./sql-conversions.ts";
 import type { AutomationStudioSqlInstructionSummary, AutomationStudioSqlSubflow } from "../../../storage/index.ts";
 import { clampInteger } from "../numbers.ts";
+import { AUTOMATION_STUDIO_RUNTIME_SUMMARY_VERSION, automationStudioRuntimeSessionListingFilter, listAutomationStudioRuntimeSummaryMemoryPage, listAutomationStudioRuntimeSummarySqlPage, listStaleAutomationStudioRuntimeSummaries, type AutomationStudioRuntimeSessionListingOptions } from "../session-listing/index.ts";
 import { sqlInstructionRequirement, sqlInstructionStatus } from "../flows/index.ts";
 import { instructionSummaryFromSql, sqlInstructionScopeKind, subflowSummaryFromSql } from "./sql-conversions.ts";
 import type { AutomationStudioInstructionSummaryPage, AutomationStudioSubflowSummaryPage } from "./types.ts";
@@ -203,10 +204,23 @@ export class AutomationStudioSummaryStore {
     }
     const repository = this.runtimeSummaryRepository(projectId);
     const page = await repository.listPage({}, { limit: 1, offset: 0 });
-    if (page.total >= (index.sessions ?? []).length) return;
-    for (const item of index.sessions ?? []) {
-      const session = await this.getRuntimeSession(projectId, item.runId);
+    if (page.total < (index.sessions ?? []).length) {
+      for (const item of index.sessions ?? []) {
+        const session = await this.getRuntimeSession(projectId, item.runId);
+        if (session) await this.writeRuntimeSummary(projectId, session);
+      }
+    }
+    await this.rewriteStaleRuntimeSummaries(projectId, repository);
+  }
+
+  // A row written in an older summary shape is rewritten from its session, one
+  // session read at a time; a row whose session is gone keeps what it holds and
+  // is marked current, so it is not looked at again (t604).
+  private async rewriteStaleRuntimeSummaries(projectId: string, repository: SQLiteRepository<JsonObject>): Promise<void> {
+    for (const stale of await listStaleAutomationStudioRuntimeSummaries(repository, AUTOMATION_STUDIO_RUNTIME_SUMMARY_VERSION)) {
+      const session = await this.getRuntimeSession(projectId, stale.runId);
       if (session) await this.writeRuntimeSummary(projectId, session);
+      else await repository.put(createRecord({ id: stale.runId, kind: "runtime.sessions", data: { ...stale, summaryVersion: AUTOMATION_STUDIO_RUNTIME_SUMMARY_VERSION } as unknown as JsonObject, nowMs: stale.updatedAt }));
     }
   }
 
@@ -542,22 +556,16 @@ export class AutomationStudioSummaryStore {
     return { instructions: result.items, total: result.total, limit, offset };
   }
 
-  async listRuntimeSessionSummaries(projectId: string, options: { limit?: unknown; offset?: unknown } = {}): Promise<AutomationStudioRuntimeRunSummaryPage> {
+  // One bounded page of summaries, filtered and newest queued first; a session's
+  // content is read by id (`getRuntimeSession`), never through a listing (t604).
+  async listRuntimeSessionSummaries(projectId: string, options: AutomationStudioRuntimeSessionListingOptions = {}): Promise<AutomationStudioRuntimeRunSummaryPage> {
+    const filter = automationStudioRuntimeSessionListingFilter(options);
     await this.ensureRuntimeSummaryIndex(projectId);
-    const limit = clampInteger(options.limit, 1, 100, 25);
-    const offset = clampInteger(options.offset, 0, 1_000_000, 0);
     if (!this.paths.root) {
       const sessions = await this.facade.listRuntimeSessions(projectId);
-      const runs = sessions.map((session) => runtimeSummaryFromSession(session)).slice(offset, offset + limit);
-      return { runs, total: sessions.length, limit, offset };
+      return listAutomationStudioRuntimeSummaryMemoryPage(sessions.map((session) => runtimeSummaryFromSession(session)), filter);
     }
-    const page = await this.runtimeSummaryRepository(projectId).listPage({}, { limit, offset, orderBy: "updated_at_ms", direction: "desc" });
-    return {
-      runs: page.records.map((record) => record.data as unknown as AutomationStudioRuntimeRunSummary),
-      total: page.total,
-      limit: page.limit,
-      offset: page.offset
-    };
+    return await listAutomationStudioRuntimeSummarySqlPage(this.runtimeSummaryRepository(projectId), filter);
   }
 
   async listFlowRunSummaries(input: { projectId: string; flowId?: string; status?: string; search?: string; sort?: "updated" | "started" | "duration" | "actions" | "status"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioFlowRunSummaryPage> {
