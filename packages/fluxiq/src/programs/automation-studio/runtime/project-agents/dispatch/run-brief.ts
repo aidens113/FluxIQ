@@ -46,6 +46,14 @@ import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectDispatc
 // (`TRIALS`), as the brief's receipts name it (`./receipts.ts`). A receipt
 // whose trial is not held -- one run before this process, say -- is named as
 // such, so the builder is never told a failure it cannot see.
+//
+// **A pass the run rescued is shown as what to answer (social debug, t603).**
+// A whole test that passed only because the run recovered by itself where the
+// site asked it to slow down reaches a repair as a `yes` with `interruptions`
+// (`contracts/subflow-brief.ts`): each step it recovered at, from the trial's
+// step record, and what the Flow needs there. Its builder is shown them with
+// how to add the pace and the dismiss-wait-and-return branch, rather than
+// told the trial passed and nothing failed.
 
 type Role = "builder" | "repair";
 
@@ -58,7 +66,11 @@ const REPAIR_NOTE = "This brief repairs your subflow after the trial named here 
   + "A proposal that does exactly what the one before did changes nothing, and the supervisor is told so. If the failure is not in a step of yours -- the run stopped before your subflow, or started somewhere your subflow does not start -- end the brief blocked and say which.";
 const REPAIR_UNHELD_NOTE = "This brief repairs your subflow after the trial named here did not pass, but what that trial said is not held here. Look at what your subflow's steps meet on the page now, change what does not work, submit and test it; "
   + "a proposal that does exactly what the one before did changes nothing, and the supervisor is told so.";
-const REPAIR_PASSED_NOTE = "This brief repairs your subflow, but the trial named here passed, so it says nothing about what to change. Look at what your subflow's steps meet on the page now; "
+const REPAIR_RESCUED_NOTE = "This brief repairs your subflow after the trial named here passed only because the run recovered by itself where the site asked it to slow down: the run waited, tried the step again or closed the site's notice, and the Flow has no step that does that. "
+  + "Under interruptions is each step where it happened: its number and label (a whole test's step numbers count every step of the whole Flow in order, not only yours), what the run met and how it recovered (absorbed, interruptions, learned), and what the Flow needs there (needs). "
+  + "Answer it in your subflow: give the span that repeats that step a `repeat pace:` of at least needs.paceAtLeastMs on its first step; where needs names a wayOut, add right after that step, inside the span, an `optional: yes` step that presses the notice's way out, and directly after it a `builtin.timing.wait` step with `only after:` naming it that waits at least needs.waitAtLeastMs, so a pass that meets the notice dismisses it, waits and goes on with the loop. "
+  + "wayOut is the handle the trial's page gave that control; find the same control on your page. Keep every other step as it is, then submit and test. If that step is not in your subflow, end the brief blocked and say which.";
+const REPAIR_PASSED_NOTE ="This brief repairs your subflow, but the trial named here passed, so it says nothing about what to change. Look at what your subflow's steps meet on the page now; "
   + "if they still do what your parts ask, end the brief blocked and say that nothing in this subflow failed, rather than write the same steps again.";
 
 /**
@@ -218,7 +230,7 @@ function repairOf(dispatcher: AutomationStudioProjectDispatcherInput, brief: Aut
   const held = receipt.kind === "subflow_trial" ? TRIALS.get(dispatcher)?.get(receipt.receiptId) : undefined;
   const seen = held?.ref.digest === receipt.digest ? held : undefined;
   const trial = brief.failingTrial ?? seen?.trial;
-  if (trial) return { receipt: named, ...structuredClone(trial), note: REPAIR_NOTE };
+  if (trial) return { receipt: named, ...structuredClone(trial), note: trial.verdict === "yes" ? REPAIR_RESCUED_NOTE : REPAIR_NOTE };
   return seen ? { receipt: named, verdict: "yes", note: REPAIR_PASSED_NOTE } : { receipt: named, note: REPAIR_UNHELD_NOTE };
 }
 

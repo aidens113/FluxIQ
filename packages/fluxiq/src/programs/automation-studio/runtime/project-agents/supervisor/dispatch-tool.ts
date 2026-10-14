@@ -12,6 +12,7 @@ import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { automationStudioProjectSupervisorDispatchOrder } from "./dispatch-order.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";
 import { automationStudioProjectSupervisorLeftOnTarget, type AutomationStudioProjectSupervisorLeftOnTarget } from "./left-on-target.ts";
+import type { AutomationStudioProjectSupervisorRescuedTest } from "./state.ts";
 import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-answer.ts";
 
 /** Floating-point slack, as the purse keeps it. */
@@ -70,6 +71,22 @@ const EPSILON_USD = 1e-9;
  *   stand as they were is answered `project.repair_unchanged`: test the
  *   latest assembled Flow again where it may be retested, assemble and test
  *   where nothing is assembled, or else amend the plan or end honestly.
+ *
+ * **A whole test the run rescued may be repaired (social debug, t603).**
+ * Social `run-mv8mebid-84ada5bd` passed its whole test only because the run
+ * recovered by itself when the site asked it to slow down; the trial gate held
+ * that yes back from completion, and the repair the supervisor rightly sent
+ * was refused four times as naming a trial that passed. A repair's
+ * `failingReceipt` may now name the latest whole test when it passed and the
+ * gate holds it back for what the run recovered from and the Flow does not
+ * answer (`rescuedTest`, `./state.ts`): its brief carries that trial with each
+ * such step from its step record (`interruptions`, `contracts/subflow-brief.ts`),
+ * which its builder is shown (`../dispatch/run-brief.ts`). A passing trial with
+ * nothing of the kind is still refused. When that repair cannot be made -- it
+ * comes back not done or changed nothing, or the purse cannot give a call of
+ * only such repairs its allowance -- the state says so, and the answer names
+ * the test that still stands (`wholeTestStands`), which the supervisor may
+ * then complete on (`./completion.ts`).
  */
 export async function automationStudioProjectSupervisorDispatchTool(context: AutomationStudioProjectSupervisorContext, value: JsonObject): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
   const { ports, state } = context;
@@ -79,20 +96,23 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
   const sent = Array.isArray(value.briefs) ? value.briefs.filter((brief): brief is JsonObject => Boolean(brief) && typeof brief === "object" && !Array.isArray(brief)) : [];
   const repeated = Array.isArray(value.briefs) && sent.length === value.briefs.length && sent.length && sent.every((brief) => brief.kind === "reset") ? repeatedReset(context) : undefined;
   if (repeated) return repeated;
+  // The latest whole test, when it passed only on the run's own recovery (header), and whether this call only repairs it.
+  const rescued = state.rescuedTest(context.controller, context.gate);
+  const onlyRescue = rescued !== undefined && sent.length > 0 && sent.length === (Array.isArray(value.briefs) ? value.briefs.length : -1) && sent.every((brief) => repairsRescued(brief, rescued));
   // Only a list of objects is sized; anything else is refused by the reading below, by its place.
   const sizing = ports.purse && Array.isArray(value.briefs) && sent.length === value.briefs.length && sent.length
     ? automationStudioProjectSupervisorBriefSizing({ sent, purse: ports.purse, structure, done: new Set(state.latestDone().keys()), supervisorCalls: ports.finishing?.supervisorCalls ?? 0 })
     : undefined;
   if (sizing && !sizing.ok) {
     const { ok: _ok, ...figures } = sizing;
-    return answer.refused("project.allowance_unavailable", GUIDANCE.refusals.allowanceUnavailable, { ...figures, canGiveUsd: usd(figures.canGiveUsd) });
+    return answer.refused("project.allowance_unavailable", GUIDANCE.refusals.allowanceUnavailable, { ...figures, canGiveUsd: usd(figures.canGiveUsd), ...unaffordable(context, onlyRescue ? rescued : undefined) });
   }
   const read = automationStudioProjectSupervisorBriefInput({ value, structure, taskSpec, after: state.after, ...(sizing ? { sizes: sizing.sizes } : {}), nextId: state.briefIds() });
   if (!read.ok) {
     const survey = read.issues.some((issue) => issue.code === "project.brief_survey_unavailable");
     return answer.refused(survey ? "project.brief_survey_unavailable" : "project.brief_refused", survey ? GUIDANCE.refusals.surveyUnavailable : GUIDANCE.refusals.briefRefused, { issues: read.issues });
   }
-  const failing = failingTrials(context, read.briefs);
+  const failing = failingTrials(context, read.briefs, rescued);
   if (failing.issues.length) return answer.refused("project.brief_refused", GUIDANCE.refusals.briefRefused, { issues: failing.issues });
   const spent = repeatedBrief(context, failing.briefs) ?? unchangedAgain(context, failing.briefs);
   if (spent) return spent;
@@ -100,7 +120,7 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
   if (!order.ok) return answer.refused(order.code === "cycle" ? "project.dispatch_cycle" : "project.predecessor_not_done", order.code === "cycle" ? GUIDANCE.refusals.dispatchCycle : GUIDANCE.refusals.predecessorNotDone, { issues: order.issues });
   const requestedUsd = order.ordered.reduce((sum, brief) => sum + brief.allowanceUsd, 0);
   const canGiveUsd = ports.purse?.allocatableUsd();
-  if (canGiveUsd !== undefined && requestedUsd > canGiveUsd + EPSILON_USD) return answer.refused("project.allowance_unavailable", GUIDANCE.refusals.allowanceUnavailable, { requestedUsd, canGiveUsd });
+  if (canGiveUsd !== undefined && requestedUsd > canGiveUsd + EPSILON_USD) return answer.refused("project.allowance_unavailable", GUIDANCE.refusals.allowanceUnavailable, { requestedUsd, canGiveUsd, ...unaffordable(context, onlyRescue ? rescued : undefined) });
   const earlier = state.answeredUnderPlan();
   // Each subflow's proposal a brief may replace, before any of them runs (header).
   const before = state.latestDone();
@@ -144,23 +164,46 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
   const unchanged = await changedNothing(context, order.ordered, returns, before);
   const allDone = returns.every((returned) => returned.outcome === "done");
   const reset = order.ordered.every((brief) => brief.kind === "reset");
+  // A repair of the rescued whole test that came back not done or changed nothing: that test still stands (header).
+  const short = rescued && order.ordered.some((brief, index) => brief.failingTrial?.verdict === "yes" && (returns[index]!.outcome !== "done" || unchanged.has(brief.briefId))) ? rescued : undefined;
+  if (short) state.recoveryRepairsShort.set(short.key, "short");
   return answer.answered({
     ok: true,
     returns: order.ordered.map((brief, index) => compact(brief, returns[index]!, unchanged.get(brief.briefId))),
     lastingActsInPlace: ports.projectLedger.snapshot().acts.filter((act) => act.inPlace).length,
-    next: unchanged.size ? GUIDANCE.next.afterRepairUnchanged : !allDone ? GUIDANCE.next.afterReturnsNotDone : reset ? GUIDANCE.next.afterReset : GUIDANCE.next.afterReturnsDone
+    ...(short ? { wholeTestStands: { complete: { revision: short.revision, digest: short.digest } } } : {}),
+    next: short ? GUIDANCE.next.afterRecoveryRepairShort : unchanged.size ? GUIDANCE.next.afterRepairUnchanged : !allDone ? GUIDANCE.next.afterReturnsNotDone : reset ? GUIDANCE.next.afterReset : GUIDANCE.next.afterReturnsDone
   }, { acted: true });
+}
+
+/** Whether a brief as sent repairs the rescued whole test, naming it by its receipt (header). */
+function repairsRescued(brief: JsonObject, rescued: AutomationStudioProjectSupervisorRescuedTest): boolean {
+  const receipt = brief.failingReceipt;
+  if (brief.kind !== "repair" || !receipt || typeof receipt !== "object" || Array.isArray(receipt)) return false;
+  return receipt.kind === rescued.receipt.kind && receipt.receiptId === rescued.receipt.receiptId && receipt.digest === rescued.receipt.digest;
+}
+
+/** Beside a refused allowance for a call of only repairs of the rescued whole test: the test that still stands, now marked as one its repair could not be paid for (header). */
+function unaffordable(context: AutomationStudioProjectSupervisorContext, rescued: AutomationStudioProjectSupervisorRescuedTest | undefined): JsonObject {
+  if (!rescued) return {};
+  context.state.recoveryRepairsShort.set(rescued.key, "money");
+  return { wholeTestStands: { complete: { revision: rescued.revision, digest: rescued.digest }, instruction: GUIDANCE.issues.recoveryRepairUnaffordable } };
 }
 
 type Issue = { code: string; path: string; why: string } & JsonObject;
 
-/** Each repair's failing receipt checked, and the latest whole test's read onto the brief that names it (header); every issue by its path. */
-function failingTrials(context: AutomationStudioProjectSupervisorContext, briefs: readonly AutomationStudioProjectSubflowBrief[]): { briefs: AutomationStudioProjectSubflowBrief[]; issues: Issue[] } {
+/**
+ * Each repair's failing receipt checked, and the latest whole test's read onto
+ * the brief that names it (header): one that did not pass, or one that passed
+ * only on the run's own recovery (`rescued`), with each step it recovered at;
+ * every issue by its path.
+ */
+function failingTrials(context: AutomationStudioProjectSupervisorContext, briefs: readonly AutomationStudioProjectSubflowBrief[], rescued: AutomationStudioProjectSupervisorRescuedTest | undefined): { briefs: AutomationStudioProjectSubflowBrief[]; issues: Issue[] } {
   const { state, controller, gate } = context;
   const latest = controller.latest();
   const standing = latest ? gate.standing(latest) : undefined;
-  // The whole test to name instead, when one stands that did not pass.
-  const wholeTest: JsonObject | undefined = latest && standing && standing.verdict !== "yes" ? { kind: "candidate_trial", receiptId: standing.trialRunId ?? `whole-test-${latest.revision}`, digest: latest.digest } : undefined;
+  // The whole test to name instead, when one stands that did not pass or passed only on the run's own recovery.
+  const wholeTest: JsonObject | undefined = latest && standing && (standing.verdict !== "yes" || rescued) ? { kind: "candidate_trial", receiptId: standing.trialRunId ?? `whole-test-${latest.revision}`, digest: latest.digest } : undefined;
   const issues: Issue[] = [];
   const refuse = (code: string, path: string, why: string) => {
     issues.push({ code, path, why, ...(wholeTest ? { wholeTest } : {}) });
@@ -171,7 +214,7 @@ function failingTrials(context: AutomationStudioProjectSupervisorContext, briefs
     if (brief.kind !== "repair" || !receipt) return brief;
     if (receipt.kind === "candidate_trial") {
       const names = latest && standing && latest.digest === receipt.digest && (standing.trialRunId === undefined || standing.trialRunId === receipt.receiptId);
-      const trial = names ? automationStudioProjectSubflowBrief.failingTrial(standing) : undefined;
+      const trial = names ? automationStudioProjectSubflowBrief.failingTrial(standing, rescued?.unanswered) : undefined;
       if (!names) refuse("project.failing_receipt_not_latest_test", path, GUIDANCE.issues.failingNotLatestTest);
       else if (!trial) refuse("project.failing_receipt_passed", path, GUIDANCE.issues.failingPassed);
       return trial ? { ...brief, failingTrial: trial } : brief;

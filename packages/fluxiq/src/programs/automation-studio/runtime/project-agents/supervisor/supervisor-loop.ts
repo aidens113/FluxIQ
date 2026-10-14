@@ -58,6 +58,13 @@
 // reset that overruns cannot carry the build past it. The outcome says
 // `timedOut`. A supervisor started again on a build under way starts a clock of
 // its own.
+//
+// **A pass the run rescued still stands (social debug, t603).** When the latest
+// whole test passed only on the run's own recovery from what the Flow does not
+// answer, and the build's money, time or turns ran out before its repair was
+// made, the run ends `candidate` on that test, not as an ending: the person is
+// told the Flow relies on the run's own recovery and why (`./completion.ts`),
+// and the outcome carries it (`reliesOnRecovery`).
 import { AutomationStudioFlowCandidateSubmissionController, AutomationStudioFlowCandidateTrialGate, type AutomationStudioCandidateTrialResult, type AutomationStudioFlowCandidate } from "../../flow-bootstrap/candidate/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError } from "../../flow-bootstrap/generation-failure/index.ts";
 import { automationStudioLlmBuildPurseRun, AutomationStudioLlmBuildPurseRefused } from "../../llm/build-purse/index.ts";
@@ -66,7 +73,7 @@ import { AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_MS, AUTOMATION_STUDIO_PROJECT_BU
 import { withAutomationStudioProjectAgent } from "../attribution/index.ts";
 import type { AutomationStudioProjectBuildEnding } from "../record/index.ts";
 import { automationStudioProjectSupervisorAssembleTool } from "./assemble-tool.ts";
-import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_COMPLETION_SCHEMA, automationStudioProjectSupervisorCompletion, type AutomationStudioProjectSupervisorEnded } from "./completion.ts";
+import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_COMPLETION_SCHEMA, automationStudioProjectSupervisorCompletion, automationStudioProjectSupervisorReliesOnRecovery, type AutomationStudioProjectSupervisorEnded } from "./completion.ts";
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { automationStudioProjectSupervisorDispatchTool } from "./dispatch-tool.ts";
 import { automationStudioProjectSupervisorLeftOnTarget } from "./left-on-target.ts";
@@ -75,7 +82,7 @@ import { automationStudioProjectSupervisorPlanning } from "./planning.ts";
 import type { AutomationStudioProjectSupervisorPorts } from "./ports.ts";
 import { automationStudioProjectSupervisorReadTask } from "./read-task.ts";
 import { automationStudioProjectSupervisorHostTools } from "./role-tools.ts";
-import { AutomationStudioProjectSupervisorState } from "./state.ts";
+import { AutomationStudioProjectSupervisorState, type AutomationStudioProjectSupervisorReliesOnRecovery } from "./state.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "./tool-ids.ts";
 import { automationStudioProjectSupervisorTools } from "./tools.ts";
 import { AutomationStudioProjectSupervisorWholeTrial } from "./whole-trial.ts";
@@ -95,6 +102,8 @@ export type AutomationStudioProjectSupervisorOutcome = {
   ending?: AutomationStudioProjectBuildEnding;
   /** Present when the run reached its time limit before a candidate passed (header). */
   timedOut?: true;
+  /** `candidate` only: the latest whole test passed only on the run's own recovery and its repair could not be made; what the person was told (header, t603). */
+  reliesOnRecovery?: AutomationStudioProjectSupervisorReliesOnRecovery;
   promotionAllowed: false;
 };
 
@@ -210,8 +219,14 @@ async function supervise(input: SupervisorInput, clock: Clock): Promise<Automati
   const candidate = controller.latest();
   // Out of time only when the loop did not complete: a completion or an honest ending given just as the work deadline passed stands.
   const timedOut = !loop?.ok && !outOfMoney && outOfTime(clock.work);
-  const done = (status: "candidate" | "ended", recorded?: AutomationStudioProjectBuildEnding): AutomationStudioProjectSupervisorOutcome => ({ loop, status, candidate, trial: gate.standing(candidate), ...(recorded ? { ending: recorded } : {}), ...(timedOut ? { timedOut: true as const } : {}), promotionAllowed: false });
+  const done = (status: "candidate" | "ended", recorded?: AutomationStudioProjectBuildEnding): AutomationStudioProjectSupervisorOutcome => ({
+    loop, status, candidate, trial: gate.standing(candidate), ...(recorded ? { ending: recorded } : {}), ...(timedOut ? { timedOut: true as const } : {}),
+    ...(status === "candidate" && state.reliesOnRecovery ? { reliesOnRecovery: structuredClone(state.reliesOnRecovery) } : {}), promotionAllowed: false
+  });
   if (loop?.ok && !ended) return done("candidate");
+  // A pass the run rescued still stands when the build's money, time or turns ran out before its repair (header, t603).
+  const shortfall = outOfMoney ? "money" : timedOut ? "time" : loop && !loop.ok && loop.code === "llm_evidence_loop.iteration_limit" ? "turns" : undefined;
+  if (shortfall && !signal?.aborted && automationStudioProjectSupervisorReliesOnRecovery(context, shortfall)) return done("candidate");
   const stoppedBy = loop && !loop.ok ? loop.code : stalled ? stalled.issueCodes[0] ?? "stalled" : undefined;
   const cancelled = !timedOut && (signal?.aborted === true || stoppedBy === "llm_evidence_loop.cancelled");
   const finished: AutomationStudioProjectSupervisorEnded | { outcome: "cancelled" | "partial" | "blocked"; reason: string } = outOfMoney

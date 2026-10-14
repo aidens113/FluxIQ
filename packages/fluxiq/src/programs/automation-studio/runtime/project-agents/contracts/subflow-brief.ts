@@ -32,13 +32,43 @@ import type { AutomationStudioProjectTaskSpec } from "./task-spec.ts";
 // (`failingTrial(...)` below), so its builder's opening look shows it
 // (`../dispatch/run-brief.ts`). The supervisor fills it in for the whole test
 // it names; a subflow trial's is filled in by the dispatcher, which ran it.
+//
+// **A pass the run rescued is a failing trial too (social debug, t603).**
+// Social `run-mv8mebid-84ada5bd`: the whole test passed only because the
+// runtime recovered by itself when the site asked the run to slow down -- it
+// waited, tried the step again and closed the site's notice -- and the Flow
+// had no step that does any of that. The trial gate holds that yes back from
+// completion (`flow-bootstrap/candidate/trial-gate.ts`, `slowDown`), so the
+// supervisor's repair of it was right, and was refused as naming a trial that
+// passed. A failing trial may now be a `yes` carrying `interruptions`: each
+// step where the run recovered from what the Flow does not answer, read from
+// the trial's own step record (its `absorbed` and `interruptions` entries and
+// the paces the run learned), never from what the page said, with what the
+// gate says the Flow needs there. A `yes` with none is still no failing trial.
 
-/** A repair's failing trial as Core read it (header): never a trial that passed. */
+/** A trial verdict that is not a pass. */
+type FailedVerdict = Exclude<AutomationStudioCandidateTrialVerdict, "yes">;
+
+/**
+ * A repair's failing trial as Core read it (header): a trial that did not
+ * pass, or one that passed only on the run's own recovery from interruptions
+ * the Flow does not answer, each named under `interruptions`.
+ */
 export type AutomationStudioProjectFailingTrial = {
-  verdict: Exclude<AutomationStudioCandidateTrialVerdict, "yes">;
+  verdict: FailedVerdict;
   /** The last step that failed, as the trial's own steps name it: its number, label, node, failure code and what happened. Absent when no step failed. */
   failedStep?: JsonObject;
   /** Everything else the trial said -- its code, what happened, what its judge read -- bounded. */
+  said: JsonObject;
+} | {
+  verdict: "yes";
+  /**
+   * Each step where the run recovered by itself from what the Flow does not
+   * answer (header): its number, label and control, what the site did and how
+   * the run recovered (`absorbed`, `interruptions`, `learned`), and what the
+   * Flow needs there (`needs`), each bounded.
+   */
+  interruptions: JsonObject[];
   said: JsonObject;
 };
 
@@ -78,8 +108,8 @@ export type AutomationStudioProjectSubflowBrief = {
 };
 
 /** `iterations` is the builder loop's own most, so no brief can carry a length its loop refuses (t577). `said`, `step` and `scalar` bound a failing trial, in JSON characters. */
-const LIMITS = { parts: 50, predecessors: 40, excerpt: 20_000, iterations: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations, calls: 10_000, said: 8_000, step: 3_000, scalar: 500 } as const;
-const FAILED_VERDICTS = AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS.filter((verdict): verdict is AutomationStudioProjectFailingTrial["verdict"] => verdict !== "yes");
+const LIMITS = { parts: 50, predecessors: 40, excerpt: 20_000, iterations: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations, calls: 10_000, said: 8_000, step: 3_000, scalar: 500, interruptions: 10 } as const;
+const FAILED_VERDICTS = AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS.filter((verdict): verdict is FailedVerdict => verdict !== "yes");
 
 export const automationStudioProjectSubflowBrief = Object.freeze({
   parse(value: unknown): AutomationStudioProjectParse<AutomationStudioProjectSubflowBrief> {
@@ -111,16 +141,46 @@ export const automationStudioProjectSubflowBrief = Object.freeze({
 
   /**
    * A trial that did not pass, as a repair carries it (header): the last step
-   * that failed, and everything else it said, each bounded. Undefined for a
-   * trial that passed.
+   * that failed, and everything else it said, each bounded. A trial that
+   * passed is one only with `unanswered` -- what the trial gate says its Flow
+   * does not answer yet (`slowDown`), one entry per step -- and carries each
+   * such step as its own step record has it; with none it is undefined.
    */
-  failingTrial(trial: { verdict: AutomationStudioCandidateTrialVerdict; feedback: JsonObject }): AutomationStudioProjectFailingTrial | undefined {
-    if (trial.verdict === "yes") return undefined;
+  failingTrial(trial: { verdict: AutomationStudioCandidateTrialVerdict; feedback: JsonObject }, unanswered: readonly JsonObject[] = []): AutomationStudioProjectFailingTrial | undefined {
     const { steps, ...rest } = trial.feedback;
+    if (trial.verdict === "yes") {
+      if (!unanswered.length) return undefined;
+      const recorded = Array.isArray(steps) ? steps.filter(isObject) : [];
+      const paces = Array.isArray(rest.paces) ? rest.paces.filter(isObject) : [];
+      return { verdict: "yes", interruptions: unanswered.slice(0, LIMITS.interruptions).map((entry) => bounded(interruption(entry, recorded, paces), LIMITS.step)), said: bounded(rest, LIMITS.said) };
+    }
     const failed = Array.isArray(steps) ? [...steps].reverse().find((step): step is JsonObject => isObject(step) && step.status === "failed") : undefined;
     return { verdict: trial.verdict, ...(failed ? { failedStep: bounded(failed, LIMITS.step) } : {}), said: bounded(rest, LIMITS.said) };
   }
 });
+
+/**
+ * One step the gate says the Flow does not answer, as the trial's step record
+ * has it (header): the step's number, label, node and control, what the run
+ * absorbed there and the layers it closed, any pace the run learned for it,
+ * and what the gate says the Flow needs (`needs`).
+ */
+function interruption(entry: JsonObject, steps: readonly JsonObject[], paces: readonly JsonObject[]): JsonObject {
+  const { step: number, label, ...needs } = entry;
+  const record = typeof number === "number" ? steps.find((step) => step.step === number) : undefined;
+  const learned = paces.filter((pace) => (record ? pace.definitionId === record.definitionId && pace.label === record.label && pace.control === record.control : pace.label === label));
+  const field = (key: string): JsonObject => (record?.[key] !== undefined ? { [key]: record[key]! } : {});
+  return {
+    ...(number !== undefined ? { step: number } : {}),
+    ...(label !== undefined ? { label } : {}),
+    ...field("definitionId"),
+    ...field("control"),
+    ...field("absorbed"),
+    ...field("interruptions"),
+    ...(learned.length ? { learned } : {}),
+    needs
+  };
+}
 
 /** `value` whole when it fits in `max` JSON characters; otherwise its plain fields alone, each text cut short. */
 function bounded(value: JsonObject, max: number): JsonObject {
@@ -135,8 +195,16 @@ function bounded(value: JsonObject, max: number): JsonObject {
 
 /** A failing trial as a recorded brief holds it; throws a refusal for `shape.parse`. */
 function readFailingTrial(value: unknown, path: string): AutomationStudioProjectFailingTrial {
-  const fields = shape.object(value, path, ["verdict", "said"], ["failedStep"]);
-  const trial: AutomationStudioProjectFailingTrial = { verdict: shape.oneOf(fields.verdict, `${path}.verdict`, FAILED_VERDICTS), said: jsonObject(fields.said, `${path}.said`, LIMITS.said) };
+  const fields = shape.object(value, path, ["verdict", "said"], ["failedStep", "interruptions"]);
+  const said = jsonObject(fields.said, `${path}.said`, LIMITS.said);
+  // A pass is a failing trial only with the interruptions its run recovered from by itself (header).
+  if (fields.verdict === "yes" && fields.interruptions !== undefined && fields.failedStep === undefined) {
+    const interruptions = shape.array(fields.interruptions, `${path}.interruptions`, LIMITS.interruptions).map((entry, index) => jsonObject(entry, `${path}.interruptions.${index}`, LIMITS.step));
+    if (!interruptions.length) return shape.refuse("project.brief_failing_receipt", `${path}.interruptions`);
+    return { verdict: "yes", interruptions, said };
+  }
+  if (fields.interruptions !== undefined) return shape.refuse("project.brief_failing_receipt", `${path}.interruptions`);
+  const trial: Extract<AutomationStudioProjectFailingTrial, { verdict: FailedVerdict }> = { verdict: shape.oneOf(fields.verdict, `${path}.verdict`, FAILED_VERDICTS), said };
   if (fields.failedStep !== undefined) trial.failedStep = jsonObject(fields.failedStep, `${path}.failedStep`, LIMITS.step);
   return trial;
 }

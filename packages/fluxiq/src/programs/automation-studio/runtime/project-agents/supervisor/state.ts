@@ -1,4 +1,6 @@
-import type { AutomationStudioProjectBuilderReturn, AutomationStudioProjectStructurePlan, AutomationStudioProjectSubflowBrief, AutomationStudioProjectTaskSpec } from "../contracts/index.ts";
+import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioFlowCandidateSubmissionController, AutomationStudioFlowCandidateTrialGate } from "../../flow-bootstrap/candidate/index.ts";
+import type { AutomationStudioProjectBuilderReturn, AutomationStudioProjectReceiptRef, AutomationStudioProjectStructurePlan, AutomationStudioProjectSubflowBrief, AutomationStudioProjectTaskSpec } from "../contracts/index.ts";
 import type { AutomationStudioProjectBuildRecordView } from "../record/index.ts";
 
 /** A brief and the return that answered it. */
@@ -22,6 +24,31 @@ export type AutomationStudioProjectSupervisorCarried = {
  * latest whole test (`standing`, a key the dispatch tool compares).
  */
 export type AutomationStudioProjectSupervisorUnchangedRepair = { briefId: string; sameAs: { briefId: string; revision: number }; planDigest: string; standing: string };
+
+/**
+ * The latest whole test when it passed only on the run's own recovery from
+ * what its Flow does not answer (t603, below): the assembled revision, the
+ * receipt a repair names it by, what the trial gate says is unanswered
+ * (`unanswered`, its `slowDown`), and one key for this exact trial.
+ */
+export type AutomationStudioProjectSupervisorRescuedTest = { key: string; revision: number; digest: string; receipt: AutomationStudioProjectReceiptRef; unanswered: JsonObject[] };
+
+/** Why a rescued test's repair could not be made (below): it came back without the change, or the build's money, time or turns ran out first. */
+export type AutomationStudioProjectSupervisorRecoveryShortfall = "short" | "money" | "time" | "turns";
+
+/** What the person is told when the supervisor completes on a rescued test (t603, below). */
+export type AutomationStudioProjectSupervisorReliesOnRecovery = { revision: number; digest: string; receiptId: string; why: AutomationStudioProjectSupervisorRecoveryShortfall; steps: JsonObject[]; told: string };
+
+/** The trial gate's refusal of a yes whose Flow does not answer what the site asked the run to do (`flow-bootstrap/candidate/trial-gate.ts`). */
+const SLOW_DOWN_UNHANDLED = "candidate.trial_slow_down_unhandled";
+
+/** The words that end what the person is told, by why the repair could not be made (below). */
+const SHORTFALL_WORDS: Readonly<Record<AutomationStudioProjectSupervisorRecoveryShortfall, string>> = Object.freeze({
+  short: "A repair to add that came back without it.",
+  money: "The build's spending limit could not pay for a repair to add that.",
+  time: "The build reached its time limit before a repair to add that was made.",
+  turns: "The build ran out of turns before a repair to add that was made."
+});
 
 /** A plan as the supervisor takes it into force: what `project.write_plan` and `project.amend_plan` read. */
 type Adopted = { taskSpec: AutomationStudioProjectTaskSpec; structure: AutomationStudioProjectStructurePlan; purposes: Record<string, string>; after: Record<string, string[]> };
@@ -63,6 +90,19 @@ const PROPOSING: ReadonlySet<AutomationStudioProjectSubflowBrief["kind"]> = new 
  * acts and facts, and words that differ by at most `EDGE_WORDS` words at their
  * ends keep the proposal, and the amendment's answer names those parts under
  * `reworded`.
+ *
+ * **A pass the run rescued is repaired, or relied on and said (t603).** Social
+ * `run-mv8mebid-84ada5bd` passed its whole test only because the runtime
+ * recovered by itself when the site asked the run to slow down; the trial gate
+ * held that yes back, and the repair sent for it was refused four times as
+ * naming a trial that passed. Such a test (`rescuedTest`) is read from the
+ * trial gate's own completion answer -- what it found in the trial's step
+ * record that the Flow does not answer -- never from page words, and a repair
+ * may name it. When that repair cannot be made -- it came back without the
+ * change, or money, time or turns ran out first (`recoveryRepairsShort`) --
+ * the passing test still stands: the supervisor completes on it
+ * (`relyOnRecovery`) and the person is told the Flow relies on the run's own
+ * recovery, and why.
  */
 export class AutomationStudioProjectSupervisorState {
   taskSpec: AutomationStudioProjectTaskSpec | undefined;
@@ -99,6 +139,10 @@ export class AutomationStudioProjectSupervisorState {
   readonly sentAs = new Map<string, string>();
   /** The latest repair of each subflow that came back unchanged, by subflow key (`AutomationStudioProjectSupervisorUnchangedRepair`). */
   readonly unchangedRepairs = new Map<string, AutomationStudioProjectSupervisorUnchangedRepair>();
+  /** Each rescued whole test whose repair could not be made, by its key, with why (header). */
+  readonly recoveryRepairsShort = new Map<string, AutomationStudioProjectSupervisorRecoveryShortfall>();
+  /** Set once the supervisor completed on a rescued test: what the person was told (header). */
+  reliesOnRecovery: AutomationStudioProjectSupervisorReliesOnRecovery | undefined;
   /** Every plan and task spec this build has had, by digest: what an amendment's comparison reads. */
   private readonly plans = new Map<string, AutomationStudioProjectStructurePlan>();
   private readonly specs = new Map<string, AutomationStudioProjectTaskSpec>();
@@ -206,6 +250,32 @@ export class AutomationStudioProjectSupervisorState {
   resetCameBackLast(): boolean {
     const latest = this.briefs.at(-1);
     return latest?.kind === "reset" && this.returns.has(latest.briefId);
+  }
+
+  /**
+   * The latest assembled Flow's latest whole test, when it passed and the
+   * trial gate holds it back from completion only for what the run recovered
+   * from by itself and the Flow does not answer (header); undefined otherwise.
+   */
+  rescuedTest(controller: Pick<AutomationStudioFlowCandidateSubmissionController, "latest">, gate: Pick<AutomationStudioFlowCandidateTrialGate, "standing" | "completion">): AutomationStudioProjectSupervisorRescuedTest | undefined {
+    const latest = controller.latest();
+    const standing = latest ? gate.standing(latest) : undefined;
+    if (!latest || standing?.verdict !== "yes") return undefined;
+    const checked = gate.completion({ revision: latest.revision, digest: latest.digest });
+    if (checked.ok || !checked.issueCodes.includes(SLOW_DOWN_UNHANDLED)) return undefined;
+    const unanswered = Array.isArray(checked.feedback.slowDown) ? checked.feedback.slowDown.filter((entry): entry is JsonObject => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry)) : [];
+    if (!unanswered.length) return undefined;
+    const receiptId = standing.trialRunId ?? `whole-test-${latest.revision}`;
+    return { key: JSON.stringify([latest.revision, latest.digest, receiptId]), revision: latest.revision, digest: latest.digest, receipt: { kind: "candidate_trial", receiptId, digest: latest.digest }, unanswered: structuredClone(unanswered) };
+  }
+
+  /** Completes on `test`, which the build could not repair for `why` (header): what the person is told, kept for the run's outcome. */
+  relyOnRecovery(test: AutomationStudioProjectSupervisorRescuedTest, why: AutomationStudioProjectSupervisorRecoveryShortfall): AutomationStudioProjectSupervisorReliesOnRecovery {
+    const at = test.unanswered.map((entry) => `${typeof entry.step === "number" ? `step ${entry.step}` : "a step"}${typeof entry.label === "string" ? ` (${JSON.stringify(entry.label)})` : ""}`);
+    const where = at.length > 1 ? `${at.slice(0, -1).join(", ")} and ${at.at(-1)}` : at[0]!;
+    const told = `The Flow passed its whole test, but the site asked the run to slow down at ${where}, and the Flow does not answer that itself: it relies on the run's own recovery, which waits, tries the step again and closes the site's notice. ${SHORTFALL_WORDS[why]}`;
+    this.reliesOnRecovery = { revision: test.revision, digest: test.digest, receiptId: test.receipt.receiptId, why, steps: structuredClone(test.unanswered), told };
+    return structuredClone(this.reliesOnRecovery);
   }
 
   /** Whether any brief came back done. */

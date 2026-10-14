@@ -113,6 +113,30 @@ describe("a repair brief's builder", () => {
     });
   });
 
+  it("is shown a whole test that passed only on the run's own recovery as what to answer: each step it recovered at and what the Flow needs there (t603)", async () => {
+    const firstSeen: Entry[][] = [];
+    const interruption: JsonObject = {
+      step: 3, label: "press save", definitionId: "web.dom.click", control: "Save",
+      absorbed: [{ failureCode: "web.action.rate_limited", happened: "The site asked the run to slow down on pass 2, and to try again in 5 s.", askedWaitMs: 5000, waitedMs: 5000 }],
+      interruptions: [{ kind: "rate_limit", wayOut: "t40", said: "The run closed the site's notice by its way out, t40." }],
+      needs: { paceAtLeastMs: 5000, wayOut: "t40", waitAtLeastMs: 5000 }
+    };
+    const brief = repair("b-paced", (value) => {
+      value.failingReceipt = { kind: "candidate_trial", receiptId: "run-8", digest: "a".repeat(64) };
+      value.failingTrial = { verdict: "yes", interruptions: [interruption], said: { judge: "Judged to do what was asked." } };
+    });
+    const build = await gardenBuild({ capacity: 1, briefs: [brief], ports: { builder: scripted("yes", firstSeen) } });
+    build.dispatcherInput.runBuilder = runAutomationStudioSubflowBuilderLoop;
+    expect((await build.run()).returns[0]).toMatchObject({ briefId: "b-paced", outcome: "done" });
+    const shown = opening(firstSeen[0]!)?.repairOf as JsonObject;
+    expect(shown).toMatchObject({ receipt: { kind: "candidate_trial", receiptId: "run-8" }, verdict: "yes", interruptions: [interruption], said: { judge: "Judged to do what was asked." } });
+    const note = String(shown.note);
+    for (const words of ["interruptions", "needs.paceAtLeastMs", "`repeat pace:`", "`optional: yes`", "`builtin.timing.wait`", "`only after:`", "end the brief blocked"]) expect(note).toContain(words);
+    // Model guidance never teaches to the test: the note names no realistic scenario's site or task.
+    expect(note.match(/store|shop|marketplace|retail|classified|auction|photo|social|network|feed|company|website|professional|product|seller|listing|follow|like\b|post\b|profile|resume|vacanc|apply/iu)?.[0]).toBeUndefined();
+    expect(note.match(/friend|cart\b|basket|bid\b|watchlist|coupon|connection|invitation|job|quote|rate limit|digest|quantity|rating/iu)?.[0]).toBeUndefined();
+  });
+
   it("is told plainly when the trial its brief names is not held, never shown a failure it cannot see", async () => {
     const firstSeen: Entry[][] = [];
     const brief = repair("b-fix", (value) => (value.failingReceipt = { kind: "subflow_trial", receiptId: "run.elsewhere", digest: "d".repeat(64) }));
