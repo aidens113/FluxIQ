@@ -150,4 +150,29 @@ describe("the subflow trial gate", () => {
     expect((await none.test(receipt)).resultCode).toBe("subflow.trial_unavailable");
     expect(none.completion(proposal)).toEqual({ ok: true });
   });
+  // A8 launch 8 (t601): every judge answered yes, Core held the yes for its exclusion evidence, and "change and resubmit it if the feedback
+  // names a cause" had the builder rewrite a correct subflow seven times.
+  it("says a not_judged its judges answered yes to as a yes Core could not confirm, and asks for no rewrite", async () => {
+    // The reasons Core's result verification gives that hold, word for word (`result-verification/agreement.ts`, `verdict.ts`): its barrel does not export the agreement.
+    const reasons = [
+      "The checks did not provide the required exclusion evidence, so the result remains unconfirmed.",
+      "The affirmative judgement did not supply the required row-local exclusion evidence, so the result remains unconfirmed."
+    ];
+    for (const why of reasons) {
+      const held = gateWith(async (request) => answer(request, { verdict: "not_judged", feedback: { code: "candidate.trial_not_judged", why } }));
+      expect(((await held.test(receipt)).evidence as JsonObject).instruction).toContain("The judges answered yes for this revision");
+    }
+    const gate = gateWith(async (request) => answer(request, { verdict: "not_judged", feedback: { code: "candidate.trial_not_judged", why: reasons[0]! } }));
+    const ran = await gate.test(receipt);
+    const told = (ran.evidence as JsonObject).instruction as string;
+    expect(told).toContain("The judges answered yes for this revision and none answered no, but Core could not confirm that yes");
+    expect(told).toContain("do not rewrite it or change which rows it keeps");
+    expect(told).not.toContain("change and resubmit");
+    expect(ran.resultReason).toBe("retry_allowed");
+    // The completion's refusal says the same.
+    expect(gate.completion(proposal)).toMatchObject({ ok: false, issueCodes: ["subflow.trial_not_judged"], feedback: { instruction: told } });
+    // Any other not_judged is said as before.
+    const other = gateWith(async (request) => answer(request, { verdict: "not_judged", feedback: { code: "candidate.trial_not_judged", why: "The judge did not answer inside its deadline, so the test was not judged." } }));
+    expect(((await other.test(receipt)).evidence as JsonObject).instruction).toBe("The trial was not judged, so this revision cannot complete. Test it again, or change and resubmit it if the feedback names a cause in the subflow.");
+  });
 });

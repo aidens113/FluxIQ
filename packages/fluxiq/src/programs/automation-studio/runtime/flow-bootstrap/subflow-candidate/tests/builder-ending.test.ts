@@ -68,7 +68,10 @@ describe("a subflow builder's honest ending", () => {
 
   it("offers the ending in its completion schema and its submit tool", async () => {
     const { observed } = await build([submit, test, end({ ended: "blocked", reason: WHY })]);
-    expect(observed[0]!.completionSchema).toEqual({ type: "object", properties: { subflowKey: { type: "string", const: "find_listing" }, revision: { type: "integer" }, digest: { type: "string" }, ended: { type: "string", enum: ["blocked", "partial"] }, reason: { type: "string" } }, additionalProperties: false });
+    expect(observed[0]!.completionSchema).toMatchObject({ type: "object", properties: { subflowKey: { type: "string", const: "find_listing" }, revision: { type: "integer" }, digest: { type: "string" }, ended: { type: "string", enum: ["blocked", "partial"] }, reason: { type: "string" } }, additionalProperties: false });
+    // The receipt or the ending whole (t601): what the check reads, and a passing receipt stands whatever else it carries.
+    expect(observed[0]!.completionSchema!.anyOf).toEqual([{ required: ["subflowKey", "revision", "digest"] }, { required: ["ended", "reason"] }]);
+    expect(observed[0]!.completionSchema!.description).toContain("A receipt whose trial answered yes is taken as the brief done whatever else it carries.");
     const description = observed[0]!.tools.find((tool) => tool.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!.description;
     expect(description).toContain("end the brief instead: complete with {\"ended\": \"blocked\", \"reason\": \"<why, in a sentence>\"}");
   });
@@ -125,5 +128,37 @@ describe("a subflow builder's honest ending", () => {
     const plain = await build([submit, test, test]);
     expect(plain.outcome.ended).toBeUndefined();
     expect(plain.outcome.lastTrial).toMatchObject({ verdict: "execution_failed" });
+  });
+  // A8 launch 8 (t601): a builder whose trial answered yes completed four times with its receipt plus `ended: "partial"`,
+  // was refused `subflow.ending_shape` each time with only the ending's shape named, and the brief came back partial.
+  describe("a receipt sent beside an ending", () => {
+    const mixed = (extra: JsonObject): Step => (evidence) => ({ kind: "complete", result: { subflowKey: "find_listing", ...receiptOf(evidence), ...extra } });
+
+    it("is the brief done when a yes stands for the proposal it names, its ending set aside", async () => {
+      const { outcome, shown } = await build([submit, test, mixed({ ended: "partial", reason: "It is a partial trial." })], YES);
+      expect(outcome.loop.ok, JSON.stringify(outcome.loop)).toBe(true);
+      expect(outcome.ended).toBeUndefined();
+      expect(outcome.trial).toMatchObject({ verdict: "yes", entryPrepared: true });
+      expect(JSON.stringify(shown.flat())).not.toContain("subflow.ending_shape");
+    });
+
+    it("is the honest ending it carries when no yes stands for the proposal it names", async () => {
+      const { outcome } = await build([submit, test, mixed({ ended: "partial", reason: WHY })]);
+      expect(outcome.loop.ok, JSON.stringify(outcome.loop)).toBe(true);
+      expect(outcome.ended).toEqual({ outcome: "partial", reason: WHY });
+    });
+
+    it("is refused naming the one shape to send when it names no latest proposal, or carries a key neither has", async () => {
+      const stale: Step = (evidence) => ({ kind: "complete", result: { subflowKey: "find_listing", revision: receiptOf(evidence).revision + 1, digest: receiptOf(evidence).digest, ended: "partial", reason: WHY } });
+      const failing = await build([submit, test, stale, end({ ended: "blocked", reason: WHY })]);
+      const refused = failing.shown.flat().find((feedback) => feedback.code === "subflow.ending_shape")!;
+      expect(refused.instruction).toContain("No trial answered yes for the latest proposal of this subflow, so this completion can only end the brief: send exactly {\"ended\": \"blocked\"");
+      expect(failing.outcome.ended).toEqual({ outcome: "blocked", reason: WHY });
+      // Where a yes stands, the one shape is that proposal's exact receipt.
+      const passing = await build([submit, test, end({ outcome: "done" }), receipt], YES);
+      const told = passing.shown.flat().find((feedback) => feedback.code === "subflow.ending_shape")!;
+      expect(told.instruction).toMatch(/^Revision 1 of this subflow passed its trial, so the brief is done: complete with exactly \{"subflowKey": "find_listing", "revision": 1, "digest": "[0-9a-f]+"\} and nothing else\.$/u);
+      expect(passing.outcome.loop.ok).toBe(true);
+    });
   });
 });
