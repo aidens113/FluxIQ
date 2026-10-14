@@ -36,7 +36,9 @@ export const automationStudioProjectBuilderReturn = Object.freeze({
     if (returned.proposal && returned.proposal.subflowKey !== brief.subflowKey) issues.push({ code: "project.return_subflow_mismatch", path: "return.proposal.subflowKey" });
     if (brief.kind === "survey" && returned.proposal) issues.push({ code: "project.return_survey_proposal", path: "return.proposal" });
     if (brief.kind !== "survey" && returned.findings) issues.push({ code: "project.return_findings_not_survey", path: "return.findings" });
-    if (returned.outcome === "done" && brief.kind !== "survey" && !returned.proposal) issues.push({ code: "project.return_done_without_proposal", path: "return.proposal" });
+    // A reset is done when nothing of the build is left to undo; it proposes no subflow.
+    if (brief.kind === "reset" && returned.proposal) issues.push({ code: "project.return_reset_proposal", path: "return.proposal" });
+    if (returned.outcome === "done" && brief.kind !== "survey" && brief.kind !== "reset" && !returned.proposal) issues.push({ code: "project.return_done_without_proposal", path: "return.proposal" });
     if (returned.outcome === "done" && brief.kind === "survey" && !returned.findings?.length) issues.push({ code: "project.return_done_without_findings", path: "return.findings" });
     return issues;
   }

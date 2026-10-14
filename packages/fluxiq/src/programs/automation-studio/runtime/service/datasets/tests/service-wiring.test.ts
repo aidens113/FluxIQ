@@ -103,6 +103,7 @@ async function extractionFlow(service: AutomationStudioService, projectId: strin
     }
   });
   await service.setFlowMapFallback({ projectId, flowId: flow.flowId, kind: "subflow", targetSubflowId: subflow.subflowId });
+  await service.saveFlowGenerationInstruction({ projectId, flowId: flow.flowId, instruction: "Read the listed records." });
   return flow;
 }
 
@@ -266,6 +267,7 @@ describe("the answer a run's datasets hold once the run ends", () => {
       }
     });
     await service.setFlowMapFallback({ projectId, flowId: flow.flowId, kind: "subflow", targetSubflowId: subflow.subflowId });
+    await service.saveFlowGenerationInstruction({ projectId, flowId: flow.flowId, instruction: "Read the listed records twice." });
     return flow;
   }
 

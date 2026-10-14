@@ -45,6 +45,7 @@ async function writeAsRunning(service: AutomationStudioService, projectId: strin
 async function queuedRun(service: AutomationStudioService, flowId: string): Promise<{ projectId: string; session: AutomationStudioRuntimeSession }> {
   const project = await service.createProject({ name: `Project ${flowId}` });
   const flow = await createRunnableCanonicalFlow(service, project.id, { flowId });
+  await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Calculate the requested constant." });
   return { projectId: project.id, session: await service.startRuntimeSession({ projectId: project.id, flowId: flow.flowId }) };
 }
 
