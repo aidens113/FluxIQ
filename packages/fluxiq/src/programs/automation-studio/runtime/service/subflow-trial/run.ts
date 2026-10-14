@@ -3,7 +3,11 @@
 //
 // 1. The predecessors' latest proposals, from the dispatcher
 //    (`predecessorProposals`). One missing, or proposed against another plan,
-//    runs nothing: the entry cannot be prepared.
+//    runs nothing: the entry cannot be prepared. A proposal made under an
+//    earlier plan of the build counts where the build says the plan in force
+//    kept it (`keptUnder`, t590: an amendment that left that subflow as it
+//    was, `project-agents/supervisor/state.ts`); one the amendment changed is
+//    still stale.
 // 2. The start, exactly as a whole candidate's trial makes it
 //    (`./start.ts`): the deployment's start hook when it has one. When the
 //    subflow trial gate holds the build's site reset, it asks the port to run
@@ -77,7 +81,7 @@ export async function runAutomationStudioSubflowTrial(request: AutomationStudioS
     return answer("execution_failed", { code, partial: true, entryPrepared: false }, { ...notRun, code });
   }
   const predecessors = await ports.predecessorProposals(scope);
-  const unprepared = unpreparedEntry(scope, predecessors);
+  const unprepared = unpreparedEntry(scope, predecessors, ports.keptUnder);
   if (unprepared) return answer("execution_failed", { ...unprepared, partial: true, entryPrepared: false }, { ...notRun, code: unprepared.code });
   const identity = await identityOf(scope, proposal, predecessors, ports);
   if (!identity) return answer("execution_failed", { code: "subflow.trial_build_gone", partial: true, entryPrepared: false }, { ...notRun, code: "subflow.trial_build_gone" });
@@ -167,12 +171,13 @@ function proposalOf(scope: AutomationStudioSubflowScope, proposal: Readonly<Auto
 }
 
 /** Why the entry cannot be prepared from these proposals, or nothing when it can. */
-function unpreparedEntry(scope: AutomationStudioSubflowScope, predecessors: readonly AutomationStudioSubflowProposal[]): { code: string; missing?: string[]; stale?: string[] } | undefined {
+function unpreparedEntry(scope: AutomationStudioSubflowScope, predecessors: readonly AutomationStudioSubflowProposal[], keptUnder: AutomationStudioSubflowTrialPorts["keptUnder"]): { code: string; missing?: string[]; stale?: string[] } | undefined {
   const keys = predecessors.map((predecessor) => predecessor.scope.subflowKey);
   if (keys.length !== scope.predecessors.length || keys.some((key, index) => key !== scope.predecessors[index])) {
     return { code: "subflow.trial_predecessor_missing", missing: scope.predecessors.filter((key) => !keys.includes(key)) };
   }
-  const stale = predecessors.filter((predecessor) => predecessor.scope.buildId !== scope.buildId || predecessor.scope.planDigest !== scope.planDigest).map((predecessor) => predecessor.scope.subflowKey);
+  const current = (predecessor: AutomationStudioSubflowProposal) => predecessor.scope.planDigest === scope.planDigest || keptUnder?.(predecessor.scope.subflowKey, predecessor.scope.planDigest, scope.planDigest) === true;
+  const stale = predecessors.filter((predecessor) => predecessor.scope.buildId !== scope.buildId || !current(predecessor)).map((predecessor) => predecessor.scope.subflowKey);
   return stale.length ? { code: "subflow.trial_predecessor_stale", stale } : undefined;
 }
 

@@ -8,7 +8,8 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
 
 /**
  * `project.assemble`: each subflow's latest done proposal under the plan in
- * force, read whole through the proposals port by the revision and digest
+ * force, or the one it kept from an earlier plan (`./state.ts`, t590, which
+ * assembly is told, `kept`), read whole through the proposals port by the revision and digest
  * its return named (a proposal that is not the one named counts as none),
  * composed into one plan (`./assembly.ts`), and submitted through the whole
  * candidate's controller as a composed submission
@@ -30,7 +31,7 @@ export async function automationStudioProjectSupervisorAssembleTool(context: Aut
     predecessors.set(subflowKey, brief.entry.predecessors);
     from.push({ subflowKey, briefId: brief.briefId, revision: named.revision });
   }
-  const assembled = automationStudioProjectAssembly({ structure, proposals, predecessors });
+  const assembled = automationStudioProjectAssembly({ structure, proposals, predecessors, kept: state.keptFromEarlierPlans() });
   if (!assembled.ok) return answer.refused("project.assemble_refused", GUIDANCE.refusals.assembleRefused, { issues: assembled.issues });
   const summary = typeof value.summary === "string" && value.summary.trim() ? value.summary.trim() : `A Flow of ${structure.plan.subflows.length} subflows, assembled from their builders' proposals.`;
   const submitted = await controller.submitComposed({ plan: assembled.assembled.plan, summary }, { trialOf: (candidate) => gate.standing(candidate), refuted: (digest) => gate.refuted(digest) });

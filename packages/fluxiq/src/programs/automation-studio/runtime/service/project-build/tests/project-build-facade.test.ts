@@ -12,6 +12,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
+import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
+import { automationStudioActivityHub } from "../../../activity/index.ts";
+import { parseAutomationStudioFlowBootstrapGenerationError } from "../../../flow-bootstrap/index.ts";
 import type { AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import type { AutomationStudioHostResourceAcquireResult, AutomationStudioHostResourceHolder, AutomationStudioHostResourcePort } from "../../../project-agents/index.ts";
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";
@@ -94,8 +97,42 @@ class CountingHost implements AutomationStudioHostResourcePort {
   }
 }
 
-async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capacity?: number; domainText?: string; proposedCheck?: JsonObject[] } = {}) {
+/**
+ * The supervisor's script in place of plan, dispatch, assemble, test (t590).
+ * `amend`: the second part runs after the first; the first is built, the plan
+ * amended with only what nobody asked for changed, and the second then sent.
+ * `ends`: the one builder never submits, so its brief comes back short, and
+ * the supervisor ends honestly.
+ */
+type Script = "amend" | "ends";
+const ENDED_REASON = "The control the task names is not on the start page.\nNo other way to it was found.";
+
+function scripted(script: Script, decisionNumber: number, evidence: readonly Entry[]): ReturnType<typeof decision> | undefined {
+  const assembled = lastOf(evidence, "project.assemble")?.complete as JsonObject | undefined;
+  const after = planInput("two_parts");
+  const subflows = (after.subflows as JsonObject[]).map((subflow) => (subflow.key === "second" ? { ...subflow, after: ["first"] } : subflow));
+  const brief = (subflowKey: string, parts: string[], predecessors: string[]) => ({ kind: "build", subflowKey, parts, entry: { caseId: "observed-current", predecessors }, allowanceUsd: 0.01, maxIterations: 6 });
+  if (script === "ends") {
+    if (decisionNumber === 1) return decision({ kind: "tool_call", callId: "plan", toolId: "project.write_plan", input: planInput("one_part") });
+    if (decisionNumber === 2) return decision({ kind: "tool_call", callId: "dispatch", toolId: "project.dispatch", input: { reason: "Build the subflow.", briefs: [brief("main", ["p1"], [])] } });
+    return decision({ kind: "complete", result: { ended: "blocked", reason: ENDED_REASON } });
+  }
+  switch (decisionNumber) {
+    case 1: return decision({ kind: "tool_call", callId: "plan", toolId: "project.write_plan", input: { ...after, subflows } });
+    case 2: return decision({ kind: "tool_call", callId: "dispatch-first", toolId: "project.dispatch", input: { reason: "Build the first part.", briefs: [brief("first", ["p1"], [])] } });
+    case 3: return decision({ kind: "tool_call", callId: "amend", toolId: "project.amend_plan", input: { taskSpec: { ...(after.taskSpec as JsonObject), notAsked: [NOT_ASKED, "Running it twice"] }, subflows, reason: "Name one more thing nobody asked for." } });
+    case 4: return decision({ kind: "tool_call", callId: "dispatch-second", toolId: "project.dispatch", input: { reason: "Build the second part after the first.", briefs: [brief("second", ["p2"], ["first"])] } });
+    case 5: return decision({ kind: "tool_call", callId: "assemble", toolId: "project.assemble", input: {} });
+    case 6: return decision({ kind: "tool_call", callId: "test", toolId: "core.test_candidate", input: assembled ?? {} });
+    default: return decision({ kind: "complete", result: assembled ?? {} });
+  }
+}
+
+async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capacity?: number; domainText?: string; proposedCheck?: JsonObject[]; script?: Script } = {}) {
   const shape = options.shape ?? "one_part";
+  /** Every tool answer the supervisor was shown, by tool, and what each builder's every decision was asked with, by subflow. */
+  const supervisorSaw = new Map<string, JsonObject>();
+  const builderSaw = new Map<string, string[]>();
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-project-build-facade-"));
   const judged = { whole: [] as AutomationStudioLlmTaskRequest[], subflow: [] as AutomationStudioLlmTaskRequest[] };
   const offered: string[][] = [];
@@ -115,6 +152,9 @@ async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capa
     instructed.push({ supervisor: tools.includes("project.write_plan"), instructions: request.domainInstructions });
     if (tools.includes("project.write_plan")) {
       supervisorDecisions += 1;
+      for (const entry of evidence) supervisorSaw.set(entry.toolId, entry.value as JsonObject);
+      const own = options.script ? scripted(options.script, supervisorDecisions, evidence) : undefined;
+      if (own) return own;
       const assembled = lastOf(evidence, "project.assemble")?.complete as JsonObject | undefined;
       switch (supervisorDecisions) {
         case 1: return decision({ kind: "tool_call", callId: "plan", toolId: "project.write_plan", input: planInput(shape) });
@@ -128,6 +168,8 @@ async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capa
       }
     }
     const subflowKey = ((loop.completionSchema.properties as JsonObject | undefined)?.subflowKey as JsonObject | undefined)?.const as string;
+    builderSaw.set(subflowKey, [...(builderSaw.get(subflowKey) ?? []), JSON.stringify(request.context)]);
+    if (options.script === "ends") return decision({ kind: "tool_call", callId: `look-${evidence.length}`, toolId: "inspect", input: { at: evidence.length } });
     const submitted = lastOf(evidence, "core.submit_subflow");
     const tested = lastOf(evidence, "core.test_subflow");
     if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: `submit-${subflowKey}`, toolId: "core.submit_subflow", input: submission(subflowKey, options.proposedCheck) });
@@ -150,7 +192,7 @@ async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capa
   const { project, flow } = await blankFixture(service);
   const proposed = vi.spyOn(service, "createFlowBootstrapAdaptation");
   return {
-    service, projectId: project.id, flowId: flow.flowId, judged, offered, instructed, host, proposed,
+    service, projectId: project.id, flowId: flow.flowId, judged, offered, instructed, host, proposed, supervisorSaw, builderSaw,
     build: (extra: { mode?: "extend" } = {}) => service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project", ...extra })
   };
 }
@@ -254,6 +296,63 @@ describe("a project build through the actual service", () => {
     expect(run.host!.most).toBe(1);
     expect(run.host!.holders).toHaveLength(2);
     expect(run.host!.held).toBe(0);
+  });
+
+  // `project.amend_plan` used to drop every proposal made before it, so a dependent could not be sent, prepared or assembled (t588 open question 1, t590).
+  it("keeps the proposal of a subflow an amendment left as it was, and its dependent is then sent and has its entry prepared from it", async () => {
+    const run = await projectBuild({ shape: "two_parts", script: "amend" });
+    // Each entry preparation's session, as the service writes it (`../entry-preparation.ts`).
+    const entries: string[] = [];
+    const service = run.service as unknown as { writeRuntimeSession(projectId: string, session: { status: string; metadata?: JsonObject }, ...rest: unknown[]): Promise<unknown> };
+    const write = service.writeRuntimeSession.bind(service);
+    vi.spyOn(service, "writeRuntimeSession").mockImplementation(async (projectId, session, ...rest) => {
+      const entry = session.metadata?.entryPreparation as JsonObject | undefined;
+      if (entry) entries.push(`${String(entry.subflowKey)} after ${JSON.stringify((entry.predecessors as JsonObject[]).map((ref) => ref.subflowKey))} ${session.status}`);
+      return await write(projectId, session, ...rest);
+    });
+    await run.build().then(() => undefined, () => undefined);
+    expect(run.supervisorSaw.get("project.amend_plan")).toMatchObject({ ok: true, written: "plan_revision", proposalsKept: [{ subflowKey: "first", briefId: "brief-1" }], proposalsDropped: [] });
+    expect(run.supervisorSaw.get("project.dispatch")).toMatchObject({ ok: true, returns: [{ briefId: "brief-2", subflowKey: "second" }] });
+    // The second builder's entry ran the first part's kept proposal once, to its end, before its first look.
+    expect(entries.at(-1)).toBe("second after [\"first\"] succeeded");
+  });
+
+  // The dependent's subflow trial runs the kept predecessor (`keptUnder`, `../subflow-trials.ts`, `../../subflow-trial/run.ts`), so it comes back done and is assembled.
+  it("assembles the kept proposal with its dependent once the dependent's subflow trial runs a kept predecessor", async () => {
+    const run = await projectBuild({ shape: "two_parts", script: "amend" });
+    // Each subflow trial's session, as the service writes it (`../../subflow-trial/run.ts`).
+    const trials: string[] = [];
+    const service = run.service as unknown as { writeRuntimeSession(projectId: string, session: { status: string; metadata?: JsonObject }, ...rest: unknown[]): Promise<unknown> };
+    const write = service.writeRuntimeSession.bind(service);
+    vi.spyOn(service, "writeRuntimeSession").mockImplementation(async (projectId, session, ...rest) => {
+      const trial = session.metadata?.subflowTrial as JsonObject | undefined;
+      if (trial && session.status !== "queued" && session.status !== "running") trials.push(`${String(trial.subflowKey)} ${session.status}`);
+      return await write(projectId, session, ...rest);
+    });
+    const result = await run.build();
+    if (result.status !== "proposed") throw new Error(`expected a proposal, got ${JSON.stringify(result)}`);
+    // The dependent's trial ran: its entry, the kept proposal of "first", was prepared, and the trial answered yes.
+    expect([...new Set(trials)]).toEqual(["first succeeded", "second succeeded"]);
+    const tested = run.builderSaw.get("second")!.at(-1)!;
+    expect(tested).toContain("\"entryPrepared\":true");
+    expect(tested).not.toContain("subflow.trial_predecessor_stale");
+    expect(run.supervisorSaw.get("project.dispatch")).toMatchObject({ ok: true, returns: [{ briefId: "brief-2", subflowKey: "second", outcome: "done" }] });
+    expect(run.supervisorSaw.get("project.assemble")).toMatchObject({ ok: true, assembledFrom: [{ subflowKey: "first", briefId: "brief-1" }, { subflowKey: "second", briefId: "brief-2" }], calls: { inOrder: ["first", "second"] } });
+  });
+
+  // A failed build's chat message was made from the thrown error, never from the ending the supervisor recorded (t586 open question 1, t590).
+  it("keeps its own failure code when it fails, and tells the person the recorded ending's kind in Core's words, never the model's reason", async () => {
+    const run = await projectBuild({ script: "ends" });
+    const seen: ClientGatewayActivity[] = [];
+    const unsubscribe = automationStudioActivityHub.subscribe((event) => seen.push(event));
+    const failure = await run.build().then(() => undefined, (error: unknown) => error).finally(unsubscribe);
+    const diagnostic = parseAutomationStudioFlowBootstrapGenerationError(failure);
+    // The code every debug and the Lab read is the build's own, as before t590.
+    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked"] });
+    expect(diagnostic!.ending).toBeUndefined();
+    const told = seen.find((event) => event.detail?.title === "The supervisor ended the build: it could not finish the Flow.");
+    expect(told?.detail).toMatchObject({ kind: "note", status: "failed", text: "Nothing this build did is still on the target." });
+    expect(JSON.stringify(seen)).not.toContain("No other way to it was found");
   });
 
   it("refuses a project build that would extend the Flow, before any model call", async () => {

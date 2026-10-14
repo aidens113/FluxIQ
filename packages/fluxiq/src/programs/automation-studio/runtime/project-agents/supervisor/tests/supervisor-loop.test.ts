@@ -186,8 +186,9 @@ describe("the project supervisor", () => {
     const codes = run.feedback.map((entry) => entry.code);
     // The ending waits for the reset of what the judged-no trial left (bigbox debug fix 10).
     expect(codes).toEqual(["project.completion_nothing_assembled", "candidate.trial_required", "project.completion_not_latest", "candidate.trial_unchanged_after_no", "project.completion_reset_first"]);
-    // The judged-no trial left its act on the target: the next test asks for a reset first.
-    expect(lastOf(run.seen, IDS.testCandidate)).toMatchObject({ ok: false, code: "project.trial_reset_required", lastWholeTrialLeftActs: true });
+    // The judged-no trial's act is in the ledger, under the supervisor; the same revision is not tested again after its no.
+    expect(lastOf(run.seen, IDS.testCandidate)).toMatchObject({ ok: false, code: "candidate.trial_unchanged_after_no" });
+    expect(run.ledger.snapshot().acts).toEqual([expect.objectContaining({ owner: "supervisor" })]);
     expect(run.trials).toHaveLength(1);
     expect(run.outcome.status).toBe("ended");
     expect(run.outcome.ending?.outcome).toBe("blocked");
@@ -204,8 +205,8 @@ describe("the project supervisor", () => {
       end("blocked", "The shelf is not shown.")
     ], project({ builder }));
     const held = run.feedback.find((entry) => entry.code === "project.completion_reset_first")!;
-    expect(held.actsInPlace).toEqual([{ act: "act-1", did: "pressed hold for place_hold", brief: "brief-2" }]);
-    expect(run.acts.every((act) => !act.inPlace)).toBe(true);
+    expect(held.actsInPlace).toEqual([{ act: "act-1", did: "trial step 1 \"press hold for place_hold\"", brief: "brief-2" }]);
+    expect(run.ledger.snapshot().acts.every((act) => !act.inPlace)).toBe(true);
     // Nothing is left, so the reason is the model's own.
     expect(run.outcome.ending).toMatchObject({ outcome: "blocked", reason: "The shelf is not shown." });
   });
@@ -215,9 +216,9 @@ describe("the project supervisor", () => {
     const briefs = [brief("find_titles", ["p1"]), brief("place_hold", ["p2"], ["find_titles"], { permittedActs: ["create_new"] }), brief("note_shelf", ["p3"], ["place_hold"])];
     const run = await supervise([call(IDS.writePlan, THREE_PART), dispatch(briefs), end("blocked", "The shelf is not shown."), end("blocked", "The shelf is not shown."), end("blocked", "The shelf is not shown.")], project({ builder }));
     expect(run.feedback.map((entry) => entry.code)).toEqual(["project.completion_reset_first", "project.completion_reset_first"]);
-    expect(run.acts.filter((act) => act.inPlace)).toHaveLength(1);
-    expect(run.outcome.ending).toMatchObject({ outcome: "blocked", reason: "The shelf is not shown. Still on the target from this build: pressed hold for place_hold." });
-    expect(run.view?.record.ending?.reason).toContain("pressed hold for place_hold");
+    expect(run.ledger.snapshot().acts.filter((act) => act.inPlace)).toHaveLength(1);
+    expect(run.outcome.ending).toMatchObject({ outcome: "blocked", reason: "The shelf is not shown. Still on the target from this build: trial step 1 \"press hold for place_hold\"." });
+    expect(run.view?.record.ending?.reason).toContain("press hold for place_hold");
   });
 
   it("answers a written plan with its warnings and says to amend it if one applies (bigbox debug fix 7)", async () => {

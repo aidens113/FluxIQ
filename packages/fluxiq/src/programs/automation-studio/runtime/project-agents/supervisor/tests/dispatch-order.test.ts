@@ -19,8 +19,8 @@ describe("the dispatch order", () => {
     expect(circle.ok === false && circle.code).toBe("cycle");
   });
 
-  it("says a predecessor whose done proposal was made under an earlier plan was dropped by the amendment (t588)", () => {
-    const amended = automationStudioProjectSupervisorDispatchOrder([brief("b", ["a"])], new Set(), new Set(["a"]));
-    expect(amended.ok === false && amended.issues[0]).toMatchObject({ predecessor: "a", why: expect.stringContaining("proposals made before project.amend_plan no longer count") });
+  it("says a predecessor whose done proposal was made under an earlier plan was dropped by the amendment, and what changed (t588, t590)", () => {
+    const amended = automationStudioProjectSupervisorDispatchOrder([brief("b", ["a"])], new Set(), new Map([["a", ["its parts changed"]]]));
+    expect(amended.ok === false && amended.issues[0]).toMatchObject({ predecessor: "a", why: "\"a\" had a done proposal only under an earlier plan, and project.amend_plan dropped it: its parts changed. Send a build or repair brief for \"a\" before this one, or in this same call." });
   });
 });

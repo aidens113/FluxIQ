@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { JsonObject } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE } from "../guidance.ts";
+import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../tool-ids.ts";
+import { automationStudioProjectSupervisorTools } from "../tools.ts";
 
 // User rule: model guidance never teaches to the test. The lists are the ones
 // `llm/harness/tests/in-run-repair-slot.test.ts` holds the in-run repair
@@ -33,6 +36,18 @@ describe("the supervisor's guidance", () => {
       expect(text.match(SITE_WORDS)?.[0], at).toBeUndefined();
       expect(text.match(LAB_TASK_WORDS)?.[0], at).toBeUndefined();
     }
+  });
+
+  // t588 made a return's trials a list of receipt references and a repair's failingReceipt one of them; t590 keeps unchanged subflows' proposals across an amendment.
+  it("describes a return's trials and a repair's failingReceipt as they are now, and what an amendment keeps", () => {
+    const { dispatch, amendPlan } = AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE.tools;
+    expect(dispatch).toContain("trials (a list holding one receipt reference for each trial its builder ran)");
+    expect(dispatch).toContain("failingReceipt: one entry of the trials an earlier return of that subflow listed, the object copied whole");
+    expect(amendPlan).toContain("proposalsKept and proposalsDropped");
+    expect(amendPlan).not.toContain("so send new briefs for every subflow the new plan needs");
+    const schema = automationStudioProjectSupervisorTools().find((tool) => tool.toolId === IDS.dispatch)!.inputSchema as JsonObject;
+    const failing = ((((schema.properties as JsonObject).briefs as JsonObject).items as JsonObject).properties as JsonObject).failingReceipt;
+    expect(failing).toEqual({ type: "object", properties: { kind: { type: "string", enum: ["subflow_trial", "candidate_trial"] }, receiptId: { type: "string" }, digest: { type: "string" } }, required: ["kind", "receiptId", "digest"], additionalProperties: false });
   });
 
   it("keeps each tool description within what a provider takes", () => {

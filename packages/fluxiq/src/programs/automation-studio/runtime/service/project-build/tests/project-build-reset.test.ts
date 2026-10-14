@@ -30,6 +30,9 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import { ProgramJsonStore } from "../../../../../_shared/storage.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import type { AutomationStudioActionConsequence, AutomationStudioActionDeclaration, AutomationStudioActionPermissionCheck } from "../../../action-permissions/index.ts";
+import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
+import { automationStudioActivityHub } from "../../../activity/index.ts";
+import { parseAutomationStudioFlowBootstrapGenerationError } from "../../../flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS, AutomationStudioSiteResetLedger } from "../../../flow-bootstrap/site-reset/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
@@ -68,9 +71,22 @@ async function storedRecord(dataDir: string): Promise<JsonObject> {
   return await new ProgramJsonStore<JsonObject>(path.join(dataDir, files[0]!), () => ({})).read();
 }
 
-/** The supervisor's script, the same in both cases: plan, build, assemble, test (refused), reset, test, complete. */
-function supervisorDecision(step: number, evidence: readonly Entry[]): JsonObject {
+/** What the supervisor ends with when its reset could not undo the save (t590). */
+const ENDED_REASON = "The saved recipe could not be taken out of the box again.";
+
+/**
+ * The supervisor's script, the same in both cases: plan, build, assemble, test
+ * (refused), reset, test, complete. With `ends`: plan, build, a reset that
+ * undoes nothing, then an honest ending.
+ */
+function supervisorDecision(step: number, evidence: readonly Entry[], ends = false): JsonObject {
   const assembled = lastOf(evidence, "project.assemble")?.complete as JsonObject | undefined;
+  if (ends) {
+    if (step === 1) return { kind: "tool_call", callId: "plan", toolId: "project.write_plan", input: PLAN };
+    if (step === 2) return { kind: "tool_call", callId: "dispatch", toolId: "project.dispatch", input: { reason: "Build the one subflow.", briefs: [BUILD_BRIEF] } };
+    if (step === 3) return { kind: "tool_call", callId: "reset", toolId: "project.dispatch", input: { reason: "Put the site back before ending.", briefs: [RESET_BRIEF] } };
+    return { kind: "complete", result: { ended: "blocked", reason: ENDED_REASON } };
+  }
   switch (step) {
     case 1: return { kind: "tool_call", callId: "plan", toolId: "project.write_plan", input: PLAN };
     case 2: return { kind: "tool_call", callId: "dispatch", toolId: "project.dispatch", input: { reason: "Build the one subflow.", briefs: [BUILD_BRIEF] } };
@@ -82,7 +98,7 @@ function supervisorDecision(step: number, evidence: readonly Entry[]): JsonObjec
   }
 }
 
-async function recipeBuild() {
+async function recipeBuild(options: { ends?: boolean } = {}) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-project-build-reset-"));
   /** The person's recipe box: one recipe was there before the build. */
   const box = new Set(["recipe:lentil-soup"]);
@@ -104,11 +120,12 @@ async function recipeBuild() {
     if (tools.includes("project.write_plan")) {
       supervisorDecisions += 1;
       supervisorSaw[supervisorDecisions] = evidence.map((entry) => ({ ...entry }));
-      return decision(supervisorDecision(supervisorDecisions, evidence));
+      return decision(supervisorDecision(supervisorDecisions, evidence, options.ends));
     }
     const properties = (loop!.completionSchema.properties ?? {}) as JsonObject;
     if (properties.summary !== undefined && properties.subflowKey === undefined) {
-      // The reset agent: undo the build's own save, named by its act, then complete.
+      // The reset agent: undo the build's own save, named by its act, then complete; where the build ends instead, it finds no way to.
+      if (options.ends) return decision({ kind: "tool_call", callId: `look.${evidence.length}`, toolId: "inspect", input: { at: evidence.length } });
       if (!lastOf(evidence, "press")) return decision({ kind: "tool_call", callId: "undo.save", toolId: "press", input: { control: "Unsave", item: "recipe:herb-bread", undoes: "act-1" } });
       return decision({ kind: "complete", result: { summary: "The recipe this build saved is out of the box again." } });
     }
@@ -177,6 +194,24 @@ describe("a project build whose builder leaves a lasting act", () => {
     // The builder's act is in the build record, with the class it declared (the control's name withheld, as the model was never shown it).
     const stored = await run.record();
     expect(stored.lastingActs).toEqual([{ recordedAt: expect.any(Number), act: "act-1", owner: { role: "builder", briefId: expect.any(String) }, consequences: ["create_new"], description: "act-1: press button", undoable: true }]);
+  });
+
+  // A failed build's chat said nothing of what the supervisor's ending names still on the target (t586, t590).
+  it("tells the person, when it ends with the save still in the box, what is still on the target in Core's words, its failure code its own", async () => {
+    const run = await recipeBuild({ ends: true });
+    const seen: ClientGatewayActivity[] = [];
+    const unsubscribe = automationStudioActivityHub.subscribe((event) => seen.push(event));
+    const failure = await run.build().then(() => undefined, (error: unknown) => error).finally(unsubscribe);
+    const diagnostic = parseAutomationStudioFlowBootstrapGenerationError(failure);
+    const reason = ((await run.record()).ending as JsonObject).reason as string;
+    expect(reason.startsWith(`${ENDED_REASON} Still on the target from this build: `)).toBe(true);
+    const note = reason.slice(ENDED_REASON.length + 1);
+    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked"] });
+    const told = seen.find((event) => event.detail?.title === "The supervisor ended the build: it could not finish the Flow.");
+    expect(told?.detail).toMatchObject({ kind: "note", status: "failed", text: note });
+    // The model's own words reach the record, never the person.
+    expect(JSON.stringify(seen)).not.toContain(ENDED_REASON);
+    expect([...run.box]).toEqual(["recipe:lentil-soup", "recipe:herb-bread"]);
   });
 
   it("undoes a cart line a builder's press on an item-less control added, and keeps the line that was there before", async () => {

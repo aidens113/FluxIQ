@@ -14,12 +14,13 @@ const PROPOSING: ReadonlySet<AutomationStudioProjectSubflowBrief["kind"]> = new 
  * predecessor is either a subflow with a done proposal already (`done`) or
  * the subflow of a brief in the same call that proposes one; any other is
  * refused at its path, named, and said why -- it never had a done proposal, or
- * had one only under a plan `project.amend_plan` replaced (`earlier`) -- as is
- * a set of briefs whose predecessors make a circle.
+ * its done proposal was dropped by a `project.amend_plan` that changed it, with
+ * what changed (`earlier`, `./state.ts`, t590) -- as is a set of briefs whose
+ * predecessors make a circle.
  * The dispatcher still decides what runs at once; this only makes sure it is
  * never handed a brief before the one it waits on.
  */
-export function automationStudioProjectSupervisorDispatchOrder(briefs: readonly AutomationStudioProjectSubflowBrief[], done: ReadonlySet<string>, earlier: ReadonlySet<string> = new Set()):
+export function automationStudioProjectSupervisorDispatchOrder(briefs: readonly AutomationStudioProjectSubflowBrief[], done: ReadonlySet<string>, earlier: ReadonlyMap<string, readonly string[]> = new Map()):
   | { ok: true; ordered: AutomationStudioProjectSubflowBrief[] }
   | { ok: false; code: "predecessor_not_done"; issues: AutomationStudioProjectSupervisorPredecessorIssue[] }
   | { ok: false; code: "cycle"; issues: AutomationStudioProjectSupervisorInputIssue[] } {
@@ -49,9 +50,10 @@ export function automationStudioProjectSupervisorDispatchOrder(briefs: readonly 
 }
 
 /** Why a predecessor does not count, and what to send instead. */
-function whyNotDone(predecessor: string, briefs: readonly AutomationStudioProjectSubflowBrief[], earlier: ReadonlySet<string>): string {
+function whyNotDone(predecessor: string, briefs: readonly AutomationStudioProjectSubflowBrief[], earlier: ReadonlyMap<string, readonly string[]>): string {
   const send = `Send a build or repair brief for "${predecessor}" before this one, or in this same call.`;
-  if (earlier.has(predecessor)) return `"${predecessor}" had a done proposal only under an earlier plan: proposals made before project.amend_plan no longer count. ${send}`;
+  const changed = earlier.get(predecessor);
+  if (changed) return `"${predecessor}" had a done proposal only under an earlier plan, and project.amend_plan dropped it${changed.length ? `: ${changed.join("; ")}` : ""}. ${send}`;
   if (briefs.some((brief) => brief.subflowKey === predecessor)) return `"${predecessor}" has no done proposal under this plan, and its brief in this call is a reset, which proposes nothing. ${send}`;
   return `"${predecessor}" has no done proposal under this plan, and no brief in this call builds it. ${send}`;
 }

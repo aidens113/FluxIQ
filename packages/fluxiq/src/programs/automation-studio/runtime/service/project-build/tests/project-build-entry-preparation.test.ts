@@ -8,7 +8,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope } from "../../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioDetachedSubflowInput, AutomationStudioDetachedSubflowResult } from "../../../flow-bootstrap/verification/index.ts";
-import { automationStudioProjectBuildPrepareEntry } from "../entry-preparation.ts";
+import { automationStudioProjectBuildPrepareEntry, type AutomationStudioProjectBuildKeptProposals } from "../entry-preparation.ts";
 import { AutomationStudioProjectBuildProposals } from "../proposals.ts";
 import type { AutomationStudioProjectBuildTrialEnvironment } from "../whole-trials.ts";
 
@@ -18,7 +18,7 @@ function proposalOf(scope: AutomationStudioSubflowScope, revision: number): Auto
   return { scope: { buildId: scope.buildId, briefId: scope.briefId, planDigest: scope.planDigest, subflowKey: scope.subflowKey }, revision, digest: `${scope.subflowKey}-${revision}`, subflows: [], summary: "", changedPaths: [] };
 }
 
-function harness(options: { startFails?: boolean; noHook?: boolean } = {}) {
+function harness(options: { startFails?: boolean; noHook?: boolean; keptUnder?: AutomationStudioProjectBuildKeptProposals["keptUnder"] } = {}) {
   const happened: string[] = [];
   const environment = {
     projectId: "project-1", flowId: "flow-1", sourceInstructionIds: ["instruction.build"], resolution: {},
@@ -44,7 +44,8 @@ function harness(options: { startFails?: boolean; noHook?: boolean } = {}) {
     partial: true, entryPrepared: status === "succeeded", ...(failedPredecessor ? { failedPredecessor, code: "candidate.trial_failed" } : {}),
     receipt: { status, finishedAt: 2 } as unknown as AutomationStudioDetachedSubflowResult["receipt"]
   });
-  const proposals = new AutomationStudioProjectBuildProposals();
+  // As the build wires them (`../run.ts`): the proposals answer which an amendment kept, where the test says so (t590).
+  const proposals = Object.assign(new AutomationStudioProjectBuildProposals(), options.keptUnder ? { keptUnder: options.keptUnder } : {});
   const passed = (subflowKey: string, briefId: string, revision: number) => proposals.trialled(scopeOf(subflowKey, briefId), proposalOf(scopeOf(subflowKey, briefId), revision), "yes");
   const prepare = (scope: AutomationStudioSubflowScope, answer = result("succeeded")) => automationStudioProjectBuildPrepareEntry({
     scope, proposals, environment, signal: new AbortController().signal, newRunId: () => "entry-run-1",
@@ -114,5 +115,28 @@ describe("a dependent builder's entry", () => {
     run.passed("first", "brief-1", 1);
     expect(await run.prepare(scopeOf("second", "brief-2", ["first"]))).toMatchObject({ kind: "unprepared", code: "candidate.trial_start_failed" });
     expect(run.happened).toEqual(["start"]);
+  });
+
+  // An amendment that left a predecessor as it was keeps its passing proposal, made under the earlier plan (t590).
+  it("runs a predecessor's passing proposal made under an earlier plan only when the plan in force kept it", async () => {
+    const earlier = { ...scopeOf("first", "brief-1"), planDigest: "plan-0" };
+    const asked: string[] = [];
+    const kept = harness({
+      keptUnder: (subflowKey, madeUnder, planDigest) => {
+        asked.push(`${subflowKey} ${madeUnder} ${planDigest}`);
+        return subflowKey === "first" && madeUnder === "plan-0" && planDigest === "plan-1";
+      }
+    });
+    kept.proposals.trialled(earlier, proposalOf(earlier, 1), "yes");
+    expect(await kept.prepare(scopeOf("second", "brief-2", ["first"]))).toMatchObject({ kind: "prepared", predecessors: ["first"] });
+    expect(asked).toEqual(["first plan-0 plan-1"]);
+    expect(kept.ran[0]!.target).toMatchObject({ subflowKey: "first", revision: 1 });
+
+    // Proposals that cannot say, or say it was not kept: stale, and nothing runs.
+    for (const run of [harness(), harness({ keptUnder: () => false })]) {
+      run.proposals.trialled(earlier, proposalOf(earlier, 1), "yes");
+      expect(await run.prepare(scopeOf("second", "brief-2", ["first"]))).toEqual({ kind: "unprepared", predecessors: ["first"], code: "project.entry_predecessor_stale", missing: ["first"], acts: [] });
+      expect(run.happened).toEqual([]);
+    }
   });
 });

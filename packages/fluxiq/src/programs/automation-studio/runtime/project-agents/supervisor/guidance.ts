@@ -65,15 +65,19 @@ const WRITE_PLAN = "Write the task spec and the plan, once. taskSpec: parts, eac
   + "Core writes the Flow's shape from these and checks that every part's text is in its instruction exactly as written and that every part is carried; a refusal lists every issue by its path in what you sent. "
   + "The answer may carry warnings, each by its path: a value no other subflow takes, or a subflow of several that neither makes a lasting act nor hands anything on. Change a plan already written with project.amend_plan.";
 
-const AMEND_PLAN = "Replace the plan with a new revision: the fields of project.write_plan, plus reason. Briefs and proposals made under the old plan no longer count, so send new briefs for every subflow the new plan needs.";
+const AMEND_PLAN = "Replace the plan with a new revision: the fields of project.write_plan, plus reason. Briefs sent under the old plan no longer count. "
+  + "A done proposal is kept where the new plan leaves its subflow as it was: the same key, the same parts with the same words, facts and lasting acts, the same inputs and outputs, and the same after, with every subflow it runs after kept too. Every other proposal made under the old plan is dropped. "
+  + "The answer lists proposalsKept and proposalsDropped, each dropped one with what changed: send briefs only for the dropped subflows and the new ones.";
 
 const DISPATCH = "Send one or more briefs to builders and wait for every return. Each brief: kind (build, repair, or reset, which puts the target back the way this build found it before the whole test), subflowKey, "
-  + "parts it carries, optional entry {caseId, predecessors: the subflows whose proposals run first to reach its start}, which is observed-current and the plan's after for that subflow when left out; optional recordingExcerpt, and failingReceipt for a repair. "
+  + "parts it carries, optional entry {caseId, predecessors: the subflows whose proposals run first to reach its start}, which is observed-current and the plan's after for that subflow when left out; optional recordingExcerpt; "
+  + "and for a repair, and only a repair, failingReceipt: one entry of the trials an earlier return of that subflow listed, the object copied whole. "
   + "A reset carries no parts and permits no act; its subflowKey is the subflow the router runs, as project.write_plan answered. Core fills in the plan, the interface and the brief id, "
   + "lets each brief make the lasting acts the task asks for (one outside its parts that moves money, deletes or sends goes to the person first), and gives it its share of the money and calls still to give, split over the briefs sent and the subflows still without a done proposal. "
   + "allowanceUsd and maxIterations are optional and only lower a brief's share. The answer says what each brief was given. "
   + "A predecessor must be done already or be sent in the same call; a brief whose predecessor comes back blocked is not started and comes back blocked too. reason says why you send them. Briefs that do not depend on each other may run at once. A reset comes back done, with no proposal, once nothing of this build is left to undo. "
-  + "The answer is every return: done, partial or blocked, the builder's reason, what it spent, and any interface change it asks for.";
+  + "The answer is every return: done, partial or blocked, the builder's reason, what it was given and spent, the proposal's revision when done, trials (a list holding one receipt reference for each trial its builder ran), and any interface change it asks for. "
+  + "A reset sent right after one that came back not done, with the same acts still on the target, is not run: the answer says what the first left and what to do instead.";
 
 const ASSEMBLE = "Join the plan and every subflow's latest done proposal into one whole Flow, and submit it. The subflow the router runs, with no proposal of its own, calls every other subflow in the order their starts depend on each other, "
   + "each input taken from the latest earlier output of the same name, or else from the Flow's own value of that name. The answer is the new revision with a complete object to test and complete with, or every reason it could not be assembled. "
@@ -109,6 +113,8 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
   next: Object.freeze({
     afterPlan: "Send briefs for the subflows with project.dispatch, those with nothing to run after first.",
     afterPlanWarned: "The plan was written with the warnings above, each by its path. If one applies, change the plan with project.amend_plan before any brief; otherwise send briefs with project.dispatch, those with nothing to run after first.",
+    afterAmend: "The plan was changed. A subflow under proposalsKept keeps its done proposal and needs no brief. Send briefs with project.dispatch for each subflow under proposalsDropped and each new one, those with nothing to run after first; once every subflow has a done proposal, call project.assemble.",
+    afterAmendWarned: "The plan was changed, with the warnings above, each by its path. If one applies, change the plan again with project.amend_plan before any brief. Otherwise, a subflow under proposalsKept keeps its done proposal and needs no brief: send briefs with project.dispatch for each subflow under proposalsDropped and each new one, those with nothing to run after first.",
     afterReturnsDone: "Every brief sent came back done. Send briefs for any subflow still without a done proposal, or call project.assemble once every one has one.",
     afterReturnsNotDone: "A brief came back partial or blocked. Read its reason: send a changed brief for that subflow, change the plan with project.amend_plan, or end honestly.",
     afterReset: "The reset came back. Test the latest assembled Flow with core.test_candidate.",
@@ -140,7 +146,11 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     dispatchFailed: "The briefs could not be run, so no return came back. Try again, or end honestly if it keeps failing.",
     assembleRefused: "The Flow could not be assembled: every listed issue names the subflow and why. Send the briefs it needs, or change the plan, then assemble again.",
     composedRefused: "The assembled Flow was refused, as listed. Change the subflow an issue names with a new brief, or change the plan, then assemble again.",
-    resetRequired: "Lasting acts this build made are still on the target, so the whole test would not start where the build started. Dispatch a reset brief (kind reset, no parts, no permitted acts) with project.dispatch, then test again."
+    resetRequired: "Lasting acts this build made are still on the target, so the whole test would not start where the build started. Dispatch a reset brief (kind reset, no parts, no permitted acts) with project.dispatch, then test again.",
+    resetRepeatedTest: "The last brief was a reset that came back without undoing everything, and the target still holds exactly what it left, as listed: another reset would only do the same, so none was run. "
+      + "What a reset tried and could not undo is kept and no longer holds the whole test back: test the latest assembled Flow with core.test_candidate, which runs with it in place and tells its judge. Or end honestly with ended and your reason; Core names what is left.",
+    resetRepeatedEnd: "The last brief was a reset that came back without undoing everything, and the target still holds exactly what it left, as listed: another reset would only do the same, so none was run. "
+      + "What a reset tried and could not undo is kept and no longer holds a whole test back. Nothing is assembled yet: send the briefs still needed and call project.assemble, then test; or end honestly with ended and your reason, and Core names what is left."
   }),
   /** What a written plan's warnings say to do (`./plan-input.ts`). */
   warnings: Object.freeze({

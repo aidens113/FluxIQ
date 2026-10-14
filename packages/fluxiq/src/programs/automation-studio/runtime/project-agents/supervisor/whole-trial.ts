@@ -1,13 +1,12 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { emitAutomationStudioProjectReceiptCard } from "../../activity/project/index.ts";
-import {
-  AutomationStudioSiteResetProjectLedger,
-  type AutomationStudioSiteResetBeforeTrialOptions,
-  type AutomationStudioSiteResetChecks,
-  type AutomationStudioSiteResetDecision,
-  type AutomationStudioSiteResetLedger,
-  type AutomationStudioSiteResetNamedAct,
-  type AutomationStudioSiteResetTrialReset
+import type {
+  AutomationStudioSiteResetBeforeTrialOptions,
+  AutomationStudioSiteResetChecks,
+  AutomationStudioSiteResetDecision,
+  AutomationStudioSiteResetLedger,
+  AutomationStudioSiteResetNamedAct,
+  AutomationStudioSiteResetTrialReset
 } from "../../flow-bootstrap/site-reset/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
@@ -48,37 +47,25 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
 //
 // A whole trial's own acts are recorded under the supervisor by its trial port
 // (`service/project-build/whole-trials.ts`), so the reset records none of its
-// own; after each trial every ledger starts a new phase.
-//
-// A ledger that cannot be asked per brief (a stand-in holding only a snapshot)
-// keeps the rule it had: no whole trial while the snapshot holds an act in
-// place, or the last whole trial left acts and no reset brief came back done.
+// own; after each trial every ledger starts a new phase. Every project ledger
+// is asked per brief (`ports.projectLedger.forBrief`, t590): the rule kept for
+// a stand-in that held only a snapshot is gone with the stand-in.
 
 /** A trial's start as the supervisor checks it: no look at the target, which it never acts on (header). */
 const UNLOOKED: AutomationStudioSiteResetChecks = { compare: async () => ({ moved: false }) };
 
 export class AutomationStudioProjectSupervisorWholeTrial {
-  /** The reset the whole candidate's gate runs before each trial; undefined for a ledger that cannot be asked per brief (header). */
-  readonly reset: AutomationStudioSiteResetTrialReset | undefined;
+  /** The reset the whole candidate's gate runs before each trial (header). */
+  readonly reset: AutomationStudioSiteResetTrialReset;
   /** How many reset briefs had come back when the last refusal was given; undefined once a trial was admitted. */
   private refusedAtResets: number | undefined;
 
   constructor(private readonly input: { ports: Pick<AutomationStudioProjectSupervisorPorts, "projectLedger">; state: AutomationStudioProjectSupervisorState }) {
-    const ledger = input.ports.projectLedger;
-    this.reset = ledger instanceof AutomationStudioSiteResetProjectLedger ? this.ledgersReset(ledger) : undefined;
+    this.reset = this.ledgersReset(input.ports.projectLedger);
   }
 
   async test(context: AutomationStudioProjectSupervisorContext, value: JsonObject, callSignal: AbortSignal | undefined): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
-    const { ports, state, gate, controller } = context;
-    if (!this.reset) {
-      const inPlace = ports.projectLedger.snapshot().acts.filter((act) => act.inPlace);
-      if (inPlace.length || state.wholeTrialLeftActs) {
-        return answer.refused("project.trial_reset_required", GUIDANCE.refusals.resetRequired, {
-          actsInPlace: inPlace.map((act) => ({ act: act.act, did: act.did, brief: act.owner })),
-          ...(state.wholeTrialLeftActs ? { lastWholeTrialLeftActs: true } : {})
-        }, { retry: true });
-      }
-    }
+    const { ports, state, gate } = context;
     const ran = await gate.test(value, callSignal ?? context.signal);
     const evidence = ran.evidence as JsonObject;
     if (evidence.code === "candidate.trial_reset_required") return this.resetRequired(evidence);
@@ -87,9 +74,8 @@ export class AutomationStudioProjectSupervisorWholeTrial {
     const receiptId = typeof evidence.trialRunId === "string" && evidence.trialRunId ? evidence.trialRunId : `whole-trial-${evidence.revision}-${Date.now()}`;
     await ports.record.recordReceipt(ports.build, { receipt: { kind: "candidate_trial", receiptId, digest: evidence.digest } });
     emitAutomationStudioProjectReceiptCard({ receipt: { kind: "candidate_trial", receiptId, digest: evidence.digest }, verdict: verdict === "yes" ? "passed" : verdict === "no" ? "failed" : "unconfirmed" });
+    // The trial's own acts are in the ledger itself, under the supervisor (header).
     if (verdict !== "yes") state.wholeTrialFailed = true;
-    // With the build's reset the trial's acts are in the ledger itself (header); a stand-in's are only on the trial.
-    if (!this.reset && gate.standing(controller.latest())?.acts?.length) state.wholeTrialLeftActs = true;
     return ran;
   }
 
@@ -110,7 +96,7 @@ export class AutomationStudioProjectSupervisorWholeTrial {
   }
 
   /** The build's reset over every brief's ledger (header). */
-  private ledgersReset(ledger: AutomationStudioSiteResetProjectLedger): AutomationStudioSiteResetTrialReset {
+  private ledgersReset(ledger: AutomationStudioProjectSupervisorPorts["projectLedger"]): AutomationStudioSiteResetTrialReset {
     /** Every ledger that recorded an act, in the order its first act was recorded. */
     const ledgers = (): AutomationStudioSiteResetLedger[] => [...new Set(ledger.snapshot().acts.map((act) => act.owner))].map((owner) => ledger.forBrief(owner));
     const ask = async (signal: AbortSignal | undefined, cannotUndo: readonly string[] | undefined, options: AutomationStudioSiteResetBeforeTrialOptions | undefined): Promise<AutomationStudioSiteResetDecision> => {
