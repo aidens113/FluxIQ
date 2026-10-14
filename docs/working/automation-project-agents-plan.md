@@ -13,7 +13,7 @@ Related: [MVP final month plan](./mvp-final-month-plan.md), [state-aware recover
 
 ## Current State
 
-**Planned, not built (2026-10-13).** The user asked for "a system of
+**Built; A8 Lab comparison running (2026-10-14).** The user asked for "a system of
 different agents for managing different parts of a automation project ...
 the current one we have for actually building subflows, but that gets spawned
 by a senior supervisor, much like we have in this repo." The evidence for why
@@ -51,10 +51,10 @@ and promotion gate, site-control preparation) and held-topology units 1-4
 observed-current case does not need them for creation; post-run repair of a
 multi-subflow Flow does need held-topology.
 
-**Delivered on dev (2026-10-13, supervisor-verified, pushed):** every unit A1-A6 with W1-W4: contracts and build record, allowances and cancellation tree, host-resource scheduler and lease on every command (web capacity 1), builder scope and partial subflow trial, agent attribution and chat cards, the project supervisor, the dispatcher, and the wiring: a build in authoring mode `project` runs the supervisor and its builders; `candidate` stays the default, so ordinary builds are unchanged. Also merged today: the fix-forward of every failure the two sweeps found (Core 305, downstream 31), a product fix for instructions leaking across Flows, and bounded retries on recording directory removal; the confirming Core sweep had one failure of 11207, since fixed. **Also merged:** the pre-A8 hardening (a refused act ends its builder; promotion reads every brief's answers; the reserve covers the judged run and one repair round; builder acts are placed so a reset can undo an Add to cart; every act in the build record), the judge checklist (A9), distinct ids in assembled Flows (A12), and the follow-ups A10, A11, A13, A15-A18. **Ready, awaiting the user's go-ahead:** A8 Lab comparison (nine paid runs, at most $2.25, about 1.5-2 hours; plan in the paired document). **Next otherwise:** A21, A10b, W8, then A7 re-author triage and A14 surveys, informed by A8.
+**Delivered on dev (2026-10-13, supervisor-verified, pushed):** every unit A1-A6 with W1-W4: contracts and build record, allowances and cancellation tree, host-resource scheduler and lease on every command (web capacity 1), builder scope and partial subflow trial, agent attribution and chat cards, the project supervisor, the dispatcher, and the wiring: a build in authoring mode `project` runs the supervisor and its builders; `candidate` stays the default, so ordinary builds are unchanged. Also merged today: the fix-forward of every failure the two sweeps found (Core 305, downstream 31), a product fix for instructions leaking across Flows, and bounded retries on recording directory removal; the confirming Core sweep had one failure of 11207, since fixed. **Also merged:** the pre-A8 hardening (a refused act ends its builder; promotion reads every brief's answers; the reserve covers the judged run and one repair round; builder acts are placed so a reset can undo an Add to cart; every act in the build record), the judge checklist (A9), distinct ids in assembled Flows (A12), and the follow-ups A10, A11, A13, A15-A18. **Now (2026-10-14):** A8 is running on the user's go-ahead ("Yes go to live tests"); its attempts are in the paired document's A8 Run Plan. Round one in mode `project` exposed, in turn, a long-path SQLite open (t568, merged), a supervisor that explored instead of planning and could not write the raw plan (t569, merged: planning format, look budget), and builds that run out of calls at a third of their dollars (t570, in flight: per-brief call shares, Core-sized allowances, permitted acts from parts, interface lines in the brief, the subflow trial reusing the candidate trial's exclusion evidence). In flight beside it so A8 keeps one frozen pair: A21 (t571), A10b (t572), and W8 downstream (t573). Round one relaunches when all four merge. After A8: A7 re-author triage and A14 surveys; judge reliability on filtered list reads (seen in both modes).
 
-**Not claimed:** that agents fix wrong judgements, that any unit exists, or
-that a multi-agent build has run.
+**Not claimed:** that agents fix wrong judgements, or that a `project` build
+has yet created a Flow live (none has reached its judged whole run).
 
 ---
 
