@@ -9,6 +9,9 @@ import type { AutomationStudioProjectBuildRecordStore, AutomationStudioProjectBu
 /** Which proposal a done return names: the brief it answered and the receipt it completed with. */
 export type AutomationStudioProjectProposalRef = { briefId: string; subflowKey: string; revision: number; digest: string };
 
+/** What a plan in force keeps of earlier plans' done proposals (t590): its digest, and the plan digest each kept proposal was made under, by subflow key. */
+export type AutomationStudioProjectSupervisorKept = { planDigest: string; madeUnder: ReadonlyMap<string, string> };
+
 /**
  * Everything the project supervisor reaches outside itself, for the unit that
  * wires it into a build (A5c) to build: the supervisor makes no store, no
@@ -24,8 +27,21 @@ export type AutomationStudioProjectProposalRef = { briefId: string; subflowKey: 
  * - `proposals`: a done return names its proposal by revision and digest; this
  *   answers the proposal itself (its subflows), as the builder's loop accepted
  *   it. Undefined when it holds none by that name.
- * - `projectLedger`: the build's lasting-act ledger (t538); an act still in
- *   place refuses the whole trial until a reset brief has undone it.
+ * - `projectLedger`: the build's lasting-act ledger (t538), asked per brief
+ *   (`forBrief`) as well as whole: before each whole trial the deployment's
+ *   start hook puts the site back where there is one, otherwise each brief's
+ *   ledger is asked, and an act still to undo refuses the trial until a reset
+ *   brief has come back; an act no control undoes is kept and the trial runs
+ *   with it, its judge told (`./whole-trial.ts`, t586). Every ending names
+ *   what it holds still on the target (`./left-on-target.ts`).
+ * - `kept`: told, each time a plan comes into force, which done proposals made
+ *   under an earlier plan it keeps, by subflow key with the plan digest each
+ *   was made under (`./state.ts`, t590), so a dependent builder's entry may
+ *   run them although their plan digest is not the brief's
+ *   (`service/project-build/entry-preparation.ts`).
+ * - `leftAtEnding`: told, as an ending's reason is made, Core's own line of
+ *   what this build still has on the target, or none (`./left-on-target.ts`,
+ *   t590): what a failed build's chat message says, never the model's words.
  * - `submission`: what the whole candidate's submission controller is made
  *   with, exactly as the candidate authoring loop's.
  * - `trial`: the whole candidate's trial runner and judge. Absent, the
@@ -50,7 +66,9 @@ export type AutomationStudioProjectSupervisorPorts = {
   sources: readonly AutomationStudioProjectInstructionSource[];
   dispatch: AutomationStudioProjectDispatchPort;
   proposals: (ref: AutomationStudioProjectProposalRef) => AutomationStudioSubflowProposal | undefined | Promise<AutomationStudioSubflowProposal | undefined>;
-  projectLedger: Pick<AutomationStudioSiteResetProjectLedger, "snapshot">;
+  projectLedger: Pick<AutomationStudioSiteResetProjectLedger, "snapshot" | "forBrief">;
+  kept?: ((kept: AutomationStudioProjectSupervisorKept) => void) | undefined;
+  leftAtEnding?: ((left: { note: string | undefined }) => void) | undefined;
   submission: ConstructorParameters<typeof AutomationStudioFlowCandidateSubmissionController>[0];
   trial?: { candidateId: string; port: AutomationStudioCandidateTrialPort } | undefined;
   purse?: AutomationStudioLlmBuildPurse | undefined;

@@ -41,8 +41,13 @@ export type AutomationStudioProjectAssembled = {
  * - The router is the plan's. The plan says what it requires as every subflow
  *   in it does.
  *
+ * A proposal counts when it was made under the plan in force, or under the
+ * earlier plan `kept` names for its subflow: the plan in force kept it because
+ * it left that subflow as it was (`./state.ts`, t590).
+ *
  * Refused, with every reason, when a subflow it needs has no proposal, a
- * proposal is for another plan or subflow, more than one router-run subflow
+ * proposal is for another plan (neither in force nor kept) or another
+ * subflow, more than one router-run subflow
  * has none, the calls' order makes a circle, two subflows share a key, or two
  * briefs' subflows share a step id (`<subflowKey>-<nodeKey>`) or a record
  * output's dataset id, so one would save its rows over the other's (t555; the
@@ -56,6 +61,8 @@ export function automationStudioProjectAssembly(input: {
   proposals: ReadonlyMap<string, AutomationStudioSubflowProposal>;
   /** Each subflow's predecessors, as the brief of its proposal named them. */
   predecessors: ReadonlyMap<string, readonly string[]>;
+  /** The plan digest each proposal the plan in force kept from an earlier plan was made under, by subflow key (`./state.ts`, `keptFromEarlierPlans`). */
+  kept?: ReadonlyMap<string, string> | undefined;
 }): { ok: true; assembled: AutomationStudioProjectAssembled } | { ok: false; issues: AutomationStudioProjectAssemblyIssue[] } {
   const { structure, proposals } = input;
   const plan = structure.plan;
@@ -71,7 +78,8 @@ export function automationStudioProjectAssembly(input: {
       if (subflow !== main && !unproposed.includes(subflow)) issues.push({ code: "project.assemble_proposal_missing", subflowKey: subflow.key, message: `"${subflow.key}" has no done proposal under this plan. Send its brief and wait for it to come back done.` });
       continue;
     }
-    if (proposal.scope.planDigest !== structure.digest || proposal.scope.subflowKey !== subflow.key || proposal.subflows[0]?.key !== subflow.key) {
+    const counted = proposal.scope.planDigest === structure.digest || input.kept?.get(subflow.key) === proposal.scope.planDigest;
+    if (!counted || proposal.scope.subflowKey !== subflow.key || proposal.subflows[0]?.key !== subflow.key) {
       issues.push({ code: "project.assemble_proposal_stale", subflowKey: subflow.key, message: `The proposal for "${subflow.key}" was made for another plan or subflow. Send its brief again under this plan.` });
     }
   }

@@ -81,6 +81,25 @@ describe("one subflow partial trial", () => {
     expect(f.pressed).toEqual([]);
   });
 
+  // An amendment that left a predecessor as it was keeps its proposal, made under the earlier plan (t590).
+  it("runs a predecessor's proposal made under an earlier plan only where the build says the plan in force kept it", async () => {
+    const f = fixture();
+    const earlier = { ...f.findProposal, scope: { ...f.findProposal.scope, planDigest: "plan.0" } };
+    f.setPredecessors([earlier]);
+    const asked: string[] = [];
+    const keptUnder = (subflowKey: string, madeUnder: string, planDigest: string) => {
+      asked.push(`${subflowKey} ${madeUnder} ${planDigest}`);
+      return subflowKey === "find" && madeUnder === "plan.0";
+    };
+    const dropped = await runAutomationStudioSubflowTrial(f.request(), { ...f.ports, keptUnder: () => false });
+    expect(dropped.result).toMatchObject({ verdict: "execution_failed", feedback: { code: "subflow.trial_predecessor_stale", stale: ["find"] } });
+    expect(f.sessions).toEqual([]);
+    const kept = await runAutomationStudioSubflowTrial(f.request(), { ...f.ports, keptUnder });
+    expect(asked).toEqual([`find plan.0 ${f.request().scope.planDigest}`]);
+    expect(kept.result).toMatchObject({ verdict: "yes", entryPrepared: true });
+    expect(f.pressed.map((id) => id.split(".").at(-2))).toEqual(["find", "add"]);
+  });
+
   it("runs nothing for a proposal bound to another brief or headed by another subflow", async () => {
     const f = fixture();
     const otherBrief = f.request();

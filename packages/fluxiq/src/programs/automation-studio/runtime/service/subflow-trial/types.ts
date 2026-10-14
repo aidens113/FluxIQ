@@ -34,6 +34,11 @@ export type AutomationStudioSubflowTrialPorts = Omit<AutomationStudioCandidateTr
    * predecessor proposal replaced mid-trial stops it.
    */
   predecessorProposals(scope: AutomationStudioSubflowScope): Promise<readonly AutomationStudioSubflowProposal[]>;
+  /**
+   * Whether an amendment kept a predecessor's proposal made under an earlier plan (t590: it left that subflow as it
+   * was), so the trial may still run it. Absent, only a proposal made under the scope's own plan counts.
+   */
+  keptUnder?: ((subflowKey: string, madeUnder: string, planDigest: string) => boolean) | undefined;
   /** The build's current structure plan digest; null once the build is gone. Absent, the scope's digest is taken as current. */
   currentPlanDigest?: ((buildId: string) => Promise<string | null>) | undefined;
   /**

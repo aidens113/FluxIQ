@@ -13,12 +13,16 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
  * checked whole, and the structure plan compiled from them, before anything is
  * written (`./plan-input.ts`), then written
  * to the build record -- a spec only when it changed -- and an amendment
- * logged as a re-plan. Briefs and proposals made under an earlier plan stop
- * counting by their plan digest (`./state.ts`). The plan goes to the chat as
- * its card. A written plan's answer carries the warnings its reading found --
- * a value no other subflow takes, a subflow that neither acts nor hands
- * anything on -- each with what to do, and its next step says to amend the
- * plan if one applies.
+ * logged as a re-plan. Briefs made under an earlier plan stop counting by
+ * their plan digest; a done proposal made under one counts on only where the
+ * new plan leaves its subflow as it was (`./state.ts`, t590). An amendment's
+ * answer lists the proposals it kept and those it dropped, each dropped one
+ * with what changed, and the dispatcher's port is told which it kept, so a
+ * dependent builder's entry runs them (`ports.kept`). The plan goes to the
+ * chat as its card. A written plan's answer carries the warnings its reading
+ * found -- a value no other subflow takes, a subflow that neither acts nor
+ * hands anything on -- each with what to do, and its next step says to amend
+ * the plan if one applies.
  */
 export async function automationStudioProjectSupervisorPlanTool(context: AutomationStudioProjectSupervisorContext, value: JsonObject, mode: "write" | "amend"): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
   const { ports, state } = context;
@@ -36,10 +40,8 @@ export async function automationStudioProjectSupervisorPlanTool(context: Automat
     if (!(error instanceof AutomationStudioProjectRecordRefusal)) throw error;
     return answer.refused("project.plan_refused", GUIDANCE.refusals.planRefused, { issues: [{ code: error.code, path: error.path }] });
   }
-  state.taskSpec = read.taskSpec;
-  state.structure = read.structure;
-  state.purposes = read.purposes;
-  state.after = read.after;
+  const carried = state.adopt({ taskSpec: read.taskSpec, structure: read.structure, purposes: read.purposes, after: read.after });
+  ports.kept?.({ planDigest: read.structure.digest, madeUnder: state.keptFromEarlierPlans() });
   const reserveUsd = ports.purse?.keptBackUsd();
   emitAutomationStudioProjectPlanCard({ taskSpec: read.taskSpec, structurePlan: read.structure, purposes: read.purposes, ...(reserveUsd ? { reserveUsd } : {}) });
   return answer.answered({
@@ -56,8 +58,13 @@ export async function automationStudioProjectSupervisorPlanTool(context: Automat
       ...(read.after[subflow.key]?.length ? { after: [...read.after[subflow.key]!] } : {})
     })),
     // What the plan was written with but may not mean (`./plan-input.ts`, bigbox debug fix 7): each by its path, with what to do.
+    // What the amendment did with the done proposals made under earlier plans (`./state.ts`, t590).
+    ...(mode === "amend" ? {
+      proposalsKept: [...carried.kept].map(([subflowKey, { brief }]) => ({ subflowKey, briefId: brief.briefId })),
+      proposalsDropped: [...carried.dropped].map(([subflowKey, why]) => ({ subflowKey, why: [...why] }))
+    } : {}),
     ...(read.warnings.length ? { warnings: read.warnings.map((warning) => ({ ...warning, instruction: warningText(warning.code) })) } : {}),
-    next: read.warnings.length ? GUIDANCE.next.afterPlanWarned : GUIDANCE.next.afterPlan
+    next: mode === "amend" ? (read.warnings.length ? GUIDANCE.next.afterAmendWarned : GUIDANCE.next.afterAmend) : read.warnings.length ? GUIDANCE.next.afterPlanWarned : GUIDANCE.next.afterPlan
   });
 }
 

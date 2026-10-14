@@ -8,6 +8,7 @@ import { automationStudioProjectSupervisorBriefSizing } from "./brief-sizing.ts"
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { automationStudioProjectSupervisorDispatchOrder } from "./dispatch-order.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";
+import { automationStudioProjectSupervisorLeftOnTarget, type AutomationStudioProjectSupervisorLeftOnTarget } from "./left-on-target.ts";
 import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-answer.ts";
 
 /** Floating-point slack, as the purse keeps it. */
@@ -27,6 +28,17 @@ const EPSILON_USD = 1e-9;
  * supervisor never assembles what a brief did not ask for. A reset brief that
  * came back done -- with no proposal, as a reset has none -- clears what the
  * last whole trial left (`./whole-trial.ts`).
+ *
+ * **No second reset with nothing changed (social debug fix 5, t590).** Social
+ * `run-mv85xmgq-8a6a6f43` sent a reset brief right after one that came back
+ * blocked, with the same acts on the target; it could only do the same, and on
+ * the way it pressed a control the task said to leave. So a call of reset
+ * briefs only, sent while the build's latest brief is a reset that came back
+ * not done and what is left on the target (`./left-on-target.ts`) is what it
+ * left, is answered `project.reset_repeated` without running: what the first
+ * left, its reason, and what to do now -- test, since an act a reset tried and
+ * could not undo is kept and no longer holds the test back, or end honestly.
+ * Anything else sent first, a whole test above all, lets a reset run again.
  */
 export async function automationStudioProjectSupervisorDispatchTool(context: AutomationStudioProjectSupervisorContext, value: JsonObject): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
   const { ports, state } = context;
@@ -34,6 +46,8 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
   const taskSpec = state.taskSpec;
   if (!structure || !taskSpec) return answer.refused("project.plan_missing", GUIDANCE.refusals.noPlan);
   const sent = Array.isArray(value.briefs) ? value.briefs.filter((brief): brief is JsonObject => Boolean(brief) && typeof brief === "object" && !Array.isArray(brief)) : [];
+  const repeated = Array.isArray(value.briefs) && sent.length === value.briefs.length && sent.length && sent.every((brief) => brief.kind === "reset") ? repeatedReset(context) : undefined;
+  if (repeated) return repeated;
   // Only a list of objects is sized; anything else is refused by the reading below, by its place.
   const sizing = ports.purse && Array.isArray(value.briefs) && sent.length === value.briefs.length && sent.length
     ? automationStudioProjectSupervisorBriefSizing({ sent, purse: ports.purse, structure, done: new Set(state.latestDone().keys()), supervisorCalls: ports.finishing?.supervisorCalls ?? 0 })
@@ -47,7 +61,7 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
     const survey = read.issues.some((issue) => issue.code === "project.brief_survey_unavailable");
     return answer.refused(survey ? "project.brief_survey_unavailable" : "project.brief_refused", survey ? GUIDANCE.refusals.surveyUnavailable : GUIDANCE.refusals.briefRefused, { issues: read.issues });
   }
-  const order = automationStudioProjectSupervisorDispatchOrder(read.briefs, new Set(state.latestDone().keys()), state.doneUnderEarlierPlans());
+  const order = automationStudioProjectSupervisorDispatchOrder(read.briefs, new Set(state.latestDone().keys()), state.droppedByEarlierPlans());
   if (!order.ok) return answer.refused(order.code === "cycle" ? "project.dispatch_cycle" : "project.predecessor_not_done", order.code === "cycle" ? GUIDANCE.refusals.dispatchCycle : GUIDANCE.refusals.predecessorNotDone, { issues: order.issues });
   const requestedUsd = order.ordered.reduce((sum, brief) => sum + brief.allowanceUsd, 0);
   const canGiveUsd = ports.purse?.allocatableUsd();
@@ -81,6 +95,13 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
     if (brief.kind === "reset" && returned.outcome === "done") state.wholeTrialLeftActs = false;
     emitAutomationStudioProjectReturnCard({ returned, brief, structurePlan: structure });
   }
+  // What the call's last reset left, when it came back not done, for a second reset sent with nothing changed (header).
+  const lastReset = [...order.ordered.entries()].reverse().find(([, brief]) => brief.kind === "reset");
+  if (lastReset) {
+    const [index, brief] = lastReset;
+    const returned = returns[index]!;
+    state.resetLeft = returned.outcome === "done" ? undefined : { briefId: brief.briefId, outcome: returned.outcome, reason: returned.reason, left: leftKey(automationStudioProjectSupervisorLeftOnTarget(ports, state)) };
+  }
   const allDone = returns.every((returned) => returned.outcome === "done");
   const reset = order.ordered.every((brief) => brief.kind === "reset");
   return answer.answered({
@@ -89,6 +110,26 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
     lastingActsInPlace: ports.projectLedger.snapshot().acts.filter((act) => act.inPlace).length,
     next: !allDone ? GUIDANCE.next.afterReturnsNotDone : reset ? GUIDANCE.next.afterReset : GUIDANCE.next.afterReturnsDone
   }, { acted: true });
+}
+
+/** The refusal of a reset sent right after one that came back not done, with what is left unchanged (header); undefined when a reset may run. */
+function repeatedReset(context: AutomationStudioProjectSupervisorContext): AutomationStudioLlmEvidenceToolExecutionResult | undefined {
+  const { ports, state, controller } = context;
+  const latest = state.briefs.at(-1);
+  const before = state.resetLeft;
+  if (!latest || !before || before.briefId !== latest.briefId || !state.resetCameBackLast()) return undefined;
+  const left = automationStudioProjectSupervisorLeftOnTarget(ports, state);
+  if (leftKey(left) !== before.left) return undefined;
+  return answer.refused("project.reset_repeated", controller.latest() ? GUIDANCE.refusals.resetRepeatedTest : GUIDANCE.refusals.resetRepeatedEnd, {
+    lastReset: { briefId: before.briefId, outcome: before.outcome, reason: before.reason },
+    leftOnTarget: left.acts.map((act) => ({ act: act.act, did: act.did, brief: act.brief, undoable: act.undoable })),
+    ...(left.lastWholeTrialLeftActs ? { lastWholeTrialLeftActs: true } : {})
+  }, { retry: true });
+}
+
+/** What is left on the target, as one comparable key. */
+function leftKey(left: AutomationStudioProjectSupervisorLeftOnTarget): string {
+  return JSON.stringify({ acts: left.acts.map((act) => [act.act, act.undoable]).sort(), trial: left.lastWholeTrialLeftActs });
 }
 
 /** The return the dispatcher gave for this brief, or a blocked one saying why it does not answer it. */

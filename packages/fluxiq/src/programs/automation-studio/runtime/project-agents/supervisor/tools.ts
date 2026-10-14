@@ -1,7 +1,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
-import { AUTOMATION_STUDIO_PROJECT_BRIEF_KINDS } from "../contracts/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_BRIEF_KINDS, AUTOMATION_STUDIO_PROJECT_RECEIPT_KINDS } from "../contracts/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "./tool-ids.ts";
 
@@ -61,7 +61,13 @@ const BRIEF_INPUT: JsonObject = {
     allowanceUsd: { type: "number" },
     maxIterations: { type: "integer" },
     recordingExcerpt: TEXT,
-    failingReceipt: { type: "object" }
+    // A repair's failing trial: one entry of an earlier return's `trials`, copied whole (`./dispatch-tool.ts`, t588).
+    failingReceipt: {
+      type: "object",
+      properties: { kind: { type: "string", enum: [...AUTOMATION_STUDIO_PROJECT_RECEIPT_KINDS] }, receiptId: TEXT, digest: TEXT },
+      required: ["kind", "receiptId", "digest"],
+      additionalProperties: false
+    }
   },
   required: ["kind", "subflowKey"],
   additionalProperties: false

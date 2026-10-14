@@ -5,6 +5,7 @@ import { AutomationStudioHostLeaseScope, type AutomationStudioHostResourceSchedu
 import { automationStudioBuildTestJudge } from "../../result-verification/index.ts";
 import { admitAutomationStudioBuildTrialSession } from "../runtime-session/index.ts";
 import { automationStudioSubflowTrialPort, type AutomationStudioSubflowTrialJudgeInput } from "../subflow-trial/index.ts";
+import type { AutomationStudioProjectBuildKeptProposals } from "./entry-preparation.ts";
 import type { AutomationStudioProjectBuildProposals } from "./proposals.ts";
 import { AutomationStudioProjectBuildTaskChecklist } from "./task-checklist.ts";
 import { automationStudioProjectBuildTrialReads } from "./trial-reads.ts";
@@ -41,7 +42,7 @@ export function automationStudioProjectBuildSubflowTrials(input: {
   binding: AutomationStudioLlmEvidenceRuntimeBinding;
   judge: { provider: AutomationStudioLlmProvider; timeoutMs?: number | undefined; signal?: AbortSignal | undefined };
   records: Pick<AutomationStudioProjectBuildRecordStore, "read">;
-  proposals: AutomationStudioProjectBuildProposals;
+  proposals: AutomationStudioProjectBuildProposals & Partial<AutomationStudioProjectBuildKeptProposals>;
   leases: Pick<AutomationStudioHostResourceScheduler, "assertCurrent">;
   /** Whether the build is still running: a trial asked after it ended is refused. */
   running(): boolean;
@@ -60,6 +61,8 @@ export function automationStudioProjectBuildSubflowTrials(input: {
       startRuntimeSession: () => environment.openSession({ runId, metadata })
     }, { buildId: ref.buildId, briefId: briefOf(metadata), lease: AutomationStudioHostLeaseScope.current() }),
     predecessorProposals: async (scope) => input.proposals.predecessors(scope),
+    // A predecessor proposal an amendment kept still prepares the entry (t590).
+    keptUnder: (subflowKey, madeUnder, planDigest) => input.proposals.keptUnder?.(subflowKey, madeUnder, planDigest) === true,
     currentPlanDigest: async (buildId) => buildId === ref.buildId ? (await input.records.read(ref))?.record.plans.at(-1)?.plan.digest ?? null : null,
     judge: async ({ summary, scope, successCheck }) => await automationStudioBuildTestJudge({
       provider: input.judge.provider, timeoutMs: input.judge.timeoutMs, instructions: [scopeInstruction(scope, successCheck, projectId, flowId)],

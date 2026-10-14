@@ -10,11 +10,16 @@
 // to reverse, or whose undo was refused as aimed at another item -- and an act
 // of a class no site control takes back (money moved, a message sent) left the
 // snapshot as if gone. Social `run-mv85xmgq-8a6a6f43` kept three confirmed
-// requests that way. A real project ledger is asked which acts it kept (its
+// requests that way. Each brief's ledger is asked which acts it kept (its
 // `claim` answers `candidate.undo_act_kept` for each, and changes nothing), and
 // every act of a class no control reverses is still there; each is named with
 // why no reset undoes it.
-import { AutomationStudioSiteResetProjectLedger } from "../../flow-bootstrap/site-reset/index.ts";
+//
+// **The person is told it in Core's words alone (t590).** When an ending's
+// reason is made (`reason`), the build is told what is left as Core named it
+// (`ports.leftAtEnding`), so a failed build's chat message can say it without
+// the model's own words, which the reason also holds
+// (`service/project-build/run.ts`).
 import type { AutomationStudioProjectSupervisorPorts } from "./ports.ts";
 import type { AutomationStudioProjectSupervisorState } from "./state.ts";
 
@@ -34,10 +39,9 @@ export type AutomationStudioProjectSupervisorLeftOnTarget = {
 /** The longest ending reason the build record keeps. */
 const MAX_REASON = 2000;
 
-export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<AutomationStudioProjectSupervisorPorts, "projectLedger">, state: Pick<AutomationStudioProjectSupervisorState, "wholeTrialLeftActs">): AutomationStudioProjectSupervisorLeftOnTarget {
+export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<AutomationStudioProjectSupervisorPorts, "projectLedger" | "leftAtEnding">, state: Pick<AutomationStudioProjectSupervisorState, "wholeTrialLeftActs">): AutomationStudioProjectSupervisorLeftOnTarget {
   const ledger = ports.projectLedger;
   const kept = (act: string, owner: string): boolean => {
-    if (!(ledger instanceof AutomationStudioSiteResetProjectLedger)) return false;
     const claim = ledger.forBrief(owner).claim(act);
     return claim.kind === "refused" && claim.evidence.code === "candidate.undo_act_kept";
   };
@@ -53,6 +57,10 @@ export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<Automa
   if (lastWholeTrialLeftActs) lines.push("the acts the last whole test of the Flow made");
   const note = lines.length ? `Still on the target from this build: ${lines.join("; ")}.` : undefined;
   const fitted = note ? note.slice(0, MAX_REASON - 2) : undefined;
-  const reason = (said: string) => (fitted ? `${said.slice(0, MAX_REASON - fitted.length - 1).trimEnd()} ${fitted}`.trim() : said.slice(0, MAX_REASON));
+  const reason = (said: string) => {
+    // The ending is being named: the build hears what is left in Core's words (header).
+    ports.leftAtEnding?.({ note });
+    return fitted ? `${said.slice(0, MAX_REASON - fitted.length - 1).trimEnd()} ${fitted}`.trim() : said.slice(0, MAX_REASON);
+  };
   return { acts: acts.map(({ line: _line, ...act }) => act), lastWholeTrialLeftActs, undoable: lastWholeTrialLeftActs || acts.some((act) => act.undoable), note, reason };
 }

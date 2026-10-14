@@ -51,16 +51,14 @@ describe("assembly", () => {
     expect(assembled.ok && assembled.assembled.plan.subflows.map((subflow) => subflow.key)).toEqual(["main"]);
   });
 
-  it("refuses a missing proposal, one for another plan, two router-run subflows without one, a circle and a key collision", () => {
+  it("refuses a missing proposal, one for another subflow, two router-run subflows without one, a circle and a key collision", () => {
     const find = part("find", ["author"], ["titles"]);
     const hold = part("hold", ["titles"], []);
     const plan = structure([main, find, hold]);
     const missing = automationStudioProjectAssembly({ structure: plan, proposals: new Map([["find", proposal(plan, find)]]), predecessors: new Map() });
     expect(!missing.ok && missing.issues.map((issue) => [issue.code, issue.subflowKey])).toEqual([["project.assemble_proposal_missing", "hold"]]);
-    const stale = proposal(plan, hold);
-    stale.scope.planDigest = "0".repeat(64);
-    const old = automationStudioProjectAssembly({ structure: plan, proposals: new Map([["find", proposal(plan, find)], ["hold", stale]]), predecessors: new Map() });
-    expect(!old.ok && old.issues.map((issue) => issue.code)).toEqual(["project.assemble_proposal_stale"]);
+    const other = automationStudioProjectAssembly({ structure: plan, proposals: new Map([["find", proposal(plan, find)], ["hold", proposal(plan, find)]]), predecessors: new Map() });
+    expect(!other.ok && other.issues.map((issue) => [issue.code, issue.subflowKey])).toEqual([["project.assemble_proposal_stale", "hold"]]);
     const two = structure([main, { ...main, key: "other" }, find]);
     const ambiguous = automationStudioProjectAssembly({ structure: two, proposals: new Map([["find", proposal(two, find)]]), predecessors: new Map() });
     expect(!ambiguous.ok && ambiguous.issues.map((issue) => issue.code)).toEqual(["project.assemble_main_ambiguous", "project.assemble_main_ambiguous"]);
@@ -70,6 +68,21 @@ describe("assembly", () => {
     const colliding = new Map([["find", proposal(plan, find, [{ key: hold.key, name: hold.name, role: hold.role, nodes: [], edges: [] }])], ["hold", proposal(plan, hold)]]);
     const collision = automationStudioProjectAssembly({ structure: plan, proposals: colliding, predecessors: new Map() });
     expect(!collision.ok && collision.issues.map((issue) => issue.code)).toEqual(["project.assemble_key_collision"]);
+  });
+
+  it("assembles a proposal the plan in force kept from an earlier plan, and refuses one from an earlier plan it did not keep (t590)", () => {
+    const find = part("find", ["author"], ["titles"]);
+    const hold = part("hold", ["titles"], []);
+    const plan = structure([main, find, hold]);
+    const kept = proposal(plan, find);
+    kept.scope.planDigest = "0".repeat(64);
+    const proposals = new Map([["find", kept], ["hold", proposal(plan, hold)]]);
+    const assembled = automationStudioProjectAssembly({ structure: plan, proposals, predecessors: new Map([["hold", ["find"]]]), kept: new Map([["find", "0".repeat(64)]]) });
+    expect(assembled.ok && assembled.assembled.composed).toEqual({ subflowKey: "main", calls: ["find", "hold"] });
+    for (const told of [undefined, new Map([["find", "1".repeat(64)]]), new Map([["hold", "0".repeat(64)]])]) {
+      const refused = automationStudioProjectAssembly({ structure: plan, proposals, predecessors: new Map(), kept: told });
+      expect(!refused.ok && refused.issues.map((issue) => [issue.code, issue.subflowKey])).toEqual([["project.assemble_proposal_stale", "find"]]);
+    }
   });
 
   describe("step and dataset ids across briefs", () => {

@@ -35,6 +35,17 @@ import type { AutomationStudioProjectBuildTrialEnvironment } from "./whole-trial
 // failed, or a predecessor's run did not reach its end -- the answer says so
 // and why, and the builder is told plainly that its entry is not prepared
 // (`./brief-ports.ts`).
+//
+// **A proposal an amendment kept runs too (t590).** A predecessor's passing
+// proposal counts when it was made under the brief's own plan, or under an
+// earlier plan whose proposal for that subflow the plan in force kept because
+// it left the subflow as it was (`project-agents/supervisor/state.ts`). The
+// supervisor tells the build which it kept (`ports.kept`), and the build's
+// proposals answer it here (`keptUnder`, wired in `./run.ts`); a proposal the
+// amendment dropped, or one of another build, is still refused as stale.
+
+/** Whether a passing proposal made under an earlier plan is one the plan in force kept for that subflow (t590). */
+export type AutomationStudioProjectBuildKeptProposals = { keptUnder(subflowKey: string, madeUnder: string, planDigest: string): boolean };
 
 /** What preparing a builder's entry came to. */
 export type AutomationStudioProjectBuildEntry =
@@ -46,7 +57,8 @@ export type AutomationStudioProjectBuildEntry =
 
 export async function automationStudioProjectBuildPrepareEntry(input: {
   scope: AutomationStudioSubflowScope;
-  proposals: Pick<AutomationStudioProjectBuildProposals, "predecessors">;
+  /** The build's proposals; `keptUnder` where the build can say which an amendment kept (header), so none is kept without it. */
+  proposals: Pick<AutomationStudioProjectBuildProposals, "predecessors"> & Partial<AutomationStudioProjectBuildKeptProposals>;
   environment: AutomationStudioProjectBuildTrialEnvironment;
   signal: AbortSignal;
   /**
@@ -67,7 +79,8 @@ export async function automationStudioProjectBuildPrepareEntry(input: {
   const passing = input.proposals.predecessors(scope);
   const missing = predecessors.filter((key) => !passing.some((proposal) => proposal.scope.subflowKey === key));
   if (missing.length) return unprepared("project.entry_predecessor_missing", { missing });
-  const stale = passing.filter((proposal) => proposal.scope.buildId !== scope.buildId || proposal.scope.planDigest !== scope.planDigest).map((proposal) => proposal.scope.subflowKey);
+  const current = (proposal: AutomationStudioSubflowProposal) => proposal.scope.planDigest === scope.planDigest || input.proposals.keptUnder?.(proposal.scope.subflowKey, proposal.scope.planDigest, scope.planDigest) === true;
+  const stale = passing.filter((proposal) => proposal.scope.buildId !== scope.buildId || !current(proposal)).map((proposal) => proposal.scope.subflowKey);
   if (stale.length) return unprepared("project.entry_predecessor_stale", { missing: stale });
 
   const target = passing.at(-1)!;
