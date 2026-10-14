@@ -350,6 +350,14 @@ Partitioned by file. `service.ts` has one owner at a time (A5 only).
   events and the step log (`llm/step-log/`); paired with downstream chat work.
 - **A7 Re-author triage.** Supervisor decides local repair brief or re-plan
   for a refuted run; depends on held-topology units 1-4.
+- **Follow-ups found while building A1-A6 (2026-10-13).** A9: give the judge
+  the task spec's parts and `notAsked` as a checklist beside the instructions
+  (`result-verification/`, unowned so far). A10: route a person's answer to the
+  asking builder by ask id (`conversations/commands/answer-ask.ts:76-88` takes
+  the newest pending ask), needed above capacity 1. A11: the trial start hook
+  takes no lease or context, needed above capacity 1. A12: renamed helper parts
+  keep their step ids, so two briefs could derive the same dataset id; check at
+  assembly. A13: `llm/build-purse/purse.ts` is 476 lines (advisory 400).
 
 Interleaving with the Codex queue: entry-case units 2-3 and held-topology
 units 1-2 touch `service/candidate-trial/`, `service/runtime-adaptation/` and
@@ -660,6 +668,40 @@ there. Narrow checks only (no full suites): the unit's vitest files from
 - Must not touch: any file outside a `tests/` directory.
 - Definition of done: the command above passes in full; `pnpm.cmd --filter fluxiq check`; `node scripts/structure-audit.mjs`;
   `git diff --check`. Report the breaking commit and what each fixture lacked.
+
+### Brief: A5c-wiring
+- Repository: FluxIQ Core, its own paired worktree under `fxwork/` (the dispatch prompt names it).
+- Task: unit A5c, wire the project supervisor into a real build behind authoring mode `project`; `candidate` stays
+  the default. (1) New `service/project-build/`: `runAutomationStudioProjectBuild(ports)` builds the supervisor's
+  ports (A5a `project-agents/supervisor/ports.ts`) and the dispatcher's (A5b) from what the candidate branch of
+  `generateFlowBootstrapAdaptationInternal` already builds (`service.ts:1504-1609`): shared once per build are the
+  activity, cancellation root, project database hold, generation lock, blank-target check, binding, instruction
+  authority, provider, loop limits, creation purse, the project ledger (replacing `:1576`), the whole-candidate trial
+  port and judge (`:1586-1589`), the draft store and promotion (`:1606-1609`, unchanged); per brief are harness
+  options and node descriptions (`:1568`), build routing (`:1561`), the permission gate and person-needed (built
+  inside the brief's cancellation child, `:1577-1581`), the subflow trial port (`service/subflow-trial/`), the
+  brief's ledger (`forBrief`); trial sessions open through `admitAutomationStudioBuildTrialSession`; one host
+  scheduler per host-resources port (`this.hostRuntime?.hostResources`); a new build record store
+  (`AutomationStudioProjectBuildRecordStore(this.projectPaths, this.flowPaths)`). Builders are never started
+  through `generateFlowBootstrapAdaptationInternal` (its generation lock is not re-entrant). (2) `service.ts`:
+  in-place edits only, net zero lines and no packing (it is at its file-lines baseline, 4333): the candidate-only
+  tests become candidate-like for `project`, `:1586-1589` move into the new module, and `:1590` becomes the
+  ternary between `runAutomationStudioProjectBuild` and `generateAutomationStudioFlowCandidateDraft`. (3) Mode
+  `project` through `model/authoring-mode/authoring-mode.ts:28`, `service/flow-bootstrap-commands/{generation-request,contracts}.ts`,
+  `api/contracts/adaptation.ts:137`, `api/handlers/llm-generation.ts`, `conversations/commands/build.ts:100,138`
+  (chat must send a `project` build, not a legacy one), `flow-bootstrap/action-permissions.ts:311`; refuse
+  `project` with `extend` or a repair brief until A7. (4) Export the supervisor from the runtime barrel only if a
+  caller outside Core needs it.
+- Required reads: this document's Current State and A5 notes; the A5a and A5b reports; the lines named above.
+- Owns: the files named above and their tests; `docs/architecture/automation-studio/llm-flow-bootstrap.md` (a
+  section on mode `project`); the report.
+- Must not touch: `project-agents/**` beyond a barrel export line, `flow-bootstrap/subflow-candidate/**`,
+  `service/subflow-trial/**`, `llm/**`, `activity/**`.
+- Definition of done: a service-level test with a stub provider (modelled on
+  `service/flow-bootstrap-commands/tests/candidate-trial-facade.test.ts`) where a `project` build proposes on a
+  judged yes and keeps a draft on no; stub host runtime at capacity 2 and capacity 1; mode parsing and `project`
+  refused with `extend`; existing candidate tests unchanged; `node scripts/structure-audit.mjs` shows `service.ts`
+  lines unchanged; the four narrow checks.
 
 ## Work Ledger
 
