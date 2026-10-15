@@ -582,6 +582,14 @@ Entries from 2026-10-13 to A8 wave 4 (t550-t611) are archived in
 - Outcome: Accepted
 - Follow-up: the builder's return to the supervisor drops `coreFindings` (`dispatch/ending.ts` `trialSaid`; given to t645); matching is by words, so a step worded wholly unlike the control's name could draw a false finding
 
+### 2026-10-15 — After A8 frozen pair 3 wave 17: a plan keeps the person's request; an output no step makes is the plan's to change (t645)
+- Agent: read-only debug of wave 17 `project` bigbox cart (downstream report `a8-bigbox-cart-run-mv9zn5ob-debug.md`); worker t645-plan-keeps-request-and-output-advice; supervisor added the `coreFindings` carry, resolved the `run-brief.ts` merge with t648 (both header notes; t648's opening call with t645's ending watch), verified and integrated
+- Changed: `supervisor/plan-input.ts`, `contracts/task-spec.ts`: an amendment may not drop a span of the instruction the current parts quote (re-split fine, at most two words reworded) nor move a part's quote into `notAsked` (`project.plan_part_dropped`, naming the quote; a part is given up only by ending honestly); `dispatch/output-refusals.ts` (new) and `dispatch/ending.ts`: one output refused under two different bindings ends the brief blocked with the plan's advice, the reason names the output and says no step of the subflow makes it, and the supervisor's next names the consuming subflow; the builder's return carries `coreFindings[].said` (at most 3); `flow-bootstrap/plan/issue-feedback.ts`: an unknown `extraction.N` handle is told such a handle comes from detecting a repeating structure
+- Why: wave 17 `project` bigbox cart: a plan's invented hand-off value cost 14 refused submissions with code-only reasons, then an amendment dropped the person's store switch and the build ended with a false "cannot be done"
+- Validation: after merging dev (t647, t648 in): tsc exit 0; project-agents, service/project-build, flow-bootstrap/plan, llm/evidence-loop -> 104 files, 961 passed; audit passed; `pnpm check` -> passed; merged `e1808501`
+- Outcome: Accepted
+- Follow-up: the early stop is tested through the dispatcher with a scripted builder, not the real builder loop's stop at its next turn
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
