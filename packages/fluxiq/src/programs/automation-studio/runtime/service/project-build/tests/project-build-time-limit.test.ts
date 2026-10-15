@@ -6,11 +6,21 @@
 // that could not be confirmed, the scripted supervisor then waits out the
 // clock, and the person is told the time limit, what was tested and what is
 // left, in Core's words.
+//
+// **The bound runs on a clock the test holds (t615).** On the real clock both
+// tests failed under load (a vitest run over project-agents, service/project-build
+// and flow-bootstrap/subflow-candidate together): the work deadline fired while
+// the builder was still trying its subflow, so the part read "never tested" or
+// the assembled candidate was never tested whole. The supervisor's two time
+// signals (`startClock` in `project-agents/supervisor/supervisor-loop.ts`) are
+// now held by the test and reach their deadline only when the scripted
+// supervisor is waiting on the decision that outlives the bound; every other
+// timer stays on the real clock.
 
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { automationStudioActivityHub } from "../../../activity/index.ts";
@@ -18,13 +28,18 @@ import { parseAutomationStudioFlowBootstrapGenerationError } from "../../../flow
 import { AutomationStudioService } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 
-// The build's bound, shortened: its work stops 6 seconds after the supervisor starts.
+// The build's bound, shortened: its work stops 6 seconds after the supervisor starts, on the test's clock.
 vi.mock("../../../loop-limits/index.ts", async (original) => ({ ...(await original<object>()), AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS: 8_000, AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_MS: 2_000 }));
 
 vi.setConfig({ testTimeout: 60_000 });
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
+
+/** The supervisor's time-limit timers, held off the real clock (header); `reachWorkDeadline` moves the clock to the bound less its ending. */
+type BuildClock = { held: () => readonly number[]; reachWorkDeadline: () => void };
+let clock: BuildClock;
+beforeEach(() => { clock = holdTheBuildClock(); });
 
 const TASK = "Create a deterministic Start to End Flow.";
 const PLAN = {
@@ -49,9 +64,49 @@ type Entry = { callId: string; toolId: string; value: unknown };
 const lastOf = (evidence: readonly Entry[], toolId: string) => [...evidence].reverse().find((entry) => entry.toolId === toolId)?.value as JsonObject | undefined;
 const decision = (decided: JsonObject) => ({ response: { kind: "evidence_tool_decision", summary: "Scripted", decision: decided }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.0001 } });
 
-/** A decision that never comes inside the build's bound: the call outlives the work deadline, and is abandoned. */
+/** A decision that never comes inside the build's bound: while it is pending the clock reaches the work deadline, and the call is abandoned. */
 function outlivingTheBound(): Promise<never> {
+  setImmediate(() => clock.reachWorkDeadline());
   return new Promise((_, reject) => { setTimeout(() => reject(new DOMException("Aborted", "AbortError")), 20_000).unref(); });
+}
+
+/**
+ * Holds the timers the supervisor's `startClock` sets (header), recognised by their caller, and lets every other
+ * timer through to the real clock. A held timer fires only when the test moves the clock past its delay.
+ */
+function holdTheBuildClock(): BuildClock {
+  const realSet = globalThis.setTimeout;
+  const realClear = globalThis.clearTimeout;
+  const held: { delay: number; fire: () => void; cleared: boolean; fired: boolean }[] = [];
+  const handles = new Map<unknown, (typeof held)[number]>();
+  const set = vi.spyOn(globalThis, "setTimeout").mockImplementation(((handler: () => void, delay?: number, ...rest: unknown[]) => {
+    if (!new Error().stack?.includes("startClock")) return (realSet as (...args: unknown[]) => unknown)(handler, delay, ...rest);
+    const timer = { delay: delay ?? 0, fire: () => handler(), cleared: false, fired: false };
+    const handle = { held: true };
+    held.push(timer);
+    handles.set(handle, timer);
+    return handle;
+  }) as unknown as typeof setTimeout);
+  const clear = vi.spyOn(globalThis, "clearTimeout").mockImplementation(((handle: unknown) => {
+    const timer = handles.get(handle);
+    if (timer) timer.cleared = true;
+    else realClear(handle as Parameters<typeof clearTimeout>[0]);
+  }) as typeof clearTimeout);
+  cleanups.push(async () => {
+    set.mockRestore();
+    clear.mockRestore();
+  });
+  return {
+    held: () => held.map((timer) => timer.delay),
+    reachWorkDeadline: () => {
+      // The earliest held deadline is the work deadline, the bound less its ending; the bound itself stays ahead.
+      const at = Math.min(...held.filter((timer) => !timer.cleared && !timer.fired).map((timer) => timer.delay));
+      for (const timer of held.filter((due) => !due.cleared && !due.fired && due.delay <= at)) {
+        timer.fired = true;
+        timer.fire();
+      }
+    }
+  };
 }
 
 describe("a project build its time limit stops", () => {
@@ -88,6 +143,8 @@ describe("a project build its time limit stops", () => {
     const unsubscribe = automationStudioActivityHub.subscribe((event) => seen.push(event));
     const failure = await service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project" })
       .then(() => undefined, (error: unknown) => error).finally(unsubscribe);
+    // The bound reached the build through its clock: the work deadline 2 seconds before the 8-second bound.
+    expect(clock.held()).toEqual([6_000, 8_000]);
     const diagnostic = parseAutomationStudioFlowBootstrapGenerationError(failure);
     // The code every debug and the Lab read stays the build's own.
     expect(diagnostic).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_time_limit", "project.build_blocked"] });
@@ -128,6 +185,7 @@ describe("a project build its time limit stops", () => {
     const seen: ClientGatewayActivity[] = [];
     const unsubscribe = automationStudioActivityHub.subscribe((event) => seen.push(event));
     const result = await service.generateFlowBootstrapAdaptation({ projectId, flowId, caller: caller(), evidenceGuided: true, authoringMode: "project" }).finally(unsubscribe);
+    expect(clock.held()).toEqual([6_000, 8_000]);
     // The draft's trial keeps its own code first, which every debug and the Lab read, and carries the time limit beside it,
     // which the chat's reply opens with (`conversations/commands/create-here.ts`).
     expect(result).toMatchObject({ status: "draft", promotionAllowed: false, trial: { verdict: "no", codes: ["candidate.trial_judged_no", "project.build_time_limit"] } });
