@@ -12,6 +12,17 @@
 // (`./missing-claim.ts`, `./value-claim.ts`). A row two conditions of one name
 // would give different readings is given none.
 //
+// **Never a condition that tests a row's own label (t651).** Where the value a
+// condition tests is the row's own name (`./label-tested-condition.ts`), a row
+// failing it says only that its name does not say the condition's text --
+// never that the request does not ask for it, though that text is a word of
+// the request. Core measured the name, not what the request's word is about,
+// so none of its rows is quoted: Core neither refutes a no with them nor
+// accounts for them (`./record-conditions.ts`), and a yes still quotes for
+// them as for any row Core did not settle on the request's words. Each of its
+// left-out rows says so (`testsLabel`): a no calling one missing disputes that
+// condition, whatever its words (`./missing-claim.ts`, t651 round 2).
+//
 // **And every condition, and the values Core read (t631).** Each condition of
 // the result, with how Core accounts for each row it alone left out
 // (`./record-conditions.ts`): what a no's advice to change one is weighed
@@ -31,6 +42,7 @@ import {
   type AutomationStudioRequestPhrases,
   type AutomationStudioRequestWording
 } from "../request-rows/index.ts";
+import { automationStudioResultConditionTestsLabel } from "./label-tested-condition.ts";
 import { automationStudioResultNoConditions } from "./record-conditions.ts";
 import { automationStudioResultRequestTextTest } from "./request-text-test.ts";
 import type { AutomationStudioResultNoClaim, AutomationStudioResultNoLeftOutRow, AutomationStudioResultNoRecord, AutomationStudioResultNoStoredRow } from "./types.ts";
@@ -45,12 +57,13 @@ export function automationStudioResultNoRecord(input: {
   const { summary } = input;
   const { reads } = automationStudioRequestRowsReads(summary);
   const stored = summary.recordSets.flatMap((set) => (set.sampleRows ?? []).flatMap((row) => storedRow(row, set.columns)));
-  const quotes = requestQuotes(summary, input.requestText, input.wording?.says);
+  const testsLabel = labelTested(summary, stored);
+  const quotes = requestQuotes(summary, testsLabel, input.requestText, input.wording?.says);
   const leftOut = reads.flatMap((read) => read.conditions.flatMap((condition) => condition.rows.map((given, index) => {
     const label = condition.labels[index]!;
     const settled = condition.settled?.labels.includes(label) === true;
     const quoted = settled ? quotes.get(quoteKey(condition.condition, label)) ?? undefined : undefined;
-    return { label, given, condition: condition.condition, settled, quotesRequest: quoted !== undefined, ...(quoted ? { quoted } : {}) };
+    return { label, given, condition: condition.condition, settled, quotesRequest: quoted !== undefined, ...(quoted ? { quoted } : {}), ...(testsLabel.has(condition.condition) ? { testsLabel: true as const } : {}) };
   })));
   const storedLabels = [...new Set(stored.map((row) => row.label))];
   const pools = [...reads.map((read) => [...new Set([...read.labels, ...storedLabels])]), storedLabels];
@@ -84,8 +97,9 @@ function quoteKey(condition: string, label: string): string {
  * Each settled row of a read that kept rows whose condition tests the
  * request's own words, by condition and label: those words, and the value the
  * row's witness found (header). `null` where one key would read two ways.
+ * None of a condition that tests a row's own label (header, t651).
  */
-function requestQuotes(summary: AutomationStudioRunResultSummary, requestText: string | undefined, says: ((text: string) => boolean) | undefined): Map<string, Quoted | null> {
+function requestQuotes(summary: AutomationStudioRunResultSummary, testsLabel: ReadonlySet<string>, requestText: string | undefined, says: ((text: string) => boolean) | undefined): Map<string, Quoted | null> {
   const quotes = new Map<string, Quoted | null>();
   if (!requestText || !says) return quotes;
   // A subflow trial's entry is judged in its own trial, as `../request-rows/summary-reads.ts` leaves it out.
@@ -95,9 +109,10 @@ function requestQuotes(summary: AutomationStudioRunResultSummary, requestText: s
     if (entry.has(account.nodeId) || !(account.kept > 0)) continue;
     (account.conditions ?? []).forEach((condition, index) => {
       if (!condition.leftOutSettled?.length || !condition.leftOutOnlyByThis?.length) return;
+      const name = automationStudioResultConditionName(condition.number ?? index + 1, condition.condition);
+      if (testsLabel.has(name)) return;
       const texts = automationStudioResultRequestTextTest(condition.condition, requestText, says);
       if (!texts) return;
-      const name = automationStudioResultConditionName(condition.number ?? index + 1, condition.condition);
       const settled = new Set(condition.leftOutSettled);
       condition.leftOutOnlyByThis.forEach((row, at) => {
         const witness = condition.leftOutObservations?.[at];
@@ -109,6 +124,21 @@ function requestQuotes(summary: AutomationStudioRunResultSummary, requestText: s
     });
   }
   return quotes;
+}
+
+/**
+ * Each read condition that tests a row's own label (`./label-tested-condition.ts`,
+ * header), as every line names it. Not a saved answer's: Core settles none of
+ * its rows, so none is refuted on them.
+ */
+function labelTested(summary: AutomationStudioRunResultSummary, stored: readonly AutomationStudioResultNoStoredRow[]): Set<string> {
+  const names = new Set<string>();
+  for (const account of summary.reads ?? []) {
+    (account.conditions ?? []).forEach((condition, index) => {
+      if (automationStudioResultConditionTestsLabel(condition, stored)) names.add(automationStudioResultConditionName(condition.number ?? index + 1, condition.condition));
+    });
+  }
+  return names;
 }
 
 /** A tested value said after a left-out row's label (`../read-account/alone-rows.ts`). */
