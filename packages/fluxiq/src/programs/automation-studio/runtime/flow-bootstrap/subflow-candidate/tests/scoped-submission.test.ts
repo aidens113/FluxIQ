@@ -309,6 +309,19 @@ describe("a subflow builder's scoped submission", () => {
     expect((await controller().submit(script([...OPEN]))).ok).toBe(true);
   });
 
+  // t609 (t598 open question 2): a Core wait that declared `create_new` satisfied a part's asked act, and a trial then
+  // recorded nothing for it, so nothing was undone or reported. A recipe box's save, asked of the part.
+  it("refuses a submission whose only declared lasting act sits on a Core wait, and takes a recorded action's (t609)", async () => {
+    const asking = testScope({ parts: [{ partId: "p2", sourceId: "instruction.1", text: "Save the recipe to the box", lastingActs: ["create_new"] }] });
+    const wait = ["step: let the box settle", "  node: builtin.timing.wait", "  duration: 1", "  unit: seconds", "  consequences: create_new"];
+    const refused = await controller(asking).submit(script([...OPEN, ...wait]));
+    if (refused.ok) throw new Error("expected a refusal");
+    expect(refused.check.issueCodes).toEqual(["subflow.lasting_act_missing"]);
+    // The same wait beside the step that does the act: the act counts, the wait's declaration does not matter.
+    const save = ["step: save the recipe", "  node: web.dom.click", "  selector: .save-recipe", "  consequences: create_new"];
+    expect((await controller(asking).submit(script([...OPEN, ...wait, ...save]))).ok).toBe(true);
+  });
+
   it("refuses a scope whose own key is a sibling's", () => {
     expect(() => new AutomationStudioSubflowScopedSubmissionController({ scope: testScope({ subflowKey: "checkout" }), siblings: [...SIBLINGS], submission: testSubmission() })).toThrow("subflow.scope_invalid");
   });

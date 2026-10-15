@@ -148,6 +148,25 @@ export type AutomationStudioHostRuntimeBoundary = {
    */
   routeEffectSeen?(effect: JsonObject, observed: JsonObject): AutomationStudioRouteEffectSighting;
   captureStateSnapshot?(input: AutomationStudioHostRuntimeActionContext & { point: "before_action" | "after_action" | "after_wait_retry" | "after_patch_test" }): AutomationStudioHostStateSnapshotRef | Promise<AutomationStudioHostStateSnapshotRef>;
+  /**
+   * What `node`'s step changed between the two snapshots, stored on the
+   * attempt as `stateRefs.stateDiff` and otherwise opaque to Core. Two keys
+   * Core reads when the host writes them (t598, t609), each of opaque tokens
+   * in the form a permission declaration's `control.item` takes:
+   *
+   * - `spot`: `{ item?, dialog? }`, the item and dialog the step's control sat
+   *   in on the page before it;
+   * - `items`: `{ before: string[], after: string[] }`, the items the host
+   *   vouches each page listed. A trial counts an item as one its step created
+   *   only when it is in `after` and not in `before`, on the same document, and
+   *   no earlier step of the trial showed it
+   *   (`service/candidate-trial/landed-acts.ts`); a host leaves out of both
+   *   sides any item it cannot vouch was absent before, such as a list only
+   *   the step revealed.
+   *
+   * Both are page evidence: a persisted trace withholds the whole diff
+   * (`executor/trace-withholding.ts`, `stateDiff`).
+   */
   inspectStateDiff?(input: { before?: AutomationStudioHostStateSnapshotRef; after?: AutomationStudioHostStateSnapshotRef; node: AutomationStudioFlowNode; attemptId: string }): JsonObject | Promise<JsonObject>;
   rollbackHint?(input: AutomationStudioHostRuntimeActionContext): JsonObject | Promise<JsonObject>;
   /**
