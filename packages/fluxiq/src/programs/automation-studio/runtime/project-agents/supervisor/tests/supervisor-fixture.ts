@@ -57,6 +57,8 @@ export function project(options: {
   builder?: BuilderPlan;
   /** The trials a return that is not done lists (t606); none when absent. */
   notDoneTrials?: (brief: AutomationStudioProjectSubflowBrief, attempt: number) => AutomationStudioProjectBuilderReturn["trials"];
+  /** The script a done brief's builder writes instead of its subflow's usual one (t637), e.g. a repair that changes its subflow; the usual one when it answers undefined. */
+  script?: (brief: AutomationStudioProjectSubflowBrief, attempt: number) => string[] | undefined;
   trial?: (attempt: number) => AutomationStudioCandidateTrialResult["verdict"];
   /** What each whole trial's feedback says, beyond its verdict (t603); `{ said: <verdict> }` when absent. */
   trialFeedback?: (attempt: number) => JsonObject;
@@ -119,14 +121,14 @@ export function project(options: {
         returns.push({ briefId: brief.briefId, outcome, reason: `The ${brief.subflowKey} control could not be found.`, trials: options.notDoneTrials?.(brief, attempt) ?? [], spentUsd: 0.01, calls: 4 });
         continue;
       }
-      const proposal = await propose(brief);
+      const proposal = await propose(brief, attempt);
       proposals.set(brief.briefId, proposal);
       if (brief.permittedActs.length) ledger.forBrief(brief.briefId).trialRan([{ step: 1, definitionId: "web.output.dom-click", label: `press hold for ${brief.subflowKey}`, consequences: ["create_new"] }], `trial-${brief.briefId}`);
       returns.push({ briefId: brief.briefId, outcome: "done", reason: "Its trial answered yes.", proposal: { subflowKey: brief.subflowKey, revision: proposal.revision, digest: proposal.digest }, trials: [{ kind: "subflow_trial", receiptId: `trial-${brief.briefId}`, digest: "c".repeat(64) }], spentUsd: 0.02, calls: 6 });
     }
     return { returns };
   };
-  async function propose(brief: AutomationStudioProjectSubflowBrief): Promise<AutomationStudioSubflowProposal> {
+  async function propose(brief: AutomationStudioProjectSubflowBrief, attempt: number): Promise<AutomationStudioSubflowProposal> {
     const view = await record.read(BUILD);
     const plan = view!.record.plans.at(-1)!.plan;
     const spec = view!.record.taskSpecs.at(-1)!.taskSpec;
@@ -145,7 +147,7 @@ export function project(options: {
       siblings: plan.plan.subflows.map((candidate) => candidate.key).filter((key) => key !== brief.subflowKey),
       submission
     });
-    const submitted = await controller.submit({ flow: SCRIPTS[brief.subflowKey]!.join("\n") });
+    const submitted = await controller.submit({ flow: (options.script?.(brief, attempt) ?? SCRIPTS[brief.subflowKey]!).join("\n") });
     if (!submitted.ok) throw new Error(`fixture script refused: ${JSON.stringify(submitted.check.feedback)}`);
     return submitted.proposal;
   }

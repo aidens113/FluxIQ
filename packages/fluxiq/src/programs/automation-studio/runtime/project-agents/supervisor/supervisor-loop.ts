@@ -86,6 +86,27 @@
 // the pass stands completes on it as well (`./completion.ts`, `ended`). Only
 // the person's cancel does not.
 //
+// **A rescued pass outlives a later assembly (A8 wave 9 social `run-mv9ml775`,
+// t637).** When the repair of a rescued pass came back done and the Flow
+// assembled from it never passed its whole test, the most recent rescued pass
+// stays the build's fallback (`./state.ts`, `standingRescue`) until a later
+// pass replaces it. Every guard-forced end above completes on it as on
+// the latest assembly's own, and the run hands its caller the fallback's own
+// Flow and its own yes (`completedOn`), never the later assembly, so the
+// caller promotes the revision that passed. The fallback's trial was not the
+// last thing run on the target, so the reset rule holds first, as for an
+// ending: Core's reset brief undoes this build's own acts still in place,
+// except where an ending sends none -- money spent, a provider that stopped
+// answering, a question put to the person -- and what is left is named after
+// the person's words. The person's cancel still completes on nothing.
+// The fallback is the most recent pass of either kind (coordinator, t637): an
+// outright one completes the same way, said plainly (`completedOnPass`). So
+// does the latest assembly's own outright pass when a guard ends the loop
+// before the supervisor completed on it (`latestPass`): a standing pass is
+// Core's evidence however the loop stopped, as t611 holds for a brief. The
+// person is told the supervisor stopped before completing, then what stopped
+// it; the reset rule holds first, and the person's cancel completes on nothing.
+//
 // **A provider that stopped answering is not asked to reset (t621).** A8
 // canary `run-mv8zw5l2-98064abf`: the model provider answered none of the
 // supervisor's decisions, and the loop ended
@@ -115,7 +136,7 @@ import { automationStudioProjectSupervisorPlanning } from "./planning.ts";
 import type { AutomationStudioProjectSupervisorPorts } from "./ports.ts";
 import { automationStudioProjectSupervisorReadTask } from "./read-task.ts";
 import { automationStudioProjectSupervisorHostTools } from "./role-tools.ts";
-import { AutomationStudioProjectSupervisorState, type AutomationStudioProjectSupervisorRecoveryShortfall, type AutomationStudioProjectSupervisorReliesOnRecovery } from "./state.ts";
+import { AutomationStudioProjectSupervisorState, type AutomationStudioProjectSupervisorCompletedOnPass, type AutomationStudioProjectSupervisorRecoveryShortfall, type AutomationStudioProjectSupervisorReliesOnRecovery } from "./state.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "./tool-ids.ts";
 import { automationStudioProjectSupervisorTools } from "./tools.ts";
 import { AutomationStudioProjectSupervisorWholeTrial } from "./whole-trial.ts";
@@ -135,8 +156,10 @@ export type AutomationStudioProjectSupervisorOutcome = {
   ending?: AutomationStudioProjectBuildEnding;
   /** Present when the run reached its time limit before a candidate passed (header). */
   timedOut?: true;
-  /** `candidate` only: the latest whole test passed only on the run's own recovery and its repair could not be made; what the person was told (header, t603). */
+  /** `candidate` only: a whole test passed only on the run's own recovery -- the latest assembly's, or the build's fallback, whose Flow is then `candidate` (t637) -- and its repair could not be made; what the person was told (header, t603). */
   reliesOnRecovery?: AutomationStudioProjectSupervisorReliesOnRecovery;
+  /** `candidate` only: completed on a fallback that passed its whole test outright, whose Flow is then `candidate`; what the person was told (header, t637). */
+  completedOnPass?: AutomationStudioProjectSupervisorCompletedOnPass;
   promotionAllowed: false;
 };
 
@@ -263,17 +286,29 @@ async function supervise(input: SupervisorInput, clock: Clock): Promise<Automati
     else if (stall && error === stall.error && !signal?.aborted) stalled = stall;
     else if (!outOfTime(clock.work)) throw error;
   }
-  const candidate = controller.latest();
   // Out of time only when the loop did not complete: a completion or an honest ending given just as the work deadline passed stands.
   const timedOut = !loop?.ok && !outOfMoney && outOfTime(clock.work);
-  const done = (status: "candidate" | "ended", recorded?: AutomationStudioProjectBuildEnding): AutomationStudioProjectSupervisorOutcome => ({
-    loop, status, candidate, trial: gate.standing(candidate), ...(recorded ? { ending: recorded } : {}), ...(timedOut ? { timedOut: true as const } : {}),
-    ...(status === "candidate" && state.reliesOnRecovery ? { reliesOnRecovery: structuredClone(state.reliesOnRecovery) } : {}), promotionAllowed: false
-  });
+  const done = (status: "candidate" | "ended", recorded?: AutomationStudioProjectBuildEnding): AutomationStudioProjectSupervisorOutcome => {
+    // Completed on the build's fallback, the caller is handed its Flow and its yes, not the later assembly's (header, t637).
+    const candidate = status === "candidate" && state.completedOn ? structuredClone(state.completedOn) : controller.latest();
+    return {
+      loop, status, candidate, trial: gate.standing(candidate), ...(recorded ? { ending: recorded } : {}), ...(timedOut ? { timedOut: true as const } : {}),
+      ...(status === "candidate" && state.reliesOnRecovery ? { reliesOnRecovery: structuredClone(state.reliesOnRecovery) } : {}),
+      ...(status === "candidate" && state.completedOnPass ? { completedOnPass: structuredClone(state.completedOnPass) } : {}), promotionAllowed: false
+    };
+  };
   if (loop?.ok && !ended) return done("candidate");
   // A pass the run rescued still stands when any guard ended the build before its repair; never on the person's cancel (header, t603, t622).
   const shortfall = recoveryShortfall({ outOfMoney, timedOut, stalled: stalled !== undefined, loop });
-  if (shortfall && !signal?.aborted && automationStudioProjectSupervisorReliesOnRecovery(context, shortfall)) return done("candidate");
+  // A rescued pass or the fallback, else the latest assembly's own outright pass (header, t637).
+  const rescue = shortfall && !signal?.aborted ? state.standingRescue(controller, gate) ?? state.latestPass(controller, gate) : undefined;
+  if (shortfall && rescue) {
+    // On the fallback or the latest outright pass the reset rule holds first, where an ending would send a reset (header, t637).
+    if (rescue.fallback && shortfall !== "money" && shortfall !== "provider" && !personEnded(stalled?.error)) await resetBeforeEnding({ ...context, signal: ending }, () => outOfTime(ending), rescue.fallback.latest ? LATEST_PASS_RESET_REASON : FALLBACK_RESET_REASON);
+    const left = rescue.fallback ? automationStudioProjectSupervisorLeftOnTarget(ports).note : undefined;
+    automationStudioProjectSupervisorReliesOnRecovery(context, shortfall, { rescue, left });
+    return done("candidate");
+  }
   const stoppedBy = loop && !loop.ok ? loop.code : stalled ? stalled.issueCodes[0] ?? "stalled" : undefined;
   const cancelled = !timedOut && (signal?.aborted === true || stoppedBy === CANCELLED);
   // The provider stopped answering (header, t621): said as that, and no reset is asked of it.
@@ -358,6 +393,10 @@ function personEnded(error: unknown): boolean {
 
 /** Why Core dispatched the reset itself, for the build record. */
 const CORE_RESET_REASON = "The supervisor stopped before a whole trial passed, so Core puts back the lasting acts this build made before the build ends.";
+/** Why Core dispatched the reset itself before completing on the build's fallback (header, t637). */
+const FALLBACK_RESET_REASON = "The supervisor stopped before a later revision passed its whole test, so Core puts back the lasting acts this build made before it completes on the last revision that passed.";
+/** Why Core dispatched the reset itself before completing on the latest assembly's own outright pass (header, t637). */
+const LATEST_PASS_RESET_REASON = "The supervisor stopped before completing, so Core puts back the lasting acts this build made before it completes on the revision that passed its whole test.";
 
 /**
  * Core's own reset brief before an ending a guard forced (header): only while
@@ -367,7 +406,7 @@ const CORE_RESET_REASON = "The supervisor stopped before a whole trial passed, s
  * any brief is; a refusal of it, a purse that cannot pay for it, or the run's
  * bound stopping it, leaves the ending to name what is left.
  */
-async function resetBeforeEnding(context: AutomationStudioProjectSupervisorContext, pastTheBound: () => boolean): Promise<void> {
+async function resetBeforeEnding(context: AutomationStudioProjectSupervisorContext, pastTheBound: () => boolean, reason = CORE_RESET_REASON): Promise<void> {
   const { ports, state } = context;
   const structure = state.structure;
   const left = automationStudioProjectSupervisorLeftOnTarget(ports);
@@ -377,7 +416,7 @@ async function resetBeforeEnding(context: AutomationStudioProjectSupervisorConte
   const ownerKey = state.briefs.find((brief) => brief.briefId === owner)?.subflowKey;
   const subflowKey = ownerKey && keys.has(ownerKey) ? ownerKey : structure.plan.subflows[0]?.key;
   if (!subflowKey) return;
-  const value = { reason: CORE_RESET_REASON, briefs: [{ kind: "reset", subflowKey, entry: { caseId: "observed-current", predecessors: [] } }] };
+  const value = { reason, briefs: [{ kind: "reset", subflowKey, entry: { caseId: "observed-current", predecessors: [] } }] };
   try {
     await withAutomationStudioProjectAgent({ role: "supervisor" }, () => automationStudioLlmBuildPurseRun(ports.purse, () => automationStudioProjectSupervisorDispatchTool(context, value)));
   } catch (error) {
