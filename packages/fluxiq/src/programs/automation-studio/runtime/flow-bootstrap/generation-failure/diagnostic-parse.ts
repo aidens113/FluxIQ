@@ -40,7 +40,7 @@ export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   // parses back" a property of one table rather than of two lists agreeing.
   const state = automationStudioFlowBootstrapFailureState(value.code, stage, providerStatusFromAccounting(value.accounting));
   if (value.retryable !== state.retryable || !state.acceptedProviderInvocations.includes(value.providerInvocation)
-    || value.providerResponse !== state.providerResponse) return null;
+    || !state.acceptedProviderResponses.includes(value.providerResponse)) return null;
   if ((value.providerResponse === "received" && value.providerInvocation !== "attempted")
     || (value.providerInvocation === "not_attempted" && value.providerResponse !== "not_received")) return null;
   if (state.accounting === "required" ? value.accounting === undefined : state.accounting === "absent" && value.accounting !== undefined) return null;

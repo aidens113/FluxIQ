@@ -369,6 +369,8 @@ export type AutomationStudioFlowBootstrapBuildPhasesOutcome =
     kept: AutomationStudioFlowBootstrapIncompleteDraftPointer | undefined;
     accounting: AutomationStudioLlmEvidenceLoopAccounting;
     rounds: number;
+    /** A provider that stopped answering only: the stopped loop's account, which says whether any reply arrived (t619). */
+    providerUnavailable?: AutomationStudioLlmEvidenceLoopProviderUnavailable;
   };
 
 /** Runs the build's rounds until a Flow is accepted, or the build ends with a stated reason. */
@@ -519,7 +521,8 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
         lastIssueCodes: phase2.lastIssueCodes,
         kept,
         accounting: spent,
-        rounds
+        rounds,
+        ...(typeof kind === "object" && "providerUnavailable" in kind ? { providerUnavailable: kind.providerUnavailable } : {})
       };
     };
     /** The budget with too little left to open another round, where one has; it notes what the round needed when the purse could not fund it. */

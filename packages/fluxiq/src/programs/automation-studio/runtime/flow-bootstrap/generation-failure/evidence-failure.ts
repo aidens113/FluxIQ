@@ -8,6 +8,7 @@ import type {
   AutomationStudioLlmEvidenceLoopAccounting,
   AutomationStudioLlmEvidenceLoopExhaustion,
   AutomationStudioLlmEvidenceLoopFailureCode,
+  AutomationStudioLlmEvidenceLoopProviderUnavailable,
   AutomationStudioLlmEvidenceLoopResult,
   AutomationStudioLlmEvidenceLoopTrace
 } from "../../llm/index.ts";
@@ -18,6 +19,8 @@ import type { AutomationStudioFlowBootstrapPhaseFailureCode } from "./codes.ts";
 import { flowBootstrapDiagnosticIssueCodes, type AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnostic.ts";
 import { AutomationStudioFlowBootstrapGenerationError } from "./error.ts";
 import { automationStudioFlowBootstrapFailureState } from "./failure-state.ts";
+import { flowBootstrapLoopProviderUnavailableEnding, type AutomationStudioFlowBootstrapLoopPageSaid } from "./loop-provider-unavailable.ts";
+import { flowBootstrapProviderReplyArrived } from "./provider-reply-arrived.ts";
 
 type EvidenceAccounting = NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["accounting"]>;
 type IncompleteDraftPointer = NonNullable<NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]>["incompleteDraft"]>;
@@ -36,8 +39,10 @@ const EVIDENCE_LOOP_FAILURE_CODES: Record<AutomationStudioLlmEvidenceLoopFailure
   // A build ends this way through its phases, with a message (`../unfinished-build/replies-unreadable.ts`);
   // a caller that publishes the loop's ending itself has only the code, and it names what happened.
   "llm_evidence_loop.unreadable_replies": "flow_bootstrap.provider_response_malformed",
-  // The same for a provider that stopped answering (`../unfinished-build/provider-unavailable.ts`).
-  "llm_evidence_loop.provider_unavailable": "flow_bootstrap.provider_timeout"
+  // A provider that stopped answering always ends with its own message (`./loop-provider-unavailable.ts`,
+  // t619): this code is never published from here without it. It was `flow_bootstrap.provider_timeout`,
+  // a request-stage code this stage's parse refuses, so the catch erased it to the stage's own code.
+  "llm_evidence_loop.provider_unavailable": "flow_bootstrap.provider_unavailable"
 };
 
 /**
@@ -52,14 +57,26 @@ const EVIDENCE_LOOP_FAILURE_CODES: Record<AutomationStudioLlmEvidenceLoopFailure
  *
  * `retryable` is read from the one table this and the parser share, so a
  * producer cannot write a state a reader will refuse.
+ *
+ * **A provider that stopped answering is said as that, in every mode (t619).**
+ * `llm_evidence_loop.provider_unavailable` is published as the build ending
+ * `flow_bootstrap.provider_unavailable`, its message Core's
+ * (`./loop-provider-unavailable.ts`): never as something the model wrote. A
+ * candidate build and a project build's supervisor both end here; `page` says
+ * whether the loop's own trace knows what was done on the target.
  */
 export function flowBootstrapEvidenceLoopFailure(
   result: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: false }>,
   /** What the loop spent before it ended, when the caller can say. */
   accounting?: EvidenceAccounting,
   /** The incomplete draft the build kept, when it kept one (`../incomplete-draft/`). */
-  incompleteDraft?: IncompleteDraftPointer
+  incompleteDraft?: IncompleteDraftPointer,
+  /** How a provider-unavailable ending says the page: from the loop's trace, or left to the caller. */
+  page?: AutomationStudioFlowBootstrapLoopPageSaid
 ): AutomationStudioFlowBootstrapGenerationError {
+  if (result.code === "llm_evidence_loop.provider_unavailable") {
+    return flowBootstrapBuildEndingFailure(flowBootstrapLoopProviderUnavailableEnding(result, page), result, accounting, incompleteDraft, result.providerUnavailable?.codes ?? []);
+  }
   const code = EVIDENCE_LOOP_FAILURE_CODES[result.code];
   const issueCodes = flowBootstrapDiagnosticIssueCodes(result.exhaustion?.lastIssueCodes ?? []);
   return new AutomationStudioFlowBootstrapGenerationError({
@@ -195,10 +212,14 @@ export function flowBootstrapUserInterventionRequiredFailure(
  * the ending that says to the person why and what was tried. `issueCodes` are
  * the last refusals the model was shown, for a reader that counts; the message
  * never names one.
+ *
+ * A provider that stopped answering says whether any reply reached the build
+ * (`./provider-reply-arrived.ts`, t619): `not_received` when none did, from
+ * the stopped loop's `providerUnavailable` its progress carries.
  */
 export function flowBootstrapBuildEndingFailure(
   ending: AutomationStudioFlowBootstrapBuildEnding,
-  progress: EvidenceLoopProgress & { exhaustion?: AutomationStudioLlmEvidenceLoopExhaustion | undefined },
+  progress: EvidenceLoopProgress & { exhaustion?: AutomationStudioLlmEvidenceLoopExhaustion | undefined; providerUnavailable?: AutomationStudioLlmEvidenceLoopProviderUnavailable | undefined },
   accounting?: EvidenceAccounting,
   incompleteDraft?: IncompleteDraftPointer,
   lastIssueCodes: readonly string[] = []
@@ -210,7 +231,7 @@ export function flowBootstrapBuildEndingFailure(
     stage: "provider_output_validation",
     retryable: automationStudioFlowBootstrapFailureState(code, "provider_output_validation", undefined).retryable,
     providerInvocation: "attempted",
-    providerResponse: "received",
+    providerResponse: ending.kind !== "provider_unavailable" || flowBootstrapProviderReplyArrived({ providerUnavailable: progress.providerUnavailable, ending, accounting }) ? "received" : "not_received",
     ...(accounting ? { accounting } : {}),
     evidenceLoop: { ...evidenceLoopDiagnostic(progress, progress.exhaustion), ...(incompleteDraft ? { incompleteDraft } : {}) },
     ...(issueCodes.length ? { issueCodes } : {}),

@@ -97,7 +97,9 @@ describe("a Flow build whose model provider stops answering", () => {
     expect(diagnostic.retryable).toBe(true);
     expect(diagnostic.ending).toMatchObject({ kind: "provider_unavailable", tried: { rounds: 1, decisions: 3, stepsInFlow: 0, tested: "not_tested" } });
     expect(diagnostic.ending?.message).toMatch(/^The build stopped because the AI model provider is not responding: 3 requests in a row got no answer -- it did not answer before the time allowed for each request ran out\. No Flow was created or changed, and nothing on the page was changed\./u);
-    expect(diagnostic.ending?.message).toContain("Try again once the provider is answering.");
+    expect(diagnostic.ending?.message).toContain("What the Flow should do is kept, so you can try again later, once the provider is answering.");
+    // No reply arrived at all, and the diagnostic says so (t619).
+    expect(diagnostic.providerResponse).toBe("not_received");
 
     // The chat: each unanswered request said in words, and the build's own ending last, final, with the message.
     const unansweredRows = seen.filter((event) => event.label === "The AI model provider did not answer");
@@ -121,6 +123,8 @@ describe("a Flow build whose model provider stops answering", () => {
     expect(requests).toHaveLength(4);
     expect(diagnostic.code).toBe("flow_bootstrap.provider_unavailable");
     expect(diagnostic.ending?.message).toContain("No Flow was created or changed. The one action already taken on the page was not undone.");
+    // A reply did arrive before the provider stopped answering (t619).
+    expect(diagnostic.providerResponse).toBe("received");
   });
 
   it("carries on to a proposed Flow when an unanswered request is followed by an answer", async () => {
