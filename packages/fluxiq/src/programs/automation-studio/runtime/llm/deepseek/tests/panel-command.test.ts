@@ -106,6 +106,32 @@ describe("the chat window's DeepSeek call", () => {
     expect(paid).toHaveBeenCalledWith(estimateAutomationStudioDeepSeekCostUsd(100, 5_000, 0, AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL));
   });
 
+  // A8 wave 4 (t613): a reply whose headers came and whose body never finished
+  // outlasted the call's signal. The send and the read both end with it now,
+  // under a code, and the body is let go.
+  it("ends a reply that starts and never finishes when its signal aborts, as a timeout, and cancels the body", async () => {
+    let cancelled = false;
+    const stalled = new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new TextEncoder().encode("\n")); },
+      cancel() { cancelled = true; }
+    });
+    // A transport that, like the live one, does not end the body itself when the signal fires.
+    const fetchImpl = (async () => new Response(stalled, { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch;
+    const controller = new AbortController();
+    const answer = modelWith(fetchImpl).decide(REQUEST, { signal: controller.signal, caller: null });
+    setTimeout(() => controller.abort(new DOMException("timed out", "TimeoutError")), 20);
+    await expect(answer).rejects.toMatchObject({ code: "llm.provider_timeout", retryable: true });
+    expect(cancelled).toBe(true);
+  });
+
+  it("ends a send that never answers when its signal aborts, as a timeout", async () => {
+    const deaf = (() => new Promise<Response>(() => undefined)) as unknown as typeof fetch;
+    const controller = new AbortController();
+    const answer = modelWith(deaf).decide(REQUEST, { signal: controller.signal, caller: null });
+    setTimeout(() => controller.abort(new DOMException("timed out", "TimeoutError")), 20);
+    await expect(answer).rejects.toMatchObject({ code: "llm.provider_timeout", retryable: true });
+  });
+
   it("does not retry when no key can be released, and says so without the key", async () => {
     const locked = modelWith(vi.fn() as unknown as typeof fetch, async () => { throw new Error("Secret key session unlock is unavailable"); });
     await expect(locked.decide(REQUEST, execution())).rejects.toMatchObject({ code: "llm.provider_secret_unavailable", retryable: false });

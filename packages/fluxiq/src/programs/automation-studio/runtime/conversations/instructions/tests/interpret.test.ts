@@ -218,6 +218,28 @@ describe("reading a person's message as an instruction", () => {
     expect(result.decision.kind).toBe("reply");
   });
 
+  // A8 wave 4 (t613): a DeepSeek attempt went on after its signal fired, and
+  // the turn waited on it. Each attempt now ends on Core's own timer.
+  it("ends an attempt on time when the model ignores its signal, and says the model did not answer in time", async () => {
+    const signals: AbortSignal[] = [];
+    const deaf: AutomationStudioConversationModel = {
+      name: "deaf",
+      decide: (_request, execution) => {
+        signals.push(execution.signal);
+        return new Promise(() => undefined);
+      }
+    };
+    const started = Date.now();
+    const result = await interpretAutomationStudioConversationTurn({
+      model: deaf, message: "good morning", transcript: [], transcriptWithheld: false, context: context(), clock: INSTANT,
+      limits: { attempts: 2, attemptTimeoutMs: 60, deadlineMs: 10_000, backoffMs: 0 }
+    });
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(result).toMatchObject({ source: "closest_match", attempts: 2, modelProblem: "the model did not answer in time" });
+    // The model was still told to stop.
+    expect(signals.map((signal) => signal.aborted)).toEqual([true, true]);
+  });
+
   it("acts on the words with no model connected at all", async () => {
     const result = await interpret(null, "please delete the toaster flow");
     expect(result).toMatchObject({

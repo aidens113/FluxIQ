@@ -6,9 +6,11 @@
 // those is a reason for a person's message to go unanswered. So:
 //
 // - A thrown call is tried again, up to three attempts inside one deadline,
-//   with a short backoff. A failure the provider marks `retryable: false` (a
-//   refused credential, a request it will never accept) is not retried,
-//   because trying again would only make the person wait for the same answer.
+//   with a short backoff. Each attempt ends on Core's own timer, even when the
+//   model goes on waiting past its signal (`attemptWithin`). A failure the
+//   provider marks `retryable: false` (a refused credential, a request it will
+//   never accept) is not retried, because trying again would only make the
+//   person wait for the same answer.
 // - An answer that tried to be an object and could not be read is asked for
 //   again with the reason, which a model almost always corrects.
 // - When the model cannot be used at all -- none is connected, or every attempt
@@ -76,10 +78,11 @@ export async function interpretAutomationStudioConversationTurn(input: Automatio
     }
     attempts += 1;
     try {
-      const raw = await input.model.decide(
+      const model = input.model;
+      const raw = await attemptWithin(Math.min(limits.attemptTimeoutMs, remaining), (signal) => model.decide(
         { instructions, transcript: [...input.transcript], message: input.message, correction },
-        { signal: AbortSignal.timeout(Math.min(limits.attemptTimeoutMs, remaining)), caller: input.caller ?? null, paid }
-      );
+        { signal, caller: input.caller ?? null, paid }
+      ));
       const decision = parseAutomationStudioConversationDecision(raw, input.context);
       if (decision) return { decision, source: "model", modelProblem: null, attempts, ...priced(costUsd) };
       correction = UNREADABLE;
@@ -91,6 +94,32 @@ export async function interpretAutomationStudioConversationTurn(input: Automatio
     }
   }
   return { ...fallback(input, problem, attempts), ...priced(costUsd) };
+}
+
+/**
+ * One attempt, over at `ms` whether or not the model honours its signal. The
+ * signal still tells the model to stop, but the attempt's end is Core's own
+ * timer: in A8 wave 4 (t613) a DeepSeek attempt whose timeout signal had fired
+ * kept reading a body that never finished, and the turn, with the panel's
+ * "Sending your message", waited on it past the Lab's 60 s. Thrown as a
+ * `TimeoutError`, which the thread reads as "the model did not answer in time"
+ * and which is tried again while the deadline lasts.
+ */
+async function attemptWithin<T>(ms: number, attempt: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      const reason = new DOMException("The model did not answer in time.", "TimeoutError");
+      controller.abort(reason);
+      reject(reason);
+    }, ms);
+  });
+  try {
+    return await Promise.race([attempt(controller.signal), expired]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** The interpretation's `costUsd`, present only when an attempt was priced. */

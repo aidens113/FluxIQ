@@ -189,7 +189,7 @@ async function runDeepSeekTask(input: {
       body
     });
     // A reply the call never reads for itself is read for the step log from a copy.
-    if (step && (!response.ok || !/^application\/json(?:\s*;|$)/i.test(response.headers.get("content-type") ?? ""))) await stepLogReply(step, response, input.maxResponseBytes);
+    if (step && (!response.ok || !/^application\/json(?:\s*;|$)/i.test(response.headers.get("content-type") ?? ""))) await stepLogReply(step, response, input.maxResponseBytes, controller.signal);
     if (response.redirected || (response.status >= 300 && response.status < 400) || (response.url && response.url !== AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL)) {
       throw new AutomationStudioLlmProviderError("llm.provider_redirect_rejected", "DeepSeek redirected outside the fixed provider endpoint.");
     }
@@ -197,7 +197,10 @@ async function runDeepSeekTask(input: {
     if (!/^application\/json(?:\s*;|$)/i.test(response.headers.get("content-type") ?? "")) {
       throw automationStudioDeepSeekMalformedReply({ case: "media_type" }, "DeepSeek returned a non-JSON media type.");
     }
-    const bytes = await readAutomationStudioDeepSeekBoundedResponse(response, input.maxResponseBytes);
+    // Read under the call's own signal: a reply DeepSeek starts and never
+    // finishes (blank lines while it queues the request) ends with the call's
+    // deadline, not when Node's fetch lets go of the body (t613).
+    const bytes = await readAutomationStudioDeepSeekBoundedResponse(response, input.maxResponseBytes, controller.signal);
     step?.reply(bytes, response.status);
     let envelope: unknown;
     try {
@@ -209,7 +212,10 @@ async function runDeepSeekTask(input: {
     step?.succeeded(parsed.response, parsed.usage);
     return parsed;
   } catch (error) {
-    const failure = error instanceof AutomationStudioLlmProviderError
+    // The body read's own timeout (`./signal-race.ts`) is renamed for whichever
+    // deadline actually ended the call: this request's, or the caller's.
+    const endedBySignal = error instanceof AutomationStudioLlmProviderError && error.code === "llm.provider_timeout" && controller.signal.aborted;
+    const failure = error instanceof AutomationStudioLlmProviderError && !endedBySignal
       ? error
       : timedOut
         ? new AutomationStudioLlmProviderError("llm.provider_timeout", "DeepSeek did not respond before the request timeout.", true)
@@ -278,9 +284,9 @@ async function deepSeekRefusalFailure(
  * a non-JSON media type -- for the step log, read from a clone under the same
  * byte ceiling so the call's own read of it is untouched.
  */
-async function stepLogReply(step: AutomationStudioLlmStepLogModelStep, response: Response, maxResponseBytes: number): Promise<void> {
+async function stepLogReply(step: AutomationStudioLlmStepLogModelStep, response: Response, maxResponseBytes: number, signal: AbortSignal): Promise<void> {
   try {
-    step.reply(await readAutomationStudioDeepSeekBoundedResponse(response.clone(), maxResponseBytes), response.status);
+    step.reply(await readAutomationStudioDeepSeekBoundedResponse(response.clone(), maxResponseBytes, signal), response.status);
   } catch {
     /* best-effort: an unread copy only leaves response.json absent */
   }

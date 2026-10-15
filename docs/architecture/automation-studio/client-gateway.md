@@ -515,6 +515,17 @@ same capabilities. The ids are:
   The first chat-driven live Lab run (`run-muq2dlhq-96bffb09`) showed the gap:
   its typed task was answered "I could not tell what you wanted done" while
   the model was slow, and nothing was built.
+- **Reading the message has a deadline that holds whatever the model does**
+  (`instructions/interpret.ts`, t613). The model is asked at most three
+  times, each attempt for at most 15 s and all of them within 24 s; then Core
+  reads the words itself and the thread says the model "did not answer in
+  time". Each attempt ends on Core's own timer, which also aborts the
+  attempt's signal: in A8 wave 4 a DeepSeek attempt whose signal had fired
+  kept reading a reply that never finished, and the turn waited past the
+  Lab's 60 s. The DeepSeek chat call (`runtime/llm/deepseek/panel-command.ts`)
+  ends its send and its body read with that signal too, so its step is
+  recorded as `llm.provider_timeout` when it ends. The extension waits 40 s
+  for `append-turn`, which covers the reading and the writes after it.
 - **Calls are made in process.** The command calls the registry with the
   request's own actor and scope, so each endpoint's permission and handler
   checks apply as they would to the same call from a control. It reaches only

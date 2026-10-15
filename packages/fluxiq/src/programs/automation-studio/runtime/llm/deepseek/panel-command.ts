@@ -15,7 +15,9 @@
 //   this function's scope.
 // - The outbound body is checked for the key before it is sent, so a key that
 //   somehow reached the thread is refused rather than echoed back to DeepSeek.
-// - A reply is read under the adapter's byte ceiling.
+// - A reply is read under the adapter's byte ceiling, and the send and the
+//   read both end when the call's signal does, with `llm.provider_timeout`,
+//   rather than when `fetch` lets go (`signal-race.ts`, t613).
 // - What a reply cost, priced from its usage, is told to the conversation
 //   (`execution.paid`), which carries it into the purse of a Flow the chat
 //   then builds: the call that decides to build a Flow is that Flow's spend.
@@ -36,6 +38,7 @@ import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, isAutomationStudioDeepSeekMod
 import { isRecord } from "./json-record.ts";
 import { automationStudioDeepSeekCacheHitInputTokens, estimateAutomationStudioDeepSeekCostUsd } from "./pricing.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL } from "./provider.ts";
+import { raceAutomationStudioDeepSeekSignal } from "./signal-race.ts";
 import { automationStudioLlmStepLogModelStep } from "../step-log/index.ts";
 
 export type AutomationStudioDeepSeekPanelCommandOptions = {
@@ -76,7 +79,7 @@ export function createAutomationStudioDeepSeekPanelCommandModel(options: Automat
       });
       try {
         const response = await send(fetchImpl, body, key, execution.signal);
-        const bytes = await readAutomationStudioDeepSeekBoundedResponse(response, maxResponseBytes);
+        const bytes = await readAutomationStudioDeepSeekBoundedResponse(response, maxResponseBytes, execution.signal);
         step?.reply(bytes, response.status);
         const envelope = panelCommandEnvelope(new TextDecoder().decode(bytes));
         // What the reply cost, told before anything can refuse it: a reply Core cannot use was still paid for.
@@ -123,18 +126,29 @@ function transcriptMessage(turn: AutomationStudioConversationModelTurn): { role:
 }
 
 async function send(fetchImpl: typeof fetch, body: string, key: string, signal: AbortSignal): Promise<Response> {
+  let sent: Promise<Response> | undefined;
   try {
-    return await fetchImpl(AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL, {
+    sent = fetchImpl(AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL, {
       method: "POST",
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json", accept: "application/json" },
       body,
       redirect: "error",
       signal
     });
+    return await raceAutomationStudioDeepSeekSignal(sent, signal);
   } catch (error) {
-    if (signal.aborted) throw new AutomationStudioLlmProviderError("llm.provider_timeout", "DeepSeek did not answer in time.", true);
+    if (signal.aborted) {
+      // A reply that still arrives after the time limit is let go unread, so it holds no connection open.
+      if (sent) void Promise.resolve(sent).then(releaseLateReply, /* best-effort: the timeout is already thrown */ () => undefined);
+      throw new AutomationStudioLlmProviderError("llm.provider_timeout", "DeepSeek did not answer in time.", true);
+    }
     throw new AutomationStudioLlmProviderError("llm.provider_network_error", error instanceof Error ? `DeepSeek could not be reached (${error.name}).` : "DeepSeek could not be reached.", true);
   }
+}
+
+/** Cancels the body of a reply that came after its call gave up. Nothing waits on it, so a failed cancel is only a connection the server will close. */
+function releaseLateReply(late: Response): void {
+  late.body?.cancel().catch(/* best-effort: nobody reads this reply */ () => undefined);
 }
 
 function httpFailure(status: number): AutomationStudioLlmProviderError {
