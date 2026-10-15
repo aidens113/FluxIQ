@@ -109,9 +109,25 @@ describe("the feedback on a refused plan", () => {
     expect(feedback).toEqual([{
       code: "bootstrap.unknown_parameter",
       path: "plan.subflows.0.nodes.0.parameters.screenshot",
+      message: "The node web.output.dom-extract_list takes no parameter \"screenshot\". The parameters it takes are \"extractList\", \"timeoutMs\", \"recordOutput\", \"expectedState\": write the line under one of those, or move it to a step whose node takes it.",
       node: "web.output.dom-extract_list",
       accepted: { parameters: ["extractList", "timeoutMs", "recordOutput", "expectedState"] }
     }]);
+  });
+
+  // t606 (A8 towels `run-mv8p37k8-f1a90624`): each `bootstrap.unknown_parameter` came back with an empty message and
+  // only the first with the node's parameters, and the model sent the same script four times.
+  it("says on every undeclared parameter which key it is and what the node takes, the accepted list given once", () => {
+    const { feedback } = feedbackFor({ extractList, screenshot: null, shelfMark: null });
+
+    expect(feedback.map((item) => item.message)).toEqual([
+      "The node web.output.dom-extract_list takes no parameter \"screenshot\". The parameters it takes are \"extractList\", \"timeoutMs\", \"recordOutput\", \"expectedState\": write the line under one of those, or move it to a step whose node takes it.",
+      "The node web.output.dom-extract_list takes no parameter \"shelfMark\". The parameters it takes are \"extractList\", \"timeoutMs\", \"recordOutput\", \"expectedState\": write the line under one of those, or move it to a step whose node takes it."
+    ]);
+    expect(feedback.filter((item) => item.accepted !== undefined)).toHaveLength(1);
+    // Without the plan's node, the sentence still names the key and where to ask.
+    expect(automationStudioFlowBootstrapIssueFeedback({ issues: [{ severity: "error", code: "bootstrap.unknown_parameter", message: "withheld", path: "plan.subflows.0.nodes.0.parameters.screenshot" }] })[0]!.message)
+      .toBe("The step's node takes no parameter \"screenshot\". Ask core.describe_nodes for the parameters it takes and write one of those, or move the line to the step whose node takes it.");
   });
 
   it("does not answer at all for a parameter name it could resolve itself", () => {

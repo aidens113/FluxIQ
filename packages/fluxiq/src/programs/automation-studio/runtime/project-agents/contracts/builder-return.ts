@@ -1,3 +1,4 @@
+import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
 import { automationStudioProjectJsonShape as shape, type AutomationStudioProjectParse } from "./json-shape.ts";
 import { readAutomationStudioProjectReceiptRef, type AutomationStudioProjectReceiptRef } from "./receipt-ref.ts";
 import type { AutomationStudioProjectSubflowBrief } from "./subflow-brief.ts";
@@ -7,6 +8,24 @@ import type { AutomationStudioProjectSubflowBrief } from "./subflow-brief.ts";
 // -- and through the brief to one structure-plan digest -- so a proposal for
 // another subflow, or a survey's findings on a build, is refused.
 
+/**
+ * A trial a return lists (t606): its receipt reference, and beside it what the
+ * trial answered and how many rows it stored, so the supervisor can tell the
+ * trial closest to passing from the latest (`closestTrial` below).
+ * A8 towels (`run-mv8p37k8-f1a90624`) had three trials store exactly the
+ * right rows and answer unsure, and the repair was sent the latest, a no that
+ * stored two. `verdict` and `rows` are additive: the reference a repair's
+ * `failingReceipt` copies is still `kind`, `receiptId` and `digest`, and the
+ * digest is made as before, from the trial's verdict among the rest
+ * (`../dispatch/receipts.ts`), so these fields never change it. A return
+ * written before them lists neither.
+ */
+export type AutomationStudioProjectTrialRef = AutomationStudioProjectReceiptRef & {
+  verdict?: AutomationStudioCandidateTrialVerdict;
+  /** The rows the trial stored, where its feedback said. */
+  rows?: number;
+};
+
 export const AUTOMATION_STUDIO_PROJECT_RETURN_OUTCOMES = Object.freeze(["done", "partial", "blocked"] as const);
 
 export type AutomationStudioProjectBuilderReturn = {
@@ -14,7 +33,7 @@ export type AutomationStudioProjectBuilderReturn = {
   outcome: (typeof AUTOMATION_STUDIO_PROJECT_RETURN_OUTCOMES)[number];
   reason: string;
   proposal?: { subflowKey: string; revision: number; digest: string };
-  trials: AutomationStudioProjectReceiptRef[];
+  trials: AutomationStudioProjectTrialRef[];
   interfaceRequest?: { change: string; why: string };
   /** Survey only. */
   findings?: string[];
@@ -41,8 +60,48 @@ export const automationStudioProjectBuilderReturn = Object.freeze({
     if (returned.outcome === "done" && brief.kind !== "survey" && brief.kind !== "reset" && !returned.proposal) issues.push({ code: "project.return_done_without_proposal", path: "return.proposal" });
     if (returned.outcome === "done" && brief.kind === "survey" && !returned.findings?.length) issues.push({ code: "project.return_done_without_findings", path: "return.findings" });
     return issues;
+  },
+
+  /**
+   * The trial of a subflow a repair should start from (t606): the closest to
+   * passing of every trial the returns given (oldest first) listed, not the
+   * latest. Unsure over no, no over a trial that was not judged, that over one
+   * whose run failed; among the same verdict, more rows stored; among equals,
+   * the latest. A trial that answered yes is no failing trial and is never
+   * chosen, and one listed without its verdict ranks below every one with it.
+   * Undefined when no trial that did not pass was listed.
+   */
+  closestTrial(returns: readonly AutomationStudioProjectBuilderReturn[]): AutomationStudioProjectTrialRef | undefined {
+    let closest: AutomationStudioProjectTrialRef | undefined;
+    for (const trial of returns.flatMap((returned) => returned.trials)) {
+      if (trial.verdict === "yes") continue;
+      // The latest among equals: a later trial replaces one it does not rank below.
+      if (!closest || !trialAbove(closest, trial)) closest = trial;
+    }
+    return closest;
+  },
+
+  /** Whether `left` ranks strictly above `right` as `closestTrial` ranks them. */
+  trialAbove(left: AutomationStudioProjectTrialRef, right: AutomationStudioProjectTrialRef): boolean {
+    return trialAbove(left, right);
+  },
+
+  /** The reference a brief's `failingReceipt` copies of a listed trial: kind, receipt id and digest, nothing beside them. */
+  trialRef(trial: AutomationStudioProjectTrialRef): AutomationStudioProjectReceiptRef {
+    return { kind: trial.kind, receiptId: trial.receiptId, digest: trial.digest };
   }
 });
+
+const TRIAL_RANK: Readonly<Record<string, number>> = { unsure: 3, no: 2, not_judged: 1, execution_failed: 0 };
+
+function trialRank(trial: AutomationStudioProjectTrialRef): [number, number] {
+  return [trial.verdict === undefined ? -1 : TRIAL_RANK[trial.verdict] ?? -1, trial.rows ?? -1];
+}
+
+function trialAbove(left: AutomationStudioProjectTrialRef, right: AutomationStudioProjectTrialRef): boolean {
+  const [a, b] = [trialRank(left), trialRank(right)];
+  return a[0] !== b[0] ? a[0] > b[0] : a[1] > b[1];
+}
 
 function read(value: unknown): AutomationStudioProjectBuilderReturn {
   const fields = shape.object(value, "return", ["briefId", "outcome", "reason", "trials", "spentUsd", "calls"], ["proposal", "interfaceRequest", "findings"]);
@@ -50,7 +109,7 @@ function read(value: unknown): AutomationStudioProjectBuilderReturn {
     briefId: shape.storageId(fields.briefId, "return.briefId"),
     outcome: shape.oneOf(fields.outcome, "return.outcome", AUTOMATION_STUDIO_PROJECT_RETURN_OUTCOMES),
     reason: shape.text(fields.reason, "return.reason", LIMITS.reason),
-    trials: shape.array(fields.trials, "return.trials", LIMITS.trials).map((trial, index) => readAutomationStudioProjectReceiptRef(trial, `return.trials.${index}`)),
+    trials: shape.array(fields.trials, "return.trials", LIMITS.trials).map((trial, index) => readTrial(trial, `return.trials.${index}`)),
     spentUsd: shape.amount(fields.spentUsd, "return.spentUsd"),
     calls: shape.count(fields.calls, "return.calls")
   };
@@ -64,4 +123,14 @@ function read(value: unknown): AutomationStudioProjectBuilderReturn {
   }
   if (fields.findings !== undefined) returned.findings = shape.array(fields.findings, "return.findings", LIMITS.findings).map((finding, index) => shape.text(finding, `return.findings.${index}`, LIMITS.finding));
   return returned;
+}
+
+/** One listed trial: its receipt reference read as ever, and its verdict and stored rows where given (header). */
+function readTrial(value: unknown, path: string): AutomationStudioProjectTrialRef {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return readAutomationStudioProjectReceiptRef(value, path);
+  const { verdict, rows, ...ref } = value as Record<string, unknown>;
+  const trial: AutomationStudioProjectTrialRef = readAutomationStudioProjectReceiptRef(ref, path);
+  if (verdict !== undefined) trial.verdict = shape.oneOf(verdict, `${path}.verdict`, AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS);
+  if (rows !== undefined) trial.rows = shape.count(rows, `${path}.rows`);
+  return trial;
 }

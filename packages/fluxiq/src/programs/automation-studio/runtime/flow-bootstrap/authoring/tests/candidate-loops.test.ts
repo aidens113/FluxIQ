@@ -264,6 +264,18 @@ describe("a written loop the graph cannot honour is refused where it is said", (
     expect(refusals(LANE_D.map((line) => line === "  repeat over: requests" ? "  repeat over: nothing" : line))).toEqual(["flow_script.repeat_span_unknown @ flow.line.13"]);
   });
 
+  // t606 (A8 towels `run-mv8p37k8-f1a90624`): a span over each kept row of a listing that a page loop runs was told
+  // only to name a listing the Flow runs once, and the same script was sent four times. It now says what can be done.
+  it("refuses a repeat over a listing a page loop runs, saying no row loop runs inside a page loop and what does", () => {
+    const perRow = [...LANE_C, "step open: open the item", "  node: web.dom.click", "  selector: .name", "  consequences: none", "  repeat over: page"];
+    const accepted = written(perRow.join("\n"));
+    const refusal = errors(accepted.issues).find((issue) => issue.code === "flow_script.repeat_not_after_its_source");
+    expect(refusal?.message).toContain("which is inside another repeat");
+    expect(refusal?.message).toContain("A repeat inside a repeat is not supported, so a Flow cannot act on each kept row of every page of a paged list.");
+    expect(refusal?.message).toContain("read every page in one `repeat while` span and keep the rows the instruction asks for with the listing's `extractList.where`");
+    expect(refusal?.message).toContain("one of the site's own filters, set before that span");
+  });
+
   it("refuses a malformed binding at its parameter", () => {
     expect(refusals(LANE_D.map((line) => line === "  text: $row.name" ? "  text: $input.who" : line))).toEqual(["flow_script.invalid_binding @ plan.subflows.0.nodes.5.parameters.text"]);
     expect(refusals(LANE_D.map((line) => line === "  text: $row.name" ? "  text: $step.nowhere.success" : line))).toEqual(["flow_script.invalid_binding @ plan.subflows.0.nodes.5.parameters.text"]);

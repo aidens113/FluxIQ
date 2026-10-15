@@ -147,7 +147,13 @@ describe("Automation Studio Flow bootstrap contract", () => {
     // asked, otherwise `extractList.where` does; it costs 328 bytes (6,074
     // to 6,402). Since t484 the schema sits in the cached prefix, so after a build's
     // first call these bytes are billed at the cached rate.
-    expect(Buffer.byteLength(serializedSchema, "utf8")).toBeLessThan(6_500);
+    //
+    // Raised to 6,700 on 2026-10-14 (t606): A8 towels (`run-mv8p37k8-f1a90624`)
+    // read every row for a clause no row printed, which only the site's own
+    // filter under a heading naming it could keep. The sentence before
+    // "Otherwise" says to look for that filter first, with a library's example;
+    // it costs about 212 bytes (6,402 to about 6,614).
+    expect(Buffer.byteLength(serializedSchema, "utf8")).toBeLessThan(6_700);
 
     const minimalWebPlan: AutomationStudioFlowBootstrapPlan = {
       schemaVersion: "0.1",
