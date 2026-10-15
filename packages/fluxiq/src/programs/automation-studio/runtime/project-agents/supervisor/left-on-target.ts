@@ -1,6 +1,5 @@
 // What this build still has on the target as it ends: every lasting act the
-// project ledger holds in place, and whether the last whole trial left acts of
-// its own that no reset has undone since. Bigbox `run-mv8186yr-a385fd3a`
+// project ledger holds in place. Bigbox `run-mv8186yr-a385fd3a`
 // (step 349) ended `blocked` with nine of the build's acts still on the site and
 // nobody told; an ending now either follows a reset brief or says, in Core's own
 // words, exactly what is left (`./completion.ts`, `./supervisor-loop.ts`).
@@ -33,7 +32,6 @@
 // name and the rest counted, as a phase start names them. Nothing asks a reset
 // for them, so they change neither `undoable` nor a reset's due.
 import type { AutomationStudioProjectSupervisorPorts } from "./ports.ts";
-import type { AutomationStudioProjectSupervisorState } from "./state.ts";
 
 /** Each act still on the target, as the ledger names it, and a line for the person when anything is left. */
 export type AutomationStudioProjectSupervisorLeftOnTarget = {
@@ -41,7 +39,6 @@ export type AutomationStudioProjectSupervisorLeftOnTarget = {
   acts: Array<{ act: string; did: string; brief: string; undoable: boolean }>;
   /** Presses that declared no lasting act but changed their page, and may still be on the target (header). */
   possibly: Array<{ act: string; did: string; brief: string }>;
-  lastWholeTrialLeftActs: boolean;
   /** Whether a reset brief could undo any of it. */
   undoable: boolean;
   /** Core's line naming everything left, for the ending's reason; undefined when nothing is. */
@@ -56,7 +53,7 @@ const MAX_REASON = 2000;
 /** How many possibly lasting presses are named; the rest are counted (header), as a phase start names them. */
 const MAX_POSSIBLY_NAMED = 10;
 
-export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<AutomationStudioProjectSupervisorPorts, "projectLedger" | "leftAtEnding">, state: Pick<AutomationStudioProjectSupervisorState, "wholeTrialLeftActs">): AutomationStudioProjectSupervisorLeftOnTarget {
+export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<AutomationStudioProjectSupervisorPorts, "projectLedger" | "leftAtEnding">): AutomationStudioProjectSupervisorLeftOnTarget {
   const ledger = ports.projectLedger;
   const kept = (act: string, owner: string): boolean => {
     const claim = ledger.forBrief(owner).claim(act);
@@ -69,9 +66,7 @@ export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<Automa
     else if (act.inPlace) acts.push({ ...named, undoable: true, line: act.did });
     else if (kept(act.act, act.owner)) acts.push({ ...named, undoable: false, line: `${act.did} (the site offers no way to undo it)` });
   }
-  const lastWholeTrialLeftActs = state.wholeTrialLeftActs;
   const lines = acts.map((act) => act.line);
-  if (lastWholeTrialLeftActs) lines.push("the acts the last whole test of the Flow made");
   const possibly = possiblyLeft(ledger);
   const named = possibly.slice(-MAX_POSSIBLY_NAMED);
   const leftOut = possibly.length - named.length;
@@ -86,7 +81,7 @@ export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<Automa
     ports.leftAtEnding?.({ note });
     return fitted ? `${said.slice(0, MAX_REASON - fitted.length - 1).trimEnd()} ${fitted}`.trim() : said.slice(0, MAX_REASON);
   };
-  return { acts: acts.map(({ line: _line, ...act }) => act), possibly, lastWholeTrialLeftActs, undoable: lastWholeTrialLeftActs || acts.some((act) => act.undoable), note, reason };
+  return { acts: acts.map(({ line: _line, ...act }) => act), possibly, undoable: acts.some((act) => act.undoable), note, reason };
 }
 
 /** Every brief's possibly lasting presses that may still be on the target, in the order the build made them (header). */

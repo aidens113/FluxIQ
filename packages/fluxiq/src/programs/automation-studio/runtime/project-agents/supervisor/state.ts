@@ -57,11 +57,10 @@ type Adopted = { taskSpec: AutomationStudioProjectTaskSpec; structure: Automatio
 const PROPOSING: ReadonlySet<AutomationStudioProjectSubflowBrief["kind"]> = new Set(["build", "repair"]);
 
 /**
- * What one supervisor run knows of its build: the task spec and structure
- * plan in force, every brief sent and every return read, and what the whole
- * trials left. The build record is the durable copy (`../record/`); this is
- * read from it when the run starts, so a supervisor started again on a build
- * already under way sees the plan and the returns it left.
+ * What one supervisor run knows of its build: the plan in force, every brief
+ * sent and every return read. The build record is the durable copy
+ * (`../record/`), read when the run starts, so a supervisor started again on a
+ * build under way sees the plan and the returns it left.
  *
  * **What an amendment keeps (t590).** A proposal's identity holds the digest
  * of the plan it was made under, so `project.amend_plan` used to drop every
@@ -78,31 +77,24 @@ const PROPOSING: ReadonlySet<AutomationStudioProjectSubflowBrief["kind"]> = new 
  * `after` (below), so it keeps nothing an earlier plan made.
  *
  * **A part's words moved by a word or two are not a part changed (bigbox
- * debug, t595).** Bigbox `run-mv8c7unr-42a8456d` amended its plan only to get
- * past an unchanged assembly: one part's facts reworded ("shown for the
- * account" to "shown on the site") and another's words given a leading
- * "then". Both subflows' proposals were dropped, a passing one among them. Its
- * facts are what the proposal's trial was judged against, so a part whose
- * facts changed still drops it, said as "its facts changed" (facts compared
- * trimmed, with case and runs of whitespace set aside); the repair-unchanged
- * refusal (`./dispatch-tool.ts`) is what removes the model's reason to reword.
- * Only the part's own text may move: the same instruction, the same lasting
- * acts and facts, and words that differ by at most `EDGE_WORDS` words at their
- * ends keep the proposal, and the amendment's answer names those parts under
- * `reworded`.
+ * debug, t595).** Bigbox `run-mv8c7unr-42a8456d` reworded one part's facts and
+ * gave another's words a leading "then", and both proposals were dropped. A
+ * part whose facts changed (compared trimmed, case and whitespace set aside)
+ * still drops it, as "its facts changed"; one whose text differs only by at
+ * most `EDGE_WORDS` words at its ends, with the same instruction, lasting acts
+ * and facts, keeps it, named under `reworded` in the amendment's answer.
  *
  * **A pass the run rescued is repaired, or relied on and said (t603).** Social
- * `run-mv8mebid-84ada5bd` passed its whole test only because the runtime
- * recovered by itself when the site asked the run to slow down; the trial gate
- * held that yes back, and the repair sent for it was refused four times as
+ * `run-mv8mebid-84ada5bd` passed its whole test only on the runtime's own
+ * recovery when the site asked it to slow down, and its repair was refused as
  * naming a trial that passed. Such a test (`rescuedTest`) is read from the
- * trial gate's own completion answer -- what it found in the trial's step
- * record that the Flow does not answer -- never from page words, and a repair
- * may name it. When that repair cannot be made -- it came back without the
- * change, or money, time or turns ran out first (`recoveryRepairsShort`) --
- * the passing test still stands: the supervisor completes on it
- * (`relyOnRecovery`) and the person is told the Flow relies on the run's own
- * recovery, and why.
+ * trial gate's completion answer, never from page words, and a repair may name
+ * it; when the repair cannot be made (`recoveryRepairsShort`) the supervisor
+ * completes on it (`relyOnRecovery`) and the person is told why. Only a
+ * slow-down admits that repair (t612): a consent banner or dialog the run
+ * closed asks the Flow for no step, so each step the gate names is kept only
+ * when its own step record says the site asked the run to slow down
+ * (`slowedDown`, below).
  */
 export class AutomationStudioProjectSupervisorState {
   taskSpec: AutomationStudioProjectTaskSpec | undefined;
@@ -118,8 +110,6 @@ export class AutomationStudioProjectSupervisorState {
   after: Record<string, string[]> = {};
   readonly briefs: AutomationStudioProjectSubflowBrief[] = [];
   private readonly returns = new Map<string, AutomationStudioProjectBuilderReturn>();
-  /** The last whole trial left lasting acts on the target, and no reset brief has come back done since. */
-  wholeTrialLeftActs = false;
   /** A whole trial ran and did not pass. */
   wholeTrialFailed = false;
   /**
@@ -263,7 +253,7 @@ export class AutomationStudioProjectSupervisorState {
     if (!latest || standing?.verdict !== "yes") return undefined;
     const checked = gate.completion({ revision: latest.revision, digest: latest.digest });
     if (checked.ok || !checked.issueCodes.includes(SLOW_DOWN_UNHANDLED)) return undefined;
-    const unanswered = Array.isArray(checked.feedback.slowDown) ? checked.feedback.slowDown.filter((entry): entry is JsonObject => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry)) : [];
+    const unanswered = objects(checked.feedback.slowDown).filter((entry) => slowedDown(entry, objects(standing.feedback.steps), objects(standing.feedback.paces)));
     if (!unanswered.length) return undefined;
     const receiptId = standing.trialRunId ?? `whole-test-${latest.revision}`;
     return { key: JSON.stringify([latest.revision, latest.digest, receiptId]), revision: latest.revision, digest: latest.digest, receipt: { kind: "candidate_trial", receiptId, digest: latest.digest }, unanswered: structuredClone(unanswered) };
@@ -354,6 +344,16 @@ export class AutomationStudioProjectSupervisorState {
     return { why: changed, reworded: compared.filter(([, change]) => change === "reworded").map(([id]) => id) };
   }
 }
+
+/** Whether the gate's `entry` is a step whose own record says the site asked the run to slow down (header): an absorbed refusal carrying the site's wait, a closed layer of kind `rate_limit`, or a pace the run learned for it, which only such a wait raises. */
+function slowedDown(entry: JsonObject, steps: readonly JsonObject[], paces: readonly JsonObject[]): boolean {
+  const record = steps.find((step) => typeof entry.step === "number" && step.step === entry.step);
+  const learned = paces.some((pace) => (record ? pace.definitionId === record.definitionId && pace.label === record.label && pace.control === record.control : entry.step === undefined && pace.label === entry.label));
+  return learned || objects(record?.absorbed).some((absorbed) => typeof absorbed.askedWaitMs === "number" && absorbed.askedWaitMs > 0) || objects(record?.interruptions).some((layer) => layer.kind === "rate_limit");
+}
+
+/** The JSON objects in `value` when it is a list; none otherwise. */
+const objects = (value: unknown): JsonObject[] => (Array.isArray(value) ? value.filter((entry): entry is JsonObject => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry)) : []);
 
 /** The most words a part's text may gain or lose at its two ends together and still be the same part reworded (header). */
 const EDGE_WORDS = 2;

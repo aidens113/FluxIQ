@@ -241,7 +241,7 @@ async function supervise(input: SupervisorInput, clock: Clock): Promise<Automati
   // A guard or the time limit stopped the loop: the target is put back, where a reset brief still can and inside the bound, before the ending names what is left (header).
   if (!outOfMoney && !cancelled && finished !== ended && !personEnded(stalled?.error)) await resetBeforeEnding({ ...context, signal: ending }, () => outOfTime(ending));
   // An ending the model gave already names what is left (`./completion.ts`); every other ending Core names it in here.
-  const named = finished === ended ? finished : { ...finished, reason: automationStudioProjectSupervisorLeftOnTarget(ports, state).reason(finished.reason) };
+  const named = finished === ended ? finished : { ...finished, reason: automationStudioProjectSupervisorLeftOnTarget(ports).reason(finished.reason) };
   const recorded = await ports.record.end(ports.build, named);
   if (stalled) throw stalled.error;
   return done("ended", recorded);
@@ -276,7 +276,7 @@ const CORE_RESET_REASON = "The supervisor stopped before a whole trial passed, s
 async function resetBeforeEnding(context: AutomationStudioProjectSupervisorContext, pastTheBound: () => boolean): Promise<void> {
   const { ports, state } = context;
   const structure = state.structure;
-  const left = automationStudioProjectSupervisorLeftOnTarget(ports, state);
+  const left = automationStudioProjectSupervisorLeftOnTarget(ports);
   if (!ports.purse || !structure || !state.taskSpec || !left.undoable || state.resetCameBackLast()) return;
   const keys = new Set(structure.plan.subflows.map((subflow) => subflow.key));
   const owner = left.acts.find((act) => act.undoable)?.brief;

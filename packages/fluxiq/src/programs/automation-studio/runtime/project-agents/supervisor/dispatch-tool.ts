@@ -29,9 +29,7 @@ const EPSILON_USD = 1e-9;
  *
  * A return that does not answer its brief -- another brief's id, a proposal
  * for another subflow -- is read as blocked, with the code that says why: the
- * supervisor never assembles what a brief did not ask for. A reset brief that
- * came back done -- with no proposal, as a reset has none -- clears what the
- * last whole trial left (`./whole-trial.ts`).
+ * supervisor never assembles what a brief did not ask for.
  *
  * **No second reset with nothing changed (social debug fix 5, t590).** Social
  * `run-mv85xmgq-8a6a6f43` sent a reset brief right after one that came back
@@ -149,7 +147,6 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
   for (const [index, brief] of order.ordered.entries()) {
     const returned = returns[index]!;
     state.answer(brief.briefId, returned);
-    if (brief.kind === "reset" && returned.outcome === "done") state.wholeTrialLeftActs = false;
     emitAutomationStudioProjectReturnCard({ returned, brief, structurePlan: structure });
   }
   // What the call's last reset left, when it came back not done, for a second reset sent with nothing changed (header).
@@ -157,7 +154,7 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
   if (lastReset) {
     const [index, brief] = lastReset;
     const returned = returns[index]!;
-    state.resetLeft = returned.outcome === "done" ? undefined : { briefId: brief.briefId, outcome: returned.outcome, reason: returned.reason, left: leftKey(automationStudioProjectSupervisorLeftOnTarget(ports, state)) };
+    state.resetLeft = returned.outcome === "done" ? undefined : { briefId: brief.briefId, outcome: returned.outcome, reason: returned.reason, left: leftKey(automationStudioProjectSupervisorLeftOnTarget(ports)) };
   }
   // What each brief was sent with, and what stood once every return came back: the same brief sent again with nothing changed since matches it (header).
   for (const brief of order.ordered) state.sentAs.set(brief.briefId, sentKey(context, brief));
@@ -241,7 +238,7 @@ function sentKey(context: AutomationStudioProjectSupervisorContext, brief: Autom
     predecessors: [...brief.entry.predecessors].sort().map((key) => [key, done.get(key)?.brief.briefId ?? null, done.get(key)?.returned.proposal?.revision ?? null]),
     excerpt: brief.recordingExcerpt ?? null,
     receipt: brief.failingReceipt ? [brief.failingReceipt.kind, brief.failingReceipt.receiptId, brief.failingReceipt.digest] : null,
-    left: leftKey(automationStudioProjectSupervisorLeftOnTarget(context.ports, context.state))
+    left: leftKey(automationStudioProjectSupervisorLeftOnTarget(context.ports))
   });
 }
 
@@ -322,18 +319,17 @@ function repeatedReset(context: AutomationStudioProjectSupervisorContext): Autom
   const latest = state.briefs.at(-1);
   const before = state.resetLeft;
   if (!latest || !before || before.briefId !== latest.briefId || !state.resetCameBackLast()) return undefined;
-  const left = automationStudioProjectSupervisorLeftOnTarget(ports, state);
+  const left = automationStudioProjectSupervisorLeftOnTarget(ports);
   if (leftKey(left) !== before.left) return undefined;
   return answer.refused("project.reset_repeated", controller.latest() ? GUIDANCE.refusals.resetRepeatedTest : GUIDANCE.refusals.resetRepeatedEnd, {
     lastReset: { briefId: before.briefId, outcome: before.outcome, reason: before.reason },
-    leftOnTarget: left.acts.map((act) => ({ act: act.act, did: act.did, brief: act.brief, undoable: act.undoable })),
-    ...(left.lastWholeTrialLeftActs ? { lastWholeTrialLeftActs: true } : {})
+    leftOnTarget: left.acts.map((act) => ({ act: act.act, did: act.did, brief: act.brief, undoable: act.undoable }))
   }, { retry: true });
 }
 
 /** What is left on the target, as one comparable key. */
 function leftKey(left: AutomationStudioProjectSupervisorLeftOnTarget): string {
-  return JSON.stringify({ acts: left.acts.map((act) => [act.act, act.undoable]).sort(), trial: left.lastWholeTrialLeftActs });
+  return JSON.stringify({ acts: left.acts.map((act) => [act.act, act.undoable]).sort() });
 }
 
 /** The return the dispatcher gave for this brief, or a blocked one saying why it does not answer it. */

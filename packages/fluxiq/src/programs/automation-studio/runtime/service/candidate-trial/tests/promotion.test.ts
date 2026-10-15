@@ -105,6 +105,18 @@ describe("promoting a judged candidate", () => {
     expect(propose).not.toHaveBeenCalled();
   });
 
+  // t608: a build its time limit stopped names that beside the standing trial (`feedback.endingCodes`); the draft's own code stays first.
+  it("keeps a draft's own code first and the build's ending codes after it, each once, identifiers only, at most four read", async () => {
+    const { input, propose } = promotionFixture();
+    input.standing = { ...input.standing!, verdict: "no", feedback: { code: "candidate.trial_judged_no", endingCodes: ["project.build_time_limit", "candidate.trial_judged_no", "Not a code!", 7, "project.a", "project.b", "project.c"] } };
+    expect(await promoteAutomationStudioCandidateTrial(input)).toEqual({ status: "draft", trial: { verdict: "no", runId: "trial.2", codes: ["candidate.trial_judged_no", "project.build_time_limit", "project.a", "project.b"] } });
+    // A yes held back for another reason keeps its own code first too.
+    const stale = promotionFixture();
+    stale.input.standing = { ...stale.input.standing!, revision: 1, feedback: { endingCodes: ["project.build_time_limit"] } };
+    expect(await promoteAutomationStudioCandidateTrial(stale.input)).toMatchObject({ status: "draft", trial: { codes: ["candidate.trial_stale_revision", "project.build_time_limit"] } });
+    expect(propose).not.toHaveBeenCalled();
+  });
+
   it("a base that moves under the adaptation lock keeps the draft as stale; any other failure is thrown", async () => {
     const stale = promotionFixture();
     stale.propose.mockRejectedValueOnce(new Error("FLOW_BOOTSTRAP_STALE: base dependency digest does not match the current Flow."));
