@@ -35,7 +35,7 @@ const submitted = (evidence: readonly Entry[]) => {
 };
 
 /** A builder whose model submits, tests, then completes on a yes or ends blocked on anything else; every request's evidence is kept. */
-function scripted(verdict: "yes" | "no", firstSeen: Entry[][], deniedEvidenceKeys: readonly string[] = []) {
+function scripted(verdict: "yes" | "no", firstSeen: Entry[][], deniedEvidenceKeys: readonly string[] = [], received: Entry[] = []) {
   return (): AutomationStudioProjectBuilderPorts => {
     let step = 0;
     const steps = [
@@ -50,7 +50,10 @@ function scripted(verdict: "yes" | "no", firstSeen: Entry[][], deniedEvidenceKey
       loop: {
         tools: [LOOK], maxToolCalls: 8,
         unusableDecisions: { maxConsecutive: 3, maxInARow: 3, stalled: () => new Error("stalled") },
-        executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true, page: "The seed catalogue." }, effectApplied: false, targetsUnchanged: true }),
+        executeTool: async (call) => {
+          received.push({ callId: call.callId, toolId: call.toolId, value: structuredClone(call.value) });
+          return { kind: "llm_evidence_tool_execution", evidence: { ok: true, page: "The seed catalogue." }, effectApplied: false, targetsUnchanged: true };
+        },
         decide: async ({ evidence }) => steps[step++]!(evidence)
       },
       submission: testSubmission(),
@@ -281,5 +284,63 @@ describe("a repair brief's opening, shown the subflow it repairs (t625)", () => 
     try { packAutomationStudioLlmContext(decision(await repairFirstRequest([]))); } catch (error) { caught = error; }
     expect(caught).toBeInstanceOf(AutomationStudioLlmRequestRefusedError);
     expect((caught as AutomationStudioLlmRequestRefusedError).code).toBe("llm.request.evidence_denied_key");
+  });
+});
+
+// A8 `run-mv9zn5ob` (t648): a repair builder was refused its own proposal's
+// navigation address six times, because the domain counts a Flow's addresses
+// as shown only when a round continues it. The opening call -- what the domain
+// receives, not what the model is shown -- now carries the repaired proposal's
+// calls under `repairs`, screened as `yourSubflow`'s steps are.
+describe("a repair brief's opening call, carrying the proposal it repairs (t648)", () => {
+  const DENIED = ["selector"] as const;
+
+  /** Every call the domain received in a repair after an earlier brief came back done, and in that earlier build brief. */
+  async function received(change: (brief: AutomationStudioProjectSubflowBrief) => void, dispatcherAgain = false): Promise<{ build: Entry[]; repair: Entry[] }> {
+    const calls: Entry[][] = [];
+    const builder = () => {
+      const mine: Entry[] = [];
+      calls.push(mine);
+      return scripted("yes", [], DENIED, mine)();
+    };
+    const build = await gardenBuild({ capacity: 1, briefs: [gardenBrief("b-read", "list_seeds")], ports: { builder } });
+    build.dispatcherInput.runBuilder = runAutomationStudioSubflowBuilderLoop;
+    expect((await build.run()).returns[0]).toMatchObject({ briefId: "b-read", outcome: "done" });
+    const fix = repair("b-fix", change);
+    await build.store.recordBrief(REF, fix);
+    if (dispatcherAgain) {
+      // A dispatcher made again for the same build holds none of the proposals the first one's builders had accepted.
+      const again = createAutomationStudioProjectDispatcher({ ...build.dispatcherInput });
+      await build.cancellation.run(REF.projectId, REF.flowId, async () => {
+        await again({ briefs: [fix], signal: new AbortController().signal });
+      });
+    } else {
+      await build.run([fix]);
+    }
+    return { build: calls[0]!, repair: calls.at(-1)! };
+  }
+
+  const failing = (brief: AutomationStudioProjectSubflowBrief) => {
+    brief.failingReceipt = { kind: "candidate_trial", receiptId: "run-11", digest: "a".repeat(64) };
+    brief.failingTrial = { verdict: "no", said: { judge: "Not done." } };
+  };
+
+  it("carries every call of the repaired proposal as {node, parameters} on the opening call only, the domain's denied keys withheld", async () => {
+    const { build, repair: fixed } = await received(failing);
+    const opened = fixed.find((entry) => entry.callId.startsWith("initial."))!;
+    const repairs = (opened.value as JsonObject).repairs as JsonObject[];
+    expect(repairs).toEqual(expect.arrayContaining([{ node: "web.output.browser-navigate", parameters: expect.objectContaining({ url: "https://listings.test/all" }) }]));
+    for (const call of repairs) expect(Object.keys(call).sort()).toEqual(["node", "parameters"]);
+    expect(repairs.some((call) => call.node === "web.output.dom-click")).toBe(true);
+    expect(JSON.stringify(repairs)).not.toContain(`"selector"`);
+    // Never on a later call, and never on a build brief's opening.
+    expect(fixed.filter((entry) => !entry.callId.startsWith("initial.")).some((entry) => "repairs" in (entry.value as JsonObject))).toBe(false);
+    expect(build.some((entry) => "repairs" in (entry.value as JsonObject))).toBe(false);
+  });
+
+  it("carries nothing when the build does not hold the proposal it repairs", async () => {
+    const { repair: fixed } = await received(failing, true);
+    expect(fixed.length).toBeGreaterThan(0);
+    expect(fixed.some((entry) => "repairs" in (entry.value as JsonObject))).toBe(false);
   });
 });

@@ -20,6 +20,16 @@ describe("the id an evidence entry is filed under", () => {
     expect(automationStudioLlmEvidenceUnusedCallId(new Set(["call.1", "call.1.2", "call.1.3"]), "call.1")).toBe("call.1.4");
   });
 
+  it("never files a model's id as an opening call's, scoped or not (t648)", () => {
+    for (const requested of ["initial.core.run_node", "initial.core.run_node.brief-1", "initial.x"]) {
+      const filed = automationStudioLlmEvidenceUnusedCallId(new Set(), requested);
+      expect(filed).toBe(`model.${requested}`);
+      expect(automationStudioLlmEvidenceIsOpeningCallId(filed)).toBe(false);
+    }
+    expect(automationStudioLlmEvidenceUnusedCallId(new Set(["model.initial.x"]), "initial.x")).toBe("model.initial.x.2");
+    expect(automationStudioLlmEvidenceIsOpeningCallId(automationStudioLlmEvidenceUnusedCallId(new Set(), `initial.${"c".repeat(198)}`))).toBe(false);
+  });
+
   it("stays within the 200-character bound the provider schema holds an id to", () => {
     const long = "c".repeat(200);
     const suffixed = automationStudioLlmEvidenceUnusedCallId(new Set([long]), long);
