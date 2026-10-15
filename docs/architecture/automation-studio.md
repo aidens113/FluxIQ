@@ -318,6 +318,18 @@ budget applies, not as checks of their own. Provider secrets are decrypted just
 in time at dispatch and never retained or persisted. Core never reads a
 provider key from the environment.
 
+**A call's deadline ends its body read too** (t613). DeepSeek answers a
+non-streaming request it has queued with headers and then blank lines until it
+is scheduled, and Node's `fetch` was seen to keep reading such a body after the
+call's signal fired. So the adapter reads every reply under the call's signal
+(`runtime/llm/deepseek/bounded-read.ts`, through `signal-race.ts`): when it
+aborts, the read ends at once as `llm.provider_timeout` (retryable), the body
+is cancelled, and the step log's `meta.json` is written then. The Flow model
+call (`deepseek/provider.ts`) and the chat window's call
+(`deepseek/panel-command.ts`) share this one path. The retry seam
+(`runtime/llm/provider-retry/`) still sees a retryable timeout, which it
+leaves to the evidence loop rather than re-sending.
+
 **Spend is bounded by the loop's budget.** The run ledger reserves every call
 before dispatch against the run's token, output-token and estimated-cost
 budgets. The Flow setting `adaptationPolicySettings.maxEstimatedCostUsdPerRun`
