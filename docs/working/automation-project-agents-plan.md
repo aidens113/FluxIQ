@@ -611,6 +611,14 @@ Earlier entries are in [the ledger archive](./automation-project-agents-plan/arc
 - Outcome: Accepted
 - Follow-up: only a slow-down notice admits such a repair (closed consent banners do not); subflow trials that passed on the runtime's recovery are not detected
 
+### 2026-10-14 — After A8 wave 3: filter groups (t606), refused-call words and the time limit (t608), a refuted no re-asked (t607)
+- Agent: workers t606-filter-group-guidance, t608-refusal-words-and-time-limit, t607-refuted-no-recheck; supervisor decided t607's two open questions and t608's code order, verified and integrated
+- Changed: t606 builder guidance on a set of options (the option chooses what its group names), and a repair the supervisor opens may name the closest trial (`closestTrial`) when the failing receipt is unknown or passed; t608 38 issue codes carry words for the model, enforced by `flow-bootstrap/plan/tests/issue-feedback-words.test.ts`, and a draft kept at the time limit keeps its trial's own code first with `project.build_time_limit` after it (`service/candidate-trial/promotion.ts`, outside the brief, the only place the codes are built); t607 `result-verification/refuted-no/` weighs each no's reasons against Core's record (duplicates, missing rows, a row's own words, counts, pages), a no whose every reason is refuted is labelled and asked once more with Core's findings and, still refuted, reads as unsure; beside a no the record leaves standing a refuted no is only labelled, so the verdict stays no (t501); Core never turns a no into a yes
+- Why: wave 3 everything-store `run-mv8p0p7c-c8412344`, a correct Flow failed by a double no calling two distinct stored rows the same pair; towels in both modes chose filters without seeing the group they sat in (downstream t605); a project build's time-limit ending replaced the trial's own failure code
+- Validation: t606 after merging dev: project-agents, project-build -> 48 files, 325 passed; tsc exit 0; audit passed; merged `d699003b`. t608: conversations, plan, project-build, candidate-trial -> 76 files, 668 passed; tsc exit 0; audit passed; merged `f779262f`. t607 after merging dev (supervisor's run): `npx tsc --noEmit -p tsconfig.json` exit 0; vitest result-verification, candidate-trial, subflow-trial, project-build, llm/deepseek -> Test Files 117 passed, Tests 1025 passed; audit passed (361 warnings, 1156 baselined); `pnpm task finish t607` ran `pnpm check` -> passed; merged `f2b873cf`, pushed
+- Outcome: Accepted
+- Follow-up: no unit test of `endingCodes` in `promotion.test.ts` (the service test covers it); the re-ask's live behaviour is unexercised until the next everything-store run
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
