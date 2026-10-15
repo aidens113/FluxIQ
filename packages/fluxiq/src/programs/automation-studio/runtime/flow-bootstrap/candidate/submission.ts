@@ -1,4 +1,5 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import type { AutomationStudioLlmEvidenceResendInvitation } from "../../llm/repeat-guard/index.ts";
 import { checkAutomationStudioFlowBootstrapCompletion, checkAutomationStudioFlowBootstrapPlanCompletion, type AutomationStudioFlowBootstrapCompletionVerdict } from "../../llm/harness-options/index.ts";
 import { automationStudioFlowBootstrapIssuePlace, automationStudioFlowBootstrapWrittenPlanBindingIssues, parseAutomationStudioFlowScript, type AutomationStudioFlowBootstrapIssueLocator } from "../authoring/index.ts";
 import { automationStudioInstructedActOptionalScriptIssues } from "../instructed-acts/index.ts";
@@ -277,7 +278,8 @@ function refusedKey(condition: { written: string; revision: number }): string {
  * of `submit`, t641): Core's words, and each condition as its trial's lines
  * named it, as its revision wrote it and the rows it kept out, with the
  * revision that still stands. One issue, so the loop counts it by its own code;
- * the model's next step is said by `./submission-refusal.ts`.
+ * the model's next step is said by `./submission-refusal.ts`. `resend` is Core's
+ * own mark that lets the repeat guard run the invited resend once (t650).
  */
 function keptConditionRefusal(dropped: AutomationStudioResultKeptConditionDrop, standing: AutomationStudioFlowCandidate | undefined): Extract<AutomationStudioFlowCandidateSubmission, { ok: false }>["check"] {
   const code = AUTOMATION_STUDIO_CANDIDATE_KEPT_CONDITION_DROPPED_CODE;
@@ -287,6 +289,7 @@ function keptConditionRefusal(dropped: AutomationStudioResultKeptConditionDrop, 
     feedback: {
       ok: false,
       code,
+      resend: "accepted_once" satisfies AutomationStudioLlmEvidenceResendInvitation,
       ...(standing ? { standingRevision: { revision: standing.revision, digest: standing.digest } } : {}),
       keptConditions: dropped.dropped.map((condition) => ({
         condition: condition.name,
