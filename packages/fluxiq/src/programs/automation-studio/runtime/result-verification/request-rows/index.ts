@@ -26,6 +26,7 @@ export * from "./request-phrases.ts";
 export * from "./request-wording.ts";
 export * from "./rerun-rows.ts";
 export * from "./row-id.ts";
+export * from "./row-values.ts";
 export * from "./row-naming.ts";
 export * from "./summary-reads.ts";
 export * from "./summary-with-left-out-naming-the-item.ts";

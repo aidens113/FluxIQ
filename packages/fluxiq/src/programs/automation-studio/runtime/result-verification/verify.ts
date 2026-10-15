@@ -200,10 +200,13 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
   const second = await askCheck(request, provider, 2, interventions);
   // The request as the judges read it: a split's no whose advice excludes by words it never states is marked and asked again (t515, `./agreement.ts`).
   const wording = automationStudioRequestWording(request.instructions, request.summary);
-  const input = { first, second, confirmAnswer, reads: request.summary.reads, recordSets: request.summary.recordSets, wording };
+  // The summary and the request's text: Core's record a no's every reason is weighed against (t607, `./refuted-no/`).
+  const requestText = request.instructions.map((instruction) => `${instruction.title}\n${instruction.body}`).join("\n");
+  const input = { first, second, confirmAnswer, reads: request.summary.reads, recordSets: request.summary.recordSets, wording, summary: request.summary, requestText };
   const settled = automationStudioResultVerificationAgreement(input);
   // A contradicted unsure beside a yes is asked once more, with Core's record named (header, t503); so is a split's no
-  // whose advice adds an exclusion the request never states (t515). The agreement names the call to ask.
+  // whose advice adds an exclusion the request never states (t515), and each no whose every reason Core's record
+  // refutes (t607). The agreement names the call to ask.
   const outcome = await automationStudioResultVerificationReaskContradicted({
     ...input, settled,
     ask: (recheck, call) => askCheck({ ...request, summary: { ...request.summary, recheck } }, provider, call, interventions, true)

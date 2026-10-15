@@ -105,7 +105,9 @@ export const AUTOMATION_STUDIO_RESULT_VERDICT_CODES = Object.freeze({
   silent: "core.result.verdict_absent",
   unavailable: "core.result.verdict_unavailable",
   disagree: "core.result.verdicts_disagree",
-  unconfirmed: "core.result.refutation_unconfirmed"
+  unconfirmed: "core.result.refutation_unconfirmed",
+  /** A no whose every reason Core's own record refutes, asked once more and still not standing (`./refuted-no/`, t607): unsure. */
+  refutationContradicted: "core.result.refutation_contradicted"
 } as const);
 
 /** The verdict a model's `answersRequest` field carries, with anything else read as `unsure`. */

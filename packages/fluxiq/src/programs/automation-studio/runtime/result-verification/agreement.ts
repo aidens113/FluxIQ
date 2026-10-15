@@ -46,9 +46,27 @@
 // (`model_unconfirmed`): not confirmed, not failed, and nothing repaired on its
 // advice. A build test's two yeses are untouched: its yes's advice stays
 // unconfirmed (`../flow-bootstrap/unfinished-build/finishing-verdict.ts`).
+//
+// **A no is only as good as what it names (t607).** A8 everything-store
+// `run-mv8p0p7c-c8412344`: a Flow that stored exactly the rows asked for was
+// failed by a double no, on byte-identical requests, calling two distinct
+// stored listings "the same pair"; another call had called a sponsored,
+// unmarked row "qualifying". Where the caller gives the judged summary, each
+// no's reading is weighed against Core's own record (`./refuted-no/weigh.ts`):
+// duplicates against the stored rows and the answer's dedupe, a missing row
+// against the stored rows and the conditions Core settled, a stored row's own
+// words, a count, and the pages and order this file already checks. A no
+// whose every named reason the record refutes is marked (`refutedNo`), its
+// reading labelled so, and `automationStudioResultVerificationReaskContradicted`
+// asks that call once more with Core's findings (`./refuted-no/reask.ts`); a
+// no still refuted is taken as unsure, never as a no. A no that names nothing
+// Core can check, or anything it cannot refute, stands as before -- and beside
+// such a no a refuted one is only labelled, not asked again, so the two keep
+// the verdict no (t501) -- and Core never turns a no into a yes.
 
-import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioResultVerdict, AutomationStudioResultVerification } from "./contracts.ts";
+import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioResultVerdict, AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "./contracts.ts";
 import { automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./read-account/index.ts";
+import { automationStudioResultNoRecord, automationStudioResultReaskRefutedNo, automationStudioResultRefutedReading, type AutomationStudioResultNoClaim, type AutomationStudioResultNoRecord } from "./refuted-no/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "./repair-directive.ts";
 import { automationStudioRequestUnstatedExclusions, type AutomationStudioRequestWording } from "./request-rows/index.ts";
 import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS as UNSETTLED } from "./unsettled/index.ts";
@@ -85,6 +103,13 @@ export type AutomationStudioResultVerificationAgreementInput = {
    * advice is marked.
    */
   wording?: AutomationStudioRequestWording | undefined;
+  /**
+   * The judged summary itself (`AutomationStudioRunResultSummary`), and the
+   * request's text: Core's record a no's reasons are weighed against
+   * (`./refuted-no/`, t607). Absent, no no is weighed and every no stands.
+   */
+  summary?: AutomationStudioRunResultSummary | undefined;
+  requestText?: string | undefined;
 };
 
 /** How a verification reads a first answer: whether a `yes` is confirmed too. */
@@ -142,27 +167,30 @@ function agree(input: AutomationStudioResultVerificationAgreementInput, reasked?
     if (second.verdict !== "does_not_answer") {
       return { ...unsettled(first, second, "model_unconfirmed", codes.unconfirmed, `This result was checked twice with the same evidence: the first answer was that it does what was asked, and the confirming check gave ${said(second)} (${second.code}). ${UNSETTLED.model_unconfirmed.run}`, verdicts), ...contradictedUnsure(2, second, input.reads) };
     }
-    return unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was that it does what was asked, the second that it does not. ${UNSETTLED.model_disagreed.run}`, verdicts, weigh);
+    return { ...unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was that it does what was asked, the second that it does not. ${UNSETTLED.model_disagreed.run}`, verdicts, weigh), ...refutedMark(input, [2]) };
   }
   if (first.verdict === "does_not_answer" && second.verdict === "does_not_answer") {
+    // A no whose every reason Core's record refutes is marked, to be asked once more (t607, `./refuted-no/`).
+    const refuted = refutedMark(input, [1, 2]);
     // Both readings, each its own call's and labelled so (`bothReadings`):
     // two calls with the same evidence reach identical Core findings, but their
     // prose can name different defects. Live run `run-mv6i27oi-a87fb247` (D1):
     // the first blamed paging against the record, the second named the two
     // stored rows that were wrong, and only the first was forwarded.
     return {
-      ...bothReadings(first, second, input.reads, input.recordSets),
+      ...bothReadings(first, second, input.reads, input.recordSets, refutedFindings(input)),
       // Nothing about the steps: this file reads only the two verdicts, and a
       // build's test can pass with a step it excused failing. "Although every
       // step of the run succeeded" was said above "Step 15 (×) failed" (t193
       // 1002-M, `run-murzln6g-11debe1d`, C6).
       reason: "The result was judged not to answer the request the Flow was built for, twice and with the same evidence.",
       verdicts,
-      calls: 2
+      calls: 2,
+      ...refuted
     };
   }
   if (second.verdict === "answers") {
-    return { ...unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was ${said(first)}, the second that it does. ${UNSETTLED.model_disagreed.run}`, verdicts, weigh), ...contradictedUnsure(1, first, input.reads) };
+    return { ...unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was ${said(first)}, the second that it does. ${UNSETTLED.model_disagreed.run}`, verdicts, weigh), ...contradictedUnsure(1, first, input.reads), ...refutedMark(input, [1]) };
   }
   return unsettled(first, second, "model_unconfirmed", codes.unconfirmed, `This result was checked twice with the same evidence, and neither answer was that it does what was asked, nor were both that it does not: the first was ${said(first)}, the second ${said(second)} (${second.code}). ${UNSETTLED.model_unconfirmed.run}`, verdicts);
 }
@@ -184,7 +212,14 @@ export async function automationStudioResultVerificationReaskContradicted(input:
   const { settled, second } = input;
   if (!second) return settled;
   const marked = settled.contradictedUnsure;
-  if (!marked) return reaskUnstatedExclusion(input, settled, second);
+  if (!marked) {
+    // A no whose every reason Core's record refutes, asked once more with Core's findings (t607, `./refuted-no/reask.ts`).
+    const record = noRecordOf(input);
+    if (settled.refutedNo && !settled.refutedNo.reasked && record) {
+      return automationStudioResultReaskRefutedNo({ first: input.first, second, settled, record, ask: input.ask, agree: (one, two) => agree({ ...input, first: one, second: two }) });
+    }
+    return reaskUnstatedExclusion(input, settled, second);
+  }
   if (marked.reasked) return settled;
   const reasked = await input.ask(recheckWords(marked.record), marked.call);
   const verdicts: AutomationStudioResultVerdict[] = [...(settled.verdicts ?? []), reasked.verdict];
@@ -390,14 +425,18 @@ function bothReadings(
   first: AutomationStudioResultVerification,
   second: AutomationStudioResultVerification,
   reads: readonly AutomationStudioResultReadAccount[] | undefined,
-  recordSets: readonly AutomationStudioResultRecordSetSummary[] | undefined
+  recordSets: readonly AutomationStudioResultRecordSetSummary[] | undefined,
+  /** Core's findings on each call whose every reason its record refutes (t607, `./refuted-no/`). */
+  refuted: ReadonlyMap<1 | 2, readonly string[]> = new Map()
 ): AutomationStudioResultVerification {
   const weighed: Weighed[] = [];
   for (const [call, verification] of [[1, first], [2, second]] as const) {
     const reading = verification.repair?.judgement;
     if (!reading || !(reading.expected || reading.observed || reading.advice)) continue;
     if (weighed.some((other) => sameWords(other.reading, reading))) continue;
-    const because = contradictsPagingRecord(reading, reads) ? CONTRADICTED : contradictsOrderRecord(reading, recordSets) ? CONTRADICTED_ORDER : undefined;
+    const findings = refuted.get(call);
+    const because = contradictsPagingRecord(reading, reads) ? CONTRADICTED : contradictsOrderRecord(reading, recordSets) ? CONTRADICTED_ORDER
+      : findings ? `contradicted by Core's record: ${findings.join(" ")}` : undefined;
     weighed.push({ call, verification, reading, contradicted: because !== undefined, ...(because ? { because } : {}) });
   }
   if (!weighed.some((one) => one.contradicted) && weighed.length < 2) return weighed[0]?.verification ?? first;
@@ -473,6 +512,60 @@ function contradictsPagingRecord(reading: JudgeReading, reads: readonly Automati
 /** Whether a reading denies an order every record set's own sort reading says the rows have (`./value-readings/order-claim.ts`, t511). */
 function contradictsOrderRecord(reading: JudgeReading, recordSets: readonly AutomationStudioResultRecordSetSummary[] | undefined): boolean {
   return [reading.expected, reading.observed, reading.advice].some((text) => automationStudioResultOrderClaimContradicted(text, recordSets));
+}
+
+/** Core's record of the judged result, built once per summary: what a no's reasons are weighed against (t607). */
+const NO_RECORDS = new WeakMap<AutomationStudioRunResultSummary, { input: AutomationStudioResultVerificationAgreementInput; record: AutomationStudioResultNoRecord }>();
+
+/** The record a no is weighed against, with the page and order claims this file checks itself; none without the summary. */
+function noRecordOf(input: AutomationStudioResultVerificationAgreementInput): AutomationStudioResultNoRecord | undefined {
+  const summary = input.summary;
+  if (!summary) return undefined;
+  const known = NO_RECORDS.get(summary);
+  // The same record only for the same request, reads and record sets: a re-agreement after a re-ask passes them all on unchanged.
+  if (known && known.input.requestText === input.requestText && known.input.wording === input.wording && known.input.reads === input.reads && known.input.recordSets === input.recordSets) return known.record;
+  const reads = input.reads ?? summary.reads;
+  const recordSets = input.recordSets ?? summary.recordSets;
+  const record = automationStudioResultNoRecord({ summary, requestText: input.requestText, wording: input.wording, other: (sentence) => pageOrOrderClaim(sentence, reads, recordSets) });
+  NO_RECORDS.set(summary, { input, record });
+  return record;
+}
+
+/** Words that deny an order, for a claim the record does not contradict: such a claim still stands. */
+const DENIES_ORDER = /\b(?:out\s+of\s+order|unsorted|wrong(?:ly)?\s+(?:sorted|ordered|order)|not\s+(?:sorted|ordered|in\s+(?:\w+\s+){0,2}order)|(?:sort|order)\s+(?:is|was)\s+(?:wrong|incorrect|reversed))\b/iu;
+
+/** A sentence's claim about pages (t501) or order (t511), refuted where the record contradicts it, standing where it does not; nothing where it makes none. */
+function pageOrOrderClaim(sentence: string, reads: readonly AutomationStudioResultReadAccount[] | undefined, recordSets: readonly AutomationStudioResultRecordSetSummary[] | undefined): AutomationStudioResultNoClaim | undefined {
+  const reading = { observed: sentence };
+  if (MORE_PAGES.test(sentence)) {
+    return contradictsPagingRecord(reading, reads)
+      ? { refuted: true, finding: pagingReads(reads).map((read) => `Read ${read.nodeId} read ${automationStudioResultReadPagesClause(read)}.`).join(" ") }
+      : { refuted: false };
+  }
+  if (contradictsOrderRecord(reading, recordSets)) return { refuted: true, finding: "Core sorted the answer itself, and its sortRead says the rows are in that order." };
+  return DENIES_ORDER.test(sentence) ? { refuted: false } : undefined;
+}
+
+/** Core's findings on each no among the two calls whose every reason its record refutes (t607); none without the summary. */
+function refutedFindings(input: AutomationStudioResultVerificationAgreementInput): Map<1 | 2, string[]> {
+  const found = new Map<1 | 2, string[]>();
+  const record = noRecordOf(input);
+  if (!record) return found;
+  for (const [call, verification] of [[1, input.first], [2, input.second]] as const) {
+    if (!verification || verification.basis !== "model" || verification.verdict !== "does_not_answer") continue;
+    const weighed = automationStudioResultRefutedReading(verification.repair?.judgement, record);
+    if (weighed.wholly) found.set(call, weighed.findings);
+  }
+  return found;
+}
+
+/** `{ refutedNo }` naming those of `calls` whose no Core's record wholly refutes, to be asked once more (t607); nothing otherwise. */
+function refutedMark(input: AutomationStudioResultVerificationAgreementInput, calls: ReadonlyArray<1 | 2>): { refutedNo?: NonNullable<AutomationStudioResultVerification["refutedNo"]> } {
+  const found = refutedFindings(input);
+  const marked = calls.filter((call) => found.has(call));
+  // Beside a no the record leaves standing, a refuted no is only labelled: the standing one keeps the verdict no (t501).
+  if (!marked.length || (calls.length === 2 && marked.length < 2)) return {};
+  return { refutedNo: { calls: marked, findings: [...new Set(marked.flatMap((call) => found.get(call)!))] } };
 }
 
 /** The reads that follow pages: authored to, or read more than one page or loop pass. */

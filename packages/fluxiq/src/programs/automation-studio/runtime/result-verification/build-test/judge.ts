@@ -26,6 +26,10 @@
 //                                                         (`../agreement.ts`, t503); still
 //                                                         unsure, unknown saying so
 //                                                         (`doubtContradicted`)
+//   a no whose every reason Core's record refutes       -> that call asked once more with Core's
+//     (`../refuted-no/`, t607), beside a yes or           findings; its answer takes its place, and
+//     another such no (beside a no that stands: no)       a no still refuted is unknown, saying so
+//                                                         in why -- never a no, never a yes Core made
 //   not performed (no model), or the deadline passed  -> not_judged
 //   no call came back usable, each asked again after a -> not_judged, saying why and how
 //     temporary fault (`../verify.ts`)                     many times it was asked (t473)
