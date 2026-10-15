@@ -19,6 +19,14 @@
 // row Core holds and none it has no record of: a quote of a text one of the
 // result's own conditions tests is no row. A no that names a row, or asks for
 // anything else, has no such remedy, and is never weighed by one.
+//
+// **What each condition kept out (t641).** Each condition also says where it
+// stands (`nodeId`, `number`), and, where it alone left out at least one row
+// and Core's record accounts for every one -- another copy of it in the
+// result, or a value Core read on it failing the request's own words
+// (`../refuted-no/record-conditions.ts`) -- those rows (`keptOut`): it left out
+// nothing the request asks for, whatever the judges said of it. The gate keeps
+// such conditions across the build's trials (`../standing-no/kept-conditions.ts`).
 
 import type { AutomationStudioRunResultSummary, AutomationStudioResultVerification } from "../contracts/index.ts";
 import {
@@ -32,7 +40,7 @@ import {
 } from "../refuted-no/index.ts";
 import { automationStudioRequestKindExclusionLabels, type AutomationStudioRequestWording } from "../request-rows/index.ts";
 import { automationStudioResultNamedStoredLabels } from "./named-stored.ts";
-import type { AutomationStudioResultStandingNoCall, AutomationStudioResultStandingNoRecord } from "../standing-no/index.ts";
+import type { AutomationStudioResultStandingNoCall, AutomationStudioResultStandingNoKeptOutRow, AutomationStudioResultStandingNoRecord } from "../standing-no/index.ts";
 
 /** Core's aside on the value a condition read on a kept row (`../read-account/condition.ts`): it may differ between revisions. */
 const KEPT_ROW_ASIDE = /\s*\(read\s.*?\son\sa\srow\sit\skept\)/giu;
@@ -61,14 +69,31 @@ export function automationStudioResultStandingNoRecord(input: {
   return {
     stored,
     storedWhole: storedWhole(summary, record),
-    conditions: (record.conditions ?? []).map((condition) => ({
-      name: condition.name,
-      ...(condition.wording ? { key: conditionKey(condition.wording) } : {}),
-      ...(condition.leftOut ? { leftOutAlone: condition.leftOut.map((row) => row.label) } : {})
-    })),
+    conditions: (record.conditions ?? []).map((condition) => {
+      const keptOut = keptOutOf(condition);
+      return {
+        name: condition.name,
+        ...(condition.wording ? { key: conditionKey(condition.wording) } : {}),
+        ...(condition.leftOut ? { leftOutAlone: condition.leftOut.map((row) => row.label) } : {}),
+        nodeId: condition.nodeId,
+        number: condition.number,
+        ...(keptOut ? { keptOut } : {})
+      };
+    }),
     ...(upheld.size ? { upheldKind: [...upheld] } : {}),
     standing
   };
+}
+
+/**
+ * The rows a condition alone left out, where there is at least one and Core's
+ * record accounts for every one (header, t641): it left out nothing the
+ * request asks for. Nothing otherwise.
+ */
+function keptOutOf(condition: AutomationStudioResultNoCondition): AutomationStudioResultStandingNoKeptOutRow[] | undefined {
+  const rows = condition.leftOut ?? [];
+  if (!rows.length || rows.some((row) => !row.accounted)) return undefined;
+  return rows.map((row) => row.accounted!.by === "request_words" ? { label: row.label, by: "request_words" as const, texts: [...row.accounted!.texts] } : { label: row.label, by: "also_in_result" as const });
 }
 
 /** A condition's wording as revisions are compared by (`./types.ts`, `key`). */

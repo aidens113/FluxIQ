@@ -146,9 +146,11 @@ export type AutomationStudioBuildTestVerdict =
      * Only on an `unknown` two checks did not settle, where one call judged the
      * test not to do what was asked: that call's expected, observed and advice
      * (`AutomationStudioResultVerification.unconfirmedReading`). One judge's
-     * reading the other call did not confirm -- never a `no`.
+     * reading the other call did not confirm -- never a `no`. With
+     * `recordContradicts` where Core's own record refutes all of it (`whole`)
+     * or some of it (`part`), as the verification marks it (t641).
      */
-    unconfirmedReading?: { expected?: string; observed?: string; advice?: string };
+    unconfirmedReading?: { expected?: string; observed?: string; advice?: string; recordContradicts?: "whole" | "part" | undefined };
     /**
      * Only on an `unknown` whose two calls split (`model_disagreed`): what the
      * call that said yes compared (`AutomationStudioResultVerification.answeredReading`),

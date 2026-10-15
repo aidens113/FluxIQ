@@ -6,7 +6,8 @@
 // that upheld rows of a kind is kept for the trials after it.
 
 import { automationStudioResultStandingNoContradicted } from "./contradiction.ts";
-import type { AutomationStudioResultStandingNoCall, AutomationStudioResultStandingNoCondition, AutomationStudioResultStandingNoContradiction, AutomationStudioResultStandingNoRecord } from "./types.ts";
+import { automationStudioResultStandingNoRecordOf as recordOf } from "./record-shape.ts";
+import type { AutomationStudioResultStandingNoContradiction, AutomationStudioResultStandingNoRecord } from "./types.ts";
 
 /** The most standing nos a gate keeps; the latest are kept. */
 const MAX_KEPT = 20;
@@ -33,38 +34,4 @@ export class AutomationStudioResultStandingNoMemory {
     }
     return undefined;
   }
-}
-
-/** A copy of `value` where it has the record's shape (`./types.ts`); nothing otherwise. */
-function recordOf(value: unknown): AutomationStudioResultStandingNoRecord | undefined {
-  if (!isObject(value) || !strings(value.stored) || typeof value.storedWhole !== "boolean" || !Array.isArray(value.conditions) || !Array.isArray(value.standing)) return undefined;
-  if (value.upheldKind !== undefined && !strings(value.upheldKind)) return undefined;
-  const conditions = value.conditions.map(conditionOf);
-  const standing = value.standing.map(callOf);
-  if (conditions.some((condition) => !condition) || standing.some((call) => !call)) return undefined;
-  return {
-    stored: [...value.stored],
-    storedWhole: value.storedWhole,
-    conditions: conditions as AutomationStudioResultStandingNoCondition[],
-    ...(value.upheldKind?.length ? { upheldKind: [...value.upheldKind] } : {}),
-    standing: standing as AutomationStudioResultStandingNoCall[]
-  };
-}
-
-function conditionOf(value: unknown): AutomationStudioResultStandingNoCondition | undefined {
-  if (!isObject(value) || typeof value.name !== "string" || (value.key !== undefined && typeof value.key !== "string") || (value.leftOutAlone !== undefined && !strings(value.leftOutAlone))) return undefined;
-  return { name: value.name, ...(value.key !== undefined ? { key: value.key } : {}), ...(value.leftOutAlone !== undefined ? { leftOutAlone: [...value.leftOutAlone] } : {}) };
-}
-
-function callOf(value: unknown): AutomationStudioResultStandingNoCall | undefined {
-  if (!isObject(value) || (value.call !== 1 && value.call !== 2) || (value.drops !== undefined && !strings(value.drops))) return undefined;
-  return { call: value.call, ...(value.drops !== undefined ? { drops: [...value.drops] } : {}) };
-}
-
-function isObject(value: unknown): value is Record<string, unknown> & { stored?: unknown; storedWhole?: unknown; conditions?: unknown; standing?: unknown; upheldKind?: unknown } {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function strings(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }

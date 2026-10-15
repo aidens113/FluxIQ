@@ -4,7 +4,8 @@
 // name conditions that left out no row by themselves, a no saying a condition
 // testing the request's own words "dropped rows ... which the request does not
 // exclude", a no calling a left-out campsite stored, the nos that name a real
-// defect, and the yes. No task, site, item or answer of any realistic scenario.
+// defect, and the yes. And the two nos of A8 wave 14's exact revision (t641),
+// one partly refuted. No task, site, item or answer of any realistic scenario.
 import {
   CAMP_BLUEWATER, CAMP_LARCH, CAMP_OSPREY, CAMP_READ, CAMP_REGION, CAMP_SILVER, CAMP_WILLOW,
   NAME_CONDITIONS, OPEN_THIS_WEEKEND
@@ -65,4 +66,23 @@ export const CAMPSITE_YES = {
   answersRequest: "yes",
   expected: EXPECTED,
   observed: `Condition 1 (promoted is absent) follows "Leave out promoted entries". Condition 2 (${OPEN_THIS_WEEKEND}) follows "open this weekend". Condition 3 (rating atLeast 4) follows "rated 4 or higher". The 4 stored campsites meet all three.`
+};
+
+/**
+ * A8 wave 14 candidate towels `run-mv9ul5dy-e9a1b1c1`, trial 2, call 1 (step
+ * 0033's shape, t641): a gap no condition answers, which Core cannot settle and
+ * so stands, and advice to change condition 1, every row of which, left out by
+ * itself, is another copy of a stored row.
+ */
+export const GAP_AND_CHANGE_NO = {
+  expected: EXPECTED,
+  observed: `Stored 4 rows. The region filter at ${CAMP_REGION} does not limit the search to the park service's own sites.`,
+  changed: `Change condition 1 (promoted is absent) on ${CAMP_READ} so a campsite with a promoted copy is still kept once.`
+};
+
+/** The same trial's call 2 (step 0034's shape): the gap alone. */
+export const GAP_NO = {
+  expected: EXPECTED,
+  observed: `The region filter at ${CAMP_REGION} was never set to the park service's own sites.`,
+  changed: `Set the region filter at ${CAMP_REGION} to the park service's own sites.`
 };

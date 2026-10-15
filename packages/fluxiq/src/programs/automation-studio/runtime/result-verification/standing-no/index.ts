@@ -22,9 +22,27 @@
 // (`./contradiction.ts`): not taken, so the trial is unsure, never a yes, and
 // the builder is told why in Core's words.
 //
-// This directory reads nothing of a run but those records, so the gates import
-// it without the reads that import the flow-bootstrap back; the builder of a
-// record, which does, is `../standing-no-record/`.
+// **And the conditions its record showed keep out only rows the request does
+// not ask for (t641).** A8 wave 14 candidate towels `run-mv9ul5dy-e9a1b1c1`: a
+// revision stored exactly the rows asked for, and judges' misread advice got
+// two of its conditions dropped one revision after another, though Core's own
+// record showed each left out, by itself, only rows another copy of which was
+// in the result or whose value failed the request's own words. The record's
+// conditions now carry where they stand and those rows (`keptOut`); the gates
+// keep each such condition as its revision wrote it (`./kept-conditions.ts`,
+// found by `./written-conditions.ts`), on the result they keep for each trial,
+// and the submission controller refuses once a revision that drops or changes
+// one (`./kept-condition-drop.ts`). A record read back from a port is read by
+// `./record-shape.ts`.
+//
+// This directory reads nothing of a run but those records and the plans the
+// gates hold, so the gates import it without the reads that import the
+// flow-bootstrap back; the builder of a record, which does, is
+// `../standing-no-record/`.
 export * from "./contradiction.ts";
+export * from "./kept-condition-drop.ts";
+export * from "./kept-conditions.ts";
 export * from "./memory.ts";
+export * from "./record-shape.ts";
 export * from "./types.ts";
+export * from "./written-conditions.ts";

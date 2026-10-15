@@ -6,8 +6,8 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioLlmProvider } from "../../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../../build-test/index.ts";
-import { campsiteInstruction, campsiteRunSummary, NAME_CONDITIONS } from "../../refuted-no/tests/campsite-fixture.ts";
-import { CAMPSITE_YES, DROP_NAME_CONDITIONS_NO, WRONGLY_LEFT_OUT_NO } from "../../refuted-no/tests/campsite-readings-fixture.ts";
+import { CAMP_CEDAR, CAMP_LARCH, CAMP_OSPREY, CAMP_READ, CAMP_WILLOW, campsiteInstruction, campsiteRunSummary, NAME_CONDITIONS } from "../../refuted-no/tests/campsite-fixture.ts";
+import { CAMPSITE_YES, DROP_NAME_CONDITIONS_NO, GAP_AND_CHANGE_NO, GAP_NO, WRONGLY_LEFT_OUT_NO } from "../../refuted-no/tests/campsite-readings-fixture.ts";
 import { verifyAutomationStudioRunResult } from "../../verify.ts";
 import { CABIN_KEPT_NO, CAMP_CABIN, cabinKeptSummary, cabinLeftOutSummary } from "./campsite-swing-fixture.ts";
 
@@ -70,6 +70,22 @@ describe("Core's record of a build test's no (t633)", () => {
     });
     expect(report.outcome).toMatchObject({ performed: true, verdict: "does_not_answer" });
     expect(report.outcome).not.toHaveProperty("standingNo");
+  });
+
+  // A8 wave 14 candidate towels `run-mv9ul5dy-e9a1b1c1`, trial 2 (t641): the exact rows, judged no on advice the record refutes in part.
+  it("says where each condition stands, and which left out only rows Core's record accounts for, whatever the judges said", async () => {
+    const verdict = await judge(answering(no(GAP_AND_CHANGE_NO), no(GAP_NO)))({ summary: campsiteRunSummary(), budget: { maxCostUsd: 0.2 } });
+    const record = verdict.verdict === "no" ? verdict.standingNo : undefined;
+    expect(record).toBeDefined();
+    expect(record!.conditions.map((condition) => [condition.nodeId, condition.number])).toEqual([1, 2, 3, 4, 5].map((number) => [CAMP_READ, number]));
+    const byNumber = new Map(record!.conditions.map((condition) => [condition.number, condition]));
+    // Condition 1: each row it left out by itself is another copy of a stored row.
+    expect(byNumber.get(1)?.keptOut).toEqual([{ label: CAMP_CEDAR.name, by: "also_in_result" }, { label: "Pine Ridge Campground, Walk-in Site 7", by: "also_in_result" }]);
+    // Condition 2: each shows a value Core read failing the request's own words.
+    expect(byNumber.get(2)?.keptOut?.map((row) => row.label)).toEqual([CAMP_LARCH, CAMP_OSPREY, CAMP_WILLOW]);
+    expect(byNumber.get(2)?.keptOut?.every((row) => row.by === "request_words" && (row.texts?.length ?? 0) > 0)).toBe(true);
+    // A numeric bound's settled row is not the request's words; a condition that left out no row by itself keeps out nothing.
+    for (const number of [3, 4, 5]) expect(byNumber.get(number)?.keptOut).toBeUndefined();
   });
 
   it("is not kept on a yes", async () => {
