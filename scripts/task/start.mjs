@@ -19,6 +19,7 @@ import { taskBranchName } from "./branch-name.mjs";
 import { dirtyLines } from "./dirty-lines.mjs";
 import { runGit } from "./git-command.mjs";
 import { noteTaskProgress } from "./progress-note.mjs";
+import { recordTaskId } from "./record-task-id.mjs";
 import { allocateTaskId } from "./task-id.mjs";
 
 export async function startTask({ repositoryRoot, slug, id: requested, from = "dev", dryRun = false, note = noteTaskProgress }) {
@@ -41,6 +42,9 @@ export async function startTask({ repositoryRoot, slug, id: requested, from = "d
 
   if (dryRun) return { id, branch, from, startPoint, allocated: requested === undefined, applied: false };
 
+  // The id is spent from here on, whatever happens next: a task later
+  // abandoned must not see its number handed out again (`task-id.mjs`).
+  await recordTaskId(repositoryRoot, id, startPoint);
   note({ step: "branch", branch, from, startPoint });
   await runGit(repositoryRoot, ["checkout", "-b", branch, from]);
 

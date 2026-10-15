@@ -19,12 +19,26 @@
 // Numbers are compared as numbers, not as strings, so "t0042" cannot slip past
 // "t042"; the spelling is then pinned to the canonical form as well, so an id
 // that names one unit of work is also written one way in both repositories.
+//
+// Branches and merges alone forget an abandoned task: its branch is deleted
+// and it never merged, so its number was handed out again (downstream, t574,
+// t598 and t616 each came to name two units of work). So every start records
+// its id as a local ref, `refs/fluxiq/task-ids/t<NNN>`, at the commit it
+// started from (`record-task-id.mjs`), and those refs count as used. A ref
+// cannot conflict between two tasks, survives branch deletion and abandon, and
+// costs nothing. `Task: t<NNN>` trailers on any local branch count as well,
+// which covers ids spent before the refs existed. A fresh clone has neither,
+// and still clears every merged id from history exactly as before. The
+// downstream allocator applies the same rule; keep the two in step.
 
 import { runGit } from "./git-command.mjs";
+import { TASK_ID_REF_PREFIX } from "./task-id-ref-prefix.mjs";
 
 const ID = /^t(\d{3,})$/u;
 const OPEN = /^task\/t(\d+)-/u;
 const MERGED = /^Merge task t(\d+):/u;
+const RECORDED = /^refs\/fluxiq\/task-ids\/t(\d+)$/u;
+const TRAILER = /^t(\d+)$/u;
 
 const canonical = (number) => `t${String(number).padStart(3, "0")}`;
 
@@ -63,10 +77,14 @@ export function chooseTaskId({ used, requested }) {
 export async function allocateTaskId({ repositoryRoot, integrationBranch = "dev", requested }) {
   const branches = await runGit(repositoryRoot, ["branch", "--list", "--format=%(refname:short)", "task/*"]);
   const subjects = await runGit(repositoryRoot, ["log", "--first-parent", "--format=%s", integrationBranch]);
+  const recorded = await runGit(repositoryRoot, ["for-each-ref", "--format=%(refname)", TASK_ID_REF_PREFIX]);
+  const trailers = await runGit(repositoryRoot, ["log", "--branches", "--format=%(trailers:key=Task,valueonly)"]);
 
   const used = [
     ...lines(branches).map((line) => match(OPEN, line, (number) => ({ number, where: `the open branch ${line}` }))),
-    ...lines(subjects).map((line) => match(MERGED, line, (number) => ({ number, where: `the merge already in ${integrationBranch}: "${line}"` })))
+    ...lines(subjects).map((line) => match(MERGED, line, (number) => ({ number, where: `the merge already in ${integrationBranch}: "${line}"` }))),
+    ...lines(recorded).map((line) => match(RECORDED, line, (number) => ({ number, where: `the earlier allocation recorded as ${line}` }))),
+    ...lines(trailers).map((line) => match(TRAILER, line, (number) => ({ number, where: `a "Task: ${line}" trailer on a local branch` })))
   ].filter((entry) => entry !== null);
 
   return chooseTaskId({ used, requested });
