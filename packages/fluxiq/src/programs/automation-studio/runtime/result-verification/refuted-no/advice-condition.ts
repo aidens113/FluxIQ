@@ -68,6 +68,20 @@ export type AutomationStudioResultAdvisedConditions = { conditions: AutomationSt
 
 /** The conditions a qualifying advice changes, where Core's record clears each (header); nothing otherwise. */
 export function automationStudioResultAdviceConditions(advice: string | undefined, record: AutomationStudioResultNoRecord): AutomationStudioResultAdvisedConditions | undefined {
+  const conditions = automationStudioResultAdviceChangedConditions(advice, record);
+  if (!conditions || !conditions.every(cleared) || mayLeaveOutTogether(conditions)) return undefined;
+  const reads = new Set((record.conditions ?? []).map((condition) => condition.nodeId));
+  return { conditions, nodeIds: [...new Set(conditions.map((condition) => condition.nodeId))], findings: conditions.map((condition) => finding(condition, reads.size > 1)) };
+}
+
+/**
+ * The conditions an advice changes, removes or loosens where it qualifies
+ * (header: each sentence keeps what it names, or changes conditions Core names
+ * by number and nothing else), whether or not Core's record clears them;
+ * nothing where any sentence asks or names more. What a later trial's no is
+ * held to across a build's trials (`../standing-no/`, t633).
+ */
+export function automationStudioResultAdviceChangedConditions(advice: string | undefined, record: AutomationStudioResultNoRecord): AutomationStudioResultNoCondition[] | undefined {
   const all = record.conditions ?? [];
   if (!all.length) return undefined;
   const chosen = new Map<string, AutomationStudioResultNoCondition>();
@@ -95,9 +109,7 @@ export function automationStudioResultAdviceConditions(advice: string | undefine
     for (const condition of here) chosen.set(`${condition.nodeId}\u0000${condition.name}`, condition);
   }
   const conditions = [...chosen.values()];
-  if (!conditions.length || !conditions.every(cleared) || mayLeaveOutTogether(conditions)) return undefined;
-  const reads = new Set(all.map((condition) => condition.nodeId));
-  return { conditions, nodeIds: [...new Set(conditions.map((condition) => condition.nodeId))], findings: conditions.map((condition) => finding(condition, reads.size > 1)) };
+  return conditions.length ? conditions : undefined;
 }
 
 /** How a read's conditions are told apart from a saved answer's on the same node: its name's place. */

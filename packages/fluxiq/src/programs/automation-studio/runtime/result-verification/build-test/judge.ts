@@ -81,6 +81,13 @@
 // `not_judged` with the cause -- it says nothing about the Flow -- never
 // `unknown` and never a no.
 //
+// **A no carries Core's record of it (t633).** Where the verification kept
+// one (`standingNo`, `../agreement.ts`, `../standing-no/`), a no hands it on:
+// the rows stored, the conditions read with, the stored rows a standing no
+// called not the asked kind, and the conditions each standing no asks to
+// remove. A trial passes it to the gate that keeps the build's trials, which
+// holds a later no to it; it is never part of what a model is told.
+//
 // **A project build's judge also reads the task checklist (unit A9).** Given
 // `taskChecklist`, the summary it is sent carries the supervisor's task spec --
 // each part in the instructions' own words, and what nobody asked for -- as a
@@ -96,6 +103,7 @@ import { automationStudioResultVerificationFailsRun, type AutomationStudioResult
 import { automationStudioResultVerificationDeadlineMs, automationStudioResultVerificationWithinDeadline } from "../deadline.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "../repair-directive.ts";
 import { automationStudioResultCheckedRowsNamed, type AutomationStudioRequestRowsNamed } from "../request-rows/index.ts";
+import type { AutomationStudioResultStandingNoRecord } from "../standing-no/index.ts";
 import {
   verifyAutomationStudioRunResult,
   type AutomationStudioResultVerificationReport,
@@ -190,6 +198,13 @@ export type AutomationStudioBuildTestVerdict =
      * lines name none.
      */
     checkedRows?: AutomationStudioRequestRowsNamed[];
+    /**
+     * Core's own record of this no (`AutomationStudioResultVerification.standingNo`,
+     * `../standing-no/`, t633): for the gate that keeps the build's trials to
+     * hold a later no to. Core-only: a trial passes it on outside its feedback,
+     * and no model is shown it. Absent where the verification kept none.
+     */
+    standingNo?: AutomationStudioResultStandingNoRecord;
     records: AutomationStudioBuildTestRecordCounts; spent: AutomationStudioBuildTestJudgeSpend;
   };
 
@@ -301,6 +316,8 @@ export function automationStudioBuildTestJudge(deps: {
         ...(outcome.repair?.checked?.length ? { checked: [...outcome.repair.checked] } : {}),
         ...(checkedRows.length ? { checkedRows } : {}),
         ...rowFix(outcome.repair),
+        // Core's record of this no, for the gate that keeps the build's trials (t633); never model-facing.
+        ...(outcome.standingNo ? { standingNo: structuredClone(outcome.standingNo) } : {}),
         // The counts the verdict was reached from, for the build to measure the next repair against (t240).
         records: { stored: wouldStore(input.summary), refused: input.summary.totalRefusedCount, missingRequired: input.summary.totalRowsMissingRequired },
         spent

@@ -30,6 +30,14 @@
 // instead of running the identical Flow again. Live run
 // `run-mv5q4j5c-49bfb5e2` re-ran an 84-second trial only to get a judgement
 // its timed-out judge would have given in 5 seconds.
+//
+// **A no keeps Core's record of it, outside the feedback (t633).** The judge's
+// no carries Core's own record of it (`standingNo`,
+// `../../result-verification/standing-no/`): the rows stored, the conditions
+// read with, the rows a standing no called not the asked kind, and the
+// conditions each standing no asks to remove. The trial's result carries it
+// beside its feedback, never in it, for the trial gate to hold a later no to
+// (`../../flow-bootstrap/candidate/trial-gate.ts`); no model is shown it.
 
 import { createHash, randomUUID } from "node:crypto";
 import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
@@ -37,7 +45,7 @@ import type { AutomationStudioCandidateTrialAct, AutomationStudioCandidateTrialR
 import { runAutomationStudioDetachedCandidate, type AutomationStudioCandidateStartReceipt, type AutomationStudioCandidateVerificationIdentity } from "../../flow-bootstrap/verification/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import { AutomationStudioHostLeaseScope } from "../../project-agents/host-resources/index.ts";
-import { automationStudioResultReadAccounts, type AutomationStudioBuildTestVerdict, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
+import { automationStudioResultReadAccounts, type AutomationStudioBuildTestVerdict, type AutomationStudioResultStandingNoCarrier, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord, AutomationStudioCandidateTrialStart, AutomationStudioCandidateTrialUnjudged } from "./contracts.ts";
 import { automationStudioCandidateTrialFeedback as Feedback } from "./feedback.ts";
 import { automationStudioCandidateTrialLandedActs } from "./landed-acts.ts";
@@ -49,7 +57,12 @@ import { automationStudioCandidateFrameEvidence } from "./frame-evidence.ts";
 const NO_SPEND: AutomationStudioCandidateTrialRecord["judge"] = Object.freeze({ calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 });
 
 /** One trial's answer and record; `unjudged` only when its judge did not judge it, with the evidence to ask the judge again on (header). */
-export type AutomationStudioCandidateTrialOutcome = { result: AutomationStudioCandidateTrialResult; record: AutomationStudioCandidateTrialRecord; unjudged?: AutomationStudioCandidateTrialUnjudged };
+export type AutomationStudioCandidateTrialOutcome = {
+  /** The gate's answer, with Core's record of a no beside its feedback (header, t633). */
+  result: AutomationStudioCandidateTrialResult & AutomationStudioResultStandingNoCarrier;
+  record: AutomationStudioCandidateTrialRecord;
+  unjudged?: AutomationStudioCandidateTrialUnjudged;
+};
 
 /** Runs and judges one trial; the result is the trial gate's answer, the record Core's audit of it. */
 export async function runAutomationStudioCandidateTrial(request: AutomationStudioCandidateTrialRequest, ports: AutomationStudioCandidateTrialPorts, preparedStart?: AutomationStudioCandidateTrialStart): Promise<AutomationStudioCandidateTrialOutcome> {
@@ -137,14 +150,16 @@ async function judged(request: AutomationStudioCandidateTrialRequest, ports: Aut
   const read = Feedback.judged({ verdict, summary, ...shown });
   const { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } = verdict.spent;
   const feedback = again ? { ...read.feedback, judgedAgain: "The judge was asked again about the same trial run on the same evidence; the Flow was not run again." } : read.feedback;
-  const outcome = answerFor(request)(read.verdict, feedback, { trialRunId: shown.trialRunId, start, execution: "succeeded", ...(read.code ? { code: read.code } : {}), ...(learnedPaces ? { learnedPaces } : {}), ...(again ? { judgedAgain: true as const } : {}), judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } }, acts);
+  // Core's record of a no, beside the feedback and never in it (header, t633).
+  const standingNo = read.verdict === "no" && verdict.verdict === "no" ? verdict.standingNo : undefined;
+  const outcome = answerFor(request)(read.verdict, feedback, { trialRunId: shown.trialRunId, start, execution: "succeeded", ...(read.code ? { code: read.code } : {}), ...(learnedPaces ? { learnedPaces } : {}), ...(again ? { judgedAgain: true as const } : {}), judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } }, acts, standingNo);
   return verdict.verdict === "not_judged" ? { ...outcome, unjudged: evidence } : outcome;
 }
 
 /** The gate's answer and Core's record of one trial of `request`'s revision. */
 function answerFor(request: AutomationStudioCandidateTrialRequest) {
-  return (verdict: AutomationStudioCandidateTrialResult["verdict"], feedback: AutomationStudioCandidateTrialResult["feedback"], record: Omit<AutomationStudioCandidateTrialRecord, "candidateId" | "revision" | "digest" | "verdict">, acts: AutomationStudioCandidateTrialAct[] = []): AutomationStudioCandidateTrialOutcome => ({
-    result: { revision: request.revision, digest: request.digest, verdict, feedback, ...(record.trialRunId ? { trialRunId: record.trialRunId } : {}), ...(acts.length ? { acts } : {}) },
+  return (verdict: AutomationStudioCandidateTrialResult["verdict"], feedback: AutomationStudioCandidateTrialResult["feedback"], record: Omit<AutomationStudioCandidateTrialRecord, "candidateId" | "revision" | "digest" | "verdict">, acts: AutomationStudioCandidateTrialAct[] = [], standingNo?: AutomationStudioResultStandingNoCarrier["standingNo"]): AutomationStudioCandidateTrialOutcome => ({
+    result: { revision: request.revision, digest: request.digest, verdict, feedback, ...(record.trialRunId ? { trialRunId: record.trialRunId } : {}), ...(acts.length ? { acts } : {}), ...(standingNo ? { standingNo: structuredClone(standingNo) } : {}) },
     record: { candidateId: request.candidateId, revision: request.revision, digest: request.digest, verdict, ...record }
   });
 }

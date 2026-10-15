@@ -41,6 +41,13 @@
 //
 // A cancelled build is not a verdict: the abort is thrown, before any judge
 // call, as a whole candidate's trial throws it.
+//
+// **A no keeps Core's record of it, outside the feedback (t633).** As a whole
+// candidate's trial does (`../candidate-trial/run.ts`): the judge's no carries
+// Core's own record of it (`standingNo`,
+// `../../result-verification/standing-no/`), and the partial receipt carries it
+// beside its feedback, never in it, for the subflow trial gate to hold a later
+// no of the brief to; no model is shown it.
 
 import { randomUUID } from "node:crypto";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -48,7 +55,7 @@ import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import type { AutomationStudioCandidateTrialAct } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { runAutomationStudioDetachedSubflow, type AutomationStudioCandidateStartReceipt, type AutomationStudioDetachedSubflowIdentity, type AutomationStudioDetachedSubflowProposal } from "../../flow-bootstrap/verification/index.ts";
-import { automationStudioResultReadAccounts, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
+import { automationStudioResultReadAccounts, type AutomationStudioResultStandingNoCarrier, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import {
   automationStudioCandidateFrameEvidence,
   automationStudioCandidateTrialFeedback as Feedback,
@@ -63,7 +70,11 @@ import type { AutomationStudioSubflowTrialJudgeInput, AutomationStudioSubflowTri
 const NO_SPEND: AutomationStudioSubflowTrialRecord["judge"] = Object.freeze({ calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 });
 
 /** One partial trial's answer and Core's record of it. */
-export type AutomationStudioSubflowTrialOutcome = { result: AutomationStudioSubflowTrialResult; record: AutomationStudioSubflowTrialRecord };
+export type AutomationStudioSubflowTrialOutcome = {
+  /** The builder's answer, with Core's record of a no beside its feedback (header, t633). */
+  result: AutomationStudioSubflowTrialResult & AutomationStudioResultStandingNoCarrier;
+  record: AutomationStudioSubflowTrialRecord;
+};
 
 /**
  * Runs and judges one partial trial (header). `preparedStart` is the start the
@@ -162,7 +173,9 @@ export async function runAutomationStudioSubflowTrial(request: AutomationStudioS
   signal.throwIfAborted();
   const read = Feedback.judged({ verdict, summary, ...shown });
   const { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } = verdict.spent;
-  return answer(read.verdict, { ...read.feedback, partial: true, entryPrepared: executed.entryPrepared }, { ...ran, execution: "succeeded", ...(read.code ? { code: read.code } : {}), judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } }, acts);
+  // Core's record of a no, beside the feedback and never in it (header, t633).
+  const standingNo = read.verdict === "no" && verdict.verdict === "no" ? verdict.standingNo : undefined;
+  return answer(read.verdict, { ...read.feedback, partial: true, entryPrepared: executed.entryPrepared }, { ...ran, execution: "succeeded", ...(read.code ? { code: read.code } : {}), judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } }, acts, standingNo);
 }
 
 /** The proposal is bound to exactly this scope and heads with its subflow. */
@@ -214,7 +227,8 @@ function answerFor(request: AutomationStudioSubflowTrialRequest) {
     verdict: AutomationStudioSubflowTrialResult["verdict"],
     feedback: JsonObject,
     record: Omit<AutomationStudioSubflowTrialRecord, "identity" | "revision" | "digest" | "verdict"> & { start: AutomationStudioCandidateTrialStart | { status: "not_run" } },
-    acts: AutomationStudioCandidateTrialAct[] = []
+    acts: AutomationStudioCandidateTrialAct[] = [],
+    standingNo?: AutomationStudioResultStandingNoCarrier["standingNo"]
   ): AutomationStudioSubflowTrialOutcome => ({
     result: {
       partial: true,
@@ -226,7 +240,8 @@ function answerFor(request: AutomationStudioSubflowTrialRequest) {
       feedback,
       ...(record.trialRunId ? { trialRunId: record.trialRunId } : {}),
       entryPrepared: record.entryPrepared,
-      ...(acts.length ? { acts } : {})
+      ...(acts.length ? { acts } : {}),
+      ...(standingNo ? { standingNo: structuredClone(standingNo) } : {})
     },
     record: { identity: { ...identity }, revision: request.proposal.revision, digest: request.proposal.digest, verdict, ...record }
   });

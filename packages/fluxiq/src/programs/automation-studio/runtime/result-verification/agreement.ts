@@ -90,22 +90,31 @@
 // a no's reading is labelled where Core's record refutes any of it (t607). An
 // unsure re-asked there that comes back yes beside a no the record wholly
 // refutes has that no asked once more too, since only both can make two yeses.
+//
+// **A build test's no keeps Core's record of it (t633).** A8 wave 8
+// `run-mv9gbsm5-2957581c`: a build swung between a Flow keeping a row its
+// judges rightly called not the asked kind and one leaving it out, whose nos
+// asked to remove the conditions that left it out. A build test's double no
+// (`confirmAnswer`) now carries `standingNo` (`./standing-no-record/`): the
+// stored rows, the conditions read with, the stored rows a standing no called
+// not the asked kind, and the conditions each standing no asks to remove. It is
+// Core's, for the gate that keeps the build's trials, and never said to a model.
 
 import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioResultVerdict, AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "./contracts.ts";
 import { automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./read-account/index.ts";
 import {
   automationStudioResultDedupeDoubtContradicted,
   automationStudioResultNoRecord,
-  automationStudioResultReadingSentences,
   automationStudioResultReaskRefutedNo,
   automationStudioResultRefutedReading,
-  automationStudioResultSentenceRows,
   type AutomationStudioResultNoClaim,
   type AutomationStudioResultNoRecord,
   type AutomationStudioResultNoWeighed
 } from "./refuted-no/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "./repair-directive.ts";
 import { automationStudioRequestUnstatedExclusions, type AutomationStudioRequestWording } from "./request-rows/index.ts";
+import type { AutomationStudioResultStandingNoRecord } from "./standing-no/index.ts";
+import { automationStudioResultNamedStoredLabels, automationStudioResultStandingNoRecord } from "./standing-no-record/index.ts";
 import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS as UNSETTLED } from "./unsettled/index.ts";
 import { automationStudioResultOrderClaimContradicted } from "./value-readings/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "./verdict.ts";
@@ -225,7 +234,9 @@ function agree(input: AutomationStudioResultVerificationAgreementInput, reasked?
       reason: "The result was judged not to answer the request the Flow was built for, twice and with the same evidence.",
       verdicts,
       calls: 2,
-      ...refuted
+      ...refuted,
+      // A build test's no keeps Core's record of it, for the gate that keeps the build's trials (header, t633). Core-only.
+      ...standingNoOf(input)
     };
   }
   if (second.verdict === "answers") {
@@ -323,19 +334,8 @@ function unstatedExclusion(
   const call = first.verdict === "does_not_answer" ? 1 : second.verdict === "does_not_answer" ? 2 : undefined;
   if (!call) return undefined;
   const judgement = (call === 1 ? first : second).repair?.judgement;
-  const exclusions = automationStudioRequestUnstatedExclusions(judgement?.advice, wording, record ? namedStoredLabels(judgement, record) : []);
+  const exclusions = automationStudioRequestUnstatedExclusions(judgement?.advice, wording, record ? automationStudioResultNamedStoredLabels(judgement, record) : []);
   return exclusions.length ? { call, exclusions } : undefined;
-}
-
-/** The labels of the stored rows a reading names, sentence by sentence, as a no's claims are found (`./refuted-no/named-rows.ts`). */
-function namedStoredLabels(reading: JudgeReading | undefined, record: AutomationStudioResultNoRecord): string[] {
-  const labels = new Set<string>();
-  for (const text of [reading?.expected, reading?.observed, reading?.advice]) {
-    for (const sentence of automationStudioResultReadingSentences(text)) {
-      for (const row of automationStudioResultSentenceRows(sentence, record).stored) labels.add(row.label);
-    }
-  }
-  return [...labels];
 }
 
 /**
@@ -690,6 +690,18 @@ function refutedMark(input: AutomationStudioResultVerificationAgreementInput, ca
   // Beside a no the record leaves standing, a refuted no is only labelled: the standing one keeps the verdict no (t501).
   if (!marked.length || (calls.length === 2 && marked.length < 2)) return {};
   return { refutedNo: { calls: marked, findings: [...new Set(marked.flatMap((call) => found.get(call)!))] } };
+}
+
+/**
+ * `{ standingNo }`: Core's record of a build test's double no (header, t633,
+ * `./standing-no-record/record.ts`); nothing for a runtime check, or without the
+ * judged summary.
+ */
+function standingNoOf(input: AutomationStudioResultVerificationAgreementInput): { standingNo?: AutomationStudioResultStandingNoRecord } {
+  const record = input.confirmAnswer === true ? noRecordOf(input) : undefined;
+  if (!record || !input.summary || !input.second) return {};
+  const calls = [{ call: 1 as const, verification: input.first }, { call: 2 as const, verification: input.second }];
+  return { standingNo: automationStudioResultStandingNoRecord({ calls, record, summary: input.summary, wording: input.wording }) };
 }
 
 /** The reads that follow pages: authored to, or read more than one page or loop pass. */
