@@ -6,6 +6,7 @@ import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../
 import { withAutomationStudioProjectAgent } from "../attribution/index.ts";
 import { automationStudioProjectSubflowBrief, type AutomationStudioProjectBuilderReturn, type AutomationStudioProjectFailingTrial, type AutomationStudioProjectReceiptRef, type AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
 import type { AutomationStudioHostLeaseScope, AutomationStudioHostResourceLease } from "../host-resources/index.ts";
+import { AutomationStudioProjectAcceptedSubflows } from "./accepted-subflows.ts";
 import { automationStudioProjectDispatchEnding as ending, type AutomationStudioProjectDispatchSpend } from "./ending.ts";
 import { AutomationStudioProjectDispatchReceipts } from "./receipts.ts";
 import { runAutomationStudioProjectResetLoop } from "./reset-loop.ts";
@@ -60,6 +61,18 @@ import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectDispatc
 // accepted, so a builder whose loop throws is held to the check a returned
 // loop is (`./ending.ts`): done on a yes of exactly that proposal, its entry
 // prepared; otherwise the return it always had, its failure said first.
+//
+// **A repair builder is shown the subflow it repairs (A8 social
+// `run-mv96rz6h`, t622).** A repair of a passing subflow was told to keep every
+// other step as it was, yet saw a blank Flow and rewrote the subflow from
+// nothing with handles it had never been shown. Every proposal Core accepts
+// for a brief of the build is kept with the script its builder sent
+// (`./accepted-subflows.ts`, `ACCEPTED`), and `repairOf` carries `yourSubflow`:
+// the proposal the failing subflow trial ran when it is held, else the latest
+// done return's proposal of that subflow (the plan in force first) as the build
+// record names it -- its script, its steps as Core resolved them (what each
+// handle stood for on the page its builder saw), and how to keep them. One the
+// build does not hold is named as such.
 
 type Role = "builder" | "repair";
 
@@ -84,7 +97,16 @@ const REPAIR_PASSED_NOTE ="This brief repairs your subflow, but the trial named 
  * dispatcher's input is made once per build, so this lives exactly as long as
  * the build's dispatcher (header).
  */
-const TRIALS = new WeakMap<AutomationStudioProjectDispatcherInput, Map<string, { ref: AutomationStudioProjectReceiptRef; trial: AutomationStudioProjectFailingTrial | undefined }>>();
+const TRIALS = new WeakMap<AutomationStudioProjectDispatcherInput, Map<string, { ref: AutomationStudioProjectReceiptRef; trial: AutomationStudioProjectFailingTrial | undefined; ran: ProposalRef }>>();
+
+/** A proposal as the build names it: the brief that made it, its revision and its digest. */
+type ProposalRef = { briefId: string; revision: number; digest: string };
+
+/** Every proposal Core accepted for a brief of one build, kept as long as the build's dispatcher (header). */
+const ACCEPTED = new WeakMap<AutomationStudioProjectDispatcherInput, AutomationStudioProjectAcceptedSubflows>();
+const YOUR_SUBFLOW_NOTE = "yourSubflow is your subflow as Core accepted it before this brief, at the revision it names: script is the whole text its builder sent, and steps are its steps as Core resolved them, each handle the script names (tN, extraction.N) there replaced by what it stood for on the page that builder saw. "
+  + "Those handles came from that builder's looks, not yours, so the check knows none of them: find the same controls and reads on your own page and write the handles your looks give. Start from this script, change only what this repair asks, and keep every other step as it is.";
+const YOUR_SUBFLOW_UNHELD_NOTE = "yourSubflow names the revision of your subflow Core accepted before this brief, but its script is not held here. Look at what your subflow's steps meet on the page now and write the whole subflow, changing only what this repair asks.";
 
 /** What a return's reason may hold (`contracts/builder-return.ts`). */
 const MAX_REASON = 2000;
@@ -168,10 +190,17 @@ async function run(input: {
   }
   const ports = await dispatcher.ports.builder(request);
   const runBuilder = dispatcher.runBuilder ?? runAutomationStudioSubflowBuilderLoop;
+  const held = acceptedOf(dispatcher);
   const accepted = (proposal: Readonly<AutomationStudioSubflowProposal>) => {
     spend.accepted = proposal;
+    held.accepted(proposal);
   };
-  const repair = repairOf(dispatcher, brief);
+  // Each script Core accepts is read off the submit tool's answer, then the ports' own observer wraps the loop (header).
+  const observe = (observed: AutomationStudioLlmEvidenceLoopInput) => {
+    const watched = held.watch(brief.briefId, observed);
+    return ports.observe ? ports.observe(watched) : watched;
+  };
+  const repair = await repairOf(dispatcher, brief);
   const loop = repair ? shownAtOpening(ports.loop, repair) : ports.loop;
   const outcome = await untilEnded(signal, ports.ended, (stop) => runBuilder({
     loop: { ...loop, maxIterations: brief.maxIterations, signal: stop, purse: allowance },
@@ -180,7 +209,7 @@ async function run(input: {
     submission: { ...ports.submission, signal: stop },
     ...(ports.trial ? { trial: { port: kept(ports.trial, heard(spend, remembered(dispatcher, receipts, receipts.wrap(ports.trial)))), ...(ports.reset ? { reset: ports.reset } : {}) } } : {}),
     ...(callScope !== undefined ? { callScope } : {}),
-    ...(ports.observe ? { observe: ports.observe } : {}),
+    observe,
     accepted
   }));
   if ("ended" in outcome) return endedAs(brief, "blocked", outcome.ended, { ...spend, trials: receipts.list() });
@@ -221,7 +250,7 @@ function remembered(dispatcher: AutomationStudioProjectDispatcherInput, receipts
     if (ref) {
       const held = TRIALS.get(dispatcher) ?? new Map();
       TRIALS.set(dispatcher, held);
-      held.set(ref.receiptId, { ref, trial: automationStudioProjectSubflowBrief.failingTrial(result) });
+      held.set(ref.receiptId, { ref, trial: automationStudioProjectSubflowBrief.failingTrial(result), ran: { briefId: result.identity.briefId, revision: result.revision, digest: result.digest } });
       while (held.size > MAX_TRIALS_KEPT) held.delete(held.keys().next().value!);
     }
     return result;
@@ -237,16 +266,58 @@ function heard(spend: AutomationStudioProjectDispatchSpend, port: AutomationStud
   };
 }
 
-/** What a repair brief's builder is shown of the trial it repairs (header); undefined for any other brief. */
-function repairOf(dispatcher: AutomationStudioProjectDispatcherInput, brief: AutomationStudioProjectSubflowBrief): JsonObject | undefined {
+/** What a repair brief's builder is shown of the trial it repairs and of the subflow it repairs (header); undefined for any other brief. */
+async function repairOf(dispatcher: AutomationStudioProjectDispatcherInput, brief: AutomationStudioProjectSubflowBrief): Promise<JsonObject | undefined> {
   const receipt = brief.failingReceipt;
   if (brief.kind !== "repair" || !receipt) return undefined;
   const named: JsonObject = { kind: receipt.kind, receiptId: receipt.receiptId };
   const held = receipt.kind === "subflow_trial" ? TRIALS.get(dispatcher)?.get(receipt.receiptId) : undefined;
   const seen = held?.ref.digest === receipt.digest ? held : undefined;
   const trial = brief.failingTrial ?? seen?.trial;
-  if (trial) return { receipt: named, ...structuredClone(trial), note: trial.verdict === "yes" ? REPAIR_RESCUED_NOTE : REPAIR_NOTE };
-  return seen ? { receipt: named, verdict: "yes", note: REPAIR_PASSED_NOTE } : { receipt: named, note: REPAIR_UNHELD_NOTE };
+  const yours = await yourSubflow(dispatcher, brief, seen?.ran);
+  const subflow = yours ? { yourSubflow: yours } : {};
+  if (trial) return { receipt: named, ...structuredClone(trial), note: trial.verdict === "yes" ? REPAIR_RESCUED_NOTE : REPAIR_NOTE, ...subflow };
+  return seen ? { receipt: named, verdict: "yes", note: REPAIR_PASSED_NOTE, ...subflow } : { receipt: named, note: REPAIR_UNHELD_NOTE, ...subflow };
+}
+
+/**
+ * The subflow a repair repairs, as Core accepted it (header): the proposal the
+ * failing subflow trial ran (`ran`) when the build holds it, else the latest
+ * done return's proposal of the subflow. Undefined when no brief of it came
+ * back done with one.
+ */
+async function yourSubflow(dispatcher: AutomationStudioProjectDispatcherInput, brief: AutomationStudioProjectSubflowBrief, ran: ProposalRef | undefined): Promise<JsonObject | undefined> {
+  const held = ACCEPTED.get(dispatcher);
+  const ref = (ran && held?.find(ran) ? ran : undefined) ?? (await latestDone(dispatcher, brief));
+  if (!ref) return undefined;
+  const found = held?.find(ref);
+  if (!found) return { revision: ref.revision, digest: ref.digest, note: YOUR_SUBFLOW_UNHELD_NOTE };
+  const steps = found.proposal.subflows.map((subflow) => ({ subflow: subflow.key, nodes: subflow.nodes.map((node) => ({ key: node.key, node: node.definitionId, ...(node.parameters ? { parameters: structuredClone(node.parameters) } : {}) })) }));
+  const text = found.script !== undefined ? { script: found.script } : found.plan !== undefined ? { plan: structuredClone(found.plan) } : {};
+  return { revision: ref.revision, digest: ref.digest, ...text, steps, note: YOUR_SUBFLOW_NOTE };
+}
+
+/** The latest done return's proposal of `brief`'s subflow from an earlier brief, the plan in force first, as the build record names it. */
+async function latestDone(dispatcher: AutomationStudioProjectDispatcherInput, brief: AutomationStudioProjectSubflowBrief): Promise<ProposalRef | undefined> {
+  const view = await dispatcher.record.store.read(dispatcher.record.ref);
+  if (!view) return undefined;
+  const briefs = new Map(view.record.briefs.map((entry) => [entry.brief.briefId, entry.brief]));
+  const done = [...view.returns].sort((left, right) => left.recordedAt - right.recordedAt).flatMap((entry) => {
+    const earlier = briefs.get(entry.briefId);
+    const proposal = entry.builderReturn.proposal;
+    if (!earlier || earlier.briefId === brief.briefId || earlier.subflowKey !== brief.subflowKey || (earlier.kind !== "build" && earlier.kind !== "repair")) return [];
+    return entry.builderReturn.outcome === "done" && proposal ? [{ ref: { briefId: earlier.briefId, revision: proposal.revision, digest: proposal.digest }, planDigest: earlier.planDigest }] : [];
+  });
+  return (done.filter((entry) => entry.planDigest === brief.planDigest).at(-1) ?? done.at(-1))?.ref;
+}
+
+/** The build's memory of accepted proposals, made with its dispatcher's first brief (header). */
+function acceptedOf(dispatcher: AutomationStudioProjectDispatcherInput): AutomationStudioProjectAcceptedSubflows {
+  const found = ACCEPTED.get(dispatcher);
+  if (found) return found;
+  const made = new AutomationStudioProjectAcceptedSubflows();
+  ACCEPTED.set(dispatcher, made);
+  return made;
 }
 
 type Execute = AutomationStudioLlmEvidenceLoopInput["executeTool"];

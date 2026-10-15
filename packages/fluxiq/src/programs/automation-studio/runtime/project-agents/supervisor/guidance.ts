@@ -221,7 +221,10 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
   completion: Object.freeze({
     nothingAssembled: "Nothing has been assembled, so there is nothing to complete with: never invent it. Assemble the Flow with project.assemble, test it with core.test_candidate, then complete with the complete object it returned.",
     notLatest: "This is not the latest assembled Flow. Complete with exactly the complete object the latest project.assemble returned, after core.test_candidate answered yes for it.",
-    shape: "Complete with exactly the complete object of the latest assembly, or with ended (blocked or partial) and reason, and nothing else.",
+    shape: "Complete with exactly the complete object of the latest assembly (complete, when one is assembled), or with ended (blocked or partial) and reason, and nothing else: drop the keys named under extra. A result that holds the latest assembly's complete object is read as completing on it, whatever else it carries.",
+    /** Said when the same refused completion comes again (`./completion.ts`, t622): the supervisor has no draft to change. */
+    sentAgain: "The check reads the complete object named, or the ending, against what the build holds, not the result's words, so the same result gets the same answer. "
+      + "Do what the refusal asks: complete with the complete object it names, or send the brief, assembly or test it asks for first, or end honestly with ended and reason alone.",
     endedTooSoon: "No brief has come back blocked or partial and no whole test has failed, so nothing stops this build yet. Keep going: send briefs, assemble and test.",
     resetFirst: "This build's lasting acts are still on the target, as listed. Before ending, dispatch a reset brief (kind reset, no parts) with project.dispatch to undo them, then end again. If the reset cannot undo them, end anyway: Core names what is left in your reason.",
     /** A whole test that passed only on the run's own recovery, before its repair was tried (`./completion.ts`, t603). */
