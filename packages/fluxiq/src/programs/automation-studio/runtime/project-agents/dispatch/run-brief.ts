@@ -12,6 +12,7 @@ import { automationStudioProjectDispatchEnding as ending, type AutomationStudioP
 import { AutomationStudioProjectDispatchReceipts } from "./receipts.ts";
 import { runAutomationStudioProjectResetLoop } from "./reset-loop.ts";
 import type { AutomationStudioProjectDispatchScope } from "./scope.ts";
+import { automationStudioProjectDispatchStartAllowance } from "./start-allowance.ts";
 import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectDispatcherInput } from "./types.ts";
 
 // One brief, from its turn to its return (automation-project-agents-plan,
@@ -87,6 +88,9 @@ import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectDispatc
 // `withheld` says so wherever it removed anything. The proposal Core keeps is
 // untouched, so a step the repair leaves as it is keeps its locator. The
 // context packet's refusal stays as the guard for anything else.
+//
+// **A brief that waited is sized as it starts (t627),** from what the purse can
+// then give, never above its dispatch-time size (`./start-allowance.ts`).
 
 type Role = "builder" | "repair";
 
@@ -142,8 +146,11 @@ export async function runAutomationStudioProjectDispatchBrief(input: {
   leases: AutomationStudioHostLeaseScope;
   /** The dispatch request's signal: aborting it stops every brief of the dispatch. */
   stop: AbortSignal;
+  /** What a waiting brief's carve is split over (`./start-allowance.ts`, t627), and the dispatcher told once it was tried. */
+  start?: { shares?: (() => number) | undefined; carved(): void } | undefined;
 }): Promise<AutomationStudioProjectBuilderReturn> {
-  const { dispatcher, brief, mapped, leases, stop } = input;
+  const { dispatcher, mapped, leases, stop } = input;
+  let brief = input.brief;
   if (brief.kind === "survey") return ending.notStarted(brief, "Survey briefs are not run by the dispatcher yet, so nothing was explored.");
   const role: Role = brief.kind === "repair" ? "repair" : "builder";
   const receipts = new AutomationStudioProjectDispatchReceipts(brief.briefId);
@@ -152,19 +159,29 @@ export async function runAutomationStudioProjectDispatchBrief(input: {
     return await dispatcher.cancellation.child(async () => {
       const signal = dispatcher.cancellation.signal()!;
       return await leases.run({ role, briefId: brief.briefId }, async (lease) => {
-        const maxCalls = dispatcher.maxCalls ? dispatcher.maxCalls(brief) : brief.maxIterations;
+        const dispatchedCalls = dispatcher.maxCalls ? dispatcher.maxCalls(brief) : brief.maxIterations;
+        // A brief that waited on a predecessor is sized from what the purse can give now (header, t627).
+        const sized = automationStudioProjectDispatchStartAllowance({ brief, maxCalls: dispatchedCalls, purse: dispatcher.purse, shares: input.start?.shares?.() });
+        const maxCalls = sized.ok ? sized.maxCalls : undefined;
         // A reset is the build's own finishing, so it may be carved from the calls kept back for it (t570).
-        const carved = dispatcher.purse.allowance({ role, briefId: brief.briefId, usd: brief.allowanceUsd, ...(maxCalls !== undefined ? { maxCalls } : {}), ...(brief.kind === "reset" ? { fromKeptBack: true } : {}) });
+        const carved = sized.ok
+          ? dispatcher.purse.allowance({ role, briefId: brief.briefId, usd: sized.allowanceUsd, ...(maxCalls !== undefined ? { maxCalls } : {}), ...(brief.kind === "reset" ? { fromKeptBack: true } : {}) })
+          : { ok: false as const, refusal: sized.refusal };
+        input.start?.carved();
         if (!carved.ok) {
           const { refusal } = carved;
           const calls = refusal.requestedCalls !== undefined && refusal.allocatableCalls !== undefined ? ` and ${refusal.requestedCalls} calls: ${refusal.allocatableCalls} calls could still be allotted` : "";
           return ending.notStarted(brief, `The build's purse could not carve this brief's allowance of $${refusal.requestedUsd.toFixed(4)}${calls}; $${refusal.allocatableUsd.toFixed(4)} could still be allotted.`);
         }
         spend.allowance = carved.allowance;
+        if (sized.ok && sized.changed) {
+          spend.sizedAtStart = sized.changed;
+          brief = { ...brief, allowanceUsd: sized.allowanceUsd, maxIterations: sized.maxIterations, ...(sized.maxCalls !== undefined ? { maxCalls: sized.maxCalls } : {}) };
+        }
         await recorded(() => dispatcher.record.store.recordAllowance(dispatcher.record.ref, { role, briefId: brief.briefId, usd: brief.allowanceUsd }));
         const allowance = carved.allowance;
         const agent = { role, briefId: brief.briefId, subflowName: mapped.subflowName };
-        return await withAutomationStudioProjectAgent(agent, () => automationStudioLlmBuildPurseScope(allowance, () => run({ ...input, lease, signal, allowance, receipts, spend })));
+        return await withAutomationStudioProjectAgent(agent, () => automationStudioLlmBuildPurseScope(allowance, () => run({ ...input, brief, lease, signal, allowance, receipts, spend })));
       }, { signal });
     }, stop);
   } catch (error) {

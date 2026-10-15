@@ -26,6 +26,13 @@ import type { AutomationStudioProjectStructurePlan } from "../contracts/index.ts
 // -- no money, or fewer calls than a builder's wrap-up needs
 // (`AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS`) -- is refused with the figures,
 // which only a build that has spent its money or calls can reach.
+//
+// **A size is a ceiling for a brief that waits (t627).** A brief sequenced
+// after another of its dispatch is carved only when its turn comes, and a
+// predecessor's allowance may have been topped up from the purse meanwhile
+// (`llm/build-purse/top-up.ts`). So it is given what is sized here, or, where
+// the purse can no longer give that, its share of what the purse can give then
+// (`../dispatch/start-allowance.ts`), and its return says which.
 
 /** A reset brief's least calls: one decision that undoes, and one that completes. */
 const MIN_RESET_CALLS = 2;
