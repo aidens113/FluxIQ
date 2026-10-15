@@ -95,6 +95,22 @@ const EPSILON_USD = 1e-9;
  * code (`GUIDANCE.briefIssues`), and an unknown receipt of a subflow with no trial
  * listed and no whole test standing that did not pass says there is nothing to
  * repair from: send a changed build brief or change the plan.
+ *
+ * **Only the repeated brief is held back (crossborder debug, t638).** A8 wave
+ * 10 `run-mv9q50ui-1736d010` sent a changed repair beside a brief that repeated
+ * a blocked one, twice, and both calls were refused whole, the changed repair
+ * with them. A call some of whose briefs repeat a blocked one now sends the
+ * others, numbered as if the repeats had not been written, and answers the
+ * repeats beside their returns (`notSent`, by each brief's path in what was
+ * sent). Only when every brief repeats, or a brief left runs after a repeated
+ * one, is the call refused whole as before.
+ *
+ * **After a reset, what comes next (t638).** The same run sent a reset because
+ * its ending was held for one (`project.completion_reset_first`) and was told
+ * to test an assembled Flow it never had. A call of resets only now says: with
+ * nothing assembled, end again (or brief and assemble); with a Flow that cannot
+ * be tested again, complete on its yes or end again; otherwise end again if an
+ * ending was held for this reset, else test.
  */
 export async function automationStudioProjectSupervisorDispatchTool(context: AutomationStudioProjectSupervisorContext, value: JsonObject): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
   const { ports, state } = context;
@@ -122,10 +138,18 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
   }
   const failing = failingTrials(context, read.briefs, rescued);
   if (failing.issues.length) return answer.refused("project.brief_refused", GUIDANCE.refusals.briefRefused, { issues: failing.issues });
-  const spent = repeatedBrief(context, failing.briefs) ?? unchangedAgain(context, failing.briefs);
+  // A brief that repeats a blocked one is held back; the others go, unless none is left or one left runs after a repeat (header).
+  const repeats = repeatedBriefs(context, failing.briefs);
+  const refusedWhole = repeats.length ? answer.refused("project.brief_repeated", GUIDANCE.refusals.briefRepeated, { repeated: repeats }, { retry: true }) : undefined;
+  if (refusedWhole && repeats.length === failing.briefs.length) return refusedWhole;
+  const held = new Set(repeats.map((entry) => entry.subflowKey));
+  const ids = state.briefIds();
+  const sending = repeats.length ? failing.briefs.filter((_brief, index) => !repeats.some((entry) => entry.path === `briefs.${index}`)).map((brief) => ({ ...brief, briefId: ids() })) : failing.briefs;
+  if (refusedWhole && sending.some((brief) => brief.entry.predecessors.some((key) => held.has(key)))) return refusedWhole;
+  const spent = unchangedAgain(context, sending);
   if (spent) return spent;
-  const order = automationStudioProjectSupervisorDispatchOrder(failing.briefs, new Set(state.latestDone().keys()), state.droppedByEarlierPlans());
-  if (!order.ok) return answer.refused(order.code === "cycle" ? "project.dispatch_cycle" : "project.predecessor_not_done", order.code === "cycle" ? GUIDANCE.refusals.dispatchCycle : GUIDANCE.refusals.predecessorNotDone, { issues: order.issues });
+  const order = automationStudioProjectSupervisorDispatchOrder(sending, new Set(state.latestDone().keys()), state.droppedByEarlierPlans());
+  if (!order.ok) return refusedWhole ?? answer.refused(order.code === "cycle" ? "project.dispatch_cycle" : "project.predecessor_not_done", order.code === "cycle" ? GUIDANCE.refusals.dispatchCycle : GUIDANCE.refusals.predecessorNotDone, { issues: order.issues });
   const requestedUsd = order.ordered.reduce((sum, brief) => sum + brief.allowanceUsd, 0);
   const canGiveUsd = ports.purse?.allocatableUsd();
   if (canGiveUsd !== undefined && requestedUsd > canGiveUsd + EPSILON_USD) return answer.refused("project.allowance_unavailable", GUIDANCE.refusals.allowanceUnavailable, { requestedUsd, canGiveUsd, ...unaffordable(context, onlyRescue ? rescued : undefined) });
@@ -179,7 +203,9 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
     returns: order.ordered.map((brief, index) => compact(brief, returns[index]!, unchanged.get(brief.briefId), RETURN.closestTrial(state.answeredFor(brief.subflowKey).map(({ returned }) => returned)))),
     lastingActsInPlace: ports.projectLedger.snapshot().acts.filter((act) => act.inPlace).length,
     ...(short ? { wholeTestStands: { complete: { revision: short.revision, digest: short.digest } } } : {}),
-    next: short ? GUIDANCE.next.afterRecoveryRepairShort : unchanged.size ? GUIDANCE.next.afterRepairUnchanged : !allDone ? GUIDANCE.next.afterReturnsNotDone : reset ? GUIDANCE.next.afterReset : GUIDANCE.next.afterReturnsDone
+    // The briefs held back as repeats of blocked ones, beside the returns of the others (header, t638).
+    ...(repeats.length ? { notSent: { code: "project.brief_repeated", instruction: GUIDANCE.refusals.briefRepeatedOthersSent, repeated: repeats } } : {}),
+    next: short ? GUIDANCE.next.afterRecoveryRepairShort : unchanged.size ? GUIDANCE.next.afterRepairUnchanged : !allDone ? GUIDANCE.next.afterReturnsNotDone : reset ? afterReset(context) : GUIDANCE.next.afterReturnsDone
   }, { acted: true });
 }
 
@@ -259,15 +285,20 @@ function sentKey(context: AutomationStudioProjectSupervisorContext, brief: Autom
   });
 }
 
-/** The refusal of a brief sent again unchanged after its subflow's latest brief came back blocked once its builder ran (header); undefined when none is. */
-function repeatedBrief(context: AutomationStudioProjectSupervisorContext, briefs: readonly AutomationStudioProjectSubflowBrief[]): AutomationStudioLlmEvidenceToolExecutionResult | undefined {
-  const repeated = briefs.flatMap((brief, index) => {
+/** What a call of resets only says to do next (header, t638): nothing assembled, a Flow that cannot be tested again, or one that may be. */
+function afterReset(context: AutomationStudioProjectSupervisorContext): string {
+  if (!context.controller.latest()) return GUIDANCE.next.afterResetNothingAssembled;
+  return "revision" in context.gate.retestable() ? GUIDANCE.next.afterReset : GUIDANCE.next.afterResetNothingToTest;
+}
+
+/** Each brief sent again unchanged after its subflow's latest brief came back blocked once its builder ran, by its path (header). */
+function repeatedBriefs(context: AutomationStudioProjectSupervisorContext, briefs: readonly AutomationStudioProjectSubflowBrief[]): Array<{ path: string; subflowKey: string; lastBrief: JsonObject }> {
+  return briefs.flatMap((brief, index) => {
     const last = brief.kind === "reset" ? undefined : context.state.latestFor(brief.subflowKey);
     if (!last || last.returned.outcome !== "blocked" || last.returned.calls === 0) return [];
     const was = context.state.sentAs.get(last.brief.briefId);
     return was !== undefined && was === sentKey(context, brief) ? [{ path: `briefs.${index}`, subflowKey: brief.subflowKey, lastBrief: { briefId: last.brief.briefId, outcome: last.returned.outcome, reason: last.returned.reason } }] : [];
   });
-  return repeated.length ? answer.refused("project.brief_repeated", GUIDANCE.refusals.briefRepeated, { repeated }, { retry: true }) : undefined;
 }
 
 /** The refusal of a further brief of a subflow whose latest repair changed nothing, while what stood then stands (header); undefined when none is. */

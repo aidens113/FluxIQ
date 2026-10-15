@@ -120,7 +120,8 @@ describe("the build record's write rules", () => {
     await expect(store.recordBrief(ref, brief())).rejects.toMatchObject({ code: "project.brief_without_plan" });
     await expect(store.recordPlan(ref, structurePlan((plan) => (plan.partOf.save_recipe = [])))).rejects.toMatchObject({ code: "project.plan_part_uncovered" });
     await store.recordPlan(ref, structurePlan());
-    const replanned = structurePlan((plan) => (plan.partOf.list_soups = ["p1", "p2"]));
+    // A later plan; one part carried by two subflows in turn is refused since t638, so it changes a name instead.
+    const replanned = structurePlan((plan) => (plan.plan.subflows[0]!.name = "List soups again"));
     await store.recordPlan(ref, replanned);
     await expect(store.recordBrief(ref, brief())).rejects.toMatchObject({ code: "project.brief_plan_stale" });
     await store.recordBrief(ref, brief(undefined, replanned));

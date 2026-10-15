@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts";
 import { automationStudioProjectActiveInstructionSources, automationStudioProjectTaskSpec } from "../index.ts";
-import { sources, taskSpec } from "../../tests/fixtures.ts";
+import { SOURCE_TEXT, sources, taskSpec } from "../../tests/fixtures.ts";
 
 describe("task spec", () => {
   it("parses a good spec unchanged", () => {
@@ -47,6 +47,31 @@ describe("task spec", () => {
     expect(automationStudioProjectTaskSpec.quoteIssues(paraphrase, sources())).toEqual([{ code: "project.quote_not_verbatim", path: "taskSpec.parts.0.quote.text" }]);
     const elsewhere = taskSpec((spec) => (spec.parts[1]!.quote.sourceId = "instruction.2"));
     expect(automationStudioProjectTaskSpec.quoteIssues(elsewhere, sources())).toEqual([{ code: "project.quote_source_unknown", path: "taskSpec.parts.1.quote.sourceId" }]);
+  });
+
+  // A8 wave 10 crossborder `run-mv9q50ui-1736d010` (t638): the whole request as p1 and a span inside it as p2.
+  it("refuses two parts of one instruction whose words overlap, and accepts parts that do not", () => {
+    const whole = taskSpec((spec) => (spec.parts[0]!.quote.text = "list the five newest soups. Then save the first one"));
+    expect(automationStudioProjectTaskSpec.quoteIssues(whole, sources())).toEqual([{ code: "project.quote_overlaps", path: "taskSpec.parts.1.quote.text" }]);
+    const inside = taskSpec((spec) => (spec.parts[1]!.quote.text = "five newest"));
+    expect(automationStudioProjectTaskSpec.quoteIssues(inside, sources())).toEqual([{ code: "project.quote_overlaps", path: "taskSpec.parts.1.quote.text" }]);
+    const same = taskSpec((spec) => (spec.parts[1]!.quote.text = spec.parts[0]!.quote.text));
+    expect(automationStudioProjectTaskSpec.quoteIssues(same, sources())).toEqual([{ code: "project.quote_overlaps", path: "taskSpec.parts.1.quote.text" }]);
+    // Touching is not overlapping: one part ends where the next begins.
+    const adjacent = taskSpec((spec) => {
+      spec.parts[0]!.quote.text = "list the five newest soups.";
+      spec.parts[1]!.quote.text = " Then save the first one to my cookbook.";
+    });
+    expect(automationStudioProjectTaskSpec.quoteIssues(adjacent, sources())).toEqual([]);
+    // Words the person wrote twice are placed apart; in two instructions they never overlap.
+    const twice = [{ sourceId: "instruction.1", text: "save the first one, then save the first one again." }];
+    const repeated = taskSpec((spec) => {
+      spec.parts[0]!.quote = { sourceId: "instruction.1", text: "save the first one" };
+      spec.parts[1]!.quote = { sourceId: "instruction.1", text: "save the first one" };
+    });
+    expect(automationStudioProjectTaskSpec.quoteIssues(repeated, twice)).toEqual([]);
+    const apart = [...sources(), { sourceId: "instruction.2", text: SOURCE_TEXT }];
+    expect(automationStudioProjectTaskSpec.quoteIssues(taskSpec((spec) => (spec.parts[1]!.quote = { sourceId: "instruction.2", text: spec.parts[0]!.quote.text })), apart)).toEqual([]);
   });
 
   it("takes only active instructions as sources", () => {

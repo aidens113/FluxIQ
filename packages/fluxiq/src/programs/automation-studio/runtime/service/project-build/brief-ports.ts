@@ -79,6 +79,16 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // from the entry. Either way its opening look says in plain words whether the
 // entry was prepared, and why not when it was not.
 //
+// **A prepared entry names what its predecessors left** (t638, A8 wave 10
+// crossborder `run-mv9q50ui-1736d010`). A builder whose part a predecessor had
+// already done -- the first subflow did the whole task -- saw a page whose
+// count had not caught up, was told only "what they did is already done", and
+// built the act again. Each lasting act the preparation run landed is now
+// named beside the note under `predecessorsLeftOnSite`, as the project ledger
+// holds it (its id and what it did, the step and the control), the same form a
+// trial's `leftOnSite` takes, with what to do when a part of the builder's own
+// asks for one of them.
+//
 // **A prepared entry is the builder's arrival** (t585, A8 launch 6). The
 // domain counts a build arrived only once it has gone to the start location,
 // and the opening look re-arms that, so on `run-mv85vjqo-4c022aec` every typed
@@ -257,7 +267,9 @@ export function automationStudioProjectBuildBriefPorts(input: {
       // Arrived only where there is a start to arrive at: the opening tool declares an arrival (header).
       const arrived = entry.kind === "prepared" && opensArriving;
       const absorbedActs = started.record.putBack?.map((act) => act.act);
-      const loop = told({ ...placed, tools }, { start: started.told, entry: entryNote(request.scope.subflowKey, entry, absorbedActs), permittedActs: request.brief.permittedActs, arrived });
+      // What the preparation run landed, as the project ledger holds it (header, t638).
+      const landed = entry.kind === "prepared" ? project.ledger.snapshot().acts.filter((act) => act.inPlace && !act.possible && act.ref.startsWith(`${entry.runId}#`)).map(({ act, did }) => ({ act, did })) : [];
+      const loop = told({ ...placed, tools }, { start: started.told, entry: entryNote(request.scope.subflowKey, entry, absorbedActs, landed), permittedActs: request.brief.permittedActs, arrived });
       // The domain's denied keys, which the dispatcher withholds from a repair's `yourSubflow` (`project-agents/dispatch/run-brief.ts`, t625).
       return { loop, submission: { ...submission, permissionFor: built.permissions.planStep }, trial, reset, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...built.submissions.observe(observed), decide: built.decide(observed.completionSchema) }), ended: built.ended, deniedEvidenceKeys: binding.deniedEvidenceKeys };
     },
@@ -354,14 +366,18 @@ function lookingInPlace(tool: Tool): Tool {
 /**
  * What a dependent builder's opening look says about its entry; nothing for a
  * subflow the build's start begins. `absorbed` names the acts of this build
- * the start hook put back before its predecessors ran (header).
+ * the start hook put back before its predecessors ran, and `landed` the
+ * lasting acts the run that prepared the entry left on the site (header).
  */
-function entryNote(subflowKey: string, entry: AutomationStudioProjectBuildEntry, absorbed: readonly string[] | undefined): JsonObject | undefined {
+function entryNote(subflowKey: string, entry: AutomationStudioProjectBuildEntry, absorbed: readonly string[] | undefined, landed: ReadonlyArray<{ act: string; did: string }> = []): JsonObject | undefined {
   if (entry.kind === "start") return undefined;
   const names = entry.predecessors.map((key) => `"${key}"`).join(", ");
   const putBack = absorbed?.length ? { absorbedByStartReset: [...absorbed] } : {};
   if (entry.kind === "prepared") {
-    return { prepared: true, note: `Before this first look, Core ran the passing proposals of the subflows before yours (${names}) once, in order, so the site is where your subflow "${subflowKey}" begins. Explore and build from here; what they did is already done, so do not do it again.`, ...putBack };
+    if (!landed.length) return { prepared: true, note: PREPARED(names, subflowKey), ...putBack };
+    const note = `${PREPARED(names, subflowKey)} Their lasting acts are under predecessorsLeftOnSite: each is on the site now, even where a page has not caught up with it. `
+      + "If one of them is what a part of yours asks for, a subflow before yours already does it: do not do it again, and end the brief blocked naming that act, so the plan can change.";
+    return { prepared: true, note, predecessorsLeftOnSite: landed.map((act) => ({ ...act })), ...putBack };
   }
   const why = entry.missing?.length
     ? `${entry.missing.map((key) => `"${key}"`).join(", ")} has no proposal whose trial passed yet, so Core could not run it first`
@@ -370,6 +386,9 @@ function entryNote(subflowKey: string, entry: AutomationStudioProjectBuildEntry,
       : `Core could not run them to reach your entry (${entry.code})`;
   return { prepared: false, code: entry.code, note: `Your subflow "${subflowKey}" begins where ${names} leave the site, but ${why}. This page is not your subflow's entry: what you see and do here may differ from what your subflow meets when it runs after them.`, ...putBack };
 }
+
+/** The note of a prepared entry, before what its predecessors left (header). */
+const PREPARED = (names: string, subflowKey: string) => `Before this first look, Core ran the passing proposals of the subflows before yours (${names}) once, in order, so the site is where your subflow "${subflowKey}" begins. Explore and build from here; what they did is already done, so do not do it again.`;
 
 /** The key Core's opening look of a builder on its prepared entry carries, which the web domain reads as its arrival (header). */
 const ARRIVED_KEY = "arrived";

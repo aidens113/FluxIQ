@@ -8,8 +8,10 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE, AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
 import { planInput, project, subflow, taskSpecInput, type BuilderPlan } from "./supervisor-fixture.ts";
-import { FIND, assembled, brief, call, dispatch, end, supervise, test, type Entry } from "./supervisor-script.ts";
+import { FIND, HOLD, assembled, brief, call, dispatch, end, supervise, test, type Entry } from "./supervisor-script.ts";
 
+/** A script any callable subflow with no interface may be built with. */
+const OPEN = (sent: { subflowKey: string }) => ["flow: Open the catalogue", `part ${sent.subflowKey}: open the catalogue`, "  step: open the catalogue", "    node: web.browser.navigate", "    url: https://library.test/catalogue", "end"];
 const ONE_PART = planInput([subflow("main", ["p1"])], taskSpecInput([["p1", FIND, []]]));
 
 const answersOf = (shown: ReadonlyArray<{ toolId: string; value: unknown }>, toolId: string) => shown.filter((entry) => entry.toolId === toolId).map((entry) => entry.value as JsonObject);
@@ -154,6 +156,40 @@ describe("a brief sent again after it came back blocked", () => {
       instruction: GUIDANCE.refusals.briefRepeated,
       repeated: [{ path: "briefs.0", subflowKey: "main", lastBrief: { briefId: "brief-1", outcome: "blocked", reason: "The main control could not be found." } }]
     });
+    expect(run.dispatched).toHaveLength(1);
+  });
+
+  // A8 wave 10 crossborder `run-mv9q50ui-1736d010` (t638): a repeat beside a changed repair refused the whole call, twice.
+  it("is held back alone: the other briefs of the call are sent, numbered on, and the repeat is answered beside their returns", async () => {
+    const TWO = planInput([subflow("find_titles", ["p1"]), subflow("place_hold", ["p2"])], taskSpecInput([["p1", FIND, []], ["p2", HOLD, []]]));
+    const run = await supervise([
+      call(IDS.writePlan, TWO),
+      dispatch([brief("find_titles", ["p1"]), brief("place_hold", ["p2"])]),
+      dispatch([brief("find_titles", ["p1"]), brief("place_hold", ["p2"], [], { recordingExcerpt: "The hold control is under Request." })], "Try both again."),
+      end("blocked")
+    ], project({ builder: blockedFirst, script: OPEN }));
+    expect(answersOf(run.shown, IDS.dispatch)[1]).toMatchObject({
+      ok: true,
+      returns: [{ briefId: "brief-3", subflowKey: "place_hold", outcome: "done" }],
+      notSent: {
+        code: "project.brief_repeated",
+        instruction: GUIDANCE.refusals.briefRepeatedOthersSent,
+        repeated: [{ path: "briefs.0", subflowKey: "find_titles", lastBrief: { briefId: "brief-1", outcome: "blocked" } }]
+      }
+    });
+    expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.briefId))).toEqual([["brief-1", "brief-2"], ["brief-3"]]);
+    expect(run.view!.record.briefs.map((entry) => entry.brief.briefId)).toEqual(["brief-1", "brief-2", "brief-3"]);
+  });
+
+  it("refuses the whole call when a brief left would run after the repeat", async () => {
+    const AFTER = planInput([subflow("find_titles", ["p1"]), subflow("place_hold", ["p2"], { after: ["find_titles"] })], taskSpecInput([["p1", FIND, []], ["p2", HOLD, []]]));
+    const run = await supervise([
+      call(IDS.writePlan, AFTER),
+      dispatch([brief("find_titles", ["p1"])]),
+      dispatch([brief("find_titles", ["p1"]), brief("place_hold", ["p2"], ["find_titles"])], "Try again, then hold."),
+      end("blocked")
+    ], project({ builder: blockedFirst }));
+    expect(answersOf(run.shown, IDS.dispatch)[1]).toMatchObject({ ok: false, code: "project.brief_repeated", instruction: GUIDANCE.refusals.briefRepeated, repeated: [{ path: "briefs.0", subflowKey: "find_titles" }] });
     expect(run.dispatched).toHaveLength(1);
   });
 

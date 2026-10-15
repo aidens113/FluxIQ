@@ -12,6 +12,15 @@ import { automationStudioProjectJsonShape as shape, type AutomationStudioProject
 // has nothing to quote and is refused. A lasting act is one of the permission
 // gate's consequence classes, so every act a part asks for is one the gate
 // already knows how to ask a person about.
+//
+// **Parts of one instruction do not overlap (A8 wave 10 crossborder, t638).**
+// `run-mv9q50ui-1736d010` quoted the whole request as part p1 and a span
+// inside it as p2, so the first builder did the whole task and every later
+// builder found its part already done. Each quote is placed where it stands in
+// its source, and two parts of one source whose spans share a character are
+// refused `project.quote_overlaps`. A quote found more than once takes the
+// first place no earlier part holds, so words a person repeats are not read as
+// an overlap.
 
 export type AutomationStudioProjectTaskPart = {
   id: string;
@@ -40,17 +49,34 @@ export const automationStudioProjectTaskSpec = Object.freeze({
     return shape.parse(() => read(value));
   },
 
-  /** Every quote is a verbatim span of an active source it names. */
+  /** Every quote is a verbatim span of an active source it names, and no two parts of one source share a character of it (header). */
   quoteIssues(spec: AutomationStudioProjectTaskSpec, sources: readonly AutomationStudioProjectInstructionSource[]): Array<{ code: string; path: string }> {
     const issues: Array<{ code: string; path: string }> = [];
+    /** The spans the earlier parts hold, by source id. */
+    const placed = new Map<string, Array<[number, number]>>();
     for (const [index, part] of spec.parts.entries()) {
       const source = sources.find((candidate) => candidate.sourceId === part.quote.sourceId);
       if (!source) issues.push({ code: "project.quote_source_unknown", path: `taskSpec.parts.${index}.quote.sourceId` });
       else if (!source.text.includes(part.quote.text)) issues.push({ code: "project.quote_not_verbatim", path: `taskSpec.parts.${index}.quote.text` });
+      else {
+        const held = placed.get(source.sourceId) ?? [];
+        const span = freeSpan(source.text, part.quote.text, held);
+        if (!span) issues.push({ code: "project.quote_overlaps", path: `taskSpec.parts.${index}.quote.text` });
+        else placed.set(source.sourceId, [...held, span]);
+      }
     }
     return issues;
   }
 });
+
+/** The first place `quote` stands in `text` that shares no character with a span `held`; undefined when every place does (header). */
+function freeSpan(text: string, quote: string, held: ReadonlyArray<readonly [number, number]>): [number, number] | undefined {
+  for (let at = text.indexOf(quote); at >= 0; at = text.indexOf(quote, at + 1)) {
+    const end = at + quote.length;
+    if (held.every(([start, stop]) => end <= start || at >= stop)) return [at, end];
+  }
+  return undefined;
+}
 
 function read(value: unknown): AutomationStudioProjectTaskSpec {
   const fields = shape.object(value, "taskSpec", ["parts", "notAsked", "digest"]);

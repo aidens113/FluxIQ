@@ -22,6 +22,16 @@ import type { AutomationStudioProjectTaskSpec } from "./task-spec.ts";
 // routes, reachability). A part subflow -- one with an interface -- and a
 // recovery subflow are reached through steps no builder has written yet, so
 // their reachability is left to the assembled candidate's validation.
+//
+// **A part is carried once (A8 wave 10 crossborder, t638).** The amended plan
+// of `run-mv9q50ui-1736d010` gave one part to three subflows that run one
+// after another, so each builder set out to do it again. A part in the
+// `partOf` of more than one subflow is refused `project.plan_part_carried_twice`,
+// by each carrier's entry after the first. Two exceptions run at most one
+// carrier in any run: the subflows the router chooses between by situation
+// (its rules' targets and, beside them, its fallback), which count as one
+// carrier, and a recovery subflow, which redoes a part only where the run
+// failed and counts as none.
 
 export type AutomationStudioProjectStructurePlan = {
   taskSpecDigest: string;
@@ -61,6 +71,7 @@ export const automationStudioProjectStructurePlan = Object.freeze({
     for (const [index, part] of taskSpec.parts.entries()) {
       if (!covered.has(part.id)) issues.push({ code: "project.plan_part_uncovered", path: `taskSpec.parts.${index}` });
     }
+    issues.push(...carriedTwice(structure));
     const laterReached = new Set(structure.plan.subflows.flatMap((subflow, index) => (subflow.interface || subflow.role === "recovery" ? [index] : [])));
     for (const issue of automationStudioFlowBootstrapRouteIssues(structure.plan)) {
       if (issue.severity !== "error") continue;
@@ -71,6 +82,29 @@ export const automationStudioProjectStructurePlan = Object.freeze({
     return issues;
   }
 });
+
+/** The router's situation alternatives, as the one carrier they count as. */
+const ROUTER_CHOICE = Symbol("router choice");
+
+/** Each carrier of a part after its first, by its `partOf` entry; the router's situation alternatives are one carrier and a recovery subflow none (header). */
+function carriedTwice(structure: AutomationStudioProjectStructurePlan): Array<{ code: string; path: string }> {
+  const { router, subflows } = structure.plan;
+  const alternatives = new Set(router.rules.length ? [...router.rules.map((rule) => rule.targetSubflowKey), ...(router.fallback.kind === "subflow" ? [router.fallback.targetSubflowKey] : [])] : []);
+  const recovery = new Set(subflows.filter((subflow) => subflow.role === "recovery").map((subflow) => subflow.key));
+  /** The carrier each part was first given to: a subflow key, or the router's alternatives as one. */
+  const first = new Map<string, string | typeof ROUTER_CHOICE>();
+  const issues: Array<{ code: string; path: string }> = [];
+  for (const [key, parts] of Object.entries(structure.partOf)) {
+    if (recovery.has(key)) continue;
+    const carrier = alternatives.has(key) ? ROUTER_CHOICE : key;
+    for (const [index, part] of parts.entries()) {
+      const held = first.get(part);
+      if (held === undefined) first.set(part, carrier);
+      else if (held !== carrier) issues.push({ code: "project.plan_part_carried_twice", path: `structurePlan.partOf.${key}.${index}` });
+    }
+  }
+  return issues;
+}
 
 function read(value: unknown): AutomationStudioProjectStructurePlan {
   const fields = shape.object(value, "structurePlan", ["taskSpecDigest", "plan", "partOf", "digest"]);

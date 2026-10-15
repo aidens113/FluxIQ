@@ -48,6 +48,35 @@ describe("structure plan", () => {
     expect(issues(structurePlan(), taskSpec((spec) => (spec.notAsked = [])))).toEqual([{ code: "project.plan_task_spec_stale", path: "structurePlan.taskSpecDigest" }]);
   });
 
+  // A8 wave 10 crossborder `run-mv9q50ui-1736d010` (t638): one part given to three subflows run one after another.
+  it("refuses a part carried by two subflows that run in turn, by the later carrier's entry", () => {
+    const twice = structurePlan((plan) => (plan.partOf.save_recipe = ["p2", "p1"]));
+    expect(issues(twice, taskSpec())).toEqual([{ code: "project.plan_part_carried_twice", path: "structurePlan.partOf.save_recipe.1" }]);
+  });
+
+  it("accepts one part carried by the subflows the router chooses between by situation, and by a recovery subflow", () => {
+    const alternative = { key: "list_soups_search", name: "List soups by search", role: "primary" as const, nodes: [], edges: [], metadata: { "fluxiq.successCheck": [{ fact: "list", op: "count" as const, value: 5 }] } };
+    const alternatives = structurePlan((plan) => {
+      plan.plan.subflows.push(alternative);
+      plan.plan.router.fallback = { kind: "subflow", targetSubflowKey: "list_soups_search" };
+      plan.partOf.list_soups_search = ["p1"];
+    });
+    expect(issues(alternatives, taskSpec())).toEqual([]);
+    const recovery = structurePlan((plan) => {
+      plan.plan.subflows.push({ key: "save_again", name: "Save again", role: "recovery", nodes: [], edges: [] });
+      plan.partOf.save_again = ["p2"];
+    });
+    expect(issues(recovery, taskSpec())).toEqual([]);
+    // An alternative and a subflow called after it are still two carriers.
+    const calledToo = structurePlan((plan) => {
+      plan.plan.subflows.push(alternative);
+      plan.plan.router.fallback = { kind: "subflow", targetSubflowKey: "list_soups_search" };
+      plan.partOf.list_soups_search = ["p1"];
+      plan.partOf.save_recipe = ["p2", "p1"];
+    });
+    expect(issues(calledToo, taskSpec())).toEqual([{ code: "project.plan_part_carried_twice", path: "structurePlan.partOf.save_recipe.1" }]);
+  });
+
   it("applies the router's own checks, leaving a part's reachability to its future callers", () => {
     const unreachable = structurePlan((plan) => plan.plan.subflows.push({ key: "orphan", name: "Orphan", role: "primary", nodes: [], edges: [], metadata: { "fluxiq.successCheck": [{ fact: "x", op: "exists" }] } }));
     expect(issues(unreachable, taskSpec())).toEqual([{ code: "bootstrap.subflow_unreachable", path: "structurePlan.plan.subflows.2" }]);
