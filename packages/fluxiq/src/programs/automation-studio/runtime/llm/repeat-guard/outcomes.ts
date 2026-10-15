@@ -187,6 +187,16 @@
 // standing revision's own script, as already accepted -- and the same script
 // sent once another revision stands is a new call that Core checks.
 //
+// **A refusal that invites its own resend admits it once (t650).** A8 frozen
+// pair 4, candidate towels `run-mva446jf-926a3c72` (0044-0050): t641's
+// `candidate.kept_condition_dropped` refusal tells the model the same change
+// sent again is accepted, and leaves the standing revision -- this key's -- as
+// it was, so the resend was refused unrun here three times and the build
+// ended. A refusal whose own JSON marks it (`diagnostics.resend`,
+// `./resend-admission.ts`) records no failure under its key the first time,
+// so the identical call runs once more; a second refusal there is recorded as
+// any refusal is. Nothing else about a refusal is read as an invitation.
+//
 // **What still runs.**
 //
 // - Anything after the page changed: the key holds the page.
@@ -204,6 +214,7 @@
 import { createHash } from "node:crypto";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioLlmEvidenceCanonicalJson } from "../evidence-loop-decision.ts";
+import { automationStudioLlmEvidenceResendAdmission } from "./resend-admission.ts";
 import { automationStudioLlmEvidenceRetriesLater } from "./retry-later.ts";
 import { automationStudioLlmEvidenceSearchStreak, type AutomationStudioLlmEvidenceSearchStreak } from "./searching.ts";
 
@@ -359,6 +370,8 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
     }
   };
   const searching = automationStudioLlmEvidenceSearchStreak();
+  // Keys whose refusal invited its resend, each admitted once (header, t650).
+  const resends = automationStudioLlmEvidenceResendAdmission();
   let latest: string | undefined;
   let refusedInARow = 0;
   let lastRefused = Number.NEGATIVE_INFINITY;
@@ -415,6 +428,13 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
       const changedNothing = !call.effectApplied || (!metPrecondition && call.stateAfter !== undefined && call.stateAfter === state);
       const retryLater = automationStudioLlmEvidenceRetriesLater(call.resultCode, call.resultReason);
       const at = key(call.toolId, call.input, state);
+      // A refusal that invites its resend, the first under this key: no failure, so the identical call runs once more (header, t650).
+      if (call.refused && resends.admits(at, call.answer)) {
+        outcomes.delete(at);
+        unshown.delete(at);
+        awaiting.delete(at);
+        return;
+      }
       if (!call.refused) showed(state);
       const sameResult = !failed && !changedNothing && call.stateAfter !== undefined && endedOn.get(at) === call.stateAfter;
       if (!failed && !changedNothing && call.stateAfter !== undefined) endedOn.set(at, call.stateAfter);

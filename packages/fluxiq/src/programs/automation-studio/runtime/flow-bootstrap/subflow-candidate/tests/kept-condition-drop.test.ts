@@ -6,14 +6,23 @@
 // refused once, in Core's words and naming the builder's own tools' subject,
 // and the same drop sent again is accepted. Scripted provider, the campsite
 // search of `../../candidate/tests/kept-condition-fixture.ts`.
+//
+// The last case sends that resend through the builder's own loop and the
+// evidence loop on one unchanged page, the shape of A8 frozen pair 4
+// (`run-mva446jf-926a3c72`, 0044-0050), where the repeat guard refused the
+// invited resend unrun three times and the build ended (t650).
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioBuildTestVerdict } from "../../../result-verification/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_KEPT_CONDITION_DROPPED_CODE, automationStudioCandidateSubmissionRefusal } from "../../candidate/index.ts";
 import { CAMP_WHERE, GAP_AND_CHANGE_NO, GAP_NO, KEPT_CONDITION_SUBMISSION, campsiteJudging, campsiteReadScript as script } from "../../candidate/tests/kept-condition-fixture.ts";
+import type { AutomationStudioLlmEvidenceLoopInput } from "../../../llm/index.ts";
 import {
+  AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID,
+  AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID,
   AutomationStudioSubflowScopedSubmissionController,
   AutomationStudioSubflowTrialGate,
+  runAutomationStudioSubflowBuilderLoop,
   type AutomationStudioSubflowProposal,
   type AutomationStudioSubflowTrialRequest,
   type AutomationStudioSubflowTrialResult
@@ -71,5 +80,52 @@ describe("a brief's condition Core's record kept, dropped after a no on advice i
 
     const again = await proposed(submit(script([open, rating, campground, notCabin])));
     expect(again.revision).toBeGreaterThan(exact.revision);
+  });
+});
+
+type Entry = { callId: string; toolId: string; value: unknown };
+type Decide = AutomationStudioLlmEvidenceLoopInput["decide"];
+
+/** The page every call finds: nothing between the refusal and its resend moves it, as in the run. */
+const PAGE = "page.campsites";
+const look = { toolId: "demo.look", description: "Look at the page.", inputSchema: { type: "object" }, effect: "observe" as const };
+const call = (callId: string, toolId: string, input: JsonObject) => ({ kind: "tool_call" as const, callId, toolId, input });
+const entry = (evidence: readonly Entry[], callId: string) => evidence.find((one) => one.callId === callId)?.value as JsonObject | undefined;
+
+describe("the resend a brief's kept-condition refusal invites, through the builder and evidence loops (t650)", () => {
+  it("is refused once with the mark, sent again word for word on the same page, and accepted as a new proposal", async () => {
+    const judge = campsiteJudging(GAP_AND_CHANGE_NO, GAP_NO);
+    const dropped = script([open, rating, campground, notCabin]);
+    let shown: readonly Entry[] = [];
+    const accepted: number[] = [];
+    const decide: Decide = async ({ iteration, evidence }) => {
+      shown = evidence as readonly Entry[];
+      const receipt = entry(shown, "submit-exact");
+      if (iteration === 1) return call("look-1", look.toolId, {});
+      if (iteration === 2) return call("submit-exact", AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, script([promoted, open, rating, campground, notCabin]));
+      if (iteration === 3) return call("test-1", AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, { revision: receipt!.revision as number, digest: receipt!.digest as string });
+      if (iteration === 4) return call("look-2", look.toolId, { again: true });
+      if (iteration === 5) return call("submit-drop", AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, dropped);
+      if (iteration === 6) return call("submit-again", AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, dropped);
+      return { kind: "complete", result: { subflowKey: scope.subflowKey, revision: 0, digest: "none" } };
+    };
+    await runAutomationStudioSubflowBuilderLoop({
+      scope, siblings: [...SIBLINGS], submission: KEPT_CONDITION_SUBMISSION,
+      trial: { port: async (request: AutomationStudioSubflowTrialRequest) => answered(request, await judge(request.proposal.subflows)) },
+      accepted: (proposal) => accepted.push(proposal.revision),
+      loop: {
+        tools: [look], maxIterations: 8, maxToolCalls: 10,
+        unusableDecisions: { maxConsecutive: 8, maxInARow: 8, stalled: () => new Error("stalled") },
+        executeTool: async () => ({ kind: "llm_evidence_tool_execution", stateDigests: { before: PAGE, after: PAGE }, evidence: { ok: true, sites: 12 }, effectApplied: false, draft: { actionId: "demo.look", effect: "observe", proposes: false } }),
+        decide
+      }
+    });
+
+    // The refusal carries the mark the guard reads beside Core's feedback, as the inner controller wrote it.
+    expect(entry(shown, "submit-drop")).toMatchObject({ ok: false, diagnostics: { code: AUTOMATION_STUDIO_CANDIDATE_KEPT_CONDITION_DROPPED_CODE, resend: "accepted_once" } });
+    // The resend ran and was accepted as a new proposal; nothing refused it as a repeat.
+    expect(entry(shown, "submit-again")).toMatchObject({ ok: true, revision: 3 });
+    expect(accepted).toEqual([1, 3]);
+    expect(JSON.stringify(shown)).not.toContain("llm_evidence_loop.repeat_refused");
   });
 });
