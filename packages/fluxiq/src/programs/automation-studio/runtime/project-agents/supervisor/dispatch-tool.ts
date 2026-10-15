@@ -85,6 +85,16 @@ const EPSILON_USD = 1e-9;
  * only such repairs its allowance -- the state says so, and the answer names
  * the test that still stands (`wholeTestStands`), which the supervisor may
  * then complete on (`./completion.ts`).
+ *
+ * **A refusal says what it needs (everything-store debug, t630).** A8 wave 7
+ * `run-mv9dd0fk-8cd2e522` spent four decisions learning that a subflow whose
+ * returns listed no trial could not be repaired: the refusal of a repair with
+ * no receipt came back as a code and a path alone, and the unknown receipt's
+ * words said to copy a trial that did not exist. A brief's reading and the
+ * build record now answer each issue with `why` where Core has words for its
+ * code (`GUIDANCE.briefIssues`), and an unknown receipt of a subflow with no trial
+ * listed and no whole test standing that did not pass says there is nothing to
+ * repair from: send a changed build brief or change the plan.
  */
 export async function automationStudioProjectSupervisorDispatchTool(context: AutomationStudioProjectSupervisorContext, value: JsonObject): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
   const { ports, state } = context;
@@ -108,7 +118,7 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
   const read = automationStudioProjectSupervisorBriefInput({ value, structure, taskSpec, after: state.after, ...(sizing ? { sizes: sizing.sizes } : {}), nextId: state.briefIds() });
   if (!read.ok) {
     const survey = read.issues.some((issue) => issue.code === "project.brief_survey_unavailable");
-    return answer.refused(survey ? "project.brief_survey_unavailable" : "project.brief_refused", survey ? GUIDANCE.refusals.surveyUnavailable : GUIDANCE.refusals.briefRefused, { issues: read.issues });
+    return answer.refused(survey ? "project.brief_survey_unavailable" : "project.brief_refused", survey ? GUIDANCE.refusals.surveyUnavailable : GUIDANCE.refusals.briefRefused, { issues: read.issues.map(worded) });
   }
   const failing = failingTrials(context, read.briefs, rescued);
   if (failing.issues.length) return answer.refused("project.brief_refused", GUIDANCE.refusals.briefRefused, { issues: failing.issues });
@@ -129,7 +139,7 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
     }
   } catch (error) {
     if (!(error instanceof AutomationStudioProjectRecordRefusal)) throw error;
-    return answer.refused("project.brief_refused", GUIDANCE.refusals.briefRefused, { issues: [{ code: error.code, path: error.path }] });
+    return answer.refused("project.brief_refused", GUIDANCE.refusals.briefRefused, { issues: [worded(error)] });
   }
   // A brief for a subflow that already came back short is a triage of that return.
   const triage = order.ordered.some((brief) => earlier.some((answered) => answered.brief.subflowKey === brief.subflowKey && answered.returned.outcome !== "done"));
@@ -221,13 +231,20 @@ function failingTrials(context: AutomationStudioProjectSupervisorContext, briefs
     // The subflow's trial closest to passing (`../contracts/builder-return.ts`, t606): offered beside a refusal, and started from instead of a worse one.
     const closest = RETURN.closestTrial(returns);
     const offered = closest ? { ...RETURN.trialRef(closest) } : undefined;
-    if (!listed.length) refuse("project.failing_receipt_unknown", path, GUIDANCE.issues.failingUnknown, offered);
+    // With no trial listed by any return and no whole test standing that did not pass, there is nothing to copy (header, t630).
+    if (!listed.length) refuse("project.failing_receipt_unknown", path, !wholeTest && returns.every((returned) => !returned.trials.length) ? GUIDANCE.issues.failingNone : GUIDANCE.issues.failingUnknown, offered);
     // The trial a done return ended on is the yes it was done on.
     else if (listed.every((entry) => entry.last && entry.returned.outcome === "done")) refuse("project.failing_receipt_passed", path, GUIDANCE.issues.failingPassed, offered);
     else if (closest && RETURN.trialAbove(closest, listed.at(-1)!.trial)) return { ...brief, failingReceipt: RETURN.trialRef(closest) };
     return brief;
   });
   return { briefs: read, issues };
+}
+
+/** An issue of a brief's reading or the build record's refusal, by its code and path, with what it means where Core has words for its code (header, t630). */
+function worded(issue: { code: string; path: string }): JsonObject {
+  const words: Readonly<Record<string, string>> = GUIDANCE.briefIssues;
+  return Object.hasOwn(words, issue.code) ? { code: issue.code, path: issue.path, why: words[issue.code]! } : { code: issue.code, path: issue.path };
 }
 
 /** What a brief is sent with and into, as one comparable key (header). */

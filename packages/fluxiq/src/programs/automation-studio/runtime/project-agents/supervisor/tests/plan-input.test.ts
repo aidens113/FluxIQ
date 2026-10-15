@@ -108,6 +108,57 @@ describe("the supervisor's planning format", () => {
     expect(result.warnings).toEqual([]);
   });
 
+  // A8 wave 7 `run-mv9dd0fk-8cd2e522` (t630): a subflow that only kept, de-duplicated and ordered the rows another read
+  // had nothing on the target to build, and the Flow's own answer was warned as unused, twice.
+  describe("a subflow that only reshapes what another reads", () => {
+    const READ_THEN_SHAPE = taskSpecInput([["p1", FIND, []], ["p3", NOTE, []]]);
+    const READ_THEN_HOLD = taskSpecInput([["p1", FIND, []], ["p2", HOLD, ["create_new"]]]);
+
+    it("warns on it, by its path, and never warns the answer the last subflow hands back as unused", () => {
+      const result = read(planInput([
+        subflow("find_titles", ["p1"], { inputs: ["author"], outputs: ["titles"] }),
+        subflow("shape_titles", ["p3"], { inputs: ["titles"], outputs: ["rows"], after: ["find_titles"] })
+      ], READ_THEN_SHAPE));
+      if (!result.ok) throw new Error(JSON.stringify(result.issues));
+      // find_titles takes the Flow's own value, not another subflow's, so it is no reshape.
+      expect(result.warnings).toEqual([{ code: "project.plan_subflow_reshape_only", path: "subflows.1" }]);
+    });
+
+    it("does not warn on one whose part makes a lasting act", () => {
+      const result = read(planInput([
+        subflow("find_titles", ["p1"], { outputs: ["titles"] }),
+        subflow("place_hold", ["p2"], { inputs: ["titles"], outputs: ["shelf"], after: ["find_titles"] })
+      ], READ_THEN_HOLD));
+      if (!result.ok) throw new Error(JSON.stringify(result.issues));
+      expect(result.warnings).toEqual([]);
+    });
+
+    it("does not warn on one whose output a later subflow takes", () => {
+      const result = read(planInput([
+        subflow("find_titles", ["p1"], { outputs: ["titles"] }),
+        subflow("pick_first", ["p3"], { inputs: ["titles"], outputs: ["first"], after: ["find_titles"] }),
+        subflow("place_hold", ["p2"], { inputs: ["first"], after: ["pick_first"] })
+      ], THREE));
+      if (!result.ok) throw new Error(JSON.stringify(result.issues));
+      expect(result.warnings).toEqual([]);
+    });
+
+    it("never warns the output of a plan's only subflow, or of the one that runs last, as unused", () => {
+      const only = read(planInput([subflow("main", ["p1"], { outputs: ["titles"] })], ONE));
+      const last = read(planInput([
+        subflow("find_titles", ["p1"], { outputs: ["titles"] }),
+        subflow("place_hold", ["p2"], { inputs: ["titles"], outputs: ["shelf"], after: ["find_titles"] })
+      ], READ_THEN_HOLD));
+      if (!only.ok || !last.ok) throw new Error(JSON.stringify([only, last]));
+      expect(only.warnings).toEqual([]);
+      expect(last.warnings).toEqual([]);
+      // Two subflows that run in no order: neither runs last, so a value neither takes is still warned.
+      const unordered = read(planInput([subflow("find_titles", ["p1"], { outputs: ["titles"] }), subflow("place_hold", ["p2"], { outputs: ["shelf"] })], READ_THEN_HOLD));
+      if (!unordered.ok) throw new Error(JSON.stringify(unordered.issues));
+      expect(unordered.warnings).toEqual([{ code: "project.plan_value_unused", path: "subflows.0.outputs.0" }, { code: "project.plan_value_unused", path: "subflows.1.outputs.0" }]);
+    });
+  });
+
   it("answers every subflow's issue and the task spec's together", () => {
     const value = planInput([subflow("find_titles", ["p1"], { outputs: ["the titles"] }), subflow("Place", ["p2"])], taskSpecInput([["p1", "Find every title ever written", []], ["p2", HOLD, []]]));
     expect(read(value)).toEqual({ ok: false, issues: [

@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioSubflowBuilderOutcome, AutomationStudioSubflowProposal, AutomationStudioSubflowTrialResult } from "../../../flow-bootstrap/subflow-candidate/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError } from "../../../flow-bootstrap/generation-failure/index.ts";
+import { automationStudioCandidateRefusalCodes as refusalCodes } from "../../../service/candidate-failure/index.ts";
 import { automationStudioProjectDispatchEnding as ending } from "../ending.ts";
 import { gardenBrief } from "./dispatch-fixture.ts";
 
@@ -101,6 +102,32 @@ describe("a brief's return reason", () => {
     expect(returned).toMatchObject({ outcome: "blocked" });
     expect(returned.reason).toBe("The builder failed: Flow Bootstrap generation failed (flow_bootstrap.evidence_repeat_without_progress). It was stopped by llm_evidence_loop.repeat_refused. The calls it stopped on, latest first: core.run_node on web.dom.type answered web.action.rejected (not_at_start_location) (2 in a row).");
     expect(ending.thrown(brief, new Error("The page closed."), false, spend).reason).toBe("The builder failed: The page closed.");
+  });
+
+  // A8 wave 7 `run-mv9dd0fk-8cd2e522` (t630): "core.submit_subflow answered subflow.scope_refused:b54daa6d (3 in a row)" hid
+  // `subflow.input_unread` behind the digest, and the supervisor amended the plan without knowing the input was the cause.
+  it("says a refused submission's run by its issue codes and the unread input's name, with the plan's advice, where the stop's codes carry them", () => {
+    const opening = gardenBrief("b-open", "open_packet");
+    const submitted = { toolId: "core.submit_subflow", resultCode: "subflow.scope_refused:b54daa6d" };
+    const carried = refusalCodes.encode({ refusals: 3, sentAgain: 0, family: "subflow.scope_refused", issues: [{ code: "subflow.input_unread", path: "flow.line.3" }] });
+    const failure = (issueCodes: string[]) => new AutomationStudioFlowBootstrapGenerationError({
+      code: "flow_bootstrap.evidence_repeat_without_progress", stage: "provider_output_validation", retryable: false, providerInvocation: "attempted", providerResponse: "received",
+      issueCodes,
+      evidenceLoop: { iterationCount: 4, decisionCount: 4, toolCallCount: 4, evidenceBytes: 10, steps: [
+        { toolId: "core.run_node", iteration: 1, nodeId: "web.output.dom-extract_list", resultCode: "web.inspect.succeeded" },
+        { ...submitted, iteration: 2 }, { ...submitted, iteration: 3 }, { ...submitted, iteration: 4 }
+      ] }
+    });
+    const returned = ending.thrown(opening, failure([...carried, "llm_evidence_loop.repeat_refused"]), false, spend);
+    expect(returned).toMatchObject({ outcome: "blocked" });
+    expect(returned.reason).toBe("The builder failed: Flow Bootstrap generation failed (flow_bootstrap.evidence_repeat_without_progress). It was stopped by llm_evidence_loop.repeat_refused. "
+      + "The calls it stopped on, latest first: core.submit_subflow answered subflow.scope_refused (subflow.input_unread: input \"packet\") (3 in a row); core.run_node on web.output.dom-extract_list answered web.inspect.succeeded. "
+      + "The plan gives this subflow a value no step of it reads: change the plan with project.amend_plan, so that it takes only values a step of it types or opens, or carry its parts in the subflow that reads that value.");
+    expect(returned.reason).not.toContain("b54daa6d");
+    expect(returned.reason).not.toContain("candidate.last_submission");
+    // With no issue carried, the code is said as it was, and no advice is given.
+    expect(ending.thrown(opening, failure(["llm_evidence_loop.repeat_refused"]), false, spend).reason).toContain("core.submit_subflow answered subflow.scope_refused:b54daa6d (3 in a row); core.run_node");
+    expect(ending.thrown(opening, failure(["llm_evidence_loop.repeat_refused"]), false, spend).reason).not.toContain("project.amend_plan");
   });
 });
 

@@ -40,6 +40,16 @@
 // what each issue means (`planIssues`), and the plan's answer says the router's
 // subflow is Core's.
 //
+// **Shaping is carried by the read (everything-store debug, t630).** A8 wave 7
+// `run-mv9dd0fk-8cd2e522` made a subflow of a part that only dropped repeats,
+// kept order and chose columns of rows another subflow read; its builder had
+// nothing on the target to do, was refused three times for never reading its
+// input, and the supervisor could not tell why. So step 2 says such a part is
+// carried by the subflow that reads, the written plan warns on a subflow that
+// only reshapes (`project.plan_subflow_reshape_only`), and a refused repair
+// says in words what it needed, and when this subflow has nothing to repair
+// from at all.
+//
 // No string here names a fingerprint field by name: the supervisor completes
 // and tests with the `complete` object assembly hands it, copied whole.
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_LOOK_BUDGET as LOOKS } from "./look-budget.ts";
@@ -53,7 +63,8 @@ const HOW_TO_WORK = [
   "1. Write the plan with project.write_plan, once. taskSpec splits the task into parts: a part is one thing the person asked for, given as their exact words copied from one instruction (its sourceId and the text), with the facts that are true once it is done and the lasting acts it needs. Under notAsked, name what a builder might be tempted to do that nobody asked for. "
     + "A part asks for something to be done or read. What the person says must stay as it is (nothing removed, nothing sent, nothing else changed) is no part: put it under notAsked, which the judge checks the whole run against, and give it no subflow.",
   "2. In the same call, subflows: one for each piece of work a builder makes, as {key, name, purpose, parts, inputs, outputs, after}. parts are the ids of the parts it carries; inputs are the values it takes and outputs the values it hands on, by name; after names the subflows that must run before it. A one-part task is one subflow with no inputs or outputs. Core writes the Flow's shape from this, and each builder proposes how its own subflow shows it is done. "
-    + "Hand a value on only when a step of a later subflow uses it, as a name it types or a row it opens. What an earlier subflow leaves on the target, such as a chosen branch or a page left open, is no value: say it with after alone.",
+    + "Hand a value on only when a step of a later subflow uses it, as a name it types or a row it opens. What an earlier subflow leaves on the target, such as a chosen branch or a page left open, is no value: say it with after alone. "
+    + "A part that only narrows, de-duplicates, orders or shapes what another part reads is carried by the subflow that reads it.",
   "3. Send briefs with project.dispatch, one for each subflow. A brief names its subflow and its parts; Core gives it its share of the money and calls left. A lasting act its parts do not ask for that moves money, deletes or sends goes to the person first; any other lasting act runs, is recorded as this build's, and the builder is told it was outside its brief. What runs before it is the plan's after unless you say otherwise. Briefs whose starts do not depend on each other may go in one call.",
   "4. Read each return. Done carries a proposal. Partial or blocked carries the builder's reason: send a changed brief, change the plan with project.amend_plan, or end honestly.",
   "5. Once every subflow is done, call project.assemble. Core joins the proposals into one Flow: the subflow the router runs calls the others in order, each input taken from the earlier output of the same name.",
@@ -73,7 +84,7 @@ const WRITE_PLAN = "Write the task spec and the plan, once. taskSpec: parts, eac
   + "subflows: each {key, name, purpose, parts, inputs, outputs, after} and nothing else. key: lower case letters, digits, _ or -, starting with a letter. parts: the part ids it carries; every part is carried by at least one subflow. "
   + "inputs and outputs: the names of the values it takes and hands on, each letters and digits starting lower case. after: the keys of the subflows that run before it. One subflow with no inputs or outputs is the one the router runs; otherwise Core adds that one, and it calls the others. "
   + "Core writes the Flow's shape from these and checks that every part's text is in its instruction exactly as written and that every part is carried; a refusal lists every issue by its path in what you sent. "
-  + "The answer may carry warnings, each by its path: a value no other subflow takes, or a subflow of several that neither makes a lasting act nor hands anything on. Change a plan already written with project.amend_plan.";
+  + "The answer may carry warnings, each by its path: a value no other subflow takes, a subflow of several that neither makes a lasting act nor hands anything on, or one that only reshapes what another subflow reads. Change a plan already written with project.amend_plan.";
 
 const AMEND_PLAN = "Replace the plan with a new revision: the fields of project.write_plan, plus reason. Briefs sent under the old plan no longer count. Write only your own subflows: the one the router runs is Core's, and Core adds it again. "
   + "A done proposal is kept where the new plan leaves its subflow as it was: the same key, the same parts with the same lasting acts, facts and words, the same inputs and outputs, and the same after, with every subflow it runs after kept too. "
@@ -187,12 +198,23 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     failingNotLatestTest: "This names a whole test that is not the latest one of the latest assembled Flow. A repair starts from the latest whole test (wholeTest, when one stands that did not pass: copy it whole) or from a trial a return of this subflow listed.",
     failingPassed: "This names a trial that passed, so it says nothing about what to repair. Name the trial that did not pass: the latest whole test (wholeTest, when one stands: copy it whole), or a trial of this subflow that did not pass.",
     failingUnknown: "No return of this subflow listed this trial. Copy one entry of the trials a return of this subflow listed, or name the latest whole test (wholeTest, when one stands that did not pass: copy it whole).",
+    /** Beside `project.failing_receipt_unknown` when this subflow's returns list no trial and no whole test stands that did not pass (`./dispatch-tool.ts`, t630). */
+    failingNone: "This subflow's returns list no trial, and no whole test stands that did not pass, so there is nothing to repair from: send kind build with something it is given changed, or change the plan with project.amend_plan.",
     changedNothing: "This proposal does exactly what the one under sameAs did, its names aside: the brief changed nothing, and what failed before still stands.",
     /** Beside a refused allowance when the call only repaired a whole test that passed on the run's own recovery (`./dispatch-tool.ts`, t603). */
     recoveryRepairUnaffordable: "This build cannot pay for the repair of the whole test that passed only on the run's own recovery, so that test still stands. "
       + "Complete with the complete object here: Core completes on that test and tells the person the Flow relies on the run's own recovery."
   }),
-  /** What each issue a plan's reading can find says, by its code, beside its path (`./plan-tool.ts`, t595); a code with none here is answered by its code and path alone. */
+  /** What each issue of a brief's reading or the build record's refusal of it says, by its code, beside its path (`./dispatch-tool.ts`, t630); a code with none here is answered by its code and path alone. */
+  briefIssues: Object.freeze({
+    "project.brief_failing_receipt": "Only a repair names failingReceipt, and a repair must name one: a trial of this subflow that did not pass, or the latest whole test that did not pass. "
+      + "With neither to name, send kind build with something it is given changed, or change the plan with project.amend_plan."
+  }),
+  /**
+   * What each issue a plan's reading can find says, by its code, beside its path (`./plan-tool.ts`, t595); a code with
+   * none here is answered by its code and path alone. A written plan's warnings are said from here too, each by its own
+   * code (t630), so a new warning cannot borrow another's words.
+   */
   planIssues: Object.freeze({
     "project.plan_subflow_no_parts": "Every subflow you write carries at least one part. If this is the subflow the router runs, leave it out: Core adds it and writes its calls.",
     "project.plan_subflow_key": "A subflow key is lower case letters, digits, _ or -, starting with a letter, at most 64 characters.",
@@ -210,12 +232,14 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     "project.task_spec_empty": "The task spec has no parts. Split the task into the parts the person asked for.",
     "project.unknown_field": "This field is not part of the plan's format. Send only the fields the tool describes.",
     "project.missing_field": "A field the plan's format needs is missing here.",
-    "project.amend_reason_missing": "An amendment needs its reason: say what is wrong with the plan in force."
-  }),
-  /** What a written plan's warnings say to do (`./plan-input.ts`). */
-  warnings: Object.freeze({
-    valueUnused: "No other subflow takes this value. Keep it only if it is what the Flow hands back to the person; otherwise remove it, and if a later subflow needs what this one leaves on the target, order it with after instead.",
-    constraintSubflow: "This subflow neither makes a lasting act nor hands anything on. If its parts read something the person asked for, keep it. If they only say what must stay as it is, they are constraints: put them under notAsked, drop those parts and this subflow, and amend the plan."
+    "project.amend_reason_missing": "An amendment needs its reason: say what is wrong with the plan in force.",
+    // A written plan's warnings, each by its own code (`./plan-input.ts`, `./plan-tool.ts`): what to do if it applies.
+    "project.plan_value_unused": "No other subflow takes this value. Keep it only if it is what the Flow hands back to the person; otherwise remove it, and if a later subflow needs what this one leaves on the target, order it with after instead.",
+    "project.plan_subflow_constraint": "This subflow neither makes a lasting act nor hands anything on. If its parts read something the person asked for, keep it. If they only say what must stay as it is, they are constraints: put them under notAsked, drop those parts and this subflow, and amend the plan.",
+    /** A warning, not a refusal (`./plan-input.ts`, t630): a builder that opens or reads something for each row is such a subflow too. */
+    "project.plan_subflow_reshape_only": "This subflow takes rows an earlier subflow reads, makes no lasting act and hands on nothing another subflow takes. "
+      + "If its parts only keep, drop, de-duplicate, order or choose columns of those rows, they are that read's own condition and processing: carry them in the subflow that reads, drop this one, and amend the plan. "
+      + "Keep it only if its builder must open or read something on the target for each row."
   }),
   /** The words of each refused completion. */
   completion: Object.freeze({

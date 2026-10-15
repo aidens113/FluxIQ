@@ -57,6 +57,37 @@ describe("a repair's failing receipt", () => {
   });
 });
 
+// A8 wave 7 `run-mv9dd0fk-8cd2e522` (t630): a subflow whose return listed no trial was sent a repair naming another
+// subflow's trial, then one with no receipt, which came back as a code and a path alone; four decisions went on finding
+// out that there was nothing to repair from.
+describe("a repair of a subflow with nothing to repair from", () => {
+  it("is refused saying no trial is listed and no whole test stands, and a repair with no receipt says in words what it needs", async () => {
+    const run = await supervise([
+      call(IDS.writePlan, ONE_PART),
+      dispatch([brief("main", ["p1"])]),
+      repairOf(() => ({ kind: "subflow_trial", receiptId: "trial-of-another-subflow", digest: "c".repeat(64) })),
+      dispatch([brief("main", ["p1"], [], { kind: "repair" })], "Repair what came back blocked."),
+      end("blocked")
+    ], project({ builder: () => "blocked" }));
+    const [blocked, unknown, noReceipt] = answersOf(run.shown, IDS.dispatch);
+    expect(blocked).toMatchObject({ ok: true, returns: [{ outcome: "blocked", trials: [] }] });
+    expect(unknown).toMatchObject({ ok: false, code: "project.brief_refused", issues: [{ code: "project.failing_receipt_unknown", path: "briefs.0.failingReceipt", why: GUIDANCE.issues.failingNone }] });
+    expect((unknown!.issues as JsonObject[])[0]).not.toHaveProperty("wholeTest");
+    expect(noReceipt).toMatchObject({ ok: false, code: "project.brief_refused", issues: [{ code: "project.brief_failing_receipt", path: "briefs.0.failingReceipt", why: GUIDANCE.briefIssues["project.brief_failing_receipt"] }] });
+    expect(run.dispatched).toHaveLength(1);
+  });
+
+  it("still says to copy a listed trial where a return of the subflow listed one", async () => {
+    const run = await supervise([
+      call(IDS.writePlan, ONE_PART),
+      dispatch([brief("main", ["p1"])]),
+      repairOf(() => ({ kind: "subflow_trial", receiptId: "trial-made-up", digest: "c".repeat(64) })),
+      end("blocked")
+    ], project({ builder: () => "blocked", notDoneTrials: () => [{ kind: "subflow_trial", receiptId: "trial-listed", digest: "d".repeat(64) }] }));
+    expect(answersOf(run.shown, IDS.dispatch)[1]).toMatchObject({ ok: false, issues: [{ code: "project.failing_receipt_unknown", why: GUIDANCE.issues.failingUnknown }] });
+  });
+});
+
 describe("a repair that changed nothing", () => {
   it("comes back said to have changed nothing, and a further brief of that subflow is refused, pointing at the retest", async () => {
     const run = await supervise([

@@ -45,6 +45,19 @@ describe("a candidate build's last refused submission", () => {
     expect(automationStudioCandidateRefusalCodes.decode(watch.codes({ trace: [] }))?.refusals).toBe(2);
   });
 
+  // t630: a project build's builder submits with core.submit_subflow, and its stall carried only the repeat guard's code.
+  it("watches the submit tool its caller names, and only that one", async () => {
+    const scoped = ran({ ok: false, revision: 0, diagnostics: { ok: false, code: "subflow.scope_refused", issues: [{ code: "subflow.input_unread", path: "flow.line.3", message: "The input is declared and never read." }] }, issueCodes: ["subflow.input_unread"] });
+    const watch = automationStudioCandidateSubmissionRefusals("core.submit_subflow");
+    const observed = watch.observe(loop([refused, scoped]));
+    await observed.executeTool({ callId: "other", toolId: "core.submit_candidate", value: {} });
+    expect(watch.codes({ trace: [] })).toEqual([]);
+    await observed.executeTool({ callId: "submit-1", toolId: "core.submit_subflow", value: {} });
+    const codes = watch.codes({ trace: [{ iteration: 1, decision: "tool_call", toolId: "core.submit_subflow", resultCode: "llm_evidence_loop.repeat_refused" }] });
+    expect(automationStudioCandidateRefusalCodes.decode(codes)).toEqual({ refusals: 1, sentAgain: 1, family: "subflow.scope_refused", issues: [{ code: "subflow.input_unread", path: "flow.line.3" }] });
+    expect(JSON.stringify(codes)).not.toContain("never read");
+  });
+
   it("reads a line, when an issue carries one, and nothing from codes that carry no refusal", () => {
     const codes = automationStudioCandidateRefusalCodes.encode({ refusals: 1, sentAgain: 0, issues: [{ code: "web.step.consequences_undeclared", line: 12, path: "plan.subflows.0.nodes.2" }] });
     expect(automationStudioCandidateRefusalCodes.decode(codes)).toEqual({ refusals: 1, sentAgain: 0, issues: [{ code: "web.step.consequences_undeclared", line: 12 }] });
