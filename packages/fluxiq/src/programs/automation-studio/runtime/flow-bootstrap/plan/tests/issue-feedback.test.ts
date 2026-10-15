@@ -230,6 +230,20 @@ describe("a refused handle is named", () => {
     const feedback = automationStudioFlowBootstrapIssueFeedback({ plan, issues: [{ code: "bootstrap.invalid_parameter_value", path: "plan.subflows.0.nodes.0.parameters.target", severity: "error", message: "" }] });
     expect(feedback[0]!.handles).toBeUndefined();
   });
+
+  // A8 frozen pair 3 `run-mv9zn5ob-d929084d` (t645): a builder copied `extraction.1` from an example and was refused it as
+  // unknown, never told that such a handle is minted only by detecting a repeating structure.
+  it("says where an extraction handle comes from beside an unknown one, and nothing of the kind for an element's handle", () => {
+    const listed = { subflows: [{ nodes: [{ parameters: { extractList: { handle: "extraction.1" } } }] }] };
+    const [extraction] = automationStudioFlowBootstrapIssueFeedback({ plan: listed, issues: [{ code: "web.handle.unknown:extractList", path: "plan.subflows.0.nodes.0.parameters", severity: "error", message: "" }] });
+    expect(extraction).toMatchObject({ handles: [{ handle: "extraction.1" }] });
+    expect(String(extraction!.from)).toContain("exists only once you have detected the structure from one of its items");
+    const [element] = automationStudioFlowBootstrapIssueFeedback({ plan, issues: [{ code: "web.handle.unknown:target", path: "plan.subflows.0.nodes.1.parameters", severity: "error", message: "" }] });
+    expect(element!.from).toBeUndefined();
+    // Another refusal of the same handle is not about where it comes from.
+    const [stale] = automationStudioFlowBootstrapIssueFeedback({ plan: listed, issues: [{ code: "web.handle.stale:extractList", path: "plan.subflows.0.nodes.0.parameters", severity: "error", message: "" }] });
+    expect(stale!.from).toBeUndefined();
+  });
 });
 
 // Lane B (`run-mv0fu9pb-57454dc4`, 0058) was refused `web.step.consequences_undeclared`

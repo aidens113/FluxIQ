@@ -129,6 +129,46 @@ describe("a brief's return reason", () => {
     expect(ending.thrown(opening, failure(["llm_evidence_loop.repeat_refused"]), false, spend).reason).toContain("core.submit_subflow answered subflow.scope_refused:b54daa6d (3 in a row); core.run_node");
     expect(ending.thrown(opening, failure(["llm_evidence_loop.repeat_refused"]), false, spend).reason).not.toContain("project.amend_plan");
   });
+
+  // A8 frozen pair 3 `run-mv9zn5ob-d929084d` (t645, with t647): every trial met a page its builder never explored, because
+  // the trial's start undid an act made while exploring, and the supervisor never heard Core's finding of it.
+  it("carries each of Core's own findings of the last trial in Core's words, after the trial's account", () => {
+    const said = "act-4 (press \"Choose this bed\" button, call c12) was made while this brief explored, and the start reset took it back before this trial; no step of this subflow, nor of a subflow run before it, does it.";
+    const finding = { code: "trial.explored_on_absorbed_act", act: "act-4", did: "press \"Choose this bed\" button", call: "c12", said };
+    const judged = trial("no", true, { code: "candidate.judge_no", judge: { observed: "The packet was planted in the wrong bed." }, coreFindings: [finding, { code: "has a space", said: "never said" }, { code: "trial.other" }] });
+    const returned = ending.built(brief, outcome({ code: "llm_evidence_loop.iteration_limit", lastTrial: judged }), spend);
+    expect(returned.reason).toBe("The builder stopped before completing (llm_evidence_loop.iteration_limit). Its last trial, of revision 2, answered no (candidate.judge_no): the judge said \"The packet was planted in the wrong bed.\"."
+      + ` Core found (trial.explored_on_absorbed_act): ${said}`);
+    // Beside a failed step too, and nothing when the feedback carries none.
+    const failed = trial("execution_failed", true, { ...FAILED_STEP.feedback, coreFindings: [finding] });
+    expect(ending.built(brief, outcome({ code: "llm_evidence_loop.iteration_limit", lastTrial: failed }), spend).reason).toMatch(/failed with web\.target\.not_found \(.*\)\. Core found \(trial\.explored_on_absorbed_act\): act-4 /u);
+    expect(ending.built(brief, outcome({ code: "llm_evidence_loop.iteration_limit", lastTrial: FAILED_STEP }), spend).reason).not.toContain("Core found");
+  });
+
+  // A8 frozen pair 3 `run-mv9zn5ob-d929084d` (t645): fourteen refusals of an output no step could make came back as codes
+  // that never named the output or said the plan was at fault.
+  it("says an output refused as no value by its interface name, with the plan's advice to drop it and keep after", () => {
+    const producer = gardenBrief("b-open", "open_packet", [], (value) => {
+      value.interface = { inputs: [], outputs: [{ id: "bedName", name: "Bed name", valueType: { kind: "unknown" } }] };
+    });
+    const submitted = { toolId: "core.submit_subflow", resultCode: "subflow.scope_refused:0a1b2c3d" };
+    const carried = refusalCodes.encode({ refusals: 4, sentAgain: 0, family: "subflow.scope_refused", issues: [{ code: "subflow.output_not_a_value", path: "flow.output.bedName" }] });
+    const stopped = ending.built(producer, outcome({ proposal: undefined, code: "llm_evidence_loop.repeat_refused", failed: { exhaustion: { lastIssueCodes: [...carried, "llm_evidence_loop.repeat_refused"] }, trace: [submitted, submitted] } }), spend);
+    expect(stopped.outcome).toBe("blocked");
+    expect(stopped.reason).toBe("The builder stopped before completing (llm_evidence_loop.repeat_refused). It was stopped by llm_evidence_loop.repeat_refused. "
+      + "The calls it stopped on, latest first: core.submit_subflow answered subflow.scope_refused (subflow.output_not_a_value: output \"bedName\") (2 in a row). "
+      + "The plan asks this subflow to hand on output \"bedName\", a value none of its steps makes: if a later subflow needs only what this one leaves on the target, "
+      + "change the plan with project.amend_plan to drop the value and keep the later subflow after this one; otherwise send a changed brief saying where on the target this subflow reads it.");
+    // An output the brief's interface does not hand on is not named, and no advice is given for it.
+    const unknown = refusalCodes.encode({ refusals: 2, sentAgain: 0, family: "subflow.scope_refused", issues: [{ code: "subflow.output_unknown_port", path: "flow.output.other" }] });
+    const other = ending.built(producer, outcome({ proposal: undefined, code: "llm_evidence_loop.repeat_refused", failed: { exhaustion: { lastIssueCodes: unknown }, trace: [submitted] } }), spend);
+    expect(other.reason).toContain("subflow.scope_refused (subflow.output_unknown_port)");
+    expect(other.reason).not.toContain("project.amend_plan");
+    // Core's own stop names the output and gives the same advice.
+    expect(ending.outputStopped("bedName", ["subflow.output_unknown_port", "subflow.output_not_a_value"])).toBe("Core stopped this brief: core.submit_subflow refused output \"bedName\" under two different bindings (subflow.output_unknown_port, subflow.output_not_a_value), so another binding would only be refused again. "
+      + "The plan asks this subflow to hand on output \"bedName\", a value none of its steps makes: if a later subflow needs only what this one leaves on the target, "
+      + "change the plan with project.amend_plan to drop the value and keep the later subflow after this one; otherwise send a changed brief saying where on the target this subflow reads it.");
+  });
 });
 
 // A8 social `run-mv8ic6mk-09bf12ff` (t611): a builder whose latest proposal had passed its trial was refused the shape of

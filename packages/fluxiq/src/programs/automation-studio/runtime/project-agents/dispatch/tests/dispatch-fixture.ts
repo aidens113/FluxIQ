@@ -22,7 +22,7 @@ const SOURCE = "Open the seed catalogue and list the spring seeds. Open the firs
 const SUCCESS = [{ fact: "text", op: "contains", value: "Seeds", target: { handle: "t8" } }];
 const PACKET_INTERFACE: AutomationStudioFlowBootstrapInterface = { inputs: [{ id: "packet", name: "Packet", valueType: { kind: "unknown" }, required: true }], outputs: [] };
 
-function gardenTaskSpec(): AutomationStudioProjectTaskSpec {
+export function gardenTaskSpec(): AutomationStudioProjectTaskSpec {
   const spec = {
     parts: [
       { id: "p1", quote: { sourceId: "instruction.1", text: "list the spring seeds" }, goalFacts: ["spring seeds are listed"], lastingActs: [] },
@@ -34,7 +34,7 @@ function gardenTaskSpec(): AutomationStudioProjectTaskSpec {
   return { ...spec, digest: automationStudioProjectTaskSpec.digest(spec) };
 }
 
-function gardenPlan(spec = gardenTaskSpec()): AutomationStudioProjectStructurePlan {
+export function gardenPlan(spec = gardenTaskSpec()): AutomationStudioProjectStructurePlan {
   const plan: Omit<AutomationStudioProjectStructurePlan, "digest"> = {
     taskSpecDigest: spec.digest,
     plan: {

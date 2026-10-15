@@ -4,7 +4,7 @@ import { automationStudioCandidateSameBehaviour } from "../../flow-bootstrap/can
 import type { AutomationStudioFlowBuildPlan } from "../../flow-bootstrap/plan/index.ts";
 import type { AutomationStudioSubflowProposal } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
-import { automationStudioProjectBuilderReturn, automationStudioProjectBuilderReturn as RETURN, automationStudioProjectSubflowBrief, type AutomationStudioProjectBuilderReturn, type AutomationStudioProjectSubflowBrief, type AutomationStudioProjectTrialRef } from "../contracts/index.ts";
+import { automationStudioProjectBuilderReturn, automationStudioProjectBuilderReturn as RETURN, automationStudioProjectSubflowBrief, type AutomationStudioProjectBuilderReturn, type AutomationStudioProjectStructurePlan, type AutomationStudioProjectSubflowBrief, type AutomationStudioProjectTrialRef } from "../contracts/index.ts";
 import { AutomationStudioProjectRecordRefusal } from "../record/index.ts";
 import { automationStudioProjectSupervisorBriefInput } from "./brief-input.ts";
 import { automationStudioProjectSupervisorBriefSizing } from "./brief-sizing.ts";
@@ -111,6 +111,17 @@ const EPSILON_USD = 1e-9;
  * nothing assembled, end again (or brief and assemble); with a Flow that cannot
  * be tested again, complete on its yes or end again; otherwise end again if an
  * ending was held for this reset, else test.
+ *
+ * **After a producer could not make a value, both ends are named (A8 frozen
+ * pair 3 bigbox, t645).** `run-mv9zn5ob-d929084d` planned a value its first
+ * subflow could not make and its second only took by name; the plan cannot
+ * show whether a step reads a value, and Core's check that a consumer reads its
+ * input (`subflow.input_unread`) runs only when the consumer's builder
+ * submits, which never happened, since the producer runs first. A return not
+ * done on an output its latest submission was refused on (`unmadeOutput`,
+ * `../dispatch/output-refusals.ts`) makes the next step name, from the plan in
+ * force, the subflows that take that value, the value and the producer, and
+ * what to change (`unmadeOutputNext`). Only the plan's keys and port names.
  */
 export async function automationStudioProjectSupervisorDispatchTool(context: AutomationStudioProjectSupervisorContext, value: JsonObject): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
   const { ports, state } = context;
@@ -205,8 +216,23 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
     ...(short ? { wholeTestStands: { complete: { revision: short.revision, digest: short.digest } } } : {}),
     // The briefs held back as repeats of blocked ones, beside the returns of the others (header, t638).
     ...(repeats.length ? { notSent: { code: "project.brief_repeated", instruction: GUIDANCE.refusals.briefRepeatedOthersSent, repeated: repeats } } : {}),
-    next: short ? GUIDANCE.next.afterRecoveryRepairShort : unchanged.size ? GUIDANCE.next.afterRepairUnchanged : !allDone ? GUIDANCE.next.afterReturnsNotDone : reset ? afterReset(context) : GUIDANCE.next.afterReturnsDone
+    // A return not done on an output its subflow could not make names both ends (header, t645).
+    next: short ? GUIDANCE.next.afterRecoveryRepairShort : unchanged.size ? GUIDANCE.next.afterRepairUnchanged
+      : !allDone ? unmadeOutputNext(structure, order.ordered.map((brief, index) => ({ brief, returned: returns[index]! }))) ?? GUIDANCE.next.afterReturnsNotDone
+        : reset ? afterReset(context) : GUIDANCE.next.afterReturnsDone
   }, { acted: true });
+}
+
+/** The next step after returns of which one is not done on an output its subflow could not make (header, t645), or undefined when none is. */
+function unmadeOutputNext(structure: AutomationStudioProjectStructurePlan, answered: ReadonlyArray<{ brief: AutomationStudioProjectSubflowBrief; returned: AutomationStudioProjectBuilderReturn }>): string | undefined {
+  const said = answered.flatMap(({ brief, returned }) => {
+    const value = returned.outcome === "done" ? undefined : returned.unmadeOutput;
+    if (value === undefined) return [];
+    const takers = structure.plan.subflows.filter((subflow) => subflow.key !== brief.subflowKey && (subflow.interface?.inputs ?? []).some((port) => port.id === value)).map((subflow) => `"${subflow.key}"`);
+    const words = takers.length ? GUIDANCE.next.afterOutputUnmade : GUIDANCE.next.afterOutputUnmadeUntaken;
+    return [words.replaceAll("{takers}", takers.join(" and ")).replaceAll("{value}", `"${value}"`).replaceAll("{producer}", `"${brief.subflowKey}"`)];
+  });
+  return said.length ? said.join(" ") : undefined;
 }
 
 /** Whether a brief as sent repairs the rescued whole test, naming it by its receipt (header). */
@@ -426,6 +452,8 @@ function compact(brief: AutomationStudioProjectSubflowBrief, returned: Automatio
     spentUsd: returned.spentUsd,
     calls: returned.calls,
     ...(returned.interfaceRequest ? { interfaceRequest: { change: returned.interfaceRequest.change, why: returned.interfaceRequest.why } } : {}),
-    ...(returned.findings ? { findings: [...returned.findings] } : {})
+    ...(returned.findings ? { findings: [...returned.findings] } : {}),
+    // The output its latest submission was refused on, which the next step names with the subflows taking it (t645).
+    ...(returned.unmadeOutput !== undefined ? { unmadeOutput: returned.unmadeOutput } : {})
   };
 }

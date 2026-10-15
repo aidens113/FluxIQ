@@ -5,10 +5,12 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioSiteResetNamedAct } from "../../../flow-bootstrap/site-reset/index.ts";
-import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowTrialRequest } from "../../../flow-bootstrap/subflow-candidate/index.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowBuilderOutcome, type AutomationStudioSubflowTrialRequest } from "../../../flow-bootstrap/subflow-candidate/index.ts";
 import { OPEN, callPart, part, script, testSubmission } from "../../../flow-bootstrap/subflow-candidate/tests/subflow-fixture.ts";
+import type { AutomationStudioLlmEvidenceLoopInput } from "../../../llm/evidence-loop.ts";
+import { automationStudioProjectStructurePlan } from "../../contracts/index.ts";
 import type { AutomationStudioProjectBuilderPorts, AutomationStudioProjectResetPorts } from "../index.ts";
-import { gardenBrief, gardenBuild, REF } from "./dispatch-fixture.ts";
+import { gardenBrief, gardenBuild, gardenPlan, REF, type BuilderScript } from "./dispatch-fixture.ts";
 
 type Entry = { callId: string; toolId: string; value: unknown };
 const submitted = (evidence: readonly Entry[]) => {
@@ -146,5 +148,51 @@ describe("a dispatched brief's loop", () => {
     const refusal = JSON.stringify(seen);
     expect(refusal).toContain("project.reset_acts_in_place");
     expect(refusal).toContain("complete and name that act under cannotUndo");
+  });
+
+  // A8 frozen pair 3 `run-mv9zn5ob-d929084d` (t645): a builder bound an output no step of its subflow made, one way after
+  // another, and spent fourteen refusals before the repeat guard ended it. Two refusals of one output under different
+  // bindings now end the brief blocked before a third submission, naming the output, with the plan's advice.
+  it("ends a brief blocked once one output was refused under two different bindings, before a third submission", async () => {
+    const OUTPUT = { id: "bedName", name: "Bed name", valueType: { kind: "unknown" as const } };
+    const sent: string[] = [];
+    const refusal = (code: string) => ({
+      kind: "llm_evidence_tool_execution", effectApplied: false, targetsUnchanged: true, resultCode: "subflow.scope_refused:0a1b2c3d",
+      evidence: { ok: false, revision: 0, issueCodes: [code], diagnostics: { ok: false, code: "subflow.scope_refused", issues: [{ code, path: "flow.output.bedName", message: `The output "bedName" is refused (${code}).` }] } }
+    });
+    const bindings = ["$step.read-bed.bedName", "$step.read-bed.text", "$step.read-bed.success"];
+    const script: BuilderScript = async (input, seen) => {
+      // The builder loop's own tools, wrapped by what the dispatcher observes, as the real loop wraps them.
+      const own = { tools: [], decide: async () => ({ kind: "complete", result: {} }), executeTool: async () => refusal("subflow.output_unknown_port") };
+      const loop = input.observe!(own as unknown as AutomationStudioLlmEvidenceLoopInput);
+      for (const [index, binding] of bindings.entries()) {
+        // The real loop asks for no further decision once its signal is aborted.
+        if (seen.signal.aborted) break;
+        sent.push(binding);
+        const flow = ["flow: Open the packet", "step: run subflow open_packet", "part open_packet: open the packet", `  output: bedName = ${binding}`, "  step read-bed: read the bed", "    node: web.dom.extract", "end"].join("\n");
+        await loop.executeTool({ callId: `submit.${index}`, toolId: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, value: { flow } } as Parameters<typeof loop.executeTool>[0]);
+      }
+      return { loop: { ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps: [], accounting: {} } as unknown as AutomationStudioSubflowBuilderOutcome["loop"], proposal: undefined, trial: undefined, promotionAllowed: false };
+    };
+    const build = await gardenBuild({
+      capacity: 1,
+      scripts: { "b-packet": script },
+      briefs: async ({ store }) => {
+        // The plan asks open_packet to hand on a value, as the run's plan asked its producer.
+        const plan = structuredClone(gardenPlan());
+        const packet = plan.plan.subflows.find((entry) => entry.key === "open_packet")!;
+        packet.interface = { inputs: [...packet.interface!.inputs], outputs: [OUTPUT] };
+        const { digest: _digest, ...fields } = plan;
+        const asked = { ...fields, digest: automationStudioProjectStructurePlan.digest(fields) };
+        await store.recordPlan(REF, asked);
+        return [gardenBrief("b-packet", "open_packet", [], (value) => Object.assign(value, { planDigest: asked.digest, interface: structuredClone(packet.interface) }))];
+      }
+    });
+    const { returns } = await build.run();
+    expect(sent).toEqual(bindings.slice(0, 2));
+    expect(returns[0], JSON.stringify(returns[0])).toMatchObject({ briefId: "b-packet", outcome: "blocked", unmadeOutput: "bedName" });
+    expect(returns[0]!.reason).toContain("Core stopped this brief: core.submit_subflow refused output \"bedName\" under two different bindings (subflow.output_unknown_port)");
+    expect(returns[0]!.reason).toContain("drop the value and keep the later subflow after this one");
+    expect((await build.store.read(REF))!.returns[0]!.builderReturn).toEqual(returns[0]);
   });
 });

@@ -21,6 +21,19 @@ import { automationStudioProjectJsonShape as shape, type AutomationStudioProject
 // refused `project.quote_overlaps`. A quote found more than once takes the
 // first place no earlier part holds, so words a person repeats are not read as
 // an overlap.
+//
+// **An amendment keeps the person's request (A8 frozen pair 3 bigbox, t645).**
+// `run-mv9zn5ob-d929084d` amended its plan to leave the person's first request
+// out of every part and list it under `notAsked`, and from then on the build
+// could only fail. An amendment's parts must still quote every stretch of the
+// person's words the plan in force quotes: they may be split or joined
+// differently, and a stretch of at most `EDGE_WORDS` words may fall away where
+// parts are reworded or re-split (the rewording `../supervisor/state.ts` keeps a
+// proposal across), but a longer stretch, or every word of a part, is refused
+// `project.plan_part_dropped`, naming the part and the words dropped. A
+// `notAsked` item the amendment adds that holds a part's words, or is held in
+// them, is refused under the same code. Core measures the text and nothing
+// else; giving a part up is an honest ending, never a plan without it.
 
 export type AutomationStudioProjectTaskPart = {
   id: string;
@@ -66,8 +79,84 @@ export const automationStudioProjectTaskSpec = Object.freeze({
       }
     }
     return issues;
+  },
+
+  /**
+   * What an amendment, `next`, drops of the person's words the plan in force, `current`, quotes (header, t645): each
+   * stretch of more than `EDGE_WORDS` words, or the whole of a part's words, no part of `next` quotes; and each
+   * `notAsked` item `next` adds that holds a part of `current`'s words or is held in them. A part whose instruction is
+   * no longer active is not measured.
+   */
+  droppedIssues(current: AutomationStudioProjectTaskSpec, next: AutomationStudioProjectTaskSpec, sources: readonly AutomationStudioProjectInstructionSource[]): AutomationStudioProjectDroppedIssue[] {
+    const issues: AutomationStudioProjectDroppedIssue[] = [];
+    const before = placedParts(current, sources);
+    const after = placedParts(next, sources);
+    for (const { part, source, span } of before) {
+      const covered = after.filter((placed) => placed.source === source).map((placed) => placed.span);
+      for (const dropped of droppedStretches(source.text, span, covered)) issues.push({ code: DROPPED, path: "taskSpec.parts", part: part.id, dropped });
+    }
+    const kept = new Set(current.notAsked);
+    for (const [index, item] of next.notAsked.entries()) {
+      if (kept.has(item)) continue;
+      const said = ` ${wordsOf(item).join(" ")} `;
+      const held = current.parts.find((part) => {
+        const quoted = ` ${wordsOf(part.quote.text).join(" ")} `;
+        return said.trim() !== "" && quoted.trim() !== "" && (said.includes(quoted) || quoted.includes(said));
+      });
+      if (held) issues.push({ code: DROPPED, path: `taskSpec.notAsked.${index}`, part: held.id, dropped: held.quote.text });
+    }
+    return issues;
   }
 });
+
+/** One issue of an amendment that drops the person's words (header, t645): the part of the plan in force and the words it lost. */
+export type AutomationStudioProjectDroppedIssue = { code: string; path: string; part: string; dropped: string };
+
+const DROPPED = "project.plan_part_dropped";
+/** The most words a stretch may lose where parts are reworded or re-split, as `../supervisor/state.ts` keeps a reworded part (header). */
+const EDGE_WORDS = 2;
+
+/** Each part of `spec` whose words stand in an active source, at the place `quoteIssues` gives it. */
+function placedParts(spec: AutomationStudioProjectTaskSpec, sources: readonly AutomationStudioProjectInstructionSource[]): Array<{ part: AutomationStudioProjectTaskPart; source: AutomationStudioProjectInstructionSource; span: [number, number] }> {
+  const placed = new Map<string, Array<[number, number]>>();
+  return spec.parts.flatMap((part) => {
+    const source = sources.find((candidate) => candidate.sourceId === part.quote.sourceId);
+    if (!source || !source.text.includes(part.quote.text)) return [];
+    const held = placed.get(source.sourceId) ?? [];
+    const span = freeSpan(source.text, part.quote.text, held) ?? firstSpan(source.text, part.quote.text);
+    placed.set(source.sourceId, [...held, span]);
+    return [{ part, source, span }];
+  });
+}
+
+/** The words of `span` in `text` that no span of `covered` holds, as said: every stretch longer than `EDGE_WORDS` words, or the whole span when none of its words is held (header). */
+function droppedStretches(text: string, span: readonly [number, number], covered: ReadonlyArray<readonly [number, number]>): string[] {
+  const held = (at: number) => covered.some(([start, stop]) => at >= start && at < stop);
+  const lost: string[] = [];
+  let kept = "";
+  let run = "";
+  for (let at = span[0]; at <= span[1]; at += 1) {
+    if (at < span[1] && !held(at)) {
+      run += text[at];
+      continue;
+    }
+    if (at < span[1]) kept += text[at];
+    if (run) lost.push(run);
+    run = "";
+  }
+  if (!wordsOf(kept).length) return wordsOf(text.slice(span[0], span[1])).length ? [text.slice(span[0], span[1]).trim()] : [];
+  return lost.filter((stretch) => wordsOf(stretch).length > EDGE_WORDS).map((stretch) => stretch.trim());
+}
+
+function firstSpan(text: string, quote: string): [number, number] {
+  const at = text.indexOf(quote);
+  return [at, at + quote.length];
+}
+
+/** A text's words, lower case, with no punctuation, as `../supervisor/state.ts` compares a part's words. */
+function wordsOf(text: string): string[] {
+  return text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
 
 /** The first place `quote` stands in `text` that shares no character with a span `held`; undefined when every place does (header). */
 function freeSpan(text: string, quote: string, held: ReadonlyArray<readonly [number, number]>): [number, number] | undefined {

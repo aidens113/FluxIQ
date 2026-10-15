@@ -41,7 +41,8 @@ export async function automationStudioProjectSupervisorPlanTool(context: Automat
   if (mode === "amend" && !state.structure) return answer.refused("project.plan_missing", GUIDANCE.refusals.noPlan);
   const reason = typeof value.reason === "string" ? value.reason.trim() : "";
   if (mode === "amend" && !reason) return answer.refused("project.plan_refused", GUIDANCE.refusals.planRefused, { issues: worded([{ code: "project.amend_reason_missing", path: "reason" }]) });
-  const read = automationStudioProjectSupervisorPlanInput(value, ports.sources);
+  // An amendment is read against the plan in force, whose words it may not drop (`./plan-input.ts`, t645).
+  const read = automationStudioProjectSupervisorPlanInput(value, ports.sources, mode === "amend" ? state.taskSpec : undefined);
   if (!read.ok) return answer.refused("project.plan_refused", GUIDANCE.refusals.planRefused, { issues: worded(read.issues) });
   try {
     if (state.taskSpec?.digest !== read.taskSpec.digest) await ports.record.recordTaskSpec(ports.build, read.taskSpec, ports.sources);
@@ -83,10 +84,16 @@ export async function automationStudioProjectSupervisorPlanTool(context: Automat
   });
 }
 
-/** Each issue with what it means in words where Core has words for its code (header). */
-function worded(issues: ReadonlyArray<{ code: string; path: string }>): JsonObject[] {
+/** Each issue with what it means in words where Core has words for its code (header), and a dropped part's id and words (t645). */
+function worded(issues: ReadonlyArray<{ code: string; path: string; part?: string; dropped?: string }>): JsonObject[] {
   const words: Readonly<Record<string, string>> = GUIDANCE.planIssues;
-  return issues.map((issue) => (Object.hasOwn(words, issue.code) ? { code: issue.code, path: issue.path, why: words[issue.code]! } : { code: issue.code, path: issue.path }));
+  return issues.map((issue) => ({
+    code: issue.code,
+    path: issue.path,
+    ...(issue.part !== undefined ? { part: issue.part } : {}),
+    ...(issue.dropped !== undefined ? { dropped: issue.dropped } : {}),
+    ...(Object.hasOwn(words, issue.code) ? { why: words[issue.code]! } : {})
+  }));
 }
 
 /**

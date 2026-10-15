@@ -9,6 +9,7 @@ import { automationStudioProjectSubflowBrief, type AutomationStudioProjectBuilde
 import type { AutomationStudioHostLeaseScope, AutomationStudioHostResourceLease } from "../host-resources/index.ts";
 import { AutomationStudioProjectAcceptedSubflows } from "./accepted-subflows.ts";
 import { automationStudioProjectDispatchEnding as ending, type AutomationStudioProjectDispatchSpend } from "./ending.ts";
+import { AutomationStudioProjectDispatchOutputRefusals } from "./output-refusals.ts";
 import { AutomationStudioProjectDispatchReceipts } from "./receipts.ts";
 import { runAutomationStudioProjectResetLoop } from "./reset-loop.ts";
 import type { AutomationStudioProjectDispatchScope } from "./scope.ts";
@@ -113,6 +114,13 @@ import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectDispatc
 // parameters}`, screened as `yourSubflow`'s steps are, and the domain counts
 // each navigation's address as shown and nothing else. A repair whose
 // proposal the build does not hold carries none.
+//
+// **An output the subflow cannot make ends its brief (A8 frozen pair 3 bigbox,
+// t645).** A builder's submissions are watched for outputs bound to no value
+// (`./output-refusals.ts`): one output refused under two different bindings
+// ends the brief blocked as the brief's own ending does, with the plan's
+// advice, and a return that is not done after such a refusal names the output
+// (`unmadeOutput`), so the supervisor is told which subflow takes it.
 
 type Role = "builder" | "repair";
 
@@ -181,6 +189,7 @@ export async function runAutomationStudioProjectDispatchBrief(input: {
   const role: Role = brief.kind === "repair" ? "repair" : "builder";
   const receipts = new AutomationStudioProjectDispatchReceipts(brief.briefId);
   const spend: AutomationStudioProjectDispatchSpend = { allowance: undefined, trials: [] };
+  const outputs = new AutomationStudioProjectDispatchOutputRefusals(brief);
   try {
     return await dispatcher.cancellation.child(async () => {
       const signal = dispatcher.cancellation.signal()!;
@@ -207,13 +216,13 @@ export async function runAutomationStudioProjectDispatchBrief(input: {
         await recorded(() => dispatcher.record.store.recordAllowance(dispatcher.record.ref, { role, briefId: brief.briefId, usd: brief.allowanceUsd }));
         const allowance = carved.allowance;
         const agent = { role, briefId: brief.briefId, subflowName: mapped.subflowName };
-        return await withAutomationStudioProjectAgent(agent, () => automationStudioLlmBuildPurseScope(allowance, () => run({ ...input, brief, lease, signal, allowance, receipts, spend })));
+        return await withAutomationStudioProjectAgent(agent, () => automationStudioLlmBuildPurseScope(allowance, () => run({ ...input, brief, lease, signal, allowance, receipts, spend, outputs })));
       }, { signal });
     }, stop);
   } catch (error) {
     const failure = recordFailureOf(error);
     if (failure) throw failure.error;
-    return ending.thrown(brief, error, stop.aborted || isAbort(error), { ...spend, trials: receipts.list() });
+    return outputs.marked(ending.thrown(brief, error, stop.aborted || isAbort(error), { ...spend, trials: receipts.list() }));
   } finally {
     spend.allowance?.close();
   }
@@ -229,8 +238,9 @@ async function run(input: {
   allowance: AutomationStudioLlmBuildPurse;
   receipts: AutomationStudioProjectDispatchReceipts;
   spend: AutomationStudioProjectDispatchSpend;
+  outputs: AutomationStudioProjectDispatchOutputRefusals;
 }): Promise<AutomationStudioProjectBuilderReturn> {
-  const { dispatcher, brief, mapped, lease, signal, allowance, receipts, spend } = input;
+  const { dispatcher, brief, mapped, lease, signal, allowance, receipts, spend, outputs } = input;
   // Only a host that runs several agents at once needs the opening call scoped (`flow-bootstrap/subflow-candidate/builder-loop.ts`).
   const callScope = input.leases.scheduler.capacity > 1 ? brief.briefId : undefined;
   const request = { brief, scope: mapped.scope, ledger: dispatcher.ledger.forBrief(brief.briefId), lease, signal };
@@ -254,7 +264,7 @@ async function run(input: {
   };
   // Each script Core accepts is read off the submit tool's answer, then the ports' own observer wraps the loop (header).
   const observe = (observed: AutomationStudioLlmEvidenceLoopInput) => {
-    const watched = held.watch(brief.briefId, observed);
+    const watched = outputs.watch(held.watch(brief.briefId, observed));
     return ports.observe ? ports.observe(watched) : watched;
   };
   // The gate's port: each trial kept as the gate weighed it, the subflow's earlier standing nos handed to it (header, t634).
@@ -263,7 +273,7 @@ async function run(input: {
   const trialPort = (port: NonNullable<typeof ports.trial>) => automationStudioProjectDispatchTrialPort({ port, scope: mapped.scope, receipts, spend, standingNos, remember: (ref, trial) => remember(dispatcher, ref, trial) });
   const repair = await repairOf(dispatcher, brief, ports.deniedEvidenceKeys);
   const loop = repair ? shownAtOpening(ports.loop, repair.said, repair.calls) : ports.loop;
-  const outcome = await untilEnded(signal, ports.ended, (stop) => runBuilder({
+  const outcome = await untilEnded(signal, outputs.ending(ports.ended), (stop) => runBuilder({
     loop: { ...loop, maxIterations: brief.maxIterations, signal: stop, purse: allowance },
     scope: mapped.scope,
     siblings: mapped.siblings,
@@ -273,8 +283,8 @@ async function run(input: {
     observe,
     accepted
   }));
-  if ("ended" in outcome) return endedAs(brief, "blocked", outcome.ended, { ...spend, trials: receipts.list() });
-  return ending.built(brief, outcome.ran, { ...spend, trials: receipts.list() });
+  if ("ended" in outcome) return outputs.marked(endedAs(brief, "blocked", outcome.ended, { ...spend, trials: receipts.list() }));
+  return outputs.marked(ending.built(brief, outcome.ran, { ...spend, trials: receipts.list() }));
 }
 
 /**
