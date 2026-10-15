@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../../../core/index.ts";
-import { runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowProposal, type AutomationStudioSubflowTrialPort, type AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import { runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowProposal, type AutomationStudioSubflowTrialResult } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioLlmBuildPurseScope, type AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
@@ -12,7 +12,9 @@ import { automationStudioProjectDispatchEnding as ending, type AutomationStudioP
 import { AutomationStudioProjectDispatchReceipts } from "./receipts.ts";
 import { runAutomationStudioProjectResetLoop } from "./reset-loop.ts";
 import type { AutomationStudioProjectDispatchScope } from "./scope.ts";
+import { AutomationStudioProjectDispatchStandingNos } from "./standing-nos.ts";
 import { automationStudioProjectDispatchStartAllowance } from "./start-allowance.ts";
+import { automationStudioProjectDispatchTrialPort } from "./trial-port.ts";
 import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectDispatcherInput } from "./types.ts";
 
 // One brief, from its turn to its return (automation-project-agents-plan,
@@ -91,6 +93,15 @@ import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectDispatc
 //
 // **A brief that waited is sized as it starts (t627),** from what the purse can
 // then give, never above its dispatch-time size (`./start-allowance.ts`).
+//
+// **A brief's trials are kept as its gate weighed them, and a subflow's
+// standing nos cross its briefs (t634).** The port a builder's gate is given
+// is made by `./trial-port.ts`: what this dispatcher keeps of a trial (its
+// receipt, `TRIALS`, the spend's last trial) is the gate's answer, and the
+// standing nos a brief's gate let stand are kept for the build (`STANDING`,
+// `./standing-nos.ts`) and seed the gate of a later brief of the same subflow
+// and plan, so a repair's gate weighs a no against what the brief before it
+// upheld.
 
 type Role = "builder" | "repair";
 
@@ -122,6 +133,8 @@ type ProposalRef = { briefId: string; revision: number; digest: string };
 
 /** Every proposal Core accepted for a brief of one build, kept as long as the build's dispatcher (header). */
 const ACCEPTED = new WeakMap<AutomationStudioProjectDispatcherInput, AutomationStudioProjectAcceptedSubflows>();
+/** The standing nos each subflow's briefs kept in one build, as long as the build's dispatcher (header, t634). */
+const STANDING = new WeakMap<AutomationStudioProjectDispatcherInput, AutomationStudioProjectDispatchStandingNos>();
 const YOUR_SUBFLOW_NOTE = "yourSubflow is your subflow as Core accepted it before this brief, at the revision it names: script is the whole text its builder sent, and steps are its steps as Core resolved them, each handle the script names (tN, extraction.N) there replaced by what it stood for on the page that builder saw. "
   + "Those handles came from that builder's looks, not yours, so the check knows none of them: find the same controls and reads on your own page and write the handles your looks give. Start from this script, change only what this repair asks, and keep every other step as it is.";
 const YOUR_SUBFLOW_UNHELD_NOTE = "yourSubflow names the revision of your subflow Core accepted before this brief, but its script is not held here. Look at what your subflow's steps meet on the page now and write the whole subflow, changing only what this repair asks.";
@@ -231,6 +244,10 @@ async function run(input: {
     const watched = held.watch(brief.briefId, observed);
     return ports.observe ? ports.observe(watched) : watched;
   };
+  // The gate's port: each trial kept as the gate weighed it, the subflow's earlier standing nos handed to it (header, t634).
+  const standingNos = STANDING.get(dispatcher) ?? new AutomationStudioProjectDispatchStandingNos();
+  STANDING.set(dispatcher, standingNos);
+  const trialPort = (port: NonNullable<typeof ports.trial>) => automationStudioProjectDispatchTrialPort({ port, scope: mapped.scope, receipts, spend, standingNos, remember: (ref, trial) => remember(dispatcher, ref, trial) });
   const repair = await repairOf(dispatcher, brief, ports.deniedEvidenceKeys);
   const loop = repair ? shownAtOpening(ports.loop, repair) : ports.loop;
   const outcome = await untilEnded(signal, ports.ended, (stop) => runBuilder({
@@ -238,7 +255,7 @@ async function run(input: {
     scope: mapped.scope,
     siblings: mapped.siblings,
     submission: { ...ports.submission, signal: stop },
-    ...(ports.trial ? { trial: { port: kept(ports.trial, heard(spend, remembered(dispatcher, receipts, receipts.wrap(ports.trial)))), ...(ports.reset ? { reset: ports.reset } : {}) } } : {}),
+    ...(ports.trial ? { trial: { port: trialPort(ports.trial), ...(ports.reset ? { reset: ports.reset } : {}) } } : {}),
     ...(callScope !== undefined ? { callScope } : {}),
     observe,
     accepted
@@ -267,34 +284,13 @@ async function untilEnded<T>(signal: AbortSignal, ended: AutomationStudioProject
   return reason !== undefined ? { ended: reason } : { ran };
 }
 
-/** `wrapped` keeping `port`'s start hook ahead of the gate's reset (`prepareStart`, t578), which a wrapper would otherwise drop. */
-function kept(port: AutomationStudioSubflowTrialPreparingPort, wrapped: AutomationStudioSubflowTrialPreparingPort): AutomationStudioSubflowTrialPreparingPort {
-  if (port.prepareStart) wrapped.prepareStart = port.prepareStart;
-  return wrapped;
-}
-
-/** `port`, keeping each trial it answers in the build's memory under the receipt id its brief's receipts gave it (header). */
-function remembered(dispatcher: AutomationStudioProjectDispatcherInput, receipts: AutomationStudioProjectDispatchReceipts, port: AutomationStudioSubflowTrialPort): AutomationStudioSubflowTrialPort {
-  return async (request) => {
-    const result = await port(request);
-    const ref = receipts.list().at(-1);
-    if (ref) {
-      const held = TRIALS.get(dispatcher) ?? new Map();
-      TRIALS.set(dispatcher, held);
-      held.set(ref.receiptId, { ref, trial: automationStudioProjectSubflowBrief.failingTrial(result), ran: { briefId: result.identity.briefId, revision: result.revision, digest: result.digest } });
-      while (held.size > MAX_TRIALS_KEPT) held.delete(held.keys().next().value!);
-    }
-    return result;
-  };
-}
-
-/** `port`, keeping the last trial it answered on the brief's spend, for a builder whose loop then throws (header, t611). */
-function heard(spend: AutomationStudioProjectDispatchSpend, port: AutomationStudioSubflowTrialPort): AutomationStudioSubflowTrialPort {
-  return async (request) => {
-    const result = await port(request);
-    spend.trial = structuredClone(result);
-    return result;
-  };
+/** Keeps `trial` in the build's memory under the receipt id its brief's receipts gave it, as listed by `ref` (header); a gate's answer replaces the port's (t634). */
+function remember(dispatcher: AutomationStudioProjectDispatcherInput, ref: AutomationStudioProjectReceiptRef, trial: AutomationStudioSubflowTrialResult): void {
+  const held = TRIALS.get(dispatcher) ?? new Map();
+  TRIALS.set(dispatcher, held);
+  held.delete(ref.receiptId);
+  held.set(ref.receiptId, { ref, trial: automationStudioProjectSubflowBrief.failingTrial(trial), ran: { briefId: trial.identity.briefId, revision: trial.revision, digest: trial.digest } });
+  while (held.size > MAX_TRIALS_KEPT) held.delete(held.keys().next().value!);
 }
 
 /** What a repair brief's builder is shown of the trial it repairs and of the subflow it repairs (header); undefined for any other brief. */
