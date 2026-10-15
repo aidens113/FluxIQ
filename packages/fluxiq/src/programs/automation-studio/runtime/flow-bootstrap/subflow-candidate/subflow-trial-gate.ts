@@ -46,6 +46,15 @@
 // says the judges answered yes and Core could not confirm it, and not to
 // rewrite a subflow whose rows they accepted: test it again, or end the brief
 // partial once the retests run out. Any other `not_judged` is said as before.
+//
+// **The hold is read as a fact, not as words (t611).** The gate matched
+// "exclusion evidence" in the feedback's `why`, so a reworded reason would
+// have lost the instruction, and a held yes beside a call that could not tell
+// was said as if every judge had answered yes. Core's result verification now
+// says the fact (`yesUnconfirmed`, `../../result-verification/contracts.ts`),
+// set only where every judge call answered yes, and the trial's feedback
+// carries it (`../../service/candidate-trial/feedback.ts`); the gate reads that
+// field and never the words.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import {
@@ -84,13 +93,12 @@ const INSTRUCTIONS: Readonly<Record<AutomationStudioCandidateTrialVerdict, strin
 });
 
 /**
- * Said for a `not_judged` the judges answered yes to (header, t601). The
- * reason Core's result verification gives when it holds a yes for missing
- * exclusion evidence (`../../result-verification/agreement.ts`,
- * `../../result-verification/verdict.ts`) is the only thing the trial's
- * feedback carries of it, under `why`.
+ * Said for a `not_judged` the judges answered yes to (header, t601), which the
+ * trial's feedback says as `yesUnconfirmed: true` (t611): Core's result
+ * verification sets it where every judge call answered yes and Core held that
+ * yes for the exclusion evidence it lacked
+ * (`../../result-verification/agreement.ts`, `../../result-verification/verdict.ts`).
  */
-const YES_UNCONFIRMED = /\bexclusion evidence\b/iu;
 const NOT_JUDGED_AFTER_YES = "The judges answered yes for this revision and none answered no, but Core could not confirm that yes (the feedback's why says what it lacked), so the trial counts as not judged and this revision cannot complete yet. "
   + "The judges accepted the rows this subflow kept: do not rewrite it or change which rows it keeps. Test this same revision again; if its retests run out held the same way, "
   + "end the brief: complete with {\"ended\": \"partial\", \"reason\": \"<the judges answered yes and Core could not confirm it>\"}.";
@@ -230,7 +238,7 @@ export class AutomationStudioSubflowTrialGate {
 /** What a trial's answer tells the builder to do next (header). */
 function instructionFor(answer: AutomationStudioSubflowTrialResult): string {
   if (!answer.entryPrepared) return ENTRY_NOT_PREPARED;
-  if (answer.verdict === "not_judged" && typeof answer.feedback.why === "string" && YES_UNCONFIRMED.test(answer.feedback.why)) return NOT_JUDGED_AFTER_YES;
+  if (answer.verdict === "not_judged" && answer.feedback.yesUnconfirmed === true) return NOT_JUDGED_AFTER_YES;
   return INSTRUCTIONS[answer.verdict];
 }
 

@@ -34,6 +34,8 @@
 //   no call came back usable, each asked again after a -> not_judged, saying why and how
 //     temporary fault (`../verify.ts`)                     many times it was asked (t473)
 //   a call the build's purse would not pay for        -> not_judged, saying the spending limit stopped it
+//   every call answered yes, held for the exclusion    -> not_judged, saying why and carrying
+//     evidence it lacked (`../agreement.ts`)              `yesUnconfirmed` (t611)
 //
 // A yes the verdict did not take -- one that did not name each row a condition
 // alone left out that names the asked item (`../verdict.ts`, live run
@@ -156,6 +158,13 @@ export type AutomationStudioBuildTestVerdict =
      * answered. A doubt the record contradicts is no evidence against the Flow.
      */
     doubtContradicted?: string;
+    /**
+     * Only on a `not_judged` whose every call answered yes and Core held the
+     * yes for the exclusion evidence it lacked
+     * (`AutomationStudioResultVerification.yesUnconfirmed`, t611): the fact,
+     * never read off `why`'s words. No call said no; nothing was confirmed.
+     */
+    yesUnconfirmed?: true;
     spent: AutomationStudioBuildTestJudgeSpend;
   }
   | {
@@ -273,7 +282,7 @@ export function automationStudioBuildTestJudge(deps: {
     if (!outcome.performed) return { verdict: "not_judged", why: outcome.reason, ...carried, spent };
     // No call came back usable, each asked again where its fault was temporary: the test was not judged (header).
     if (outcome.basis === "model_unavailable") return { verdict: "not_judged", why: couldNotJudge(outcome.reason, spent.calls), ...carried, spent };
-    if (outcome.exclusionEvidenceMissing) return { verdict: "not_judged", why: outcome.reason, ...carried, spent };
+    if (outcome.exclusionEvidenceMissing) return { verdict: "not_judged", why: outcome.reason, ...carried, ...(outcome.yesUnconfirmed ? { yesUnconfirmed: true as const } : {}), spent };
     if (outcome.verdict === "answers") return { verdict: "yes", spent };
     if (outcome.verdict === "does_not_answer" && automationStudioResultVerificationFailsRun(outcome)) {
       const judgement = outcome.repair?.judgement;

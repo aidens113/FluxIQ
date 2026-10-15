@@ -63,6 +63,13 @@
 // Core can check, or anything it cannot refute, stands as before -- and beside
 // such a no a refuted one is only labelled, not asked again, so the two keep
 // the verdict no (t501) -- and Core never turns a no into a yes.
+//
+// **A yes held for its exclusion evidence says so as a field (t611).** Where
+// both calls answered yes and Core held one or both for the exclusion evidence
+// it lacked, the unsure outcome carries `yesUnconfirmed`, as `./verdict.ts`
+// marks one held call. A build read that fact off the reason's words before
+// (t601); the words may change, the field does not. Beside an unsure, or a call
+// that did not answer, it is absent: only one judge said yes.
 
 import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioResultVerdict, AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "./contracts.ts";
 import { automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./read-account/index.ts";
@@ -153,7 +160,9 @@ function agree(input: AutomationStudioResultVerificationAgreementInput, reasked?
       schemaVersion: first.schemaVersion, verdict: "unsure", basis: "model_unconfirmed", code: "core.result.exclusion_evidence_missing",
       reason: "The checks did not provide the required exclusion evidence, so the result remains unconfirmed.",
       observation: first.observation, verdicts, calls: 2,
-      exclusionEvidenceMissing: [...(first.exclusionEvidenceMissing ?? []), ...(second.exclusionEvidenceMissing ?? [])]
+      exclusionEvidenceMissing: [...(first.exclusionEvidenceMissing ?? []), ...(second.exclusionEvidenceMissing ?? [])],
+      // Both calls answered yes, one or both held for the evidence it lacked (header, t611). An unsure, or a call that did not answer, beside it is no yes.
+      ...(answeredYes(first) && answeredYes(second) ? { yesUnconfirmed: true as const } : {})
     };
   }
   const codes = AUTOMATION_STUDIO_RESULT_VERDICT_CODES;
@@ -571,4 +580,10 @@ function refutedMark(input: AutomationStudioResultVerificationAgreementInput, ca
 /** The reads that follow pages: authored to, or read more than one page or loop pass. */
 function pagingReads(reads: readonly AutomationStudioResultReadAccount[] | undefined): AutomationStudioResultReadAccount[] {
   return (reads ?? []).filter((read) => read.paginates === true || read.pagesRead > 1 || (read.keptPerPage?.length ?? 0) > 1);
+}
+
+/** Whether one call answered a plain yes: taken, or held for its exclusion evidence (header, t611). A yes that also said the Flow needs a change is not one. */
+function answeredYes(call: AutomationStudioResultVerification): boolean {
+  if (call.yesUnconfirmed === true) return true;
+  return call.basis === "model" && call.verdict === "answers" && call.code === AUTOMATION_STUDIO_RESULT_VERDICT_CODES.answers;
 }
