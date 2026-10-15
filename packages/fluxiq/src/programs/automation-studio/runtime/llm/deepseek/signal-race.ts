@@ -13,6 +13,17 @@ import { AutomationStudioLlmProviderError } from "../provider-contract.ts";
  */
 export async function raceAutomationStudioDeepSeekSignal<T>(work: Promise<T>, signal: AbortSignal | undefined, onAbort?: () => void): Promise<T> {
   if (!signal) return await work;
+  // Already aborted: no race at all. `work` may be settled already (a chunk the
+  // body had buffered), and a settled `work` wins `Promise.race` over a
+  // rejection made in the same turn; `onAbort` then cancels the reader, the
+  // next read reports `done`, and a body that never finished reads as a
+  // complete one. A refusal read after the step log's copy was cut off met
+  // exactly this (t617).
+  if (signal.aborted) {
+    work.catch(/* the call is already over; its outcome is not awaited */ () => undefined);
+    onAbort?.();
+    throw new AutomationStudioLlmProviderError("llm.provider_timeout", "DeepSeek did not answer in time.", true);
+  }
   let listener: (() => void) | undefined;
   const aborted = new Promise<never>((_resolve, reject) => {
     listener = () => {
@@ -21,8 +32,7 @@ export async function raceAutomationStudioDeepSeekSignal<T>(work: Promise<T>, si
       reject(new AutomationStudioLlmProviderError("llm.provider_timeout", "DeepSeek did not answer in time.", true));
       onAbort?.();
     };
-    if (signal.aborted) listener();
-    else signal.addEventListener("abort", listener, { once: true });
+    signal.addEventListener("abort", listener, { once: true });
   });
   try {
     return await Promise.race([work, aborted]);

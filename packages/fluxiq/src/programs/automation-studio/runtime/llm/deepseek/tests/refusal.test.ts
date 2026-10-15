@@ -6,6 +6,7 @@ import { estimateAutomationStudioDeepSeekInputTokens } from "../request-body.ts"
 import { automationStudioDeepSeekRequestShape } from "../request-shape.ts";
 import {
   AUTOMATION_STUDIO_DEEPSEEK_REFUSAL_MESSAGE_MAX_LENGTH,
+  readAutomationStudioDeepSeekRefusal,
   type AutomationStudioDeepSeekRefusal
 } from "../refusal.ts";
 
@@ -193,6 +194,26 @@ describe("Automation Studio DeepSeek refusal", () => {
     });
 
     expect(shape.malformed).toEqual(["context.instructions", "estimatedInputTokens"]);
+  });
+
+  // t617: a refusal whose body starts and never finishes ends with the call's
+  // signal, as the call's timeout rather than a withheld body, and is let go.
+  it("ends a refusal body that never finishes when the call's signal aborts, as a timeout, and cancels the body", async () => {
+    let cancelled = false;
+    const stalled = new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new TextEncoder().encode("\n")); },
+      cancel() { cancelled = true; }
+    });
+    const controller = new AbortController();
+    const read = readAutomationStudioDeepSeekRefusal({
+      response: new Response(stalled, { status: 500, headers: { "content-type": "application/json" } }),
+      maxResponseBytes: 1_024,
+      request: automationStudioDeepSeekRequestShape({ request: requestWithMeasuredTokens(), model: "deepseek-flash", body: "{}" }),
+      signal: controller.signal
+    });
+    setTimeout(() => controller.abort(new DOMException("timed out", "TimeoutError")), 20);
+    await expect(read).rejects.toMatchObject({ code: "llm.provider_timeout", retryable: true });
+    expect(cancelled).toBe(true);
   });
 });
 

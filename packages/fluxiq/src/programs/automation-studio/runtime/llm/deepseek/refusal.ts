@@ -86,10 +86,17 @@ export async function readAutomationStudioDeepSeekRefusal(input: {
   request: AutomationStudioDeepSeekRequestShape;
   /** The credential the request was sent with, so a provider echoing it cannot carry it here. */
   credential?: string;
+  /**
+   * The call's own signal. A refusal body DeepSeek starts and never finishes
+   * ends with it, is cancelled, and the read throws `llm.provider_timeout`
+   * (`./bounded-read.ts`, `./signal-race.ts`; t617) -- the one failure of the
+   * read that does become the call's, because the call has already ended.
+   */
+  signal?: AbortSignal;
 }): Promise<AutomationStudioDeepSeekRefusal> {
   const withheld: AutomationStudioDeepSeekRefusalWithheld[] = [];
   const contentType = input.response.headers.get("content-type");
-  const read = await readRefusalBytes(input.response, input.maxResponseBytes);
+  const read = await readRefusalBytes(input.response, input.maxResponseBytes, input.signal);
   if ("withheld" in read) {
     withheld.push(read.withheld);
     return { status: input.response.status, contentType, bodyBytes: null, error: null, withheld, request: input.request };
@@ -129,11 +136,15 @@ export function automationStudioDeepSeekRefusalText(refusal: AutomationStudioDee
 
 async function readRefusalBytes(
   response: Response,
-  maxResponseBytes: number
+  maxResponseBytes: number,
+  signal: AbortSignal | undefined
 ): Promise<{ bytes: Uint8Array } | { withheld: "body_unreadable" | "body_over_limit" }> {
   try {
-    return { bytes: await readAutomationStudioDeepSeekBoundedResponse(response, maxResponseBytes) };
+    return { bytes: await readAutomationStudioDeepSeekBoundedResponse(response, maxResponseBytes, signal) };
   } catch (error) {
+    // A read the call's deadline ended is not a fact about the body: the call
+    // is over, and its timeout is what the caller reports (t617).
+    if (signal?.aborted && error instanceof AutomationStudioLlmProviderError && error.code === "llm.provider_timeout") throw error;
     // Named rather than thrown, and named rather than dropped: a reply too
     // large to hold is a different fact from a reply that could not be read,
     // and neither may become the failure the caller reports -- the status the

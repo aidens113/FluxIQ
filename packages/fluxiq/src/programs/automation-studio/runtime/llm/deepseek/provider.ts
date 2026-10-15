@@ -193,7 +193,9 @@ async function runDeepSeekTask(input: {
     if (response.redirected || (response.status >= 300 && response.status < 400) || (response.url && response.url !== AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL)) {
       throw new AutomationStudioLlmProviderError("llm.provider_redirect_rejected", "DeepSeek redirected outside the fixed provider endpoint.");
     }
-    if (!response.ok) throw await deepSeekRefusalFailure(response, input, body, secret);
+    // The refusal body is read under the same signal: a 4xx/5xx DeepSeek starts
+    // and never finishes ends with the call's deadline too (t617).
+    if (!response.ok) throw await deepSeekRefusalFailure(response, input, body, secret, controller.signal);
     if (!/^application\/json(?:\s*;|$)/i.test(response.headers.get("content-type") ?? "")) {
       throw automationStudioDeepSeekMalformedReply({ case: "media_type" }, "DeepSeek returned a non-JSON media type.");
     }
@@ -261,13 +263,15 @@ async function deepSeekRefusalFailure(
   response: Response,
   input: { request: AutomationStudioLlmTaskRequest; model: AutomationStudioDeepSeekModel; maxResponseBytes: number },
   body: string,
-  credential: string
+  credential: string,
+  signal: AbortSignal
 ): Promise<AutomationStudioLlmProviderError> {
   const refusal = await readAutomationStudioDeepSeekRefusal({
     response,
     maxResponseBytes: input.maxResponseBytes,
     request: automationStudioDeepSeekRequestShape({ request: input.request, model: input.model, body }),
-    credential
+    credential,
+    signal
   });
   const said = automationStudioDeepSeekRefusalText(refusal);
   if (response.status === 401 || response.status === 403) {

@@ -10,9 +10,14 @@
 // request to a local HTTP server that trickles a blank line every 100 ms: the
 // call ends at its deadline, the step log writes `llm.provider_timeout` at that
 // moment, and the retry layer sees the retryable timeout it never re-sends.
+//
+// A refusal stalls the same way: a 500 whose headers came and whose body is
+// blank lines forever was read in `../../deepseek/refusal.ts` with no signal,
+// so the adapter read on after the retry layer had ended the call (t617). The
+// server answers 500 on `/500`, 200 everywhere else.
 // No real provider is called; the secret is a fixed fake.
 
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -36,7 +41,7 @@ beforeAll(async () => {
   server = http.createServer((request, response) => {
     request.resume();
     open.add(response);
-    response.writeHead(200, { "content-type": "application/json" });
+    response.writeHead(request.url === "/500" ? 500 : 200, { "content-type": "application/json" });
     const tick = setInterval(() => response.write("\n"), 100);
     response.on("close", () => {
       clearInterval(tick);
@@ -68,10 +73,10 @@ afterEach(() => {
  * refused. The reply is handed back with its own body stream but no URL, since
  * the adapter refuses a reply from anywhere but DeepSeek's endpoint.
  */
-function localFetch(signalReachesBody: boolean): typeof fetch {
+function localFetch(signalReachesBody: boolean, status: 200 | 500 = 200): typeof fetch {
   return (async (input: string | URL | Request, init?: RequestInit) => {
     if (String(input) !== AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL) throw new Error(`This test sends only DeepSeek's request, never ${String(input)}.`);
-    const reply = await fetch(`${base}/`, signalReachesBody ? init : { ...init, signal: null });
+    const reply = await fetch(`${base}/${status === 500 ? "500" : ""}`, signalReachesBody ? init : { ...init, signal: null });
     return new Response(reply.body, { status: reply.status, headers: reply.headers });
   }) as typeof fetch;
 }
@@ -86,6 +91,18 @@ describe("a Flow model call whose reply never finishes", () => {
   // adapter itself read on, and its step never got a meta.json.
   it("ends at its deadline even when the signal does not reach the transport's body", async () => {
     await expectEndedAtDeadline(localFetch(false));
+  }, DEADLINE_MS + 10_000);
+});
+
+describe("a Flow model call refused with a 500 whose body never finishes", () => {
+  it("ends at its deadline as a retryable timeout, and the step log says so when it ends", async () => {
+    await expectEndedAtDeadline(localFetch(true, 500));
+  }, DEADLINE_MS + 10_000);
+
+  // Before t617 the refusal body was read with no signal: the race above the
+  // adapter ended the call, and the adapter read on with its step unfinished.
+  it("ends at its deadline even when the signal does not reach the transport's body", async () => {
+    await expectEndedAtDeadline(localFetch(false, 500));
   }, DEADLINE_MS + 10_000);
 });
 
@@ -107,9 +124,14 @@ async function expectEndedAtDeadline(fetchImpl: typeof fetch): Promise<void> {
   expect(outcome.retry.attempts).toHaveLength(1);
 
   // The adapter itself ended, not only the race above it: its step is complete, with the code.
+  // The race above can settle a turn of the event loop before the adapter's own
+  // catch writes the step, so the step is waited for -- but only until the
+  // deadline's margin, which a body read that outlives the call never meets.
   const steps = readdirSync(stepDirectory).filter((name) => /^\d{4}-/u.test(name));
   expect(steps).toHaveLength(1);
-  const meta = JSON.parse(readFileSync(path.join(stepDirectory, steps[0]!, "meta.json"), "utf8")) as { ms: number; status: string; error: { code: string } | null };
+  const metaPath = path.join(stepDirectory, steps[0]!, "meta.json");
+  while (!existsSync(metaPath) && Date.now() - started < DEADLINE_MS + 1_000) await new Promise((resolve) => setTimeout(resolve, 10));
+  const meta = JSON.parse(readFileSync(metaPath, "utf8")) as { ms: number; status: string; error: { code: string } | null };
   expect(meta).toMatchObject({ status: "error", error: { code: "llm.provider_timeout" } });
   expect(meta.ms).toBeLessThan(DEADLINE_MS + 1_000);
 }
