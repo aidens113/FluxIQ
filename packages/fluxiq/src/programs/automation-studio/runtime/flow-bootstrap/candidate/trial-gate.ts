@@ -163,6 +163,20 @@
 // rides on the result the gate keeps for each trial (`keptConditions`, never
 // shown to a model), and the submission controller refuses once a later
 // revision that drops or changes one (`./submission.ts`).
+//
+// **A trial on a page the build's exploration changed, and no step does, says
+// so (t647; A8 bigbox debug `run-mv9zn5ob-d929084d`, fix 6).** The gap the
+// subflow trial gate closes (`../subflow-candidate/subflow-trial-gate.ts`)
+// exists here too: a candidate build explores, the start hook takes back what
+// its exploration did before each trial, and a Flow with no step for one of
+// those acts meets a page the build never explored. Where a trial that is not
+// a yes started after the start hook took back an act made while exploring on
+// a named control, and no step of this Flow nor any act the trial landed names
+// that control, its feedback carries Core's finding under `coreFindings`, code
+// `trial.explored_on_absorbed_act` first, naming the act as the act log
+// records it (`../site-reset/explored-on-absorbed.ts`). Any exploration of the
+// build counts, a project build's every brief's under the supervisor's whole
+// trial: the whole Flow is what must do it.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
@@ -176,7 +190,7 @@ import {
   type AutomationStudioResultKeptConditionsCarrier,
   type AutomationStudioResultStandingNoContradiction
 } from "../../result-verification/standing-no/index.ts";
-import type { AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetSpot, AutomationStudioSiteResetTrialActPlace, AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
+import { automationStudioSiteResetExploredOnAbsorbed, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetSpot, type AutomationStudioSiteResetTrialActPlace, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialAct, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialResult, type AutomationStudioCandidateTrialVerdict, type AutomationStudioFlowCandidate } from "./contracts.ts";
 
 export const AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID = "core.test_candidate";
@@ -326,14 +340,20 @@ export class AutomationStudioFlowCandidateTrialGate {
     // Not a trial: the model is told what to put back, and the identical test after it reaches this gate again (header).
     if (reset?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: reset.evidence, effectApplied: reset.moved, targetsUnchanged: !reset.moved, resultCode: reset.evidence.code, resultReason: RETEST_REASON };
     // What the hook took back before this trial is recorded at once, whatever the trial then answers (header, t504).
-    const absorbed = reset?.kind === "admit" ? (reset.absorbedByStartReset ?? []).map(namedAct) : [];
+    const absorbedActs = reset?.kind === "admit" ? reset.absorbedByStartReset ?? [] : [];
+    const absorbed = absorbedActs.map(namedAct);
     this.absorbed.push(...absorbed);
     this.trials.set(key(latest), tried + 1);
     const asked = await this.ask(trial, latest, signal, reset?.kind === "admit" ? automationStudioCandidateStartedWithSaid(reset.startedWith) : []);
     signal.throwIfAborted();
     // A no whose remedy would take back what an earlier standing no of this build upheld is not taken (header, t633).
     const contradiction = this.standingNos.weigh({ revision: asked.answer.revision, verdict: asked.answer.verdict, standingNo: asked.standingNo });
-    const answer = contradiction ? notTaken(asked.answer, contradiction) : asked.answer;
+    const weighedAnswer = contradiction ? notTaken(asked.answer, contradiction) : asked.answer;
+    // The page the build explored was changed by an act the start took back and no step does (header, t647).
+    const explored = weighedAnswer.verdict !== "yes"
+      ? automationStudioSiteResetExploredOnAbsorbed({ absorbed: absorbedActs, steps: (latest.buildPlan?.plan?.subflows ?? []).flatMap((subflow) => subflow.nodes ?? []), ran: weighedAnswer.acts, whose: "flow" })
+      : [];
+    const answer = explored.length ? withCoreFindings(weighedAnswer, explored) : weighedAnswer;
     // What Core's record of this trial shows its conditions kept out, as the revision that ran wrote them (header, t641).
     this.keptConditions.remember({ revision: answer.revision, standingNo: asked.standingNo, plan: latest.buildPlan?.plan });
     const keptConditions = this.keptConditions.conditions();
@@ -498,6 +518,12 @@ function namedAct(act: AutomationStudioSiteResetNamedAct): { act: string; did: s
 }
 
 function key(receipt: { revision: number; digest: string }): string { return `${receipt.revision}\n${receipt.digest}`; }
+
+/** The answer with Core's own findings beside the trial's feedback, after any already there (header, t647). */
+function withCoreFindings(answer: AutomationStudioCandidateTrialResult, found: readonly JsonObject[]): AutomationStudioCandidateTrialResult {
+  const earlier = Array.isArray(answer.feedback.coreFindings) ? answer.feedback.coreFindings : [];
+  return { ...answer, feedback: { ...answer.feedback, coreFindings: [...earlier, ...found] } };
+}
 
 /** A no the build's own record contradicts, kept as an unsure with Core's words beside the judge's (header, t633): its revision is not closed. */
 function notTaken(answer: AutomationStudioCandidateTrialResult, contradiction: AutomationStudioResultStandingNoContradiction): AutomationStudioCandidateTrialResult {

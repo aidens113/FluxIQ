@@ -88,6 +88,13 @@
 // asked to undo a rotating carousel and a chat card's cover, and that ask is
 // what drove the removal of the dish soap.
 //
+// **What the hook took back says who made it and on what (t647).** Each act it
+// answers carries, for Core alone, the brief whose ledger recorded it
+// (`owner`, a project build's) and the name of the control its exploration
+// call acted on (`control`), so a trial gate can say when the page a builder
+// explored was changed by an act the hook undid and no step of the Flow does
+// (`./explored-on-absorbed.ts`). Neither is ever shown to a model.
+//
 // **A press with an effect but no lasting class is possibly lasting (t593).**
 // A press that declares `none` can still leave something on the site: on A8
 // crossborder `run-mv8c76i3-61b9ca89` a coupon press declared nothing, the
@@ -124,6 +131,7 @@
 
 import type { AutomationStudioActionConsequence, AutomationStudioActionEffect } from "../../action-permissions/index.ts";
 import type {
+  AutomationStudioSiteResetAbsorbedAct,
   AutomationStudioSiteResetBeforeTrialOptions,
   AutomationStudioSiteResetCalls,
   AutomationStudioSiteResetChecks,
@@ -158,6 +166,8 @@ type Act = {
   ref: string;
   /** The exploration call's id, as the model gave it; absent for a trial's act. */
   call?: string;
+  /** The name of the control the exploration call acted on, as the gate carried it; absent when withheld or for a trial's act (t647). */
+  control?: string;
   undoable: boolean;
   undone: boolean;
   /** The call that last tried to undo it, as the model gave its id. */
@@ -281,7 +291,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     };
     // A press on a named control that declared nothing lasting is possibly lasting, where this ledger records those (header).
     const possible = this.options.possible === true && declared.control.name !== null;
-    this.record(words.filter((word) => word.trim()).join(" ").trim(), call.callId, declared.consequences, call.callId, spot, possible);
+    this.record(words.filter((word) => word.trim()).join(" ").trim(), call.callId, declared.consequences, call.callId, spot, possible, [], declared.control.name ?? undefined);
   }
 
   /** The act the exploration call `callId` made, if it made one. */
@@ -335,13 +345,14 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     if (options.startReset === true) {
       // The hook put the whole site back: no act of this build is on it, and the model is asked for nothing (header).
       // Each act it took back is answered, never erased in silence (t504).
-      const absorbed: AutomationStudioSiteResetNamedAct[] = [];
+      const absorbed: AutomationStudioSiteResetAbsorbedAct[] = [];
       for (const act of this.acts) {
         if (!act.undoable || act.undone) continue;
         act.undone = true;
         delete act.stillThere;
         // A possibly lasting act is taken back unnamed (header).
-        if (!act.possible) absorbed.push(namedAct(act));
+        // With who recorded it and the control it acted on, for Core's own reading (t647, `./explored-on-absorbed.ts`).
+        if (!act.possible) absorbed.push({ ...namedAct(act), ...(this.options.owner !== undefined ? { owner: this.options.owner } : {}), ...(act.control ? { control: act.control } : {}) });
       }
       this.phase = { recorded: 0, refusals: 0, startDiffersSent: false };
       return { kind: "admit", ...(absorbed.length > 0 ? { absorbedByStartReset: absorbed } : {}) };
@@ -423,7 +434,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     return act.undoable && !act.undone && !act.kept;
   }
 
-  private record(did: string, ref: string, consequences: readonly AutomationStudioActionConsequence[], call?: string, spot?: AutomationStudioSiteResetSpot, possible = false, created: readonly string[] = []): void {
+  private record(did: string, ref: string, consequences: readonly AutomationStudioActionConsequence[], call?: string, spot?: AutomationStudioSiteResetSpot, possible = false, created: readonly string[] = [], control?: string): void {
     const lasting = consequences.some((consequence) => UNDOABLE.has(consequence) || IRREVERSIBLE.has(consequence));
     if (!lasting && !possible) return;
     const id = this.options.nextActId ? this.options.nextActId() : this.next <= MAX_ACT ? `act-${this.next}` : undefined;
@@ -431,7 +442,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     const undoable = !consequences.some((consequence) => IRREVERSIBLE.has(consequence));
     // Said as possibly lasting wherever it is named, since some answers carry only what an act did (header).
     const words = lasting ? did || "an act" : `${did || "an act"} (${POSSIBLY_LASTING})`;
-    const act: Act = { id, did: words, ref, ...(call ? { call } : {}), ...(spot ? { spot } : {}), createdItems: [...new Set(created)], undoable, undone: false, attempts: 0, spent: false, askedFor: 0, kept: false, possible: !lasting };
+    const act: Act = { id, did: words, ref, ...(call ? { call } : {}), ...(control?.trim() ? { control: control.trim() } : {}), ...(spot ? { spot } : {}), createdItems: [...new Set(created)], undoable, undone: false, attempts: 0, spent: false, askedFor: 0, kept: false, possible: !lasting };
     this.acts.push(act);
     this.next += 1;
     // A possibly lasting act never makes a reset due: it refuses no trial (header).
