@@ -17,7 +17,7 @@
 //
 // Never asked twice: the outcome is marked `reasked`.
 
-import type { AutomationStudioResultRepairDirective, AutomationStudioResultVerdict, AutomationStudioResultVerification } from "../contracts.ts";
+import type { AutomationStudioResultRepairDirective, AutomationStudioResultVerdict, AutomationStudioResultVerification } from "../contracts/index.ts";
 import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS as UNSETTLED } from "../unsettled/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../verdict.ts";
 import { automationStudioResultRefutedNoRecheckWords } from "./recheck-words.ts";

@@ -1,5 +1,5 @@
 // The shared advice for a read its authored paging bound stopped.
-import type { AutomationStudioResultReadAccount } from "../contracts.ts";
+import type { AutomationStudioResultReadAccount } from "../contracts/index.ts";
 
 /** The existing page-bound advice, shared with the judge's evidence copy. */
 export function automationStudioResultReadPageBoundSentence(read: AutomationStudioResultReadAccount): string {

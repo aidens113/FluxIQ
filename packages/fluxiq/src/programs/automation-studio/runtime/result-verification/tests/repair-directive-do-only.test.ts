@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import {
   AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES,
   automationStudioResultRepairDirective,

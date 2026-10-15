@@ -8,7 +8,7 @@
 // drops it (`./judge-paging.ts`, after the rows are flagged, `../verify.ts`),
 // and so does the summary a refuted run's repair is handed
 // (`../../recovery/annotation/annotate.ts`). The summary given is never changed.
-import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 
 /** The summary with no condition's `testedLabel`; the same object when none carries one. */
 export function automationStudioResultSummaryWithoutTestedLabel(summary: AutomationStudioRunResultSummary): AutomationStudioRunResultSummary {

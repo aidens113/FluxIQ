@@ -3,7 +3,7 @@
 // stopped on control_disabled" -- a list whose Next was disabled on its last
 // page -- read it as the page bound, and sent the re-author to raise maxPages.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioResultReadAccount } from "../../contracts.ts";
+import type { AutomationStudioResultReadAccount } from "../../contracts/index.ts";
 import { automationStudioResultReadAccounts } from "../accounts.ts";
 import { automationStudioResultReadSentence } from "../sentence.ts";
 import { EARBUDS_NODE_ID, earbudsAttempt, earbudsNode } from "./earbuds-read.ts";

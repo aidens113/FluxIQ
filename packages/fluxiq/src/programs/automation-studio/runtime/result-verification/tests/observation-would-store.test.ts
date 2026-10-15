@@ -4,7 +4,7 @@
 // read "Passed: no rows came back" over a Flow that would store 30 rows.
 import { describe, expect, it } from "vitest";
 import { automationStudioResultCheckWords } from "../check-words.ts";
-import type { AutomationStudioBuildTestStore, AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioBuildTestStore, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultObservation } from "../verdict.ts";
 
 /** A dataset whose reads collected one more row than its answer keeps: the count is the answer's. */

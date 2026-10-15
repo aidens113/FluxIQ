@@ -4,7 +4,7 @@
 // the verdict holds a yes to it (`../verdict.ts`).
 
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
-import type { AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultLeftOutNamingTheItem } from "./left-out-naming-the-item.ts";
 
 /** The summary with `leftOutNamingTheItem` set when there are such rows, and without it otherwise. */

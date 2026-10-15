@@ -48,7 +48,7 @@
 // of the reply when that sentence names no row of its own: a quote beside
 // another row is that row's reason, never lent to its neighbour.
 
-import type { AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import type { AutomationStudioRequestWording } from "./request-wording.ts";
 import { automationStudioRequestRowNaming, automationStudioRequestTextNamesRow } from "./row-naming.ts";
 import { automationStudioRequestRowsReads } from "./summary-reads.ts";

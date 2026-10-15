@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../../contracts.ts";
+import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioResultSummaryWithPagingWords } from "../index.ts";
 
 const read = (overrides: Partial<AutomationStudioResultReadAccount> = {}): AutomationStudioResultReadAccount => ({

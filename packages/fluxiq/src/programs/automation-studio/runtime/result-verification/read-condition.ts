@@ -1,4 +1,4 @@
-// One condition of a list read's account (`./contracts.ts`,
+// One condition of a list read's account (`./contracts/read-account.ts`,
 // `AutomationStudioResultReadAccount.conditions`), and the witness of its read
 // on each row it alone left out. Its own file since t574 added the condition's
 // number, its presence sentence and the rows Core settled, which took the
@@ -23,7 +23,7 @@ export type AutomationStudioResultLeftOutObservation = {
 /** Passive condition witness, retaining original text and no executable address or inferred eligibility. */
 export type AutomationStudioResultConditionObservation = { conditionIndex: number } & AutomationStudioResultLeftOutObservation;
 
-/** One condition of a read's account, in authored order (`./contracts.ts`, `conditions`). */
+/** One condition of a read's account, in authored order (`./contracts/read-account.ts`, `conditions`). */
 export type AutomationStudioResultReadCondition = {
   /**
    * The condition's place in the step's authored `where`, counting from 1:

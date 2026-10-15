@@ -34,7 +34,7 @@
 // told the rows, the numbers and the change (`repair-directive.ts`).
 
 import { readAutomationStudioRecordNumber } from "@fluxiq/contracts/automation-studio";
-import type { AutomationStudioResultLeftOutObservation, AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioResultLeftOutObservation, AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 // The leaf, not the barrel: `../read-account/` reaches `../../llm/`, which reaches this directory, so a value through the barrel would close a module cycle.
 import { automationStudioResultConditionName } from "../read-account/condition-name.ts";
 import { automationStudioRequestRowLabel, automationStudioRequestRowsReads } from "./summary-reads.ts";

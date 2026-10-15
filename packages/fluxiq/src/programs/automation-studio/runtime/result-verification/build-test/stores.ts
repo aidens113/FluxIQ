@@ -63,7 +63,7 @@ import type { AutomationStudioFlowNode } from "../../../model/index.ts";
 import { AUTOMATION_STUDIO_RECORD_WRITE_MODES } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioLocatorShapedText } from "../../llm/index.ts";
-import type { AutomationStudioBuildTestStore } from "../contracts.ts";
+import type { AutomationStudioBuildTestStore } from "../contracts/index.ts";
 import { AUTOMATION_STUDIO_BUILD_TEST_READ_ROWS_KEY, automationStudioBuildTestReadRows } from "./read-rows.ts";
 
 /** What a label that may not be said reads as: the read-account's own word (`../read-account/alone-rows.ts`). */

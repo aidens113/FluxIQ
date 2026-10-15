@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
-import type { AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { summarizeAutomationStudioRunResult } from "../result-summary.ts";
 import { harness, session, verify } from "./run-outcome-harness.ts";
 // After the modules under test: loaded first, the llm barrel is met mid-cycle and arrives without its screens.

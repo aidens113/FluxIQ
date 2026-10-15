@@ -41,7 +41,7 @@ import type {
   AutomationStudioResultVerdict,
   AutomationStudioResultVerification,
   AutomationStudioRunResultSummary
-} from "./contracts.ts";
+} from "./contracts/index.ts";
 import { automationStudioResultRepairDirective } from "./repair-directive.ts";
 
 /** Core's codes for a verdict it reached itself. */

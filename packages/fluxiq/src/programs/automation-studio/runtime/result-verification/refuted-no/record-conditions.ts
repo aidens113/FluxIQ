@@ -21,7 +21,7 @@
 // settled row is not: Core read that it fails the bound as written, never that
 // the bound is the request's.
 
-import type { AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultConditionName } from "../read-account/index.ts";
 import { automationStudioRequestRowLabel } from "../request-rows/index.ts";
 import type { AutomationStudioResultNoCondition, AutomationStudioResultNoLeftOutRow } from "./types.ts";

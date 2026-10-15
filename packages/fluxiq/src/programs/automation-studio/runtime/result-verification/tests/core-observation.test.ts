@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { automationStudioResultCoreObservation, automationStudioResultFailureRecord } from "../core-observation.ts";
-import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 
 // The failures Core catches without a model, and the mutation each one is
 // proof against.

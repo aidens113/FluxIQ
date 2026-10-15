@@ -39,7 +39,7 @@
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepById, automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepCarried, automationStudioFlowDraftStepCarriedJoin } from "../../flow-draft/carried-step/index.ts";
-import type { AutomationStudioBuildTestStep } from "../contracts.ts";
+import type { AutomationStudioBuildTestStep } from "../contracts/index.ts";
 
 type Explored = NonNullable<AutomationStudioBuildTestStep["explored"]>;
 type PressRecord = Omit<AutomationStudioFlowDraftStep, "priorExecution" | "checkedCandidate">;

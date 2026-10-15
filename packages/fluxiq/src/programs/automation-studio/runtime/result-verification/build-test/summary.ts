@@ -127,7 +127,7 @@ import {
   automationStudioWithoutLocators,
   screenAutomationStudioLlmEvidence
 } from "../../llm/index.ts";
-import type { AutomationStudioBuildTestAccount, AutomationStudioBuildTestNote, AutomationStudioBuildTestStep } from "../contracts.ts";
+import type { AutomationStudioBuildTestAccount, AutomationStudioBuildTestNote, AutomationStudioBuildTestStep } from "../contracts/index.ts";
 import {
   automationStudioResultEndView,
   summarizeAutomationStudioRunResult,

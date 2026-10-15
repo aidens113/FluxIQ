@@ -21,7 +21,7 @@
 // "also in the result". A label that only starts another label is not it. The
 // lines themselves are left exactly as they are.
 
-import type { AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioRequestRowsReads } from "./summary-reads.ts";
 import type { AutomationStudioRequestRowsNamed, AutomationStudioRequestRowsRead } from "./types.ts";
 import { automationStudioRequestRowIds } from "./words.ts";

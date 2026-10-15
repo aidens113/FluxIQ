@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraftReplayable } from "../../../flow-draft/index.ts";
 import { automationStudioLlmRequestEvidenceRefusal, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
-import type { AutomationStudioRunResultSummary } from "../../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioBuildTestResultSummary, automationStudioBuildTestUntestedCarried } from "../summary.ts";
 import {
   ACCEPT_FRIENDS, FRIENDS, PICKUP_CART, RUN_36_READ, RUN_36_STEPS, RUN_40_CLAIMS, RUN_40_STEPS,

@@ -1,6 +1,6 @@
 // One record set a run stored, as the verification reads it, and each key of
 // its answer's sort as Core read it (t511, `./value-readings/sort-reading.ts`).
-// Kept apart from `./contracts.ts`, which re-exports both.
+// Kept apart from `./contracts/index.ts`, which re-exports both.
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioResultProcessingAccount } from "./processing-account.ts";

@@ -23,7 +23,7 @@
 // out two such rows, all asked for the dedupe it already did. So such a read is
 // said to leave them out, with its count where it sent one.
 
-import type { AutomationStudioResultReadAccount } from "../contracts.ts";
+import type { AutomationStudioResultReadAccount } from "../contracts/index.ts";
 import { automationStudioResultConditionName, automationStudioResultReadPageBoundSentence, automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./index.ts";
 
 /** Core's sentence for how one read went. */

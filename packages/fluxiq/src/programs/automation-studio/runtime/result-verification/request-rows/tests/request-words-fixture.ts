@@ -3,7 +3,7 @@
 // site with the same shape: a catalogue searched for one phrase, a request
 // that states one exclusion, a read whose first condition makes it and whose
 // second leaves out one more row the request never excludes.
-import type { AutomationStudioRunResultSummary } from "../../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioResultConditionName } from "../../read-account/index.ts";
 import { automationStudioRequestWording, type AutomationStudioRequestWording } from "../request-wording.ts";
 

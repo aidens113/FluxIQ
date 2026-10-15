@@ -12,8 +12,8 @@
 
 import { ACTIVITY_RESULT_CHECK_LABELS } from "../../../../ui/index.ts";
 import { automationStudioActivityInBuild, automationStudioActivityReasonText } from "../activity/index.ts";
-import type { AutomationStudioResultVerificationOutcome } from "./contracts.ts";
-import { automationStudioResultVerificationAnswers, automationStudioResultVerificationFailsRun } from "./contracts.ts";
+import type { AutomationStudioResultVerificationOutcome } from "./contracts/index.ts";
+import { automationStudioResultVerificationAnswers, automationStudioResultVerificationFailsRun } from "./contracts/index.ts";
 import { automationStudioResultCheckWords } from "./check-words.ts";
 import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS as UNSETTLED } from "./unsettled/index.ts";
 

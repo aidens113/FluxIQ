@@ -1,7 +1,7 @@
 // The judge's summary names the columns the instruction asks for that no stored
 // column reads, by the build's matcher and sentence (F35), and nothing else.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioRunResultSummary } from "../../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioResultSummaryWithUnreadColumns } from "../unread-columns.ts";
 
 function summary(columns: string[], columnsWithheld = false): AutomationStudioRunResultSummary {

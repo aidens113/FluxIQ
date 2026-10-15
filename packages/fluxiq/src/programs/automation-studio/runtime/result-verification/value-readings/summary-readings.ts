@@ -38,7 +38,7 @@ import {
 } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
-import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary } from "../contracts.ts";
+import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary } from "../contracts/index.ts";
 import type { AutomationStudioResultSortRead } from "../record-set-summary.ts";
 import { automationStudioResultReadConditionColumn, automationStudioResultReadParameters } from "../read-account/index.ts";
 import { automationStudioResultConditionReadings, type AutomationStudioResultReadCell } from "./condition-readings.ts";

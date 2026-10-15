@@ -98,7 +98,7 @@ import type {
   AutomationStudioResultFlowStepSummary,
   AutomationStudioResultRecordSetSummary,
   AutomationStudioRunResultSummary
-} from "./contracts.ts";
+} from "./contracts/index.ts";
 import { automationStudioResultCapturedRows } from "./captured-rows.ts";
 import { automationStudioResultNarrowedBefore } from "./narrowed-before.ts";
 import { automationStudioResultProcessingAccount } from "./processing-account.ts";
@@ -134,10 +134,10 @@ type TracedAttempt = {
 };
 
 // `AutomationStudioResultEndView` and the summary's `endView` live in
-// `./contracts.ts`; re-exported here for the callers that read them from here.
-export type { AutomationStudioResultEndView } from "./contracts.ts";
+// `./contracts/run-result-summary.ts`; re-exported here for the callers that read them from here.
+export type { AutomationStudioResultEndView } from "./contracts/index.ts";
 
-/** @deprecated The summary itself now carries `endView` (`./contracts.ts`); kept for the callers that still name this. */
+/** @deprecated The summary itself now carries `endView` (`./contracts/run-result-summary.ts`); kept for the callers that still name this. */
 export type AutomationStudioRunResultSummaryWithEndView = AutomationStudioRunResultSummary;
 
 /** One record set as the caller reads it out of the store. */

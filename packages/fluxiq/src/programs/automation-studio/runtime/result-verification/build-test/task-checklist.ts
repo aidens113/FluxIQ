@@ -40,7 +40,7 @@
 // accounts for (`../request-rows/summary-reads.ts`). A trial with no
 // predecessors, and a whole trial, is told exactly what it was.
 
-import type { AutomationStudioResultTaskChecklist, AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioResultTaskChecklist, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 
 /** What the instructions ask, part by part, and what they do not ask: the build's own reading, never the request. */
 export type AutomationStudioBuildTestTaskChecklist = {

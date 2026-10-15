@@ -10,7 +10,7 @@ import { RUN_MUW60J7C_REQUEST, runMuw60j7cRunSummary } from "../request-rows/tes
 import {
   REQUEST_WORDS_NAMES, REQUEST_WORDS_HANDLE, REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS, requestWordsRunSummary
 } from "../request-rows/tests/request-words-fixture.ts";
-import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK, verifyAutomationStudioRunResult } from "../verify.ts";
 
 const instruction: AutomationStudioFlowInstruction = {

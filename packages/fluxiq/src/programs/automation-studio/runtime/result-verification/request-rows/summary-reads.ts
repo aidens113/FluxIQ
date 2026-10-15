@@ -62,7 +62,7 @@
 // judge's copy: a row is read as its label without it.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import type { AutomationStudioResultProcessingCondition } from "../processing-account.ts";
 // The leaf, not the barrel: `../read-account/` reaches `../../llm/`, which reaches this directory, so a value through the barrel would close a module cycle.
 import { automationStudioResultConditionName } from "../read-account/condition-name.ts";

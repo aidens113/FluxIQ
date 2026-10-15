@@ -51,7 +51,7 @@
 // "exclusion evidence" in the feedback's `why`, so a reworded reason would
 // have lost the instruction, and a held yes beside a call that could not tell
 // was said as if every judge had answered yes. Core's result verification now
-// says the fact (`yesUnconfirmed`, `../../result-verification/contracts.ts`),
+// says the fact (`yesUnconfirmed`, `../../result-verification/contracts/verification.ts`),
 // set only where every judge call answered yes, and the trial's feedback
 // carries it (`../../service/candidate-trial/feedback.ts`); the gate reads that
 // field and never the words.

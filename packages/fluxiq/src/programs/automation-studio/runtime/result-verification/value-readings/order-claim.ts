@@ -17,7 +17,7 @@
 // the sorted column, so a claim about a column the answer is not sorted by is
 // never marked.
 
-import type { AutomationStudioResultRecordSetSummary } from "../contracts.ts";
+import type { AutomationStudioResultRecordSetSummary } from "../contracts/index.ts";
 
 /** A denial of order: "not sorted", "isn't newest-first", "out of order", "sorted as strings". */
 const DENIES_ORDER = new RegExp([

@@ -9,7 +9,7 @@
 import type { AutomationStudioRecordSchema } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../../model/index.ts";
-import type { AutomationStudioRunResultSummary } from "../../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { summarizeAutomationStudioRunResult } from "../../result-summary.ts";
 import { datasetSummary } from "../../tests/run-outcome-harness.ts";
 

@@ -16,7 +16,7 @@ import {
   type AutomationStudioFlowGraphVersion,
   type AutomationStudioJudgedFlowGraphVersion
 } from "../flow-version/index.ts";
-import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerificationOutcome } from "./contracts.ts";
+import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerificationOutcome } from "./contracts/index.ts";
 import { automationStudioRecordedResultRepair } from "./repair-directive.ts";
 import type { AutomationStudioRuntimeSessionVerificationInput } from "./run-outcome.ts";
 import { automationStudioResultVerificationStatus } from "./verification-status.ts";

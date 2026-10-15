@@ -8,7 +8,7 @@
 // none, so no row is left out by the two together.
 // No task, site, item or answer of any realistic scenario.
 import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts";
-import type { AutomationStudioRunResultSummary } from "../../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import type { AutomationStudioResultReadCondition } from "../../read-condition.ts";
 import { automationStudioRequestWording, type AutomationStudioRequestWording } from "../../request-rows/index.ts";
 

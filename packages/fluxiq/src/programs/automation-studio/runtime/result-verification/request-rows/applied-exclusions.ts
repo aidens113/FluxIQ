@@ -23,7 +23,7 @@
 // such as the Replacement Handle row"), so neither is applied. Only Core's
 // wording of the Flow's own conditions is read, never a model's.
 
-import type { AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 
 /** A negated text test, as Core words it: the subject, the relation, and its text or list of texts. */
 const NEGATED_TEXT = /^.+? not (?:contains|startsWith|endsWith|matches|equals) (.+)$/su;

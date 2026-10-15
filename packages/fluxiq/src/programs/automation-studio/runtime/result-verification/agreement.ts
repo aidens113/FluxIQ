@@ -100,7 +100,7 @@
 // not the asked kind, and the conditions each standing no asks to remove. It is
 // Core's, for the gate that keeps the build's trials, and never said to a model.
 
-import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioResultVerdict, AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "./contracts.ts";
+import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioResultVerdict, AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "./contracts/index.ts";
 import { automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./read-account/index.ts";
 import {
   automationStudioResultDedupeDoubtContradicted,

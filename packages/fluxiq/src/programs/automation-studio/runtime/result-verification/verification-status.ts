@@ -33,7 +33,7 @@
 // Any reason for skipping that this module does not recognise is `unverified`:
 // a new way of not judging a result is still not a judgement.
 
-import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerificationOutcome } from "./contracts.ts";
+import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerificationOutcome } from "./contracts/index.ts";
 
 export type AutomationStudioResultVerificationStatus = "confirmed" | "refuted" | "unverified" | "no_result";
 

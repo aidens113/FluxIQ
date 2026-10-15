@@ -99,7 +99,7 @@ import { randomUUID } from "node:crypto";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowIntervention } from "../../../model/index.ts";
 import { automationStudioLlmCurrentBuildPurse, type AutomationStudioLlmBuildPurseRefusal } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmProvider } from "../../llm/index.ts";
-import { automationStudioResultVerificationFailsRun, type AutomationStudioResultRepairDirective, type AutomationStudioResultVerification, type AutomationStudioRunResultSummary } from "../contracts.ts";
+import { automationStudioResultVerificationFailsRun, type AutomationStudioResultRepairDirective, type AutomationStudioResultVerification, type AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultVerificationDeadlineMs, automationStudioResultVerificationWithinDeadline } from "../deadline.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "../repair-directive.ts";
 import { automationStudioResultCheckedRowsNamed, type AutomationStudioRequestRowsNamed } from "../request-rows/index.ts";

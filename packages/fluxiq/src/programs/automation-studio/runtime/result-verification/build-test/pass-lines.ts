@@ -24,7 +24,7 @@ import {
   type AutomationStudioFlowDraftReplayStatus,
   type AutomationStudioFlowDraftStep
 } from "../../flow-draft/index.ts";
-import type { AutomationStudioBuildTestPass, AutomationStudioBuildTestStep } from "../contracts.ts";
+import type { AutomationStudioBuildTestPass, AutomationStudioBuildTestStep } from "../contracts/index.ts";
 import type { AutomationStudioBuildTestObservationReader } from "./observation.ts";
 
 /** One pass of a span member's outcome, as the walker writes it. Declared here so this reads it before the walker's type lands. */

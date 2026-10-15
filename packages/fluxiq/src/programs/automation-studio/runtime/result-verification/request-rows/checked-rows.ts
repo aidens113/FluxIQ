@@ -77,7 +77,7 @@
 // so called that is not in the result is a misread, said as the other
 // direction's is; the condition that left it out is still said as before.
 
-import type { AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { AutomationStudioRequestRowId } from "./row-id.ts";
 import { automationStudioRequestRowNaming } from "./row-naming.ts";
 import { automationStudioRequestRowValuesAgree } from "./row-values.ts";

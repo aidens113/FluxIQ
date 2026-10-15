@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ACTIVITY_RESULT_CHECK_LABELS, activityActionOf } from "../../../../../ui/index.ts";
 import { automationStudioResultCheckActivity } from "../check-activity.ts";
-import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultVerificationAgreement } from "../agreement.ts";
 import { automationStudioResultVerdict } from "../verdict.ts";
 import { runWithAutomationStudioActivity } from "../../activity/index.ts";
