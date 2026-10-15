@@ -21,8 +21,9 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
  * dependent builder's entry runs them (`ports.kept`). The plan goes to the
  * chat as its card. A written plan's answer carries the warnings its reading
  * found -- a value no other subflow takes, a subflow that neither acts nor
- * hands anything on -- each with what to do, and its next step says to amend
- * the plan if one applies.
+ * hands anything on, one that only reshapes what another reads -- each with
+ * what to do in its own code's words, and its next step says to amend the
+ * plan if one applies.
  *
  * **What the answer invites (bigbox debug, t595).** Bigbox
  * `run-mv8c7unr-42a8456d` copied Core's own router-run subflow, listed in
@@ -77,7 +78,7 @@ export async function automationStudioProjectSupervisorPlanTool(context: Automat
       proposalsKept: [...carried.kept].map(([subflowKey, { brief }]) => ({ subflowKey, briefId: brief.briefId, ...(carried.reworded.has(subflowKey) ? { reworded: [...carried.reworded.get(subflowKey)!] } : {}) })),
       proposalsDropped: [...carried.dropped].map(([subflowKey, why]) => ({ subflowKey, why: [...why] }))
     } : {}),
-    ...(read.warnings.length ? { warnings: read.warnings.map((warning) => ({ ...warning, instruction: warningText(warning.code) })) } : {}),
+    ...(read.warnings.length ? { warnings: read.warnings.map(warned) } : {}),
     next: mode === "amend" ? (read.warnings.length ? GUIDANCE.next.afterAmendWarned : GUIDANCE.next.afterAmend) : read.warnings.length ? GUIDANCE.next.afterPlanWarned : GUIDANCE.next.afterPlan
   });
 }
@@ -88,6 +89,11 @@ function worded(issues: ReadonlyArray<{ code: string; path: string }>): JsonObje
   return issues.map((issue) => (Object.hasOwn(words, issue.code) ? { code: issue.code, path: issue.path, why: words[issue.code]! } : { code: issue.code, path: issue.path }));
 }
 
-function warningText(code: string): string {
-  return code === "project.plan_subflow_constraint" ? GUIDANCE.warnings.constraintSubflow : GUIDANCE.warnings.valueUnused;
+/**
+ * A written plan's warning with what to do, in its own code's words (`GUIDANCE.planIssues`, t630): every warning code
+ * once fell back to the unused value's words, so a new one told the model to remove the Flow's answer.
+ */
+function warned(warning: { code: string; path: string }): JsonObject {
+  const words: Readonly<Record<string, string>> = GUIDANCE.planIssues;
+  return Object.hasOwn(words, warning.code) ? { code: warning.code, path: warning.path, instruction: words[warning.code]! } : { code: warning.code, path: warning.path };
 }

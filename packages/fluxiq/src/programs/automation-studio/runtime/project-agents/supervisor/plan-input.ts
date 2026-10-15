@@ -49,6 +49,21 @@
 //   subflow of its own. Core cannot read which from the words, so the answer
 //   names both and the model amends the plan.
 //
+// **Shaping a read belongs to that read (everything-store debug, t630).** A8
+// wave 7 `run-mv9dd0fk-8cd2e522` planned a second subflow that took the rows
+// the first read and only dropped repeats, kept their order and chose their
+// columns. That is the read's own condition and processing: its builder had no
+// page work of its own, re-read the page, was refused for never reading its
+// input, and the build spent most of its money on the split. So a subflow of
+// several that takes a value another subflow hands on, carries no part with a
+// lasting act, and hands on nothing another subflow takes is a warning,
+// `project.plan_subflow_reshape_only`: a warning because a builder that opens
+// or reads something on the target for each row is a legitimate such subflow,
+// and only the model can tell which. And the output of the subflow that runs
+// last -- the one nothing runs after, that itself runs after another, or the
+// only one -- is what the Flow hands back, so it is never `plan_value_unused`:
+// that warning told the same run to remove the Flow's answer, twice.
+//
 // **Core's router entry sent back is left out (bigbox debug, t595).** Bigbox
 // `run-mv8c7unr-42a8456d` amended its plan by copying the written plan's
 // answer, which listed the router-run subflow Core had added, `main` with
@@ -120,20 +135,48 @@ export function automationStudioProjectSupervisorPlanInput(value: JsonObject, so
   return { ok: true, taskSpec: spec.value, structure: structure.value, purposes: compiled.purposes, after: Object.fromEntries(written.map((subflow) => [subflow.key, [...subflow.after]])), warnings: valueWarnings(written, spec.value) };
 }
 
-/** Each value no other subflow takes, and each subflow of several that neither acts nor hands anything on (header). */
+/**
+ * Each value no other subflow takes, other than what the last subflow hands back; each subflow of
+ * several that neither acts nor hands anything on; and each that only reshapes what another reads (header).
+ */
 function valueWarnings(written: readonly Written[], spec: AutomationStudioProjectTaskSpec): AutomationStudioProjectSupervisorInputIssue[] {
   const warned: AutomationStudioProjectSupervisorInputIssue[] = [];
   for (const subflow of written) {
+    if (handsBackTheAnswer(subflow, written)) continue;
     for (const [index, output] of subflow.outputs.entries()) {
-      if (!written.some((other) => other !== subflow && other.inputs.includes(output))) warned.push({ code: "project.plan_value_unused", path: `subflows.${subflow.at}.outputs.${index}` });
+      if (!takenByAnother(subflow, output, written)) warned.push({ code: "project.plan_value_unused", path: `subflows.${subflow.at}.outputs.${index}` });
     }
   }
   if (written.length < 2) return warned;
   const acts = new Map(spec.parts.map((part) => [part.id, part.lastingActs.length > 0]));
   for (const subflow of written) {
-    if (!subflow.outputs.length && subflow.parts.every((part) => !acts.get(part))) warned.push({ code: "project.plan_subflow_constraint", path: `subflows.${subflow.at}` });
+    if (subflow.parts.some((part) => acts.get(part))) continue;
+    if (!subflow.outputs.length) warned.push({ code: "project.plan_subflow_constraint", path: `subflows.${subflow.at}` });
+    else if (takesFromAnother(subflow, written) && subflow.outputs.every((output) => !takenByAnother(subflow, output, written))) {
+      warned.push({ code: "project.plan_subflow_reshape_only", path: `subflows.${subflow.at}` });
+    }
   }
   return warned;
+}
+
+/** Whether a subflow other than `subflow` takes `value`. */
+function takenByAnother(subflow: Written, value: string, written: readonly Written[]): boolean {
+  return written.some((other) => other !== subflow && other.inputs.includes(value));
+}
+
+/** Whether `subflow` takes a value another subflow hands on. */
+function takesFromAnother(subflow: Written, written: readonly Written[]): boolean {
+  return subflow.inputs.some((input) => written.some((other) => other !== subflow && other.outputs.includes(input)));
+}
+
+/**
+ * Whether `subflow` runs last, so what it hands on is the Flow's answer (header): the only subflow, or one that runs
+ * after another (by after, or by taking its value) while nothing runs after it or takes what it hands on.
+ */
+function handsBackTheAnswer(subflow: Written, written: readonly Written[]): boolean {
+  if (written.length === 1) return true;
+  const followed = written.some((other) => other !== subflow && (other.after.includes(subflow.key) || other.inputs.some((input) => subflow.outputs.includes(input))));
+  return !followed && (subflow.after.length > 0 || takesFromAnother(subflow, written));
 }
 
 /** Every subflow as written, each issue by its path; undefined when any was refused. */

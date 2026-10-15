@@ -4,6 +4,7 @@ import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioSubflowBuilderOutcome, AutomationStudioSubflowProposal, AutomationStudioSubflowTrialResult } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResult } from "../../llm/index.ts";
+import { automationStudioCandidateRefusalCodes as refusalCodes } from "../../service/candidate-failure/index.ts";
 import type { AutomationStudioProjectBuilderReturn, AutomationStudioProjectReceiptRef, AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
 import { automationStudioProjectDispatchAllowanceSaid, type AutomationStudioProjectDispatchSizedAtStart } from "./allowance-said.ts";
 
@@ -52,6 +53,19 @@ import { automationStudioProjectDispatchAllowanceSaid, type AutomationStudioProj
 // sized it at, and each top-up its allowance drew from the build's purse, in
 // figures (`./allowance-said.ts`); the rest of its reason is clipped to leave
 // room for them.
+//
+// **A refused submission says its issues (everything-store debug, t630).** A8
+// wave 7 `run-mv9dd0fk-8cd2e522` came back blocked "core.submit_subflow
+// answered subflow.scope_refused:b54daa6d (3 in a row)": the suffix is a digest
+// of the refusal's issues, which keeps two refusals apart for the repeat guard
+// and means nothing to the supervisor, and the one fact it needed --
+// `subflow.input_unread`, the plan's input no step read -- was behind it. Where
+// the stop's codes carry the last refused submission's issues
+// (`candidate.last_submission_*`, `../../service/candidate-failure/refusal-codes.ts`),
+// the run of that refusal is said by its family and its issue codes instead,
+// an unread input by the name the brief's interface gives it, and the codes
+// leave the guard's sentence. An unread input is the plan's to change, so the
+// reason ends with that advice. Codes and Core's own port names only.
 
 /** What a return's reason may hold (`contracts/builder-return.ts`). */
 const MAX_REASON = 2000;
@@ -90,7 +104,7 @@ export const automationStudioProjectDispatchEnding = Object.freeze({
     const passed = passedProposal(outcome.proposal, outcome.trial);
     if (passed) {
       if (outcome.loop.ok && !outcome.ended) return returned(brief, "done", passedSaid(passed), spend, passed);
-      const after = outcome.loop.ok ? `The builder then ended it ${outcome.ended!.outcome}: ${clipped(outcome.ended!.reason, MAX_ENDING_WORDS)}` : stopReason(outcome.loop, spend.allowance);
+      const after = outcome.loop.ok ? `The builder then ended it ${outcome.ended!.outcome}: ${clipped(outcome.ended!.reason, MAX_ENDING_WORDS)}` : stopReason(brief, outcome.loop, spend.allowance);
       return passedDone(brief, passed, after, spend);
     }
     const proposal = outcome.proposal ?? spend.accepted;
@@ -108,7 +122,7 @@ export const automationStudioProjectDispatchEnding = Object.freeze({
         : `The builder completed revision ${proposal.revision}, but its latest trial answered ${verdict}.`;
       return returned(brief, "partial", `${why}${lastTrial}`, spend, proposal);
     }
-    const ended = outcome.loop.ok ? "The builder completed without a proposal of its subflow." : stopReason(outcome.loop, spend.allowance);
+    const ended = outcome.loop.ok ? "The builder completed without a proposal of its subflow." : stopReason(brief, outcome.loop, spend.allowance);
     return returned(brief, proposal ? "partial" : "blocked", `${ended}${lastTrial}`, spend, proposal);
   },
 
@@ -119,7 +133,7 @@ export const automationStudioProjectDispatchEnding = Object.freeze({
       ? "The build was stopped before this brief finished."
       : refusal
         ? `This brief's allowance could not pay for its next call (${refusal.code}).`
-        : `The builder failed: ${errorWords(error)}${thrownEnding(error)}`;
+        : `The builder failed: ${errorWords(error)}${thrownEnding(error, brief)}`;
     // A standing yes for the latest accepted proposal is done, the throw said after it (header, t611): the same check as a returned loop's.
     const passed = passedProposal(spend.accepted, spend.trial);
     if (passed) return passedDone(brief, passed, why, spend);
@@ -130,7 +144,7 @@ export const automationStudioProjectDispatchEnding = Object.freeze({
   reset(brief: AutomationStudioProjectSubflowBrief, loop: AutomationStudioLlmEvidenceLoopResult, left: readonly AutomationStudioSiteResetNamedAct[], spend: AutomationStudioProjectDispatchSpend): AutomationStudioProjectBuilderReturn {
     if (loop.ok && !left.length) return returned(brief, "done", "Every lasting act this build made is undone; the site is as the build found it.", spend, undefined);
     const still = left.length ? ` ${left.length} act${left.length === 1 ? " is" : "s are"} still to undo: ${left.map((act) => `${act.act} (${act.did})`).join(", ")}.` : "";
-    const ended = loop.ok ? "The reset completed." : stopReason(loop, spend.allowance);
+    const ended = loop.ok ? "The reset completed." : stopReason(brief, loop, spend.allowance);
     return returned(brief, "blocked", `${ended}${still}`, spend, undefined);
   }
 });
@@ -155,20 +169,62 @@ function returned(
 }
 
 /** Why a loop ended without completing: its allowance, when that refused, otherwise its own code. */
-function stopReason(loop: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: false }>, allowance: AutomationStudioLlmBuildPurse | undefined): string {
+function stopReason(brief: AutomationStudioProjectSubflowBrief, loop: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: false }>, allowance: AutomationStudioLlmBuildPurse | undefined): string {
   const refusal = allowance?.refusal;
   if (refusal) return `This brief's allowance could not pay for its next call (${refusal.code}), so the builder stopped.`;
-  return `The builder stopped before completing (${loop.code}).${configurationSaid(loop.configuration)}${guardSaid(loop.exhaustion?.lastIssueCodes)}${callsSaid(loop.trace)}`;
+  return `The builder stopped before completing (${loop.code}).${configurationSaid(loop.configuration)}${stoppedOn(brief, loop.exhaustion?.lastIssueCodes, loop.trace)}`;
 }
 
 /** One answered call, as a loop's trace row or a stored failure's step holds it. */
 type AnsweredCall = { toolId?: string | undefined; decision?: string | undefined; nodeId?: string | undefined; resultCode?: string | undefined; resultReason?: string | undefined };
 
 /** What one of Core's own build failures says of the loop it ended, or nothing for any other throw (header). */
-function thrownEnding(error: unknown): string {
+function thrownEnding(error: unknown, brief: AutomationStudioProjectSubflowBrief): string {
   const diagnostic = parseAutomationStudioFlowBootstrapGenerationError(error);
   if (!diagnostic) return "";
-  return `${guardSaid(diagnostic.issueCodes)}${callsSaid(diagnostic.evidenceLoop?.steps ?? [])}`;
+  return stoppedOn(brief, diagnostic.issueCodes, diagnostic.evidenceLoop?.steps ?? []);
+}
+
+/** The last refused submission, as the stop's codes carry it (header, t630): its family, its issue codes, and the codes that carried it. */
+type LastRefused = { family: string; codes: string[]; carried: ReadonlySet<string> };
+
+/** A refusal code ending in the digest of its issues (`../../flow-bootstrap/candidate/submission-refusal.ts`). */
+const ISSUES_DIGEST = /:[0-9a-f]{8}$/u;
+/** The scope issue that says no step of the subflow reads an input the plan gives it (`../../flow-bootstrap/subflow-candidate/callable-target.ts`). */
+const INPUT_UNREAD = "subflow.input_unread";
+/** What the supervisor is told after an unread input: the plan's to change (header, t630). */
+const INPUT_UNREAD_ADVICE = " The plan gives this subflow a value no step of it reads: change the plan with project.amend_plan, so that it takes only values a step of it types or opens, or carry its parts in the subflow that reads that value.";
+
+/** The guard's codes, then the calls the loop stopped on, the last refused submission said by its issues where the codes carry them (header, t630). */
+function stoppedOn(brief: AutomationStudioProjectSubflowBrief, codes: readonly string[] | undefined, rows: readonly AnsweredCall[]): string {
+  const refused = lastRefused(codes ?? []);
+  const guard = guardSaid((codes ?? []).filter((code) => !refused?.carried.has(code)));
+  const calls = callsSaid(rows, refused ? (code) => refusedSaid(code, refused, brief) : undefined);
+  const advice = refused && calls.said && refused.codes.includes(INPUT_UNREAD) ? INPUT_UNREAD_ADVICE : "";
+  return `${guard}${calls.text}${advice}`;
+}
+
+/** The last refused submission the codes carry, or undefined when they carry none with a family and an issue. */
+function lastRefused(codes: readonly string[]): LastRefused | undefined {
+  const decoded = refusalCodes.decode(codes);
+  if (!decoded?.family || !SAYABLE.test(decoded.family)) return undefined;
+  const issues = [...new Set(decoded.issues.map((issue) => issue.code).filter((code) => SAYABLE.test(code)))];
+  if (!issues.length) return undefined;
+  return { family: decoded.family, codes: issues, carried: new Set(refusalCodes.encode(decoded)) };
+}
+
+/** A call's result code as said: the last refused submission's family and issues in place of its digest, or undefined for any other code. */
+function refusedSaid(code: string, refused: LastRefused, brief: AutomationStudioProjectSubflowBrief): string | undefined {
+  if (!ISSUES_DIGEST.test(code) || code.replace(ISSUES_DIGEST, "") !== refused.family) return undefined;
+  return `${refused.family} (${refused.codes.map((issue) => (issue === INPUT_UNREAD ? `${issue}: ${inputsSaid(brief)}` : issue)).join(", ")})`;
+}
+
+/** The brief's inputs by the names its interface gives them, the plan's port names Core checked. */
+function inputsSaid(brief: AutomationStudioProjectSubflowBrief): string {
+  const names = (brief.interface?.inputs ?? []).map((port) => port.id).filter((name) => SAYABLE.test(name));
+  if (!names.length) return "an input";
+  const quoted = names.map((name) => `"${name}"`).join(", ");
+  return names.length === 1 ? `input ${quoted}` : `one of the inputs ${quoted}`;
 }
 
 /** The check that refused the loop's configuration, its figures and its sentence (t584). */
@@ -190,24 +246,26 @@ function guardSaid(codes: readonly string[] | undefined): string {
  * said once with its count -- so "every call was refused not_at_start_location"
  * reads as such, beside the guard's own refusal of the repeat.
  */
-function callsSaid(rows: readonly AnsweredCall[]): string {
+function callsSaid(rows: readonly AnsweredCall[], codeSaid?: (code: string) => string | undefined): { text: string; said: boolean } {
   const answered = rows.filter((row) => row.resultCode !== undefined && SAYABLE.test(row.resultCode)).slice(-MAX_LAST_CALLS).reverse();
+  // Only the latest refused submission's run is the one the codes carry the issues of (header, t630).
+  const latest = codeSaid ? answered.find((row) => codeSaid(row.resultCode!) !== undefined)?.resultCode : undefined;
   const runs: Array<{ said: string; count: number }> = [];
   for (const row of answered) {
-    const said = callSaid(row);
+    const said = callSaid(row, latest !== undefined && row.resultCode === latest ? codeSaid!(latest) : undefined);
     const last = runs.at(-1);
     if (last?.said === said) last.count += 1;
     else runs.push({ said, count: 1 });
   }
-  if (!runs.length) return "";
-  return ` The calls it stopped on, latest first: ${runs.map((run) => (run.count > 1 ? `${run.said} (${run.count} in a row)` : run.said)).join("; ")}.`;
+  if (!runs.length) return { text: "", said: false };
+  return { text: ` The calls it stopped on, latest first: ${runs.map((run) => (run.count > 1 ? `${run.said} (${run.count} in a row)` : run.said)).join("; ")}.`, said: latest !== undefined };
 }
 
-function callSaid(row: AnsweredCall): string {
+function callSaid(row: AnsweredCall, code = row.resultCode): string {
   const tool = [row.toolId, row.decision].find((value): value is string => typeof value === "string" && SAYABLE.test(value)) ?? "a decision";
   const node = row.nodeId && SAYABLE.test(row.nodeId) ? ` on ${row.nodeId}` : "";
   const reason = row.resultReason && SAYABLE.test(row.resultReason) ? ` (${row.resultReason})` : "";
-  return `${tool}${node} answered ${row.resultCode}${reason}`;
+  return `${tool}${node} answered ${code}${reason}`;
 }
 
 /**

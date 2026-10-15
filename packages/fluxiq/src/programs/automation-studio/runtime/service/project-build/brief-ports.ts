@@ -5,12 +5,12 @@ import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConse
 import { observeAutomationStudioEvidenceLoop } from "../../activity/index.ts";
 import { automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapPersonNeeded, flowBootstrapEvidenceUnusableDecisionFailure, type AutomationStudioBootstrapAccounting, type AutomationStudioFlowBootstrapActionPermissions, type AutomationStudioFlowBootstrapPersonNeeded } from "../../flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY, AUTOMATION_STUDIO_SITE_RESET_WORDS, AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetCalls, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetTarget, type AutomationStudioSiteResetTrialReset } from "../../flow-bootstrap/site-reset/index.ts";
-import type { AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, type AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, AUTOMATION_STUDIO_NODE_WRITE_KEY, automationStudioFlowDraftReplayClearedCode, automationStudioHarnessOptionRegistry, automationStudioLlmNodeDescriptions, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceToolExecutionResult, type AutomationStudioLlmHarnessInput } from "../../llm/index.ts";
 import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectBriefPortFactory, AutomationStudioProjectBriefPortRequest } from "../../project-agents/index.ts";
 import { startAutomationStudioBuildRouting } from "../../route-state/index.ts";
-import { automationStudioCandidateStallCode } from "../candidate-failure/index.ts";
+import { automationStudioCandidateStallCode, automationStudioCandidateSubmissionRefusals } from "../candidate-failure/index.ts";
 import { automationStudioFlowBootstrapUnusableDecisions, type generateAutomationStudioFlowCandidateDraft } from "../flow-bootstrap-commands/index.ts";
 import type { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
 import type { AutomationStudioProjectBuildDecisions } from "./decisions.ts";
@@ -148,6 +148,16 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 //
 // The proposals a dependent builder's entry runs are the build's one registry,
 // the one its subflow trials record into (`./subflow-trials.ts`).
+//
+// **A stall names the submission it stalled on** (t630, A8 wave 7
+// `run-mv9dd0fk-8cd2e522`). A builder refused `subflow.input_unread` three
+// times came back "subflow.scope_refused:b54daa6d": the stall carried only the
+// repeat guard's code. Each brief now watches its own builder's
+// `core.submit_subflow` answers (`../candidate-failure/submission-refusals.ts`,
+// through the builder loop's `observe`), and a stall for no progress carries
+// the last refused one as `candidate.last_submission_*` codes, as a candidate
+// build's does, which the brief's return reads back as its issues and the input
+// (`project-agents/dispatch/ending.ts`).
 
 type DraftInput = Parameters<typeof generateAutomationStudioFlowCandidateDraft>[0];
 
@@ -181,9 +191,14 @@ export function automationStudioProjectBuildBriefPorts(input: {
   const { project, draft } = input;
   const { projectId, flowId, resolution, startLocation } = draft.submission;
   const { binding } = project;
-  const unusable = (maxIterations: number) => automationStudioFlowBootstrapUnusableDecisions({
+  // A stall for no progress carries the brief's last refused submission as codes, which its return reads back (t630, `project-agents/dispatch/ending.ts`).
+  const unusable = (maxIterations: number, submissions: ReturnType<typeof automationStudioCandidateSubmissionRefusals>) => automationStudioFlowBootstrapUnusableDecisions({
     maxConsecutiveUnusableDecisions: draft.maxConsecutiveUnusableDecisions, maxIterations, callerEnding: () => undefined,
-    stalled: (progress) => flowBootstrapEvidenceUnusableDecisionFailure(progress, input.accounting(), automationStudioCandidateStallCode(progress.issueCodes))
+    stalled: (progress) => {
+      const code = automationStudioCandidateStallCode(progress.issueCodes);
+      const refused = code === "flow_bootstrap.evidence_repeat_without_progress" ? submissions.codes(progress) : [];
+      return flowBootstrapEvidenceUnusableDecisionFailure({ ...progress, issueCodes: [...refused, ...progress.issueCodes] }, input.accounting(), code);
+    }
   });
   /** Where each act of the build was made, by act id: the page its read around it found (header). */
   const pages = new Map<string, string>();
@@ -204,8 +219,10 @@ export function automationStudioProjectBuildBriefPorts(input: {
     };
     const decide = (completionSchema: JsonObject | undefined) => input.decisions.decide({ runHarness, wrapDecision: routing.observing, completionSchema });
     const { purse: _purse, signal: _signal, budget: _budget, maxIterations: _maxIterations, tools: _tools, executeTool: _executeTool, nodeOf: _nodeOf, ...limits } = draft.loop;
-    const loop = { ...limits, tools: harness.tools, observedStateKeys: harness.observedStateKeys, executeTool: routing.recording(personNeeded.executeTool), nodeOf: nodeDescriptions.definition, unusableDecisions: unusable(request.brief.maxIterations), decide: decide(undefined) };
-    return { loop, permissions, decide, ended: briefEnding(permissions, personNeeded) };
+    // This brief's own submissions, watched where the builder loop answers them (`observe` below).
+    const submissions = automationStudioCandidateSubmissionRefusals(AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID);
+    const loop = { ...limits, tools: harness.tools, observedStateKeys: harness.observedStateKeys, executeTool: routing.recording(personNeeded.executeTool), nodeOf: nodeDescriptions.definition, unusableDecisions: unusable(request.brief.maxIterations, submissions), decide: decide(undefined) };
+    return { loop, permissions, decide, submissions, ended: briefEnding(permissions, personNeeded) };
   };
   const { proposals } = input;
   // The build's one start, which every brief takes before its first look (header).
@@ -242,7 +259,7 @@ export function automationStudioProjectBuildBriefPorts(input: {
       const absorbedActs = started.record.putBack?.map((act) => act.act);
       const loop = told({ ...placed, tools }, { start: started.told, entry: entryNote(request.scope.subflowKey, entry, absorbedActs), permittedActs: request.brief.permittedActs, arrived });
       // The domain's denied keys, which the dispatcher withholds from a repair's `yourSubflow` (`project-agents/dispatch/run-brief.ts`, t625).
-      return { loop, submission: { ...submission, permissionFor: built.permissions.planStep }, trial, reset, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...observed, decide: built.decide(observed.completionSchema) }), ended: built.ended, deniedEvidenceKeys: binding.deniedEvidenceKeys };
+      return { loop, submission: { ...submission, permissionFor: built.permissions.planStep }, trial, reset, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...built.submissions.observe(observed), decide: built.decide(observed.completionSchema) }), ended: built.ended, deniedEvidenceKeys: binding.deniedEvidenceKeys };
     },
     reset: async (request) => {
       // An undo aimed at another item is refused in a reset's words (header).

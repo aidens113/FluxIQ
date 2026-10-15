@@ -58,6 +58,9 @@ type Entry = { callId: string; toolId: string; value: unknown };
 const lastOf = (evidence: readonly Entry[], toolId: string) => [...evidence].reverse().find((entry) => entry.toolId === toolId)?.value as JsonObject | undefined;
 const decision = (decided: JsonObject) => ({ response: { kind: "evidence_tool_decision", summary: "Scripted", decision: decided }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.0001 } });
 
+/** Where the supervisor's latest evidence is kept beside the builders'. */
+const SUPERVISOR = "(supervisor)";
+
 /** The stub domain's own save, which a part that asks a lasting act runs (t598: a Core wait declaring one leaves nothing). */
 const SAVE = "domain.isolated.save";
 
@@ -128,6 +131,7 @@ async function build(input: {
     if (!tools.length) return decision({ kind: "tool_call", callId: "read", toolId: "none", input: {} });
     if (tools.includes("project.write_plan")) {
       supervisorDecisions += 1;
+      latestSeen[SUPERVISOR] = evidence.map((entry) => structuredClone(entry));
       if (supervisorDecisions === 1) return decision({ kind: "tool_call", callId: "plan", toolId: "project.write_plan", input: input.plan });
       if (supervisorDecisions === 2) return decision({ kind: "tool_call", callId: "dispatch", toolId: "project.dispatch", input: { reason: "Build each subflow the plan needs.", briefs: input.briefs } });
       return decision({ kind: "complete", result: { ended: "partial", reason: "Only the briefs were under test." } });
@@ -322,5 +326,41 @@ describe("a brief whose parts ask for no lasting act", () => {
     expect(result("remove")).not.toHaveProperty("outsideBrief");
     expect(result("rename")).toMatchObject({ ok: true, renamed: true, outsideBrief: { consequences: ["modify_existing"] } });
     expect((result("rename")!.outsideBrief as JsonObject).note).toContain("they ask for no lasting act");
+  });
+});
+
+// A8 wave 7 `run-mv9dd0fk-8cd2e522` (t630): a builder given an input none of its steps could use was refused
+// `subflow.input_unread` three times and stopped; its return said "subflow.scope_refused:b54daa6d" and nothing more.
+describe("a brief whose builder never reads the input the plan gives it", () => {
+  it("comes back blocked naming the refused submission's issue and the input, with the plan's advice", async () => {
+    const plan = {
+      taskSpec: { parts: [{ id: "p1", quote: { sourceId: "instruction.build", text: TASK }, goalFacts: ["The Flow runs from its start to its end"], lastingActs: [] }], notAsked: [] },
+      subflows: [{ key: "second", name: "second", parts: ["p1"], inputs: ["titles"] }]
+    };
+    const run = await build({
+      plan,
+      briefs: [{ kind: "build", subflowKey: "second", parts: ["p1"], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.01, maxIterations: 8 }],
+      tools: [{ toolId: "look", description: "Look at the page", inputSchema: { type: "object" }, effect: "observe" }],
+      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { seen: true }, effectApplied: false, targetsUnchanged: true }),
+      // Each submission declares the input and reads it nowhere, a little different each time, as the live builder's were.
+      builderFirst: (_subflowKey, evidence) => {
+        const sent = evidence.filter((entry) => entry.toolId === "core.submit_subflow").length;
+        const flow = ["flow: second", "part second: carry out its part", "  input: titles", "  step pause: wait briefly", "    node: builtin.timing.wait", `    duration: ${sent + 1}`, "    unit: milliseconds", "end"].join("\n");
+        return { kind: "tool_call", callId: `submit-${sent + 1}`, toolId: "core.submit_subflow", input: { flow } };
+      }
+    });
+    await run.run().catch(() => undefined);
+
+    const refusals = (run.latestSeen.second ?? []).filter((entry) => entry.toolId === "core.submit_subflow").map((entry) => entry.value as JsonObject);
+    expect(refusals.length).toBeGreaterThanOrEqual(2);
+    for (const refused of refusals) expect(refused).toMatchObject({ ok: false, issueCodes: ["subflow.input_unread"] });
+    const dispatched = lastOf(run.latestSeen[SUPERVISOR] ?? [], "project.dispatch");
+    const returned = (dispatched?.returns as JsonObject[] | undefined)?.[0];
+    expect(returned, JSON.stringify(dispatched)).toMatchObject({ subflowKey: "second", outcome: "blocked" });
+    const reason = String(returned!.reason);
+    expect(reason).toContain("core.submit_subflow answered subflow.scope_refused (subflow.input_unread: input \"titles\") (3 in a row)");
+    expect(reason).toContain("The plan gives this subflow a value no step of it reads: change the plan with project.amend_plan");
+    expect(reason).not.toMatch(/subflow\.scope_refused:[0-9a-f]{8}/u);
+    expect(reason).not.toContain("candidate.last_submission");
   });
 });

@@ -7,10 +7,30 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE, AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
 import { planInput, subflow, taskSpecInput } from "./supervisor-fixture.ts";
-import { FIND, HOLD, NOTE, call, complete, dispatch, lastOf, reset, supervise, test } from "./supervisor-script.ts";
+import { FIND, HOLD, NOTE, call, complete, dispatch, end, lastOf, reset, supervise, test } from "./supervisor-script.ts";
 
 /** A build brief with no entry: Core fills in the observed current page and the plan's `after`. */
 const build = (subflowKey: string, parts: string[], extra: JsonObject = {}): JsonObject => ({ kind: "build", subflowKey, parts, allowanceUsd: 0.05, maxIterations: 20, ...extra });
+
+// t630: every warning code but the constraint one was answered with the unused value's words, so a plan warned that a
+// subflow only reshapes another's rows would have been told to remove the Flow's answer.
+describe("a written plan's warnings", () => {
+  it("each say what to do in their own code's words", async () => {
+    const plan = planInput([
+      subflow("find_titles", ["p1"], { outputs: ["titles", "branch"] }),
+      subflow("shape_titles", ["p3"], { inputs: ["titles"], outputs: ["rows"], after: ["find_titles"] }),
+      subflow("note_hold", ["p2"], { inputs: ["titles"], after: ["find_titles"] })
+    ], taskSpecInput([["p1", FIND, []], ["p2", HOLD, []], ["p3", NOTE, []]]));
+    const run = await supervise([call(IDS.writePlan, plan), end("blocked")]);
+    const warnings = lastOf(run.seen, IDS.writePlan)!.warnings as JsonObject[];
+    const words: Readonly<Record<string, string>> = GUIDANCE.planIssues;
+    expect(warnings.map((warning) => [warning.code, warning.path])).toEqual([
+      ["project.plan_value_unused", "subflows.0.outputs.1"], ["project.plan_subflow_reshape_only", "subflows.1"], ["project.plan_subflow_constraint", "subflows.2"]
+    ]);
+    for (const warning of warnings) expect(warning.instruction, String(warning.code)).toBe(words[String(warning.code)]);
+    expect(new Set(warnings.map((warning) => warning.instruction)).size).toBe(3);
+  });
+});
 
 describe("the supervisor plans in its planning format", () => {
   it("one part: one router-run subflow, a brief with no entry, assembled, tested and completed", async () => {
