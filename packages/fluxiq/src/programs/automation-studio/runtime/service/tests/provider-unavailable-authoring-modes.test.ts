@@ -79,7 +79,7 @@ const SILENT_ENDING: Readonly<Record<Mode, string>> = {
   candidate: "The build stopped because the AI model provider did not answer: 3 requests in a row got no answer -- it did not answer before the time allowed for each request ran out. "
     + "Nothing was built: no Flow was created or changed, and nothing on the page was changed. What the Flow should do is kept, so you can try again later, once the provider is answering.",
   project: "The build stopped because the AI model provider did not answer: 3 requests in a row got no answer -- it did not answer before the time allowed for each request ran out. "
-    + "Nothing was built: no Flow was created or changed. What the Flow should do is kept, so you can try again later, once the provider is answering. Nothing this build did is still on the target."
+    + "Nothing was built: no Flow was created or changed. Nothing this build did is still on the target. What the Flow should do is kept, so you can try again later, once the provider is answering."
 };
 
 describe.each<Mode>(["candidate", "project"])("a %s build whose model provider answers nothing", (mode) => {
@@ -94,7 +94,7 @@ describe.each<Mode>(["candidate", "project"])("a %s build whose model provider a
     expect(diagnostic.retryable).toBe(true);
     expect(diagnostic.issueCodes).toEqual(["llm.provider_timeout"]);
     expect(diagnostic.ending).toMatchObject({ kind: "provider_unavailable", notDone: [], tried: { rounds: 1, decisions: 3, tested: "not_tested" } });
-    // The whole ending, pinned per mode: the candidate's own loop says the page; the project build says what its builders left, here nothing.
+    // The whole ending, pinned per mode: the candidate's own loop says the page; the project build says what its builders left, here nothing, before the advice (t621).
     const message = diagnostic.ending!.message;
     expect(message).toBe(SILENT_ENDING[mode]);
     // Every call failed before anything arrived, and the diagnostic says so (t619).

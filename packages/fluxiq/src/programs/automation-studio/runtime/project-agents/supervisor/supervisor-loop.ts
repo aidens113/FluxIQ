@@ -70,10 +70,23 @@
 // made, the run ends `candidate` on that test, not as an ending: the person is
 // told the Flow relies on the run's own recovery and why (`./completion.ts`),
 // and the outcome carries it (`reliesOnRecovery`).
+//
+// **A provider that stopped answering is not asked to reset (t621).** A8
+// canary `run-mv8zw5l2-98064abf`: the model provider answered none of the
+// supervisor's decisions, and the loop ended
+// `llm_evidence_loop.provider_unavailable`. Core's reset brief is a builder
+// run on that same provider, so it could only wait out more deadlines and
+// undo nothing. A loop the provider stopped sends no reset: its ending names,
+// in Core's words, every act of this build still on the target, so the person
+// knows what to take back. Every other ending a guard forced still resets
+// first. Its record reason says the provider stopped answering, under the code
+// the person's ending carries (`flow_bootstrap.provider_unavailable`), never
+// "the supervisor stopped".
 import { AutomationStudioFlowCandidateSubmissionController, AutomationStudioFlowCandidateTrialGate, type AutomationStudioCandidateTrialResult, type AutomationStudioFlowCandidate } from "../../flow-bootstrap/candidate/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError } from "../../flow-bootstrap/generation-failure/index.ts";
 import { automationStudioLlmBuildPurseRun, AutomationStudioLlmBuildPurseRefused } from "../../llm/build-purse/index.ts";
 import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceLoopResult } from "../../llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceLoopProviderUnavailable } from "../../llm/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_MS, AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS } from "../../loop-limits/index.ts";
 import { withAutomationStudioProjectAgent } from "../attribution/index.ts";
 import type { AutomationStudioProjectBuildEnding } from "../record/index.ts";
@@ -248,6 +261,8 @@ async function supervise(input: SupervisorInput, clock: Clock): Promise<Automati
   if (shortfall && !signal?.aborted && automationStudioProjectSupervisorReliesOnRecovery(context, shortfall)) return done("candidate");
   const stoppedBy = loop && !loop.ok ? loop.code : stalled ? stalled.issueCodes[0] ?? "stalled" : undefined;
   const cancelled = !timedOut && (signal?.aborted === true || stoppedBy === "llm_evidence_loop.cancelled");
+  // The provider stopped answering (header, t621): said as that, and no reset is asked of it.
+  const unanswered = !timedOut && !cancelled && loop && !loop.ok && loop.code === PROVIDER_STOPPED ? loop : undefined;
   const finished: AutomationStudioProjectSupervisorEnded | { outcome: "cancelled" | "partial" | "blocked"; reason: string } = outOfMoney
     ? { outcome: state.anyDone() ? "partial" : "blocked", reason: "The Flow's spending limit could not pay for the supervisor's next call, so the build stopped before a whole trial passed." }
     : loop?.ok && ended
@@ -256,14 +271,40 @@ async function supervise(input: SupervisorInput, clock: Clock): Promise<Automati
         ? { outcome: state.anyDone() ? "partial" : "blocked", reason: `The build reached its time limit of ${spoken(clock.limit.maxMs)} before a whole trial passed.` }
         : cancelled
           ? { outcome: "cancelled", reason: "The build was cancelled." }
-          : { outcome: state.anyDone() ? "partial" : "blocked", reason: `The supervisor stopped before a whole trial passed (${stoppedBy ?? "unknown"}).` };
+          : unanswered
+            ? { outcome: state.anyDone() ? "partial" : "blocked", reason: providerStoppedReason(unanswered.providerUnavailable, automationStudioProjectSupervisorLeftOnTarget(ports).undoable) }
+            : { outcome: state.anyDone() ? "partial" : "blocked", reason: `The supervisor stopped before a whole trial passed (${stoppedBy ?? "unknown"}).` };
   // A guard or the time limit stopped the loop: the target is put back, where a reset brief still can and inside the bound, before the ending names what is left (header).
-  if (!outOfMoney && !cancelled && finished !== ended && !personEnded(stalled?.error)) await resetBeforeEnding({ ...context, signal: ending }, () => outOfTime(ending));
+  // A provider that stopped answering is not asked to (header, t621): its ending names what is left instead.
+  if (!outOfMoney && !cancelled && !unanswered && finished !== ended && !personEnded(stalled?.error)) await resetBeforeEnding({ ...context, signal: ending }, () => outOfTime(ending));
   // An ending the model gave already names what is left (`./completion.ts`); every other ending Core names it in here.
   const named = finished === ended ? finished : { ...finished, reason: automationStudioProjectSupervisorLeftOnTarget(ports).reason(finished.reason) };
   const recorded = await ports.record.end(ports.build, named);
   if (stalled) throw stalled.error;
   return done("ended", recorded);
+}
+
+/** The loop code a model provider that stopped answering ends with (`../../llm/unanswered-calls.ts`). */
+const PROVIDER_STOPPED = "llm_evidence_loop.provider_unavailable";
+/** The code the person's ending for it carries (`../../flow-bootstrap/generation-failure/evidence-failure.ts`, t619), which the record names too. */
+const PROVIDER_ENDING_CODE = "flow_bootstrap.provider_unavailable";
+/** The provider code said as "could not be reached", as the person's ending says it. */
+const UNREACHABLE = "llm.provider_network_error";
+
+/**
+ * The record's reason for a loop the provider stopped answering (header,
+ * t621), in the words the person's ending uses: what the provider did, how
+ * many requests went unanswered, and, where a reset could have undone acts of
+ * this build, that none was sent. Core's note of what is left follows it.
+ */
+function providerStoppedReason(summary: AutomationStudioLlmEvidenceLoopProviderUnavailable | undefined, undoable: boolean): string {
+  const inARow = summary?.inARow ?? 1;
+  const requests = inARow === 1 ? "a request" : `${inARow} requests in a row`;
+  const happened = summary?.codes[0] === UNREACHABLE
+    ? `The build stopped because the AI model provider could not be reached: ${requests} got no answer`
+    : `The build stopped because the AI model provider did not answer: ${requests} got no answer -- ${summary?.said ?? "it did not answer"}`;
+  const reset = undoable ? " No reset was sent to put the target back: it would need the same provider." : "";
+  return `${happened}, before a whole trial passed (${PROVIDER_ENDING_CODE}).${reset}`;
 }
 
 /** A time limit in words: whole minutes where it is some, else seconds. */
