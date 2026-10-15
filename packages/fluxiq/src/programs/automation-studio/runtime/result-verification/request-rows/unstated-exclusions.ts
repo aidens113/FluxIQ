@@ -19,6 +19,16 @@
 // the same request is not. An exclusion made only of the words the request
 // searched by has no words of its own, so it is not marked: whether it leaves
 // out anything the request asks for is the left-out rows' to show.
+//
+// **Nor one the Flow already applies (t624).** A8 bigbox `run-mv96rz68-532f5e52`
+// step 0029: "Keep ... condition 4 (name not contains Holder)" was read as
+// adding "not contains Holder", and the call was asked again over advice that
+// changes nothing. An exclusion whose own words are exactly those of a text a
+// condition of the judged result already leaves rows out by
+// (`applied-exclusions.ts`) is not marked: keeping it, or adding it again,
+// leaves out nothing more. One that names less or more is still marked.
+// Whether that condition is the request's is what its own left-out rows are
+// held to.
 
 import type { AutomationStudioRequestWording } from "./request-wording.ts";
 
@@ -56,10 +66,10 @@ export function automationStudioRequestUnstatedExclusions(advice: string | undef
   return [...new Set(found)];
 }
 
-/** Whether an exclusion's words have words of their own and none of them is the request's. */
+/** Whether an exclusion's words have words of their own, none of them is the request's, and no condition the result applies already leaves out by them (header). */
 function unstated(target: string, wording: AutomationStudioRequestWording): boolean {
   const own = wording.ownWords(target);
-  return own.length > 0 && !own.some((word) => wording.has(word));
+  return own.length > 0 && !own.some((word) => wording.has(word)) && !wording.applied(target);
 }
 
 /** The clause's words after `from`, at most `MOST_WORDS`, as the advice wrote them. */

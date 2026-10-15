@@ -1,5 +1,5 @@
-// The rows a numeric bound, or a presence test, left out that Core itself
-// settles (t574, t599).
+// The rows a numeric bound, a presence test, or a text test left out that
+// Core itself settles (t574, t599, t624).
 //
 // **Why.** A yes over any row a condition alone left out has to quote, beside
 // that row, the request's words excluding it (`../request-rows/unquoted-rows.ts`,
@@ -32,17 +32,30 @@
 //   says `absent` where the condition keeps only rows with the value, or
 //   `present` where it keeps only rows without it. A witness that could not
 //   read the value (`unavailable`, `withheld`), or no witness, settles nothing.
+// - **A text test (t624)** (`contains`, `startsWith`, `endsWith`, `matches`, or
+//   an `equals` of text only, possibly negated, with no bound and no presence
+//   test beside it): the row whose aligned witness found the value (`present`)
+//   and whose value, so read, fails the condition by Core's own semantics.
+//   A8 bigbox `run-mv96rz6d-745e2940` stored the exact answer at step 0051 and
+//   three times more; every yes was held because a text condition alone left
+//   out nine rows, each witnessed with the value it failed on, and no judge
+//   named all nine labels, which shared long prefixes, beside a quote.
 //
 // A row whose value states no number, is withheld or empty, a row with no such
-// witness, or a row of a text condition is not settled, and is still quoted
-// for row by row.
+// witness, a text test's row whose witness found no value or a value that
+// passes it, or a row of a condition mixing a text test with a bound, is not
+// settled, and is still quoted for row by row.
 //
 // **What a yes must still show.** That the condition is the request's: Core
 // read the row against the condition as authored, not against the request. So
 // the sentence says a yes quotes, once, in a sentence naming the condition, the
 // request's words stating that bound -- or, for a presence test, asking for
-// rows with (or without) that value -- and `../request-rows/unquoted-rows.ts`
-// holds it to that; it need not quote beside each settled row.
+// rows with (or without) that value; for a text test, asking for rows whose
+// value says (or does not say) what the condition looks for -- and
+// `../request-rows/unquoted-rows.ts` holds it to that; it need not quote
+// beside each settled row. A text test can encode the request wrongly; the
+// one quote, and each row's tested value shown beside it, are what guard that,
+// as for a bound.
 
 import { automationStudioRecordConditionHolds, readAutomationStudioRecordNumber, type AutomationStudioRecordCondition } from "@fluxiq/contracts/automation-studio";
 import { automationStudioResultConditionName } from "../read-account/index.ts";
@@ -59,9 +72,10 @@ type LeftOutRow = { row: string; cell: AutomationStudioResultReadCell | undefine
 
 /**
  * The left-out rows Core settles for this condition, as given, and its
- * sentence (header); nothing when the condition is neither a numeric bound nor
- * a presence test, or no row is settled. `column` is the column the condition
- * tests, where one is known: a numeric bound settles nothing without it.
+ * sentence (header); nothing when the condition is not a numeric bound, a
+ * presence test or a text test, or no row is settled. `column` is the column
+ * the condition tests, where one is known: a numeric bound settles nothing
+ * without it.
  */
 export function automationStudioResultSettledRows(input: {
   condition: AutomationStudioRecordCondition;
@@ -88,6 +102,7 @@ export function automationStudioResultSettledRows(input: {
         + `It must still show the condition is the request's: quote, once, in a sentence that names ${named}, the request's own words asking for ${asks}. If the request asks no such thing, these rows are ones it asks for.`
     };
   }
+  if (textOnly(condition)) return textSettled(input, name, named);
   if (column === undefined || !numericOnly(condition)) return undefined;
   const settled = input.leftOut.filter(({ cell }) => cell !== undefined && readAutomationStudioRecordNumber(cell.value) !== undefined && !automationStudioRecordConditionHolds(condition, cell.value));
   if (!settled.length) return undefined;
@@ -96,6 +111,31 @@ export function automationStudioResultSettledRows(input: {
     settled: `Core read ${column} as a number on each row in leftOutSettled, and each fails ${name} as written: Core settled these rows, so a yes need not quote the request beside each of them. `
       + `It must still show the bound is the request's: quote, once, in a sentence that names ${named}, the request's own words stating that bound. If the request states no such bound, these rows are ones it asks for.`
   };
+}
+
+/**
+ * A text test's settled rows (header): each whose witness found the value and
+ * whose value, as found, fails the condition as written. Its sentence names the
+ * value by its column where one is known.
+ */
+function textSettled(input: { condition: AutomationStudioRecordCondition; column: string | undefined; leftOut: readonly LeftOutRow[] }, name: string, named: string): { leftOutSettled: string[]; settled: string } | undefined {
+  const settled = input.leftOut.filter(({ witness }) => witness?.state === "present" && !automationStudioRecordConditionHolds(input.condition, witness.value));
+  if (!settled.length) return undefined;
+  const value = input.column ?? "the value it tests";
+  const asks = input.condition.not === true ? "leaving out rows whose" : "asking only for rows whose";
+  return {
+    leftOutSettled: settled.map(({ row }) => row),
+    settled: `On each row in leftOutSettled the read found ${value}, as that row's witness in leftOutObservations gives it, and Core tested that value against ${name} as written: each fails it, so Core settled these rows, and a yes need not quote the request beside each of them. `
+      + `It must still show the condition is the request's: quote, once, in a sentence that names ${named}, the request's own words ${asks} ${value} says what the condition looks for. If the request asks no such thing, these rows are ones it asks for.`
+  };
+}
+
+/** Whether the condition compares text and nothing else: a text relation, or an `equals` of text only, with no bound and no presence test. */
+function textOnly(condition: AutomationStudioRecordCondition): boolean {
+  if (BOUNDS.some((key) => condition[key] !== undefined) || condition.is !== undefined) return false;
+  const equals = condition.equals === undefined ? [] : Array.isArray(condition.equals) ? condition.equals : [condition.equals];
+  if (equals.some((entry) => typeof entry !== "string")) return false;
+  return equals.length > 0 || TEXTS.some((key) => condition[key] !== undefined);
 }
 
 /** Whether the condition compares a number and nothing else: a bound or a numeric `equals`, no text test and no presence test. */

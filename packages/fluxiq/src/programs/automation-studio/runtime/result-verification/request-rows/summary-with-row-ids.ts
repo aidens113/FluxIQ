@@ -5,7 +5,9 @@
 // not settle (`leftOutSettled`, `../value-readings/settled-rows.ts`), and each
 // record set's processing condition's: the rows a yes names one by one
 // (`unquoted-rows.ts`, `unaccounted-rows.ts`). A settled row needs no naming,
-// and a withheld label is no row's own, so neither is given one.
+// nor does a row whose item is also in the result (`leftOutAlsoInResult`,
+// `summary-with-also-in-result.ts`, t624, made first on the copy), and a withheld
+// label is no row's own, so none of them is given one.
 //
 // **The judge's copy only.** The summary given is never changed, and the
 // checks of a reply read the summary without ids: the id is the label's own
@@ -35,7 +37,7 @@ export function automationStudioResultSummaryWithRowIds(summary: AutomationStudi
   };
   const reads = summary.reads?.map((read): AutomationStudioResultReadAccount => !read.conditions?.some((entry) => entry.leftOutOnlyByThis?.length) ? read : {
     ...read,
-    conditions: read.conditions.map((entry) => entry.leftOutOnlyByThis?.length ? { ...entry, leftOutOnlyByThis: said(entry.leftOutOnlyByThis, entry.leftOutSettled) } : entry)
+    conditions: read.conditions.map((entry) => entry.leftOutOnlyByThis?.length ? { ...entry, leftOutOnlyByThis: said(entry.leftOutOnlyByThis, [...(entry.leftOutSettled ?? []), ...(entry.leftOutAlsoInResult ?? [])]) } : entry)
   });
   const recordSets = summary.recordSets.map((set): AutomationStudioResultRecordSetSummary => !set.processing?.conditions?.some((entry) => entry.leftOutOnlyByThis?.length) ? set : {
     ...set,

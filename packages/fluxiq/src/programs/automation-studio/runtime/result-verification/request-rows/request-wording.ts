@@ -22,6 +22,7 @@
 
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import type { AutomationStudioRunResultSummary } from "../contracts.ts";
+import { automationStudioRequestAppliedExclusions } from "./applied-exclusions.ts";
 import { automationStudioRequestPhrases } from "./request-phrases.ts";
 import { automationStudioRequestRowsReads } from "./summary-reads.ts";
 import { automationStudioRequestRowWordCarries, automationStudioRequestRowWords } from "./words.ts";
@@ -39,6 +40,13 @@ export type AutomationStudioRequestWording = {
   ownWords(text: string): string[];
   /** Whether a word, as compared, is one the request says. */
   has(word: string): boolean;
+  /**
+   * Whether an exclusion's own words (`ownWords`) are exactly those of one
+   * text a condition of the judged result already leaves rows out by
+   * (`applied-exclusions.ts`, t624): it names what the Flow already leaves
+   * out. False for a text with no words of its own.
+   */
+  applied(text: string): boolean;
 };
 
 /**
@@ -64,10 +72,12 @@ export function automationStudioRequestWording(
   if (!words.some(automationStudioRequestRowWordCarries)) return undefined;
   const said = new Set(words);
   const searched = searchedWords(requestText, summary);
+  const ownWords = (text: string): string[] => wordsOf(text).filter((word) => automationStudioRequestRowWordCarries(word) && !LIST_WORDS.has(word) && !searched.has(word));
   return {
     says: (text) => runs(words, wordsOf(text)),
-    ownWords: (text) => wordsOf(text).filter((word) => automationStudioRequestRowWordCarries(word) && !LIST_WORDS.has(word) && !searched.has(word)),
-    has: (word) => said.has(word)
+    ownWords,
+    has: (word) => said.has(word),
+    applied: automationStudioRequestAppliedExclusions(summary, ownWords)
   };
 }
 

@@ -16,7 +16,11 @@
 // words (`unquoted-rows.ts`), and the exclusions an advice adds that the
 // request never states (`unstated-exclusions.ts`). And Core's short id for a
 // row (`row-id.ts`, t599), said on the judge's copy before each left-out row a
-// judge must still name (`summary-with-row-ids.ts`).
+// judge must still name (`summary-with-row-ids.ts`). And, on that copy, the
+// left-out rows whose item is also in the result (`summary-with-also-in-result.ts`,
+// t624); and the exclusions the result's conditions already apply, which an
+// advice to keep them does not add (`applied-exclusions.ts`, t624).
+export * from "./applied-exclusions.ts";
 export * from "./checked-rows.ts";
 export * from "./checked-rows-named.ts";
 export * from "./left-out-naming-the-item.ts";
@@ -29,6 +33,7 @@ export * from "./row-id.ts";
 export * from "./row-values.ts";
 export * from "./row-naming.ts";
 export * from "./summary-reads.ts";
+export * from "./summary-with-also-in-result.ts";
 export * from "./summary-with-left-out-naming-the-item.ts";
 export * from "./summary-with-row-ids.ts";
 export * from "./types.ts";
