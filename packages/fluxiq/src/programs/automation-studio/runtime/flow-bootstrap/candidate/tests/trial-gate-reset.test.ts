@@ -232,6 +232,45 @@ describe("candidate trial gate: the site is put back first", () => {
     expect(asked[0]!.startedWith).toBeUndefined();
   });
 
+  // t609: the gate copied a trial's acts field by field and dropped `spot` and `created`, so in candidate mode an undo
+  // of what a trial left was refused `candidate.undo_wrong_target` on a site with no start hook. A library's reading list.
+  it("carries where a trial's act sat and what it made to the reset, which undoes it on its own item with no start hook (t609)", async () => {
+    const latest = { revision: 1, digest: "d1", baseDependencyDigest: "b", status: "draft", summary: "s", buildPlan: {}, changedPaths: [] } as unknown as AutomationStudioFlowCandidate;
+    const ledger = new AutomationStudioSiteResetLedger();
+    const back = async () => ({ moved: true, differs: [] });
+    const asked: AutomationStudioCandidateTrialRequest[] = [];
+    const port = portOf(asked, [
+      { step: 2, definitionId: "domain.library.add", label: "Add the novel", consequences: ["create_new"], spot: { item: "i:card-novel", dialog: "not a token!" }, created: ["i:line-novel", "i:line-novel"] },
+      // One malformed created entry drops the whole list, never the act or its spot.
+      { step: 3, definitionId: "domain.library.add", label: "Add the atlas", consequences: ["create_new"], spot: { item: "i:card-atlas" }, created: ["i:line-atlas", "<b>atlas</b>"] }
+    ]);
+    const gate = new AutomationStudioFlowCandidateTrialGate({ latest: () => latest, trial: { candidateId: "c", port }, reset: {
+      beforeTrial: (_signal, cannotUndo, options) => ledger.beforeTrial(back, cannotUndo, options),
+      trialRan: (acts, trialRunId) => ledger.trialRan(acts, trialRunId)
+    } });
+    const first = await gate.test({ revision: 1, digest: "d1" });
+    expect(first.evidence).toMatchObject({ verdict: "unsure", leftOnSite: [{ act: "act-1", did: "trial step 2 \"Add the novel\"" }, { act: "act-2", did: "trial step 3 \"Add the atlas\"" }] });
+    expect(gate.standing(latest)?.acts).toEqual([
+      { step: 2, definitionId: "domain.library.add", label: "Add the novel", consequences: ["create_new"], spot: { item: "i:card-novel" }, created: ["i:line-novel"] },
+      { step: 3, definitionId: "domain.library.add", label: "Add the atlas", consequences: ["create_new"], spot: { item: "i:card-atlas" } }
+    ]);
+    // No hook took them back: the next test is refused until both are undone.
+    expect((await gate.test({ revision: 1, digest: "d1" })).evidence).toMatchObject({ code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-1" }, { act: "act-2" }] });
+    // The novel's line, which the trial's step made, is removed unasked; the atlas is put back on its own card.
+    const aim = (consequences: Array<"delete" | "modify_existing">, item: string) => ({ effect: "mutate" as const, consequences, control: { item } });
+    expect(ledger.claim("act-1")).toEqual({ kind: "undo", undo: { act: "act-1", allowed: [] } });
+    expect(ledger.target("act-1", aim(["delete"], "i:line-novel"))).toEqual({ kind: "admit", on: "created", allowed: ["delete"] });
+    ledger.explored({ callId: "undo.novel", toolId: "core.run_node", landed: true, undoes: "act-1", on: "created", declared: { permitted: true, effect: "mutate", consequences: ["delete"], control: { name: "Remove", kind: "button", item: "i:line-novel" }, verb: "press" } });
+    ledger.undoSeen("act-1", true);
+    expect(ledger.target("act-2", aim(["modify_existing"], "i:card-atlas"))).toEqual({ kind: "admit", on: "own", allowed: [] });
+    ledger.explored({ callId: "undo.atlas", toolId: "core.run_node", landed: true, undoes: "act-2", on: "own", declared: { permitted: true, effect: "mutate", consequences: ["modify_existing"], control: { name: "Saved", kind: "button", item: "i:card-atlas" }, verb: "press" } });
+    ledger.undoSeen("act-2", true);
+    const again = await gate.test({ revision: 1, digest: "d1" });
+    expect(again.evidence).toMatchObject({ verdict: "unsure", trialRunId: "trial.2" });
+    expect((again.evidence as JsonObject).startedWith).toBeUndefined();
+    expect(asked).toHaveLength(2);
+  });
+
   it("refuses a test whose cannotUndo is not a list of act ids", async () => {
     const latest = { revision: 1, digest: "d1", baseDependencyDigest: "b", status: "draft", summary: "s", buildPlan: {}, changedPaths: [] } as unknown as AutomationStudioFlowCandidate;
     const gate = new AutomationStudioFlowCandidateTrialGate({ latest: () => latest, trial: { candidateId: "c", port: portOf([]) } });

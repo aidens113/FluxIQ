@@ -67,6 +67,16 @@
 // (`project-agents/contracts/asked-acts.ts`), so only that some act is
 // declared is asked.
 //
+// **A step that can make no lasting act declares none (t609).** A step of one
+// of Core's own nodes that acts on nothing outside the run -- a wait, a branch,
+// a variable, whose `automationStudioNodeSideEffectClass` is `none` -- leaves
+// nothing on the site whatever it declares, and a trial records no act for it
+// (`../../service/candidate-trial/landed-acts.ts`, t598). So its `consequences`
+// count toward neither rule above: a subflow whose only declared act sits on a
+// wait is refused `subflow.lasting_act_missing`, as one declaring none is. A
+// Core node that does reach outside (a recorded action, a database write)
+// counts, as a domain step does.
+//
 // **An output hands on a value, never a step's route (t594).** On the same run
 // a first builder bound its interface output to a click's success port
 // (`$step.<label>.success`): a routing signal, which says only that the step
@@ -83,7 +93,9 @@ import {
   type AutomationStudioFlowCandidateSubmission,
   type AutomationStudioFlowCandidateSubmissionHistory
 } from "../candidate/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS, type AutomationStudioFlowBootstrapInterface, type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSubflow } from "../plan/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS, type AutomationStudioFlowBootstrapInterface, type AutomationStudioFlowBootstrapNode, type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSubflow } from "../plan/index.ts";
+import { automationStudioNodeSideEffectClass } from "../../executor/index.ts";
+import type { AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowScopeIdentity, AutomationStudioSubflowTrialResult } from "./contracts.ts";
 import { automationStudioSubflowCallableProbe } from "./callable-target.ts";
 import { automationStudioSubflowRouteOutputs } from "./route-outputs.ts";
@@ -311,9 +323,22 @@ function replaced(value: JsonValue, from: string, to: string): JsonValue {
   return value;
 }
 
-/** The lasting consequences these subflows' steps declare, in order: a step's `consequences` naming any (`[]` and none say nothing lasting). */
+/**
+ * The lasting consequences these subflows' steps declare, in order: a step's `consequences` naming any (`[]` and none say
+ * nothing lasting), on a step that can make a lasting act at all -- never one of Core's own that acts on nothing outside the run (header, t609).
+ */
 function lastingOf(subflows: readonly AutomationStudioFlowBootstrapSubflow[]): string[] {
-  return [...new Set(subflows.flatMap((subflow) => subflow.nodes.flatMap((node) => node.consequences ?? [])))];
+  return [...new Set(subflows.flatMap((subflow) => subflow.nodes.flatMap((node) => canLast(node) ? node.consequences ?? [] : [])))];
+}
+
+/** Core's own nodes; those whose side-effect class is `none` act on nothing outside the run (header). */
+const CORE_NODE_PREFIX = "builtin.";
+
+/** Whether the step's node could leave anything on the site: a domain step, or a Core node that reaches outside the run (header). */
+function canLast(node: AutomationStudioFlowBootstrapNode): boolean {
+  if (!node.definitionId.startsWith(CORE_NODE_PREFIX)) return true;
+  const flowNode: AutomationStudioFlowNode = { id: node.key, definitionId: node.definitionId, definitionVersion: node.definitionVersion, parameterValues: node.parameters ?? {} };
+  return automationStudioNodeSideEffectClass(flowNode) !== "none";
 }
 
 /** A partial verdict as the unchanged-submission rule reads a trial: the probe's revision and digest, the verdict and its feedback. */
