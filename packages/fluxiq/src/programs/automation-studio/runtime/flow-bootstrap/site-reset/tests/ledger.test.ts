@@ -177,9 +177,9 @@ describe("site reset ledger", () => {
     };
     // Every act the hook took back is answered, kept ones too; the act no control takes back (act-4) is not the hook's to absorb (t504).
     expect(await ledger.beforeTrial(checks, undefined, { startReset: true })).toEqual({ kind: "admit", absorbedByStartReset: [
-      { act: "act-1", did: "press \"Save\" button", call: "call.1" },
-      { act: "act-2", did: "press \"Save\" button", call: "call.2" },
-      { act: "act-3", did: "press \"Save\" button", call: "call.3" },
+      { act: "act-1", did: "press \"Save\" button", call: "call.1", control: "Save" },
+      { act: "act-2", did: "press \"Save\" button", call: "call.2", control: "Save" },
+      { act: "act-3", did: "press \"Save\" button", call: "call.3", control: "Save" },
       { act: "act-5", did: "trial step 1 demo.press" }
     ] });
     expect(looked).toBe(0);
@@ -189,7 +189,7 @@ describe("site reset ledger", () => {
     ledger.explored(acted("call.6", ["create_new"]));
     expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-6" }] } });
     // Only what was still on the site: the acts the first hook took back are not answered twice.
-    expect(await ledger.beforeTrial(checks, undefined, { startReset: true })).toEqual({ kind: "admit", absorbedByStartReset: [{ act: "act-6", did: "press \"Save\" button", call: "call.6" }] });
+    expect(await ledger.beforeTrial(checks, undefined, { startReset: true })).toEqual({ kind: "admit", absorbedByStartReset: [{ act: "act-6", did: "press \"Save\" button", call: "call.6", control: "Save" }] });
     // A hook with nothing of the build on the site says nothing.
     expect(await ledger.beforeTrial(checks, undefined, { startReset: true })).toEqual({ kind: "admit" });
   });
@@ -207,7 +207,7 @@ describe("site reset ledger", () => {
     const compareAt = async (place: AutomationStudioSiteResetPlace): Promise<AutomationStudioSiteResetComparison> => ({ moved: true, differs: place.changed.includes("row 1 archived") ? ["row 1 archived"] : [] });
     expect(await ledger.beforeTrial({ compare: back, compareAt })).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-1" }] } });
     const decision = await ledger.beforeTrial({ compare: back, compareAt }, undefined, { startReset: true });
-    expect(decision).toEqual({ kind: "admit", absorbedByStartReset: [{ act: "act-1", did: "press \"Save\" button", call: "call.archive" }] });
+    expect(decision).toEqual({ kind: "admit", absorbedByStartReset: [{ act: "act-1", did: "press \"Save\" button", call: "call.archive", control: "Save" }] });
   });
 
   it("refuses a claim on an unknown act, a malformed value, or an act that cannot be undone, listing the acts that may be", () => {
@@ -476,7 +476,7 @@ describe("a press with an effect but no lasting class (t593)", () => {
     expect(ledger.possiblyInPlace().map((act) => act.act)).toEqual(["act-2"]);
     // The hook puts the rest back, naming only a lasting act among those it took back.
     ledger.explored(acted("call.save", ["create_new"]));
-    expect(await ledger.beforeTrial({ compare: unknown }, undefined, { startReset: true })).toEqual({ kind: "admit", absorbedByStartReset: [{ act: "act-3", did: "press \"Save\" button", call: "call.save" }] });
+    expect(await ledger.beforeTrial({ compare: unknown }, undefined, { startReset: true })).toEqual({ kind: "admit", absorbedByStartReset: [{ act: "act-3", did: "press \"Save\" button", call: "call.save", control: "Save" }] });
     expect(ledger.possiblyInPlace()).toEqual([]);
   });
 });

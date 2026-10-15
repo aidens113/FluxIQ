@@ -100,6 +100,17 @@ export type AutomationStudioSiteResetCalls = {
  */
 export type AutomationStudioSiteResetNamedAct = { act: string; did: string; call?: string; stillThere?: string[]; possible?: true };
 
+/**
+ * One act a start hook took back (`absorbedByStartReset`), with what the act
+ * log knows of how it was made (t647), for Core's own reading and never shown
+ * to a model (each trial gate names an act by `act`, `did` and `call` alone):
+ * `owner`, the brief whose ledger recorded it, where the ledger records for
+ * one (`./project-ledger.ts`); `control`, the name of the control an
+ * exploration call acted on, as the permission gate carried it, where it
+ * carried one.
+ */
+export type AutomationStudioSiteResetAbsorbedAct = AutomationStudioSiteResetNamedAct & { owner?: string; control?: string };
+
 /** One read of the target where it stands (`startState`): its opaque state, what differs from the state it was given, and where it was read. */
 export type AutomationStudioSiteResetRead = {
   state: JsonObject;
@@ -174,7 +185,7 @@ export type AutomationStudioSiteResetLines = { gone: string[]; added: string[] }
  * trial is admitted.
  */
 export type AutomationStudioSiteResetDecision =
-  | { kind: "admit"; startedWith?: JsonObject; absorbedByStartReset?: AutomationStudioSiteResetNamedAct[] }
+  | { kind: "admit"; startedWith?: JsonObject; absorbedByStartReset?: AutomationStudioSiteResetAbsorbedAct[] }
   | { kind: "refuse"; evidence: JsonObject & { code: string }; moved: boolean };
 
 /**

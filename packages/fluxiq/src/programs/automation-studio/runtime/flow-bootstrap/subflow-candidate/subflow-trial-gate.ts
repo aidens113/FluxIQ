@@ -112,6 +112,22 @@
 // for each trial (`keptConditions`), for the brief's submission controller to
 // refuse once a proposal that drops one (`./scoped-submission.ts`). Earlier
 // briefs' kept conditions do not reach this gate: only its own trials'.
+//
+// **A trial on a page this brief's exploration changed, and no step does, says
+// so (t647; A8 bigbox debug `run-mv9zn5ob-d929084d`, fix 6).** A builder
+// pressed a control while exploring that changed what the site offers, built
+// on the page that act left, and every trial's start hook took the act back;
+// no step of its subflow, nor of one before it, does it, so each trial met a
+// page the builder never explored and failed, and the evidence only listed the
+// act as taken back. Where a trial that is not a yes, its entry prepared,
+// started after the start hook took back an act this brief's own exploration
+// made on a named control, and no step of this proposal nor any act the trial
+// landed (the predecessors' among them) names that control, its feedback
+// carries Core's finding under `coreFindings`, code
+// `trial.explored_on_absorbed_act` first, naming the act as the act log
+// records it (`../site-reset/explored-on-absorbed.ts`). An unprepared entry
+// says nothing: the predecessors' steps did not all run, so what they do was
+// not measured.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import {
@@ -129,7 +145,7 @@ import {
   type AutomationStudioResultKeptConditionsCarrier,
   type AutomationStudioResultStandingNoContradiction
 } from "../../result-verification/standing-no/index.ts";
-import type { AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
+import { automationStudioSiteResetExploredOnAbsorbed, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowScopeIdentity, AutomationStudioSubflowTrialPort, AutomationStudioSubflowTrialResult } from "./contracts.ts";
 
 /**
@@ -270,12 +286,18 @@ export class AutomationStudioSubflowTrialGate {
     // Not a trial: the model is told what to put back, and the identical test after it reaches this gate again (header).
     if (reset?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: reset.evidence, effectApplied: reset.moved, targetsUnchanged: !reset.moved, resultCode: reset.evidence.code, resultReason: RETEST_REASON };
     // What the hook took back before this trial is answered with it, whatever the trial then answers.
-    const absorbed = reset?.kind === "admit" ? (reset.absorbedByStartReset ?? []).map(namedAct) : [];
+    const absorbedActs = reset?.kind === "admit" ? reset.absorbedByStartReset ?? [] : [];
+    const absorbed = absorbedActs.map(namedAct);
     this.trials.set(key(latest), tried + 1);
     const asked = await this.ask(port, latest, signal, reset?.kind === "admit" ? automationStudioCandidateStartedWithSaid(reset.startedWith) : []);
     // A no whose remedy would take back what an earlier standing no of this subflow upheld is not taken (header, t633, t634).
     const contradiction = asked.answer.entryPrepared ? this.standingNos.weigh({ revision: asked.answer.revision, verdict: asked.answer.verdict, standingNo: asked.standingNo }) : undefined;
-    const answer = contradiction ? notTaken(asked.answer, contradiction) : asked.answer;
+    const weighedAnswer = contradiction ? notTaken(asked.answer, contradiction) : asked.answer;
+    // The page this brief explored was changed by an act the start took back and no step does (header, t647).
+    const explored = weighedAnswer.verdict !== "yes" && weighedAnswer.entryPrepared
+      ? automationStudioSiteResetExploredOnAbsorbed({ absorbed: absorbedActs, owner: this.input.scope.briefId, steps: (latest.subflows ?? []).flatMap((subflow) => subflow.nodes ?? []), ran: weighedAnswer.acts, whose: "subflow" })
+      : [];
+    const answer = explored.length ? withCoreFindings(weighedAnswer, explored) : weighedAnswer;
     // The port is told the gate's verdict, even of a trial a stop then cuts short (header, t634).
     const stood = answer.verdict === "no" && answer.entryPrepared && asked.standingNo !== undefined;
     port.weighed?.({ answer: structuredClone(answer), ...(stood ? { standingNo: structuredClone(asked.standingNo) } : {}) });
@@ -368,6 +390,12 @@ function instructionFor(answer: AutomationStudioSubflowTrialResult, retestable: 
 }
 
 function key(receipt: { revision: number; digest: string }): string { return `${receipt.revision}\n${receipt.digest}`; }
+
+/** The answer with Core's own findings beside the trial's feedback, after any already there (header, t647). */
+function withCoreFindings(answer: AutomationStudioSubflowTrialResult, found: readonly JsonObject[]): AutomationStudioSubflowTrialResult {
+  const earlier = Array.isArray(answer.feedback.coreFindings) ? answer.feedback.coreFindings : [];
+  return { ...answer, feedback: { ...answer.feedback, coreFindings: [...earlier, ...found] } };
+}
 
 /** A no the build's own record contradicts, kept as an unsure with Core's words beside the judge's (header, t633): its revision is not closed. */
 function notTaken(answer: AutomationStudioSubflowTrialResult, contradiction: AutomationStudioResultStandingNoContradiction): AutomationStudioSubflowTrialResult {

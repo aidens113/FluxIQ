@@ -3,6 +3,7 @@
 // the start check drives calls through the evidence loop's tools.
 export * from "./act-places.ts";
 export * from "./contracts.ts";
+export * from "./explored-on-absorbed.ts";
 export * from "./ledger.ts";
 export * from "./project-ledger.ts";
 export * from "./project-reset.ts";
