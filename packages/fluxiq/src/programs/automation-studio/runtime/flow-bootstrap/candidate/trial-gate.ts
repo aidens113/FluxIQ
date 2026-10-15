@@ -110,6 +110,17 @@
 // the yes stands, but the answer and the completion rule name what to add,
 // under `slowDown`, and completion is refused `candidate.trial_slow_down_unhandled`.
 //
+// **An unsure says a re-test is allowed, and when it is the better move
+// (t632).** A8 wave 8 `run-mv9gbsm5-2957581c` (0051-0054): a revision whose
+// rows were exactly right came back unsure, and the builder followed the no's
+// advice back to a Flow already judged no, although the trial's own `readings`
+// said to test the same revision again where the evidence supports the yes.
+// While retests are left, an unsure now says that testing the same revision
+// again is allowed and when it is the better move -- one call said yes, Core's
+// record contradicts the other call, or that call's advice would take back
+// what answered an earlier no; with none left, it says to change the Flow for
+// a defect the trial shows.
+//
 // With no port injected the test tool says `candidate.trial_unavailable` and
 // completion keeps its old meaning: the latest valid submission ends as an
 // unverified draft, which is all a deployment without a trial runner can make.
@@ -134,10 +145,15 @@ const RETEST_REASON = "retry_allowed";
 const INSTRUCTIONS: Readonly<Record<AutomationStudioCandidateTrialVerdict, string>> = Object.freeze({
   yes: "The trial passed for this exact revision and digest. Complete now with exactly this revision and digest. Submitting again makes a new revision that needs its own trial.",
   no: "The judge found the trial did not do what the instruction asks. Read the feedback, change the Flow to fix it, submit the whole revised candidate, then test the new revision. This exact Flow cannot be tested again or completed.",
-  unsure: "The judge could not confirm the trial did what the instruction asks, so this revision cannot complete. Read the feedback; correct the Flow, submit it and test the new revision, or test this revision again if the feedback says nothing about the Flow itself.",
+  unsure: "The judge could not confirm the trial did what the instruction asks, and this revision has no retests left, so it cannot complete. Change the Flow for a defect the trial's own reads, steps and stored rows show, submit the whole candidate, then test the new revision.",
   not_judged: "The trial was not judged, so this revision cannot complete. Test this revision again, or change and resubmit it if the feedback names a cause in the Flow.",
   execution_failed: "The candidate did not run to its end, so this revision cannot complete. Read the feedback for the step that failed: what it says happened, and whether trying again may pass (retryable). If it may, test this same revision again; otherwise correct that step, submit the whole candidate, then test the new revision."
 });
+
+/** Said for an unsure while the revision may still be tested (header, t632): a re-test is allowed, and when it is the better move. Generic words. */
+const UNSURE_RETESTABLE = "The judge could not confirm the trial did what the instruction asks, so this revision cannot complete yet. "
+  + "Testing this same revision again, with the same revision and digest, is allowed (retestsLeft says how many times), and it is the better move when the feedback names no defect the trial's own reads, steps and stored rows show: "
+  + "one judge call said yes (answeredReading), Core's record contradicts the other call's reading or doubt, or the change that reading asks for would take back what answered an earlier no. Otherwise change the Flow for the defect that evidence shows, submit the whole candidate, then test the new revision.";
 
 /** What the model is told when a revision failed the same way twice. */
 const SAME_FAILURE_INSTRUCTION = "This revision stopped at the same step with the same failure in two trials, so testing it again would fail the same way. Change that step, or remove it if it only checks the act before it (the judge reads the page the run ends on), submit the whole candidate, then test the new revision.";
@@ -435,7 +451,8 @@ function named(step: OnPageStep): string {
 /** What a verdict tells the model to do, when its revision has not failed the same way twice. */
 function standingInstruction(answer: AutomationStudioCandidateTrialResult, retestable: boolean): string {
   const onPage = retestable ? onPageStep(answer) : undefined;
-  return onPage ? testAgainInstruction(onPage) : INSTRUCTIONS[answer.verdict];
+  if (onPage) return testAgainInstruction(onPage);
+  return answer.verdict === "unsure" && retestable ? UNSURE_RETESTABLE : INSTRUCTIONS[answer.verdict];
 }
 
 /** What the model is told once a revision stopped at the same step twice, from the latest trial of it. */

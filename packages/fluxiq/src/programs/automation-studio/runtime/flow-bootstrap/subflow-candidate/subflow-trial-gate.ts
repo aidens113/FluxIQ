@@ -55,6 +55,19 @@
 // set only where every judge call answered yes, and the trial's feedback
 // carries it (`../../service/candidate-trial/feedback.ts`); the gate reads that
 // field and never the words.
+//
+// **An unsure says a re-test is allowed, and when it is the better move
+// (t632).** A8 wave 8 `run-mv9gbsm5-2957581c` (0051-0054): a revision whose
+// rows were exactly right came back unsure, one call yes and one no, and the
+// builder followed the no's advice, rebuilding a revision already judged no,
+// when the trial's own `readings` already said to test the same revision again
+// where the evidence supports the yes. The unsure instruction said "test this
+// revision again if the feedback says nothing about the subflow itself", which
+// a no-reading always seems to. It now says, while retests are left, that
+// testing the same revision again is allowed, and that it is the better move
+// when one call said yes, when Core's record contradicts the other call, or
+// when that call's advice would take back what answered an earlier no; with
+// none left, it says to change the subflow for a defect the trial shows.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import {
@@ -87,7 +100,7 @@ const TRANSIENT: ReadonlySet<AutomationStudioCandidateTrialVerdict> = new Set(["
 const INSTRUCTIONS: Readonly<Record<AutomationStudioCandidateTrialVerdict, string>> = Object.freeze({
   yes: "This subflow's trial passed for this exact revision and digest. It is a partial trial: it answers for this brief only and is no trial of the whole Flow. Complete with exactly this subflowKey, revision and digest. Submitting again makes a new revision that needs its own trial.",
   no: "The judge found this subflow did not do what its parts ask. Read the feedback, change the subflow to fix it, submit it with core.submit_subflow, then test the new revision. This exact proposal cannot be tested again or completed.",
-  unsure: "The judge could not confirm this subflow did what its parts ask, so this revision cannot complete. Correct the subflow and submit it, or test this revision again if the feedback says nothing about the subflow itself.",
+  unsure: "The judge could not confirm this subflow did what its parts ask, and this revision has no retests left, so it cannot complete. Change the subflow for a defect the trial's own reads, steps and stored rows show, submit it with core.submit_subflow, then test the new revision.",
   not_judged: "The trial was not judged, so this revision cannot complete. Test it again, or change and resubmit it if the feedback names a cause in the subflow.",
   execution_failed: "The subflow did not run to its end, so this revision cannot complete. Read the feedback for the step that failed. If trying again may pass, test this same revision again; otherwise correct that step, submit the subflow, then test the new revision."
 });
@@ -102,6 +115,11 @@ const INSTRUCTIONS: Readonly<Record<AutomationStudioCandidateTrialVerdict, strin
 const NOT_JUDGED_AFTER_YES = "The judges answered yes for this revision and none answered no, but Core could not confirm that yes (the feedback's why says what it lacked), so the trial counts as not judged and this revision cannot complete yet. "
   + "The judges accepted the rows this subflow kept: do not rewrite it or change which rows it keeps. Test this same revision again; if its retests run out held the same way, "
   + "end the brief: complete with {\"ended\": \"partial\", \"reason\": \"<the judges answered yes and Core could not confirm it>\"}.";
+
+/** Said for an unsure while the revision may still be tested (header, t632): a re-test is allowed, and when it is the better move. Generic words. */
+const UNSURE_RETESTABLE = "The judge could not confirm this subflow did what its parts ask, so this revision cannot complete yet. "
+  + "Testing this same revision again, with the same revision and digest, is allowed (retestsLeft says how many times), and it is the better move when the feedback names no defect the trial's own reads, steps and stored rows show: "
+  + "one judge call said yes (answeredReading), Core's record contradicts the other call's reading or doubt, or the change that reading asks for would take back what answered an earlier no. Otherwise change the subflow for the defect that evidence shows, submit it with core.submit_subflow, then test the new revision.";
 
 /** Said instead when a predecessor did not run to its end: the target never started where it should. */
 const ENTRY_NOT_PREPARED = "A subflow that runs before this one did not run to its end, so this subflow did not start from its prepared entry and the verdict says nothing about it. Test this revision again; if it keeps failing there, complete with outcome blocked and say why.";
@@ -173,7 +191,7 @@ export class AutomationStudioSubflowTrialGate {
     const evidence: JsonObject = {
       ok: answer.verdict === "yes", partial: true, verdict: answer.verdict, subflowKey: answer.identity.subflowKey, revision: answer.revision, digest: answer.digest,
       entryPrepared: answer.entryPrepared, feedback: answer.feedback, promotionCredit: false,
-      instruction: instructionFor(answer),
+      instruction: instructionFor(answer, retestsLeft > 0),
       ...(reset?.kind === "admit" && reset.startedWith ? { startedWith: reset.startedWith } : {}),
       ...(absorbed.length ? { absorbedByStartReset: absorbed } : {}),
       ...(leftOnSite?.length ? { leftOnSite: leftOnSite.map(namedAct) } : {})
@@ -193,7 +211,8 @@ export class AutomationStudioSubflowTrialGate {
     const closed = this.closedDigests.get(receipt.digest);
     if (closed) return refusal("subflow.trial_unchanged_after_no", "This exact proposal was judged no and has not changed. Change it, submit it, test the new revision, and complete only after a yes.", { previousFeedback: closed });
     if (!answer) return refusal("subflow.trial_required", `Test this proposal first: call ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} with revision ${receipt.revision} and digest ${receipt.digest}, and complete only after it answers yes for that revision and digest.`);
-    return refusal(`subflow.trial_${answer.verdict}`, instructionFor(answer), { verdict: answer.verdict, entryPrepared: answer.entryPrepared, trialFeedback: answer.feedback });
+    const retestable = (this.trials.get(key(receipt)) ?? 0) < AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION;
+    return refusal(`subflow.trial_${answer.verdict}`, instructionFor(answer, retestable), { verdict: answer.verdict, entryPrepared: answer.entryPrepared, trialFeedback: answer.feedback });
   }
 
   /** The judge's feedback when a proposal with this digest was judged no; undefined otherwise. */
@@ -235,10 +254,11 @@ export class AutomationStudioSubflowTrialGate {
   }
 }
 
-/** What a trial's answer tells the builder to do next (header). */
-function instructionFor(answer: AutomationStudioSubflowTrialResult): string {
+/** What a trial's answer tells the builder to do next (header); `retestable`, whether this revision may still be tested again. */
+function instructionFor(answer: AutomationStudioSubflowTrialResult, retestable: boolean): string {
   if (!answer.entryPrepared) return ENTRY_NOT_PREPARED;
   if (answer.verdict === "not_judged" && answer.feedback.yesUnconfirmed === true) return NOT_JUDGED_AFTER_YES;
+  if (answer.verdict === "unsure" && retestable) return UNSURE_RETESTABLE;
   return INSTRUCTIONS[answer.verdict];
 }
 

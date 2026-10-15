@@ -18,7 +18,16 @@ export class AutomationStudioFlowCandidateSubmissionController {
   /** The current revision's Flow as the script reader reads it (`submissionText`), to tell an unchanged resubmission (t464). */
   private currentText: string | undefined;
   private readonly originalSource: AutomationStudioCandidateOriginalSourceBinding | undefined;
-  constructor(private readonly input: Omit<Parameters<typeof checkAutomationStudioFlowBootstrapCompletion>[0], "result" | "draftSteps" | "routeSignaturesOf"> & { baseDependencyDigest: string; signal?: AbortSignal; originalSource?: AutomationStudioCandidateOriginalSourceBinding }) {
+  constructor(private readonly input: Omit<Parameters<typeof checkAutomationStudioFlowBootstrapCompletion>[0], "result" | "draftSteps" | "routeSignaturesOf"> & {
+    baseDependencyDigest: string; signal?: AbortSignal; originalSource?: AutomationStudioCandidateOriginalSourceBinding;
+    /**
+     * The submit and test tools of the loop this controller serves, and what it
+     * calls what it submits, for its refusals to name (`./unchanged-submission.ts`,
+     * t632): a subflow brief's are `core.submit_subflow` and `core.test_subflow`.
+     * Absent, the candidate loop's.
+     */
+    refusalTools?: { submit: string; test: string; subject: string } | undefined;
+  }) {
     const descriptor = Object.getOwnPropertyDescriptor(input, "originalSource");
     if (!descriptor) return;
     if (!Object.hasOwn(descriptor, "value") || descriptor.value === undefined) throw new Error("candidate.original_binding_invalid");
@@ -195,12 +204,16 @@ export class AutomationStudioFlowCandidateSubmissionController {
   private unchanged(standing: AutomationStudioFlowCandidate | undefined, same: AutomationStudioFlowCandidate | undefined, history: AutomationStudioFlowCandidateSubmissionHistory, refuted: JsonObject | undefined, text?: string, reworded?: boolean, datasetRenamed?: boolean): AutomationStudioFlowCandidateSubmission {
     this.current = standing;
     if (same && text !== undefined) this.currentText = text;
+    // Beside a refuted Flow, the revision still standing when it is another, with its last trial (`./unchanged-submission.ts`, t632).
+    const current = refuted !== undefined && standing && standing.digest !== same?.digest ? { revision: standing.revision, digest: standing.digest, lastTrial: history.trialOf?.(standing) } : undefined;
     const check = automationStudioCandidateUnchangedRefusal({
       standing: same ? { revision: same.revision, digest: same.digest } : undefined,
       lastTrial: same ? history.trialOf?.(same) : undefined,
       refuted,
       reworded,
-      datasetRenamed
+      datasetRenamed,
+      tools: this.input.refusalTools,
+      current
     });
     return { ok: false, revision: (same ?? standing)?.revision ?? this.revision, check };
   }
