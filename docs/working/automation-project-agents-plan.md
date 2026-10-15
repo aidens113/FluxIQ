@@ -612,6 +612,13 @@ Entries from 2026-10-13 to A8 wave 4 (t550-t611) are archived in
 - Validation: after merging dev: tsc exit 0; llm, flow-bootstrap/candidate, flow-bootstrap/subflow-candidate, candidate-trial, subflow-trial -> 268 files, 2440 passed (both loop replays and three guard cases fail on HEAD's outcomes.ts); audit passed; `pnpm check` -> passed; merged `1e1a10af`
 - Outcome: Accepted
 
+### 2026-10-15 — After A8 frozen pair 4 wave 22: a row's own name is never the request's words (t651)
+- Agent: read-only debug of wave 22 `candidate` towels; worker t651-own-label-is-not-request-words (two rounds; supervisor added the missing-rows case), verified and integrated
+- Changed: `result-verification/refuted-no/label-tested-condition.ts` (new): a condition that tests a row's own label (testedLabel, a left-out witness equal to its label, a kept read equal to a stored label, or a column holding each label) is skipped by `record.ts` `requestQuotes`, the one source every request-words reader uses (t629, t631, t636, t641), so Core neither refutes the judges with it nor keeps the condition; `missing-claim.ts`: "Missing rows: X" naming no condition stands when only such a condition left X out; a text test over a column of its own still settles, is kept and its drop refused once
+- Why: wave 22 `candidate` towels: `retailer startsWith "<brand>"` read the product name, the request-words test counted its left-out rows as failing the request's words, Core overruled correct judges and t641 held the condition (7 of 8 kept-out rows were asked for)
+- Validation: after merging dev (t650 in): tsc exit 0; result-verification, candidate-trial, subflow-trial, flow-bootstrap, llm/repeat-guard -> 297 files, 3240 passed, 2 skipped (the new tests fail with the fix removed; the converse tests pass); audit passed; `pnpm check` -> passed
+- Outcome: Accepted
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
