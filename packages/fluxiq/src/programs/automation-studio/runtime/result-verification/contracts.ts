@@ -687,14 +687,13 @@ export type AutomationStudioResultVerification = {
   /** What was actually observed: counts, never a model's prose or a row's contents. */
   observation: string;
   /**
-   * The verdict each verification call returned, in the order asked: one; two
-   * when the first answered anything but `answers`, or `answers` on a
-   * verification that confirms it (`confirmAnswer`); three when a contradicted
-   * unsure was asked again (`contradictedUnsure`). Verdict words only, never
-   * the model's prose. Absent when no model was asked.
+   * The verdict each verification call returned, in the order asked: one; two when the first answered
+   * anything but `answers`, or `answers` on a verification that confirms it (`confirmAnswer`); more when a
+   * contradicted unsure (`contradictedUnsure`) or a refuted no (`refutedNo`) was asked again. Verdict words
+   * only, never the model's prose. Absent when no model was asked.
    */
   verdicts?: AutomationStudioResultVerdict[];
-  /** The verification calls made or attempted: 1, 2, or 3 with a re-ask. Absent when no model was asked. */
+  /** The verification calls made or attempted: 1, 2, 3 with a re-ask, or 4 where both refuted nos were asked again. Absent when no model was asked. */
   calls?: number;
   /**
    * What to fix, present exactly when the verdict is `does_not_answer`. An
@@ -731,6 +730,8 @@ export type AutomationStudioResultVerification = {
    * (`./agreement.ts`, t503, `run-mv6lgqi6-4bfab2e1`).
    */
   contradictedUnsure?: { call: 1 | 2; record: string; reasked?: true };
+  /** The calls whose no Core's record wholly refutes, and Core's findings (`./refuted-no/`, t607): each asked once more (`reasked`); a no still refuted is unsure. */
+  refutedNo?: { calls: Array<1 | 2>; findings: string[]; reasked?: true };
   /**
    * Present exactly when the verification fails the run
    * (`automationStudioResultVerificationFailsRun`): what the run must report.

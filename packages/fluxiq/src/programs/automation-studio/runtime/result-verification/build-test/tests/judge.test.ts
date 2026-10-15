@@ -301,18 +301,27 @@ describe("run murwcmx2: the judge's reading reaches the build", () => {
   // Through the real check (`../verify.ts` hands the reads to `../agreement.ts`):
   // a reading of more pages, where every read's own account says its list ended,
   // is marked contradicted and follows the reading the record leaves standing.
+  // That standing no keeps the verdict no: a refuted no beside it is labelled,
+  // not asked again (t607, `../refuted-no/`).
+  const ended = { nodeId: "s7", definitionId: "web.dom.extract_list", pagesRead: 5, pageLimit: 10, stop: "control_disabled", truncated: false, kept: 15, paginates: true };
+  const PAGES = { answersRequest: "no", expected: FIRST.expected, observed: "There are many more pages; the read stopped at page 5, not every page.", changed: "Follow the remaining pages." };
+
   it("two noes, one claiming pages the record says do not exist: the other reading leads and that one is marked contradicted", async () => {
-    const ended = { nodeId: "s7", definitionId: "web.dom.extract_list", pagesRead: 5, pageLimit: 10, stop: "control_disabled", truncated: false, kept: 15, paginates: true };
-    const provider = answering(
-      { answersRequest: "no", expected: FIRST.expected, observed: "There are many more pages; the read stopped at page 5, not every page.", changed: "Follow the remaining pages." },
-      { answersRequest: "no", ...FIRST }
-    );
+    const provider = answering(PAGES, { answersRequest: "no", ...FIRST });
     const verdict = await judge(PICKUP_CART, { provider })({ summary: { ...run40Summary(), reads: [ended] }, budget: { maxCostUsd: 0.2 } });
     expect(verdict.verdict).toBe("no");
     const observed = verdict.verdict === "no" ? verdict.observed ?? "" : "";
     expect(observed.startsWith(`Judge call 2: ${FIRST.observed} Judge call 1 (contradicted by Core's record`)).toBe(true);
     expect(observed).toContain("): There are many more pages");
     expect(verdict).toMatchObject({ expected: FIRST.expected });
+    expect(verdict.spent.calls).toBe(2);
+  });
+
+  it("two noes both claiming pages the record says do not exist: each call is asked again, and the same claim again is unknown, never a no", async () => {
+    const provider = answering(PAGES, PAGES, PAGES, PAGES);
+    const verdict = await judge(PICKUP_CART, { provider })({ summary: { ...run40Summary(), reads: [ended] }, budget: { maxCostUsd: 0.2 } });
+    expect(verdict).toMatchObject({ verdict: "unknown", why: expect.stringContaining("contradicted by Core's own record") });
+    expect(verdict.spent.calls).toBe(4);
   });
 
   it("a no the second call did not confirm is unknown, carrying that no's expected, observed and advice as one unconfirmed reading", async () => {
