@@ -5,6 +5,7 @@ import type { AutomationStudioSubflowBuilderOutcome, AutomationStudioSubflowProp
 import type { AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResult } from "../../llm/index.ts";
 import type { AutomationStudioProjectBuilderReturn, AutomationStudioProjectReceiptRef, AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
+import { automationStudioProjectDispatchAllowanceSaid, type AutomationStudioProjectDispatchSizedAtStart } from "./allowance-said.ts";
 
 // Every way a brief can end, as the return the supervisor reads
 // (`contracts/builder-return.ts`). A throw, an allowance refusal or a stop is
@@ -45,6 +46,12 @@ import type { AutomationStudioProjectBuilderReturn, AutomationStudioProjectRecei
 // (`passedProposal`), against the latest proposal Core accepted and the last
 // trial its port answered (`spend.trial`, kept by `./run-brief.ts`): done on a
 // yes of exactly that proposal, today's return otherwise.
+//
+// **A return says its money (t627).** Every return of a brief that ran ends with
+// what it was given when it started, where that was less than the dispatch
+// sized it at, and each top-up its allowance drew from the build's purse, in
+// figures (`./allowance-said.ts`); the rest of its reason is clipped to leave
+// room for them.
 
 /** What a return's reason may hold (`contracts/builder-return.ts`). */
 const MAX_REASON = 2000;
@@ -67,6 +74,8 @@ export type AutomationStudioProjectDispatchSpend = {
   accepted?: Readonly<AutomationStudioSubflowProposal> | undefined;
   /** The last subflow trial the brief's port answered, for a builder whose loop then threw: a yes of `accepted` is done (header, t611). */
   trial?: Readonly<AutomationStudioSubflowTrialResult> | undefined;
+  /** What the brief started with, where it was sized as it started below what the dispatch sized it at (`./start-allowance.ts`, t627). */
+  sizedAtStart?: AutomationStudioProjectDispatchSizedAtStart | undefined;
 };
 
 export const automationStudioProjectDispatchEnding = Object.freeze({
@@ -136,7 +145,7 @@ function returned(
   const value: AutomationStudioProjectBuilderReturn = {
     briefId: brief.briefId,
     outcome,
-    reason: clip(reason),
+    reason: withMoney(reason, automationStudioProjectDispatchAllowanceSaid(spend.sizedAtStart, spend.allowance?.toppedUp() ?? [])),
     trials: spend.trials.map((trial) => ({ ...trial })),
     spentUsd: spend.allowance?.spentUsd() ?? 0,
     calls: spend.allowance?.spentCalls() ?? 0
@@ -299,6 +308,12 @@ function errorWords(error: unknown): string {
   const words = error instanceof Error ? error.message : String(error);
   const trimmed = words.trim() || "no reason was given";
   return trimmed.length > MAX_ERROR_WORDS ? `${trimmed.slice(0, MAX_ERROR_WORDS - 3)}...` : trimmed;
+}
+
+/** `reason`, clipped so `money` still fits after it (header, t627). */
+function withMoney(reason: string, money: string): string {
+  if (!money) return clip(reason);
+  return `${clipped(reason, MAX_REASON - money.length)}${money}`.slice(0, MAX_REASON);
 }
 
 function clip(reason: string): string {

@@ -28,9 +28,15 @@
 // calls are kept from every other call on the purse, as its dollars are. Only a
 // request that says it is for that finishing work (`fromKeptBack`, a reset
 // brief's) may carve from what is kept back.
+//
+// **A share, not a wall (t627).** An allowance whose next call does not fit it
+// is topped up from what the purse could still carve, beyond what the purse's
+// own finishing calls are kept at, when that can pay (`./top-up.ts`); each grant
+// is listed with its allowance's spend (`topUps`).
 
 import { AUTOMATION_STUDIO_LLM_BUILD_PURSE_EPSILON_USD } from "./epsilon.ts";
 import type { AutomationStudioLlmBuildPurse } from "./purse.ts";
+import type { AutomationStudioLlmBuildPurseTopUp } from "./top-up.ts";
 
 /** Who an allowance was carved for: the agent role and the brief it serves. */
 export type AutomationStudioLlmBuildPurseAttribution = {
@@ -64,8 +70,10 @@ export type AutomationStudioLlmBuildPurseAllowanceRefusal = {
 
 /** What one allowance has spent, by the role and brief it was carved for. */
 export type AutomationStudioLlmBuildPurseAttributedSpend = AutomationStudioLlmBuildPurseAttribution & {
-  /** The allowance's ceiling. */
+  /** What the allowance was carved at; its top-ups are listed apart. */
   allottedUsd: number;
+  /** What it drew from the purse it was carved from when its next call did not fit (t627). Absent when it drew nothing. */
+  topUps?: AutomationStudioLlmBuildPurseTopUp[];
   /** What its settled calls were charged. */
   spentUsd: number;
   /** Its settled calls. */
@@ -139,16 +147,18 @@ export class AutomationStudioLlmBuildPurseAllowanceBook {
 
   /** Every allowance carved, open or closed, and those carved from them, in the order they were carved. */
   spend(): AutomationStudioLlmBuildPurseAttributedSpend[] {
-    return this.carved.flatMap((allowance) => [
-      {
+    return this.carved.flatMap((allowance) => {
+      const topUps = allowance.toppedUp();
+      return [{
         role: allowance.attribution?.role ?? "",
         briefId: allowance.attribution?.briefId ?? "",
-        allottedUsd: allowance.ceilingUsd,
+        allottedUsd: allowance.carvedUsd,
         spentUsd: allowance.spentUsd(),
         calls: allowance.spentCalls(),
-        closed: allowance.isClosed()
+        closed: allowance.isClosed(),
+        ...(topUps.length > 0 ? { topUps } : {})
       },
-      ...allowance.attributedSpend()
-    ]);
+      ...allowance.attributedSpend()];
+    });
   }
 }

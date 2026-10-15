@@ -44,8 +44,10 @@
 // beyond its reserve makes, are kept by `./settlement-ledger.ts`; the judging
 // kept back from every other call by `./judging-reserve.ts` (t254); the
 // allowances carved from the purse for each brief by `./allowance-book.ts`
-// (t534); and a refusal's figures are written by `./cost-refusal.ts`. This
-// class composes them and decides, call by call, whether a call is held.
+// (t534); the top-ups an allowance draws from the purse it was carved from when
+// its next call does not fit it (`./top-up.ts`, t627); and a refusal's figures
+// are written by `./cost-refusal.ts`. This class composes them and decides,
+// call by call, whether a call is held.
 
 import { AutomationStudioLlmBuildPurseAllowanceBook, type AutomationStudioLlmBuildPurseAllowanceRefusal, type AutomationStudioLlmBuildPurseAllowanceRequest, type AutomationStudioLlmBuildPurseAttributedSpend, type AutomationStudioLlmBuildPurseAttribution } from "./allowance-book.ts";
 import { automationStudioLlmBuildPurseCostRefusal } from "./cost-refusal.ts";
@@ -53,6 +55,7 @@ import { AUTOMATION_STUDIO_LLM_BUILD_PURSE_EPSILON_USD } from "./epsilon.ts";
 import { AutomationStudioLlmBuildPurseJudgingReserve } from "./judging-reserve.ts";
 import { automationStudioLlmBuildPurseFramesOf } from "./run-frame.ts";
 import { AutomationStudioLlmBuildPurseLedger } from "./settlement-ledger.ts";
+import { AutomationStudioLlmBuildPurseTopUps, type AutomationStudioLlmBuildPurseTopUp } from "./top-up.ts";
 import type { AutomationStudioLlmBuildPurseCall, AutomationStudioLlmBuildPurseHeld, AutomationStudioLlmBuildPurseJudging, AutomationStudioLlmBuildPurseOptions, AutomationStudioLlmBuildPurseRefusal } from "./types.ts";
 
 /** What ties an allowance to the purse it was carved from. Set only by `allowance`. */
@@ -62,7 +65,8 @@ type AutomationStudioLlmBuildPurseLink = {
 };
 
 export class AutomationStudioLlmBuildPurse {
-  readonly ceilingUsd: number;
+  /** What the purse was opened, or the allowance carved, at. */
+  readonly carvedUsd: number;
   /** The worst case of the last call it priced: the least the next, larger request can cost at worst. */
   lastProjectedCostUsd: number | undefined;
   /** What earlier builds of the same Flow creation spent: part of `spentUsd`, never charged again. */
@@ -82,16 +86,29 @@ export class AutomationStudioLlmBuildPurse {
   /** Calls no allowance may be carved from but one for the finishing work they are kept for (`keepBackCallsFromAllowances`). */
   private allowanceKeptBackCalls = 0;
   private closed = false;
+  /** What this allowance drew from the purse it was carved from (`./top-up.ts`); none on a build's or a Flow's own purse. */
+  private readonly topUps: AutomationStudioLlmBuildPurseTopUps;
 
   constructor(private readonly options: AutomationStudioLlmBuildPurseOptions, link?: AutomationStudioLlmBuildPurseLink) {
     if (!Number.isFinite(options.ceilingUsd) || options.ceilingUsd < 0) throw new Error("A build purse's ceiling must be a finite, non-negative amount.");
     const carried = options.carriedUsd ?? 0;
     if (!Number.isFinite(carried) || carried < 0) throw new Error("A build purse's carried spend must be a finite, non-negative amount.");
     this.ledger = new AutomationStudioLlmBuildPurseLedger(options.maxCalls, options);
-    this.ceilingUsd = options.ceilingUsd;
+    this.carvedUsd = options.ceilingUsd;
+    this.topUps = new AutomationStudioLlmBuildPurseTopUps(options.ceilingUsd);
     this.carriedUsd = carried;
     this.parent = link?.parent;
     this.attribution = link ? { ...link.attribution } : undefined;
+  }
+
+  /** The most this purse may spend: what it was carved at, plus what an allowance was topped up with (`./top-up.ts`). */
+  get ceilingUsd(): number {
+    return this.carvedUsd + this.topUps.toppedUpUsd();
+  }
+
+  /** Every top-up this allowance drew from the purse it was carved from, with its amount and reason; none on a build's or a Flow's own purse. */
+  toppedUp(): AutomationStudioLlmBuildPurseTopUp[] {
+    return this.topUps.list();
   }
 
   /** Calls that reported costing more than they were held at. */
@@ -319,10 +336,13 @@ export class AutomationStudioLlmBuildPurse {
     const keptBackUsd = call.judge ? 0 : this.keptBackUsd();
     const allottedUsd = this.allowances.outstandingUsd(via);
     const heldUsd = projected ?? this.ledger.largestReportedUsd();
-    const over = heldUsd > 0
-      ? spentUsd + pendingUsd + keptBackUsd + allottedUsd + heldUsd > this.ceilingUsd + AUTOMATION_STUDIO_LLM_BUILD_PURSE_EPSILON_USD
-      : spentUsd + pendingUsd + keptBackUsd + allottedUsd >= this.ceilingUsd;
+    const overBy = () => spentUsd + pendingUsd + keptBackUsd + allottedUsd + heldUsd - this.ceilingUsd;
+    let over = heldUsd > 0 ? overBy() > AUTOMATION_STUDIO_LLM_BUILD_PURSE_EPSILON_USD : spentUsd + pendingUsd + keptBackUsd + allottedUsd >= this.ceilingUsd;
+    // An allowance short of its next call asks the purse it was carved from for the difference before it refuses (t627).
+    const grant = over && !this.closed && heldUsd > 0 ? this.parent?.topUp(this, overBy(), heldUsd) : undefined;
+    if (grant) over = overBy() > AUTOMATION_STUDIO_LLM_BUILD_PURSE_EPSILON_USD;
     if (this.closed || over) {
+      if (grant) this.topUps.withdraw(grant);
       return this.refuse(automationStudioLlmBuildPurseCostRefusal({
         projectedCostUsd: projected,
         estimatedInputTokens: call.estimatedInputTokens,
@@ -338,7 +358,11 @@ export class AutomationStudioLlmBuildPurse {
       }));
     }
     const above = this.parent?.holdFor(call, this);
-    if (above && !above.ok) return this.refuse(above.refusal);
+    if (above && !above.ok) {
+      // A grant for a call a purse above then refused paid for nothing, so it is not kept.
+      if (grant) this.topUps.withdraw(grant);
+      return this.refuse(above.refusal);
+    }
     const own = this.ledger.hold(heldUsd, projected);
     return {
       ok: true,
@@ -353,6 +377,15 @@ export class AutomationStudioLlmBuildPurse {
         }
       }
     };
+  }
+
+  /** Top up `allowance`, one of this purse's, whose next call held at `heldUsd` is `shortfallUsd` short, from what this purse could carve beyond its own finishing (`./top-up.ts`); the grant, if any. */
+  private topUp(allowance: AutomationStudioLlmBuildPurse, shortfallUsd: number, heldUsd: number): AutomationStudioLlmBuildPurseTopUp | undefined {
+    if (this.closed) return undefined;
+    const settledCalls = this.ledger.calls.spentCalls();
+    const averageUsd = settledCalls > 0 ? this.ledger.settledUsd() / settledCalls : undefined;
+    const finishing = { calls: this.allowanceKeptBackCalls, worstUsd: Math.max(heldUsd, this.lastProjectedCostUsd ?? 0), averageUsd };
+    return allowance.topUps.grant({ shortfallUsd, heldUsd, allocatableUsd: this.allocatableUsd(), finishing });
   }
 
   private refuse(refusal: AutomationStudioLlmBuildPurseRefusal): { ok: false; refusal: AutomationStudioLlmBuildPurseRefusal } {

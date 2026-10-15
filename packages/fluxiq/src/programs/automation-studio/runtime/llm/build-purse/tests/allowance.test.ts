@@ -38,7 +38,8 @@ describe("an allowance carved from a build's purse", () => {
   });
 
   it("refuses at its own level when the call would cross the allowance, leaving the parent untouched", () => {
-    const build = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1 });
+    // The whole build is the allowance, so nothing is left to top it up from (t627).
+    const build = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.02 });
     const allowance = carve(build, "brief.cart", 0.02);
     settled(allowance.hold(call(0.015)), 0.015);
     const refused = allowance.hold(call(0.01));
@@ -209,7 +210,8 @@ describe("an allowance under the Flow's purse", () => {
 
   it("holds the build's chain and the Flow's purse, and says an allowance refused with the brief it serves", async () => {
     const flow = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1 });
-    const build = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1 });
+    // The build's purse is the allowance's whole, so nothing is left to top it up from (t627).
+    const build = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.03 });
     const allowance = carve(build, "brief.cart", 0.03);
     const outcome = await automationStudioLlmFlowPurseScope(flow, async () => await automationStudioLlmBuildPurseScope(allowance, async () => {
       const held = hold(0.02);

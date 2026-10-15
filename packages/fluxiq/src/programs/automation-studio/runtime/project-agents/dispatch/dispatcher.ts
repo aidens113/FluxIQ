@@ -30,6 +30,10 @@ import type { AutomationStudioProjectDispatcherInput } from "./types.ts";
 //   the one scheduler of the host port for a lease (`./host-lease.ts`) in the
 //   order they became ready, given order first; with capacity 1 they run one at
 //   a time in that order.
+// - **A brief that waited is sized as it starts (t627).** Its allowance is
+//   carved when its turn comes, from what the purse can then give, split over
+//   it, the briefs of the dispatch not yet carved and the build's finishing, and
+//   never above what the dispatch sized it at (`./start-allowance.ts`).
 // - **Endings are returns.** Each brief runs in its own child of the
 //   supervisor's cancellation scope (`./run-brief.ts`): a builder ending never
 //   aborts a sibling, and a Flow cancel or the request's signal stops every
@@ -61,6 +65,8 @@ export function createAutomationStudioProjectDispatcher(input: AutomationStudioP
     const dispatched = new Set(request.briefs.map((brief) => brief.subflowKey));
     const leases = automationStudioProjectHostLeaseScope(input.host);
     const ended = request.briefs.map(() => deferred<AutomationStudioProjectBuilderReturn>());
+    // The briefs not yet carved: what a waiting brief's start-time share is split with, beside the build's finishing (header).
+    const uncarved = new Set(request.briefs.map((_, index) => index));
     const turn = async (index: number): Promise<AutomationStudioProjectBuilderReturn> => {
       const brief = request.briefs[index]!;
       if (cyclic.has(index)) return ending.notStarted(brief, "This brief and another of the same dispatch each wait for the other's subflow, so neither can start.");
@@ -81,17 +87,20 @@ export function createAutomationStudioProjectDispatcher(input: AutomationStudioP
         const predecessor = request.briefs[waitsOn[index]![unready]!]!;
         return ending.notStarted(brief, `Brief ${predecessor.briefId} for subflow ${predecessor.subflowKey}, which this subflow starts after, ${unpassed(before[unready]!)}, so this subflow's entry cannot be prepared and its trials could not run.`);
       }
-      return await runAutomationStudioProjectDispatchBrief({ dispatcher: input, brief, mapped: mapped[index]!, leases, stop });
+      const start = { ...(waitsOn[index]!.length ? { shares: () => uncarved.size + 1 } : {}), carved: () => uncarved.delete(index) };
+      return await runAutomationStudioProjectDispatchBrief({ dispatcher: input, brief, mapped: mapped[index]!, leases, stop, start });
     };
     const tasks = request.briefs.map(async (brief, index) => {
       let returned: AutomationStudioProjectBuilderReturn;
       try {
         returned = await turn(index);
       } catch (error) {
+        uncarved.delete(index);
         // A record failure: the briefs that wait on this one must not wait forever.
         ended[index]!.resolve(ending.notStarted(brief, "The build record could not be written for this brief."));
         throw error;
       }
+      uncarved.delete(index);
       ended[index]!.resolve(returned);
       await input.record.store.recordReturn(input.record.ref, returned);
       return returned;
