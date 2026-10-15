@@ -100,3 +100,50 @@ describe("the recovery ladder and the run's LLM setting", () => {
     expect(trace.message).toBe("Recovery budget exhausted: max adaptation/LLM attempts per run.");
   });
 });
+
+// The ladder marks the candidate that goes on past an optional step
+// (`optionalStepWayOn`), so a reader of the run tells the Flow's own way on from
+// a failed route without reading the label (t643): the Lab once read such a
+// bypassed step as the run's failure.
+describe("the mark on an optional step's way on", () => {
+  const step = (id: string) => ({ id, definitionId: "builtin.policy.action", parameterValues: { outputId: `output.${id}`, parameters: { elementId: id } } });
+  const end = { id: "end", definitionId: "builtin.control.end", parameterValues: { resultStatus: "success" } };
+  const edge = (sourceNodeId: string, sourcePortId: string, targetNodeId: string, targetPortId = "in") => ({ id: `${sourceNodeId}.${sourcePortId}`, sourceNodeId, sourcePortId, targetNodeId, targetPortId });
+  const dispatched: string[] = [];
+  const runBannerFails = (flow: AutomationStudioFlowDocument) => runAutomationStudioGraph(flow, {
+    allowLlmDiagnosis: false,
+    effectDispatcher: (effect) => {
+      const outputId = String((effect.payload as { outputId?: unknown } | undefined)?.outputId ?? "");
+      dispatched.push(outputId);
+      return outputId === "output.banner"
+        ? { status: "failed", route: "failed", outputs: {}, message: "Synthetic banner was not found.", failure: { category: "target_not_found", code: "test.target.not_found", retryable: false, stage: "dispatch" } }
+        : { status: "success", route: "success", outputs: { ok: true } };
+    }
+  });
+
+  it("is set on the selected candidate when a failed optional step goes on to its Merge", async () => {
+    dispatched.length = 0;
+    const trace = await runBannerFails({
+      ...failingFlow,
+      nodes: [step("banner"), { id: "join", definitionId: "builtin.control.merge", parameterValues: { mergeMode: "first" } }, step("next"), end],
+      edges: [edge("banner", "failed", "join"), edge("banner", "success", "join", "branches"), edge("join", "success", "next"), edge("next", "success", "end")]
+    });
+    expect(dispatched).toEqual(["output.banner", "output.next"]);
+    expect(trace.status).toBe("succeeded");
+    expect(trace.attempts.find((attempt) => attempt.nodeId === "banner")?.status).toBe("failed");
+    expect(trace.attempts.find((attempt) => attempt.nodeId === "banner")?.recoveryDecision?.selected).toMatchObject({ kind: "deterministic_path", targetNodeId: "join", optionalStepWayOn: true });
+  });
+
+  it("is absent on a plain failed route, which is not the optional rule", async () => {
+    dispatched.length = 0;
+    const trace = await runBannerFails({
+      ...failingFlow,
+      nodes: [step("banner"), step("fallback"), end],
+      edges: [edge("banner", "failed", "fallback"), edge("banner", "success", "end"), edge("fallback", "success", "end")]
+    });
+    expect(dispatched).toEqual(["output.banner", "output.fallback"]);
+    const selected = trace.attempts.find((attempt) => attempt.nodeId === "banner")?.recoveryDecision?.selected;
+    expect(selected).toMatchObject({ kind: "deterministic_path", targetNodeId: "fallback" });
+    expect(selected?.optionalStepWayOn).toBeUndefined();
+  });
+});

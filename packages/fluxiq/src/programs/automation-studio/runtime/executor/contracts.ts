@@ -147,6 +147,13 @@ export type AutomationStudioRecoveryCandidate = {
   edgeId?: string;
   subflowId?: string;
   reason: string;
+  /**
+   * Set on the candidate that goes on past an optional step by the Flow's own
+   * rule (`step-skip/optional-step.ts`), which is not a recovery. Run readers
+   * (the Lab's verdict) tell such a bypass from a failed route by this mark,
+   * never by the label, which is display text (t643).
+   */
+  optionalStepWayOn?: true;
 };
 
 export type AutomationStudioRecoveryDecision = {
