@@ -1,7 +1,9 @@
-import { emitAutomationStudioActivity, observeAutomationStudioEvidenceLoop } from "../../activity/index.ts";
+import { automationStudioActivityReasonText, emitAutomationStudioActivity, observeAutomationStudioEvidenceLoop } from "../../activity/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE,
   AutomationStudioFlowBootstrapGenerationError,
+  DIAGNOSTIC_SUPERVISOR_ENDING_CODES,
+  MAX_DIAGNOSTIC_ENDED_BECAUSE,
   flowBootstrapEvidenceLoopFailure,
   flowBootstrapEvidenceUnusableDecisionFailure,
   flowBootstrapPhaseFailure
@@ -70,9 +72,13 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // told, in Core's words alone (`flow-bootstrap/generation-failure/build-ending.ts`):
 // a failure with an ending of its own (a budget, unreadable replies, a silent
 // provider) has Core's note after its message; any other is preceded by a chat
-// row saying the recorded ending's kind and that note. The model's reason is
-// never said: the note is Core's, as the supervisor names it
-// (`ports.leftAtEnding`). A question put to the person (a permission, an
+// row saying the recorded ending's kind, why, and that note. The note is
+// Core's, as the supervisor names it (`ports.leftAtEnding`). Why is the
+// supervisor's recorded reason, screened as any reason the model gives is
+// (`activity/wording/reason-text.ts`, t649): the row said only "it could not
+// finish the Flow", and the person never read why the build ended (A8 frozen
+// pair 3, `run-mv9zn5ob-d929084d`, screenshot 00048). A time limit's row says
+// the limit, which is its why. A question put to the person (a permission, an
 // intervention) is said as it is.
 //
 // **What an amendment kept runs in a dependent's entry (t590).** The
@@ -267,7 +273,9 @@ const TIME_LIMIT_CODE = "project.build_time_limit";
 /** The questions a stall puts to the person: said as they are (`project-agents/supervisor/supervisor-loop.ts`). */
 const PERSON_CODES: ReadonlySet<string> = new Set(["flow_bootstrap.permission_required", "flow_bootstrap.user_intervention_required"]);
 const MAX_MESSAGE = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE;
-/** The supervisor's recorded ending, by its kind, in Core's words (header): never its reason, which holds the model's. */
+/** The most of the supervisor's recorded reason its ending's row says (header, t649). */
+const MAX_ENDED_REASON = 240;
+/** The supervisor's recorded ending, by its kind, in Core's words (header); its reason is said after, screened. */
 const ENDED_WORDS = Object.freeze({
   partial: "The supervisor ended the build with only part of the Flow built.",
   blocked: "The supervisor ended the build: it could not finish the Flow."
@@ -345,9 +353,16 @@ function toldEnding(failure: Error, recorded: AutomationStudioProjectBuildEnding
   }
   // The time limit is said as the time limit, with what was tested and is left (header, t601).
   const title = timedOut?.title ?? ENDED_WORDS[recorded.outcome];
-  const text = timedOut ? `${timedOut.tested} ${note ?? NOTHING_LEFT}` : note ?? NOTHING_LEFT;
+  // Why the supervisor ended it, in its screened words, before what is left (header, t649).
+  // The record keeps Core's note after the model's words (`project-agents/record/store.ts`); the note is said once, last.
+  const own = note && recorded.reason.endsWith(note) ? recorded.reason.slice(0, -note.length) : recorded.reason;
+  const why = timedOut ? undefined : automationStudioActivityReasonText(own, MAX_ENDED_REASON);
+  const text = timedOut ? `${timedOut.tested} ${note ?? NOTHING_LEFT}` : `${why ? `${/[.!?…]$/u.test(why) ? why : `${why}.`} ` : ""}${note ?? NOTHING_LEFT}`;
   emitAutomationStudioActivity({ phase: "building", label: title, detail: { kind: "note", title, text, status: "failed" } });
-  return failure;
+  // The failure carries why too, beside the supervisor's ending it explains, so the build's last row and the chat's ending say it (header, t649).
+  const ended = why === undefined ? undefined : why.slice(0, MAX_DIAGNOSTIC_ENDED_BECAUSE).trim();
+  if (!ended || !diagnostic.issueCodes?.some((code) => DIAGNOSTIC_SUPERVISOR_ENDING_CODES.has(code))) return failure;
+  return new AutomationStudioFlowBootstrapGenerationError({ ...diagnostic, endedBecause: ended });
 }
 
 /**

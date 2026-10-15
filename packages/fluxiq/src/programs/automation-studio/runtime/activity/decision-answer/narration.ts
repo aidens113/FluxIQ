@@ -30,12 +30,27 @@ type Held = { thought: Thought; call: Call; repeat: boolean };
 /** A candidate build's own calls (`../candidate/result.ts`), read as plain strings so this module does not reach into the loop. */
 const SUBMIT_CANDIDATE = "core.submit_candidate";
 const TEST_CANDIDATE = "core.test_candidate";
-const OWN: ReadonlySet<string> = new Set([SUBMIT_CANDIDATE, TEST_CANDIDATE]);
+/**
+ * A part's own calls in a project build (`core.submit_subflow`, `core.test_subflow`),
+ * and any other tool that saves or tests a builder's steps: read like the
+ * candidate's (`../candidate/result.ts` reads every one, t649). A refused
+ * subflow submission was narrated "Submitting the subflow with the store name
+ * read via a list extraction" above its refusal (A8 frozen pair 3,
+ * `run-mv9zn5ob-d929084d`, screenshot 00012).
+ */
+const SUBMIT = /^core.submit_[a-z_]+$/u;
+const TEST = /^core.test_[a-z_]+$/u;
+const own = (toolId: string): boolean => SUBMIT.test(toolId) || TEST.test(toolId);
 
 /** What is said in place of the reason of a call sent again unchanged, which Core did not run. */
 const AGAIN: Readonly<Record<string, string>> = Object.freeze({
   [SUBMIT_CANDIDATE]: "This is the same Flow it had already sent, unchanged, so it was not checked again.",
   [TEST_CANDIDATE]: "This asks for the same test again with nothing in the Flow changed, so it was not run again."
+});
+/** The same, for a part's own calls and any other that saves or tests a builder's steps. */
+const AGAIN_PART = Object.freeze({
+  submit: "These are the same steps it had already sent, unchanged, so they were not checked again.",
+  test: "This asks for the same test again with nothing changed, so it was not run again."
 });
 const AGAIN_STEP = "This is exactly the step it had already tried, so it was not done again.";
 /** Said of a call Core did not run for another reason. */
@@ -45,6 +60,15 @@ const REFUSED: Readonly<Record<string, string>> = Object.freeze({
   [SUBMIT_CANDIDATE]: "The AI model sent a version of the Flow's steps, but it was refused, so it is not what the Flow does.",
   [TEST_CANDIDATE]: "The test of the whole Flow didn't go through, so it showed nothing about this version."
 });
+/** The same, for a part's own calls and any other that saves or tests a builder's steps. */
+const REFUSED_PART = Object.freeze({
+  submit: "The AI model sent a version of this part's steps, but it was refused, so it is not what the Flow does.",
+  test: "The test of this part didn't go through, so it showed nothing about this version."
+});
+/** What `table` says of `toolId`, else the part's words for its kind; undefined for a tool that is neither. */
+function wordsFor(table: Readonly<Record<string, string>>, part: Readonly<{ submit: string; test: string }>, toolId: string): string | undefined {
+  return table[toolId] ?? (SUBMIT.test(toolId) ? part.submit : TEST.test(toolId) ? part.test : undefined);
+}
 /**
  * Said of a Flow Core refused as the one already saved, sent again unchanged
  * (`candidate.unchanged_submission`). "it was refused, so it is not what the
@@ -100,11 +124,11 @@ export function automationStudioActivityNarration(): {
       const key = keyOf(call);
       const repeat = decided.has(key);
       decided.add(key);
-      if (repeat || OWN.has(call.toolId)) held = { thought, call, repeat };
+      if (repeat || own(call.toolId)) held = { thought, call, repeat };
       else say(thought);
     },
     ran: (call) => {
-      if (!held || !same(call) || OWN.has(call.toolId)) return;
+      if (!held || !same(call) || own(call.toolId)) return;
       say(held.thought);
       held = undefined;
     },
@@ -113,13 +137,13 @@ export function automationStudioActivityNarration(): {
       const { thought } = held;
       held = undefined;
       const tested = failed === "failed" ? TEST_FAILED : failed === "unconfirmed" ? TEST_UNCONFIRMED : undefined;
-      say(thought, failed === undefined ? undefined : failed === "unchanged" ? UNCHANGED : tested !== undefined && call.toolId === TEST_CANDIDATE ? tested : REFUSED[call.toolId] ?? NOT_RUN);
+      say(thought, failed === undefined ? undefined : failed === "unchanged" ? UNCHANGED : tested !== undefined && TEST.test(call.toolId) ? tested : wordsFor(REFUSED, REFUSED_PART, call.toolId) ?? NOT_RUN);
     },
     unrun: () => {
       if (!held) return;
       const { thought, call, repeat } = held;
       held = undefined;
-      say(thought, repeat ? AGAIN[call.toolId] ?? AGAIN_STEP : NOT_RUN);
+      say(thought, repeat ? wordsFor(AGAIN, AGAIN_PART, call.toolId) ?? AGAIN_STEP : NOT_RUN);
     }
   };
 }

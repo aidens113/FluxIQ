@@ -92,8 +92,11 @@ function briefCard(fields: Record<string, unknown>): Card | undefined {
   const purpose = words(fields.purpose, LIMITS.text);
   const allowanceUsd = amount(fields.allowanceUsd);
   const caseId = words(fields.caseId, LIMITS.text);
+  // The subflows it starts after, by name (t649): kept only as a list of words, an empty one too (it starts after none).
+  const after = entries(fields.after, (name) => words(name, LIMITS.text));
+  const afterSent = Array.isArray(fields.after);
   if (briefId === undefined || brief === undefined || subflowKey === undefined || subflowName === undefined || purpose === undefined || allowanceUsd === undefined) return undefined;
-  return { kind: "brief", briefId, brief, subflowKey, subflowName, purpose, ...(caseId === undefined ? {} : { caseId }), allowanceUsd };
+  return { kind: "brief", briefId, brief, subflowKey, subflowName, purpose, ...(caseId === undefined ? {} : { caseId }), allowanceUsd, ...(afterSent ? { after } : {}) };
 }
 
 function returnCard(fields: Record<string, unknown>): Card | undefined {

@@ -750,9 +750,14 @@ and two optional, additive fields say which one did what (t539):
   (the task's parts in the person's own words, each subflow with its one-line
   purpose and parts, the starting cases, the budget split and the reserve),
   `brief` ("Building <subflow>: <purpose>", or Surveying, Repairing, with the
-  brief id as the row's `ref`), `return` (outcome, reason, spend, calls and a
-  count of trials) and `receipt` (a subflow or whole-Flow trial and its
-  verdict). The emitters (`runtime/activity/project/`) build each from the
+  brief id as the row's `ref`, and `after`: the plan's names of the subflows
+  it starts after, empty for none, so a client says "<subflow> waits for
+  <predecessor>" while a predecessor dispatched beside it is still out; t649),
+  `return` (outcome, reason, spend, calls and a count of trials; the reason is
+  said for the person by `runtime/activity/project/return-words.ts`, never the
+  dispatcher's codes, calls, subflow keys or brief ids, which the supervisor
+  still reads in the build record) and `receipt` (a subflow or whole-Flow trial
+  and its verdict). The emitters (`runtime/activity/project/`) build each from the
   project-agent contracts and never put a digest in a title, a ref or a card;
   the hub rebuilds a card field by field (`runtime/activity/project-card-bounds.ts`),
   cutting strings to 160 characters (a return's `reason` to 240) and lists to

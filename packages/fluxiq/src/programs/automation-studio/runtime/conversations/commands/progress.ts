@@ -7,7 +7,7 @@
 // says why it stopped and how far it had got.
 
 import { automationStudioActivityCheckRefusalReasons, automationStudioActivityIssueWords } from "../../activity/index.ts";
-import { automationStudioActivityRefusedStepIssues } from "../../activity/wording/index.ts";
+import { automationStudioActivityFailureCodeWords, automationStudioActivityRefusedStepIssues } from "../../activity/wording/index.ts";
 import { automationStudioCandidateRefusalCodes } from "../../service/candidate-failure/index.ts";
 import type { AutomationStudioConversationCommandCallResult, AutomationStudioConversationCommandOutcome } from "./command.ts";
 
@@ -79,7 +79,7 @@ export function automationStudioConversationCallCause(what: string, response: Au
   const meant = (code && NO_PROGRESS.test(code) ? refusedWords(diagnostic) ?? neverSubmittedWords(diagnostic) : undefined)
     ?? (code && ITERATION_LIMIT.test(code) ? exhaustedWords(diagnostic?.evidenceLoop?.exhausted) : undefined)
     ?? supervisorEndingWords(diagnostic)
-    ?? (code ? CODE_WORDS.find(([pattern]) => pattern.test(code))?.[1] : undefined)
+    ?? (code ? automationStudioActivityFailureCodeWords(code) : undefined)
     ?? (typeof diagnostic?.stage === "string" && Object.hasOwn(STAGE_WORDS, diagnostic.stage) ? STAGE_WORDS[diagnostic.stage] : undefined);
   const said = meant ?? (automationStudioConversationPlainCause(response.error ?? "") || (code ? "something went wrong inside FluxIQ" : "no reason was given"));
   return `${what} failed: ${said}`;
@@ -102,6 +102,7 @@ type Diagnostic = {
   issueCodes?: unknown;
   candidate?: { revision?: unknown; trialCount?: unknown };
   refusedSteps?: unknown;
+  endedBecause?: unknown;
 };
 
 /** A candidate build that stopped for no progress: what its last refused submission was refused for says why (`refusedWords`). */
@@ -214,31 +215,18 @@ function supervisorEndingWords(diagnostic: Diagnostic | undefined): string | und
     return outcome ? TIME_LIMIT_WORDS[outcome] : "it reached its time limit before a whole test of the Flow passed";
   }
   const code = codes.find((entry): entry is string => typeof entry === "string" && Object.hasOwn(SUPERVISOR_ENDING_WORDS, entry));
-  return code ? SUPERVISOR_ENDING_WORDS[code] : undefined;
+  if (!code) return undefined;
+  // Why the supervisor ended it, its screened reason (`endedBecause`, t649): the person read that it ended and never why.
+  const why = typeof diagnostic?.endedBecause === "string" ? diagnostic.endedBecause.trim().replace(/[.\s]+$/u, "") : "";
+  return why ? `${SUPERVISOR_ENDING_WORDS[code]}: ${lowerFirst(why)}` : SUPERVISOR_ENDING_WORDS[code];
 }
 
-/** What a failure code means, in words that finish "failed: ...". First match wins. */
-const CODE_WORDS: ReadonlyArray<readonly [RegExp, string]> = [
-  // A build's own endings, each named for what happened rather than the stage it ended in (t362, round 4's C6).
-  [/evidence_repeat_without_progress$/u, "it kept trying without getting any further, so it was stopped"],
-  [/evidence_unusable_decision$|model_replies_unreadable$|provider_response_malformed$/u, "the model's answer could not be used"],
-  [/evidence_limit$/u, "it reached the limit on how much it may read from the page"],
-  [/evidence_tool_failed$/u, "a step it tried failed in a way it could not go on from"],
-  [/evidence_cancelled$/u, "it was stopped"],
-  [/blank_target_required$/u, "FluxIQ could not tell which part of this Flow to build on, as it builds on a Flow with one main part"],
-  [/pending_adaptation_exists$/u, "a suggested change to this Flow is already waiting for you to accept or set aside"],
-  [/generation_lock_failed$/u, "another build of this Flow was already under way"],
-  [/active_instructions_required$/u, "the Flow has no instruction saying what it should do"],
-  [/secret_unavailable/u, "your model key is locked"],
-  [/provider_refused|request_refused/u, "the request to the model was refused"],
-  [/auth_failed/u, "the model's credentials were not accepted"],
-  [/rate_limited/u, "the model was too busy to answer"],
-  [/timeout|timed_out|aborted|deadline/u, "it ran out of time"],
-  [/network_error|http_error|redirect_rejected|provider_request_failed/u, "the model could not be reached"],
-  [/provider_resolution|provider_resolver/u, "no model was set up to build it"],
-  [/cost_exhausted|cost_limit|spend/u, "it reached its spending limit"],
-  [/run_budget_\w+_exhausted|evidence_budget_exhausted/u, "it reached the limit on how much it may do"]
-];
+/** "The item can't be added" reads "the item can't be added" after a colon; a word with a capital inside ("FluxIQ") stays. */
+function lowerFirst(sentence: string): string {
+  const word = /^\S+/u.exec(sentence)?.[0] ?? "";
+  return /\p{Lu}/u.test(word.slice(1)) ? sentence : `${sentence.charAt(0).toLowerCase()}${sentence.slice(1)}`;
+}
+
 
 /** What each stage of a build means when it is where the build failed, for a code with no words of its own. */
 const STAGE_WORDS: Readonly<Record<string, string>> = Object.freeze({

@@ -19,13 +19,13 @@ import { parseAutomationStudioFlowBootstrapCandidateKept } from "./candidate-kep
 import { automationStudioFlowBootstrapRefusedSteps } from "./refused-steps.ts";
 import { FLOW_BOOTSTRAP_PHASE_FAILURE_CODE_STAGE } from "./codes.ts";
 import type { AutomationStudioLlmProviderThrow, AutomationStudioLlmProviderThrowWithheld } from "../../llm/index.ts";
-import { DIAGNOSTIC_ISSUE_CODE, MAX_DIAGNOSTIC_ISSUE_CODES, type AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnostic.ts";
+import { DIAGNOSTIC_ISSUE_CODE, DIAGNOSTIC_SUPERVISOR_ENDING_CODES, MAX_DIAGNOSTIC_ENDED_BECAUSE, MAX_DIAGNOSTIC_ISSUE_CODES, type AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnostic.ts";
 import { automationStudioFlowBootstrapFailureState, automationStudioFlowBootstrapProviderStatus } from "./failure-state.ts";
 
 export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   value: unknown
 ): AutomationStudioFlowBootstrapFailureDiagnostic | null {
-  if (!isRecord(value) || !hasExactFields(value, ["code", "stage", "retryable", "providerInvocation", "providerResponse", "accounting", "evidenceLoop", "issueCodes", "permissionRequest", "providerThrow", "ending", "candidate", "refusedSteps", "totalProviderCallCount"])) return null;
+  if (!isRecord(value) || !hasExactFields(value, ["code", "stage", "retryable", "providerInvocation", "providerResponse", "accounting", "evidenceLoop", "issueCodes", "permissionRequest", "providerThrow", "ending", "candidate", "refusedSteps", "totalProviderCallCount", "endedBecause"])) return null;
   if (typeof value.code !== "string") return null;
   if (value.totalProviderCallCount !== undefined && (!Number.isSafeInteger(value.totalProviderCallCount) || (value.totalProviderCallCount as number) < 0)) return null;
   // The stage a code belongs to, which is also the only stage it may claim. A
@@ -65,6 +65,9 @@ export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   // The refused steps' own words stand only beside the no-progress ending they explain.
   const refusedSteps = automationStudioFlowBootstrapRefusedSteps.parse(value.refusedSteps);
   if (refusedSteps === null || (refusedSteps !== undefined && value.code !== REFUSED_STEPS_CODE)) return null;
+  // A supervisor's reason for ending stands only beside the supervisor's ending it explains (t649): words on one line, bounded.
+  if (value.endedBecause !== undefined && (typeof value.endedBecause !== "string" || !value.endedBecause.trim() || value.endedBecause.length > MAX_DIAGNOSTIC_ENDED_BECAUSE
+    || /[\r\n]/u.test(value.endedBecause) || !(value.issueCodes as string[] | undefined)?.some((code) => DIAGNOSTIC_SUPERVISOR_ENDING_CODES.has(code)))) return null;
   return {
     ...(value.totalProviderCallCount === undefined ? {} : { totalProviderCallCount: value.totalProviderCallCount as number }),
     code: value.code,
@@ -79,7 +82,8 @@ export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
     ...(providerThrow ? { providerThrow } : {}),
     ...(ending ? { ending } : {}),
     ...(candidate ? { candidate } : {}),
-    ...(refusedSteps ? { refusedSteps } : {})
+    ...(refusedSteps ? { refusedSteps } : {}),
+    ...(value.endedBecause !== undefined ? { endedBecause: value.endedBecause as string } : {})
   };
 }
 

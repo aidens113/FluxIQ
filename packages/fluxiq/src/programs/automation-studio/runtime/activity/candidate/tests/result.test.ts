@@ -83,3 +83,29 @@ describe("testing a candidate's whole Flow, in words", () => {
     expect(automationStudioActivityCandidateResult("core.test_candidate", ran({ seen: true }))).toBeUndefined();
   });
 });
+
+// t649 (A8 frozen pair 3, `run-mv9zn5ob-d929084d`, 00012): a project builder's submission of its part,
+// refused under `flow_bootstrap.evidence_completion_parameters_unresolved`, ended "succeeded" and read
+// a green "Done". Every tool that saves or tests a builder's steps is read the same way.
+describe("a project builder's part, saved and tested, in words", () => {
+  const part = (toolId: string, evidence: Record<string, unknown>, resultCode?: string) => automationStudioActivityCandidateResult(toolId, ran(evidence, resultCode));
+
+  it("a refused part is declined with Core's reasons, an accepted one is done", () => {
+    const refused = said(part("core.submit_subflow", { ok: false, revision: 3, diagnostics: { ok: false, code: "flow_bootstrap.completion_refused", refusal: "flow_bootstrap.evidence_completion_parameters_unresolved", issues: [{ code: "web.handle.unknown", handles: [{ handle: "extraction.1" }] }] } }, "flow_bootstrap.evidence_completion_parameters_unresolved:c01a26f6"));
+    expect(refused).toMatchObject({ status: "failed", part: "Declined", outcome: "not done" });
+    expect(refused?.words).toBeTruthy();
+    expect(said(part("core.submit_subflow", { ok: false, revision: 0, diagnostics: { ok: false, code: "subflow.scope_refused", issues: [{ code: "subflow.output_unknown_port" }] } }, "subflow.scope_refused:ba64ff77"))).toMatchObject({ status: "failed", part: "Declined" });
+    expect(said(part("core.submit_subflow", { ok: true, revision: 4, digest: "c".repeat(64) }))).toEqual({ status: "succeeded", part: "Said", words: "the steps were accepted", outcome: "done" });
+  });
+
+  it("a part's test reads its verdict, and a refused test reads the candidate gate's words for its code", () => {
+    expect(said(part("core.test_subflow", { ok: false, partial: true, verdict: "no", feedback: {} }, "subflow.trial_no"))).toMatchObject({ status: "failed", part: "Said", outcome: "didn't pass" });
+    expect(said(part("core.test_subflow", { ok: true, partial: true, verdict: "yes", feedback: {} }, "subflow.trial_yes"))).toMatchObject({ status: "succeeded", outcome: "passed" });
+    expect(said(part("core.test_subflow", { ok: false, code: "subflow.trial_stale_revision", instruction: "Only the latest proposal can be tested." }, "subflow.trial_stale_revision")))
+      .toEqual({ status: "failed", part: "Declined", words: "only the latest saved steps can be tested", outcome: "not done" });
+  });
+
+  it("any other tool is not read here", () => {
+    expect(part("core.run_node", { ok: false })).toBeUndefined();
+  });
+});
