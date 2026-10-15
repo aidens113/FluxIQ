@@ -704,7 +704,7 @@ Earlier entries are in [the ledger archive](./automation-project-agents-plan/arc
 - Why: frozen pair 2 `project` bigbox cart: the product succeeded and the oracle passed, but the Lab read the optional step Core went past as the run's failure; a reader must tell the Flow's own way on from a failed route by structure, not display text
 - Validation: after merging dev: tsc exit 0; vitest executor -> 101 files, 875 passed; the new ladder test fails without the mark; `pnpm check` -> passed; merged `cb0d5989`
 - Outcome: Accepted
-- Follow-up: in a unit test, a dispatcher answer `failed` with no `outputs` and no failure `stage` left the attempt `succeeded` and the ladder unconsulted; with `outputs: {}` and `stage: "dispatch"` it fails as expected (to confirm which field decides, and whether a real host can answer that way)
+- Follow-up: none. A probe showed an optional step answered `target_not_found` without a dispatch `stage` is skipped as a success by design (`executor/step-skip/absent-step.ts`, route `skipped`), and only a dispatch-stage failure reaches the ladder; with downstream t642 a hidden-only tie now answers not found, so that rule skips such a step cleanly
 
 ## Open Questions
 
