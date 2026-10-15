@@ -590,6 +590,14 @@ Entries from 2026-10-13 to A8 wave 4 (t550-t611) are archived in
 - Outcome: Accepted
 - Follow-up: the early stop is tested through the dispatcher with a scripted builder, not the real builder loop's stop at its next turn
 
+### 2026-10-15 — After A8 frozen pair 3 wave 17: a data output names where its value lies (t646, Core half)
+- Agent: worker t646-read-one-value (two rounds), paired with downstream; supervisor reviewed the executor change, verified and integrated
+- Changed: `nodes/contracts.ts` `AutomationNodePort.resultPath` (validated in `nodes/definitions.ts`); `executor/node-execution/result-path-outputs.ts` (new) and `attempt.ts`: after a successful dispatch the value at that path of the answer is copied to `outputs.<port>`, never replacing an output already written; `flow-bootstrap/subflow-candidate/route-outputs.ts` classifies such a port as a value; `flow-bootstrap/plan/flow-script-format.ts`: the example reads one value with a single-value read and its port, not a list extraction (its own kind of site); `docs/architecture/automation-studio-native-nodes.md`
+- Why: wave 17 `project` bigbox cart: a builder that had to hand on one read value could not (no port carried it) and copied the format example's `extraction.1`
+- Validation: after merging dev (t645, t647, t648 in): tsc exit 0; executor, flow-bootstrap, project-agents, tests/earlier-output -> 322 files, 3426 passed, 2 skipped; audit passed; `pnpm check` -> passed; merged `7a3838ce`
+- Outcome: Accepted
+- Follow-up: the `extract` parameter's shape is described, not yet refused before a run when wrong
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
