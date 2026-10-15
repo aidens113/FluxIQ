@@ -92,6 +92,7 @@ export function chooseAutomationStudioRecovery(
       kind: "deterministic_path",
       priority: DETERMINISTIC_PATH_PRIORITY,
       label: "Go on past the optional step",
+      optionalStepWayOn: true,
       targetNodeId: optionalWayOn.targetNodeId,
       edgeId: optionalWayOn.id,
       reason: `${node.id} is optional, so the run goes on along ${optionalWayOn.id} without spending recovery budget.`
