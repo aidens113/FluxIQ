@@ -20,6 +20,7 @@ import { emitAutomationStudioActivity, emitAutomationStudioActivityClearedWait, 
 import { attemptWithHostExpectationEvaluation } from "../transition-comparison.ts";
 
 import { automationStudioClearedLayersOf } from "./cleared-layers.ts";
+import { automationStudioResultPathOutputs } from "./result-path-outputs.ts";
 import { automationStudioAttemptWithRecordedEffect } from "./recorded-effect.ts";
 import { automationStudioNodeAttemptFailure } from "./failure.ts";
 import { automationStudioCallSubflow } from "../frames/index.ts";
@@ -150,7 +151,7 @@ export class AutomationStudioNodeAttemptExecution {
       if (native) {
         // An importer's definition is the native runtime's, so it says which routes the node declares.
         const target: RecordCaptureTarget = { runState, nodeId: node.id, attemptId, cleared: [], ...(consumer ? { consumer } : {}) };
-        const result = await this.dispatchAutomationStudioEffects(native.result, options, withholding, target, this.declaredBranchRoutes(definition?.outputs ?? native.declaredOutputs));
+        const result = await this.dispatchAutomationStudioEffects(native.result, options, withholding, target, definition?.outputs ?? native.declaredOutputs);
         return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities, runState);
       }
       if (options.commandRun && (!options.compositeExecutor || !options.commandRun.acceptsComposite(options.compositeExecutor))) {
@@ -196,7 +197,7 @@ export class AutomationStudioNodeAttemptExecution {
       };
       let result = await definition.execute(context);
       const target: RecordCaptureTarget = { runState, nodeId: node.id, attemptId, cleared: [], ...(consumer ? { consumer } : {}) };
-      result = await this.dispatchAutomationStudioEffects(result, options, withholding, target, this.declaredBranchRoutes(definition.outputs));
+      result = await this.dispatchAutomationStudioEffects(result, options, withholding, target, definition.outputs);
       return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target) }, options, beforeAction, hostCapabilities, runState);
     } catch (error) {
       await options.commandRun?.stop("executor.attempt_failed");
@@ -241,8 +242,10 @@ export class AutomationStudioNodeAttemptExecution {
   // is taken only when the node's definition declares a branch output of that
   // id, so a dispatch can choose among the routes its node was authored with and
   // never invent one, or send the run down a data port's edge; otherwise the
-  // node's own route stands.
-  private static async dispatchAutomationStudioEffects(initial: AutomationNodeExecutionResult, options: AutomationStudioGraphExecutionOptions, withholding: AutomationStudioTraceWithholding, target: RecordCaptureTarget, branchRoutes: ReadonlySet<string>): Promise<AutomationNodeExecutionResult> {
+  // node's own route stands. A data output that names where in the answer its
+  // value lies is filled from it (`./result-path-outputs.ts`).
+  private static async dispatchAutomationStudioEffects(initial: AutomationNodeExecutionResult, options: AutomationStudioGraphExecutionOptions, withholding: AutomationStudioTraceWithholding, target: RecordCaptureTarget, declaredOutputs: readonly AutomationNodePort[] | undefined): Promise<AutomationNodeExecutionResult> {
+    const branchRoutes = this.declaredBranchRoutes(declaredOutputs);
     let result = initial;
     for (const [index, effect] of (initial.effects ?? []).entries()) {
       await options.commandRun?.checkpoint();
@@ -301,7 +304,7 @@ export class AutomationStudioNodeAttemptExecution {
         };
       } else {
         const route = dispatched.route && branchRoutes.has(dispatched.route) ? { route: dispatched.route } : {};
-        result = { ...result, outputs, ...targetResolution, ...route };
+        result = { ...result, outputs: { ...outputs, ...automationStudioResultPathOutputs(outputs, declaredOutputs) }, ...targetResolution, ...route };
       }
       if (issued && target.consumer && options.commandRun) {
         const handled = this.handling.get(target.consumer) ?? new Map();

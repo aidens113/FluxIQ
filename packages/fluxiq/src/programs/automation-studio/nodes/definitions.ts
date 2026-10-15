@@ -1,3 +1,4 @@
+import { parseAutomationStudioRecordsPath } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioFlowScope } from "../model/flows.ts";
 import type { AutomationStudioValidationIssue, AutomationStudioValidationResult } from "../model/validation.ts";
@@ -236,6 +237,10 @@ function validatePorts(ports: AutomationNodePort[], issues: AutomationStudioVali
     if (!port.label.trim()) issue(issues, "node.port_missing_label", "Node port must have a label.", `${path}.${index}.label`);
     if (ids.has(port.id)) issue(issues, "node.duplicate_port_id", `Duplicate node port id "${port.id}".`, `${path}.${index}.id`);
     ids.add(port.id);
+    // Only a data output is filled from its dispatched answer (`AutomationNodePort.resultPath`).
+    if (port.resultPath !== undefined && (path !== "outputs" || port.role !== "data" || !parseAutomationStudioRecordsPath(port.resultPath))) {
+      issue(issues, "node.port_invalid_result_path", `Port "${port.id}" may declare a result path only as a data output, as a dotted path.`, `${path}.${index}.resultPath`);
+    }
   }
 }
 

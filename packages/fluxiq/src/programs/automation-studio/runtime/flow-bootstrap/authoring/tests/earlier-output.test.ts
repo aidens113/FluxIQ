@@ -26,9 +26,9 @@ const resolution = {
   permissions: ["web-automation.action"]
 };
 
-// The library, with the single-element read declaring a record output and
-// typing able to take a row, so both a field of an output and a repeat are exercised.
-const VALUE_OUTPUT: AutomationNodePort = { id: "value", label: "Value", valueType: "object", role: "data" };
+// The library, whose single-element read declares its `value` output as the
+// domain does (t646), with typing able to take a row, so both a field of an
+// output and a repeat are exercised.
 const ROW_INPUT: AutomationNodePort = { id: "item", label: "Item", valueType: "any", role: "data", required: false };
 const READ = "web.output.dom-extract";
 const TYPE = "web.output.dom-type";
@@ -37,8 +37,7 @@ const LIST = "web.output.dom-extract_list";
 // Core's built-ins come with it, for the join an optional step adds and the loop a repeat does.
 const registry = new AutomationStudioNodeRegistry();
 for (const definition of webDomainNodeDefinitionsFixture()) {
-  if (definition.id === READ) registry.register({ ...definition, outputs: [...definition.outputs, VALUE_OUTPUT] });
-  else if (definition.id === TYPE) registry.register({ ...definition, inputs: [...definition.inputs, ROW_INPUT] });
+  if (definition.id === TYPE) registry.register({ ...definition, inputs: [...definition.inputs, ROW_INPUT] });
   else registry.register(definition);
 }
 

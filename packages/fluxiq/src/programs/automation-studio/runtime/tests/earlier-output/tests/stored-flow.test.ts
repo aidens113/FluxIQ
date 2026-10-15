@@ -19,7 +19,7 @@ import {
   type AutomationStudioLlmEvidenceToolExecutionResult
 } from "../../../llm/index.ts";
 import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
-import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, AutomationStudioNodeRegistry, type AutomationNodeExecutionResult, type AutomationNodePort } from "../../../../nodes/index.ts";
+import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, AutomationStudioNodeRegistry, type AutomationNodeExecutionResult } from "../../../../nodes/index.ts";
 import { createBlankAutomationStudioFlowArtifact } from "../../../../model/index.ts";
 import {
   automationStudioFlowDraftStepIsProposed,
@@ -38,12 +38,11 @@ const resolution = {
   permissions: ["web-automation.action"]
 };
 
-// The web library, with the single-element read declaring a record output.
-const VALUE_OUTPUT: AutomationNodePort = { id: "value", label: "Value", valueType: "object", role: "data" };
+// The web library, whose single-element read declares its `value` output as the domain does (t646).
 const READ = "web.output.dom-extract";
 const TYPE = "web.output.dom-type";
 const CLICK = "web.output.dom-click";
-const definitions = webDomainNodeDefinitionsFixture().map((definition) => definition.id === READ ? { ...definition, outputs: [...definition.outputs, VALUE_OUTPUT] } : definition);
+const definitions = webDomainNodeDefinitionsFixture();
 const registry = new AutomationStudioNodeRegistry();
 for (const definition of definitions) registry.register(definition);
 const nodeOf = automationStudioLlmNodeDescriptions({ registry, resolution }).definition;

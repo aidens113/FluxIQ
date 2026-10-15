@@ -71,6 +71,20 @@ describe("canonical Automation Studio node registry", () => {
     expect(validateAutomationStudioImporterNodeManifest(invalidManifest).issues.map((issue) => issue.code)).toContain("node.importer_scope_mismatch");
     expect(() => new AutomationStudioNodeRegistry().registerImporterManifest(invalidManifest)).toThrow("node.importer_scope_mismatch");
   });
+
+  // t646: a data output may say where in its dispatched answer its value lies; nothing else may.
+  it("accepts a result path on a data output only, and only as a dotted path", () => {
+    const withOutput = (port: AutomationStudioNodeDefinition["outputs"][number]) => ({ ...importerNode(), outputs: [...importerNode().outputs, port] });
+    expect(validateAutomationStudioNodeDefinition(withOutput({ id: "value", label: "Value", valueType: "any", role: "data", resultPath: "result.extracted" }))).toEqual({ ok: true, issues: [] });
+    for (const port of [
+      { id: "value", label: "Value", valueType: "any" as const, role: "branch" as const, resultPath: "result.extracted" },
+      { id: "value", label: "Value", valueType: "any" as const, role: "data" as const, resultPath: "result..extracted" }
+    ]) {
+      expect(validateAutomationStudioNodeDefinition(withOutput(port)).issues.map((issue) => issue.code)).toEqual(["node.port_invalid_result_path"]);
+    }
+    const input = { ...importerNode(), inputs: [{ id: "in", label: "In", valueType: "any" as const, role: "data" as const, resultPath: "result.extracted" }] };
+    expect(validateAutomationStudioNodeDefinition(input).issues.map((issue) => issue.code)).toContain("node.port_invalid_result_path");
+  });
 });
 
 describe("a parameter contract bound on the registry", () => {

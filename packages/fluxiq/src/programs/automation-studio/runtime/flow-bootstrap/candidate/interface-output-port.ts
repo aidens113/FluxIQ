@@ -9,6 +9,10 @@
 // declares only its success and failure ports; Core accepted it, the value was
 // empty, and every later builder was held to read it.
 //
+// A data port the node declares is a value, whatever it holds: a list's
+// `records`, or a single-value read's `value`, which the executor fills from
+// where the port says its dispatched answer keeps it (`resultPath`, t646).
+//
 // A node whose definition the registry does not know is read by the port's id,
 // as definitions default it (`nodes/shared/definition.ts`), and is never said
 // to lack a port. A call to a part also gives the part's outputs, which its own

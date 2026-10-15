@@ -8,7 +8,8 @@ import type { AutomationNodeParameter, AutomationStudioNodeDefinition } from "..
 // definition did not. Each action carries the domain's `expectedState`
 // parameter, whose description the catalog sends. The list extraction's
 // `recordOutput` carries the `record-output` control, and its definition the
-// records path, as the domain declares both.
+// records path, as the domain declares both. The single-value read declares
+// its `value` data port and where its answer keeps the value (t646).
 //
 // Resolve them with runtime capability `web.actions` and permission
 // `web-automation.action`.
@@ -44,6 +45,8 @@ const extractList: AutomationNodeParameter[] = [
 
 /** Where the list extraction's result keeps its rows (the domain's `WEB_AUTOMATION_EXTRACT_LIST_RECORDS_PATH`). */
 const EXTRACT_LIST_RECORDS_PATH = "result.extracted";
+/** Where the single-value read's result keeps the value it read (the domain's `value` port's `resultPath`, t646). */
+const EXTRACT_VALUE_PATH = "result.extracted";
 
 type WebOutput = {
   slug: string;
@@ -54,6 +57,8 @@ type WebOutput = {
   parameters: AutomationNodeParameter[];
   tags?: string[];
   records?: true;
+  /** A single-value read, which hands what it read on through its `value` data port. */
+  value?: true;
 };
 
 const WEB_OUTPUTS: WebOutput[] = [
@@ -66,7 +71,16 @@ const WEB_OUTPUTS: WebOutput[] = [
   { slug: "dom-keypress", outputId: "web.dom.keypress", label: "Key Press", description: "Dispatch a keyboard event, with modifier keys.", privileged: true, parameters: [...elementTarget(false), text("key", "Key", { defaultValue: "" }), value("modifiers", "Modifiers")] },
   { slug: "dom-wait_for_selector", outputId: "web.dom.wait_for_selector", label: "Wait For Selector", description: "Wait until an element is present, visible, enabled, or absent.", privileged: false, parameters: [...elementTarget(true), value("wait", "Condition")] },
   { slug: "dom-wait_for_text", outputId: "web.dom.wait_for_text", label: "Wait For Text", description: "Wait until page text appears or the page settles.", privileged: false, parameters: [text("text", "Text", { required: true }), timeoutMs, value("wait", "Condition")] },
-  { slug: "dom-extract", outputId: "web.dom.extract", label: "Extract", description: "Extract text, value, or attributes from an element.", privileged: false, parameters: [...elementTarget(true), value("extract", "Read")] },
+  {
+    slug: "dom-extract", outputId: "web.dom.extract", label: "Extract",
+    description: "Read one value off one element of the page. A later step reads it as $step.<label>.value. Name the element by its handle in target; extract says which value. For rows of a list, use Extract List.",
+    privileged: false, value: true,
+    // Its `extract` described with every mode and led by the text read, as the domain declares it (t646).
+    parameters: [...elementTarget(true), value("extract", "Read", {
+      description: "Which value of the element to read, handed on as the step's value output ($step.<label>.value). {\"mode\": \"text\"} reads its visible text; \"value\" a field's current value; \"attribute\" one attribute, named: {\"mode\": \"attribute\", \"attribute\": \"href\"}; \"html\" its inner HTML. In a Flow script: `extract.mode: text`.",
+      example: { mode: "text" }
+    })]
+  },
   { slug: "dom-capture_snapshot", outputId: "web.dom.capture_snapshot", label: "Capture Snapshot", description: "Capture a structured DOM snapshot.", privileged: false, parameters: [] },
   { slug: "dom-check", outputId: "web.dom.check", label: "Set Checked", description: "Set a checkbox or radio to a checked state.", privileged: true, parameters: [...elementTarget(true), flag("checked", "Checked", true)] },
   { slug: "dom-assert", outputId: "web.dom.assert", label: "Assert", description: "Verify a condition about the page and fail when it does not hold.", privileged: false, parameters: [...elementTarget(false), value("assert", "Assertion", { required: true })] },
@@ -100,7 +114,8 @@ export function webDomainNodeDefinitionsFixture(): AutomationStudioNodeDefinitio
     outputs: [
       { id: "success", label: "Success", valueType: "any", role: "success" },
       { id: "failed", label: "Failed", valueType: "any", role: "failure" },
-      ...(output.records ? [{ id: "records", label: "Records", valueType: "array" as const, role: "data" as const }] : [])
+      ...(output.records ? [{ id: "records", label: "Records", valueType: "array" as const, role: "data" as const }] : []),
+      ...(output.value ? [{ id: "value", label: "Value", valueType: "any" as const, role: "data" as const, resultPath: EXTRACT_VALUE_PATH }] : [])
     ],
     parameters: [...output.parameters, expectedState],
     tags: ["web-automation", "output", ...(output.tags ?? [])],

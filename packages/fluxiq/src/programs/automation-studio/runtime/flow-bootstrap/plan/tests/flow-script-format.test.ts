@@ -444,7 +444,15 @@ describe("the state-aware Flow script format", () => {
     const check = [{ fact: "text", op: "contains", value: "Booked", target: { handle: "t11" } }];
     expect(calendar!.metadata?.["fluxiq.successCheck"]).toEqual(check);
     expect(floorplan!.metadata?.["fluxiq.successCheck"]).toEqual(check);
-    expect(calendar!.interface?.outputs.map((port) => port.metadata?.binding)).toEqual([{ $state: { path: "$node.s2.records" } }]);
+    // t646: each part reads its one reference with the single-value read and hands it on through its value port.
+    expect(calendar!.interface?.outputs.map((port) => port.metadata?.binding)).toEqual([{ $state: { path: "$node.s2.value" } }]);
+    expect(floorplan!.interface?.outputs.map((port) => port.metadata?.binding)).toEqual([{ $state: { path: "$node.s3.value" } }]);
+    for (const part of [calendar!, floorplan!]) {
+      const read = part.nodes.at(-1)!;
+      expect(read.definitionId).toBe("web.output.dom-extract");
+      expect(read.parameters).toMatchObject({ target: { handle: "t12" }, extract: { mode: "text" } });
+    }
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT).not.toContain("$step.calendar-ref.records");
     expect(plan.metadata).toEqual({ requires: ["flow.handlers@1", "flow.subflow-calls@1", "web.facts@1"] });
   });
 });
@@ -485,7 +493,7 @@ describe("every example in the Flow script format, saved as a Flow", () => {
     const booking = main.nodes.find((node) => node.metadata?.bootstrapSymbolicKey === "s2")!;
     expect(handler.parameterValues?.scope).toEqual({ kind: "nodes", nodeIds: [booking.id] });
     const calendar = byKey.get("calendar")!.graphFlow;
-    expect(calendar.interface.outputs.map((port) => [port.id, port.metadata?.binding])).toEqual([["reference", { $state: { path: "$node.s2.records" } }]]);
+    expect(calendar.interface.outputs.map((port) => [port.id, port.metadata?.binding])).toEqual([["reference", { $state: { path: "$node.s2.value" } }]]);
     expect(calendar.metadata?.["fluxiq.successCheck"]).toEqual([{ fact: "text", op: "contains", value: "Booked", target: { handle: "t11" } }]);
     expect(calendar.metadata?.requires).toEqual(["web.facts@1"]);
     expect(main.metadata?.requires).toEqual(["flow.handlers@1", "flow.subflow-calls@1"]);

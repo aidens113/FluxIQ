@@ -35,6 +35,15 @@ export type AutomationNodePort = {
   role?: "control" | "success" | "failure" | "data" | "error" | "branch";
   required?: boolean;
   multiple?: boolean;
+  /**
+   * A data output only: where in the node's dispatched answer (`outputs.result`)
+   * the value this port hands on lies, as a dotted path in the grammar a records
+   * path uses. After a successful dispatch the executor copies the value found
+   * there to `outputs.<id>`, so a later step reads it as `$step.<label>.<id>`
+   * (`../runtime/executor/node-execution/result-path-outputs.ts`). Without it an
+   * output node's answer stays under `result`, which no port declares.
+   */
+  resultPath?: string;
 };
 
 export type AutomationNodeParameter = {
