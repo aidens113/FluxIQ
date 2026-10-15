@@ -24,6 +24,19 @@ import { plan } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 // (`FLUXIQ_AUTHORING_MODE=candidate`, the describe at the end) the model
 // submits a candidate and asks for its test; Core runs it once from its start,
 // the judge says yes twice, and the chat applies the proposal that makes (t340).
+//
+// **Only a hang guard bounds these cases by time (t644).** Under load a case
+// took over 60 s against 1-4 s quiet and failed on its 60 s watchdog (t616),
+// one case had only the default 15 s, and the cleanup hook, which waits for
+// the chat's command work, had only vitest's 15 s hook timeout, past which the
+// directory would be removed under a build still writing. The scripted chat
+// model and provider answer at once, so the chat's attempt deadline and the
+// provider's are not reached; the one exception is the judge's own read of the
+// Flow's changes, a single database read under the provider's 20 s deadline.
+// Nothing else on the path waits on time. The watchdog is a hang guard only,
+// for every case and for the cleanup hook, and the cleanup still waits for
+// every command's work, the build included, before it closes the service and
+// removes its directory.
 
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -53,6 +66,9 @@ const PAIRED: ProgramApiActor = {
   permissions: ["programs.read", "programs.write", "runtime.control", "flows.write"]
 };
 const EXTENSION_CAPABILITIES = ["flow.createHere", "flow.describe", "flow.explore", "flow.improve", "run.execute", "ask.answer"].map((id) => ({ id }));
+
+// A hang guard only (header), for each case and for the cleanup that waits for its work.
+vi.setConfig({ testTimeout: 300_000, hookTimeout: 300_000 });
 
 let tempRoot: string;
 let world: World | null = null;
@@ -286,7 +302,7 @@ describe("the extension's chat, end to end in Core", () => {
     const built = world.activity.filter((event) => event.subject.kind === "build");
     expect(built.length).toBeGreaterThan(0);
     expect(built.every((event) => event.conversationId === world!.conversationId)).toBe(true);
-  }, 60_000);
+  });
 
   it("builds from a job the person only described, taking their message as what the automation should do", async () => {
     world = await createWorld({ unlocked: UNLOCKED_SESSION });
@@ -308,7 +324,7 @@ describe("the extension's chat, end to end in Core", () => {
     const [result] = resultTurns((await world.thread()).turns, "flow.createHere");
     expect(result?.text).toMatch(/is ready/u);
     expect(result?.text).not.toMatch(/Say "run it"/u);
-  }, 60_000);
+  });
 
   it("says what an automation should do", async () => {
     world = await createWorld({ unlocked: UNLOCKED_SESSION });
@@ -320,7 +336,7 @@ describe("the extension's chat, end to end in Core", () => {
     const bodies = await Promise.all(page.instructions.map(async (entry) => (await world!.service.getFlowInstruction(world!.project.id, entry.instructionId))?.body));
     expect(bodies).toContain("It should find kettles");
     expect(bodies).not.toContain("Find every kettle under 30 dollars.");
-  }, 60_000);
+  });
 
   it("explores and builds a blank automation it is told about, and applies it", async () => {
     world = await createWorld({ unlocked: UNLOCKED_SESSION });
@@ -336,7 +352,7 @@ describe("the extension's chat, end to end in Core", () => {
     const page = await world.service.listFlowInstructionSummaries({ projectId: world.project.id, flowId: flow.flowId, status: "active" }) as unknown as { instructions: Array<{ instructionId: string }> };
     expect(await Promise.all(page.instructions.map(async (entry) => (await world!.service.getFlowInstruction(world!.project.id, entry.instructionId))?.body))).toEqual([message]);
     expect(resultTurns((await world.thread()).turns, "flow.explore")[0]?.text).not.toMatch(/stopped because/u);
-  }, 60_000);
+  });
 
   it("continues a kept creation through the real explore registry command without adding an instruction or another Flow", async () => {
     world = await createWorld({ unlocked: UNLOCKED_SESSION });
@@ -369,7 +385,7 @@ describe("the extension's chat, end to end in Core", () => {
     expect((await onlyFlow(world.service, world.project.id)).flowId).toBe(flow.flowId);
     expect(await world.service.listFlowInstructionSummaries({ projectId: world.project.id, flowId: flow.flowId, status: "active" })).toEqual(beforeInstructions);
     expect(automationStudioConversationCommandWork.takeUnreported()).toEqual([]);
-  }, 60_000);
+  });
 
   it("does not apply an explored creation while its adaptation carries a permission request", async () => {
     const calls: string[] = [];
@@ -421,7 +437,7 @@ describe("the extension's chat, end to end in Core", () => {
     expect(grant.ok, grant.error).toBe(true);
     expect((grant.payload as { execution: Record<string, unknown> | null }).execution).toMatchObject({ status: "done" });
     expect((await world.service.getFlowBootstrapAdaptation(world.project.id, flow.flowId, accepted.adaptationId))!.status).toBe("applied");
-  }, 90_000);
+  });
 
   it("runs an automation from its own chat, where \"run it\" means that automation", async () => {
     world = await createWorld({ unlocked: UNLOCKED_SESSION });
@@ -442,7 +458,7 @@ describe("the extension's chat, end to end in Core", () => {
     const runs = await world.call("list-flow-runs", { projectId: world.project.id, flowId: flow.flowId, limit: 5 });
     expect(runs.ok, runs.error).toBe(true);
     expect(JSON.stringify(runs.payload)).toContain(flow.flowId);
-  }, 90_000);
+  });
 
   it("answers the question waiting in the thread from what the person typed", async () => {
     world = await createWorld({ unlocked: UNLOCKED_SESSION });
@@ -472,7 +488,7 @@ describe("the extension's chat, end to end in Core", () => {
     const ask = await world.service.conversations.getAsk({ projectId: world.project.id, askId: "ask.robot-check.1" });
     expect(ask?.status).not.toBe("pending");
     expect(ask?.answer?.kind).toBe("grant");
-  }, 60_000);
+  });
 
   it("says the key is locked, and how far it got, when the person has no unlocked session", async () => {
     world = await createWorld({ unlocked: null });
@@ -489,7 +505,7 @@ describe("the extension's chat, end to end in Core", () => {
     expect(result?.text).toMatch(/The Flow "[^"]+" has no steps yet, but it keeps your instruction, so you can build it again\./u);
     expect(result?.text).not.toMatch(/Before that I created the Flow/u);
     expect(result?.text).toMatch(/model key is locked/u);
-  }, 60_000);
+  });
 
   describe("in the default candidate authoring mode", () => {
     beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", ""); });
@@ -516,7 +532,7 @@ describe("the extension's chat, end to end in Core", () => {
       // The trial ran in a session of its own, marked as a candidate trial.
       const trials = (await world.service.listRuntimeSessions(world.project.id)).filter((session) => (session.metadata as { candidateTrial?: unknown } | undefined)?.candidateTrial !== undefined);
       expect(trials.map((session) => session.status)).toEqual(["succeeded"]);
-    }, 60_000);
+    });
 
     it.each([PAGE, "http://127.0.0.1:4100/private?token=sensitive"])("candidate announcement masks address %s", async (page) => {
       world = await createWorld({ unlocked: UNLOCKED_SESSION });
@@ -526,6 +542,6 @@ describe("the extension's chat, end to end in Core", () => {
       expect(text).not.toContain(page); expect(text).not.toContain("token=sensitive");
       expect(text).toContain(page === PAGE ? "shop.example.test" : "the page you had open");
       expect(text).toContain("test-running the whole Flow once from the start");
-    }, 60_000);
+    });
   });
 });

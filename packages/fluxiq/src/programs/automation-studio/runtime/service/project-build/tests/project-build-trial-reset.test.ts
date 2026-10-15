@@ -25,8 +25,20 @@
 // the domain's arrival node, which declares a fixed output action as the web
 // domain's does. The supervisor's whole trial is covered beside this, unchanged
 // (`./project-build-reset.test.ts`).
+//
+// **Nothing here waits on the wall clock (t644).** Under load this build took
+// over 60 s against 16 s quiet and failed on the 60 s watchdog, and the
+// timed-out build, still writing, then failed the directory's removal with
+// EBUSY or ENOTEMPTY (t616). Twelve of its quiet 16 s were the reset's settled
+// reads: two reads of the page a second apart
+// (`flow-bootstrap/site-reset/settle-ms.ts`), though this stub shop never
+// changes by itself. That wait is held at zero below, so both reads still
+// happen, back to back, and nothing asserted depends on time passing between
+// them. The build's own bounds are never reached, so the watchdog is a hang
+// guard only, and cleanup stops the build if it is still running and waits
+// for it before removing its directory (`./settled-builds.ts`).
 
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -38,8 +50,12 @@ import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.
 import { AutomationStudioService } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { automationStudioTestDeclaredStepResolution } from "./declared-step-resolution.ts";
+import { automationStudioTestSettledBuilds } from "./settled-builds.ts";
 
-vi.setConfig({ testTimeout: 60_000 });
+// The reset's settled read, its two reads back to back (header).
+vi.mock("../../../flow-bootstrap/site-reset/index.ts", async (original) => ({ ...(await original<object>()), AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS: 0 }));
+// A hang guard only (header).
+vi.setConfig({ testTimeout: 300_000, hookTimeout: 300_000 });
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
@@ -207,10 +223,8 @@ async function twoBuilders() {
   });
   const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 120, maxEstimatedCostUsd: 0.2 }), llmEvidenceRuntime: domain.binding });
   service.bindNativeNodeRuntime(domain.runtime);
-  cleanups.push(async () => {
-    await service.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+  const builds = automationStudioTestSettledBuilds(service, dataDir);
+  cleanups.push(builds.cleanup);
   const { project, flow } = await blankFixture(service, "active", "example");
   // Each trial's and entry's session as it starts and ends, with the page the tab showed as it started.
   const internal = service as unknown as { writeRuntimeSession(projectId: string, session: { status: string; metadata?: JsonObject }, ...rest: unknown[]): Promise<unknown> };
@@ -225,7 +239,7 @@ async function twoBuilders() {
   });
   return {
     domain, seen,
-    build: () => service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project", startLocation: START, permittedConsequences: ["create_new"] })
+    build: () => builds.track(project.id, flow.flowId, service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project", startLocation: START, permittedConsequences: ["create_new"] }))
   };
 }
 

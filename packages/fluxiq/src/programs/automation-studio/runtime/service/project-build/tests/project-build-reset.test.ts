@@ -36,8 +36,20 @@
 // (t598). The shop below has no state diff, so its trial's
 // add names no cart line: no control there takes it back, and the reset
 // names act-1 under `cannotUndo`, as before.
+//
+// **Nothing here waits on the wall clock (t644).** Under load these builds
+// took up to 45 s against 1-5 s quiet, near the 60 s watchdog, and a timed-out
+// build, still writing, then failed the directory's removal (t616). The one
+// real wait on their path was the reset's settled read: two reads of the page
+// a second apart (`flow-bootstrap/site-reset/settle-ms.ts`), about a second per
+// read here, though these stub sites never change by themselves. It is held at
+// zero below, so both reads still happen, back to back, and nothing a test
+// asserts depends on time passing between them. The build's own bounds are
+// never reached, so the watchdog is a hang guard only, and cleanup stops any
+// build still running and waits for it before removing its directory
+// (`./settled-builds.ts`).
 
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -55,8 +67,12 @@ import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { automationStudioTestDeclaredStepResolution } from "./declared-step-resolution.ts";
+import { automationStudioTestSettledBuilds } from "./settled-builds.ts";
 
-vi.setConfig({ testTimeout: 60_000 });
+// The reset's settled read, its two reads back to back (header).
+vi.mock("../../../flow-bootstrap/site-reset/index.ts", async (original) => ({ ...(await original<object>()), AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS: 0 }));
+// A hang guard only (header).
+vi.setConfig({ testTimeout: 300_000, hookTimeout: 300_000 });
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
@@ -197,15 +213,13 @@ async function recipeBuild(options: { ends?: boolean; undeclaredFirst?: boolean 
   const service = new AutomationStudioService(serviceOptions);
   service.bindNativeNodeRuntime(recipeRuntime(box, pressed));
   service.bindHostRuntime(boxDiffs(box));
-  cleanups.push(async () => {
-    await service.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+  const builds = automationStudioTestSettledBuilds(service, dataDir);
+  cleanups.push(builds.cleanup);
   const { project, flow } = await blankFixture(service, "active", "isolated");
   const record = () => storedRecord(dataDir);
   return {
     box, pressed, boxWhenWholeJudged, supervisorSaw, builderSaw, record,
-    build: () => service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project" })
+    build: () => builds.track(project.id, flow.flowId, service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project" }))
   };
 }
 
@@ -465,14 +479,12 @@ async function cartBuild(resetScript: ResetScript = UNDO_THE_ADD, options: { sta
   const domain = shopDomain(cart);
   const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 80, maxEstimatedCostUsd: 0.1 }), llmEvidenceRuntime: domain.binding });
   service.bindNativeNodeRuntime(shopRuntime());
-  cleanups.push(async () => {
-    await service.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+  const builds = automationStudioTestSettledBuilds(service, dataDir);
+  cleanups.push(builds.cleanup);
   const { project, flow } = await blankFixture(service, "active", "example");
   return {
     cart, cartWhenWholeJudged, supervisorSaw, acted: domain.acted, inputs: domain.inputs, record: () => storedRecord(dataDir), resetFirstInstructions: () => resetFirst ?? "", resetSaw, builderRunNode: () => builderRunNode,
-    build: () => service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project", ...(options.startLocation ? { startLocation: options.startLocation } : {}) })
+    build: () => builds.track(project.id, flow.flowId, service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project", ...(options.startLocation ? { startLocation: options.startLocation } : {}) }))
   };
 }
 
