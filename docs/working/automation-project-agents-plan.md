@@ -619,6 +619,14 @@ Earlier entries are in [the ledger archive](./automation-project-agents-plan/arc
 - Outcome: Accepted
 - Follow-up: no unit test of `endingCodes` in `promotion.test.ts` (the service test covers it); the re-ask's live behaviour is unexercised until the next everything-store run
 
+### 2026-10-14 — After A8 wave 4: trial acts name their items (t609), a structured judges' yes and done on a standing yes (t611), slow-down repairs only (t612)
+- Agent: workers t609-trial-acts-name-their-items (Core side), t611-judges-yes-structured, t612-slowdown-repairs-only; supervisor gave t611 `run-brief.ts` for a builder that throws after a yes, fixed dev's stale working-doc index, verified and integrated
+- Changed: t609 the whole-candidate gate's trial acts carry `spot` and `created` (t598 open question 4), a wait no longer meets a part's asked act in `scoped-submission.ts` (open question 2), `runtime/host-runtime.ts` names the two state-diff keys; t611 the verification result carries `yesUnconfirmed` (every judge call answered yes and Core held it for missing exclusion evidence), `subflow-trial-gate.ts` reads it instead of matching feedback text, and dispatch returns `done` whenever the latest proposal has a standing yes with its entry prepared for its exact revision and digest, however the builder stopped (ended, limit, guard, throw; one shared `passedProposal`); a return that is not done says when its last trial was a yes; t612 a whole test that passed on the runtime's recovery admits a repair only when a step's record shows a slow-down (`askedWaitMs`, a `rate_limit` layer, or a learned pace), dead `state.wholeTrialLeftActs` removed (unset since t590), a unit test of t608's `endingCodes`
+- Why: t598's reset of trial acts needed the domain's keys and the candidate path; the social debug (`run-mv8ic6mk`) showed a passing subflow returned partial and amended; t603's repair could be opened for a dismissed banner
+- Validation: t612 after merging dev: tsc exit 0; project-agents, project-build, candidate-trial -> 67 files, 484 passed; audit passed; Core finish `pnpm check` -> passed; merged `482c03dd`. t609 after merging dev: tsc exit 0; site-reset, candidate-trial, candidate, subflow-candidate, project-build, project-agents, subflow-trial -> 95 files, 709 passed; audit passed; `pnpm check` -> passed; merged `5746fdd8`. t611 after merging dev: tsc exit 0; result-verification, candidate-trial, subflow-trial, subflow-candidate, candidate, project-agents, project-build, llm/deepseek -> 179 files, 1515 passed; audit passed; `pnpm check` -> passed; merged `a3119b84`; all pushed
+- Outcome: Accepted
+- Follow-up: `project-build-time-limit.test.ts` (t601) runs an 8 s real-clock bound and failed twice under load (t615 makes it deterministic); with t611 a held yes beside an unsure call now gets the default not-judged text
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
