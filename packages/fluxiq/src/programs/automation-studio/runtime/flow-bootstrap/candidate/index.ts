@@ -9,3 +9,4 @@ export * from "./stall-retest.ts";
 export * from "./trial-view.ts";
 export * from "./authoring-loop.ts";
 export * from "../authoring-result/index.ts";
+export * from "./interface-output-port.ts";
