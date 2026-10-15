@@ -201,7 +201,10 @@ function agree(input: AutomationStudioResultVerificationAgreementInput, reasked?
       observation: first.observation, verdicts, calls: 2,
       exclusionEvidenceMissing: [...(first.exclusionEvidenceMissing ?? []), ...(second.exclusionEvidenceMissing ?? [])],
       // Both calls answered yes, one or both held for the evidence it lacked (header, t611). An unsure, or a call that did not answer, beside it is no yes.
-      ...(answeredYes(first) && answeredYes(second) ? { yesUnconfirmed: true as const } : {})
+      ...(answeredYes(first) && answeredYes(second) ? { yesUnconfirmed: true as const } : {}),
+      // A yes that advised a change, held or taken, says so, and what a yes compared is kept (t636, `./verdict.ts`).
+      ...(advisedChange(first) || advisedChange(second) ? { changeAdvised: true as const } : {}),
+      ...yesReading(first, second)
     };
   }
   const codes = AUTOMATION_STUDIO_RESULT_VERDICT_CODES;
@@ -502,6 +505,26 @@ function answeredReadingOf(verification: AutomationStudioResultVerification): No
   const { expected, observed } = verification.answeredReading;
   const reading = { ...(expected ? { expected } : {}), ...(observed ? { observed } : {}) };
   return Object.keys(reading).length ? reading : undefined;
+}
+
+/** Whether a call answered yes and said the Flow needs a change: held for its exclusion evidence, or taken (t636). */
+function advisedChange(call: AutomationStudioResultVerification): boolean {
+  return call.changeAdvised === true || (call.basis === "model" && call.verdict === "answers" && call.code === AUTOMATION_STUDIO_RESULT_VERDICT_CODES.answersWithChangeAdvised);
+}
+
+/**
+ * What a call that answered yes compared, as `answeredReading` (t636): first a
+ * held yes that advised a change, with the change it named, then any held or
+ * taken yes; nothing where neither answered yes.
+ */
+function yesReading(first: AutomationStudioResultVerification, second: AutomationStudioResultVerification): { answeredReading?: NonNullable<AutomationStudioResultVerification["answeredReading"]> } {
+  const advised = [first, second].find((call) => call.changeAdvised && call.answeredReading);
+  if (advised?.answeredReading) {
+    const { expected, observed, advice } = advised.answeredReading;
+    return { answeredReading: { ...(expected ? { expected } : {}), ...(observed ? { observed } : {}), ...(advice ? { advice } : {}) } };
+  }
+  const reading = [first, second].map((call) => answeredReadingOf(call.exclusionEvidenceMissing ? { ...call, verdict: "answers" } : call)).find((found) => found !== undefined);
+  return reading ? { answeredReading: reading } : {};
 }
 
 /** What a call that judged `does_not_answer` said, copied off its directive; nothing for any other call or an empty reading. */

@@ -98,7 +98,7 @@ import { automationStudioResultCoreObservation } from "./core-observation.ts";
 import { automationStudioResultSummaryWithPagingWords, automationStudioResultSummaryWithUnreadColumns } from "./read-account/index.ts";
 import { automationStudioRequestWording, automationStudioResultSummaryWithAlsoInResult, automationStudioResultSummaryWithLeftOutNamingTheItem, automationStudioResultSummaryWithRowIds } from "./request-rows/index.ts";
 import { automationStudioResultVerdict } from "./verdict.ts";
-import { automationStudioResultExclusionEvidenceRecheck } from "./exclusion-evidence/index.ts";
+import { automationStudioResultAdviceKept, automationStudioResultExclusionEvidenceRecheck } from "./exclusion-evidence/index.ts";
 import { emitAutomationStudioActivity } from "../activity/index.ts";
 
 /**
@@ -231,8 +231,12 @@ async function askCheck(
 ): Promise<ReturnType<typeof automationStudioResultVerdict>> {
   let current = request;
   let evidenceRecheck = false;
+  // A held yes that advised a change: the call keeps that advice through its recheck (`./exclusion-evidence/advice-kept.ts`, t636).
+  let advised: ReturnType<typeof automationStudioResultVerdict> | undefined;
   for (let ask = 1; ; ask += 1) {
-    const asked = await askOnce(current, provider, check, ask, reask, evidenceRecheck);
+    const reply = await askOnce(current, provider, check, ask, reask, evidenceRecheck);
+    const asked: typeof reply = advised ? { ...reply, verification: automationStudioResultAdviceKept(reply.verification, advised) } : reply;
+    if (asked.verification.changeAdvised) advised = asked.verification;
     const taken = new Set(interventions.map((intervention) => intervention.interventionId));
     const intervention = taken.has(asked.intervention.interventionId) ? { ...asked.intervention, interventionId: `${asked.intervention.interventionId}.${interventions.length + 1}` } : asked.intervention;
     interventions.push(intervention);

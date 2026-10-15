@@ -1,5 +1,5 @@
 // The rows a numeric bound, a presence test, or a text test left out that
-// Core itself settles (t574, t599, t624).
+// Core itself settles (t574, t599, t624, t636).
 //
 // **Why.** A yes over any row a condition alone left out has to quote, beside
 // that row, the request's words excluding it (`../request-rows/unquoted-rows.ts`,
@@ -41,10 +41,27 @@
 //   out nine rows, each witnessed with the value it failed on, and no judge
 //   named all nine labels, which shared long prefixes, beside a quote.
 //
-// A row whose value states no number, is withheld or empty, a row with no such
-// witness, a text test's row whose witness found no value or a value that
-// passes it, or a row of a condition mixing a text test with a bound, is not
-// settled, and is still quoted for row by row.
+// **And a row with no value at all (t636).** A8 social `run-mv9ml775-9872e63e`:
+// a subflow trial over exactly the rows asked for was held through 8 yeses out
+// of 8, on two kinds of left-out row Core had measured and never settled.
+//
+// - **A numeric bound's empty row**: one whose tested value the read found
+//   empty -- its witness `absent`, or `present` with nothing in it, or, with no
+//   witness, the row said `label — column: (no value)` -- is settled where the
+//   condition, by Core's own semantics, fails on no value (a bound does; a
+//   negated one holds, so it never left such a row out).
+// - **A text test's absent row**: one whose witness found no value (`absent`)
+//   is settled where the condition fails on no value: a `contains`,
+//   `startsWith`, `endsWith`, `matches` or text `equals` that is not negated.
+//   A negated one holds on no value, so its absent rows stay unsettled.
+//
+// Each kind's sentence says the read found no value, never that a value failed.
+//
+// A row whose value states no number and is not empty, a withheld value, a
+// witness that could not read the value (`unavailable`, `withheld`), a text
+// test's row with no witness or a value that passes it, or a row of a condition
+// mixing a text test with a bound, is not settled, and is still quoted for row
+// by row.
 //
 // **What a yes must still show.** That the condition is the request's: Core
 // read the row against the condition as authored, not against the request. So
@@ -66,6 +83,8 @@ import type { AutomationStudioResultReadCell } from "./condition-readings.ts";
 const BOUNDS = ["atLeast", "atMost", "lessThan", "greaterThan"] as const;
 /** The relations that compare text. */
 const TEXTS = ["matches", "contains", "startsWith", "endsWith"] as const;
+/** What a left-out row says for an empty tested value (`../read-account/alone-rows.ts`). */
+const NO_VALUE = "(no value)";
 
 /** One left-out row as given, with its tested cell where the row says one, and its witness where the read sent one for every row. */
 type LeftOutRow = { row: string; cell: AutomationStudioResultReadCell | undefined; witness?: AutomationStudioResultLeftOutObservation | null | undefined };
@@ -104,13 +123,33 @@ export function automationStudioResultSettledRows(input: {
   }
   if (textOnly(condition)) return textSettled(input, name, named);
   if (column === undefined || !numericOnly(condition)) return undefined;
-  const settled = input.leftOut.filter(({ cell }) => cell !== undefined && readAutomationStudioRecordNumber(cell.value) !== undefined && !automationStudioRecordConditionHolds(condition, cell.value));
+  // A bound fails on no value unless it is negated (header, t636).
+  const failsEmpty = !automationStudioRecordConditionHolds(condition, undefined);
+  const numbered = (entry: LeftOutRow) => entry.cell !== undefined && readAutomationStudioRecordNumber(entry.cell.value) !== undefined && !automationStudioRecordConditionHolds(condition, entry.cell.value);
+  const empty = (entry: LeftOutRow) => failsEmpty && foundEmpty(entry, column);
+  const settled = input.leftOut.filter((entry) => numbered(entry) || empty(entry));
   if (!settled.length) return undefined;
+  const read = !settled.some(empty)
+    ? `Core read ${column} as a number on each row in leftOutSettled, and each fails ${name} as written`
+    : settled.every(empty)
+      ? `On each row in leftOutSettled the read found no ${column}, and a row with no number fails ${name} as written`
+      : `Core read ${column} on each row in leftOutSettled, and each fails ${name} as written: where the row states a number, that number fails it, and where the read found no ${column}, a row with no number fails every bound`;
   return {
     leftOutSettled: settled.map(({ row }) => row),
-    settled: `Core read ${column} as a number on each row in leftOutSettled, and each fails ${name} as written: Core settled these rows, so a yes need not quote the request beside each of them. `
+    settled: `${read}: Core settled these rows, so a yes need not quote the request beside each of them. `
       + `It must still show the bound is the request's: quote, once, in a sentence that names ${named}, the request's own words stating that bound. If the request states no such bound, these rows are ones it asks for.`
   };
+}
+
+/**
+ * Whether the read found the row's tested value empty (header, t636): its
+ * witness found none, or found it with nothing in it; with no witness, the row
+ * said `(no value)` for this column. A witness that could not read the value
+ * says nothing about it.
+ */
+function foundEmpty({ row, witness }: LeftOutRow, column: string): boolean {
+  if (witness) return witness.state === "absent" || (witness.state === "present" && !witness.value.trim());
+  return row.endsWith(` — ${column}: ${NO_VALUE}`);
 }
 
 /**
@@ -119,13 +158,22 @@ export function automationStudioResultSettledRows(input: {
  * value by its column where one is known.
  */
 function textSettled(input: { condition: AutomationStudioRecordCondition; column: string | undefined; leftOut: readonly LeftOutRow[] }, name: string, named: string): { leftOutSettled: string[]; settled: string } | undefined {
-  const settled = input.leftOut.filter(({ witness }) => witness?.state === "present" && !automationStudioRecordConditionHolds(input.condition, witness.value));
+  // A text test fails on no value unless it is negated (header, t636).
+  const failsAbsent = !automationStudioRecordConditionHolds(input.condition, undefined);
+  const absent = ({ witness }: LeftOutRow) => failsAbsent && witness?.state === "absent";
+  const settled = input.leftOut.filter((entry) => absent(entry) || (entry.witness?.state === "present" && !automationStudioRecordConditionHolds(input.condition, entry.witness.value)));
   if (!settled.length) return undefined;
   const value = input.column ?? "the value it tests";
+  const none = input.column === undefined ? "no value to test" : `no ${input.column}`;
   const asks = input.condition.not === true ? "leaving out rows whose" : "asking only for rows whose";
+  const read = !settled.some(absent)
+    ? `On each row in leftOutSettled the read found ${value}, as that row's witness in leftOutObservations gives it, and Core tested that value against ${name} as written: each fails it`
+    : settled.every(absent)
+      ? `On each row in leftOutSettled the read found ${none}, as that row's witness in leftOutObservations gives it, and a row with no value fails ${name} as written`
+      : `On each row in leftOutSettled the read found ${value} or found ${none}, as that row's witness in leftOutObservations gives it, and Core tested what it found against ${name} as written: each fails it, a row with no value as well`;
   return {
     leftOutSettled: settled.map(({ row }) => row),
-    settled: `On each row in leftOutSettled the read found ${value}, as that row's witness in leftOutObservations gives it, and Core tested that value against ${name} as written: each fails it, so Core settled these rows, and a yes need not quote the request beside each of them. `
+    settled: `${read}, so Core settled these rows, and a yes need not quote the request beside each of them. `
       + `It must still show the condition is the request's: quote, once, in a sentence that names ${named}, the request's own words ${asks} ${value} says what the condition looks for. If the request asks no such thing, these rows are ones it asks for.`
   };
 }

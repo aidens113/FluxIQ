@@ -36,6 +36,9 @@
 //   a call the build's purse would not pay for        -> not_judged, saying the spending limit stopped it
 //   every call answered yes, held for the exclusion    -> not_judged, saying why and carrying
 //     evidence it lacked (`../agreement.ts`)              `yesUnconfirmed` (t611)
+//   a yes held for its exclusion evidence that advised -> not_judged, saying why and carrying
+//     a change (`patchNeeded`, `../verdict.ts`)            `changeAdvised` and that yes's reading
+//                                                         with the change it named (t636)
 //
 // A yes the verdict did not take -- one that did not name each row a condition
 // alone left out that names the asked item (`../verdict.ts`, live run
@@ -150,8 +153,10 @@ export type AutomationStudioBuildTestVerdict =
      * Only on an `unknown` whose two calls split (`model_disagreed`): what the
      * call that said yes compared (`AutomationStudioResultVerification.answeredReading`),
      * so the build is shown both readings and the evidence each relied on (t477).
+     * And on a `not_judged` beside `changeAdvised` (t636): what the held yes
+     * compared, and in `advice` the change it named.
      */
-    answeredReading?: { expected?: string; observed?: string };
+    answeredReading?: { expected?: string; observed?: string; advice?: string };
     /**
      * Only on an `unknown` whose two calls disagreed because one said the test
      * does what was asked (`model_disagreed`): the pair, never its words. What a
@@ -174,6 +179,13 @@ export type AutomationStudioBuildTestVerdict =
      * never read off `why`'s words. No call said no; nothing was confirmed.
      */
     yesUnconfirmed?: true;
+    /**
+     * Only on a `not_judged` where Core held a yes for the exclusion evidence
+     * it lacked and a yes said the Flow needs a change
+     * (`AutomationStudioResultVerification.changeAdvised`, t636): the fact, in
+     * place of `yesUnconfirmed`. No call said no; nothing was confirmed.
+     */
+    changeAdvised?: true;
     spent: AutomationStudioBuildTestJudgeSpend;
   }
   | {
@@ -298,7 +310,7 @@ export function automationStudioBuildTestJudge(deps: {
     if (!outcome.performed) return { verdict: "not_judged", why: outcome.reason, ...carried, spent };
     // No call came back usable, each asked again where its fault was temporary: the test was not judged (header).
     if (outcome.basis === "model_unavailable") return { verdict: "not_judged", why: couldNotJudge(outcome.reason, spent.calls), ...carried, spent };
-    if (outcome.exclusionEvidenceMissing) return { verdict: "not_judged", why: outcome.reason, ...carried, ...(outcome.yesUnconfirmed ? { yesUnconfirmed: true as const } : {}), spent };
+    if (outcome.exclusionEvidenceMissing) return { verdict: "not_judged", why: outcome.reason, ...carried, ...(outcome.yesUnconfirmed ? { yesUnconfirmed: true as const } : {}), ...heldAdvice(outcome), spent };
     if (outcome.verdict === "answers") return { verdict: "yes", spent };
     if (outcome.verdict === "does_not_answer" && automationStudioResultVerificationFailsRun(outcome)) {
       const judgement = outcome.repair?.judgement;
@@ -331,6 +343,12 @@ export function automationStudioBuildTestJudge(deps: {
     const doubt = doubtContradicted(outcome);
     return { verdict: "unknown", why: outcome.reason, ...carried, ...(reading ? { unconfirmedReading: { ...reading } } : {}), ...(answered ? { answeredReading: { ...answered } } : {}), ...(outcome.basis === "model_disagreed" ? { oneCallSaidYes: true as const } : {}), ...(doubt ? { doubtContradicted: doubt } : {}), spent };
   };
+}
+
+/** On a held yes that advised a change (t636, header): the fact and that yes's reading, with the change it named; nothing otherwise. */
+function heldAdvice(outcome: AutomationStudioResultVerification): { changeAdvised?: true; answeredReading?: { expected?: string; observed?: string; advice?: string } } {
+  if (!outcome.changeAdvised) return {};
+  return { changeAdvised: true, ...(outcome.answeredReading ? { answeredReading: { ...outcome.answeredReading } } : {}) };
 }
 
 /** Core's sentence on an unsure call whose doubt about pages (t503) or a dedupe (t628) Core's record contradicts (`../agreement.ts`); nothing without one. */

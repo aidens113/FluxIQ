@@ -114,6 +114,16 @@
 // a builder not to rewrite what the judges accepted
 // (`../../flow-bootstrap/subflow-candidate/subflow-trial-gate.ts`); before, it
 // matched the words of `why`. Every other `not_judged` is as it was.
+//
+// **A held yes that advised a change says so, with its reading (t636).** A yes
+// that said the Flow needs a change (`patchNeeded`) and lacked its exclusion
+// evidence is held, never a no (`../../result-verification/verdict.ts`); the
+// judge's `not_judged` then carries `changeAdvised` and that yes's
+// `answeredReading`, with the change it named in `advice`. The feedback says
+// it as `changeAdvised` -- Core's code first, then Core's short words -- beside
+// `answeredReading`, so the builder can weigh the change instead of seeing a
+// bare not-judged. It is never `yesUnconfirmed`: the judge did not accept the
+// Flow as it is. Without the field the feedback is as it was.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../../../model/index.ts";
@@ -167,6 +177,13 @@ const PAGING_NOTE = "Each read's pagesRead, stop and paging are Core's own recor
 /** Added to a split's note when a read carries its paging account (header, t498). */
 const PAGING_SPLIT_NOTE = " Where a reading speaks of pages, each read's paging is Core's own record of how its paging ended, and it stands against that reading.";
 
+/** Core's code and words for a held yes that advised a change (header, t636). Generic words. */
+const CHANGE_ADVISED = Object.freeze({
+  code: "candidate.trial_yes_change_advised",
+  said: "A judge call said this trial does what was asked but also that the Flow needs a change, and Core held that yes because it did not quote the request's words for the rows a condition left out. "
+    + "answeredReading is what that call compared, and its advice the change it named. Weigh that advice against this trial's own reads, steps and stored rows: make the change where that evidence supports it; otherwise test this same revision again."
+});
+
 /** The most steps a feedback lists; a longer Flow says how many it left out. */
 const MAX_STEPS = 40;
 
@@ -210,7 +227,9 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
         ...(split ? { answeredReading: compact({ ...judged.answeredReading }), readings: (judged.unconfirmedReading ? SPLIT_NOTE : UNREAD_SPLIT_NOTE) + (paged ? PAGING_SPLIT_NOTE : "") + (doubt ? DOUBT_NOTE : "") } : doubt ? { readings: DOUBT_ALONE_NOTE } : {}) } };
     }
     // A not_judged whose every judge call answered yes, Core holding the yes, says so as a field a gate reads (header, t611).
-    return { verdict: "not_judged", code: "candidate.trial_not_judged", feedback: { ...common, code: "candidate.trial_not_judged", why: judged.why, ...(judged.yesUnconfirmed ? { yesUnconfirmed: true } : {}) } };
+    // A held yes that advised a change, with that yes's reading and the change it named (header, t636).
+    const advised = judged.changeAdvised ? { changeAdvised: { ...CHANGE_ADVISED }, ...(judged.answeredReading ? { answeredReading: compact({ ...judged.answeredReading }) } : {}) } : {};
+    return { verdict: "not_judged", code: "candidate.trial_not_judged", feedback: { ...common, code: "candidate.trial_not_judged", why: judged.why, ...(judged.yesUnconfirmed ? { yesUnconfirmed: true } : {}), ...advised } };
   }
 });
 
