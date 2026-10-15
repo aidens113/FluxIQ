@@ -29,8 +29,25 @@
 // leaves out nothing more. One that names less or more is still marked.
 // Whether that condition is the request's is what its own left-out rows are
 // held to.
+//
+// **Nor one that says what a stored row it names is (t628).** A8 bigbox
+// `run-mv9a4aj0-f9a81d13` step 0081: a no named a stored row whose own label
+// says it is a holder, and advised keeping "only rows whose name is a pack of"
+// the item asked for, "(exclude holders, dispensers and accessories)". Marked as
+// an unstated exclusion, the call was asked again, said yes over the holder, and
+// the Flow then failed its whole test on that same row. Narrowing to the
+// request's own item is no exclusion of the no's own making; whether the request
+// asks for that kind of row is the judge's call, and a word list cannot settle
+// it. So where the caller gives the labels of the stored rows the no's reading
+// names, an exclusion whose kind -- its words before an example ("such as",
+// "like", "e.g.", "including"), or all of them where those carry nothing of
+// their own -- has a word of its own that is a word of one of those labels is
+// not marked: it says what that row is. One that spells the row's own name
+// (the label's first four words) still is, as is one whose kind no named label
+// says: "excluding accessories such as <a stored row>" stays marked.
 
 import type { AutomationStudioRequestWording } from "./request-wording.ts";
+import { automationStudioRequestRowWords } from "./words.ts";
 
 /** The most words of an exclusion read after or before its cue: a clause, not the rest of the advice. */
 const MOST_WORDS = 10;
@@ -47,21 +64,33 @@ const BEFORE_CUE = /\b(?:is|are|be|being|been|gets?|got)\s+(?:excluded|filtered\
 /** A negation just before a cue, or before the passive's auxiliary: "do not exclude", "should not be left out". */
 const NEGATED = /(?:\b(?:not|never|no\s+longer|stop|stops|without|instead\s+of|rather\s+than)|n['’]t)\s+(?:[\p{L}'’-]+\s+)?$/iu;
 
-/** Each exclusion the advice adds that the request never states, as the advice words it, cue first; none when there are none. */
-export function automationStudioRequestUnstatedExclusions(advice: string | undefined, wording: AutomationStudioRequestWording): string[] {
+/** Where an exclusion's kind ends and its examples begin (header, t628). */
+const EXAMPLE_CUE = /\b(?:such\s+as|like|for\s+(?:example|instance)|including|includes?)\b|\be\.?\s?g\b/iu;
+
+/** The fewest words of a label an exclusion must spell to name that row rather than say what it is (`row-naming.ts`). */
+const NAME_WORDS = 4;
+
+/**
+ * Each exclusion the advice adds that the request never states, as the advice
+ * words it, cue first; none when there are none. `namedStored` are the labels
+ * of the stored rows the same reading names: an exclusion that says what one of
+ * them is, is not one (header, t628).
+ */
+export function automationStudioRequestUnstatedExclusions(advice: string | undefined, wording: AutomationStudioRequestWording, namedStored: readonly string[] = []): string[] {
   if (!advice?.trim()) return [];
   const found: string[] = [];
+  const marks = (target: string): boolean => unstated(target, wording) && !saysWhatANamedRowIs(target, wording, namedStored);
   for (const match of advice.matchAll(AFTER_CUE)) {
     const start = match.index!;
     if (NEGATED.test(advice.slice(0, start))) continue;
     const target = clauseAfter(advice, start + match[0].length);
-    if (unstated(target, wording)) found.push(`${match[0]} ${target}`.trim());
+    if (marks(target)) found.push(`${match[0]} ${target}`.trim());
   }
   for (const match of advice.matchAll(BEFORE_CUE)) {
     const start = match.index!;
     if (NEGATED.test(advice.slice(0, start))) continue;
     const target = clauseBefore(advice, start);
-    if (unstated(target, wording)) found.push(`${target} ${match[0]}`.trim());
+    if (marks(target)) found.push(`${target} ${match[0]}`.trim());
   }
   return [...new Set(found)];
 }
@@ -70,6 +99,36 @@ export function automationStudioRequestUnstatedExclusions(advice: string | undef
 function unstated(target: string, wording: AutomationStudioRequestWording): boolean {
   const own = wording.ownWords(target);
   return own.length > 0 && !own.some((word) => wording.has(word)) && !wording.applied(target);
+}
+
+/**
+ * Whether an exclusion's kind has a word of its own that is a word of a named
+ * stored row's label, without spelling that row's name (header, t628).
+ */
+function saysWhatANamedRowIs(target: string, wording: AutomationStudioRequestWording, namedStored: readonly string[]): boolean {
+  if (!namedStored.length) return false;
+  const cut = target.search(EXAMPLE_CUE);
+  const before = cut < 0 ? target : target.slice(0, cut);
+  const kind = wording.ownWords(before).length ? before : target;
+  const kindWords = wording.ownWords(kind);
+  const spelled = wordsOf(kind);
+  return namedStored.some((label) => {
+    const words = wordsOf(label);
+    if (!words.length || runsIn(spelled, words.slice(0, Math.min(NAME_WORDS, words.length)))) return false;
+    return kindWords.some((word) => words.includes(word));
+  });
+}
+
+function wordsOf(text: string): string[] {
+  return automationStudioRequestRowWords(text).map((word) => word.word);
+}
+
+/** Whether `run` appears word for word in `words`. */
+function runsIn(words: readonly string[], run: readonly string[]): boolean {
+  for (let start = 0; start + run.length <= words.length; start += 1) {
+    if (run.every((word, index) => words[start + index] === word)) return true;
+  }
+  return false;
 }
 
 /** The clause's words after `from`, at most `MOST_WORDS`, as the advice wrote them. */

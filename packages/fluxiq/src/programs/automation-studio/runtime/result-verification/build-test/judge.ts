@@ -154,7 +154,8 @@ export type AutomationStudioBuildTestVerdict =
     /**
      * Only on an `unknown` where one call could not tell because of pages
      * Core's record says were all read (`AutomationStudioResultVerification.contradictedUnsure`,
-     * t503): Core's sentence naming that call, the record and what the re-ask
+     * t503), or of rows merged by a dedupe Core's record says removed none
+     * (t628): Core's sentence naming that call, the record and what the re-ask
      * answered. A doubt the record contradicts is no evidence against the Flow.
      */
     doubtContradicted?: string;
@@ -315,15 +316,18 @@ export function automationStudioBuildTestJudge(deps: {
   };
 }
 
-/** Core's sentence on an unsure call whose doubt about pages Core's record contradicts (`../agreement.ts`, t503); nothing without one. */
+/** Core's sentence on an unsure call whose doubt about pages (t503) or a dedupe (t628) Core's record contradicts (`../agreement.ts`); nothing without one. */
 function doubtContradicted(outcome: AutomationStudioResultVerification): string | undefined {
   const marked = outcome.contradictedUnsure;
   if (!marked) return undefined;
-  const last = outcome.verdicts?.at(-1);
+  // The re-ask of the doubt is always the third call; a no asked once more after it comes later (t628).
+  const reasked = outcome.verdicts?.[2];
   const after = !marked.reasked ? ""
-    : last === "does_not_answer" ? " It was asked again with that record named and then said no: its reading is unconfirmedReading."
-      : " It was asked again with that record named and still could not tell.";
-  return `Judge call ${marked.call} could not tell, saying the list has pages its read never reached; Core's record says otherwise: ${marked.record}${after}`;
+    : reasked === "does_not_answer" ? " It was asked again with that record named and then said no: its reading is unconfirmedReading."
+      : reasked === "answers" ? " It was asked again with that record named and then said it does what was asked."
+        : " It was asked again with that record named and still could not tell.";
+  const doubted = marked.about === "dedupe" ? "saying the answer's dedupe merged distinct rows" : "saying the list has pages its read never reached";
+  return `Judge call ${marked.call} could not tell, ${doubted}; Core's record says otherwise: ${marked.record}${after}`;
 }
 
 /**

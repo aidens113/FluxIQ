@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerification, type AutomationStudioRunResultSummary } from "../contracts.ts";
-import { automationStudioResultVerificationAgreement, automationStudioResultVerificationAskAgain } from "../agreement.ts";
+import { automationStudioResultVerificationAgreement, automationStudioResultVerificationAskAgain, automationStudioResultVerificationReaskContradicted } from "../agreement.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict } from "../verdict.ts";
 import { automationStudioResultVerificationStatus } from "../verification-status.ts";
 import { REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS, requestWordsRunSummary, requestWordsWording } from "../request-rows/tests/request-words-fixture.ts";
+import { ABSENT_NO, DEDUPE_DOUBT, SCOOP_NO, SOIL_MIX, SOIL_REQUEST_TEXT, SOIL_YES, soilRunSummary, soilWording } from "../request-rows/tests/potting-soil-fixture.ts";
 
 // What two checks of one result come to. Any answer the model gave other than
 // `yes` is asked again; only two agreeing `no`s fail the run. On 2026-09-18 the
@@ -361,5 +362,98 @@ describe("a yes Core held for its exclusion evidence (t611)", () => {
 
   it("is kept when the held call is the only one asked", () => {
     expect(automationStudioResultVerificationAgreement({ first: heldYes() })).toMatchObject({ verdict: "unsure", yesUnconfirmed: true, calls: 1 });
+  });
+});
+
+// A8 bigbox `run-mv9a4aj0-f9a81d13` (t628), replayed with stub judges over a run
+// of the same shape on another kind of site (`potting-soil-fixture.ts`).
+describe("a no that says what a stored row is, and an unsure beside a no (t628)", () => {
+  const judged = (answersRequest: "yes" | "no" | "unknown", diagnosis: { expected?: string; observed?: string; changed?: string }): AutomationStudioResultVerification =>
+    automationStudioResultVerdict({ summary, diagnosis: { answersRequest, ...diagnosis }, basis: "model" });
+  const record = (duplicates = 0) => {
+    const run = soilRunSummary(duplicates);
+    return { reads: run.reads, recordSets: run.recordSets, wording: soilWording(), summary: run, requestText: SOIL_REQUEST_TEXT };
+  };
+
+  // 0080-0082: a yes that missed the stored scoop, and a no naming it and advising to keep only the item asked for.
+  it("0081: leaves a no's advice to keep only the item asked for unmarked where it says what a stored row it names is, and asks nothing again", async () => {
+    const input = { first: judged("yes", SOIL_YES), second: judged("no", SCOOP_NO), confirmAnswer: true, ...record() };
+    const settled = automationStudioResultVerificationAgreement(input);
+    expect(settled).toMatchObject({ verdict: "unsure", basis: "model_disagreed", verdicts: ["answers", "does_not_answer"] });
+    expect(settled.unconfirmedReading?.advice).toBe(SCOOP_NO.changed);
+    // 0082's answer, had the call been asked again: a yes over the scoop. It is never asked, so the no stands.
+    const ask = vi.fn(async () => judged("yes", SOIL_YES));
+    const outcome = await automationStudioResultVerificationReaskContradicted({ ...input, settled, ask });
+    expect(ask).not.toHaveBeenCalled();
+    expect(outcome).toMatchObject({ verdict: "unsure", basis: "model_disagreed", calls: 2 });
+  });
+
+  it("0081: still marks that advice without Core's record of the rows, as t515 did", () => {
+    const { summary: _run, requestText: _text, ...unrecorded } = record();
+    const agreed = automationStudioResultVerificationAgreement({ first: judged("yes", SOIL_YES), second: judged("no", SCOOP_NO), confirmAnswer: true, ...unrecorded });
+    expect(agreed.unconfirmedReading?.advice).toMatch(/^Judge call 2 \(Core's check: this advice adds an exclusion the request never states, "exclude scoops, sieves and accessories"/u);
+  });
+
+  it("t515's origin still marks: an exclusion by a kind no named row's label says, beside that row, and asks again with the symmetric recheck", async () => {
+    // The row's label shares no word with the request, as t515's did: an exclusion that names a word of the request is stated.
+    const origin = { ...SCOOP_NO, observed: `"${SOIL_MIX.name}" ($9.47, 4.6) is stored.`, changed: "Add a condition excluding accessories such as the Rootwise Potting Soil Mix row." };
+    const input = { first: judged("yes", SOIL_YES), second: judged("no", origin), confirmAnswer: true, ...record() };
+    const settled = automationStudioResultVerificationAgreement(input);
+    expect(settled.unconfirmedReading?.advice).toContain("\"excluding accessories such as the Rootwise Potting Soil Mix row\"");
+    const ask = vi.fn(async (_recheck: string, _call: 1 | 2) => judged("yes", SOIL_YES));
+    const outcome = await automationStudioResultVerificationReaskContradicted({ ...input, settled, ask });
+    expect(ask).toHaveBeenCalledTimes(1);
+    const recheck = ask.mock.calls[0]![0];
+    expect(recheck).toContain("never states as an exclusion");
+    // A kept row may be answered no by the request's words naming what it asks for, which the row is not.
+    expect(recheck).toContain("words that exclude it, or the words naming what the request asks for, which that row by its own words is not");
+    expect(outcome).toMatchObject({ verdict: "answers", calls: 3 });
+  });
+
+  // 0063-0066: an unsure doubting the dedupe, which removed nothing, beside a no calling two stored rows absent.
+  it("0063: marks the unsure's dedupe doubt contradicted and labels the refuted no's reading", () => {
+    const agreed = automationStudioResultVerificationAgreement({ first: judged("unknown", DEDUPE_DOUBT), second: judged("no", ABSENT_NO), confirmAnswer: true, ...record() });
+    expect(agreed).toMatchObject({ verdict: "unsure", basis: "model_unconfirmed", verdicts: ["unsure", "does_not_answer"], contradictedUnsure: { call: 1, about: "dedupe" } });
+    expect(agreed.contradictedUnsure?.record).toContain("The answer's own dedupe removed no row");
+    expect(agreed.contradictedUnsure?.record).toContain("\"Mossbank Potting Soil, 25 Quart\" is in the stored rows, and the other copy Core's read saw was left out by condition 1 (sponsored is absent) alone");
+    const observed = agreed.unconfirmedReading?.observed ?? "";
+    expect(observed).toMatch(/^Judge call 2 \(contradicted by Core's record: "Rootwise Potting Soil Mix, 16 Quart" is in the stored rows\./u);
+    expect(observed.endsWith(`: ${ABSENT_NO.observed}`)).toBe(true);
+    expect(agreed.unconfirmedReading?.expected).toBe(ABSENT_NO.expected);
+    expect(automationStudioResultVerificationFailsRun(agreed)).toBe(false);
+  });
+
+  it("0063: re-asks the doubt with Core's record, and, when it says yes, the refuted no too, so two yeses are a yes", async () => {
+    const input = { first: judged("unknown", DEDUPE_DOUBT), second: judged("no", ABSENT_NO), confirmAnswer: true, ...record() };
+    const settled = automationStudioResultVerificationAgreement(input);
+    const ask = vi.fn(async (_recheck: string, _call: 1 | 2) => judged("yes", SOIL_YES));
+    const outcome = await automationStudioResultVerificationReaskContradicted({ ...input, settled, ask });
+    expect(ask.mock.calls.map((call) => call[1])).toEqual([1, 2]);
+    expect(ask.mock.calls[0]![0]).toContain("took the answer's dedupe to have merged distinct rows into one");
+    expect(ask.mock.calls[0]![0]).toContain("The answer's own dedupe removed no row");
+    expect(ask.mock.calls[1]![0]).toContain("\"Rootwise Potting Soil Mix, 16 Quart\" is in the stored rows.");
+    expect(outcome).toMatchObject({ verdict: "answers", verdicts: ["unsure", "does_not_answer", "answers", "answers"], calls: 4, contradictedUnsure: { call: 1, about: "dedupe", reasked: true }, refutedNo: { calls: [2], reasked: true } });
+  });
+
+  it("0063: asks the refuted no nothing more where the doubt asked again still cannot tell", async () => {
+    const input = { first: judged("unknown", DEDUPE_DOUBT), second: judged("no", ABSENT_NO), confirmAnswer: true, ...record() };
+    const settled = automationStudioResultVerificationAgreement(input);
+    const ask = vi.fn(async () => judged("unknown", DEDUPE_DOUBT));
+    const outcome = await automationStudioResultVerificationReaskContradicted({ ...input, settled, ask });
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(outcome).toMatchObject({ verdict: "unsure", calls: 3, contradictedUnsure: { reasked: true } });
+    expect(outcome.unconfirmedReading?.observed).toMatch(/^Judge call 2 \(contradicted by Core's record/u);
+  });
+
+  it("leaves a dedupe doubt standing where the dedupe removed a row, and labels a no only in part where a reason stands", () => {
+    const removed = automationStudioResultVerificationAgreement({ first: judged("unknown", DEDUPE_DOUBT), second: judged("no", ABSENT_NO), confirmAnswer: true, ...record(1) });
+    expect(removed).not.toHaveProperty("contradictedUnsure");
+    const standing = { ...ABSENT_NO, observed: `${ABSENT_NO.observed} The seller step keeps only one brand, which is wrong.` };
+    const partly = automationStudioResultVerificationAgreement({ first: judged("unknown", DEDUPE_DOUBT), second: judged("no", standing), confirmAnswer: true, ...record() });
+    expect(partly.unconfirmedReading?.observed).toMatch(/^Judge call 2 \(Core's record contradicts part of this reading: "Rootwise Potting Soil Mix, 16 Quart" is in the stored rows\./u);
+    // Without Core's record nothing is weighed, as before.
+    const bare = automationStudioResultVerificationAgreement({ first: judged("unknown", DEDUPE_DOUBT), second: judged("no", ABSENT_NO) });
+    expect(bare).not.toHaveProperty("contradictedUnsure");
+    expect(bare.unconfirmedReading?.observed).toBe(ABSENT_NO.observed);
   });
 });
