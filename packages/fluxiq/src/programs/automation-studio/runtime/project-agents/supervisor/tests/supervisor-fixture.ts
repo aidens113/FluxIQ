@@ -55,6 +55,8 @@ export type BuilderPlan = (brief: AutomationStudioProjectSubflowBrief, attempt: 
  */
 export function project(options: {
   builder?: BuilderPlan;
+  /** The trials a return that is not done lists (t606); none when absent. */
+  notDoneTrials?: (brief: AutomationStudioProjectSubflowBrief, attempt: number) => AutomationStudioProjectBuilderReturn["trials"];
   trial?: (attempt: number) => AutomationStudioCandidateTrialResult["verdict"];
   /** What each whole trial's feedback says, beyond its verdict (t603); `{ said: <verdict> }` when absent. */
   trialFeedback?: (attempt: number) => JsonObject;
@@ -114,7 +116,7 @@ export function project(options: {
         continue;
       }
       if (outcome !== "done") {
-        returns.push({ briefId: brief.briefId, outcome, reason: `The ${brief.subflowKey} control could not be found.`, trials: [], spentUsd: 0.01, calls: 4 });
+        returns.push({ briefId: brief.briefId, outcome, reason: `The ${brief.subflowKey} control could not be found.`, trials: options.notDoneTrials?.(brief, attempt) ?? [], spentUsd: 0.01, calls: 4 });
         continue;
       }
       const proposal = await propose(brief);

@@ -101,7 +101,9 @@ describe("a repair brief's builder", () => {
     expect(first).toMatchObject({ briefId: "b-read", outcome: "blocked", trials: [{ kind: "subflow_trial", receiptId: "run.b-read" }] });
     expect(opening(firstSeen[0]!)).not.toHaveProperty("repairOf");
 
-    const fix = repair("b-fix", (value) => (value.failingReceipt = first.trials[0]!));
+    // The reference alone: the verdict and rows listed beside it (t606) are not part of it.
+    const { kind, receiptId, digest } = first.trials[0]!;
+    const fix = repair("b-fix", (value) => (value.failingReceipt = { kind, receiptId, digest }));
     await build.store.recordBrief(REF, fix);
     verdict = "yes";
     expect((await build.run([fix])).returns[0]).toMatchObject({ briefId: "b-fix", outcome: "done" });

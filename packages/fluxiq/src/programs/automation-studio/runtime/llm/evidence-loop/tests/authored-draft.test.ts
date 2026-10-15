@@ -773,6 +773,15 @@ describe("the policy where the result is a Flow", () => {
     expect(policy).toContain("never repeat a successful mutation merely to try another eventual-workflow value");
   });
 
+  // t606 (A8 towels `run-mv8p37k8-f1a90624`): the request's clause was printed on no row and only the site's own
+  // filter, under a group heading naming it, could keep it; the example is a library's, no Lab scenario's.
+  it("sends a condition the items do not print to the site's own filter whose group heading names it", () => {
+    const policy = AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION;
+    const sentence = "When a condition the request asks for is not printed on the listed items, look for the site's own filter whose group heading names that condition, and prefer choosing it over opening or reading every item to test it: in a library catalogue, a request for audiobooks is met by the option Audiobook under the heading Format, a filter whose words keep exactly what the request asks.";
+    expect(policy).toContain(sentence);
+    expect(sentence).not.toMatch(/shop|store|seller|retailer|pickup|cart|order|feed|social|job|towel|valueridge/iu);
+  });
+
   it("says add is for a step run or written, and that write implies it", () => {
     const schema = buildAutomationStudioLlmEvidenceLoopDecisionSchema([go], { type: "object" }, true, false, true);
     const add = ((schema.oneOf as JsonObject[]).find((variant) => (variant.properties as JsonObject).toolId !== undefined)!.properties as JsonObject).add as JsonObject;

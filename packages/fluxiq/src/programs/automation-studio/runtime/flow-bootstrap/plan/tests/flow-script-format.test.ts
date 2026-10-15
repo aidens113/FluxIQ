@@ -269,9 +269,11 @@ describe("the legacy format and completion schema bytes", () => {
   // with `submit: true` (lane B's refused script). Both digests moved with it.
   // t489 changed it deliberately again: the narrowing sentence no longer says to narrow with the site's own
   // controls first, and its example moved off a shop (lane C round 13, D2). Both digests moved with it.
+  // t606 changed it deliberately, by one sentence before "Otherwise": a condition the items do not print is the site's
+  // own filter under a group heading naming it (A8 towels, `run-mv8p37k8-f1a90624`). Both digests moved with it.
   it("are unchanged by candidate-only text", () => {
-    expect(digest(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT)).toBe("7887ea279c568e9fd4436d6c68008ce132f1a784ca602afb81f7aeeba9b052b7");
-    expect(digest(JSON.stringify(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA))).toBe("acbbb16db061c7f1d08293a1745bd10e02d533cae43768dd9bfea61a387eb591");
+    expect(digest(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT)).toBe("71df264a2c345227a15f9bf5955ed35169619552210336e664f86b06e005ec67");
+    expect(digest(JSON.stringify(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA))).toBe("02c766712576f5d8a7bf6cf539e951644b0fa8b3a3978293fadeb3e8cc529147");
   });
 });
 
@@ -525,6 +527,15 @@ describe("the format's guidance on narrowing a collection", () => {
     const narrowing = exampleBlocks(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).find(([name]) => /narrowing/u.test(name));
     expect(narrowing?.[1]).toBeDefined();
     expect(narrowing![1]).not.toMatch(/shop|store|order|cart|feed|social|post|job|career/iu);
+  });
+
+  // t606 (A8 towels `run-mv8p37k8-f1a90624`): a request clause no row printed was answerable only through the site's
+  // own filter under a group heading naming it; the builder read every row and then each item's page instead.
+  it("says a condition the items do not print is the site's own filter under a heading naming it, before reading every item", () => {
+    const sentence = "When the items do not print a condition the instruction asks for, look first for the site's own filter whose group heading names it, such as Format: Audiobook in a library catalogue, rather than reading every item.";
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).toContain(sentence);
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT.indexOf(sentence)).toBeLessThan(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT.indexOf("Otherwise read the collection and narrow in the read's own condition"));
+    expect(sentence).not.toMatch(/shop|store|seller|retailer|pickup|cart|order|feed|social|job|towel|valueridge/iu);
   });
 });
 

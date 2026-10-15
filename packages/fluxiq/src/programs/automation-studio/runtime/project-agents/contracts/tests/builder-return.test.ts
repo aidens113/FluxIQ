@@ -23,6 +23,15 @@ describe("builder return", () => {
     expect(parse(value)).toMatchObject({ status: "invalid", code });
   });
 
+  // t606: a listed trial carries its verdict and stored rows beside its reference, which is read as ever.
+  it("reads a trial's verdict and stored rows beside its reference, and refuses either malformed", () => {
+    const listed = { kind: "subflow_trial" as const, receiptId: "trial-2", digest: "c".repeat(64), verdict: "unsure" as const, rows: 9 };
+    expect(parse(builderReturn((value) => (value.trials = [listed])))).toMatchObject({ status: "valid", value: { trials: [listed] } });
+    expect(parse(builderReturn((value) => (value.trials = [{ ...listed, verdict: "great" as "no" }])))).toMatchObject({ status: "invalid", code: "project.invalid_choice" });
+    expect(parse(builderReturn((value) => (value.trials = [{ ...listed, rows: -1 }])))).toMatchObject({ status: "invalid", code: "project.invalid_count" });
+    expect(parse(builderReturn((value) => (value.trials = [{ ...listed, said: "x" } as typeof listed])))).toMatchObject({ status: "invalid", code: "project.unknown_field" });
+  });
+
   it("refuses a return that does not answer its brief", () => {
     const codes = (change: (value: ReturnType<typeof builderReturn>) => void, owner = brief()) => issues(builderReturn(change), owner).map((issue) => issue.code);
     expect(codes((value) => (value.briefId = "b2"))).toEqual(["project.return_brief_mismatch"]);

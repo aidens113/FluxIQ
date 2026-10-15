@@ -86,6 +86,16 @@ const REPEAT_NODE_ID = "builtin.control.repeat";
  */
 const ROW_PORT = "item";
 
+/**
+ * What a repeat over a listing that another repeat runs is told can be done
+ * instead (t606). A8 towels (`run-mv8p37k8-f1a90624`) nested a span over each
+ * kept row inside the span that turns a list's pages, to open each row's own
+ * page, and was told only to name a listing the Flow runs once; it sent the
+ * same script four times. A span holds no second repeat, so no Flow acts on
+ * each kept row of every page: the sentence says so, and says what does work.
+ */
+const NO_ROW_LOOP_IN_PAGE_LOOP = "A repeat inside a repeat is not supported, so a Flow cannot act on each kept row of every page of a paged list. To keep rows across pages, read every page in one `repeat while` span and keep the rows the instruction asks for with the listing's `extractList.where`; a condition the rows do not print is usually one of the site's own filters, set before that span. To act on each row, do it on the rows one listing reads, with `repeat over:` that listing.";
+
 /** One step of the draft, already written down in the caller's vocabulary. */
 export type AutomationStudioFlowDraftRoutedStep = {
   step: AutomationStudioFlowDraftStep;
@@ -362,7 +372,7 @@ function scriptSpan(input: {
   if (overAt === undefined) return refuse("flow_script.repeat_span_unknown", `${at} repeats over "${overLabel}", and no step in this block has that label. Label the step that reads the rows, \`step <label>: ...\`, and name it.`);
   if (overAt >= index) return refuse("flow_script.repeat_not_after_its_source", `${at} repeats over "${overLabel}", which is written at or after it. The listing a span walks runs once, before the span: write it first.`);
   const source = input.consumed.has(overAt) ? undefined : input.emitted.find((candidate) => candidate.label === overLabel);
-  if (!source || !head) return refuse("flow_script.repeat_not_after_its_source", `${at} repeats over "${overLabel}", which is inside another repeat, so the Flow does not reach it on its own line. Name a listing the Flow runs once, before this span.`);
+  if (!source || !head) return refuse("flow_script.repeat_not_after_its_source", `${at} repeats over "${overLabel}", which is inside another repeat, so the Flow does not reach it on its own line. Name a listing the Flow runs once, before this span. ${NO_ROW_LOOP_IN_PAGE_LOOP}`);
   const rows = listPort(source, input.registry, input.resolution);
   if (!rows && source !== head) return refuse("flow_script.repeat_not_after_its_source", `${at} repeats over "${overLabel}", which reads no list, so it is a check asked again before every pass, and it has to be the step written just before the span.`);
   return { kind: "over", end, source, head, rows };

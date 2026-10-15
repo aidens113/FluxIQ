@@ -63,6 +63,14 @@
 // an unresolved handle that is a word one of the node's parameters takes is
 // answered with that line. Each issue about one of a node's parameters names
 // the node (`node`), so the model can ask `core.describe_nodes` what it takes.
+//
+// **An undeclared parameter is named, every time (t606).** A8 towels
+// (`run-mv8p37k8-f1a90624`) was refused `bootstrap.unknown_parameter` for a
+// `recordOutput` written on a node that does not take one: each issue came
+// back with no message, only the first with the node's parameters, and the
+// model sent the same script four times. Each such issue now carries Core's
+// sentence naming the key, the node and the parameters it takes -- identifiers
+// only, never a value.
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
 import type { AutomationStudioNodeDefinition, AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
@@ -316,6 +324,8 @@ export function automationStudioFlowBootstrapIssueFeedback(input: {
     if (instead) entry.instead = instead;
     // The node to ask `core.describe_nodes` about, for an issue about one of its parameters (header, t514).
     if (definition && NODE_NAMED_CODES.has(issue.code)) entry.node = definition.id;
+    // Core's own sentence for a parameter the node does not take, on every such issue (t606).
+    if (issue.code === UNKNOWN_PARAMETER_CODE && entry.message === undefined) entry.message = undeclaredSentence(target, definition);
     if (ROUTE_CODES.has(issue.code)) {
       return { ...entry, accepted: { condition: AUTOMATION_STUDIO_ROUTE_CONDITION_FORM } };
     }
@@ -332,6 +342,24 @@ export function automationStudioFlowBootstrapIssueFeedback(input: {
 /** The issues about one of a node's parameters that name the node, for `core.describe_nodes` (header, t514). */
 const NODE_NAMED_CODES: ReadonlySet<string> = new Set(["bootstrap.unknown_parameter", "bootstrap.invalid_parameter_value", "bootstrap.handle_unresolved"]);
 const UNRESOLVED_CODE = "bootstrap.handle_unresolved";
+const UNKNOWN_PARAMETER_CODE = "bootstrap.unknown_parameter";
+
+/**
+ * Core's sentence for a parameter a step's node does not take (t606): the
+ * parameter as the model wrote its key, the node, and every parameter the node
+ * takes that the model writes. Only identifiers are inserted -- the key from
+ * the issue's path, the node's id and its parameters' ids -- never a value.
+ * A8 towels (`run-mv8p37k8-f1a90624`) sent one script four times after its
+ * `bootstrap.unknown_parameter` issues came back with no sentence, and only
+ * the first with the node's parameters.
+ */
+function undeclaredSentence(target: ParameterTarget | undefined, definition: AutomationStudioNodeDefinition | undefined): string {
+  const key = target && DETAIL_NAME.test(target.parameterId) ? JSON.stringify(target.parameterId) : "this parameter";
+  if (!definition) return `The step's node takes no parameter ${key}. Ask core.describe_nodes for the parameters it takes and write one of those, or move the line to the step whose node takes it.`;
+  const shown = definition.parameters.filter((parameter) => parameter.shownToModel !== false).map((parameter) => JSON.stringify(parameter.id));
+  const takes = shown.length ? `The parameters it takes are ${shown.join(", ")}` : "It takes no parameter you write";
+  return `The node ${definition.id} takes no parameter ${key}. ${takes}: write the line under one of those, or move it to a step whose node takes it.`;
+}
 
 /**
  * What to write instead of a word under the wrong key (header, t514): the

@@ -4,7 +4,7 @@ import { automationStudioCandidateSameBehaviour } from "../../flow-bootstrap/can
 import type { AutomationStudioFlowBuildPlan } from "../../flow-bootstrap/plan/index.ts";
 import type { AutomationStudioSubflowProposal } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
-import { automationStudioProjectBuilderReturn, automationStudioProjectSubflowBrief, type AutomationStudioProjectBuilderReturn, type AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
+import { automationStudioProjectBuilderReturn, automationStudioProjectBuilderReturn as RETURN, automationStudioProjectSubflowBrief, type AutomationStudioProjectBuilderReturn, type AutomationStudioProjectSubflowBrief, type AutomationStudioProjectTrialRef } from "../contracts/index.ts";
 import { AutomationStudioProjectRecordRefusal } from "../record/index.ts";
 import { automationStudioProjectSupervisorBriefInput } from "./brief-input.ts";
 import { automationStudioProjectSupervisorBriefSizing } from "./brief-sizing.ts";
@@ -169,7 +169,7 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
   if (short) state.recoveryRepairsShort.set(short.key, "short");
   return answer.answered({
     ok: true,
-    returns: order.ordered.map((brief, index) => compact(brief, returns[index]!, unchanged.get(brief.briefId))),
+    returns: order.ordered.map((brief, index) => compact(brief, returns[index]!, unchanged.get(brief.briefId), RETURN.closestTrial(state.answeredFor(brief.subflowKey).map(({ returned }) => returned)))),
     lastingActsInPlace: ports.projectLedger.snapshot().acts.filter((act) => act.inPlace).length,
     ...(short ? { wholeTestStands: { complete: { revision: short.revision, digest: short.digest } } } : {}),
     next: short ? GUIDANCE.next.afterRecoveryRepairShort : unchanged.size ? GUIDANCE.next.afterRepairUnchanged : !allDone ? GUIDANCE.next.afterReturnsNotDone : reset ? GUIDANCE.next.afterReset : GUIDANCE.next.afterReturnsDone
@@ -205,8 +205,8 @@ function failingTrials(context: AutomationStudioProjectSupervisorContext, briefs
   // The whole test to name instead, when one stands that did not pass or passed only on the run's own recovery.
   const wholeTest: JsonObject | undefined = latest && standing && (standing.verdict !== "yes" || rescued) ? { kind: "candidate_trial", receiptId: standing.trialRunId ?? `whole-test-${latest.revision}`, digest: latest.digest } : undefined;
   const issues: Issue[] = [];
-  const refuse = (code: string, path: string, why: string) => {
-    issues.push({ code, path, why, ...(wholeTest ? { wholeTest } : {}) });
+  const refuse = (code: string, path: string, why: string, closest?: JsonObject) => {
+    issues.push({ code, path, why, ...(wholeTest ? { wholeTest } : {}), ...(closest ? { closestTrial: closest } : {}) });
   };
   const read = briefs.map((brief, index) => {
     const receipt = brief.failingReceipt;
@@ -219,10 +219,15 @@ function failingTrials(context: AutomationStudioProjectSupervisorContext, briefs
       else if (!trial) refuse("project.failing_receipt_passed", path, GUIDANCE.issues.failingPassed);
       return trial ? { ...brief, failingTrial: trial } : brief;
     }
-    const listed = state.answeredFor(brief.subflowKey).flatMap(({ returned }) => returned.trials.flatMap((trial, at) => (trial.receiptId === receipt.receiptId && trial.digest === receipt.digest ? [{ returned, last: at === returned.trials.length - 1 }] : [])));
-    if (!listed.length) refuse("project.failing_receipt_unknown", path, GUIDANCE.issues.failingUnknown);
+    const returns = state.answeredFor(brief.subflowKey).map(({ returned }) => returned);
+    const listed = returns.flatMap((returned) => returned.trials.flatMap((trial, at) => (trial.receiptId === receipt.receiptId && trial.digest === receipt.digest ? [{ returned, trial, last: at === returned.trials.length - 1 }] : [])));
+    // The subflow's trial closest to passing (`../contracts/builder-return.ts`, t606): offered beside a refusal, and started from instead of a worse one.
+    const closest = RETURN.closestTrial(returns);
+    const offered = closest ? { ...RETURN.trialRef(closest) } : undefined;
+    if (!listed.length) refuse("project.failing_receipt_unknown", path, GUIDANCE.issues.failingUnknown, offered);
     // The trial a done return ended on is the yes it was done on.
-    else if (listed.every((entry) => entry.last && entry.returned.outcome === "done")) refuse("project.failing_receipt_passed", path, GUIDANCE.issues.failingPassed);
+    else if (listed.every((entry) => entry.last && entry.returned.outcome === "done")) refuse("project.failing_receipt_passed", path, GUIDANCE.issues.failingPassed, offered);
+    else if (closest && RETURN.trialAbove(closest, listed.at(-1)!.trial)) return { ...brief, failingReceipt: RETURN.trialRef(closest) };
     return brief;
   });
   return { briefs: read, issues };
@@ -348,8 +353,15 @@ function blocked(brief: AutomationStudioProjectSubflowBrief, code: string, given
   return { briefId: brief.briefId, outcome: "blocked", reason: `The return did not answer this brief (${code}).`, trials: [], spentUsd: given?.spentUsd ?? 0, calls: given?.calls ?? 0 };
 }
 
+/**
+ * What a not-done return says of the trial a repair of its subflow starts from
+ * (t606): the closest to passing of every trial that subflow's returns listed,
+ * which Core puts on a repair naming a trial it ranks below.
+ */
+const REPAIR_FROM = "Of every trial this subflow's returns listed, this is the closest to passing (unsure over no, then the most rows stored, then the latest). A repair of this subflow starts from it: copy it whole as the repair's failingReceipt. A repair naming a trial that ranks below it is sent with this one instead.";
+
 /** What the supervisor reads of a return: never the builder's history. */
-function compact(brief: AutomationStudioProjectSubflowBrief, returned: AutomationStudioProjectBuilderReturn, sameAs?: { briefId: string; revision: number }): JsonObject {
+function compact(brief: AutomationStudioProjectSubflowBrief, returned: AutomationStudioProjectBuilderReturn, sameAs: { briefId: string; revision: number } | undefined, closest: AutomationStudioProjectTrialRef | undefined): JsonObject {
   return {
     briefId: brief.briefId,
     kind: brief.kind,
@@ -363,6 +375,10 @@ function compact(brief: AutomationStudioProjectSubflowBrief, returned: Automatio
     ...(sameAs ? { changedNothing: { sameAs, instruction: GUIDANCE.issues.changedNothing } } : {}),
     // Each trial's receipt ref, as a repair brief's failingReceipt names one (bigbox debug fix 5, t588).
     trials: returned.trials.map((trial) => ({ kind: trial.kind, receiptId: trial.receiptId, digest: trial.digest })),
+    // What each answered and stored, beside the refs (t606); a ref is copied without them.
+    ...(returned.trials.some((trial) => trial.verdict !== undefined) ? { trialsAnswered: returned.trials.map((trial) => ({ receiptId: trial.receiptId, ...(trial.verdict !== undefined ? { verdict: trial.verdict } : {}), ...(trial.rows !== undefined ? { rows: trial.rows } : {}) })) } : {}),
+    // The subflow's trial closest to passing, for a repair to start from, while this return is not done (`../contracts/builder-return.ts`, t606).
+    ...(closest && returned.outcome !== "done" ? { repairFrom: { failingReceipt: RETURN.trialRef(closest), instruction: REPAIR_FROM } } : {}),
     spentUsd: returned.spentUsd,
     calls: returned.calls,
     ...(returned.interfaceRequest ? { interfaceRequest: { change: returned.interfaceRequest.change, why: returned.interfaceRequest.why } } : {}),
