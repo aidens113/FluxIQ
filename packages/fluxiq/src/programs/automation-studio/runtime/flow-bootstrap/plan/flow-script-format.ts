@@ -485,6 +485,12 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT = [
  * becomes its node's expected state, so a press whose answer was lost is
  * settled from the page rather than stopped as uncertain.
  *
+ * The second known way's parts read their one booking reference with the
+ * single-value read and hand it on through its `value` port (t646). They read
+ * it with a list extraction and its `records` until then, and a builder that had
+ * to hand on one value copied that `extraction.1` handle, which only the list
+ * detector gives, and was refused for every guess (A8 frozen pair 3).
+ *
  * No example is a Lab task (t378's rule): a city permit portal, a weather
  * network's station list and a meeting-room planner are sites and acts none of
  * the ten realistic scenarios has, and no example closes an email or
@@ -562,18 +568,19 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT = [
   "  then: use reference = $step.other.reference",
   "end",
   "part calendar: book from the room's calendar",
-  "  output: reference = $step.calendar-ref.records",
+  "  output: reference = $step.calendar-ref.value",
   "  step: choose the 10:00 slot on Thursday",
   "    node: web.dom.click",
   "    target: t8",
   "    consequences: create_new",
   "  step calendar-ref: read the booking reference",
-  "    node: web.dom.extract_list",
-  "    extractList: extraction.1",
+  "    node: web.dom.extract",
+  "    target: t12",
+  "    extract.mode: text",
   "  done when: text t11 contains \"Booked\"",
   "end",
   "part floorplan: book from the floor plan",
-  "  output: reference = $step.plan-ref.records",
+  "  output: reference = $step.plan-ref.value",
   "  step: choose the Juniper room on the floor plan",
   "    node: web.dom.click",
   "    target: t15",
@@ -583,8 +590,9 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT = [
   "    target: t16",
   "    consequences: create_new",
   "  step plan-ref: read the booking reference",
-  "    node: web.dom.extract_list",
-  "    extractList: extraction.1",
+  "    node: web.dom.extract",
+  "    target: t12",
+  "    extract.mode: text",
   "  done when: text t11 contains \"Booked\"",
   "end"
 ].join("\n");

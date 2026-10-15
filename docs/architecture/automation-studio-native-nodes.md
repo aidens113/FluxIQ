@@ -211,6 +211,35 @@ Trusted Code Nodes cannot emit importer output actions. Action-bound input
 events remain confirmation observations and never become policy state through
 this runtime.
 
+### Values a dispatch hands on through data ports
+
+A dispatched output's answer is kept whole at `outputs.result`, which no port
+declares, so a later node cannot read it there. A data output port may declare
+`resultPath` (`AutomationNodePort.resultPath`, `nodes/contracts.ts`): the dotted
+path, in the records-path grammar, inside that answer where the port's value
+lies. The importer that defines the node sets it on its own port definition;
+for example, a web-automation domain's single-value read declares
+`{ id: "value", role: "data", resultPath: "result.extracted" }`, because its
+dispatcher wraps the client's answer under `result` and the client answers on
+`extracted`. Definition validation refuses `resultPath` on an input, on any
+output whose role is not `data`, and on a path that does not parse
+(`node.port_invalid_result_path`).
+
+The executor copies the value only after a **successful** dispatch, in the
+same merge where a dispatched route is taken
+(`runtime/executor/node-execution/attempt.ts`, through
+`node-execution/result-path-outputs.ts`): for each declared data port with a
+`resultPath`, the value found at that path is written to `outputs.<port id>`,
+where the run keeps it as `<node id>.<port id>`, so a later step reads it as
+`$step.<label>.<port id>` (the plan's `$node.<key>.<port id>`). A failed
+dispatch writes nothing. A path that finds nothing writes nothing, so a
+binding to the port then fails `executor.parameter.unresolved_state_path`
+rather than reading an empty value. A key the dispatch or a record capture
+already wrote (`result`, `error`, `records`) is never replaced. The answer
+arrives already screened by its domain, so the copy carries nothing the answer
+did not, and the persisted trace withholds it as it withholds any value a later
+step resolved out of state. A port without `resultPath` behaves as before.
+
 ## Element Matching
 
 Recording mappers and native importer implementations share the same
