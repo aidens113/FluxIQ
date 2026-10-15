@@ -74,6 +74,16 @@
 // Core adds the router subflow again, so the plan is the one the model meant.
 // Every issue still names the path of what was sent.
 //
+// **An amendment never drops the person's request (A8 frozen pair 3 bigbox,
+// t645).** `run-mv9zn5ob-d929084d` amended its plan so that no part quoted the
+// person's first request and `notAsked` listed it, Core accepted it, and the
+// build could only end on a false reason. An amendment is read against the
+// plan in force (`current`): a stretch of the person's words its parts no
+// longer quote, or a `notAsked` item it adds that restates a part, is refused
+// `project.plan_part_dropped`, each issue naming the part and the words
+// (`../contracts/task-spec.ts`, `droppedIssues`). Not a hint the model may
+// override: a part is given up only by ending honestly.
+//
 // The raw plan is out of the model's reach: a `structurePlan` sent is refused
 // as a field the format does not have. Every refusal names the planning
 // format's own path -- `subflows.1.inputs.0`, never `structurePlan.plan...` --
@@ -90,8 +100,11 @@ import {
 } from "../contracts/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";
 
-/** One thing that stops a plan being written, by the path of what the model sent. */
-export type AutomationStudioProjectSupervisorInputIssue = { code: string; path: string };
+/**
+ * One thing that stops a plan being written, by the path of what the model sent; a dropped part names the part of the
+ * plan in force and the words dropped (header, t645).
+ */
+export type AutomationStudioProjectSupervisorInputIssue = { code: string; path: string; part?: string; dropped?: string };
 
 /** A subflow as the supervisor writes it, and its index in what was sent (`at`), which every issue's path names. */
 type Written = { at: number; key: string; name: string; purpose?: string; parts: string[]; inputs: string[]; outputs: string[]; after: string[] };
@@ -107,7 +120,8 @@ const MAX_SUBFLOWS = 39;
 const MAX_PORTS = 40;
 const MAX_PARTS = 50;
 
-export function automationStudioProjectSupervisorPlanInput(value: JsonObject, sources: readonly AutomationStudioProjectInstructionSource[]):
+/** `current` is the task spec of the plan in force, given for an amendment, which may not drop its words (header, t645). */
+export function automationStudioProjectSupervisorPlanInput(value: JsonObject, sources: readonly AutomationStudioProjectInstructionSource[], current?: AutomationStudioProjectTaskSpec):
   | { ok: true; taskSpec: AutomationStudioProjectTaskSpec; structure: AutomationStudioProjectStructurePlan; purposes: Record<string, string>; after: Record<string, string[]>; warnings: AutomationStudioProjectSupervisorInputIssue[] }
   | { ok: false; issues: AutomationStudioProjectSupervisorInputIssue[] } {
   const issues: AutomationStudioProjectSupervisorInputIssue[] = Object.keys(value)
@@ -117,7 +131,7 @@ export function automationStudioProjectSupervisorPlanInput(value: JsonObject, so
   const specFields = { parts: rawSpec.parts, notAsked: rawSpec.notAsked ?? [] };
   const spec = automationStudioProjectTaskSpec.parse({ ...rawSpec, notAsked: specFields.notAsked, digest: automationStudioProjectTaskSpec.digest(specFields as Omit<AutomationStudioProjectTaskSpec, "digest">) });
   if (spec.status === "invalid") issues.push({ code: spec.code, path: spec.path });
-  else issues.push(...automationStudioProjectTaskSpec.quoteIssues(spec.value, sources));
+  else issues.push(...automationStudioProjectTaskSpec.quoteIssues(spec.value, sources), ...(current ? automationStudioProjectTaskSpec.droppedIssues(current, spec.value, sources) : []));
   const written = readSubflows(value.subflows, issues);
   if (spec.status === "invalid" || !written || issues.length) return { ok: false, issues };
   const compiled = compile(written);

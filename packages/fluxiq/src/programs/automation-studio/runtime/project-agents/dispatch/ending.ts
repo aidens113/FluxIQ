@@ -66,6 +66,27 @@ import { automationStudioProjectDispatchAllowanceSaid, type AutomationStudioProj
 // an unread input by the name the brief's interface gives it, and the codes
 // leave the guard's sentence. An unread input is the plan's to change, so the
 // reason ends with that advice. Codes and Core's own port names only.
+//
+// **An output the subflow cannot make is the plan's to change (A8 frozen pair
+// 3 bigbox, t645).** `run-mv9zn5ob-d929084d` planned an output no step of its
+// producer could make; the builder was refused it fourteen times across two
+// briefs, and both came back with codes that never said the plan was at fault.
+// A last refused submission carrying `subflow.output_not_a_value` or
+// `subflow.output_unknown_port` is said with the output by the name the
+// brief's interface gives it, and the reason ends with the plan's advice: drop
+// the value and keep `after` when a later subflow needs only what this one
+// leaves on the target. The same words end a brief Core stops itself once one
+// output was refused under two different bindings (`outputStopped`,
+// `./output-refusals.ts`).
+//
+// **A trial's own findings reach the supervisor (t645, with t647).** A trial's
+// feedback may carry what Core itself measured of the run under `coreFindings`
+// (`{code, act, did, call, said}`, first `trial.explored_on_absorbed_act`: the
+// page the builder explored was changed by an act the trial's start undid and
+// no step does). The return said only the trial's code, failed step and judge,
+// so the supervisor sent a repair "since the act is already done". Each
+// finding's `said` -- Core's own sentence -- is now carried after the trial's
+// account, by its code, bounded as the rest; the key is read structurally.
 
 /** What a return's reason may hold (`contracts/builder-return.ts`). */
 const MAX_REASON = 2000;
@@ -73,6 +94,9 @@ const MAX_ERROR_WORDS = 300;
 /** The most of the builder's own words, and of one quoted page or judge text, a reason carries, so the trial's account still fits. */
 const MAX_ENDING_WORDS = 1000;
 const MAX_QUOTED = 200;
+/** How many of a trial's Core findings a reason carries, and the most of one finding's sentence (header, t645). */
+const MAX_FINDINGS = 3;
+const MAX_FINDING_WORDS = 400;
 /** The step kinds a trial runs around the subflow (its start, the call into it): a failure there is the subflow's step failing inside. */
 const FRAME_STEP = /^builtin\.control\./u;
 /** How many of a stopped loop's last answered calls its return names, a run of the same answer said once. */
@@ -140,6 +164,12 @@ export const automationStudioProjectDispatchEnding = Object.freeze({
     return returned(brief, spend.accepted ? "partial" : "blocked", why, spend, spend.accepted);
   },
 
+  /** Why Core stopped a brief whose builder was refused one output under two different bindings (header, t645): the output by its interface name, the codes, and the plan's advice. */
+  outputStopped(output: string, codes: readonly string[]): string {
+    const said = [...new Set(codes.filter((code) => SAYABLE.test(code)))];
+    return `Core stopped this brief: core.submit_subflow refused output "${output}" under two different bindings${said.length ? ` (${said.join(", ")})` : ""}, so another binding would only be refused again.${outputAdvice([output])}`;
+  },
+
   /** A reset loop that returned, and what it left to undo. */
   reset(brief: AutomationStudioProjectSubflowBrief, loop: AutomationStudioLlmEvidenceLoopResult, left: readonly AutomationStudioSiteResetNamedAct[], spend: AutomationStudioProjectDispatchSpend): AutomationStudioProjectBuilderReturn {
     if (loop.ok && !left.length) return returned(brief, "done", "Every lasting act this build made is undone; the site is as the build found it.", spend, undefined);
@@ -185,8 +215,11 @@ function thrownEnding(error: unknown, brief: AutomationStudioProjectSubflowBrief
   return stoppedOn(brief, diagnostic.issueCodes, diagnostic.evidenceLoop?.steps ?? []);
 }
 
-/** The last refused submission, as the stop's codes carry it (header, t630): its family, its issue codes, and the codes that carried it. */
-type LastRefused = { family: string; codes: string[]; carried: ReadonlySet<string> };
+/**
+ * The last refused submission, as the stop's codes carry it (header, t630): its family, its issue codes, the codes that
+ * carried it, and the brief's outputs its output issues name (t645).
+ */
+type LastRefused = { family: string; codes: string[]; carried: ReadonlySet<string>; outputs: string[] };
 
 /** A refusal code ending in the digest of its issues (`../../flow-bootstrap/candidate/submission-refusal.ts`). */
 const ISSUES_DIGEST = /:[0-9a-f]{8}$/u;
@@ -194,29 +227,46 @@ const ISSUES_DIGEST = /:[0-9a-f]{8}$/u;
 const INPUT_UNREAD = "subflow.input_unread";
 /** What the supervisor is told after an unread input: the plan's to change (header, t630). */
 const INPUT_UNREAD_ADVICE = " The plan gives this subflow a value no step of it reads: change the plan with project.amend_plan, so that it takes only values a step of it types or opens, or carry its parts in the subflow that reads that value.";
+/** The scope issues that say an output is bound to no value (`../../flow-bootstrap/subflow-candidate/route-outputs.ts`), each at `flow.output.<id>`. */
+const OUTPUT_CODES: ReadonlySet<string> = new Set(["subflow.output_not_a_value", "subflow.output_unknown_port"]);
+const OUTPUT_PATH = /^flow\.output\.([A-Za-z][A-Za-z0-9_]*)$/u;
 
 /** The guard's codes, then the calls the loop stopped on, the last refused submission said by its issues where the codes carry them (header, t630). */
 function stoppedOn(brief: AutomationStudioProjectSubflowBrief, codes: readonly string[] | undefined, rows: readonly AnsweredCall[]): string {
-  const refused = lastRefused(codes ?? []);
+  const refused = lastRefused(codes ?? [], brief);
   const guard = guardSaid((codes ?? []).filter((code) => !refused?.carried.has(code)));
   const calls = callsSaid(rows, refused ? (code) => refusedSaid(code, refused, brief) : undefined);
-  const advice = refused && calls.said && refused.codes.includes(INPUT_UNREAD) ? INPUT_UNREAD_ADVICE : "";
+  const advice = refused && calls.said ? `${refused.codes.includes(INPUT_UNREAD) ? INPUT_UNREAD_ADVICE : ""}${refused.outputs.length ? outputAdvice(refused.outputs) : ""}` : "";
   return `${guard}${calls.text}${advice}`;
 }
 
-/** The last refused submission the codes carry, or undefined when they carry none with a family and an issue. */
-function lastRefused(codes: readonly string[]): LastRefused | undefined {
+/** The last refused submission the codes carry, or undefined when they carry none with a family and an issue; its outputs are the brief's own (header, t645). */
+function lastRefused(codes: readonly string[], brief: AutomationStudioProjectSubflowBrief): LastRefused | undefined {
   const decoded = refusalCodes.decode(codes);
   if (!decoded?.family || !SAYABLE.test(decoded.family)) return undefined;
   const issues = [...new Set(decoded.issues.map((issue) => issue.code).filter((code) => SAYABLE.test(code)))];
   if (!issues.length) return undefined;
-  return { family: decoded.family, codes: issues, carried: new Set(refusalCodes.encode(decoded)) };
+  const declared = new Set((brief.interface?.outputs ?? []).map((port) => port.id));
+  const outputs = [...new Set(decoded.issues.flatMap((issue) => {
+    const named = OUTPUT_CODES.has(issue.code) && issue.path ? OUTPUT_PATH.exec(issue.path)?.[1] : undefined;
+    return named && declared.has(named) && SAYABLE.test(named) ? [named] : [];
+  }))];
+  return { family: decoded.family, codes: issues, carried: new Set(refusalCodes.encode(decoded)), outputs };
+}
+
+/** What the supervisor is told after an output the subflow could not make (header, t645): the plan's to change. */
+function outputAdvice(outputs: readonly string[]): string {
+  const named = outputs.map((name) => `"${name}"`).join(", ");
+  return ` The plan asks this subflow to hand on ${outputs.length === 1 ? `output ${named}, a value` : `outputs ${named}, values`} none of its steps makes: `
+    + "if a later subflow needs only what this one leaves on the target, change the plan with project.amend_plan to drop the value and keep the later subflow after this one; otherwise send a changed brief saying where on the target this subflow reads it.";
 }
 
 /** A call's result code as said: the last refused submission's family and issues in place of its digest, or undefined for any other code. */
 function refusedSaid(code: string, refused: LastRefused, brief: AutomationStudioProjectSubflowBrief): string | undefined {
   if (!ISSUES_DIGEST.test(code) || code.replace(ISSUES_DIGEST, "") !== refused.family) return undefined;
-  return `${refused.family} (${refused.codes.map((issue) => (issue === INPUT_UNREAD ? `${issue}: ${inputsSaid(brief)}` : issue)).join(", ")})`;
+  const outputs = refused.outputs.length ? refused.outputs.map((name) => `"${name}"`).join(", ") : undefined;
+  const said = (issue: string) => (issue === INPUT_UNREAD ? `${issue}: ${inputsSaid(brief)}` : OUTPUT_CODES.has(issue) && outputs ? `${issue}: output ${outputs}` : issue);
+  return `${refused.family} (${refused.codes.map(said).join(", ")})`;
 }
 
 /** The brief's inputs by the names its interface gives them, the plan's port names Core checked. */
@@ -308,12 +358,24 @@ function trialSaid(trial: AutomationStudioSubflowTrialResult | undefined, latest
   const feedback = trial.feedback;
   const code = text(feedback.code);
   const head = ` Its last trial, of revision ${trial.revision}, answered ${trial.verdict}${code ? ` (${code})` : ""}`;
-  if (!trial.entryPrepared) return `${head}: ${entrySaid(feedback)}`;
+  const found = findingsSaid(feedback.coreFindings);
+  if (!trial.entryPrepared) return `${head}: ${entrySaid(feedback)}${found}`;
   const step = failedStep(feedback.steps);
-  if (step) return `${head}: ${step}`;
+  if (step) return `${head}: ${step}${found}`;
   const judge = isObject(feedback.judge) ? feedback.judge : undefined;
   const judged = text(judge?.observed) ?? text(judge?.advice) ?? text(feedback.why);
-  return judged ? `${head}: the judge said ${quoted(judged)}.` : `${head}.`;
+  return judged ? `${head}: the judge said ${quoted(judged)}.${found}` : `${head}.${found}`;
+}
+
+/** What Core itself found of the trial's run (header, t645): each finding's own sentence by its code, read structurally. */
+function findingsSaid(value: JsonValue | undefined): string {
+  if (!Array.isArray(value)) return "";
+  const said = value.filter(isObject).flatMap((finding) => {
+    const code = text(finding.code);
+    const words = text(finding.said);
+    return code && words && SAYABLE.test(code) ? [` Core found (${code}): ${clipped(words, MAX_FINDING_WORDS)}`] : [];
+  });
+  return said.slice(0, MAX_FINDINGS).join("");
 }
 
 /** Why the trial's entry was not prepared: which predecessor had no passing proposal, failed, or was proposed against another plan. */

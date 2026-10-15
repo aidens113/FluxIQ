@@ -71,6 +71,13 @@
 // model sent the same script four times. Each such issue now carries Core's
 // sentence naming the key, the node and the parameters it takes -- identifiers
 // only, never a value.
+//
+// **An unknown extraction handle says where one comes from (A8 frozen pair 3
+// bigbox, t645).** `run-mv9zn5ob-d929084d` copied `extraction.1` from a format
+// example into a list read, was refused the handle as unknown, and never learnt
+// that such a handle is minted only by detecting a repeating structure. An
+// unknown-handle issue whose handles include an `extraction.N` now carries
+// `from`: one fixed sentence saying so, in no domain's words.
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
 import type { AutomationStudioNodeDefinition, AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
@@ -271,6 +278,13 @@ const ROUTE_CODES: ReadonlySet<string> = new Set([
 
 /** Issue codes about a handle a node's parameter names (`web.handle.unknown`, `web.handle.stale:target`, ...). */
 const HANDLE_ISSUE = /^[a-z]+\.handle\.[a-z_]+(?::|$)/u;
+/** A domain's refusal of a handle it never issued (`web.handle.unknown`), any domain, with or without a position. */
+const UNKNOWN_HANDLE = /^[a-z]+\.handle\.unknown(?::|$)/u;
+/** A handle that names a detected repeating structure (`extraction.1`). */
+const EXTRACTION_HANDLE = /^extraction\.\d+$/u;
+/** Where such a handle comes from (header, t645): fixed words, naming no domain's tool. */
+const EXTRACTION_FROM = "A handle written extraction.N names a repeating structure (a list or a table of rows) that a detection of that structure found on the page you looked at: it exists only once you have detected the structure from one of its items, which mints the handle and its fields. "
+  + "Copying one from an example or another builder's script names nothing here. Detect the structure first and write the handle its answer gives; to hand on one value that is not a row of a list, read it with a step that reads that one element instead.";
 /** The keys a written handle reference carries (`../../llm/harness-options/plan-node-handles.ts`). */
 const HANDLE_KEY = "handle", LOCATION_KEY = "location";
 
@@ -337,6 +351,8 @@ export function automationStudioFlowBootstrapIssueFeedback(input: {
     }
     const handles = issue.path && HANDLE_ISSUE.test(issue.code) ? handlesAt(input.plan, issue.path, issue.code) : [];
     if (handles.length) entry.handles = handles;
+    // Where an extraction handle comes from, beside a refusal that knows none of it (header, t645).
+    if (UNKNOWN_HANDLE.test(issue.code) && handles.some((named) => typeof named.handle === "string" && EXTRACTION_HANDLE.test(named.handle))) entry.from = EXTRACTION_FROM;
     if (!target || described.has(target.key)) return entry;
     const accepted = definition ? acceptedShape(definition, target) : undefined;
     if (!accepted) return entry;

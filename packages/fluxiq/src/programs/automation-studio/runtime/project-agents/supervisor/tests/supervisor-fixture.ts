@@ -80,6 +80,8 @@ export function project(options: {
    * deployment's start hook, which puts the whole site back.
    */
   ledger?: { hook?: boolean; undoes?: boolean };
+  /** The output a return that is not done names as one its subflow could not make (t645); none when absent. */
+  unmadeOutput?: (brief: AutomationStudioProjectSubflowBrief) => string | undefined;
 } = {}) {
   const projects = new AutomationStudioProjectPaths(undefined);
   let clock = 1000;
@@ -118,7 +120,8 @@ export function project(options: {
         continue;
       }
       if (outcome !== "done") {
-        returns.push({ briefId: brief.briefId, outcome, reason: `The ${brief.subflowKey} control could not be found.`, trials: options.notDoneTrials?.(brief, attempt) ?? [], spentUsd: 0.01, calls: 4 });
+        const unmade = options.unmadeOutput?.(brief);
+        returns.push({ briefId: brief.briefId, outcome, reason: `The ${brief.subflowKey} control could not be found.`, trials: options.notDoneTrials?.(brief, attempt) ?? [], spentUsd: 0.01, calls: 4, ...(unmade ? { unmadeOutput: unmade } : {}) });
         continue;
       }
       const proposal = await propose(brief, attempt);

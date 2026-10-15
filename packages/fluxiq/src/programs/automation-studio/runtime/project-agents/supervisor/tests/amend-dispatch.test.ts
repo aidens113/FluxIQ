@@ -108,7 +108,10 @@ describe("a dispatch around an amended plan", () => {
     expect((answersOf(spaced.shown, IDS.amendPlan)[0]!.proposalsKept as JsonObject[])[0]).not.toHaveProperty("reworded");
     const facts = await amended(respoken("the three newest titles by Ada Hart", "the three titles are shown on the page"));
     expect(answersOf(facts.shown, IDS.amendPlan)[0]).toMatchObject({ ok: true, proposalsKept: [], proposalsDropped: [{ subflowKey: "find_titles", why: ["its facts changed"] }] });
-    const cut = await amended(respoken("newest titles by Ada Hart", `${FIND} is done`));
+    // Cut further, its first words now a part of their own (an amendment may not drop them, t645): its parts changed.
+    const split = respoken("newest titles by Ada Hart", `${FIND} is done`);
+    (split.taskSpec as { parts: JsonObject[] }).parts.unshift({ id: "p0", quote: { sourceId: "instruction.1", text: "Find the three" }, goalFacts: ["three are asked for"], lastingActs: [] });
+    const cut = await amended({ ...split, subflows: (TWO.subflows as JsonObject[]).map((entry, index) => (index === 0 ? { ...entry, parts: ["p0", "p1"] } : entry)) });
     expect(answersOf(cut.shown, IDS.amendPlan)[0]).toMatchObject({ ok: true, proposalsKept: [], proposalsDropped: [{ subflowKey: "find_titles", why: ["its parts changed"] }] });
   });
 

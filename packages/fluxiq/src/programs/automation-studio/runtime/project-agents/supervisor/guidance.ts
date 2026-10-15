@@ -61,6 +61,13 @@
 // reset no longer says to test a Flow when none is assembled, or when the
 // reset was sent because an ending was held for it: it says to end again.
 //
+// **A part is given up only by an honest ending (A8 frozen pair 3 bigbox,
+// t645).** `run-mv9zn5ob-d929084d` amended its plan to move the person's first
+// request under notAsked. The amend tool now says every stretch of the words a
+// part holds stays in a part, and `project.plan_part_dropped` says why and
+// what to do instead. A subflow that could not make a value the plan asks it to
+// hand on is answered by naming both ends (`afterOutputUnmade`).
+//
 // No string here names a fingerprint field by name: the supervisor completes
 // and tests with the `complete` object assembly hands it, copied whole.
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_LOOK_BUDGET as LOOKS } from "./look-budget.ts";
@@ -101,7 +108,8 @@ const AMEND_PLAN = "Replace the plan with a new revision: the fields of project.
   + "A done proposal is kept where the new plan leaves its subflow as it was: the same key, the same parts with the same lasting acts, facts and words, the same inputs and outputs, and the same after, with every subflow it runs after kept too. "
   + "A part whose words only gain or lose a word or two at either end is the same part: its proposal is kept and listed with reworded. A part whose facts changed drops it, since its trial was judged against the old facts. Every other proposal made under the old plan is dropped. "
   + "The answer lists proposalsKept and proposalsDropped, each dropped one with what changed: send briefs only for the dropped subflows and the new ones. "
-  + "Changing words does not change what a builder writes: amend to change what the subflows are, not to get past a refusal.";
+  + "Changing words does not change what a builder writes: amend to change what the subflows are, not to get past a refusal. "
+  + "Every stretch of the person's words a part of the plan in force holds stays in a part of the new one, split or joined in any way, and never goes under notAsked: to give a part up, end honestly with ended instead.";
 
 const DISPATCH = "Send one or more briefs to builders and wait for every return. Each brief: kind (build, repair, or reset, which puts the target back the way this build found it before the whole test), subflowKey, "
   + "parts it carries, optional entry {caseId, predecessors: the subflows whose proposals run first to reach its start}, which is observed-current and the plan's after for that subflow when left out; optional recordingExcerpt; "
@@ -157,6 +165,16 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     afterAmendWarned: "The plan was changed, with the warnings above, each by its path. If one applies, change the plan again with project.amend_plan before any brief. Otherwise, a subflow under proposalsKept keeps its done proposal and needs no brief: send briefs with project.dispatch for each subflow under proposalsDropped and each new one, those with nothing to run after first.",
     afterReturnsDone: "Every brief sent came back done. Send briefs for any subflow still without a done proposal, or call project.assemble once every one has one.",
     afterReturnsNotDone: "A brief came back partial or blocked. Read its reason: send a changed brief for that subflow, change the plan with project.amend_plan, or end honestly.",
+    /**
+     * After a brief came back not done on an output the plan asks its subflow to hand on and none of its steps makes
+     * (`./dispatch-tool.ts`, t645): {producer}, {value} and {takers} filled in, each in quotes.
+     */
+    afterOutputUnmade: "{takers} takes {value}, which {producer} could not make: the plan asks {producer} to hand on a value none of its steps makes. "
+      + "If {takers} needs only what {producer} leaves on the target, change the plan with project.amend_plan: drop {value} from {producer}'s outputs and from the inputs of {takers}, and keep {producer} in their after. "
+      + "If a step of {takers} types or opens that value, {producer} must read it on the target: send it a changed brief saying so, or end honestly.",
+    /** The same, when no other subflow takes the value: it is what the Flow hands back. */
+    afterOutputUnmadeUntaken: "{producer} could not make {value}, which the plan asks it to hand on and no other subflow takes: none of its steps makes that value. "
+      + "If the person asked for that value, send {producer} a changed brief saying where on the target it is read, or end honestly; otherwise change the plan with project.amend_plan to drop {value}.",
     /** After a call of reset briefs only, while the latest assembled Flow may be tested (`./dispatch-tool.ts`, t638): an ending held for this reset comes first. */
     afterReset: "The reset came back. If you sent it because your ending was held for a reset (project.completion_reset_first), end again now: nothing holds it back. Otherwise test the latest assembled Flow with core.test_candidate.",
     /** After a call of reset briefs only, with nothing assembled (`./dispatch-tool.ts`, t638): there is no Flow to test. */
@@ -254,6 +272,10 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     "project.unknown_field": "This field is not part of the plan's format. Send only the fields the tool describes.",
     "project.missing_field": "A field the plan's format needs is missing here.",
     "project.amend_reason_missing": "An amendment needs its reason: say what is wrong with the plan in force.",
+    /** Not overridable (`./plan-input.ts`, t645): a plan without a part of the request is another task. */
+    "project.plan_part_dropped": "This amendment drops words of the person's request that a part of the plan in force holds (part, and dropped: the words), or lists them under notAsked. "
+      + "A plan without them is a different task, which nobody asked for. Keep every stretch of those words in a part of the new plan: parts may be split or joined differently, but none of the words may be lost. "
+      + "If that part cannot be done, do not amend it away: end honestly with ended (partial or blocked) and your reason, which the person reads.",
     // A written plan's warnings, each by its own code (`./plan-input.ts`, `./plan-tool.ts`): what to do if it applies.
     "project.plan_value_unused": "No other subflow takes this value. Keep it only if it is what the Flow hands back to the person; otherwise remove it, and if a later subflow needs what this one leaves on the target, order it with after instead.",
     "project.plan_subflow_constraint": "This subflow neither makes a lasting act nor hands anything on. If its parts read something the person asked for, keep it. If they only say what must stay as it is, they are constraints: put them under notAsked, drop those parts and this subflow, and amend the plan.",

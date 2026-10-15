@@ -37,6 +37,12 @@ export type AutomationStudioProjectBuilderReturn = {
   interfaceRequest?: { change: string; why: string };
   /** Survey only. */
   findings?: string[];
+  /**
+   * The output, by the name the brief's interface gives it, that the brief's latest submission was refused for binding
+   * to no value, on a return that is not done (t645): the plan asks the subflow for a value none of its steps makes,
+   * and the supervisor is told which subflow takes it (`../supervisor/dispatch-tool.ts`). Absent from returns before it.
+   */
+  unmadeOutput?: string;
   spentUsd: number;
   calls: number;
 };
@@ -55,6 +61,7 @@ export const automationStudioProjectBuilderReturn = Object.freeze({
     if (returned.proposal && returned.proposal.subflowKey !== brief.subflowKey) issues.push({ code: "project.return_subflow_mismatch", path: "return.proposal.subflowKey" });
     if (brief.kind === "survey" && returned.proposal) issues.push({ code: "project.return_survey_proposal", path: "return.proposal" });
     if (brief.kind !== "survey" && returned.findings) issues.push({ code: "project.return_findings_not_survey", path: "return.findings" });
+    if (returned.unmadeOutput !== undefined && (returned.outcome === "done" || !(brief.interface?.outputs ?? []).some((port) => port.id === returned.unmadeOutput))) issues.push({ code: "project.return_unmade_output", path: "return.unmadeOutput" });
     // A reset is done when nothing of the build is left to undo; it proposes no subflow.
     if (brief.kind === "reset" && returned.proposal) issues.push({ code: "project.return_reset_proposal", path: "return.proposal" });
     if (returned.outcome === "done" && brief.kind !== "survey" && brief.kind !== "reset" && !returned.proposal) issues.push({ code: "project.return_done_without_proposal", path: "return.proposal" });
@@ -104,7 +111,7 @@ function trialAbove(left: AutomationStudioProjectTrialRef, right: AutomationStud
 }
 
 function read(value: unknown): AutomationStudioProjectBuilderReturn {
-  const fields = shape.object(value, "return", ["briefId", "outcome", "reason", "trials", "spentUsd", "calls"], ["proposal", "interfaceRequest", "findings"]);
+  const fields = shape.object(value, "return", ["briefId", "outcome", "reason", "trials", "spentUsd", "calls"], ["proposal", "interfaceRequest", "findings", "unmadeOutput"]);
   const returned: AutomationStudioProjectBuilderReturn = {
     briefId: shape.storageId(fields.briefId, "return.briefId"),
     outcome: shape.oneOf(fields.outcome, "return.outcome", AUTOMATION_STUDIO_PROJECT_RETURN_OUTCOMES),
@@ -121,6 +128,7 @@ function read(value: unknown): AutomationStudioProjectBuilderReturn {
     const request = shape.object(fields.interfaceRequest, "return.interfaceRequest", ["change", "why"]);
     returned.interfaceRequest = { change: shape.text(request.change, "return.interfaceRequest.change", LIMITS.reason), why: shape.text(request.why, "return.interfaceRequest.why", LIMITS.reason) };
   }
+  if (fields.unmadeOutput !== undefined) returned.unmadeOutput = shape.id(fields.unmadeOutput, "return.unmadeOutput");
   if (fields.findings !== undefined) returned.findings = shape.array(fields.findings, "return.findings", LIMITS.findings).map((finding, index) => shape.text(finding, `return.findings.${index}`, LIMITS.finding));
   return returned;
 }
