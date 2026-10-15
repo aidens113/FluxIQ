@@ -682,6 +682,14 @@ Earlier entries are in [the ledger archive](./automation-project-agents-plan/arc
 - Outcome: Accepted
 - Follow-up: records carry only within one plan digest (an amended plan starts without them); the moved contract files' doc-comment paths are one directory off; Core's generated docs reference is stale (`pnpm docs:reference`)
 
+### 2026-10-15 — After A8 wave 9: empty-bound and absent-text rows settle (t636); the last pass stays the fallback (t637)
+- Agent: read-only debug of wave 9 social (downstream report); workers t636-settle-empty-and-absent-rows (two rounds), t637-rescued-pass-outlives-later-assembly (three rounds); supervisor decided the fallback's kinds, lifetime, the named-fallback completion and the guard end after an outright pass, verified and integrated
+- Changed: t636 `value-readings/settled-rows.ts` settles a left-out row with an empty value under a numeric bound and a row a positive text test found nothing on (negated tests, unavailable or withheld witnesses stay unsettled), a quote-lacking yes that advised a change is held (`changeAdvised`) not turned into a no, and the builder sees its reading and advice (`candidate.trial_yes_change_advised`); judge instruction pins lines 9-10; t637 `project-agents/supervisor/state.ts` keeps the most recent whole-test pass of either kind, with its own Flow, as the build's fallback until a later pass; every ending without one (honest ending, guard end, a completion naming the fallback) completes on it after the reset rule; a guard end after the latest revision passed outright completes on that revision; a person's cancel completes on nothing
+- Why: wave 9 `project` social: three revisions met the oracle, 8 of 8 correct yeses held on unsettled rows, and the rescued pass was lost to a later re-assembly that never passed
+- Validation: t636 after merging dev: tsc exit 0; result-verification, candidate-trial, subflow-trial, flow-bootstrap, llm/deepseek, diagnosis-channel -> 290 files, 3293 passed, 2 skipped (replays fail on HEAD); `pnpm check` -> passed; merged `6fa47db2`. t637 after merging dev: tsc exit 0; project-agents, project-build, provider-unavailable modes -> 57 files, 398 passed (each new branch's test fails with it off); `pnpm check` -> passed; merged `8f64cc9e`; both pushed
+- Outcome: Accepted
+- Follow-up: the fallback lives in memory only (a restarted supervisor has none); a taken yes that advised a change keeps no advice text
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
