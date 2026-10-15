@@ -659,6 +659,13 @@ Earlier entries are in [the ledger archive](./automation-project-agents-plan/arc
 - Outcome: Accepted
 - Follow-up: a brief waiting only for a host lease is still carved at its dispatch-time size; grants are in the return's reason text, not a structured field; order claims against page order (t628 R4) not done
 
+### 2026-10-15 — After A8 wave 7: a no calling settled rows missing is refuted (t629); shaping stays with the read (t630)
+- Agent: read-only debugs of wave 7 (downstream reports); workers t629-judge-refutes-missing-settled-rows, t630-plan-keeps-shaping-with-read (two rounds); supervisor gave t630 the warning-words and refusal-producer files, verified and integrated
+- Changed: t629 `result-verification/refuted-no/`: a left-out row settled by a positive text test whose words are the request's own is marked, the missing reading covers generic phrasings ("missing qualifying rows", "not included", "should be included"), the dispute exemption lifts when every named row is so settled, a claim that such a row's value is the condition's text is refuted with Core's reading (`value-claim.ts`), a sentence naming a stored row with a cell word is not refuted; t630 a plan warning `project.plan_subflow_reshape_only` on a subflow that only reshapes what another reads, one guidance sentence that shaping is carried by the subflow that reads, `plan_value_unused` no longer fires on the Flow's answer, every plan warning shows its own words (`plan-tool.ts`), a blocked return names the submission issue codes and input (`brief-ports.ts`, `submission-refusals.ts`, `dispatch/ending.ts`), refusals say what a repair needs (`dispatch-tool.ts`)
+- Why: wave 7 `candidate` towels held its exact rows on nos Core could not refute; everything-store spent about $0.08 on a subflow with no page work
+- Validation: t629 after merging dev: tsc exit 0; result-verification, candidate-trial, subflow-trial, flow-bootstrap/candidate, llm/deepseek -> 131 files, 1180 passed (no pin moved); `pnpm check` -> passed; merged `13985ebd`. t630 after merging dev: tsc exit 0; project-agents, project-build, candidate-failure, llm/deepseek -> 66 files, 509 passed (the end-to-end blocked-reason test fails with the producer unwired); `pnpm check` -> passed; merged `1ed24ec1`; both pushed
+- Outcome: Accepted
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
