@@ -136,7 +136,11 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // provider did not answer and nothing was built. Its builders, not its loop,
 // act on the target, so the message leaves the page to this build, which puts
 // Core's note of what is left after it -- or that nothing this build did is
-// still on the target -- and shows no supervisor ending row.
+// still on the target -- and shows no supervisor ending row. The note goes
+// before the ending's closing advice to try again later, not after it (t621),
+// so the advice is the last thing the person reads; no reset was sent, since
+// it would need the same silent provider (`project-agents/supervisor/
+// supervisor-loop.ts`), so the note is what tells the person what to take back.
 
 type DraftInput = Parameters<typeof generateAutomationStudioFlowCandidateDraft>[0];
 type DraftResult = { record: AutomationStudioFlowCandidateDraftRecord; trial: AutomationStudioCandidateTrialResult | undefined };
@@ -333,7 +337,12 @@ function toldEnding(failure: Error, recorded: AutomationStudioProjectBuildEnding
   if (PERSON_CODES.has(diagnostic.code)) return failure;
   // A silent provider's ending leaves the target to this build, which says what is left of it, or that nothing is (header, t619).
   const note = left?.note ?? (diagnostic.ending?.kind === "provider_unavailable" ? NOTHING_LEFT : undefined);
-  if (diagnostic.ending) return note ? new AutomationStudioFlowBootstrapGenerationError({ ...diagnostic, ending: { ...diagnostic.ending, message: fitted(diagnostic.ending.message, note) } }) : failure;
+  if (diagnostic.ending) {
+    if (!note) return failure;
+    // A silent provider's ending closes on its advice to try again later; what is left is said before it (t621).
+    const message = diagnostic.ending.kind === "provider_unavailable" ? beforeAdvice(diagnostic.ending.message, note) : fitted(diagnostic.ending.message, note);
+    return new AutomationStudioFlowBootstrapGenerationError({ ...diagnostic, ending: { ...diagnostic.ending, message } });
+  }
   // The time limit is said as the time limit, with what was tested and is left (header, t601).
   const title = timedOut?.title ?? ENDED_WORDS[recorded.outcome];
   const text = timedOut ? `${timedOut.tested} ${note ?? NOTHING_LEFT}` : note ?? NOTHING_LEFT;
@@ -341,10 +350,24 @@ function toldEnding(failure: Error, recorded: AutomationStudioProjectBuildEnding
   return failure;
 }
 
-/** `said` and then `note` within the length an ending's message may hold: the note in full, `said` cut at a sentence's end where it must give way. */
-function fitted(said: string, note: string): string {
-  const whole = note.length <= MAX_MESSAGE ? note : `${note.slice(0, MAX_MESSAGE - "; and more.".length).replace(/;[^;]*$/u, "")}; and more.`;
-  const room = MAX_MESSAGE - whole.length - 1;
+/**
+ * A message whose last sentence is its advice, with `note` put before that
+ * sentence (t621): the advice is kept whole after the note where it fits, and
+ * the message's opening gives way first, as `fitted` cuts it.
+ */
+function beforeAdvice(said: string, note: string): string {
+  const end = said.lastIndexOf(". ");
+  if (end < 0) return fitted(said, note);
+  const advice = said.slice(end + 2);
+  const room = MAX_MESSAGE - advice.length - 1;
+  // A note too long to leave the advice room keeps all of its room, as `fitted` gives it.
+  return note.length < room ? `${fitted(said.slice(0, end + 1), note, room)} ${advice}` : fitted(said.slice(0, end + 1), note);
+}
+
+/** `said` and then `note` within `max`, the length an ending's message may hold by default: the note in full, `said` cut at a sentence's end where it must give way. */
+function fitted(said: string, note: string, max = MAX_MESSAGE): string {
+  const whole = note.length <= max ? note : `${note.slice(0, max - "; and more.".length).replace(/;[^;]*$/u, "")}; and more.`;
+  const room = max - whole.length - 1;
   if (said.length <= room) return `${said} ${whole}`;
   const cut = said.slice(0, room);
   const end = cut.lastIndexOf(". ");

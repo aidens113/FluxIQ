@@ -30,14 +30,20 @@ const SILENT: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: false }> = {
   providerUnavailable: { inARow: 3, codes: ["llm.provider_timeout"], said: "it did not answer before the time allowed for each request ran out", replied: false }
 };
 
-/** What the project build adds after its ending when no act of the build is left on the target (`service/project-build/run.ts`). */
+/** What the project build puts into its ending, before the closing advice, when no act of the build is left on the target (`service/project-build/run.ts`, t621). */
 const NOTHING_LEFT = "Nothing this build did is still on the target.";
+
+/** Core's own ending message with the build's target note put before its last sentence, the advice to try again later, as the project build places it (t621). */
+function withNoteBeforeAdvice(message: string, note: string): string {
+  const end = message.lastIndexOf(". ");
+  return `${message.slice(0, end + 1)} ${note} ${message.slice(end + 2)}`;
+}
 
 /** Each mode's failed build, as the service publishes it (`service/tests/provider-unavailable-authoring-modes.test.ts` pins the same words end to end). */
 function diagnosticOf(mode: Mode): Record<string, unknown> {
   if (mode === "candidate") return { ...flowBootstrapEvidenceLoopFailure(SILENT).diagnostic };
   const diagnostic = flowBootstrapEvidenceLoopFailure(SILENT, undefined, undefined, "said_by_caller").diagnostic;
-  return { ...diagnostic, ending: { ...diagnostic.ending!, message: `${diagnostic.ending!.message} ${NOTHING_LEFT}` } };
+  return { ...diagnostic, ending: { ...diagnostic.ending!, message: withNoteBeforeAdvice(diagnostic.ending!.message, NOTHING_LEFT) } };
 }
 
 /** The whole answer, by mode. */
@@ -46,7 +52,7 @@ const ANSWER: Readonly<Record<Mode, string>> = {
     + "Nothing was built: no Flow was created or changed, and nothing on the page was changed. What the Flow should do is kept, so you can try again later, once the provider is answering. "
     + "The Flow \"Hubs\" has no steps yet.",
   project: "The build stopped because the AI model provider did not answer: 3 requests in a row got no answer -- it did not answer before the time allowed for each request ran out. "
-    + "Nothing was built: no Flow was created or changed. What the Flow should do is kept, so you can try again later, once the provider is answering. Nothing this build did is still on the target. "
+    + "Nothing was built: no Flow was created or changed. Nothing this build did is still on the target. What the Flow should do is kept, so you can try again later, once the provider is answering. "
     + "The Flow \"Hubs\" has no steps yet."
 };
 
