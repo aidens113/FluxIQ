@@ -50,6 +50,17 @@
 // says in words what it needed, and when this subflow has nothing to repair
 // from at all.
 //
+// **One part, one stretch of words, one subflow (crossborder debug, t638).**
+// A8 wave 10 `run-mv9q50ui-1736d010` quoted the whole request as one part and
+// a span inside it as another, then amended its plan to give one part to three
+// subflows run one after another: the first builder did the whole task and
+// the later ones found nothing left to do. So step 1 and the plan's tool say
+// parts share no words and step 2 that each part is carried by one subflow,
+// and the refusals `project.quote_overlaps` and
+// `project.plan_part_carried_twice` say what each means. And the note after a
+// reset no longer says to test a Flow when none is assembled, or when the
+// reset was sent because an ending was held for it: it says to end again.
+//
 // No string here names a fingerprint field by name: the supervisor completes
 // and tests with the `complete` object assembly hands it, copied whole.
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_LOOK_BUDGET as LOOKS } from "./look-budget.ts";
@@ -60,9 +71,9 @@ const READ_TASK = "Read the task: the person's instructions, word for word, unde
 const HOW_TO_WORK = [
   "You supervise this build. You do not operate the target and you never write a step: builders do, one subflow each, and they are the ones who explore the target, find what the task names and act on it. You plan, brief, read what comes back, assemble and test.",
   `Plan from the task and a short look. The start page as the build found it is already in your evidence, and you may make at most ${LOOKS} more looks with the look tools, which change nothing; after them looking is withdrawn for the rest of the build. Something the task names that the start page does not show is not yours to find: finding it is what a builder's part is for.`,
-  "1. Write the plan with project.write_plan, once. taskSpec splits the task into parts: a part is one thing the person asked for, given as their exact words copied from one instruction (its sourceId and the text), with the facts that are true once it is done and the lasting acts it needs. Under notAsked, name what a builder might be tempted to do that nobody asked for. "
+  "1. Write the plan with project.write_plan, once. taskSpec splits the task into parts: a part is one thing the person asked for, given as their exact words copied from one instruction (its sourceId and the text), with the facts that are true once it is done and the lasting acts it needs. Parts share no words: where one stretch of the person's words holds another, it is one part, or split it into stretches that do not overlap. Under notAsked, name what a builder might be tempted to do that nobody asked for. "
     + "A part asks for something to be done or read. What the person says must stay as it is (nothing removed, nothing sent, nothing else changed) is no part: put it under notAsked, which the judge checks the whole run against, and give it no subflow.",
-  "2. In the same call, subflows: one for each piece of work a builder makes, as {key, name, purpose, parts, inputs, outputs, after}. parts are the ids of the parts it carries; inputs are the values it takes and outputs the values it hands on, by name; after names the subflows that must run before it. A one-part task is one subflow with no inputs or outputs. Core writes the Flow's shape from this, and each builder proposes how its own subflow shows it is done. "
+  "2. In the same call, subflows: one for each piece of work a builder makes, as {key, name, purpose, parts, inputs, outputs, after}. parts are the ids of the parts it carries, and each part is carried by one subflow only; inputs are the values it takes and outputs the values it hands on, by name; after names the subflows that must run before it. A one-part task is one subflow with no inputs or outputs. Core writes the Flow's shape from this, and each builder proposes how its own subflow shows it is done. "
     + "Hand a value on only when a step of a later subflow uses it, as a name it types or a row it opens. What an earlier subflow leaves on the target, such as a chosen branch or a page left open, is no value: say it with after alone. "
     + "A part that only narrows, de-duplicates, orders or shapes what another part reads is carried by the subflow that reads it.",
   "3. Send briefs with project.dispatch, one for each subflow. A brief names its subflow and its parts; Core gives it its share of the money and calls left. A lasting act its parts do not ask for that moves money, deletes or sends goes to the person first; any other lasting act runs, is recorded as this build's, and the builder is told it was outside its brief. What runs before it is the plan's after unless you say otherwise. Briefs whose starts do not depend on each other may go in one call.",
@@ -81,9 +92,9 @@ const EXAMPLE = "An example from a lending library's catalogue: \"Find the three
   + "titles is handed on because place_hold's step opens the first of them. Had the task also said \"and leave my other holds as they are\", that goes under notAsked, not into a part with a subflow of its own.";
 
 const WRITE_PLAN = "Write the task spec and the plan, once. taskSpec: parts, each {id, its words as {sourceId, text} with text copied exactly from that instruction, goalFacts, lastingActs}, and notAsked. "
-  + "subflows: each {key, name, purpose, parts, inputs, outputs, after} and nothing else. key: lower case letters, digits, _ or -, starting with a letter. parts: the part ids it carries; every part is carried by at least one subflow. "
+  + "subflows: each {key, name, purpose, parts, inputs, outputs, after} and nothing else. key: lower case letters, digits, _ or -, starting with a letter. parts: the part ids it carries; every part is carried by exactly one subflow. "
   + "inputs and outputs: the names of the values it takes and hands on, each letters and digits starting lower case. after: the keys of the subflows that run before it. One subflow with no inputs or outputs is the one the router runs; otherwise Core adds that one, and it calls the others. "
-  + "Core writes the Flow's shape from these and checks that every part's text is in its instruction exactly as written and that every part is carried; a refusal lists every issue by its path in what you sent. "
+  + "Core writes the Flow's shape from these and checks that every part's text is in its instruction exactly as written, that no two parts' texts overlap, and that every part is carried by exactly one subflow; a refusal lists every issue by its path in what you sent. "
   + "The answer may carry warnings, each by its path: a value no other subflow takes, a subflow of several that neither makes a lasting act nor hands anything on, or one that only reshapes what another subflow reads. Change a plan already written with project.amend_plan.";
 
 const AMEND_PLAN = "Replace the plan with a new revision: the fields of project.write_plan, plus reason. Briefs sent under the old plan no longer count. Write only your own subflows: the one the router runs is Core's, and Core adds it again. "
@@ -146,7 +157,12 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     afterAmendWarned: "The plan was changed, with the warnings above, each by its path. If one applies, change the plan again with project.amend_plan before any brief. Otherwise, a subflow under proposalsKept keeps its done proposal and needs no brief: send briefs with project.dispatch for each subflow under proposalsDropped and each new one, those with nothing to run after first.",
     afterReturnsDone: "Every brief sent came back done. Send briefs for any subflow still without a done proposal, or call project.assemble once every one has one.",
     afterReturnsNotDone: "A brief came back partial or blocked. Read its reason: send a changed brief for that subflow, change the plan with project.amend_plan, or end honestly.",
-    afterReset: "The reset came back. Test the latest assembled Flow with core.test_candidate.",
+    /** After a call of reset briefs only, while the latest assembled Flow may be tested (`./dispatch-tool.ts`, t638): an ending held for this reset comes first. */
+    afterReset: "The reset came back. If you sent it because your ending was held for a reset (project.completion_reset_first), end again now: nothing holds it back. Otherwise test the latest assembled Flow with core.test_candidate.",
+    /** After a call of reset briefs only, with nothing assembled (`./dispatch-tool.ts`, t638): there is no Flow to test. */
+    afterResetNothingAssembled: "The reset came back. Nothing is assembled, so there is no Flow to test: end again now with ended and your reason, or, if the build can still go on, send the briefs still needed and call project.assemble.",
+    /** After a call of reset briefs only, when the latest assembled Flow may not be tested again (`./dispatch-tool.ts`, t638). */
+    afterResetNothingToTest: "The reset came back. The latest assembled Flow cannot be tested again: complete with its complete object if its test answered yes, otherwise end again now with ended and your reason, or change a subflow or the plan and assemble again.",
     /** After the repair of a whole test that passed only on the run's own recovery came back without the change (`./dispatch-tool.ts`, t603). */
     afterRecoveryRepairShort: "The repair of the whole test that passed only on the run's own recovery came back without the change, so that test still stands. "
       + "Complete with the complete object under wholeTestStands: Core completes on that test and tells the person the Flow relies on the run's own recovery. Or send a changed repair brief, if what came back says what to change.",
@@ -187,6 +203,9 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
       + "What a reset tried and could not undo is kept and no longer holds a whole test back. Nothing is assembled yet: send the briefs still needed and call project.assemble, then test; or end honestly with ended and your reason, and Core names what is left.",
     briefRepeated: "No brief was sent: each listed brief is the same as its subflow's latest brief, which came back blocked for the reason shown, and nothing it starts from has changed since, so its builder could only do the same. "
       + "Change what the builder is given (its parts, what runs before it, a recordingExcerpt, or the trial a repair starts from), change the plan with project.amend_plan if that subflow cannot do its parts, or end honestly with ended and your reason.",
+    /** Beside the returns when only some briefs of a call repeated a blocked one (`./dispatch-tool.ts`, t638): the others were sent. */
+    briefRepeatedOthersSent: "The briefs under repeated were not sent: each is the same as its subflow's latest brief, which came back blocked for the reason shown, and nothing it starts from has changed since, so its builder could only do the same. "
+      + "The other briefs of this call were sent, and their returns are under returns. For each brief under repeated, change what its builder is given (its parts, what runs before it, a recordingExcerpt, or the trial a repair starts from), change the plan with project.amend_plan if that subflow cannot do its parts, or end honestly with ended and your reason.",
     repairUnchangedTest: "No brief was sent: each listed subflow's latest brief came back with a proposal that does exactly what the one before it did, and the plan and the latest whole test stand as they did then, so another brief would change nothing. "
       + "That test may be repeated: test the latest assembled Flow again with core.test_candidate, with the same complete object. If it fails the same way, change the plan with project.amend_plan or end honestly.",
     repairUnchangedAssemble: "No brief was sent: each listed subflow's latest brief came back with a proposal that does exactly what the one before it did, so another would change nothing. Nothing is assembled yet: send the briefs still needed, call project.assemble and test the Flow, or end honestly.",
@@ -225,8 +244,10 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     "project.duplicate": "A name or act is listed twice here. List each once.",
     "project.plan_no_subflows": "The plan writes no subflow. Write at least one, carrying the parts.",
     "project.plan_part_uncovered": "No subflow carries this part. Put every part in the parts of at least one subflow.",
+    "project.plan_part_carried_twice": "An earlier subflow already carries this part, and subflows run one after another, so this subflow's builder would do it again. Give each part to one subflow only: drop it from this subflow's parts, and if this subflow only gets to where a later part begins, order it with after instead.",
     "project.plan_part_unknown": "This names a part the task spec does not have. Use only the ids of the task spec's parts.",
     "project.quote_not_verbatim": "This part's text is not in its instruction exactly as written. Copy the person's words character for character from that instruction.",
+    "project.quote_overlaps": "This part's text shares words with an earlier part's text from the same instruction, so one piece of the task would be built twice. Give each part its own stretch of the person's words: where one part's text holds another's, keep one part for it, or split it into stretches that do not overlap.",
     "project.quote_source_unknown": "This part names an instruction that is not one of the person's. Use a sourceId project.read_task gave.",
     "project.duplicate_part": "Two parts have this id. Give each part an id of its own.",
     "project.task_spec_empty": "The task spec has no parts. Split the task into the parts the person asked for.",

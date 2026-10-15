@@ -208,6 +208,8 @@ describe("a dependent builder's entry", () => {
     expect(happened.filter((line) => line.startsWith("call initial.look"))).toEqual([`call initial.look ${JSON.stringify({ go: "start" })}`, `call initial.look ${JSON.stringify({ look: true, arrived: true })}`]);
     expect(opening("second")).toMatchObject({ callId: "initial.look", value: { seen: true, entry: { prepared: true } } });
     expect(((opening("second")!.value as JsonObject).entry as JsonObject).note).toContain(`the subflows before yours ("first")`);
+    // The first's part makes no lasting act, so nothing is named as left (t638).
+    expect((opening("second")!.value as JsonObject).entry).not.toHaveProperty("predecessorsLeftOnSite");
   });
 
   it("marks the acts its start hook put back undone in their ledgers before the builder looks, and names them at its opening", async () => {
@@ -278,6 +280,11 @@ describe("a dependent builder's entry", () => {
     expect(putBack, JSON.stringify(happened)).toBeGreaterThan(happened.indexOf("start hook"));
     expect(putBack).toBeLessThan(entryRan);
     expect(run.firstSeen.second?.[0]).toMatchObject({ callId: "initial.look", value: { entry: { prepared: true, absorbedByStartReset: ["act-1", "act-2"] }, phaseStart: { phase: "builder", startHook: "ran", putBack: ["act-1", "act-2"], arrival: "none", predecessors: { ran: ["first"], prepared: true } } } });
+    // The save the preparation run landed is named as the project ledger holds it, with what to do if a part of the second asks for it (t638).
+    const entry = (run.firstSeen.second?.[0]?.value as JsonObject).entry as JsonObject;
+    expect(entry.predecessorsLeftOnSite).toEqual([{ act: "act-3", did: expect.stringMatching(/^trial step \d+ /u) }]);
+    expect(entry.note).toContain("Their lasting acts are under predecessorsLeftOnSite");
+    expect(entry.note).toContain("end the brief blocked naming that act");
   });
 });
 
