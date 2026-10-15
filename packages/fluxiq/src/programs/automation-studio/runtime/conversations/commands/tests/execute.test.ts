@@ -24,6 +24,16 @@ import { runConfirmedAutomationStudioConversationCommand } from "../confirmed.ts
 import { executeAutomationStudioConversationCommand } from "../execute.ts";
 import { automationStudioConversationCommandWork } from "../work.ts";
 
+// **Nothing here is timed but vitest's watchdog (t616).** Under a full sweep
+// three tests of "in candidate authoring mode" failed that pass alone; loaded
+// runs (six copies beside sixteen CPU-bound processes, or this directory with
+// service/project-build three at once) failed from 4 to 14 of these tests, every
+// one on the 15 s per-test timeout. No test waits on a clock: each command runs
+// against a real thread whose pool opens and closes the project database on
+// every operation, which takes 0.5-1 s quiet and 15-23 s on a loaded machine.
+// The watchdog is wide so it only stops a hang; it measures nothing.
+vi.setConfig({ testTimeout: 120_000 });
+
 // Its own directory per case: a fixed path under the working directory was
 // shared by every run of this file in the checkout, so two runs at once
 // deleted and overwrote each other's data.

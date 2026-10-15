@@ -57,7 +57,12 @@
 // is left, under a second signal that aborts at the bound itself, so even a
 // reset that overruns cannot carry the build past it. The outcome says
 // `timedOut`. A supervisor started again on a build under way starts a clock of
-// its own.
+// its own. Its two timers are set on the clock it is handed
+// (`AutomationStudioProjectSupervisorClock`, t616): production always runs on
+// the real clock; a test that must reach the bound at an exact point of a build
+// hands its own, which the project build passes through
+// (`../../service/project-build/run.ts`), so the deadline is reached by the
+// test's signal and never by machine load.
 //
 // **A pass the run rescued still stands (social debug, t603).** When the latest
 // whole test passed only on the run's own recovery from what the Flow does not
@@ -110,6 +115,18 @@ export type AutomationStudioProjectSupervisorOutcome = {
 /** How long one supervisor run may take, whole, and the last part of that kept for its ending (header). Core's constants unless a test says otherwise. */
 export type AutomationStudioProjectSupervisorTimeLimit = { maxMs: number; endingMs: number };
 
+/** Sets and clears the time limit's two timers (header). A handle is whatever `setTimeout` returned, handed back to `clearTimeout`. */
+export type AutomationStudioProjectSupervisorClock = {
+  setTimeout(fire: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+};
+
+/** The real clock, read at each call so a test's fake timers still apply. */
+export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_REAL_CLOCK: AutomationStudioProjectSupervisorClock = Object.freeze({
+  setTimeout: (fire: () => void, ms: number): unknown => setTimeout(fire, ms),
+  clearTimeout: (handle: unknown): void => clearTimeout(handle as ReturnType<typeof setTimeout>)
+});
+
 const TIME_LIMIT: AutomationStudioProjectSupervisorTimeLimit = Object.freeze({ maxMs: AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS, endingMs: AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_MS });
 
 type SupervisorInput = {
@@ -118,11 +135,13 @@ type SupervisorInput = {
   /** Wraps the loop's input before it runs, as the candidate loop's `observe` does, for the chat. */
   observe?: ((loop: AutomationStudioLlmEvidenceLoopInput) => AutomationStudioLlmEvidenceLoopInput) | undefined;
   timeLimit?: AutomationStudioProjectSupervisorTimeLimit | undefined;
+  /** The timers the time limit is kept by (header, t616); the real clock unless a test holds its own. */
+  clock?: AutomationStudioProjectSupervisorClock | undefined;
 };
 
 export async function runAutomationStudioProjectSupervisorLoop(input: SupervisorInput): Promise<AutomationStudioProjectSupervisorOutcome> {
   // The clock starts here, before the build record is read (header).
-  const clock = startClock(input.timeLimit ?? TIME_LIMIT);
+  const clock = startClock(input.timeLimit ?? TIME_LIMIT, input.clock ?? AUTOMATION_STUDIO_PROJECT_SUPERVISOR_REAL_CLOCK);
   try {
     return await supervise(input, clock);
   } finally {
@@ -133,12 +152,12 @@ export async function runAutomationStudioProjectSupervisorLoop(input: Supervisor
 /** The run's two time signals (header): `work` aborts `endingMs` before the bound, `whole` at it. */
 type Clock = { limit: AutomationStudioProjectSupervisorTimeLimit; work: AbortSignal; whole: AbortSignal; stop(): void };
 
-function startClock(limit: AutomationStudioProjectSupervisorTimeLimit): Clock {
+function startClock(limit: AutomationStudioProjectSupervisorTimeLimit, timers: AutomationStudioProjectSupervisorClock): Clock {
   const work = new AbortController();
   const whole = new AbortController();
   const reached = () => new DOMException("The project build reached its time limit.", "TimeoutError");
-  const timers = [setTimeout(() => work.abort(reached()), Math.max(0, limit.maxMs - limit.endingMs)), setTimeout(() => whole.abort(reached()), limit.maxMs)];
-  return { limit, work: work.signal, whole: whole.signal, stop: () => timers.forEach(clearTimeout) };
+  const handles = [timers.setTimeout(() => work.abort(reached()), Math.max(0, limit.maxMs - limit.endingMs)), timers.setTimeout(() => whole.abort(reached()), limit.maxMs)];
+  return { limit, work: work.signal, whole: whole.signal, stop: () => handles.forEach((handle) => timers.clearTimeout(handle)) };
 }
 
 async function supervise(input: SupervisorInput, clock: Clock): Promise<AutomationStudioProjectSupervisorOutcome> {

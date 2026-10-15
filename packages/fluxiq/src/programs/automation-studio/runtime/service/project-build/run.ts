@@ -9,6 +9,7 @@ import {
 import type { AutomationStudioCandidateTrialResult, AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS } from "../../loop-limits/index.ts";
 import {
+  AUTOMATION_STUDIO_PROJECT_SUPERVISOR_REAL_CLOCK,
   automationStudioProjectActiveInstructionSources,
   automationStudioProjectDigest,
   automationStudioProjectHostLeaseScope,
@@ -209,7 +210,9 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
         ...(draft.loop.signal ? { signal: draft.loop.signal } : {})
       },
       loop: { ...loop, unusableDecisions, decide: decide(undefined) },
-      observe: (observed) => observeAutomationStudioEvidenceLoop({ ...observed, decide: decide(observed.completionSchema) })
+      observe: (observed) => observeAutomationStudioEvidenceLoop({ ...observed, decide: decide(observed.completionSchema) }),
+      // The time limit's timers, on the real clock; passed here so a test of this build can hold them (t616, `project-agents/supervisor/supervisor-loop.ts`).
+      clock: AUTOMATION_STUDIO_PROJECT_SUPERVISOR_REAL_CLOCK
     });
   } catch (error) {
     // A stall a guard ended the loop on is thrown on once its ending is recorded (t586): the person reads that ending (header).
