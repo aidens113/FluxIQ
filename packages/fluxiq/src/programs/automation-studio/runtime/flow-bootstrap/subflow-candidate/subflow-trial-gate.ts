@@ -68,6 +68,23 @@
 // when one call said yes, when Core's record contradicts the other call, or
 // when that call's advice would take back what answered an earlier no; with
 // none left, it says to change the subflow for a defect the trial shows.
+//
+// **An exclusion a standing no upheld holds across the brief's trials
+// (t633).** The same run then swung between two revisions: one kept a row its
+// judges rightly called not the asked kind and was judged no; the other left
+// that row out by several conditions together and stored exactly the rows
+// asked for, and its judges said no, asking to remove those very conditions.
+// Each no was weighed as if fresh. A trial judged no now hands the gate Core's
+// own record of it (`standingNo`, beside the feedback, never shown to a model;
+// `../../result-verification/standing-no/`). The gate keeps the records that
+// upheld rows of a kind, and a later no whose remedy would take back exactly
+// those rows -- this revision stores none of them, and the no asks only to
+// remove conditions this revision added since, which would take its read back
+// to the conditions that kept them -- is contradicted by the build's own
+// record: not taken, so the trial is unsure, its revision is not closed, and
+// the builder is told why in Core's words (`contradictedByBuild`) and to test
+// the same revision again rather than make that change. Never a yes: a yes
+// still needs a trial its judges answer yes.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import {
@@ -77,6 +94,8 @@ import {
   type AutomationStudioCandidateTrialPrepared,
   type AutomationStudioCandidateTrialVerdict
 } from "../candidate/index.ts";
+// Its own barrel, not result-verification's, whose reads import flow-bootstrap back (a module cycle).
+import { AutomationStudioResultStandingNoMemory, type AutomationStudioResultStandingNoContradiction } from "../../result-verification/standing-no/index.ts";
 import type { AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowScopeIdentity, AutomationStudioSubflowTrialPort, AutomationStudioSubflowTrialResult } from "./contracts.ts";
 
@@ -121,6 +140,15 @@ const UNSURE_RETESTABLE = "The judge could not confirm this subflow did what its
   + "Testing this same revision again, with the same revision and digest, is allowed (retestsLeft says how many times), and it is the better move when the feedback names no defect the trial's own reads, steps and stored rows show: "
   + "one judge call said yes (answeredReading), Core's record contradicts the other call's reading or doubt, or the change that reading asks for would take back what answered an earlier no. Otherwise change the subflow for the defect that evidence shows, submit it with core.submit_subflow, then test the new revision.";
 
+/**
+ * Said for a no the build's own record contradicts while the revision may
+ * still be tested (header, t633): why it is not taken, and to test again
+ * rather than make its change. Generic words.
+ */
+const CONTRADICTED_RETESTABLE = "The judge answered no, but Core's record of this build contradicts that no (contradictedByBuild in the feedback says how): the change it asks for would bring back rows that an earlier no of this brief, which stood, called not what the parts ask for. "
+  + "So that no is not taken: this revision is unsure, not closed. Test this same revision again, with the same revision and digest (retestsLeft says how many times), and do not make the change that no asks for. "
+  + "Change the subflow only for a defect the trial's own reads, steps and stored rows show, submit it with core.submit_subflow, then test the new revision.";
+
 /** Said instead when a predecessor did not run to its end: the target never started where it should. */
 const ENTRY_NOT_PREPARED = "A subflow that runs before this one did not run to its end, so this subflow did not start from its prepared entry and the verdict says nothing about it. Test this revision again; if it keeps failing there, complete with outcome blocked and say why.";
 
@@ -136,6 +164,8 @@ export class AutomationStudioSubflowTrialGate {
   private readonly verdicts = new Map<string, AutomationStudioSubflowTrialResult>();
   private readonly closedDigests = new Map<string, JsonObject>();
   private readonly trials = new Map<string, number>();
+  /** The brief's standing nos that upheld rows of a kind, for a later no to be held to (header, t633). */
+  private readonly standingNos = new AutomationStudioResultStandingNoMemory();
   private readonly fallbackSignal = new AbortController().signal;
 
   constructor(private readonly input: {
@@ -182,8 +212,11 @@ export class AutomationStudioSubflowTrialGate {
     // What the hook took back before this trial is answered with it, whatever the trial then answers.
     const absorbed = reset?.kind === "admit" ? (reset.absorbedByStartReset ?? []).map(namedAct) : [];
     this.trials.set(key(latest), tried + 1);
-    const answer = await this.ask(port, latest, signal, reset?.kind === "admit" ? automationStudioCandidateStartedWithSaid(reset.startedWith) : []);
+    const asked = await this.ask(port, latest, signal, reset?.kind === "admit" ? automationStudioCandidateStartedWithSaid(reset.startedWith) : []);
     signal.throwIfAborted();
+    // A no whose remedy would take back what an earlier standing no of this brief upheld is not taken (header, t633).
+    const contradiction = asked.answer.entryPrepared ? this.standingNos.weigh({ revision: asked.answer.revision, verdict: asked.answer.verdict, standingNo: asked.standingNo }) : undefined;
+    const answer = contradiction ? notTaken(asked.answer, contradiction) : asked.answer;
     const leftOnSite = this.input.reset?.trialRan(answer.acts ?? [], answer.trialRunId);
     this.verdicts.set(key(answer), answer);
     if (answer.verdict === "no" && answer.entryPrepared) this.closedDigests.set(answer.digest, answer.feedback);
@@ -227,10 +260,11 @@ export class AutomationStudioSubflowTrialGate {
     return answer ? structuredClone(answer) : undefined;
   }
 
-  private async ask(port: AutomationStudioSubflowTrialPort, latest: AutomationStudioSubflowProposal, signal: AbortSignal, startedWith: readonly string[]): Promise<AutomationStudioSubflowTrialResult> {
+  /** The trial's answer as the gate keeps it, and Core's record of a no it carried beside it, unread (header, t633). */
+  private async ask(port: AutomationStudioSubflowTrialPort, latest: AutomationStudioSubflowProposal, signal: AbortSignal, startedWith: readonly string[]): Promise<{ answer: AutomationStudioSubflowTrialResult; standingNo?: unknown }> {
     const scope = this.input.scope;
     const identity: AutomationStudioSubflowScopeIdentity = { buildId: scope.buildId, briefId: scope.briefId, planDigest: scope.planDigest, subflowKey: scope.subflowKey };
-    const failed = (code: string): AutomationStudioSubflowTrialResult => ({ partial: true, scope: "subflow", identity: { ...identity }, revision: latest.revision, digest: latest.digest, verdict: "execution_failed", feedback: { code }, entryPrepared: false });
+    const failed = (code: string): { answer: AutomationStudioSubflowTrialResult } => ({ answer: { partial: true, scope: "subflow", identity: { ...identity }, revision: latest.revision, digest: latest.digest, verdict: "execution_failed", feedback: { code }, entryPrepared: false } });
     let raw: unknown;
     try {
       raw = await port({ scope: structuredClone(scope), proposal: deepFreeze(structuredClone(latest)), signal, ...(startedWith.length ? { startedWith: [...startedWith] } : {}) });
@@ -250,7 +284,8 @@ export class AutomationStudioSubflowTrialGate {
     const kept: AutomationStudioSubflowTrialResult = { partial: true, scope: "subflow", identity: { ...identity }, revision: latest.revision, digest: latest.digest, verdict: result.verdict!, feedback: structuredClone(result.feedback), entryPrepared: result.entryPrepared };
     if (result.trialRunId) kept.trialRunId = result.trialRunId;
     if (Array.isArray(result.acts) && result.acts.length) kept.acts = structuredClone(result.acts);
-    return kept;
+    const standingNo = (result as { standingNo?: unknown }).standingNo;
+    return { answer: kept, ...(standingNo !== undefined ? { standingNo } : {}) };
   }
 }
 
@@ -258,11 +293,17 @@ export class AutomationStudioSubflowTrialGate {
 function instructionFor(answer: AutomationStudioSubflowTrialResult, retestable: boolean): string {
   if (!answer.entryPrepared) return ENTRY_NOT_PREPARED;
   if (answer.verdict === "not_judged" && answer.feedback.yesUnconfirmed === true) return NOT_JUDGED_AFTER_YES;
+  if (answer.verdict === "unsure" && retestable && typeof answer.feedback.contradictedByBuild === "string") return CONTRADICTED_RETESTABLE;
   if (answer.verdict === "unsure" && retestable) return UNSURE_RETESTABLE;
   return INSTRUCTIONS[answer.verdict];
 }
 
 function key(receipt: { revision: number; digest: string }): string { return `${receipt.revision}\n${receipt.digest}`; }
+
+/** A no the build's own record contradicts, kept as an unsure with Core's words beside the judge's (header, t633): its revision is not closed. */
+function notTaken(answer: AutomationStudioSubflowTrialResult, contradiction: AutomationStudioResultStandingNoContradiction): AutomationStudioSubflowTrialResult {
+  return { ...answer, verdict: "unsure", feedback: { ...answer.feedback, contradictedByBuild: contradiction.said } };
+}
 
 /** An act as the model is shown it: its id, what it did, and the call that made it. */
 function namedAct(act: AutomationStudioSiteResetNamedAct): JsonObject {

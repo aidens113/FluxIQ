@@ -676,7 +676,7 @@ export type AutomationStudioResultRepairDirective = {
 };
 
 /** The verdict, the reason a person reads, and the observation behind it. */
-export type AutomationStudioResultVerification = {
+export type AutomationStudioResultVerification = import("./standing-no/index.ts").AutomationStudioResultStandingNoCarrier & {
   schemaVersion: "automation-studio.result-verification.v1";
   verdict: AutomationStudioResultVerdict;
   basis: AutomationStudioResultVerdictBasis;

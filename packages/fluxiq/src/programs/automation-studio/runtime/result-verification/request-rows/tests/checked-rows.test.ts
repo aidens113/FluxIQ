@@ -8,6 +8,7 @@ import type { AutomationStudioRunResultSummary } from "../../contracts.ts";
 import { automationStudioResultCheckedRows, automationStudioResultCheckedRowsNamed } from "../index.ts";
 import { RUN_MUW60J7C_PAIRS_LEFT_OUT, RUN_MUW60J7C_RESULT_JUDGE, runMuw60j7cRunSummary, runMuw60j7cTestSummary } from "./run-muw60j7c.ts";
 import { SOIL_BIN, SOIL_CONDITIONS, SOIL_SCOOP, SOIL_SIEVE, soilRunSummary } from "./potting-soil-fixture.ts";
+import { CAMP_BLUEWATER, CAMP_OSPREY, campsiteRunSummary, OPEN_THIS_WEEKEND } from "../../refuted-no/tests/campsite-fixture.ts";
 
 const judged = (): string => {
   const { summary, diagnosis } = RUN_MUW60J7C_RESULT_JUDGE;
@@ -223,5 +224,36 @@ describe("a left-out word in a sentence that names rows a condition left out (t6
   it("still calls a stored row misread in a sentence that names no row a condition left out", () => {
     const checked = automationStudioResultCheckedRows(soilRunSummary(), `"${SOIL_SCOOP.name}" was dropped by the read.`);
     expect(checked.join("\n")).toContain(`${SOIL_SCOOP.name} is in the result, although the check calls it left out`);
+  });
+});
+
+// A8 wave 8 `run-mv9gbsm5-2957581c` step 0110 (t633, debug fix 3): a judge
+// wrote that the run "stored 9 rows including" a row the read had left out,
+// and Core said nothing of it. On another kind of site, the park service's
+// campsite search (`../../refuted-no/tests/campsite-fixture.ts`).
+describe("a row a judgement calls stored that is not in the result (t633)", () => {
+  const MISREAD = `${CAMP_OSPREY} is not in the result, although the check calls it stored: the check misread which rows were stored; advice resting on that reading is not supported.`;
+  const misread = (sentence: string): string[] => automationStudioResultCheckedRows(campsiteRunSummary(), sentence).filter((line) => line.includes("misread"));
+
+  it("is said misread, and the condition that left it out is still named", () => {
+    const checked = automationStudioResultCheckedRows(campsiteRunSummary(), `Stored 4 rows including "${CAMP_OSPREY}", which is closed for the season.`);
+    expect(checked.filter((line) => line.includes("misread"))).toEqual([MISREAD]);
+    expect(checked.find((line) => line.includes(`condition 2 (${OPEN_THIS_WEEKEND})`))).toContain(CAMP_OSPREY);
+  });
+
+  it("is said misread where the result is said to hold it, before or after its name", () => {
+    expect(misread(`The result includes ${CAMP_OSPREY} and ${CAMP_BLUEWATER.name}.`)).toEqual([MISREAD]);
+    expect(misread(`${CAMP_OSPREY} is in the result.`)).toEqual([MISREAD]);
+    expect(misread(`The read kept ${CAMP_OSPREY}.`)).toEqual([MISREAD]);
+  });
+
+  it("is not said of a stored row, of a row a left-out word follows, or where keeping is advised, wanted or denied", () => {
+    expect(misread(`Stored 4 rows including "${CAMP_BLUEWATER.name}", which is a cabin loop.`)).toEqual([]);
+    expect(misread(`Stored 4 rows, and the availability condition dropped ${CAMP_OSPREY}.`)).toEqual([]);
+    expect(misread(`The stored rows include ${CAMP_BLUEWATER.name}, while ${CAMP_OSPREY} was excluded by availability.`)).toEqual([]);
+    expect(misread(`Add a condition that keeps ${CAMP_OSPREY}.`)).toEqual([]);
+    expect(misread(`The read should have kept ${CAMP_OSPREY}.`)).toEqual([]);
+    expect(misread(`${CAMP_OSPREY} is not in the result.`)).toEqual([]);
+    expect(misread(`The request keeps ${CAMP_OSPREY} out.`)).toEqual([]);
   });
 });

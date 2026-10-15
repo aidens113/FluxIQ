@@ -44,6 +44,12 @@ export type AutomationStudioResultNoCondition = {
   name: string;
   /** Its number, as a judge names it (`condition N`). */
   number: number;
+  /**
+   * Its wording as its account gives it, a saved answer's after
+   * `recordOutput.process.where`; absent where the account gives none: what
+   * one revision's condition is told apart from another's by (`../standing-no/`, t633).
+   */
+  wording?: string | undefined;
   /** The read it belongs to, by node id; a saved answer's condition, the node that collected the set. */
   nodeId: string;
   /** How many rows it rejected across the read, where the read counted them. */

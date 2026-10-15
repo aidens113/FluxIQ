@@ -125,12 +125,28 @@
 // completion keeps its old meaning: the latest valid submission ends as an
 // unverified draft, which is all a deployment without a trial runner can make.
 // Nothing here promotes; the loop result only carries the standing verdict.
+//
+// **An exclusion a standing no upheld holds across the build's trials
+// (t633).** As the subflow trial gate holds a brief's
+// (`../subflow-candidate/subflow-trial-gate.ts`; A8 wave 8
+// `run-mv9gbsm5-2957581c`, where a build swung between a Flow keeping a row its
+// judges rightly called not the asked kind and one leaving it out, whose nos
+// asked to remove the very conditions that left it out). A trial judged no
+// hands the gate Core's own record of it (`standingNo`, beside the feedback,
+// never shown to a model; `../../result-verification/standing-no/`). A later no
+// whose remedy would take back exactly the rows an earlier standing no upheld
+// is contradicted by the build's own record: not taken, so the trial is unsure
+// and its revision not closed, and the model is told why in Core's words
+// (`contradictedByBuild`) and to test the same revision again rather than make
+// that change. Never a yes: a yes still needs a trial its judges answer yes.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS } from "../plan/index.ts";
 import { automationStudioCandidateStartedWithSaid } from "./started-with.ts";
+// Its own barrel, not result-verification's, whose reads import flow-bootstrap back (a module cycle).
+import { AutomationStudioResultStandingNoMemory, type AutomationStudioResultStandingNoContradiction } from "../../result-verification/standing-no/index.ts";
 import type { AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetSpot, AutomationStudioSiteResetTrialActPlace, AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialAct, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialResult, type AutomationStudioCandidateTrialVerdict, type AutomationStudioFlowCandidate } from "./contracts.ts";
 
@@ -154,6 +170,15 @@ const INSTRUCTIONS: Readonly<Record<AutomationStudioCandidateTrialVerdict, strin
 const UNSURE_RETESTABLE = "The judge could not confirm the trial did what the instruction asks, so this revision cannot complete yet. "
   + "Testing this same revision again, with the same revision and digest, is allowed (retestsLeft says how many times), and it is the better move when the feedback names no defect the trial's own reads, steps and stored rows show: "
   + "one judge call said yes (answeredReading), Core's record contradicts the other call's reading or doubt, or the change that reading asks for would take back what answered an earlier no. Otherwise change the Flow for the defect that evidence shows, submit the whole candidate, then test the new revision.";
+
+/**
+ * Said for a no the build's own record contradicts while the revision may
+ * still be tested (header, t633): why it is not taken, and to test again
+ * rather than make its change. Generic words.
+ */
+const CONTRADICTED_RETESTABLE = "The judge answered no, but Core's record of this build contradicts that no (contradictedByBuild in the feedback says how): the change it asks for would bring back rows that an earlier no of this build, which stood, called not what the instruction asks for. "
+  + "So that no is not taken: this revision is unsure, not closed. Test this same revision again, with the same revision and digest (retestsLeft says how many times), and do not make the change that no asks for. "
+  + "Change the Flow only for a defect the trial's own reads, steps and stored rows show, submit the whole candidate, then test the new revision.";
 
 /** What the model is told when a revision failed the same way twice. */
 const SAME_FAILURE_INSTRUCTION = "This revision stopped at the same step with the same failure in two trials, so testing it again would fail the same way. Change that step, or remove it if it only checks the act before it (the judge reads the page the run ends on), submit the whole candidate, then test the new revision.";
@@ -210,6 +235,8 @@ export class AutomationStudioFlowCandidateTrialGate {
   private readonly slowDowns = new Map<string, JsonObject[]>();
   /** Every act of this build a start hook took back so far, in the order it was absorbed (header, t504). */
   private readonly absorbed: AutomationStudioSiteResetNamedAct[] = [];
+  /** The build's standing nos that upheld rows of a kind, for a later no to be held to (header, t633). */
+  private readonly standingNos = new AutomationStudioResultStandingNoMemory();
   private readonly fallbackSignal = new AbortController().signal;
 
   constructor(private readonly input: {
@@ -261,8 +288,11 @@ export class AutomationStudioFlowCandidateTrialGate {
     const absorbed = reset?.kind === "admit" ? (reset.absorbedByStartReset ?? []).map(namedAct) : [];
     this.absorbed.push(...absorbed);
     this.trials.set(key(latest), tried + 1);
-    const answer = await this.ask(trial, latest, signal, reset?.kind === "admit" ? automationStudioCandidateStartedWithSaid(reset.startedWith) : []);
+    const asked = await this.ask(trial, latest, signal, reset?.kind === "admit" ? automationStudioCandidateStartedWithSaid(reset.startedWith) : []);
     signal.throwIfAborted();
+    // A no whose remedy would take back what an earlier standing no of this build upheld is not taken (header, t633).
+    const contradiction = this.standingNos.weigh({ revision: asked.answer.revision, verdict: asked.answer.verdict, standingNo: asked.standingNo });
+    const answer = contradiction ? notTaken(asked.answer, contradiction) : asked.answer;
     const leftOnSite = this.input.reset?.trialRan(answer.acts ?? [], answer.trialRunId);
     this.verdicts.set(key(answer), this.absorbed.length > 0 ? { ...answer, absorbedByStartReset: this.absorbed.map(namedAct) } : answer);
     if (answer.verdict === "no") this.closedDigests.set(answer.digest, answer.feedback);
@@ -351,8 +381,9 @@ export class AutomationStudioFlowCandidateTrialGate {
     return answer ? structuredClone(answer) : undefined;
   }
 
-  private async ask(trial: { candidateId: string; port: AutomationStudioCandidateTrialPort }, latest: AutomationStudioFlowCandidate, signal: AbortSignal, startedWith: readonly string[]): Promise<AutomationStudioCandidateTrialResult> {
-    const failed = (code: string): AutomationStudioCandidateTrialResult => ({ revision: latest.revision, digest: latest.digest, verdict: "execution_failed", feedback: { code } });
+  /** The trial's answer as the gate keeps it, and Core's record of a no it carried beside it, unread (header, t633). */
+  private async ask(trial: { candidateId: string; port: AutomationStudioCandidateTrialPort }, latest: AutomationStudioFlowCandidate, signal: AbortSignal, startedWith: readonly string[]): Promise<{ answer: AutomationStudioCandidateTrialResult; standingNo?: unknown }> {
+    const failed = (code: string): { answer: AutomationStudioCandidateTrialResult } => ({ answer: { revision: latest.revision, digest: latest.digest, verdict: "execution_failed", feedback: { code } } });
     let raw: unknown;
     try {
       raw = await trial.port({ candidateId: trial.candidateId, revision: latest.revision, digest: latest.digest, signal, candidate: deepFreeze(structuredClone(latest)), ...(startedWith.length ? { startedWith: [...startedWith] } : {}) });
@@ -368,7 +399,9 @@ export class AutomationStudioFlowCandidateTrialGate {
     // A verdict about another revision or digest is no verdict about this one.
     if (result.revision !== latest.revision || result.digest !== latest.digest) return failed("candidate.trial_result_mismatch");
     const acts = trialActs(result.acts);
-    return { revision: latest.revision, digest: latest.digest, verdict: result.verdict!, feedback: structuredClone(result.feedback) as JsonObject, ...(result.trialRunId ? { trialRunId: result.trialRunId } : {}), ...(acts.length ? { acts } : {}) };
+    const answer: AutomationStudioCandidateTrialResult = { revision: latest.revision, digest: latest.digest, verdict: result.verdict!, feedback: structuredClone(result.feedback) as JsonObject, ...(result.trialRunId ? { trialRunId: result.trialRunId } : {}), ...(acts.length ? { acts } : {}) };
+    const standingNo = (result as { standingNo?: unknown }).standingNo;
+    return { answer, ...(standingNo !== undefined ? { standingNo } : {}) };
   }
 }
 
@@ -415,6 +448,11 @@ function namedAct(act: AutomationStudioSiteResetNamedAct): { act: string; did: s
 
 function key(receipt: { revision: number; digest: string }): string { return `${receipt.revision}\n${receipt.digest}`; }
 
+/** A no the build's own record contradicts, kept as an unsure with Core's words beside the judge's (header, t633): its revision is not closed. */
+function notTaken(answer: AutomationStudioCandidateTrialResult, contradiction: AutomationStudioResultStandingNoContradiction): AutomationStudioCandidateTrialResult {
+  return { ...answer, verdict: "unsure", feedback: { ...answer.feedback, contradictedByBuild: contradiction.said } };
+}
+
 /**
  * The step a failed trial stopped at, from its feedback: the last step listed,
  * when it failed, by its position, node and failure code, with the run's code.
@@ -452,6 +490,7 @@ function named(step: OnPageStep): string {
 function standingInstruction(answer: AutomationStudioCandidateTrialResult, retestable: boolean): string {
   const onPage = retestable ? onPageStep(answer) : undefined;
   if (onPage) return testAgainInstruction(onPage);
+  if (answer.verdict === "unsure" && retestable && typeof answer.feedback.contradictedByBuild === "string") return CONTRADICTED_RETESTABLE;
   return answer.verdict === "unsure" && retestable ? UNSURE_RETESTABLE : INSTRUCTIONS[answer.verdict];
 }
 

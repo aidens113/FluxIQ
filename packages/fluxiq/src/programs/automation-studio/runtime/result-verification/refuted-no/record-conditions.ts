@@ -41,7 +41,7 @@ export function automationStudioResultNoConditions(summary: AutomationStudioRunR
   const add = (nodeId: string, counted: Counted, index: number, prefix: string): void => {
     const number = counted.number ?? index + 1;
     const name = `${prefix}${automationStudioResultConditionName(number, counted.condition)}`;
-    conditions.push({ name, number, nodeId, rejected: counted.rejected, leftOut: rowsOf(name, counted, leftOut, storedLabels) });
+    conditions.push({ name, number, nodeId, ...(counted.condition ? { wording: `${prefix}${counted.condition}` } : {}), rejected: counted.rejected, leftOut: rowsOf(name, counted, leftOut, storedLabels) });
   };
   for (const account of summary.reads ?? []) {
     if (entry.has(account.nodeId)) continue;

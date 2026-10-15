@@ -62,6 +62,20 @@
 // left out, and a stored row it names is called left out only where a left-out
 // word said of the run comes before it, as in "the condition excluded six
 // rows, including <a stored row>" (t474's origin, `run-muw60j7c-bb7c9a62`).
+//
+// **And a row called stored that is not (t633).** A8 wave 8
+// `run-mv9gbsm5-2957581c` step 0110: a judge wrote "Stored 9 rows including
+// ... <a row>, which are not <the seller asked for>", naming a row the read had
+// left out, and Core said nothing of it: only the other direction was checked.
+// A sentence that says the run stored, kept or holds rows (`STORED`: a stored
+// word said of the run, never of the request, nor as what should happen or did
+// not, nor of a condition wanted: "a condition that keeps") calls the rows it
+// names after that word stored, until a left-out word said of the run comes
+// between, or comes after the row ("<row> and <row> were excluded" says what
+// was left out); a row it names before any such word is called stored by one
+// right after it ("<row> is in the result"). A named row
+// so called that is not in the result is a misread, said as the other
+// direction's is; the condition that left it out is still said as before.
 
 import type { AutomationStudioRunResultSummary } from "../contracts.ts";
 import { AutomationStudioRequestRowId } from "./row-id.ts";
@@ -77,6 +91,14 @@ const LEFT_OUT = /\b(left out|leaves? out|leaving out|drop(s|ped|ping)?|exclud(e
 const ASKED_BY = /\b(?:request|requests|instruction|instructions|task|user|prompt)(?:['’]s)?(?:\s+(?:explicitly|expressly|clearly|also|specifically|says?|said|asks?|asked|wants?|wanted|means|meant|to|and))*\s+$/iu;
 /** What comes before a left-out word said as what should happen, or did not ("should be excluded", "a condition to exclude", "was not dropped", "wasn't filtered out"). */
 const NOT_DONE = /(?:\b(?:should|must|would|could|ought to|needs? to|has to|have to|to|not|never|no longer)|n['’]t)(?:\s+(?:also|be|been|being|have|\w+ly))*\s+$/iu;
+/**
+ * Words that say the run stored or kept rows (header, t633): a past or present
+ * of storing, keeping or holding, or the result, table or stored rows said to
+ * include, contain or hold them. Never a bare "store" or "keep", which advise.
+ */
+const STORED = /\b(?:stored|stores|kept|keeps|holds|held|retained|retains)\b|\b(?:result|results|table|output|answer|stored\s+rows?|stored\s+set)\s+(?:also\s+)?(?:includes?|included|contains?|contained|has|had|holds?|held)\b|\bin\s+the\s+(?:result|stored\s+rows|stored\s+set|table|output)\b/giu;
+/** What comes before a stored word said of a condition wanted, not of the run: "a condition that keeps", "one which holds", "so it keeps" (t633). */
+const WANTED = /\b(?:that|which|will|so\s+(?:it|that\s+it))\s+$/iu;
 /** What comes before a left-out word whose subject is nothing: "no condition excludes", "has no condition that excludes". */
 const NONE_DID = /\bno(?:\s+[\p{L}-]+){1,2}(?:\s+(?:that|which))?\s+$/iu;
 /** An id that is a measure: digits, then a unit ("600MAH"). */
@@ -84,8 +106,8 @@ const MEASURE = /^\p{N}+\p{L}+$/u;
 /** Abbreviations whose full stop does not end a sentence. */
 const ABBREVIATIONS = /\b(e\.g|i\.e|etc|vs|approx|incl)\./giu;
 
-/** A row the judgement named: its label, the ids it was named by, and whether a sentence naming it called it left out. */
-type Named = { label: string; ids: Set<string>; calledLeftOut: boolean };
+/** A row the judgement named: its label, the ids it was named by, and whether a sentence naming it called it left out, or stored (t633). */
+type Named = { label: string; ids: Set<string>; calledLeftOut: boolean; calledStored: boolean };
 
 /** One mention of a row in a sentence: its label, the id it was named by, and where in the sentence it starts. */
 type Mention = { label: string; id?: string; at: number };
@@ -95,10 +117,11 @@ export function automationStudioResultCheckedRows(summary: AutomationStudioRunRe
   const { reads, stored } = automationStudioRequestRowsReads(summary);
   if (!reads.length && !stored.length) return [];
   const named = new Map<string, Named>();
-  const note = (label: string, id: string | undefined, calledLeftOut: boolean): void => {
-    const entry = named.get(label) ?? { label, ids: new Set<string>(), calledLeftOut: false };
+  const note = (label: string, id: string | undefined, calledLeftOut: boolean, calledStored: boolean): void => {
+    const entry = named.get(label) ?? { label, ids: new Set<string>(), calledLeftOut: false, calledStored: false };
     if (id) entry.ids.add(id);
     entry.calledLeftOut ||= calledLeftOut;
+    entry.calledStored ||= calledStored;
     named.set(label, entry);
   };
   const everyLabel = [...new Set([...stored.map((row) => row.label), ...reads.flatMap((read) => read.labels)])];
@@ -122,9 +145,11 @@ export function automationStudioResultCheckedRows(summary: AutomationStudioRunRe
     mentions.push(...longestNamed(sentence, prefixes, stored));
     // Where the sentence names a row a condition left out, its left-out word is that row's; a stored row's only where said before it (header, t628).
     const namesConditioned = mentions.some((mention) => conditioned.has(mention.label));
+    // What the run is said to have done, by place: a stored word or a left-out word (header, t633).
+    const marks = saidOfRun(sentence);
     for (const mention of mentions) {
       const calledLeftOut = leftOutAt >= 0 && (!namesConditioned || conditioned.has(mention.label) || leftOutAt < mention.at);
-      note(mention.label, mention.id, calledLeftOut);
+      note(mention.label, mention.id, calledLeftOut, calledStored(marks, mention, mentions));
     }
   }
   return lines([...named.values()], reads, new Set([...stored.map((row) => row.label), ...reads.flatMap((read) => read.inResult)]));
@@ -145,6 +170,10 @@ function lines(named: readonly Named[], reads: readonly AutomationStudioRequestR
       }
     } else if (row.calledLeftOut && inResult.has(row.label)) {
       misread.push(`${said(row)} is in the result, although the check calls it left out: the check misread which rows were left out; advice resting on that reading is not supported.`);
+    }
+    // A row called stored that the result does not hold (header, t633), whatever left it out.
+    if (row.calledStored && !inResult.has(row.label)) {
+      misread.push(`${said(row)} is not in the result, although the check calls it stored: the check misread which rows were stored; advice resting on that reading is not supported.`);
     }
   }
   const alone = [...byCondition.values()].map((entry) =>
@@ -168,6 +197,35 @@ function firstLeftOut(sentence: string): number {
     if (!ASKED_BY.test(before) && !NOT_DONE.test(before) && !NONE_DID.test(before)) return match.index!;
   }
   return -1;
+}
+
+/** Each place a sentence says what the run did (header, t633): a stored word or a left-out word, said of the run, in order. */
+function saidOfRun(sentence: string): Array<{ at: number; stored: boolean }> {
+  const marks: Array<{ at: number; stored: boolean }> = [];
+  for (const [pattern, stored] of [[LEFT_OUT, false], [STORED, true]] as const) {
+    for (const match of sentence.matchAll(pattern)) {
+      const before = sentence.slice(0, match.index);
+      if (ASKED_BY.test(before) || NOT_DONE.test(before) || NONE_DID.test(before) || (stored && WANTED.test(before))) continue;
+      marks.push({ at: match.index!, stored });
+    }
+  }
+  return marks.sort((one, other) => one.at - other.at);
+}
+
+/**
+ * Whether a mention is called stored (header, t633): the last thing said of the
+ * run before it is a stored word; or nothing is said before it, and the first
+ * thing said after it, before the next row named, is. Never where the first
+ * thing said of the run after it is a left-out word: "<a row> and <a row> were
+ * excluded" says what was left out, whatever a stored word before them said.
+ */
+function calledStored(said: ReadonlyArray<{ at: number; stored: boolean }>, mention: Mention, mentions: readonly Mention[]): boolean {
+  const after = said.find((mark) => mark.at > mention.at);
+  if (after && !after.stored) return false;
+  const before = said.filter((mark) => mark.at < mention.at).at(-1);
+  if (before) return before.stored;
+  const next = mentions.filter((other) => other.at > mention.at).reduce((least, other) => Math.min(least, other.at), Number.POSITIVE_INFINITY);
+  return after !== undefined && after.at < next;
 }
 
 /** Whether exactly one stored row has a cell that is this id and nothing else. */

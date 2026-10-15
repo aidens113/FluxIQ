@@ -45,6 +45,14 @@
 // not marked: it says what that row is. One that spells the row's own name
 // (the label's first four words) still is, as is one whose kind no named label
 // says: "excluding accessories such as <a stored row>" stays marked.
+//
+// **The rows such an exclusion says what they are, kept (t633).** A8 wave 8
+// `run-mv9gbsm5-2957581c`: a no that stood called a stored holder not the item
+// asked for, and the next revision, which left the holder out, was judged no by
+// advice to drop the very conditions that left it out. The labels of the named
+// stored rows an exclusion says what they are
+// (`automationStudioRequestKindExclusionLabels`) are what a build keeps of that
+// no across its trials (`../standing-no/`).
 
 import type { AutomationStudioRequestWording } from "./request-wording.ts";
 import { automationStudioRequestRowWords } from "./words.ts";
@@ -77,22 +85,41 @@ const NAME_WORDS = 4;
  * them is, is not one (header, t628).
  */
 export function automationStudioRequestUnstatedExclusions(advice: string | undefined, wording: AutomationStudioRequestWording, namedStored: readonly string[] = []): string[] {
+  const found = exclusionsOf(advice)
+    .filter(({ target }) => unstated(target, wording) && !saysWhatNamedRowsAre(target, wording, namedStored).length)
+    .map(({ said }) => said);
+  return [...new Set(found)];
+}
+
+/**
+ * The labels among `namedStored` -- the stored rows the same reading names --
+ * that an exclusion of the advice says what they are (header, t628): its kind
+ * has a word of its own that is a word of the label, and it does not spell the
+ * row's name. Whether the request states that exclusion does not matter: the
+ * reading calls the row a kind of thing, which is what a no that stood holds
+ * across a build's trials (`../standing-no/`, t633). None without an advice.
+ */
+export function automationStudioRequestKindExclusionLabels(advice: string | undefined, wording: AutomationStudioRequestWording, namedStored: readonly string[]): string[] {
+  return [...new Set(exclusionsOf(advice).flatMap(({ target }) => saysWhatNamedRowsAre(target, wording, namedStored)))];
+}
+
+/** Each exclusion an advice words, not negated: its words (`target`), and as the advice says it, cue first or last. */
+function exclusionsOf(advice: string | undefined): Array<{ target: string; said: string }> {
   if (!advice?.trim()) return [];
-  const found: string[] = [];
-  const marks = (target: string): boolean => unstated(target, wording) && !saysWhatANamedRowIs(target, wording, namedStored);
+  const found: Array<{ target: string; said: string }> = [];
   for (const match of advice.matchAll(AFTER_CUE)) {
     const start = match.index!;
     if (NEGATED.test(advice.slice(0, start))) continue;
     const target = clauseAfter(advice, start + match[0].length);
-    if (marks(target)) found.push(`${match[0]} ${target}`.trim());
+    found.push({ target, said: `${match[0]} ${target}`.trim() });
   }
   for (const match of advice.matchAll(BEFORE_CUE)) {
     const start = match.index!;
     if (NEGATED.test(advice.slice(0, start))) continue;
     const target = clauseBefore(advice, start);
-    if (marks(target)) found.push(`${target} ${match[0]}`.trim());
+    found.push({ target, said: `${target} ${match[0]}`.trim() });
   }
-  return [...new Set(found)];
+  return found;
 }
 
 /** Whether an exclusion's words have words of their own, none of them is the request's, and no condition the result applies already leaves out by them (header). */
@@ -102,17 +129,18 @@ function unstated(target: string, wording: AutomationStudioRequestWording): bool
 }
 
 /**
- * Whether an exclusion's kind has a word of its own that is a word of a named
- * stored row's label, without spelling that row's name (header, t628).
+ * The named stored rows' labels whose words an exclusion's kind has a word of
+ * its own of, without spelling that row's name (header, t628): the rows it
+ * says what they are. None where it says what none is.
  */
-function saysWhatANamedRowIs(target: string, wording: AutomationStudioRequestWording, namedStored: readonly string[]): boolean {
-  if (!namedStored.length) return false;
+function saysWhatNamedRowsAre(target: string, wording: AutomationStudioRequestWording, namedStored: readonly string[]): string[] {
+  if (!namedStored.length) return [];
   const cut = target.search(EXAMPLE_CUE);
   const before = cut < 0 ? target : target.slice(0, cut);
   const kind = wording.ownWords(before).length ? before : target;
   const kindWords = wording.ownWords(kind);
   const spelled = wordsOf(kind);
-  return namedStored.some((label) => {
+  return namedStored.filter((label) => {
     const words = wordsOf(label);
     if (!words.length || runsIn(spelled, words.slice(0, Math.min(NAME_WORDS, words.length)))) return false;
     return kindWords.some((word) => words.includes(word));
