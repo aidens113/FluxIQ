@@ -598,6 +598,13 @@ Entries from 2026-10-13 to A8 wave 4 (t550-t611) are archived in
 - Outcome: Accepted
 - Follow-up: the `extract` parameter's shape is described, not yet refused before a run when wrong
 
+### 2026-10-15 — After A8 frozen pair 3 wave 17: project activity says what happened (t649, Core half)
+- Agent: worker t649-project-chat-cards-honest (three rounds: extension readings, then their Core sources, then the ending's reason); supervisor verified and integrated
+- Changed: `activity/candidate/result.ts` reads every `core.submit_*` / `core.test_*` answer (a refused subflow submission arrives declined with Core's words) and `activity/decision-answer/narration.ts` holds back the model's sentence above it; `activity/project/return-words.ts` (new) gives return cards plain words, the failure-code words moved to `activity/wording/failure-code-words.ts`; the brief card carries `after` (contracts `client-gateway.ts`); `flow-bootstrap/generation-failure` diagnostic `endedBecause` (strict parse, beside `project.build_blocked|partial`), set in `service/project-build/run.ts`, said by `conversations/commands/progress.ts`; `activity/wording/person-words.ts` keeps "a list extraction" whole
+- Why: wave 17 `project` bigbox cart's chat: a refused submission drawn "Done", raw codes and brief ids on cards, a waiting brief shown building with an allowance, an ending with no reason
+- Validation: after merging dev (t645-t648 in): tsc exit 0; activity, service/project-build, conversations/commands, flow-bootstrap/generation-failure, project-agents -> 124 files, 1273 passed; audit passed; `pnpm check` -> passed; merged `eca33297`; paired with downstream (an older Core's strict parser would drop a diagnostic carrying `endedBecause`)
+- Outcome: Accepted
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
