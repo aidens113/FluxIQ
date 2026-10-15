@@ -126,8 +126,10 @@ export type AutomationStudioConversationBuildResult =
    * is what a candidate build that failed kept, said for the person
    * (`automationStudioConversationCandidateKeptSaid`); a candidate draft is not
    * carried on from, so `kept` stays about the incomplete draft alone.
+   * `endingKind` is which ending `ending` is (`build-ending.ts`, `kind`), so a
+   * command does not say again what that ending already says (t619).
    */
-  | { ok: false; cause: string; ending?: string; kept: boolean; candidateKept?: string };
+  | { ok: false; cause: string; ending?: string; endingKind?: string; kept: boolean; candidateKept?: string };
 
 export async function buildAutomationStudioFlowFromConversation(
   context: AutomationStudioConversationCommandContext,
@@ -147,9 +149,11 @@ export async function buildAutomationStudioFlowFromConversation(
     ...(context.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: context.interpretationCostUsd })
   });
   if (!response.ok) {
-    const ending = (response.payload as { cancelled?: boolean } | undefined)?.cancelled === true ? "Build stopped. The Flow was not promoted." : buildEnding(response);
+    const cancelled = (response.payload as { cancelled?: boolean } | undefined)?.cancelled === true;
+    const ending = cancelled ? "Build stopped. The Flow was not promoted." : buildEnding(response);
+    const endingKind = cancelled ? undefined : buildEndingKind(response);
     const candidateKept = keptCandidate(response);
-    return { ok: false, cause: automationStudioConversationCallCause("the build", response), ...(ending ? { ending } : {}), kept: keptDraft(response), ...(candidateKept ? { candidateKept } : {}) };
+    return { ok: false, cause: automationStudioConversationCallCause("the build", response), ...(ending ? { ending } : {}), ...(ending && endingKind ? { endingKind } : {}), kept: keptDraft(response), ...(candidateKept ? { candidateKept } : {}) };
   }
   if (candidateMode) {
     const subject = { projectId: context.projectId, flowId: input.flowId };
@@ -178,6 +182,12 @@ export async function buildAutomationStudioFlowFromConversation(
 function buildEnding(response: AutomationStudioConversationCommandCallResult): string | undefined {
   const ending = (response.payload as { diagnostic?: { ending?: { message?: unknown } } } | undefined)?.diagnostic?.ending?.message;
   return typeof ending === "string" && ending.trim() ? ending.trim() : undefined;
+}
+
+/** Which ending the failed call's account is, by its closed kind, when it carries one. */
+function buildEndingKind(response: AutomationStudioConversationCommandCallResult): string | undefined {
+  const kind = (response.payload as { diagnostic?: { ending?: { kind?: unknown } } } | undefined)?.diagnostic?.ending?.kind;
+  return typeof kind === "string" && /^[a-z_]{1,40}$/u.test(kind) ? kind : undefined;
 }
 
 /** Whether the failed build kept an incomplete draft for the next build to carry on from: its diagnostic names one with at least one step. */

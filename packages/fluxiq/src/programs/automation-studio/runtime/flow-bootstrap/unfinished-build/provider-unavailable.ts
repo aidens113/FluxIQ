@@ -47,7 +47,8 @@ export function automationStudioFlowBootstrapProviderUnavailable(input: {
     : "No Flow was created or changed, and nothing on the page was changed.";
   const progress = asked && notDone.length < asked ? automationStudioFlowBootstrapProgressSaid(input.checklist, input.judgement) : "";
   const kept = input.kept ? "The steps worked out so far were kept, and building again carries on from them." : "Nothing was kept to carry on from.";
-  const message = [happened, changed, progress, kept, "Try again once the provider is answering."].filter(Boolean).join(" ");
+  // The same closing words as every mode's silent-provider ending (`../generation-failure/loop-provider-unavailable.ts`, t619): the chat does not say them again.
+  const message = [happened, changed, progress, kept, "What the Flow should do is kept, so you can try again later, once the provider is answering."].filter(Boolean).join(" ");
   return {
     kind: "provider_unavailable",
     message: message.slice(0, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE),

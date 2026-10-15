@@ -28,6 +28,8 @@ export * from "./failed-builds.ts";
 export * from "./failure-state.ts";
 export * from "./harness-failure.ts";
 export * from "./harness-vocabulary.ts";
+export * from "./loop-provider-unavailable.ts";
+export * from "./provider-reply-arrived.ts";
 export * from "./phase-failure.ts";
 export * from "./refused-steps.ts";
 export * from "./thrown-issue-codes.ts";

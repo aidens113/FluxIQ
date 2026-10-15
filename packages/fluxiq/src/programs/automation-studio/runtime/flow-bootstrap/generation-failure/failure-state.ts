@@ -45,6 +45,14 @@ export type AutomationStudioFlowBootstrapFailureState = {
   /** Canonical plus explicitly compatible historical/observed states. */
   acceptedProviderInvocations: readonly AutomationStudioFlowBootstrapFailureDiagnostic["providerInvocation"][];
   providerResponse: AutomationStudioFlowBootstrapFailureDiagnostic["providerResponse"];
+  /**
+   * Canonical plus every state a producer that observed what happened may
+   * write instead. Only `flow_bootstrap.provider_unavailable` has a second: a
+   * build whose every call failed before any reply arrived says
+   * `not_received` (t619, A8 canary `run-mv8zw5l2-98064abf`), never the
+   * `received` every other ending past the request stage implies.
+   */
+  acceptedProviderResponses: readonly AutomationStudioFlowBootstrapFailureDiagnostic["providerResponse"][];
   accounting: "required" | "absent" | "optional";
   /**
    * Whether the diagnostic carries the question a person answers. Exactly one
@@ -164,6 +172,9 @@ export function automationStudioFlowBootstrapFailureState(
   };
 }
 
+/** The one code past the request stage that may say no reply arrived (`acceptedProviderResponses`). */
+const PROVIDER_UNAVAILABLE_CODE = "flow_bootstrap.provider_unavailable";
+
 const ENDING_CODES: ReadonlySet<string> = new Set([
   "flow_bootstrap.not_doable",
   "flow_bootstrap.build_not_finished",
@@ -183,6 +194,7 @@ function providerState(
       providerInvocation: "not_attempted",
       acceptedProviderInvocations: ["not_attempted"],
       providerResponse: "not_received",
+      acceptedProviderResponses: ["not_received"],
       accounting: stage === "pre_provider_validation" && FLOW_BOOTSTRAP_HARNESS_PREFLIGHT_CODE_SET.has(code) ? "required" : "absent"
     };
   }
@@ -192,15 +204,18 @@ function providerState(
       providerInvocation: "attempted",
       acceptedProviderInvocations: ["attempted"],
       providerResponse: "received",
+      acceptedProviderResponses: code === PROVIDER_UNAVAILABLE_CODE ? ["received", "not_received"] : ["received"],
       accounting: "optional"
     };
   }
   const rule = providerRequestRule(code);
+  const providerResponse = rule.providerResponse === "by_status" ? (providerStatus === undefined ? "unknown" : "received") : rule.providerResponse;
   return {
     retryable: rule.retryable === "server_error" ? providerStatus !== undefined && providerStatus >= 500 : rule.retryable,
     providerInvocation: rule.providerInvocation,
     acceptedProviderInvocations: rule.acceptedProviderInvocations ?? [rule.providerInvocation],
-    providerResponse: rule.providerResponse === "by_status" ? (providerStatus === undefined ? "unknown" : "received") : rule.providerResponse,
+    providerResponse,
+    acceptedProviderResponses: [providerResponse],
     // The stage default names a request whose answer is unknown, and it is what
     // the catch produces for a throw it could not place. Such a failure must not
     // also claim a cost: the accounting it would carry is the running total of a

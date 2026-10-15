@@ -90,6 +90,9 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
   }
 };
 
+/** The build endings whose own message says the instruction is kept and the build can be run again (header of `automationStudioConversationCreateHereLeft`). */
+const ENDINGS_SAYING_INSTRUCTION_KEPT: ReadonlySet<string> = new Set(["provider_unavailable"]);
+
 /** The code a project build its time limit stopped adds after its kept draft's own trial code (`../../service/project-build/run.ts`, t608). */
 const TIME_LIMIT_CODE = "project.build_time_limit";
 
@@ -148,9 +151,18 @@ function automationStudioConversationFlowName(instruction: string): string {
  * A candidate build that failed after writing its steps says what it kept --
  * the latest version as a draft, and how its test runs came out -- in place of
  * "has no steps yet" (t362, `run-muyrpbnk-fef374e7`).
+ *
+ * An ending that already says the instruction is kept and building again is
+ * possible -- a silent provider's (`flow-bootstrap/generation-failure/
+ * loop-provider-unavailable.ts`) -- is not followed by the same again (t619):
+ * this names the Flow and what it holds, and says nothing of the instruction.
  */
-function automationStudioConversationCreateHereLeft(name: string, built: { ending?: string | undefined; kept: boolean; candidateKept?: string | undefined }, from: AutomationStudioConversationCommandInstruction["from"]): string {
+function automationStudioConversationCreateHereLeft(name: string, built: { ending?: string | undefined; endingKind?: string | undefined; kept: boolean; candidateKept?: string | undefined }, from: AutomationStudioConversationCommandInstruction["from"]): string {
   const instruction = from === "person" ? "your instruction" : `the instruction ${AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS}`;
+  if (built.ending && built.endingKind && ENDINGS_SAYING_INSTRUCTION_KEPT.has(built.endingKind)) {
+    // What a kept draft holds is the ending's own to say (its kept sentence) or the candidate's; the Flow itself holds no step.
+    return built.candidateKept ?? `The Flow "${name}" has no steps yet.`;
+  }
   // A candidate build's draft is never carried on from, and is not "no steps" either (t362, round 4's C6).
   if (built.candidateKept) return `${built.candidateKept} The Flow "${name}" keeps ${instruction}, so you can build it again.`;
   if (!built.kept) return `The Flow "${name}" has no steps yet, but it keeps ${instruction}, so you can build it again.`;

@@ -28,7 +28,8 @@ export async function automationStudioFlowBootstrapBuiltLoop(input: {
   const { built, accounting } = input;
   if (built.kind === "unfinished") {
     input.creation.ended(built.ending.kind === "not_doable");
-    throw flowBootstrapBuildEndingFailure(built.ending, built.progress, accounting(built.accounting), built.kept, built.lastIssueCodes);
+    // A silent provider's own account says whether any reply arrived (`flow-bootstrap/generation-failure/provider-reply-arrived.ts`, t619).
+    throw flowBootstrapBuildEndingFailure(built.ending, { ...built.progress, providerUnavailable: built.providerUnavailable }, accounting(built.accounting), built.kept, built.lastIssueCodes);
   }
   const loop = built.kind === "ended" ? { ...built.loop, trace: built.trace, accounting: built.accounting } : built.loop; // Keep every round before publishing the person/permission ending.
   const personStopped = input.personNeeded.endedOnIntervention(loop, accounting(loop.accounting));

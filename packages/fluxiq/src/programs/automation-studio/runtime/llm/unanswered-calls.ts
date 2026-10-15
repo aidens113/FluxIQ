@@ -55,6 +55,12 @@ export type AutomationStudioLlmEvidenceLoopProviderUnavailable = {
   codes: string[];
   /** The commonest, said in words, for the build's ending to quote. */
   said: string;
+  /**
+   * Whether any decision call of this loop got a reply, whatever it said
+   * (t619): false when every call failed before anything arrived, which the
+   * build's ending publishes as `providerResponse: "not_received"`.
+   */
+  replied: boolean;
 };
 
 /** The loop's count of unanswered decision calls. */
@@ -68,9 +74,11 @@ export type AutomationStudioLlmProviderUnansweredCount = {
 
 export function automationStudioLlmProviderUnansweredCount(maxInARow: number = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_PROVIDER_UNANSWERED_IN_A_ROW): AutomationStudioLlmProviderUnansweredCount {
   let run: string[] = [];
+  let replied = false;
   return {
     answered() {
       run = [];
+      replied = true;
     },
     unanswered(code) {
       run.push(code);
@@ -80,7 +88,7 @@ export function automationStudioLlmProviderUnansweredCount(maxInARow: number = A
       const counts = new Map<string, number>();
       for (const code of run) counts.set(code, (counts.get(code) ?? 0) + 1);
       const codes = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([code]) => code);
-      return { inARow: run.length, codes, said: CODE_SAID[codes[0] ?? ""] ?? "it did not answer" };
+      return { inARow: run.length, codes, said: CODE_SAID[codes[0] ?? ""] ?? "it did not answer", replied };
     }
   };
 }

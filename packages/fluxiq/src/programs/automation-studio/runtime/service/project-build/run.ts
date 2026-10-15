@@ -122,6 +122,20 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // the chat's reply opens with the time limit
 // (`conversations/commands/create-here.ts`). Which plan the kept draft was
 // assembled under is not said: the candidate does not record it.
+//
+// **A silent provider is said as that (t619).** A8 canary
+// `run-mv8zw5l2-98064abf`: DeepSeek answered none of the supervisor's three
+// decisions, its loop ended `llm_evidence_loop.provider_unavailable`, and the
+// person read "The supervisor ended the build: it could not finish the Flow"
+// and "what the model wrote could not be used", under
+// `flow_bootstrap.post_provider_validation_failed`. The loop's ending is
+// published as the candidate build publishes it, through the one
+// classification both modes share (`flowBootstrapEvidenceLoopFailure`):
+// `flow_bootstrap.provider_unavailable`, with Core's message that the
+// provider did not answer and nothing was built. Its builders, not its loop,
+// act on the target, so the message leaves the page to this build, which puts
+// Core's note of what is left after it -- or that nothing this build did is
+// still on the target -- and shows no supervisor ending row.
 
 type DraftInput = Parameters<typeof generateAutomationStudioFlowCandidateDraft>[0];
 type DraftResult = { record: AutomationStudioFlowCandidateDraftRecord; trial: AutomationStudioCandidateTrialResult | undefined };
@@ -214,7 +228,7 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   if (!candidate) {
     // A build its time limit stopped ends as recorded, not as its stopped loop's cancel (header).
     const failure = outcome.loop && !outcome.loop.ok && !outcome.timedOut
-      ? draft.ending(outcome.loop, spent) ?? flowBootstrapEvidenceLoopFailure(outcome.loop, spent)
+      ? draft.ending(outcome.loop, spent) ?? flowBootstrapEvidenceLoopFailure(outcome.loop, spent, undefined, "said_by_caller")
       : new AutomationStudioFlowBootstrapGenerationError({ ...flowBootstrapPhaseFailure("post_provider_validation", spent, "flow_bootstrap.post_provider_validation_failed").diagnostic, issueCodes: [...(outcome.timedOut ? [TIME_LIMIT_CODE] : []), `project.build_${outcome.ending?.outcome ?? "blocked"}`] });
     const timedOut = outcome.timedOut ? timeLimitWords(Object.keys((await records.read(ref))?.record.plans.at(-1)?.plan.partOf ?? {}), trials) : undefined;
     throw toldEnding(failure, outcome.ending, left, timedOut);
@@ -314,7 +328,8 @@ function toldEnding(failure: Error, recorded: AutomationStudioProjectBuildEnding
   if (!recorded || (recorded.outcome !== "partial" && recorded.outcome !== "blocked") || !(failure instanceof AutomationStudioFlowBootstrapGenerationError)) return failure;
   const { diagnostic } = failure;
   if (PERSON_CODES.has(diagnostic.code)) return failure;
-  const note = left?.note;
+  // A silent provider's ending leaves the target to this build, which says what is left of it, or that nothing is (header, t619).
+  const note = left?.note ?? (diagnostic.ending?.kind === "provider_unavailable" ? NOTHING_LEFT : undefined);
   if (diagnostic.ending) return note ? new AutomationStudioFlowBootstrapGenerationError({ ...diagnostic, ending: { ...diagnostic.ending, message: fitted(diagnostic.ending.message, note) } }) : failure;
   // The time limit is said as the time limit, with what was tested and is left (header, t601).
   const title = timedOut?.title ?? ENDED_WORDS[recorded.outcome];
