@@ -1,5 +1,5 @@
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
-import type { AutomationStudioSubflowScope, AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import type { AutomationStudioSubflowScope, AutomationStudioSubflowTrialPreparingPort, AutomationStudioSubflowTrialRequest } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider } from "../../llm/index.ts";
 import { AutomationStudioHostLeaseScope, type AutomationStudioHostResourceScheduler, type AutomationStudioProjectBuildRecordStore, type AutomationStudioProjectBuildRef } from "../../project-agents/index.ts";
 import { automationStudioBuildTestJudge } from "../../result-verification/index.ts";
@@ -30,7 +30,12 @@ import type { AutomationStudioProjectBuildTrialEnvironment } from "./whole-trial
 // - **Proposals.** Every proposal tried is kept by brief, revision and digest
 //   (`./proposals.ts`), so the supervisor can assemble a done return's
 //   proposal and a later subflow's trial can run its predecessors' latest
-//   passing proposals to reach its entry.
+//   passing proposals to reach its entry. Its verdict is the one the brief's
+//   gate weighed (t634): this port answers before the gate weighs the trial,
+//   and the gate may hold a no unsure (a no the build's own record
+//   contradicts, t633), so each trial this port answered is told to the
+//   proposals when the gate tells the port what it kept (`weighed`, chained
+//   by the dispatcher's `project-agents/dispatch/trial-port.ts`).
 // - **The start page and the start hook** (t578). Each trial's run goes to the
 //   build's start location first, through the domain's arrival node
 //   (`runsNodes.arrival`), and the port keeps the inner port's `prepareStart`,
@@ -88,9 +93,14 @@ export function automationStudioProjectBuildSubflowTrials(input: {
       })({ summary, taskChecklist: await AutomationStudioProjectBuildTaskChecklist.subflow(source, scope, entry) });
     }
   });
+  // Each trial this port answered, until its gate tells the verdict it kept (header, t634).
+  const answered = new Map<string, Pick<AutomationStudioSubflowTrialRequest, "scope" | "proposal">>();
   const port: AutomationStudioSubflowTrialPreparingPort = async (request) => {
     const result = await trials.port(request);
-    input.proposals.trialled(request.scope, request.proposal, result.verdict);
+    const at = trialKey(request.scope.briefId, request.proposal.revision, request.proposal.digest);
+    answered.delete(at);
+    answered.set(at, { scope: request.scope, proposal: request.proposal });
+    while (answered.size > MAX_ANSWERED) answered.delete(answered.keys().next().value!);
     // How its start was made, as every phase is told (header).
     const predecessors = request.scope.predecessors.length ? { keys: request.scope.predecessors, prepared: result.entryPrepared } : undefined;
     const phaseStart = AutomationStudioProjectBuildPhaseStart.trialStart({ phase: "subflow_trial", feedback: result.feedback, arrival, startLocation: environment.startLocation, predecessors });
@@ -98,8 +108,21 @@ export function automationStudioProjectBuildSubflowTrials(input: {
   };
   // The start hook, ahead of the gate's reset check, is the inner port's (`../subflow-trial/port.ts`).
   if (trials.port.prepareStart) port.prepareStart = trials.port.prepareStart;
+  // The gate's verdict of a trial this port answered is the one the proposals keep (header, t634).
+  port.weighed = ({ answer }) => {
+    const at = trialKey(answer.identity.briefId, answer.revision, answer.digest);
+    const asked = answered.get(at);
+    if (!asked) return;
+    answered.delete(at);
+    input.proposals.trialled(asked.scope, asked.proposal, answer.verdict);
+  };
   return { ...trials, port };
 }
+
+/** The most trials awaiting their gate's verdict at once; a brief's gate tells each before its next trial. */
+const MAX_ANSWERED = 200;
+
+const trialKey = (briefId: string, revision: number, digest: string): string => JSON.stringify([briefId, revision, digest]);
 
 /** The brief a partial trial's session is marked with (`../subflow-trial/run.ts`, `metadata.subflowTrial`). */
 function briefOf(metadata: Record<string, unknown>): string {
