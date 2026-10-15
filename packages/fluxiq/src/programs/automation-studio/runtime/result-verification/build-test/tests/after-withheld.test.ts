@@ -8,7 +8,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftReplayOutcome, AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
-import type { AutomationStudioBuildTestStep } from "../../contracts.ts";
+import type { AutomationStudioBuildTestStep } from "../../contracts/index.ts";
 import { automationStudioBuildTestResultSummary } from "../summary.ts";
 import { DENIED, ROW_CONTEXT, SITE, navigate, present, replayed, report, verified, web } from "./draft-steps.ts";
 

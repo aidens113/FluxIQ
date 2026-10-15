@@ -17,7 +17,7 @@
 // comparison (the domain's grammar refuses that condition). Wording withheld by
 // a screen is no evidence, so its column keeps the finding.
 
-import type { AutomationStudioResultReadAccount } from "../contracts.ts";
+import type { AutomationStudioResultReadAccount } from "../contracts/index.ts";
 
 /** What follows the column key in a condition that keeps only the rows with nothing in that column. */
 const EMPTYING_RELATIONS: readonly string[] = ["is absent", "not is present", "equals \"\"", "equals [\"\"]"];

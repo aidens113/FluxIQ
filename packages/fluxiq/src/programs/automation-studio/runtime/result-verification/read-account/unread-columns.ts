@@ -11,7 +11,7 @@
 
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import { automationStudioFlowBootstrapUnreadColumnsSentence } from "../../flow-bootstrap/index.ts";
-import type { AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 
 /**
  * The summary with `instructionColumnsUnread` set when the instruction names a

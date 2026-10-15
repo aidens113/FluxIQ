@@ -2,7 +2,7 @@
 // the build-test judge of step 0031 (the replayed reads 9 and 10, their readRows) and the
 // result judge of step 0039 (the 30 stored rows, name and url, and the read s7). Copied from
 // the run's request.json files; nothing else of either summary is needed here.
-import type { AutomationStudioBuildTestStep, AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../../contracts.ts";
+import type { AutomationStudioBuildTestStep, AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 
 /** The request, as the Flow's instruction states it. */
 export const RUN_MUW60J7C_REQUEST = "Find every pair of wireless earbuds in the store's search results that is Brightaisle Plus eligible, rated 4.0 or higher and priced under $50, going through every page of results. Leave out sponsored placements and accessories such as ear tips or charging cases, list each pair only once even if it turns up on two pages, and keep the order the search results show them in, with columns name, price, rating and url.";

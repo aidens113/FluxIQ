@@ -2,7 +2,7 @@
 // ended, in Core's own words, and with the loop's Repeat as the thing to raise.
 // Never a read's own paging setting, and never a word of the medium's.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../../contracts.ts";
+import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioResultSummaryWithPagingWords } from "../judge-paging.ts";
 import { automationStudioResultReadPageBoundSentence } from "../page-bound-sentence.ts";
 import { automationStudioResultReadPagesClause } from "../pages-clause.ts";

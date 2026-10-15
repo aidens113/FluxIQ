@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import {
   AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES,
   automationStudioResultRepairDirective,

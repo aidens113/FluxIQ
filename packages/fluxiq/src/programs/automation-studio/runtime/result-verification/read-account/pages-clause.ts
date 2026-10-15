@@ -2,7 +2,7 @@
 // A read whose step ran as the passes of a loop (`keptPerPage`) is said by how
 // the loop ended (`loopClause`), in Core's words: no control, no setting of the
 // read's own, since the loop is what moved the list on.
-import type { AutomationStudioResultReadAccount } from "../contracts.ts";
+import type { AutomationStudioResultReadAccount } from "../contracts/index.ts";
 import { automationStudioResultReadStop } from "./stop.ts";
 
 /** The pages read and why paging stopped, as what the stop means. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioResultVerification } from "../../contracts.ts";
+import type { AutomationStudioResultVerification } from "../../contracts/index.ts";
 import { automationStudioResultExclusionEvidenceRecheck } from "../recheck.ts";
 
 const deficient = (lines: string[]): AutomationStudioResultVerification => ({

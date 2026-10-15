@@ -4,7 +4,7 @@
 // B0J5MCMBAY ... B07Z1RZGJG". Both are in the stored result, and the re-author
 // followed that reading and threw away the answer it held.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioRunResultSummary } from "../../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioResultCheckedRows, automationStudioResultCheckedRowsNamed } from "../index.ts";
 import { RUN_MUW60J7C_PAIRS_LEFT_OUT, RUN_MUW60J7C_RESULT_JUDGE, runMuw60j7cRunSummary, runMuw60j7cTestSummary } from "./run-muw60j7c.ts";
 import { SOIL_BIN, SOIL_CONDITIONS, SOIL_SCOOP, SOIL_SIEVE, soilRunSummary } from "./potting-soil-fixture.ts";

@@ -22,7 +22,7 @@
 // record of (`./named-rows.ts`).
 
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultConditionName } from "../read-account/index.ts";
 import {
   automationStudioRequestPhrases,

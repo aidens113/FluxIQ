@@ -75,7 +75,7 @@ import {
   type AutomationStudioResultRepairOutcome
 } from "../recovery/refuted-result/index.ts";
 import { automationStudioResultCalledNodes, type AutomationStudioResultCalledGraphSource } from "./called-nodes.ts";
-import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerificationOutcome, type AutomationStudioRunResultSummary } from "./contracts.ts";
+import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerificationOutcome, type AutomationStudioRunResultSummary } from "./contracts/index.ts";
 import { automationStudioResultCoreObservation, automationStudioResultFailureRecord } from "./core-observation.ts";
 import { automationStudioResultVerificationWithinDeadline } from "./deadline.ts";
 import {

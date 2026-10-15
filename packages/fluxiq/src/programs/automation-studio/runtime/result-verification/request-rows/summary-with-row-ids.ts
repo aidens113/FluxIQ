@@ -15,7 +15,7 @@
 // carried between the copy and the check. Core's lines (`../verdict.ts`) and
 // every other reader of the summary see the rows exactly as before.
 
-import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { AutomationStudioRequestRowId } from "./row-id.ts";
 import { automationStudioRequestRowLabel } from "./summary-reads.ts";
 

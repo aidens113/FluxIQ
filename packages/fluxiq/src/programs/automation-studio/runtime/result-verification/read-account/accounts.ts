@@ -83,7 +83,7 @@ import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../model/index.ts";
 import { automationStudioEvidenceKey } from "../../llm/index.ts";
-import type { AutomationStudioResultConditionObservation, AutomationStudioResultLeftOutObservation, AutomationStudioResultReadAccount } from "../contracts.ts";
+import type { AutomationStudioResultConditionObservation, AutomationStudioResultLeftOutObservation, AutomationStudioResultReadAccount } from "../contracts/index.ts";
 import { automationStudioResultReadAloneRows } from "./alone-rows.ts";
 import { automationStudioResultReadConditionColumn, automationStudioResultReadConditionText } from "./condition.ts";
 import { automationStudioResultReadDedupe } from "./dedupe.ts";

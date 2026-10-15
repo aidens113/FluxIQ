@@ -4,7 +4,7 @@
 // back", because a test stores nothing and Core's observation counted 0.
 import { describe, expect, it } from "vitest";
 import { automationStudioResultCheckWords } from "../check-words.ts";
-import type { AutomationStudioResultVerification } from "../contracts.ts";
+import type { AutomationStudioResultVerification } from "../contracts/index.ts";
 import { automationStudioResultObservation } from "../verdict.ts";
 
 const answered = (observation: string): AutomationStudioResultVerification => ({

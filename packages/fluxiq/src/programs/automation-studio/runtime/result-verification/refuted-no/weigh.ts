@@ -53,7 +53,7 @@
 // turns a no into a yes from this; `./reask.ts` asks the call once more, and a
 // no still refuted is taken as unsure.
 
-import type { AutomationStudioResultRepairDirective } from "../contracts.ts";
+import type { AutomationStudioResultRepairDirective } from "../contracts/index.ts";
 import { automationStudioResultAdviceConditions } from "./advice-condition.ts";
 import { automationStudioResultConditionReferences } from "./condition-references.ts";
 import { automationStudioResultWithoutConditionWording } from "./condition-wording.ts";

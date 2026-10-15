@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioResultVerificationOutcome } from "../contracts.ts";
+import type { AutomationStudioResultVerificationOutcome } from "../contracts/index.ts";
 import { automationStudioResultVerificationStatus } from "../verification-status.ts";
 import { AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES } from "../verify.ts";
 

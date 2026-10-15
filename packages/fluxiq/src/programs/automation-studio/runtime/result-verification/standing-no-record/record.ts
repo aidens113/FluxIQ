@@ -20,7 +20,7 @@
 // result's own conditions tests is no row. A no that names a row, or asks for
 // anything else, has no such remedy, and is never weighed by one.
 
-import type { AutomationStudioRunResultSummary, AutomationStudioResultVerification } from "../contracts.ts";
+import type { AutomationStudioRunResultSummary, AutomationStudioResultVerification } from "../contracts/index.ts";
 import {
   automationStudioResultAdviceChangedConditions,
   automationStudioResultReadingSentences,

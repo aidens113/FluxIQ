@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioResultVerificationAnswers, automationStudioResultVerificationFailsRun, type AutomationStudioRunResultSummary } from "../contracts.ts";
+import { automationStudioResultVerificationAnswers, automationStudioResultVerificationFailsRun, type AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict, automationStudioResultVerdictFromDiagnosis } from "../verdict.ts";
 import {
   REQUEST_WORDS_NAMES, REQUEST_WORDS_HANDLE, REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS, requestWordsRunSummary, requestWordsWording

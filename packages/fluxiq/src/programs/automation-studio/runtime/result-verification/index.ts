@@ -32,7 +32,7 @@ export * from "./build-test/index.ts";
 export * from "./called-nodes.ts";
 export * from "./captured-rows.ts";
 export * from "./check-activity.ts";
-export * from "./contracts.ts";
+export * from "./contracts/index.ts";
 export * from "./core-observation.ts";
 export * from "./deadline.ts";
 export * from "./narrowed-before.ts";

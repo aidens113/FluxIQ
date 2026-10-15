@@ -47,7 +47,7 @@ import type {
   AutomationStudioResultRepairFinding,
   AutomationStudioResultRecordSetSummary,
   AutomationStudioRunResultSummary
-} from "./contracts.ts";
+} from "./contracts/index.ts";
 import { automationStudioResultReadEmptiedColumns } from "./read-account/index.ts";
 import type { AutomationStudioRequestRowsKeptNumberLeftOut } from "./request-rows/index.ts";
 

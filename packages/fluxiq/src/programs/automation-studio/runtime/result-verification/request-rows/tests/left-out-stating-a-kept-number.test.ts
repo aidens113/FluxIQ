@@ -3,7 +3,7 @@
 // reader, never by the request or a judge. Generic site: a shared-documents
 // workspace whose rows say how many people edit each document.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../../contracts.ts";
+import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioResultLeftOutStatingAKeptNumber } from "../index.ts";
 
 const NODE = "node.docs.list";

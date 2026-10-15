@@ -3,7 +3,7 @@
 // `../agreement.ts` (t628), which still reads a split's no by it, so the record
 // a build keeps of a standing no (`./record.ts`, t633) names the same rows.
 
-import type { AutomationStudioResultRepairDirective } from "../contracts.ts";
+import type { AutomationStudioResultRepairDirective } from "../contracts/index.ts";
 import { automationStudioResultReadingSentences, automationStudioResultSentenceRows, type AutomationStudioResultNoRecord } from "../refuted-no/index.ts";
 
 /** The labels of the stored rows `reading` names in its expected, observed and advice, each once. */

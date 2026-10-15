@@ -6,7 +6,7 @@
 // bookkeeping for which rows `../request-rows/` may flag, and no judge
 // instruction describes it. So the flagged rows are found before this copy is
 // made (`../verify.ts`).
-import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultReadPageBoundSentence, automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./index.ts";
 import { automationStudioResultSummaryWithoutTestedLabel } from "./without-tested-label.ts";
 

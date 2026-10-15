@@ -39,7 +39,7 @@
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../llm/index.ts";
-import type { AutomationStudioResultFlowStepSummary } from "./contracts.ts";
+import type { AutomationStudioResultFlowStepSummary } from "./contracts/index.ts";
 
 /** One traced attempt, as far as this reads it. */
 type TracedAttempt = { nodeId: string; stateRefs?: { stateDiff?: JsonObject } | undefined };

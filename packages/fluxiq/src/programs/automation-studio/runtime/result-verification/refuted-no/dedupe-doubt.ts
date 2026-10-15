@@ -19,7 +19,7 @@
 // dedupe removed a row, is not contradicted: whether that removal was right is
 // the judge's.
 
-import type { AutomationStudioResultRepairDirective } from "../contracts.ts";
+import type { AutomationStudioResultRepairDirective } from "../contracts/index.ts";
 import { automationStudioResultSentenceRows } from "./named-rows.ts";
 import { automationStudioResultReadingSentences } from "./sentences.ts";
 import type { AutomationStudioResultNoRecord } from "./types.ts";

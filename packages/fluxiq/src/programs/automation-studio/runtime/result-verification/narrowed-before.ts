@@ -35,7 +35,7 @@ import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../model/index.ts";
 import { screenAutomationStudioLlmEvidence } from "../llm/index.ts";
 import { automationStudioModelFacingControlWords } from "../llm/model-facing/index.ts";
-import type { AutomationStudioResultNarrowingStep } from "./contracts.ts";
+import type { AutomationStudioResultNarrowingStep } from "./contracts/index.ts";
 
 /** One traced attempt, as far as this reads it. */
 type TracedAttempt = {

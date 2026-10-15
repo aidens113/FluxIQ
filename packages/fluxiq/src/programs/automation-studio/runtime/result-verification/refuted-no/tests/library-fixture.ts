@@ -6,7 +6,7 @@
 // of any realistic scenario.
 import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts";
 import type { AutomationStudioResultReadCondition } from "../../read-condition.ts";
-import type { AutomationStudioRunResultSummary } from "../../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioRequestWording, type AutomationStudioRequestWording } from "../../request-rows/index.ts";
 
 /** The request. */

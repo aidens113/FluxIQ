@@ -17,7 +17,7 @@
 // time. The agreement rule itself is unchanged: an unsure beside a yes stays
 // unsure.
 import { describe, expect, it, vi } from "vitest";
-import { automationStudioResultVerificationFailsRun, type AutomationStudioResultReadAccount, type AutomationStudioResultVerification, type AutomationStudioRunResultSummary } from "../contracts.ts";
+import { automationStudioResultVerificationFailsRun, type AutomationStudioResultReadAccount, type AutomationStudioResultVerification, type AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultVerificationAgreement, automationStudioResultVerificationReaskContradicted } from "../agreement.ts";
 import { automationStudioResultVerdict } from "../verdict.ts";
 import { requestWordsRunSummary, requestWordsWording } from "../request-rows/tests/request-words-fixture.ts";

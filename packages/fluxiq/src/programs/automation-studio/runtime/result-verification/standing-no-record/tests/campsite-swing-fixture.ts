@@ -7,7 +7,7 @@
 // together -- neither alone, so no read account names it -- and stores exactly
 // the four campsites; its judges say no, asking to remove those two
 // conditions. No task, site, item or answer of any realistic scenario.
-import type { AutomationStudioRunResultSummary } from "../../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { CAMP_READ, campsiteRunSummary } from "../../refuted-no/tests/campsite-fixture.ts";
 
 /** The rental cabin revision 1 stores: open this weekend, rated 4.7, and not a campsite. */

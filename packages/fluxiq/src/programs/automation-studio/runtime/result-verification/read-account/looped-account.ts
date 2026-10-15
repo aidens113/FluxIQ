@@ -19,7 +19,7 @@
 // wording carries what the condition read on a row it kept (`condition.ts`),
 // and a first pass that kept nothing has no such row to say.
 
-import type { AutomationStudioResultReadAccount } from "../contracts.ts";
+import type { AutomationStudioResultReadAccount } from "../contracts/index.ts";
 
 type Condition = NonNullable<AutomationStudioResultReadAccount["conditions"]>[number];
 

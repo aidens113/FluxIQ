@@ -10,7 +10,7 @@
 // (`row-naming.ts`). Whether its reason is right is not checked here: naming the
 // row is the least a reading of it leaves behind.
 
-import type { AutomationStudioResultLeftOutNamingTheItem, AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioResultLeftOutNamingTheItem, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioRequestRowNaming, automationStudioRequestTextNamesRow } from "./row-naming.ts";
 import { automationStudioRequestRowLabel, automationStudioRequestRowsReads } from "./summary-reads.ts";
 

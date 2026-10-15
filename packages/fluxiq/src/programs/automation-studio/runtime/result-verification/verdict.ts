@@ -75,7 +75,7 @@ import {
   type AutomationStudioResultVerdictBasis,
   type AutomationStudioResultVerification,
   type AutomationStudioRunResultSummary
-} from "./contracts.ts";
+} from "./contracts/index.ts";
 import { automationStudioResultFailureRecord } from "./core-observation.ts";
 import { automationStudioResultReadSentence } from "./read-account/index.ts";
 import { automationStudioResultScreenedJudgement } from "./judgement-screen.ts";

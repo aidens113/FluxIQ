@@ -21,7 +21,7 @@
 // quote's own words are what is held to the request.
 
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
-import type { AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioRequestAppliedExclusions } from "./applied-exclusions.ts";
 import { automationStudioRequestPhrases } from "./request-phrases.ts";
 import { automationStudioRequestRowsReads } from "./summary-reads.ts";

@@ -20,7 +20,7 @@
 // that moves the list on found no further page, is the list ending; `bound`,
 // the loop's Repeat reached its most passes, is the bound; `failed` is neither.
 
-import type { AutomationStudioResultReadAccount } from "../contracts.ts";
+import type { AutomationStudioResultReadAccount } from "../contracts/index.ts";
 
 /** Why a read's paging stopped, as what a reader does about it. */
 export type AutomationStudioResultReadStopMeaning = "list_ended" | "page_bound" | "other";

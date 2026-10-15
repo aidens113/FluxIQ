@@ -13,7 +13,7 @@ import { processAutomationStudioRecordRows, readAutomationStudioRecordNumber, ty
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../../model/index.ts";
-import type { AutomationStudioRunResultSummary } from "../../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { summarizeAutomationStudioRunResult } from "../../result-summary.ts";
 import { datasetSummary } from "../../tests/run-outcome-harness.ts";
 

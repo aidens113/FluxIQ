@@ -14,7 +14,7 @@
 // and node ids, and it travels to the repair unchanged (`repair-directive.ts`).
 
 import { activityActionSentences } from "../../../../ui/index.ts";
-import type { AutomationStudioResultVerification } from "./contracts.ts";
+import type { AutomationStudioResultVerification } from "./contracts/index.ts";
 
 /** A dotted path or handle: `reads.stop`, `extractList.paginate.maxPages`, `node.bootstrap.….main.s7`, `extraction.4`. */
 const DOTTED = /\b[A-Za-z_][\w-]+\.[A-Za-z0-9_][\w-]*/u;

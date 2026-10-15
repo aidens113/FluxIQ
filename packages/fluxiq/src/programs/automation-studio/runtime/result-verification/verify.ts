@@ -91,7 +91,7 @@ import {
   type AutomationStudioLlmRunBudgetLedger,
   type AutomationStudioLlmTokenLimits
 } from "../llm/index.ts";
-import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "./contracts.ts";
+import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "./contracts/index.ts";
 import { automationStudioResultVerificationAgreement, automationStudioResultVerificationAskAgain, automationStudioResultVerificationReaskContradicted } from "./agreement.ts";
 import { automationStudioResultCheckActivity } from "./check-activity.ts";
 import { automationStudioResultCoreObservation } from "./core-observation.ts";

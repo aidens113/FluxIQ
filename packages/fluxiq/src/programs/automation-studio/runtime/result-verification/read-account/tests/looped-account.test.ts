@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { automationStudioResultReadLoopedAccount } from "../looped-account.ts";
-import type { AutomationStudioResultReadAccount } from "../../contracts.ts";
+import type { AutomationStudioResultReadAccount } from "../../contracts/index.ts";
 
 it("keeps conflicting repeated-label witnesses in pass order and legacy unknowns aligned", () => {
   const witness = (page: number, pass = page) => ({ conditionIndex: 0, state: "present" as const, value: `read ${pass}`, source: "read" as const, page, item: 1 });

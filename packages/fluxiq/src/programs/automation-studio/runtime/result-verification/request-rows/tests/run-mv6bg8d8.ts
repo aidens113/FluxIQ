@@ -11,7 +11,7 @@
 // links are stand-ins, as nothing here reads them but the processing.
 import { processAutomationStudioRecordRows, type AutomationStudioRecordCollectedRow, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../../contracts.ts";
+import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { summarizeAutomationStudioRunResult } from "../../result-summary.ts";
 
 /** The read whose passes collected the set. */

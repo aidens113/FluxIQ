@@ -4,7 +4,7 @@
 // beside the no's (`./agreement.ts`).
 
 import { automationStudioLocatorShapedText, automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../llm/index.ts";
-import type { AutomationStudioResultRepairDirective } from "./contracts.ts";
+import type { AutomationStudioResultRepairDirective } from "./contracts/index.ts";
 
 /** The three words `stillAchievable` may carry; any other value is not carried. */
 const STILL_ACHIEVABLE = ["yes", "no", "unknown"] as const;

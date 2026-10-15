@@ -11,7 +11,7 @@ import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../../../model/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { automationStudioLlmRequestEvidenceRefusal, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
-import type { AutomationStudioRunResultSummary } from "../../contracts.ts";
+import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioBuildTestResultSummary, type AutomationStudioBuildTestReportInput } from "../summary.ts";
 import { DENIED, SITE, navigate, replayed, report, web } from "./draft-steps.ts";
 

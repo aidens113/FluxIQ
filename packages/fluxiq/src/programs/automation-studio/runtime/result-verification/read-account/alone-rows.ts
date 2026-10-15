@@ -34,7 +34,7 @@
 
 import type { JsonValue } from "../../../../../core/index.ts";
 import { automationStudioLocatorShapedText, screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
-import type { AutomationStudioResultConditionObservation } from "../contracts.ts";
+import type { AutomationStudioResultConditionObservation } from "../contracts/index.ts";
 import { screenAutomationStudioResultConditionObservation } from "../condition-observation/index.ts";
 
 /** What a label or a tested value that may not be said reads as. */

@@ -10,7 +10,7 @@
 // check, stands as before.
 import { describe, expect, it, vi } from "vitest";
 import { automationStudioResultVerificationAgreement, automationStudioResultVerificationReaskContradicted } from "../../agreement.ts";
-import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerification } from "../../contracts.ts";
+import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerification } from "../../contracts/index.ts";
 import type { AutomationStudioLlmDiagnosisFields } from "../../../llm/index.ts";
 import { automationStudioResultVerdict } from "../../verdict.ts";
 import { LAMP_CLAMP, LAMP_SHADE, LAMPS_REQUEST_TEXT, SAME_LAMP_NO, lampsRunSummary, lampsWording } from "./lamps-fixture.ts";

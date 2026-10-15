@@ -14,7 +14,7 @@
 // `../request-rows/row-id.ts`, t599), and a presence test's rows are settled
 // like a bound's: one quote of the request asking for that value.
 
-import type { AutomationStudioResultVerification } from "../contracts.ts";
+import type { AutomationStudioResultVerification } from "../contracts/index.ts";
 import { screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
 
 /** What the recheck asks, said once above Core's lines (header). Written for no site or kind of item. */

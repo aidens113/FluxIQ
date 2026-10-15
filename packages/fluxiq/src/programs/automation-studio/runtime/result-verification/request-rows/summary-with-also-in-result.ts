@@ -19,7 +19,7 @@
 // **The judge's copy only.** As `summary-with-row-ids.ts`: the summary given is
 // never changed, and the verdict reads the rows as before.
 
-import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioRequestRowLabel, automationStudioRequestRowsReads } from "./summary-reads.ts";
 
 /** What a label that may not be said reads as (`../read-account/alone-rows.ts`). */

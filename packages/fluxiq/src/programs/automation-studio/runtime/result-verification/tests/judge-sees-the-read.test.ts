@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 import { automationStudioRecordConditionHolds, type AutomationStudioRecordSchema, type AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord, AutomationStudioFlowRunDetail } from "../../../model/index.ts";
-import type { AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { summarizeAutomationStudioRunResult } from "../result-summary.ts";
 import { EARBUDS_LOCATORS, EARBUDS_NODE_ID, earbudsAttempt, earbudsNode } from "../read-account/tests/earbuds-read.ts";
 import { ANSWER, datasetSummary, flow, harness, instruction, runDetail, session, verify } from "./run-outcome-harness.ts";
