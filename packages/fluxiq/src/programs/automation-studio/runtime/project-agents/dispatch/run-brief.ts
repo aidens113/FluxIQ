@@ -102,6 +102,17 @@ import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectDispatc
 // `./standing-nos.ts`) and seed the gate of a later brief of the same subflow
 // and plan, so a repair's gate weighs a no against what the brief before it
 // upheld.
+//
+// **A repair's opening call carries the calls of the proposal it repairs
+// (A8 `run-mv9zn5ob`, t648).** Its builder was shown that proposal, and the
+// web domain refused its navigation to the proposal's own step address six
+// times as an address the build was never shown. The domain counts a held
+// Flow's navigations as shown (its `held` key), but a repair continues no
+// Flow: it opens afresh. So the opening call -- the call, not its answer --
+// carries the repaired proposal's calls under `repairs`, as `{node,
+// parameters}`, screened as `yourSubflow`'s steps are, and the domain counts
+// each navigation's address as shown and nothing else. A repair whose
+// proposal the build does not hold carries none.
 
 type Role = "builder" | "repair";
 
@@ -109,6 +120,8 @@ type Role = "builder" | "repair";
 const MAX_TRIALS_KEPT = 200;
 /** The key a repair's failing trial is shown under, beside the opening look's evidence. */
 const REPAIR_KEY = "repairOf";
+/** The key a repair's opening call carries the repaired proposal's calls under, for the domain (header, t648). */
+const REPAIRS_KEY = "repairs";
 const REPAIR_NOTE = "This brief repairs your subflow after the trial named here did not pass: its verdict, the step it stopped at (failedStep: its number, label, node, failure code and what happened) and the rest of what its run and its judge said (said). "
   + "A whole test's step numbers count every step of the whole Flow in order, not only yours; its label names the step. Find what in your subflow made that happen, change it, submit and test it. "
   + "A proposal that does exactly what the one before did changes nothing, and the supervisor is told so. If the failure is not in a step of yours -- the run stopped before your subflow, or started somewhere your subflow does not start -- end the brief blocked and say which.";
@@ -249,7 +262,7 @@ async function run(input: {
   STANDING.set(dispatcher, standingNos);
   const trialPort = (port: NonNullable<typeof ports.trial>) => automationStudioProjectDispatchTrialPort({ port, scope: mapped.scope, receipts, spend, standingNos, remember: (ref, trial) => remember(dispatcher, ref, trial) });
   const repair = await repairOf(dispatcher, brief, ports.deniedEvidenceKeys);
-  const loop = repair ? shownAtOpening(ports.loop, repair) : ports.loop;
+  const loop = repair ? shownAtOpening(ports.loop, repair.said, repair.calls) : ports.loop;
   const outcome = await untilEnded(signal, ports.ended, (stop) => runBuilder({
     loop: { ...loop, maxIterations: brief.maxIterations, signal: stop, purse: allowance },
     scope: mapped.scope,
@@ -293,8 +306,13 @@ function remember(dispatcher: AutomationStudioProjectDispatcherInput, ref: Autom
   while (held.size > MAX_TRIALS_KEPT) held.delete(held.keys().next().value!);
 }
 
-/** What a repair brief's builder is shown of the trial it repairs and of the subflow it repairs (header); undefined for any other brief. */
-async function repairOf(dispatcher: AutomationStudioProjectDispatcherInput, brief: AutomationStudioProjectSubflowBrief, deniedKeys: readonly string[]): Promise<JsonObject | undefined> {
+/**
+ * What a repair brief's builder is shown of the trial it repairs and of the
+ * subflow it repairs (`said`), and the repaired proposal's calls its opening
+ * call carries (`calls`, t648) when the build holds it (header); undefined for
+ * any other brief.
+ */
+async function repairOf(dispatcher: AutomationStudioProjectDispatcherInput, brief: AutomationStudioProjectSubflowBrief, deniedKeys: readonly string[]): Promise<{ said: JsonObject; calls: JsonObject[] | undefined } | undefined> {
   const receipt = brief.failingReceipt;
   if (brief.kind !== "repair" || !receipt) return undefined;
   const named: JsonObject = { kind: receipt.kind, receiptId: receipt.receiptId };
@@ -302,24 +320,26 @@ async function repairOf(dispatcher: AutomationStudioProjectDispatcherInput, brie
   const seen = held?.ref.digest === receipt.digest ? held : undefined;
   const trial = brief.failingTrial ?? seen?.trial;
   const yours = await yourSubflow(dispatcher, brief, seen?.ran, deniedKeys);
-  const subflow = yours ? { yourSubflow: yours } : {};
-  if (trial) return { receipt: named, ...structuredClone(trial), note: trial.verdict === "yes" ? REPAIR_RESCUED_NOTE : REPAIR_NOTE, ...subflow };
-  return seen ? { receipt: named, verdict: "yes", note: REPAIR_PASSED_NOTE, ...subflow } : { receipt: named, note: REPAIR_UNHELD_NOTE, ...subflow };
+  const subflow = yours ? { yourSubflow: yours.shown } : {};
+  const calls = yours?.calls;
+  if (trial) return { said: { receipt: named, ...structuredClone(trial), note: trial.verdict === "yes" ? REPAIR_RESCUED_NOTE : REPAIR_NOTE, ...subflow }, calls };
+  return { said: seen ? { receipt: named, verdict: "yes", note: REPAIR_PASSED_NOTE, ...subflow } : { receipt: named, note: REPAIR_UNHELD_NOTE, ...subflow }, calls };
 }
 
 /**
  * The subflow a repair repairs, as Core accepted it (header): the proposal the
  * failing subflow trial ran (`ran`) when the build holds it, else the latest
  * done return's proposal of the subflow, its parameters and plan with the
- * domain's `deniedKeys` withheld (header, t625). Undefined when no brief of it
- * came back done with one.
+ * domain's `deniedKeys` withheld (header, t625), and its calls as `{node,
+ * parameters}` screened the same way, for the opening call (t648) when the build
+ * holds it. Undefined when no brief of it came back done with one.
  */
-async function yourSubflow(dispatcher: AutomationStudioProjectDispatcherInput, brief: AutomationStudioProjectSubflowBrief, ran: ProposalRef | undefined, deniedKeys: readonly string[]): Promise<JsonObject | undefined> {
+async function yourSubflow(dispatcher: AutomationStudioProjectDispatcherInput, brief: AutomationStudioProjectSubflowBrief, ran: ProposalRef | undefined, deniedKeys: readonly string[]): Promise<{ shown: JsonObject; calls: JsonObject[] | undefined } | undefined> {
   const held = ACCEPTED.get(dispatcher);
   const ref = (ran && held?.find(ran) ? ran : undefined) ?? (await latestDone(dispatcher, brief));
   if (!ref) return undefined;
   const found = held?.find(ref);
-  if (!found) return { revision: ref.revision, digest: ref.digest, note: YOUR_SUBFLOW_UNHELD_NOTE };
+  if (!found) return { shown: { revision: ref.revision, digest: ref.digest, note: YOUR_SUBFLOW_UNHELD_NOTE }, calls: undefined };
   // A copy for the model, the domain's denied keys withheld; the proposal Core keeps is never touched (header).
   let withheld = 0;
   const shown = (value: JsonObject): JsonObject => {
@@ -329,7 +349,9 @@ async function yourSubflow(dispatcher: AutomationStudioProjectDispatcherInput, b
   };
   const steps = found.proposal.subflows.map((subflow) => ({ subflow: subflow.key, nodes: subflow.nodes.map((node) => ({ key: node.key, node: node.definitionId, ...(node.parameters ? { parameters: shown(node.parameters) } : {}) })) }));
   const text = found.script !== undefined ? { script: found.script } : found.plan !== undefined ? { plan: shown(found.plan) } : {};
-  return { revision: ref.revision, digest: ref.digest, ...text, steps, note: YOUR_SUBFLOW_NOTE, ...(withheld ? { withheld: AUTOMATION_STUDIO_LLM_DRAFT_WITHHELD_NOTE } : {}) };
+  // The opening call's copy is screened apart from the model's, so `withheld` counts only what the model is shown.
+  const calls = found.proposal.subflows.flatMap((subflow) => subflow.nodes.map((node): JsonObject => ({ node: node.definitionId, parameters: node.parameters ? automationStudioLlmValueWithoutDeniedKeys(structuredClone(node.parameters), deniedKeys).value : {} })));
+  return { shown: { revision: ref.revision, digest: ref.digest, ...text, steps, note: YOUR_SUBFLOW_NOTE, ...(withheld ? { withheld: AUTOMATION_STUDIO_LLM_DRAFT_WITHHELD_NOTE } : {}) }, calls };
 }
 
 /** The latest done return's proposal of `brief`'s subflow from an earlier brief, the plan in force first, as the build record names it. */
@@ -357,12 +379,16 @@ function acceptedOf(dispatcher: AutomationStudioProjectDispatcherInput): Automat
 
 type Execute = AutomationStudioLlmEvidenceLoopInput["executeTool"];
 
-/** `loop`, its opening look answered with `said` beside its evidence under `repairOf` (header). */
-function shownAtOpening<L extends { executeTool: Execute }>(loop: L, said: JsonObject): L {
+/**
+ * `loop`, its opening call carrying the repaired proposal's `calls` under
+ * `repairs` when there are any (t648), and its opening look answered with
+ * `said` beside its evidence under `repairOf` (header).
+ */
+function shownAtOpening<L extends { executeTool: Execute }>(loop: L, said: JsonObject, calls: readonly JsonObject[] | undefined): L {
   const inner = loop.executeTool;
   const executeTool: Execute = async (call) => {
-    const ran = await inner(call);
-    if (!isOpeningCall(call.callId)) return ran;
+    if (!isOpeningCall(call.callId)) return await inner(call);
+    const ran = await inner(calls?.length ? { ...call, value: { ...call.value, [REPAIRS_KEY]: structuredClone([...calls]) } } : call);
     if (isExecution(ran)) return { ...ran, evidence: isObject(ran.evidence) ? { ...ran.evidence, [REPAIR_KEY]: said } : { [REPAIR_KEY]: said, evidence: ran.evidence } };
     return isObject(ran) ? { ...ran, [REPAIR_KEY]: said } : { [REPAIR_KEY]: said, evidence: ran };
   };
