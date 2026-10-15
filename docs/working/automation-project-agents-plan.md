@@ -643,6 +643,14 @@ Earlier entries are in [the ledger archive](./automation-project-agents-plan/arc
 - Outcome: Accepted
 - Follow-up: four more files fail the same way under load (`project-build-facade`, `project-build-reset`, `project-build-trial-reset`, downstream `extension-chat`), held until wave 5 ends so loaded reproductions do not share the machine with live runs; `supervisor-time-limit.test.ts` could use the new clock
 
+### 2026-10-15 — After A8 wave 5: a rescued pass survives (t622); the judge settles text conditions (t624)
+- Agent: read-only debugs of the three wave 5 failures (downstream reports); workers t622-rescued-pass-survives-stall, t624-judge-settles-text-conditions; supervisor decided t622's two open questions and moved t624's judge sentence, verified and integrated
+- Changed: t622 every guard-forced end and the model's own honest ending complete on a standing rescued pass (only a person's cancel does not), a completion naming the passing revision and digest is read as one whatever else it carries, a repair builder is shown its subflow's accepted script and resolved steps (`dispatch/accepted-subflows.ts`); t624 `value-readings/settled-rows.ts` settles rows a text condition left out when Core read a failing value, `leftOutAlsoInResult` marks left-out rows whose item was kept, an advised exclusion matching an applied one is not unstated (t515), Core's own bracketed condition wording is not weighed as a judge's claim (t607), and the judge instruction says so (pins lines 9-10)
+- Why: wave 5 `project` social lost a passing Flow to a shape refusal and a guard stall; `project` towels stored the oracle's exact rows four times and was never confirmed
+- Validation: t622 after merging dev: tsc exit 0; project-agents, project-build, provider-unavailable modes -> 52 files, 363 passed (the stall replay fails 7 of 8 on the old loop); `pnpm check` -> passed; merged `a7527572`. t624 after merging dev: tsc exit 0; llm/deepseek (pins), diagnosis-channel, result-verification, candidate-trial, subflow-trial -> 113 files, 1031 passed (6 pins fail with the fixes disabled); `pnpm check` -> passed; merged `95cc9a7d`; both pushed
+- Outcome: Accepted
+- Follow-up: the model's honest-ending reason reaches the run's outcome but not the build record (needs a record decision kind); the judge guard test checks copies of the new phrases, not the instruction itself (the llm barrel does not export it)
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
