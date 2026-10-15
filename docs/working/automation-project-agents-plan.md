@@ -666,6 +666,14 @@ Earlier entries are in [the ledger archive](./automation-project-agents-plan/arc
 - Validation: t629 after merging dev: tsc exit 0; result-verification, candidate-trial, subflow-trial, flow-bootstrap/candidate, llm/deepseek -> 131 files, 1180 passed (no pin moved); `pnpm check` -> passed; merged `13985ebd`. t630 after merging dev: tsc exit 0; project-agents, project-build, candidate-failure, llm/deepseek -> 66 files, 509 passed (the end-to-end blocked-reason test fails with the producer unwired); `pnpm check` -> passed; merged `1ed24ec1`; both pushed
 - Outcome: Accepted
 
+### 2026-10-15 — After A8 wave 8: a no weighed by what it references (t631); re-tests and the loop's own tools (t632)
+- Agent: read-only debugs of wave 8 (downstream reports); workers t631-judge-no-names-rows (two rounds), t632-judge-upheld-exclusions-kept; supervisor asked t631 for the joint guard before merging, split t632's blocked part 1 into t633, verified and integrated
+- Changed: t631 `result-verification/refuted-no/`: a no is weighed first by the conditions its advice changes (`advice-condition.ts`: refuted when removing each re-admits no row the request could ask for; several conditions only when the counts show no row was left out by the set together) and by the rows it names (`row-reference-claim.ts`), with the t607/t629 wording patterns kept as the fallback; the judge instruction gains the converse filter sentence (pins lines 9-10); t632 after an unsure trial with retests left both gates say a re-test of the same revision is allowed and when it is the better move, and the unchanged-after-no refusal names the loop's own tools and the unsure revision still standing
+- Why: wave 8 towels: refuting by wording kept missing new phrasings (a recurring failure), the exact rows four times; a builder told to use `core.submit_candidate` inside a brief
+- Validation: t632 after merging dev: tsc exit 0; subflow-candidate, candidate, subflow-trial, candidate-trial, project-agents/dispatch -> 60 files, 454 passed; `pnpm check` -> passed; merged `775579e1`. t631 after merging dev (t632 in): tsc exit 0; result-verification, candidate-trial, subflow-trial, flow-bootstrap/candidate, subflow-candidate, llm/deepseek, diagnosis-channel -> 145 files, 1304 passed (the 4 joint-guard tests fail with the guard off); `pnpm check` -> passed; merged `5ddb6039`; both pushed
+- Outcome: Accepted
+- Follow-up: per-row "which conditions left this row out" is not sent by the domain, so a jointly excluded row cannot be weighed (multi-condition advice stands unless the counts rule it out); t633 holds an upheld exclusion across trials
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
