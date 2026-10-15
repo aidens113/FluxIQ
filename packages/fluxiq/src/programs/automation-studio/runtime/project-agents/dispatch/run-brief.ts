@@ -3,6 +3,7 @@ import { runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowProp
 import { automationStudioLlmBuildPurseScope, type AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
+import { AUTOMATION_STUDIO_LLM_DRAFT_WITHHELD_NOTE, automationStudioLlmValueWithoutDeniedKeys } from "../../llm/harness/index.ts";
 import { withAutomationStudioProjectAgent } from "../attribution/index.ts";
 import { automationStudioProjectSubflowBrief, type AutomationStudioProjectBuilderReturn, type AutomationStudioProjectFailingTrial, type AutomationStudioProjectReceiptRef, type AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
 import type { AutomationStudioHostLeaseScope, AutomationStudioHostResourceLease } from "../host-resources/index.ts";
@@ -73,6 +74,19 @@ import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectDispatc
 // record names it -- its script, its steps as Core resolved them (what each
 // handle stood for on the page its builder saw), and how to keep them. One the
 // build does not hold is named as such.
+//
+// **Its steps are shown with the domain's denied keys withheld (A8 wave 6,
+// t625).** A web click or read field resolves to `{selector, element:
+// {selector, ...}}`, and `selector` is a key the web domain denies, so every
+// repair's opening request was refused before its first turn
+// (`flow_bootstrap.request_refused_evidence_denied_key`, `run-mv9a48cs`). The
+// steps are the Flow's own authored parameters, not page payload, so they are
+// withheld the way the draft is (`llm/harness/draft-screen.ts`): the domain's
+// keys come with the brief's ports (`deniedEvidenceKeys`), each node's
+// parameters (and a plan the builder sent) go through the one walk, and
+// `withheld` says so wherever it removed anything. The proposal Core keeps is
+// untouched, so a step the repair leaves as it is keeps its locator. The
+// context packet's refusal stays as the guard for anything else.
 
 type Role = "builder" | "repair";
 
@@ -200,7 +214,7 @@ async function run(input: {
     const watched = held.watch(brief.briefId, observed);
     return ports.observe ? ports.observe(watched) : watched;
   };
-  const repair = await repairOf(dispatcher, brief);
+  const repair = await repairOf(dispatcher, brief, ports.deniedEvidenceKeys);
   const loop = repair ? shownAtOpening(ports.loop, repair) : ports.loop;
   const outcome = await untilEnded(signal, ports.ended, (stop) => runBuilder({
     loop: { ...loop, maxIterations: brief.maxIterations, signal: stop, purse: allowance },
@@ -267,14 +281,14 @@ function heard(spend: AutomationStudioProjectDispatchSpend, port: AutomationStud
 }
 
 /** What a repair brief's builder is shown of the trial it repairs and of the subflow it repairs (header); undefined for any other brief. */
-async function repairOf(dispatcher: AutomationStudioProjectDispatcherInput, brief: AutomationStudioProjectSubflowBrief): Promise<JsonObject | undefined> {
+async function repairOf(dispatcher: AutomationStudioProjectDispatcherInput, brief: AutomationStudioProjectSubflowBrief, deniedKeys: readonly string[]): Promise<JsonObject | undefined> {
   const receipt = brief.failingReceipt;
   if (brief.kind !== "repair" || !receipt) return undefined;
   const named: JsonObject = { kind: receipt.kind, receiptId: receipt.receiptId };
   const held = receipt.kind === "subflow_trial" ? TRIALS.get(dispatcher)?.get(receipt.receiptId) : undefined;
   const seen = held?.ref.digest === receipt.digest ? held : undefined;
   const trial = brief.failingTrial ?? seen?.trial;
-  const yours = await yourSubflow(dispatcher, brief, seen?.ran);
+  const yours = await yourSubflow(dispatcher, brief, seen?.ran, deniedKeys);
   const subflow = yours ? { yourSubflow: yours } : {};
   if (trial) return { receipt: named, ...structuredClone(trial), note: trial.verdict === "yes" ? REPAIR_RESCUED_NOTE : REPAIR_NOTE, ...subflow };
   return seen ? { receipt: named, verdict: "yes", note: REPAIR_PASSED_NOTE, ...subflow } : { receipt: named, note: REPAIR_UNHELD_NOTE, ...subflow };
@@ -283,18 +297,26 @@ async function repairOf(dispatcher: AutomationStudioProjectDispatcherInput, brie
 /**
  * The subflow a repair repairs, as Core accepted it (header): the proposal the
  * failing subflow trial ran (`ran`) when the build holds it, else the latest
- * done return's proposal of the subflow. Undefined when no brief of it came
- * back done with one.
+ * done return's proposal of the subflow, its parameters and plan with the
+ * domain's `deniedKeys` withheld (header, t625). Undefined when no brief of it
+ * came back done with one.
  */
-async function yourSubflow(dispatcher: AutomationStudioProjectDispatcherInput, brief: AutomationStudioProjectSubflowBrief, ran: ProposalRef | undefined): Promise<JsonObject | undefined> {
+async function yourSubflow(dispatcher: AutomationStudioProjectDispatcherInput, brief: AutomationStudioProjectSubflowBrief, ran: ProposalRef | undefined, deniedKeys: readonly string[]): Promise<JsonObject | undefined> {
   const held = ACCEPTED.get(dispatcher);
   const ref = (ran && held?.find(ran) ? ran : undefined) ?? (await latestDone(dispatcher, brief));
   if (!ref) return undefined;
   const found = held?.find(ref);
   if (!found) return { revision: ref.revision, digest: ref.digest, note: YOUR_SUBFLOW_UNHELD_NOTE };
-  const steps = found.proposal.subflows.map((subflow) => ({ subflow: subflow.key, nodes: subflow.nodes.map((node) => ({ key: node.key, node: node.definitionId, ...(node.parameters ? { parameters: structuredClone(node.parameters) } : {}) })) }));
-  const text = found.script !== undefined ? { script: found.script } : found.plan !== undefined ? { plan: structuredClone(found.plan) } : {};
-  return { revision: ref.revision, digest: ref.digest, ...text, steps, note: YOUR_SUBFLOW_NOTE };
+  // A copy for the model, the domain's denied keys withheld; the proposal Core keeps is never touched (header).
+  let withheld = 0;
+  const shown = (value: JsonObject): JsonObject => {
+    const screened = automationStudioLlmValueWithoutDeniedKeys(structuredClone(value), deniedKeys);
+    withheld += screened.withheld;
+    return screened.value;
+  };
+  const steps = found.proposal.subflows.map((subflow) => ({ subflow: subflow.key, nodes: subflow.nodes.map((node) => ({ key: node.key, node: node.definitionId, ...(node.parameters ? { parameters: shown(node.parameters) } : {}) })) }));
+  const text = found.script !== undefined ? { script: found.script } : found.plan !== undefined ? { plan: shown(found.plan) } : {};
+  return { revision: ref.revision, digest: ref.digest, ...text, steps, note: YOUR_SUBFLOW_NOTE, ...(withheld ? { withheld: AUTOMATION_STUDIO_LLM_DRAFT_WITHHELD_NOTE } : {}) };
 }
 
 /** The latest done return's proposal of `brief`'s subflow from an earlier brief, the plan in force first, as the build record names it. */

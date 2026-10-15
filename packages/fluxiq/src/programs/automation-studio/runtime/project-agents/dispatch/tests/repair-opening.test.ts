@@ -4,12 +4,14 @@
 // each explored from scratch and wrote the same steps again. The real builder
 // loop runs here on a scripted model: its first request's opening look now
 // carries `repairOf`, the trial the brief names, and since t622 the subflow
-// it repairs as Core accepted it (`yourSubflow`).
+// it repairs as Core accepted it (`yourSubflow`), and since t625 its steps with
+// the domain's denied keys withheld, packed through the real context packet.
 import { describe, expect, it } from "vitest";
-import type { JsonObject } from "../../../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, runAutomationStudioSubflowBuilderLoop } from "../../../flow-bootstrap/subflow-candidate/index.ts";
 import { OPEN, callPart, part, script, testSubmission } from "../../../flow-bootstrap/subflow-candidate/tests/subflow-fixture.ts";
-import type { AutomationStudioLlmEvidenceTool } from "../../../llm/evidence-loop.ts";
+import { buildAutomationStudioLlmEvidenceLoopDecisionSchema, type AutomationStudioLlmEvidenceTool } from "../../../llm/evidence-loop.ts";
+import { AUTOMATION_STUDIO_LLM_DRAFT_WITHHELD_NOTE, AutomationStudioLlmRequestRefusedError, packAutomationStudioLlmContext, screenAutomationStudioLlmEvidence, type AutomationStudioLlmHarnessInput } from "../../../llm/harness/index.ts";
 import type { AutomationStudioProjectSubflowBrief } from "../../contracts/index.ts";
 import { createAutomationStudioProjectDispatcher, type AutomationStudioProjectBuilderPorts } from "../index.ts";
 import { gardenBrief, gardenBuild, REF } from "./dispatch-fixture.ts";
@@ -33,7 +35,7 @@ const submitted = (evidence: readonly Entry[]) => {
 };
 
 /** A builder whose model submits, tests, then completes on a yes or ends blocked on anything else; every request's evidence is kept. */
-function scripted(verdict: "yes" | "no", firstSeen: Entry[][]) {
+function scripted(verdict: "yes" | "no", firstSeen: Entry[][], deniedEvidenceKeys: readonly string[] = []) {
   return (): AutomationStudioProjectBuilderPorts => {
     let step = 0;
     const steps = [
@@ -52,6 +54,7 @@ function scripted(verdict: "yes" | "no", firstSeen: Entry[][]) {
         decide: async ({ evidence }) => steps[step++]!(evidence)
       },
       submission: testSubmission(),
+      deniedEvidenceKeys,
       trial: async (request) => ({
         partial: true, scope: "subflow", identity: { ...request.proposal.scope }, revision: request.proposal.revision, digest: request.proposal.digest,
         verdict, feedback: verdict === "yes" ? {} : STOPPED, trialRunId: `run.${request.proposal.scope.briefId}`, entryPrepared: true
@@ -212,5 +215,71 @@ describe("a repair brief's builder", () => {
     expect(said).toMatchObject({ receipt: { kind: "subflow_trial", receiptId: "run.elsewhere" } });
     expect(said).not.toHaveProperty("verdict");
     expect(String(said.note)).toContain("is not held here");
+  });
+});
+
+// A8 wave 6 `run-mv9a48cs` (t625): `yourSubflow`'s steps are the parameters as
+// Core resolved them, and a web click resolves to `selector` -- a key the web
+// domain denies -- so every repair's opening request was refused before its
+// first turn (`flow_bootstrap.request_refused_evidence_denied_key`). The t622
+// cases above never went through the context packet, so they could not see it.
+describe("a repair brief's opening, shown the subflow it repairs (t625)", () => {
+  const WEB_DENIED_EVIDENCE_KEYS = ["html", "innerHtml", "outerHtml", "pageSource", "cookies", "headers", "selector"] as const;
+  /** The script's own locator for its press, as `part()` writes it. */
+  const LOCATOR = ".filter";
+
+  /** The repair's first request's evidence, after an earlier brief of the build came back done; `denied` is what the ports declare. */
+  async function repairFirstRequest(denied: readonly string[]): Promise<Entry[]> {
+    const firstSeen: Entry[][] = [];
+    const build = await gardenBuild({ capacity: 1, briefs: [gardenBrief("b-read", "list_seeds")], ports: { builder: scripted("yes", firstSeen, denied) } });
+    build.dispatcherInput.runBuilder = runAutomationStudioSubflowBuilderLoop;
+    expect((await build.run()).returns[0]).toMatchObject({ briefId: "b-read", outcome: "done" });
+    const fix = repair("b-fix", (value) => {
+      value.failingReceipt = { kind: "candidate_trial", receiptId: "run-10", digest: "a".repeat(64) };
+      value.failingTrial = { verdict: "no", said: { judge: "Not done." } };
+    });
+    await build.store.recordBrief(REF, fix);
+    await build.run([fix]);
+    return firstSeen[1]!;
+  }
+
+  /** The decision request the builder loop asks for with `evidence`, as `llm/harness/tests/draft-screen.test.ts` builds one. */
+  function decision(evidence: readonly Entry[]): AutomationStudioLlmHarnessInput {
+    const completionSchema = { type: "object" };
+    return {
+      taskKind: "evidence_tool_decision", projectId: "project.one", flowId: "flow.one", runId: "run.one", instructions: [],
+      deniedEvidenceKeys: WEB_DENIED_EVIDENCE_KEYS,
+      evidenceLoop: { iteration: evidence.length + 1, tools: [LOOK], evidence: evidence.map((entry) => ({ ...entry, value: entry.value as JsonValue })), decisionSchema: buildAutomationStudioLlmEvidenceLoopDecisionSchema([LOOK], completionSchema, true), completionSchema, canComplete: true }
+    };
+  }
+
+  it("carries the resolved steps' denied keys only when the ports declare none: the precondition of the defect", async () => {
+    const yours = (opening(await repairFirstRequest([]))?.repairOf as JsonObject).yourSubflow as JsonObject;
+    expect(screenAutomationStudioLlmEvidence(yours, ["selector"]).deniedKey).toBe(true);
+    expect(JSON.stringify(yours.steps)).toContain(LOCATOR);
+    expect(yours).not.toHaveProperty("withheld");
+  });
+
+  it("withholds the domain's denied keys from the steps it shows, and says so", async () => {
+    const shown = opening(await repairFirstRequest(WEB_DENIED_EVIDENCE_KEYS))?.repairOf as JsonObject;
+    expect(screenAutomationStudioLlmEvidence(shown, ["selector"]).deniedKey).toBe(false);
+    const yours = shown.yourSubflow as JsonObject;
+    expect(yours.withheld).toBe(AUTOMATION_STUDIO_LLM_DRAFT_WITHHELD_NOTE);
+    expect(JSON.stringify(yours.steps)).not.toContain(`"selector"`);
+    // What the repair needs to keep its steps is still there: the script it sent, and each step's node.
+    expect(yours.script).toBe(script([...OPEN, ...callPart(), ...part()]).flow);
+    expect((yours.steps as JsonObject[]).flatMap((entry) => (entry.nodes as JsonObject[]).map((node) => node.node))).toEqual(expect.arrayContaining(["web.output.dom-click"]));
+  });
+
+  it("is packed through the real context packet without refusal; unscreened, the same opening is refused as the runs were", async () => {
+    const packed = packAutomationStudioLlmContext(decision(await repairFirstRequest(WEB_DENIED_EVIDENCE_KEYS)));
+    const sent = packed.evidenceLoop!.evidence.find((entry) => entry.callId.startsWith("initial."))!.value as JsonObject;
+    expect((sent.repairOf as JsonObject).yourSubflow).toMatchObject({ withheld: AUTOMATION_STUDIO_LLM_DRAFT_WITHHELD_NOTE });
+
+    // The guard stays: the route t622 opened is caught at the packet, before any provider call.
+    let caught: unknown;
+    try { packAutomationStudioLlmContext(decision(await repairFirstRequest([]))); } catch (error) { caught = error; }
+    expect(caught).toBeInstanceOf(AutomationStudioLlmRequestRefusedError);
+    expect((caught as AutomationStudioLlmRequestRefusedError).code).toBe("llm.request.evidence_denied_key");
   });
 });

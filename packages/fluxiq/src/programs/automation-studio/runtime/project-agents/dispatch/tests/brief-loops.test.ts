@@ -33,6 +33,7 @@ describe("a dispatched brief's loop", () => {
         decide: async ({ evidence }) => steps[step++]!(evidence)
       },
       submission: testSubmission(),
+      deniedEvidenceKeys: [],
       trial: async (request) => {
         asked.push(request);
         return { partial: true, scope: "subflow", identity: { ...request.proposal.scope }, revision: request.proposal.revision, digest: request.proposal.digest, verdict: "yes", feedback: {}, trialRunId: "run.trial-1", entryPrepared: true };

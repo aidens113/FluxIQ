@@ -70,6 +70,7 @@ function scriptedBuilder(shown: Record<string, string>, budgets: Record<string, 
         }
       },
       submission: testSubmission(),
+      deniedEvidenceKeys: [],
       trial,
       observe: (loop: AutomationStudioLlmEvidenceLoopInput) => {
         // The brief opens the description of the submit tool's `flow` input (t584).

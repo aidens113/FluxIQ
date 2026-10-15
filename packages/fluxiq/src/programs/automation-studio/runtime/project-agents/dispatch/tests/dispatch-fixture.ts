@@ -167,7 +167,8 @@ export async function gardenBuild(options: { capacity: number; briefs: GardenBri
   };
   const builderPorts = (): AutomationStudioProjectBuilderPorts => ({
     loop: { tools: [], decide: async () => ({ kind: "complete", result: {} }), executeTool: async () => ({ ok: true }) },
-    submission: {} as unknown as AutomationStudioProjectBuilderPorts["submission"]
+    submission: {} as unknown as AutomationStudioProjectBuilderPorts["submission"],
+    deniedEvidenceKeys: []
   });
   const dispatcherInput: AutomationStudioProjectDispatcherInput = {
     record: { store, ref: REF },

@@ -124,4 +124,4 @@ export { runAutomationStudioLlmHarness } from "./run.ts";
 // Every guard that refuses to build a request, named, so a build that failed on
 // one says which (`request-refusal.ts`).
 export { AUTOMATION_STUDIO_LLM_REQUEST_REFUSAL_CODES, AutomationStudioLlmRequestRefusedError, type AutomationStudioLlmRequestRefusalCode } from "./request-refusal.ts";
-export { AUTOMATION_STUDIO_LLM_DRAFT_WITHHELD_NOTE, automationStudioLlmDraftEntryWithoutDeniedKeys } from "./draft-screen.ts";
+export { AUTOMATION_STUDIO_LLM_DRAFT_WITHHELD_NOTE, automationStudioLlmDraftEntryWithoutDeniedKeys, automationStudioLlmValueWithoutDeniedKeys } from "./draft-screen.ts";
