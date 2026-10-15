@@ -51,6 +51,17 @@
 // **And Core's short id (t599).** An id no row holds names the one label whose
 // Core id it is (`row-id.ts`): the judge's copy shows it before each left-out
 // row a judge must still name.
+//
+// **A left-out word belongs to the rows a condition left out (t628).** A8
+// bigbox `run-mv9a4aj0-f9a81d13` step 0086: a judge wrote that the stored rows
+// include a kept row of the wrong kind "and, on the read's own evidence, <two
+// rows> were seen and only excluded by rating". Both rows were ones that
+// condition alone left out; the word `excluded` was given to the kept row too,
+// and correct advice was called "not supported". In a sentence that names a row
+// a condition of the read left out, its left-out word belongs to the rows it
+// left out, and a stored row it names is called left out only where a left-out
+// word said of the run comes before it, as in "the condition excluded six
+// rows, including <a stored row>" (t474's origin, `run-muw60j7c-bb7c9a62`).
 
 import type { AutomationStudioRunResultSummary } from "../contracts.ts";
 import { AutomationStudioRequestRowId } from "./row-id.ts";
@@ -76,6 +87,9 @@ const ABBREVIATIONS = /\b(e\.g|i\.e|etc|vs|approx|incl)\./giu;
 /** A row the judgement named: its label, the ids it was named by, and whether a sentence naming it called it left out. */
 type Named = { label: string; ids: Set<string>; calledLeftOut: boolean };
 
+/** One mention of a row in a sentence: its label, the id it was named by, and where in the sentence it starts. */
+type Mention = { label: string; id?: string; at: number };
+
 /** Core's lines on the rows a judgement names; none when it names no row the run holds. */
 export function automationStudioResultCheckedRows(summary: AutomationStudioRunResultSummary, judgement: string): string[] {
   const { reads, stored } = automationStudioRequestRowsReads(summary);
@@ -91,8 +105,11 @@ export function automationStudioResultCheckedRows(summary: AutomationStudioRunRe
   // A label short of four words is not matched by prefix: too few words tell a row apart by chance.
   const prefixes = reads.flatMap((read) => read.labels.map((label) => ({ label, prefix: automationStudioRequestRowNaming(label, read.labels).prefix })))
     .filter((entry) => entry.prefix.length >= 4);
+  const conditioned = new Set(reads.flatMap((read) => read.conditions.flatMap((condition) => condition.labels)));
   for (const sentence of sentences(judgement)) {
-    const leftOut = saysLeftOut(sentence);
+    const leftOutAt = firstLeftOut(sentence);
+    const mentions: Mention[] = [];
+    const upper = sentence.toUpperCase();
     for (const id of automationStudioRequestRowIds(sentence)) {
       if (MEASURE.test(id) && !wholeCellOfOne(stored, id)) continue;
       const holders = new Set(stored.filter((row) => row.cells.some((cell) => cell.toUpperCase().includes(id))).map((row) => row.label));
@@ -100,9 +117,15 @@ export function automationStudioResultCheckedRows(summary: AutomationStudioRunRe
       // An id no row holds may be Core's own for one label (header).
       if (!holders.size) for (const label of everyLabel) if (AutomationStudioRequestRowId.of(label) === id) holders.add(label);
       // An id more than one row holds names none of them.
-      if (holders.size === 1) note([...holders][0]!, id, leftOut);
+      if (holders.size === 1) mentions.push({ label: [...holders][0]!, id, at: upper.indexOf(id) });
     }
-    for (const label of longestNamed(sentence, prefixes, stored)) note(label, undefined, leftOut);
+    mentions.push(...longestNamed(sentence, prefixes, stored));
+    // Where the sentence names a row a condition left out, its left-out word is that row's; a stored row's only where said before it (header, t628).
+    const namesConditioned = mentions.some((mention) => conditioned.has(mention.label));
+    for (const mention of mentions) {
+      const calledLeftOut = leftOutAt >= 0 && (!namesConditioned || conditioned.has(mention.label) || leftOutAt < mention.at);
+      note(mention.label, mention.id, calledLeftOut);
+    }
   }
   return lines([...named.values()], reads, new Set([...stored.map((row) => row.label), ...reads.flatMap((read) => read.inResult)]));
 }
@@ -138,13 +161,13 @@ function whereOf(read: AutomationStudioRequestRowsRead): string {
   return read.step !== undefined ? `Step ${read.step}` : `Read ${read.nodeId}`;
 }
 
-/** Whether a sentence says the run left something out: a left-out word not said of the request, nor as what should happen or did not. */
-function saysLeftOut(sentence: string): boolean {
+/** Where a sentence first says the run left something out: a left-out word not said of the request, nor as what should happen or did not; -1 where it never does. */
+function firstLeftOut(sentence: string): number {
   for (const match of sentence.matchAll(LEFT_OUT)) {
     const before = sentence.slice(0, match.index);
-    if (!ASKED_BY.test(before) && !NOT_DONE.test(before) && !NONE_DID.test(before)) return true;
+    if (!ASKED_BY.test(before) && !NOT_DONE.test(before) && !NONE_DID.test(before)) return match.index!;
   }
-  return false;
+  return -1;
 }
 
 /** Whether exactly one stored row has a cell that is this id and nothing else. */
@@ -153,12 +176,13 @@ function wholeCellOfOne(stored: readonly AutomationStudioRequestRowsStored[], id
 }
 
 /**
- * The labels a sentence names by prefix, each mention given to the longest
+ * The labels a sentence names by prefix, each with where its first mention
+ * starts (t628), each mention given to the longest
  * label it spells: a match that lies inside another label's longer match in
  * the same sentence is that label's, not its own. A mention of a stored row
  * whose written values its cells contradict names no row it holds (header, t489).
  */
-function longestNamed(sentence: string, prefixes: ReadonlyArray<{ label: string; prefix: readonly string[] }>, stored: readonly AutomationStudioRequestRowsStored[]): string[] {
+function longestNamed(sentence: string, prefixes: ReadonlyArray<{ label: string; prefix: readonly string[] }>, stored: readonly AutomationStudioRequestRowsStored[]): Mention[] {
   const words = automationStudioRequestRowWords(sentence).map((word) => word.word);
   const found: Array<{ label: string; start: number; end: number }> = [];
   for (const { label, prefix } of prefixes) {
@@ -169,7 +193,17 @@ function longestNamed(sentence: string, prefixes: ReadonlyArray<{ label: string;
   const matches = found.filter((match) => valuesAgree(sentence, words.length, match, found, stored));
   const inside = (match: { label: string; start: number; end: number }): boolean => matches.some((other) =>
     other.label !== match.label && other.start <= match.start && other.end >= match.end && other.end - other.start > match.end - match.start);
-  return [...new Set(matches.filter((match) => !inside(match)).map((match) => match.label))];
+  // Each mention's place in the sentence: its first word's, by the same runs of letters and digits the words are, apostrophes dropped
+  // (`words.ts`); where the runs do not line up, its end, so a left-out word in it is said before the mention, as before t628.
+  const kept: number[] = [];
+  for (let index = 0; index < sentence.length; index += 1) if (sentence[index] !== "'" && sentence[index] !== "’") kept.push(index);
+  const runs = [...sentence.replace(/['’]/gu, "").matchAll(/[\p{L}\p{N}]+/gu)];
+  const at = (start: number): number => runs.length === words.length ? kept[runs[start]!.index]! : sentence.length;
+  const mentions: Mention[] = [];
+  for (const match of matches.filter((one) => !inside(one)).sort((one, other) => one.start - other.start)) {
+    if (!mentions.some((mention) => mention.label === match.label)) mentions.push({ label: match.label, at: at(match.start) });
+  }
+  return mentions;
 }
 
 /**

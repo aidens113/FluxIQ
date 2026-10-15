@@ -33,6 +33,8 @@ export function automationStudioResultNoRecord(input: {
     pools,
     storedCount: tested ? tested.reduce((total, store) => total + store.answer.rows, 0) : summary.totalRecordCount,
     duplicatesRemoved: summary.recordSets.reduce((total, set) => total + (set.processing?.duplicates ?? 0), 0),
+    duplicatesCounted: summary.recordSets.length > 0 && summary.recordSets.every((set) => set.processing !== undefined)
+      && !(tested ?? []).some((store) => (store.removed?.duplicates ?? 0) > 0),
     nodeIds: summary.flowShape.map((step) => step.nodeId),
     ...(phrases ? { phrases, item: itemOf(storedLabels, phrases) } : {}),
     ...(input.wording ? { says: input.wording.says } : {}),

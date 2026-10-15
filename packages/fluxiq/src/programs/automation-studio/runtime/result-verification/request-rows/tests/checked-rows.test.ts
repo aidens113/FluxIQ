@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { AutomationStudioRunResultSummary } from "../../contracts.ts";
 import { automationStudioResultCheckedRows, automationStudioResultCheckedRowsNamed } from "../index.ts";
 import { RUN_MUW60J7C_PAIRS_LEFT_OUT, RUN_MUW60J7C_RESULT_JUDGE, runMuw60j7cRunSummary, runMuw60j7cTestSummary } from "./run-muw60j7c.ts";
+import { SOIL_BIN, SOIL_CONDITIONS, SOIL_SCOOP, SOIL_SIEVE, soilRunSummary } from "./potting-soil-fixture.ts";
 
 const judged = (): string => {
   const { summary, diagnosis } = RUN_MUW60J7C_RESULT_JUDGE;
@@ -190,5 +191,37 @@ describe("a row named by its title beside values its stored cells do not hold", 
   it("reads each mention's values up to the next row it names", () => {
     const lines = misread(`The run left out ${TITLE} at $42.00 and Northpine Pocket Torch, Aluminium at $18.00.`);
     expect(lines).toHaveLength(2);
+  });
+});
+
+// A8 bigbox `run-mv9a4aj0-f9a81d13` step 0086 (t628): a judge named a stored row
+// of the wrong kind and then two rows "seen and only excluded by rating"; the
+// left-out word was given to the stored row too, and correct advice was called
+// "not supported". On another kind of site (`potting-soil-fixture.ts`).
+describe("a left-out word in a sentence that names rows a condition left out (t628)", () => {
+  const RATING = `the condition 2 (${SOIL_CONDITIONS.rating})`;
+
+  it("belongs to the rows that condition left out, and calls no stored row named before it misread", () => {
+    const sentence = `However, the stored rows include items that are not bags of potting soil: "${SOIL_SCOOP.name}" (a scoop) and, on the read's own evidence, "${SOIL_SIEVE}" and "${SOIL_BIN}" were seen and only excluded by rating, not by kind.`;
+    const checked = automationStudioResultCheckedRows(soilRunSummary(), sentence);
+    expect(checked.join("\n")).not.toContain("misread");
+    const rating = checked.find((line) => line.includes(RATING));
+    expect(rating).toContain(SOIL_SIEVE);
+    expect(rating).toContain(SOIL_BIN);
+    expect(rating).not.toContain(SOIL_SCOOP.name);
+  });
+
+  it("still calls a stored row misread where the left-out word is said before it, as t474's origin did", () => {
+    const sentence = `The rating condition alone excluded rows the request asks for, including ${SOIL_SIEVE} and ${SOIL_SCOOP.name}.`;
+    const checked = automationStudioResultCheckedRows(soilRunSummary(), sentence);
+    expect(checked.filter((line) => line.includes("misread"))).toEqual([
+      `${SOIL_SCOOP.name} is in the result, although the check calls it left out: the check misread which rows were left out; advice resting on that reading is not supported.`
+    ]);
+    expect(checked.find((line) => line.includes(RATING))).toContain(SOIL_SIEVE);
+  });
+
+  it("still calls a stored row misread in a sentence that names no row a condition left out", () => {
+    const checked = automationStudioResultCheckedRows(soilRunSummary(), `"${SOIL_SCOOP.name}" was dropped by the read.`);
+    expect(checked.join("\n")).toContain(`${SOIL_SCOOP.name} is in the result, although the check calls it left out`);
   });
 });

@@ -723,13 +723,13 @@ export type AutomationStudioResultVerification = {
   /** On an `unsure` a model gave, what it doubted, screened as a refutation's is: what an unsure beside a yes is weighed by (`./agreement.ts`, t503). Never a repair. */
   unsureReading?: NonNullable<AutomationStudioResultRepairDirective["judgement"]>;
   /**
-   * On an unsure beside a yes, the unsure call (1 or 2) whose doubt speaks of
-   * pages left unread where every paging read's record says its list ended,
-   * and Core's words naming that record: that call is asked once more with the
-   * record named (`reasked` once it was), and the agreement rule stands
-   * (`./agreement.ts`, t503, `run-mv6lgqi6-4bfab2e1`).
+   * On an unsure beside a yes or a no, the unsure call (1 or 2) whose doubt the
+   * record contradicts -- pages left unread where every paging read says its list
+   * ended (t503), or rows merged where the dedupe removed none (`about: "dedupe"`,
+   * `./refuted-no/dedupe-doubt.ts`, t628) -- and Core's words naming that record:
+   * asked once more with it named (`reasked` once it was); the rule stands (`./agreement.ts`).
    */
-  contradictedUnsure?: { call: 1 | 2; record: string; reasked?: true };
+  contradictedUnsure?: { call: 1 | 2; record: string; about?: "dedupe"; reasked?: true };
   /** The calls whose no Core's record wholly refutes, and Core's findings (`./refuted-no/`, t607): each asked once more (`reasked`); a no still refuted is unsure. */
   refutedNo?: { calls: Array<1 | 2>; findings: string[]; reasked?: true };
   /**

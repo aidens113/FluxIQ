@@ -30,6 +30,13 @@ export type AutomationStudioResultNoRecord = {
   storedCount: number;
   /** The rows the answer's own dedupe removed as repeating an earlier one, over every record set. */
   duplicatesRemoved: number;
+  /**
+   * True when every record set counted its repeats (`processing`) and no
+   * build-test store says its answer removed one: `duplicatesRemoved` is then
+   * the whole count, which a doubt about merged rows is weighed against
+   * (`./dedupe-doubt.ts`, t628).
+   */
+  duplicatesCounted: boolean;
   /** Every step's node id, as the Flow names it. */
   nodeIds: string[];
   /** The request's phrases (`../request-rows/request-phrases.ts`), where the request was given. */

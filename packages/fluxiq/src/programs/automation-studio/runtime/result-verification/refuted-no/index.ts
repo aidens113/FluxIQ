@@ -9,9 +9,11 @@
 // sentence read without Core's own wording of the conditions it names
 // (`condition-wording.ts`, t624); and the one re-ask of a wholly refuted no
 // (`reask.ts`, `recheck-words.ts`), after which a no still refuted is unsure,
-// never a no and never a yes Core made.
+// never a no and never a yes Core made. And an unsure call's doubt that the
+// answer's dedupe merged rows, held to the same record (`dedupe-doubt.ts`, t628).
 export * from "./condition-wording.ts";
 export * from "./count-claim.ts";
+export * from "./dedupe-doubt.ts";
 export * from "./duplicate-claim.ts";
 export * from "./excluded-kind-claim.ts";
 export * from "./missing-claim.ts";
