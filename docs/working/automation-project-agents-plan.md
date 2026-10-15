@@ -651,6 +651,14 @@ Earlier entries are in [the ledger archive](./automation-project-agents-plan/arc
 - Outcome: Accepted
 - Follow-up: the model's honest-ending reason reaches the run's outcome but not the build record (needs a record decision kind); the judge guard test checks copies of the new phrases, not the instruction itself (the llm barrel does not export it)
 
+### 2026-10-15 — After A8 wave 6: repairs start again (t625), a brief's share can grow (t627), the judge weighs kinds and splits (t628)
+- Agent: read-only debugs of wave 6 (downstream reports); workers t625-repair-context-withholds-denied-keys, t627-allowance-top-up-from-purse (two rounds), t628-judge-kind-exclusions-and-splits; supervisor gave t627 the dispatch sizing, resolved one header conflict, verified and integrated
+- Changed: t625 a repair's `yourSubflow` maps each node's parameters through one denied-key walk split out of `llm/harness/draft-screen.ts`, the builder ports carry the domain's denied keys (a t622 regression had every repair refused before its first turn); t627 the allowance book grants a bounded top-up from the purse's unreserved remainder when a brief's next call does not fit (never the judging reserve, the finishing calls or another open allowance), a brief waiting on a predecessor is sized when it starts, each return names its grants; t628 an exclusion whose words are a stored row's own label is not an unstated exclusion and the recheck lets a row be answered no by the request's words for what it asks for, an unsure-and-no split labels the refuted reading and marks a contradicted dedupe doubt, `checked-rows.ts` no longer calls a stored row misread beside left-out rows
+- Why: wave 6: every repair refused (`request_refused_evidence_denied_key`, three runs); everything-store's first builder stopped with $0.018 left while the purse held $0.184; towels' correct no turned into a yes by t515's re-ask
+- Validation: t625 after merging dev: tsc exit 0; project-agents, llm/harness, project-build -> 97 files, 710 passed (2 new tests fail with the fix off); `pnpm check` -> passed; merged `00ca7e70`. t627 after merging dev (t625 conflict in a header comment, both kept): tsc exit 0; build-purse, project-agents, project-build, candidate-purse tests, llm/harness -> 131 files, 999 passed; `pnpm check` -> passed; merged `eb79ffd3`. t628 after merging dev: tsc exit 0; result-verification, candidate-trial, subflow-trial, llm/deepseek, diagnosis-channel -> 113 files, 1045 passed (new tests fail on the old files); `pnpm check` -> passed; merged `48b45401`; all pushed
+- Outcome: Accepted
+- Follow-up: a brief waiting only for a host lease is still carved at its dispatch-time size; grants are in the return's reason text, not a structured field; order claims against page order (t628 R4) not done
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
