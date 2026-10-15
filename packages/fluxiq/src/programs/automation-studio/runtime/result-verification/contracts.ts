@@ -743,8 +743,8 @@ export type AutomationStudioResultVerification = {
    * `observation`, which are said in the chat. Absent when nothing failed.
    */
   failureCode?: string;
-  /** Core's bounded missing-proof lines for a yes lacking row-local exclusion evidence. Not a refutation or permission to promote; never recorded on a run. */
-  exclusionEvidenceMissing?: string[];
+  /** Core's bounded missing-proof lines for a yes lacking row-local exclusion evidence. Not a refutation or permission to promote; never recorded on a run. */ exclusionEvidenceMissing?: string[];
+  /** Beside it, set exactly when every call asked answered a plain yes (none no, none unsure, none unanswered) and Core held that yes for the exclusion evidence it lacked (`./verdict.ts`, `./agreement.ts`, t611): what a build reads, never the reason's words. Never a yes or permission to promote. */ yesUnconfirmed?: true;
 };
 
 /**

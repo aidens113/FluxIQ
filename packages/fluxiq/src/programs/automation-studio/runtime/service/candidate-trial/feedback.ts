@@ -106,6 +106,14 @@
 // the feedback says once (`pagingNote`), and a split's note again, that this
 // record stands against a reading about pages. The judges' own copy is
 // result-verification's and is unchanged.
+//
+// **A yes Core held is carried as a fact (t611).** A `not_judged` whose every
+// judge call answered yes, Core holding that yes for the exclusion evidence it
+// lacked, carries `yesUnconfirmed: true` beside `why`
+// (`AutomationStudioBuildTestVerdict`). The subflow trial gate reads it to tell
+// a builder not to rewrite what the judges accepted
+// (`../../flow-bootstrap/subflow-candidate/subflow-trial-gate.ts`); before, it
+// matched the words of `why`. Every other `not_judged` is as it was.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../../../model/index.ts";
@@ -201,7 +209,8 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
         ...(doubt ? { doubtContradicted: doubt } : {}),
         ...(split ? { answeredReading: compact({ ...judged.answeredReading }), readings: (judged.unconfirmedReading ? SPLIT_NOTE : UNREAD_SPLIT_NOTE) + (paged ? PAGING_SPLIT_NOTE : "") + (doubt ? DOUBT_NOTE : "") } : doubt ? { readings: DOUBT_ALONE_NOTE } : {}) } };
     }
-    return { verdict: "not_judged", code: "candidate.trial_not_judged", feedback: { ...common, code: "candidate.trial_not_judged", why: judged.why } };
+    // A not_judged whose every judge call answered yes, Core holding the yes, says so as a field a gate reads (header, t611).
+    return { verdict: "not_judged", code: "candidate.trial_not_judged", feedback: { ...common, code: "candidate.trial_not_judged", why: judged.why, ...(judged.yesUnconfirmed ? { yesUnconfirmed: true } : {}) } };
   }
 });
 

@@ -103,3 +103,61 @@ describe("a brief's return reason", () => {
     expect(ending.thrown(brief, new Error("The page closed."), false, spend).reason).toBe("The builder failed: The page closed.");
   });
 });
+
+// A8 social `run-mv8ic6mk-09bf12ff` (t611): a builder whose latest proposal had passed its trial was refused the shape of
+// its completion until its loop stopped, and came back partial, so the supervisor amended a subflow that had passed. A
+// standing yes is Core's receipt: the brief is done however its loop stopped, and a return that is not done says a yes.
+describe("a brief whose latest proposal has a standing yes", () => {
+  const yes = trial("yes", true, {});
+  const receipts = { allowance: undefined, trials: [{ kind: "subflow_trial" as const, receiptId: "receipt.b-read.1", digest: "e".repeat(64) }] };
+  const DONE = "Revision 2 of the subflow was tried on its own and its trial answered yes. The brief is done on that trial's receipt, though the builder did not complete with it.";
+
+  it("is done with its receipt when the builder was stopped by ending-shape refusals", () => {
+    const refusedShape = { decision: "complete", resultCode: "subflow.ending_shape" };
+    const returned = ending.built(brief, outcome({ code: "llm_evidence_loop.repeat_without_progress", failed: { exhaustion: { lastIssueCodes: ["subflow.ending_shape"] }, trace: [refusedShape, refusedShape] }, trial: yes, lastTrial: yes }), receipts);
+    expect(returned).toMatchObject({ outcome: "done", proposal: { subflowKey: "list_seeds", revision: 2, digest: proposal.digest }, trials: receipts.trials });
+    expect(returned.reason).toBe(`${DONE} The builder stopped before completing (llm_evidence_loop.repeat_without_progress). It was stopped by subflow.ending_shape. The calls it stopped on, latest first: complete answered subflow.ending_shape (2 in a row).`);
+  });
+
+  it("is done with its receipt when the builder ran out of turns or of allowance", () => {
+    const limit = ending.built(brief, outcome({ code: "llm_evidence_loop.iteration_limit", trial: yes, lastTrial: yes }), receipts);
+    expect(limit).toMatchObject({ outcome: "done", proposal: { revision: 2, digest: proposal.digest }, trials: receipts.trials });
+    expect(limit.reason).toBe(`${DONE} The builder stopped before completing (llm_evidence_loop.iteration_limit).`);
+  });
+
+  it("is done when the builder ended it honestly, and a clean receipt reads as it did", () => {
+    const ended = ending.built(brief, outcome({ result: { ended: "partial", reason: "Unsure it is right." }, ended: { outcome: "partial", reason: "Unsure it is right." }, trial: yes, lastTrial: yes }), spend);
+    expect(ended).toMatchObject({ outcome: "done", reason: `${DONE} The builder then ended it partial: Unsure it is right.` });
+    expect(ending.built(brief, outcome({ result: {}, trial: yes, lastTrial: yes }), spend).reason).toBe("Revision 2 of the subflow was tried on its own and its trial answered yes.");
+  });
+
+  it("is not done for a yes whose entry was not prepared, or a yes of another proposal", () => {
+    const unprepared = trial("yes", false, { code: "subflow.trial_predecessor_missing", missing: ["sign_in"] });
+    expect(ending.built(brief, outcome({ code: "llm_evidence_loop.iteration_limit", trial: unprepared, lastTrial: unprepared }), spend).outcome).toBe("partial");
+    const other = { ...yes, digest: "f".repeat(64) };
+    expect(ending.built(brief, outcome({ code: "llm_evidence_loop.iteration_limit", trial: other }), spend).outcome).toBe("partial");
+  });
+
+  it("is done on a throw by the same check, and a throw with no such yes says its failure first as before", () => {
+    const failure = new AutomationStudioFlowBootstrapGenerationError({
+      code: "flow_bootstrap.evidence_repeat_without_progress", stage: "provider_output_validation", retryable: false, providerInvocation: "attempted", providerResponse: "received",
+      issueCodes: ["llm_evidence_loop.repeat_refused"]
+    });
+    const thrownDone = ending.thrown(brief, failure, false, { ...receipts, accepted: proposal, trial: yes });
+    expect(thrownDone).toMatchObject({ outcome: "done", proposal: { subflowKey: "list_seeds", revision: 2, digest: proposal.digest }, trials: receipts.trials });
+    expect(thrownDone.reason).toBe(`${DONE} The builder failed: Flow Bootstrap generation failed (flow_bootstrap.evidence_repeat_without_progress). It was stopped by llm_evidence_loop.repeat_refused.`);
+    // No yes, a yes of another brief, or a yes whose entry was not prepared: today's return.
+    for (const trialOf of [undefined, trial("unsure", true, {}), { ...yes, identity: { ...yes.identity, briefId: "b-other" } }, trial("yes", false, {})]) {
+      const returned = ending.thrown(brief, failure, false, { ...receipts, accepted: proposal, trial: trialOf });
+      expect(returned).toMatchObject({ outcome: "partial", proposal: { revision: 2 } });
+      expect(returned.reason).toBe("The builder failed: Flow Bootstrap generation failed (flow_bootstrap.evidence_repeat_without_progress). It was stopped by llm_evidence_loop.repeat_refused.");
+    }
+  });
+
+  it("says a last yes of a revision the builder then replaced, where the return once said nothing", () => {
+    const older = { ...yes, revision: 1, digest: "a".repeat(64) };
+    const returned = ending.built(brief, outcome({ code: "llm_evidence_loop.iteration_limit", trial: undefined, lastTrial: older }), spend);
+    expect(returned.outcome).toBe("partial");
+    expect(returned.reason).toBe("The builder stopped before completing (llm_evidence_loop.iteration_limit). Its last trial, of revision 1, answered yes, but revision 2 was submitted after it and was never tried.");
+  });
+});

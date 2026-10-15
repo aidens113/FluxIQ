@@ -151,18 +151,10 @@ describe("the subflow trial gate", () => {
     expect(none.completion(proposal)).toEqual({ ok: true });
   });
   // A8 launch 8 (t601): every judge answered yes, Core held the yes for its exclusion evidence, and "change and resubmit it if the feedback
-  // names a cause" had the builder rewrite a correct subflow seven times.
+  // names a cause" had the builder rewrite a correct subflow seven times. The hold is read from the feedback's field, never its words (t611).
   it("says a not_judged its judges answered yes to as a yes Core could not confirm, and asks for no rewrite", async () => {
-    // The reasons Core's result verification gives that hold, word for word (`result-verification/agreement.ts`, `verdict.ts`): its barrel does not export the agreement.
-    const reasons = [
-      "The checks did not provide the required exclusion evidence, so the result remains unconfirmed.",
-      "The affirmative judgement did not supply the required row-local exclusion evidence, so the result remains unconfirmed."
-    ];
-    for (const why of reasons) {
-      const held = gateWith(async (request) => answer(request, { verdict: "not_judged", feedback: { code: "candidate.trial_not_judged", why } }));
-      expect(((await held.test(receipt)).evidence as JsonObject).instruction).toContain("The judges answered yes for this revision");
-    }
-    const gate = gateWith(async (request) => answer(request, { verdict: "not_judged", feedback: { code: "candidate.trial_not_judged", why: reasons[0]! } }));
+    const why = "The checks did not provide the required exclusion evidence, so the result remains unconfirmed.";
+    const gate = gateWith(async (request) => answer(request, { verdict: "not_judged", feedback: { code: "candidate.trial_not_judged", why, yesUnconfirmed: true } }));
     const ran = await gate.test(receipt);
     const told = (ran.evidence as JsonObject).instruction as string;
     expect(told).toContain("The judges answered yes for this revision and none answered no, but Core could not confirm that yes");
@@ -171,8 +163,26 @@ describe("the subflow trial gate", () => {
     expect(ran.resultReason).toBe("retry_allowed");
     // The completion's refusal says the same.
     expect(gate.completion(proposal)).toMatchObject({ ok: false, issueCodes: ["subflow.trial_not_judged"], feedback: { instruction: told } });
-    // Any other not_judged is said as before.
-    const other = gateWith(async (request) => answer(request, { verdict: "not_judged", feedback: { code: "candidate.trial_not_judged", why: "The judge did not answer inside its deadline, so the test was not judged." } }));
-    expect(((await other.test(receipt)).evidence as JsonObject).instruction).toBe("The trial was not judged, so this revision cannot complete. Test it again, or change and resubmit it if the feedback names a cause in the subflow.");
+    // The field alone carries it, whatever the reason's words.
+    const reworded = gateWith(async (request) => answer(request, { verdict: "not_judged", feedback: { code: "candidate.trial_not_judged", why: "Held.", yesUnconfirmed: true } }));
+    expect(((await reworded.test(receipt)).evidence as JsonObject).instruction).toBe(told);
+  });
+
+  it("says a not_judged whose reason names exclusion evidence without the field as any other not_judged (t611)", async () => {
+    const plain = "The trial was not judged, so this revision cannot complete. Test it again, or change and resubmit it if the feedback names a cause in the subflow.";
+    // Both of Core's held-yes reasons, word for word, and a deadline's: none carries yesUnconfirmed, so none is said as a yes.
+    const reasons = [
+      "The checks did not provide the required exclusion evidence, so the result remains unconfirmed.",
+      "The affirmative judgement did not supply the required row-local exclusion evidence, so the result remains unconfirmed.",
+      "The judge did not answer inside its deadline, so the test was not judged."
+    ];
+    for (const why of reasons) {
+      const gate = gateWith(async (request) => answer(request, { verdict: "not_judged", feedback: { code: "candidate.trial_not_judged", why } }));
+      expect(((await gate.test(receipt)).evidence as JsonObject).instruction).toBe(plain);
+      expect(gate.completion(proposal)).toMatchObject({ ok: false, issueCodes: ["subflow.trial_not_judged"], feedback: { instruction: plain } });
+    }
+    // A field on any other verdict changes nothing.
+    const unsure = gateWith(async (request) => answer(request, { verdict: "unsure", feedback: { code: "candidate.trial_unconfirmed", yesUnconfirmed: true } }));
+    expect(((await unsure.test(receipt)).evidence as JsonObject).instruction).toBe("The judge could not confirm this subflow did what its parts ask, so this revision cannot complete. Correct the subflow and submit it, or test this revision again if the feedback says nothing about the subflow itself.");
   });
 });

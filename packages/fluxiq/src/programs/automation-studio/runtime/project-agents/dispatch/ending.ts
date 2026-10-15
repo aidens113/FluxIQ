@@ -31,6 +31,20 @@ import type { AutomationStudioProjectBuilderReturn, AutomationStudioProjectRecei
 // sentence (t584), the guard's codes, and the calls it stopped on, each by its
 // tool, node and result code and reason, a run of the same answer counted.
 // Codes and ids only: nothing the model wrote.
+//
+// **A standing yes is done, however the loop stopped (t611).** A8 social
+// `run-mv8ic6mk-09bf12ff`: a builder whose latest proposal's trial answered
+// yes sent a receipt with an ending beside it, was refused the shape until its
+// loop stopped, and came back `partial`; the supervisor amended a subflow that
+// had passed. The trial's receipt is Core's evidence, not the builder's words:
+// whenever the latest proposal has a standing yes with its entry prepared,
+// the return is `done` with that proposal and its receipts, and its reason says
+// how the builder stopped after it. And a return that is not done says when its
+// last trial was a yes -- of a revision the builder then replaced -- where it
+// once said nothing. A builder whose loop threw is held to the same check
+// (`passedProposal`), against the latest proposal Core accepted and the last
+// trial its port answered (`spend.trial`, kept by `./run-brief.ts`): done on a
+// yes of exactly that proposal, today's return otherwise.
 
 /** What a return's reason may hold (`contracts/builder-return.ts`). */
 const MAX_REASON = 2000;
@@ -51,6 +65,8 @@ export type AutomationStudioProjectDispatchSpend = {
   trials: readonly AutomationStudioProjectReceiptRef[];
   /** The latest proposal Core accepted, for a builder whose loop then threw. */
   accepted?: Readonly<AutomationStudioSubflowProposal> | undefined;
+  /** The last subflow trial the brief's port answered, for a builder whose loop then threw: a yes of `accepted` is done (header, t611). */
+  trial?: Readonly<AutomationStudioSubflowTrialResult> | undefined;
 };
 
 export const automationStudioProjectDispatchEnding = Object.freeze({
@@ -61,8 +77,15 @@ export const automationStudioProjectDispatchEnding = Object.freeze({
 
   /** A builder loop that returned. */
   built(brief: AutomationStudioProjectSubflowBrief, outcome: AutomationStudioSubflowBuilderOutcome, spend: AutomationStudioProjectDispatchSpend): AutomationStudioProjectBuilderReturn {
+    // A standing yes for the latest proposal is done, however the loop stopped (header, t611).
+    const passed = passedProposal(outcome.proposal, outcome.trial);
+    if (passed) {
+      if (outcome.loop.ok && !outcome.ended) return returned(brief, "done", passedSaid(passed), spend, passed);
+      const after = outcome.loop.ok ? `The builder then ended it ${outcome.ended!.outcome}: ${clipped(outcome.ended!.reason, MAX_ENDING_WORDS)}` : stopReason(outcome.loop, spend.allowance);
+      return passedDone(brief, passed, after, spend);
+    }
     const proposal = outcome.proposal ?? spend.accepted;
-    const lastTrial = trialSaid(outcome.lastTrial ?? outcome.trial);
+    const lastTrial = trialSaid(outcome.lastTrial ?? outcome.trial, proposal);
     if (outcome.loop.ok && outcome.ended) {
       // The builder's own ending; `partial` only while a proposal stands (header).
       const as = outcome.ended.outcome === "partial" && proposal ? "partial" : "blocked";
@@ -88,6 +111,9 @@ export const automationStudioProjectDispatchEnding = Object.freeze({
       : refusal
         ? `This brief's allowance could not pay for its next call (${refusal.code}).`
         : `The builder failed: ${errorWords(error)}${thrownEnding(error)}`;
+    // A standing yes for the latest accepted proposal is done, the throw said after it (header, t611): the same check as a returned loop's.
+    const passed = passedProposal(spend.accepted, spend.trial);
+    if (passed) return passedDone(brief, passed, why, spend);
     return returned(brief, spend.accepted ? "partial" : "blocked", why, spend, spend.accepted);
   },
 
@@ -176,12 +202,42 @@ function callSaid(row: AnsweredCall): string {
 }
 
 /**
- * What the last trial answered, as a sentence after a return's reason, or
- * nothing when no trial ran or it answered yes (header). Page and judge text is
- * quoted short; codes are said as they are.
+ * The one check every ending asks (header, t611): `proposal` -- the latest --
+ * when `trial` is a partial yes about it, its entry prepared, for its own
+ * brief, plan and subflow and that exact revision and digest; undefined
+ * otherwise. A returned loop gives the gate's standing verdict, a thrown one
+ * the last trial its port answered.
  */
-function trialSaid(trial: AutomationStudioSubflowTrialResult | undefined): string {
-  if (!trial || (trial.verdict === "yes" && trial.entryPrepared)) return "";
+function passedProposal(proposal: Readonly<AutomationStudioSubflowProposal> | undefined, trial: Readonly<AutomationStudioSubflowTrialResult> | undefined): Readonly<AutomationStudioSubflowProposal> | undefined {
+  if (!proposal || !trial || trial.partial !== true || trial.verdict !== "yes" || trial.entryPrepared !== true) return undefined;
+  const said = trial.identity;
+  const scope = proposal.scope;
+  const same = said?.buildId === scope.buildId && said.briefId === scope.briefId && said.planDigest === scope.planDigest && said.subflowKey === scope.subflowKey;
+  return same && trial.revision === proposal.revision && trial.digest === proposal.digest ? proposal : undefined;
+}
+
+/** What a passing brief says of its yes. */
+function passedSaid(passed: Readonly<AutomationStudioSubflowProposal>): string {
+  return `Revision ${passed.revision} of the subflow was tried on its own and its trial answered yes.`;
+}
+
+/** A brief done on its standing yes though the builder did not complete with it, `after` saying how it stopped. */
+function passedDone(brief: AutomationStudioProjectSubflowBrief, passed: Readonly<AutomationStudioSubflowProposal>, after: string, spend: AutomationStudioProjectDispatchSpend): AutomationStudioProjectBuilderReturn {
+  return returned(brief, "done", `${passedSaid(passed)} The brief is done on that trial's receipt, though the builder did not complete with it. ${after}`, spend, passed);
+}
+
+/**
+ * What the last trial answered, as a sentence after a return's reason, or
+ * nothing when no trial ran (header). A yes is said too, with the revision
+ * submitted after it where there is one (t611). Page and judge text is quoted
+ * short; codes are said as they are.
+ */
+function trialSaid(trial: AutomationStudioSubflowTrialResult | undefined, latest?: Readonly<AutomationStudioSubflowProposal>): string {
+  if (!trial) return "";
+  if (trial.verdict === "yes" && trial.entryPrepared) {
+    const after = latest && (latest.revision !== trial.revision || latest.digest !== trial.digest) ? `, but revision ${latest.revision} was submitted after it and was never tried` : "";
+    return ` Its last trial, of revision ${trial.revision}, answered yes${after}.`;
+  }
   const feedback = trial.feedback;
   const code = text(feedback.code);
   const head = ` Its last trial, of revision ${trial.revision}, answered ${trial.verdict}${code ? ` (${code})` : ""}`;

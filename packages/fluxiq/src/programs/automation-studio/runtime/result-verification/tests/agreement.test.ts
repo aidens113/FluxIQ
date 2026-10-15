@@ -3,6 +3,7 @@ import { automationStudioResultVerificationFailsRun, type AutomationStudioResult
 import { automationStudioResultVerificationAgreement, automationStudioResultVerificationAskAgain } from "../agreement.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict } from "../verdict.ts";
 import { automationStudioResultVerificationStatus } from "../verification-status.ts";
+import { REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS, requestWordsRunSummary, requestWordsWording } from "../request-rows/tests/request-words-fixture.ts";
 
 // What two checks of one result come to. Any answer the model gave other than
 // `yes` is asked again; only two agreeing `no`s fail the run. On 2026-09-18 the
@@ -309,5 +310,56 @@ describe("a yes that says the Flow needs a change (t515)", () => {
   it("leaves a build test's two yeses a yes, its advice unconfirmed as before", () => {
     const outcome = automationStudioResultVerificationAgreement({ first: yesAdvising(true), second: yesAdvising(false), confirmAnswer: true });
     expect(outcome).toMatchObject({ verdict: "answers", verdicts: ["answers", "answers"], calls: 2 });
+  });
+});
+
+// A yes Core held for its exclusion evidence is said as a field (t611). A8 launch 8 (everything-store): every judge
+// answered yes, Core held each yes, and the subflow trial gate could tell only by matching "exclusion evidence" in the
+// reason's words (t601). `yesUnconfirmed` is set where every call answered yes, and only there.
+const STOCK_SAID = `Copper Garden Tools Pair is left out, as the request says "leaving out out-of-stock items".`;
+
+/** A yes over a row a condition alone left out, whose reason is only the words the request searched by: Core holds it. */
+const heldYes = (): AutomationStudioResultVerification => automationStudioResultVerdict({
+  summary: requestWordsRunSummary(),
+  diagnosis: { answersRequest: "yes", observed: `${STOCK_SAID} Replacement Handle for Garden Tools is left out: it is a part, and the request asks for "garden tools".` },
+  basis: "model",
+  wording: requestWordsWording()
+});
+/** A yes Core takes: each left-out row beside the request's own excluding words. */
+const takenYes = (): AutomationStudioResultVerification => automationStudioResultVerdict({
+  summary: requestWordsRunSummary(),
+  diagnosis: { answersRequest: "yes", observed: `${STOCK_SAID} Replacement Handle for Garden Tools is left out, as the request says "replacement parts".` },
+  basis: "model",
+  wording: requestWordsWording(REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS)
+});
+const unsureCall = (): AutomationStudioResultVerification => automationStudioResultVerdict({ summary: requestWordsRunSummary(), diagnosis: { answersRequest: "unknown" }, basis: "model" });
+const unansweredCall = (): AutomationStudioResultVerification => automationStudioResultVerdict({ summary: requestWordsRunSummary(), basis: "model_unavailable", failureCode: "llm.provider_timeout" });
+
+describe("a yes Core held for its exclusion evidence (t611)", () => {
+  it("is marked on the one call Core held, and never on a yes it took", () => {
+    const held = heldYes();
+    expect(held).toMatchObject({ verdict: "unsure", code: "core.result.exclusion_evidence_missing", yesUnconfirmed: true });
+    expect(takenYes()).toMatchObject({ verdict: "answers" });
+    expect(takenYes()).not.toHaveProperty("yesUnconfirmed");
+    expect(unsureCall()).not.toHaveProperty("yesUnconfirmed");
+  });
+
+  it("is marked on the agreement where both calls answered yes, one or both held", () => {
+    for (const [first, second] of [[heldYes(), heldYes()], [heldYes(), takenYes()], [takenYes(), heldYes()]] as const) {
+      const agreed = automationStudioResultVerificationAgreement({ first, second, confirmAnswer: true });
+      expect(agreed).toMatchObject({ verdict: "unsure", basis: "model_unconfirmed", code: "core.result.exclusion_evidence_missing", calls: 2, yesUnconfirmed: true });
+    }
+  });
+
+  it("is absent where the other call could not tell or did not answer: only one judge said yes", () => {
+    for (const second of [unsureCall(), unansweredCall()]) {
+      const agreed = automationStudioResultVerificationAgreement({ first: heldYes(), second, confirmAnswer: true });
+      expect(agreed).toMatchObject({ verdict: "unsure", code: "core.result.exclusion_evidence_missing" });
+      expect(agreed).not.toHaveProperty("yesUnconfirmed");
+    }
+  });
+
+  it("is kept when the held call is the only one asked", () => {
+    expect(automationStudioResultVerificationAgreement({ first: heldYes() })).toMatchObject({ verdict: "unsure", yesUnconfirmed: true, calls: 1 });
   });
 });

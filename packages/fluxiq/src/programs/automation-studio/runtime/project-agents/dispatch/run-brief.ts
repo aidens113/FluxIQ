@@ -54,6 +54,12 @@ import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectDispatc
 // step record, and what the Flow needs there. Its builder is shown them with
 // how to add the pace and the dismiss-wait-and-return branch, rather than
 // told the trial passed and nothing failed.
+//
+// **A throw after a standing yes is done (t611).** The last trial the brief's
+// port answered is kept on its spend (`heard`) beside the latest proposal Core
+// accepted, so a builder whose loop throws is held to the check a returned
+// loop is (`./ending.ts`): done on a yes of exactly that proposal, its entry
+// prepared; otherwise the return it always had, its failure said first.
 
 type Role = "builder" | "repair";
 
@@ -172,7 +178,7 @@ async function run(input: {
     scope: mapped.scope,
     siblings: mapped.siblings,
     submission: { ...ports.submission, signal: stop },
-    ...(ports.trial ? { trial: { port: kept(ports.trial, remembered(dispatcher, receipts, receipts.wrap(ports.trial))), ...(ports.reset ? { reset: ports.reset } : {}) } } : {}),
+    ...(ports.trial ? { trial: { port: kept(ports.trial, heard(spend, remembered(dispatcher, receipts, receipts.wrap(ports.trial)))), ...(ports.reset ? { reset: ports.reset } : {}) } } : {}),
     ...(callScope !== undefined ? { callScope } : {}),
     ...(ports.observe ? { observe: ports.observe } : {}),
     accepted
@@ -218,6 +224,15 @@ function remembered(dispatcher: AutomationStudioProjectDispatcherInput, receipts
       held.set(ref.receiptId, { ref, trial: automationStudioProjectSubflowBrief.failingTrial(result) });
       while (held.size > MAX_TRIALS_KEPT) held.delete(held.keys().next().value!);
     }
+    return result;
+  };
+}
+
+/** `port`, keeping the last trial it answered on the brief's spend, for a builder whose loop then throws (header, t611). */
+function heard(spend: AutomationStudioProjectDispatchSpend, port: AutomationStudioSubflowTrialPort): AutomationStudioSubflowTrialPort {
+  return async (request) => {
+    const result = await port(request);
+    spend.trial = structuredClone(result);
     return result;
   };
 }

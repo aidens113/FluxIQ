@@ -178,7 +178,8 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
         schemaVersion: "automation-studio.result-verification.v1", verdict: "unsure", basis: "model_unconfirmed",
         code: "core.result.exclusion_evidence_missing",
         reason: "The affirmative judgement did not supply the required row-local exclusion evidence, so the result remains unconfirmed.",
-        observation, exclusionEvidenceMissing: proof.checked ?? []
+        // The call answered yes and Core held it: said as a field, never left to the reason's words (t611).
+        observation, exclusionEvidenceMissing: proof.checked ?? [], yesUnconfirmed: true
       };
     }
     if (unaccounted.length || keptNumber.length || unquoted.length) {
