@@ -690,6 +690,14 @@ Earlier entries are in [the ledger archive](./automation-project-agents-plan/arc
 - Outcome: Accepted
 - Follow-up: the fallback lives in memory only (a restarted supervisor has none); a taken yes that advised a change keeps no advice text
 
+### 2026-10-15 — After A8 wave 10: plan parts disjoint (t638); an output must read a declared port (t639)
+- Agent: read-only debug of wave 10 crossborder (downstream report); workers t638-plan-parts-disjoint, t639-output-port-must-exist (three rounds); supervisor gave t639 the route-port case and the issue words the merge surfaced, verified and integrated
+- Changed: t638 `project.quote_overlaps` (parts whose quotes overlap) and `project.plan_part_carried_twice` (a part in more than one subflow, router alternatives and recovery excepted), `project.brief_repeated` refuses only the repeated brief, the words after a reset no longer ask to test a Flow that is not there, a prepared entry lists the predecessors' landed acts; t639 one reader of an interface output's port (`flow-bootstrap/candidate/interface-output-port.ts`), `subflow.output_unknown_port`, `candidate.part_output_unknown_port`, `candidate.part_output_not_a_value`, all with words in `plan/issue-feedback.ts`
+- Why: wave 10 `project` crossborder: an overlapping first plan, an output on an undeclared port, then builders forced onto an empty value
+- Validation: t639 after merging dev: tsc exit 0; flow-bootstrap, project-agents, project-build, subflow-trial -> 227 files, 2578 passed, 2 skipped (the merge first surfaced `issue-feedback-words.test.ts`, fixed); `pnpm check` -> passed; merged `3ec89240`. t638 after merging dev (t639 in): tsc exit 0; project-agents, project-build, flow-bootstrap, subflow-trial -> 228 files, 2586 passed, 2 skipped; `pnpm check` -> passed; merged `a7cec5ac`; both pushed
+- Outcome: Accepted
+- Follow-up: the reset words cannot tell a reset sent for a held ending (needs a flag in `completion.ts`/`state.ts`); a navigate refusal names the parameter, not its binding (Core resolves bindings before the domain sees them)
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
