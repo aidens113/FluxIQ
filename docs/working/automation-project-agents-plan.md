@@ -698,6 +698,14 @@ Earlier entries are in [the ledger archive](./automation-project-agents-plan/arc
 - Outcome: Accepted
 - Follow-up: the reset words cannot tell a reset sent for a held ending (needs a flag in `completion.ts`/`state.ts`); a navigate refusal names the parameter, not its binding (Core resolves bindings before the domain sees them)
 
+### 2026-10-15 — After A8 frozen pair 2: the ladder marks an optional step's way on (t643)
+- Agent: supervisor (the Core half of downstream t643, whose worker had matched the ladder's label text), verified and integrated
+- Changed: `executor/recovery-ladder.ts` sets `optionalStepWayOn: true` on the candidate that goes on past an optional step; `executor/contracts.ts` `AutomationStudioRecoveryCandidate` carries it; the run detail passes it through `recoverySelected`; the downstream Lab reads the mark, never the label
+- Why: frozen pair 2 `project` bigbox cart: the product succeeded and the oracle passed, but the Lab read the optional step Core went past as the run's failure; a reader must tell the Flow's own way on from a failed route by structure, not display text
+- Validation: after merging dev: tsc exit 0; vitest executor -> 101 files, 875 passed; the new ladder test fails without the mark; `pnpm check` -> passed; merged `cb0d5989`
+- Outcome: Accepted
+- Follow-up: in a unit test, a dispatcher answer `failed` with no `outputs` and no failure `stage` left the attempt `succeeded` and the ladder unconsulted; with `outputs: {}` and `stage: "dispatch"` it fails as expected (to confirm which field decides, and whether a real host can answer that way)
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
