@@ -605,6 +605,13 @@ Entries from 2026-10-13 to A8 wave 4 (t550-t611) are archived in
 - Validation: after merging dev (t645-t648 in): tsc exit 0; activity, service/project-build, conversations/commands, flow-bootstrap/generation-failure, project-agents -> 124 files, 1273 passed; audit passed; `pnpm check` -> passed; merged `eca33297`; paired with downstream (an older Core's strict parser would drop a diagnostic carrying `endedBecause`)
 - Outcome: Accepted
 
+### 2026-10-15 — After A8 frozen pair 4 wave 22: a refusal that invites its resend admits it once (t650)
+- Agent: read-only debug of wave 22 `candidate` towels (downstream report `a8-towels-run-mva446jf-debug.md`); worker t650-invited-resend-admitted-once; supervisor checked the mark is read only from Core's own answer, verified and integrated
+- Changed: `flow-bootstrap/candidate/submission.ts` `keptConditionRefusal` marks `diagnostics.resend: "accepted_once"`; `llm/repeat-guard/resend-admission.ts` (new) and `outcomes.ts`: the first refusal so marked records no failure under its key, so the identical resend runs once and reaches the controller; a second refusal there, and any unmarked refusal, is guarded as before; the subflow path gets the mark through the same feedback
+- Why: wave 22 `candidate` towels: t641's refusal invited the same change sent again, and the repeat guard refused that resend unrun three times, ending the build
+- Validation: after merging dev: tsc exit 0; llm, flow-bootstrap/candidate, flow-bootstrap/subflow-candidate, candidate-trial, subflow-trial -> 268 files, 2440 passed (both loop replays and three guard cases fail on HEAD's outcomes.ts); audit passed; `pnpm check` -> passed; merged `1e1a10af`
+- Outcome: Accepted
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
