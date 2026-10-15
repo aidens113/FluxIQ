@@ -71,6 +71,21 @@
 // told the Flow relies on the run's own recovery and why (`./completion.ts`),
 // and the outcome carries it (`reliesOnRecovery`).
 //
+// **Every guard-forced end keeps that pass (A8 social `run-mv96rz6h`, t622).**
+// The supervisor's repair of a rescued pass came back short, its completions
+// were refused on their shape until the repeat guard stalled the loop, and a
+// stall was not one of the shortfalls above, so the build ended with no Flow
+// although its latest whole test had passed. A repair that fails never loses a
+// passing Flow: every end a guard forced -- money, time, turns, a stall the
+// loop threw, any other loop that stopped short, a provider that stopped
+// answering -- completes on a standing rescued pass the same way, with its own
+// reason (`stalled`, `provider`). A stall on a question put to the person
+// (`permission_required`, `user_intervention_required`) counts too: the person
+// declining a later step is not the person cancelling the build, and the pass
+// was already made under what they permitted. A model's honest ending while
+// the pass stands completes on it as well (`./completion.ts`, `ended`). Only
+// the person's cancel does not.
+//
 // **A provider that stopped answering is not asked to reset (t621).** A8
 // canary `run-mv8zw5l2-98064abf`: the model provider answered none of the
 // supervisor's decisions, and the loop ended
@@ -100,7 +115,7 @@ import { automationStudioProjectSupervisorPlanning } from "./planning.ts";
 import type { AutomationStudioProjectSupervisorPorts } from "./ports.ts";
 import { automationStudioProjectSupervisorReadTask } from "./read-task.ts";
 import { automationStudioProjectSupervisorHostTools } from "./role-tools.ts";
-import { AutomationStudioProjectSupervisorState, type AutomationStudioProjectSupervisorReliesOnRecovery } from "./state.ts";
+import { AutomationStudioProjectSupervisorState, type AutomationStudioProjectSupervisorRecoveryShortfall, type AutomationStudioProjectSupervisorReliesOnRecovery } from "./state.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "./tool-ids.ts";
 import { automationStudioProjectSupervisorTools } from "./tools.ts";
 import { AutomationStudioProjectSupervisorWholeTrial } from "./whole-trial.ts";
@@ -256,11 +271,11 @@ async function supervise(input: SupervisorInput, clock: Clock): Promise<Automati
     ...(status === "candidate" && state.reliesOnRecovery ? { reliesOnRecovery: structuredClone(state.reliesOnRecovery) } : {}), promotionAllowed: false
   });
   if (loop?.ok && !ended) return done("candidate");
-  // A pass the run rescued still stands when the build's money, time or turns ran out before its repair (header, t603).
-  const shortfall = outOfMoney ? "money" : timedOut ? "time" : loop && !loop.ok && loop.code === "llm_evidence_loop.iteration_limit" ? "turns" : undefined;
+  // A pass the run rescued still stands when any guard ended the build before its repair; never on the person's cancel (header, t603, t622).
+  const shortfall = recoveryShortfall({ outOfMoney, timedOut, stalled: stalled !== undefined, loop });
   if (shortfall && !signal?.aborted && automationStudioProjectSupervisorReliesOnRecovery(context, shortfall)) return done("candidate");
   const stoppedBy = loop && !loop.ok ? loop.code : stalled ? stalled.issueCodes[0] ?? "stalled" : undefined;
-  const cancelled = !timedOut && (signal?.aborted === true || stoppedBy === "llm_evidence_loop.cancelled");
+  const cancelled = !timedOut && (signal?.aborted === true || stoppedBy === CANCELLED);
   // The provider stopped answering (header, t621): said as that, and no reset is asked of it.
   const unanswered = !timedOut && !cancelled && loop && !loop.ok && loop.code === PROVIDER_STOPPED ? loop : undefined;
   const finished: AutomationStudioProjectSupervisorEnded | { outcome: "cancelled" | "partial" | "blocked"; reason: string } = outOfMoney
@@ -282,6 +297,25 @@ async function supervise(input: SupervisorInput, clock: Clock): Promise<Automati
   const recorded = await ports.record.end(ports.build, named);
   if (stalled) throw stalled.error;
   return done("ended", recorded);
+}
+
+/** The loop codes that are no guard's: the person's cancel, which never completes on a rescued pass (header). */
+const CANCELLED = "llm_evidence_loop.cancelled";
+const TURNS = "llm_evidence_loop.iteration_limit";
+
+/**
+ * Why a guard ended the loop before a rescued pass's repair was made (header,
+ * t622): the purse, the time limit, the turns, the provider, or any other
+ * stop a guard forced (`stalled`). Undefined when the loop completed or the
+ * model ended it, or the person cancelled it.
+ */
+function recoveryShortfall(ended: { outOfMoney: boolean; timedOut: boolean; stalled: boolean; loop: AutomationStudioLlmEvidenceLoopResult | undefined }): AutomationStudioProjectSupervisorRecoveryShortfall | undefined {
+  if (ended.outOfMoney) return "money";
+  if (ended.timedOut) return "time";
+  if (ended.stalled) return "stalled";
+  const { loop } = ended;
+  if (!loop || loop.ok || loop.code === CANCELLED) return undefined;
+  return loop.code === TURNS ? "turns" : loop.code === PROVIDER_STOPPED ? "provider" : "stalled";
 }
 
 /** The loop code a model provider that stopped answering ends with (`../../llm/unanswered-calls.ts`). */

@@ -3,14 +3,15 @@
 // requests held no receipt, no failure and no word of what had gone wrong, so
 // each explored from scratch and wrote the same steps again. The real builder
 // loop runs here on a scripted model: its first request's opening look now
-// carries `repairOf`, the trial the brief names.
+// carries `repairOf`, the trial the brief names, and since t622 the subflow
+// it repairs as Core accepted it (`yourSubflow`).
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, runAutomationStudioSubflowBuilderLoop } from "../../../flow-bootstrap/subflow-candidate/index.ts";
 import { OPEN, callPart, part, script, testSubmission } from "../../../flow-bootstrap/subflow-candidate/tests/subflow-fixture.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../../../llm/evidence-loop.ts";
 import type { AutomationStudioProjectSubflowBrief } from "../../contracts/index.ts";
-import type { AutomationStudioProjectBuilderPorts } from "../index.ts";
+import { createAutomationStudioProjectDispatcher, type AutomationStudioProjectBuilderPorts } from "../index.ts";
 import { gardenBrief, gardenBuild, REF } from "./dispatch-fixture.ts";
 
 type Entry = { callId: string; toolId: string; value: unknown };
@@ -137,6 +138,68 @@ describe("a repair brief's builder", () => {
     // Model guidance never teaches to the test: the note names no realistic scenario's site or task.
     expect(note.match(/store|shop|marketplace|retail|classified|auction|photo|social|network|feed|company|website|professional|product|seller|listing|follow|like\b|post\b|profile|resume|vacanc|apply/iu)?.[0]).toBeUndefined();
     expect(note.match(/friend|cart\b|basket|bid\b|watchlist|coupon|connection|invitation|job|quote|rate limit|digest|quantity|rating/iu)?.[0]).toBeUndefined();
+  });
+
+  // A8 social `run-mv96rz6h` (t622): the repair of a passing subflow was told to keep every other step, saw a blank Flow and rewrote it from nothing.
+  it("is shown the subflow it repairs as Core accepted it: the latest done proposal's script and its resolved steps (t622)", async () => {
+    const firstSeen: Entry[][] = [];
+    const build = await gardenBuild({ capacity: 1, briefs: [gardenBrief("b-read", "list_seeds")], ports: { builder: scripted("yes", firstSeen) } });
+    build.dispatcherInput.runBuilder = runAutomationStudioSubflowBuilderLoop;
+    const first = (await build.run()).returns[0]!;
+    expect(first).toMatchObject({ briefId: "b-read", outcome: "done", proposal: { subflowKey: "list_seeds" } });
+    expect(opening(firstSeen[0]!)).not.toHaveProperty("repairOf");
+
+    const fix = repair("b-paced", (value) => {
+      value.failingReceipt = { kind: "candidate_trial", receiptId: "run-9", digest: "a".repeat(64) };
+      value.failingTrial = { verdict: "yes", interruptions: [{ step: 2, label: "press the filter", needs: { paceAtLeastMs: 3000 } }], said: { judge: "Judged to do what was asked." } };
+    });
+    await build.store.recordBrief(REF, fix);
+    await build.run([fix]);
+    const yours = (opening(firstSeen[1]!)?.repairOf as JsonObject).yourSubflow as JsonObject;
+    expect(yours).toMatchObject({ revision: first.proposal!.revision, digest: first.proposal!.digest, script: script([...OPEN, ...callPart(), ...part()]).flow });
+    const steps = yours.steps as JsonObject[];
+    expect(steps.map((entry) => entry.subflow)).toContain("list_seeds");
+    expect(steps.flatMap((entry) => (entry.nodes as JsonObject[]).map((node) => node.node))).toEqual(expect.arrayContaining(["web.output.browser-navigate", "web.output.dom-click"]));
+    const note = String(yours.note);
+    for (const words of ["script", "steps", "handle", "keep every other step as it is"]) expect(note).toContain(words);
+    // Model guidance never teaches to the test.
+    expect(note.match(/store|shop|marketplace|retail|classified|auction|photo|social|network|feed|company|website|professional|product|seller|listing|follow|like\b|post\b|profile|resume|vacanc|apply/iu)?.[0]).toBeUndefined();
+    expect(note.match(/friend|cart\b|basket|bid\b|watchlist|coupon|connection|invitation|job|quote|rate limit|digest|quantity|rating/iu)?.[0]).toBeUndefined();
+  });
+
+  it("is shown the proposal a failing subflow trial ran, even when that brief came back without a done return (t622)", async () => {
+    const firstSeen: Entry[][] = [];
+    let verdict: "yes" | "no" = "no";
+    const build = await gardenBuild({ capacity: 1, briefs: [gardenBrief("b-read", "list_seeds")], ports: { builder: () => scripted(verdict, firstSeen)() } });
+    build.dispatcherInput.runBuilder = runAutomationStudioSubflowBuilderLoop;
+    const first = (await build.run()).returns[0]!;
+    expect(first).toMatchObject({ outcome: "blocked" });
+    const { kind, receiptId, digest } = first.trials[0]!;
+    const fix = repair("b-fix", (value) => (value.failingReceipt = { kind, receiptId, digest }));
+    await build.store.recordBrief(REF, fix);
+    verdict = "yes";
+    await build.run([fix]);
+    const yours = (opening(firstSeen[1]!)?.repairOf as JsonObject).yourSubflow as JsonObject;
+    expect(yours).toMatchObject({ revision: 1, script: script([...OPEN, ...callPart(), ...part()]).flow });
+  });
+
+  it("is told plainly when the subflow it repairs is not held here (t622)", async () => {
+    const firstSeen: Entry[][] = [];
+    const build = await gardenBuild({ capacity: 1, briefs: [gardenBrief("b-read", "list_seeds")], ports: { builder: scripted("yes", firstSeen) } });
+    build.dispatcherInput.runBuilder = runAutomationStudioSubflowBuilderLoop;
+    const first = (await build.run()).returns[0]!;
+    const fix = repair("b-fix", (value) => {
+      value.failingReceipt = { kind: "candidate_trial", receiptId: "run-9", digest: "a".repeat(64) };
+      value.failingTrial = { verdict: "no", said: { judge: "Not done." } };
+    });
+    await build.store.recordBrief(REF, fix);
+    // A dispatcher made again for the same build holds none of the proposals the first one's builders had accepted.
+    const again = createAutomationStudioProjectDispatcher({ ...build.dispatcherInput });
+    await build.cancellation.run(REF.projectId, REF.flowId, async () => {
+      await again({ briefs: [fix], signal: new AbortController().signal });
+    });
+    const yours = (opening(firstSeen.at(-1)!)?.repairOf as JsonObject).yourSubflow as JsonObject;
+    expect(yours).toEqual({ revision: first.proposal!.revision, digest: first.proposal!.digest, note: expect.stringContaining("not held here") });
   });
 
   it("is told plainly when the trial its brief names is not held, never shown a failure it cannot see", async () => {

@@ -33,11 +33,22 @@ export type AutomationStudioProjectSupervisorUnchangedRepair = { briefId: string
  */
 export type AutomationStudioProjectSupervisorRescuedTest = { key: string; revision: number; digest: string; receipt: AutomationStudioProjectReceiptRef; unanswered: JsonObject[] };
 
-/** Why a rescued test's repair could not be made (below): it came back without the change, or the build's money, time or turns ran out first. */
-export type AutomationStudioProjectSupervisorRecoveryShortfall = "short" | "money" | "time" | "turns";
+/**
+ * Why a rescued test's repair could not be made (below): it came back without
+ * the change, or the build's money, time or turns ran out first, or a guard
+ * stopped the supervisor's loop (`stalled`: a stall, a run of unusable or
+ * unprogressing decisions) or its model provider stopped answering
+ * (`provider`) before it completed (`./supervisor-loop.ts`, t622), or the
+ * model gave an honest ending while the pass stood (`ended`, `./completion.ts`).
+ */
+export type AutomationStudioProjectSupervisorRecoveryShortfall = "short" | "money" | "time" | "turns" | "stalled" | "provider" | "ended";
 
 /** What the person is told when the supervisor completes on a rescued test (t603, below). */
-export type AutomationStudioProjectSupervisorReliesOnRecovery = { revision: number; digest: string; receiptId: string; why: AutomationStudioProjectSupervisorRecoveryShortfall; steps: JsonObject[]; told: string };
+export type AutomationStudioProjectSupervisorReliesOnRecovery = {
+  revision: number; digest: string; receiptId: string; why: AutomationStudioProjectSupervisorRecoveryShortfall; steps: JsonObject[]; told: string;
+  /** `ended` only: the honest ending the model gave, its own words kept beside what the person is told (t622). */
+  endedWith?: { outcome: "blocked" | "partial"; reason: string };
+};
 
 /** The trial gate's refusal of a yes whose Flow does not answer what the site asked the run to do (`flow-bootstrap/candidate/trial-gate.ts`). */
 const SLOW_DOWN_UNHANDLED = "candidate.trial_slow_down_unhandled";
@@ -47,7 +58,10 @@ const SHORTFALL_WORDS: Readonly<Record<AutomationStudioProjectSupervisorRecovery
   short: "A repair to add that came back without it.",
   money: "The build's spending limit could not pay for a repair to add that.",
   time: "The build reached its time limit before a repair to add that was made.",
-  turns: "The build ran out of turns before a repair to add that was made."
+  turns: "The build ran out of turns before a repair to add that was made.",
+  stalled: "The build stopped making progress before it could add that.",
+  provider: "The AI model provider stopped answering before the build could add that.",
+  ended: "The supervisor ended the build before a repair to add that was made."
 });
 
 /** A plan as the supervisor takes it into force: what `project.write_plan` and `project.amend_plan` read. */
@@ -260,11 +274,13 @@ export class AutomationStudioProjectSupervisorState {
   }
 
   /** Completes on `test`, which the build could not repair for `why` (header): what the person is told, kept for the run's outcome. */
-  relyOnRecovery(test: AutomationStudioProjectSupervisorRescuedTest, why: AutomationStudioProjectSupervisorRecoveryShortfall): AutomationStudioProjectSupervisorReliesOnRecovery {
+  relyOnRecovery(test: AutomationStudioProjectSupervisorRescuedTest, why: AutomationStudioProjectSupervisorRecoveryShortfall, endedWith?: { outcome: "blocked" | "partial"; reason: string }): AutomationStudioProjectSupervisorReliesOnRecovery {
     const at = test.unanswered.map((entry) => `${typeof entry.step === "number" ? `step ${entry.step}` : "a step"}${typeof entry.label === "string" ? ` (${JSON.stringify(entry.label)})` : ""}`);
     const where = at.length > 1 ? `${at.slice(0, -1).join(", ")} and ${at.at(-1)}` : at[0]!;
-    const told = `The Flow passed its whole test, but the site asked the run to slow down at ${where}, and the Flow does not answer that itself: it relies on the run's own recovery, which waits, tries the step again and closes the site's notice. ${SHORTFALL_WORDS[why]}`;
-    this.reliesOnRecovery = { revision: test.revision, digest: test.digest, receiptId: test.receipt.receiptId, why, steps: structuredClone(test.unanswered), told };
+    // A repair that already came back without the change is said too, before what then stopped the build (t622).
+    const short = why !== "short" && this.recoveryRepairsShort.has(test.key) ? `${SHORTFALL_WORDS.short} ` : "";
+    const told = `The Flow passed its whole test, but the site asked the run to slow down at ${where}, and the Flow does not answer that itself: it relies on the run's own recovery, which waits, tries the step again and closes the site's notice. ${short}${SHORTFALL_WORDS[why]}`;
+    this.reliesOnRecovery = { revision: test.revision, digest: test.digest, receiptId: test.receipt.receiptId, why, steps: structuredClone(test.unanswered), told, ...(endedWith ? { endedWith: { ...endedWith } } : {}) };
     return structuredClone(this.reliesOnRecovery);
   }
 
