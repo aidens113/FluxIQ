@@ -7,15 +7,16 @@
 // clock, and the person is told the time limit, what was tested and what is
 // left, in Core's words.
 //
-// **The bound runs on a clock the test holds (t615).** On the real clock both
-// tests failed under load (a vitest run over project-agents, service/project-build
-// and flow-bootstrap/subflow-candidate together): the work deadline fired while
-// the builder was still trying its subflow, so the part read "never tested" or
-// the assembled candidate was never tested whole. The supervisor's two time
-// signals (`startClock` in `project-agents/supervisor/supervisor-loop.ts`) are
-// now held by the test and reach their deadline only when the scripted
-// supervisor is waiting on the decision that outlives the bound; every other
-// timer stays on the real clock.
+// **The bound runs on a clock the test holds (t615, t616).** On the real clock
+// both tests failed under load (a vitest run over project-agents,
+// service/project-build and flow-bootstrap/subflow-candidate together): the work
+// deadline fired while the builder was still trying its subflow, so the part
+// read "never tested" or the assembled candidate was never tested whole. The
+// build passes the supervisor's clock through (`../run.ts`,
+// `project-agents/supervisor/supervisor-loop.ts`); the test hands its own clock in place of
+// the real one, so the deadline is reached only when the scripted supervisor is
+// waiting on the decision that outlives the bound. Every other timer stays on
+// the real clock.
 
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -30,16 +31,20 @@ import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/s
 
 // The build's bound, shortened: its work stops 6 seconds after the supervisor starts, on the test's clock.
 vi.mock("../../../loop-limits/index.ts", async (original) => ({ ...(await original<object>()), AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS: 8_000, AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_MS: 2_000 }));
+// The clock the build passes to its supervisor, held by the test (header).
+const buildClock = vi.hoisted(() => heldClock());
+vi.mock("../../../project-agents/index.ts", async (original) => ({ ...(await original<object>()), AUTOMATION_STUDIO_PROJECT_SUPERVISOR_REAL_CLOCK: buildClock.clock }));
 
-vi.setConfig({ testTimeout: 60_000 });
+// A hang guard only: loaded runs took up to 61 s against 1.5 s quiet, past the 60 s it was (t616).
+vi.setConfig({ testTimeout: 300_000 });
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
 
-/** The supervisor's time-limit timers, held off the real clock (header); `reachWorkDeadline` moves the clock to the bound less its ending. */
+/** The supervisor's time-limit timers, on the test's clock (header); `reachWorkDeadline` moves the clock to the bound less its ending. */
 type BuildClock = { held: () => readonly number[]; reachWorkDeadline: () => void };
 let clock: BuildClock;
-beforeEach(() => { clock = holdTheBuildClock(); });
+beforeEach(() => { clock = buildClock.start(); });
 
 const TASK = "Create a deterministic Start to End Flow.";
 const PLAN = {
@@ -71,42 +76,39 @@ function outlivingTheBound(): Promise<never> {
 }
 
 /**
- * Holds the timers the supervisor's `startClock` sets (header), recognised by their caller, and lets every other
- * timer through to the real clock. A held timer fires only when the test moves the clock past its delay.
+ * The clock the build hands its supervisor (header): a timer set on it fires only when the test moves the clock past
+ * its delay. `start` begins a fresh one for each test. Hoisted with the mock that installs it, so it takes no imports.
  */
-function holdTheBuildClock(): BuildClock {
-  const realSet = globalThis.setTimeout;
-  const realClear = globalThis.clearTimeout;
-  const held: { delay: number; fire: () => void; cleared: boolean; fired: boolean }[] = [];
-  const handles = new Map<unknown, (typeof held)[number]>();
-  const set = vi.spyOn(globalThis, "setTimeout").mockImplementation(((handler: () => void, delay?: number, ...rest: unknown[]) => {
-    if (!new Error().stack?.includes("startClock")) return (realSet as (...args: unknown[]) => unknown)(handler, delay, ...rest);
-    const timer = { delay: delay ?? 0, fire: () => handler(), cleared: false, fired: false };
-    const handle = { held: true };
-    held.push(timer);
-    handles.set(handle, timer);
-    return handle;
-  }) as unknown as typeof setTimeout);
-  const clear = vi.spyOn(globalThis, "clearTimeout").mockImplementation(((handle: unknown) => {
-    const timer = handles.get(handle);
-    if (timer) timer.cleared = true;
-    else realClear(handle as Parameters<typeof clearTimeout>[0]);
-  }) as typeof clearTimeout);
-  cleanups.push(async () => {
-    set.mockRestore();
-    clear.mockRestore();
-  });
-  return {
-    held: () => held.map((timer) => timer.delay),
-    reachWorkDeadline: () => {
-      // The earliest held deadline is the work deadline, the bound less its ending; the bound itself stays ahead.
-      const at = Math.min(...held.filter((timer) => !timer.cleared && !timer.fired).map((timer) => timer.delay));
-      for (const timer of held.filter((due) => !due.cleared && !due.fired && due.delay <= at)) {
-        timer.fired = true;
-        timer.fire();
-      }
+function heldClock() {
+  type Timer = { delay: number; fire: () => void; cleared: boolean; fired: boolean };
+  let held: Timer[] = [];
+  const clock = {
+    setTimeout: (fire: () => void, ms: number): unknown => {
+      const timer: Timer = { delay: ms, fire, cleared: false, fired: false };
+      held.push(timer);
+      return timer;
+    },
+    clearTimeout: (handle: unknown): void => {
+      const timer = held.find((each) => each === handle);
+      if (timer) timer.cleared = true;
     }
   };
+  const start = (): BuildClock => {
+    held = [];
+    return {
+      held: () => held.map((timer) => timer.delay),
+      reachWorkDeadline: () => {
+        // The earliest held deadline is the work deadline, the bound less its ending; the bound itself stays ahead.
+        const pending = held.filter((timer) => !timer.cleared && !timer.fired);
+        const at = Math.min(...pending.map((timer) => timer.delay));
+        for (const timer of pending.filter((due) => due.delay <= at)) {
+          timer.fired = true;
+          timer.fire();
+        }
+      }
+    };
+  };
+  return { clock, start };
 }
 
 describe("a project build its time limit stops", () => {

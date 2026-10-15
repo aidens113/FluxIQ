@@ -16,11 +16,29 @@ import type { AutomationStudioFlowDocument } from "../../../../model/index.ts";
 import { AutomationStudioCommandRunController, type AutomationStudioCommandEffectProvenance } from "../../command-run/index.ts";
 import { AutomationStudioCommandExecutionController as Controller } from "../index.ts";
 
+// **No outcome here is decided by the wall clock (t616).** Under a full sweep two
+// tests failed that pass alone: "io: second actual effect ..." and "exact run
+// close retains ... held post-COMMIT observer drains", both at vitest's 15 s
+// watchdog. Every test waited on real deadlines: each command was sent with a
+// 1 s timeout, so the gateway gave its answer 4 s (timeout plus its 3 s answer
+// margin) and the runtime target 1 s plus its margin and reconcile allowance; a
+// pipeline slower than that under load became `outcome_unknown`, and the two
+// tests that need an answer never to come waited those 3-4 s out. Now the
+// gateway's own deadline is out of reach (`NEVER_MS`), the Flow sets no node
+// timeout, and an answer that never comes is said by the test through the
+// command's signal (`answerNeverCame`), which ends the command as the deadline
+// would: unknown, its run fenced. The watchdog is wide because the fixture is a
+// real FluxIQ on disk, whose cold start the first test carries; it stops a hang
+// and measures nothing.
+vi.setConfig({ testTimeout: 120_000 });
+/** The gateway's own answer deadline, never reached inside a test (header). */
+const NEVER_MS = 2_147_483_647;
+
 const flow: AutomationStudioFlowDocument = { schemaVersion: "0.1", flowId: "flow.root", ownerKind: "routine", ownerId: "routine.1", name: "Synthetic two effects", createdAt: 1, updatedAt: 1, nodes: [
-  { id: "first", definitionId: "builtin.policy.action", parameterValues: { outputId: "synthetic.action", parameters: { value: 1 }, timeoutMs: 1000 } },
+  { id: "first", definitionId: "builtin.policy.action", parameterValues: { outputId: "synthetic.action", parameters: { value: 1 } } },
   { id: "second", definitionId: "builtin.policy.action", parameterValues: { outputId: "synthetic.action", parameters: { value: 2 } } }
 ], edges: [{ id: "first.second", sourceNodeId: "first", sourcePortId: "success", targetNodeId: "second", targetPortId: "in" }] };
-async function fixture(operation: (h: { fluxiq: FluxIQ; controller: Controller; io: IoRegistry; runtime: RuntimeService; owner: { projectId: string; runId: string; rootFlowId: string }; contexts: ClientGatewayCommandContext[]; sends: unknown[]; legacy: ReturnType<typeof vi.fn>; acknowledge(value: boolean): void }) => Promise<void>) {
+async function fixture(operation: (h: { fluxiq: FluxIQ; controller: Controller; io: IoRegistry; runtime: RuntimeService; owner: { projectId: string; runId: string; rootFlowId: string }; contexts: ClientGatewayCommandContext[]; sends: unknown[]; legacy: ReturnType<typeof vi.fn>; acknowledge(value: boolean): void; answerNeverCame(): void }) => Promise<void>) {
   const root = await mkdtemp(path.join(os.tmpdir(), "actual-command-execution-"));
   const bootstrap = FluxIQ.create({ rootDir: root, loadEnv: false, modelProvidersEnabled: false });
   for (const [key, value] of Object.entries(bootstrap.paths)) if (key !== "domainId" && typeof value === "string") { const relative = path.relative(root, path.resolve(value)); if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error("nonowned fixture path"); }
@@ -28,12 +46,15 @@ async function fixture(operation: (h: { fluxiq: FluxIQ; controller: Controller; 
   const fluxiq = FluxIQ.create({ rootDir: root, loadEnv: false, modelProvidersEnabled: false }), program = fluxiq.programs.automationStudio;
   const pool = (program as unknown as { projectDatabasePool: AutomationStudioProjectDatabasePool }).projectDatabasePool;
   const controller = new Controller({ pool, getRuntimeSession: (projectId, runId) => program.getRuntimeSession(projectId, runId) });
-  const gateway = new ClientGatewayService({ resolveCommandLedger: context => controller.resolve(context) });
+  const gateway = new ClientGatewayService({ resolveCommandLedger: context => controller.resolve(context), commandTimeoutMs: NEVER_MS });
   let ack = true;
+  // Each command's signal, aborted when the test says its answer never came (header); unacknowledged commands are told at once.
+  const deadlines: AbortController[] = [];
+  const answerNeverCame = () => { for (const deadline of deadlines.splice(0)) deadline.abort(); };
   const sends: unknown[] = [], contexts: ClientGatewayCommandContext[] = [], legacy = vi.fn(() => { throw new Error("legacy handler executed"); });
-  const session = gateway.connect({ socket: { send: raw => { const envelope = JSON.parse(raw); if (envelope.type !== "server.execute_action") return; sends.push(envelope); if (ack) queueMicrotask(() => { void gateway.receive(session.sessionId, { id: `ack.${sends.length}`, protocolVersion: CLIENT_GATEWAY_PROTOCOL_VERSION, timestamp: Date.now(), type: "client.action_result", payload: { commandId: envelope.payload.commandId, status: "succeeded", payload: { synthetic: sends.length, records: [{ name: "synthetic record" }] } } }); }); } } });
+  const session = gateway.connect({ socket: { send: raw => { const envelope = JSON.parse(raw); if (envelope.type !== "server.execute_action") return; sends.push(envelope); if (!ack) queueMicrotask(answerNeverCame); else queueMicrotask(() => { void gateway.receive(session.sessionId, { id: `ack.${sends.length}`, protocolVersion: CLIENT_GATEWAY_PROTOCOL_VERSION, timestamp: Date.now(), type: "client.action_result", payload: { commandId: envelope.payload.commandId, status: "succeeded", payload: { synthetic: sends.length, records: [{ name: "synthetic record" }] } } }); }); } } });
   const io = new IoRegistry(), runtime = new RuntimeService();
-  const invoke = async (context: ClientGatewayCommandContext, parameters: import("../../../../../../core/index.ts").JsonObject) => { contexts.push(context); return await gateway.executeAction(session.sessionId, { actionType: "synthetic.action", parameters, timeoutMs: ack ? 1000 : 20 }, { context }).result; };
+  const invoke = async (context: ClientGatewayCommandContext, parameters: import("../../../../../../core/index.ts").JsonObject) => { contexts.push(context); const deadline = new AbortController(); deadlines.push(deadline); return await gateway.executeAction(session.sessionId, { actionType: "synthetic.action", parameters }, { context, signal: deadline.signal }).result; };
   try {
   io.registerOutput("synthetic.domain", defineOutput({ definition: { id: "synthetic.action", title: "Synthetic" }, mode: "request", dispatch: legacy, dispatchWithCommandContext: async request => { const result = await invoke(request.commandContext!, request.payload as import("../../../../../../core/index.ts").JsonObject); if (result.status !== "completed") throw new Error("unknown durable outcome"); return { outputId: request.outputId, ok: result.result.status === "succeeded", ...(result.result.payload !== undefined ? { payload: result.result.payload } : {}) }; } }));
   runtime.registerAdapter({ adapterId: "synthetic.runtime", label: "Synthetic", transport: "direct", domainId: "synthetic.domain", capabilities: () => [{ id: "synthetic.action", kind: "action", domainId: "synthetic.domain", actionTypes: ["synthetic.action"], outputIds: ["synthetic.action"] }], execute: legacy, executeWithCommandContext: async (command, context) => { const result = await invoke(context.commandContext!, command.parameters ?? {}); if (result.status !== "completed") throw new Error("unknown durable outcome"); return { commandId: command.commandId!, status: result.result.status, ...(result.result.payload !== undefined ? { payload: result.result.payload } : {}) }; } });
@@ -46,7 +67,7 @@ async function fixture(operation: (h: { fluxiq: FluxIQ; controller: Controller; 
       await program.saveFlowGenerationInstruction({ projectId: project.id, flowId, instruction: "Send each synthetic action once." });
     }
     const stored = await program.startRuntimeSession({ projectId: project.id, runId: "run.synthetic", flow });
-    await operation({ fluxiq, controller, io, runtime, owner: { projectId: project.id, runId: stored.runId, rootFlowId: stored.flowId }, contexts, sends, legacy, acknowledge: value => { ack = value; } });
+    await operation({ fluxiq, controller, io, runtime, owner: { projectId: project.id, runId: stored.runId, rootFlowId: stored.flowId }, contexts, sends, legacy, acknowledge: value => { ack = value; }, answerNeverCame });
   } finally {
     await gateway.close(); await controller.close(); await fluxiq.close();
     const owned = path.resolve(root); if (path.dirname(owned) !== path.resolve(os.tmpdir()) || !path.basename(owned).startsWith("actual-command-execution-")) throw new Error("nonowned cleanup"); await rm(owned, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
@@ -135,6 +156,8 @@ describe("actual executor private provenance, gateway and SQLite consumption", (
     try {
       const executing = runAutomationStudioGraph(flow, { commandRun: run, signal: run.signal, effectDispatcher: createIoPolicyEffectDispatcher(h.io, "synthetic.domain") });
       await observing;
+      // The answer's deadline passes while the observer is held: said by the test, not waited out (header).
+      h.answerNeverCame();
       expect((await executing).status).toBe("failed");
       const closing = h.controller.closeRun(run).then(() => { drained = true; });
       await new Promise(resolve => setTimeout(resolve, 30));

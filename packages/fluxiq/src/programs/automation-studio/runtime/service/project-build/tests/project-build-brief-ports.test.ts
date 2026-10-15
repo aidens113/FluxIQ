@@ -18,6 +18,16 @@
 //    that deletes goes to the person's gate (asked, and declined here), while
 //    its press that modifies -- a class nobody is asked about -- runs, and
 //    the builder is told the act was outside its brief.
+//
+// **Only a hang guard is timed (t616).** Under a full sweep "a dependent
+// builder's entry > marks the acts ..." failed and passed alone. Loaded runs
+// (this directory with conversations/commands, three at once beside ten
+// CPU-bound processes) timed out both dependent-entry tests in every copy, at
+// 60-64 s against 2 s quiet; the build each runs through the real service waits
+// on no clock of its own, and the EBUSY and ENOTEMPTY cleanup failures that
+// followed were the timed-out build still writing to the data directory being
+// removed (it was released 1-4 s later in each case). The guard is wide so it
+// only stops a hang.
 
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -33,7 +43,7 @@ import { AutomationStudioService, type AutomationStudioServiceOptions } from "..
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { automationStudioTestDeclaredStepResolution } from "./declared-step-resolution.ts";
 
-vi.setConfig({ testTimeout: 60_000 });
+vi.setConfig({ testTimeout: 300_000 });
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
