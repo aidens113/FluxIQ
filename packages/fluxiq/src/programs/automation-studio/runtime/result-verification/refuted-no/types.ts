@@ -26,6 +26,37 @@ export type AutomationStudioResultNoLeftOutRow = {
 };
 
 /**
+ * How Core's record accounts for one row a condition alone left out (t631):
+ * `request_words`, a settled row of a condition testing the request's own
+ * words (`quotesRequest`), with those words; `also_in_result`, a row whose
+ * label is also a row of the result, another copy of it kept.
+ */
+export type AutomationStudioResultNoAccounted = { by: "request_words"; texts: string[] } | { by: "also_in_result" };
+
+/**
+ * One condition of a read, or of a saved answer's `process.where`, as Core's
+ * account gives it, whether or not it left a row out alone: what a no's advice
+ * to change it is weighed against (`./record-conditions.ts`,
+ * `./advice-condition.ts`, t631).
+ */
+export type AutomationStudioResultNoCondition = {
+  /** The condition as every line names it (`condition N (wording)`), a saved answer's after `recordOutput.process.where`. */
+  name: string;
+  /** Its number, as a judge names it (`condition N`). */
+  number: number;
+  /** The read it belongs to, by node id; a saved answer's condition, the node that collected the set. */
+  nodeId: string;
+  /** How many rows it rejected across the read, where the read counted them. */
+  rejected?: number | undefined;
+  /**
+   * Each row it alone left out, by label, with how Core's record accounts for
+   * it; absent where the read did not count them (`alone`) or did not send
+   * every one, so Core cannot say what changing it brings back.
+   */
+  leftOut?: Array<{ label: string; accounted?: AutomationStudioResultNoAccounted | undefined }> | undefined;
+};
+
+/**
  * What a claim is weighed against: Core's own record of the judged result.
  * Built once per verification (`./record.ts`), never from a model's words.
  */
@@ -47,6 +78,10 @@ export type AutomationStudioResultNoRecord = {
   duplicatesCounted: boolean;
   /** Every step's node id, as the Flow names it. */
   nodeIds: string[];
+  /** Every condition of every read and saved answer the result was judged on (t631): what a no's advice names by number. */
+  conditions?: AutomationStudioResultNoCondition[] | undefined;
+  /** Whether a text is a value Core read on a row -- a stored row's cell but its label, a left-out row's tested value -- and no row's label: a quote of one names no row (t631). */
+  isValue?: ((text: string) => boolean) | undefined;
   /** The request's phrases (`../request-rows/request-phrases.ts`), where the request was given. */
   phrases?: AutomationStudioRequestPhrases | undefined;
   /** Whether a text's words run word for word in the request (`../request-rows/request-wording.ts`): a quote of the request names no row. */

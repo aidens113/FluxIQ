@@ -35,7 +35,8 @@
 // what is disputed is then the row's value, which Core read. A condition whose
 // words the request does not state stays the judge's to weigh.
 
-import type { AutomationStudioResultNoClaim, AutomationStudioResultNoLeftOutRow, AutomationStudioResultNoNamedRows } from "./types.ts";
+import { automationStudioResultLeftOutFinding } from "./left-out-finding.ts";
+import type { AutomationStudioResultNoClaim, AutomationStudioResultNoNamedRows } from "./types.ts";
 
 /** The nouns a judge calls the result's rows by. Generic, never any site's. */
 const ROWS = String.raw`(?:rows?|records?|items?|entries|listings?|products?)`;
@@ -78,17 +79,7 @@ export function automationStudioResultMissingClaim(sentence: string, named: Auto
     if (!rows.every((row) => row.settled)) return { refuted: false };
     // A dispute of the condition stands, unless the condition tests the request's own words and Core read the row failing them (header, t629).
     if (disputesCondition && !rows.every((row) => row.quotesRequest)) return { refuted: false };
-    for (const row of rows) findings.push(finding(row));
+    for (const row of rows) findings.push(automationStudioResultLeftOutFinding(row));
   }
   return { refuted: true, finding: findings.join(" ") };
-}
-
-/** Core's words for one settled row: what its read saw, and, where its condition tests the request's own words, those words and the value Core read. */
-function finding(row: AutomationStudioResultNoLeftOutRow): string {
-  if (!row.quoted) return `Core's read saw "${row.given}", and only ${row.condition} left it out: Core read that row's tested value itself, and it fails that condition as written.`;
-  return `Core's read saw "${row.given}", and only ${row.condition} left it out: that condition tests the request's own words ${said(row.quoted.texts)}, and Core read "${row.quoted.read}" on that row, which fails it as written.`;
-}
-
-function said(texts: readonly string[]): string {
-  return texts.map((text) => `"${text}"`).join(" or ");
 }
