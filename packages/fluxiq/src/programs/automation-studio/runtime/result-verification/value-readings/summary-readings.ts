@@ -1,9 +1,10 @@
 // A run summary's reads and record sets with Core's readings of their values
 // (t511): each read condition's and saved-answer condition's `valuesRead`
 // (`./condition-readings.ts`), each record set's `sortRead`
-// (`./sort-reading.ts`), and the rows a read's numeric bound or presence test
-// left out that Core settles itself, `leftOutSettled` and `settled`
-// (`./settled-rows.ts`, t574, t599: a presence test by each row's witness).
+// (`./sort-reading.ts`), and the rows a read's numeric bound, presence test or
+// text test left out that Core settles itself, `leftOutSettled` and `settled`
+// (`./settled-rows.ts`, t574, t599, t624: a presence or text test by each
+// row's witness).
 //
 // **Where the rows come from.** Only from what the summary already carries,
 // screened: a read's kept rows are the stored rows of the record sets its step
@@ -95,7 +96,7 @@ function withReadReadings(read: AutomationStudioResultReadAccount, sets: readonl
   let changed = false;
   const conditions = read.conditions.map((entry, index) => {
     const column = automationStudioResultReadConditionColumn(written[index], columns);
-    // A condition whose read no column makes is read in Core's grammar under a stand-in name: only a presence test's witnesses can settle its rows (`./settled-rows.ts`, t599).
+    // A condition whose read no column makes is read in Core's grammar under a stand-in name: only a presence or text test's witnesses can settle its rows (`./settled-rows.ts`, t599, t624).
     const condition = asRecordCondition(written[index], column ?? UNNAMED_COLUMN);
     if (!condition) return entry;
     const kept = read.unfiltered || column === undefined ? [] : writes.flatMap((set) => keptCells(set, column));
@@ -104,7 +105,7 @@ function withReadReadings(read: AutomationStudioResultReadAccount, sets: readonl
     const paired = (entry.leftOutOnlyByThis ?? []).map((row, at) => ({ row, cell: column === undefined ? undefined : leftOutCell(row, column), witness: witnesses?.[at] }));
     const leftOut = paired.flatMap(({ cell }) => cell ?? []);
     const valuesRead = column === undefined ? [] : automationStudioResultConditionReadings({ condition, column, kept, leftOut });
-    // The rows a numeric bound or a presence test left out that Core read as failing it: settled, never quoted for row by row (`./settled-rows.ts`, t574, t599).
+    // The rows a numeric bound, a presence test or a text test left out that Core read as failing it: settled, never quoted for row by row (`./settled-rows.ts`, t574, t599, t624).
     const settled = read.unfiltered ? undefined : automationStudioResultSettledRows({ condition, column, number: entry.number ?? index + 1, wording: entry.condition, leftOut: paired });
     if (!valuesRead.length && !settled) return entry;
     changed = true;

@@ -19,10 +19,11 @@
 // really exclude that row is the judge's to say; that the reason is the
 // request's, and stands beside the row, is what Core checks.
 //
-// **Except the rows Core settled itself (t574, t599).** A row a numeric bound
-// left out whose value Core read as failing that bound, or a row a presence
+// **Except the rows Core settled itself (t574, t599, t624).** A row a numeric
+// bound left out whose value Core read as failing that bound, a row a presence
 // test left out whose witness found the value absent (or, for `is absent`,
-// present) (`../value-readings/settled-rows.ts`), needs no quote beside it:
+// present), or a row a text test left out whose witness found a value failing
+// it (`../value-readings/settled-rows.ts`), needs no quote beside it:
 // Core measured it. What Core did not measure is that the condition is the
 // request's, so a yes still quotes the request once, beside a sentence that
 // names that condition -- its `condition N`, its column, or a number its bound

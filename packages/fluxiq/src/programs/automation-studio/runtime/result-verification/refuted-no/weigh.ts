@@ -22,6 +22,12 @@
 //   condition by its number, a step by its node id, or a row Core cannot find.
 // - Any other sentence names nothing, and rests on the sentences around it.
 //
+// Each sentence is read without Core's own wording of the conditions it
+// names (`./condition-wording.ts`, t624): `condition 1 (sponsored is absent)`
+// is no claim that rows are absent, and "Keep condition 4 (name not contains
+// Holder)" says nothing is wrong. So a sentence that only keeps a condition is
+// neither refuted nor a reason that stands.
+//
 // The reading is wholly refuted when at least one sentence's claims are
 // refuted and no sentence stands. A reading that names nothing Core can check,
 // or anything Core cannot refute, is not: the no stands as before. Core never
@@ -29,6 +35,7 @@
 // no still refuted is taken as unsure.
 
 import type { AutomationStudioResultRepairDirective } from "../contracts.ts";
+import { automationStudioResultWithoutConditionWording } from "./condition-wording.ts";
 import { automationStudioResultCountClaim } from "./count-claim.ts";
 import { automationStudioResultDuplicateClaim } from "./duplicate-claim.ts";
 import { automationStudioResultExcludedKindClaim } from "./excluded-kind-claim.ts";
@@ -50,7 +57,8 @@ export function automationStudioResultRefutedReading(reading: Reading | undefine
   const findings: string[] = [];
   let refuted = 0;
   let standing = false;
-  for (const sentence of automationStudioResultReadingSentences(reading?.observed)) {
+  // Each sentence less Core's own wording of the conditions it names: those are Core's words, not the judge's claim (`./condition-wording.ts`, t624).
+  for (const sentence of automationStudioResultReadingSentences(reading?.observed).map(automationStudioResultWithoutConditionWording)) {
     const named = automationStudioResultSentenceRows(sentence, record);
     const claims = [
       automationStudioResultDuplicateClaim(sentence, named, record),

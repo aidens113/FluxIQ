@@ -5,9 +5,12 @@
 // (`duplicate-claim.ts`), rows called missing (`missing-claim.ts`), a stored
 // row called an excluded kind of thing its own words say it is not
 // (`excluded-kind-claim.ts`), the result's count (`count-claim.ts`) -- each
-// found by the rows a sentence names (`named-rows.ts`, `sentences.ts`); and the
-// one re-ask of a wholly refuted no (`reask.ts`, `recheck-words.ts`), after
-// which a no still refuted is unsure, never a no and never a yes Core made.
+// found by the rows a sentence names (`named-rows.ts`, `sentences.ts`), each
+// sentence read without Core's own wording of the conditions it names
+// (`condition-wording.ts`, t624); and the one re-ask of a wholly refuted no
+// (`reask.ts`, `recheck-words.ts`), after which a no still refuted is unsure,
+// never a no and never a yes Core made.
+export * from "./condition-wording.ts";
 export * from "./count-claim.ts";
 export * from "./duplicate-claim.ts";
 export * from "./excluded-kind-claim.ts";

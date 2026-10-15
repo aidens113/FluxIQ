@@ -5,7 +5,9 @@
 // left out, and one row a text condition alone left out, every label sharing
 // its first nine words with the others, as the live run's did. The summary is
 // Core's own (`../../result-summary.ts`), from the read's account and its
-// witnesses.
+// witnesses. The text condition's witness could not read the name, so Core
+// settles nothing there and the row is still named one by one: since t624 a
+// text test's row is settled where its witness found a value that fails it.
 import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../../model/index.ts";
@@ -56,7 +58,7 @@ function readAttempt(memberWitness: PresenceCatalogueWitness): AutomationStudioF
         aloneObservations: [
           noMember.map((_, at) => witness(0, at + 4, memberWitness)),
           promoted.map((_, at) => witness(1, at + 8, { state: "present", value: "Promoted" })),
-          [witness(2, 10, { state: "present", value: PRESENCE_CATALOGUE_SPARE })]
+          [witness(2, 10, { state: "unavailable" })]
         ]
       }
     } }

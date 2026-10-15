@@ -44,8 +44,8 @@
 // **And the rows Core settled** (`../value-readings/settled-rows.ts`, t574):
 // a run's condition carries their labels and the word runs that name it, for
 // `unquoted-rows.ts`: `condition N`, its column, and the numbers a bound's
-// wording writes -- or, for a presence test (t599), the one column its wording
-// names, and no number, since a presence test bounds nothing.
+// wording writes -- or, for a presence test (t599) or a text test (t624), the
+// one column its wording names, and no number, since neither bounds anything.
 //
 // **Not the reads that prepared a subflow trial's entry (t599).** A8 social
 // `run-mv8ic6mk-09bf12ff`: a subflow trial runs its predecessors inside it, so
@@ -79,6 +79,9 @@ const TESTED_VALUE = /^(.+?) — (?:\(withheld\)|[\p{L}\p{N}_.$@-]{1,64}: .*)$/s
 const TESTED_COLUMN = /^.+? — ([\p{L}\p{N}_.$@-]{1,64}): /su;
 /** A presence test's wording (`../read-account/condition.ts`): its column, what its read found where said, and `is present` or `is absent`. */
 const PRESENCE_WORDING = /^([\p{L}\p{N}_.$@-]{1,64})(?: \(read .*\))? (?:not )?is (?:present|absent)$/su;
+/** A text test's relation, with quoted text or a list of it (t624); and its wording when a column names what it tests. */
+const TEXT_RELATION = / (?:not )?(?:contains|startsWith|endsWith|matches|equals) \[?"/u;
+const TEXT_WORDING = /^([\p{L}\p{N}_.$@-]{1,64})(?: \(read .*\))? (?:not )?(?:contains|startsWith|endsWith|matches|equals) \[?"/su;
 
 /**
  * Every list read a summary holds rows for, and a run's stored rows. The
@@ -157,15 +160,17 @@ function condition(name: string, rows: string[], testedLabel: boolean, settled?:
  * The word runs a sentence names a settled condition by: `condition N`, its
  * column (whole, and split where it joins words in camel case), and each number
  * its wording writes -- the bound a quote of the request states. A presence
- * test's column is read from its wording where no row says it, and its wording
- * gives no number: it bounds nothing (header).
+ * test's or a text test's column is read from its wording where no row says
+ * it, and its wording gives no number: it bounds nothing, and a number in a
+ * text test's text is part of what it looks for (header, t624).
  */
 function boundNames(number: number, settledRows: readonly string[], wording: string | undefined): string[][] {
   const names = [wordsOf(`condition ${number}`)];
   const presence = PRESENCE_WORDING.exec(wording ?? "")?.[1];
-  const column = TESTED_COLUMN.exec(AutomationStudioRequestRowId.unsaid(settledRows[0] ?? ""))?.[1] ?? presence;
+  const unbounded = presence !== undefined || TEXT_RELATION.test(wording ?? "");
+  const column = TESTED_COLUMN.exec(AutomationStudioRequestRowId.unsaid(settledRows[0] ?? ""))?.[1] ?? presence ?? TEXT_WORDING.exec(wording ?? "")?.[1];
   if (column) names.push(wordsOf(column), wordsOf(column.replace(/(\p{Ll})(\p{Lu})/gu, "$1 $2")));
-  if (presence === undefined) for (const word of wordsOf(wording ?? "")) if (/^\p{N}+$/u.test(word)) names.push([word]);
+  if (!unbounded) for (const word of wordsOf(wording ?? "")) if (/^\p{N}+$/u.test(word)) names.push([word]);
   const said = new Set<string>();
   return names.filter((name) => {
     const key = name.join(" ");

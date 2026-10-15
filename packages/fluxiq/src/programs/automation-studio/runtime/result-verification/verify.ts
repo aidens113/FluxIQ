@@ -96,7 +96,7 @@ import { automationStudioResultVerificationAgreement, automationStudioResultVeri
 import { automationStudioResultCheckActivity } from "./check-activity.ts";
 import { automationStudioResultCoreObservation } from "./core-observation.ts";
 import { automationStudioResultSummaryWithPagingWords, automationStudioResultSummaryWithUnreadColumns } from "./read-account/index.ts";
-import { automationStudioRequestWording, automationStudioResultSummaryWithLeftOutNamingTheItem, automationStudioResultSummaryWithRowIds } from "./request-rows/index.ts";
+import { automationStudioRequestWording, automationStudioResultSummaryWithAlsoInResult, automationStudioResultSummaryWithLeftOutNamingTheItem, automationStudioResultSummaryWithRowIds } from "./request-rows/index.ts";
 import { automationStudioResultVerdict } from "./verdict.ts";
 import { automationStudioResultExclusionEvidenceRecheck } from "./exclusion-evidence/index.ts";
 import { emitAutomationStudioActivity } from "../activity/index.ts";
@@ -279,11 +279,13 @@ async function askOnce(
   // reads and the judge is never shown (`run-mux6naez-6c20f26e`). Last, Core's
   // short id before each left-out row a judge must still name
   // (`request-rows/summary-with-row-ids.ts`, t599): the judge's copy only, and
-  // the verdict reads the rows without it.
-  const judged = automationStudioResultSummaryWithRowIds(automationStudioResultSummaryWithPagingWords(automationStudioResultSummaryWithLeftOutNamingTheItem(
+  // the verdict reads the rows without it. Before the ids, each left-out row
+  // whose item is also in the result is said so (`request-rows/summary-with-also-in-result.ts`,
+  // t624), and needs no id: no yes is asked to name it.
+  const judged = automationStudioResultSummaryWithRowIds(automationStudioResultSummaryWithAlsoInResult(automationStudioResultSummaryWithPagingWords(automationStudioResultSummaryWithLeftOutNamingTheItem(
     automationStudioResultSummaryWithUnreadColumns(request.summary, request.instructions),
     request.instructions
-  )));
+  ))));
   const result = await runAutomationStudioLlmHarness({
     taskKind: "loop_verification",
     projectId: request.projectId,

@@ -18,7 +18,7 @@ import { EARBUDS_LOCATORS, EARBUDS_NODE_ID, earbudsAttempt, earbudsNode } from "
 import { ANSWER, datasetSummary, flow, harness, instruction, runDetail, session, verify } from "./run-outcome-harness.ts";
 import { automationStudioResultExclusionEvidenceRecheck } from "../exclusion-evidence/index.ts";
 import { automationStudioResultConditionName, automationStudioResultReadPresence } from "../read-account/index.ts";
-import { automationStudioRequestWording, automationStudioResultSummaryWithLeftOutNamingTheItem } from "../request-rows/index.ts";
+import { automationStudioRequestWording, automationStudioResultSummaryWithAlsoInResult, automationStudioResultSummaryWithLeftOutNamingTheItem } from "../request-rows/index.ts";
 import { automationStudioResultSettledRows } from "../value-readings/index.ts";
 import { automationStudioResultVerdict } from "../verdict.ts";
 
@@ -298,7 +298,8 @@ describe("a yes over rows a numeric bound left out, which Core settled", () => {
 
 // User rule: model guidance never teaches to the test. The sentences t574 adds
 // to what a judge and a builder read -- a presence test's sentence, a settled
-// bound's sentence, the recheck and Core's line for an unquoted bound -- must
+// bound's sentence, the recheck and Core's line for an unquoted bound, and
+// t599's and t624's settled sentences and t624's also-in-result sentence -- must
 // name none of the ten realistic scenarios, their sites' plain words or their
 // tasks (the lists `build-test/tests/task-checklist.test.ts` holds its label
 // to). "quote" is left off the task words: quoting the request is the check
@@ -333,7 +334,31 @@ describe("the judge wording t574 adds", () => {
       automationStudioResultSettledRows({ condition: { field: "weight", is: "present" }, column: "weight", number: 1, wording: "weight is present", leftOut: witnessed("absent") })!.settled,
       automationStudioResultSettledRows({ condition: { field: "value", is: "absent" }, column: undefined, number: 2, wording: undefined, leftOut: witnessed("present") })!.settled
     ];
-    for (const text of [presence, settled.settled, ...presenceSettled, recheck, automationStudioResultConditionName(1, undefined)]) guarded(text);
+    // t624: a text test's settled sentence, kept and left out by its words, with and without a known column; and the also-in-result sentence.
+    const textSettled = [
+      automationStudioResultSettledRows({ condition: { field: "finish", contains: "Matte" }, column: "finish", number: 1, wording: "finish contains [\"Matte\"]", leftOut: witnessed("present") })!.settled,
+      automationStudioResultSettledRows({ condition: { field: "value", equals: "Seen", not: true }, column: undefined, number: 2, wording: undefined, leftOut: witnessed("present") })!.settled
+    ];
+    const summary: AutomationStudioRunResultSummary = {
+      schemaVersion: "automation-studio.run-result-summary.v1", totalRecordCount: 1, totalRefusedCount: 0, totalRowsMissingRequired: 0, recordSetCount: 1, flowShape: [], withheld: false,
+      recordSets: [{ datasetId: "d", recordCount: 1, refusedCount: 0, truncated: false, columns: ["name"], columnsWithheld: false, rowsChecked: 1, rowsMissingRequired: 0, missingRequiredColumns: [], sampleRows: [{ name: "Row A" }] }],
+      reads: [{ nodeId: "read", definitionId: "list", pagesRead: 1, truncated: false, itemsSeen: 2, kept: 1, conditions: [{ number: 1, condition: "marked is absent", leftOutOnlyByThis: ["Row A"] }] }]
+    };
+    const alsoInResult = automationStudioResultSummaryWithAlsoInResult(summary).reads![0]!.conditions![0]!.alsoInResult!;
+    for (const text of [presence, settled.settled, ...presenceSettled, ...textSettled, alsoInResult, recheck, automationStudioResultConditionName(1, undefined)]) guarded(text);
+  });
+
+  // t624: the judge instruction's sentences on settled text rows and on rows also in the result (`../../llm/diagnosis-instructions.ts`;
+  // the instruction's whole text is pinned in `llm/deepseek/tests/system-prompt-pins.json`), held to the same guard.
+  it("in the judge instruction, names none of them either", () => {
+    const sentences = [
+      "or, for a condition that tests text (contains, startsWith, endsWith, matches, or equals with text, possibly negated), its read found on the row a value that fails that condition as written",
+      "Such a text condition's rows are settled the same way: a yes quotes once, in a sentence that names that condition, the request's words asking for rows whose value says what the condition looks for, or for leaving such rows out, and where the request asks no such thing, those rows are ones it asks for.",
+      "The rows in a condition's leftOutAlsoInResult are left-out rows whose label is also a row of the result: another copy of the same item was kept and came back, so none of them is a row the Flow dropped, none is missing from the result, and none needs a quote or a name in a yes."
+    ];
+    for (const sentence of sentences) {
+      guarded(sentence);
+    }
   });
 });
 

@@ -51,11 +51,20 @@ export type AutomationStudioResultReadCondition = {
    * The rows of `leftOutOnlyByThis`, as given there, whose tested value Core
    * read as a number that fails this condition's own numeric bound, or, for a
    * presence test, whose witness found the value absent (or present) as the
-   * condition leaves out (`./value-readings/settled-rows.ts`, t574, t599), and
+   * condition leaves out, or, for a text test, whose witness found a value
+   * that fails it (`./value-readings/settled-rows.ts`, t574, t599, t624), and
    * `settled`, Core's sentence saying so and what a yes must still show: a
    * quote of the request's words stating that bound or asking for that value,
    * once. No yes is asked to quote the request beside each such row.
    */
   leftOutSettled?: string[];
   settled?: string;
+  /**
+   * On the judge's copy only (`./request-rows/summary-with-also-in-result.ts`,
+   * t624): the rows of `leftOutOnlyByThis`, as given there, whose label is also
+   * a row of the result -- another copy of the same item was kept -- and
+   * `alsoInResult`, Core's sentence saying so.
+   */
+  leftOutAlsoInResult?: string[];
+  alsoInResult?: string;
 };
