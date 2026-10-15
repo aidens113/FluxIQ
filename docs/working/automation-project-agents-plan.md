@@ -714,6 +714,14 @@ Earlier entries are in [the ledger archive](./automation-project-agents-plan/arc
 - Outcome: Accepted. Not live-tested yet; frozen pair 3 exercises t641
 - Follow-up: the supervisor's assembled Flow (`submitComposed`) is not held to kept conditions (no model wrote it); reused node ids are not matched, so nothing is kept for them; refuting "kept" claims about rows several conditions left out together (the towels debug) is not done; `project-build-time-limit.test.ts` has the same cleanup race; extension-chat's 20 s provider deadline still runs on the real clock
 
+### 2026-10-15 — After A8 frozen pair 3 wave 17: a trial says when its start undid an act the build explored on (t647); a repair's opening carries its proposal, the opening prefix is Core's (t648)
+- Agent: read-only debug of wave 17 `project` bigbox cart (downstream report `a8-bigbox-cart-run-mv9zn5ob-debug.md`); workers t647-trial-explored-on-undone-act, t648-repair-may-revisit-own-addresses (two rounds); supervisor reserved the opening call-id prefix, verified and integrated
+- Changed: t647 `flow-bootstrap/site-reset/explored-on-absorbed.ts` (new): a trial that is not a yes, whose start reset took back a lasting act an exploration call made on a named control that no step (nor an act the trial landed) names, carries `coreFindings` `trial.explored_on_absorbed_act` in `subflow-candidate/subflow-trial-gate.ts` and `candidate/trial-gate.ts`; the act log keeps the explored act's control and owning brief (`site-reset/ledger.ts`, `contracts.ts`). t648 `project-agents/dispatch/run-brief.ts` `shownAtOpening` puts the repaired proposal's calls on a repair's opening call (`repairs`, screened like `yourSubflow.steps`); `llm/evidence-loop/call-id.ts` files a model-written id starting `initial.` under `model.`, so no model call passes for Core's opening (the domain reads `held`, `arrived`, `repairs` only there)
+- Why: wave 17 `project` bigbox cart: a builder explored on a store it had chosen, every trial started from the reset store, and nothing said why; its repair builder was refused its own proposal's address six times; the opening prefix was not reserved
+- Validation: t647 tsc exit 0; flow-bootstrap, subflow-trial, candidate-trial -> 198 files, 2367 passed, 2 skipped; audit passed. t648 tsc exit 0; llm, project-agents/dispatch -> 216 files, 2083 passed; `pnpm check` -> passed; merged `5c504b16`
+- Outcome: Accepted
+- Follow-up: the builder's return to the supervisor drops `coreFindings` (`dispatch/ending.ts` `trialSaid`; given to t645); matching is by words, so a step worded wholly unlike the control's name could draw a false finding
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
