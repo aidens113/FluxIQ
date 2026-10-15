@@ -281,9 +281,8 @@ describe("a project build whose builder leaves a lasting act", () => {
     const note = reason.slice(ENDED_REASON.length + 1);
     expect(diagnostic).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked"] });
     const told = seen.find((event) => event.detail?.title === "The supervisor ended the build: it could not finish the Flow.");
-    expect(told?.detail).toMatchObject({ kind: "note", status: "failed", text: note });
-    // The model's own words reach the record, never the person.
-    expect(JSON.stringify(seen)).not.toContain(ENDED_REASON);
+    // Why it ended, the supervisor's words screened, then Core's note once: its row said only that it ended (t649).
+    expect(told?.detail).toMatchObject({ kind: "note", status: "failed", text: `${ENDED_REASON} ${note}` });
     // Its trial's recipe and its explored one, both still there.
     expect([...run.box]).toEqual(["recipe:lentil-soup", TRIAL_RECIPE, "recipe:herb-bread"]);
   });

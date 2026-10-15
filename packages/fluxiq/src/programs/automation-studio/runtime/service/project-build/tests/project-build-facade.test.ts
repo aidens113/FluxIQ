@@ -350,7 +350,8 @@ describe("a project build through the actual service", () => {
   });
 
   // A failed build's chat message was made from the thrown error, never from the ending the supervisor recorded (t586 open question 1, t590).
-  it("keeps its own failure code when it fails, and tells the person the recorded ending's kind in Core's words, never the model's reason", async () => {
+  // Its row said that it ended and never why (t649, A8 frozen pair 3 `run-mv9zn5ob-d929084d`, 00048): the reason is said, screened, before what is left.
+  it("keeps its own failure code when it fails, and tells the person the recorded ending's kind, why, and what is left", async () => {
     const run = await projectBuild({ script: "ends" });
     const seen: ClientGatewayActivity[] = [];
     const unsubscribe = automationStudioActivityHub.subscribe((event) => seen.push(event));
@@ -360,8 +361,9 @@ describe("a project build through the actual service", () => {
     expect(diagnostic).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked"] });
     expect(diagnostic!.ending).toBeUndefined();
     const told = seen.find((event) => event.detail?.title === "The supervisor ended the build: it could not finish the Flow.");
-    expect(told?.detail).toMatchObject({ kind: "note", status: "failed", text: "Nothing this build did is still on the target." });
-    expect(JSON.stringify(seen)).not.toContain("No other way to it was found");
+    expect(told?.detail).toMatchObject({ kind: "note", status: "failed", text: "The control the task names is not on the start page. No other way to it was found. Nothing this build did is still on the target." });
+    // The failure carries why beside the supervisor's ending, so the chat's ending and the build's last row say it (t649).
+    expect(diagnostic!.endedBecause).toBe("The control the task names is not on the start page. No other way to it was found.");
   });
 
   it("refuses a project build that would extend the Flow, before any model call", async () => {

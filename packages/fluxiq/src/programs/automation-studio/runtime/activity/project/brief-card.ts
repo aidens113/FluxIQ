@@ -20,6 +20,9 @@ const VERBS = Object.freeze({ build: "Building", survey: "Surveying", repair: "R
 /** A reset is of the site, not of a subflow: what the person reads before the judged whole run. */
 const RESET_WORDS = "Resetting the site to where the build started";
 
+/** The most subflows a brief's card names it starts after: the contract bounds every list to 20 entries. */
+const MAX_AFTER = 20;
+
 /** A run of hex as long as a digest's: a brief id shaped like one is never a row's ref. */
 const DIGEST_LIKE = /[a-f0-9]{32,}/iu;
 
@@ -29,11 +32,21 @@ const DIGEST_LIKE = /[a-f0-9]{32,}/iu;
  * where the build started") as a `note` row whose card names the
  * brief, its subflow, its starting case and its allowance. The row's ref is
  * the brief id, so a client can put the builder's own steps under it.
+ *
+ * The card names, by the plan's names, the subflows this one starts after
+ * (`after`, from its entry's predecessors; t649): a brief dispatched beside
+ * one of them waits for it to pass before its builder starts
+ * (`../../project-agents/dispatch/dependencies.ts`), and a chat said
+ * "Building <subflow> / Allowance $0.08" of a brief that never ran (A8 frozen
+ * pair 3, `run-mv9zn5ob-d929084d`, screenshot 00004). Whether one of them is
+ * still being built is the chat's to see: a subflow an earlier dispatch built
+ * is not waited on.
  */
 export function emitAutomationStudioProjectBriefCard(input: AutomationStudioProjectBriefCardInput): void {
   const { brief, structurePlan, taskSpec } = input;
   const subflowName = automationStudioProjectSubflowName(brief.subflowKey, structurePlan);
   const purpose = automationStudioProjectSubflowPurpose(brief.subflowKey, structurePlan, taskSpec, input.purpose);
+  const after = [...new Set(brief.entry.predecessors.filter((key) => key !== brief.subflowKey))].slice(0, MAX_AFTER).map((key) => automationStudioProjectSubflowName(key, structurePlan));
   const card: ClientGatewayActivityProjectCard = {
     kind: "brief",
     briefId: brief.briefId,
@@ -42,6 +55,8 @@ export function emitAutomationStudioProjectBriefCard(input: AutomationStudioProj
     subflowName,
     purpose,
     caseId: brief.entry.caseId,
+    // Always sent, empty for none: absent says only that an older Core sent the card.
+    after,
     allowanceUsd: brief.allowanceUsd
   };
   const title = automationStudioProjectCardWords(brief.kind === "reset" ? RESET_WORDS : `${VERBS[brief.kind]} ${subflowName}: ${purpose}`, 160);

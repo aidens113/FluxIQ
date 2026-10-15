@@ -2,6 +2,7 @@ import type { ClientGatewayActivityPhase, ClientGatewayActivityProjectCard } fro
 import type { AutomationStudioProjectBuilderReturn, AutomationStudioProjectStructurePlan, AutomationStudioProjectSubflowBrief } from "../../project-agents/contracts/index.ts";
 import { emitAutomationStudioActivity } from "../emit.ts";
 import { automationStudioProjectCardWords } from "./card-words.ts";
+import { automationStudioProjectReturnWords } from "./return-words.ts";
 import { automationStudioProjectSubflowName } from "./subflow-name.ts";
 
 /** What a builder's return card is made from. */
@@ -21,14 +22,16 @@ const DIGEST_LIKE = /[a-f0-9]{32,}/iu;
 
 /**
  * Shows a builder's return in the chat as a `note` row: "<subflow>: done"
- * (partly done, blocked) with the builder's reason, and a card of its outcome,
- * spend, calls and how many trials it ran. The proposal's digest and the
+ * (partly done, blocked) with the builder's reason in a person's words
+ * (`./return-words.ts`), and a card of its outcome, spend, calls and how
+ * many trials it ran. The proposal's digest and the
  * trials' digests stay in the build record; the card counts trials only.
  */
 export function emitAutomationStudioProjectReturnCard(input: AutomationStudioProjectReturnCardInput): void {
   const { returned, brief } = input;
   const subflowName = automationStudioProjectSubflowName(brief.subflowKey, input.structurePlan);
-  const reason = automationStudioProjectCardWords(returned.reason, 240);
+  // The reason is written for the supervisor; the person reads it in words, never its codes or ids (`./return-words.ts`, t649).
+  const reason = automationStudioProjectCardWords(automationStudioProjectReturnWords(returned, (key) => automationStudioProjectSubflowName(key, input.structurePlan)), 240);
   const card: ClientGatewayActivityProjectCard = {
     kind: "return",
     briefId: returned.briefId,

@@ -169,3 +169,43 @@ describe("any other call", () => {
     expect(thoughts().map(([, text]) => text)).toEqual(["Pressing Next for the next page.", "This is exactly the step it had already tried, so it was not done again."]);
   });
 });
+
+// t649 (A8 frozen pair 3, `run-mv9zn5ob-d929084d`, 00012): a project builder's submission of its part,
+// refused, was narrated "Submitting the subflow with the store name read via a list extraction" above
+// a green "Done". Every tool that saves or tests a builder's steps is held until Core answers it.
+describe("a part's own calls in a project build", () => {
+  const part = (callId: string, toolId: string, reason: string) => automationStudioActivityDecisionReason.attach({ kind: "tool_call", callId, toolId, input: { flow: SCRIPT } }, reason);
+  const refusedPart = ran({ ok: false, revision: 3, diagnostics: { ok: false, code: "flow_bootstrap.completion_refused", refusal: "flow_bootstrap.evidence_completion_parameters_unresolved", issues: [{ code: "web.handle.unknown" }] } });
+
+  it("a refused part is said in Core's words, an accepted one as the model said it, and a resend unchanged as that", async () => {
+    const claim = "Submitting the part with the name read from the header.";
+    const observed = observeAutomationStudioEvidenceLoop(loopInput(
+      [part("s-1", "core.submit_subflow", claim), part("s-2", "core.submit_subflow", claim), part("s-3", "core.submit_subflow", "Sending the fixed part."), { kind: "complete", result: {} }],
+      [refusedPart, ran({ ok: true, revision: 4, digest: "e".repeat(64) })]
+    ));
+    await inScope(async () => {
+      const first = await observed.decide(request(1));
+      await observed.executeTool({ callId: "s-1", toolId: "core.submit_subflow", value: (first as { input: JsonObject }).input });
+      await observed.decide(request(2, [repeatCheck(1)]));
+      const third = await observed.decide(request(3));
+      await observed.executeTool({ callId: "s-3", toolId: "core.submit_subflow", value: (third as { input: JsonObject }).input });
+    });
+    expect(thoughts().map(([, text]) => text)).toEqual([
+      "The AI model sent a version of this part's steps, but it was refused, so it is not what the Flow does.",
+      "These are the same steps it had already sent, unchanged, so they were not checked again.",
+      "Sending the fixed part."
+    ]);
+  });
+
+  it("a part's failed test is said as the test showed it", async () => {
+    const observed = observeAutomationStudioEvidenceLoop(loopInput(
+      [automationStudioActivityDecisionReason.attach({ kind: "tool_call", callId: "t-1", toolId: "core.test_subflow", input: { revision: 3, digest: "f".repeat(64) } }, "Testing the part, which now reads the name."), { kind: "complete", result: {} }],
+      [{ kind: "llm_evidence_tool_execution", evidence: { ok: false, partial: true, verdict: "no", feedback: {} }, effectApplied: true, resultCode: "subflow.trial_no" }]
+    ));
+    await inScope(async () => {
+      const first = await observed.decide(request(1));
+      await observed.executeTool({ callId: "t-1", toolId: "core.test_subflow", value: (first as { input: JsonObject }).input });
+    });
+    expect(thoughts().map(([, text]) => text)).toEqual(["The AI model expected this version to do what was asked, but the test showed it doesn't yet."]);
+  });
+});

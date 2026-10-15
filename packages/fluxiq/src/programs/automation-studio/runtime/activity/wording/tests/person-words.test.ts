@@ -70,3 +70,26 @@ describe("automationStudioActivityPersonWords: a revision the sentence needs", (
     }
   });
 });
+
+// A8 frozen pair 3 (`run-mv9zn5ob-d929084d`, t649): the model wrote "with the
+// store name read via a list extraction" and the chat read "via a list reading
+// the list". A noun before "extraction" already has its article; only the
+// word for the read changes.
+describe("automationStudioActivityPersonWords: extraction after a noun", () => {
+  it("keeps the model's words around a list extraction", () => {
+    const said = automationStudioActivityReasonText("Submitting the part with the store name read via a list extraction, since the page read exposes no text output.", 240, { decision: true });
+    expect(said).toContain("read via a list read, since");
+    expect(said).not.toMatch(/reading the list|list reader/u);
+  });
+
+  it("says a noun's extraction step and extractions as that noun's read", () => {
+    expect(automationStudioActivityPersonWords("Add a text extraction step after it")).toBe("Add a text-reading step after it");
+    expect(automationStudioActivityPersonWords("Both list extractions came back empty")).toBe("Both list reads came back empty");
+    expect(automationStudioActivityPersonWords("the list extraction handle")).toBe("the list");
+  });
+
+  it("still says a bare extraction as before", () => {
+    expect(automationStudioActivityPersonWords("Run extraction on the results")).toBe("Run reading the list on the results");
+    expect(automationStudioActivityPersonWords("The extraction already read all 5 pages")).toBe("The list reader already read all 5 pages");
+  });
+});

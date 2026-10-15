@@ -121,3 +121,19 @@ describe("a new Flow's name", () => {
     expect(name.length).toBeLessThanOrEqual(80);
   });
 });
+
+// t649 (A8 frozen pair 3, `run-mv9zn5ob-d929084d`, 00048): the build's ending and its toast said the
+// supervisor ended it and never why. Its screened reason (`endedBecause`) is said after.
+describe("a supervisor's reason for ending a build", () => {
+  it("is said after the supervisor's ending, and not beside a time limit", () => {
+    const ended = (issueCodes: string[], endedBecause?: string) => automationStudioConversationCallCause("the build", {
+      ok: false,
+      error: "Flow Bootstrap generation failed (flow_bootstrap.post_provider_validation_failed).",
+      payload: { diagnostic: { code: "flow_bootstrap.post_provider_validation_failed", stage: "post_provider_validation", issueCodes, ...(endedBecause === undefined ? {} : { endedBecause }) } }
+    });
+    expect(ended(["project.build_blocked"], "The item can't be collected from this branch.")).toBe("the build failed: the supervisor ended it because it could not finish the Flow: the item can't be collected from this branch");
+    expect(ended(["project.build_partial"], "FluxIQ could not reach the last page.")).toBe("the build failed: the supervisor ended it with only part of the Flow built: FluxIQ could not reach the last page");
+    expect(ended(["project.build_blocked"])).toBe("the build failed: the supervisor ended it because it could not finish the Flow");
+    expect(ended(["project.build_time_limit", "project.build_blocked"], "The item can't be collected.")).toBe("the build failed: it reached its time limit before a whole test of the Flow passed");
+  });
+});

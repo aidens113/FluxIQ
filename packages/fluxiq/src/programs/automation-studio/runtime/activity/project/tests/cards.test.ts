@@ -73,7 +73,7 @@ describe("the brief card", () => {
     expect(event.detail).toMatchObject({ kind: "note", title: "Building Save recipe: save the first one to my cookbook", status: "started", ref: "b1" });
     expect(event.detail?.project).toEqual({
       kind: "brief", briefId: "b1", brief: "build", subflowKey: "save_recipe", subflowName: "Save recipe",
-      purpose: "save the first one to my cookbook", caseId: "observed-current", allowanceUsd: 0.05
+      purpose: "save the first one to my cookbook", caseId: "observed-current", allowanceUsd: 0.05, after: ["List soups"]
     });
     expectNoDigest(event);
   });
@@ -115,7 +115,8 @@ describe("the return card", () => {
       emitAutomationStudioProjectReturnCard({ returned: builderReturn((value) => Object.assign(value, { outcome: "blocked" })), brief: brief() });
     });
     expect(seen.map((event) => [event.detail?.title, event.detail?.status])).toEqual([["save_recipe: partly done", undefined], ["save_recipe: blocked", "failed"]]);
-    expect(seen[0]!.detail?.text).toBe("It stopped at revision ….");
+    // A revision is a version to the person (`../../wording/person-words.ts`), as in any reason the chat shows.
+    expect(seen[0]!.detail?.text).toBe("It stopped at version ….");
     for (const event of seen) expectNoDigest(event);
   });
 });

@@ -181,7 +181,23 @@ export type AutomationStudioFlowBootstrapFailureDiagnostic = {
    * alone said "a step".
    */
   refusedSteps?: AutomationStudioFlowBootstrapRefusedStep[];
+  /**
+   * Present only beside a project build's supervisor ending in `issueCodes`
+   * (`project.build_blocked`, `project.build_partial`; t649): why the
+   * supervisor ended the build, its recorded reason screened as any reason
+   * the model gives is, on one line, at most `MAX_DIAGNOSTIC_ENDED_BECAUSE`
+   * characters (`service/project-build/run.ts`). The chat's ending and the
+   * build's last activity row say it after "the supervisor ended it ..."
+   * (`conversations/commands/progress.ts`): the person read that it ended and
+   * never why (A8 frozen pair 3, `run-mv9zn5ob-d929084d`, screenshot 00048).
+   */
+  endedBecause?: string;
 };
+
+/** The most characters a supervisor's screened reason for ending a build carries (`endedBecause`). */
+export const MAX_DIAGNOSTIC_ENDED_BECAUSE = 240;
+/** The issue codes a supervisor's ending stands under: `endedBecause` stands only beside one of them. */
+export const DIAGNOSTIC_SUPERVISOR_ENDING_CODES: ReadonlySet<string> = new Set(["project.build_blocked", "project.build_partial"]);
 
 export const MAX_DIAGNOSTIC_ISSUE_CODES = 16;
 /** The shape an issue code must have to travel: no whitespace, so no sentence. */

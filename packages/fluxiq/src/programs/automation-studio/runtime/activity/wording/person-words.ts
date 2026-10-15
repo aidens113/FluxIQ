@@ -19,7 +19,16 @@ const LIST_READER = /\b(?:dom\s+)?(?:extract[\s_-]?list(?:\s+(?:nodes?|steps?|to
  * handle" read "the detected reading the list handle" (R3-U-10, live run
  * `run-mux6naez-6c20f26e`). It is said as the list it names.
  */
-const LIST_HANDLE = /\b(?:dom\s+)?(?:extract[\s_-]?list|extraction)\s+handles?\b/giu;
+const LIST_HANDLE = /\b(?:list\s+)?(?:dom\s+)?(?:extract[\s_-]?list|extraction)\s+handles?\b/giu;
+/**
+ * "extraction" after a noun that says what is read: "via a list extraction",
+ * "the text extraction step". That noun phrase has its article already, so
+ * bare "extraction" said as "reading the list" garbled it: "with the store
+ * name read via a list reading the list" (A8 frozen pair 3,
+ * `run-mv9zn5ob-d929084d`, t649). It is said as that noun's read: "a list
+ * read", "a list-reading step".
+ */
+const MODIFIED_EXTRACTION = /\b(list|data|text|value|row|table|record|field|page|price|link)(s?)\s+extraction(s?)(\s+(?:nodes?|steps?|tools?))?\b(?!\s+handles?\b)/giu;
 /**
  * A control's handle, after the word for the control: "the quantity field
  * handle", "the current quantity input handle" (R4a, `run-mv2nlh9l-52e476da`,
@@ -116,6 +125,7 @@ export function automationStudioActivityPersonWords(text: string): string {
     .replace(/\brevision(s?)\b/giu, (found: string, plural: string) => cased(found, `version${plural}`))
     .replace(CANDIDATE, (found: string, plural: string, owner: string | undefined, offset: number, whole: string) => cased(found, `${determined(whole, offset) ? "" : "the "}Flow${plural}${owner ?? ""}`))
     .replace(LIST_HANDLE, (found: string) => cased(found, "list"))
+    .replace(MODIFIED_EXTRACTION, (found: string, noun: string, plural: string, many: string, kind: string | undefined) => `${cased(found, noun.toLowerCase())}${plural}${kind ? `-reading${kind}` : ` read${many}`}`)
     .replace(CONTROL_HANDLE, (found: string, control: string, plural: string) => `${control}${plural}`)
     .replace(HANDLE_ID, (found: string) => cased(found, "control"))
     .replace(HANDLE_NOUN, (found: string, which: string, plural: string) => `${which} control${plural}`)

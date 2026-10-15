@@ -5,6 +5,7 @@ export { automationStudioActivityAction, type AutomationStudioActivityCallWords 
 export { automationStudioActivityCheckRefusalReasons, automationStudioActivityCompletionRefusal } from "./completion-refusal.ts";
 export { automationStudioActivityDecision } from "./decision.ts";
 export { automationStudioActivityDraftEditCard } from "./draft-edit-card.ts";
+export { automationStudioActivityFailureCodeWords } from "./failure-code-words.ts";
 export { automationStudioActivityHumanLabel } from "./human-label.ts";
 export { automationStudioActivityIssueWords, type AutomationStudioActivityIssue } from "./issue-words.ts";
 export { automationStudioActivityIssuesOf } from "./issues-of.ts";
