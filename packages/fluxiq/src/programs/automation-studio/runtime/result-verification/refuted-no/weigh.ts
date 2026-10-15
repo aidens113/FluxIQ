@@ -13,7 +13,8 @@
 // can check against its record: rows called one and the same
 // (`./duplicate-claim.ts`), rows called missing (`./missing-claim.ts`), a
 // stored row called an excluded kind of thing its own words say it is not
-// (`./excluded-kind-claim.ts`), the result's count (`./count-claim.ts`), and
+// (`./excluded-kind-claim.ts`), the result's count (`./count-claim.ts`), a
+// left-out row given a value Core read otherwise (`./value-claim.ts`, t629), and
 // the pages and order the agreement checks itself (`record.other`).
 //
 // - A sentence making claims is refuted when Core's record refutes every one.
@@ -42,6 +43,7 @@ import { automationStudioResultExcludedKindClaim } from "./excluded-kind-claim.t
 import { automationStudioResultMissingClaim } from "./missing-claim.ts";
 import { automationStudioResultSentenceRows } from "./named-rows.ts";
 import { automationStudioResultReadingSentences } from "./sentences.ts";
+import { automationStudioResultValueClaim } from "./value-claim.ts";
 import type { AutomationStudioResultNoClaim, AutomationStudioResultNoRecord, AutomationStudioResultNoWeighed } from "./types.ts";
 
 /** Words that say something is wrong. */
@@ -65,6 +67,7 @@ export function automationStudioResultRefutedReading(reading: Reading | undefine
       automationStudioResultMissingClaim(sentence, named),
       automationStudioResultExcludedKindClaim(sentence, named, record),
       automationStudioResultCountClaim(sentence, named, record),
+      automationStudioResultValueClaim(sentence, named),
       record.other?.(sentence)
     ].filter((claim): claim is AutomationStudioResultNoClaim => claim !== undefined);
     for (const claim of claims) if (claim.refuted && claim.finding && !findings.includes(claim.finding)) findings.push(claim.finding);

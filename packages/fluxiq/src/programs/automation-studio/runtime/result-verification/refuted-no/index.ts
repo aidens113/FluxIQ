@@ -4,13 +4,16 @@
 // claims Core can check -- rows called one and the same
 // (`duplicate-claim.ts`), rows called missing (`missing-claim.ts`), a stored
 // row called an excluded kind of thing its own words say it is not
-// (`excluded-kind-claim.ts`), the result's count (`count-claim.ts`) -- each
+// (`excluded-kind-claim.ts`), the result's count (`count-claim.ts`), a left-out
+// row given a value Core read otherwise (`value-claim.ts`, t629) -- each
 // found by the rows a sentence names (`named-rows.ts`, `sentences.ts`), each
 // sentence read without Core's own wording of the conditions it names
 // (`condition-wording.ts`, t624); and the one re-ask of a wholly refuted no
 // (`reask.ts`, `recheck-words.ts`), after which a no still refuted is unsure,
 // never a no and never a yes Core made. And an unsure call's doubt that the
 // answer's dedupe merged rows, held to the same record (`dedupe-doubt.ts`, t628).
+// And which conditions test the request's own words, so a dispute of one is
+// held to the value Core read (`request-text-test.ts`, t629).
 export * from "./condition-wording.ts";
 export * from "./count-claim.ts";
 export * from "./dedupe-doubt.ts";
@@ -21,6 +24,8 @@ export * from "./named-rows.ts";
 export * from "./reask.ts";
 export * from "./recheck-words.ts";
 export * from "./record.ts";
+export * from "./request-text-test.ts";
 export * from "./sentences.ts";
 export * from "./types.ts";
+export * from "./value-claim.ts";
 export * from "./weigh.ts";

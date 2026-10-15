@@ -3,11 +3,27 @@
 // each read alone left out, and which of them Core settled; the count stored
 // and the repeats the answer's dedupe removed; and the request's item phrase.
 // Read from the summary the judges were sent, never from a model's words.
+//
+// **And which settled rows fail the request's own words (t629).** A settled row
+// of a read that kept rows, left out by a condition that tests text the request
+// says (`./request-text-test.ts`), carries those words and the value its read's
+// witness found on it (`leftOutObservations`, aligned with `leftOutOnlyByThis`):
+// what a no calling it missing, or giving it another value, is held to
+// (`./missing-claim.ts`, `./value-claim.ts`). A row two conditions of one name
+// would give different readings is given none.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioRunResultSummary } from "../contracts.ts";
-import { automationStudioRequestPhrases, automationStudioRequestRowsReads, type AutomationStudioRequestPhrases, type AutomationStudioRequestWording } from "../request-rows/index.ts";
-import type { AutomationStudioResultNoClaim, AutomationStudioResultNoRecord, AutomationStudioResultNoStoredRow } from "./types.ts";
+import { automationStudioResultConditionName } from "../read-account/index.ts";
+import {
+  automationStudioRequestPhrases,
+  automationStudioRequestRowLabel,
+  automationStudioRequestRowsReads,
+  type AutomationStudioRequestPhrases,
+  type AutomationStudioRequestWording
+} from "../request-rows/index.ts";
+import { automationStudioResultRequestTextTest } from "./request-text-test.ts";
+import type { AutomationStudioResultNoClaim, AutomationStudioResultNoLeftOutRow, AutomationStudioResultNoRecord, AutomationStudioResultNoStoredRow } from "./types.ts";
 
 /** The record a no is weighed against (header). `requestText` gives the item phrase, `wording` the request's own words; `other` checks the claims the agreement checks itself. */
 export function automationStudioResultNoRecord(input: {
@@ -19,9 +35,12 @@ export function automationStudioResultNoRecord(input: {
   const { summary } = input;
   const { reads } = automationStudioRequestRowsReads(summary);
   const stored = summary.recordSets.flatMap((set) => (set.sampleRows ?? []).flatMap((row) => storedRow(row, set.columns)));
+  const quotes = requestQuotes(summary, input.requestText, input.wording?.says);
   const leftOut = reads.flatMap((read) => read.conditions.flatMap((condition) => condition.rows.map((given, index) => {
     const label = condition.labels[index]!;
-    return { label, given, condition: condition.condition, settled: condition.settled?.labels.includes(label) === true };
+    const settled = condition.settled?.labels.includes(label) === true;
+    const quoted = settled ? quotes.get(quoteKey(condition.condition, label)) ?? undefined : undefined;
+    return { label, given, condition: condition.condition, settled, quotesRequest: quoted !== undefined, ...(quoted ? { quoted } : {}) };
   })));
   const storedLabels = [...new Set(stored.map((row) => row.label))];
   const pools = [...reads.map((read) => [...new Set([...read.labels, ...storedLabels])]), storedLabels];
@@ -40,6 +59,44 @@ export function automationStudioResultNoRecord(input: {
     ...(input.wording ? { says: input.wording.says } : {}),
     ...(input.other ? { other: input.other } : {})
   };
+}
+
+type Quoted = NonNullable<AutomationStudioResultNoLeftOutRow["quoted"]>;
+
+/** A left-out row's key: its condition as named, and its label. */
+function quoteKey(condition: string, label: string): string {
+  return `${condition}\u0000${label}`;
+}
+
+/**
+ * Each settled row of a read that kept rows whose condition tests the
+ * request's own words, by condition and label: those words, and the value the
+ * row's witness found (header). `null` where one key would read two ways.
+ */
+function requestQuotes(summary: AutomationStudioRunResultSummary, requestText: string | undefined, says: ((text: string) => boolean) | undefined): Map<string, Quoted | null> {
+  const quotes = new Map<string, Quoted | null>();
+  if (!requestText || !says) return quotes;
+  // A subflow trial's entry is judged in its own trial, as `../request-rows/summary-reads.ts` leaves it out.
+  const entry = new Set(summary.taskChecklist?.entry?.steps ?? []);
+  for (const account of summary.reads ?? []) {
+    // A read that kept no row shows no value passing its conditions: what it tests may not be what the request means.
+    if (entry.has(account.nodeId) || !(account.kept > 0)) continue;
+    (account.conditions ?? []).forEach((condition, index) => {
+      if (!condition.leftOutSettled?.length || !condition.leftOutOnlyByThis?.length) return;
+      const texts = automationStudioResultRequestTextTest(condition.condition, requestText, says);
+      if (!texts) return;
+      const name = automationStudioResultConditionName(condition.number ?? index + 1, condition.condition);
+      const settled = new Set(condition.leftOutSettled);
+      condition.leftOutOnlyByThis.forEach((row, at) => {
+        const witness = condition.leftOutObservations?.[at];
+        if (!settled.has(row) || witness?.state !== "present") return;
+        const key = quoteKey(name, automationStudioRequestRowLabel(row));
+        const known = quotes.get(key);
+        quotes.set(key, known === undefined || known?.read === witness.value ? { texts, read: witness.value } : null);
+      });
+    });
+  }
+  return quotes;
 }
 
 /** A stored row by its text cells, labelled by its first text column, as `../request-rows/summary-reads.ts` labels it. */

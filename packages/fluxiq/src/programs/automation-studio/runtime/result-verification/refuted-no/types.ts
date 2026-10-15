@@ -15,6 +15,14 @@ export type AutomationStudioResultNoLeftOutRow = {
   condition: string;
   /** True when Core read the row's tested value itself and found it failing the condition as written. */
   settled: boolean;
+  /**
+   * True when the row is settled and its condition tests the request's own
+   * words (`./request-text-test.ts`, t629) over a read that kept rows: a row
+   * that fails it does not say what the request asks for, by Core's own read.
+   */
+  quotesRequest: boolean;
+  /** Where `quotesRequest`: the request's words the condition tests, and the value Core's read found on this row. */
+  quoted?: { texts: string[]; read: string } | undefined;
 };
 
 /**
