@@ -102,6 +102,8 @@ import { automationStudioSubflowRouteOutputs } from "./route-outputs.ts";
 import { automationStudioSubflowPartKey, automationStudioSubflowRekeyedParts } from "./part-keys.ts";
 import type { AutomationStudioSubflowScopeIssue } from "./scope-issue.ts";
 import { automationStudioSubflowProposalDigest } from "./subflow-digest.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID } from "./submit-tool.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID } from "./subflow-trial-gate.ts";
 
 type CandidateControllerInput = ConstructorParameters<typeof AutomationStudioFlowCandidateSubmissionController>[0];
 
@@ -120,6 +122,9 @@ export type AutomationStudioSubflowSubmissionHistory = {
 export const AUTOMATION_STUDIO_SUBFLOW_SCOPE_REFUSED_CODE = "subflow.scope_refused";
 
 type ScopeIssue = AutomationStudioSubflowScopeIssue;
+
+/** The builder's own submit and test tools, and what it submits: what its refusals name (t632). */
+const SUBFLOW_TOOLS = Object.freeze({ submit: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, test: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, subject: "subflow" });
 
 /** Session-local proposals for one brief; never the accepted Flow store, never a whole candidate. */
 export class AutomationStudioSubflowScopedSubmissionController {
@@ -150,7 +155,8 @@ export class AutomationStudioSubflowScopedSubmissionController {
     this.siblings = new Set(input.siblings);
     // The brief's parts are what this subflow is asked to do: the probe's checks read them as the instruction.
     this.instructionText = this.scope.parts.map((part) => part.text).join("\n");
-    this.inner = new AutomationStudioFlowCandidateSubmissionController({ ...input.submission, instructionText: this.instructionText });
+    // Its refusals name this loop's tools, never the whole candidate's (`../candidate/unchanged-submission.ts`, t632).
+    this.inner = new AutomationStudioFlowCandidateSubmissionController({ ...input.submission, instructionText: this.instructionText, refusalTools: SUBFLOW_TOOLS });
   }
 
   /** The latest valid proposal, or none once a refusal cleared it. */

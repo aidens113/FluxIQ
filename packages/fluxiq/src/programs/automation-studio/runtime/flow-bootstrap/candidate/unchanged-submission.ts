@@ -47,6 +47,21 @@
 // rename cannot answer a judge's no. Compared with a refuted Flow the
 // `datasetId` is set aside (`{ datasetId: "set_aside" }`); compared with a
 // revision that was not refuted it is still a change, as t485 decided.
+//
+// **It names the tools of the loop it is sent in (t632).** A8 wave 8
+// `run-mv9gbsm5-2957581c` (0055, 0124): a subflow builder was told to "submit
+// the whole changed Flow with core.submit_candidate", a tool its brief does not
+// offer; there it is `core.submit_subflow` and `core.test_subflow`. The
+// submission controller is given the loop's own tools and what it calls its
+// submission (`tools`), and the refusal names those; without them it names the
+// candidate loop's, as before.
+//
+// **And the revision still standing, where its trial was not a no (t632).** The
+// same run's builder rebuilt, after an unsure trial, a Flow already judged no,
+// following the unsure's no-reading, while the unsure revision could still be
+// tested again. A refusal of a refuted Flow now names the revision that still
+// stands when its last trial was unsure, not judged or failed to run, and says
+// that testing it again is allowed and when that is the better move.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowBuildPlan } from "../plan/index.ts";
@@ -91,8 +106,17 @@ function canonical(value: JsonValue): string {
   return JSON.stringify(value);
 }
 
-const SUBMIT = "core.submit_candidate";
-const TEST = "core.test_candidate";
+/** The submit and test tools of the loop a refusal is sent in, and what that loop calls what it submits ("Flow", "subflow"). */
+type Tools = { submit: string; test: string; subject: string };
+
+/** The candidate loop's own tools: what a refusal names unless the loop it is sent in names others (header). */
+const CANDIDATE_TOOLS: Tools = Object.freeze({ submit: "core.submit_candidate", test: "core.test_candidate", subject: "Flow" });
+
+/** Trial verdicts after which the same revision may be tested again, within the trial gate's bound. */
+const RETESTABLE: ReadonlySet<string> = new Set(["unsure", "not_judged", "execution_failed"]);
+
+/** The revision still standing beside a refuted Flow, with its last trial (header, t632). */
+type Current = { revision: number; digest: string; lastTrial: AutomationStudioCandidateTrialResult | undefined };
 
 /** The refusal check for a submission that changes nothing, with what failed last. */
 export function automationStudioCandidateUnchangedRefusal(input: {
@@ -106,8 +130,14 @@ export function automationStudioCandidateUnchangedRefusal(input: {
   datasetRenamed?: boolean | undefined;
   /** Set when the submission differs from `standing` in its names alone (header). */
   reworded?: boolean | undefined;
+  /** The tools of the loop the refusal is sent in (header, t632); the candidate loop's when absent. */
+  tools?: Tools | undefined;
+  /** Where the Flow was refuted: the revision that still stands, with its last trial, when it is another (header, t632). */
+  current?: Current | undefined;
 }): Extract<AutomationStudioFlowCandidateSubmission, { ok: false }>["check"] {
   const { standing, lastTrial, refuted } = input;
+  const tools = input.tools ?? CANDIDATE_TOOLS;
+  const retest = refuted ? retestable(input.current) : undefined;
   const reworded = input.reworded === true && standing !== undefined;
   const code = refuted ? "candidate.unchanged_after_no" : "candidate.unchanged_submission";
   const same = reworded
@@ -128,24 +158,38 @@ export function automationStudioCandidateUnchangedRefusal(input: {
       ...(standing ? { revision: standing.revision, digest: standing.digest } : {}),
       ...(lastTrial ? { lastTrial: { verdict: lastTrial.verdict, feedback: structuredClone(lastTrial.feedback) } } : {}),
       ...(refuted ? { judged: structuredClone(refuted) } : {}),
-      instruction: `${same}. ${whatFailed(standing, lastTrial, refuted)}`
+      ...(retest ? { standingRevision: { revision: retest.revision, digest: retest.digest, verdict: retest.verdict } } : {}),
+      instruction: `${same}. ${whatFailed(standing, lastTrial, refuted, tools)}${retest ? retestWords(retest, tools) : ""}`
     }
   };
 }
 
+/** The revision still standing beside a refuted Flow, when its last trial allows testing it again (header, t632). */
+function retestable(current: Current | undefined): { revision: number; digest: string; verdict: string } | undefined {
+  const verdict = current?.lastTrial?.verdict;
+  return current && verdict && RETESTABLE.has(verdict) ? { revision: current.revision, digest: current.digest, verdict } : undefined;
+}
+
+/** That testing the standing revision again is allowed, and when it is the better move (header, t632). Generic words, naming no site or task. */
+function retestWords(retest: { revision: number; digest: string; verdict: string }, tools: Tools): string {
+  return ` Revision ${retest.revision} still stands and its last trial answered ${retest.verdict}, so testing it again with ${tools.test}, using exactly revision ${retest.revision} and digest ${retest.digest}, is allowed until its retests run out. `
+    + `That is the better move when its feedback names no defect in the ${tools.subject} itself: one judge call said yes, Core's record contradicts the other call's reading, or the change that reading asks for would take back what answered an earlier no.`;
+}
+
 /** What failed last and the way out, in the words the trial gate uses for the same verdicts (`./trial-gate.ts`). */
-function whatFailed(standing: Pick<AutomationStudioFlowCandidate, "revision" | "digest"> | undefined, lastTrial: AutomationStudioCandidateTrialResult | undefined, refuted: JsonObject | undefined): string {
+function whatFailed(standing: Pick<AutomationStudioFlowCandidate, "revision" | "digest"> | undefined, lastTrial: AutomationStudioCandidateTrialResult | undefined, refuted: JsonObject | undefined, tools: Tools): string {
+  const subject = tools.subject;
   if (refuted) {
-    return "The judge found its trial did not do what the instruction asks (what it found is under judged), and submitting it again cannot change that: this exact Flow cannot be tested again or completed. "
-      + `Change the Flow to fix what the judge found, submit the whole changed Flow with ${SUBMIT}, then test the new revision.`;
+    return `The judge found its trial did not do what the instruction asks (what it found is under judged), and submitting it again cannot change that: this exact ${subject} cannot be tested again or completed. `
+      + `Change the ${subject} to fix what the judge found, submit the whole changed ${subject} with ${tools.submit}, then test the new revision.`;
   }
   if (!lastTrial) {
-    return `Revision ${standing?.revision} still stands and has not been tested: test it with ${TEST} using exactly that revision and digest, or change the Flow and submit the whole changed Flow.`;
+    return `Revision ${standing?.revision} still stands and has not been tested: test it with ${tools.test} using exactly that revision and digest, or change the ${subject} and submit the whole changed ${subject} with ${tools.submit}.`;
   }
   if (lastTrial.verdict === "yes") {
     return `Its trial already answered yes: complete with exactly revision ${standing?.revision} and its digest.`;
   }
   return `Its last trial answered ${lastTrial.verdict}; what failed is under lastTrial (the step that stopped, and what it says happened). `
-    + "Submitting the same Flow again cannot change that. Change the step that feedback names, or the steps that lead to it, and submit the whole changed Flow; "
-    + `test the same revision again with ${TEST} only if that feedback says trying again may pass.`;
+    + `Submitting the same ${subject} again cannot change that. Change the step that feedback names, or the steps that lead to it, and submit the whole changed ${subject} with ${tools.submit}; `
+    + `test the same revision again with ${tools.test} only if that feedback says trying again may pass.`;
 }

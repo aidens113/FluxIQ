@@ -94,10 +94,8 @@ import type { AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialResult } from "./contracts.ts";
 import { automationStudioSubflowBuilderTools } from "./role-tools.ts";
 import { AutomationStudioSubflowScopedSubmissionController } from "./scoped-submission.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID } from "./submit-tool.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, AutomationStudioSubflowTrialGate, type AutomationStudioSubflowTrialPreparingPort } from "./subflow-trial-gate.ts";
-
-/** The builder's submit tool. */
-export const AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID = "core.submit_subflow";
 
 /**
  * Calls a builder's budget keeps back from its count of decisions left: the
