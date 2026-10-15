@@ -26,7 +26,8 @@ const builderPorts = (ended: AutomationStudioProjectBriefEnding, decide: Automat
     decide
   },
   submission: testSubmission(),
-  ended
+  ended,
+  deniedEvidenceKeys: []
 });
 
 const resetBrief = () => gardenBrief("b-reset", "list_seeds", [], (value) => Object.assign(value, { kind: "reset", parts: [], maxIterations: 3 }));

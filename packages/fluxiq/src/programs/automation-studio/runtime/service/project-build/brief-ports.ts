@@ -241,7 +241,8 @@ export function automationStudioProjectBuildBriefPorts(input: {
       const arrived = entry.kind === "prepared" && opensArriving;
       const absorbedActs = started.record.putBack?.map((act) => act.act);
       const loop = told({ ...placed, tools }, { start: started.told, entry: entryNote(request.scope.subflowKey, entry, absorbedActs), permittedActs: request.brief.permittedActs, arrived });
-      return { loop, submission: { ...submission, permissionFor: built.permissions.planStep }, trial, reset, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...observed, decide: built.decide(observed.completionSchema) }), ended: built.ended };
+      // The domain's denied keys, which the dispatcher withholds from a repair's `yourSubflow` (`project-agents/dispatch/run-brief.ts`, t625).
+      return { loop, submission: { ...submission, permissionFor: built.permissions.planStep }, trial, reset, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...observed, decide: built.decide(observed.completionSchema) }), ended: built.ended, deniedEvidenceKeys: binding.deniedEvidenceKeys };
     },
     reset: async (request) => {
       // An undo aimed at another item is refused in a reset's words (header).

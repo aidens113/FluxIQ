@@ -31,13 +31,27 @@ export const AUTOMATION_STUDIO_LLM_DRAFT_WITHHELD_NOTE = "Values under keys the 
  * key removed at any depth, and anything else exactly as it was.
  */
 export function automationStudioLlmDraftEntryWithoutDeniedKeys<T extends { toolId: string; value: JsonValue }>(item: T, deniedKeys: readonly string[]): T {
-  if (item.toolId !== AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID || !deniedKeys.length) return item;
-  const denied = new Set(deniedKeys.map(automationStudioEvidenceKey));
-  const removed = { count: 0 };
-  const value = withoutKeys(item.value, denied, removed);
-  if (!removed.count) return item;
+  if (item.toolId !== AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID) return item;
+  const { value, withheld } = automationStudioLlmValueWithoutDeniedKeys(item.value, deniedKeys);
+  if (!withheld) return item;
   const noted = value && typeof value === "object" && !Array.isArray(value) ? { ...value, withheld: AUTOMATION_STUDIO_LLM_DRAFT_WITHHELD_NOTE } : value;
   return { ...item, value: noted };
+}
+
+/**
+ * `value` with every key the domain denies removed at any depth, and how many
+ * it removed; `value` itself, untouched, when it removed none. The one walk
+ * for any of the Flow's own authored parameters a model is shown (header) --
+ * the draft entry above, and a repair's `yourSubflow`
+ * (`project-agents/dispatch/run-brief.ts`, t625) -- never for gathered page
+ * evidence, which the context packet still refuses whole.
+ */
+export function automationStudioLlmValueWithoutDeniedKeys<T extends JsonValue>(value: T, deniedKeys: readonly string[]): { value: T; withheld: number } {
+  if (!deniedKeys.length) return { value, withheld: 0 };
+  const denied = new Set(deniedKeys.map(automationStudioEvidenceKey));
+  const removed = { count: 0 };
+  const shown = withoutKeys(value, denied, removed);
+  return removed.count ? { value: shown as T, withheld: removed.count } : { value, withheld: 0 };
 }
 
 function withoutKeys(value: JsonValue, denied: ReadonlySet<string>, removed: { count: number }): JsonValue {

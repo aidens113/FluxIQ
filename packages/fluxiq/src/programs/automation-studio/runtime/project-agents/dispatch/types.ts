@@ -62,6 +62,14 @@ export type AutomationStudioProjectBuilderPorts = {
   observe?: BuilderInput["observe"];
   /** The brief's permission and person-needed ending; absent, only the build's cancellation stops its loop. */
   ended?: AutomationStudioProjectBriefEnding | undefined;
+  /**
+   * The bound domain's declared denied evidence keys
+   * (`AutomationStudioLlmEvidenceRuntimeBinding.deniedEvidenceKeys`): what the
+   * dispatcher withholds from the Flow's own parameters it shows a repair
+   * under `yourSubflow` (`./run-brief.ts`, t625). Required, as the binding's
+   * is, so no ports arrive without them; `[]` denies nothing.
+   */
+  deniedEvidenceKeys: readonly string[];
 };
 
 /**

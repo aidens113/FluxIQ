@@ -13,6 +13,7 @@ import { automationStudioFlowDraftSeedFromFlow } from "../../node-tools/index.ts
 import {
   AUTOMATION_STUDIO_LLM_DRAFT_WITHHELD_NOTE,
   AutomationStudioLlmRequestRefusedError,
+  automationStudioLlmValueWithoutDeniedKeys,
   packAutomationStudioLlmContext,
   screenAutomationStudioLlmEvidence,
   type AutomationStudioLlmHarnessInput
@@ -84,5 +85,25 @@ describe("the draft a repair shows its model", () => {
     try { packAutomationStudioLlmContext(refused); } catch (error) { caught = error; }
     expect(caught).toBeInstanceOf(AutomationStudioLlmRequestRefusedError);
     expect((caught as AutomationStudioLlmRequestRefusedError).code).toBe("llm.request.evidence_denied_key");
+  });
+});
+
+// t625: the one walk the draft entry and a repair's `yourSubflow` (`project-agents/dispatch/run-brief.ts`) share.
+describe("a value the Flow authored, shown without the domain's denied keys", () => {
+  it("drops every denied key at any depth, matched as the screen matches keys, counts them and leaves the value given untouched", () => {
+    const given: JsonValue = { selector: LOCATOR, element: { accessibleName: "Search Marketplace", Selector: LOCATOR }, fields: [{ name: "price", selector: ".p" }] };
+    const { value, withheld } = automationStudioLlmValueWithoutDeniedKeys(given, WEB_DENIED_EVIDENCE_KEYS);
+    expect(withheld).toBe(3);
+    expect(value).toEqual({ element: { accessibleName: "Search Marketplace" }, fields: [{ name: "price" }] });
+    expect(screenAutomationStudioLlmEvidence(value, WEB_DENIED_EVIDENCE_KEYS).deniedKey).toBe(false);
+    expect(JSON.stringify(given)).toContain(LOCATOR);
+  });
+
+  it("returns the value itself when it removed nothing, or when the domain denies nothing", () => {
+    const clean: JsonValue = { text: "dining table", element: { accessibleName: "Search Marketplace" } };
+    expect(automationStudioLlmValueWithoutDeniedKeys(clean, WEB_DENIED_EVIDENCE_KEYS)).toEqual({ value: clean, withheld: 0 });
+    expect(automationStudioLlmValueWithoutDeniedKeys(clean, WEB_DENIED_EVIDENCE_KEYS).value).toBe(clean);
+    const located: JsonValue = { selector: LOCATOR };
+    expect(automationStudioLlmValueWithoutDeniedKeys(located, []).value).toBe(located);
   });
 });

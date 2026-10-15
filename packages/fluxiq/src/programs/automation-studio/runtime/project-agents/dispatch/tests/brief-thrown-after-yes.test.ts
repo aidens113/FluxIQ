@@ -14,6 +14,7 @@ function portsAnswering(verdict: Verdict) {
   return (): AutomationStudioProjectBuilderPorts => ({
     loop: { tools: [], decide: async () => ({ kind: "complete", result: {} }), executeTool: async () => ({ ok: true }) },
     submission: {} as unknown as AutomationStudioProjectBuilderPorts["submission"],
+    deniedEvidenceKeys: [],
     trial: async (request) => ({ partial: true, scope: "subflow", identity: { ...request.proposal.scope }, revision: request.proposal.revision, digest: request.proposal.digest, verdict, feedback: {} as JsonObject, trialRunId: `run.trial-${request.proposal.revision}`, entryPrepared: true })
   });
 }
