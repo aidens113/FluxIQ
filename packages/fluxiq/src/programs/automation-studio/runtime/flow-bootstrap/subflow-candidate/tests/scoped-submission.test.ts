@@ -292,6 +292,26 @@ describe("a subflow builder's scoped submission", () => {
     expect(kept.ok, JSON.stringify(kept)).toBe(true);
   });
 
+  // A8 wave 10 (t639): a builder handed on an output its step's node does not declare, which is empty at run time.
+  it("refuses a callable part's output bound to a port its step's node does not declare, naming the ports it does", async () => {
+    const scope = testScope({ interface: interfaceOf });
+    const press = ["  step press: press the filter", "    node: web.dom.click", "    selector: .filter", "    consequences: none"];
+    const bound = (binding: string) => {
+      const lines = callable({ output: binding });
+      lines.splice(lines.indexOf("end"), 0, ...press);
+      return lines;
+    };
+    const refused = await controller(scope).submit(script(bound("count = $step.press.address")));
+    if (refused.ok) throw new Error("expected a refusal");
+    expect(refused.check.issueCodes).toEqual(["subflow.output_unknown_port"]);
+    const said = String(((refused.check.feedback?.issues as JsonObject[] | undefined)?.[0])?.message);
+    expect(said).toContain('The output "count" is bound to "address" of one of this part\'s steps, and its node "web.output.dom-click" declares no output by that name: it declares only success, failed');
+    expect(said).toContain("end the brief blocked and name the output, so the plan can change.");
+    // A port the node declares stands.
+    const kept = await controller(scope).submit(script(bound("count = $step.rows.records")));
+    expect(kept.ok, JSON.stringify(kept)).toBe(true);
+  });
+
   // A8 launch 7 (t594): a dependent part asked a lasting act, and every submission pressed with `consequences: none`.
   it("refuses a submission that declares no lasting act when its brief's parts ask for one, and asks nothing of a brief whose parts do not", async () => {
     const asking = testScope({ parts: [{ partId: "p2", sourceId: "instruction.1", text: "Save the listing to the shortlist", lastingActs: ["create_new"] }] });

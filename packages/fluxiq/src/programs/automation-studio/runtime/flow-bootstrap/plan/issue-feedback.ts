@@ -223,6 +223,12 @@ const AUTHORED_CODES: ReadonlySet<string> = new Set([
   "subflow.output_unbound",
   "subflow.input_unread",
   "subflow.output_not_a_value",
+  // An output bound to a port its step's node does not declare, or a whole
+  // candidate's part output bound to one or to a route port (t639): each
+  // sentence names the output, the port and the ports the node declares.
+  "subflow.output_unknown_port",
+  "candidate.part_output_unknown_port",
+  "candidate.part_output_not_a_value",
   // An optional step, or a step that runs only after one, where it cannot
   // stand (`../script-statements/guarded-steps.ts`): each sentence is
   // Core's own and names only lines, labels and node ids the model wrote, and
