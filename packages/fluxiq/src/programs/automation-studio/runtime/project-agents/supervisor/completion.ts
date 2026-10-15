@@ -58,12 +58,11 @@ export function automationStudioProjectSupervisorCompletion(context: AutomationS
       const reason = typeof result.reason === "string" ? result.reason.trim() : "";
       if ((result.ended !== "blocked" && result.ended !== "partial") || !reason || keys.some((key) => key !== "ended" && key !== "reason")) return refused("project.completion_shape", GUIDANCE.completion.shape);
       if (!context.state.anyNotDone() && !context.state.wholeTrialFailed) return refused("project.completion_ended_too_soon", GUIDANCE.completion.endedTooSoon);
-      const left = automationStudioProjectSupervisorLeftOnTarget(context.ports, context.state);
+      const left = automationStudioProjectSupervisorLeftOnTarget(context.ports);
       if (left.note && left.undoable && !context.state.resetCameBackLast() && heldForReset < MAX_HELD_FOR_RESET) {
         heldForReset += 1;
         return refused("project.completion_reset_first", GUIDANCE.completion.resetFirst, {
-          actsInPlace: left.acts.filter((act) => act.undoable).map((act) => ({ act: act.act, did: act.did, brief: act.brief })),
-          ...(left.lastWholeTrialLeftActs ? { lastWholeTrialLeftActs: true } : {})
+          actsInPlace: left.acts.filter((act) => act.undoable).map((act) => ({ act: act.act, did: act.did, brief: act.brief }))
         });
       }
       ended({ outcome: result.ended, reason: left.reason(reason) });

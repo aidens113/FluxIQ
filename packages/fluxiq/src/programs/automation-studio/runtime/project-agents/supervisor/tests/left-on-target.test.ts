@@ -16,7 +16,7 @@ const back = async (): Promise<AutomationStudioSiteResetComparison> => ({ moved:
 
 function leftOn(ledger: AutomationStudioSiteResetProjectLedger) {
   const told: Array<string | undefined> = [];
-  const left = automationStudioProjectSupervisorLeftOnTarget({ projectLedger: ledger, leftAtEnding: ({ note }) => told.push(note) }, { wholeTrialLeftActs: false });
+  const left = automationStudioProjectSupervisorLeftOnTarget({ projectLedger: ledger, leftAtEnding: ({ note }) => told.push(note) });
   return { left, told };
 }
 
