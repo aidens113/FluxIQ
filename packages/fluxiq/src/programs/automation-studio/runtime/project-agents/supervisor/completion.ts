@@ -5,7 +5,7 @@ import type { AutomationStudioLlmEvidenceCompletionCheck } from "../../llm/evide
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";
 import { automationStudioProjectSupervisorLeftOnTarget } from "./left-on-target.ts";
-import type { AutomationStudioProjectSupervisorRecoveryShortfall, AutomationStudioProjectSupervisorReliesOnRecovery } from "./state.ts";
+import type { AutomationStudioProjectSupervisorCompletedOnPass, AutomationStudioProjectSupervisorRecoveryShortfall, AutomationStudioProjectSupervisorReliesOnRecovery, AutomationStudioProjectSupervisorStandingRescue } from "./state.ts";
 
 /** How many times an ending is held back for a reset before it is let through with what is left named (header). */
 const MAX_HELD_FOR_RESET = 2;
@@ -72,9 +72,38 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_COMPLETION_SCHEMA: JsonObject 
  * Flow relies on the run's own recovery (`ended`), and the model's own ending
  * kept beside it (`endedWith`) for the run's outcome, never in the person's
  * words. Only the person's cancel ends without it (`./supervisor-loop.ts`).
+ *
+ * **An honest ending completes on the build's fallback too (A8 wave 9 social
+ * `run-mv9ml775`, t637).** When a repair of a rescued pass came back done and
+ * the Flow assembled from it never passed, the most recent rescued pass is the
+ * build's fallback (`standingRescue`, `./state.ts`), and an honest ending
+ * completes on it, said as above with the later assembly named as set aside.
+ * Unlike the latest assembly's own rescued pass, whose trial was the last thing
+ * run on the target, the fallback's Flow was not: later trials and builders
+ * acted since. So the reset rule holds first, exactly as for an ending: while
+ * this build's own acts are still in place and a reset brief could undo them,
+ * the ending is refused `project.completion_reset_first` until one has come
+ * back, and what no reset undid is named after the person's words. The
+ * ending is never refused as too soon: a passing revision stands.
+ *
+ * **The fallback is any pass, and may be named (coordinator, t637).** The
+ * fallback is the most recent whole-test pass of either kind: a rescued one,
+ * said with the recovery words, or an outright one, said plainly -- the later
+ * revision never passed, so the build completes on the last that passed. A
+ * completion naming the fallback's revision and digest completes on it under
+ * the same reset rule (`completed`), rather than being refused as not the
+ * latest; one naming any other revision that is not the latest is refused
+ * `project.completion_not_latest` as before.
  */
 export function automationStudioProjectSupervisorCompletion(context: AutomationStudioProjectSupervisorContext, ended: (ending: AutomationStudioProjectSupervisorEnded) => void): (result: JsonObject) => AutomationStudioLlmEvidenceCompletionCheck {
   let heldForReset = 0;
+  /** The reset rule before an ending, or a completion on the fallback (header): a refusal while a reset could still undo this build's acts, else what is left. */
+  const resetFirst = (): { refusal: AutomationStudioLlmEvidenceCompletionCheck | undefined; left: ReturnType<typeof automationStudioProjectSupervisorLeftOnTarget> } => {
+    const left = automationStudioProjectSupervisorLeftOnTarget(context.ports);
+    if (!left.note || !left.undoable || context.state.resetCameBackLast() || heldForReset >= MAX_HELD_FOR_RESET) return { refusal: undefined, left };
+    heldForReset += 1;
+    return { refusal: refused("project.completion_reset_first", GUIDANCE.completion.resetFirst, { actsInPlace: left.acts.filter((act) => act.undoable).map((act) => ({ act: act.act, did: act.did, brief: act.brief })) }), left };
+  };
   return (result) => {
     const keys = Object.keys(result);
     // A result naming a revision and a digest is judged as a completion on it, whatever else it carries (header).
@@ -83,15 +112,20 @@ export function automationStudioProjectSupervisorCompletion(context: AutomationS
       const reason = typeof result.reason === "string" ? result.reason.trim() : "";
       const extra = keys.filter((key) => key !== "ended" && key !== "reason");
       if ((result.ended !== "blocked" && result.ended !== "partial") || !reason || extra.length) return refused("project.completion_shape", GUIDANCE.completion.shape, shapeDetail(context, extra));
-      // A rescued pass stands: the ending completes on it, the model's words kept beside it (header).
-      if (automationStudioProjectSupervisorReliesOnRecovery(context, "ended", { outcome: result.ended, reason })) return { ok: true };
-      if (!context.state.anyNotDone() && !context.state.wholeTrialFailed) return refused("project.completion_ended_too_soon", GUIDANCE.completion.endedTooSoon);
-      const left = automationStudioProjectSupervisorLeftOnTarget(context.ports);
-      if (left.note && left.undoable && !context.state.resetCameBackLast() && heldForReset < MAX_HELD_FOR_RESET) {
-        heldForReset += 1;
-        return refused("project.completion_reset_first", GUIDANCE.completion.resetFirst, {
-          actsInPlace: left.acts.filter((act) => act.undoable).map((act) => ({ act: act.act, did: act.did, brief: act.brief }))
-        });
+      const endedWith: AutomationStudioProjectSupervisorEnded = { outcome: result.ended, reason };
+      const rescue = context.state.standingRescue(context.controller, context.gate);
+      // The latest assembly's rescued pass stands: the ending completes on it, the model's words kept beside it (header).
+      if (rescue && !rescue.fallback) {
+        automationStudioProjectSupervisorReliesOnRecovery(context, "ended", { endedWith, rescue });
+        return { ok: true };
+      }
+      if (!rescue && !context.state.anyNotDone() && !context.state.wholeTrialFailed) return refused("project.completion_ended_too_soon", GUIDANCE.completion.endedTooSoon);
+      const { refusal, left } = resetFirst();
+      if (refusal) return refusal;
+      // The build's fallback stands: once the reset rule held, the ending completes on it (header, t637).
+      if (rescue) {
+        automationStudioProjectSupervisorReliesOnRecovery(context, "ended", { endedWith, rescue, left: left.note });
+        return { ok: true };
       }
       ended({ outcome: result.ended, reason: left.reason(reason) });
       return { ok: true };
@@ -99,6 +133,14 @@ export function automationStudioProjectSupervisorCompletion(context: AutomationS
     const candidate = context.controller.latest();
     if (!candidate) return refused("project.completion_nothing_assembled", GUIDANCE.completion.nothingAssembled, { submitted: false });
     if (!names || !context.controller.matches({ revision: result.revision as number, digest: result.digest as string, baseDependencyDigest: candidate.baseDependencyDigest })) {
+      // A completion naming the build's fallback completes on it, once the reset rule held (header, t637).
+      const rescue = names ? context.state.standingRescue(context.controller, context.gate) : undefined;
+      if (rescue?.fallback && rescue.fallback.revision === result.revision && rescue.fallback.digest === result.digest) {
+        const { refusal, left } = resetFirst();
+        if (refusal) return refusal;
+        automationStudioProjectSupervisorReliesOnRecovery(context, "completed", { rescue, left: left.note });
+        return { ok: true };
+      }
       return refused("project.completion_not_latest", GUIDANCE.completion.notLatest, { submitted: true, complete: { revision: candidate.revision, digest: candidate.digest } });
     }
     const checked = context.gate.completion({ revision: candidate.revision, digest: candidate.digest });
@@ -107,7 +149,7 @@ export function automationStudioProjectSupervisorCompletion(context: AutomationS
     // A pass the run rescued completes once its repair could not be made, and the person is told (header).
     const why = context.state.recoveryRepairsShort.get(rescued.key);
     if (why) {
-      automationStudioProjectSupervisorReliesOnRecovery(context, why);
+      automationStudioProjectSupervisorReliesOnRecovery(context, why, { rescue: { test: rescued } });
       return { ok: true };
     }
     return refused("candidate.trial_slow_down_unhandled", GUIDANCE.completion.recoveryRepairFirst, { slowDown: rescued.unanswered, wholeTest: { ...rescued.receipt } });
@@ -115,18 +157,30 @@ export function automationStudioProjectSupervisorCompletion(context: AutomationS
 }
 
 /**
- * Completes on the latest whole test when it passed only on the run's own
- * recovery and its repair could not be made for `why` (header): the state
- * keeps what the person is told for the run's outcome, and the chat shows it
- * now. Undefined, and nothing said, when the latest whole test is no such pass.
+ * Completes on a pass that stands although no repair of it was made for
+ * `why` (header): `rescue`, or else the one standing -- the latest assembly's
+ * rescued pass, or the build's fallback (t637). A rescued pass is said with the
+ * recovery words; an outright fallback plainly. The state keeps what the
+ * person is told for the run's outcome, and the Flow it completed on when that
+ * is the fallback; the chat shows it now. `left` is Core's note of what is
+ * still on the target, said after it on the fallback. Undefined, and nothing
+ * said, when no such pass stands.
  */
-export function automationStudioProjectSupervisorReliesOnRecovery(context: Pick<AutomationStudioProjectSupervisorContext, "state" | "controller" | "gate">, why: AutomationStudioProjectSupervisorRecoveryShortfall, endedWith?: AutomationStudioProjectSupervisorEnded): AutomationStudioProjectSupervisorReliesOnRecovery | undefined {
-  const rescued = context.state.rescuedTest(context.controller, context.gate);
-  if (!rescued) return undefined;
-  const relied = context.state.relyOnRecovery(rescued, why, endedWith);
-  emitAutomationStudioActivity({ phase: "verifying", label: RELIES_TITLE, detail: { kind: "note", title: RELIES_TITLE, status: "succeeded", text: relied.told } });
+export function automationStudioProjectSupervisorReliesOnRecovery(
+  context: Pick<AutomationStudioProjectSupervisorContext, "state" | "controller" | "gate">,
+  why: AutomationStudioProjectSupervisorRecoveryShortfall,
+  options: { endedWith?: AutomationStudioProjectSupervisorEnded; rescue?: AutomationStudioProjectSupervisorStandingRescue; left?: string | undefined } = {}
+): AutomationStudioProjectSupervisorReliesOnRecovery | AutomationStudioProjectSupervisorCompletedOnPass | undefined {
+  const rescue = options.rescue ?? context.state.standingRescue(context.controller, context.gate);
+  if (!rescue) return undefined;
+  const relied = rescue.test ? context.state.relyOnRecovery(rescue, why, options.endedWith, options.left) : context.state.completeOnPass(rescue.fallback, why, options.endedWith, options.left);
+  const title = rescue.test ? RELIES_TITLE : FALLBACK_TITLE;
+  emitAutomationStudioActivity({ phase: "verifying", label: title, detail: { kind: "note", title, status: "succeeded", text: relied.told } });
   return relied;
 }
+
+/** The chat row's title when the build completes on a fallback that passed outright (t637). */
+const FALLBACK_TITLE = "The build completes on the last revision that passed";
 
 /** The chat row's title when the Flow completes relying on the run's own recovery. */
 const RELIES_TITLE = "The Flow relies on the run's own recovery";

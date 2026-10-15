@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioFlowCandidateSubmissionController, AutomationStudioFlowCandidateTrialGate } from "../../flow-bootstrap/candidate/index.ts";
+import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmissionController, AutomationStudioFlowCandidateTrialGate } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioProjectBuilderReturn, AutomationStudioProjectReceiptRef, AutomationStudioProjectStructurePlan, AutomationStudioProjectSubflowBrief, AutomationStudioProjectTaskSpec } from "../contracts/index.ts";
 import type { AutomationStudioProjectBuildRecordView } from "../record/index.ts";
 
@@ -39,14 +39,44 @@ export type AutomationStudioProjectSupervisorRescuedTest = { key: string; revisi
  * stopped the supervisor's loop (`stalled`: a stall, a run of unusable or
  * unprogressing decisions) or its model provider stopped answering
  * (`provider`) before it completed (`./supervisor-loop.ts`, t622), or the
- * model gave an honest ending while the pass stood (`ended`, `./completion.ts`).
+ * model gave an honest ending while the pass stood (`ended`, `./completion.ts`),
+ * or completed naming the build's fallback (`completed`, t637).
  */
-export type AutomationStudioProjectSupervisorRecoveryShortfall = "short" | "money" | "time" | "turns" | "stalled" | "provider" | "ended";
+export type AutomationStudioProjectSupervisorRecoveryShortfall = "short" | "money" | "time" | "turns" | "stalled" | "provider" | "ended" | "completed";
 
 /** What the person is told when the supervisor completes on a rescued test (t603, below). */
 export type AutomationStudioProjectSupervisorReliesOnRecovery = {
   revision: number; digest: string; receiptId: string; why: AutomationStudioProjectSupervisorRecoveryShortfall; steps: JsonObject[]; told: string;
   /** `ended` only: the honest ending the model gave, its own words kept beside what the person is told (t622). */
+  endedWith?: { outcome: "blocked" | "partial"; reason: string };
+  /** Completed on the build's fallback rather than the latest assembly (header, t637): the later assembly set aside, which never passed its whole test. */
+  setAside?: { revision: number; digest: string };
+};
+
+/**
+ * The build's fallback as an ending completes on it (header, t637): the
+ * revision that passed, its trial's receipt, its Flow -- the one the run then
+ * hands its caller to promote -- and the later assembly it sets aside.
+ */
+export type AutomationStudioProjectSupervisorFallbackFlow = {
+  revision: number; digest: string; receiptId: string; candidate: AutomationStudioFlowCandidate; setAside: { revision: number; digest: string } | undefined;
+  /** The latest assembly's own outright pass, which a guard's end completes on (header, t637): nothing set aside. */
+  latest?: true;
+};
+
+/**
+ * The pass an ending completes on (header, t637): the latest assembly's own
+ * rescued pass (`test` alone), or the build's fallback -- a rescued pass, its
+ * test beside it, or an outright one, with no `test`.
+ */
+export type AutomationStudioProjectSupervisorStandingRescue =
+  | { test: AutomationStudioProjectSupervisorRescuedTest; fallback?: AutomationStudioProjectSupervisorFallbackFlow }
+  | { test?: undefined; fallback: AutomationStudioProjectSupervisorFallbackFlow };
+
+/** What the person is told when the supervisor completes on a fallback that passed outright (header, t637): no recovery to rely on, so none is said. */
+export type AutomationStudioProjectSupervisorCompletedOnPass = {
+  revision: number; digest: string; receiptId: string; why: AutomationStudioProjectSupervisorRecoveryShortfall; told: string;
+  setAside?: { revision: number; digest: string };
   endedWith?: { outcome: "blocked" | "partial"; reason: string };
 };
 
@@ -61,7 +91,20 @@ const SHORTFALL_WORDS: Readonly<Record<AutomationStudioProjectSupervisorRecovery
   turns: "The build ran out of turns before a repair to add that was made.",
   stalled: "The build stopped making progress before it could add that.",
   provider: "The AI model provider stopped answering before the build could add that.",
-  ended: "The supervisor ended the build before a repair to add that was made."
+  ended: "The supervisor ended the build before a repair to add that was made.",
+  completed: "The supervisor completed on it before a repair to add that was made."
+});
+
+/** What then stopped a build that completes on its fallback (header, t637): its repair was made, so the words above, which say it was not, do not fit. */
+const FALLBACK_STOP_WORDS: Readonly<Record<AutomationStudioProjectSupervisorRecoveryShortfall, string>> = Object.freeze({
+  short: "A later repair came back without the change.",
+  money: "The build's spending limit then ran out.",
+  time: "The build then reached its time limit.",
+  turns: "The build then ran out of turns.",
+  stalled: "The build then stopped making progress.",
+  provider: "The AI model provider then stopped answering.",
+  ended: "The supervisor then ended the build.",
+  completed: "The supervisor then completed on it."
 });
 
 /** A plan as the supervisor takes it into force: what `project.write_plan` and `project.amend_plan` read. */
@@ -109,6 +152,34 @@ const PROPOSING: ReadonlySet<AutomationStudioProjectSubflowBrief["kind"]> = new 
  * closed asks the Flow for no step, so each step the gate names is kept only
  * when its own step record says the site asked the run to slow down
  * (`slowedDown`, below).
+ *
+ * **A rescued pass outlives a later assembly (A8 wave 9 social
+ * `run-mv9ml775`, t637).** The repair of a rescued pass came back done, its
+ * re-assembly became the latest candidate, no later whole test answered yes,
+ * and the build ended with no Flow: `rescuedTest` reads only the latest
+ * assembly, so the passing revision stopped counting the moment it was no
+ * longer latest. A repair whose re-assembled Flow never passes is a failed
+ * repair, and a failed repair never loses a passing Flow. So after every whole
+ * test (`noteWholeTest`, from `./whole-trial.ts`) the most recent pass of
+ * either kind -- a rescued pass, or an outright yes the gate completes on -- is
+ * kept with its own Flow, a snapshot of the candidate the trial ran, as the
+ * build's fallback, replaced only by a later pass, and dropped when its own
+ * revision is tested again and no longer passes. An ending with no later pass,
+ * and a completion naming the fallback (coordinator, t637), complete on it
+ * (`standingRescue`): the run hands its caller that revision's Flow and its
+ * own yes to promote (`completedOn`, `./supervisor-loop.ts`), never the later
+ * assembly, which the person is told was set aside. A rescued fallback is said
+ * with the recovery words (`relyOnRecovery`); an outright one plainly, that the
+ * later revision never passed (`completeOnPass`). An outright pass that is
+ * itself the latest assembly is no fallback: the supervisor completes on it.
+ * But when a guard ends the build before the supervisor did (`latestPass`,
+ * `./supervisor-loop.ts`; coordinator, t637), the build completes on that
+ * pass too -- a standing pass is Core's evidence however the loop stopped, as
+ * t611 holds for a brief -- and the person is told the supervisor stopped
+ * before completing. Before it does, the reset
+ * rule holds as for any ending (`./completion.ts`, `./supervisor-loop.ts`): a
+ * reset brief undoes this build's own acts still on the target, and what no
+ * reset could undo is named in the person's words.
  */
 export class AutomationStudioProjectSupervisorState {
   taskSpec: AutomationStudioProjectTaskSpec | undefined;
@@ -147,6 +218,12 @@ export class AutomationStudioProjectSupervisorState {
   readonly recoveryRepairsShort = new Map<string, AutomationStudioProjectSupervisorRecoveryShortfall>();
   /** Set once the supervisor completed on a rescued test: what the person was told (header). */
   reliesOnRecovery: AutomationStudioProjectSupervisorReliesOnRecovery | undefined;
+  /** Set once the supervisor completed on a fallback that passed outright: what the person was told (header, t637). */
+  completedOnPass: AutomationStudioProjectSupervisorCompletedOnPass | undefined;
+  /** Set once the supervisor completed on the fallback rather than the latest assembly: that fallback's Flow, for the run to hand its caller (header, t637). */
+  completedOn: AutomationStudioFlowCandidate | undefined;
+  /** The most recent whole-test pass with its Flow and trial receipt, its rescued test when it was rescued, until a later pass replaces it (header, t637). */
+  private fallback: { candidate: AutomationStudioFlowCandidate; receiptId: string; rescued?: AutomationStudioProjectSupervisorRescuedTest } | undefined;
   /** Every plan and task spec this build has had, by digest: what an amendment's comparison reads. */
   private readonly plans = new Map<string, AutomationStudioProjectStructurePlan>();
   private readonly specs = new Map<string, AutomationStudioProjectTaskSpec>();
@@ -273,15 +350,100 @@ export class AutomationStudioProjectSupervisorState {
     return { key: JSON.stringify([latest.revision, latest.digest, receiptId]), revision: latest.revision, digest: latest.digest, receipt: { kind: "candidate_trial", receiptId, digest: latest.digest }, unanswered: structuredClone(unanswered) };
   }
 
-  /** Completes on `test`, which the build could not repair for `why` (header): what the person is told, kept for the run's outcome. */
-  relyOnRecovery(test: AutomationStudioProjectSupervisorRescuedTest, why: AutomationStudioProjectSupervisorRecoveryShortfall, endedWith?: { outcome: "blocked" | "partial"; reason: string }): AutomationStudioProjectSupervisorReliesOnRecovery {
+  /**
+   * After each whole test (header, t637): a pass of the latest assembly,
+   * rescued or outright, becomes the build's fallback, with its Flow; the
+   * fallback's own revision tested again and no longer passing drops it.
+   */
+  noteWholeTest(controller: Pick<AutomationStudioFlowCandidateSubmissionController, "latest">, gate: Pick<AutomationStudioFlowCandidateTrialGate, "standing" | "completion">): void {
+    const latest = controller.latest();
+    if (!latest) return;
+    const rescued = this.rescuedTest(controller, gate);
+    if (rescued) {
+      this.fallback = { candidate: latest, receiptId: rescued.receipt.receiptId, rescued };
+      return;
+    }
+    const standing = gate.standing(latest);
+    if (standing?.verdict === "yes" && gate.completion({ revision: latest.revision, digest: latest.digest }).ok) {
+      this.fallback = { candidate: latest, receiptId: standing.trialRunId ?? `whole-test-${latest.revision}` };
+      return;
+    }
+    if (this.fallback?.candidate.revision === latest.revision && this.fallback.candidate.digest === latest.digest) this.fallback = undefined;
+  }
+
+  /**
+   * The pass an ending completes on (header, t637): the latest assembly's own
+   * rescued pass, else the fallback a later assembly set aside, with its Flow.
+   * Undefined when there is none, or the fallback is the latest assembly's
+   * outright pass, which the supervisor completes on as it is.
+   */
+  standingRescue(controller: Pick<AutomationStudioFlowCandidateSubmissionController, "latest">, gate: Pick<AutomationStudioFlowCandidateTrialGate, "standing" | "completion">): AutomationStudioProjectSupervisorStandingRescue | undefined {
+    const latest = this.rescuedTest(controller, gate);
+    if (latest) return { test: latest };
+    const kept = this.fallback;
+    if (!kept) return undefined;
+    const now = controller.latest();
+    const { revision, digest } = kept.candidate;
+    if (!kept.rescued && now?.revision === revision && now.digest === digest) return undefined;
+    const fallback: AutomationStudioProjectSupervisorFallbackFlow = { revision, digest, receiptId: kept.receiptId, candidate: structuredClone(kept.candidate), setAside: now ? { revision: now.revision, digest: now.digest } : undefined };
+    return kept.rescued ? { test: kept.rescued, fallback } : { fallback };
+  }
+
+  /**
+   * Completes on a rescued pass, which the build could not repair for `why`
+   * (header): what the person is told, kept for the run's outcome. On the
+   * fallback (t637) the person is told the later assembly never passed and
+   * what then stopped the build, and `left`, Core's note of what is still on
+   * the target, follows.
+   */
+  relyOnRecovery(rescue: { test: AutomationStudioProjectSupervisorRescuedTest; fallback?: AutomationStudioProjectSupervisorFallbackFlow }, why: AutomationStudioProjectSupervisorRecoveryShortfall, endedWith?: { outcome: "blocked" | "partial"; reason: string }, left?: string): AutomationStudioProjectSupervisorReliesOnRecovery {
+    const { test, fallback } = rescue;
     const at = test.unanswered.map((entry) => `${typeof entry.step === "number" ? `step ${entry.step}` : "a step"}${typeof entry.label === "string" ? ` (${JSON.stringify(entry.label)})` : ""}`);
     const where = at.length > 1 ? `${at.slice(0, -1).join(", ")} and ${at.at(-1)}` : at[0]!;
     // A repair that already came back without the change is said too, before what then stopped the build (t622).
-    const short = why !== "short" && this.recoveryRepairsShort.has(test.key) ? `${SHORTFALL_WORDS.short} ` : "";
-    const told = `The Flow passed its whole test, but the site asked the run to slow down at ${where}, and the Flow does not answer that itself: it relies on the run's own recovery, which waits, tries the step again and closes the site's notice. ${short}${SHORTFALL_WORDS[why]}`;
-    this.reliesOnRecovery = { revision: test.revision, digest: test.digest, receiptId: test.receipt.receiptId, why, steps: structuredClone(test.unanswered), told, ...(endedWith ? { endedWith: { ...endedWith } } : {}) };
+    const short = !fallback && why !== "short" && this.recoveryRepairsShort.has(test.key) ? `${SHORTFALL_WORDS.short} ` : "";
+    const later = fallback?.setAside ? `revision ${fallback.setAside.revision}` : "a later revision";
+    const after = fallback
+      ? `A repair to add that was made, but the Flow assembled from it (${later}) never passed its whole test, so the build completes on revision ${test.revision}, the last that passed. ${FALLBACK_STOP_WORDS[why]}${left ? ` ${left}` : ""}`
+      : `${short}${SHORTFALL_WORDS[why]}`;
+    const told = `The Flow passed its whole test, but the site asked the run to slow down at ${where}, and the Flow does not answer that itself: it relies on the run's own recovery, which waits, tries the step again and closes the site's notice. ${after}`;
+    this.reliesOnRecovery = {
+      revision: test.revision, digest: test.digest, receiptId: test.receipt.receiptId, why, steps: structuredClone(test.unanswered), told,
+      ...(endedWith ? { endedWith: { ...endedWith } } : {}), ...(fallback?.setAside ? { setAside: { ...fallback.setAside } } : {})
+    };
+    this.completedOn = fallback ? structuredClone(fallback.candidate) : undefined;
     return structuredClone(this.reliesOnRecovery);
+  }
+
+  /**
+   * The latest assembly's own outright pass, for a guard's end to complete on
+   * (header, t637); undefined when its latest whole test is no such pass.
+   */
+  latestPass(controller: Pick<AutomationStudioFlowCandidateSubmissionController, "latest">, gate: Pick<AutomationStudioFlowCandidateTrialGate, "standing" | "completion">): { fallback: AutomationStudioProjectSupervisorFallbackFlow } | undefined {
+    const latest = controller.latest();
+    const standing = latest ? gate.standing(latest) : undefined;
+    if (!latest || standing?.verdict !== "yes" || !gate.completion({ revision: latest.revision, digest: latest.digest }).ok) return undefined;
+    return { fallback: { revision: latest.revision, digest: latest.digest, receiptId: standing.trialRunId ?? `whole-test-${latest.revision}`, candidate: latest, setAside: undefined, latest: true } };
+  }
+
+  /**
+   * Completes on a pass that passed its whole test outright (header, t637),
+   * said plainly: on a fallback, that the later revision never passed; on the
+   * latest assembly's own, that the supervisor stopped before completing; then
+   * what stopped the build.
+   */
+  completeOnPass(fallback: AutomationStudioProjectSupervisorFallbackFlow, why: AutomationStudioProjectSupervisorRecoveryShortfall, endedWith?: { outcome: "blocked" | "partial"; reason: string }, left?: string): AutomationStudioProjectSupervisorCompletedOnPass {
+    const later = fallback.setAside ? `Revision ${fallback.setAside.revision}` : "A later revision";
+    const said = fallback.latest
+      ? `The supervisor stopped before completing, so the build completes on revision ${fallback.revision}, which passed its whole test.`
+      : `${later} never passed its whole test, so the build completes on revision ${fallback.revision}, the last that passed.`;
+    const told = `${said} ${FALLBACK_STOP_WORDS[why]}${left ? ` ${left}` : ""}`;
+    this.completedOnPass = {
+      revision: fallback.revision, digest: fallback.digest, receiptId: fallback.receiptId, why, told,
+      ...(fallback.setAside ? { setAside: { ...fallback.setAside } } : {}), ...(endedWith ? { endedWith: { ...endedWith } } : {})
+    };
+    this.completedOn = structuredClone(fallback.candidate);
+    return structuredClone(this.completedOnPass);
   }
 
   /** Whether any brief came back done. */

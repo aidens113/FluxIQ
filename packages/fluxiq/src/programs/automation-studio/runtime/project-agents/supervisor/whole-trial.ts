@@ -75,6 +75,8 @@ export class AutomationStudioProjectSupervisorWholeTrial {
     emitAutomationStudioProjectReceiptCard({ receipt: { kind: "candidate_trial", receiptId, digest: evidence.digest }, verdict: verdict === "yes" ? "passed" : verdict === "no" ? "failed" : "unconfirmed" });
     // The trial's own acts are in the ledger itself, under the supervisor (header).
     if (verdict !== "yes") state.wholeTrialFailed = true;
+    // The most recent pass, rescued or outright, is kept as the build's fallback until a later pass replaces it (`./state.ts`, t637).
+    state.noteWholeTest(context.controller, gate);
     return ran;
   }
 
