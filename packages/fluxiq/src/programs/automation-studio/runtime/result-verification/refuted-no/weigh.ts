@@ -29,6 +29,24 @@
 // Holder)" says nothing is wrong. So a sentence that only keeps a condition is
 // neither refuted nor a reason that stands.
 //
+// **What a no references comes first (t631).** A8 bigbox `run-mv9gbsm5-2957581c`:
+// the wording lists above missed a new phrasing in three waves running, so a no
+// is weighed first by what it references, which Core can resolve whatever the
+// words:
+//
+// - its advice, where it changes, removes or loosens only conditions Core names
+//   by number (`./advice-condition.ts`): when Core's account shows that each
+//   brings back no row the request could ask for, that is a refuted claim of
+//   its own, and every sentence of `observed` that names only conditions (no
+//   row, no row Core cannot find, no step but those conditions' reads) is its
+//   reason, refuted with it;
+// - the rows a sentence names, by Core's row id or a row's own label
+//   (`./row-reference-claim.ts`): refuted where every one failed the request's
+//   own words by the value Core read, standing where Core did not settle one.
+//
+// The wording claims above remain the fallback, for the sentences whose
+// references alone settle nothing.
+//
 // The reading is wholly refuted when at least one sentence's claims are
 // refuted and no sentence stands. A reading that names nothing Core can check,
 // or anything Core cannot refute, is not: the no stands as before. Core never
@@ -36,12 +54,16 @@
 // no still refuted is taken as unsure.
 
 import type { AutomationStudioResultRepairDirective } from "../contracts.ts";
+import { automationStudioResultAdviceConditions } from "./advice-condition.ts";
+import { automationStudioResultConditionReferences } from "./condition-references.ts";
 import { automationStudioResultWithoutConditionWording } from "./condition-wording.ts";
 import { automationStudioResultCountClaim } from "./count-claim.ts";
 import { automationStudioResultDuplicateClaim } from "./duplicate-claim.ts";
 import { automationStudioResultExcludedKindClaim } from "./excluded-kind-claim.ts";
 import { automationStudioResultMissingClaim } from "./missing-claim.ts";
 import { automationStudioResultSentenceRows } from "./named-rows.ts";
+import { automationStudioResultNodeIdsSaid } from "./node-ids.ts";
+import { automationStudioResultRowReferenceClaim } from "./row-reference-claim.ts";
 import { automationStudioResultReadingSentences } from "./sentences.ts";
 import { automationStudioResultValueClaim } from "./value-claim.ts";
 import type { AutomationStudioResultNoClaim, AutomationStudioResultNoRecord, AutomationStudioResultNoWeighed } from "./types.ts";
@@ -59,6 +81,8 @@ export function automationStudioResultRefutedReading(reading: Reading | undefine
   const findings: string[] = [];
   let refuted = 0;
   let standing = false;
+  // The conditions its advice changes, where Core's record clears every one (header, t631).
+  const advised = automationStudioResultAdviceConditions(reading?.advice, record);
   // Each sentence less Core's own wording of the conditions it names: those are Core's words, not the judge's claim (`./condition-wording.ts`, t624).
   for (const sentence of automationStudioResultReadingSentences(reading?.observed).map(automationStudioResultWithoutConditionWording)) {
     const named = automationStudioResultSentenceRows(sentence, record);
@@ -68,7 +92,9 @@ export function automationStudioResultRefutedReading(reading: Reading | undefine
       automationStudioResultExcludedKindClaim(sentence, named, record),
       automationStudioResultCountClaim(sentence, named, record),
       automationStudioResultValueClaim(sentence, named),
-      record.other?.(sentence)
+      record.other?.(sentence),
+      // The rows it names, whatever its words (`./row-reference-claim.ts`, t631).
+      automationStudioResultRowReferenceClaim(sentence, named)
     ].filter((claim): claim is AutomationStudioResultNoClaim => claim !== undefined);
     for (const claim of claims) if (claim.refuted && claim.finding && !findings.includes(claim.finding)) findings.push(claim.finding);
     if (claims.length) {
@@ -76,8 +102,20 @@ export function automationStudioResultRefutedReading(reading: Reading | undefine
       else standing = true;
       continue;
     }
-    const namesSomething = named.stored.length > 0 || named.leftOut.length > 0 || named.unmatched || CONDITION_NUMBER.test(sentence) || record.nodeIds.some((nodeId) => sentence.includes(nodeId));
+    const conditions = automationStudioResultConditionReferences(sentence);
+    const steps = automationStudioResultNodeIdsSaid(sentence, record.nodeIds).ids;
+    const namesRows = named.stored.length > 0 || named.leftOut.length > 0 || named.unmatched;
+    // A sentence naming only conditions is the reason for an advice Core's record refutes (header, t631).
+    if (advised && conditions.length && !namesRows && steps.every((step) => advised.nodeIds.includes(step))) {
+      if (NEGATIVE.test(sentence)) refuted += 1;
+      continue;
+    }
+    const namesSomething = namesRows || conditions.length > 0 || CONDITION_NUMBER.test(sentence) || record.nodeIds.some((nodeId) => sentence.includes(nodeId));
     if (namesSomething && NEGATIVE.test(sentence)) standing = true;
+  }
+  if (advised) {
+    refuted += 1;
+    for (const finding of advised.findings) if (!findings.includes(finding)) findings.push(finding);
   }
   return { wholly: refuted > 0 && !standing, findings };
 }
