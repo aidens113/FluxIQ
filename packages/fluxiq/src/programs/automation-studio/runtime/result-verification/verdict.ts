@@ -66,6 +66,15 @@
 // it, its advice unconfirmed (`flow-bootstrap/unfinished-build/`
 // `finishing-verdict.ts`, cause 10) -- but carries `answersWithChangeAdvised`,
 // and a runtime check's single yes so coded is not confirmed (`agreement.ts`).
+//
+// **A yes that lacks its quote is held, even when it advised a change (t636).**
+// A8 social `run-mv9ml775-9872e63e` step 0132: a yes with `patchNeeded: true`
+// that did not quote the request beside one left-out row became a no with no
+// reading, and two yeses over a correct result came out a split. A missing
+// quote is a held yes: it is unsure (`exclusion_evidence_missing`), keeps what
+// it compared (`answeredReading`), and is rechecked like any held yes
+// (`verify.ts`). It carries `changeAdvised` in place of `yesUnconfirmed`, which
+// is said only of a plain yes, and a recheck's yes keeps the advice's code.
 
 import type { AutomationStudioLlmDiagnosisFields } from "../llm/index.ts";
 import {
@@ -172,14 +181,24 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
   if (verdict === "answers") {
     const unaccounted = automationStudioResultLeftOutRowsUnaccounted(input.summary, replyText(input));
     const unquoted = input.wording ? withoutUnaccounted(automationStudioResultLeftOutRowsUnquoted(input.summary, replyText(input), input.wording), unaccounted) : [];
-    if (unquoted.length && !unaccounted.length && !keptNumber.length && input.diagnosis?.patchNeeded !== true) {
+    // What the yes compared, screened as a no's is: a split shows it beside the no's (`./agreement.ts`, t477), and a held yes keeps it (t636).
+    const read = automationStudioResultScreenedJudgement({ expected: input.diagnosis?.expected, observed: input.diagnosis?.observed }).judgement;
+    const answeredReading = { ...(read?.expected ? { expected: read.expected } : {}), ...(read?.observed ? { observed: read.observed } : {}) };
+    const advised = input.diagnosis?.patchNeeded === true;
+    // A held yes that advised a change keeps the change it named, screened as a no's advice is (header, t636).
+    const advisedChange = advised ? automationStudioResultScreenedJudgement({ advice: advice(input) }).judgement?.advice : undefined;
+    const heldReading = { ...answeredReading, ...(advisedChange ? { advice: advisedChange } : {}) };
+    if (unquoted.length && !unaccounted.length && !keptNumber.length) {
+      // A missing quote is a held yes, never a no, whether or not the yes also advised a change (header, t636).
       const proof = automationStudioResultRepairDirective({ summary: input.summary, checked: unquoted.map(unquotedLine) });
       return {
         schemaVersion: "automation-studio.result-verification.v1", verdict: "unsure", basis: "model_unconfirmed",
         code: "core.result.exclusion_evidence_missing",
         reason: "The affirmative judgement did not supply the required row-local exclusion evidence, so the result remains unconfirmed.",
-        // The call answered yes and Core held it: said as a field, never left to the reason's words (t611).
-        observation, exclusionEvidenceMissing: proof.checked ?? [], yesUnconfirmed: true
+        observation, exclusionEvidenceMissing: proof.checked ?? [],
+        // The call answered a plain yes and Core held it: said as a field, never left to the reason's words (t611). A yes advising a change is no plain yes.
+        ...(advised ? { changeAdvised: true as const } : { yesUnconfirmed: true as const }),
+        ...(Object.keys(heldReading).length ? { answeredReading: heldReading } : {})
       };
     }
     if (unaccounted.length || keptNumber.length || unquoted.length) {
@@ -191,15 +210,12 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
         checked: [...unaccounted.map(unaccountedLine), ...unquoted.map(unquotedLine), ...keptNumber.map(keptNumberLine)]
       }));
     }
-    // What the yes compared, screened as a no's is: a split shows it beside the no's (`./agreement.ts`, t477).
-    const read = automationStudioResultScreenedJudgement({ expected: input.diagnosis?.expected, observed: input.diagnosis?.observed }).judgement;
-    const answeredReading = { ...(read?.expected ? { expected: read.expected } : {}), ...(read?.observed ? { observed: read.observed } : {}) };
     return {
       schemaVersion: "automation-studio.result-verification.v1",
       verdict,
       basis: "model",
       // A yes that also said the Flow needs a change is not a clean pass (header, t515).
-      code: input.diagnosis?.patchNeeded === true ? codes.answersWithChangeAdvised : codes.answers,
+      code: advised ? codes.answersWithChangeAdvised : codes.answers,
       reason: "The result was judged to answer the request.",
       observation,
       ...(Object.keys(answeredReading).length ? { answeredReading } : {})

@@ -6,6 +6,8 @@ import {
 } from "../request-rows/tests/request-words-fixture.ts";
 import { automationStudioResultCheckedRowsNamed } from "../request-rows/index.ts";
 import { automationStudioResultRecordedOutcome } from "../run-record.ts";
+import { automationStudioResultVerificationAgreement } from "../agreement.ts";
+import { automationStudioResultAdviceKept } from "../exclusion-evidence/index.ts";
 
 // The fail-closed rule, stated once and asserted from every direction.
 //
@@ -333,5 +335,52 @@ describe("a yes over rows a condition alone left out, held to the request's own 
     });
     expect(verification.verdict).toBe("does_not_answer");
     expect(verification.repair?.judgement?.advice).toBe("Remove the handle condition.");
+  });
+});
+
+// A yes that lacks its quote is held, even when it also said the Flow needs a
+// change (t636, A8 social `run-mv9ml775-9872e63e` step 0132): it became a no
+// with no reading, and two yeses over a correct result came out a split.
+describe("a yes lacking its quote that also advised a change (t636)", () => {
+  const handleSaid = "Replacement Handle for Garden Tools is left out: it is a part, and the request asks for \"garden tools\".";
+  const advising = automationStudioResultVerdict({
+    summary: requestWordsRunSummary(), basis: "model", wording: requestWordsWording(),
+    diagnosis: {
+      answersRequest: "yes", patchNeeded: true, expected: "Every garden tool on the first page that is in stock.",
+      observed: `Copper Garden Tools Pair is left out, as the request says "leaving out out-of-stock items". ${handleSaid}`, changed: "Name the stock column."
+    }
+  });
+
+  it("is held as unsure, never a no, and keeps what it compared", () => {
+    expect(advising).toMatchObject({ verdict: "unsure", basis: "model_unconfirmed", code: "core.result.exclusion_evidence_missing", changeAdvised: true });
+    expect(advising.exclusionEvidenceMissing).toHaveLength(1);
+    expect(advising.answeredReading?.observed).toContain("Copper Garden Tools Pair is left out");
+    // The change it named is kept beside its reading, screened as a no's advice is.
+    expect(advising.answeredReading?.advice).toBe("Name the stock column.");
+    expect(advising.repair).toBeUndefined();
+    expect(automationStudioResultVerificationFailsRun(advising)).toBe(false);
+  });
+
+  it("is not a plain yes: Core says changeAdvised, not yesUnconfirmed, alone and beside a plain held yes", () => {
+    expect(advising.yesUnconfirmed).toBeUndefined();
+    const plain = automationStudioResultVerdict({ summary: requestWordsRunSummary(), basis: "model", wording: requestWordsWording(), diagnosis: { answersRequest: "yes", observed: handleSaid } });
+    expect(plain.yesUnconfirmed).toBe(true);
+    const both = automationStudioResultVerificationAgreement({ first: advising, second: plain, confirmAnswer: true });
+    expect(both).toMatchObject({ verdict: "unsure", code: "core.result.exclusion_evidence_missing", changeAdvised: true, calls: 2 });
+    expect(both.yesUnconfirmed).toBeUndefined();
+    expect(both.answeredReading).toMatchObject({ advice: "Name the stock column." });
+    expect(both.answeredReading?.observed).toContain("Copper Garden Tools Pair is left out");
+  });
+
+  it("keeps its advice through the recheck: a taken yes is coded as advising a change, a yes held again stays no plain yes", () => {
+    const quoted = automationStudioResultVerdict({ summary: requestWordsRunSummary(), basis: "model", diagnosis: { answersRequest: "yes", observed: "All rows are right." } });
+    expect(quoted.code).toBe(AUTOMATION_STUDIO_RESULT_VERDICT_CODES.answers);
+    expect(automationStudioResultAdviceKept(quoted, advising)).toMatchObject({ verdict: "answers", code: AUTOMATION_STUDIO_RESULT_VERDICT_CODES.answersWithChangeAdvised });
+    const heldAgain = automationStudioResultAdviceKept(automationStudioResultVerdict({ summary: requestWordsRunSummary(), basis: "model", wording: requestWordsWording(), diagnosis: { answersRequest: "yes", observed: handleSaid } }), advising);
+    // Held again, it is no plain yes, and it carries the change the earlier ask named.
+    expect(heldAgain).toMatchObject({ verdict: "unsure", changeAdvised: true, answeredReading: { advice: "Name the stock column." } });
+    expect(heldAgain.yesUnconfirmed).toBeUndefined();
+    const no = automationStudioResultVerdict({ summary: requestWordsRunSummary(), basis: "model", diagnosis: { answersRequest: "no" } });
+    expect(automationStudioResultAdviceKept(no, advising)).toBe(no);
   });
 });

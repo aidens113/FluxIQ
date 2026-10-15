@@ -44,9 +44,11 @@ export type AutomationStudioResultVerification = import("../standing-no/index.ts
    * screened as a refutation's is (`./judgement-screen.ts`). Kept on a yes, and
    * on a split (`model_disagreed`) beside the other call's, so a build sees the
    * evidence each relied on (t477, `run-mv5uu9g1-9d80deea`). Never a repair or
-   * its advice.
+   * its advice. On a yes held for its exclusion evidence that advised a change
+   * (`changeAdvised`, t636) it carries that change too (`advice`), so a build
+   * can weigh it; it is still no repair.
    */
-  answeredReading?: { expected?: string; observed?: string };
+  answeredReading?: { expected?: string; observed?: string; advice?: string };
   /** On an `unsure` a model gave, what it doubted, screened as a refutation's is: what an unsure beside a yes is weighed by (`./agreement.ts`, t503). Never a repair. */
   unsureReading?: NonNullable<AutomationStudioResultRepairDirective["judgement"]>;
   /**
@@ -72,6 +74,7 @@ export type AutomationStudioResultVerification = import("../standing-no/index.ts
   failureCode?: string;
   /** Core's bounded missing-proof lines for a yes lacking row-local exclusion evidence. Not a refutation or permission to promote; never recorded on a run. */ exclusionEvidenceMissing?: string[];
   /** Beside it, set exactly when every call asked answered a plain yes (none no, none unsure, none unanswered) and Core held that yes for the exclusion evidence it lacked (`./verdict.ts`, `./agreement.ts`, t611): what a build reads, never the reason's words. Never a yes or permission to promote. */ yesUnconfirmed?: true;
+  /** On a yes Core held for its exclusion evidence (`exclusionEvidenceMissing`) whose reply also said the Flow needs a change (`patchNeeded: true`, `./verdict.ts`, t636): in place of `yesUnconfirmed`, which is said only of a plain yes. A recheck's yes keeps the advice's code (`answersWithChangeAdvised`, `./verify.ts`). Never a yes or permission to promote. */ changeAdvised?: true;
 };
 
 /**

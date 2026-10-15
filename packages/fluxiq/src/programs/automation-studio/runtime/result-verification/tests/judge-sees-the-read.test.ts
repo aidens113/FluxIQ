@@ -345,7 +345,14 @@ describe("the judge wording t574 adds", () => {
       reads: [{ nodeId: "read", definitionId: "list", pagesRead: 1, truncated: false, itemsSeen: 2, kept: 1, conditions: [{ number: 1, condition: "marked is absent", leftOutOnlyByThis: ["Row A"] }] }]
     };
     const alsoInResult = automationStudioResultSummaryWithAlsoInResult(summary).reads![0]!.conditions![0]!.alsoInResult!;
-    for (const text of [presence, settled.settled, ...presenceSettled, ...textSettled, alsoInResult, recheck, automationStudioResultConditionName(1, undefined)]) guarded(text);
+    // t636: a bound's row the read found empty, and a text test's rows whose witness found no value, each said with and without a known column.
+    const emptySettled = [
+      automationStudioResultSettledRows({ condition, column: "weight", number: 1, wording: "weight atMost 2", leftOut: [{ row: "Row A — weight: (no value)", cell: undefined }] })!.settled,
+      automationStudioResultSettledRows({ condition, column: "weight", number: 1, wording: "weight atMost 2", leftOut: [{ row: "Row A — weight: 3 kg", cell: { label: "Row A", value: "3 kg" } }, { row: "Row B — weight: (no value)", cell: undefined }] })!.settled,
+      automationStudioResultSettledRows({ condition: { field: "finish", contains: "Matte" }, column: "finish", number: 1, wording: undefined, leftOut: witnessed("absent") })!.settled,
+      automationStudioResultSettledRows({ condition: { field: "value", contains: "Matte" }, column: undefined, number: 2, wording: undefined, leftOut: [...witnessed("absent"), { row: "Row B", cell: undefined, witness: { source: "read" as const, page: 1, item: 2, state: "present" as const, value: "Gloss" } }] })!.settled
+    ];
+    for (const text of [presence, settled.settled, ...presenceSettled, ...textSettled, ...emptySettled, alsoInResult, recheck, automationStudioResultConditionName(1, undefined)]) guarded(text);
   });
 
   // t624: the judge instruction's sentences on settled text rows and on rows also in the result (`../../llm/diagnosis-instructions.ts`;
@@ -353,6 +360,9 @@ describe("the judge wording t574 adds", () => {
   it("in the judge instruction, names none of them either", () => {
     const sentences = [
       "or, for a condition that tests text (contains, startsWith, endsWith, matches, or equals with text, possibly negated), its read found on the row a value that fails that condition as written",
+      // t636: the no-value clauses.
+      "or found none there, and no bound holds on a row with no value",
+      "or, where the condition is not negated, found none, so none needs a quote beside it",
       "Such a text condition's rows are settled the same way: a yes quotes once, in a sentence that names that condition, the request's words asking for rows whose value says what the condition looks for, or for leaving such rows out, and where the request asks no such thing, those rows are ones it asks for.",
       "The rows in a condition's leftOutAlsoInResult are left-out rows whose label is also a row of the result: another copy of the same item was kept and came back, so none of them is a row the Flow dropped, none is missing from the result, and none needs a quote or a name in a yes."
     ];
