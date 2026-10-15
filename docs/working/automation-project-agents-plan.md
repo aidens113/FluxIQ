@@ -674,6 +674,14 @@ Earlier entries are in [the ledger archive](./automation-project-agents-plan/arc
 - Outcome: Accepted
 - Follow-up: per-row "which conditions left this row out" is not sent by the domain, so a jointly excluded row cannot be weighed (multi-condition advice stands unless the counts rule it out); t633 holds an upheld exclusion across trials
 
+### 2026-10-15 — An upheld exclusion holds across trials and briefs (t633, t634); verification contracts split (t635)
+- Agent: workers t633-upheld-exclusion-holds-across-trials, t634-standing-no-across-briefs, t635-split-verification-contracts; supervisor ordered the merges (t635's import moves before t634), verified and integrated
+- Changed: t633 a build test's double no carries Core's record (`standingNo`: rows stored, conditions read, rows called not the asked kind, conditions the no asks to remove) beside the feedback, both gates keep records that upheld rows and weigh a later no whose only remedy would bring them back as contradicted (unsure, revision open, the builder told), `checked-rows.ts` flags a row called stored that is not; t634 the dispatcher keeps standing nos per subflow and plan digest and seeds every later brief's gate with them, and the gate's weighed verdict reaches the receipt, the trial memory, the last trial and the build's proposals; t635 `result-verification/contracts.ts` (at the 800-line hard limit) split into `contracts/` behind a barrel, imports only
+- Why: wave 8 `project` towels swung between the exact Flow and one keeping a row the judges called not the kind asked, across trials and across briefs; a receipt could say no where the gate said unsure
+- Validation: t633 after merging dev: tsc exit 0; result-verification, candidate-trial, subflow-trial, flow-bootstrap, project-agents, project-build, llm/deepseek -> 202 files, 1667 passed (4 new tests fail with the logic off); `pnpm check` -> passed; merged `69d4f689`. t635 after merging dev: tsc exit 0; the six directories -> 325 files, 3476 passed, 2 skipped; audit passed (warnings 371 to 370); `pnpm check` -> passed; merged `d12eb924`. t634 after merging dev: tsc exit 0; project-agents, project-build, flow-bootstrap, result-verification, subflow-trial, candidate-trial -> 328 files, 3484 passed, 2 skipped; `pnpm check` -> passed; merged `af5f5b29`; all pushed
+- Outcome: Accepted
+- Follow-up: records carry only within one plan digest (an amended plan starts without them); the moved contract files' doc-comment paths are one directory off; Core's generated docs reference is stale (`pnpm docs:reference`)
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
