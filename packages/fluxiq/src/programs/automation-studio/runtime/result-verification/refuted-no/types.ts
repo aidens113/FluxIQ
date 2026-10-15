@@ -19,10 +19,20 @@ export type AutomationStudioResultNoLeftOutRow = {
    * True when the row is settled and its condition tests the request's own
    * words (`./request-text-test.ts`, t629) over a read that kept rows: a row
    * that fails it does not say what the request asks for, by Core's own read.
+   * Never where the condition tests the row's own label
+   * (`./label-tested-condition.ts`, t651): Core read the name, not what the
+   * request's word is about.
    */
   quotesRequest: boolean;
   /** Where `quotesRequest`: the request's words the condition tests, and the value Core's read found on this row. */
   quoted?: { texts: string[]; read: string } | undefined;
+  /**
+   * True when its condition tests the row's own label
+   * (`./label-tested-condition.ts`, t651): Core read only that the name fails
+   * it, never that the request does not ask for the row, so a no calling it
+   * missing disputes that condition (`./missing-claim.ts`).
+   */
+  testsLabel?: true | undefined;
 };
 
 /**

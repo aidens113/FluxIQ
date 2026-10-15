@@ -13,7 +13,8 @@
 // never a no and never a yes Core made. And an unsure call's doubt that the
 // answer's dedupe merged rows, held to the same record (`dedupe-doubt.ts`, t628).
 // And which conditions test the request's own words, so a dispute of one is
-// held to the value Core read (`request-text-test.ts`, t629). And, first, what a
+// held to the value Core read (`request-text-test.ts`, t629) -- never one that
+// tests a row's own label (`label-tested-condition.ts`, t651). And, first, what a
 // no references (t631): the conditions its advice changes, weighed by Core's
 // account of each (`advice-condition.ts`, found by `condition-references.ts`
 // over `record-conditions.ts`), and the rows a sentence names, whatever its
@@ -26,6 +27,7 @@ export * from "./count-claim.ts";
 export * from "./dedupe-doubt.ts";
 export * from "./duplicate-claim.ts";
 export * from "./excluded-kind-claim.ts";
+export * from "./label-tested-condition.ts";
 export * from "./left-out-finding.ts";
 export * from "./missing-claim.ts";
 export * from "./named-rows.ts";

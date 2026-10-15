@@ -34,6 +34,15 @@
 // words over a read that kept rows (`./request-text-test.ts`, `./record.ts`):
 // what is disputed is then the row's value, which Core read. A condition whose
 // words the request does not state stays the judge's to weigh.
+//
+// **And a row only a test of its own name left out is disputed whatever the
+// words (t651).** A8 frozen pair 4 `run-mva446jf-926a3c72`: a condition kept
+// rows whose title starts with the store's house name, as a stand-in for "sold
+// by the store itself". A row it left out fails it as written, but Core read
+// only the row's name, which the judge sees too: a judge cannot misread it, so
+// calling such a row missing says the condition is wrong, as a sentence that
+// names it does (`./record.ts`, `testsLabel`). Such a sentence stands. A row
+// left out by a condition over a column of its own is refuted as before.
 
 import { automationStudioResultLeftOutFinding } from "./left-out-finding.ts";
 import type { AutomationStudioResultNoClaim, AutomationStudioResultNoNamedRows } from "./types.ts";
@@ -70,14 +79,15 @@ export function automationStudioResultMissingClaim(sentence: string, named: Auto
   if (named.unmatched) return { refuted: false };
   // A stored row said to lack a value is a claim about its cell, which Core does not check here: the wider words above say "not included" of a column too.
   if (named.stored.length && SPEAKS_OF_A_CELL.test(sentence)) return { refuted: false };
-  const disputesCondition = SPEAKS_OF_A_CONDITION.test(sentence);
+  const speaksOfACondition = SPEAKS_OF_A_CONDITION.test(sentence);
   const findings: string[] = [];
   for (const label of new Set(named.stored.map((row) => row.label))) findings.push(`"${label}" is in the stored rows.`);
   const byLabel = new Map<string, typeof named.leftOut>();
   for (const row of named.leftOut) byLabel.set(row.label, [...(byLabel.get(row.label) ?? []), row]);
   for (const rows of byLabel.values()) {
     if (!rows.every((row) => row.settled)) return { refuted: false };
-    // A dispute of the condition stands, unless the condition tests the request's own words and Core read the row failing them (header, t629).
+    // A dispute of the condition stands, unless the condition tests the request's own words and Core read the row failing them (header, t629); a row a name test left out is disputed whatever the words (header, t651).
+    const disputesCondition = speaksOfACondition || rows.some((row) => row.testsLabel === true);
     if (disputesCondition && !rows.every((row) => row.quotesRequest)) return { refuted: false };
     for (const row of rows) findings.push(automationStudioResultLeftOutFinding(row));
   }
