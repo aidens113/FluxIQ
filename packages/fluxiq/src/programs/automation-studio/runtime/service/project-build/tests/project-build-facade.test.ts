@@ -6,8 +6,17 @@
 // through the candidate's own promotion; a no keeps it as a draft. Builders
 // are scheduled on a stub host at capacity 2 (two independent subflows built
 // at once) and capacity 1 (one at a time).
+//
+// **Nothing here waits on the wall clock (t644).** Under load these builds
+// took up to 60 s against 1-3 s quiet and failed on the 60 s watchdog, and the
+// timed-out build, still writing, then failed the directory's removal (t616).
+// The build's own bounds (the supervisor's 30 minutes, the builders' loops,
+// each provider call's deadline against a provider that answers at once) are
+// never reached here, so the watchdog is a hang guard only, and cleanup stops
+// any build still running and waits for it before removing its directory
+// (`./settled-builds.ts`).
 
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -19,8 +28,10 @@ import type { AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import type { AutomationStudioHostResourceAcquireResult, AutomationStudioHostResourceHolder, AutomationStudioHostResourcePort } from "../../../project-agents/index.ts";
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
+import { automationStudioTestSettledBuilds } from "./settled-builds.ts";
 
-vi.setConfig({ testTimeout: 60_000 });
+// A hang guard only (header).
+vi.setConfig({ testTimeout: 300_000, hookTimeout: 300_000 });
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
@@ -185,15 +196,13 @@ async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capa
     ...(host ? { hostRuntime: { capabilities: [], hostResources: host } } : {})
   };
   const service = new AutomationStudioService(serviceOptions);
-  cleanups.push(async () => {
-    await service.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+  const builds = automationStudioTestSettledBuilds(service, dataDir);
+  cleanups.push(builds.cleanup);
   const { project, flow } = await blankFixture(service);
   const proposed = vi.spyOn(service, "createFlowBootstrapAdaptation");
   return {
     service, projectId: project.id, flowId: flow.flowId, judged, offered, instructed, host, proposed, supervisorSaw, builderSaw,
-    build: (extra: { mode?: "extend" } = {}) => service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project", ...extra })
+    build: (extra: { mode?: "extend" } = {}) => builds.track(project.id, flow.flowId, service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project", ...extra }))
   };
 }
 
