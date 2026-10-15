@@ -37,8 +37,14 @@ export type AutomationStudioResultVerification = import("../standing-no/index.ts
    * (`build-test/judge.ts`; live run murwcmx2 was told only "unverified").
    * Absent when no call judged `does_not_answer` or it said nothing more. Like
    * every reading here, the model's prose, never recorded on a run (`run-record.ts`).
+   *
+   * `recordContradicts` is Core's, not the model's: set where Core's own record
+   * refutes the reading, `whole` where it refutes every reason it gives and
+   * `part` where some still stand, beside the label its fields carry
+   * (`./agreement.ts`, `./refuted-no/reask.ts`, t641). A build's gate reads it
+   * as the fact, never the label's words.
    */
-  unconfirmedReading?: NonNullable<AutomationStudioResultRepairDirective["judgement"]>;
+  unconfirmedReading?: NonNullable<AutomationStudioResultRepairDirective["judgement"]> & { recordContradicts?: "whole" | "part" | undefined };
   /**
    * The reading of a call that judged `answers` (`expected`, `observed`),
    * screened as a refutation's is (`./judgement-screen.ts`). Kept on a yes, and

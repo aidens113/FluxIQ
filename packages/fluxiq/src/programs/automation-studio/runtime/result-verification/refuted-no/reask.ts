@@ -82,8 +82,12 @@ export async function automationStudioResultReaskRefutedNo(input: {
   };
 }
 
-/** The refuted readings, each field labelled with its call and Core's finding, as `../agreement.ts` labels a contradicted reading (t501). */
-function labelled(readings: ReadonlyArray<{ call: 1 | 2; reading: Reading; findings: string[] }>): Reading | undefined {
+/**
+ * The refuted readings, each field labelled with its call and Core's finding,
+ * as `../agreement.ts` labels a contradicted reading (t501), and the fact
+ * beside the labels for a gate to read (`recordContradicts`, t641).
+ */
+function labelled(readings: ReadonlyArray<{ call: 1 | 2; reading: Reading; findings: string[] }>): (Reading & { recordContradicts: "whole" }) | undefined {
   if (!readings.length) return undefined;
   const field = (name: "expected" | "observed" | "advice"): string | undefined => {
     const parts = readings.filter((one) => one.reading[name]).map((one) => `Judge call ${one.call} (contradicted by Core's record: ${one.findings.join(" ")}): ${one.reading[name]}`);
@@ -92,5 +96,5 @@ function labelled(readings: ReadonlyArray<{ call: 1 | 2; reading: Reading; findi
   const expected = readings.find((one) => one.reading.expected)?.reading.expected;
   const observed = field("observed");
   const advice = field("advice");
-  return { ...(expected ? { expected } : {}), ...(observed ? { observed } : {}), ...(advice ? { advice } : {}) };
+  return { ...(expected ? { expected } : {}), ...(observed ? { observed } : {}), ...(advice ? { advice } : {}), recordContradicts: "whole" };
 }

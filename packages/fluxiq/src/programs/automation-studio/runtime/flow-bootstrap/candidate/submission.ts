@@ -2,12 +2,17 @@ import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { checkAutomationStudioFlowBootstrapCompletion, checkAutomationStudioFlowBootstrapPlanCompletion, type AutomationStudioFlowBootstrapCompletionVerdict } from "../../llm/harness-options/index.ts";
 import { automationStudioFlowBootstrapIssuePlace, automationStudioFlowBootstrapWrittenPlanBindingIssues, parseAutomationStudioFlowScript, type AutomationStudioFlowBootstrapIssueLocator } from "../authoring/index.ts";
 import { automationStudioInstructedActOptionalScriptIssues } from "../instructed-acts/index.ts";
+// Its own barrel, not result-verification's, whose reads import flow-bootstrap back (a module cycle).
+import { automationStudioResultKeptConditionsDropped, type AutomationStudioResultKeptConditionDrop, type AutomationStudioResultKeptConditionsCarrier } from "../../result-verification/standing-no/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import { automationStudioFlowScriptWayOutIssues } from "../script-statements/index.ts";
 import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission, AutomationStudioFlowCandidateSubmissionHistory, AutomationStudioCandidateOriginalSourceBinding } from "./contracts.ts";
 import { automationStudioCandidateFingerprint as fingerprint } from "./digest.ts";
 import { automationStudioInterfaceOutputPort } from "./interface-output-port.ts";
 import { automationStudioCandidateSameBehaviour, automationStudioCandidateUnchangedRefusal } from "./unchanged-submission.ts";
+
+/** The code a submission dropping a condition Core's record kept is refused under, once (`submit`, t641). */
+export const AUTOMATION_STUDIO_CANDIDATE_KEPT_CONDITION_DROPPED_CODE = "candidate.kept_condition_dropped";
 
 /** Session-local candidates, separate from discovery and the accepted Flow store. */
 export class AutomationStudioFlowCandidateSubmissionController {
@@ -16,6 +21,8 @@ export class AutomationStudioFlowCandidateSubmissionController {
   private previous: AutomationStudioFlowCandidate | undefined;
   /** Every revision accepted in this session, oldest first: what a renamed refuted Flow is found among (t493). */
   private readonly accepted: AutomationStudioFlowCandidate[] = [];
+  /** Each kept condition, as written and by the revision whose trial showed it, a submission was already refused for dropping (t641): refused once, never twice. */
+  private readonly keptRefused = new Set<string>();
   /** The current revision's Flow as the script reader reads it (`submissionText`), to tell an unchanged resubmission (t464). */
   private currentText: string | undefined;
   private readonly originalSource: AutomationStudioCandidateOriginalSourceBinding | undefined;
@@ -93,9 +100,25 @@ export class AutomationStudioFlowCandidateSubmissionController {
    * accepted in this session whose digest the judge refuted, once the
    * `datasetId` is set aside too, is refused as `unchanged_after_no`: where a
    * run saves its rows cannot change which rows it keeps.
+   *
+   * **And once, one that drops a condition Core's record kept (t641).** A8
+   * wave 14 candidate towels `run-mv9ul5dy-e9a1b1c1`: judges' misread advice got
+   * two conditions of an exact revision dropped, one revision after another,
+   * though Core's record of its trial showed each left out, by itself, only rows
+   * the request does not ask for. The trial gate keeps such conditions as the
+   * revision that ran wrote them and hands them back on the result it keeps for
+   * a trial (`keptConditions`, `../../result-verification/standing-no/kept-conditions.ts`);
+   * the latest accepted revision's trial that has one carries them. A
+   * submission that no longer writes one as it was written is refused
+   * `candidate.kept_condition_dropped` with Core's words naming it, as written,
+   * and the rows it kept out, and the revision that stood still stands. Once per
+   * condition and the trial that showed it: the same drop submitted again is
+   * accepted, so the refusal is a hint the model can override, never a block. A
+   * Flow Core composed (`submitComposed`) is held to nothing here: no model
+   * wrote it.
    */
   async submit(result: JsonObject, history: AutomationStudioFlowCandidateSubmissionHistory = {}): Promise<AutomationStudioFlowCandidateSubmission> {
-    return this.submitChecked(result, history, () => checkAutomationStudioFlowBootstrapCompletion({ ...this.input, result, handleReach: "view_history" }));
+    return this.submitChecked(result, history, () => checkAutomationStudioFlowBootstrapCompletion({ ...this.input, result, handleReach: "view_history" }), true);
   }
 
   /**
@@ -115,8 +138,8 @@ export class AutomationStudioFlowCandidateSubmissionController {
     return this.submitChecked(result, history, () => checkAutomationStudioFlowBootstrapPlanCompletion({ ...this.input, origin: "composed", plan, summary: composed.summary }));
   }
 
-  /** `submit`'s body, with the completion check it is held to given (`submit`, `submitComposed`). */
-  private async submitChecked(result: JsonObject, history: AutomationStudioFlowCandidateSubmissionHistory, check: () => Promise<AutomationStudioFlowBootstrapCompletionVerdict>): Promise<AutomationStudioFlowCandidateSubmission> {
+  /** `submit`'s body, with the completion check it is held to given (`submit`, `submitComposed`); `holdKept`, whether a dropped kept condition is refused (header of `submit`, t641). */
+  private async submitChecked(result: JsonObject, history: AutomationStudioFlowCandidateSubmissionHistory, check: () => Promise<AutomationStudioFlowBootstrapCompletionVerdict>, holdKept = false): Promise<AutomationStudioFlowCandidateSubmission> {
     this.input.signal?.throwIfAborted();
     const standing = this.current;
     // The last revision accepted: the standing one, or the one a refusal since cleared.
@@ -162,6 +185,12 @@ export class AutomationStudioFlowCandidateSubmissionController {
     // A refuted Flow with only where it saves its rows renamed: still refuted (header).
     const renamedRefuted = this.renamedRefuted(plan, history);
     if (renamedRefuted !== undefined) return this.unchanged(standing, undefined, history, renamedRefuted, undefined, undefined, true);
+    // A condition Core's record kept, no longer written as it was: refused once, and what stood still stands (header of `submit`, t641).
+    const dropped = holdKept ? this.keptDropped(plan, history) : undefined;
+    if (dropped) {
+      this.current = standing;
+      return { ok: false, revision, check: keptConditionRefusal(dropped, standing) };
+    }
     const candidate: AutomationStudioFlowCandidate = {
       revision, digest, baseDependencyDigest: this.input.baseDependencyDigest,
       status: "draft", summary: verdict.summary, buildPlan: plan,
@@ -174,6 +203,22 @@ export class AutomationStudioFlowCandidateSubmissionController {
     this.currentText = text;
     const handleViews = (verdict.handleViews ?? []).map((view) => ({ node: view.node, handle: view.handle, view: view.view, location: view.location }));
     return { ok: true, candidate, handleViews };
+  }
+
+  /**
+   * The kept conditions `plan` no longer writes as they were written, from the
+   * latest accepted revision's trial that carries any, less those already
+   * refused once (header of `submit`, t641); each found is refused this once.
+   */
+  private keptDropped(plan: AutomationStudioFlowCandidate["buildPlan"], history: AutomationStudioFlowCandidateSubmissionHistory): AutomationStudioResultKeptConditionDrop | undefined {
+    if (!history.trialOf) return undefined;
+    const trial = [...this.accepted].reverse().map((earlier) => history.trialOf!(earlier)).find((found) => found !== undefined);
+    const carried = (trial as AutomationStudioResultKeptConditionsCarrier | undefined)?.keptConditions;
+    if (!carried?.length) return undefined;
+    const refused = new Set(carried.filter((condition) => this.keptRefused.has(refusedKey(condition))).map((condition) => condition.written));
+    const found = automationStudioResultKeptConditionsDropped({ carried, plan: plan.plan, refused, subject: this.input.refusalTools?.subject });
+    for (const condition of found?.dropped ?? []) this.keptRefused.add(refusedKey(condition));
+    return found;
   }
 
   /** The judge's finding for an accepted revision the plan matches once its `datasetId` is set aside, the latest first; none when no such revision was refuted. */
@@ -220,6 +265,43 @@ export class AutomationStudioFlowCandidateSubmissionController {
     });
     return { ok: false, revision: (same ?? standing)?.revision ?? this.revision, check };
   }
+}
+
+/** A kept condition as a refusal of it is remembered: as written, and the revision whose trial showed it, so a later trial's showing may refuse once more. */
+function refusedKey(condition: { written: string; revision: number }): string {
+  return `${condition.revision}\n${condition.written}`;
+}
+
+/**
+ * The refusal of a submission that drops or changes a kept condition (header
+ * of `submit`, t641): Core's words, and each condition as its trial's lines
+ * named it, as its revision wrote it and the rows it kept out, with the
+ * revision that still stands. One issue, so the loop counts it by its own code;
+ * the model's next step is said by `./submission-refusal.ts`.
+ */
+function keptConditionRefusal(dropped: AutomationStudioResultKeptConditionDrop, standing: AutomationStudioFlowCandidate | undefined): Extract<AutomationStudioFlowCandidateSubmission, { ok: false }>["check"] {
+  const code = AUTOMATION_STUDIO_CANDIDATE_KEPT_CONDITION_DROPPED_CODE;
+  return {
+    ok: false,
+    issueCodes: [code],
+    feedback: {
+      ok: false,
+      code,
+      ...(standing ? { standingRevision: { revision: standing.revision, digest: standing.digest } } : {}),
+      keptConditions: dropped.dropped.map((condition) => ({
+        condition: condition.name,
+        revision: condition.revision,
+        written: JSON.parse(condition.written) as JsonValue,
+        keptOut: condition.keptOut.map((row) => ({ label: row.label, by: row.by, ...(row.texts ? { texts: [...row.texts] } : {}) }))
+      })),
+      // The issue's path names the conditions dropped, so a refusal for one kept
+      // condition and a later one for another are two refusals, not a run of one
+      // (`./submission-refusal.ts` `refusalCode`): each is a hint refused once,
+      // and hints must never add up to the run of refusals that ends a build.
+      issues: [{ code, message: dropped.said, path: dropped.dropped.map((condition) => condition.written).sort().join(" | ") }],
+      instruction: dropped.said
+    }
+  };
 }
 
 /**

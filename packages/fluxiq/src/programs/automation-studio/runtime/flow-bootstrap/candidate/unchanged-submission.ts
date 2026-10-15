@@ -62,10 +62,22 @@
 // tested again. A refusal of a refuted Flow now names the revision that still
 // stands when its last trial was unsure, not judged or failed to run, and says
 // that testing it again is allowed and when that is the better move.
+//
+// **And the better move only on Core's findings (t641).** That offer called a
+// re-test the better move where "one judge call said yes", as the trial gate's
+// unsure words did; A8 wave 14 candidate towels `run-mv9ul5dy-e9a1b1c1` spent
+// its last trial re-testing a wrong revision on one judge's yes. The offer now
+// says a re-test is the better move only where Core's record contradicts what
+// kept that trial from a yes -- the no's reading wholly, or the unsure call's
+// doubt (`automationStudioCandidateRetestAdvised`, `./trial-gate.ts`), or a no
+// the build's own record did not take (`contradictedByBuild`) -- and says so
+// as a field (`standingRevision.retestAdvised`). Otherwise testing again stays
+// allowed, only where the trial shows no defect.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowBuildPlan } from "../plan/index.ts";
 import type { AutomationStudioCandidateTrialResult, AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission } from "./contracts.ts";
+import { automationStudioCandidateRetestAdvised } from "./trial-gate.ts";
 
 /** The parameter a step keeps its rows by, and its one display-only word; its `datasetId` decides where rows go (header). */
 const RECORD_OUTPUT = "recordOutput";
@@ -158,22 +170,29 @@ export function automationStudioCandidateUnchangedRefusal(input: {
       ...(standing ? { revision: standing.revision, digest: standing.digest } : {}),
       ...(lastTrial ? { lastTrial: { verdict: lastTrial.verdict, feedback: structuredClone(lastTrial.feedback) } } : {}),
       ...(refuted ? { judged: structuredClone(refuted) } : {}),
-      ...(retest ? { standingRevision: { revision: retest.revision, digest: retest.digest, verdict: retest.verdict } } : {}),
+      ...(retest ? { standingRevision: { revision: retest.revision, digest: retest.digest, verdict: retest.verdict, retestAdvised: retest.advised } } : {}),
       instruction: `${same}. ${whatFailed(standing, lastTrial, refuted, tools)}${retest ? retestWords(retest, tools) : ""}`
     }
   };
 }
 
-/** The revision still standing beside a refuted Flow, when its last trial allows testing it again (header, t632). */
-function retestable(current: Current | undefined): { revision: number; digest: string; verdict: string } | undefined {
-  const verdict = current?.lastTrial?.verdict;
-  return current && verdict && RETESTABLE.has(verdict) ? { revision: current.revision, digest: current.digest, verdict } : undefined;
+/** A standing revision that may be tested again, and whether Core's findings make that the better move (header, t632, t641). */
+type Retest = { revision: number; digest: string; verdict: string; advised: boolean };
+
+/** The revision still standing beside a refuted Flow, when its last trial allows testing it again (header, t632, t641). */
+function retestable(current: Current | undefined): Retest | undefined {
+  const trial = current?.lastTrial;
+  if (!current || !trial || !RETESTABLE.has(trial.verdict)) return undefined;
+  const advised = trial.verdict === "unsure" && (typeof trial.feedback.contradictedByBuild === "string" || automationStudioCandidateRetestAdvised(trial));
+  return { revision: current.revision, digest: current.digest, verdict: trial.verdict, advised };
 }
 
-/** That testing the standing revision again is allowed, and when it is the better move (header, t632). Generic words, naming no site or task. */
-function retestWords(retest: { revision: number; digest: string; verdict: string }, tools: Tools): string {
-  return ` Revision ${retest.revision} still stands and its last trial answered ${retest.verdict}, so testing it again with ${tools.test}, using exactly revision ${retest.revision} and digest ${retest.digest}, is allowed until its retests run out. `
-    + `That is the better move when its feedback names no defect in the ${tools.subject} itself: one judge call said yes, Core's record contradicts the other call's reading, or the change that reading asks for would take back what answered an earlier no.`;
+/** That testing the standing revision again is allowed, and the better move only on Core's findings (header, t632, t641). Generic words, naming no site or task. */
+function retestWords(retest: Retest, tools: Tools): string {
+  const allowed = ` Revision ${retest.revision} still stands and its last trial answered ${retest.verdict}, so testing it again with ${tools.test}, using exactly revision ${retest.revision} and digest ${retest.digest}, is allowed until its retests run out. `;
+  return retest.advised
+    ? `${allowed}It is the better move here (retestAdvised is true): Core's record contradicts what kept that trial from a yes -- the no's reading, the doubt, or a no the build's own record did not take, as its feedback says -- so the change that contradicted reading asks for is not.`
+    : `${allowed}Nothing in Core's record contradicts what kept that trial from a yes (retestAdvised is false), so test it again only where its feedback, by the trial's own reads, steps and stored rows, shows no defect in the ${tools.subject} itself.`;
 }
 
 /** What failed last and the way out, in the words the trial gate uses for the same verdicts (`./trial-gate.ts`). */

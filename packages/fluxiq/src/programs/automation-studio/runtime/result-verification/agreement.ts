@@ -99,6 +99,20 @@
 // stored rows, the conditions read with, the stored rows a standing no called
 // not the asked kind, and the conditions each standing no asks to remove. It is
 // Core's, for the gate that keeps the build's trials, and never said to a model.
+//
+// **A double no's reading the record refutes in part is labelled too (t641).**
+// A8 wave 14 candidate towels `run-mv9ul5dy-e9a1b1c1`, trial 2: a revision
+// stored exactly the rows asked for and both calls said no. Core's record
+// refuted the advice of one -- to change a condition every row of which, left
+// out by itself, was another copy of a row in the result -- but that call also
+// named a true gap, so the reading was not wholly refuted, and its advice
+// reached the builder unlabelled; the builder followed it and dropped the
+// condition. A double no now labels each reading the record refutes any of,
+// as a split already does (t628): "contradicted" where it refutes all of it,
+// "Core's record contradicts part of this reading" with Core's findings where
+// some still stands. The verdict is unchanged: a reading with a reason left
+// standing still counts. An unconfirmed reading carries the same fact as a
+// field (`recordContradicts`), for a gate to read rather than the words.
 
 import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioResultVerdict, AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "./contracts/index.ts";
 import { automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./read-account/index.ts";
@@ -229,7 +243,7 @@ function agree(input: AutomationStudioResultVerificationAgreementInput, reasked?
     // the first blamed paging against the record, the second named the two
     // stored rows that were wrong, and only the first was forwarded.
     return {
-      ...bothReadings(first, second, input.reads, input.recordSets, refutedFindings(input)),
+      ...bothReadings(first, second, input.reads, input.recordSets, weighedNos(input)),
       // Nothing about the steps: this file reads only the two verdicts, and a
       // build's test can pass with a step it excused failing. "Although every
       // step of the run succeeded" was said above "Step 15 (×) failed" (t193
@@ -471,11 +485,13 @@ function markedAdvice(unstated: { call: 1 | 2; exclusions: readonly string[] }, 
 function refutedLabelled(reading: JudgeReading, refuted: { call: 1 | 2 } & AutomationStudioResultNoWeighed): JudgeReading {
   const label = refuted.wholly
     ? `Judge call ${refuted.call} (contradicted by Core's record: ${refuted.findings.join(" ")})`
-    : `Judge call ${refuted.call} (Core's record contradicts part of this reading: ${refuted.findings.join(" ")})`;
+    : `Judge call ${refuted.call} (${PART_CONTRADICTED}: ${refuted.findings.join(" ")})`;
   return {
     ...reading,
     ...(reading.observed ? { observed: `${label}: ${reading.observed}` } : {}),
-    ...(reading.advice ? { advice: `${label}: ${reading.advice}` } : {})
+    ...(reading.advice ? { advice: `${label}: ${reading.advice}` } : {}),
+    // The fact beside the label, for a gate to read (header, t641).
+    recordContradicts: refuted.wholly ? "whole" : "part"
   };
 }
 
@@ -545,6 +561,8 @@ type Weighed = { call: 1 | 2; verification: AutomationStudioResultVerification; 
 
 /** What a reading marked contradicted says of itself, after its call's number. */
 const CONTRADICTED = "contradicted by Core's record: every read's own account says its list ended with no further page, so what this reading says about more pages is mistaken";
+/** What a reading Core's record refutes only in part says of itself, before Core's findings (t628, t641). */
+const PART_CONTRADICTED = "Core's record contradicts part of this reading";
 /** What a reading that denies an order Core found says of itself (t511). */
 const CONTRADICTED_ORDER = "contradicted by Core's record: Core sorted the answer itself, and its sortRead says how it read the sorted column and that the rows are in that order, so what this reading says about the order is mistaken";
 
@@ -568,20 +586,22 @@ function bothReadings(
   second: AutomationStudioResultVerification,
   reads: readonly AutomationStudioResultReadAccount[] | undefined,
   recordSets: readonly AutomationStudioResultRecordSetSummary[] | undefined,
-  /** Core's findings on each call whose every reason its record refutes (t607, `./refuted-no/`). */
-  refuted: ReadonlyMap<1 | 2, readonly string[]> = new Map()
+  /** What Core's record says of each call's no where it refutes any of it (t607, `./refuted-no/`; in part, t641). */
+  refuted: ReadonlyMap<1 | 2, AutomationStudioResultNoWeighed> = new Map()
 ): AutomationStudioResultVerification {
   const weighed: Weighed[] = [];
   for (const [call, verification] of [[1, first], [2, second]] as const) {
     const reading = verification.repair?.judgement;
     if (!reading || !(reading.expected || reading.observed || reading.advice)) continue;
     if (weighed.some((other) => sameWords(other.reading, reading))) continue;
-    const findings = refuted.get(call);
+    const found = refuted.get(call);
     const because = contradictsPagingRecord(reading, reads) ? CONTRADICTED : contradictsOrderRecord(reading, recordSets) ? CONTRADICTED_ORDER
-      : findings ? `contradicted by Core's record: ${findings.join(" ")}` : undefined;
-    weighed.push({ call, verification, reading, contradicted: because !== undefined, ...(because ? { because } : {}) });
+      : found?.wholly ? `contradicted by Core's record: ${found.findings.join(" ")}` : undefined;
+    // A reading the record refutes only in part still stands, and says which part (header, t641).
+    const label = because ?? (found?.findings.length ? `${PART_CONTRADICTED}: ${found.findings.join(" ")}` : undefined);
+    weighed.push({ call, verification, reading, contradicted: because !== undefined, ...(label ? { because: label } : {}) });
   }
-  if (!weighed.some((one) => one.contradicted) && weighed.length < 2) return weighed[0]?.verification ?? first;
+  if (!weighed.some((one) => one.because) && weighed.length < 2) return weighed[0]?.verification ?? first;
   const ordered = [...weighed.filter((one) => !one.contradicted), ...weighed.filter((one) => one.contradicted)];
   const lead = ordered[0]!.verification;
   const labelled = (field: "expected" | "observed" | "advice"): string | undefined => {
@@ -702,6 +722,16 @@ function refutedFindings(input: AutomationStudioResultVerificationAgreementInput
   for (const call of [1, 2] as const) {
     const weighed = weighedNo(input, call);
     if (weighed?.wholly) found.set(call, weighed.findings);
+  }
+  return found;
+}
+
+/** What Core's record says of each no among the two calls where it refutes any of it, wholly or in part (header, t641); none without the summary. */
+function weighedNos(input: AutomationStudioResultVerificationAgreementInput): Map<1 | 2, AutomationStudioResultNoWeighed> {
+  const found = new Map<1 | 2, AutomationStudioResultNoWeighed>();
+  for (const call of [1, 2] as const) {
+    const weighed = weighedNo(input, call);
+    if (weighed?.findings.length) found.set(call, weighed);
   }
   return found;
 }

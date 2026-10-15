@@ -83,6 +83,15 @@
 // worked. The next subflow then navigated to it as an address. An output bound
 // to a port whose role is success or failure is refused
 // `subflow.output_not_a_value` (`./route-outputs.ts`).
+//
+// **A proposal that drops a condition Core's record kept is refused once
+// (t641).** The candidate controller this one wraps refuses, once, a
+// submission that no longer writes a condition Core's record showed keeps out
+// only rows the request does not ask for (`../candidate/submission.ts`). The
+// subflow gate keeps those conditions on the result it keeps for each trial
+// (`keptConditions`, `./subflow-trial-gate.ts`), and the history handed to the
+// candidate controller carries them through, so a brief's proposals are held
+// to its own trials as a whole candidate's are.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { acceptAutomationStudioFlowBootstrapResult, parseAutomationStudioFlowScript } from "../authoring/index.ts";
 import {
@@ -93,6 +102,8 @@ import {
   type AutomationStudioFlowCandidateSubmission,
   type AutomationStudioFlowCandidateSubmissionHistory
 } from "../candidate/index.ts";
+// Its own barrel, not result-verification's, whose reads import flow-bootstrap back (a module cycle).
+import type { AutomationStudioResultKeptConditionsCarrier } from "../../result-verification/standing-no/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS, type AutomationStudioFlowBootstrapInterface, type AutomationStudioFlowBootstrapNode, type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSubflow } from "../plan/index.ts";
 import { automationStudioNodeSideEffectClass } from "../../executor/index.ts";
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
@@ -348,9 +359,11 @@ function canLast(node: AutomationStudioFlowBootstrapNode): boolean {
 }
 
 /** A partial verdict as the unchanged-submission rule reads a trial: the probe's revision and digest, the verdict and its feedback. */
-function candidateTrial(trial: AutomationStudioSubflowTrialResult, candidate: Pick<AutomationStudioFlowCandidate, "revision" | "digest">): AutomationStudioCandidateTrialResult {
-  const read: AutomationStudioCandidateTrialResult = { revision: candidate.revision, digest: candidate.digest, verdict: trial.verdict, feedback: structuredClone(trial.feedback) };
+function candidateTrial(trial: AutomationStudioSubflowTrialResult & AutomationStudioResultKeptConditionsCarrier, candidate: Pick<AutomationStudioFlowCandidate, "revision" | "digest">): AutomationStudioCandidateTrialResult {
+  const read: AutomationStudioCandidateTrialResult & AutomationStudioResultKeptConditionsCarrier = { revision: candidate.revision, digest: candidate.digest, verdict: trial.verdict, feedback: structuredClone(trial.feedback) };
   if (trial.trialRunId) read.trialRunId = trial.trialRunId;
+  // The conditions the subflow gate kept (t641, `./subflow-trial-gate.ts`), for the candidate controller to hold the next proposal to.
+  if (trial.keptConditions?.length) read.keptConditions = structuredClone(trial.keptConditions);
   return read;
 }
 

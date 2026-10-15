@@ -183,9 +183,10 @@ describe("the subflow trial gate", () => {
     }
     // A field on any other verdict changes nothing.
     const unsure = gateWith(async (request) => answer(request, { verdict: "unsure", feedback: { code: "candidate.trial_unconfirmed", yesUnconfirmed: true } }));
-    // An unsure is said as an unsure (its re-test allowed, t632), never as a yes Core held.
+    // An unsure is said as an unsure (its re-test allowed, t632, t641), never as a yes Core held.
     const toldUnsure = String(((await unsure.test(receipt)).evidence as JsonObject).instruction);
-    expect(toldUnsure).toMatch(/^The judge could not confirm this subflow did what its parts ask, so this revision cannot complete yet\. Testing this same revision again/u);
+    expect(toldUnsure).toMatch(/^The judge could not confirm this subflow did what its parts ask, so this revision cannot complete yet\. /u);
+    expect(toldUnsure).toContain("Testing this same revision again, with the same revision and digest, stays allowed");
     expect(toldUnsure).not.toContain("The judges answered yes");
   });
 });

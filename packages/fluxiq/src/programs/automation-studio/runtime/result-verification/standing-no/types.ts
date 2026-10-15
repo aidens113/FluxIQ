@@ -14,7 +14,26 @@ export type AutomationStudioResultStandingNoCondition = {
   key?: string | undefined;
   /** The labels of the rows it alone left out, where its read counted and sent them all. */
   leftOutAlone?: string[] | undefined;
+  /** The read or saved answer it belongs to, by node id, as Core's account gives it: where a gate finds it as its revision wrote it (t641). */
+  nodeId?: string | undefined;
+  /** Its number there (`condition N`). */
+  number?: number | undefined;
+  /**
+   * Where it alone left out at least one row and Core's record accounts for
+   * every one -- another copy of it is in the result, or Core read a value on it
+   * that fails the request's own words -- those rows, each with how: it left out
+   * nothing the request asks for (t641). Absent otherwise.
+   */
+  keptOut?: AutomationStudioResultStandingNoKeptOutRow[] | undefined;
 };
+
+/**
+ * One row a condition alone left out that Core's record accounts for (t641,
+ * `../refuted-no/types.ts`, `AutomationStudioResultNoAccounted`): `also_in_result`,
+ * another copy of it kept; `request_words`, a value Core read on it failing
+ * the request's own words, `texts`.
+ */
+export type AutomationStudioResultStandingNoKeptOutRow = { label: string; by: "also_in_result" | "request_words"; texts?: string[] | undefined };
 
 /** One no of the trial that Core's record does not wholly refute (`../refuted-no/weigh.ts`). */
 export type AutomationStudioResultStandingNoCall = {
@@ -62,5 +81,32 @@ export type AutomationStudioResultStandingNoContradiction = {
   /** The later revision's conditions the no asks to remove, as lines name them. */
   conditions: string[];
   /** Core's words for the builder: what its record shows, naming no row. */
+  said: string;
+};
+
+/**
+ * A condition Core's record showed leaves out only rows the request does not
+ * ask for, as a gate keeps it across its build's trials (t641,
+ * `./kept-conditions.ts`). Core-only: a refusal names it in Core's words.
+ */
+export type AutomationStudioResultKeptCondition = {
+  /** As the lines of the trial that showed it named it: `condition N (wording)`. */
+  name: string;
+  /** The revision whose trial showed it. */
+  revision: number;
+  /** The condition as that revision wrote it, as JSON with its keys sorted: what a later submission is matched by (`./written-conditions.ts`). */
+  written: string;
+  /** Each row it alone left out, with how Core's record accounts for it. */
+  keptOut: AutomationStudioResultStandingNoKeptOutRow[];
+};
+
+/** What carries a gate's kept conditions to the submission it is asked about, outside what a model is shown: the result a gate keeps for a trial (t641). */
+export type AutomationStudioResultKeptConditionsCarrier = { keptConditions?: AutomationStudioResultKeptCondition[] | undefined };
+
+/** Core's finding that a submission drops or changes kept conditions (`./kept-condition-drop.ts`, t641). */
+export type AutomationStudioResultKeptConditionDrop = {
+  /** The kept conditions it no longer writes as they were written. */
+  dropped: AutomationStudioResultKeptCondition[];
+  /** Core's words for the builder: each condition, as written, and the rows it keeps out. */
   said: string;
 };

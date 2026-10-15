@@ -139,6 +139,30 @@
 // and its revision not closed, and the model is told why in Core's words
 // (`contradictedByBuild`) and to test the same revision again rather than make
 // that change. Never a yes: a yes still needs a trial its judges answer yes.
+//
+// **A re-test is advised on Core's findings, not on one judge's yes (t641).**
+// A8 wave 14 candidate towels `run-mv9ul5dy-e9a1b1c1` (0083): an unsure trial
+// split one yes against a right no, the t632 words called a re-test "the better
+// move" because one judge call said yes, and the builder spent its last trial
+// re-testing a wrong revision, claiming a contradiction Core had not found. An
+// unsure now says a re-test is the better move only where Core's record
+// contradicts what kept the trial from a yes: the no's reading
+// (`unconfirmedReading.recordContradicts` is `whole`, `../../result-verification/agreement.ts`)
+// or the unsure call's doubt (`doubtContradicted`); and says which, as a field
+// (`retestAdvised`), so the builder cannot claim one Core did not find. Where
+// none is, it says a re-test is still allowed, and to change the Flow for the
+// defect the reading names where the trial's own evidence shows it.
+//
+// **And the conditions Core's record showed keep out only what the request
+// does not ask for (t641).** The same run dropped, one revision after another,
+// two conditions of an exact revision on judges' misread advice. A trial judged
+// no hands the gate Core's record of it (`standingNo`), whose conditions now say
+// where they stand and, where Core's record accounts for every row one alone
+// left out, those rows; the gate finds each such condition as the revision that
+// ran wrote it and keeps it (`AutomationStudioResultKeptConditionMemory`). It
+// rides on the result the gate keeps for each trial (`keptConditions`, never
+// shown to a model), and the submission controller refuses once a later
+// revision that drops or changes one (`./submission.ts`).
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
@@ -146,7 +170,12 @@ import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS } from "../plan/index.ts";
 import { automationStudioCandidateStartedWithSaid } from "./started-with.ts";
 // Its own barrel, not result-verification's, whose reads import flow-bootstrap back (a module cycle).
-import { AutomationStudioResultStandingNoMemory, type AutomationStudioResultStandingNoContradiction } from "../../result-verification/standing-no/index.ts";
+import {
+  AutomationStudioResultKeptConditionMemory,
+  AutomationStudioResultStandingNoMemory,
+  type AutomationStudioResultKeptConditionsCarrier,
+  type AutomationStudioResultStandingNoContradiction
+} from "../../result-verification/standing-no/index.ts";
 import type { AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetSpot, AutomationStudioSiteResetTrialActPlace, AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialAct, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialResult, type AutomationStudioCandidateTrialVerdict, type AutomationStudioFlowCandidate } from "./contracts.ts";
 
@@ -166,10 +195,19 @@ const INSTRUCTIONS: Readonly<Record<AutomationStudioCandidateTrialVerdict, strin
   execution_failed: "The candidate did not run to its end, so this revision cannot complete. Read the feedback for the step that failed: what it says happened, and whether trying again may pass (retryable). If it may, test this same revision again; otherwise correct that step, submit the whole candidate, then test the new revision."
 });
 
-/** Said for an unsure while the revision may still be tested (header, t632): a re-test is allowed, and when it is the better move. Generic words. */
+/**
+ * Said for an unsure while the revision may still be tested (header, t632,
+ * t641): a re-test is allowed, and the better move only where Core's record
+ * contradicts what kept the trial from a yes (`retestAdvised`). Generic words.
+ */
+const UNSURE_RETEST_ADVISED = "The judge could not confirm the trial did what the instruction asks, so this revision cannot complete yet. "
+  + "Core's record contradicts what kept this trial from a yes (retestAdvised is true): the no's reading, which its label in unconfirmedReading says Core's record contradicts, or the doubt doubtContradicted names. "
+  + "So testing this same revision again, with the same revision and digest, is the better move (retestsLeft says how many times), and a change that contradicted reading asks for is not. "
+  + "Change the Flow only for a defect the trial's own reads, steps and stored rows show, submit the whole candidate, then test the new revision.";
 const UNSURE_RETESTABLE = "The judge could not confirm the trial did what the instruction asks, so this revision cannot complete yet. "
-  + "Testing this same revision again, with the same revision and digest, is allowed (retestsLeft says how many times), and it is the better move when the feedback names no defect the trial's own reads, steps and stored rows show: "
-  + "one judge call said yes (answeredReading), Core's record contradicts the other call's reading or doubt, or the change that reading asks for would take back what answered an earlier no. Otherwise change the Flow for the defect that evidence shows, submit the whole candidate, then test the new revision.";
+  + "Nothing in Core's record contradicts what kept this trial from a yes (retestAdvised is false), so another trial of this same revision is likely to be judged the same way, whatever one judge call said. "
+  + "Change the Flow for the defect the no's reading or the doubt names where the trial's own reads, steps and stored rows show it, submit the whole candidate, then test the new revision. "
+  + "Testing this same revision again, with the same revision and digest, stays allowed (retestsLeft says how many times) where that evidence shows no such defect.";
 
 /**
  * Said for a no the build's own record contradicts while the revision may
@@ -223,7 +261,8 @@ export class AutomationStudioFlowCandidateTrialGate {
       cannotUndo: { type: "array", maxItems: 50, items: { type: "string", pattern: "^act-[1-9][0-9]{0,3}$" }, description: "Only after candidate.trial_reset_required listed them: the acts the site offers no control to undo. The trial then runs with them already done, and the judge is told." } },
     required: ["revision", "digest"], additionalProperties: false }
   };
-  private readonly verdicts = new Map<string, AutomationStudioCandidateTrialResult>();
+  /** Each trial's answer as kept, with the kept conditions as of that trial (header, t641): what `standing` hands the submission controller. */
+  private readonly verdicts = new Map<string, AutomationStudioCandidateTrialResult & AutomationStudioResultKeptConditionsCarrier>();
   private readonly closedDigests = new Map<string, JsonObject>();
   /** Trials run of each revision and digest. */
   private readonly trials = new Map<string, number>();
@@ -237,6 +276,8 @@ export class AutomationStudioFlowCandidateTrialGate {
   private readonly absorbed: AutomationStudioSiteResetNamedAct[] = [];
   /** The build's standing nos that upheld rows of a kind, for a later no to be held to (header, t633). */
   private readonly standingNos = new AutomationStudioResultStandingNoMemory();
+  /** The conditions Core's record showed keep out only rows the request does not ask for (header, t641). */
+  private readonly keptConditions = new AutomationStudioResultKeptConditionMemory();
   private readonly fallbackSignal = new AbortController().signal;
 
   constructor(private readonly input: {
@@ -293,8 +334,15 @@ export class AutomationStudioFlowCandidateTrialGate {
     // A no whose remedy would take back what an earlier standing no of this build upheld is not taken (header, t633).
     const contradiction = this.standingNos.weigh({ revision: asked.answer.revision, verdict: asked.answer.verdict, standingNo: asked.standingNo });
     const answer = contradiction ? notTaken(asked.answer, contradiction) : asked.answer;
+    // What Core's record of this trial shows its conditions kept out, as the revision that ran wrote them (header, t641).
+    this.keptConditions.remember({ revision: answer.revision, standingNo: asked.standingNo, plan: latest.buildPlan?.plan });
+    const keptConditions = this.keptConditions.conditions();
     const leftOnSite = this.input.reset?.trialRan(answer.acts ?? [], answer.trialRunId);
-    this.verdicts.set(key(answer), this.absorbed.length > 0 ? { ...answer, absorbedByStartReset: this.absorbed.map(namedAct) } : answer);
+    this.verdicts.set(key(answer), {
+      ...answer,
+      ...(this.absorbed.length > 0 ? { absorbedByStartReset: this.absorbed.map(namedAct) } : {}),
+      ...(keptConditions.length ? { keptConditions } : {})
+    });
     if (answer.verdict === "no") this.closedDigests.set(answer.digest, answer.feedback);
     const repeatedStep = this.recordStop(answer);
     const slowDown = answer.verdict === "yes" ? unhandledSlowDowns(answer.feedback, latest) : [];
@@ -307,6 +355,8 @@ export class AutomationStudioFlowCandidateTrialGate {
       ...(repeatedStep ? { failedStep: repeatedStep } : {}),
       ...(slowDown.length ? { slowDown } : {}),
       ...(TRANSIENT.has(answer.verdict) ? { retestsLeft } : {}),
+      // Whether Core's record contradicts what kept an unsure from a yes: the fact its instruction rests on (header, t641).
+      ...(answer.verdict === "unsure" && retestsLeft > 0 && typeof answer.feedback.contradictedByBuild !== "string" ? { retestAdvised: automationStudioCandidateRetestAdvised(answer) } : {}),
       ...(reset?.kind === "admit" && reset.startedWith ? { startedWith: reset.startedWith } : {}),
       ...(absorbed.length ? { absorbedByStartReset: absorbed } : {}),
       ...(leftOnSite?.length ? { leftOnSite: leftOnSite.map(namedAct) } : {})
@@ -329,7 +379,8 @@ export class AutomationStudioFlowCandidateTrialGate {
     if (answer && repeated) return refusal(`candidate.trial_${answer.verdict}`, repeatedInstruction(answer), { verdict: answer.verdict, failedStep: repeated, trialFeedback: answer.feedback });
     if (!answer) return refusal("candidate.trial_required", `Test this candidate first: call ${AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID} with revision ${receipt.revision} and digest ${receipt.digest}, and complete only after it answers yes for that revision and digest.`);
     const retestable = TRANSIENT.has(answer.verdict) && (this.trials.get(key(receipt)) ?? 0) < AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION;
-    return refusal(`candidate.trial_${answer.verdict}`, standingInstruction(answer, retestable), { verdict: answer.verdict, trialFeedback: answer.feedback });
+    const advised = answer.verdict === "unsure" && retestable && typeof answer.feedback.contradictedByBuild !== "string" ? { retestAdvised: automationStudioCandidateRetestAdvised(answer) } : {};
+    return refusal(`candidate.trial_${answer.verdict}`, standingInstruction(answer, retestable), { verdict: answer.verdict, trialFeedback: answer.feedback, ...advised });
   }
 
   /**
@@ -491,7 +542,21 @@ function standingInstruction(answer: AutomationStudioCandidateTrialResult, retes
   const onPage = retestable ? onPageStep(answer) : undefined;
   if (onPage) return testAgainInstruction(onPage);
   if (answer.verdict === "unsure" && retestable && typeof answer.feedback.contradictedByBuild === "string") return CONTRADICTED_RETESTABLE;
-  return answer.verdict === "unsure" && retestable ? UNSURE_RETESTABLE : INSTRUCTIONS[answer.verdict];
+  if (answer.verdict === "unsure" && retestable) return automationStudioCandidateRetestAdvised(answer) ? UNSURE_RETEST_ADVISED : UNSURE_RETESTABLE;
+  return INSTRUCTIONS[answer.verdict];
+}
+
+/**
+ * Whether Core's record contradicts what kept an unsure from a yes (header,
+ * t641): the no's reading wholly (`unconfirmedReading.recordContradicts`, Core's
+ * field beside its label), or the unsure call's doubt (`doubtContradicted`).
+ * Read as fields Core set, never off the words; one judge's yes is none.
+ * Exported for the subflow trial gate, which advises a re-test the same way.
+ */
+export function automationStudioCandidateRetestAdvised(answer: { feedback: JsonObject }): boolean {
+  const reading = answer.feedback.unconfirmedReading;
+  if (isJsonObject(reading) && reading.recordContradicts === "whole") return true;
+  return typeof answer.feedback.doubtContradicted === "string" && answer.feedback.doubtContradicted.length > 0;
 }
 
 /** What the model is told once a revision stopped at the same step twice, from the latest trial of it. */

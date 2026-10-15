@@ -99,17 +99,36 @@
 // and `weighed`, told each trial's answer as this gate keeps it, with Core's
 // record of a no it kept standing, so the dispatcher lists and remembers the
 // gate's verdict (`../../project-agents/dispatch/trial-port.ts`).
+//
+// **A re-test is advised on Core's findings, and the conditions Core's record
+// kept are remembered (t641).** As the whole gate does
+// (`../candidate/trial-gate.ts`; A8 wave 14 candidate towels
+// `run-mv9ul5dy-e9a1b1c1`): an unsure says a re-test is the better move only
+// where Core's record contradicts what kept the trial from a yes -- the no's
+// reading wholly, or the unsure call's doubt -- and says so as a field
+// (`retestAdvised`), never because one judge call said yes; and the conditions
+// Core's record of a trial judged no showed keep out only rows the request does
+// not ask for are kept as the proposal that ran wrote them, on the result kept
+// for each trial (`keptConditions`), for the brief's submission controller to
+// refuse once a proposal that drops one (`./scoped-submission.ts`). Earlier
+// briefs' kept conditions do not reach this gate: only its own trials'.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import {
   AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION,
   AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS,
+  automationStudioCandidateRetestAdvised,
   automationStudioCandidateStartedWithSaid,
   type AutomationStudioCandidateTrialPrepared,
   type AutomationStudioCandidateTrialVerdict
 } from "../candidate/index.ts";
 // Its own barrel, not result-verification's, whose reads import flow-bootstrap back (a module cycle).
-import { AutomationStudioResultStandingNoMemory, type AutomationStudioResultStandingNoContradiction } from "../../result-verification/standing-no/index.ts";
+import {
+  AutomationStudioResultKeptConditionMemory,
+  AutomationStudioResultStandingNoMemory,
+  type AutomationStudioResultKeptConditionsCarrier,
+  type AutomationStudioResultStandingNoContradiction
+} from "../../result-verification/standing-no/index.ts";
 import type { AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowScopeIdentity, AutomationStudioSubflowTrialPort, AutomationStudioSubflowTrialResult } from "./contracts.ts";
 
@@ -161,10 +180,19 @@ const NOT_JUDGED_AFTER_YES = "The judges answered yes for this revision and none
   + "The judges accepted the rows this subflow kept: do not rewrite it or change which rows it keeps. Test this same revision again; if its retests run out held the same way, "
   + "end the brief: complete with {\"ended\": \"partial\", \"reason\": \"<the judges answered yes and Core could not confirm it>\"}.";
 
-/** Said for an unsure while the revision may still be tested (header, t632): a re-test is allowed, and when it is the better move. Generic words. */
+/**
+ * Said for an unsure while the revision may still be tested (header, t632,
+ * t641): a re-test is allowed, and the better move only where Core's record
+ * contradicts what kept the trial from a yes (`retestAdvised`). Generic words.
+ */
+const UNSURE_RETEST_ADVISED = "The judge could not confirm this subflow did what its parts ask, so this revision cannot complete yet. "
+  + "Core's record contradicts what kept this trial from a yes (retestAdvised is true): the no's reading, which its label in unconfirmedReading says Core's record contradicts, or the doubt doubtContradicted names. "
+  + "So testing this same revision again, with the same revision and digest, is the better move (retestsLeft says how many times), and a change that contradicted reading asks for is not. "
+  + "Change the subflow only for a defect the trial's own reads, steps and stored rows show, submit it with core.submit_subflow, then test the new revision.";
 const UNSURE_RETESTABLE = "The judge could not confirm this subflow did what its parts ask, so this revision cannot complete yet. "
-  + "Testing this same revision again, with the same revision and digest, is allowed (retestsLeft says how many times), and it is the better move when the feedback names no defect the trial's own reads, steps and stored rows show: "
-  + "one judge call said yes (answeredReading), Core's record contradicts the other call's reading or doubt, or the change that reading asks for would take back what answered an earlier no. Otherwise change the subflow for the defect that evidence shows, submit it with core.submit_subflow, then test the new revision.";
+  + "Nothing in Core's record contradicts what kept this trial from a yes (retestAdvised is false), so another trial of this same revision is likely to be judged the same way, whatever one judge call said. "
+  + "Change the subflow for the defect the no's reading or the doubt names where the trial's own reads, steps and stored rows show it, submit it with core.submit_subflow, then test the new revision. "
+  + "Testing this same revision again, with the same revision and digest, stays allowed (retestsLeft says how many times) where that evidence shows no such defect.";
 
 /**
  * Said for a no the build's own record contradicts while the revision may
@@ -187,11 +215,14 @@ export class AutomationStudioSubflowTrialGate {
       cannotUndo: { type: "array", maxItems: 50, items: { type: "string", pattern: "^act-[1-9][0-9]{0,3}$" }, description: "Only after candidate.trial_reset_required listed them: the acts the site offers no control to undo. The trial then runs with them already done, and the judge is told." } },
     required: ["revision", "digest"], additionalProperties: false }
   };
-  private readonly verdicts = new Map<string, AutomationStudioSubflowTrialResult>();
+  /** Each trial's answer as kept, with the kept conditions as of that trial (header, t641): what `standing` hands the submission controller. */
+  private readonly verdicts = new Map<string, AutomationStudioSubflowTrialResult & AutomationStudioResultKeptConditionsCarrier>();
   private readonly closedDigests = new Map<string, JsonObject>();
   private readonly trials = new Map<string, number>();
   /** The brief's standing nos that upheld rows of a kind, for a later no to be held to (header, t633). */
   private readonly standingNos = new AutomationStudioResultStandingNoMemory();
+  /** The conditions Core's record showed keep out only rows the request does not ask for (header, t641). */
+  private readonly keptConditions = new AutomationStudioResultKeptConditionMemory();
   private readonly fallbackSignal = new AbortController().signal;
 
   constructor(private readonly input: {
@@ -250,7 +281,10 @@ export class AutomationStudioSubflowTrialGate {
     port.weighed?.({ answer: structuredClone(answer), ...(stood ? { standingNo: structuredClone(asked.standingNo) } : {}) });
     signal.throwIfAborted();
     const leftOnSite = this.input.reset?.trialRan(answer.acts ?? [], answer.trialRunId);
-    this.verdicts.set(key(answer), answer);
+    // What Core's record of this trial shows its conditions kept out, as the proposal that ran wrote them (header, t641).
+    if (answer.entryPrepared) this.keptConditions.remember({ revision: answer.revision, standingNo: asked.standingNo, plan: latest.subflows ? { subflows: latest.subflows } : undefined });
+    const keptConditions = this.keptConditions.conditions();
+    this.verdicts.set(key(answer), keptConditions.length ? { ...answer, keptConditions } : answer);
     if (answer.verdict === "no" && answer.entryPrepared) this.closedDigests.set(answer.digest, answer.feedback);
     const retestsLeft = TRANSIENT.has(answer.verdict) || !answer.entryPrepared ? AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION - (tried + 1) : 0;
     const evidence: JsonObject = {
@@ -263,6 +297,8 @@ export class AutomationStudioSubflowTrialGate {
     };
     if (answer.trialRunId) evidence.trialRunId = answer.trialRunId;
     if (TRANSIENT.has(answer.verdict) || !answer.entryPrepared) evidence.retestsLeft = retestsLeft;
+    // Whether Core's record contradicts what kept an unsure from a yes: the fact its instruction rests on (header, t641).
+    if (answer.verdict === "unsure" && answer.entryPrepared && retestsLeft > 0 && typeof answer.feedback.contradictedByBuild !== "string") evidence.retestAdvised = automationStudioCandidateRetestAdvised(answer);
     const answered: AutomationStudioLlmEvidenceToolExecutionResult = { kind: "llm_evidence_tool_execution", evidence, effectApplied: true, targetsUnchanged: false, resultCode: `subflow.trial_${answer.verdict}` };
     if (retestsLeft > 0) answered.resultReason = RETEST_REASON;
     return answered;
@@ -277,7 +313,8 @@ export class AutomationStudioSubflowTrialGate {
     if (closed) return refusal("subflow.trial_unchanged_after_no", "This exact proposal was judged no and has not changed. Change it, submit it, test the new revision, and complete only after a yes.", { previousFeedback: closed });
     if (!answer) return refusal("subflow.trial_required", `Test this proposal first: call ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} with revision ${receipt.revision} and digest ${receipt.digest}, and complete only after it answers yes for that revision and digest.`);
     const retestable = (this.trials.get(key(receipt)) ?? 0) < AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION;
-    return refusal(`subflow.trial_${answer.verdict}`, instructionFor(answer, retestable), { verdict: answer.verdict, entryPrepared: answer.entryPrepared, trialFeedback: answer.feedback });
+    const advised = answer.verdict === "unsure" && answer.entryPrepared && retestable && typeof answer.feedback.contradictedByBuild !== "string" ? { retestAdvised: automationStudioCandidateRetestAdvised(answer) } : {};
+    return refusal(`subflow.trial_${answer.verdict}`, instructionFor(answer, retestable), { verdict: answer.verdict, entryPrepared: answer.entryPrepared, trialFeedback: answer.feedback, ...advised });
   }
 
   /** The judge's feedback when a proposal with this digest was judged no; undefined otherwise. */
@@ -326,7 +363,7 @@ function instructionFor(answer: AutomationStudioSubflowTrialResult, retestable: 
   if (!answer.entryPrepared) return ENTRY_NOT_PREPARED;
   if (answer.verdict === "not_judged" && answer.feedback.yesUnconfirmed === true) return NOT_JUDGED_AFTER_YES;
   if (answer.verdict === "unsure" && retestable && typeof answer.feedback.contradictedByBuild === "string") return CONTRADICTED_RETESTABLE;
-  if (answer.verdict === "unsure" && retestable) return UNSURE_RETESTABLE;
+  if (answer.verdict === "unsure" && retestable) return automationStudioCandidateRetestAdvised(answer) ? UNSURE_RETEST_ADVISED : UNSURE_RETESTABLE;
   return INSTRUCTIONS[answer.verdict];
 }
 

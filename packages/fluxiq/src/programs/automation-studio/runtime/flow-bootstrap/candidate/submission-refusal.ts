@@ -79,9 +79,23 @@
 // since the detection -- the advice no longer calls the handle right, and says
 // to detect the list again. That reason is read from the refusal, never
 // guessed here; with no such issue the advice is the one t383 gave.
+//
+// **A dropped condition Core's record kept is a hint, said as one (t641).** A
+// submission that no longer writes a condition Core's record showed keeps out
+// only rows the request does not ask for is refused once
+// (`candidate.kept_condition_dropped`, `./submission.ts`). It lists no issue a
+// script must correct, so the general "correct every listed issue" advice, and
+// the warning that a third such refusal ends the build, would say the wrong
+// thing. Its next step is said by its own branch, by its code: Core's words on
+// each condition and the rows it kept out, that the revision which stood still
+// stands, and that sending the same change again is accepted if the builder is
+// sure of it -- a refusal the model may override once, never a block. The
+// subflow builder sends its refusals through this function too
+// (`../subflow-candidate/builder-loop.ts`), so it is told the same.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowCandidateSubmission } from "./contracts.ts";
+import { AUTOMATION_STUDIO_CANDIDATE_KEPT_CONDITION_DROPPED_CODE } from "./submission.ts";
 
 /** The code a refused submission is counted under when its check names no closed code of its own. */
 export const AUTOMATION_STUDIO_CANDIDATE_SUBMISSION_REFUSED_CODE = "candidate.submission_refused";
@@ -181,12 +195,27 @@ export function automationStudioCandidateSubmissionRefusal(submitted: Extract<Au
   // says what failed last and the way out (t464, `./unchanged-submission.ts`).
   const next = feedback.unchanged === true && typeof feedback.instruction === "string"
     ? `${feedback.instruction} ${RESUBMIT}`
-    : refusedSteps(feedback) + (advice ? advice + HANDLE_TAIL : GENERAL_NEXT);
+    : feedback.code === AUTOMATION_STUDIO_CANDIDATE_KEPT_CONDITION_DROPPED_CODE && typeof feedback.instruction === "string"
+      ? keptConditionNext(feedback.instruction, feedback.standingRevision)
+      : refusedSteps(feedback) + (advice ? advice + HANDLE_TAIL : GENERAL_NEXT);
   return {
     evidence: { ok: false, revision: submitted.revision, diagnostics: feedback, issueCodes: [...submitted.check.issueCodes], next },
     resultCode: refusalCode(feedback, submitted.check.issueCodes),
     draft: { proposes: true }
   };
+}
+
+/**
+ * The next step after a refused drop of a kept condition (header, t641): Core's
+ * words on the condition, the revision that still stands, and that this is a
+ * hint the model may override once. Generic words, naming no site or task.
+ */
+function keptConditionNext(instruction: string, standing: JsonValue | undefined): string {
+  const revision = standing && typeof standing === "object" && !Array.isArray(standing) && typeof standing.revision === "number" ? standing.revision : undefined;
+  const stands = revision === undefined
+    ? "Nothing was made a new revision: what stood before this submission still stands."
+    : `Nothing was made a new revision: revision ${revision}, which stood before this submission, still stands.`;
+  return `${instruction} ${stands} This refusal is a hint from Core's record, not a block: if you are sure the change is right, send the same change again and it is accepted.`;
 }
 
 /** How long a digest of the refused issues is, in hex digits. */
