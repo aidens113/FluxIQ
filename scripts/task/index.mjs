@@ -15,5 +15,7 @@ export { listTasks } from "./list.mjs";
 export { branchCheckedOutElsewhere, listWorktrees, locateTask } from "./locate.mjs";
 export { samePath } from "./path-identity.mjs";
 export { noteTaskProgress } from "./progress-note.mjs";
+export { recordTaskId } from "./record-task-id.mjs";
 export { startTask } from "./start.mjs";
 export { allocateTaskId, chooseTaskId } from "./task-id.mjs";
+export { TASK_ID_REF_PREFIX } from "./task-id-ref-prefix.mjs";

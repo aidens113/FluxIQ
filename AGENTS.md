@@ -275,6 +275,14 @@ where a worker produced the change. A task merges `--no-ff` with the subject
 and `git revert -m 1 <merge>` undoes one cleanly. Commits are never squashed:
 they are the step-by-step record, and the merge commit is the boundary.
 
+A task id is never reused. `pnpm task start` records each id it allocates as
+a local ref, `refs/fluxiq/task-ids/t<NNN>`, at the commit the task started
+from, and counts those refs, `Task: t<NNN>` trailers on any local branch, open
+task branches and merge subjects as spent. Abandon never deletes the ref, so an
+abandoned task's number stays spent. A Core-paired task started downstream
+writes the same ref here. The downstream allocator applies the same rule; keep
+`scripts/task/task-id.mjs` and `record-task-id.mjs` in step on both sides.
+
 Merge `dev` into the task branch and re-run the narrowest relevant checks
 before merging back. That is what catches two tasks that changed different
 files and still produced an incompatible system, which git cannot detect.
