@@ -1,7 +1,7 @@
 # Automation Project Agents Plan
 
 Status: Active
-Status detail: A1-A6 delivered; A8 passed on downstream frozen pair 8 (`project` 10 of 10) and `project` is the product default since 2026-10-16 (t667). A7 (project extend) and the one-part cost gap follow. User decision 2026-10-13: concurrent agents in Core, the extension sets one at a time.
+Status detail: A1-A6 delivered; A8 passed (downstream frozen pair 8) and `project` is the product default since 2026-10-16 (t667). Now: the cost gap (P1-P5; t672, t673 merged). User decision 2026-10-13: concurrent agents in Core, the extension one at a time.
 Created: 2026-10-13
 Last updated: 2026-10-16
 Owner: Senior supervisor agent
@@ -13,49 +13,36 @@ Related: [MVP final month plan](./mvp-final-month-plan.md), [state-aware recover
 
 ## Current State
 
-**Built; A8 Lab comparison running (2026-10-14).** The user asked for "a system of
-different agents for managing different parts of a automation project ...
-the current one we have for actually building subflows, but that gets spawned
-by a senior supervisor, much like we have in this repo." The evidence for why
-(context growth from 14.7k to 81.7k tokens per decision in one build, task
-parts lost or invented, verification starved by one shared budget) and the
-user's words are in the paired document's `Why Now`.
+**Built, qualified and the product default (2026-10-16); now closing its cost gap.** The user asked for "a system of
+different agents for managing different parts of a automation project ... the current one we have for actually
+building subflows, but that gets spawned by a senior supervisor, much like we have in this repo." Units A1-A6 are
+delivered; A8 passed on downstream frozen pair 8 (`project` 10 of 10, `candidate` 9 of 9 run with towels failed) and
+`project` became the default authoring mode (t667; an extend still builds `candidate`; `candidate` and `legacy` stay
+selectable with `FLUXIQ_AUTHORING_MODE`). The evidence for why is in `Why Now` of the paired document.
 
-**Design decided (supervisor recommendations, user may overrule):**
-- Five roles: project supervisor, subflow builder, repair agent (model
-  agents); validator and promotion owner (existing Core services). Roles,
-  invariants and contracts below.
-- The supervisor replaces the single loop inside
-  `generateFlowBootstrapAdaptation` behind a new authoring mode `project`;
-  it became the product default on 2026-10-16 (t667), when the Lab showed
-  `project` passing every A8 task twice in a row on one frozen pair where
-  `candidate` failed one. A one-part task is a one-subflow plan, so there is one path.
-- Builders are the existing candidate authoring loop with a subflow scope,
-  started through the child-build entry the re-author path already uses
-  (`service.ts:1495`, called at `:2512`).
-- **Core runs builders concurrently; the domain sets how many** (user,
-  2026-10-13: "make it possible in core, but have extension set it to only 1
-  at a time"). The supervisor dispatches independent briefs at once, up to
-  the host capacity the domain declares; the web domain declares 1, so in the
-  extension builders run one at a time. Everything in Core is built and
-  tested for concurrency (stub hosts with capacity 2), not only for one.
-- One Flow purse; the supervisor carves allowances and keeps a reserve for
-  the judged whole run and one repair round.
-- Assembly produces one complete candidate topology through the existing
-  submission controller, trial port and `promoteAutomationStudioCandidateTrial`;
-  no new promotion path.
+**Design (supervisor recommendations, user may overrule):** five roles (project supervisor, subflow builder, repair
+agent; validator and promotion owner stay existing services); builders are the candidate authoring loop with a
+subflow scope; **Core runs builders concurrently, the domain sets how many** (user, 2026-10-13; the web domain
+declares 1); one Flow purse with a reserve for the judged whole run and one repair round; assembly through the
+existing submission controller, trial port and promotion; creation ends only on one judged whole-Flow run.
 
-**Depends on, already designed by Codex (not part of this plan):** entry-case
-units 2-4 (t532 continuation: prepared-start and trial receipts, accumulator
-and promotion gate, site-control preparation) and held-topology units 1-4
-(whole-topology held re-author). A multi-part task with only the default
-observed-current case does not need them for creation; post-run repair of a
-multi-subflow Flow does need held-topology.
+**Cost gap (2026-10-16; plan, findings and units P1-P5 in the paired document's `Cost Gap Plan`).** `project` cost
+about 1.6 times `candidate` on pair 8. Two thirds of the gap is finished work thrown away: an unread handed-on value
+blocking a brief, and plan amends dropping done proposals; a predecessor's proposal re-doing a later part's act while
+Core prepared the entry; the supervisor's guidance teaching splits. Merged: t672 (an unread handed-on input passes,
+noted; `dispatch/call-order.ts` is the one binding rule), t673 (guidance: asks done on one page are one subflow).
+In flight: t671 (P1: a narrowing, merge, or act/fact change carries a done proposal; the carried script is rewritten
+to fit), t676 (P4: Core checks a "done before" ending; possible acts listed; builders told the other parts),
+t677 (an exact first-ask yes flag in place of the call count). Next: P5, a one-part plan whose builder's test is the
+judged whole run (design in the downstream report `cost-gap-core-code.md` (5)); then a live round in `project`.
 
-**Delivered on dev (2026-10-13, supervisor-verified, pushed):** every unit A1-A6 with W1-W4: contracts and build record, allowances and cancellation tree, host-resource scheduler and lease on every command (web capacity 1), builder scope and partial subflow trial, agent attribution and chat cards, the project supervisor, the dispatcher, and the wiring: a build in authoring mode `project` runs the supervisor and its builders; `candidate` stays the default, so ordinary builds are unchanged. Also merged today: the fix-forward of every failure the two sweeps found (Core 305, downstream 31), a product fix for instructions leaking across Flows, and bounded retries on recording directory removal; the confirming Core sweep had one failure of 11207, since fixed. **Also merged:** the pre-A8 hardening (a refused act ends its builder; promotion reads every brief's answers; the reserve covers the judged run and one repair round; builder acts are placed so a reset can undo an Add to cart; every act in the build record), the judge checklist (A9), distinct ids in assembled Flows (A12), and the follow-ups A10, A11, A13, A15-A18. **Now (2026-10-14):** A8 is running on the user's go-ahead ("Yes go to live tests"); its attempts are in the paired document's A8 Run Plan. Round one in mode `project` exposed, in turn, a long-path SQLite open (t568, merged), a supervisor that explored instead of planning and could not write the raw plan (t569, merged: planning format, look budget), and builds that run out of calls at a third of their dollars (t570, in flight: per-brief call shares, Core-sized allowances, permitted acts from parts, interface lines in the brief, the subflow trial reusing the candidate trial's exclusion evidence). Merged since: t570-t575 (call shares, A21, A10b, judge evidence t574, acting briefs t575), downstream W8 (t573) and the Lab's call backstop at Core's 250 (t576), and t577 (a brief's turns capped at the builder loop's 64, which launch 5 hit). Launch 5's bigbox run, the first whose builders ran on this pair, showed no subflow trial could pass (downstream `reports/a8-bigbox-run-mv8186yr-debug.md`): t578 trial setup and reset, t579 dispatch waits for a passing predecessor, t580 builders explore from their entry, t581 honest builder endings, t582 supervisor plan checks are merged (ledger). Round one relaunches as launch 6. After A8: A7 re-author triage and A14 surveys; judge reliability on filtered list reads (seen in both modes).
+**Also done 2026-10-16:** t674 split `result-verification/verdict.ts` into `verdict/`.
 
-**Not claimed:** that agents fix wrong judgements, or that a `project` build
-has yet created a Flow live (none has reached its judged whole run).
+**Open follow-ups:** the reset-reason flag for a held ending (`completion.ts`/`state.ts`); the supervisor's fallback
+kept only in memory; `flow-bootstrap/candidate/submission.ts` past the 400-line advisory; A7 (project extend) after
+held-topology units 1-4; a mechanical check for `\b` in RegExp template literals (two tests silently never ran).
+
+**Not claimed:** that agents fix wrong judgements; that the cost fixes lower cost live (no live round yet).
 
 ---
 
@@ -687,6 +674,27 @@ Entries from 2026-10-13 to A8 wave 4 (t550-t611) are archived in
 - Why: t663 left the file at exactly 800 lines, so the next judging change would have failed the audit
 - Validation: after merging dev (t667 in): tsc exit 0; result-verification, candidate-trial, subflow-trial, flow-bootstrap, llm, model, conversations -> 568 files, 5757 passed, 2 skipped; audit passed; `pnpm check` -> passed; pushed
 - Outcome: Accepted
+
+### 2026-10-16 — Cost gap round 1: an unread handed-on input passes (t672); asks on one page are one subflow (t673); verdict.ts split (t674)
+- Agent: downstream investigation workers (reports `cost-gap-run-evidence.md`, `cost-gap-core-code.md`,
+  `cost-gap-cross-part-act.md`); workers t672 (two rounds: blocked on ownership, then the seam it proposed), t673,
+  t674; supervisor reviewed, re-ran the checks, fixed two never-running word checks t673 found, integrated in order
+- Changed: t672 `project-agents/dispatch/call-order.ts` (new; assembly's call order and input binding, used by
+  `supervisor/assembly.ts` and `dispatch/scope.ts` `handedOn`), `flow-bootstrap/subflow-candidate/{callable-target,
+  scoped-submission,contracts,builder-loop}.ts`, `dispatch/ending.ts`: an unread handed-on input passes, `unneeded` on
+  the proposal, the answer and the return; an unread person's value is refused, told to read it. t673
+  `supervisor/guidance.ts` steps 1-2 and examples (library account, community garden); `guidance.test.ts`'s per-word
+  loop removed with a note and `flow-draft/amendment/tests/apply.test.ts`'s pagination check fixed (`\b` in a
+  template literal is a backspace; neither ever ran). t674 `result-verification/verdict.ts` -> `verdict/`
+- Why: downstream frozen pair 8: `project` $0.977 against `candidate` $0.606 on nine paired runs, $0.248 of the gap
+  thrown-away briefs (`run-mvan7giv-4246aafb`: three `subflow.input_unread` refusals, an amend dropping the done work)
+- Validation: t672 after merging dev: tsc exit 0; vitest subflow-candidate, project-agents, project-build -> 83 files,
+  527 passed. t673: vitest guidance + apply -> 57 passed; check passed. t674: tsc exit 0; vitest result-verification,
+  candidate-trial, subflow-trial -> 141 files, 1174 passed. `pnpm task finish` -> `pnpm check` passed for each;
+  pushed `f05a486c`
+- Outcome: Accepted
+- Follow-up: P1 t671, P4 t676, t677 in flight; P5 next; a mechanical check for `\b` in RegExp template literals
+
 
 ## Open Questions
 
