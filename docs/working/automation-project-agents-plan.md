@@ -657,6 +657,14 @@ Entries from 2026-10-13 to A8 wave 4 (t550-t611) are archived in
 - Validation: after merging dev: tsc exit 0; result-verification, flow-version, flow-bootstrap/candidate, flow-bootstrap-commands, project-build, candidate-trial, service-bootstrap -> 217 files, 1598 passed; audit passed; `pnpm check` -> passed; merged `a5256b07`; pushed
 - Outcome: Accepted. The evidence-guided path has no trial run id and records nothing
 
+### 2026-10-16 — After A8 frozen pair 7 wave 37: kept rows checked before a yes (t663); the playback hold sets aside only nos Core refutes (t664)
+- Agent: read-only debug of wave 37 `candidate` towels (downstream report `a8-towels-run-mvahlxuu-debug.md`); workers t663 (two rounds: it fires on build tests, the re-ask wiring, `weighedNos`), t664 (three rounds: the producer moved to t663, a re-asked yes is not confirmed, tests reconciled with the producer); supervisor decided a re-asked yes never holds, verified and integrated in order (t663, then t664)
+- Changed: t663 `result-verification/request-rows/{kept-without-asked-column,kept-not-naming-the-item}.ts` (new) and `verdict.ts`: a kept row lacking an asked-for column the others carry, or the item phrase the others write, is flagged under a stated threshold, and a yes not naming it beside a quote of the request is held; `refuted-no/reask.ts`, `recheck-words.ts`, `exclusion-evidence/recheck.ts`: the re-ask says Core's record covers only the rows it names and lists flagged rows; `agreement.ts`, `contracts/verification.ts`: a double no carries `weighedNos`. t664 `result-verification/build-yes-hold/`: holds only where Core contradicts part of each no, never a no that stands whole, a yes confirmed only from two first-ask calls, `buildYesHold {held, because}` recorded and logged; fixed the saved-Flow port refusing every routed playback (the cause it never fired)
+- Why: wave 37 `candidate` towels: every yes gate was about left-out rows; a re-ask after Core refuted the nos' wrong reason turned them into a false yes on a kept row that is not the item asked for; t662's hold, had it fired, would have set aside two correct nos
+- Validation: t663 after merging dev: tsc exit 0; result-verification, candidate-trial, subflow-trial, flow-bootstrap -> 314 files, 3329 passed, 2 skipped; `pnpm check` -> passed; merged `03311d55`. t664 after merging dev (t663 in): tsc exit 0; result-verification, flow-version, flow-bootstrap-commands, project-build, candidate-trial, subflow-trial -> 179 files, 1358 passed; `pnpm check` -> passed; merged `7c321b7a`; pushed
+- Outcome: Accepted
+- Follow-up: `result-verification/agreement.ts` is at exactly 800 lines: split it before the next addition; the confirmed-yes rule uses the call count (an exact re-ask flag needs judge.ts, candidate-trial and promotion)
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
