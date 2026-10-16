@@ -619,6 +619,14 @@ Entries from 2026-10-13 to A8 wave 4 (t550-t611) are archived in
 - Validation: after merging dev (t650 in): tsc exit 0; result-verification, candidate-trial, subflow-trial, flow-bootstrap, llm/repeat-guard -> 297 files, 3240 passed, 2 skipped (the new tests fail with the fix removed; the converse tests pass); audit passed; `pnpm check` -> passed
 - Outcome: Accepted
 
+### 2026-10-15 — After A8 frozen pair 5 wave 27: a claim about a row the read never saw is refuted (t654)
+- Agent: read-only debug of wave 27 towels (downstream report `a8-towels-run-mva6mlo8-debug.md`, both modes, not a t650/t651 regression); worker t654-unseen-row-claim-refuted (round 1 blocked: the record carried neither narrowing nor counts); supervisor measured the completeness rule on the real run, verified and integrated
+- Changed: `result-verification/refuted-no/unseen-row-claim.ts` (new), `record.ts`, `types.ts`, `named-rows.ts`, `missing-claim.ts`: a sentence saying a condition left out or missed a row X in none of the rows a read saw is refuted ("no condition saw X") when the read's counts show its labels cover every row it saw and a step narrowed the page first; a sentence blaming the step stands; counts that do not add up refute nothing
+- Why: wave 27 towels: correct 9-row reads were disputed with claims Core could not answer
+- Validation: after merging dev: tsc exit 0; result-verification, candidate-trial, subflow-trial -> 115 files, 995 passed; audit passed; `pnpm check` -> passed; merged `2a4130dc`
+- Outcome: Accepted, inert on real reads so far: on all 12 judged trials of `run-mva6mlo8` the counts fall short (e.g. seen 23, kept 9, alone 12: two rows were left out by more than one condition and are listed nowhere), so the rule would not have fired
+- Follow-up: t655 (after t652): the domain's read account lists rows left out by more than one condition (`node-run/rejected-rows.ts`), and Core counts them, so a read's labels can be complete
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
