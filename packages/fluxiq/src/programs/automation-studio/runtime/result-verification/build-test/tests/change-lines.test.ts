@@ -116,11 +116,11 @@ describe("a change line shaped like a credential", () => {
 function verificationRequest(sent: AutomationStudioRunResultSummary): AutomationStudioLlmTaskRequest {
   return {
     requestId: "request.one", idempotencyKey: "request.one", timeoutMs: 20_000, estimatedInputTokens: 100,
-    taskKind: "loop_verification", promptVersion: "automation-studio.loop-verification.v2", expectedOutput: "diagnosis",
+    taskKind: "loop_verification", promptVersion: "automation-studio.loop-verification.v3", expectedOutput: "diagnosis",
     tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 }, maxEstimatedCostUsd: 0.25,
     deniedEvidenceKeys: DENIED,
     context: {
-      schemaVersion: "0.1", taskKind: "loop_verification", promptVersion: "automation-studio.loop-verification.v2",
+      schemaVersion: "0.1", taskKind: "loop_verification", promptVersion: "automation-studio.loop-verification.v3",
       projectId: "project.one", flowId: "flow.one",
       instructions: { instructions: [], instructionIds: [], diagnostics: [], tokenBudget: 8_000, estimatedTokens: 0 },
       resultSummary: sent

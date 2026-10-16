@@ -53,9 +53,23 @@
 // stored rows an exclusion says what they are
 // (`automationStudioRequestKindExclusionLabels`) are what a build keeps of that
 // no across its trials (`../standing-no/`).
+//
+// **Nor one that leaves out only what is not the request's own item (t660).**
+// A8 frozen pair 6 `run-mvac0nmw-52ed30b2` step 0122: a no advised "excluding
+// non-<item> items", where the item's words were also the words the request
+// searched by. Those are no words of the exclusion's own, which left the
+// negating prefix "non" as its only one: never a word of the request, so the
+// exclusion was marked, the call asked again, and the re-ask lost a true claim.
+// Leaving out what is not the item asked for states nothing the request does
+// not: so an exclusion whose kind (as t628 reads it, before its examples) says
+// a negation -- "non", "not", "but", "except", "other than", "rather than" --
+// right before words the request says, and has no word of its own past that
+// negation and those words but the request's (and words that point at anything
+// at all: "anything", "everything"), is not marked. "Excluding accessories that
+// are not <the item>" still is: "accessories" is a kind of its own.
 
 import type { AutomationStudioRequestWording } from "./request-wording.ts";
-import { automationStudioRequestRowWords } from "./words.ts";
+import { automationStudioRequestRowWordCarries, automationStudioRequestRowWords, type AutomationStudioRequestRowWord } from "./words.ts";
 
 /** The most words of an exclusion read after or before its cue: a clause, not the rest of the advice. */
 const MOST_WORDS = 10;
@@ -122,10 +136,55 @@ function exclusionsOf(advice: string | undefined): Array<{ target: string; said:
   return found;
 }
 
-/** Whether an exclusion's words have words of their own, none of them is the request's, and no condition the result applies already leaves out by them (header). */
+/** Whether an exclusion's words have words of their own, none of them is the request's, no condition the result applies already leaves out by them, and it is no negation of the request's own item (header). */
 function unstated(target: string, wording: AutomationStudioRequestWording): boolean {
   const own = wording.ownWords(target);
-  return own.length > 0 && !own.some((word) => wording.has(word)) && !wording.applied(target);
+  return own.length > 0 && !own.some((word) => wording.has(word)) && !wording.applied(target) && !negatesTheItem(target, wording);
+}
+
+/** Words that, right before the request's item, leave out what is not that item (header, t660); "other than" and "rather than" end in "than". */
+const ITEM_NEGATIONS: ReadonlySet<string> = new Set(["non", "not", "but", "except", "than"]);
+
+/** Of those, the ones written as a word of the exclusion's own: a prefix ("non-<item>"), dropped where it negates the item. */
+const OWN_NEGATIONS: ReadonlySet<string> = new Set(["non"]);
+
+/** Words that point at anything at all, never a kind of their own: "anything that is not <the item>". */
+const ANYTHING_WORDS: ReadonlySet<string> = new Set(["anything", "everything", "something", "thing", "whatever", "else"]);
+
+/**
+ * Whether an exclusion's kind leaves out only what is not the request's own
+ * item (header, t660): it says a negation right before words the request says,
+ * and past those negations and the pointing words it has no word of its own but
+ * the request's.
+ */
+function negatesTheItem(target: string, wording: AutomationStudioRequestWording): boolean {
+  const cut = target.search(EXAMPLE_CUE);
+  const before = cut < 0 ? target : target.slice(0, cut);
+  const kind = wording.ownWords(before).length ? before : target;
+  const words = automationStudioRequestRowWords(kind);
+  const dropped = new Set<number>();
+  let negated = false;
+  words.forEach((word, index) => {
+    if (!ITEM_NEGATIONS.has(word.word) || !saidAfter(words, index, wording)) return;
+    negated = true;
+    if (OWN_NEGATIONS.has(word.word)) dropped.add(index);
+  });
+  if (!negated) return false;
+  const rest = words.filter((word, index) => !dropped.has(index) && !ANYTHING_WORDS.has(word.word)).map((word) => word.raw).join(" ");
+  return wording.ownWords(rest).every((word) => wording.has(word));
+}
+
+/** Whether, after the negation at `at` and any words that carry nothing, the same clause goes on with words the request says, one of them carrying something. */
+function saidAfter(words: readonly AutomationStudioRequestRowWord[], at: number, wording: AutomationStudioRequestWording): boolean {
+  const segment = words[at]!.segment;
+  let start = at + 1;
+  while (start < words.length && words[start]!.segment === segment && !automationStudioRequestRowWordCarries(words[start]!.word)) start += 1;
+  const run: string[] = [];
+  for (let index = start; index < words.length && words[index]!.segment === segment; index += 1) {
+    run.push(words[index]!.raw);
+    if (wording.says(run.join(" "))) return true;
+  }
+  return false;
 }
 
 /**

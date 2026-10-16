@@ -40,6 +40,15 @@
 // status its steps earned. That is what the old exemption produced anyway,
 // except that now it is the failure case rather than the rule.
 //
+// **A double no on the same rows as the build's two yeses is held (t660).**
+// A8 frozen pair 6 candidate `run-mvac1av6-f7b0f9e2`: the playback of a built
+// Flow stored exactly the rows its build's judged test had stored, and two nos
+// refuted what two yeses had confirmed; the re-author that followed broke the
+// Flow. Where the caller names the trial its build judged this very revision by
+// (`judgedBuildTrial`), a double no on the rows that trial stored, against the
+// same request, is recorded unverified, not refuted (`./build-yes-hold/`). It
+// never makes a yes.
+//
 // Everything it reaches outside itself is a port, for the reason
 // `recovery/annotation/ports.ts` states: the service is a six-thousand-line
 // class at its own line budget, and a path that can only be driven by standing
@@ -94,6 +103,7 @@ import {
 import { automationStudioResultVerificationStatus } from "./verification-status.ts";
 import { AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES, verifyAutomationStudioRunResult } from "./verify.ts";
 import { AutomationStudioCompletedVerificationChecks } from "./completed-checks/index.ts";
+import { automationStudioResultBuildYesHold, type AutomationStudioResultJudgedBuildTrialPort } from "./build-yes-hold/index.ts";
 
 /**
  * A resolver's answer, normalized to the one shape the verification reads.
@@ -220,6 +230,13 @@ export type AutomationStudioResultVerificationPorts = {
    * ever recorded and no change rises past `provisional`.
    */
   recordAdaptationReplays?: ((input: { projectId: string; flowId: string; runId: string; checkedAt: number; trace: AutomationStudioGraphExecutionTrace; subflowId?: string }) => Promise<unknown>) | undefined;
+  /**
+   * The trial the build judged the very Flow revision this run executed by
+   * (`./build-yes-hold/judged-trial.ts`, t660): read only after a double no,
+   * which it holds where that trial was a confirmed yes on the same request and
+   * stored the same rows. Absent, a double no refutes as it always did.
+   */
+  judgedBuildTrial?: AutomationStudioResultJudgedBuildTrialPort | undefined;
 };
 
 export type AutomationStudioRuntimeSessionVerificationInput = {
@@ -544,7 +561,7 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
   const instructions = await input.ports.flowInstructionSet({ projectId: input.projectId, flowId: session.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
   const instructionDigest = automationStudioFlowInstructionDigest(instructions);
   const resolved = await input.ports.resolveProvider?.({ projectId: input.projectId, flowId: session.flowId });
-  return withResult(await verifyAutomationStudioRunResult({
+  const verified = await verifyAutomationStudioRunResult({
     projectId: input.projectId,
     flowId: session.flowId,
     runId: session.runId,
@@ -560,7 +577,17 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     ...(resolved?.timeoutMs !== undefined ? { timeoutMs: resolved.timeoutMs } : {}),
     ...(costCeiling(input, resolved) !== undefined ? { maxEstimatedCostUsd: costCeiling(input, resolved) } : {}),
     ...(input.signal ? { signal: input.signal } : {})
-  }), instructionDigest);
+  });
+  // A double no on the rows the build's two yeses judged is held (header, t660).
+  const judgedBuildTrial = input.ports.judgedBuildTrial;
+  const outcome = judgedBuildTrial
+    ? await automationStudioResultBuildYesHold({
+      outcome: verified.outcome, runId: session.runId, instructionDigest: instructionDigest ?? undefined, recordSets,
+      trial: async () => await judgedBuildTrial({ projectId: input.projectId, flowId: session.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}), runId: session.runId, flowVersions: automationStudioFlowVersionsFromMetadata(session.metadata) }),
+      trialRecordSets: async (trialRunId) => await readRecordSets(input.ports, input.projectId, trialRunId)
+    })
+    : verified.outcome;
+  return withResult({ ...verified, outcome }, instructionDigest);
 }
 
 /**
