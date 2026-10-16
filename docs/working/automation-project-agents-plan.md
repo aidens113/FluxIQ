@@ -650,6 +650,13 @@ Entries from 2026-10-13 to A8 wave 4 (t550-t611) are archived in
 - Outcome: Accepted
 - Follow-up: t662 (a saved Flow version records its judged trial so t660's hold can fire); t661's "a layer step N opened" wording is inert while t656 never clears a run-opened layer
 
+### 2026-10-16 — A saved Flow remembers the trial that judged it (t662)
+- Agent: worker t662-saved-flow-remembers-its-judged-trial; supervisor accepted the null-parent match and the unverified ending on an unreadable saved Flow, verified and integrated
+- Changed: `flow-version/judged-build-trial/` (new): applying a judged-yes revision (`service/flow-bootstrap-commands/applied-parent.ts`, both build paths) records on the parent Flow the trial's run id, yes calls, instruction digest, adaptation id and saved versions; `result-verification/build-yes-hold/saved-flow-trial.ts` and `service.ts` supply `judgedBuildTrial` to the post-playback check, so t660's hold can fire; an unreadable saved Flow after a double no ends `unverified` (`verification_did_not_finish`)
+- Why: wave 32 `candidate` towels: a correct Flow refuted after playback on rows two judges had accepted in the build
+- Validation: after merging dev: tsc exit 0; result-verification, flow-version, flow-bootstrap/candidate, flow-bootstrap-commands, project-build, candidate-trial, service-bootstrap -> 217 files, 1598 passed; audit passed; `pnpm check` -> passed; merged `a5256b07`; pushed
+- Outcome: Accepted. The evidence-guided path has no trial run id and records nothing
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
