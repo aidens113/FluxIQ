@@ -29,6 +29,22 @@
 // a narrowing step's label, control words (with or without the count printed
 // beside them), chosen option or group (`./record.ts`, `narrowing`) names no
 // row Core cannot find.
+//
+// **A label spelled whole is that row (t665).** A8 frozen pair 8 candidate
+// towels `run-mvam0lys-2d3eb090` step 0043: "... left out '<label A>' and
+// '<label B>' — both are ..., 4.5+ ...". The values check read the judge's own
+// reason ("4.5+") as a written value of B, found it against B's rating cell,
+// and un-named a row the judge spelled in full. The check tells apart rows a
+// short prefix names; a mention spelling the whole label names that label
+// whatever follows it, so it is checked only for a mention that is a prefix.
+//
+// **Nor a row only told apart by (t665).** The pools hold rows conditions left
+// out together (`./record.ts`, `unnamed`), so a stored label's prefix is long
+// enough to tell it from them (step 0058: a quote of a left-out "<Brand> Line
+// Paper Towel Holder" named the stored "<Brand> Line Paper Towels Value Pack"
+// by their shared start). Those rows are named by no prefix of their own: Core
+// holds them as seen, not as rows of the result or rows one condition left out,
+// so a quote of one stays a row Core cannot find.
 
 import {
   AutomationStudioRequestRowId,
@@ -93,7 +109,9 @@ function prefixesOf(record: AutomationStudioResultNoRecord): Array<{ label: stri
   const known = PREFIXES.get(record);
   if (known) return known;
   const said = new Set<string>();
+  const unnamed = new Set(record.unnamed ?? []);
   const prefixes = record.pools.flatMap((pool) => pool.flatMap((label) => {
+    if (unnamed.has(label)) return [];
     const prefix = automationStudioRequestRowNaming(label, pool).prefix;
     const key = `${label}\u0000${prefix.join(" ")}`;
     if (said.has(key) || prefix.length < Math.min(PREFIX_MIN_WORDS, wordsOf(label).length)) return [];
@@ -117,19 +135,21 @@ function prefixNamed(sentence: string, record: AutomationStudioResultNoRecord): 
       found.push({ label, start, end: start + prefix.length });
     }
   }
-  const agreeing = found.filter((match) => valuesAgree(sentence, words.length, match, found, record.stored));
+  const agreeing = found.filter((match) => valuesAgree(sentence, words, match, found, record.stored));
   const inside = (match: Match): boolean => agreeing.some((other) =>
     other.label !== match.label && other.start <= match.start && other.end >= match.end && other.end - other.start > match.end - match.start);
   return [...new Set(agreeing.filter((match) => !inside(match)).map((match) => match.label))];
 }
 
-/** Whether the values a sentence writes after a mention, up to the next mention, agree with a stored row by that label; true for a label no stored row has. */
-function valuesAgree(sentence: string, wordCount: number, match: Match, found: readonly Match[], stored: readonly AutomationStudioResultNoStoredRow[]): boolean {
+/** Whether the values a sentence writes after a mention, up to the next mention, agree with a stored row by that label; true for a label no stored row has, and for a mention spelling the whole label (header, t665). */
+function valuesAgree(sentence: string, words: readonly string[], match: Match, found: readonly Match[], stored: readonly AutomationStudioResultNoStoredRow[]): boolean {
   const rows = stored.filter((row) => row.label === match.label);
   if (!rows.length) return true;
+  const label = wordsOf(match.label);
+  if (label.length >= match.end - match.start && label.every((word, index) => words[match.start + index] === word)) return true;
   const text = sentence.replace(/['’]/gu, "");
   const runs = [...text.matchAll(/[\p{L}\p{N}]+/gu)];
-  if (runs.length !== wordCount) return true;
+  if (runs.length !== words.length) return true;
   const last = runs[match.end - 1]!;
   const next = found.filter((other) => other.start >= match.end).reduce((least, other) => Math.min(least, other.start), runs.length);
   const after = text.slice(last.index + last[0].length, next < runs.length ? runs[next]!.index : text.length);

@@ -97,15 +97,14 @@ describe("Automation Studio LLM structured diagnosis channel", () => {
     expect(unknownKey.response).toBeUndefined();
     expect(unknownKey.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_output.unexpected_field");
 
-    // A text past its bound is read clipped to it, never carried whole and never
-    // voiding the reply (live run murwcmx2, `harness/tests/long-diagnosis-text.test.ts`);
+    // A text past its bound is read whole with a warning, never cut and never
+    // voiding the reply (live run murwcmx2, t665, `harness/tests/long-diagnosis-text.test.ts`);
     // a text that is not a string is still refused.
     const overlong = await diagnose({ kind: "diagnosis", summary: "A diagnosis.", diagnosis: { observed: "x".repeat(501) } });
     expect(overlong.ok).toBe(true);
-    expect(overlong.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_output.diagnosis_text_clipped");
-    const clipped = overlong.response?.kind === "diagnosis" ? (overlong.response.diagnosis?.observed ?? "") : "";
-    expect(clipped.length).toBeLessThanOrEqual(500);
-    expect(clipped.endsWith("[clipped]")).toBe(true);
+    expect(overlong.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_output.diagnosis_text_past_bound");
+    const whole = overlong.response?.kind === "diagnosis" ? (overlong.response.diagnosis?.observed ?? "") : "";
+    expect(whole).toBe("x".repeat(501));
 
     const notText = await diagnose({ kind: "diagnosis", summary: "A diagnosis.", diagnosis: { observed: { sql: "DROP TABLE runs" } } });
     expect(notText.ok).toBe(false);

@@ -8,7 +8,10 @@
 // of any realistic scenario. And (round 2) end to end: from the page's own
 // option groups, through the narrowing record (`../../narrowed-before.ts`,
 // `../../narrowing-group.ts`), to the weighed no -- an added choice refuted, a
-// switch between options with the same count not.
+// switch between options with the same count not. And (t665, A8 frozen pair 8
+// candidate towels `run-mvam0lys-2d3eb090` step 0043) clause by clause: a
+// clause blaming such a step is refuted though another clause of the sentence
+// names a condition, which is weighed on its own.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowNode } from "../../../../model/index.ts";
@@ -217,5 +220,50 @@ describe("from the page's own option groups to the weighed no (t659 round 2)", (
   it("a choice added beside one already chosen is not an added choice either", () => {
     const both = (chosen: readonly string[]): JsonObject => ({ page: "(the view)", resultCount: 40, groups: [{ name: "Format", options: ["Hardcover", "Paperback"].map((words) => ({ words, count: 40, chosen: chosen.includes(words) })) }] });
     expect(recorded(both(["Paperback"]), both(["Paperback", "Hardcover"]))[0]).not.toHaveProperty("addedChoice");
+  });
+});
+
+describe("a sentence blaming such a step in one clause and naming a condition in another (t665)", () => {
+  /** Step 0043's shape: the step blamed, a condition said to do right, and a clause naming nothing. */
+  const CLAUSES = `But the "Hardcover (40)" filter (${S6}) keeps atlases the request excludes, and the read's condition 1 correctly drops them; conversely the site filter's count (40) is not the request's cohort.`;
+  const STEP_ONLY = (count: { before: number; after: number }): FormatChange => ({ resultCount: count });
+
+  it("is refuted where Core measured the step as removing no row, 40 results before and 40 after", () => {
+    expect(automationStudioResultRefutedReading({ expected: EXPECTED, observed: CLAUSES }, record())).toEqual({ wholly: true, findings: [FORMAT_FINDING] });
+  });
+
+  it("stands where the step's count changed, 32 results before and 23 after", () => {
+    const weighed = automationStudioResultRefutedReading({ expected: EXPECTED, observed: CLAUSES }, record(STEP_ONLY({ before: 32, after: 23 })));
+    expect(weighed).toEqual({ wholly: false, findings: [] });
+  });
+
+  it("stands where another clause stands on its own: a row a bound left out called wrongly dropped, or a condition said to be wrong", () => {
+    for (const observed of [
+      `s6 keeps only hardcover atlases, and condition 1 dropped "${LOW}", which the request asks for.`,
+      "s6 is narrower than the request; condition 1 should not be there."
+    ]) {
+      const weighed = automationStudioResultRefutedReading({ expected: EXPECTED, observed }, record());
+      expect(weighed.wholly).toBe(false);
+    }
+  });
+
+  it("is read whole, as before, where no clause blames only such a step", () => {
+    const observed = `The read's condition 1 correctly drops low ratings, and ${S4} chose "Available today (40)", which drops atlases the request asks for.`;
+    expect(automationStudioResultRefutedReading({ expected: EXPECTED, observed }, record()).wholly).toBe(false);
+  });
+});
+
+describe("a row said rightly left out (t665)", () => {
+  /** Step 0043's last sentence: a condition's rows, called correctly excluded. */
+  const RIGHTLY = `Condition 1 left out "${LOW}" (3.7), correctly excluded.`;
+
+  it("is no reason: beside a refuted sentence the reading is wholly refuted", () => {
+    expect(automationStudioResultRefutedReading({ expected: EXPECTED, observed: `${BLAMES_FORMAT} ${RIGHTLY}` }, record())).toEqual({ wholly: true, findings: [FORMAT_FINDING] });
+  });
+
+  it("still stands where it says anything else is wrong", () => {
+    for (const said of [`Condition 1 left out "${LOW}" (3.7), which should not be excluded.`, `Condition 1 wrongly excluded "${LOW}" (3.7) and left out too much.`, `Condition 1 left out "${LOW}" (3.7), but it is not rated below 4.`]) {
+      expect(automationStudioResultRefutedReading({ expected: EXPECTED, observed: `${BLAMES_FORMAT} ${said}` }, record()).wholly).toBe(false);
+    }
   });
 });

@@ -70,6 +70,16 @@
 // is not read so: "condition 3 excludes holders but <row> got through" says it
 // was kept. Whether the condition is the request's stays with
 // `./advice-condition.ts`.
+//
+// **Only the clauses that name a row (t665).** A8 frozen pair 8 candidate towels
+// `run-mvam0lys-2d3eb090` step 0069: "condition 1 dropped rows that are ...:
+// eg <stored A> (...) and <stored B> (...)". The colon-ended lead clause says
+// the rows are left out and names none; the rows follow. Requiring every
+// `left_out_by` clause to name a stored row read nothing, and the false
+// "dropped" stood. So only the `left_out_by` clauses that name a row, or a row
+// Core cannot find, are held to that test, and at least one must: a clause
+// naming no row ("the request only says to leave out ...") says nothing of
+// which rows came back.
 
 import { automationStudioResultLeftOutFinding } from "./left-out-finding.ts";
 import { automationStudioResultSentenceRows } from "./named-rows.ts";
@@ -129,11 +139,12 @@ function calledMissing(sentence: string, named: AutomationStudioResultNoNamedRow
   const missing = clauses.filter((clause) => clause.says === "missing");
   if (lost || (!missing.length && automationStudioResultSaysMissing(sentence))) return automationStudioResultSaysMissing(sentence) ? named : undefined;
   const leftOutBy = clauses.filter((clause) => clause.says === "left_out_by");
-  // A condition said to have left out only rows the result stores, each a label a condition also left a copy of (header, t659).
+  // A condition said to have left out only rows the result stores, each a label a condition also left a copy of (header, t659); only the clauses naming a row (header, t665).
   const copied = (label: string): boolean => record.leftOut.some((row) => row.label === label);
-  const storedOnly = leftOutBy.length > 0 && leftOutBy.every((clause) =>
+  const naming = leftOutBy.filter((clause) => clause.rows.stored.length > 0 || clause.rows.leftOut.length > 0 || clause.rows.unmatched);
+  const storedOnly = naming.length > 0 && naming.every((clause) =>
     clause.rows.stored.length > 0 && !clause.rows.leftOut.length && !clause.rows.unmatched && clause.rows.stored.every((row) => copied(row.label)));
-  const saying = [...missing, ...(storedOnly ? leftOutBy : [])];
+  const saying = [...missing, ...(storedOnly ? naming : [])];
   if (!saying.length) return undefined;
   return { stored: unique(saying.flatMap((clause) => clause.rows.stored)), leftOut: unique(saying.flatMap((clause) => clause.rows.leftOut)) };
 }
@@ -214,7 +225,7 @@ function automationStudioResultSaysMissing(sentence: string): boolean {
 
 /** A sentence's clauses, each with what it says of its rows (header). */
 export function automationStudioResultRowClauses(sentence: string): AutomationStudioResultRowClause[] {
-  const pieces = split(sentence);
+  const pieces = split(sentence, false);
   const own = pieces.map((piece) => saysOf(piece.text));
   return pieces.map((piece, at) => ({ text: piece.text, says: own[at] ?? shared(pieces, own, at) }));
 }
@@ -242,8 +253,17 @@ function shared(pieces: readonly Piece[], own: ReadonlyArray<AutomationStudioRes
   return undefined;
 }
 
-/** The sentence cut into clauses outside quotes and brackets (header). */
-function split(sentence: string): Piece[] {
+/**
+ * A sentence's clauses as its reasons are weighed one by one (`./weigh.ts`,
+ * t665): cut as above, and also at every ", and " outside quotes and brackets,
+ * since "the filter keeps X, and condition 3 drops them" gives two reasons.
+ */
+export function automationStudioResultReasonClauses(sentence: string): string[] {
+  return split(sentence, true).map((piece) => piece.text);
+}
+
+/** The sentence cut into clauses outside quotes and brackets (header); `everyAnd` cuts at each ", and " too. */
+function split(sentence: string, everyAnd: boolean): Piece[] {
   const pieces: Piece[] = [];
   let group = 0;
   let from = 0;
@@ -269,7 +289,7 @@ function split(sentence: string): Piece[] {
     else if (char === ":" && /^:(?:\s|$)/u.test(rest)) cut(at + 1, at + 1, true, false);
     else if (/^,\s+but\s/iu.test(rest)) cut(at, at + 1, false, true);
     else {
-      const and = /^,?\s+and\s+(?=["“])/iu.exec(rest);
+      const and = (everyAnd ? /^,\s+and\s+|^,?\s+and\s+(?=["“])/iu : /^,?\s+and\s+(?=["“])/iu).exec(rest);
       if (and && /\S/u.test(sentence.slice(from, at))) cut(at, at + and[0].length, false, false);
     }
   }

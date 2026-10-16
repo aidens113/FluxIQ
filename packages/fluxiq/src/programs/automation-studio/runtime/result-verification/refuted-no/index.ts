@@ -26,6 +26,10 @@
 // (`missing-claim.ts`); a link to the row itself read as its label
 // (`label-tested-condition.ts`); and a no or advice blaming a step Core
 // measured as removing no row (`unseen-row-claim.ts`, `advice-condition.ts`).
+// And (t665) a no weighed on its whole text, clause by clause where it blames
+// such a step (`weigh.ts`); a left-out claim held to the clauses naming a row
+// (`missing-claim.ts`); a label spelled whole named whatever follows it, and
+// rows left out together telling labels apart (`named-rows.ts`, `record.ts`).
 export * from "./advice-condition.ts";
 export * from "./condition-references.ts";
 export * from "./condition-wording.ts";
