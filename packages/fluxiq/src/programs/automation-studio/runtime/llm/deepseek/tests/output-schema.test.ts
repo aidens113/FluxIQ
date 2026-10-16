@@ -11,6 +11,38 @@ import type { AutomationStudioLlmTaskRequest } from "../../harness.ts";
 import { automationStudioDeepSeekOutputSchema } from "../output-schema.ts";
 import { automationStudioDeepSeekSystemPrompt } from "../system-prompt.ts";
 
+// t653 (live run `run-mva6mlo8-f519063c`): four of 21 judge replies wrote
+// `summary` first, looped in it to the provider's output ceiling and left no
+// verdict. A verification is asked for its diagnosis before its summary, in
+// the schema's order and in words; every other diagnosis keeps its shape.
+describe("automationStudioDeepSeekOutputSchema for a result verification", () => {
+  const verification = { taskKind: "loop_verification", expectedOutput: "diagnosis", context: {} } as unknown as AutomationStudioLlmTaskRequest;
+  const diagnosis = { taskKind: "runtime_diagnosis", expectedOutput: "diagnosis", context: {} } as unknown as AutomationStudioLlmTaskRequest;
+  const members = (request: AutomationStudioLlmTaskRequest) => Object.keys((automationStudioDeepSeekOutputSchema(request) as { properties: Record<string, unknown> }).properties);
+
+  it("lists kind and diagnosis before summary, and requires the diagnosis", () => {
+    expect(members(verification)).toEqual(["kind", "diagnosis", "confidence", "summary", "metadata"]);
+    expect((automationStudioDeepSeekOutputSchema(verification) as { required: string[] }).required).toEqual(["kind", "diagnosis", "summary"]);
+    // The same members and the same field shapes: only the order and the requirement moved.
+    const { properties: ordered } = automationStudioDeepSeekOutputSchema(verification) as { properties: Record<string, unknown> };
+    const { properties: plain } = automationStudioDeepSeekOutputSchema(diagnosis) as { properties: Record<string, unknown> };
+    expect(ordered).toEqual(plain);
+  });
+
+  it("is the only diagnosis whose order moved", () => {
+    expect(members(diagnosis)).toEqual(["kind", "summary", "confidence", "diagnosis", "metadata"]);
+  });
+
+  it("says the order in the verification's words, right after the fields, and nowhere else", () => {
+    const ORDER = "Write the reply's members in the order the outputSchema lists them: kind first, then the whole diagnosis object";
+    const prompt = automationStudioDeepSeekSystemPrompt(verification);
+    expect(prompt).toContain(ORDER);
+    expect(prompt.indexOf(ORDER)).toBeGreaterThan(prompt.indexOf("Put your reading of the failure in the diagnosis object"));
+    expect(prompt.indexOf(ORDER)).toBeLessThan(prompt.indexOf("This call judges a finished run's result"));
+    expect(automationStudioDeepSeekSystemPrompt(diagnosis)).not.toContain(ORDER);
+  });
+});
+
 describe("automationStudioDeepSeekOutputSchema for a runtime patch", () => {
   it("offers exactly the plan's allowed kinds", () => {
     expect(patchKindsOffered(patchRequest(["temporary_target_override", "temporary_wait_retry"]))).toEqual(["temporary_wait_retry", "temporary_target_override"]);

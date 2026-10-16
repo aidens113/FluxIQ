@@ -36,6 +36,20 @@
 // validate (`llm_output.*`), is asked again under the same bound of
 // `AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK`, one extra ask.
 //
+// **A reply cut off after its verdict is read for that verdict (t653).** Live
+// run `run-mva6mlo8-f519063c`: four of 21 judge replies looped inside `summary`
+// to the provider's 8,192-token ceiling and were lost, each a fresh draw on
+// retry. The verification now asks for `kind` and `diagnosis` before `summary`,
+// and the reply envelope reads a cut reply whose diagnosis closed before the
+// cut and marks it with the typed field `truncatedAfterVerdict: true`, which is
+// what this reads -- never the plain sentence the adapter puts in place of the
+// cut summary -- and the call's intervention is marked the same. The cut
+// summary is never read. A no or an unknown read so is the answer it gave. A
+// yes is read from its whole fields only and counts only if it passes there
+// every check a yes must pass; otherwise the quotes or row names it owes may be
+// in what was cut, so it gave no answer and is asked again as before. This
+// reads what the model wrote and caps nothing.
+//
 // **A build's test confirms a `yes` as well (`confirmAnswer`).** The build-test
 // judge's `yes` finishes a build, and in live run murwcmx2 one `yes` to a
 // request answered `no` before finished it on rows the playback judge refused.
@@ -312,26 +326,36 @@ async function askOnce(
     metadata: { source: VERIFICATION_SOURCE, expectedOutput: "diagnosis" }
   });
   const response = result.ok && result.response?.kind === "diagnosis" ? result.response : undefined;
-  const verification = automationStudioResultVerdict({
-    // The run's own summary, with the flagged rows the judge was shown: the
-    // judge's paging words are not Core's observation.
-    summary: judged.leftOutNamingTheItem ? { ...request.summary, leftOutNamingTheItem: judged.leftOutNamingTheItem } : request.summary,
+  // A reply cut off after its verdict (header, t653), by the adapter's typed mark: read from its kind and diagnosis alone, never its summary.
+  const truncatedAfterVerdict = response?.truncatedAfterVerdict === true;
+  // The run's own summary, with the flagged rows the judge was shown: the
+  // judge's paging words are not Core's observation.
+  const summary = judged.leftOutNamingTheItem ? { ...request.summary, leftOutNamingTheItem: judged.leftOutNamingTheItem } : request.summary;
+  // A yes over a row a condition alone left out quotes, beside it, the request's own words that exclude it (t515, `./verdict.ts`).
+  const wording = automationStudioRequestWording(request.instructions, request.summary);
+  const read = automationStudioResultVerdict({
+    summary,
     ...(response?.diagnosis ? { diagnosis: response.diagnosis } : {}),
     // The reply's own prose, carried only as the judgement's advice where the
     // diagnosis channel's `changed` gave none. The verdict reader screens and
     // bounds it; nothing here is required of the model.
-    ...(response?.summary ? { summaryText: response.summary } : {}),
+    ...(response?.summary && !truncatedAfterVerdict ? { summaryText: response.summary } : {}),
     basis: response ? "model" : "model_unavailable",
-    // A yes over a row a condition alone left out quotes, beside it, the request's own words that exclude it (t515, `./verdict.ts`).
-    wording: automationStudioRequestWording(request.instructions, request.summary),
+    wording,
     ...(response ? {} : { failureCode: firstErrorCode(result.diagnostics) })
   });
+  // A cut yes its whole fields do not carry gave no answer, and is asked again as a cut reply always was (header, t653).
+  const unreadYes = truncatedAfterVerdict && response?.diagnosis?.answersRequest === "yes" && read.verdict !== "answers";
+  const verification = unreadYes ? automationStudioResultVerdict({ summary, basis: "model_unavailable", failureCode: CUT_REPLY_CODE, wording }) : read;
   // The harness records a call's own metadata, not the caller's, so the
   // intervention is told here which check it was and who asked.
-  const intervention = { ...result.intervention, metadata: { ...(result.intervention.metadata ?? {}), source: VERIFICATION_SOURCE, verificationCheck: check, ...(ask > 1 ? { verificationAsk: ask } : {}), ...(reask ? { verificationReask: true } : {}), ...(evidenceRecheck ? { verificationEvidenceRecheck: true } : {}) } };
-  const temporary = !response && request.signal?.aborted !== true && askAgainAfter(firstError(result.diagnostics));
+  const intervention = { ...result.intervention, metadata: { ...(result.intervention.metadata ?? {}), source: VERIFICATION_SOURCE, verificationCheck: check, ...(ask > 1 ? { verificationAsk: ask } : {}), ...(reask ? { verificationReask: true } : {}), ...(evidenceRecheck ? { verificationEvidenceRecheck: true } : {}), ...(truncatedAfterVerdict ? { truncatedAfterVerdict: true } : {}) } };
+  const temporary = request.signal?.aborted !== true && (unreadYes || (!response && askAgainAfter(firstError(result.diagnostics))));
   return { verification, intervention, temporary };
 }
+
+/** The code a cut reply's unread yes is recorded under: the reply was cut off, as it was before its verdict could be read (t653). */
+const CUT_REPLY_CODE = "llm.provider_output_truncated";
 
 /**
  * Whether a call that gave no verdict is asked again (header): a fault the
