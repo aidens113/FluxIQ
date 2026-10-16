@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../../llm/index.ts";
-import { AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS, AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowTrialRequest } from "../index.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS, AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS, AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowTrialRequest } from "../index.ts";
 import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS } from "../../../llm/evidence-loop.ts";
 import { OPEN, SIBLINGS, callPart, part, script, testScope, testSubmission } from "./subflow-fixture.ts";
 
 const look: AutomationStudioLlmEvidenceTool = { toolId: "core.run_node", description: "Run a node", inputSchema: { type: "object" }, effect: "mutate", perCallEffect: true, initialObservation: { input: { node: "web.inspect" } } };
@@ -22,7 +23,7 @@ const receiptOf = (evidence: readonly Entry[]) => {
   return { revision: value.revision as number, digest: value.digest as string };
 };
 
-async function build(steps: Array<(evidence: readonly Entry[]) => JsonObject>, options: { port?: boolean; callScope?: string; scope?: ReturnType<typeof testScope>; iterations?: number; toolCalls?: number; purse?: AutomationStudioLlmEvidenceLoopInput["purse"] } = {}) {
+async function build(steps: Array<(evidence: readonly Entry[]) => JsonObject>, options: { port?: boolean; callScope?: string; scope?: ReturnType<typeof testScope>; iterations?: number; toolCalls?: number; purse?: AutomationStudioLlmEvidenceLoopInput["purse"]; whole?: true } = {}) {
   const observed: AutomationStudioLlmEvidenceLoopInput[] = [];
   const executed: string[] = [];
   const offered: string[][] = [];
@@ -37,6 +38,7 @@ async function build(steps: Array<(evidence: readonly Entry[]) => JsonObject>, o
   const outcome = await runAutomationStudioSubflowBuilderLoop({
     scope: options.scope ?? testScope(), siblings: [...SIBLINGS], submission: testSubmission(),
     ...(options.callScope === undefined ? {} : { callScope: options.callScope }),
+    ...(options.whole ? { trialIsWhole: true as const } : {}),
     observe: (loop) => {
       observed.push(loop);
       return loop;
@@ -187,6 +189,28 @@ describe("a subflow builder's loop", () => {
   it("counts its allowance's calls in its budget, keeping its finishing trials' judges back", async () => {
     const { observed } = await build([submit]);
     expect(observed[0]!.budget).toEqual({ countCalls: { keptForFinishing: AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS } });
+  });
+
+  // t679: a single-subflow plan's test is the judged whole run, whose judge the build's reserve pays.
+  it("says a whole-run test is the build's judged run, and keeps back no judge calls for it", async () => {
+    let next: unknown;
+    const testing = (evidence: readonly Entry[]) => {
+      next = ([...evidence].reverse().find((entry) => entry.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!.value as JsonObject).next;
+      return test(evidence);
+    };
+    const { outcome, observed, offered } = await build([submit, testing, complete()], { whole: true });
+    expect(outcome.loop.ok, JSON.stringify(outcome.loop)).toBe(true);
+    expect(observed[0]!.budget).toEqual({ countCalls: { keptForFinishing: 0 } });
+    const testTool = observed[0]!.tools.find((tool) => tool.toolId === AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID)!;
+    expect(testTool.description).toContain("This test is the build's judged run: a yes completes this brief");
+    expect(testTool.description).not.toContain("it counts for this brief only");
+    expect(String(next)).toContain("This test runs the whole Flow from its start as the build's judged run; a yes completes this brief.");
+    expect(offered[0]).toContain(AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID);
+    // Its wrap-up still fits a brief's least calls: they hold the wrap-up's decisions with room to spare.
+    expect(AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS).toBeGreaterThan(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS);
+    // A subflow test says what it always said.
+    const plain = await build([submit]);
+    expect(plain.observed[0]!.tools.find((tool) => tool.toolId === AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID)!.description).toContain("it counts for this brief only");
   });
 
   it("keeps the opening id exactly `initial.<toolId>` when the dispatcher passes no scope", async () => {

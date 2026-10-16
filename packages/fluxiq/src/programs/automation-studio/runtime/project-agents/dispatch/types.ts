@@ -5,6 +5,7 @@ import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/index.ts";
 import type { AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
 import type { AutomationStudioHostResourceLease, AutomationStudioHostResourcePort } from "../host-resources/index.ts";
 import type { AutomationStudioProjectBuildRecordStore, AutomationStudioProjectBuildRef } from "../record/index.ts";
+import type { AutomationStudioProjectWholeTestTried } from "../single-subflow/index.ts";
 
 // What the dispatcher reaches outside itself (automation-project-agents-plan,
 // `Concurrent dispatch`). The service that wires the supervisor in (A5c)
@@ -106,6 +107,13 @@ export type AutomationStudioProjectDispatcherInput = {
   ports: AutomationStudioProjectBriefPortFactory;
   /** The call cap of a brief's allowance; absent, the brief's `maxIterations`. Its subflow trials' judge calls count against it too. */
   maxCalls?: ((brief: AutomationStudioProjectSubflowBrief) => number | undefined) | undefined;
+  /**
+   * The build's proposals, told each single-subflow brief's trial with the
+   * verdict its gate kept (t679, `../single-subflow/whole-test-port.ts`): the
+   * scoped trial port tells them its own, and a single-subflow brief never asks
+   * it. Absent, nothing is told.
+   */
+  trialled?: AutomationStudioProjectWholeTestTried | undefined;
   /** The builder loop; replaced only by tests. */
   runBuilder?: typeof runAutomationStudioSubflowBuilderLoop | undefined;
 };

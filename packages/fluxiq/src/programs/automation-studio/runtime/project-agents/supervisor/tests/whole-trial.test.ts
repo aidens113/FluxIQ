@@ -9,7 +9,8 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
 import { BUILD, planInput, project, subflow, taskSpecInput } from "./supervisor-fixture.ts";
-import { FIND, HOLD, brief, call, complete, dispatch, end, reset, supervise, test } from "./supervisor-script.ts";
+import { singleBuild } from "../../single-subflow/tests/single-build.ts";
+import { FIND, HOLD, brief, call, complete, dispatch, end, lastOf, reset, supervise, test, type Step } from "./supervisor-script.ts";
 
 const TWO_PART = planInput([subflow("find_titles", ["p1"], { inputs: ["author"], outputs: ["titles"] }), subflow("place_hold", ["p2"], { inputs: ["titles"], outputs: ["shelf"] })], taskSpecInput([["p1", FIND, []], ["p2", HOLD, ["create_new"]]]));
 const BUILDS = [brief("find_titles", ["p1"]), brief("place_hold", ["p2"], ["find_titles"], { permittedActs: ["create_new"] })];
@@ -52,6 +53,24 @@ describe("the supervisor's whole test", () => {
     expect(run.trials).toHaveLength(1);
     expect(run.outcome.status).toBe("ended");
     expect(run.outcome.ending?.reason).toContain("Still on the target from this build: trial step 1 \"press hold for place_hold\" (the site offers no way to undo it).");
+  });
+});
+
+// t679: on a plan of one subflow the builder's test was the judged whole run of that revision.
+describe("the supervisor's whole test of a single-subflow plan", () => {
+  const ONE_PART = planInput([subflow("find_newest", ["p1"])], taskSpecInput([["p1", FIND, []]]));
+  const testDispatched: Step = (evidence) => ({ kind: "tool_call", toolId: IDS.testCandidate, callId: "test-again", input: lastOf(evidence, IDS.dispatch)!.complete as JsonObject });
+  const completeOnTest: Step = (evidence) => ({ kind: "complete", result: lastOf(evidence, IDS.testCandidate)!.complete as JsonObject });
+
+  it("answers a test of the revision its builder's test already judged yes with that yes, and runs no second trial", async () => {
+    const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([brief("find_newest", ["p1"])]), testDispatched, completeOnTest], singleBuild());
+    expect(run.outcome.status, JSON.stringify(run.outcome.loop)).toBe("candidate");
+    expect(run.trials).toHaveLength(1);
+    const again = tests(run.shown)[0]!;
+    expect(again).toMatchObject({ ok: true, verdict: "yes", alreadyJudged: true, complete: run.trials[0], trialRunId: "run-1" });
+    expect(String(again.instruction)).toContain("No second trial ran");
+    // One receipt: the builder's test's.
+    expect((await run.record.read(BUILD))!.record.receipts).toHaveLength(1);
   });
 });
 

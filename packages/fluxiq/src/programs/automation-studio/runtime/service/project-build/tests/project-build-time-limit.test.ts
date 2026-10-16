@@ -17,6 +17,14 @@
 // the real one, so the deadline is reached only when the scripted supervisor is
 // waiting on the decision that outlives the bound. Every other timer stays on
 // the real clock.
+//
+// **What a part's own test means depends on the plan (t679).** On a plan of one
+// subflow the builder's test is the judged whole run of the Flow assembled
+// from its proposal, so a build its time limit stops after that test holds an
+// assembled candidate, kept as a draft, and the words count that test as its
+// part's. A part passing its own test while the whole Flow fails, or a build
+// stopped before anything was assembled, needs a plan of several subflows, and
+// those cases are built on two parts.
 
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -52,6 +60,22 @@ const PLAN = {
   subflows: [{ key: "main", name: "Main", parts: ["p1"] }]
 };
 const BRIEF = { kind: "build", subflowKey: "main", parts: ["p1"], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.01, maxIterations: 6 };
+/** Two parts the router-run subflow Core adds calls in turn: a plan whose parts are tested on their own (header). */
+const TWO_PARTS = {
+  taskSpec: {
+    parts: [
+      { id: "p1", quote: { sourceId: "instruction.build", text: "Create a deterministic" }, goalFacts: ["The Flow is deterministic"], lastingActs: [] },
+      { id: "p2", quote: { sourceId: "instruction.build", text: "Start to End Flow." }, goalFacts: ["The Flow runs from its start to its end"], lastingActs: [] }
+    ],
+    notAsked: []
+  },
+  subflows: [{ key: "first", name: "first", parts: ["p1"] }, { key: "second", name: "second", parts: ["p2"] }]
+};
+const TWO_BRIEFS = (["first", "second"] as const).map((subflowKey, index) => ({ kind: "build", subflowKey, parts: [`p${index + 1}`], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.01, maxIterations: 6 }));
+/** What a builder submits: the router-run subflow's plan, or a part's script of one short wait. */
+const submissionOf = (subflowKey: string): JsonObject => (subflowKey === "main" ? SUBMISSION : { flow: [`flow: ${subflowKey}`, `part ${subflowKey}: carry out its part`, "  step pause: wait briefly", "    node: builtin.timing.wait", "    duration: 1", "    unit: milliseconds", "end"].join("\n") });
+/** The subflow a builder's completion names, from its schema. */
+const subflowOf = (loop: { completionSchema: JsonObject }): string => (((loop.completionSchema.properties as JsonObject | undefined)?.subflowKey as JsonObject | undefined)?.const as string);
 const SUBMISSION = {
   summary: "Build the main subflow",
   plan: {
@@ -120,13 +144,13 @@ describe("a project build its time limit stops", () => {
       const evidence = loop.evidence as Entry[];
       if (loop.tools.some((tool) => tool.toolId === "project.write_plan")) {
         supervisorDecisions += 1;
-        if (supervisorDecisions === 1) return decision({ kind: "tool_call", callId: "plan", toolId: "project.write_plan", input: PLAN });
-        if (supervisorDecisions === 2) return decision({ kind: "tool_call", callId: "dispatch", toolId: "project.dispatch", input: { reason: "Build the subflow.", briefs: [BRIEF] } });
+        if (supervisorDecisions === 1) return decision({ kind: "tool_call", callId: "plan", toolId: "project.write_plan", input: TWO_PARTS });
+        if (supervisorDecisions === 2) return decision({ kind: "tool_call", callId: "dispatch", toolId: "project.dispatch", input: { reason: "Build the subflows.", briefs: TWO_BRIEFS } });
         // The supervisor is still deciding when its time runs out.
         return await outlivingTheBound();
       }
       const submitted = lastOf(evidence, "core.submit_subflow");
-      if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: "submit", toolId: "core.submit_subflow", input: SUBMISSION });
+      if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: "submit", toolId: "core.submit_subflow", input: submissionOf(subflowOf(loop)) });
       if (!lastOf(evidence, "core.test_subflow")) return decision({ kind: "tool_call", callId: "test", toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } });
       return decision({ kind: "complete", result: { ended: "partial", reason: MODEL_REASON } });
     });
@@ -153,7 +177,7 @@ describe("a project build its time limit stops", () => {
     const told = seen.find((event) => event.detail?.title === "The build reached its time limit of 8 seconds before a whole test of the Flow passed.");
     expect(told?.detail, JSON.stringify(seen.map((event) => event.detail?.title).filter(Boolean))).toMatchObject({
       kind: "note", status: "failed",
-      text: "Its one part did not pass its own test. Left: a part tested once whose last test could not be confirmed. The whole Flow was not assembled, so it was never tested as one. Nothing this build did is still on the target."
+      text: TEST_ONE_TEXT
     });
     expect(seen.some((event) => event.detail?.title === "The supervisor ended the build: it could not finish the Flow.")).toBe(false);
     // The time limit's row is Core's words alone; the brief's own return row may quote its builder.
@@ -170,8 +194,8 @@ describe("a project build its time limit stops", () => {
       const evidence = loop.evidence as Entry[];
       if (loop.tools.some((tool) => tool.toolId === "project.write_plan")) {
         supervisorDecisions += 1;
-        if (supervisorDecisions === 1) return decision({ kind: "tool_call", callId: "plan", toolId: "project.write_plan", input: PLAN });
-        if (supervisorDecisions === 2) return decision({ kind: "tool_call", callId: "dispatch", toolId: "project.dispatch", input: { reason: "Build the subflow.", briefs: [BRIEF] } });
+        if (supervisorDecisions === 1) return decision({ kind: "tool_call", callId: "plan", toolId: "project.write_plan", input: TWO_PARTS });
+        if (supervisorDecisions === 2) return decision({ kind: "tool_call", callId: "dispatch", toolId: "project.dispatch", input: { reason: "Build the subflows.", briefs: TWO_BRIEFS } });
         if (supervisorDecisions === 3) return decision({ kind: "tool_call", callId: "assemble", toolId: "project.assemble", input: {} });
         const assembled = lastOf(evidence, "project.assemble")?.complete as JsonObject | undefined;
         if (supervisorDecisions === 4) return decision({ kind: "tool_call", callId: "test", toolId: "core.test_candidate", input: assembled ?? {} });
@@ -179,9 +203,9 @@ describe("a project build its time limit stops", () => {
         return await outlivingTheBound();
       }
       const submitted = lastOf(evidence, "core.submit_subflow");
-      if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: "submit", toolId: "core.submit_subflow", input: SUBMISSION });
+      if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: "submit", toolId: "core.submit_subflow", input: submissionOf(subflowOf(loop)) });
       if (lastOf(evidence, "core.test_subflow")?.verdict !== "yes") return decision({ kind: "tool_call", callId: "test", toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } });
-      return decision({ kind: "complete", result: { subflowKey: "main", revision: submitted.revision as number, digest: submitted.digest as string } });
+      return decision({ kind: "complete", result: { subflowKey: subflowOf(loop), revision: submitted.revision as number, digest: submitted.digest as string } });
     });
     const { service, projectId, flowId } = await serviceWith(provider);
     const seen: ClientGatewayActivity[] = [];
@@ -194,10 +218,46 @@ describe("a project build its time limit stops", () => {
     const told = seen.find((event) => event.detail?.title === "The build reached its time limit of 8 seconds before a whole test of the Flow passed.");
     expect(told?.detail, JSON.stringify(seen.map((event) => event.detail?.title).filter(Boolean))).toMatchObject({
       kind: "note", status: "failed",
-      text: "Its one part passed its own test. A whole Flow was assembled and tested from its start, and its last whole test was judged not to do what was asked; it is kept as a draft, and nothing was put into the Flow. Nothing this build did is still on the target."
+      text: TEST_TWO_TEXT
     });
   });
+
+  // t679: one part's builder test is the judged whole run, so its time limit finds a Flow assembled and tested, and says the part was tested.
+  it("keeps a one-part build's whole test as a draft, and counts its builder's test as its part's", async () => {
+    let supervisorDecisions = 0;
+    const provider = mockProvider(async (request) => {
+      if (request.taskKind === "loop_verification") return judgeReply("unknown");
+      const loop = request.context.evidenceLoop!;
+      const evidence = loop.evidence as Entry[];
+      if (loop.tools.some((tool) => tool.toolId === "project.write_plan")) {
+        supervisorDecisions += 1;
+        if (supervisorDecisions === 1) return decision({ kind: "tool_call", callId: "plan", toolId: "project.write_plan", input: PLAN });
+        if (supervisorDecisions === 2) return decision({ kind: "tool_call", callId: "dispatch", toolId: "project.dispatch", input: { reason: "Build the subflow.", briefs: [BRIEF] } });
+        // The supervisor is still deciding when its time runs out.
+        return await outlivingTheBound();
+      }
+      const submitted = lastOf(evidence, "core.submit_subflow");
+      if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: "submit", toolId: "core.submit_subflow", input: SUBMISSION });
+      if (!lastOf(evidence, "core.test_subflow")) return decision({ kind: "tool_call", callId: "test", toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } });
+      return decision({ kind: "complete", result: { ended: "partial", reason: MODEL_REASON } });
+    });
+    const { service, projectId, flowId } = await serviceWith(provider);
+    const seen: ClientGatewayActivity[] = [];
+    const unsubscribe = automationStudioActivityHub.subscribe((event) => seen.push(event));
+    const result = await service.generateFlowBootstrapAdaptation({ projectId, flowId, caller: caller(), evidenceGuided: true, authoringMode: "project" }).finally(unsubscribe);
+    expect(clock.held()).toEqual([6_000, 8_000]);
+    expect(result).toMatchObject({ status: "draft", promotionAllowed: false });
+    const told = seen.find((event) => event.detail?.title === "The build reached its time limit of 8 seconds before a whole test of the Flow passed.");
+    expect(told?.detail, JSON.stringify(seen.map((event) => event.detail?.title).filter(Boolean))).toMatchObject({ kind: "note", status: "failed", text: TEST_THREE_TEXT });
+    // Its part was tested, by the builder's whole test: never said to be untested.
+    expect(JSON.stringify(told)).not.toContain("never tested");
+  });
 });
+
+/** What each case's time limit tells the person (header). */
+const TEST_ONE_TEXT = "None of its 2 parts passed its own test. Left: a part tested once whose last test could not be confirmed; and a part tested once whose last test could not be confirmed. The whole Flow was not assembled, so it was never tested as one. Nothing this build did is still on the target.";
+const TEST_TWO_TEXT = "Of its 2 parts, 2 passed their own test. A whole Flow was assembled and tested from its start, and its last whole test was judged not to do what was asked; it is kept as a draft, and nothing was put into the Flow. Nothing this build did is still on the target.";
+const TEST_THREE_TEXT = "Its one part did not pass its own test. Left: a part tested once whose last test could not be confirmed. A whole Flow was assembled and tested from its start, and its last whole test could not be confirmed; it is kept as a draft, and nothing was put into the Flow. Nothing this build did is still on the target.";
 
 /** The service over `provider`, with a blank project and Flow to build. */
 async function serviceWith(provider: ReturnType<typeof mockProvider>) {

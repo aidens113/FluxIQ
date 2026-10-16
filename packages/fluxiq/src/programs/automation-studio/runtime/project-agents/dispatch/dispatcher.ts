@@ -39,6 +39,9 @@ import type { AutomationStudioProjectDispatcherInput } from "./types.ts";
 //   aborts a sibling, and a Flow cancel or the request's signal stops every
 //   builder and every waiter, each ending `blocked` or `partial` as stopped.
 //   Every return is written to the build record, one file per brief.
+// - **A single-subflow plan's whole test reaches its briefs (t679).** The
+//   request's `wholeTrial` (`./port.ts`) is handed to each brief, and a build
+//   or repair brief's gate tests through it (`./run-brief.ts`).
 //
 // Only a dispatch the record cannot hold is refused before anything runs: a
 // brief not recorded, recorded twice in the request, or written against an
@@ -88,7 +91,7 @@ export function createAutomationStudioProjectDispatcher(input: AutomationStudioP
         return ending.notStarted(brief, `Brief ${predecessor.briefId} for subflow ${predecessor.subflowKey}, which this subflow starts after, ${unpassed(before[unready]!)}, so this subflow's entry cannot be prepared and its trials could not run.`);
       }
       const start = { ...(waitsOn[index]!.length ? { shares: () => uncarved.size + 1 } : {}), carved: () => uncarved.delete(index) };
-      return await runAutomationStudioProjectDispatchBrief({ dispatcher: input, brief, mapped: mapped[index]!, leases, stop, start });
+      return await runAutomationStudioProjectDispatchBrief({ dispatcher: input, brief, mapped: mapped[index]!, leases, stop, start, ...(request.wholeTrial ? { wholeTrial: request.wholeTrial } : {}) });
     };
     const tasks = request.briefs.map(async (brief, index) => {
       let returned: AutomationStudioProjectBuilderReturn;

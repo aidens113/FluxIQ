@@ -2,6 +2,7 @@ import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { emitAutomationStudioProjectReceiptCard } from "../../activity/project/index.ts";
 import { automationStudioSiteResetProjectReset, type AutomationStudioSiteResetChecks, type AutomationStudioSiteResetTrialReset } from "../../flow-bootstrap/site-reset/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
+import { automationStudioProjectSingleSubflowPlan } from "../single-subflow/index.ts";
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";
 import type { AutomationStudioProjectSupervisorPorts } from "./ports.ts";
@@ -49,6 +50,20 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
 // build shares (`flow-bootstrap/site-reset/project-reset.ts`), asked here with
 // no brief of its own and no look; only the repeated refusal is the
 // supervisor's.
+//
+// **A single-subflow plan's yes is not judged twice (t679).** On a plan of one
+// subflow the router runs, the builder's own test was the judged whole run of
+// the revision assembled from its proposal (`../single-subflow/single-subflow-trial.ts`).
+// A whole test the supervisor then asks of that same revision, while its yes
+// stands and may be completed on, runs no second trial: it answers with that
+// yes and its `complete` object, records no receipt again, and says to
+// complete. A pass the run rescued is tested as before.
+//
+// **A builder's undo answers the repeated refusal too (t679).** The same
+// refusal repeats only while acts are still to undo: an act a builder of a
+// single-subflow plan undid, or named under `cannotUndo` in its own test after
+// its reset asked for it, is no longer one, so that builder's next test reaches
+// the ledgers again without a reset brief.
 
 /** A trial's start as the supervisor checks it: no look at the target, which it never acts on (header). */
 const UNLOOKED: AutomationStudioSiteResetChecks = { compare: async () => ({ moved: false }) };
@@ -65,6 +80,9 @@ export class AutomationStudioProjectSupervisorWholeTrial {
 
   async test(context: AutomationStudioProjectSupervisorContext, value: JsonObject, callSignal: AbortSignal | undefined): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
     const { ports, state, gate } = context;
+    // The revision a single-subflow builder's test already judged yes is not tried again (header, t679).
+    const judged = this.alreadyJudged(context, value);
+    if (judged) return judged;
     const ran = await gate.test(value, callSignal ?? context.signal);
     const evidence = ran.evidence as JsonObject;
     if (evidence.code === "candidate.trial_reset_required") return this.resetRequired(evidence);
@@ -78,6 +96,20 @@ export class AutomationStudioProjectSupervisorWholeTrial {
     // The most recent pass, rescued or outright, is kept as the build's fallback until a later pass replaces it (`./state.ts`, t637).
     state.noteWholeTest(context.controller, gate);
     return ran;
+  }
+
+  /** The standing yes of a single-subflow plan's latest revision, when `value` names it and it may be completed on (header, t679); undefined otherwise. */
+  private alreadyJudged(context: AutomationStudioProjectSupervisorContext, value: JsonObject): AutomationStudioLlmEvidenceToolExecutionResult | undefined {
+    const { state, controller, gate } = context;
+    if (automationStudioProjectSingleSubflowPlan(state.structure) === undefined) return undefined;
+    const latest = controller.latest();
+    if (!latest || value.revision !== latest.revision || value.digest !== latest.digest) return undefined;
+    const standing = gate.standing(latest);
+    if (standing?.verdict !== "yes" || !gate.completion({ revision: latest.revision, digest: latest.digest }).ok) return undefined;
+    return answer.answered({
+      ok: true, verdict: "yes", revision: latest.revision, digest: latest.digest, ...(standing.trialRunId ? { trialRunId: standing.trialRunId } : {}),
+      alreadyJudged: true, complete: { revision: latest.revision, digest: latest.digest }, instruction: GUIDANCE.next.afterWholeAlreadyJudged
+    });
   }
 
   /** The gate's refusal in the supervisor's words: a reset brief undoes what the gate listed, each act with the brief that made it. */

@@ -3,6 +3,7 @@ import { AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS } from "../../flow-bootstrap/
 import type { AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import type { AutomationStudioProjectStructurePlan } from "../contracts/index.ts";
+import { automationStudioProjectSingleSubflowPlan } from "../single-subflow/index.ts";
 
 // Core sizes each brief it dispatches (t570). On A8 round 1 the supervisor
 // guessed every brief's money and turns: `project.allowance_unavailable` twice
@@ -33,6 +34,19 @@ import type { AutomationStudioProjectStructurePlan } from "../contracts/index.ts
 // (`llm/build-purse/top-up.ts`). So it is given what is sized here, or, where
 // the purse can no longer give that, its share of what the purse can give then
 // (`../dispatch/start-allowance.ts`), and its return says which.
+//
+// **A single-subflow plan's one brief is given what the build can give (t679).**
+// On a plan of one subflow the router runs, its builder's test is the judged
+// whole run (`../single-subflow/single-subflow-trial.ts`), so the finishing that
+// even share was kept for is the supervisor's completion and a reset before an
+// ending, whose calls the purse already keeps back from every allowance
+// (`finishing`, `service/project-build/reserve.ts`). A build or repair brief of
+// that subflow sent alone is given what the purse can carve less those
+// finishing calls priced at the build's average settled call
+// (`finishingCalls`), never less than the even share, and every call the purse
+// can carve. Until any call has settled nothing is priced, and the even share
+// stands; so it does for a build that keeps no finishing calls back. Every
+// other brief and plan is sized as above.
 
 /** A reset brief's least calls: one decision that undoes, and one that completes. */
 const MIN_RESET_CALLS = 2;
@@ -67,6 +81,8 @@ export function automationStudioProjectSupervisorBriefSizing(input: {
   structure: AutomationStudioProjectStructurePlan;
   done: ReadonlySet<string>;
   supervisorCalls: number;
+  /** The build's own finishing calls, the supervisor's and a reset's (`ports.finishing`), which a single-subflow brief's money leaves (header, t679); absent, nothing is kept back for them, and the even share stands. */
+  finishingCalls?: number | undefined;
 }): AutomationStudioProjectSupervisorBriefSizing {
   const { sent, purse, structure } = input;
   const sending = new Set(sent.map((brief) => brief.subflowKey).filter((key): key is string => typeof key === "string"));
@@ -80,18 +96,33 @@ export function automationStudioProjectSupervisorBriefSizing(input: {
     const kept = purse.allocatableCalls({ fromKeptBack: true });
     return kept === undefined ? undefined : Math.max(0, kept - input.supervisorCalls);
   })();
+  // The one brief of a single-subflow plan, sent alone (header, t679).
+  const single = automationStudioProjectSingleSubflowPlan(structure);
   const sizes: AutomationStudioProjectSupervisorBriefSize[] = [];
   for (const brief of sent) {
     const reset = brief.kind === "reset";
-    const calls = reset ? resetCalls : callShare;
+    const whole = !reset && sent.length === 1 && single !== undefined && input.finishingCalls !== undefined && brief.subflowKey === single && (brief.kind === "build" || brief.kind === "repair");
+    const calls = reset ? resetCalls : whole ? canGiveCalls : callShare;
     const least = reset ? MIN_RESET_CALLS : AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS;
     if (usdShare < MIN_USD || (calls !== undefined && calls < least)) return { ok: false, canGiveUsd, ...(canGiveCalls !== undefined ? { canGiveCalls } : {}), shares };
-    const allowanceUsd = lowered(brief.allowanceUsd, usdShare);
+    const finishing = whole ? finishingUsd(purse, input.finishingCalls!) : undefined;
+    const allowanceUsd = lowered(brief.allowanceUsd, finishing === undefined ? usdShare : Math.max(usdShare, canGiveUsd - finishing));
     // One turn is at least one call, so a call share bounds the turns too.
     const maxIterations = Math.min(MAX_ITERATIONS, lowered(brief.maxIterations, calls ?? DEFAULT_ITERATIONS, true));
     sizes.push({ allowanceUsd, maxIterations, ...(calls !== undefined ? { maxCalls: calls } : {}) });
   }
   return { ok: true, sizes };
+}
+
+/**
+ * The build's finishing calls priced at its average settled call: what this
+ * build spent over the calls it settled (header, t679). Undefined while no
+ * call has settled, when the even share stands.
+ */
+function finishingUsd(purse: AutomationStudioLlmBuildPurse, calls: number): number | undefined {
+  const settled = purse.spentCalls();
+  const averageUsd = settled > 0 ? Math.max(0, purse.spentUsd() - purse.carriedUsd) / settled : undefined;
+  return averageUsd === undefined || !Number.isFinite(averageUsd) ? undefined : calls * averageUsd;
 }
 
 /** What the supervisor wrote, when it is a positive number below the share; else the share. */

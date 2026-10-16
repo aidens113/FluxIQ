@@ -15,6 +15,12 @@
 // never reached here, so the watchdog is a hang guard only, and cleanup stops
 // any build still running and waits for it before removing its directory
 // (`./settled-builds.ts`).
+//
+// **A one-part plan's builder test is the judged whole run (t679).** Its
+// supervisor writes the plan, dispatches and completes on the yes the
+// dispatch answer carries; no subflow-scoped judge is asked. What only a plan
+// of several subflows still has -- the scoped judge and a builder's proposed
+// success check it is judged against -- is tested on two parts.
 
 import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
@@ -74,9 +80,12 @@ function briefs(shape: Shape): JsonObject[] {
   return shape === "one_part" ? [brief("main", ["p1"])] : [brief("first", ["p1"]), brief("second", ["p2"])];
 }
 
-/** What a builder submits: for the router-run subflow a plan of a start and an end; for a part, the script of one short wait. */
-function submission(subflowKey: string, proposedCheck?: JsonObject[]): JsonObject {
-  if (subflowKey !== "main") return { flow: [`flow: ${subflowKey}`, `part ${subflowKey}: carry out its part`, "  step pause: wait briefly", "    node: builtin.timing.wait", "    duration: 1", "    unit: milliseconds", "end"].join("\n") };
+/** A part's proposed success check, in the script's own terms: one that names no handle (t679). */
+const PART_DONE_WHEN = "done when: dialog alert \"Not saved\" absent";
+
+/** What a builder submits: for the router-run subflow a plan of a start and an end; for a part, the script of one short wait, with `doneWhen` its proposed check. */
+function submission(subflowKey: string, proposedCheck?: JsonObject[], doneWhen?: string): JsonObject {
+  if (subflowKey !== "main") return { flow: [`flow: ${subflowKey}`, `part ${subflowKey}: carry out its part`, ...(doneWhen ? [`  ${doneWhen}`] : []), "  step pause: wait briefly", "    node: builtin.timing.wait", "    duration: 1", "    unit: milliseconds", "end"].join("\n") };
   return {
     summary: "Build the main subflow",
     plan: { schemaVersion: "0.1", router: { name: "Main", rules: [], fallback: { kind: "subflow", targetSubflowKey: "main" } }, subflows: [{ key: "main", name: "Main", role: "primary", ...START_END, ...(proposedCheck ? { metadata: { "fluxiq.successCheck": proposedCheck } } : {}) }] }
@@ -139,7 +148,7 @@ function scripted(script: Script, decisionNumber: number, evidence: readonly Ent
   }
 }
 
-async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capacity?: number; domainText?: string; proposedCheck?: JsonObject[]; script?: Script } = {}) {
+async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capacity?: number; domainText?: string; proposedCheck?: JsonObject[]; doneWhen?: string; script?: Script } = {}) {
   const shape = options.shape ?? "one_part";
   /** Every tool answer the supervisor was shown, by tool, and what each builder's every decision was asked with, by subflow. */
   const supervisorSaw = new Map<string, JsonObject>();
@@ -167,6 +176,11 @@ async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capa
       const own = options.script ? scripted(options.script, supervisorDecisions, evidence) : undefined;
       if (own) return own;
       const assembled = lastOf(evidence, "project.assemble")?.complete as JsonObject | undefined;
+      // One part: its builder's test was the judged whole run, so it completes on the dispatch answer's yes (t679).
+      if (shape === "one_part" && supervisorDecisions >= 3) {
+        const complete = lastOf(evidence, "project.dispatch")?.complete as JsonObject | undefined;
+        return decision({ kind: "complete", result: complete ?? { ended: "partial", reason: "The whole Flow's trial was judged not to do what was asked." } });
+      }
       switch (supervisorDecisions) {
         case 1: return decision({ kind: "tool_call", callId: "plan", toolId: "project.write_plan", input: planInput(shape) });
         case 2: return decision({ kind: "tool_call", callId: "dispatch", toolId: "project.dispatch", input: { reason: "Build each subflow the plan needs.", briefs: briefs(shape) } });
@@ -183,7 +197,7 @@ async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capa
     if (options.script === "ends") return decision({ kind: "tool_call", callId: `look-${evidence.length}`, toolId: "inspect", input: { at: evidence.length } });
     const submitted = lastOf(evidence, "core.submit_subflow");
     const tested = lastOf(evidence, "core.test_subflow");
-    if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: `submit-${subflowKey}`, toolId: "core.submit_subflow", input: submission(subflowKey, options.proposedCheck) });
+    if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: `submit-${subflowKey}`, toolId: "core.submit_subflow", input: submission(subflowKey, options.proposedCheck, options.doneWhen) });
     if (tested?.verdict !== "yes") return decision({ kind: "tool_call", callId: `test-${subflowKey}`, toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } });
     return decision({ kind: "complete", result: { subflowKey, revision: submitted.revision as number, digest: submitted.digest as string } });
   });
@@ -207,16 +221,19 @@ async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capa
 }
 
 describe("a project build through the actual service", () => {
-  it("plans a one-part task, builds and tries its subflow, assembles, and proposes the whole Flow on a judged yes", async () => {
+  it("plans a one-part task, whose builder's test is the judged whole run, and proposes the whole Flow on that yes", async () => {
     const run = await projectBuild();
     const result = await run.build();
     if (result.status !== "proposed") throw new Error(`expected a proposal, got ${JSON.stringify(result)}`);
     expect(result.candidate).toMatchObject({ trial: { verdict: "yes" } });
     expect(run.proposed).toHaveBeenCalledTimes(1);
-    // One subflow trial, judged on the brief's parts alone, then the whole trial, each a first answer and its confirmation.
-    expect(run.judged.subflow).toHaveLength(2);
+    // No subflow-scoped judge: the builder's test was the whole trial, a first answer and its confirmation, judged on the whole task.
+    expect(run.judged.subflow).toHaveLength(0);
     expect(run.judged.whole).toHaveLength(2);
-    for (const request of run.judged.subflow) expect(JSON.stringify(request.context)).toContain(TASK);
+    for (const request of run.judged.whole) expect(JSON.stringify(request.context)).toContain(TASK);
+    // Write the plan, dispatch, complete: the dispatch answer carried the complete object.
+    expect(run.supervisorSaw.get("project.dispatch")).toMatchObject({ ok: true, complete: { revision: 1 }, returns: [{ outcome: "done" }] });
+    expect(run.supervisorSaw.has("project.assemble")).toBe(false);
     // The supervisor is offered its own tools and never a builder's; each builder its own, never the supervisor's.
     expect(run.offered.some((tools) => tools.includes("project.dispatch") && !tools.includes("core.submit_subflow"))).toBe(true);
     expect(run.offered.some((tools) => tools.includes("core.submit_subflow") && !tools.includes("project.dispatch"))).toBe(true);
@@ -244,15 +261,13 @@ describe("a project build through the actual service", () => {
   });
 
   // The plan the supervisor writes gives no success check, so the builder's own is its subflow's, and its trial is judged against it (t569).
+  // A one-part plan's test is the whole run (t679), so the scoped judge this checks is a plan of several subflows'.
   it("judges a subflow's trial against the success check its builder proposed when the plan gives none", async () => {
-    const proposed = [{ fact: "ended", op: "exists" }];
-    const run = await projectBuild({ proposedCheck: proposed });
+    const run = await projectBuild({ shape: "two_parts", doneWhen: PART_DONE_WHEN });
     const result = await run.build();
     if (result.status !== "proposed") throw new Error(`expected a proposal, got ${JSON.stringify(result)}`);
     expect(run.judged.subflow.length).toBeGreaterThan(0);
-    for (const request of run.judged.subflow) {
-      expect(JSON.stringify(request.context)).toContain(JSON.stringify(`Its success check, as its builder proposed it (the plan gives none): ${JSON.stringify(proposed)}`).slice(1, -1));
-    }
+    for (const request of run.judged.subflow) expect(JSON.stringify(request.context)).toContain("Its success check, as its builder proposed it (the plan gives none): ");
   });
 
   it("keeps the assembled Flow as a draft when the whole trial is judged no, and proposes nothing", async () => {
