@@ -66,6 +66,15 @@
 // against that count. Each read's `narrowedBefore` steps, once each, with the
 // reads they came before (`narrowing`): what `./unseen-row-claim.ts` and
 // `./advice-condition.ts` hold such a no to. Not a subflow trial's entry's reads.
+//
+// **And the rows left out together tell labels apart (t665).** A8 frozen pair 8
+// candidate towels `run-mvam0lys-2d3eb090` step 0058: a quote of a row two
+// conditions left out together, "<Brand> Line Paper Towel Holder ...", named the
+// stored "<Brand> Line Paper Towels Value Pack ..." because the pools a label's
+// naming prefix is told apart in held no together row, so the prefix was short.
+// Each read's together rows join its pool and the stored pool; those not already
+// in a pool are `unnamed`: they lengthen other labels' prefixes, and are named by
+// none of their own (`./named-rows.ts`).
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../contracts/index.ts";
@@ -108,9 +117,14 @@ export function automationStudioResultNoRecord(input: {
     return { label, given, condition: condition.condition, settled, quotesRequest: quoted !== undefined, ...(quoted ? { quoted } : {}), ...(testsLabel.has(condition.condition) ? { testsLabel: true as const } : {}) };
   })));
   const storedLabels = [...new Set(stored.map((row) => row.label))];
-  const pools = [...reads.map((read) => [...new Set([...read.labels, ...storedLabels])]), storedLabels];
+  const named = [...reads.map((read) => [...new Set([...read.labels, ...storedLabels])]), storedLabels];
+  // The rows left out together join the pools, to tell labels apart only (header, t665).
+  const together = togetherLabels(summary);
+  const known = new Set(named.flat());
+  const unnamed = [...new Set(together.filter((label) => !known.has(label)))];
+  const pools = unnamed.length ? named.map((pool) => [...pool, ...unnamed]) : named;
   const seen = seenReads(summary);
-  const together = togetherSets(summary);
+  const togetherBy = togetherSets(summary);
   const narrowing = narrowingSteps(summary);
   const tested = summary.buildTest?.stores;
   const phrases = input.requestText?.trim() ? automationStudioRequestPhrases(input.requestText) : undefined;
@@ -125,8 +139,9 @@ export function automationStudioResultNoRecord(input: {
     nodeIds: summary.flowShape.map((step) => step.nodeId),
     conditions: automationStudioResultNoConditions(summary, leftOut, new Set(storedLabels)),
     isValue: valuesOf(summary, stored, leftOut),
-    ...(seen ? { seen, seenLabels: [...new Set([...pools.flat(), ...togetherLabels(summary)])] } : {}),
-    ...(together.length ? { together } : {}),
+    ...(unnamed.length ? { unnamed } : {}),
+    ...(seen ? { seen, seenLabels: [...new Set([...pools.flat(), ...together])] } : {}),
+    ...(togetherBy.length ? { together: togetherBy } : {}),
     ...(narrowing ? { narrowing } : {}),
     ...(phrases ? { phrases, item: itemOf(storedLabels, phrases) } : {}),
     ...(input.wording ? { says: input.wording.says } : {}),

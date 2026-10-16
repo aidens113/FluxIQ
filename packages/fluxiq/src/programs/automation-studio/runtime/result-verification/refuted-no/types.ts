@@ -105,8 +105,14 @@ export type AutomationStudioResultNoNarrowingStep = AutomationStudioResultNarrow
 export type AutomationStudioResultNoRecord = {
   stored: AutomationStudioResultNoStoredRow[];
   leftOut: AutomationStudioResultNoLeftOutRow[];
-  /** Each read's labels, kept, stored or left out: the pool a row's naming prefix is told apart in. */
+  /** Each read's labels, kept, stored or left out, alone or together (t665): the pool a row's naming prefix is told apart in. */
   pools: string[][];
+  /**
+   * The labels in `pools` only to tell others apart: rows a read's conditions
+   * left out together that are in no pool otherwise (`./record.ts`, t665). No
+   * prefix of their own names them (`./named-rows.ts`). Absent where none.
+   */
+  unnamed?: string[] | undefined;
   /** The rows the result holds: what a stated count is held to. */
   storedCount: number;
   /** The rows the answer's own dedupe removed as repeating an earlier one, over every record set. */

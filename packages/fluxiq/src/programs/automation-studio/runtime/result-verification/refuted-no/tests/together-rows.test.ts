@@ -1,8 +1,10 @@
 // A read that names the rows its conditions left out together (t655) can name
 // every row it saw: its counts then add up, t654's unseen-row refutation can
 // fire, and t631's joint-exclusion guard can say which sets of conditions left
-// a row out. One still short refutes nothing. A library catalogue: no task,
-// site, item or answer of any realistic scenario.
+// a row out. One still short refutes nothing. And (t665) its together rows
+// tell labels apart, so a quote of one never names a stored row by a shared
+// start. A library catalogue: no task, site, item or answer of any realistic
+// scenario.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioResultAdviceConditions, automationStudioResultNoRecord, automationStudioResultRefutedReading, automationStudioResultSentenceRows, automationStudioResultUnseenRowClaim } from "../index.ts";
@@ -120,5 +122,39 @@ describe("advice to remove several conditions, where the read names the rows the
 
   it("stands as before t655 where the listing is short of the read's counts", () => {
     expect(automationStudioResultAdviceConditions(ADVICE, record(threeConditions(6, [[1, 3], [2, 3]])))).toBeUndefined();
+  });
+});
+
+describe("the rows left out together, in the pools a label is told apart in (t665)", () => {
+  /** Stored: a line's paperback omnibus. */
+  const OMNIBUS = "Penhallow Cases Omnibus Edition, Paperback";
+  /** Left out together, its start shared with the stored omnibus. */
+  const OMNIBUS_BOX = "Penhallow Cases Omnibus Edition Box Set, Slipcase";
+  const withOmnibus = (together?: string[]) => {
+    const base = summary(twoConditions(6 + (together?.length ?? 0) - 1, together));
+    const set = base.recordSets[0]!;
+    const sampleRows = [...(set.sampleRows ?? []), { title: OMNIBUS, author: "R. Tamsin", rating: "4.4", url: "/catalog/item/BKP3D7R1M8" }];
+    return automationStudioResultNoRecord({
+      summary: { ...base, totalRecordCount: 4, recordSets: [{ ...set, recordCount: 4, rowsChecked: 4, sampleRows }] },
+      requestText: REQUEST
+    });
+  };
+
+  it("a quote of a row left out together names no stored row", () => {
+    const rec = withOmnibus([OMNIBUS_BOX]);
+    expect(rec.unnamed).toEqual([OMNIBUS_BOX]);
+    const named = automationStudioResultSentenceRows(`The result includes "${OMNIBUS_BOX}", a box set.`, rec);
+    expect(named.stored).toEqual([]);
+    expect(named.unmatched).toBe(true);
+  });
+
+  it("names the stored row as before where the read names no together rows", () => {
+    const named = automationStudioResultSentenceRows(`The result includes "${OMNIBUS_BOX}", a box set.`, withOmnibus());
+    expect(named.stored.map((row) => row.label)).toEqual([OMNIBUS]);
+  });
+
+  it("still names the stored row by its own label", () => {
+    const named = automationStudioResultSentenceRows(`The result includes "${OMNIBUS}", which is rated 4.4.`, withOmnibus([OMNIBUS_BOX]));
+    expect(named.stored.map((row) => row.label)).toEqual([OMNIBUS]);
   });
 });

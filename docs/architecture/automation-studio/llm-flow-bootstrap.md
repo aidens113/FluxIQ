@@ -1290,10 +1290,12 @@ cited exploration's "3 Cart" as the Flow's result). A judge
 reply that leaves a diagnosis text empty (`changed: ""` beside a yes) has that
 field read as omitted, not refused (`runtime/llm/harness/provider-result.ts`,
 cause C2). A diagnosis text (`expected`, `observed`, `changed`) past its
-500-character bound is read clipped to it, at a word boundary and ending
-`… [clipped]`, with a warning `llm_output.diagnosis_text_clipped` naming the
-field; the verdict and the other fields stand, and only a text that is not a
-string is refused. It used to void the whole reply: live run `run-murwcmx2`'s
+500-character bound is read whole, with a warning
+`llm_output.diagnosis_text_past_bound` naming the field; the verdict and the
+other fields stand, and only a text that is not a string is refused. Until
+t665 it was clipped to the bound, and Core weighed the clipped copy: on A8
+`run-mvam0lys` a judge's real reason lay past the cut and Core labelled the
+whole reading contradicted. It used to void the whole reply: live run `run-murwcmx2`'s
 second judge call answered a clear `no` with a 581-character `changed`, and the
 refutation was recorded as unconfirmed (t194 cause C-A). The bound stays 500 in
 the instruction and the output schema. When the judge's two calls do not settle
