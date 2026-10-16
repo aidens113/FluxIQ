@@ -307,7 +307,9 @@ function failingTrials(context: AutomationStudioProjectSupervisorContext, briefs
 /**
  * Each build brief of a subflow whose done proposal the plan in force carried
  * (`./state.ts`, t658) named with it, as `carriedFrom`: what its builder starts
- * from and tests first (`../dispatch/run-brief.ts`). Every other brief as read.
+ * from and tests first (`../dispatch/run-brief.ts`), with the outputs a
+ * narrowing removed, the subflow a merge took it from and whether it became
+ * the one the router runs (t671). Every other brief as read.
  */
 function carriedOnto(context: AutomationStudioProjectSupervisorContext, read: { briefs: AutomationStudioProjectSubflowBrief[]; issues: Issue[] }): { briefs: AutomationStudioProjectSubflowBrief[]; issues: Issue[] } {
   const carried = context.state.carriedForward();
@@ -315,7 +317,17 @@ function carriedOnto(context: AutomationStudioProjectSupervisorContext, read: { 
     const found = brief.kind === "build" ? carried.get(brief.subflowKey) : undefined;
     const proposal = found?.answered.returned.proposal;
     if (!found || !proposal) return brief;
-    return { ...brief, carriedFrom: { briefId: found.answered.brief.briefId, revision: proposal.revision, digest: proposal.digest, addedParts: [...found.addedParts], renamedOutputs: found.renamedOutputs.map((pair) => ({ ...pair })) } };
+    // A narrowing or a merge names what the dispatcher rewrites in the script its builder is shown (t671); absent when it does not apply.
+    const absorbed = found.absorbed;
+    return {
+      ...brief,
+      carriedFrom: {
+        briefId: found.answered.brief.briefId, revision: proposal.revision, digest: proposal.digest, addedParts: [...found.addedParts], renamedOutputs: found.renamedOutputs.map((pair) => ({ ...pair })),
+        ...(found.removedOutputs.length ? { removedOutputs: [...found.removedOutputs] } : {}),
+        ...(absorbed && absorbed.builtFor !== brief.subflowKey ? { builtFor: absorbed.builtFor } : {}),
+        ...(absorbed?.routerRun ? { routerRun: true as const } : {})
+      }
+    };
   });
   return { briefs, issues: read.issues };
 }

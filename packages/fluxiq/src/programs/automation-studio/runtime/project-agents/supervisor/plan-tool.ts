@@ -53,6 +53,16 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
  * (`./state.ts`): the answer lists it under `proposalsCarried`, with the parts
  * and renames it was not built for, and says its next build brief starts from
  * it and is tested on every part.
+ *
+ * **A narrowing and a merge are listed with why (Lab `run-mvan7giv`, t671).**
+ * A proposal carried because the amendment only removed outputs lists them
+ * (`removedOutputs`); one carried onto the subflow it was merged into names the
+ * subflow it was built for and those whose parts joined it (`absorbed`); each
+ * carried one says in one sentence why (`because`). A proposal, carried or
+ * dropped, whose own parts changed names each and what changed in it
+ * (`changedParts`): on that run "its parts changed" was a part's lasting act
+ * rewritten, which the reason alone did not say; such a proposal is now
+ * carried, and its next trial judges the part as it now is.
  */
 export async function automationStudioProjectSupervisorPlanTool(context: AutomationStudioProjectSupervisorContext, value: JsonObject, mode: "write" | "amend"): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
   const { ports, state } = context;
@@ -102,13 +112,18 @@ export async function automationStudioProjectSupervisorPlanTool(context: Automat
     // What the amendment did with the done proposals made under earlier plans (`./state.ts`, t590).
     ...(mode === "amend" ? {
       proposalsKept: [...carried.kept].map(([subflowKey, { brief }]) => ({ subflowKey, briefId: brief.briefId, ...(carried.reworded.has(subflowKey) ? { reworded: [...carried.reworded.get(subflowKey)!] } : {}) })),
-      proposalsDropped: [...carried.dropped].map(([subflowKey, why]) => ({ subflowKey, why: [...why] })),
-      // Each proposal carried to its subflow's next build brief, which starts from it and is judged on every part (`./state.ts`, t658).
+      // A dropped subflow whose own parts changed says which and how (header, t671).
+      proposalsDropped: [...carried.dropped].map(([subflowKey, why]) => ({ subflowKey, why: [...why], ...(carried.changedParts.has(subflowKey) ? { changedParts: carried.changedParts.get(subflowKey)!.map((entry) => ({ ...entry })) } : {}) })),
+      // Each proposal carried to its subflow's next build brief, which starts from it and is judged on every part (`./state.ts`, t658, t671).
       ...(carried.forward.size ? {
         proposalsCarried: [...carried.forward].map(([subflowKey, found]) => ({
           subflowKey, briefId: found.answered.brief.briefId, revision: found.answered.returned.proposal!.revision, why: [...found.why],
           ...(found.addedParts.length ? { addedParts: [...found.addedParts] } : {}),
           ...(found.renamedOutputs.length ? { renamedOutputs: found.renamedOutputs.map((pair) => ({ ...pair })) } : {}),
+          ...(found.removedOutputs.length ? { removedOutputs: [...found.removedOutputs] } : {}),
+          ...(found.changedParts.length ? { changedParts: found.changedParts.map((entry) => ({ ...entry })) } : {}),
+          ...(found.absorbed ? { absorbed: { builtFor: found.absorbed.builtFor, partsFrom: [...found.absorbed.partsFrom], routerRun: found.absorbed.routerRun } } : {}),
+          because: found.because,
           instruction: GUIDANCE.next.carried
         }))
       } : {})

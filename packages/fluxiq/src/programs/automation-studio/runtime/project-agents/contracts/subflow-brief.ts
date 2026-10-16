@@ -56,6 +56,14 @@ import type { AutomationStudioProjectTaskSpec } from "./task-spec.ts";
 // starts from it, and its own trial is judged against every part, the new ones
 // with them, before the brief can be done. Core sets it; a brief as sent never
 // carries one (`../supervisor/brief-input.ts`).
+//
+// **A narrowed or merged proposal is carried too (Lab `run-mvan7giv`, t671).**
+// The carried proposal then names the outputs the amendment removed
+// (`removedOutputs`), the subflow it was built for when merged under another
+// key (`builtFor`), and that it now is the subflow the router runs
+// (`routerRun`), so the dispatcher shows its builder a script that already
+// fits (`../dispatch/run-brief.ts`). Each is absent when it does not apply, so
+// a brief recorded before them reads as it did.
 
 /** A trial verdict that is not a pass. */
 type FailedVerdict = Exclude<AutomationStudioCandidateTrialVerdict, "yes">;
@@ -131,6 +139,12 @@ export type AutomationStudioProjectCarriedProposal = {
   digest: string;
   addedParts: string[];
   renamedOutputs: Array<{ from: string; to: string }>;
+  /** Each output the amendment removed that the carried script still binds (t671); absent when none. */
+  removedOutputs?: string[];
+  /** The subflow the proposal was built for, when the amendment merged it into this one under another key (t671). */
+  builtFor?: string;
+  /** Set when the proposal was built for a callable subflow and this one is the subflow the router runs (t671). */
+  routerRun?: true;
 };
 
 /** `iterations` is the builder loop's own most, so no brief can carry a length its loop refuses (t577). `said`, `step` and `scalar` bound a failing trial, in JSON characters. */
@@ -289,7 +303,7 @@ function read(value: unknown): AutomationStudioProjectSubflowBrief {
 
 /** A carried proposal as a recorded brief holds it (header); throws a refusal for `shape.parse`. */
 function readCarried(value: unknown, path: string): AutomationStudioProjectCarriedProposal {
-  const fields = shape.object(value, path, ["briefId", "revision", "digest", "addedParts", "renamedOutputs"]);
+  const fields = shape.object(value, path, ["briefId", "revision", "digest", "addedParts", "renamedOutputs"], ["removedOutputs", "builtFor", "routerRun"]);
   const renamedOutputs = shape.array(fields.renamedOutputs, `${path}.renamedOutputs`, LIMITS.parts).map((entry, index) => {
     const pair = shape.object(entry, `${path}.renamedOutputs.${index}`, ["from", "to"]);
     return { from: shape.id(pair.from, `${path}.renamedOutputs.${index}.from`), to: shape.id(pair.to, `${path}.renamedOutputs.${index}.to`) };
@@ -299,6 +313,9 @@ function readCarried(value: unknown, path: string): AutomationStudioProjectCarri
     revision: shape.count(fields.revision, `${path}.revision`, 1),
     digest: shape.digest(fields.digest, `${path}.digest`),
     addedParts: shape.ids(fields.addedParts, `${path}.addedParts`, LIMITS.parts),
-    renamedOutputs
+    renamedOutputs,
+    ...(fields.removedOutputs !== undefined ? { removedOutputs: shape.ids(fields.removedOutputs, `${path}.removedOutputs`, LIMITS.parts) } : {}),
+    ...(fields.builtFor !== undefined ? { builtFor: shape.id(fields.builtFor, `${path}.builtFor`, 64) } : {}),
+    ...(fields.routerRun !== undefined ? { routerRun: fields.routerRun === true ? true : shape.refuse("project.not_true", `${path}.routerRun`) } : {})
   };
 }
