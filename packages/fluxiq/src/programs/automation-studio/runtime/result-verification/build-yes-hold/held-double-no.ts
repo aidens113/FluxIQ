@@ -27,9 +27,15 @@
 //
 // - the caller names the trial its build judged the very Flow revision this run
 //   executed by (`./judged-trial.ts`);
-// - that trial was judged yes by exactly two calls, the first asked and the
-//   second confirming it (t296): a yes reached only by asking again calls that
-//   first said otherwise is no confirmed yes (t664, `FIRST_ASK_CONFIRMED_CALLS`);
+// - that trial was judged yes by its first ask and the second call confirming
+//   it (t296): a yes reached only by asking again calls that first said
+//   otherwise is no confirmed yes (t664). The trial says so itself
+//   (`firstAskConfirmed`, recorded by the verification where its calls are
+//   made, `../first-ask/`, t677, and carried through the trial's record and
+//   promotion to the saved Flow); a retry after a temporary fault or the
+//   exclusion-evidence recheck no longer passes a confirmed yes over. A record
+//   written before t677 carries no flag, and for it the hold still counts the
+//   judge calls (`FIRST_ASK_CONFIRMED_CALLS`, `firstAskConfirmed`);
 // - it was judged against the same request (instruction digest);
 // - the rows it stored are the rows this run stored, read by Core from both
 //   runs' stores and compared by content (`./same-stored-rows.ts`);
@@ -53,18 +59,25 @@ import { automationStudioResultEveryNoContradicted, automationStudioResultWeighe
 export const AUTOMATION_STUDIO_RESULT_BUILD_YES_DISAGREES = "core.result.build_yes_disagrees";
 
 /**
- * The judge calls behind a first-ask confirmed yes: the first call's yes and
- * the second call's confirmation (t296), and no other. Every re-ask adds a
- * call of its own (`../verify.ts` records each ask's intervention, and the
- * build-test judge counts them, `../build-test/judge.ts` `spentBy`): a refuted
- * no asked again (t607), a contradicted unsure asked again (t503), a split's no
- * asked again (t515). A yes reached only through one is not a two-call yes
- * (t664: the debugged towels trial's false yes was two nos asked again, four
- * calls). A call asked again after a temporary fault, or after Core's
- * exclusion-evidence recheck, adds one too; such a yes is passed over as well,
- * which is the side a doubt falls on: the hold is the act that sets nos aside.
+ * For a record without the flag only (written before t677): the judge calls
+ * behind a first-ask confirmed yes, the first call's yes and the second call's
+ * confirmation (t296), and no other. Every re-ask adds a call of its own
+ * (`../verify.ts` records each ask's intervention, and the build-test judge
+ * counts them, `../build-test/judge.ts` `spentBy`): a refuted no asked again
+ * (t607), a contradicted unsure asked again (t503), a split's no asked again
+ * (t515). A yes reached only through one is not a two-call yes (t664: the
+ * debugged towels trial's false yes was two nos asked again, four calls). A
+ * call asked again after a temporary fault, or after Core's exclusion-evidence
+ * recheck, adds one too, so such a record's yes is passed over as well: the
+ * side a doubt falls on, since the hold is the act that sets nos aside.
  */
 const FIRST_ASK_CONFIRMED_CALLS = 2;
+
+/** Whether the trial's yes was first-ask confirmed: its own flag where it carries one (t677), else its call count (header). */
+function firstAskConfirmed(trial: AutomationStudioResultJudgedBuildTrial): boolean {
+  if (trial.verdict !== "yes") return false;
+  return trial.firstAskConfirmed ?? trial.calls === FIRST_ASK_CONFIRMED_CALLS;
+}
 
 /**
  * The outcome a run's result check records (header): `outcome` as it came,
@@ -87,7 +100,7 @@ export async function automationStudioResultBuildYesHold(input: {
   const trial = await input.trial();
   if (!trial || "missing" in trial) return kept(trial?.missing ?? "no_build_trial");
   if (trial.trialRunId === input.runId) return kept("no_build_trial");
-  if (trial.verdict !== "yes" || trial.calls !== FIRST_ASK_CONFIRMED_CALLS) return kept("trial_not_confirmed");
+  if (!firstAskConfirmed(trial)) return kept("trial_not_confirmed");
   if (!input.instructionDigest || trial.instructionDigest !== input.instructionDigest) return kept("request_differs");
   if (!automationStudioResultSameStoredRows(input.recordSets, await input.trialRecordSets(trial.trialRunId))) return kept("rows_differ");
   const weighed = automationStudioResultWeighedNos(outcome);

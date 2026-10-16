@@ -44,6 +44,12 @@
 // their worst case (`./judging-fits.ts`). Where it cannot, the trial answers
 // `not_judged` under `candidate.trial_unaffordable`, with the figures, and
 // nothing runs; a re-judgement is not asked either, and keeps its evidence.
+//
+// **A yes's record says whether it was first-ask confirmed (t677).** The judge's
+// yes says whether its first two calls reached it with nothing re-asked of a
+// different verdict (`../../result-verification/first-ask/`); the record keeps
+// that (`firstAskConfirmed`) for promotion to carry to the saved Flow, where the
+// playback hold reads it in place of the record's call count.
 
 import { createHash, randomUUID } from "node:crypto";
 import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
@@ -178,7 +184,9 @@ async function judged(request: AutomationStudioCandidateTrialRequest, ports: Aut
   // An unsure split keeps Core's record too, so a condition it vindicated is held across the build (t652, fix 2);
   // only a no is ever weighed as one by the gate's memory.
   const standingNo = (read.verdict === "no" && verdict.verdict === "no") || (read.verdict === "unsure" && verdict.verdict === "unknown") ? verdict.standingNo : undefined;
-  const outcome = answerFor(request)(read.verdict, feedback, { trialRunId: shown.trialRunId, start, execution: "succeeded", ...(read.code ? { code: read.code } : {}), ...(learnedPaces ? { learnedPaces } : {}), ...(again ? { judgedAgain: true as const } : {}), judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } }, acts, standingNo);
+  // Whether the judge's yes was first-ask confirmed, on a yes the gate took as one: what promotion carries to the saved Flow (header, t677).
+  const firstAsk = read.verdict === "yes" && verdict.verdict === "yes" && verdict.firstAskConfirmed !== undefined ? { firstAskConfirmed: verdict.firstAskConfirmed } : {};
+  const outcome = answerFor(request)(read.verdict, feedback, { trialRunId: shown.trialRunId, start, execution: "succeeded", ...(read.code ? { code: read.code } : {}), ...(learnedPaces ? { learnedPaces } : {}), ...(again ? { judgedAgain: true as const } : {}), ...firstAsk, judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } }, acts, standingNo);
   return verdict.verdict === "not_judged" ? { ...outcome, unjudged: evidence } : outcome;
 }
 

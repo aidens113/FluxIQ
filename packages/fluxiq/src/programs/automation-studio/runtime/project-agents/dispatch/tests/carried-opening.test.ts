@@ -12,6 +12,7 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, runAutomationStudioSubflowBuilderLoop } from "../../../flow-bootstrap/subflow-candidate/index.ts";
 import { OPEN, callPart, part, script, testSubmission } from "../../../flow-bootstrap/subflow-candidate/tests/subflow-fixture.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../../../llm/evidence-loop.ts";
+import { automationStudioProjectCarriedScript } from "../../amendment/index.ts";
 import { automationStudioProjectSubflowBrief, type AutomationStudioProjectSubflowBrief } from "../../contracts/index.ts";
 import type { AutomationStudioProjectBuilderPorts } from "../index.ts";
 import { automationStudioProjectRenamedOutputs } from "../renamed-outputs.ts";
@@ -94,6 +95,27 @@ describe("a build brief starting from a proposal an amendment carried", () => {
     const opened = received.slice(before).find((entry) => entry.callId.startsWith("initial."))!;
     expect(((opened.value as JsonObject).repairs as JsonObject[]).some((call) => call.node === "web.output.browser-navigate")).toBe(true);
     expect(received.slice(0, before).some((entry) => "repairs" in (entry.value as JsonObject))).toBe(false);
+  });
+
+  // t671: a narrowing or a merge names what it changed; the script shown is already rewritten (`../../amendment/carried-script.ts`).
+  it("shows what a narrowing or merge changed beside a script already rewritten for this subflow", async () => {
+    const seen: Entry[][] = [];
+    const steps = [[submit("s1", FIRST), testOf("t1", "s1"), completeOn("s1")], [endBlocked]];
+    const build = await gardenBuild({ capacity: 1, briefs: [gardenBrief("b-read", "list_seeds")], ports: { builder: ports(steps, seen, [], () => "yes") } });
+    build.dispatcherInput.runBuilder = runAutomationStudioSubflowBuilderLoop;
+    const first = (await build.run()).returns[0]!;
+    const from = { briefId: "b-read", revision: first.proposal!.revision, digest: first.proposal!.digest, addedParts: [], renamedOutputs: [], removedOutputs: ["count"], builtFor: "narrow", routerRun: true as const };
+    const carried = gardenBrief("b-merged", "list_seeds", [], (brief) => {
+      brief.carriedFrom = from;
+    });
+    await build.store.recordBrief(REF, carried);
+    await build.run([carried]);
+    const shown = opening(seen.at(-1)!)!.startsFrom as JsonObject;
+    expect(shown).toMatchObject({ removedOutputs: ["count"], builtFor: "narrow", routerRun: true, script: automationStudioProjectCarriedScript(String(FIRST.flow), from, "list_seeds") });
+    // The part named under builtFor is unwrapped into the router's steps.
+    expect(String(shown.script)).not.toContain("part narrow:");
+    expect(String(shown.script)).toContain("step: press the filter");
+    for (const words of ["removedOutputs taken out", "routerRun", "builtFor"]) expect(String(shown.note)).toContain(words);
   });
 
   it("binds a renamed output's line to the same step output under its new name, and nothing else", () => {

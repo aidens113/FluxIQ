@@ -34,7 +34,7 @@ export function automationStudioResultJudgedBuildTrialOfSavedFlow(ports: {
     const record = automationStudioFlowJudgedBuildTrialFromMetadata(await ports.flowMetadata(input.projectId, input.flowId));
     if (!record || record.trialRunId === input.runId) return { missing: "no_build_trial" };
     if (!ranTheWholeFlow(record.versions, input.flowVersions) || !automationStudioRanJudgedVersions(record.versions, input.flowVersions)) return { missing: "revision_mismatch" };
-    return { trialRunId: record.trialRunId, verdict: record.verdict, calls: record.calls, instructionDigest: record.instructionDigest };
+    return { trialRunId: record.trialRunId, verdict: record.verdict, calls: record.calls, ...(record.firstAskConfirmed !== undefined ? { firstAskConfirmed: record.firstAskConfirmed } : {}), instructionDigest: record.instructionDigest };
   };
 }
 

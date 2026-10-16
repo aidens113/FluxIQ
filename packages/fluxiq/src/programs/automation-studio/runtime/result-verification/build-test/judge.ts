@@ -140,7 +140,17 @@ export type AutomationStudioBuildTestRecordCounts = { stored: number; refused: n
  * TODO(t195 lead): unify with that type at integration.
  */
 export type AutomationStudioBuildTestVerdict =
-  | { verdict: "yes"; spent: AutomationStudioBuildTestJudgeSpend }
+  | {
+    verdict: "yes"; spent: AutomationStudioBuildTestJudgeSpend;
+    /**
+     * Whether the verification said its yes was first-ask confirmed
+     * (`AutomationStudioResultVerification.firstAskConfirmed`, `../first-ask/`,
+     * t677): the fact the playback hold reads, where `spent.calls` counts every
+     * ask, a retry after a temporary fault included. Always set by this judge;
+     * absent only on a verdict made elsewhere.
+     */
+    firstAskConfirmed?: boolean;
+  }
   | {
     verdict: "unknown" | "not_judged"; why: string; untestedCarried?: number[];
     /**
@@ -322,7 +332,7 @@ export function automationStudioBuildTestJudge(deps: {
     // No call came back usable, each asked again where its fault was temporary: the test was not judged (header).
     if (outcome.basis === "model_unavailable") return { verdict: "not_judged", why: couldNotJudge(outcome.reason, spent.calls), ...carried, spent };
     if (outcome.exclusionEvidenceMissing) return { verdict: "not_judged", why: outcome.reason, ...carried, ...(outcome.yesUnconfirmed ? { yesUnconfirmed: true as const } : {}), ...heldAdvice(outcome), spent };
-    if (outcome.verdict === "answers") return { verdict: "yes", spent };
+    if (outcome.verdict === "answers") return { verdict: "yes", spent, firstAskConfirmed: outcome.firstAskConfirmed === true };
     if (outcome.verdict === "does_not_answer" && automationStudioResultVerificationFailsRun(outcome)) {
       const judgement = outcome.repair?.judgement;
       // The same rows in structured form, read from Core's lines against the summary they were made from (R3-3).

@@ -23,6 +23,14 @@ export type AutomationStudioResultVerification = import("../standing-no/index.ts
   /** The verification calls made or attempted: 1, 2, 3 with a re-ask, or 4 where both refuted nos were asked again. Absent when no model was asked. */
   calls?: number;
   /**
+   * Set exactly on a confirming verification's (`confirmAnswer`) yes that its
+   * two checks reached with no call re-asked after them and no check's verdict
+   * changed between its asks (`../first-ask/`, t677): what the playback hold
+   * reads in place of counting calls. A retry after a temporary fault, or the
+   * exclusion-evidence recheck of a yes, does not clear it. Never on a runtime check.
+   */
+  firstAskConfirmed?: true;
+  /**
    * What to fix, present exactly when the verdict is `does_not_answer`. An
    * `unsure` carries none: nobody judged the result wrong, and
    * `recovery/refuted-result/attempt.ts` builds no repair from one.

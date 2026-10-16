@@ -56,6 +56,8 @@
 // A request that sets `confirmAnswer` asks a first `yes` once more with the same
 // evidence; a second `no` leaves it unsure (`agreement.ts`). The runtime result
 // check does not set it, and a first `yes` there still stands on one call.
+// Such a yes reached by its two checks with nothing re-asked of a different
+// verdict says so (`firstAskConfirmed`, `./first-ask/`, t677).
 //
 // **An unsure beside a yes whose doubt Core's record contradicts is asked once
 // more (t503).** Lane C round 17 (`run-mv6lgqi6-4bfab2e1`, trial 3): one check
@@ -114,6 +116,7 @@ import { automationStudioRequestWording, automationStudioResultSummaryWithAlsoIn
 import { automationStudioResultReaskNarrowingNo } from "./unsure-doubts/index.ts";
 import { automationStudioResultVerdict } from "./verdict/index.ts";
 import { automationStudioResultAdviceKept, automationStudioResultExclusionEvidenceRecheck } from "./exclusion-evidence/index.ts";
+import { automationStudioResultFirstAskConfirmed, automationStudioResultModelSaid } from "./first-ask/index.ts";
 import { emitAutomationStudioActivity } from "../activity/index.ts";
 
 /**
@@ -208,11 +211,13 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
   emitAutomationStudioActivity({ phase: "verifying", label: "Checking the result answers the request", detail: { kind: "check", title: "Result check started", status: "started" } });
   const confirmAnswer = request.confirmAnswer === true;
   const interventions: AutomationStudioFlowIntervention[] = [];
-  const first = await askCheck(request, provider, 1, interventions);
+  // How the yes was reached, recorded as the calls are made (`./first-ask/`, t677).
+  const trail: CheckTrail = { interventions, verdictChanged: false, reasks: 0 };
+  const first = await askCheck(request, provider, 1, trail);
   if (!automationStudioResultVerificationAskAgain(first, { confirmAnswer })) {
     return said({ outcome: { ...automationStudioResultVerificationAgreement({ first }), performed: true }, interventions });
   }
-  const second = await askCheck(request, provider, 2, interventions);
+  const second = await askCheck(request, provider, 2, trail);
   // The request as the judges read it: a split's no whose advice excludes by words it never states is marked and asked again (t515, `./agreement.ts`).
   const wording = automationStudioRequestWording(request.instructions, request.summary);
   // The summary and the request's text: Core's record a no's every reason is weighed against (t607, `./refuted-no/`).
@@ -222,39 +227,53 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
   // A contradicted unsure beside a yes is asked once more, with Core's record named (header, t503); so is a split's no
   // whose advice adds an exclusion the request never states (t515), and each no whose every reason Core's record
   // refutes (t607). The agreement names the call to ask.
-  const ask = (recheck: string, call: 1 | 2) => askCheck({ ...request, summary: { ...request.summary, recheck } }, provider, call, interventions, true);
+  const ask = (recheck: string, call: 1 | 2) => {
+    trail.reasks += 1;
+    return askCheck({ ...request, summary: { ...request.summary, recheck } }, provider, call, trail, true);
+  };
   const reasked = await automationStudioResultVerificationReaskContradicted({ ...input, settled, ask });
   // Where nothing was asked again, a no blaming only steps that chose the request's own words is asked once more (t666, `./unsure-doubts/narrowing-no-reask.ts`).
   const outcome = await automationStudioResultReaskNarrowingNo({
     settled: reasked, first, second, reads: request.summary.reads, requestText, says: wording?.says, ask,
     agree: (one, two) => automationStudioResultVerificationAgreement({ ...input, first: one, second: two })
   });
-  return said({ outcome: { ...outcome, performed: true }, interventions });
+  const confirmed = automationStudioResultFirstAskConfirmed({ confirmAnswer, outcome, first, second, verdictChanged: trail.verdictChanged, reasks: trail.reasks });
+  return said({ outcome: { ...outcome, performed: true, ...(confirmed ? { firstAskConfirmed: true as const } : {}) }, interventions });
 }
+
+/** What every call of one verification adds to: each ask's intervention, and how its yes was reached (`./first-ask/`, t677). */
+type CheckTrail = { interventions: AutomationStudioFlowIntervention[]; verdictChanged: boolean; reasks: number };
 
 /**
  * One check, asked again while its call did not come back for a temporary
  * reason, up to `AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK` asks
  * (header). Every ask's intervention is recorded, in order, under a name of its
  * own: two calls can finish within one millisecond of each other, and the
- * harness names an intervention by the run and the time.
+ * harness names an intervention by the run and the time. An ask whose verdict
+ * word differs from an earlier ask's of this check marks the trail (t677).
  */
 async function askCheck(
   request: AutomationStudioResultVerificationRequest,
   provider: AutomationStudioLlmProvider,
   check: 1 | 2,
-  interventions: AutomationStudioFlowIntervention[],
+  trail: CheckTrail,
   /** The one re-ask of a contradicted unsure (header, t503): marked on its intervention. */
   reask = false
 ): Promise<ReturnType<typeof automationStudioResultVerdict>> {
+  const { interventions } = trail;
   let current = request;
   let evidenceRecheck = false;
   // A held yes that advised a change: the call keeps that advice through its recheck (`./exclusion-evidence/advice-kept.ts`, t636).
   let advised: ReturnType<typeof automationStudioResultVerdict> | undefined;
+  // The verdict word this check's first answering ask gave (`./first-ask/model-said.ts`); an ask that gave none sets nothing.
+  let firstSaid: ReturnType<typeof automationStudioResultModelSaid>;
   for (let ask = 1; ; ask += 1) {
     const reply = await askOnce(current, provider, check, ask, reask, evidenceRecheck);
     const asked: typeof reply = advised ? { ...reply, verification: automationStudioResultAdviceKept(reply.verification, advised) } : reply;
     if (asked.verification.changeAdvised) advised = asked.verification;
+    const saidNow = automationStudioResultModelSaid(asked.verification);
+    if (saidNow !== undefined && firstSaid !== undefined && saidNow !== firstSaid) trail.verdictChanged = true;
+    firstSaid ??= saidNow;
     const taken = new Set(interventions.map((intervention) => intervention.interventionId));
     const intervention = taken.has(asked.intervention.interventionId) ? { ...asked.intervention, interventionId: `${asked.intervention.interventionId}.${interventions.length + 1}` } : asked.intervention;
     interventions.push(intervention);

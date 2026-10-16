@@ -14,8 +14,9 @@
 // - `revision_mismatch`: the run did not execute exactly the graph versions the
 //   trial judged, or did not run the whole Flow.
 // - `trial_not_confirmed`: the trial was not a yes its first two judge calls
-//   reached: another verdict, one call, or a yes reached by asking calls again
-//   (more than two).
+//   reached: another verdict, or a yes its record says was not first-ask
+//   confirmed (`firstAskConfirmed`, t677) -- for a record without that flag,
+//   one call or a yes reached by asking calls again (more than two).
 // - `request_differs`: the trial was judged against another request.
 // - `rows_differ`: the run did not store the trial's very rows.
 // - `nos_not_weighed`: the double no carries no weighing of each call's no by

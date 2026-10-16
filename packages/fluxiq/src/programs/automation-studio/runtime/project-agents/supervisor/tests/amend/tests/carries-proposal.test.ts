@@ -69,7 +69,7 @@ describe("an amendment that only adds parts to a subflow or renames its outputs"
     expect(run.dispatched[0]!.briefs[0]).not.toHaveProperty("carriedFrom");
   });
 
-  it("still drops the proposal when the amendment changes what runs before it, or changes a part it was built for", async () => {
+  it("still drops the proposal when the amendment changes what runs before it, and carries it when a part it was built for changed its lasting acts", async () => {
     const TWO = planInput([
       subflow("find_titles", ["p1"], { inputs: ["author"], outputs: ["titles"] }),
       subflow("place_hold", ["p2"], { inputs: ["titles"], after: ["find_titles"] })
@@ -87,7 +87,7 @@ describe("an amendment that only adds parts to a subflow or renames its outputs"
     expect(reorderedAnswer).toMatchObject({ ok: true, proposalsKept: [] });
     expect(reorderedAnswer).not.toHaveProperty("proposalsCarried");
     expect((reorderedAnswer.proposalsDropped as JsonObject[]).find((entry) => entry.subflowKey === "find_titles")!.why).toContain("what runs before it changed");
-    // A part added, and the part it was built for asks a lasting act it did not.
+    // A part added, and the part it was built for asks a lasting act it did not: dropped until t671, carried since (supervisor decision), its next trial judging the part as it is now.
     const changed = await amended({
       ...planInput([
         subflow("find_titles", ["p1", "p3"], { inputs: ["author"], outputs: ["titles"] }),
@@ -96,23 +96,24 @@ describe("an amendment that only adds parts to a subflow or renames its outputs"
       reason: "Finding the titles saves them."
     });
     const changedAnswer = answersOf(changed.shown, IDS.amendPlan)[0]!;
-    expect(changedAnswer).not.toHaveProperty("proposalsCarried");
-    expect(changedAnswer).toMatchObject({ ok: true, proposalsKept: [], proposalsDropped: [{ subflowKey: "find_titles", why: ["its parts changed"] }] });
+    expect(changedAnswer).toMatchObject({ ok: true, proposalsKept: [], proposalsDropped: [], proposalsCarried: [{ subflowKey: "find_titles", why: ["its parts changed"], addedParts: ["p3"], changedParts: [{ part: "p1", what: "its lasting acts changed, from none to create_new" }] }] });
   });
 
-  it("still drops the proposal when an output is lost, not renamed", async () => {
+  // t671 (Lab `run-mvan7giv`) turned the lost output no subflow takes any more into a narrowing, carried
+  // (`./keeps-done-work.test.ts`); an output lost that a subflow still takes is still a drop.
+  it("still drops the proposal when an output is lost that a subflow still takes", async () => {
     const TWO_OUT = planInput([
       subflow("find_titles", ["p1"], { inputs: ["author"], outputs: ["titles", "count"] }),
       subflow("place_hold", ["p2"], { inputs: ["titles", "count"], after: ["find_titles"] })
     ], taskSpecInput([["p1", FIND, []], ["p2", HOLD, []]]));
     const lost = planInput([
       subflow("find_titles", ["p1"], { inputs: ["author"], outputs: ["titles"] }),
-      subflow("place_hold", ["p2"], { inputs: ["titles"], after: ["find_titles"] })
+      subflow("place_hold", ["p2"], { inputs: ["titles", "count"], after: ["find_titles"] })
     ], taskSpecInput([["p1", FIND, []], ["p2", HOLD, []]]));
     const twoOutScript = ["flow: Find the titles", "part find_titles: find the titles", "  input: author", "  output: titles = $step.rows.records", "  output: count = $step.rows.records", "  step rows: read the rows", "    node: web.dom.extract_list", "    extractList: extraction.1", "    extractList.minItems: 0", "  step: type the author", "    node: web.dom.type", "    selector: .author", "    text: $input.author", "end"];
-    const run = await supervise([call(IDS.writePlan, TWO_OUT), dispatch([brief("find_titles", ["p1"])]), call(IDS.amendPlan, { ...lost, reason: "The count is not needed." }), end("blocked")], project({ script: (sent) => (sent.subflowKey === "find_titles" ? twoOutScript : undefined) }));
+    const run = await supervise([call(IDS.writePlan, TWO_OUT), dispatch([brief("find_titles", ["p1"])]), call(IDS.amendPlan, { ...lost, reason: "The count is given by the person." }), end("blocked")], project({ script: (sent) => (sent.subflowKey === "find_titles" ? twoOutScript : undefined) }));
     const answer = answersOf(run.shown, IDS.amendPlan)[0]!;
     expect(answer).not.toHaveProperty("proposalsCarried");
-    expect(answer).toMatchObject({ ok: true, proposalsDropped: [{ subflowKey: "find_titles", why: ["its inputs or outputs changed"] }] });
+    expect(answer).toMatchObject({ ok: true, proposalsDropped: [{ subflowKey: "find_titles", why: ["its inputs or outputs changed", "it no longer hands on \"count\", which a subflow of the plan still takes"] }] });
   });
 });

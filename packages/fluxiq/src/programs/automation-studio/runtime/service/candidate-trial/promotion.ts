@@ -34,6 +34,11 @@
 // limit stopped (`../project-build/run.ts`, t608) -- names it in the standing
 // trial's `feedback.endingCodes`, and those codes follow the draft's own, so
 // the code every debug and the Lab read stays first.
+//
+// The `created` event's trial carries whether its yes was first-ask confirmed
+// (`firstAskConfirmed`, `./run.ts`, t677) where the trial's record says, beside
+// its judge calls; apply records both on the saved Flow
+// (`../../flow-version/judged-build-trial/`), for the playback hold.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioCandidateFingerprint as fingerprint, type AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
@@ -78,7 +83,8 @@ export async function promoteAutomationStudioCandidateTrial(input: {
   let adaptation: AutomationStudioBootstrapAdaptation;
   try {
     adaptation = await input.propose({ buildPlan: paced.buildPlan, baseDependencyDigest: stored.candidate.baseDependencyDigest, sourceInstructionIds: [...stored.sourceInstructionIds], summary: stored.candidate.summary,
-      candidateTrial: { ...generated, trial: { ...generated.trial, start: trial.start.status }, trials: input.trials.length,
+      // The yes's first-ask fact rides on the `created` event's trial, which apply records on the saved Flow (header, t677).
+      candidateTrial: { ...generated, trial: { ...generated.trial, start: trial.start.status, ...(trial.firstAskConfirmed !== undefined ? { firstAskConfirmed: trial.firstAskConfirmed } : {}) }, trials: input.trials.length,
         ...(trial.learnedPaces?.length ? { learnedPaces: trial.learnedPaces.map((pace) => ({ ...pace })) } : {}),
         ...(paced.raised.length ? { raisedPaces: paced.raised } : {}) } });
   } catch (error) {

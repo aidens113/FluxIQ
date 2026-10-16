@@ -23,8 +23,8 @@ const THREE = planInput([
   subflow("place_hold", ["p2"], { inputs: ["titles"], outputs: ["shelf"], after: ["find_titles"] }),
   subflow("note_shelf", ["p3"], { inputs: ["shelf"], after: ["place_hold"] })
 ], taskSpecInput([["p1", FIND, []], ["p2", HOLD, []], ["p3", NOTE, []]]));
-/** THREE with the first part's lasting acts changed: its words are the same, what its builder was judged on is not. */
-const THREE_FIRST_CHANGED = planInput((THREE.subflows as JsonObject[]), taskSpecInput([["p1", FIND, ["create_new"]], ["p2", HOLD, []], ["p3", NOTE, []]]));
+/** THREE with the first subflow given one more input: its steps never read it, so its proposal is dropped (a changed part's lasting acts carry it since t671). */
+const THREE_FIRST_CHANGED = planInput((THREE.subflows as JsonObject[]).map((entry, index) => (index === 0 ? { ...entry, inputs: ["author", "branch"] } : entry)), THREE.taskSpec as JsonObject);
 /** THREE with the second part's lasting acts changed, and so the third, which runs after it. */
 const THREE_SECOND_CHANGED = planInput((THREE.subflows as JsonObject[]), taskSpecInput([["p1", FIND, []], ["p2", HOLD, ["create_new"]], ["p3", NOTE, []]]));
 
@@ -35,18 +35,18 @@ describe("a dispatch around an amended plan", () => {
     const run = await supervise([
       call(IDS.writePlan, TWO),
       dispatch([brief("find_titles", ["p1"])]),
-      call(IDS.amendPlan, { ...THREE_FIRST_CHANGED, reason: "The shelf is a third part, and finding the titles saves them." }),
+      call(IDS.amendPlan, { ...THREE_FIRST_CHANGED, reason: "The shelf is a third part, and finding the titles is done in one branch." }),
       dispatch([brief("place_hold", ["p2"], ["find_titles"])]),
       dispatch([brief("place_hold", ["p2"], ["note_shelf"])]),
       end("blocked")
     ]);
     const answers = answersOf(run.shown, IDS.dispatch);
     expect(answers[0]).toMatchObject({ ok: true, returns: [{ subflowKey: "find_titles", outcome: "done", trials: [{ kind: "subflow_trial", receiptId: "trial-brief-1", digest: "c".repeat(64) }] }] });
-    expect(answersOf(run.shown, IDS.amendPlan)[0]).toMatchObject({ ok: true, proposalsKept: [], proposalsDropped: [{ subflowKey: "find_titles", why: ["its parts changed"] }] });
+    expect(answersOf(run.shown, IDS.amendPlan)[0]).toMatchObject({ ok: true, proposalsKept: [], proposalsDropped: [{ subflowKey: "find_titles", why: ["its inputs or outputs changed"] }] });
     expect(answers[1]).toMatchObject({ ok: false, code: "project.predecessor_not_done" });
     const [dropped] = answers[1]!.issues as JsonObject[];
     expect(dropped).toMatchObject({ code: "project.predecessor_not_done", path: "briefs.0.entry.predecessors.0", predecessor: "find_titles" });
-    expect(dropped!.why).toBe("\"find_titles\" had a done proposal only under an earlier plan, and project.amend_plan dropped it: its parts changed. Send a build or repair brief for \"find_titles\" before this one, or in this same call.");
+    expect(dropped!.why).toBe("\"find_titles\" had a done proposal only under an earlier plan, and project.amend_plan dropped it: its inputs or outputs changed. Send a build or repair brief for \"find_titles\" before this one, or in this same call.");
     const [never] = answers[2]!.issues as JsonObject[];
     expect(never).toMatchObject({ predecessor: "note_shelf", why: "\"note_shelf\" has no done proposal under this plan, and no brief in this call builds it. Send a build or repair brief for \"note_shelf\" before this one, or in this same call." });
     expect(run.dispatched).toHaveLength(1);
@@ -73,7 +73,8 @@ describe("a dispatch around an amended plan", () => {
     expect(run.outcome.status).toBe("candidate");
   });
 
-  it("lists what an amendment kept and dropped, a subflow after a dropped one dropped with it", async () => {
+  // Since t671 a part whose lasting acts changed carries its proposal, where t595 dropped it; what runs after a carried one is still dropped.
+  it("lists what an amendment kept, carried and dropped, a subflow after a carried one dropped with it", async () => {
     const run = await supervise([
       call(IDS.writePlan, THREE),
       dispatch([brief("find_titles", ["p1"]), brief("place_hold", ["p2"], ["find_titles"]), brief("note_shelf", ["p3"], ["place_hold"])]),
@@ -82,13 +83,14 @@ describe("a dispatch around an amended plan", () => {
     ]);
     expect(answersOf(run.shown, IDS.amendPlan)[0]).toMatchObject({
       proposalsKept: [{ subflowKey: "find_titles", briefId: "brief-1" }],
-      proposalsDropped: [{ subflowKey: "place_hold", why: ["its parts changed"] }, { subflowKey: "note_shelf", why: ["it runs after \"place_hold\", which is not kept"] }]
+      proposalsCarried: [{ subflowKey: "place_hold", briefId: "brief-2", why: ["its parts changed"], changedParts: [{ part: "p2", what: "its lasting acts changed, from none to create_new" }] }],
+      proposalsDropped: [{ subflowKey: "note_shelf", why: ["it runs after \"place_hold\", which is not kept"] }]
     });
   });
 
   // Bigbox `run-mv8c7unr-42a8456d` reworded one part's facts and gave another's words a leading word, and lost a passing proposal (t595).
-  // Its facts are what that proposal's trial was judged against, so facts that changed still drop it (supervisor decision, t595).
-  it("keeps a proposal whose part's words moved by a word at an end, naming it; drops one whose facts changed, or whose words were cut further", async () => {
+  // Its facts are what that proposal's trial was judged against, so t595 dropped it on facts that changed; since t671 it is carried, and its next trial judges the new facts (supervisor decision).
+  it("keeps a proposal whose part's words moved by a word at an end, naming it; carries one whose facts changed; drops one whose words were cut further", async () => {
     const respoken = (text: string, fact: string) => planInput((TWO.subflows as JsonObject[]), {
       parts: [{ id: "p1", quote: { sourceId: "instruction.1", text }, goalFacts: [fact], lastingActs: [] }, { id: "p2", quote: { sourceId: "instruction.1", text: HOLD }, goalFacts: [`${HOLD} is done`], lastingActs: [] }],
       notAsked: ["borrowing any title"]
@@ -107,7 +109,7 @@ describe("a dispatch around an amended plan", () => {
     expect(answersOf(spaced.shown, IDS.amendPlan)[0]).toMatchObject({ ok: true, proposalsKept: [{ subflowKey: "find_titles", briefId: "brief-1" }], proposalsDropped: [] });
     expect((answersOf(spaced.shown, IDS.amendPlan)[0]!.proposalsKept as JsonObject[])[0]).not.toHaveProperty("reworded");
     const facts = await amended(respoken("the three newest titles by Ada Hart", "the three titles are shown on the page"));
-    expect(answersOf(facts.shown, IDS.amendPlan)[0]).toMatchObject({ ok: true, proposalsKept: [], proposalsDropped: [{ subflowKey: "find_titles", why: ["its facts changed"] }] });
+    expect(answersOf(facts.shown, IDS.amendPlan)[0]).toMatchObject({ ok: true, proposalsKept: [], proposalsDropped: [], proposalsCarried: [{ subflowKey: "find_titles", why: ["its facts changed"], changedParts: [{ part: "p1", what: "its facts changed" }] }] });
     // Cut further, its first words now a part of their own (an amendment may not drop them, t645): its parts changed.
     const split = respoken("newest titles by Ada Hart", `${FIND} is done`);
     (split.taskSpec as { parts: JsonObject[] }).parts.unshift({ id: "p0", quote: { sourceId: "instruction.1", text: "Find the three" }, goalFacts: ["three are asked for"], lastingActs: [] });

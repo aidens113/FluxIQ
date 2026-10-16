@@ -129,9 +129,10 @@ const WRITE_PLAN = "Write the task spec and the plan, once. taskSpec: parts, eac
 
 const AMEND_PLAN = "Replace the plan with a new revision: the fields of project.write_plan, plus reason. Briefs sent under the old plan no longer count. Write only your own subflows: the one the router runs is Core's, and Core adds it again. "
   + "A done proposal is kept where the new plan leaves its subflow as it was: the same key, the same parts with the same lasting acts, facts and words, the same inputs and outputs, and the same after, with every subflow it runs after kept too. "
-  + "A part whose words only gain or lose a word or two at either end is the same part: its proposal is kept and listed with reworded. A part whose facts changed drops it, since its trial was judged against the old facts. Every other proposal made under the old plan is dropped. "
-  + "A done proposal whose subflow the new plan only gives more parts, or whose outputs it only adds to or renames, is carried: its next build brief starts from it, and it counts as done only once that brief's own trial answers yes on every part. "
-  + "The answer lists proposalsKept and proposalsDropped, each dropped one with what changed, and proposalsCarried: send briefs only for the carried and dropped subflows and the new ones. "
+  + "A part whose words only gain or lose a word or two at either end is the same part: its proposal is kept and listed with reworded. "
+  + "A done proposal is carried instead when the new plan only gives its subflow more parts, changes the facts or lasting acts of its parts, renames or adds outputs, or removes outputs no subflow takes; or merges its subflow into another, or renames it, keeping its parts. "
+  + "Its next build brief starts from it, and it counts as done only once that brief's own trial answers yes on every part. Every other proposal made under the old plan is dropped. "
+  + "The answer lists proposalsKept, proposalsCarried, each with because, and proposalsDropped, each with what changed (changedParts names a part and how): send briefs only for the carried and dropped subflows and the new ones. "
   + "Changing words does not change what a builder writes: amend to change what the subflows are, not to get past a refusal. "
   + "Every stretch of the person's words a part of the plan in force holds stays in a part of the new one, split or joined in any way, and never goes under notAsked: to give a part up, end honestly with ended instead.";
 
