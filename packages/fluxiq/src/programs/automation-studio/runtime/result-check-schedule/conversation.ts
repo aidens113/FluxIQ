@@ -16,7 +16,7 @@
 //   3. A confirmed check says nothing at all. A thread that reports every
 //      passing run is a thread nobody reads.
 //
-// The words are Core's own throughout. `verdict.ts` composes `reason` and
+// The words are Core's own throughout. `../result-verification/verdict/` composes `reason` and
 // `observation` from Core's counts and the verdict word precisely so the
 // model's prose never reaches a run record, and a conversation turn is a run
 // record that a person reads.

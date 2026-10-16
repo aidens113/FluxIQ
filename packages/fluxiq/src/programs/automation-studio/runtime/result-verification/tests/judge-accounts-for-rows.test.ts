@@ -30,7 +30,7 @@ import {
   runMuw60j7cRunSummary, runMuw60j7cTestSummary
 } from "../request-rows/tests/run-muw60j7c.ts";
 import { RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT, runMv6bg8d8RunSummary } from "../request-rows/tests/run-mv6bg8d8.ts";
-import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict } from "../verdict.ts";
+import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict } from "../verdict/index.ts";
 import { verifyAutomationStudioRunResult } from "../verify.ts";
 
 const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 };

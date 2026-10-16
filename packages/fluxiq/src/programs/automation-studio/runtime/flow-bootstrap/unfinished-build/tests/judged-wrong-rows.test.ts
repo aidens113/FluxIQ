@@ -1,7 +1,7 @@
 // A build's test judged wrong reaches the next round with the rows (t274-c25b).
 // Live run `run-muw60j7c-bb7c9a62`, step 0031: both judges of the test said yes
 // over three pairs of earbuds the name condition alone left out for mentioning
-// a charging case. Core now takes such a yes as a no (`result-verification/verdict.ts`),
+// a charging case. Core now takes such a yes as a no (`result-verification/verdict/`),
 // and the build's repair round must be told which rows -- Core's fix lines and
 // its check of them -- not only the finding code `judgedWrong` used to keep.
 import { describe, expect, it } from "vitest";

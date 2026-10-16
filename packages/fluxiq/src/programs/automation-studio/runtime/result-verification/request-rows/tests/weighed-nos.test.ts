@@ -10,7 +10,7 @@ import type { AutomationStudioLlmDiagnosisFields } from "../../../llm/index.ts";
 import { campsiteRequestText, campsiteRunSummary, campsiteWording } from "../../refuted-no/tests/campsite-fixture.ts";
 import { GAP_AND_CHANGE_NO, GAP_NO } from "../../refuted-no/tests/campsite-readings-fixture.ts";
 import { LAMP_CLAMP, LAMPS_REQUEST_TEXT, SAME_LAMP_NO, lampsRunSummary, lampsWording } from "../../refuted-no/tests/lamps-fixture.ts";
-import { automationStudioResultVerdict } from "../../verdict.ts";
+import { automationStudioResultVerdict } from "../../verdict/index.ts";
 
 const campsite = campsiteRunSummary();
 const campsiteWords = campsiteWording(campsite);

@@ -1,5 +1,5 @@
 import type { AutomationStudioResultVerification } from "../contracts/index.ts";
-import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../verdict.ts";
+import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../verdict/index.ts";
 
 /** What a call that judged `answers` compared, copied; nothing for any other call or an empty reading. */
 export function answeredReadingOf(verification: AutomationStudioResultVerification): NonNullable<AutomationStudioResultVerification["answeredReading"]> | undefined {

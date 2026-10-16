@@ -1,7 +1,7 @@
 import type { AutomationStudioResultVerdict, AutomationStudioResultVerification } from "../contracts/index.ts";
 import { automationStudioResultReaskRefutedNo } from "../refuted-no/index.ts";
 import { automationStudioResultDoubtRecheckWords } from "../unsure-doubts/index.ts";
-import { automationStudioResultKeptRowsFlagged } from "../verdict.ts";
+import { automationStudioResultKeptRowsFlagged } from "../verdict/index.ts";
 import { agree } from "./agree.ts";
 import { exclusionRecheckWords } from "./exclusion-words.ts";
 import { noRecordOf } from "./no-record.ts";

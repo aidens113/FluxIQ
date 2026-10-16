@@ -58,7 +58,7 @@ const AUTOMATION_STUDIO_DIAGNOSIS_FIELDS_INSTRUCTION = "Put your reading of the 
 // three pairs "with Wireless Charging Case" the name condition alone left out,
 // beside the excluded-row sentence above; Core now flags such rows
 // (`result-verification/request-rows/`) and a yes that does not name each is
-// not taken (`result-verification/verdict.ts`). And the result judges said the
+// not taken (`result-verification/verdict/`). And the result judges said the
 // Plus condition left out two rows that were in the result; the re-author
 // followed that and discarded the right answer, so a no names its rows and Core
 // checks them (`repair.checked`).

@@ -30,7 +30,7 @@
 // kept nothing by its conditions. With no kept row whose number can be read,
 // there is no range.
 //
-// It flags; `verdict.ts` refuses a yes over a flagged row, and the repair is
+// It flags; `../verdict/` refuses a yes over a flagged row, and the repair is
 // told the rows, the numbers and the change (`repair-directive.ts`).
 
 import { readAutomationStudioRecordNumber } from "@fluxiq/contracts/automation-studio";

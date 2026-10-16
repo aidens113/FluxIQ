@@ -11,7 +11,7 @@
 //
 // **Read from Core's own lines, against the summary they were made from.** The
 // lines are Core's (`checked-rows.ts`, and the line a yes that passed over rows
-// is downgraded with, `../verdict.ts`), and a build's judge holds them and the
+// is downgraded with, `../verdict/`), and a build's judge holds them and the
 // summary but not the judge's reply they were matched in. So a row is taken as
 // named for a condition exactly when a line naming its read (`Step N`, `Read
 // <node>`) and that condition (`the condition N (...)`, its one name,

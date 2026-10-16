@@ -2,7 +2,7 @@
 //
 // **Why.** A yes that said the Flow needs a change (`patchNeeded: true`) and
 // lacked its exclusion evidence is held, not turned into a no
-// (`../verdict.ts`), and asked again with the recheck (`../verify.ts`). The
+// (`../verdict/`), and asked again with the recheck (`../verify.ts`). The
 // recheck is a new reply, which may say nothing of a change; taken alone, its
 // yes would read as a clean pass, and a runtime check's single yes would be
 // confirmed over a first reply that advised a change. So the call keeps the
@@ -12,7 +12,7 @@
 // carries the change the earlier ask named where its own reply named none.
 
 import type { AutomationStudioResultVerification } from "../contracts/index.ts";
-import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../verdict.ts";
+import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../verdict/index.ts";
 
 /**
  * The verification an asked call ends with, once `earlier`, an earlier ask of

@@ -65,7 +65,7 @@ export type AutomationStudioRunResultSummary = {
    * another of the request's phrases only after it (`request-rows/`): by their
    * own words the item asked for, sold with or including something the request
    * leaves out. Set only on the summary the judge is shown, and only when there
-   * are some. A `yes` that does not account for each is not a `yes` (`verdict.ts`).
+   * are some. A `yes` that does not account for each is not a `yes` (`../verdict/`).
    */
   leftOutNamingTheItem?: AutomationStudioResultLeftOutNamingTheItem[];
   /**

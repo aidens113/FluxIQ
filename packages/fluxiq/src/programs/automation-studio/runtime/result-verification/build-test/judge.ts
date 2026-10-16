@@ -37,11 +37,11 @@
 //   every call answered yes, held for the exclusion    -> not_judged, saying why and carrying
 //     evidence it lacked (`../agreement/`)              `yesUnconfirmed` (t611)
 //   a yes held for its exclusion evidence that advised -> not_judged, saying why and carrying
-//     a change (`patchNeeded`, `../verdict.ts`)            `changeAdvised` and that yes's reading
+//     a change (`patchNeeded`, `../verdict/`)            `changeAdvised` and that yes's reading
 //                                                         with the change it named (t636)
 //
 // A yes the verdict did not take -- one that did not name each row a condition
-// alone left out that names the asked item (`../verdict.ts`, live run
+// alone left out that names the asked item (`../verdict/`, live run
 // `run-muw60j7c-bb7c9a62`) -- arrives as `does_not_answer` and is read like any
 // other: two of them are a no, carrying Core's finding code and, in `checked`,
 // Core's lines naming the rows; beside a yes that named them, unknown. The no

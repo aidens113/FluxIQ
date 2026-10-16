@@ -13,7 +13,7 @@
 // flagged any, the rows the result keeps that it measured as unlike every
 // other kept row (`../request-rows/kept-without-asked-column.ts`,
 // `../request-rows/kept-not-naming-the-item.ts`): what it measured, never that
-// the row is wrong. Words only; a yes is held to those rows by `../verdict.ts`.
+// the row is wrong. Words only; a yes is held to those rows by `../verdict/`.
 
 import type { AutomationStudioRequestRowsKept } from "../request-rows/index.ts";
 

@@ -15,7 +15,7 @@
 // **Two provenances, kept apart.** `findings` and `fix` are Core's own:
 // arithmetic over the summary Core already holds, and one sentence per finding
 // that Core wrote. `judgement` is the model's reading of the request, screened.
-// The split is not bookkeeping -- `verdict.ts` records Core's words onto a run
+// The split is not bookkeeping -- `verdict/` records Core's words onto a run
 // and never a model's prose, and that rule survives here: `run-outcome.ts`
 // records `findings` and `fix`, while `judgement` travels to the repair inside
 // the failure record's `expected` and `actual`, which is where a sentence written
@@ -82,14 +82,14 @@ export const AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES = Object.freeze({
   /**
    * A yes that did not account, row by row, for rows a condition alone left out
    * that name the asked item first (`request-rows/`, live run
-   * `run-muw60j7c-bb7c9a62`): set only where `verdict.ts` does not take that yes.
+   * `run-muw60j7c-bb7c9a62`): set only where `verdict/` does not take that yes.
    */
   leftOutNamingTheItem: "result.left_out_naming_the_item",
   /**
    * Rows a text condition alone left out that state a number within the range
    * the rows it kept state (`request-rows/left-out-stating-a-kept-number.ts`,
    * t478, live run `run-mv5yaapw-6d20d23d`): the condition read characters, not
-   * the number. Set where `verdict.ts` refuses a yes over them, and beside a no's
+   * the number. Set where `verdict/` refuses a yes over them, and beside a no's
    * own findings.
    */
   leftOutStatingAKeptNumber: "result.left_out_stating_a_kept_number"

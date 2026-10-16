@@ -29,7 +29,7 @@
 // run's `testedLabel` comes from the authored condition (`summary-reads.ts`).
 //
 // It flags; it does not judge. Whether the request excludes a flagged row is the
-// judge's to say, and `verdict.ts` holds a yes to saying it row by row.
+// judge's to say, and `../verdict/` holds a yes to saying it row by row.
 
 import type { AutomationStudioResultLeftOutNamingTheItem, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioRequestPhrases, type AutomationStudioRequestPhrases } from "./request-phrases.ts";

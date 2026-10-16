@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioResultReadAccount, AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioResultVerificationAgreement } from "../../agreement/index.ts";
 import { automationStudioRequestWording } from "../../request-rows/index.ts";
-import { automationStudioResultVerdict } from "../../verdict.ts";
+import { automationStudioResultVerdict } from "../../verdict/index.ts";
 import { automationStudioResultNarrowingNoBlamed, automationStudioResultReaskNarrowingNo } from "../index.ts";
 
 const read: AutomationStudioResultReadAccount = {

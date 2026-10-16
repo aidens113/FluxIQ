@@ -3,7 +3,7 @@ import { ACTIVITY_RESULT_CHECK_LABELS, activityActionOf } from "../../../../../u
 import { automationStudioResultCheckActivity } from "../check-activity.ts";
 import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultVerificationAgreement } from "../agreement/index.ts";
-import { automationStudioResultVerdict } from "../verdict.ts";
+import { automationStudioResultVerdict } from "../verdict/index.ts";
 import { runWithAutomationStudioActivity } from "../../activity/index.ts";
 
 const summary: AutomationStudioRunResultSummary = {

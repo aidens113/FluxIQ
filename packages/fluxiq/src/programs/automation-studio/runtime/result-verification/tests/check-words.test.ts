@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { automationStudioResultCheckWords } from "../check-words.ts";
 import type { AutomationStudioResultVerification } from "../contracts/index.ts";
-import { automationStudioResultObservation } from "../verdict.ts";
+import { automationStudioResultObservation } from "../verdict/index.ts";
 
 const answered = (observation: string): AutomationStudioResultVerification => ({
   schemaVersion: "automation-studio.result-verification.v1",

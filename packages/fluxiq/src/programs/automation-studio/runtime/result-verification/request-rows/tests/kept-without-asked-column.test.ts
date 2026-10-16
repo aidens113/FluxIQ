@@ -3,7 +3,7 @@
 // held, never refused (t663, A8 towels `run-mvahlxuu-760d9e28`, fix 1).
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
-import { automationStudioResultVerdict } from "../../verdict.ts";
+import { automationStudioResultVerdict } from "../../verdict/index.ts";
 import { automationStudioResultKeptWithoutAskedColumn } from "../kept-without-asked-column.ts";
 import { ATLASES, BOOKMARK, atlasRow, atlasRunSummary, atlasWithBookmarkSummary, atlasWording } from "./kept-rows-fixture.ts";
 
