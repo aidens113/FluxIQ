@@ -15,11 +15,12 @@
 // Nothing here waits on the wall clock (`./project-build-reset.test.ts`, t644):
 // the reset's settled read is held at zero, and the watchdog is a hang guard.
 
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
+import { ProgramJsonStore } from "../../../../../_shared/storage.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import type { AutomationStudioHostRuntimeBoundary, AutomationStudioHostStateSnapshotRef } from "../../../host-runtime.ts";
 import type { AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
@@ -140,7 +141,7 @@ async function plotBuild() {
   const { project, flow } = await blankFixture(service, "active", "isolated");
   const proposed = vi.spyOn(service, "createFlowBootstrapAdaptation");
   return {
-    bookings, booked, judged, supervisorDid, builderTests, host, proposed,
+    bookings, booked, judged, supervisorDid, builderTests, host, proposed, record: () => storedRecord(dataDir),
     build: () => builds.track(project.id, flow.flowId, service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project" }))
   };
 }
@@ -165,11 +166,22 @@ describe("a one-part project build", () => {
     // The Flow's booking is the build's lasting act; the plot booked before the build is untouched.
     expect(run.booked).toEqual([`run Book ${PLOT}`]);
     expect([...run.bookings]).toEqual([BOOKED_BEFORE, PLOT]);
+    // That booking is the judged whole run's act, so it is the supervisor's in the build record, never the builder's (t597).
+    expect((await run.record()).lastingActs).toEqual([
+      { recordedAt: expect.any(Number), act: "act-1", owner: { role: "supervisor" }, consequences: ["create_new"], description: "act-1: trial step 1 \"book the plot\"", undoable: true }
+    ]);
     // Proposed through the candidate's promotion, standing on the whole trial.
     expect(run.proposed).toHaveBeenCalledTimes(1);
     expect(result.candidate).toMatchObject({ trial: { verdict: "yes" } });
   });
 });
+
+/** The build record's main file, read off disk as a restarted Core would find it. */
+async function storedRecord(dataDir: string): Promise<JsonObject> {
+  const files = (await readdir(dataDir, { recursive: true })).map((file) => file.toString()).filter((file) => file.split(path.sep).includes("project-builds") && path.basename(file) === "build.json");
+  expect(files).toHaveLength(1);
+  return await new ProgramJsonStore<JsonObject>(path.join(dataDir, files[0]!), () => ({})).read();
+}
 
 function plotNode(id: string, label: string, parameters: AutomationStudioNodeDefinition["parameters"]): AutomationStudioNodeDefinition {
   return {

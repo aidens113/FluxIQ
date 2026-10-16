@@ -189,7 +189,9 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   const dispatch = createAutomationStudioProjectDispatcher({
     record: { store: records, ref }, purse, cancellation: project.cancellation, host, ledger: project.ledger,
     ports: automationStudioProjectBuildBriefPorts({ project, draft, decisions, subflowTrial: subflowTrials.port, proposals, accounting, acts }),
-    maxCalls: automationStudioProjectBuildBriefCalls
+    maxCalls: automationStudioProjectBuildBriefCalls,
+    // A single-subflow brief's trials, which never reach the scoped trial port, are the proposals' too (t679).
+    trialled: (scope, proposal, verdict) => proposals.trialled(scope, proposal, verdict)
   });
   const sources = automationStudioProjectActiveInstructionSources(project.instructions);
   const { purse: _purse, signal: _signal, budget: _budget, ...loop } = draft.loop;
@@ -243,7 +245,7 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
     const failure = outcome.loop && !outcome.loop.ok && !outcome.timedOut
       ? draft.ending(outcome.loop, spent) ?? flowBootstrapEvidenceLoopFailure(outcome.loop, spent, undefined, "said_by_caller")
       : new AutomationStudioFlowBootstrapGenerationError({ ...flowBootstrapPhaseFailure("post_provider_validation", spent, "flow_bootstrap.post_provider_validation_failed").diagnostic, issueCodes: [...(outcome.timedOut ? [TIME_LIMIT_CODE] : []), `project.build_${outcome.ending?.outcome ?? "blocked"}`] });
-    const timedOut = outcome.timedOut ? timeLimitWords(Object.keys((await records.read(ref))?.record.plans.at(-1)?.plan.partOf ?? {}), trials) : undefined;
+    const timedOut = outcome.timedOut ? timeLimitWords(partSubflows((await records.read(ref))?.record.plans.at(-1)?.plan.partOf), trials) : undefined;
     throw toldEnding(failure, outcome.ending, left, timedOut);
   }
   const current = await draft.currentBinding();
@@ -257,7 +259,7 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   const trial = outcome.status === "candidate" || outcome.trial?.verdict !== "yes" ? outcome.trial : undefined;
   // A draft its time limit kept says the time limit, not only its last whole test (header, t608).
   if (outcome.timedOut && outcome.status === "ended" && outcome.trial?.verdict !== "yes") {
-    const subflows = Object.keys((await records.read(ref))?.record.plans.at(-1)?.plan.partOf ?? {});
+    const subflows = partSubflows((await records.read(ref))?.record.plans.at(-1)?.plan.partOf);
     const words = timeLimitWords(subflows, trials, { tested: trial?.verdict });
     const title = words.title, text = `${words.tested} ${left?.note ?? NOTHING_LEFT}`;
     emitAutomationStudioActivity({ phase: "building", label: title, detail: { kind: "note", title, text, status: "failed" } });
@@ -265,6 +267,14 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
     return { record, trial: trial ? { ...trial, feedback: { ...trial.feedback, endingCodes: [TIME_LIMIT_CODE] } } : undefined };
   }
   return { record, trial };
+}
+
+/**
+ * The latest plan's subflows that carry parts, which a time limit's words count as its parts (t601): never the
+ * router-run subflow Core adds to a plan of several, which carries none and is never tried on its own (t679).
+ */
+function partSubflows(partOf: Readonly<Record<string, readonly string[]>> | undefined): string[] {
+  return Object.entries(partOf ?? {}).filter(([, parts]) => parts.length > 0).map(([key]) => key);
 }
 
 /** The code a build its time limit stopped carries: on its failure's issue codes, and as a kept draft's trial code (header, t608). */

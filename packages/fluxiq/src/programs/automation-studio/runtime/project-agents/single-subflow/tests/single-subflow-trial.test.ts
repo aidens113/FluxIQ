@@ -76,11 +76,31 @@ describe("a single-subflow plan's builder test", () => {
     const first = refusalOf(built.answers[0]);
     expect(first).toMatchObject({ code: "candidate.trial_reset_required", retry: true, detail: { actsToUndo: [{ act: "act-1" }] } });
     expect(first!.instruction).toContain("Undo each with the site's own controls");
-    expect(first!.instruction).toContain("end the brief partial and name that act");
+    expect(first!.instruction).toContain("goes under cannotUndo when you test again");
     expect(first!.instruction).not.toContain("project.dispatch");
     // No trial ran for the refusal, and the next test ran once the act was undone.
     expect(run.trials).toHaveLength(1);
     expect(built.answers[1]).toMatchObject({ trial: { verdict: "yes" } });
+    expect(run.outcome.status, JSON.stringify(run.outcome.loop)).toBe("candidate");
+  });
+
+  // The whole test's repeated refusal holds only while acts are still to undo (`../../supervisor/whole-trial.ts`).
+  it("runs once the builder names an act it could not undo under cannotUndo in its own test, with no reset brief", async () => {
+    let acted = 0;
+    const built = singleBuild({
+      testsPerScript: 2,
+      beforeTest: async (sent, ledger) => {
+        acted += 1;
+        if (acted === 1) ledger.forBrief(sent.briefId).trialRan([{ step: 1, definitionId: "web.output.dom-click", label: "press renew", consequences: ["create_new"] }], "explored-1");
+        // Its own gate's reset, told the act the site offers no control to undo, as a builder's test passes cannotUndo.
+        else await ledger.forBrief(sent.briefId).beforeTrial({ compare: async () => ({ moved: false }) }, ["act-1"]);
+      }
+    });
+    const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([BUILD_ONE]), completeOnDispatch], built);
+    expect(refusalOf(built.answers[0])).toMatchObject({ code: "candidate.trial_reset_required" });
+    expect(built.answers[1]).toMatchObject({ trial: { verdict: "yes" } });
+    expect(run.trials).toHaveLength(1);
+    expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build"]]);
     expect(run.outcome.status, JSON.stringify(run.outcome.loop)).toBe("candidate");
   });
 

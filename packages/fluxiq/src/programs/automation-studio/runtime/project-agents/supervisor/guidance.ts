@@ -231,7 +231,9 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     afterSingleWholeYes: "This plan is one subflow, so its builder's test was the judged whole test of the Flow assembled from the proposal it returned, and that test answered yes. "
       + "Complete now with the complete object here. Do not assemble, reset or test again: that is the same Flow, already judged.",
     /** After project.assemble answered with a revision a single subflow's test already judged yes (`./assemble-tool.ts`, t679). */
-    afterAssembleTested: "This is the revision the subflow's own test already assembled and judged yes (sameRevision), not a new one. Complete with the complete object above; do not test it again."
+    afterAssembleTested: "This is the revision the subflow's own test already assembled and judged yes (sameRevision), not a new one. Complete with the complete object above; do not test it again.",
+    /** A whole test asked of the revision a single subflow's test already judged yes (`./whole-trial.ts`, t679): no second trial ran. */
+    afterWholeAlreadyJudged: "This revision's whole test already answered yes: the plan is one subflow, and its builder's test was the judged whole run of exactly this revision. No second trial ran. Complete now with the complete object here."
   }),
   /**
    * The way forward the loop's own notes name -- the spent look budget, the

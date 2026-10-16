@@ -144,6 +144,21 @@
 // trial the port did not start because the purse cannot hold its two judge
 // calls (`subflow.trial_unaffordable`) is no trial -- nothing is counted or
 // kept, and the refusal carries no retry reason.
+//
+// **A trial the port did not run is said as the port says it (t679).** A port
+// may answer a trial it did not start with `notRun` beside its result
+// (`AutomationStudioSubflowTrialNotRun`): its code, what the builder is to do,
+// what it is shown, and whether the same test may reach the gate again. As for
+// a trial the purse cannot judge, nothing is counted, kept, weighed or reset,
+// and no verdict is given: the answer is the port's refusal itself. A
+// single-subflow plan's whole test answers that way when the whole Flow could
+// not be joined or its gate would not run it
+// (`../../project-agents/single-subflow/single-subflow-trial.ts`).
+//
+// **A single-subflow plan's test is the judged whole run (t679).** Given
+// `whole`, the gate's tool says that a test runs the whole Flow from its start
+// as the build's judged run and that a yes completes the brief, and a yes says
+// the same, never that it is a partial trial for this brief only.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import {
@@ -181,6 +196,16 @@ export type AutomationStudioSubflowTrialPreparingPort = AutomationStudioSubflowT
   weighed?: ((trial: AutomationStudioSubflowTrialWeighed) => void) | undefined;
 };
 
+/**
+ * A trial the port did not run (header, t679), carried beside the result it
+ * answers: its code, what the builder is to do, what else it is shown, and
+ * whether the same test may reach the gate again. The result's verdict is then
+ * no verdict and is never read.
+ */
+export type AutomationStudioSubflowTrialNotRun = {
+  notRun: { code: string; instruction: string; detail?: JsonObject | undefined; retry?: boolean | undefined };
+};
+
 /** A trial as the gate weighed it (header, t634): never shown to a model. */
 export type AutomationStudioSubflowTrialWeighed = {
   /** The trial's answer as the gate keeps it: its verdict is the gate's, the trial's own code first in its feedback. */
@@ -201,6 +226,16 @@ const UNAFFORDABLE_CODE = "subflow.trial_unaffordable";
 /** What the builder is told when a trial did not start because the purse cannot pay its judge calls (header, t661). Generic words. */
 const UNAFFORDABLE_INSTRUCTION = "Core did not start this trial: the money this brief has left cannot pay the two judge calls that judge a trial, so nothing ran and no judge was asked (notRun has the figures). "
   + "Testing again is refused the same way while that stands, so do not test again, and do not spend calls changing the subflow for a trial that cannot run.";
+
+/** The tool's description, by whether a test is the judged whole run (header, t679). Generic words. */
+const RESET_WORDS = "Before a trial, put the site back the way this build found it: if this answers candidate.trial_reset_required, undo the acts it lists, then test again; an act the site offers no control to undo goes under cannotUndo, and the trial runs with it already done.";
+const SUBFLOW_DESCRIPTION = "Ask Core to try your latest submitted subflow once, on its own with no model: from the start page, it runs the subflows before this one to reach its entry, runs this subflow with its inputs, and judges it against its parts and success check. Give that proposal's revision and digest exactly. The answer is a partial verdict (yes, no, unsure, not_judged or execution_failed) with feedback; it counts for this brief only. The run acts on the site like the saved subflow would. "
+  + `${RESET_WORDS} Complete only after a yes for that exact revision and digest. If it answers subflow.trial_unavailable, no trial can run here.`;
+const WHOLE_DESCRIPTION = "Ask Core to test your latest submitted subflow as the whole Flow: the plan is your one subflow, so Core joins it into the whole Flow and runs that once from its start with no model, and the judge says whether the run did what the person asked. This test is the build's judged run: a yes completes this brief, and the supervisor completes the Flow on it. "
+  + "Give that proposal's revision and digest exactly. The answer is a verdict (yes, no, unsure, not_judged or execution_failed) with feedback. The run acts on the site like the saved Flow would. "
+  + `${RESET_WORDS} Complete only after a yes for that exact revision and digest. If it answers subflow.trial_unavailable, no trial can run here.`;
+/** What a yes says when the test was the judged whole run (header, t679). Generic words. */
+const WHOLE_YES = "The whole Flow's test passed for this exact revision and digest: it is the build's judged run. Complete with exactly this subflowKey, revision and digest; the supervisor completes the Flow on it. Submitting again makes a new revision that needs its own test.";
 
 const INSTRUCTIONS: Readonly<Record<AutomationStudioCandidateTrialVerdict, string>> = Object.freeze({
   yes: "This subflow's trial passed for this exact revision and digest. It is a partial trial: it answers for this brief only and is no trial of the whole Flow. Complete with exactly this subflowKey, revision and digest. Submitting again makes a new revision that needs its own trial.",
@@ -254,9 +289,9 @@ const ENTRY_NOT_PREPARED = "A subflow that runs before this one did not run to i
 
 /** The model-facing partial test tool and the builder's completion rule bound to its verdicts. */
 export class AutomationStudioSubflowTrialGate {
-  readonly tool: AutomationStudioLlmEvidenceTool = {
-    toolId: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, effect: "mutate",
-    description: "Ask Core to try your latest submitted subflow once, on its own with no model: from the start page, it runs the subflows before this one to reach its entry, runs this subflow with its inputs, and judges it against its parts and success check. Give that proposal's revision and digest exactly. The answer is a partial verdict (yes, no, unsure, not_judged or execution_failed) with feedback; it counts for this brief only. The run acts on the site like the saved subflow would. Before a trial, put the site back the way this build found it: if this answers candidate.trial_reset_required, undo the acts it lists, then test again; an act the site offers no control to undo goes under cannotUndo, and the trial runs with it already done. Complete only after a yes for that exact revision and digest. If it answers subflow.trial_unavailable, no trial can run here.",
+  /** The model-facing test tool, described by whether a test is the judged whole run (header, t679). */
+  readonly tool: AutomationStudioLlmEvidenceTool;
+  private static readonly toolInput: JsonObject = {
     inputSchema: { type: "object", properties: { revision: { type: "integer" }, digest: { type: "string" },
       cannotUndo: { type: "array", maxItems: 50, items: { type: "string", pattern: "^act-[1-9][0-9]{0,3}$" }, description: "Only after candidate.trial_reset_required listed them: the acts the site offers no control to undo. The trial then runs with them already done, and the judge is told." } },
     required: ["revision", "digest"], additionalProperties: false }
@@ -280,7 +315,10 @@ export class AutomationStudioSubflowTrialGate {
     reset?: AutomationStudioSiteResetTrialReset | undefined;
     /** The earlier brief's revision this brief starts from, which its own are numbered on from (header, t658). */
     revisionsAfter?: number | undefined;
+    /** Whether a test is a single-subflow plan's judged whole run, which the tool and a yes say (header, t679). */
+    whole?: true | undefined;
   }) {
+    this.tool = { toolId: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, effect: "mutate", description: input.whole ? WHOLE_DESCRIPTION : SUBFLOW_DESCRIPTION, inputSchema: structuredClone(AutomationStudioSubflowTrialGate.toolInput.inputSchema as JsonObject) };
     if (input.port !== undefined && typeof input.port !== "function") throw new Error("subflow.trial_port_invalid");
     // Earlier briefs' standing nos, at revisions below 1, oldest first (header, t634).
     const earlier = Array.isArray(input.port?.standingNos) ? input.port.standingNos : [];
@@ -333,6 +371,12 @@ export class AutomationStudioSubflowTrialGate {
     const absorbed = absorbedActs.map(namedAct);
     this.trials.set(key(latest), tried + 1);
     const asked = await this.ask(port, latest, signal, reset?.kind === "admit" ? automationStudioCandidateStartedWithSaid(reset.startedWith) : []);
+    // Not a trial: the port did not run it, and says why in the builder's terms (header, t679).
+    if (asked.notRun) {
+      this.trials.set(key(latest), tried);
+      const { code, instruction, detail, retry } = asked.notRun;
+      return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code, instruction, ...(detail ? structuredClone(detail) : {}) }, effectApplied: false, targetsUnchanged: true, resultCode: code, ...(retry ? { resultReason: RETEST_REASON } : {}) };
+    }
     // Not a trial: the purse could not pay its two judge calls, so nothing ran and nothing is counted (header, t661).
     if (asked.answer.feedback.code === UNAFFORDABLE_CODE) {
       this.trials.set(key(latest), tried);
@@ -360,7 +404,7 @@ export class AutomationStudioSubflowTrialGate {
     const evidence: JsonObject = {
       ok: answer.verdict === "yes", partial: true, verdict: answer.verdict, subflowKey: answer.identity.subflowKey, revision: answer.revision, digest: answer.digest,
       entryPrepared: answer.entryPrepared, feedback: answer.feedback, promotionCredit: false,
-      instruction: instructionFor(answer, retestsLeft > 0),
+      instruction: instructionFor(answer, retestsLeft > 0, this.input.whole === true),
       ...(reset?.kind === "admit" && reset.startedWith ? { startedWith: reset.startedWith } : {}),
       ...(absorbed.length ? { absorbedByStartReset: absorbed } : {}),
       ...(leftOnSite?.length ? { leftOnSite: leftOnSite.map(namedAct) } : {})
@@ -384,7 +428,7 @@ export class AutomationStudioSubflowTrialGate {
     if (!answer) return refusal("subflow.trial_required", `Test this proposal first: call ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} with revision ${receipt.revision} and digest ${receipt.digest}, and complete only after it answers yes for that revision and digest.`);
     const retestable = (this.trials.get(key(receipt)) ?? 0) < AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION;
     const advised = answer.verdict === "unsure" && answer.entryPrepared && retestable && typeof answer.feedback.contradictedByBuild !== "string" ? { retestAdvised: automationStudioCandidateRetestAdvised(answer) } : {};
-    return refusal(`subflow.trial_${answer.verdict}`, instructionFor(answer, retestable), { verdict: answer.verdict, entryPrepared: answer.entryPrepared, trialFeedback: answer.feedback, ...advised });
+    return refusal(`subflow.trial_${answer.verdict}`, instructionFor(answer, retestable, this.input.whole === true), { verdict: answer.verdict, entryPrepared: answer.entryPrepared, trialFeedback: answer.feedback, ...advised });
   }
 
   /** The judge's feedback when a proposal with this digest was judged no; undefined otherwise. */
@@ -400,7 +444,7 @@ export class AutomationStudioSubflowTrialGate {
   }
 
   /** The trial's answer as the gate keeps it, and Core's record of a no it carried beside it, unread (header, t633). */
-  private async ask(port: AutomationStudioSubflowTrialPort, latest: AutomationStudioSubflowProposal, signal: AbortSignal, startedWith: readonly string[]): Promise<{ answer: AutomationStudioSubflowTrialResult; standingNo?: unknown }> {
+  private async ask(port: AutomationStudioSubflowTrialPort, latest: AutomationStudioSubflowProposal, signal: AbortSignal, startedWith: readonly string[]): Promise<{ answer: AutomationStudioSubflowTrialResult; standingNo?: unknown; notRun?: AutomationStudioSubflowTrialNotRun["notRun"] }> {
     const scope = this.input.scope;
     const identity: AutomationStudioSubflowScopeIdentity = { buildId: scope.buildId, briefId: scope.briefId, planDigest: scope.planDigest, subflowKey: scope.subflowKey };
     const failed = (code: string): { answer: AutomationStudioSubflowTrialResult } => ({ answer: { partial: true, scope: "subflow", identity: { ...identity }, revision: latest.revision, digest: latest.digest, verdict: "execution_failed", feedback: { code }, entryPrepared: false } });
@@ -412,6 +456,9 @@ export class AutomationStudioSubflowTrialGate {
       // The port's own error text may carry page or account detail, so the model is told only that it failed.
       return failed("subflow.trial_port_failed");
     }
+    // A trial the port did not run, said as the port says it (header, t679).
+    const notRun = notRunOf(raw);
+    if (notRun) return { answer: failed("subflow.trial_not_run").answer, notRun };
     const result = raw as Partial<AutomationStudioSubflowTrialResult> | null;
     if (!result || typeof result !== "object" || result.partial !== true || result.scope !== "subflow" || typeof result.entryPrepared !== "boolean"
       || !(AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS as readonly unknown[]).includes(result.verdict) || !isJsonObject(result.feedback)
@@ -428,8 +475,17 @@ export class AutomationStudioSubflowTrialGate {
   }
 }
 
-/** What a trial's answer tells the builder to do next (header); `retestable`, whether this revision may still be tested again. */
-function instructionFor(answer: AutomationStudioSubflowTrialResult, retestable: boolean): string {
+/** The port's own account of a trial it did not run (header, t679), when it gave a well-formed one; undefined otherwise. */
+function notRunOf(raw: unknown): AutomationStudioSubflowTrialNotRun["notRun"] | undefined {
+  const said = raw && typeof raw === "object" ? (raw as { notRun?: unknown }).notRun : undefined;
+  if (!said || typeof said !== "object" || Array.isArray(said)) return undefined;
+  const { code, instruction, detail, retry } = said as Record<string, unknown>;
+  if (typeof code !== "string" || !code || typeof instruction !== "string" || !instruction) return undefined;
+  return { code, instruction, ...(isJsonObject(detail) ? { detail: structuredClone(detail) } : {}), ...(retry === true ? { retry: true } : {}) };
+}
+
+/** What a trial's answer tells the builder to do next (header); `retestable`, whether this revision may still be tested again; `whole`, whether the test was the judged whole run (t679). */
+function instructionFor(answer: AutomationStudioSubflowTrialResult, retestable: boolean, whole = false): string {
   if (!answer.entryPrepared) return ENTRY_NOT_PREPARED;
   // A control on the page but not shown: a step before it must show it, never a test of the same revision (header, t661).
   const notShown = automationStudioCandidateNotShownInstruction(answer, "submit the subflow with core.submit_subflow");
@@ -441,7 +497,7 @@ function instructionFor(answer: AutomationStudioSubflowTrialResult, retestable: 
     // Core's record contradicts part of the no's reading: never said to contradict nothing (header, t652).
     return automationStudioCandidateRecordContradictsPart(answer) ? UNSURE_PART_CONTRADICTED : UNSURE_RETESTABLE;
   }
-  return INSTRUCTIONS[answer.verdict];
+  return whole && answer.verdict === "yes" ? WHOLE_YES : INSTRUCTIONS[answer.verdict];
 }
 
 function key(receipt: { revision: number; digest: string }): string { return `${receipt.revision}\n${receipt.digest}`; }

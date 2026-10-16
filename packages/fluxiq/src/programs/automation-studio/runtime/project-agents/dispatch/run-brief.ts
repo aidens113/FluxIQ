@@ -147,10 +147,12 @@ import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectDispatc
 // brief's gate asks it in place of the subflow trial port, through
 // `../single-subflow/whole-test-port.ts`: each trial that ran is kept as the
 // gate weighed it, as above, the subflow trial port's start hook still runs
-// ahead of the gate's site reset, and a whole test that did not run is
-// answered to the builder as its refusal, never as a verdict. The whole
-// trial's judge runs under the supervisor's frame, so it is not this brief's
-// spend. A reset brief never gets it.
+// ahead of the gate's site reset, a whole test that did not run is answered
+// to the builder as its refusal, never as a verdict, and each trial's proposal
+// is told to the build's proposals (`trialled`, `./types.ts`). The builder's
+// loop is told its test is the whole run (`trialIsWhole`). The whole trial's
+// judge runs under the supervisor's frame, so it is not this brief's spend. A
+// reset brief never gets it.
 
 type Role = "builder" | "repair";
 
@@ -307,12 +309,11 @@ async function run(input: {
   STANDING.set(dispatcher, standingNos);
   const trialPort = (port: NonNullable<typeof ports.trial>) => automationStudioProjectDispatchTrialPort({ port, scope: mapped.scope, receipts, spend, standingNos, remember: (ref, trial) => remember(dispatcher, ref, trial) });
   // A single-subflow plan's brief tests the judged whole run instead, through the same wrapper (header, t679).
-  const whole = input.wholeTrial ? new AutomationStudioProjectWholeTestPort(input.wholeTrial, ports.trial, trialPort) : undefined;
+  const whole = input.wholeTrial ? new AutomationStudioProjectWholeTestPort(input.wholeTrial, ports.trial, trialPort, dispatcher.trialled) : undefined;
   const gatePort = whole ? whole.port : ports.trial ? trialPort(ports.trial) : undefined;
-  // Each script Core accepts is read off the submit tool's answer, then the ports' own observer wraps the loop (header);
-  // a single-subflow brief's refused whole test is answered as its refusal first (header, t679).
+  // Each script Core accepts is read off the submit tool's answer, then the ports' own observer wraps the loop (header).
   const observe = (observed: AutomationStudioLlmEvidenceLoopInput) => {
-    const watched = outputs.watch(held.watch(brief.briefId, whole ? whole.observe(observed) : observed));
+    const watched = outputs.watch(held.watch(brief.briefId, observed));
     return ports.observe ? ports.observe(watched) : watched;
   };
   const repair = await repairOf(dispatcher, brief, ports.deniedEvidenceKeys);
@@ -330,6 +331,8 @@ async function run(input: {
     ...(gatePort ? { trial: { port: gatePort, ...(ports.reset ? { reset: ports.reset } : {}) } } : {}),
     ...(callScope !== undefined ? { callScope } : {}),
     ...(revisionsAfter !== undefined ? { revisionsAfter } : {}),
+    // Its test is the judged whole run, and its words and budget say so (header, t679).
+    ...(whole ? { trialIsWhole: true as const } : {}),
     observe,
     accepted
   }));

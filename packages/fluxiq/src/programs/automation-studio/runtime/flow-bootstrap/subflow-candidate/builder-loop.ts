@@ -115,6 +115,16 @@
 // brief's parts, reaches its honest ending through one trial, which says why.
 // A permission the person did not give, or a check only a person can pass,
 // ends the brief through its own signal, never this check.
+//
+// **A single-subflow plan's builder tests the judged whole run (t679).** Given
+// `trialIsWhole`, its port's test is the whole Flow joined from its proposal
+// and judged as the build's run (`../../project-agents/single-subflow/`): the
+// test tool and a yes say so (`./subflow-trial-gate.ts`, `whole`), the submit
+// answer's next step says a yes completes the brief, and its budget keeps back
+// no judge calls (`keptForFinishing: 0`), since that judge is paid from the
+// build's judging reserve, not from this builder's allowance. Its wrap-up then
+// begins with its own decisions left, which a brief's least calls
+// (`AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS`) still hold.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceCompletionCheck, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
@@ -211,13 +221,16 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
    * are numbered on from (`./scoped-submission.ts`, t658). Absent, they start at 1.
    */
   revisionsAfter?: number | undefined;
+  /** Whether the port's test is a single-subflow plan's judged whole run (header, t679). */
+  trialIsWhole?: true | undefined;
 }): Promise<AutomationStudioSubflowBuilderOutcome> {
   const signals = [input.loop.signal, input.submission.signal].filter((value): value is AbortSignal => value !== undefined);
   const signal = signals.length ? AbortSignal.any(signals) : undefined;
   const submission: ScopedInput["submission"] = signal ? { ...input.submission, signal } : input.submission;
   const after = input.revisionsAfter !== undefined ? { revisionsAfter: input.revisionsAfter } : {};
   const controller = new AutomationStudioSubflowScopedSubmissionController({ scope: input.scope, siblings: input.siblings, submission, ...after });
-  const gate = new AutomationStudioSubflowTrialGate({ scope: input.scope, latest: () => controller.latest(), port: input.trial?.port, signal, ...(input.trial?.reset ? { reset: input.trial.reset } : {}), ...after });
+  const whole = input.trialIsWhole === true;
+  const gate = new AutomationStudioSubflowTrialGate({ scope: input.scope, latest: () => controller.latest(), port: input.trial?.port, signal, ...(input.trial?.reset ? { reset: input.trial.reset } : {}), ...after, ...(whole ? { whole: true as const } : {}) });
   const subflowKey = input.scope.subflowKey;
   let tried = false;
   let lastTrial: AutomationStudioSubflowTrialResult | undefined;
@@ -293,8 +306,8 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   };
   const discovery: AutomationStudioLlmEvidenceLoopInput = {
     ...input.loop, draft: false, dryRun: false, discoveryOnly: true,
-    // Its turns, its allowance's dollars and its calls, less its finishing trials' judges (header, t570).
-    budget: { ...(input.loop.budget ?? {}), countCalls: { keptForFinishing: AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS } },
+    // Its turns, its allowance's dollars and its calls, less its finishing trials' judges (header, t570); none where they are the build's (t679).
+    budget: { ...(input.loop.budget ?? {}), countCalls: { keptForFinishing: whole ? 0 : AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS } },
     finishingTools: { submit: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, test: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID },
     tools: [...automationStudioSubflowBuilderTools(input.loop.tools), submitTool, gate.tool],
     // The receipt of the latest proposal, or an honest ending (header): either whole, and a passing receipt stands whatever else it carries (t601).
@@ -327,9 +340,11 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
         changedPaths: [...submitted.proposal.changedPaths], verification: "not_performed", promotionAllowed: false,
         ...acceptedScript(call.value, submitted.proposal),
         ...unneededNote(submitted.proposal),
-        next: gate.available
-          ? `Test next with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} using exactly {"revision": ${submitted.proposal.revision}, "digest": "${submitted.proposal.digest}"}. Do not complete until that exact revision's trial answers yes. Submitting again makes a new revision that needs its own trial.`
-          : "No subflow trial runner is available here; completing leaves an untried proposal."
+        next: !gate.available
+          ? "No subflow trial runner is available here; completing leaves an untried proposal."
+          : whole
+            ? `Test next with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} using exactly {"revision": ${submitted.proposal.revision}, "digest": "${submitted.proposal.digest}"}. This test runs the whole Flow from its start as the build's judged run; a yes completes this brief. Submitting again makes a new revision that needs its own test.`
+            : `Test next with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} using exactly {"revision": ${submitted.proposal.revision}, "digest": "${submitted.proposal.digest}"}. Do not complete until that exact revision's trial answers yes. Submitting again makes a new revision that needs its own trial.`
       };
       return { kind: "llm_evidence_tool_execution", evidence, effectApplied: false, targetsUnchanged: true };
     }

@@ -68,7 +68,7 @@ const WORDS = Object.freeze({
   composedRefused: "Core joined your subflow into the whole Flow, and that Flow was refused, as listed under refusal, so nothing ran. Change your subflow for what it names, submit it with core.submit_subflow, then test the new revision.",
   judgedNo: "Your subflow joins into a whole Flow that was already tried and judged no (refusal has what the judge said), so it was not tried again. Change your subflow to answer that, submit it with core.submit_subflow, then test the new revision.",
   resetRequired: "Before the whole Flow could run, lasting acts this build made were still on the site, as listed under actsToUndo, so nothing ran. Undo each with the site's own controls, then test the same revision and digest again. "
-    + "If the site offers no control that undoes one, end the brief partial and name that act, so the supervisor can have it put back.",
+    + "An act the site offers no control to undo goes under cannotUndo when you test again, and the test then runs with it already done; name only an act you tried to undo and could not.",
   unaffordable: "Core did not start this test: the money kept for judging the build's whole run cannot pay its two judge calls, so nothing ran and no judge was asked (refusal has the figures). "
     + "Testing again is refused the same way, so do not test again or change your subflow for it: end the brief partial and say so.",
   notRun: "Core did not run the whole Flow joined from this revision, for the reason under refusal. Change your subflow for what it names, submit it with core.submit_subflow, then test the new revision."
