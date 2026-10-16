@@ -46,8 +46,11 @@ describe("the supervisor's guidance", () => {
     expect(dispatch).toContain("It must name a trial that did not pass; its builder is shown what that trial said.");
     expect(dispatch).toContain("changedNothing");
     expect(amendPlan).toContain("listed with reworded");
-    expect(amendPlan).toContain("A part whose facts changed drops it");
-    expect(amendPlan).toContain("proposalsKept and proposalsDropped");
+    // t671 reversed t595's drop on changed facts: such a proposal, a narrowed one and a merged one are carried.
+    expect(amendPlan).not.toContain("A part whose facts changed drops it");
+    expect(amendPlan).toContain("changes the facts or lasting acts of its parts");
+    expect(amendPlan).toContain("removes outputs no subflow takes; or merges its subflow into another");
+    expect(amendPlan).toContain("proposalsKept, proposalsCarried, each with because, and proposalsDropped");
     expect(amendPlan).not.toContain("so send new briefs for every subflow the new plan needs");
     const schema = automationStudioProjectSupervisorTools().find((tool) => tool.toolId === IDS.dispatch)!.inputSchema as JsonObject;
     const failing = ((((schema.properties as JsonObject).briefs as JsonObject).items as JsonObject).properties as JsonObject).failingReceipt;

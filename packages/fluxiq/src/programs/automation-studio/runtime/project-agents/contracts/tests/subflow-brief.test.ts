@@ -26,6 +26,15 @@ describe("subflow brief", () => {
     expect(parse(value)).toMatchObject({ status: "invalid", code });
   });
 
+  // t671: a narrowed or merged proposal names what changed; a brief recorded before then, naming none, reads as it did.
+  it("reads a carried proposal's removed outputs, the subflow it was built for and that it now is router-run, and refuses a routerRun that is not true", () => {
+    const carried = { briefId: "b-1", revision: 2, digest: "c".repeat(64), addedParts: [], renamedOutputs: [] };
+    expect(parse(brief((value) => (value.carriedFrom = carried)))).toEqual({ status: "valid", value: brief((value) => (value.carriedFrom = carried)) });
+    const merged = { ...carried, removedOutputs: ["count"], builtFor: "find_titles", routerRun: true as const };
+    expect(parse(brief((value) => (value.carriedFrom = merged)))).toEqual({ status: "valid", value: brief((value) => (value.carriedFrom = merged)) });
+    expect(parse(brief((value) => (value.carriedFrom = { ...carried, routerRun: false as unknown as true })))).toMatchObject({ status: "invalid", code: "project.not_true", path: "brief.carriedFrom.routerRun" });
+  });
+
   it("refuses more turns than a builder's loop takes (t577)", () => {
     expect(parse(brief((value) => (value.maxIterations = 64)))).toMatchObject({ status: "valid" });
     expect(parse(brief((value) => (value.maxIterations = 65)))).toMatchObject({ status: "invalid", code: "project.invalid_count", path: "brief.maxIterations" });
