@@ -54,6 +54,23 @@
 // control is found, nor asks the model to find or re-address one: that is the
 // extension's work (user, 2026-10-10; t426).
 //
+// **A control on the page but not shown is never tested again unchanged
+// (t661).** A8 bigbox cart (`run-mvac0ddx-f52ba929`): the step's control was
+// found but hidden -- the menu holding it had been closed again -- and the
+// answer said the step was right and to test the same revision again. When the
+// stopping step's feedback says `targetNotShown`
+// (`../../service/candidate-trial/target-on-page.ts`), the instruction names
+// the step, says its control is on the page but not shown, and says to change
+// the steps that lead to it so the step that shows it runs right before it;
+// never to test unchanged, and never how a control is found.
+//
+// **A trial the purse cannot judge is no trial (t661, A8 towels debug fix 8).**
+// The trial port starts nothing when the purse cannot hold the trial's two
+// judge calls (`../../service/candidate-trial/judging-fits.ts`) and answers
+// `candidate.trial_unaffordable` with the figures. The gate counts no trial for
+// it, keeps no verdict, and refuses with that code and no retry reason, so an
+// identical request to test again is the repeat guard's.
+//
 // **The site is put back first (t462; user, 2026-10-12).** Given a reset
 // (`../site-reset/`), a trial that follows a lasting act of this build runs
 // only once the model has undone this build's acts and the site is back as the
@@ -250,12 +267,26 @@ const CONTRADICTED_RETESTABLE = "The judge answered no, but Core's record of thi
   + "So that no is not taken: this revision is unsure, not closed. Test this same revision again, with the same revision and digest (retestsLeft says how many times), and do not make the change that no asks for. "
   + "Change the Flow only for a defect the trial's own reads, steps and stored rows show, submit the whole candidate, then test the new revision.";
 
+/** The code of a trial the purse could not pay to judge, so it did not start (header, t661). */
+const UNAFFORDABLE_CODE = "candidate.trial_unaffordable";
+
+/** What the model is told when a trial did not start because the purse cannot pay its judge calls (header, t661). Generic words. */
+const UNAFFORDABLE_INSTRUCTION = "Core did not start this trial: the money this build has left cannot pay the two judge calls that judge a trial, so nothing ran and no judge was asked (notRun has the figures). "
+  + "Testing again is refused the same way while that stands, so do not test again, and do not spend calls changing the Flow for a trial that cannot run.";
+
 /** What the model is told when a revision failed the same way twice. */
 const SAME_FAILURE_INSTRUCTION = "This revision stopped at the same step with the same failure in two trials, so testing it again would fail the same way. Change that step, or remove it if it only checks the act before it (the judge reads the page the run ends on), submit the whole candidate, then test the new revision.";
 
 /** What the model is told when the step a trial stopped at could not find a control still on the page (header, t420). */
 function testAgainInstruction(step: OnPageStep): string {
   return `${named(step)} could not find its control where it was saved, though one like it is on the page. Nothing in your script needs to change for this: test this same revision again, with the same revision and digest, without acting on the control yourself.`;
+}
+
+/** What the model is told when the step a trial stopped at found its control on the page but not shown (header, t661). */
+function notShownInstruction(step: OnPageStep, resubmit: string): string {
+  return `${named(step)} found its control on the page, but the control was not shown, so the step could not use it. Testing this revision unchanged would meet the same hidden control. `
+    + "A step before it must show it: put the step that opens the menu, panel or list holding the control right before this step, with nothing between them that could close it again, or add that step where the Flow has none. "
+    + `Change the steps that lead to this one, not how this step finds its control, ${resubmit}, then test the new revision.`;
 }
 
 /** What the model is told when that happened at the same step in two trials of one revision (header, t420). */
@@ -364,6 +395,11 @@ export class AutomationStudioFlowCandidateTrialGate {
     this.trials.set(key(latest), tried + 1);
     const asked = await this.ask(trial, latest, signal, reset?.kind === "admit" ? automationStudioCandidateStartedWithSaid(reset.startedWith) : []);
     signal.throwIfAborted();
+    // Not a trial: the purse could not pay its two judge calls, so nothing ran and nothing is counted (header, t661).
+    if (asked.answer.feedback.code === UNAFFORDABLE_CODE) {
+      this.trials.set(key(latest), tried);
+      return refused(UNAFFORDABLE_CODE, UNAFFORDABLE_INSTRUCTION, { notRun: asked.answer.feedback });
+    }
     // A no whose remedy would take back what an earlier standing no of this build upheld is not taken (header, t633).
     const contradiction = this.standingNos.weigh({ revision: asked.answer.revision, verdict: asked.answer.verdict, standingNo: asked.standingNo });
     const weighedAnswer = contradiction ? notTaken(asked.answer, contradiction) : asked.answer;
@@ -568,12 +604,22 @@ function stoppingStep(feedback: JsonObject): JsonObject | undefined {
 /** The step a failed trial stopped at when it could not find a control still on the page (`targetOnPage`, header). */
 type OnPageStep = { step: number; label?: string };
 
-function onPageStep(answer: AutomationStudioCandidateTrialResult | undefined): OnPageStep | undefined {
+function onPageStep(answer: Pick<AutomationStudioCandidateTrialResult, "verdict" | "feedback"> | undefined, flag: "targetOnPage" | "targetNotShown" = "targetOnPage"): OnPageStep | undefined {
   if (answer?.verdict !== "execution_failed") return undefined;
   const steps = answer.feedback.steps;
   const last = Array.isArray(steps) ? steps.at(-1) : undefined;
-  if (!isJsonObject(last) || last.status !== "failed" || last.targetOnPage !== true || typeof last.step !== "number" || !Number.isSafeInteger(last.step)) return undefined;
+  if (!isJsonObject(last) || last.status !== "failed" || last[flag] !== true || typeof last.step !== "number" || !Number.isSafeInteger(last.step)) return undefined;
   return { step: last.step, ...(typeof last.label === "string" && last.label.trim() ? { label: last.label.replace(/\s+/gu, " ").trim().slice(0, 80) } : {}) };
+}
+
+/**
+ * The instruction for a trial that stopped at a step whose control was on the
+ * page but not shown (header, t661), or nothing for any other answer. Exported
+ * for the subflow trial gate, which says the same.
+ */
+export function automationStudioCandidateNotShownInstruction(answer: Pick<AutomationStudioCandidateTrialResult, "verdict" | "feedback"> | undefined, resubmit = "submit the whole candidate"): string | undefined {
+  const step = onPageStep(answer, "targetNotShown");
+  return step ? notShownInstruction(step, resubmit) : undefined;
 }
 
 /** The step as the instructions name it: its number in the trial's feedback, and its own label when it has one. */
@@ -583,6 +629,8 @@ function named(step: OnPageStep): string {
 
 /** What a verdict tells the model to do, when its revision has not failed the same way twice. */
 function standingInstruction(answer: AutomationStudioCandidateTrialResult, retestable: boolean): string {
+  const notShown = automationStudioCandidateNotShownInstruction(answer);
+  if (notShown) return notShown;
   const onPage = retestable ? onPageStep(answer) : undefined;
   if (onPage) return testAgainInstruction(onPage);
   if (answer.verdict === "unsure" && retestable && typeof answer.feedback.contradictedByBuild === "string") return CONTRADICTED_RETESTABLE;
@@ -621,6 +669,8 @@ export function automationStudioCandidateRetestAdvised(answer: { feedback: JsonO
 
 /** What the model is told once a revision stopped at the same step twice, from the latest trial of it. */
 function repeatedInstruction(answer: AutomationStudioCandidateTrialResult | undefined): string {
+  const notShown = automationStudioCandidateNotShownInstruction(answer);
+  if (notShown) return notShown;
   const onPage = onPageStep(answer);
   return onPage ? stillNotFoundInstruction(onPage) : SAME_FAILURE_INSTRUCTION;
 }

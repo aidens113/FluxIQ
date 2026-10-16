@@ -43,6 +43,11 @@
 // retryable (`./target-on-page.ts`); the trial gate reads its
 // `targetOnPage` to tell the model to test again rather than look for it.
 //
+// **A control on the page but not shown says so (t661).** Where the domain
+// measured the step's control on the page but not shown, the step says that,
+// and that a step before it must show it, never that it is right and to test
+// again (`./target-on-page.ts`, `targetNotShown`).
+//
 // **A step says what the run closed over the page, and by which control (t470).**
 // A layer the client closed while a step ran -- a slow-down notice, a
 // promotion -- is listed under `interruptions`, with the handle of the way out
@@ -311,13 +316,23 @@ function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: Au
     // What the step's own node said was wrong with it: codes, the field refused and the names it can use (`./step-issues.ts`, t489).
     const issues = failure && !attempt.stateHeld ? automationStudioTrialStepIssues(attempt.outputs) : [];
     // What the run closed over the page while the step ran, and the handle of the way out it pressed when the domain named one (t470).
-    const interruptions = automationStudioTrialInterruptions([...absorbed.map((entry) => entry.failed), attempt], wayOuts);
-    const told = { ...step, ...(issues.length ? { issues } : {}), ...(absorbed.length ? { absorbed: automationStudioTrialAbsorbedFeedback({ absorbed, pass, targetOnPage: onPage !== undefined }) } : {}), ...(interruptions.length ? { interruptions } : {}) };
+    // A layer the domain marks as opened by this run is said as the nearest earlier step's that acted (t661).
+    const interruptions = automationStudioTrialInterruptions([...absorbed.map((entry) => entry.failed), attempt], wayOuts, openerBefore(ran, index));
+    const told = { ...step, ...(issues.length ? { issues } : {}), ...(absorbed.length ? { absorbed: automationStudioTrialAbsorbedFeedback({ absorbed, pass, targetOnPage: onPage?.targetOnPage === true, targetNotShown: onPage?.targetNotShown === true }) } : {}), ...(interruptions.length ? { interruptions } : {}) };
     // A step whose state already held is done: no retry or check advice for a failure the run went past.
     return failure && !attempt.stateHeld ? { ...told, retryable: failure.retryable === true, ...automationStudioTrialCheckStepFeedback(node, attempt), ...onPage } : told;
   });
   const paces = learnedPaces(trace, nodes);
   return { steps: listed, ...(ran.length > MAX_STEPS ? { stepsLeftOut: ran.length - MAX_STEPS } : {}), ...(paces.length ? { paces } : {}) };
+}
+
+/** The number of the nearest step listed before `index` that acted: it succeeded, and was neither skipped nor done by state. */
+function openerBefore(ran: ReturnType<typeof automationStudioTrialExecutedSteps>, index: number): number | undefined {
+  for (let earlier = Math.min(index, ran.length) - 1; earlier >= 0; earlier -= 1) {
+    const { attempt } = ran[earlier]!;
+    if (attempt.status === "succeeded" && !attempt.skipped && !attempt.stateHeld) return earlier + 1;
+  }
+  return undefined;
 }
 
 /**

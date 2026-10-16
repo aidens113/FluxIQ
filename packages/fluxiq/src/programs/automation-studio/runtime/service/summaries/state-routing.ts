@@ -11,8 +11,15 @@
 // refused as its closed code and node id -- never the record's `reason`
 // sentence, which repeats the host's words, nor its counts.
 //
+// **Why a no_match found no way on (t661).** Without the sentence nobody could
+// tell why routing answered `no_match` (A8 bigbox cart, `run-mvac0ddx-f52ba929`).
+// The decision now records the case as a closed code, `noMatchCause`
+// (`executor/state-routing/decision.ts`), and a `no_match` keeps it when it is
+// one of Core's codes; anything else is dropped, and a record saved before it
+// existed reads as before.
+//
 // Session traces are read back from storage, so the record is parsed, not typed.
-import type { AutomationStudioFlowRunActionAttemptRecord, AutomationStudioFlowRunStateRouteRefusal } from "../../../model/index.ts";
+import type { AutomationStudioFlowRunActionAttemptRecord, AutomationStudioFlowRunStateRouteNoMatchCause, AutomationStudioFlowRunStateRouteRefusal } from "../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 
 type RunDetailStateRouting = NonNullable<AutomationStudioFlowRunActionAttemptRecord["stateRouting"]>;
@@ -27,6 +34,9 @@ const NOT_ROUTED = new Set(["no_match", "unobserved", "no_pre_states"]);
 /** Core's safety guards (C6, "Safe state routing"), the only codes a refused way on keeps. */
 const GUARDS: ReadonlySet<string> = new Set<AutomationStudioFlowRunStateRouteRefusal["guard"]>(["unbound_value", "repeats_lasting_act", "not_checkpoint", "checkpoint_when_not_true", "ready_state_not_true"]);
 
+/** Why a `no_match` found no way on (t661), the only codes its cause keeps. */
+const NO_MATCH_CAUSES: ReadonlySet<string> = new Set<AutomationStudioFlowRunStateRouteNoMatchCause>(["effect_not_on_page", "effect_route_refused", "matches_refused", "matching_steps_already_acted", "no_step_matches_page"]);
+
 /**
  * The run detail's `stateRouting` for one attempt, or `undefined` when the
  * attempt carries no routing record or one outside Core's closed outcomes.
@@ -35,14 +45,16 @@ const GUARDS: ReadonlySet<string> = new Set<AutomationStudioFlowRunStateRouteRef
 export function automationStudioRunDetailStateRouting(attempt: AutomationStudioNodeAttemptTrace, failureCode: string | undefined): RunDetailStateRouting | undefined {
   const record: unknown = attempt.stateRouting;
   if (typeof record !== "object" || record === null || Array.isArray(record)) return undefined;
-  const { outcome, toNodeId } = record as Record<string, unknown>;
+  const { outcome, toNodeId, noMatchCause } = record as Record<string, unknown>;
   const refused = refusedOf((record as Record<string, unknown>).refused);
   // `skipped` already carries where a passed-over step went, which way, and on which code.
   if (outcome === "routed" || outcome === "effect_holds") return { outcome, ...refused };
   const code = askedCode(attempt, failureCode);
   const coded = code !== undefined && code.length <= 120 && CORE_CODE.test(code) ? { code } : {};
   if (outcome === "guard_stopped") return typeof toNodeId === "string" && NODE_ID.test(toNodeId) ? { outcome, ...coded, toNodeId, ...refused } : undefined;
-  if (typeof outcome === "string" && NOT_ROUTED.has(outcome)) return { outcome: outcome as "no_match" | "unobserved" | "no_pre_states", ...coded, ...refused };
+  // Why a no_match found no way on, as Core's closed code only (header, t661).
+  const cause = outcome === "no_match" && typeof noMatchCause === "string" && NO_MATCH_CAUSES.has(noMatchCause) ? { noMatchCause: noMatchCause as AutomationStudioFlowRunStateRouteNoMatchCause } : {};
+  if (typeof outcome === "string" && NOT_ROUTED.has(outcome)) return { outcome: outcome as "no_match" | "unobserved" | "no_pre_states", ...coded, ...refused, ...cause };
   return undefined;
 }
 

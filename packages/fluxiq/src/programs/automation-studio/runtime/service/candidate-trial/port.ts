@@ -19,6 +19,7 @@
 
 import type { AutomationStudioCandidateTrialPort, AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord, AutomationStudioCandidateTrialStart, AutomationStudioCandidateTrialUnjudged } from "./contracts.ts";
+import { automationStudioTrialJudgingShortfall, automationStudioTrialLargestJudgePrompt } from "./judging-fits.ts";
 import { automationStudioCandidateTrialStart, rejudgeAutomationStudioCandidateTrial, runAutomationStudioCandidateTrial } from "./run.ts";
 
 /** The port, the trials it ran, and what their judges spent. */
@@ -42,7 +43,9 @@ export function automationStudioCandidateTrialPort(candidateId: string, ports: A
     unjudged.delete(key);
     const start = ready?.key === key ? ready.start : undefined;
     ready = undefined;
-    const trial = kept ? await rejudgeAutomationStudioCandidateTrial(request, kept, ports) : await runAutomationStudioCandidateTrial(request, ports, start);
+    // The judge calls are held at the largest prompt an earlier trial's judge was sent (`./judging-fits.ts`, t661).
+    const prompt = automationStudioTrialLargestJudgePrompt(records);
+    const trial = kept ? await rejudgeAutomationStudioCandidateTrial(request, kept, ports, prompt) : await runAutomationStudioCandidateTrial(request, ports, start, prompt);
     if (trial.unjudged) unjudged.set(key, trial.unjudged);
     records.push(structuredClone(trial.record));
     return trial.result;
@@ -53,6 +56,8 @@ export function automationStudioCandidateTrialPort(candidateId: string, ports: A
       ready = undefined;
       // A re-judgement runs nothing, so nothing is put back for it.
       if (unjudged.has(key)) return "none";
+      // A trial the purse cannot judge does not start, so the site is not put back for it (`./judging-fits.ts`, t661).
+      if (automationStudioTrialJudgingShortfall({ code: "candidate.trial_unaffordable", judgeInputTokens: automationStudioTrialLargestJudgePrompt(records) })) return "none";
       const start = await automationStudioCandidateTrialStart({ candidateId, revision, digest, signal }, ports);
       ready = { key, start };
       return start.status === "reset" ? "reset" : start.status === "failed" ? "failed" : "none";

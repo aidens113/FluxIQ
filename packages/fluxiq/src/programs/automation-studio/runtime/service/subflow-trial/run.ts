@@ -48,6 +48,13 @@
 // `../../result-verification/standing-no/`), and the partial receipt carries it
 // beside its feedback, never in it, for the subflow trial gate to hold a later
 // no of the brief to; no model is shown it.
+//
+// **A trial the purse cannot judge is not started (t661).** As a whole
+// candidate's trial (`../candidate-trial/judging-fits.ts`): once the entry can
+// be prepared, and before the start hook or any step acts on the site, the
+// purse is asked to hold the trial's two judge calls at their worst case.
+// Where it cannot, the trial answers `not_judged` under
+// `subflow.trial_unaffordable`, with the figures, and nothing runs.
 
 import { randomUUID } from "node:crypto";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -61,6 +68,7 @@ import {
   automationStudioCandidateTrialFeedback as Feedback,
   automationStudioCandidateTrialLandedActs,
   automationStudioCandidateTrialSummary,
+  automationStudioTrialJudgingShortfall,
   type AutomationStudioCandidateTrialStart
 } from "../candidate-trial/index.ts";
 import { automationStudioSubflowTrialPredecessorGap } from "./predecessor-gap.ts";
@@ -68,6 +76,9 @@ import { automationStudioSubflowTrialStart } from "./start.ts";
 import type { AutomationStudioSubflowTrialJudgeInput, AutomationStudioSubflowTrialPorts, AutomationStudioSubflowTrialRecord } from "./types.ts";
 
 const NO_SPEND: AutomationStudioSubflowTrialRecord["judge"] = Object.freeze({ calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 });
+
+/** The code of a trial not started because the purse cannot pay its two judge calls (header, t661). */
+const UNAFFORDABLE = "subflow.trial_unaffordable";
 
 /** One partial trial's answer and Core's record of it. */
 export type AutomationStudioSubflowTrialOutcome = {
@@ -79,9 +90,11 @@ export type AutomationStudioSubflowTrialOutcome = {
 /**
  * Runs and judges one partial trial (header). `preparedStart` is the start the
  * port's `prepareStart` already made for this trial, ahead of the gate's reset
- * check; given, the hook is not run again.
+ * check; given, the hook is not run again. `judgeInputTokens` is the largest
+ * judge prompt an earlier partial trial of this build sent, which sizes the
+ * judge calls held before it starts (header, t661).
  */
-export async function runAutomationStudioSubflowTrial(request: AutomationStudioSubflowTrialRequest, ports: AutomationStudioSubflowTrialPorts, preparedStart?: AutomationStudioCandidateTrialStart): Promise<AutomationStudioSubflowTrialOutcome> {
+export async function runAutomationStudioSubflowTrial(request: AutomationStudioSubflowTrialRequest, ports: AutomationStudioSubflowTrialPorts, preparedStart?: AutomationStudioCandidateTrialStart, judgeInputTokens?: number): Promise<AutomationStudioSubflowTrialOutcome> {
   const { signal, scope, proposal } = request;
   signal.throwIfAborted();
   const now = ports.now ?? Date.now;
@@ -98,6 +111,9 @@ export async function runAutomationStudioSubflowTrial(request: AutomationStudioS
   if (unprepared) return answer("execution_failed", { ...unprepared, partial: true, entryPrepared: false }, { ...notRun, code: unprepared.code });
   const identity = await identityOf(scope, proposal, predecessors, ports);
   if (!identity) return answer("execution_failed", { code: "subflow.trial_build_gone", partial: true, entryPrepared: false }, { ...notRun, code: "subflow.trial_build_gone" });
+  // Not started when the purse cannot pay both judge calls: nothing acts on the site and no judge is asked (header, t661).
+  const unaffordable = automationStudioTrialJudgingShortfall({ code: UNAFFORDABLE, judgeInputTokens });
+  if (unaffordable) return answer("not_judged", { ...unaffordable, partial: true, entryPrepared: false }, { ...notRun, code: UNAFFORDABLE });
 
   const start = preparedStart ?? await automationStudioSubflowTrialStart({ scope, revision: proposal.revision, digest: proposal.digest, signal }, ports);
   if (start.status === "failed") return answer("execution_failed", { code: start.code, start: start.status, partial: true, entryPrepared: false }, { ...notRun, start, code: start.code });

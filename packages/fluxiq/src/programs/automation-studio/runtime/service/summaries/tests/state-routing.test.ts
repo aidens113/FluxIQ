@@ -66,6 +66,20 @@ describe("runtimeSessionToFlowRunDetail state routing", () => {
     expect(project(consulted({ outcome: "no_match", candidates: 1, matched: 1, refused: [refused[3]] }))?.stateRouting).toEqual({ outcome: "no_match", code: "web.target.not_found" });
   });
 
+  // t661: the reason sentence stays dropped, so why a no_match found no way on is carried as Core's closed code.
+  it("carries why a no_match found no way on as its closed code, and nothing of the page", () => {
+    for (const noMatchCause of ["effect_not_on_page", "effect_route_refused", "matches_refused", "matching_steps_already_acted", "no_step_matches_page"]) {
+      const record = project(consulted({ outcome: "no_match", candidates: 2, matched: 0, reason: "The page said “Only 2 left”.", noMatchCause }));
+      expect(record?.stateRouting).toEqual({ outcome: "no_match", code: "web.target.not_found", noMatchCause });
+      expect(JSON.stringify(record)).not.toContain("Only 2 left");
+    }
+  });
+
+  it("drops a cause outside Core's codes, and any cause on another outcome", () => {
+    expect(project(consulted({ outcome: "no_match", candidates: 1, matched: 0, noMatchCause: "The page said “Only 2 left”." }))?.stateRouting).toEqual({ outcome: "no_match", code: "web.target.not_found" });
+    expect(project(consulted({ outcome: "unobserved", candidates: 1, matched: 0, noMatchCause: "no_step_matches_page" }))?.stateRouting).toEqual({ outcome: "unobserved", code: "web.target.not_found" });
+  });
+
   it("writes no stateRouting for an attempt that never consulted the page", () => {
     expect(project({ ...attempt("failed"), failure: notFound } as AutomationStudioNodeAttemptTrace)).not.toHaveProperty("stateRouting");
     expect(project(attempt("succeeded"))).not.toHaveProperty("stateRouting");

@@ -44,10 +44,23 @@
 // control is the extension's work (user, 2026-10-10), and R4a's wording ("the
 // address is out of date", "matched the saved one at 0.27") sent the model
 // looking for a new handle.
+//
+// **A control on the page but not shown is not a near miss (t661).** A8 bigbox
+// cart (`run-mvac0ddx-f52ba929`): the step's control was found -- one match,
+// scored well -- but its menu had been closed again, so it had no box. That
+// measurement cleared the bar above, and the model was told the step "could not
+// find its control ... The step itself is right ... test again", and spent
+// trials re-addressing a control it never lost. Where the domain measured the
+// control on the page but not shown (`shown: false`, read by
+// `../../executor/state-routing/target-not-shown.ts`), the step now says that,
+// says a step before it must show it, carries `targetNotShown` rather than
+// `targetOnPage`, and is never told to test unchanged. A domain that does not
+// report it leaves the step as it was.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
+import { automationStudioTargetMeasuredNotShown } from "../../executor/state-routing/index.ts";
 
 /** The lowest score at which the closest control is read as the saved one, still on the page (header). */
 const NEAR_MISS_MIN_SCORE = 0.12;
@@ -64,10 +77,18 @@ const ADVICE = "Nothing in your script needs to change for this: test this same 
 /** What happened, in the words every try of such a step says it (`./absorbed.ts` says the same). */
 const ON_PAGE_HAPPENED = "The step could not find its control where it was saved, though one like it is on the page.";
 
+/** What happened to a step whose control was on the page but not shown (header, t661; `./absorbed.ts` says the same). */
+const NOT_SHOWN_HAPPENED = "The step found its control on the page, but the control was not shown, so it could not be used.";
+
+/** What the model is told to do about it on the step itself; the trial gate says the same as its instruction (header, t661). */
+const NOT_SHOWN_ADVICE = "Testing this revision unchanged would meet the same hidden control. A step before this one must show it: the step that opens the menu, panel or list holding it must run right before this step, with nothing between them that could close it again. Change the steps that lead to this one, not how this step finds its control.";
+
 /**
  * The fields a step that could not find a control still on the page adds to its
  * feedback entry, replacing what it says happened; nothing for any other step.
- * `step` is the step's number in the feedback, `control` its control's words.
+ * A control measured on the page but not shown says that instead
+ * (`targetNotShown`, header, t661). `step` is the step's number in the
+ * feedback, `control` its control's words.
  */
 export function automationStudioTrialTargetOnPage(input: {
   step: number;
@@ -79,13 +100,23 @@ export function automationStudioTrialTargetOnPage(input: {
 }): JsonObject | undefined {
   const { attempt } = input;
   if (attempt.status !== "failed" || attempt.failure?.category !== "target_not_found") return undefined;
-  const measured = [attempt, ...[...(input.earlier ?? [])].reverse()]
-    .filter((tried) => tried.failure?.category === "target_not_found")
-    .map(measurement).find((found) => found !== undefined);
-  if (!measured || !onPage(measured)) return undefined;
+  const tried = [attempt, ...[...(input.earlier ?? [])].reverse()].filter((each) => each.failure?.category === "target_not_found");
   const label = bounded(input.node?.label);
   const named = `Step ${input.step}${label ? ` (${JSON.stringify(label)})` : ""}`;
   const control = input.control ? ` ${JSON.stringify(input.control)}` : "";
+  // The latest try that measured anything decides: one that found the control hidden is never a near miss (header, t661).
+  const latest = tried.find((each) => automationStudioTargetMeasuredNotShown(each) || measurement(each) !== undefined);
+  if (latest && automationStudioTargetMeasuredNotShown(latest)) {
+    return {
+      happened: NOT_SHOWN_HAPPENED,
+      targetNotShown: true,
+      notShown: `${named} found its control${control} on the page, but it was not shown, so the step could not use it. The step's control is right; a step before it must show it.`,
+      advice: NOT_SHOWN_ADVICE,
+      retryable: false
+    };
+  }
+  const measured = latest ? measurement(latest) : undefined;
+  if (!measured || !onPage(measured)) return undefined;
   return {
     happened: ON_PAGE_HAPPENED,
     targetOnPage: true,

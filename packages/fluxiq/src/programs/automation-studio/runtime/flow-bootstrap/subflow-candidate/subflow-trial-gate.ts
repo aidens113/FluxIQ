@@ -136,11 +136,20 @@
 // records it (`../site-reset/explored-on-absorbed.ts`). An unprepared entry
 // says nothing: the predecessors' steps did not all run, so what they do was
 // not measured.
+//
+// **A control on the page but not shown, and a trial the purse cannot judge
+// (t661).** As the whole candidate's gate does (`../candidate/trial-gate.ts`):
+// a trial that stopped at a step whose feedback says `targetNotShown` is told
+// to change the steps that lead to it, never to test the same revision; and a
+// trial the port did not start because the purse cannot hold its two judge
+// calls (`subflow.trial_unaffordable`) is no trial -- nothing is counted or
+// kept, and the refusal carries no retry reason.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import {
   AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION,
   AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS,
+  automationStudioCandidateNotShownInstruction,
   automationStudioCandidateRecordContradictsPart,
   automationStudioCandidateRetestAdvised,
   automationStudioCandidateStartedWithSaid,
@@ -185,6 +194,13 @@ export const AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID = "core.test_subflow";
 
 const RETEST_REASON = "retry_allowed";
 const TRANSIENT: ReadonlySet<AutomationStudioCandidateTrialVerdict> = new Set(["unsure", "not_judged", "execution_failed"]);
+
+/** The code of a trial the purse could not pay to judge, so it did not start (header, t661). */
+const UNAFFORDABLE_CODE = "subflow.trial_unaffordable";
+
+/** What the builder is told when a trial did not start because the purse cannot pay its judge calls (header, t661). Generic words. */
+const UNAFFORDABLE_INSTRUCTION = "Core did not start this trial: the money this brief has left cannot pay the two judge calls that judge a trial, so nothing ran and no judge was asked (notRun has the figures). "
+  + "Testing again is refused the same way while that stands, so do not test again, and do not spend calls changing the subflow for a trial that cannot run.";
 
 const INSTRUCTIONS: Readonly<Record<AutomationStudioCandidateTrialVerdict, string>> = Object.freeze({
   yes: "This subflow's trial passed for this exact revision and digest. It is a partial trial: it answers for this brief only and is no trial of the whole Flow. Complete with exactly this subflowKey, revision and digest. Submitting again makes a new revision that needs its own trial.",
@@ -317,6 +333,11 @@ export class AutomationStudioSubflowTrialGate {
     const absorbed = absorbedActs.map(namedAct);
     this.trials.set(key(latest), tried + 1);
     const asked = await this.ask(port, latest, signal, reset?.kind === "admit" ? automationStudioCandidateStartedWithSaid(reset.startedWith) : []);
+    // Not a trial: the purse could not pay its two judge calls, so nothing ran and nothing is counted (header, t661).
+    if (asked.answer.feedback.code === UNAFFORDABLE_CODE) {
+      this.trials.set(key(latest), tried);
+      return refused(UNAFFORDABLE_CODE, UNAFFORDABLE_INSTRUCTION, { notRun: asked.answer.feedback });
+    }
     // A no whose remedy would take back what an earlier standing no of this subflow upheld is not taken (header, t633, t634).
     const contradiction = asked.answer.entryPrepared ? this.standingNos.weigh({ revision: asked.answer.revision, verdict: asked.answer.verdict, standingNo: asked.standingNo }) : undefined;
     const weighedAnswer = contradiction ? notTaken(asked.answer, contradiction) : asked.answer;
@@ -410,6 +431,9 @@ export class AutomationStudioSubflowTrialGate {
 /** What a trial's answer tells the builder to do next (header); `retestable`, whether this revision may still be tested again. */
 function instructionFor(answer: AutomationStudioSubflowTrialResult, retestable: boolean): string {
   if (!answer.entryPrepared) return ENTRY_NOT_PREPARED;
+  // A control on the page but not shown: a step before it must show it, never a test of the same revision (header, t661).
+  const notShown = automationStudioCandidateNotShownInstruction(answer, "submit the subflow with core.submit_subflow");
+  if (notShown) return notShown;
   if (answer.verdict === "not_judged" && answer.feedback.yesUnconfirmed === true) return NOT_JUDGED_AFTER_YES;
   if (answer.verdict === "unsure" && retestable && typeof answer.feedback.contradictedByBuild === "string") return CONTRADICTED_RETESTABLE;
   if (answer.verdict === "unsure" && retestable) {

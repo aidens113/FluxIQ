@@ -15,6 +15,7 @@ import { automationStudioStateRouteFactGate, type AutomationStudioStateRouteFact
 import { AUTOMATION_STUDIO_STATE_ROUTE_RETURN_LIMIT, automationStudioRunProgressMark, type AutomationStudioStateRouteGuard } from "./progress-guard.ts";
 import { automationStudioRankStateRoutes, type AutomationStudioRankedStateRoute, type AutomationStudioStateRouteMatch } from "./ranking.ts";
 import type { AutomationStudioGuardedStateRoutingRecord, AutomationStudioStateRouteRefusal } from "./refusal.ts";
+import { automationStudioStateReopenOpener } from "./reopen.ts";
 import { automationStudioRepeatedLastingAct } from "./repeated-act.ts";
 import { automationStudioUnboundSkippedValue } from "./skipped-values.ts";
 
@@ -29,16 +30,19 @@ import { automationStudioUnboundSkippedValue } from "./skipped-values.ts";
  * - `routed`: the page already shows the failing step's own effect, and the
  *   run goes on along its success `edge` to `node` (record outcome
  *   `effect_holds`); or the page matched `node`'s recorded pre-state, and the
- *   run goes on there (record outcome `routed`, with its `closeness`).
+ *   run goes on there (record outcome `routed`, with its `closeness`); or the
+ *   failing step's control was measured on the page but not shown, and the run
+ *   goes back to `node`, the step that showed it (`reopen`, `./reopen.ts`).
  * - `stopped`: the match was one return too many to the same node without
  *   progress; the run ends failed with `message`.
  * - `none`: no way on was found; the recovery ladder runs exactly as before.
+ *   A `no_match` record says why as a closed code (`noMatchCause`, t661).
  *
  * A record names every way on a safety guard refused (`refused`), when one was.
  */
 export type AutomationStudioStateRouteDecision =
   | { kind: "declared"; edge: AutomationStudioFlowEdge; notDone?: true }
-  | { kind: "routed"; node: AutomationStudioFlowNode; direction: AutomationStudioStateRouteDirection; closeness?: number; edge?: AutomationStudioFlowEdge; record: AutomationStudioGuardedStateRoutingRecord }
+  | { kind: "routed"; node: AutomationStudioFlowNode; direction: AutomationStudioStateRouteDirection; closeness?: number; edge?: AutomationStudioFlowEdge; reopen?: true; record: AutomationStudioGuardedStateRoutingRecord }
   | { kind: "stopped"; message: string; record: AutomationStudioGuardedStateRoutingRecord }
   | { kind: "none"; record: AutomationStudioGuardedStateRoutingRecord };
 
@@ -46,8 +50,8 @@ export type AutomationStudioStateRouteInput = {
   flow: AutomationStudioFlowDocument;
   /** The step that cannot run. */
   node: AutomationStudioFlowNode;
-  /** Its failed attempt, or the one synthesized when its readiness gate did not hold. */
-  attempt: Pick<AutomationStudioNodeAttemptTrace, "status" | "failure">;
+  /** Its failed attempt, or the one synthesized when its readiness gate did not hold; `outputs` carry the domain's measurement of its control (`./target-not-shown.ts`). */
+  attempt: Pick<AutomationStudioNodeAttemptTrace, "status" | "failure"> & { outputs?: AutomationStudioNodeAttemptTrace["outputs"] | undefined };
   /** Every attempt of the run so far. */
   attempts: readonly AutomationStudioNodeAttemptTrace[];
   /** `inputs` are the run's own values, which no step passed over has to set. */
@@ -87,6 +91,11 @@ export type AutomationStudioStateRouteInput = {
  *    (`repeated-act.ts`). A refused match is dropped and the next one tried;
  *    with none left the decision is `none` and the ladder runs.
  *
+ * Before 4, a step whose control was measured on the page but not shown goes
+ * back to the step that showed it, once until the run makes progress, through
+ * the lasting-act guard and the progress guard (`./reopen.ts`, t661); a second
+ * return with nothing done since stops the run.
+ *
  * The route in 3 is not gated by checkpoints or ready states: it goes on along
  * the failing step's own success edge, as if the step had run.
  */
@@ -98,15 +107,20 @@ export async function decideAutomationStudioStateRoute(input: AutomationStudioSt
     .map((node) => ({ node, signatures: automationStudioNodeRouteSignatures(node) }))
     .filter((candidate) => candidate.signatures.before !== undefined);
   const own = ownEffect(input.flow, input.node);
-  if (!candidates.length && !own) return none("no_pre_states", 0);
+  // The step that showed a control this one found on the page but not shown (`./reopen.ts`, t661).
+  const opener = automationStudioStateReopenOpener({ flow: input.flow, node: input.node, attempt: input.attempt, attempts: input.attempts, hostRuntime: input.options.hostRuntime });
+  if (!candidates.length && !own && !opener) return none("no_pre_states", 0);
   const hostRuntime = input.options.hostRuntime;
   const observation = await observeAutomationStudioRouteState({ hostRuntime, ...flowScope(input.flow), ...(input.options.signal ? { signal: input.options.signal } : {}) });
   if (!observation.ok) return none("unobserved", candidates.length, observation.reason);
   const refused: AutomationStudioStateRouteRefusal[] = [];
   const held = own ? effectHolds(input, own, observation.state, candidates.length, refused) : undefined;
   if (held && held.kind !== "none") return held;
-  const notShown = held?.kind === "none" && held.record.reason ? `${held.record.reason} ` : "";
-  if (!candidates.length) return none("no_match", 0, `${notShown}No other step recorded an expected starting page.`, refused);
+  const reopened = opener ? reopen(input, opener, observation.state, candidates.length, refused) : undefined;
+  if (reopened) return reopened;
+  const ownReason = held?.kind === "none" && held.record.reason ? `${held.record.reason} ` : "";
+  if (!candidates.length && !own) return none("no_pre_states", 0, undefined, refused);
+  if (!candidates.length) return none("no_match", 0, `${ownReason}No other step recorded an expected starting page.`, refused, held?.kind === "none" ? held.record.noMatchCause : undefined);
   const signed = automationStudioSignRouteState(hostRuntime, observation.state);
   if (!signed.ok) return none("unobserved", candidates.length, `${signed.reason} So the page could not be compared with any step's.`, refused);
   const observed = signed.signature;
@@ -133,7 +147,8 @@ export async function decideAutomationStudioStateRoute(input: AutomationStudioSt
       : effectStands
         ? `${effectStands} step(s) expected this page but had already acted, and nothing shows their effect is gone.`
         : "The page matched no step's expected starting page.";
-    return none("no_match", candidates.length, notShown + why, refused);
+    const cause = chosen.refused.length ? "matches_refused" : effectStands ? "matching_steps_already_acted" : "no_step_matches_page";
+    return none("no_match", candidates.length, ownReason + why, refused, cause);
   }
   const record = { candidates: candidates.length, matched: matches.length - chosen.refused.length, toNodeId: best.node.id, direction: best.direction, closeness: best.closeness, ...refusedOf(refused) };
   const stopped = guarded(input, best.node.id, record, `the page matched only node ${best.node.id}'s expected starting page`);
@@ -183,15 +198,43 @@ function effectHolds(
   refused: AutomationStudioStateRouteRefusal[]
 ): AutomationStudioStateRouteDecision {
   const reading = automationStudioRouteEffectHolds(input.options.hostRuntime, own.effect, observed);
-  if (!reading.holds) return none("no_match", candidates, reading.reason);
+  if (!reading.holds) return none("no_match", candidates, reading.reason, [], "effect_not_on_page");
   const unbound = unboundRefusal(input, own.target.id);
   if (unbound) {
     refused.push(unbound.refusal);
-    return none("no_match", candidates, `The page already shows what node ${input.node.id} does, but going on past it was refused. ${unbound.why}`);
+    return none("no_match", candidates, `The page already shows what node ${input.node.id} does, but going on past it was refused. ${unbound.why}`, [], "effect_route_refused");
   }
   const record = { candidates, matched: 0, toNodeId: own.target.id, direction: "forward" as const };
   const stopped = guarded(input, own.target.id, record, `the page already showed what it does, which leads only to node ${own.target.id}`);
   return stopped ?? { kind: "routed", node: own.target, direction: "forward", edge: own.edge, record: { outcome: "effect_holds", ...record } };
+}
+
+/**
+ * Back to `opener`, the step that showed the control the failing step found on
+ * the page but not shown (`./reopen.ts`, t661): refused, and added to
+ * `refused`, when it would run a completed lasting act again; stopped on a
+ * second return with nothing done since, or one past the progress guard;
+ * otherwise routed backward to it.
+ */
+function reopen(
+  input: AutomationStudioStateRouteInput,
+  opener: AutomationStudioFlowNode,
+  observed: JsonObject,
+  candidates: number,
+  refused: AutomationStudioStateRouteRefusal[]
+): AutomationStudioStateRouteDecision | undefined {
+  const repeat = repeatRefusal(input, opener.id, observed);
+  if (repeat) {
+    refused.push(repeat.refusal);
+    return undefined;
+  }
+  const record = { candidates, matched: 0, toNodeId: opener.id, direction: "backward" as const };
+  if (!input.guard.reopen(opener.id, automationStudioRunProgressMark(input.attempts))) {
+    const reason = `Node ${input.node.id}'s control was on the page but not shown again after the run went back to node ${opener.id}, whose recorded result showed it, and nothing was done since, so going back again would loop.`;
+    return { kind: "stopped", message: `The run stopped: ${reason}`, record: { outcome: "guard_stopped", ...record, reason } };
+  }
+  const stopped = guarded(input, opener.id, record, `its control was on the page but not shown, and node ${opener.id} is the step that showed it`);
+  return stopped ?? { kind: "routed", node: opener, direction: "backward", reopen: true, record: { outcome: "routed", ...record } };
 }
 
 /** A way on a safety guard refused, with the sentence that says why. */
@@ -274,8 +317,8 @@ function guarded(
   };
 }
 
-function none(outcome: "no_match" | "unobserved" | "no_pre_states", candidates: number, reason?: string, refused: readonly AutomationStudioStateRouteRefusal[] = []): AutomationStudioStateRouteDecision {
-  return { kind: "none", record: { outcome, candidates, matched: 0, ...(reason ? { reason } : {}), ...refusedOf(refused) } };
+function none(outcome: "no_match" | "unobserved" | "no_pre_states", candidates: number, reason?: string, refused: readonly AutomationStudioStateRouteRefusal[] = [], noMatchCause?: AutomationStudioGuardedStateRoutingRecord["noMatchCause"]): AutomationStudioStateRouteDecision {
+  return { kind: "none", record: { outcome, candidates, matched: 0, ...(reason ? { reason } : {}), ...refusedOf(refused), ...(outcome === "no_match" && noMatchCause ? { noMatchCause } : {}) } };
 }
 
 /** The record's `refused`, present only when a guard refused a way on. */

@@ -28,8 +28,8 @@ describe("what a step's run closed over the page", () => {
       attempt("a2", "succeeded", [{ kind: "promotion", control: "No thanks", wayOut: "way-out.2" }])
     ], { "way-out.1": "t901" });
     expect(said).toEqual([
-      { kind: "rate_limit", wayOut: "t901", said: "The page put the site's notice asking the run to slow down in the way, and the run closed it by pressing its way out, t901." },
-      { kind: "promotion", said: "The page put a promotion in the way, and the run closed it by itself. No control of it is named, so no step of the Flow is needed to close it." }
+      { kind: "rate_limit", wayOut: "t901", said: "The site's notice asking the run to slow down was over the page, and the run closed it by pressing its way out, t901." },
+      { kind: "promotion", said: "A promotion was over the page, and the run closed it by itself. No control of it is named, so no step of the Flow is needed to close it." }
     ]);
   });
 
@@ -61,6 +61,48 @@ describe("what a step's run closed over the page", () => {
   it("lists no interruptions on a step whose run closed nothing", () => {
     const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "not_reset", graph, trace: trace([attempt("a1", "succeeded")]) });
     expect((feedback.steps as JsonObject[])[0]).not.toHaveProperty("interruptions");
+  });
+});
+
+// t661, A8 bigbox cart (`run-mvac0ddx-f52ba929`): an optional step's control was gone, so the client cleared the layers
+// over the page, among them the store picker the Flow's own step had just opened, and the step said "The page put a
+// dialog in the way ... t334": Core never knew the page put it there, and nothing said t334 closed the picker. A layer
+// is now said as over the page, with its own name, and -- where the domain marks it opened by this run -- as the layer
+// the nearest earlier step that acted opened. A library fixture: a branch list a step opens.
+describe("whose layer the run closed", () => {
+  const branchList = { kind: "dialog" as const, control: "Close", name: "Choose your branch", wayOut: "way-out.7" };
+  /** The dismiss attempt of an optional step, its dispatch's own report marking the branch list as opened by this run. */
+  const dismissing = (runOpened?: boolean | string): Attempt => ({
+    ...attempt("d1", "succeeded", [branchList]), nodeId: "dismiss",
+    outputs: { result: { clearedLayers: [{ kind: "dialog", control: "Close", name: "Choose your branch", wayOut: "way-out.7", ...(runOpened === undefined ? {} : { runOpened }) }] } }
+  });
+
+  it("names a layer the domain marks as opened by this run as the given step's, and says closing it undid that step", () => {
+    expect(automationStudioTrialInterruptions([dismissing(true)], { "way-out.7": "t334" }, 2)).toEqual([{
+      kind: "dialog", wayOut: "t334", openedByStep: 2,
+      said: "A dialog (\"Choose your branch\"), a layer step 2 opened, was over the page, and the run closed it by pressing its way out, t334. Closing it undid what step 2 had opened."
+    }]);
+  });
+
+  it("never says the page put it there, and attributes no step where the domain did not mark it or no step acted before", () => {
+    for (const said of [automationStudioTrialInterruptions([dismissing(undefined)], { "way-out.7": "t334" }, 2), automationStudioTrialInterruptions([dismissing("yes")], {}, 2), automationStudioTrialInterruptions([dismissing(true)], {})]) {
+      expect(said).toHaveLength(1);
+      expect(said[0]).not.toHaveProperty("openedByStep");
+      expect(String(said[0]!.said)).toMatch(/^A dialog \("Choose your branch"\) was over the page/u);
+      expect(String(said[0]!.said)).not.toMatch(/page put|step \d+ opened/u);
+    }
+  });
+
+  it("is said on the step in the trial feedback as the nearest earlier step that acted, passing over a skipped one", () => {
+    const flow = { nodes: [
+      { id: "list", definitionId: "web.output.dom-click", parameterValues: { element: { tagName: "button", visibleText: "Choose branch" } } },
+      { id: "skipped", definitionId: "web.output.dom-click", parameterValues: { element: { tagName: "button", visibleText: "Not now" } } },
+      { id: "dismiss", definitionId: "web.output.dom-click", parameterValues: { element: { tagName: "button", visibleText: "No thanks" } } }
+    ] } as unknown as AutomationStudioFlowArtifact;
+    const skipped: Attempt = { ...attempt("s1", "succeeded"), nodeId: "skipped", route: "skipped", skipped: { reason: "target_absent", code: "web.target.not_found" } };
+    const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph: flow, wayOuts: { "way-out.7": "t334" },
+      trace: trace([{ ...attempt("l1", "succeeded"), nodeId: "list" }, skipped, dismissing(true)]) });
+    expect((feedback.steps as JsonObject[])[2]).toMatchObject({ interruptions: [{ kind: "dialog", wayOut: "t334", openedByStep: 1 }] });
   });
 });
 
