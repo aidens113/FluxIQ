@@ -15,6 +15,9 @@
 // break read as one page's item 20 twice. So each pass's witness pages are
 // moved on by the pages the passes before it read.
 //
+// **The rows conditions left out together are every pass's** (t655), each set
+// of conditions once, its rows in pass order.
+//
 // **A condition is worded from a pass that kept rows**, where one did: the
 // wording carries what the condition read on a row it kept (`condition.ts`),
 // and a first pass that kept nothing has no such row to say.
@@ -41,6 +44,7 @@ export function automationStudioResultReadLoopedAccount(input: AutomationStudioR
   const itemsSeen = sum(passes.map((pass) => pass.itemsSeen));
   const earlierPageRepeats = sum(passes.map((pass) => pass.earlierPageRepeats));
   const conditions = mergedConditions(passes);
+  const together = mergedTogether(passes);
   return {
     nodeId: first.nodeId,
     definitionId: first.definitionId,
@@ -56,6 +60,7 @@ export function automationStudioResultReadLoopedAccount(input: AutomationStudioR
     ...(passes.some((pass) => pass.dropsEarlierPageRepeats) ? { dropsEarlierPageRepeats: true as const } : {}),
     ...(earlierPageRepeats !== undefined ? { earlierPageRepeats } : {}),
     ...(conditions.length ? { conditions } : {}),
+    ...(together.length ? { leftOutTogether: together } : {}),
     ...(passes.some((pass) => pass.unfiltered) ? { unfiltered: true } : {}),
     ...(input.attempts > 1 ? { attempts: input.attempts } : {}),
     keptPerPage: passes.map((pass) => pass.kept)
@@ -101,6 +106,20 @@ function mergedConditions(passes: readonly AutomationStudioResultReadAccount[]):
     });
   }
   return merged;
+}
+
+/** Each set of conditions that left rows out together on any pass, in first-seen order, with every pass's rows in pass order. */
+function mergedTogether(passes: readonly AutomationStudioResultReadAccount[]): NonNullable<AutomationStudioResultReadAccount["leftOutTogether"]> {
+  const bySet = new Map<string, { conditions: number[]; rows: string[] }>();
+  for (const pass of passes) {
+    for (const set of pass.leftOutTogether ?? []) {
+      const key = set.conditions.join(",");
+      const merged = bySet.get(key) ?? { conditions: [...set.conditions], rows: [] };
+      merged.rows.push(...set.rows);
+      bySet.set(key, merged);
+    }
+  }
+  return [...bySet.values()];
 }
 
 /** The sum of the counts given, or nothing when no pass gave one. */

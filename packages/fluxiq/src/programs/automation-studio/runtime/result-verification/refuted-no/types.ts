@@ -75,8 +75,9 @@ export type AutomationStudioResultNoCondition = {
 
 /**
  * One list read as Core can say which rows it saw (`./record.ts`, t654):
- * `whole` when its labels -- the rows it kept, and each row a condition alone
- * left out -- are every row it looked at, by its own counts; `narrowedBefore`,
+ * `whole` when its labels -- the rows it kept, each row a condition alone left
+ * out, and each row conditions left out together (t655) -- are every row it
+ * looked at, by its own counts; `narrowedBefore`,
  * the steps that acted on the page before it ran.
  */
 export type AutomationStudioResultNoSeenRead = {
@@ -123,8 +124,16 @@ export type AutomationStudioResultNoRecord = {
    * replayed reads carry no counts).
    */
   seen?: AutomationStudioResultNoSeenRead[] | undefined;
-  /** Every label any read saw, kept, stored or left out (t654). */
+  /** Every label any read saw, kept, stored or left out, alone or together (t654, t655). */
   seenLabels?: string[] | undefined;
+  /**
+   * Each read whose own counts say it names every row two or more of its
+   * conditions left out together (`./record.ts`, t655), with the set of
+   * condition numbers each such row failed: what removing several of its
+   * conditions at once brings back (`./advice-condition.ts`). A read not
+   * listed cannot say it.
+   */
+  together?: Array<{ nodeId: string; sets: number[][] }> | undefined;
   /** A claim Core's agreement checks itself (pages, order): whether this sentence makes one, and whether the record refutes it. */
   other?: ((sentence: string) => AutomationStudioResultNoClaim | undefined) | undefined;
 };

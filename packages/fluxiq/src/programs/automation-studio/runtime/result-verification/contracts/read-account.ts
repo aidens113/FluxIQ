@@ -81,6 +81,17 @@ export type AutomationStudioResultReadAccount = {
    * item asked for (`request-rows/left-out-naming-the-item.ts`).
    */
   conditions?: AutomationStudioResultReadCondition[];
+  /**
+   * The rows two or more conditions left out together (t655), which no
+   * condition's `leftOutOnlyByThis` names: each set of conditions, by number,
+   * with the rows that failed exactly those, each by its label alone, screened
+   * as `leftOutOnlyByThis` is (`../read-account/together-rows.ts`). With them a
+   * read's labels can name every row it saw: `itemsSeen` is `kept`, each
+   * condition's `alone` and these rows. A8 frozen pair 5
+   * (`run-mva6mlm4-97fe42f9`): seen 23, kept 9, 12 left out alone, and two
+   * rows named nowhere. Absent where the read did not send them.
+   */
+  leftOutTogether?: AutomationStudioResultLeftOutTogether[];
   /** True when every row failed the conditions and the read answered with the unfiltered rows instead. */
   unfiltered?: boolean;
   /**
@@ -126,4 +137,21 @@ export type AutomationStudioResultNarrowingStep = {
   label?: string;
   control?: string;
   effect?: "new_page" | "same_page" | "already_shown";
+  /**
+   * Where the step chose one option of a named group the page showed (t655,
+   * `../narrowing-group.ts`): the group's words, the option it chose
+   * (`chose`), and every other option of the group that stayed unchosen
+   * (`leftOptions`), each with the count the page showed beside it before the
+   * step. Words and numbers the domain read off the page (`groups` on its
+   * snapshot summary), screened as `control` is; Core interprets none of them.
+   * Absent where the step chose no such option, or the page said none.
+   */
+  group?: string;
+  chose?: string;
+  leftOptions?: Array<{ words: string; count?: number }>;
+  /** The number of results the page stated before and after the step (its snapshot's `resultCount`), where it stated one. */
+  resultCount?: { before?: number; after?: number };
 };
+
+/** One set of conditions that left rows out together (`AutomationStudioResultReadAccount.leftOutTogether`): their numbers, from 1, and the rows by label. */
+export type AutomationStudioResultLeftOutTogether = { conditions: number[]; rows: string[] };

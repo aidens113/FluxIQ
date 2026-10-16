@@ -121,6 +121,14 @@
 // (`recordContradicts`), the verdict unchanged; and `standingNo` rides on every
 // outcome two calls reach, so a gate keeps such conditions from any judged
 // trial (`./standing-no/kept-conditions.ts`). Only a no is weighed by it.
+//
+// **An unsure that a step chose an option the request does not name is weighed
+// too (t655).** Same towels run: a doubt named a step whose option is the
+// request's own words. Where every step it names chose one option of a named
+// group and that option passes the request-text test, the doubt is marked
+// (`about: "narrowing"`, `./unsure-doubts/narrowing.ts`) and asked once
+// more with the request's words and the options the step left out
+// (`./unsure-doubts/recheck-words.ts`); its answer takes its place.
 
 import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioResultVerdict, AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "./contracts/index.ts";
 import { automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./read-account/index.ts";
@@ -138,6 +146,7 @@ import { automationStudioRequestUnstatedExclusions, type AutomationStudioRequest
 import type { AutomationStudioResultStandingNoRecord } from "./standing-no/index.ts";
 import { automationStudioResultNamedStoredLabels, automationStudioResultStandingNoRecord } from "./standing-no-record/index.ts";
 import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS as UNSETTLED } from "./unsettled/index.ts";
+import { automationStudioResultDoubtRecheckWords, automationStudioResultNarrowingDoubtContradicted } from "./unsure-doubts/index.ts";
 import { automationStudioResultOrderClaimContradicted } from "./value-readings/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "./verdict.ts";
 
@@ -312,7 +321,7 @@ async function reaskContradicted(input: Parameters<typeof automationStudioResult
     return reaskUnstatedExclusion(input, settled, second);
   }
   if (marked.reasked) return settled;
-  const reasked = await input.ask(recheckWords(marked), marked.call);
+  const reasked = await input.ask(automationStudioResultDoubtRecheckWords(marked.about, marked.record), marked.call);
   const verdicts: AutomationStudioResultVerdict[] = [...(settled.verdicts ?? []), reasked.verdict];
   const done = { ...marked, reasked: true as const };
   if (reasked.basis !== "model") return { ...settled, verdicts, calls: 3, contradictedUnsure: done };
@@ -388,24 +397,13 @@ function quotedExclusions(exclusions: readonly string[]): string {
   return exclusions.map((exclusion) => `"${exclusion}"`).join(", ");
 }
 
-/** What a call asked again is told (header, t503; a doubt about the dedupe, t628): Core's words, naming no site or task. */
-function recheckWords(marked: NonNullable<AutomationStudioResultVerification["contradictedUnsure"]>): string {
-  if (marked.about === "dedupe") {
-    return "This same evidence was judged before, and that answer could not tell because it took the answer's dedupe to have merged distinct rows into one. "
-      + `Core's own record of this answer says otherwise: ${marked.record} `
-      + "Answer again from the evidence, holding any reading about repeated or merged rows to that record; answer unknown only for a doubt the record does not settle.";
-  }
-  return "This same evidence was judged before, and that answer could not tell because it took the list to have pages its read never reached. "
-    + `Core's own record of each paging read says otherwise: ${marked.record} `
-    + "Answer again from the evidence, holding any reading about pages to that record; answer unknown only for a doubt the record does not settle.";
-}
-
 /**
  * `{ contradictedUnsure }` when `verification` is an unsure a model gave whose
  * doubt speaks of pages left unread where every paging read's record says its
- * list ended (`contradictsPagingRecord`), or of rows the dedupe merged where
+ * list ended (`contradictsPagingRecord`), of rows the dedupe merged where
  * Core's record says it removed none (`./refuted-no/dedupe-doubt.ts`, t628),
- * naming the record; nothing otherwise.
+ * or of a step choosing an option the request does not name where the option
+ * is the request's own words (t655), naming the record; nothing otherwise.
  */
 function contradictedUnsure(call: 1 | 2, verification: AutomationStudioResultVerification, input: AutomationStudioResultVerificationAgreementInput): { contradictedUnsure?: NonNullable<AutomationStudioResultVerification["contradictedUnsure"]> } {
   const doubt = verification.verdict === "unsure" && verification.basis === "model" ? verification.unsureReading : undefined;
@@ -416,7 +414,10 @@ function contradictedUnsure(call: 1 | 2, verification: AutomationStudioResultVer
   }
   const record = noRecordOf(input);
   const dedupe = record ? automationStudioResultDedupeDoubtContradicted(doubt, record) : undefined;
-  return dedupe ? { contradictedUnsure: { call, record: dedupe, about: "dedupe" } } : {};
+  if (dedupe) return { contradictedUnsure: { call, record: dedupe, about: "dedupe" } };
+  // A step said to choose an option the request does not name, whose option is the request's own words (t655, `./unsure-doubts/`).
+  const narrowing = automationStudioResultNarrowingDoubtContradicted(doubt, input.reads, input.requestText, input.wording?.says);
+  return narrowing ? { contradictedUnsure: { call, record: narrowing, about: "narrowing" } } : {};
 }
 
 /** An answer in Core's own words, as it finishes "the first was ...". */

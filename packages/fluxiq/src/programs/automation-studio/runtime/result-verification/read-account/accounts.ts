@@ -74,6 +74,11 @@
 // its sentence, and each row it alone left out said with `(no value)` in the
 // column it tested, where the row does not already say its value.
 //
+// **And the rows two or more conditions left out together** (`together-rows.ts`,
+// t655), from `conditions.togetherRows` where the read sent them: each once,
+// under the conditions it failed, by label, so a read's labels can name every
+// row it saw.
+//
 // **Every read, every condition and every dedupe key** (user, 2026-09-30:
 // "Remove ANY AND ALL LIMITS ON THE NUMBER OF ELEMENTS PASSED TO MODEL. DO NOT
 // HIDE INFORMATION"). Until then a judge saw four reads, eight conditions each
@@ -92,6 +97,7 @@ import { automationStudioResultReadParameters } from "./read-parameters.ts";
 import { automationStudioResultReadLoopPasses } from "./loop-passes.ts";
 import { automationStudioResultReadPresence } from "./presence.ts";
 import { automationStudioResultReadStoredColumns } from "./stored-columns.ts";
+import { automationStudioResultReadTogetherRows } from "./together-rows.ts";
 
 /** A closed word the read reports, as extraction-summary.ts admits them. */
 const STOP_WORD = /^[a-z_]{1,40}$/u;
@@ -209,6 +215,8 @@ function account(
   // A condition over a column the rows do not store says what it read (`condition.ts`, `stored-columns.ts`).
   const stored = authored ? automationStudioResultReadStoredColumns(extraction, node?.parameterValues) : undefined;
   const conditions = conditionAccounts(filter, authored, deniedKeys, stored);
+  // The rows two or more conditions left out together, by label, under the bound domain's declared keys only (`together-rows.ts`, t655).
+  const together = deniedKeys ? automationStudioResultReadTogetherRows(filter?.togetherRows, conditions.length, deniedKeys) : undefined;
   const paginate = authored?.paginate;
   const pageLimit = isRecord(paginate) ? firstLimit(paginate) : undefined;
   const columns = isRecord(authored?.fields) ? Object.keys(authored.fields) : [];
@@ -232,6 +240,7 @@ function account(
     ...(dropsEarlierPageRepeats ? { dropsEarlierPageRepeats: true as const } : {}),
     ...(earlierPageRepeats !== undefined ? { earlierPageRepeats } : {}),
     ...(conditions.length ? { conditions } : {}),
+    ...(together ? { leftOutTogether: together } : {}),
     ...(filter?.unfiltered === true ? { unfiltered: true } : {}),
     ...(attempts > 1 ? { attempts } : {})
   };

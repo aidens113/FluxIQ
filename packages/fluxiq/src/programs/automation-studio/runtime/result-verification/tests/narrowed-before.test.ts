@@ -51,7 +51,7 @@ const attempt = (nodeId: string, extra: Partial<AutomationStudioNodeAttemptTrace
   attemptId: `a${clock}`, nodeId, definitionId: nodes.find((node) => node.id === nodeId)!.definitionId, startedAt: clock++, status: "succeeded",
   inputs: {}, outputs: {}, effects: [], ...extra
 });
-const changed = (stateDiff: JsonObject): Partial<AutomationStudioNodeAttemptTrace> => ({ stateRefs: { stateDiff } } as Partial<AutomationStudioNodeAttemptTrace>);
+const changed = (stateDiff: JsonObject): Partial<AutomationStudioNodeAttemptTrace> => ({ stateRefs: { stateDiff } } as unknown as Partial<AutomationStudioNodeAttemptTrace>);
 
 const trace: AutomationStudioNodeAttemptTrace[] = [
   attempt("s1", changed(diff({ documentChanged: true }))),
@@ -96,7 +96,7 @@ describe("a read names the steps that acted on the page before it", () => {
   it("says a step whose try found its state already shown, and a step whose page was not compared", () => {
     const held = automationStudioResultNarrowedBefore({
       readNodeIds: [READ], flowNodes: nodes, deniedEvidenceKeys: DENIED,
-      attempts: [attempt("s3", { status: "failed", stateHeld: { rung: "skip_satisfied_node", route: "success" } }), attempt("s4", { stateRefs: {} } as Partial<AutomationStudioNodeAttemptTrace>), attempt(READ)]
+      attempts: [attempt("s3", { status: "failed", stateHeld: { rung: "skip_satisfied_node", route: "success" } }), attempt("s4", { stateRefs: {} } as unknown as Partial<AutomationStudioNodeAttemptTrace>), attempt(READ)]
     });
     expect(held.byRead.get(READ)).toEqual([
       { nodeId: "s3", label: "show books only", control: "Books", effect: "already_shown" },
@@ -127,5 +127,60 @@ describe("a read names the steps that acted on the page before it", () => {
     expect(read?.narrowedBefore).toEqual(EXPECTED);
     expect(typeof read?.paging).toBe("string");
     expect(report.outcome.performed && report.outcome.verdict).toBe("does_not_answer");
+  });
+});
+
+// t655 (A8 frozen pair 5 towels, `run-mva6mlo8-f519063c`): a step that chose one
+// option of a named group says the group, the option, the options it left
+// unchosen with the counts the page showed, and the result counts before and
+// after, from the `groups` and `resultCount` the domain puts beside each
+// snapshot's view. A step with no group says none.
+describe("what a narrowing step chose and left out", () => {
+  const format = (chosen?: string): JsonObject => ({
+    name: "Format",
+    options: ([["Hardcover", 40], ["Paperback", 12], ["Audiobook", 3]] as const).map(([words, count]) => ({ words, count, chosen: words === chosen }))
+  });
+  const summary = (chosen: string | undefined, resultCount: number): JsonObject => ({ page: "(the view)", groups: [format(chosen)], resultCount });
+  const formatNodes: AutomationStudioFlowNode[] = [click("f1", "Choose Hardcover format", "Hardcover (40)"), click("f2", "accept the notice", "Accept"), nodes.find((node) => node.id === READ)!];
+  /** An attempt of a step of `formatNodes`, as the trace carries it. */
+  const step = (nodeId: string, extra: Partial<AutomationStudioNodeAttemptTrace> = {}): AutomationStudioNodeAttemptTrace =>
+    ({ attemptId: `a${clock}`, nodeId, definitionId: formatNodes.find((node) => node.id === nodeId)!.definitionId, startedAt: clock++, status: "succeeded", inputs: {}, outputs: {}, effects: [], ...extra });
+  const pressed = (nodeId: string, before: JsonObject, after: JsonObject): AutomationStudioNodeAttemptTrace =>
+    step(nodeId, { stateRefs: { stateDiff: diff({ added: "checkbox \"Hardcover (40)\" checked" }), beforeAction: { summary: before }, afterAction: { summary: after } } } as unknown as Partial<AutomationStudioNodeAttemptTrace>);
+
+  it("carries the group, the option chosen, the other options with their counts, and the result counts", () => {
+    const { byRead, withheld } = automationStudioResultNarrowedBefore({
+      readNodeIds: [READ], flowNodes: formatNodes, deniedEvidenceKeys: DENIED,
+      attempts: [pressed("f1", summary(undefined, 55), summary("Hardcover", 40)), step(READ, changed(diff({})))]
+    });
+    expect(withheld).toBe(false);
+    expect(byRead.get(READ)).toEqual([{
+      nodeId: "f1", label: "Choose Hardcover format", control: "Hardcover (40)", effect: "same_page",
+      group: "Format", chose: "Hardcover", leftOptions: [{ words: "Paperback", count: 12 }, { words: "Audiobook", count: 3 }], resultCount: { before: 55, after: 40 }
+    }]);
+  });
+
+  it("finds the option by the step's control words where no option is seen to change, and carries none for a step with no group", () => {
+    const { byRead } = automationStudioResultNarrowedBefore({
+      readNodeIds: [READ], flowNodes: formatNodes, deniedEvidenceKeys: DENIED,
+      attempts: [
+        step("f1", { stateRefs: { stateDiff: diff({ documentChanged: true }), afterAction: { summary: summary("Hardcover", 40) } } } as unknown as Partial<AutomationStudioNodeAttemptTrace>),
+        step("f2", { stateRefs: { stateDiff: diff({ removed: "dialog \"Notice\"" }), beforeAction: { summary: { page: "(the view)" } }, afterAction: { summary: { page: "(the view)" } } } } as unknown as Partial<AutomationStudioNodeAttemptTrace>),
+        step(READ, changed(diff({})))
+      ]
+    });
+    const [chose, notice] = byRead.get(READ)!;
+    expect(chose).toMatchObject({ group: "Format", chose: "Hardcover", leftOptions: [{ words: "Paperback", count: 12 }, { words: "Audiobook", count: 3 }], resultCount: { after: 40 } });
+    expect(notice).toEqual({ nodeId: "f2", label: "accept the notice", control: "Accept", effect: "same_page" });
+  });
+
+  it("says no group without a denied-keys declaration, and marks it withheld", () => {
+    const { byRead, withheld } = automationStudioResultNarrowedBefore({
+      readNodeIds: [READ], flowNodes: formatNodes, deniedEvidenceKeys: undefined,
+      attempts: [pressed("f1", summary(undefined, 55), summary("Hardcover", 40)), step(READ, changed(diff({})))]
+    });
+    expect(withheld).toBe(true);
+    expect(byRead.get(READ)?.[0]).not.toHaveProperty("group");
+    expect(byRead.get(READ)?.[0]?.resultCount).toEqual({ before: 55, after: 40 });
   });
 });

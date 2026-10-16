@@ -83,6 +83,20 @@ describe("a replayed list read's rows, as the build-test judge is shown them", (
     const wrong = judged(answer({ leftOutOnlyByThis: [{ condition: "unit_flag", conditionIndex: 1, rows: [{ label: "Unit alpha" }], observations: [observation] }] }));
     expect(JSON.stringify(observedOf(wrong))).not.toContain('"observations"');
   });
+  it("names once each row two or more conditions left out together, with every condition that left it out (t655)", () => {
+    const summary = judged(answer({
+      rows: [{ name: "Trevio T5 Wireless Earbuds, Ivory" }],
+      leftOutTogether: [
+        { conditions: ["price", "name"], conditionIndexes: [0, 1], rows: [{ name: "Unit gamma" }, { password: "Unit delta" }] },
+        // Not two conditions: left out.
+        { conditions: ["price"], conditionIndexes: [0], rows: [{ name: "Unit epsilon" }] }
+      ]
+    }));
+    expect(observedOf(summary)).toMatchObject({ readRows: { leftOutTogether: [{ numbers: [1, 2], conditions: ["price", "name"], rows: ["Unit gamma", "(withheld)"] }] } });
+    expect(JSON.stringify(observedOf(summary))).not.toContain("Unit epsilon");
+    expect(summary.withheld).toBe(true);
+    expect(automationStudioLlmRequestEvidenceRefusal(verificationRequest(summary))).toBeUndefined();
+  });
   it("names the rows it returned and, per condition, the rows that condition alone left out, each by its label", () => {
     const summary = judged(answer({
       rows: [{ name: "Trevio T5 Wireless Earbuds, Ivory" }, { name: "Soundcrest Air Lite" }],

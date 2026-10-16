@@ -61,10 +61,12 @@ export type AutomationStudioResultVerification = import("../standing-no/index.ts
    * On an unsure beside a yes or a no, the unsure call (1 or 2) whose doubt the
    * record contradicts -- pages left unread where every paging read says its list
    * ended (t503), or rows merged where the dedupe removed none (`about: "dedupe"`,
-   * `./refuted-no/dedupe-doubt.ts`, t628) -- and Core's words naming that record:
+   * `./refuted-no/dedupe-doubt.ts`, t628), or a step said to choose an option the
+   * request does not name where the option is the request's own words (`about:
+   * "narrowing"`, `./unsure-doubts/`, t655) -- and Core's words naming that record:
    * asked once more with it named (`reasked` once it was); the rule stands (`./agreement.ts`).
    */
-  contradictedUnsure?: { call: 1 | 2; record: string; about?: "dedupe"; reasked?: true };
+  contradictedUnsure?: { call: 1 | 2; record: string; about?: "dedupe" | "narrowing"; reasked?: true };
   /** The calls whose no Core's record wholly refutes, and Core's findings (`./refuted-no/`, t607): each asked once more (`reasked`); a no still refuted is unsure. */
   refutedNo?: { calls: Array<1 | 2>; findings: string[]; reasked?: true };
   /**

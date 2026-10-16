@@ -527,6 +527,44 @@ candidate trial's feedback carries the same list per read, with one sentence
 saying what it means (`service/candidate-trial/reads.ts`)
 (`result-verification/narrowed-before.ts`).
 
+A narrowing step that chose one option of a named group also carries what it
+chose and left out (t655, `result-verification/narrowing-group.ts`): `group`,
+`chose`, `leftOptions` (every other option of the group still unchosen after
+it, each with the count the page showed beside it before it) and `resultCount`
+(`{ before?, after? }`). They come from the structured `groups` and
+`resultCount` a domain puts beside each state snapshot's view, never from a line
+of the view; the group is the one with exactly one option chosen after the step
+that was unchosen before it, else the one option matching the step's control
+words less a trailing count. Words are screened as the control's are, and
+without a denied-keys declaration none is carried. An unsure call whose doubt
+names such a step (its label, node id, group or option) as one the request does
+not name, where the option's words pass the request-text test
+(`refuted-no/request-text-test.ts`), is marked `contradictedUnsure` with
+`about: "narrowing"` (`result-verification/unsure-doubts/narrowing.ts`) and asked once more with
+Core's words naming the request's words and the options the step left out
+(`result-verification/unsure-doubts/recheck-words.ts`); its answer takes its place, so a yes
+still needs two yeses. A doubt naming any step whose option is not the
+request's own words stands, and a no is never asked again on this ground.
+
+A read account also carries `leftOutTogether` (t655,
+`result-verification/read-account/together-rows.ts`) where the read sent them:
+each set of conditions (numbered from 1) with the rows that failed exactly
+those, by label alone, screened as `leftOutOnlyByThis` is; a loop's passes add
+up. The read account reads them from the extraction account's
+`conditions.togetherRows` (`{ failed, rows }`, 0-based places), which
+`service/summaries/extraction-summary.ts` builds from the domain's
+`rejectedSamples`: a row with the same values after the alone lead of two or
+more conditions' lists, said once and led by its label (a row after one list's
+lead only is not said). A build test's replayed read carries them as
+`readRows.leftOutTogether` (`build-test/read-rows.ts`, said as `numbers`,
+`conditions` and labels). With them a read's labels can name every row it saw:
+t654's test of whether they do (`refuted-no/record.ts`) counts them, `itemsSeen
+= kept + Σ alone + rows left out together`, every one sayable, and their labels
+join `seenLabels`. Where that listing is complete, the record says which sets of
+conditions left a row out together (`together`), and t631's joint-exclusion
+guard (`refuted-no/advice-condition.ts`) refuses advice to remove several
+conditions only where some row failed only named ones.
+
 A step that runs per row names the rows it acted on (`rowsActedOn`) from the
 session's trace, and the trace a run saves holds a `$datasetRow` marker where
 each captured row sat. A marker is read back as the stored row it stands for

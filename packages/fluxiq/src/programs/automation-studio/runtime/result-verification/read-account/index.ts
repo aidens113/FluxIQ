@@ -1,7 +1,8 @@
 // How each list read of a run went: the account the judgement and the
 // re-author are shown (`accounts.ts`), the condition wording inside it
 // (`condition.ts`), how its `dedupe` reads (`dedupe.ts`), the rows a
-// condition removed by itself (`alone-rows.ts`), the one name every line
+// condition removed by itself (`alone-rows.ts`), the rows two or more left
+// out together (`together-rows.ts`), the one name every line
 // gives a condition (`condition-name.ts`), what a presence test found on both
 // sides (`presence.ts`),
 // Core's sentence for it (`sentence.ts`), what stopped its paging (`stop.ts`),
@@ -28,5 +29,6 @@ export * from "./emptied-columns.ts";
 export * from "./sentence.ts";
 export * from "./stop.ts";
 export * from "./stored-columns.ts";
+export * from "./together-rows.ts";
 export * from "./unread-columns.ts";
 export * from "./without-tested-label.ts";
