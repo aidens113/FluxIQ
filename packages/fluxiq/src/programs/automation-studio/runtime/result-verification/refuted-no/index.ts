@@ -21,6 +21,11 @@
 // words (`row-reference-claim.ts`, `left-out-finding.ts`); a step's node id is
 // no row (`node-ids.ts`). And a condition said to have left out a row no read
 // saw, where a step narrowed the page first (`unseen-row-claim.ts`, t654).
+// And (t659) each sentence's words for missing held to their own clause
+// and a stored row a clause says is kept a reason that stands
+// (`missing-claim.ts`); a link to the row itself read as its label
+// (`label-tested-condition.ts`); and a no or advice blaming a step Core
+// measured as removing no row (`unseen-row-claim.ts`, `advice-condition.ts`).
 export * from "./advice-condition.ts";
 export * from "./condition-references.ts";
 export * from "./condition-wording.ts";

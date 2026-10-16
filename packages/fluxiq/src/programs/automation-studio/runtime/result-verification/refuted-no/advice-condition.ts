@@ -61,6 +61,7 @@ import { automationStudioResultSentenceRows } from "./named-rows.ts";
 import { automationStudioResultNodeIdsSaid } from "./node-ids.ts";
 import { automationStudioResultReadingSentences } from "./sentences.ts";
 import type { AutomationStudioResultNoCondition, AutomationStudioResultNoRecord } from "./types.ts";
+import { automationStudioResultNarrowingStepsNamed, automationStudioResultStepRemovedNoRow } from "./unseen-row-claim.ts";
 
 /** Words that change, remove or loosen what they name. Generic, never any site's. */
 const CHANGES = /\b(?:remov(?:e|es|ed|ing)|drop(?:s|ped|ping)?|delet(?:e|es|ed|ing)|relax(?:es|ed|ing)?|loosen(?:s|ed|ing)?|widen(?:s|ed|ing)?|broaden(?:s|ed|ing)?|replac(?:e|es|ed|ing)|chang(?:e|es|ed|ing)|rewrit(?:e|es|ing)|rewritten|fix(?:es|ed|ing)?|revis(?:e|es|ed|ing))\b/iu;
@@ -169,4 +170,54 @@ function finding(condition: AutomationStudioResultNoCondition, sayRead: boolean)
     ...(inResult ? [`${inResult} ${inResult === 1 ? "is" : "are"} also a row of the result, another copy kept`] : [])
   ];
   return `Of the ${rows.length} row${rows.length === 1 ? "" : "s"} ${name} left out by itself, ${parts.join(", and ")}. Removing or loosening it alone brings back no row the request asks for.`;
+}
+
+// A no whose advice only removes or replaces steps that acted on the page
+// before a read, each one Core measured as removing no row (t659), weighed as
+// the condition advice above weighs advice that changes conditions (t631).
+//
+// **Why.** A8 frozen pair 6 candidate towels `run-mvac1av6-f7b0f9e2`: both
+// runtime nos advised "Remove or replace <the rating step>", a step after which
+// the page stated as many results as before. The refuted run's advice became
+// the re-author's brief, and the re-author spent 48 decisions removing a step
+// that changed no row, then broke the read.
+//
+// **The rule.** The advice is read sentence by sentence, each without Core's
+// own wording of the conditions it names. It qualifies when every sentence
+// either keeps what it names ("Keep the search step") or removes, undoes,
+// clears or replaces narrowing steps (`./unseen-row-claim.ts`) and
+// nothing else: it names no row, no row Core has no record of, no condition by
+// number, no step but those and the reads they came before, and asks for
+// nothing more -- to add, choose, tighten, exclude, sort, or to replace "with"
+// something else. Then, where Core measured of each named step that it removed
+// no row (`./unseen-row-claim.ts`), the advice is a refuted claim of its
+// own (`./weigh.ts`).
+
+/** Words that remove, undo or replace what they name. Generic, never any site's. */
+const UNDOES = /\b(?:remov(?:e|es|ed|ing)|drop(?:s|ped|ping)?|delet(?:e|es|ed|ing)|undo(?:es|ing)?|uncheck(?:s|ed|ing)?|deselect(?:s|ed|ing)?|unselect(?:s|ed|ing)?|clear(?:s|ed|ing)?|skip(?:s|ped|ping)?|replac(?:e|es|ed|ing)|revert(?:s|ed|ing)?)\b/iu;
+/** Words that ask for more than undoing what they name. */
+const ASKS_MORE = /\b(?:add(?:s|ed|ing)?|insert(?:s|ed|ing)?|tighten(?:s|ed|ing)?|restrict(?:s|ing)?|requir(?:e|es|ing)|enforc(?:e|es|ed|ing)|ensur(?:e|es|ed|ing)|rais(?:e|es|ing)|increas(?:e|es|ing)|lower(?:s|ing)?|decreas(?:e|es|ing)|exclud(?:e|es|ing)|leave\s+out|filter\s+out|dedup\w*|sort(?:s|ing)?|choos(?:e|es|ing)|select(?:s|ing)?|pick(?:s|ing)?|instead|with)\b/iu;
+
+/** The narrowing steps a qualifying advice removes or replaces, each one Core measured as removing no row, and Core's finding for each (header); nothing otherwise. */
+export function automationStudioResultAdviceSteps(advice: string | undefined, record: AutomationStudioResultNoRecord): { nodeIds: string[]; findings: string[] } | undefined {
+  if (!record.narrowing?.steps.length) return undefined;
+  const chosen = new Map<string, string>();
+  for (const sentence of automationStudioResultReadingSentences(advice).map(automationStudioResultWithoutConditionWording)) {
+    const { steps, others } = automationStudioResultNarrowingStepsNamed(sentence, record);
+    if (!steps.length) {
+      // A sentence that keeps what it names changes nothing; any other may ask a change Core does not weigh here.
+      if (KEEPS.test(sentence) && !UNDOES.test(sentence) && !ASKS_MORE.test(sentence)) continue;
+      return undefined;
+    }
+    if (KEEPS.test(sentence) || !UNDOES.test(sentence) || ASKS_MORE.test(sentence) || others.length) return undefined;
+    if (automationStudioResultConditionReferences(sentence).length) return undefined;
+    const named = automationStudioResultSentenceRows(sentence, record);
+    if (named.stored.length || named.leftOut.length || named.unmatched) return undefined;
+    for (const step of steps) {
+      const finding = automationStudioResultStepRemovedNoRow(step);
+      if (finding === undefined) return undefined;
+      chosen.set(step.nodeId, finding);
+    }
+  }
+  return chosen.size ? { nodeIds: [...chosen.keys()], findings: [...chosen.values()] } : undefined;
 }

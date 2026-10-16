@@ -87,6 +87,18 @@ export type AutomationStudioResultNoSeenRead = {
 };
 
 /**
+ * One step that acted on the page before a read, as a no that blames it is
+ * weighed (t659, `./unseen-row-claim.ts`, `./advice-condition.ts`): the step as
+ * the read's account carries it (`../narrowed-before.ts`), its `addedChoice`
+ * set by `../narrowing-group.ts` where the page's own option groups say the
+ * step only added a choice. Core reads it as recorded and never infers it: a
+ * step that switched one option for another, or sorted the list, can state the
+ * same count with other rows. Absent, the step removed rows as far as Core can
+ * say.
+ */
+export type AutomationStudioResultNoNarrowingStep = AutomationStudioResultNarrowingStep;
+
+/**
  * What a claim is weighed against: Core's own record of the judged result.
  * Built once per verification (`./record.ts`), never from a model's words.
  */
@@ -134,6 +146,12 @@ export type AutomationStudioResultNoRecord = {
    * listed cannot say it.
    */
   together?: Array<{ nodeId: string; sets: number[][] }> | undefined;
+  /**
+   * Every step that acted on the page before a read the result was judged on,
+   * once each, by node id, with the node ids of those reads (t659): what a no
+   * blaming such a step is weighed against. Absent where no read names one.
+   */
+  narrowing?: { steps: AutomationStudioResultNoNarrowingStep[]; readNodeIds: string[] } | undefined;
   /** A claim Core's agreement checks itself (pages, order): whether this sentence makes one, and whether the record refutes it. */
   other?: ((sentence: string) => AutomationStudioResultNoClaim | undefined) | undefined;
 };

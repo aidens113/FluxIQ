@@ -156,7 +156,9 @@ describe("what a narrowing step chose and left out", () => {
     expect(withheld).toBe(false);
     expect(byRead.get(READ)).toEqual([{
       nodeId: "f1", label: "Choose Hardcover format", control: "Hardcover (40)", effect: "same_page",
-      group: "Format", chose: "Hardcover", leftOptions: [{ words: "Paperback", count: 12 }, { words: "Audiobook", count: 3 }], resultCount: { before: 55, after: 40 }
+      group: "Format", chose: "Hardcover", leftOptions: [{ words: "Paperback", count: 12 }, { words: "Audiobook", count: 3 }], resultCount: { before: 55, after: 40 },
+      // Its group had no option chosen before it, and one after (t659).
+      addedChoice: true
     }]);
   });
 

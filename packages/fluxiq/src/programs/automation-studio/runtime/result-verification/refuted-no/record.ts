@@ -12,6 +12,12 @@
 // (`./missing-claim.ts`, `./value-claim.ts`). A row two conditions of one name
 // would give different readings is given none.
 //
+// **And a condition that leaves out what the request excludes (t660).** The
+// text test is asked per settled row, with the value Core's read found on it:
+// a presence test (`sponsored is absent`) tests that witness against the
+// request's exclusion words (`./request-exclusion-test.ts`), so a row showing a
+// value the request says to leave out is accounted by the request's words.
+//
 // **Never a condition that tests a row's own label (t651).** Where the value a
 // condition tests is the row's own name (`./label-tested-condition.ts`), a row
 // failing it says only that its name does not say the condition's text --
@@ -53,6 +59,13 @@
 // where it is complete, says which sets of conditions left rows out together
 // (`together`): what a no's advice to remove several conditions brings back
 // (`./advice-condition.ts`).
+//
+// **And every step that acted on the page before a read (t659).** A8 frozen
+// pair 6 candidate towels `run-mvac1av6-f7b0f9e2`: two nos blamed a step after
+// which the page stated as many results as before it, and nothing weighed them
+// against that count. Each read's `narrowedBefore` steps, once each, with the
+// reads they came before (`narrowing`): what `./unseen-row-claim.ts` and
+// `./advice-condition.ts` hold such a no to. Not a subflow trial's entry's reads.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../contracts/index.ts";
@@ -67,7 +80,14 @@ import {
 import { automationStudioResultConditionTestsLabel } from "./label-tested-condition.ts";
 import { automationStudioResultNoConditions } from "./record-conditions.ts";
 import { automationStudioResultRequestTextTest } from "./request-text-test.ts";
-import type { AutomationStudioResultNoClaim, AutomationStudioResultNoLeftOutRow, AutomationStudioResultNoRecord, AutomationStudioResultNoSeenRead, AutomationStudioResultNoStoredRow } from "./types.ts";
+import type {
+  AutomationStudioResultNoClaim,
+  AutomationStudioResultNoLeftOutRow,
+  AutomationStudioResultNoNarrowingStep,
+  AutomationStudioResultNoRecord,
+  AutomationStudioResultNoSeenRead,
+  AutomationStudioResultNoStoredRow
+} from "./types.ts";
 
 /** The record a no is weighed against (header). `requestText` gives the item phrase, `wording` the request's own words; `other` checks the claims the agreement checks itself. */
 export function automationStudioResultNoRecord(input: {
@@ -91,6 +111,7 @@ export function automationStudioResultNoRecord(input: {
   const pools = [...reads.map((read) => [...new Set([...read.labels, ...storedLabels])]), storedLabels];
   const seen = seenReads(summary);
   const together = togetherSets(summary);
+  const narrowing = narrowingSteps(summary);
   const tested = summary.buildTest?.stores;
   const phrases = input.requestText?.trim() ? automationStudioRequestPhrases(input.requestText) : undefined;
   return {
@@ -106,6 +127,7 @@ export function automationStudioResultNoRecord(input: {
     isValue: valuesOf(summary, stored, leftOut),
     ...(seen ? { seen, seenLabels: [...new Set([...pools.flat(), ...togetherLabels(summary)])] } : {}),
     ...(together.length ? { together } : {}),
+    ...(narrowing ? { narrowing } : {}),
     ...(phrases ? { phrases, item: itemOf(storedLabels, phrases) } : {}),
     ...(input.wording ? { says: input.wording.says } : {}),
     ...(input.other ? { other: input.other } : {})
@@ -179,6 +201,16 @@ function togetherSets(summary: AutomationStudioRunResultSummary): NonNullable<Au
     .map((account) => ({ nodeId: account.nodeId, sets: (account.leftOutTogether ?? []).map((set) => [...set.conditions]) }));
 }
 
+/** Every step that acted on the page before a read, once each, and those reads (header, t659); none where no read names one. Not a subflow trial's entry's. */
+function narrowingSteps(summary: AutomationStudioRunResultSummary): NonNullable<AutomationStudioResultNoRecord["narrowing"]> | undefined {
+  const entry = new Set(summary.taskChecklist?.entry?.steps ?? []);
+  const reads = (summary.reads ?? []).filter((account) => !entry.has(account.nodeId) && (account.narrowedBefore?.length ?? 0) > 0);
+  if (!reads.length) return undefined;
+  const steps = new Map<string, AutomationStudioResultNoNarrowingStep>();
+  for (const account of reads) for (const step of account.narrowedBefore ?? []) if (!steps.has(step.nodeId)) steps.set(step.nodeId, step);
+  return { steps: [...steps.values()], readNodeIds: [...new Set(reads.map((account) => account.nodeId))] };
+}
+
 /** Whether a condition counted the rows it alone left out and sent each by a label that may be said. */
 function namesEveryRow(condition: Counted): boolean {
   const rows = condition.leftOutOnlyByThis ?? [];
@@ -214,12 +246,13 @@ function requestQuotes(summary: AutomationStudioRunResultSummary, testsLabel: Re
       if (!condition.leftOutSettled?.length || !condition.leftOutOnlyByThis?.length) return;
       const name = automationStudioResultConditionName(condition.number ?? index + 1, condition.condition);
       if (testsLabel.has(name)) return;
-      const texts = automationStudioResultRequestTextTest(condition.condition, requestText, says);
-      if (!texts) return;
       const settled = new Set(condition.leftOutSettled);
       condition.leftOutOnlyByThis.forEach((row, at) => {
         const witness = condition.leftOutObservations?.[at];
         if (!settled.has(row) || witness?.state !== "present") return;
+        // Per row: a presence test's text is the value Core read on that row (header, t660).
+        const texts = automationStudioResultRequestTextTest(condition.condition, requestText, says, witness.value);
+        if (!texts) return;
         const key = quoteKey(name, automationStudioRequestRowLabel(row));
         const known = quotes.get(key);
         quotes.set(key, known === undefined || known?.read === witness.value ? { texts, read: witness.value } : null);
