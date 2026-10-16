@@ -92,9 +92,17 @@
 // sure of it -- a refusal the model may override once, never a block. The
 // subflow builder sends its refusals through this function too
 // (`../subflow-candidate/builder-loop.ts`), so it is told the same.
+//
+// **And a dropped step that chose the request's own words (t666).** A
+// submission that no longer has such a step, and tests its words nowhere, is
+// refused once (`candidate.kept_step_dropped`, `./kept-step-hint.ts`). It too
+// lists no issue to correct, so its own branch says Core's words on the step,
+// that the revision which stood still stands, and that the same change sent
+// again is accepted where the builder is sure the Flow does not need the step.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowCandidateSubmission } from "./contracts.ts";
+import { AUTOMATION_STUDIO_CANDIDATE_KEPT_STEP_DROPPED_CODE } from "./kept-step-hint.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_KEPT_CONDITION_DROPPED_CODE } from "./submission.ts";
 
 /** The code a refused submission is counted under when its check names no closed code of its own. */
@@ -196,8 +204,11 @@ export function automationStudioCandidateSubmissionRefusal(submitted: Extract<Au
   const next = feedback.unchanged === true && typeof feedback.instruction === "string"
     ? `${feedback.instruction} ${RESUBMIT}`
     : feedback.code === AUTOMATION_STUDIO_CANDIDATE_KEPT_CONDITION_DROPPED_CODE && typeof feedback.instruction === "string"
-      ? keptConditionNext(feedback.instruction, feedback.standingRevision)
-      : refusedSteps(feedback) + (advice ? advice + HANDLE_TAIL : GENERAL_NEXT);
+      ? hintNext(feedback.instruction, feedback.standingRevision, "the change is right")
+      // A dropped step that chose the request's own words is a hint too, said as one (header, t666).
+      : feedback.code === AUTOMATION_STUDIO_CANDIDATE_KEPT_STEP_DROPPED_CODE && typeof feedback.instruction === "string"
+        ? hintNext(feedback.instruction, feedback.standingRevision, "the Flow does not need that step, or reads those words another way")
+        : refusedSteps(feedback) + (advice ? advice + HANDLE_TAIL : GENERAL_NEXT);
   return {
     evidence: { ok: false, revision: submitted.revision, diagnostics: feedback, issueCodes: [...submitted.check.issueCodes], next },
     resultCode: refusalCode(feedback, submitted.check.issueCodes),
@@ -206,16 +217,18 @@ export function automationStudioCandidateSubmissionRefusal(submitted: Extract<Au
 }
 
 /**
- * The next step after a refused drop of a kept condition (header, t641): Core's
- * words on the condition, the revision that still stands, and that this is a
- * hint the model may override once. Generic words, naming no site or task.
+ * The next step after a hint Core's record gave (header): a refused drop of a
+ * kept condition (t641) or of a step that chose the request's own words (t666).
+ * Core's words, the revision that still stands, and that this is a hint the
+ * model may override once, sending the same change again where it is sure of
+ * `sure`. Generic words, naming no site or task.
  */
-function keptConditionNext(instruction: string, standing: JsonValue | undefined): string {
+function hintNext(instruction: string, standing: JsonValue | undefined, sure: string): string {
   const revision = standing && typeof standing === "object" && !Array.isArray(standing) && typeof standing.revision === "number" ? standing.revision : undefined;
   const stands = revision === undefined
     ? "Nothing was made a new revision: what stood before this submission still stands."
     : `Nothing was made a new revision: revision ${revision}, which stood before this submission, still stands.`;
-  return `${instruction} ${stands} This refusal is a hint from Core's record, not a block: if you are sure the change is right, send the same change again and it is accepted.`;
+  return `${instruction} ${stands} This refusal is a hint from Core's record, not a block: if you are sure ${sure}, send the same change again and it is accepted.`;
 }
 
 /** How long a digest of the refused issues is, in hex digits. */

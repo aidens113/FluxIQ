@@ -62,6 +62,35 @@ export type AutomationStudioResultStandingNoRecord = {
   upheldKind?: string[] | undefined;
   /** Each no of the trial Core's record does not wholly refute. */
   standing: AutomationStudioResultStandingNoCall[];
+  /**
+   * Each set of two or more conditions of one read that left rows out only
+   * together (t655), where that read's listing of such rows is complete
+   * (`../refuted-no/record.ts`, `together`): what a gate keeps as one when
+   * Core's record accounts for every such row (t666, `./kept-conditions.ts`).
+   * Absent where no read listed one.
+   */
+  together?: AutomationStudioResultStandingNoTogether[] | undefined;
+};
+
+/**
+ * One set of conditions of one read that left rows out only together (t655,
+ * t666): no one of them left those rows out by itself, so dropping one keeps
+ * them out and dropping every one brings them back.
+ */
+export type AutomationStudioResultStandingNoTogether = {
+  /** The read, by node id, as its conditions' own `nodeId`. */
+  nodeId: string;
+  /** Its conditions' numbers there (`condition N`), two or more, ascending. */
+  numbers: number[];
+  /** The labels of the rows that failed exactly these conditions. */
+  rows: string[];
+  /**
+   * Where Core's record accounts for every one of those rows and there is at
+   * least one -- another copy of it in the result, or a value Core read on it
+   * that fails the request's own words -- those rows, each with how. Absent
+   * otherwise.
+   */
+  keptOut?: AutomationStudioResultStandingNoKeptOutRow[] | undefined;
 };
 
 /**
@@ -99,8 +128,16 @@ export type AutomationStudioResultKeptCondition = {
   revision: number;
   /** The condition as that revision wrote it, as JSON with its keys sorted: what a later submission is matched by (`./written-conditions.ts`). */
   written: string;
-  /** Each row it alone left out, with how Core's record accounts for it. */
+  /** Each row it alone left out, with how Core's record accounts for it; for a set, each row they left out together. */
   keptOut: AutomationStudioResultStandingNoKeptOutRow[];
+  /**
+   * Present for a set of conditions kept as one (t666): each, as the trial's
+   * lines named it and as its revision wrote it, two or more. `name` then
+   * names them all, and `written` is their written forms as one JSON list,
+   * sorted: what a refusal is remembered by. A later plan writes the set still
+   * where it writes any one of them as written.
+   */
+  members?: Array<{ name: string; written: string }> | undefined;
 };
 
 /** What carries a gate's kept conditions to the submission it is asked about, outside what a model is shown: the result a gate keeps for a trial (t641). */
@@ -111,5 +148,32 @@ export type AutomationStudioResultKeptConditionDrop = {
   /** The kept conditions it no longer writes as they were written. */
   dropped: AutomationStudioResultKeptCondition[];
   /** Core's words for the builder: each condition, as written, and the rows it keeps out. */
+  said: string;
+};
+
+/**
+ * A step of the trial's Flow that chose, in a named group the page showed, an
+ * option whose words are the request's own, as the revision that ran wrote it
+ * (t666, `./kept-steps.ts`). Core-only: a hint names it in Core's words.
+ */
+export type AutomationStudioResultKeptStep = {
+  /** Its node id in the trial, and its label where the trial gave one. */
+  nodeId: string;
+  label?: string | undefined;
+  /** The group it chose in and the option it chose, as the page showed them. */
+  group: string;
+  chose: string;
+  /** The request's words the option's words are (`../refuted-no/request-text-test.ts`). */
+  texts: string[];
+  /** The revision whose trial showed it. */
+  revision: number;
+  /** Its parameters as that revision wrote them, as JSON with keys sorted (`./written-conditions.ts`). */
+  written: string;
+};
+
+/** Core's finding that a submission no longer has such steps, and no condition of it tests their words (`./kept-steps.ts`, t666). */
+export type AutomationStudioResultKeptStepDrop = {
+  dropped: AutomationStudioResultKeptStep[];
+  /** Core's words for the builder: each step, as written, the option it chose and the request's words it is. */
   said: string;
 };
