@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_AUTHORING_MODE_DEFAULT, AUTOMATION_STUDIO_AUTHORING_MODE_ENV, AUTOMATION_STUDIO_AUTHORING_MODES, isAutomationStudioAuthoringMode, resolveAutomationStudioAuthoringMode } from "../index.ts";
 
 describe("authoring mode", () => {
-  it("defaults to candidate when unset or blank", () => {
-    expect(AUTOMATION_STUDIO_AUTHORING_MODE_DEFAULT).toBe("candidate");
-    expect(resolveAutomationStudioAuthoringMode({})).toBe("candidate");
-    expect(resolveAutomationStudioAuthoringMode({ [AUTOMATION_STUDIO_AUTHORING_MODE_ENV]: "" })).toBe("candidate");
-    expect(resolveAutomationStudioAuthoringMode({ [AUTOMATION_STUDIO_AUTHORING_MODE_ENV]: "  " })).toBe("candidate");
+  it("defaults to project when unset or blank (since A8 frozen pair 8)", () => {
+    expect(AUTOMATION_STUDIO_AUTHORING_MODE_DEFAULT).toBe("project");
+    expect(resolveAutomationStudioAuthoringMode({})).toBe("project");
+    expect(resolveAutomationStudioAuthoringMode({ [AUTOMATION_STUDIO_AUTHORING_MODE_ENV]: "" })).toBe("project");
+    expect(resolveAutomationStudioAuthoringMode({ [AUTOMATION_STUDIO_AUTHORING_MODE_ENV]: "  " })).toBe("project");
   });
 
   it.each(AUTOMATION_STUDIO_AUTHORING_MODES)("reads %s", (mode) => {
