@@ -366,7 +366,8 @@ describe("a brief whose builder never reads the input the plan gives it", () => 
     expect(returned, JSON.stringify(dispatched)).toMatchObject({ subflowKey: "second", outcome: "blocked" });
     const reason = String(returned!.reason);
     expect(reason).toContain("core.submit_subflow answered subflow.scope_refused (subflow.input_unread: input \"titles\") (3 in a row)");
-    expect(reason).toContain("The plan gives this subflow a value no step of it reads: change the plan with project.amend_plan");
+    // No other subflow hands `titles` on, so it is the person's value, and the advice is to give it where it is used (t672).
+    expect(reason).toContain("The plan gives this subflow a value the person gives the Flow, and no step of it reads that value: if another subflow is the one that uses it, change the plan with project.amend_plan");
     expect(reason).not.toMatch(/subflow\.scope_refused:[0-9a-f]{8}/u);
     expect(reason).not.toContain("candidate.last_submission");
   });

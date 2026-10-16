@@ -115,9 +115,11 @@ const EPSILON_USD = 1e-9;
  * **After a producer could not make a value, both ends are named (A8 frozen
  * pair 3 bigbox, t645).** `run-mv9zn5ob-d929084d` planned a value its first
  * subflow could not make and its second only took by name; the plan cannot
- * show whether a step reads a value, and Core's check that a consumer reads its
- * input (`subflow.input_unread`) runs only when the consumer's builder
- * submits, which never happened, since the producer runs first. A return not
+ * show whether a step reads a value, and Core's check of a consumer's inputs
+ * runs only when the consumer's builder submits, which never happened, since
+ * the producer runs first; and since t672 that check refuses only an unread
+ * input the person gives the Flow (`subflow.input_unread`), accepting one
+ * another subflow hands on unread and saying so. A return not
  * done on an output its latest submission was refused on (`unmadeOutput`,
  * `../dispatch/output-refusals.ts`) makes the next step name, from the plan in
  * force, the subflows that take that value, the value and the producer, and

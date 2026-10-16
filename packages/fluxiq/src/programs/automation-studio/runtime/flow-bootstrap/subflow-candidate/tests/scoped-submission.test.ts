@@ -270,6 +270,25 @@ describe("a subflow builder's scoped submission", () => {
     expect(await codes(controller(scope).submit(script(longer)))).toContain("subflow.input_unread");
   });
 
+  // A8 Lab `run-mvan7giv-4246aafb` (t672): an input an earlier subflow handed on, which no line needed, was refused three
+  // times and the brief ended blocked. Handed on, it is accepted and noted; the person's value is still refused, told to read it.
+  it("accepts a handed-on input no line reads, noting it on the proposal, and refuses the person's value unread with no way out but reading it", async () => {
+    const unread = callable().filter((line) => !line.includes("$input.query") && line !== "  step: type the query" && line !== "    node: web.dom.type" && line !== "    selector: .search");
+    const handed = await controller(testScope({ interface: interfaceOf, handedOn: ["query"] })).submit(script(unread));
+    if (!handed.ok) throw new Error(JSON.stringify(handed));
+    expect(handed.proposal.unneededInputs).toEqual(["query"]);
+    // Read, nothing is noted.
+    const read = await controller(testScope({ interface: interfaceOf, handedOn: ["query"] })).submit(script(callable()));
+    if (!read.ok) throw new Error(JSON.stringify(read));
+    expect(read.proposal.unneededInputs).toBeUndefined();
+    // The person's value: refused, told to read it, never to end the brief.
+    const refused = await controller(testScope({ interface: interfaceOf })).submit(script(unread));
+    if (refused.ok) throw new Error("expected a refusal");
+    const message = JSON.stringify(refused.check.feedback);
+    expect(message).toContain("No other subflow hands this value on: it is one the person gives the Flow, and this subflow is where the plan uses it. Read it where this subflow uses it.");
+    expect(message).not.toContain("end the brief blocked and name the input");
+  });
+
   // A8 launch 7 (t594): a first builder bound its output to a click's success port, a route that hands on no value.
   it("refuses a callable part's output bound to a step's success or failure port, with the way out of ending blocked", async () => {
     const scope = testScope({ interface: interfaceOf });

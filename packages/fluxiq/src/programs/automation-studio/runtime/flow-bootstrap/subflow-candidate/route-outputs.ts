@@ -5,10 +5,11 @@
 // signal, which says only that the step worked. Core accepted it, since an
 // output was only asked to be bound, and the next subflow navigated to it as an
 // address. An output bound to a port whose role is success or failure is now
-// refused `subflow.output_not_a_value` (`./scoped-submission.ts`), with t581's
-// way out (`./callable-target.ts`, `subflow.input_unread`): if the subflow has
-// no value to hand on, end the brief blocked and name the output, so the plan
-// can change. The port's role is the node definition's; a port the registry
+// refused `subflow.output_not_a_value` (`./scoped-submission.ts`), with a way
+// out of its own: if the subflow has no value to hand on, end the brief
+// blocked and name the output, so the plan can change. (An unread input once
+// had the same way out; since t672 one another subflow hands on is accepted
+// and one the person gives is read, `./callable-target.ts`.) The port's role is the node definition's; a port the registry
 // does not describe is read by its id, as definitions default it
 // (`nodes/shared/definition.ts`).
 //
@@ -22,7 +23,7 @@ import { automationStudioInterfaceOutputPort } from "../candidate/index.ts";
 import type { AutomationStudioFlowBootstrapSubflow } from "../plan/index.ts";
 import type { AutomationStudioSubflowScopeIssue } from "./scope-issue.ts";
 
-/** t581's way out, said when the subflow has no value to hand on (header). */
+/** The way out said when the subflow has no value to hand on (header). */
 const WAY_OUT = "If this subflow has no value to hand on, the plan asks it for one it does not make: end the brief blocked and name the output, so the plan can change.";
 
 /** The issues of a callable target whose outputs are bound to a step's success or failure port, or to a port its node does not declare (header). */

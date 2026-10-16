@@ -26,13 +26,27 @@
 //
 // **Every input it declares is read (t581).** A part that declares an
 // `input:` none of its lines reads is refused `subflow.input_unread`, naming
-// the input: on the A8 bigbox run later subflows declared `storeName`, as the
-// plan gave it, and none of their steps read it, which no check of the plan
-// can see. A read is `$input.<name>` written anywhere in the part's own lines
+// the input, when that input is the person's value (t672, below): on the A8
+// bigbox run later subflows declared `storeName`, as the plan gave it, and
+// none of their steps read it, which no check of the plan can see. A read is `$input.<name>` written anywhere in the part's own lines
 // but its `input:` lines -- a step's value, a condition or `done when:` fact, a
 // value given on to a part it calls, an output line -- or in a handler written
 // inside the part. A helper part's own `$input` reads are its own inputs, not
 // this part's, so they do not count.
+//
+// **Only the person's value must be read (t672).** On the A8 Lab run
+// `run-mvan7giv-4246aafb` a subflow declared an input an earlier subflow handed
+// on, and none of its lines needed it: the earlier subflow had already left the
+// site where this one starts. It was refused three times, told to end the brief
+// blocked, and the plan was amended and the earlier subflow's finished work
+// built again. Which inputs another subflow hands on is the scope's
+// (`handedOn`, by the rule assembly binds them by,
+// `project-agents/dispatch/call-order.ts`). Such an input left unread is no
+// refusal: the submission passes, and the input is said `unneeded`, which the
+// proposal carries so the builder's answer and its brief's return say it was
+// not needed (`./scoped-submission.ts`). Every other input is a value the
+// person gives the Flow, and this subflow is where the plan uses it: one left
+// unread is still refused, told to read it where the subflow uses it.
 import { parseAutomationStudioFlowScript } from "../authoring/index.ts";
 import type { AutomationStudioFlowBootstrapInterface } from "../plan/index.ts";
 import type { AutomationStudioSubflowScopeIssue } from "./scope-issue.ts";
@@ -42,9 +56,11 @@ export const AUTOMATION_STUDIO_SUBFLOW_PROBE_CALL_LABEL = "subflow-probe-call";
 
 /**
  * Reads a callable subflow's script against its scope: the issues that refuse
- * it, or the probe script to check (header). `flow` is the script as sent.
+ * it, or the probe script to check and the handed-on inputs no line reads
+ * (header). `flow` is the script as sent; `handedOn` the scope's inputs another
+ * subflow hands on.
  */
-export function automationStudioSubflowCallableProbe(input: { flow: string; subflowKey: string; contract: AutomationStudioFlowBootstrapInterface }): { issues: AutomationStudioSubflowScopeIssue[]; probe?: string } {
+export function automationStudioSubflowCallableProbe(input: { flow: string; subflowKey: string; contract: AutomationStudioFlowBootstrapInterface; handedOn?: readonly string[] | undefined }): { issues: AutomationStudioSubflowScopeIssue[]; probe?: string; unneeded?: string[] } {
   const { script } = parseAutomationStudioFlowScript(input.flow);
   const issues: AutomationStudioSubflowScopeIssue[] = [];
   const outside = script.blocks.find((block) => block.label === undefined && !block.handler);
@@ -69,21 +85,27 @@ export function automationStudioSubflowCallableProbe(input: { flow: string; subf
   if (unbound.length) {
     issues.push({ code: "subflow.output_unbound", path: `flow.line.${target.line}`, message: `This subflow must hand back ${said(unbound)}, and the part binds ${unbound.length === 1 ? "it" : "them"} to nothing. Write \`output: <name> = $step.<label>.<output>\` for each, naming one of the part's own steps.` });
   }
-  // A declared input nothing in the part reads (header, t581): asked only of the scope's own names, once they match.
+  // A declared input nothing in the part reads (header, t581): asked only of the scope's own names, once they match; a handed-on one is only noted (t672).
+  const unneeded: string[] = [];
   if (!issues.length) {
     const own = script.blocks.indexOf(target);
     const reads = JSON.stringify([{ ...target, inputs: undefined }, ...script.blocks.filter((block) => block.handler?.parent === own)]);
+    const handedOn = new Set(input.handedOn ?? []);
     for (const line of target.inputs ?? []) {
       if (readsInput(reads, line.label)) continue;
+      if (handedOn.has(line.label)) {
+        unneeded.push(line.label);
+        continue;
+      }
       issues.push({ code: "subflow.input_unread", path: `flow.line.${line.line}`, message: `The input "${line.label}" at line ${line.line} is declared, and no line of this part reads it. `
         + `A part reads an input as \`$input.${line.label}\`: in a step's value, in a condition or \`done when:\` fact, or given on to a part it calls (\`${line.label}: $input.${line.label}\`). `
-        + "Read it where this subflow uses it. If this subflow has no use for it, the plan gives it a value it does not need: end the brief blocked and name the input, so the plan can change." });
+        + "No other subflow hands this value on: it is one the person gives the Flow, and this subflow is where the plan uses it. Read it where this subflow uses it." });
     }
   }
   if (issues.length) return { issues };
   // Every block closed first, then the call, so the steps it names stay where the builder wrote them (header).
   const call = [`step ${AUTOMATION_STUDIO_SUBFLOW_PROBE_CALL_LABEL}: run ${input.subflowKey}`, `  call: ${input.subflowKey}`, ...expectedInputs.map((name) => `  ${name}: $input.${name} = example`)];
-  return { issues, probe: [input.flow, "end", "end", ...call].join("\n") };
+  return { issues, probe: [input.flow, "end", "end", ...call].join("\n"), ...(unneeded.length ? { unneeded } : {}) };
 }
 
 /** Whether the part's written lines name `$input.<name>`, and not a longer name that starts with it. */

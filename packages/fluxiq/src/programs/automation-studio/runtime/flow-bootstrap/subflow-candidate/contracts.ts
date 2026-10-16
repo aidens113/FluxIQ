@@ -37,6 +37,14 @@ export type AutomationStudioSubflowScope = {
   interface?: AutomationStudioFlowBootstrapInterface;
   successCheck?: AutomationStudioFlowBootstrapSubflowMetadata["fluxiq.successCheck"];
   predecessors: readonly string[];
+  /**
+   * The interface's inputs whose value an earlier subflow of the plan hands
+   * on, by the rule assembly binds them by (`project-agents/dispatch/call-order.ts`,
+   * t672). One no line reads is no refusal: the subflow did not need it
+   * (`./callable-target.ts`). Every other input is a value the person gives
+   * the Flow. Absent, every input is.
+   */
+  handedOn?: readonly string[];
 };
 
 /** What binds a proposal, a trial and its receipt to one brief of one plan. */
@@ -55,6 +63,8 @@ export type AutomationStudioSubflowProposal = {
   subflows: readonly AutomationStudioFlowBootstrapSubflow[];
   summary: string;
   changedPaths: readonly string[];
+  /** The scope's handed-on inputs no line of this proposal reads (t672): the builder's answer and its brief's return say so, so no plan change follows. */
+  unneededInputs?: readonly string[];
 };
 
 /**

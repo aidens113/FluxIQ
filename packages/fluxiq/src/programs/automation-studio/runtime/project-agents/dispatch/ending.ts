@@ -64,8 +64,19 @@ import { automationStudioProjectDispatchAllowanceSaid, type AutomationStudioProj
 // (`candidate.last_submission_*`, `../../service/candidate-failure/refusal-codes.ts`),
 // the run of that refusal is said by its family and its issue codes instead,
 // an unread input by the name the brief's interface gives it, and the codes
-// leave the guard's sentence. An unread input is the plan's to change, so the
-// reason ends with that advice. Codes and Core's own port names only.
+// leave the guard's sentence. Since t672 only an input the person gives the
+// Flow is refused unread, so the reason ends with that advice: give the value
+// to the subflow that uses it, or say where this one does. Codes and Core's
+// own port names only.
+//
+// **An input the subflow did not need is said, not amended (t672).** On the A8
+// Lab run `run-mvan7giv-4246aafb` a builder's input handed on by an earlier
+// subflow was one none of its lines needed; it was refused, the brief ended
+// blocked, and the supervisor amended the plan and had the earlier subflow
+// rebuilt. Such an input is now accepted unread and carried on the proposal
+// (`unneededInputs`, `flow-bootstrap/subflow-candidate/scoped-submission.ts`),
+// and every return with that proposal says, by the input's name, that the
+// subflow did not need it and the plan needs no change for it.
 //
 // **An output the subflow cannot make is the plan's to change (A8 frozen pair
 // 3 bigbox, t645).** `run-mv9zn5ob-d929084d` planned an output no step of its
@@ -189,7 +200,8 @@ function returned(
   const value: AutomationStudioProjectBuilderReturn = {
     briefId: brief.briefId,
     outcome,
-    reason: withMoney(reason, automationStudioProjectDispatchAllowanceSaid(spend.sizedAtStart, spend.allowance?.toppedUp() ?? [])),
+    // The unneeded inputs are said before the money, and kept whole as it is (header, t672, t627).
+    reason: withMoney(reason, `${unneededSaid(proposal)}${automationStudioProjectDispatchAllowanceSaid(spend.sizedAtStart, spend.allowance?.toppedUp() ?? [])}`),
     trials: spend.trials.map((trial) => ({ ...trial })),
     spentUsd: spend.allowance?.spentUsd() ?? 0,
     calls: spend.allowance?.spentCalls() ?? 0
@@ -225,8 +237,8 @@ type LastRefused = { family: string; codes: string[]; carried: ReadonlySet<strin
 const ISSUES_DIGEST = /:[0-9a-f]{8}$/u;
 /** The scope issue that says no step of the subflow reads an input the plan gives it (`../../flow-bootstrap/subflow-candidate/callable-target.ts`). */
 const INPUT_UNREAD = "subflow.input_unread";
-/** What the supervisor is told after an unread input: the plan's to change (header, t630). */
-const INPUT_UNREAD_ADVICE = " The plan gives this subflow a value no step of it reads: change the plan with project.amend_plan, so that it takes only values a step of it types or opens, or carry its parts in the subflow that reads that value.";
+/** What the supervisor is told after an unread input, which is always one the person gives the Flow (header, t630, t672). */
+const INPUT_UNREAD_ADVICE = " The plan gives this subflow a value the person gives the Flow, and no step of it reads that value: if another subflow is the one that uses it, change the plan with project.amend_plan to give it there; otherwise send a changed brief saying where this subflow uses it.";
 /** The scope issues that say an output is bound to no value (`../../flow-bootstrap/subflow-candidate/route-outputs.ts`), each at `flow.output.<id>`. */
 const OUTPUT_CODES: ReadonlySet<string> = new Set(["subflow.output_not_a_value", "subflow.output_unknown_port"]);
 const OUTPUT_PATH = /^flow\.output\.([A-Za-z][A-Za-z0-9_]*)$/u;
@@ -267,6 +279,14 @@ function refusedSaid(code: string, refused: LastRefused, brief: AutomationStudio
   const outputs = refused.outputs.length ? refused.outputs.map((name) => `"${name}"`).join(", ") : undefined;
   const said = (issue: string) => (issue === INPUT_UNREAD ? `${issue}: ${inputsSaid(brief)}` : OUTPUT_CODES.has(issue) && outputs ? `${issue}: output ${outputs}` : issue);
   return `${refused.family} (${refused.codes.map(said).join(", ")})`;
+}
+
+/** What a return says of the handed-on inputs its proposal does not read (header, t672), by the names Core checked; nothing when there are none. */
+function unneededSaid(proposal: Readonly<AutomationStudioSubflowProposal> | undefined): string {
+  const names = (proposal?.unneededInputs ?? []).filter((name) => SAYABLE.test(name));
+  if (!names.length) return "";
+  const quoted = names.map((name) => `"${name}"`).join(", ");
+  return ` No step of this subflow reads ${names.length === 1 ? `its input ${quoted}` : `its inputs ${quoted}`}, which an earlier subflow hands on: this subflow did not need ${names.length === 1 ? "it" : "them"}, and the plan needs no change for that.`;
 }
 
 /** The brief's inputs by the names its interface gives them, the plan's port names Core checked. */

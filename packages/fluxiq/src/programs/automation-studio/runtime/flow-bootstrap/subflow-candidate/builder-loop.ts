@@ -85,6 +85,11 @@
 // it is the receipt, and its `ended` and `reason` are set aside; with none it
 // is the honest ending it also carries. Anything else is refused with the one
 // shape to send: the exact receipt where a yes stands, the ending otherwise.
+//
+// **An unread handed-on input is said, not refused (t672).** A proposal whose
+// lines read none of an input another subflow hands on carries it as
+// `unneededInputs` (`./scoped-submission.ts`), and the accepted answer says so
+// in a `note`: the revision stands, and the supervisor is told.
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceCompletionCheck, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
 import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT } from "../plan/index.ts";
@@ -318,6 +323,7 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
         ok: true, status: "draft", partial: true, subflowKey, revision: submitted.proposal.revision, digest: submitted.proposal.digest,
         changedPaths: [...submitted.proposal.changedPaths], verification: "not_performed", promotionAllowed: false,
         ...acceptedScript(call.value, submitted.proposal),
+        ...unneededNote(submitted.proposal),
         next: gate.available
           ? `Test next with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} using exactly {"revision": ${submitted.proposal.revision}, "digest": "${submitted.proposal.digest}"}. Do not complete until that exact revision's trial answers yes. Submitting again makes a new revision that needs its own trial.`
           : "No subflow trial runner is available here; completing leaves an untried proposal."
@@ -370,4 +376,12 @@ function acceptedScript(sent: JsonObject, proposal: Readonly<AutomationStudioSub
   if (typeof sent.flow === "string") return { script: sent.flow, scriptIs: `${said}: script is its whole text.` };
   if (sent.plan !== undefined) return { plan: sent.plan, scriptIs: `${said}: plan is its whole JSON plan.` };
   return {};
+}
+
+/** What an accepted proposal says of the handed-on inputs no line of it reads (header, t672): that it stands as it is, and the supervisor is told. */
+function unneededNote(proposal: Readonly<AutomationStudioSubflowProposal>): JsonObject {
+  const names = proposal.unneededInputs ?? [];
+  if (!names.length) return {};
+  const quoted = names.map((name) => `"${name}"`).join(", ");
+  return { note: `No line of this subflow reads ${names.length === 1 ? `the input ${quoted}` : `the inputs ${quoted}`}, which another subflow hands on: this subflow does not need ${names.length === 1 ? "it" : "them"}, so this revision stands as it is and the supervisor is told. Keep the \`input:\` ${names.length === 1 ? "line" : "lines"}, since the plan gives the value.` };
 }
