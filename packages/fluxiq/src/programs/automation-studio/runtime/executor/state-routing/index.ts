@@ -21,6 +21,8 @@ export {
 export { automationStudioRankStateRoutes, type AutomationStudioRankedStateRoute, type AutomationStudioStateRouteMatch } from "./ranking.ts";
 export type { AutomationStudioGuardedStateRoutingRecord, AutomationStudioStateRouteRefusal, AutomationStudioStateRouteRefusalGuard } from "./refusal.ts";
 export { automationStudioRepeatedLastingAct, type AutomationStudioRepeatedLastingAct } from "./repeated-act.ts";
+export { automationStudioStateReopenOpener } from "./reopen.ts";
+export { automationStudioTargetMeasuredNotShown } from "./target-not-shown.ts";
 export { automationStudioStateRouteOnward, automationStudioStateRouteSpan } from "./route-path.ts";
 export { automationStudioStateRoutedAttempt } from "./routed-attempt.ts";
 export { automationStudioUnboundSkippedValue, type AutomationStudioUnboundSkippedValue } from "./skipped-values.ts";

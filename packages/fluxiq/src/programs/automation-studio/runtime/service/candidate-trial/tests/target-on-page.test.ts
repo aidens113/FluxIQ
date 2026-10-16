@@ -131,3 +131,76 @@ describe("trial feedback for a step that scored no control at all", () => {
     expect((await gate.test({ revision: 4, digest: "8d633994" })).resultCode).toBe("candidate.trial_same_failure");
   });
 });
+
+// t661, A8 bigbox cart (`run-mvac0ddx-f52ba929`): the store picker a step opened was closed again before the step that
+// used it, so that step's control was found -- one match, scored well -- but had no box. The domain reported it under
+// `target_not_found`, the measurement cleared the near-miss bar, and the model was told the step was right and to test
+// again. A control the domain measured on the page but not shown (`shown: false`) now says so and that a step before
+// it must show it, and never takes the test-again path. A library fixture: a branch list a step opens, then the
+// branch's own button.
+
+const branchGraph = {
+  nodes: [
+    { id: "open", definitionId: "web.output.browser-navigate", label: "open the catalogue", parameterValues: { url: "http://library.test/" } },
+    { id: "list", definitionId: "web.output.dom-click", label: "open the branch list", parameterValues: { element: { tagName: "button", visibleText: "Choose branch" } } },
+    { id: "set", definitionId: "web.output.dom-click", label: "make Eastside my branch", parameterValues: { element: { tagName: "button", visibleText: "Make this my branch" } } }
+  ]
+} as unknown as AutomationStudioFlowArtifact;
+const notShownFailure: Failure = { category: "target_not_found", code: "web.target.not_shown", retryable: true, stage: "target_resolution", expected: "a shown control", actual: "the control has no box" };
+const listed: Attempt = { attemptId: "l1", nodeId: "list", definitionId: "web.output.dom-click", startedAt: 2, status: "succeeded", inputs: {}, outputs: {}, effects: [] };
+const setting = (attemptId: string, resolution?: JsonObject): Attempt => ({
+  attemptId, nodeId: "set", definitionId: "web.output.dom-click", startedAt: 3, status: "failed", inputs: {}, effects: [], failure: { ...notShownFailure },
+  outputs: { outputId: "web.dom.click", ok: false, result: { result: { status: "failed", ...(resolution ? { resolution } : {}) } } }
+});
+const foundHidden = { strategy: "fingerprint", candidateCount: 1, bestScore: 0.708, confidence: 0.9, shown: false };
+const branchFeedback = (attempts: Attempt[]) => automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph: branchGraph,
+  trace: { status: "failed", startedAt: 1, values: {}, effects: [], attempts: [{ ...open, nodeId: "open" }, { ...listed }, ...attempts] } }).feedback;
+const branchStep = (attempts: Attempt[]) => (branchFeedback(attempts).steps as JsonObject[]).at(-1)!;
+
+describe("trial feedback for a step whose control was on the page but not shown", () => {
+  it("says the control was found but not shown and that a step before it must show it, never that the step is right and to test again", () => {
+    const step = branchStep(["s1", "s2", "s3", "s4"].map((id) => setting(id, foundHidden)));
+    expect(step).toMatchObject({
+      step: 3, status: "failed", failureCode: "web.target.not_shown", targetNotShown: true, retryable: false,
+      happened: "The step found its control on the page, but the control was not shown, so it could not be used.",
+      notShown: "Step 3 (\"make Eastside my branch\") found its control \"Make this my branch\" on the page, but it was not shown, so the step could not use it. The step's control is right; a step before it must show it."
+    });
+    expect(step.advice).toMatch(/A step before this one must show it/u);
+    for (const key of ["targetOnPage", "onPage"]) expect(step).not.toHaveProperty(key);
+    // The tries it absorbed say the same.
+    expect((step.absorbed as JsonObject[]).map((entry) => entry.happened)).toEqual(Array(3).fill("The step found its control on the page, but the control was not shown, so it could not be used."));
+    expect(JSON.stringify(step)).not.toMatch(/test this same revision again|could not find its control|0\.708|fingerprint|selector/iu);
+  });
+
+  it("reads the latest measurement: a hidden control measured last is not a near miss, whatever an earlier try scored", () => {
+    expect(branchStep([setting("s1", { strategy: "fingerprint", candidateCount: 1, bestScore: 0.708 }), setting("s2", foundHidden)])).toMatchObject({ targetNotShown: true });
+  });
+
+  it.each([
+    ["no shown field, as a domain that does not report it yet", { strategy: "fingerprint", candidateCount: 1, bestScore: 0.708 }],
+    ["a shown field that is not exactly false", { strategy: "fingerprint", candidateCount: 1, bestScore: 0.708, shown: "false" }]
+  ])("keeps the near-miss reading when the domain did not say not shown: %s", (_name, resolution) => {
+    const step = branchStep([setting("s1", resolution)]);
+    expect(step).toMatchObject({ targetOnPage: true });
+    expect(step).not.toHaveProperty("targetNotShown");
+  });
+
+  it("the trial gate tells the model to change the steps that lead to it, never to test the same revision unchanged", async () => {
+    const candidate = { revision: 2, digest: "d5915cd0" } as unknown as AutomationStudioFlowCandidate;
+    const feedback = branchFeedback(["s1", "s2"].map((id) => setting(id, foundHidden)));
+    const gate = new AutomationStudioFlowCandidateTrialGate({
+      latest: () => candidate,
+      trial: { candidateId: "candidate.branch", port: async () => ({ revision: 2, digest: "d5915cd0", verdict: "execution_failed", trialRunId: "trial", feedback }) }
+    });
+    const first = (await gate.test({ revision: 2, digest: "d5915cd0" })).evidence as JsonObject;
+    expect(first.instruction).toBe("Step 3 (\"make Eastside my branch\") found its control on the page, but the control was not shown, so the step could not use it. Testing this revision unchanged would meet the same hidden control. "
+      + "A step before it must show it: put the step that opens the menu, panel or list holding the control right before this step, with nothing between them that could close it again, or add that step where the Flow has none. "
+      + "Change the steps that lead to this one, not how this step finds its control, submit the whole candidate, then test the new revision.");
+    // The same stop again closes the revision, and the refusal says the same, not the near-miss words.
+    await gate.test({ revision: 2, digest: "d5915cd0" });
+    const refusedAgain = await gate.test({ revision: 2, digest: "d5915cd0" });
+    expect(refusedAgain.resultCode).toBe("candidate.trial_same_failure");
+    expect((refusedAgain.evidence as JsonObject).instruction).toMatch(/^Step 3 .* found its control on the page, but the control was not shown/u);
+    expect(gate.completion({ revision: 2, digest: "d5915cd0" })).toMatchObject({ ok: false, feedback: { instruction: expect.stringMatching(/not shown/u) } });
+  });
+});

@@ -14,9 +14,13 @@
 // made, without running it again (`./run.ts`, `preparedStart`). A prepared
 // start not followed by its trial is dropped by the next `prepareStart` of the
 // same brief, revision and digest.
+//
+// **A trial the purse cannot judge puts nothing back (t661).** `prepareStart`
+// runs no hook when the purse cannot hold the trial's two judge calls: the
+// trial will not start (`./run.ts`).
 
 import type { AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
-import type { AutomationStudioCandidateTrialStart } from "../candidate-trial/index.ts";
+import { automationStudioTrialJudgingShortfall, automationStudioTrialLargestJudgePrompt, type AutomationStudioCandidateTrialStart } from "../candidate-trial/index.ts";
 import { runAutomationStudioSubflowTrial } from "./run.ts";
 import { automationStudioSubflowTrialStart } from "./start.ts";
 import type { AutomationStudioSubflowTrialPorts, AutomationStudioSubflowTrialRecord } from "./types.ts";
@@ -47,7 +51,8 @@ export function automationStudioSubflowTrialPort(buildId: string, ports: Automat
     const key = keyOf(request.scope.briefId, request.proposal.revision, request.proposal.digest);
     const start = ready.get(key);
     ready.delete(key);
-    const trial = await runAutomationStudioSubflowTrial(request, ports, start);
+    // The judge calls are held at the largest prompt an earlier partial trial's judge was sent (`../candidate-trial/judging-fits.ts`, t661).
+    const trial = await runAutomationStudioSubflowTrial(request, ports, start, automationStudioTrialLargestJudgePrompt(records));
     records.push(structuredClone(trial.record));
     return trial.result;
   };
@@ -57,6 +62,8 @@ export function automationStudioSubflowTrialPort(buildId: string, ports: Automat
       if (scope.buildId !== buildId) return "none";
       const key = keyOf(scope.briefId, revision, digest);
       ready.delete(key);
+      // A trial the purse cannot judge does not start, so the site is not put back for it (t661).
+      if (automationStudioTrialJudgingShortfall({ code: "subflow.trial_unaffordable", judgeInputTokens: automationStudioTrialLargestJudgePrompt(records) })) return "none";
       const start = await automationStudioSubflowTrialStart({ scope, revision, digest, signal }, ports);
       ready.set(key, start);
       return start.status === "reset" ? "reset" : start.status === "failed" ? "failed" : "none";

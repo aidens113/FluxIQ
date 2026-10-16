@@ -38,6 +38,12 @@
 // conditions each standing no asks to remove. The trial's result carries it
 // beside its feedback, never in it, for the trial gate to hold a later no to
 // (`../../flow-bootstrap/candidate/trial-gate.ts`); no model is shown it.
+//
+// **A trial the purse cannot judge is not started (t661).** Before anything
+// acts on the site, the purse is asked to hold the trial's two judge calls at
+// their worst case (`./judging-fits.ts`). Where it cannot, the trial answers
+// `not_judged` under `candidate.trial_unaffordable`, with the figures, and
+// nothing runs; a re-judgement is not asked either, and keeps its evidence.
 
 import { createHash, randomUUID } from "node:crypto";
 import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
@@ -53,8 +59,12 @@ import { automationStudioTrialLearnedPaces } from "./learned-paces.ts";
 import { automationStudioCandidateTrialSummary } from "./summary.ts";
 import { automationStudioTrialWayOuts } from "./way-outs.ts";
 import { automationStudioCandidateFrameEvidence } from "./frame-evidence.ts";
+import { automationStudioTrialJudgingShortfall } from "./judging-fits.ts";
 
 const NO_SPEND: AutomationStudioCandidateTrialRecord["judge"] = Object.freeze({ calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 });
+
+/** The code of a trial not started because the purse cannot pay its two judge calls (header, t661). */
+const UNAFFORDABLE = "candidate.trial_unaffordable";
 
 /** One trial's answer and record; `unjudged` only when its judge did not judge it, with the evidence to ask the judge again on (header). */
 export type AutomationStudioCandidateTrialOutcome = {
@@ -64,12 +74,20 @@ export type AutomationStudioCandidateTrialOutcome = {
   unjudged?: AutomationStudioCandidateTrialUnjudged;
 };
 
-/** Runs and judges one trial; the result is the trial gate's answer, the record Core's audit of it. */
-export async function runAutomationStudioCandidateTrial(request: AutomationStudioCandidateTrialRequest, ports: AutomationStudioCandidateTrialPorts, preparedStart?: AutomationStudioCandidateTrialStart): Promise<AutomationStudioCandidateTrialOutcome> {
+/**
+ * Runs and judges one trial; the result is the trial gate's answer, the record
+ * Core's audit of it. `judgeInputTokens` is the largest judge prompt an earlier
+ * trial of this build sent, which sizes the judge calls held before it starts
+ * (`./judging-fits.ts`).
+ */
+export async function runAutomationStudioCandidateTrial(request: AutomationStudioCandidateTrialRequest, ports: AutomationStudioCandidateTrialPorts, preparedStart?: AutomationStudioCandidateTrialStart, judgeInputTokens?: number): Promise<AutomationStudioCandidateTrialOutcome> {
   const { signal, candidate } = request;
   signal.throwIfAborted();
   const now = ports.now ?? Date.now;
   const answer = answerFor(request);
+  // Not started when the purse cannot pay both judge calls: nothing acts on the site and no judge is asked (header, t661).
+  const unaffordable = automationStudioTrialJudgingShortfall({ code: UNAFFORDABLE, judgeInputTokens });
+  if (unaffordable) return answer("not_judged", unaffordable, { start: preparedStart ?? { status: "not_reset" }, execution: "not_run", code: UNAFFORDABLE, judge: { ...NO_SPEND } });
   const start = preparedStart ?? await automationStudioCandidateTrialStart(request, ports);
   if (start.status === "failed") return answer("execution_failed", { code: start.code, start: start.status }, { start, execution: "not_run", code: start.code, judge: { ...NO_SPEND } });
 
@@ -137,8 +155,14 @@ export async function runAutomationStudioCandidateTrial(request: AutomationStudi
  * evidence: nothing is run, and no act is answered as left on the site, since
  * none was made (header). Its verdict is the trial's, under the trial's run id.
  */
-export async function rejudgeAutomationStudioCandidateTrial(request: AutomationStudioCandidateTrialRequest, unjudged: AutomationStudioCandidateTrialUnjudged, ports: AutomationStudioCandidateTrialPorts): Promise<AutomationStudioCandidateTrialOutcome> {
+export async function rejudgeAutomationStudioCandidateTrial(request: AutomationStudioCandidateTrialRequest, unjudged: AutomationStudioCandidateTrialUnjudged, ports: AutomationStudioCandidateTrialPorts, judgeInputTokens?: number): Promise<AutomationStudioCandidateTrialOutcome> {
   request.signal.throwIfAborted();
+  // The judge is not asked again when the purse cannot pay both calls; the evidence is kept for when it can (header, t661).
+  const unaffordable = automationStudioTrialJudgingShortfall({ code: UNAFFORDABLE, judgeInputTokens });
+  if (unaffordable) {
+    const refused = answerFor(request)("not_judged", { ...unaffordable, trialRunId: unjudged.shown.trialRunId }, { trialRunId: unjudged.shown.trialRunId, start: unjudged.start, execution: "succeeded", code: UNAFFORDABLE, judge: { ...NO_SPEND } });
+    return { ...refused, unjudged };
+  }
   return await judged(request, ports, unjudged, [], true);
 }
 

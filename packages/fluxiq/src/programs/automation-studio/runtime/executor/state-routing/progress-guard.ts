@@ -42,11 +42,19 @@ export type AutomationStudioStateRouteGuard = {
    * resets the count, and routes into different nodes are counted apart.
    */
   admit(nodeId: string, mark: number): AutomationStudioStateRouteAdmission;
+  /**
+   * Records a return to `nodeId` to show a control a later step found on the
+   * page but not shown (`./reopen.ts`, t661), taken at progress `mark`, or
+   * refuses it: one such return per node until the run makes progress, so a
+   * second return to the same opener with nothing done since stops the run.
+   */
+  reopen(nodeId: string, mark: number): boolean;
 };
 
 /** A fresh guard, one per run. */
 export function automationStudioStateRouteGuard(): AutomationStudioStateRouteGuard {
   const routes = new Map<string, { mark: number; returns: number }>();
+  const reopened = new Map<string, number>();
   return {
     admit(nodeId, mark) {
       const previous = routes.get(nodeId);
@@ -54,6 +62,11 @@ export function automationStudioStateRouteGuard(): AutomationStudioStateRouteGua
       if (returns > AUTOMATION_STUDIO_STATE_ROUTE_RETURN_LIMIT) return { admitted: false, returns };
       routes.set(nodeId, { mark, returns });
       return { admitted: true };
+    },
+    reopen(nodeId, mark) {
+      if (reopened.get(nodeId) === mark) return false;
+      reopened.set(nodeId, mark);
+      return true;
     }
   };
 }

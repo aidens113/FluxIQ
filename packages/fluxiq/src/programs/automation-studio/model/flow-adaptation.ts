@@ -433,11 +433,15 @@ export type AutomationStudioFlowRunActionAttemptRecord = {
    * guard's closed code and the node it led to, in ranked order; absent when
    * none was. A `no_match` with `refused` matched a node the run could not
    * safely go to, not nothing.
+   *
+   * `noMatchCause` (t661) says why a `no_match` found no way on, as a closed
+   * code (`AutomationStudioFlowRunStateRouteNoMatchCause`); absent on any other
+   * outcome, and on a record saved before it existed.
    */
   stateRouting?:
     | { outcome: "routed" | "effect_holds"; refused?: AutomationStudioFlowRunStateRouteRefusal[] }
     | { outcome: "guard_stopped"; code?: string; toNodeId: string; refused?: AutomationStudioFlowRunStateRouteRefusal[] }
-    | { outcome: "no_match" | "unobserved" | "no_pre_states"; code?: string; refused?: AutomationStudioFlowRunStateRouteRefusal[] };
+    | { outcome: "no_match" | "unobserved" | "no_pre_states"; code?: string; refused?: AutomationStudioFlowRunStateRouteRefusal[]; noMatchCause?: AutomationStudioFlowRunStateRouteNoMatchCause };
   /** The invocation ids of the frames this attempt ran in, outermost first (C1). */
   framePath?: string[];
   /** What this attempt's failure counted as (C6); absent on an attempt that did not fail. */
@@ -463,6 +467,22 @@ export type AutomationStudioFlowRunActionAttemptRecord = {
   parentAttemptId?: string;
   metadata?: JsonObject;
 };
+
+/**
+ * Why state routing found no way on for a step that could not run (t661), as
+ * the routing decision tells its cases apart (`runtime/executor/state-routing/decision.ts`):
+ *
+ * - `effect_not_on_page`: the step recorded its own effect, the page did not
+ *   show it, and no other step recorded an expected starting page.
+ * - `effect_route_refused`: the page showed the step's own effect, going on
+ *   past it was refused, and no other step recorded an expected starting page.
+ * - `matches_refused`: the page matched other steps' expected starting pages,
+ *   and a safety guard refused going on at each (`refused` names them).
+ * - `matching_steps_already_acted`: the steps whose starting page matched had
+ *   already acted in this run, and nothing showed their effect gone.
+ * - `no_step_matches_page`: the page matched no step's expected starting page.
+ */
+export type AutomationStudioFlowRunStateRouteNoMatchCause = "effect_not_on_page" | "effect_route_refused" | "matches_refused" | "matching_steps_already_acted" | "no_step_matches_page";
 
 /** One way on state routing refused: the guard's closed code and the node the route led to. */
 export type AutomationStudioFlowRunStateRouteRefusal = { guard: "unbound_value" | "repeats_lasting_act" | "not_checkpoint" | "checkpoint_when_not_true" | "ready_state_not_true"; toNodeId: string };
