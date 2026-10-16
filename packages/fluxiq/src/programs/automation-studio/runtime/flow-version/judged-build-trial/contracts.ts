@@ -30,7 +30,16 @@ export const AUTOMATION_STUDIO_FLOW_JUDGED_BUILD_TRIAL_METADATA_KEY = "judgedBui
 export type AutomationStudioFlowJudgedBuildTrial = {
   trialRunId: string;
   verdict: "yes";
-  /** The judge calls behind the yes: two where a second call confirmed it (t296). */
+  /**
+   * The judge calls behind the yes, as the build-test judge counted them (one
+   * per ask): exactly two where a second call confirmed a first-ask yes
+   * (t296); more where the yes was reached by asking calls again -- a refuted
+   * no (t607), a contradicted unsure (t503) or a split's no (t515) re-asked --
+   * or a call was asked again. The playback hold reads it as the re-ask mark
+   * (t664, `../../result-verification/build-yes-hold/held-double-no.ts`): the
+   * outcome's own marks (`refutedNo.reasked`, `contradictedUnsure.reasked`)
+   * do not survive the judge's yes, so the count is what apply can carry.
+   */
   calls: number;
   /** `automationStudioFlowInstructionDigest` of the Flow's instructions, as the run's result check digests them. */
   instructionDigest: string;

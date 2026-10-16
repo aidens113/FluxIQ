@@ -2,6 +2,7 @@
 // result check is told it (`./held-double-no.ts`, t660).
 
 import type { AutomationStudioFlowGraphVersion } from "../../flow-version/index.ts";
+import type { AutomationStudioResultBuildYesHoldBecause } from "./because.ts";
 
 /**
  * The trial a build judged the very Flow revision a run executed by, where
@@ -19,9 +20,16 @@ export type AutomationStudioResultJudgedBuildTrial = {
 };
 
 /**
- * Finds that trial for a run: the project, the Flow (and Subflow) and the run,
- * with the graph versions the run recorded executing. Nothing where the build
- * judged no trial of exactly those versions, or the deployment keeps none.
+ * Why a port names no trial for a run (t664, `./because.ts`): the saved Flow
+ * names none, or the run did not execute the versions it judged.
+ */
+export type AutomationStudioResultJudgedBuildTrialMissing = { missing: Extract<AutomationStudioResultBuildYesHoldBecause, "no_build_trial" | "revision_mismatch"> };
+
+/**
+ * Finds that trial for a run: the project, the Flow (and the Subflow its
+ * router chose) and the run, with the graph versions the run recorded
+ * executing. Where the build judged no trial of exactly those versions, why
+ * not; `undefined` reads as `no_build_trial`.
  */
 export type AutomationStudioResultJudgedBuildTrialPort = (input: {
   projectId: string;
@@ -29,4 +37,4 @@ export type AutomationStudioResultJudgedBuildTrialPort = (input: {
   subflowId?: string | undefined;
   runId: string;
   flowVersions: readonly AutomationStudioFlowGraphVersion[];
-}) => Promise<AutomationStudioResultJudgedBuildTrial | undefined>;
+}) => Promise<AutomationStudioResultJudgedBuildTrial | AutomationStudioResultJudgedBuildTrialMissing | undefined>;

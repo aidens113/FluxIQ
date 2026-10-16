@@ -47,7 +47,11 @@
 // Flow. Where the caller names the trial its build judged this very revision by
 // (`judgedBuildTrial`), a double no on the rows that trial stored, against the
 // same request, is recorded unverified, not refuted (`./build-yes-hold/`). It
-// never makes a yes.
+// never makes a yes. Since t664 (A8 towels `run-mvahlxuu-760d9e28`, where the
+// build's yes was the wrong side) it holds only nos Core's record contradicts
+// at least in part, and every double no records why it was or was not held
+// (`resultVerification.buildYesHold`, one closed code) and says so in one
+// build-trace line.
 //
 // Everything it reaches outside itself is a port, for the reason
 // `recovery/annotation/ports.ts` states: the service is a six-thousand-line
@@ -71,7 +75,7 @@ import {
   type AutomationStudioFlowGraphVersion
 } from "../flow-version/index.ts";
 import { automationStudioAttemptInputs, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../executor/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTokenLimits } from "../llm/index.ts";
+import { automationStudioLlmBuildTrace, type AutomationStudioLlmProvider, type AutomationStudioLlmTokenLimits } from "../llm/index.ts";
 
 import {
   automationStudioRefutedResultRerunsFlow,
@@ -103,7 +107,7 @@ import {
 import { automationStudioResultVerificationStatus } from "./verification-status.ts";
 import { AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES, verifyAutomationStudioRunResult } from "./verify.ts";
 import { AutomationStudioCompletedVerificationChecks } from "./completed-checks/index.ts";
-import { automationStudioResultBuildYesHold, type AutomationStudioResultJudgedBuildTrialPort } from "./build-yes-hold/index.ts";
+import { automationStudioResultBuildYesHold, type AutomationStudioResultBuildYesHoldRecord, type AutomationStudioResultJudgedBuildTrialPort } from "./build-yes-hold/index.ts";
 
 /**
  * A resolver's answer, normalized to the one shape the verification reads.
@@ -318,7 +322,8 @@ export async function verifyAutomationStudioRuntimeSessionResult(
   const outcome = report.outcome;
   const failing = outcome.performed === true && automationStudioResultVerificationFailsRun(outcome);
   const scheduled = automationStudioResultRecordedCheck(input, outcome);
-  const recordedMetadata = { resultVerification: automationStudioResultRecordedOutcome(outcome), ...(scheduled ? { resultCheck: scheduled } : {}) };
+  // A double no says on the record whether the build's yes held it, and why (header, t664).
+  const recordedMetadata = { resultVerification: { ...automationStudioResultRecordedOutcome(outcome), ...(report.buildYesHold ? { buildYesHold: report.buildYesHold } : {}) }, ...(scheduled ? { resultCheck: scheduled } : {}) };
   const next: AutomationStudioRuntimeSession = failing
     ? { ...input.session, status: "failed", metadata: { ...(input.session.metadata ?? {}), ...recordedMetadata } }
     : { ...input.session, metadata: { ...(input.session.metadata ?? {}), ...recordedMetadata } };
@@ -510,6 +515,8 @@ type AutomationStudioRuntimeSessionVerificationReport = Awaited<ReturnType<typeo
    * rather than as the digest of an empty question.
    */
   instructionDigest?: string;
+  /** On a double no, whether the build's judged yes held it and why (`./build-yes-hold/because.ts`, t664). */
+  buildYesHold?: AutomationStudioResultBuildYesHoldRecord;
 };
 
 /** The verification, plus what the run produced and the first record set it judged. */
@@ -578,16 +585,16 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     ...(costCeiling(input, resolved) !== undefined ? { maxEstimatedCostUsd: costCeiling(input, resolved) } : {}),
     ...(input.signal ? { signal: input.signal } : {})
   });
-  // A double no on the rows the build's two yeses judged is held (header, t660).
+  // A double no on the rows the build's two yeses judged is held where Core's record refutes part of each no; every double no says why (header, t660, t664).
   const judgedBuildTrial = input.ports.judgedBuildTrial;
-  const outcome = judgedBuildTrial
-    ? await automationStudioResultBuildYesHold({
-      outcome: verified.outcome, runId: session.runId, instructionDigest: instructionDigest ?? undefined, recordSets,
-      trial: async () => await judgedBuildTrial({ projectId: input.projectId, flowId: session.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}), runId: session.runId, flowVersions: automationStudioFlowVersionsFromMetadata(session.metadata) }),
-      trialRecordSets: async (trialRunId) => await readRecordSets(input.ports, input.projectId, trialRunId)
-    })
-    : verified.outcome;
-  return withResult({ ...verified, outcome }, instructionDigest);
+  const { outcome, hold } = await automationStudioResultBuildYesHold({
+    outcome: verified.outcome, runId: session.runId, instructionDigest: instructionDigest ?? undefined, recordSets,
+    trial: async () => await judgedBuildTrial?.({ projectId: input.projectId, flowId: session.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}), runId: session.runId, flowVersions: automationStudioFlowVersionsFromMetadata(session.metadata) }),
+    trialRecordSets: async (trialRunId) => await readRecordSets(input.ports, input.projectId, trialRunId)
+  });
+  if (hold) automationStudioLlmBuildTrace.line(`result-check build-yes-hold run=${session.runId} held=${hold.held} because=${hold.because}`);
+  const report = withResult({ ...verified, outcome }, instructionDigest);
+  return hold ? { ...report, buildYesHold: hold } : report;
 }
 
 /**
