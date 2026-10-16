@@ -17,7 +17,7 @@
 // (`../refuted-no/request-text-test.ts`): they run word for word in the request, never
 // beside a word that negates, excludes or offers an alternative. Core's words
 // then name the request's words and the options the step left out, and the
-// call is asked once more (`../agreement.ts`); its answer takes its place, so a
+// call is asked once more (`../agreement/`); its answer takes its place, so a
 // yes still needs two yeses. A doubt naming any step whose option is not the
 // request's own words stands: whether that narrowing was right is the judge's.
 //

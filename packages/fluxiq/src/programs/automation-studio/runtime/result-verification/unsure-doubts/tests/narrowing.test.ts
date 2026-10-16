@@ -6,7 +6,7 @@
 // catalogue: no task, site, item or answer of any realistic scenario.
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioResultReadAccount, AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "../../contracts/index.ts";
-import { automationStudioResultVerificationAgreement, automationStudioResultVerificationReaskContradicted } from "../../agreement.ts";
+import { automationStudioResultVerificationAgreement, automationStudioResultVerificationReaskContradicted } from "../../agreement/index.ts";
 import { automationStudioRequestWording } from "../../request-rows/index.ts";
 import { automationStudioResultVerdict } from "../../verdict.ts";
 

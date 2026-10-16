@@ -7,7 +7,7 @@
 // the claim as fact and added a column nobody asked for. A record set's
 // `sortRead` (`./sort-reading.ts`) says, for its first key, whether the rows
 // shown are in that order. A reading that denies the order of a sorted column
-// every such record says is in order is contradicted, and `../agreement.ts`
+// every such record says is in order is contradicted, and `../agreement/`
 // marks it so, as it marks a reading about pages the record says do not exist
 // (t501).
 //

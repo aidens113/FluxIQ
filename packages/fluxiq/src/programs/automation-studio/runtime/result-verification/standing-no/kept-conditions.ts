@@ -32,7 +32,7 @@
 // one no), so no record reached its gate, and the next revision dropped a
 // condition whose every row left out by itself Core had settled on the
 // request's own words. A trial judged unsure carries the record too
-// (`../agreement.ts`), and this memory reads it as it reads a no's: the rows
+// (`../agreement/`), and this memory reads it as it reads a no's: the rows
 // are Core's measurement, and a label test is never one (t651,
 // `../refuted-no/label-tested-condition.ts`).
 //

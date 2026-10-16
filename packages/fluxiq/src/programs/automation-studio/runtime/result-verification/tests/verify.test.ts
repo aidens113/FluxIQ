@@ -162,7 +162,7 @@ describe("a verification check that did not come back", () => {
 // t503 (lane C round 17, `run-mv6lgqi6-4bfab2e1`, trial 3): one check could not
 // tell because "later pages were never read", against every paging read's own
 // account that its list ended, and the other said yes. That check is asked once
-// more, with Core's record named on its copy (`../agreement.ts`).
+// more, with Core's record named on its copy (`../agreement/`).
 describe("an unsure beside a yes whose doubt about pages Core's record contradicts", () => {
   /** A read that followed five pages and stopped because the list had no next page. */
   const ended: AutomationStudioResultReadAccount = { nodeId: "n2", definitionId: "extract", pagesRead: 5, pageLimit: 10, stop: "control_disabled", truncated: false, kept: 13, paginates: true };

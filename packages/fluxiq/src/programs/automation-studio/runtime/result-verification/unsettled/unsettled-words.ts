@@ -1,6 +1,6 @@
 /**
  * The closing sentence of a verification two checks did not settle
- * (`../agreement.ts`), as each unit of work reads it.
+ * (`../agreement/`), as each unit of work reads it.
  *
  * A run is not failed on such checks, and its result card says so (`run`). A
  * build cannot finish on them: its test has to be judged to do what was asked.

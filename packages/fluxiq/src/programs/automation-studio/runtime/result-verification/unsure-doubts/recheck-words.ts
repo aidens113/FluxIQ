@@ -1,5 +1,5 @@
 // What an unsure call whose doubt Core's record contradicts is told when it is
-// asked once more (`../agreement.ts`, t503): what it took to be so, whose
+// asked once more (`../agreement/`, t503): what it took to be so, whose
 // record says otherwise, Core's words naming that record, and what a reading
 // is held to. One sentence frame for each kind of doubt: pages left unread
 // (t503), rows a dedupe merged (t628, `../refuted-no/dedupe-doubt.ts`), and a step said to

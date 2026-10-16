@@ -4,7 +4,7 @@
 // other agreement checks, `../../tests/` and `../../refuted-no/tests/` being
 // full.
 import { describe, expect, it } from "vitest";
-import { automationStudioResultVerificationAgreement, automationStudioResultVerificationReaskContradicted } from "../../agreement.ts";
+import { automationStudioResultVerificationAgreement, automationStudioResultVerificationReaskContradicted } from "../../agreement/index.ts";
 import type { AutomationStudioResultVerification } from "../../contracts/index.ts";
 import type { AutomationStudioLlmDiagnosisFields } from "../../../llm/index.ts";
 import { campsiteRequestText, campsiteRunSummary, campsiteWording } from "../../refuted-no/tests/campsite-fixture.ts";

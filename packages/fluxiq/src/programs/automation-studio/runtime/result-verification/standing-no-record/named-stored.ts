@@ -1,6 +1,6 @@
 // The labels of the stored rows a judge's reading names, sentence by sentence,
 // as a no's claims are found (`../refuted-no/named-rows.ts`). Moved here from
-// `../agreement.ts` (t628), which still reads a split's no by it, so the record
+// `../agreement/` (t628), which still reads a split's no by it, so the record
 // a build keeps of a standing no (`./record.ts`, t633) names the same rows.
 
 import type { AutomationStudioResultRepairDirective } from "../contracts/index.ts";

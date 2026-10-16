@@ -18,7 +18,7 @@
 // unsure.
 import { describe, expect, it, vi } from "vitest";
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultReadAccount, type AutomationStudioResultVerification, type AutomationStudioRunResultSummary } from "../contracts/index.ts";
-import { automationStudioResultVerificationAgreement, automationStudioResultVerificationReaskContradicted } from "../agreement.ts";
+import { automationStudioResultVerificationAgreement, automationStudioResultVerificationReaskContradicted } from "../agreement/index.ts";
 import { automationStudioResultVerdict } from "../verdict.ts";
 import { requestWordsRunSummary, requestWordsWording } from "../request-rows/tests/request-words-fixture.ts";
 

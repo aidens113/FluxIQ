@@ -1,5 +1,5 @@
 // A no whose every reason Core's record refutes is not taken at face value,
-// through the agreement that marks it (`../../agreement.ts`) and the re-ask
+// through the agreement that marks it (`../../agreement/`) and the re-ask
 // (`../reask.ts`); kept beside the rule it tests, `../../tests/` being full
 // (t607, A8 everything-store `run-mv8p0p7c-c8412344`, whole test 2): two calls
 // on byte-identical requests both said two distinct stored listings were "the
@@ -9,7 +9,7 @@
 // and never a yes Core made. A no naming a real defect, or nothing Core can
 // check, stands as before.
 import { describe, expect, it, vi } from "vitest";
-import { automationStudioResultVerificationAgreement, automationStudioResultVerificationReaskContradicted } from "../../agreement.ts";
+import { automationStudioResultVerificationAgreement, automationStudioResultVerificationReaskContradicted } from "../../agreement/index.ts";
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerification } from "../../contracts/index.ts";
 import type { AutomationStudioLlmDiagnosisFields } from "../../../llm/index.ts";
 import { automationStudioResultVerdict } from "../../verdict.ts";

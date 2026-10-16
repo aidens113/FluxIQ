@@ -10,7 +10,7 @@
 // non-earbud accessory". Nothing compared that reason with the request. A yes
 // over a row a condition alone left out now quotes the request's own words that
 // exclude it (`unquoted-rows.ts`), and a no's advice that excludes by words the
-// request never states is marked (`unstated-exclusions.ts`, `../agreement.ts`).
+// request never states is marked (`unstated-exclusions.ts`, `../agreement/`).
 //
 // **The words it searched by** are the words of the request phrases every row a
 // read kept names (`request-phrases.ts`): a search for a phrase brings back rows
