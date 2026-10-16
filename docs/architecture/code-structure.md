@@ -3,7 +3,11 @@
 How source files are placed, named, sized, and divided in this repository.
 `AGENTS.md` carries the binding summary; this document is the full
 methodology. Size and density budgets are enforced by
-`scripts/structure-audit.mjs` as the first step of `pnpm check`.
+`scripts/structure-audit.mjs` as the first step of `pnpm check`, and before
+every push: `.githooks/pre-push` runs the audit and refuses a push it fails
+(t682), because a commit made straight on `dev` -- a ledger entry, a working
+document -- has no merge step to run it. `pnpm install` points git at
+`.githooks` (the root `prepare` script; a no-op outside a git checkout).
 
 ## The Gap This Closes
 
