@@ -162,6 +162,29 @@ describe("the hold, by what Core's record says of each no", () => {
     expect((await held(weighed)).hold).toEqual({ held: true, because: "held" });
   });
 
+  it("reads the trial's own first-ask flag in place of its call count, and the count only for a record without one (t677)", async () => {
+    const weighed = doubleNo([part(1), part(2)]);
+    const hold = async (trial: AutomationStudioResultJudgedBuildTrial) =>
+      (await automationStudioResultBuildYesHold({ outcome: weighed, runId: "run-1", instructionDigest: DIGEST, recordSets: SETS, trial: async () => trial, trialRecordSets: async () => SETS })).hold;
+    // A first-ask confirmed yes whose first call timed out and was asked again: three calls, still held.
+    expect(await hold({ ...TRIAL, calls: 3, firstAskConfirmed: true })).toEqual({ held: true, because: "held" });
+    // The debugged towels trial as a flagged record: two refuted nos asked again, four calls, never held to.
+    expect(await hold({ ...TRIAL, calls: 4, firstAskConfirmed: false })).toEqual({ held: false, because: "trial_not_confirmed" });
+    // A two-call yes the verification says was not first-ask confirmed is not held to either: the flag, not the count.
+    expect(await hold({ ...TRIAL, calls: 2, firstAskConfirmed: false })).toEqual({ held: false, because: "trial_not_confirmed" });
+    // A flag never makes a yes of another verdict.
+    expect(await hold({ ...TRIAL, verdict: "unsure", firstAskConfirmed: true })).toEqual({ held: false, because: "trial_not_confirmed" });
+    // An old record without the flag: the count, exactly as before.
+    expect(await hold({ ...TRIAL, calls: 2 })).toEqual({ held: true, because: "held" });
+    expect(await hold({ ...TRIAL, calls: 3 })).toEqual({ held: false, because: "trial_not_confirmed" });
+  });
+
+  it("still refutes the towels playback, whose nos stand whole, beside a flagged first-ask yes (t664)", async () => {
+    const next = await verify(checked({ said: STANDS_WHOLE, trial: { ...TRIAL, calls: 3, firstAskConfirmed: true } }));
+    expect(next.status).toBe("failed");
+    expect(recorded(next)).toMatchObject({ status: "refuted", verdict: "does_not_answer", basis: "model", buildYesHold: { held: false, because: "no_stands_whole" } });
+  });
+
   it("holds where one no is wholly contradicted and the other in part", async () => {
     expect((await held(doubleNo([{ call: 1, recordContradicts: "whole" }, part(2)]))).hold).toEqual({ held: true, because: "held" });
   });

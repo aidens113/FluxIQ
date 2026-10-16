@@ -112,7 +112,8 @@ describe("the verdict mapping", () => {
 
   it("answers is yes, with every call's spend summed", async () => {
     const verdict = await judge(PICKUP_CART, { verify: async () => report(answered("answers", "model"), 2) })({ summary: run40Summary() });
-    expect(verdict).toEqual({ verdict: "yes", spent: { inputTokens: 1800, outputTokens: 120, totalTokens: 1920, estimatedCostUsd: 0.03, calls: 2 } });
+    // The stubbed outcome does not say its yes was first-ask confirmed, so the judge does not either (t677).
+    expect(verdict).toEqual({ verdict: "yes", spent: { inputTokens: 1800, outputTokens: 120, totalTokens: 1920, estimatedCostUsd: 0.03, calls: 2 }, firstAskConfirmed: false });
   });
 
   it("two unsure answers are unknown, never a pass and never a repair", async () => {
@@ -357,7 +358,7 @@ describe("run murwcmx2: a build's yes is confirmed by a second call", () => {
     const { provider, seen } = answering({ answersRequest: "yes" }, { answersRequest: "yes" });
     const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
     expect(seen).toHaveLength(2);
-    expect(verdict).toEqual({ verdict: "yes", spent: { inputTokens: 1800, outputTokens: 120, totalTokens: 1920, estimatedCostUsd: 0.002, calls: 2 } });
+    expect(verdict).toEqual({ verdict: "yes", spent: { inputTokens: 1800, outputTokens: 120, totalTokens: 1920, estimatedCostUsd: 0.002, calls: 2 }, firstAskConfirmed: true });
     // The same evidence both times, each call under half of what the build has left.
     expect(seen[1]?.context).toEqual(seen[0]?.context);
     expect(seen.map((call) => call.maxEstimatedCostUsd)).toEqual([0.1, 0.1]);
