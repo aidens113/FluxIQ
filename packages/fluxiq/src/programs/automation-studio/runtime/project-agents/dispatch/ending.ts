@@ -195,9 +195,9 @@ export const automationStudioProjectDispatchEnding = Object.freeze({
     return `Core stopped this brief: core.submit_subflow refused output "${output}" under two different bindings${said.length ? ` (${said.join(", ")})` : ""}, so another binding would only be refused again.${outputAdvice([output])}`;
   },
 
-  /** A reset loop that returned, and what it left to undo. */
-  reset(brief: AutomationStudioProjectSubflowBrief, loop: AutomationStudioLlmEvidenceLoopResult, left: readonly AutomationStudioSiteResetNamedAct[], spend: AutomationStudioProjectDispatchSpend): AutomationStudioProjectBuilderReturn {
-    if (loop.ok && !left.length) return returned(brief, "done", "Every lasting act this build made is undone; the site is as the build found it.", spend, undefined);
+  /** A reset loop that returned, and what it left to undo; `done` its words when nothing is, naming any act that stayed (`./reset-done.ts`, t684). */
+  reset(brief: AutomationStudioProjectSubflowBrief, loop: AutomationStudioLlmEvidenceLoopResult, left: readonly AutomationStudioSiteResetNamedAct[], spend: AutomationStudioProjectDispatchSpend, done: string): AutomationStudioProjectBuilderReturn {
+    if (loop.ok && !left.length) return returned(brief, "done", done, spend, undefined);
     const still = left.length ? ` ${left.length} act${left.length === 1 ? " is" : "s are"} still to undo: ${left.map((act) => `${act.act} (${act.did})`).join(", ")}.` : "";
     const ended = loop.ok ? "The reset completed." : stopReason(brief, loop, spend.allowance);
     return returned(brief, "blocked", `${ended}${still}`, spend, undefined);

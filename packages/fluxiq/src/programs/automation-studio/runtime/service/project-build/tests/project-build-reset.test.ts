@@ -264,25 +264,26 @@ describe("a project build whose builder leaves a lasting act", () => {
     expect(lastOf(run.supervisorSaw[5]!, "core.test_candidate")).toMatchObject({ ok: false, code: "project.trial_reset_required", actsInPlace: [{ act: "act-1", did: "trial step 3 \"save the recipe\"" }, { act: "act-2", did: "press button" }] });
     // The reset brief came back done, naming nothing it could not undo, and nothing of the build was left in place.
     expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "done" }], lastingActsInPlace: 0 });
-    // It pressed only the build's own recipes: the explored save's, on its own item. The one saved before the build was never touched.
-    // The builder's trial ran its save inside a called part, whose step names no recipe (t679: a part's steps carry no state
-    // diff of their own, as the shop's below have none), so the reset's undo of it was refused as aimed at no item of its own,
-    // and act-1 is kept, as the cart case's trial add is. The whole trial then ran with it in place, its judge told so.
-    expect(run.pressed).toEqual([`run Save ${TRIAL_RECIPE}`, "Save recipe:herb-bread", "Unsave recipe:herb-bread", `run Save ${TRIAL_RECIPE}`]);
+    // It pressed only the build's own recipes: the explored save's, on its own item, and the builder's trial's, on the item that
+    // trial's own diff showed it put in the box (t598) -- though that trial ran its save inside a called part, whose call's own
+    // diff, listed before the part's steps, already showed the recipe (t684). The one saved before the build was never touched.
+    // Only then did the whole trial run, saving its recipe again.
+    expect(run.pressed).toEqual([`run Save ${TRIAL_RECIPE}`, "Save recipe:herb-bread", "Unsave recipe:herb-bread", `Unsave ${TRIAL_RECIPE}`, `run Save ${TRIAL_RECIPE}`]);
     expect([...run.box]).toEqual(["recipe:lentil-soup", TRIAL_RECIPE]);
-    // The whole trial ran once, after the reset, and saved its recipe: a first answer and its confirmation.
+    // The whole trial ran once, after the reset, on the site as the build found it, and saved its recipe: a first answer and its confirmation.
     expect(run.boxWhenWholeJudged).toEqual([["recipe:lentil-soup", TRIAL_RECIPE], ["recipe:lentil-soup", TRIAL_RECIPE]]);
-    expect(lastOf(run.supervisorSaw[7]!, "core.test_candidate")).toMatchObject({ verdict: "yes", startedWith: { cannotUndo: [{ act: "act-1" }] } });
+    const judged = lastOf(run.supervisorSaw[7]!, "core.test_candidate");
+    expect(judged).toMatchObject({ verdict: "yes" });
+    expect(judged).not.toHaveProperty("startedWith");
 
     // The builder's acts are in the build record, with the class each declared (the control's name withheld, as the model was never
-    // shown it) (t597).
+    // shown it), and so is the judged whole run's own save, the supervisor's (t597).
     const stored = await run.record();
     expect(stored.lastingActs).toEqual([
       { recordedAt: expect.any(Number), act: "act-1", owner: { role: "builder", briefId: expect.any(String) }, consequences: ["create_new"], description: "act-1: trial step 3 \"save the recipe\"", undoable: true },
-      { recordedAt: expect.any(Number), act: "act-2", owner: { role: "builder", briefId: expect.any(String) }, consequences: ["create_new"], description: "act-2: press button", undoable: true }
+      { recordedAt: expect.any(Number), act: "act-2", owner: { role: "builder", briefId: expect.any(String) }, consequences: ["create_new"], description: "act-2: press button", undoable: true },
+      { recordedAt: expect.any(Number), act: "act-3", owner: { role: "supervisor" }, consequences: ["create_new"], description: "act-3: trial step 4 \"save the recipe\"", undoable: true }
     ]);
-    // The judged whole run's save found its recipe already in the box (act-1, kept), so it changed nothing and made no act of its
-    // own; a whole run's own act, the supervisor's, is recorded in `./project-build-single-subflow.test.ts`.
   });
 
   // t594 fix 8 was dormant until the dispatcher's scope carried each part's lasting acts (t597, `project-agents/dispatch/scope.ts`).
@@ -328,6 +329,10 @@ describe("a project build whose builder leaves a lasting act", () => {
     // The builder's own trial of its add (t597), and its add.
     expect(lastOf(run.supervisorSaw[5]!, "core.test_candidate")).toMatchObject({ ok: false, code: "project.trial_reset_required", actsInPlace: [{ act: "act-1", did: "trial step 3 \"add it to the cart\"" }, { act: "act-2", did: "press \"Add to cart\" button" }] });
     expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "done" }], lastingActsInPlace: 0 });
+    // Done, and honest: the trial's add it named under cannotUndo stays, so it never says every act is undone (t684).
+    const said = ((lastOf(run.supervisorSaw[6]!, "project.dispatch")!.returns as JsonObject[])[0]!.reason as string);
+    expect(said).not.toContain("Every lasting act this build made is undone");
+    expect(said).toContain("1 lasting act of this build stays on the site, so the site is not as the build found it: act-1 (trial step 3 \"add it to the cart\"; the site offers no way to undo it)");
     // The add, then the removal of the very line it created; the domain never saw `undoes`.
     expect(run.acted).toEqual(["add herb-tea", "remove herb-tea"]);
     expect(run.inputs.every((value) => !Object.prototype.hasOwnProperty.call(value, "undoes"))).toBe(true);

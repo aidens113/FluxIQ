@@ -233,6 +233,16 @@ const PROPOSING: ReadonlySet<AutomationStudioProjectSubflowBrief["kind"]> = new 
  * then say to end (or complete) again now, never to test (`./dispatch-tool.ts`).
  * The build going on drops it: a brief other than a reset, a whole test run,
  * or a plan taken into force.
+ *
+ * **A whole test after a reset acts on the target again (t684).** The ending
+ * rule holds an ending until "a reset brief has come back after the build's
+ * last other brief" (`./completion.ts`), and `resetCameBackLast` asked only
+ * that the latest brief was a reset that came back. A whole test run after it
+ * leaves its own act on the target, yet the next ending was let through
+ * unheld. Returns and whole tests are now counted in the order they happened,
+ * and a reset counts as last only when no whole test ran after it. A test
+ * asked, even one refused for a reset, also drops `resetToEnd`
+ * (`./whole-trial.ts`).
  */
 export class AutomationStudioProjectSupervisorState {
   taskSpec: AutomationStudioProjectTaskSpec | undefined;
@@ -259,6 +269,12 @@ export class AutomationStudioProjectSupervisorState {
   resetLeft: { briefId: string; outcome: string; reason: string; left: string } | undefined;
   /** Set when a reset is asked for so the build can end, until the build goes on (header, t683). */
   resetToEnd: AutomationStudioProjectSupervisorResetToEnd | undefined;
+  /** A count of this run's returns and whole tests, in the order they happened (`resetCameBackLast`, header, t684). */
+  private moments = 0;
+  /** When each return this run received came back, on `moments`. */
+  private readonly answeredAt = new Map<string, number>();
+  /** When this run's latest whole test ran, on `moments`; undefined before the first. */
+  private testedAt: number | undefined;
   /**
    * What each brief this run sent was sent with, and what stood once its
    * return came back, by brief id, as a key the dispatch tool compares
@@ -324,6 +340,9 @@ export class AutomationStudioProjectSupervisorState {
 
   answer(briefId: string, returned: AutomationStudioProjectBuilderReturn): void {
     this.returns.set(briefId, returned);
+    // When it came back, against the whole tests (`resetCameBackLast`, t684).
+    this.moments += 1;
+    this.answeredAt.set(briefId, this.moments);
   }
 
   /** Every brief answered so far under the plan in force, oldest first. */
@@ -392,10 +411,15 @@ export class AutomationStudioProjectSupervisorState {
     });
   }
 
-  /** Whether the latest brief sent was a reset and its return came back, done or not: the build tried to undo its acts after its last other brief. */
+  /**
+   * Whether the latest brief sent was a reset, its return came back, done or not, and no whole test ran after it: the build tried
+   * to undo its acts after the last thing that acted on the target (header, t684). A return read from the record counts as back
+   * before any test this run ran.
+   */
   resetCameBackLast(): boolean {
     const latest = this.briefs.at(-1);
-    return latest?.kind === "reset" && this.returns.has(latest.briefId);
+    if (latest?.kind !== "reset" || !this.returns.has(latest.briefId)) return false;
+    return this.testedAt === undefined || this.testedAt < (this.answeredAt.get(latest.briefId) ?? 0);
   }
 
   /**
@@ -423,6 +447,9 @@ export class AutomationStudioProjectSupervisorState {
   noteWholeTest(controller: Pick<AutomationStudioFlowCandidateSubmissionController, "latest">, gate: Pick<AutomationStudioFlowCandidateTrialGate, "standing" | "completion">): void {
     // A whole test that ran is the build going on, not ending (header, t683).
     this.resetToEnd = undefined;
+    // It acted on the target after any reset that came back before it (`resetCameBackLast`, header, t684).
+    this.moments += 1;
+    this.testedAt = this.moments;
     const latest = controller.latest();
     if (!latest) return;
     const rescued = this.rescuedTest(controller, gate);

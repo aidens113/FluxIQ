@@ -34,7 +34,8 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_COMPLETION_SCHEMA: JsonObject 
  * `run-mv8186yr-a385fd3a` ended blocked with nine of the build's acts on the
  * site. While this build's lasting acts are still in place and a reset brief
  * could undo them, an ending is refused `project.completion_reset_first` until
- * a reset brief has come back after the build's last other brief. A reset that
+ * a reset brief has come back after the build's last other brief and its last
+ * whole test (`resetCameBackLast`, `./state.ts`, t684). A reset that
  * came back without undoing everything, acts no reset can undo, or
  * `MAX_HELD_FOR_RESET` such refusals already given (so a reset that cannot be
  * sent never holds the build until its ceiling) let the ending through; and

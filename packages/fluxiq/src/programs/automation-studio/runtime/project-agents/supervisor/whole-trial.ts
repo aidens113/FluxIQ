@@ -64,6 +64,12 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
 // single-subflow plan undid, or named under `cannotUndo` in its own test after
 // its reset asked for it, is no longer one, so that builder's next test reaches
 // the ledgers again without a reset brief.
+//
+// **A test asked drops the reason for a reset (t684).** An ending held for a
+// reset sets the state's `resetToEnd`, which a whole test that ran clears
+// (`./state.ts`, `noteWholeTest`). A test refused `project.trial_reset_required`
+// never reached it, so the reset the model then sent was answered "end again
+// now", though it had chosen to test. Every test asked now clears it first.
 
 /** A trial's start as the supervisor checks it: no look at the target, which it never acts on (header). */
 const UNLOOKED: AutomationStudioSiteResetChecks = { compare: async () => ({ moved: false }) };
@@ -80,6 +86,8 @@ export class AutomationStudioProjectSupervisorWholeTrial {
 
   async test(context: AutomationStudioProjectSupervisorContext, value: JsonObject, callSignal: AbortSignal | undefined): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
     const { ports, state, gate } = context;
+    // A test asked is the build going on, not ending, even one refused for a reset: the reset's answer then says to test (header, t684).
+    state.resetToEnd = undefined;
     // The revision a single-subflow builder's test already judged yes is not tried again (header, t679).
     const judged = this.alreadyJudged(context, value);
     if (judged) return judged;
