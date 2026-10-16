@@ -112,7 +112,7 @@ import { automationStudioResultCoreObservation } from "./core-observation.ts";
 import { automationStudioResultSummaryWithPagingWords, automationStudioResultSummaryWithUnreadColumns } from "./read-account/index.ts";
 import { automationStudioRequestWording, automationStudioResultSummaryWithAlsoInResult, automationStudioResultSummaryWithLeftOutNamingTheItem, automationStudioResultSummaryWithRowIds } from "./request-rows/index.ts";
 import { automationStudioResultReaskNarrowingNo } from "./unsure-doubts/index.ts";
-import { automationStudioResultVerdict } from "./verdict.ts";
+import { automationStudioResultVerdict } from "./verdict/index.ts";
 import { automationStudioResultAdviceKept, automationStudioResultExclusionEvidenceRecheck } from "./exclusion-evidence/index.ts";
 import { emitAutomationStudioActivity } from "../activity/index.ts";
 
@@ -335,7 +335,7 @@ async function askOnce(
   // The run's own summary, with the flagged rows the judge was shown: the
   // judge's paging words are not Core's observation.
   const summary = judged.leftOutNamingTheItem ? { ...request.summary, leftOutNamingTheItem: judged.leftOutNamingTheItem } : request.summary;
-  // A yes over a row a condition alone left out quotes, beside it, the request's own words that exclude it (t515, `./verdict.ts`).
+  // A yes over a row a condition alone left out quotes, beside it, the request's own words that exclude it (t515, `./verdict/`).
   const wording = automationStudioRequestWording(request.instructions, request.summary);
   const read = automationStudioResultVerdict({
     summary,

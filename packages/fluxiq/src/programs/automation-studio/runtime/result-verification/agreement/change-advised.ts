@@ -1,6 +1,6 @@
 import type { AutomationStudioResultVerification } from "../contracts/index.ts";
 import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS as UNSETTLED } from "../unsettled/index.ts";
-import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../verdict.ts";
+import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../verdict/index.ts";
 import { answeredReadingOf } from "./yes-readings.ts";
 
 /**

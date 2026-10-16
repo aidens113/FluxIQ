@@ -3,7 +3,7 @@
 // not name it beside a quote of the request is held (t663, A8 towels
 // `run-mvahlxuu-760d9e28`, fix 1b).
 import { describe, expect, it } from "vitest";
-import { automationStudioResultVerdict } from "../../verdict.ts";
+import { automationStudioResultVerdict } from "../../verdict/index.ts";
 import { automationStudioResultKeptNotNamingTheItem } from "../kept-not-naming-the-item.ts";
 import { automationStudioRequestPhrases } from "../request-phrases.ts";
 import { ORGANIZER, SCREW_PACKS, SCREW_REQUEST, screwRunSummary, screwWording } from "./kept-rows-fixture.ts";

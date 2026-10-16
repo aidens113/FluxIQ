@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { automationStudioResultVerificationAnswers, automationStudioResultVerificationFailsRun, type AutomationStudioRunResultSummary } from "../contracts/index.ts";
-import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict, automationStudioResultVerdictFromDiagnosis } from "../verdict.ts";
+import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict, automationStudioResultVerdictFromDiagnosis } from "../verdict/index.ts";
 import {
   REQUEST_WORDS_NAMES, REQUEST_WORDS_HANDLE, REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS, requestWordsRunSummary, requestWordsWording
 } from "../request-rows/tests/request-words-fixture.ts";

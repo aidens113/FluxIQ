@@ -24,7 +24,7 @@
 //
 // Where several of the request's phrases qualify, a row is flagged once, under
 // the longest. It flags; it does not judge. A row so named may still be the
-// item asked for: `../verdict.ts` holds a yes to naming it, in a sentence
+// item asked for: `../verdict/` holds a yes to naming it, in a sentence
 // quoting the request's words, and never refuses one for it.
 
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";

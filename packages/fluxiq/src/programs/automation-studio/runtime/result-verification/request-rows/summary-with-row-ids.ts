@@ -12,7 +12,7 @@
 // **The judge's copy only.** The summary given is never changed, and the
 // checks of a reply read the summary without ids: the id is the label's own
 // (`row-id.ts`), so `row-naming.ts` counts a reply that names it with nothing
-// carried between the copy and the check. Core's lines (`../verdict.ts`) and
+// carried between the copy and the check. Core's lines (`../verdict/`) and
 // every other reader of the summary see the rows exactly as before.
 
 import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts/index.ts";

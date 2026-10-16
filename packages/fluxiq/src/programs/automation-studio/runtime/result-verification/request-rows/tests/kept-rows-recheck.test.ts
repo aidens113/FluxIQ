@@ -1,11 +1,11 @@
 // A refuted no's re-ask says Core's record covers only the rows it names, and
 // names the kept rows Core flagged (t663, A8 towels `run-mvahlxuu-760d9e28`,
-// fix 2). Words only: the hold on a yes is `../../verdict.ts`'s.
+// fix 2). Words only: the hold on a yes is `../../verdict/`'s.
 import { describe, expect, it, vi } from "vitest";
 import { automationStudioResultVerificationAgreement, automationStudioResultVerificationReaskContradicted } from "../../agreement/index.ts";
 import { automationStudioResultRefutedNoRecheckWords } from "../../refuted-no/index.ts";
 import { LAMPS_INSTRUCTION, LAMPS_REQUEST_TEXT, SAME_LAMP_NO, lampsRunSummary } from "../../refuted-no/tests/lamps-fixture.ts";
-import { automationStudioResultVerdict } from "../../verdict.ts";
+import { automationStudioResultVerdict } from "../../verdict/index.ts";
 import { automationStudioResultKeptNotNamingTheItem } from "../kept-not-naming-the-item.ts";
 import { automationStudioResultKeptWithoutAskedColumn } from "../kept-without-asked-column.ts";
 import { automationStudioRequestPhrases } from "../request-phrases.ts";

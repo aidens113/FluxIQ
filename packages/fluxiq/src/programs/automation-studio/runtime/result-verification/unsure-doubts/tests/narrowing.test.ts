@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioResultReadAccount, AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioResultVerificationAgreement, automationStudioResultVerificationReaskContradicted } from "../../agreement/index.ts";
 import { automationStudioRequestWording } from "../../request-rows/index.ts";
-import { automationStudioResultVerdict } from "../../verdict.ts";
+import { automationStudioResultVerdict } from "../../verdict/index.ts";
 
 const read: AutomationStudioResultReadAccount = {
   nodeId: "read", definitionId: "extract_list", pagesRead: 1, stop: "control_absent", truncated: false, kept: 9,

@@ -16,7 +16,7 @@
 // came out of, and why that answer was refuted. The history lives in memory for
 // the length of the verification's own recursion, because the judgement's
 // advice is a model's prose and a run record never carries that
-// (`result-verification/verdict.ts`); the run record carries the counts.
+// (`result-verification/verdict/`); the run record carries the counts.
 //
 // **Convergence is judged on what changed, not on a counter alone.** An attempt
 // whose re-run produced exactly the answer it was asked to repair -- the same

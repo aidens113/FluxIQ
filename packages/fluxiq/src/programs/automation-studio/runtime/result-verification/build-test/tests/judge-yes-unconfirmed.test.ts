@@ -6,7 +6,7 @@ import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts
 import { automationStudioResultVerificationAgreement } from "../../agreement/index.ts";
 import type { AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS, requestWordsRunSummary, requestWordsWording } from "../../request-rows/tests/request-words-fixture.ts";
-import { automationStudioResultVerdict } from "../../verdict.ts";
+import { automationStudioResultVerdict } from "../../verdict/index.ts";
 import type { AutomationStudioResultVerificationReport } from "../../verify.ts";
 import { automationStudioBuildTestJudge } from "../judge.ts";
 

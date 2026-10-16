@@ -5,7 +5,7 @@
 // recheck listed all 37 rows six conditions left out, most of them rows a
 // rating or price bound left out with values that settle them, and it turned
 // the one correct yes into a no. The lines below it are Core's
-// (`../verdict.ts`): rows left out by a text or presence condition, each to be
+// (`../verdict/`): rows left out by a text or presence condition, each to be
 // named beside a quote of the request, and, for a numeric bound whose rows Core
 // read as failing it (`../value-readings/settled-rows.ts`), the one quote of
 // the request stating the bound. Each condition is named `condition N
@@ -14,7 +14,7 @@
 // `../request-rows/row-id.ts`, t599), and a presence test's rows are settled
 // like a bound's: one quote of the request asking for that value. And a line
 // may name rows the result keeps that Core measured as unlike the rest (t663,
-// `../verdict.ts`): the last sentence says what is asked of those.
+// `../verdict/`): the last sentence says what is asked of those.
 
 import type { AutomationStudioResultVerification } from "../contracts/index.ts";
 import { screenAutomationStudioLlmEvidence } from "../../llm/index.ts";

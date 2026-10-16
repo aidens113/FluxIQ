@@ -1,7 +1,7 @@
 // The judge's copy of the summary, with the left-out rows that name the asked
 // item said beside the reads (`left-out-naming-the-item.ts`). Both kinds of
 // judge are shown it, a build test's and a finished run's (`../verify.ts`), and
-// the verdict holds a yes to it (`../verdict.ts`).
+// the verdict holds a yes to it (`../verdict/`).
 
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";

@@ -36,7 +36,7 @@ const NO = {
   answersRequest: "no"
 };
 const UNKNOWN = { observed: "The read kept 3 rows; whether a second page exists is not shown.", answersRequest: "unknown" };
-/** The quotes a yes owes beside each row a condition alone left out (`../../../verdict.ts`, t515). */
+/** The quotes a yes owes beside each row a condition alone left out (`../../../verdict/`, t515). */
 const QUOTES = "Copper Garden Tools Pair is left out, as the request says \"leaving out out-of-stock items\". Replacement Handle for Garden Tools is left out, as the request says \"replacement parts\".";
 const YES_QUOTING = { observed: `The read kept 3 rows. ${QUOTES}`, answersRequest: "yes" };
 const YES_BARE = { observed: "The read kept 3 rows, each a garden tool in stock.", answersRequest: "yes" };

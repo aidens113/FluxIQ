@@ -31,7 +31,7 @@
 // collected are left out, as `summary-reads.ts` leaves them out.
 //
 // It flags; it does not judge. The row may be exactly what was asked, its value
-// simply not shown on the page: `../verdict.ts` holds a yes to naming it, in a
+// simply not shown on the page: `../verdict/` holds a yes to naming it, in a
 // sentence quoting the request's words, and never refuses one for it.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";

@@ -40,12 +40,12 @@ const WOULD_STORE = /(\d+)(?: records?)? would be stored/u;
 /**
  * How many record sets a run wrote and, for more than one, each one's rows and
  * whether they are the same rows: "across 2 record sets (4, 4 rows; the same
- * rows in each)", "(4, 4 rows; 6 distinct)" (`./verdict.ts`).
+ * rows in each)", "(4, 4 rows; 6 distinct)" (`./verdict/`).
  */
 const SETS = /\bstored, across (\d+) record sets?(?: \(([\d, ]+) rows(?:; (the same rows in each|\d+ distinct))?\))?/u;
 /**
  * How many datasets a build's Flow would write, or record sets a run wrote,
- * right after that count (`./verdict.ts`): "…, in 0 datasets", "…, across 0
+ * right after that count (`./verdict/`): "…, in 0 datasets", "…, across 0
  * record sets". None means the Flow stores nothing -- a cart, a form -- so it
  * has no rows to count: live run `run-muxkzdjw-31a13429` (lane A round 4)
  * carded a cart Flow "Didn't pass: no rows would be stored, and ...", as a
@@ -93,12 +93,12 @@ function rowsWords(observation: string): string[] {
  * never summed: each set is an answer of its own, and the same rows stored by
  * two steps are not twice the rows (live run `run-mv5jnc5m-a47c3e59`: "8 rows
  * came back" of 4 requests stored by the listing and again by the final read).
- * Without the per-set counts (`./verdict.ts`, `eachSet`), only the sets are said.
+ * Without the per-set counts (`./verdict/`, `eachSet`), only the sets are said.
  *
  * **The same rows in every set are said once (t482).** Live run
  * `run-mv636xyp-2e4fe54d` stored the same 4 requests from the listing and from
  * the read of the accepted ones, and "4 rows came back, in each of 2 record
- * sets" read as two answers. Where Core could tell (`./verdict.ts`,
+ * sets" read as two answers. Where Core could tell (`./verdict/`,
  * `distinctRows`), the card says one answer, or how many distinct rows the sets
  * hold together; where it could not, each set's count, never "in each of".
  */

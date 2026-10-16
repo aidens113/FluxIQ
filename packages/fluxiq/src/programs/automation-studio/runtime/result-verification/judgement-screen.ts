@@ -1,6 +1,6 @@
 // The screen every word a judge wrote passes before Core carries it: a
 // refutation's directive (`./repair-directive.ts`), and since t477 the reading
-// a yes gave beside its verdict (`./verdict.ts`), which a split shows the model
+// a yes gave beside its verdict (`./verdict/`), which a split shows the model
 // beside the no's (`./agreement.ts`).
 
 import { automationStudioLocatorShapedText, automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../llm/index.ts";

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerification, type AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultVerificationAgreement, automationStudioResultVerificationAskAgain, automationStudioResultVerificationReaskContradicted } from "../agreement/index.ts";
-import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict } from "../verdict.ts";
+import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict } from "../verdict/index.ts";
 import { automationStudioResultVerificationStatus } from "../verification-status.ts";
 import { REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS, requestWordsRunSummary, requestWordsWording } from "../request-rows/tests/request-words-fixture.ts";
 import { ABSENT_NO, DEDUPE_DOUBT, SCOOP_NO, SOIL_MIX, SOIL_REQUEST_TEXT, SOIL_YES, soilRunSummary, soilWording } from "../request-rows/tests/potting-soil-fixture.ts";

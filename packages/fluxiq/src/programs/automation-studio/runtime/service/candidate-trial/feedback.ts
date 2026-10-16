@@ -122,7 +122,7 @@
 //
 // **A held yes that advised a change says so, with its reading (t636).** A yes
 // that said the Flow needs a change (`patchNeeded`) and lacked its exclusion
-// evidence is held, never a no (`../../result-verification/verdict.ts`); the
+// evidence is held, never a no (`../../result-verification/verdict/`); the
 // judge's `not_judged` then carries `changeAdvised` and that yes's
 // `answeredReading`, with the change it named in `advice`. The feedback says
 // it as `changeAdvised` -- Core's code first, then Core's short words -- beside

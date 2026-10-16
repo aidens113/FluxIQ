@@ -43,7 +43,7 @@
 // **A `no` carries Core's lines on the rows (t274-c25b).** Live run
 // `run-muw60j7c-bb7c9a62`'s test judges said yes over three pairs of earbuds the
 // name condition alone left out; Core now takes such a yes as a no
-// (`../../result-verification/verdict.ts`), and its fix lines and its check of
+// (`../../result-verification/verdict/`), and its fix lines and its check of
 // the rows (`fix`, `checked`) are what name them. The judgement kept only the
 // finding code, so the repair was told a code and no row; now it keeps both.
 //

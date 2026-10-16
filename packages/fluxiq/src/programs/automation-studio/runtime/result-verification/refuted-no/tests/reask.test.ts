@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 import { automationStudioResultVerificationAgreement, automationStudioResultVerificationReaskContradicted } from "../../agreement/index.ts";
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerification } from "../../contracts/index.ts";
 import type { AutomationStudioLlmDiagnosisFields } from "../../../llm/index.ts";
-import { automationStudioResultVerdict } from "../../verdict.ts";
+import { automationStudioResultVerdict } from "../../verdict/index.ts";
 import { LAMP_CLAMP, LAMP_SHADE, LAMPS_REQUEST_TEXT, SAME_LAMP_NO, lampsRunSummary, lampsWording } from "./lamps-fixture.ts";
 
 const summary = lampsRunSummary();
@@ -23,7 +23,7 @@ const judged = (diagnosis: AutomationStudioLlmDiagnosisFields): AutomationStudio
 
 /** The same no both calls gave (whole test 2's shape). */
 const sameLampNo = () => judged({ answersRequest: "no", ...SAME_LAMP_NO });
-/** A yes that quotes the request for each row a condition alone left out, as `../verdict.ts` holds a yes to. */
+/** A yes that quotes the request for each row a condition alone left out, as `../verdict/` holds a yes to. */
 const YES: AutomationStudioLlmDiagnosisFields = {
   answersRequest: "yes",
   expected: SAME_LAMP_NO.expected,

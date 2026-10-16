@@ -13,7 +13,7 @@
 // read's own account said its list ended; the other said yes. The trial was
 // left unconfirmed and the correct revision retested until the build ran out
 // of time. An unsure call now keeps what it doubted (`unsureReading`,
-// `../verdict.ts`); on such a split, a doubt the record contradicts is marked
+// `../verdict/`); on such a split, a doubt the record contradicts is marked
 // (`contradictedUnsure`), and `automationStudioResultVerificationReaskContradicted`
 // asks that call once more with the record named. The rule above stands: what
 // the re-asked call answers takes its place, so a yes there beside the other
@@ -42,7 +42,7 @@
 // **A runtime check's single yes that said the Flow needs a change is not
 // confirmed (t515).** The same run's playback check answered yes with
 // `patchNeeded: true`, and the run was recorded confirmed: "Passed". Such a yes
-// (`answersWithChangeAdvised`, `../verdict.ts`) is recorded unsure
+// (`answersWithChangeAdvised`, `../verdict/`) is recorded unsure
 // (`model_unconfirmed`): not confirmed, not failed, and nothing repaired on its
 // advice. A build test's two yeses are untouched: its yes's advice stays
 // unconfirmed (`../../flow-bootstrap/unfinished-build/finishing-verdict.ts`).
@@ -66,7 +66,7 @@
 //
 // **A yes held for its exclusion evidence says so as a field (t611).** Where
 // both calls answered yes and Core held one or both for the exclusion evidence
-// it lacked, the unsure outcome carries `yesUnconfirmed`, as `../verdict.ts`
+// it lacked, the unsure outcome carries `yesUnconfirmed`, as `../verdict/`
 // marks one held call. A build read that fact off the reason's words before
 // (t601); the words may change, the field does not. Beside an unsure, or a call
 // that did not answer, it is absent: only one judge said yes.

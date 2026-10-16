@@ -215,7 +215,7 @@ const INSTRUCTIONS: Readonly<Record<AutomationStudioCandidateTrialVerdict, strin
  * trial's feedback says as `yesUnconfirmed: true` (t611): Core's result
  * verification sets it where every judge call answered yes and Core held that
  * yes for the exclusion evidence it lacked
- * (`../../result-verification/agreement/`, `../../result-verification/verdict.ts`).
+ * (`../../result-verification/agreement/`, `../../result-verification/verdict/`).
  */
 const NOT_JUDGED_AFTER_YES = "The judges answered yes for this revision and none answered no, but Core could not confirm that yes (the feedback's why says what it lacked), so the trial counts as not judged and this revision cannot complete yet. "
   + "The judges accepted the rows this subflow kept: do not rewrite it or change which rows it keeps. Test this same revision again; if its retests run out held the same way, "

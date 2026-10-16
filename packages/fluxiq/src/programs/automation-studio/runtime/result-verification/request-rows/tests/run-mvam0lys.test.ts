@@ -16,7 +16,7 @@ import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts
 import { automationStudioResultVerificationAgreement } from "../../agreement/index.ts";
 import type { AutomationStudioResultNarrowingStep, AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioResultNoRecord, automationStudioResultRefutedReading } from "../../refuted-no/index.ts";
-import { automationStudioResultVerdict } from "../../verdict.ts";
+import { automationStudioResultVerdict } from "../../verdict/index.ts";
 import { automationStudioRequestWording } from "../index.ts";
 // Imported last: imported first, the harness barrel loads the verdict's evidence screen half-built (an import cycle).
 import { parseAutomationStudioLlmProviderResult } from "../../../llm/harness/index.ts";

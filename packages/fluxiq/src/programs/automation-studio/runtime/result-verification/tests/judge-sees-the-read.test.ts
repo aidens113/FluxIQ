@@ -20,7 +20,7 @@ import { automationStudioResultExclusionEvidenceRecheck } from "../exclusion-evi
 import { automationStudioResultConditionName, automationStudioResultReadPresence } from "../read-account/index.ts";
 import { automationStudioRequestWording, automationStudioResultSummaryWithAlsoInResult, automationStudioResultSummaryWithLeftOutNamingTheItem } from "../request-rows/index.ts";
 import { automationStudioResultSettledRows } from "../value-readings/index.ts";
-import { automationStudioResultVerdict } from "../verdict.ts";
+import { automationStudioResultVerdict } from "../verdict/index.ts";
 
 const schema: AutomationStudioRecordSchema = {
   schemaVersion: "0.1",

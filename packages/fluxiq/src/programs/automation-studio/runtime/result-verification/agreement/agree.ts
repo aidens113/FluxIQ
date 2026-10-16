@@ -1,6 +1,6 @@
 import type { AutomationStudioResultVerdict, AutomationStudioResultVerification } from "../contracts/index.ts";
 import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS as UNSETTLED } from "../unsettled/index.ts";
-import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../verdict.ts";
+import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../verdict/index.ts";
 import { automationStudioResultVerificationAskAgain } from "./ask-again.ts";
 import { bothReadings } from "./both-readings.ts";
 import { changeAdvised } from "./change-advised.ts";
@@ -33,7 +33,7 @@ export function agree(input: AutomationStudioResultVerificationAgreementInput, r
       exclusionEvidenceMissing: [...(first.exclusionEvidenceMissing ?? []), ...(second.exclusionEvidenceMissing ?? [])],
       // Both calls answered yes, one or both held for the evidence it lacked (header, t611). An unsure, or a call that did not answer, beside it is no yes.
       ...(answeredYes(first) && answeredYes(second) ? { yesUnconfirmed: true as const } : {}),
-      // A yes that advised a change, held or taken, says so, and what a yes compared is kept (t636, `../verdict.ts`).
+      // A yes that advised a change, held or taken, says so, and what a yes compared is kept (t636, `../verdict/`).
       ...(advisedChange(first) || advisedChange(second) ? { changeAdvised: true as const } : {}),
       ...yesReading(first, second)
     };

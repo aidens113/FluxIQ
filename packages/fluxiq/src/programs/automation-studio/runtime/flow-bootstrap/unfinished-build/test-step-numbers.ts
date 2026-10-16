@@ -12,7 +12,7 @@
 // **What changes, and what cannot.** Core's own words are put in the seed's
 // numbers: the step its `checked` and `fix` lines name (`Step N:` and
 // `(Step N)`, the only forms they write: `result-verification/request-rows/checked-rows.ts`,
-// `verdict.ts`, `repair-directive.ts`), the read `checkedRows` names, and the
+// `verdict/`, `repair-directive.ts`), the read `checkedRows` names, and the
 // carried steps `untestedCarried` lists. The judge's own words (expected,
 // observed, advice, an unconfirmed reading) are the model's and are never
 // rewritten; `testStepIsDraftStep` maps each test step number that changed to

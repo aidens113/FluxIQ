@@ -19,12 +19,12 @@
 //
 // The recheck also names the rows the result keeps that Core flagged as unlike
 // the rest (`kept`, t663): Core's record speaks only of the rows it names, and
-// a yes it brings back is held to the flagged rows by `../verdict.ts`.
+// a yes it brings back is held to the flagged rows by `../verdict/`.
 
 import type { AutomationStudioResultRepairDirective, AutomationStudioResultVerdict, AutomationStudioResultVerification } from "../contracts/index.ts";
 import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS as UNSETTLED } from "../unsettled/index.ts";
 import type { AutomationStudioRequestRowsKept } from "../request-rows/index.ts";
-import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../verdict.ts";
+import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../verdict/index.ts";
 import { automationStudioResultRefutedNoRecheckWords } from "./recheck-words.ts";
 import type { AutomationStudioResultNoRecord } from "./types.ts";
 import { automationStudioResultRefutedReading } from "./weigh.ts";
@@ -38,7 +38,7 @@ export async function automationStudioResultReaskRefutedNo(input: {
   second: Verification;
   settled: Verification;
   record: AutomationStudioResultNoRecord;
-  /** The rows the result keeps that Core flagged as unlike the rest (`../verdict.ts`, t663): named in the recheck, never weighed. */
+  /** The rows the result keeps that Core flagged as unlike the rest (`../verdict/`, t663): named in the recheck, never weighed. */
   kept?: readonly AutomationStudioRequestRowsKept[] | undefined;
   /** Asks call `call` once more, its copy carrying `recheck`. */
   ask: (recheck: string, call: 1 | 2) => Promise<Verification>;

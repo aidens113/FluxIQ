@@ -1,7 +1,7 @@
 // What a build's judged-wrong test carries to its repair (t274-c25b), from live
 // run `run-muw60j7c-bb7c9a62`: both judges of the test (step 0031) said yes over
 // three pairs of earbuds the name condition alone left out for mentioning a
-// charging case. Core now takes such a yes as a no (`../../verdict.ts`); the
+// charging case. Core now takes such a yes as a no (`../../verdict/`); the
 // build's repair must then be told the rows, not only the finding code, and
 // what the Flow would store -- 20 unfiltered rows from step 9 and 10 filtered
 // rows from step 10, appended to one dataset -- not the 0 a test stores itself.

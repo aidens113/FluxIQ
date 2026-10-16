@@ -48,7 +48,7 @@ export * from "./standing-no-record/index.ts";
 export * from "./step-changes.ts";
 export * from "./unsettled/index.ts";
 export * from "./value-readings/index.ts";
-export * from "./verdict.ts";
+export * from "./verdict/index.ts";
 export * from "./verification-status.ts";
 export * from "./verify.ts";
 export * from "./zero-provider-run.ts";

@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { automationStudioResultCheckWords } from "../check-words.ts";
 import type { AutomationStudioBuildTestStore, AutomationStudioRunResultSummary } from "../contracts/index.ts";
-import { automationStudioResultObservation } from "../verdict.ts";
+import { automationStudioResultObservation } from "../verdict/index.ts";
 
 /** A dataset whose reads collected one more row than its answer keeps: the count is the answer's. */
 const store = (rows: number, steps: number[]): AutomationStudioBuildTestStore => ({
