@@ -151,7 +151,9 @@ async function judged(request: AutomationStudioCandidateTrialRequest, ports: Aut
   const { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } = verdict.spent;
   const feedback = again ? { ...read.feedback, judgedAgain: "The judge was asked again about the same trial run on the same evidence; the Flow was not run again." } : read.feedback;
   // Core's record of a no, beside the feedback and never in it (header, t633).
-  const standingNo = read.verdict === "no" && verdict.verdict === "no" ? verdict.standingNo : undefined;
+  // An unsure split keeps Core's record too, so a condition it vindicated is held across the build (t652, fix 2);
+  // only a no is ever weighed as one by the gate's memory.
+  const standingNo = (read.verdict === "no" && verdict.verdict === "no") || (read.verdict === "unsure" && verdict.verdict === "unknown") ? verdict.standingNo : undefined;
   const outcome = answerFor(request)(read.verdict, feedback, { trialRunId: shown.trialRunId, start, execution: "succeeded", ...(read.code ? { code: read.code } : {}), ...(learnedPaces ? { learnedPaces } : {}), ...(again ? { judgedAgain: true as const } : {}), judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } }, acts, standingNo);
   return verdict.verdict === "not_judged" ? { ...outcome, unjudged: evidence } : outcome;
 }

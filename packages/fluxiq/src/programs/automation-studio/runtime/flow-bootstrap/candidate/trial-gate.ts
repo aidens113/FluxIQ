@@ -153,6 +153,19 @@
 // none is, it says a re-test is still allowed, and to change the Flow for the
 // defect the reading names where the trial's own evidence shows it.
 //
+// **And never that nothing contradicts a no Core refutes in part (t652).** A8
+// frozen pair 5 candidate towels `run-mva6mlo8-f519063c`, trial 6: a split's no
+// claimed a stored row was missing, Core's record refuted that claim, and the
+// unsure's words still said "Nothing in Core's record contradicts what kept
+// this trial from a yes"; the builder dropped a correct condition on it. Where
+// the no's reading carries `recordContradicts: "part"`
+// (`../../result-verification/agreement.ts`, now on a split too), the words say
+// Core's record contradicts part of it, as its label says, and to change the
+// Flow only for what the rest names where the trial's own evidence shows it.
+// `retestAdvised` stays false there: only `whole` advises a re-test (t641). A
+// trial judged unsure also hands the gate Core's record (`standingNo`), so the
+// conditions it keeps come from any judged trial, not only a no.
+//
 // **And the conditions Core's record showed keep out only what the request
 // does not ask for (t641).** The same run dropped, one revision after another,
 // two conditions of an exact revision on judges' misread advice. A trial judged
@@ -221,6 +234,11 @@ const UNSURE_RETEST_ADVISED = "The judge could not confirm the trial did what th
 const UNSURE_RETESTABLE = "The judge could not confirm the trial did what the instruction asks, so this revision cannot complete yet. "
   + "Nothing in Core's record contradicts what kept this trial from a yes (retestAdvised is false), so another trial of this same revision is likely to be judged the same way, whatever one judge call said. "
   + "Change the Flow for the defect the no's reading or the doubt names where the trial's own reads, steps and stored rows show it, submit the whole candidate, then test the new revision. "
+  + "Testing this same revision again, with the same revision and digest, stays allowed (retestsLeft says how many times) where that evidence shows no such defect.";
+/** Said where Core's record contradicts part of the no's reading (header, t652): never that nothing does. Generic words. */
+const UNSURE_PART_CONTRADICTED = "The judge could not confirm the trial did what the instruction asks, so this revision cannot complete yet. "
+  + "Core's record contradicts part of the no's reading, as its label in unconfirmedReading says (retestAdvised is false): make no change for that part. "
+  + "Change the Flow only for what the rest of it names where the trial's own reads, steps and stored rows show it, submit the whole candidate, then test the new revision. "
   + "Testing this same revision again, with the same revision and digest, stays allowed (retestsLeft says how many times) where that evidence shows no such defect.";
 
 /**
@@ -568,8 +586,24 @@ function standingInstruction(answer: AutomationStudioCandidateTrialResult, retes
   const onPage = retestable ? onPageStep(answer) : undefined;
   if (onPage) return testAgainInstruction(onPage);
   if (answer.verdict === "unsure" && retestable && typeof answer.feedback.contradictedByBuild === "string") return CONTRADICTED_RETESTABLE;
-  if (answer.verdict === "unsure" && retestable) return automationStudioCandidateRetestAdvised(answer) ? UNSURE_RETEST_ADVISED : UNSURE_RETESTABLE;
+  if (answer.verdict === "unsure" && retestable) {
+    if (automationStudioCandidateRetestAdvised(answer)) return UNSURE_RETEST_ADVISED;
+    return automationStudioCandidateRecordContradictsPart(answer) ? UNSURE_PART_CONTRADICTED : UNSURE_RETESTABLE;
+  }
   return INSTRUCTIONS[answer.verdict];
+}
+
+/**
+ * Whether Core's record contradicts part, and not all, of the no's reading
+ * that kept an unsure from a yes (header, t652): `unconfirmedReading.recordContradicts`
+ * is `part`, the field Core set beside its label. Never a reason to re-test
+ * (`automationStudioCandidateRetestAdvised`); only that the unsure's words never
+ * say nothing in Core's record contradicts it. Exported for the subflow trial
+ * gate and the unchanged-submission refusal, which say the same.
+ */
+export function automationStudioCandidateRecordContradictsPart(answer: { feedback: JsonObject }): boolean {
+  const reading = answer.feedback.unconfirmedReading;
+  return isJsonObject(reading) && reading.recordContradicts === "part";
 }
 
 /**

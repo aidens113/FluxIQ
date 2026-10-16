@@ -1,18 +1,18 @@
 // The shape of A8 wave 14 candidate towels `run-mv9ul5dy-e9a1b1c1` (t641) on
 // another kind of site, for the whole-candidate and subflow replays: the park
 // service's campsite search of
-// `../../../result-verification/refuted-no/tests/campsite-fixture.ts`, written
+// `../../../../../result-verification/refuted-no/tests/campsite-fixture.ts`, written
 // as one list read whose five conditions are the account's, judged by the
 // build-test judge with a scripted provider. Trial 2's two nos: call 1 names a
 // gap Core cannot settle and advises changing condition 1, every row of which,
 // left out by itself, is another copy of a stored row; call 2 names only the
 // gap. No task, site, item or answer of any realistic scenario.
-import type { JsonObject } from "../../../../../../core/index.ts";
-import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
-import type { AutomationStudioLlmProvider } from "../../../llm/index.ts";
-import { automationStudioBuildTestJudge, type AutomationStudioBuildTestVerdict, type AutomationStudioRunResultSummary } from "../../../result-verification/index.ts";
-import { CAMP_READ, campsiteInstruction, campsiteRunSummary } from "../../../result-verification/refuted-no/tests/campsite-fixture.ts";
-import { GAP_AND_CHANGE_NO as GAP_AND_CHANGE, GAP_NO as GAP } from "../../../result-verification/refuted-no/tests/campsite-readings-fixture.ts";
+import type { JsonObject } from "../../../../../../../../core/index.ts";
+import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../../../../../nodes/index.ts";
+import type { AutomationStudioLlmProvider } from "../../../../../llm/index.ts";
+import { automationStudioBuildTestJudge, type AutomationStudioBuildTestVerdict, type AutomationStudioRunResultSummary } from "../../../../../result-verification/index.ts";
+import { CAMP_READ, campsiteInstruction, campsiteRunSummary } from "../../../../../result-verification/refuted-no/tests/campsite-fixture.ts";
+import { GAP_AND_CHANGE_NO as GAP_AND_CHANGE, GAP_NO as GAP } from "../../../../../result-verification/refuted-no/tests/campsite-readings-fixture.ts";
 
 const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 };
 

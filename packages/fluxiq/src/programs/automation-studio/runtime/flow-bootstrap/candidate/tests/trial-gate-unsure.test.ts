@@ -66,4 +66,20 @@ describe("an unsure whole-candidate trial", () => {
     const part = { unconfirmedReading: { observed: "...", recordContradicts: "part" } };
     for (const feedback of [worded, part]) expect(((await gateAnswering(feedback).test(receipt)).evidence as JsonObject).retestAdvised).toBe(false);
   });
+
+  it("never says nothing in Core's record contradicts a no it refutes in part (t652, trial 6 of `run-mva6mlo8-f519063c`)", async () => {
+    const part: JsonObject = { ...SPLIT, unconfirmedReading: { observed: "Judge call 2 (Core's record contradicts part of this reading: a stored row was called missing): ...", recordContradicts: "part" } };
+    const gate = gateAnswering(part);
+    const ran = await gate.test(receipt);
+    const evidence = ran.evidence as JsonObject;
+    const told = String(evidence.instruction);
+    expect(evidence.retestAdvised).toBe(false);
+    expect(told).not.toContain("Nothing in Core's record contradicts");
+    expect(told).toContain("Core's record contradicts part of the no's reading, as its label in unconfirmedReading says (retestAdvised is false): make no change for that part.");
+    expect(told).toContain("Change the Flow only for what the rest of it names where the trial's own reads, steps and stored rows show it");
+    expect(told).toContain("stays allowed");
+    expect(told).not.toContain("is the better move");
+    expect(told).not.toMatch(/\b(?:paper|towels?|holders?|pickup|packs?|retailer|valueridge|sponsored)\b/iu);
+    expect(gate.completion(candidate)).toMatchObject({ ok: false, issueCodes: ["candidate.trial_unsure"], feedback: { instruction: told, retestAdvised: false } });
+  });
 });

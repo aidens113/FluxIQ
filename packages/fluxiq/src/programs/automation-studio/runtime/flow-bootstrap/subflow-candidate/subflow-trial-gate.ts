@@ -113,6 +113,14 @@
 // refuse once a proposal that drops one (`./scoped-submission.ts`). Earlier
 // briefs' kept conditions do not reach this gate: only its own trials'.
 //
+// **And never that nothing contradicts a no Core refutes in part (t652).** As
+// the whole gate says it (`../candidate/trial-gate.ts`): where the no's reading
+// carries `recordContradicts: "part"`, the unsure's words say Core's record
+// contradicts part of it and to change the subflow only for what the rest
+// names; `retestAdvised` stays false. A trial judged unsure now hands this gate
+// Core's record too (`standingNo`), so its kept conditions come from any judged
+// trial, not only a no.
+//
 // **A trial on a page this brief's exploration changed, and no step does, says
 // so (t647; A8 bigbox debug `run-mv9zn5ob-d929084d`, fix 6).** A builder
 // pressed a control while exploring that changed what the site offers, built
@@ -133,6 +141,7 @@ import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvi
 import {
   AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION,
   AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS,
+  automationStudioCandidateRecordContradictsPart,
   automationStudioCandidateRetestAdvised,
   automationStudioCandidateStartedWithSaid,
   type AutomationStudioCandidateTrialPrepared,
@@ -208,6 +217,11 @@ const UNSURE_RETEST_ADVISED = "The judge could not confirm this subflow did what
 const UNSURE_RETESTABLE = "The judge could not confirm this subflow did what its parts ask, so this revision cannot complete yet. "
   + "Nothing in Core's record contradicts what kept this trial from a yes (retestAdvised is false), so another trial of this same revision is likely to be judged the same way, whatever one judge call said. "
   + "Change the subflow for the defect the no's reading or the doubt names where the trial's own reads, steps and stored rows show it, submit it with core.submit_subflow, then test the new revision. "
+  + "Testing this same revision again, with the same revision and digest, stays allowed (retestsLeft says how many times) where that evidence shows no such defect.";
+/** Said where Core's record contradicts part of the no's reading (header, t652): never that nothing does. Generic words. */
+const UNSURE_PART_CONTRADICTED = "The judge could not confirm this subflow did what its parts ask, so this revision cannot complete yet. "
+  + "Core's record contradicts part of the no's reading, as its label in unconfirmedReading says (retestAdvised is false): make no change for that part. "
+  + "Change the subflow only for what the rest of it names where the trial's own reads, steps and stored rows show it, submit it with core.submit_subflow, then test the new revision. "
   + "Testing this same revision again, with the same revision and digest, stays allowed (retestsLeft says how many times) where that evidence shows no such defect.";
 
 /**
@@ -385,7 +399,11 @@ function instructionFor(answer: AutomationStudioSubflowTrialResult, retestable: 
   if (!answer.entryPrepared) return ENTRY_NOT_PREPARED;
   if (answer.verdict === "not_judged" && answer.feedback.yesUnconfirmed === true) return NOT_JUDGED_AFTER_YES;
   if (answer.verdict === "unsure" && retestable && typeof answer.feedback.contradictedByBuild === "string") return CONTRADICTED_RETESTABLE;
-  if (answer.verdict === "unsure" && retestable) return automationStudioCandidateRetestAdvised(answer) ? UNSURE_RETEST_ADVISED : UNSURE_RETESTABLE;
+  if (answer.verdict === "unsure" && retestable) {
+    if (automationStudioCandidateRetestAdvised(answer)) return UNSURE_RETEST_ADVISED;
+    // Core's record contradicts part of the no's reading: never said to contradict nothing (header, t652).
+    return automationStudioCandidateRecordContradictsPart(answer) ? UNSURE_PART_CONTRADICTED : UNSURE_RETESTABLE;
+  }
   return INSTRUCTIONS[answer.verdict];
 }
 

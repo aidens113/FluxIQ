@@ -93,8 +93,11 @@ describe("a subflow builder's refusal of a Flow already judged no", () => {
       expect(check.feedback.standingRevision).toMatchObject({ retestAdvised: true });
       expect(String(check.feedback.instruction)).not.toMatch(/\b(?:paper|towels?|holders?|pickup|retailer|valueridge|sponsored)\b/iu);
     }
-    // In part is no reason to test again unchanged.
-    expect(refusedBeside(unsureTrial({ unconfirmedReading: { observed: "...", recordContradicts: "part" } })).feedback.standingRevision).toMatchObject({ retestAdvised: false });
+    // In part is no reason to test again unchanged, and never said to be nothing (t652).
+    const part = refusedBeside(unsureTrial({ unconfirmedReading: { observed: "...", recordContradicts: "part" } }));
+    expect(part.feedback.standingRevision).toMatchObject({ retestAdvised: false });
+    expect(String(part.feedback.instruction)).not.toContain("Nothing in Core's record contradicts");
+    expect(String(part.feedback.instruction)).toContain("Core's record contradicts part of the no's reading that kept that trial from a yes, as its label in unconfirmedReading says (retestAdvised is false): make no change for that part");
   });
 
   it("still names the candidate loop's tools where no other loop's are given", () => {

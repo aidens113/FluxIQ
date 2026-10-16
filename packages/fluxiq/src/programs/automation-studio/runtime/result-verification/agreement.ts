@@ -113,6 +113,14 @@
 // some still stands. The verdict is unchanged: a reading with a reason left
 // standing still counts. An unconfirmed reading carries the same fact as a
 // field (`recordContradicts`), for a gate to read rather than the words.
+//
+// **A split's no is labelled too, and every judged build test keeps Core's
+// record (t652).** A8 frozen pair 5 towels `run-mva6mlo8-f519063c`, trial 6: a
+// split's no called a stored row missing, unlabelled, and the builder dropped a
+// condition Core's record had vindicated. Both split branches now label it
+// (`recordContradicts`), the verdict unchanged; and `standingNo` rides on every
+// outcome two calls reach, so a gate keeps such conditions from any judged
+// trial (`./standing-no/kept-conditions.ts`). Only a no is weighed by it.
 
 import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioResultVerdict, AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "./contracts/index.ts";
 import { automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./read-account/index.ts";
@@ -193,7 +201,7 @@ export function automationStudioResultVerificationAskAgain(first: AutomationStud
  * ignored.
  */
 export function automationStudioResultVerificationAgreement(input: AutomationStudioResultVerificationAgreementInput): AutomationStudioResultVerification {
-  return agree(input);
+  return recorded(input, agree(input));
 }
 
 /** The agreement, `reasked` naming the call a split's no was asked again for (t515), so its mark says so. */
@@ -232,7 +240,8 @@ function agree(input: AutomationStudioResultVerificationAgreementInput, reasked?
     if (second.verdict !== "does_not_answer") {
       return { ...unsettled(first, second, "model_unconfirmed", codes.unconfirmed, `This result was checked twice with the same evidence: the first answer was that it does what was asked, and the confirming check gave ${said(second)} (${second.code}). ${UNSETTLED.model_unconfirmed.run}`, verdicts), ...contradictedUnsure(2, second, input) };
     }
-    return { ...unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was that it does what was asked, the second that it does not. ${UNSETTLED.model_disagreed.run}`, verdicts, weigh), ...refutedMark(input, [2]) };
+    // The no's reading labelled where Core's record refutes any of it, as every other branch labels it (header, t652).
+    return { ...unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was that it does what was asked, the second that it does not. ${UNSETTLED.model_disagreed.run}`, verdicts, { ...weigh, refuted: splitRefuted(input, 2) }), ...refutedMark(input, [2]) };
   }
   if (first.verdict === "does_not_answer" && second.verdict === "does_not_answer") {
     // A no whose every reason Core's record refutes is marked, to be asked once more (t607, `./refuted-no/`).
@@ -257,14 +266,13 @@ function agree(input: AutomationStudioResultVerificationAgreementInput, reasked?
     };
   }
   if (second.verdict === "answers") {
-    return { ...unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was ${said(first)}, the second that it does. ${UNSETTLED.model_disagreed.run}`, verdicts, weigh), ...contradictedUnsure(1, first, input), ...refutedMark(input, [1]) };
+    return { ...unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was ${said(first)}, the second that it does. ${UNSETTLED.model_disagreed.run}`, verdicts, { ...weigh, refuted: splitRefuted(input, 1) }), ...contradictedUnsure(1, first, input), ...refutedMark(input, [1]) };
   }
   // Neither yes nor two nos (header, t628): a doubt Core's record contradicts is marked, to be asked once more (t503), and
   // the no's reading, where one said no, is labelled where the record refutes any of it (t607). Re-asking that no alone
   // could not make two yeses, so it is asked only after a contradicted doubt asked again comes back yes.
   const noCall: 1 | 2 | undefined = first.verdict === "does_not_answer" ? 1 : second.verdict === "does_not_answer" ? 2 : undefined;
-  const weighed = noCall ? weighedNo(input, noCall) : undefined;
-  const refuted = noCall && weighed?.findings.length ? { call: noCall, ...weighed } : undefined;
+  const refuted = noCall ? splitRefuted(input, noCall) : undefined;
   const doubt = contradictedUnsure(1, first, input).contradictedUnsure ? contradictedUnsure(1, first, input) : contradictedUnsure(2, second, input);
   return {
     ...unsettled(first, second, "model_unconfirmed", codes.unconfirmed, `This result was checked twice with the same evidence, and neither answer was that it does what was asked, nor were both that it does not: the first was ${said(first)}, the second ${said(second)} (${second.code}). ${UNSETTLED.model_unconfirmed.run}`, verdicts, { refuted }),
@@ -286,6 +294,12 @@ export async function automationStudioResultVerificationReaskContradicted(input:
   /** Asks call `call` once more, its copy carrying `recheck`. */
   ask: (recheck: string, call: 1 | 2) => Promise<AutomationStudioResultVerification>;
 }): Promise<AutomationStudioResultVerification> {
+  // Every outcome a re-ask comes to keeps Core's record of the trial, as the agreement's own does (header, t652).
+  return recorded(input, await reaskContradicted(input));
+}
+
+/** The re-ask itself (`automationStudioResultVerificationReaskContradicted`). */
+async function reaskContradicted(input: Parameters<typeof automationStudioResultVerificationReaskContradicted>[0]): Promise<AutomationStudioResultVerification> {
   const { settled, second } = input;
   if (!second) return settled;
   const marked = settled.contradictedUnsure;
@@ -745,10 +759,23 @@ function refutedMark(input: AutomationStudioResultVerificationAgreementInput, ca
   return { refutedNo: { calls: marked, findings: [...new Set(marked.flatMap((call) => found.get(call)!))] } };
 }
 
+/** What Core's record says of a split's or unsure's no, with its call, where it refutes any of it (header, t628, t652); nothing otherwise. */
+function splitRefuted(input: AutomationStudioResultVerificationAgreementInput, call: 1 | 2): ({ call: 1 | 2 } & AutomationStudioResultNoWeighed) | undefined {
+  const weighed = weighedNo(input, call);
+  return weighed?.findings.length ? { call, ...weighed } : undefined;
+}
+
+/** `outcome` with Core's record of the judged build test where it has none yet (header, t652); never for a runtime check or one call. */
+function recorded(input: AutomationStudioResultVerificationAgreementInput, outcome: AutomationStudioResultVerification): AutomationStudioResultVerification {
+  if (outcome.standingNo || (outcome.calls ?? 0) < 2) return outcome;
+  const record = standingNoOf(input);
+  return record.standingNo ? { ...outcome, ...record } : outcome;
+}
+
 /**
- * `{ standingNo }`: Core's record of a build test's double no (header, t633,
- * `./standing-no-record/record.ts`); nothing for a runtime check, or without the
- * judged summary.
+ * `{ standingNo }`: Core's record of a build test two calls judged (header,
+ * t633, t652, `./standing-no-record/record.ts`); nothing for a runtime check,
+ * or without the judged summary.
  */
 function standingNoOf(input: AutomationStudioResultVerificationAgreementInput): { standingNo?: AutomationStudioResultStandingNoRecord } {
   const record = input.confirmAnswer === true ? noRecordOf(input) : undefined;

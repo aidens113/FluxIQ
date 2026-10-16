@@ -19,10 +19,10 @@
 // 0044-0050) did: there the repeat guard refused the invited resend unrun as a
 // repeat of the refusal three times and the build ended (t650).
 import { describe, expect, it } from "vitest";
-import type { JsonObject } from "../../../../../../core/index.ts";
-import type { AutomationStudioBuildTestVerdict } from "../../../result-verification/index.ts";
-import { CAMP_CEDAR } from "../../../result-verification/refuted-no/tests/campsite-fixture.ts";
-import type { AutomationStudioLlmEvidenceLoopInput } from "../../../llm/index.ts";
+import type { JsonObject } from "../../../../../../../../core/index.ts";
+import type { AutomationStudioBuildTestVerdict } from "../../../../../result-verification/index.ts";
+import { CAMP_CEDAR } from "../../../../../result-verification/refuted-no/tests/campsite-fixture.ts";
+import type { AutomationStudioLlmEvidenceLoopInput } from "../../../../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_CANDIDATE_KEPT_CONDITION_DROPPED_CODE,
   AutomationStudioFlowCandidateSubmissionController,
@@ -31,12 +31,12 @@ import {
   runAutomationStudioFlowCandidateAuthoringLoop,
   type AutomationStudioCandidateTrialResult,
   type AutomationStudioFlowCandidate
-} from "../index.ts";
+} from "../../../index.ts";
 import { CAMP_WHERE, GAP_AND_CHANGE_NO, GAP_NO, KEPT_CONDITION_SUBMISSION, campsiteJudging, campsiteReadScript as script } from "./kept-condition-fixture.ts";
 
 const { promoted, open, rating, campground, notCabin } = CAMP_WHERE;
 
-/** The trial's answer as the candidate trial service gives it (`../../../service/candidate-trial/run.ts`): the no's record beside the feedback. */
+/** The trial's answer as the candidate trial service gives it (`../../../../../service/candidate-trial/run.ts`): the no's record beside the feedback. */
 function answered(request: { revision: number; digest: string }, verdict: AutomationStudioBuildTestVerdict): AutomationStudioCandidateTrialResult {
   const base = { revision: request.revision, digest: request.digest };
   if (verdict.verdict === "no") return { ...base, verdict: "no", feedback: { code: "candidate.trial_judged_no", judge: { ...(verdict.observed ? { observed: verdict.observed } : {}), ...(verdict.advice ? { advice: verdict.advice } : {}) } }, ...(verdict.standingNo ? { standingNo: verdict.standingNo } : {}) } as AutomationStudioCandidateTrialResult;

@@ -5,7 +5,7 @@
 // only rows the request does not ask for, the next proposal dropping one is
 // refused once, in Core's words and naming the builder's own tools' subject,
 // and the same drop sent again is accepted. Scripted provider, the campsite
-// search of `../../candidate/tests/kept-condition-fixture.ts`.
+// search of `../../candidate/tests/kept-condition/tests/kept-condition-fixture.ts`.
 //
 // The last case sends that resend through the builder's own loop and the
 // evidence loop on one unchanged page, the shape of A8 frozen pair 4
@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioBuildTestVerdict } from "../../../result-verification/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_KEPT_CONDITION_DROPPED_CODE, automationStudioCandidateSubmissionRefusal } from "../../candidate/index.ts";
-import { CAMP_WHERE, GAP_AND_CHANGE_NO, GAP_NO, KEPT_CONDITION_SUBMISSION, campsiteJudging, campsiteReadScript as script } from "../../candidate/tests/kept-condition-fixture.ts";
+import { CAMP_WHERE, GAP_AND_CHANGE_NO, GAP_NO, KEPT_CONDITION_SUBMISSION, campsiteJudging, campsiteReadScript as script } from "../../candidate/tests/kept-condition/tests/kept-condition-fixture.ts";
 import type { AutomationStudioLlmEvidenceLoopInput } from "../../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID,
