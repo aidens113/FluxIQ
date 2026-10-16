@@ -45,6 +45,18 @@ describe("a brief's scope", () => {
     expect(automationStudioProjectDispatchScope(recordOf(plan, [opening, planting]), planting).scope.handedOn).toBeUndefined();
   });
 
+  // A8 frozen pair 8 (t676): a builder did a later part's lasting act while it explored; nothing named that part as another builder's.
+  it("carries the task's other parts, by id and the person's words, as out of its scope", () => {
+    const plan = gardenPlan();
+    const opening = gardenBrief("b-open", "open_packet", ["list_seeds"]);
+    const { scope } = automationStudioProjectDispatchScope(recordOf(plan, [opening]), opening);
+    const own = new Set(opening.parts);
+    const others = gardenTaskSpec().parts.filter((part) => !own.has(part.id)).map((part) => ({ partId: part.id, text: part.quote.text }));
+    expect(others.length).toBeGreaterThan(0);
+    expect(scope.outOfScope).toEqual(others);
+    for (const part of scope.outOfScope!) expect(scope.parts.map((held) => held.partId)).not.toContain(part.partId);
+  });
+
   it("carries none for a brief whose inputs are all the person's", () => {
     const plan = gardenPlan();
     const opening = gardenBrief("b-open", "open_packet", ["list_seeds"]);

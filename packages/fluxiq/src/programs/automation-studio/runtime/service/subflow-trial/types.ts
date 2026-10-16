@@ -19,6 +19,12 @@ export type AutomationStudioSubflowTrialJudgeInput = {
    * which its builder proposed. Absent when neither has one.
    */
   successCheck?: { check: NonNullable<AutomationStudioSubflowScope["successCheck"]>; from: "plan" | "builder" } | undefined;
+  /**
+   * The trial's steps, by nodeId, whose act Core recorded possibly lasting
+   * (t676; `../candidate-trial/landed-acts.ts`): each declared no lasting act
+   * yet changed its own page. Absent where there is none.
+   */
+  possiblyLasting?: string[] | undefined;
 };
 
 /**
