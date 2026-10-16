@@ -103,7 +103,7 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowCandidateSubmission } from "./contracts.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_KEPT_STEP_DROPPED_CODE } from "./kept-step-hint.ts";
-import { AUTOMATION_STUDIO_CANDIDATE_KEPT_CONDITION_DROPPED_CODE } from "./submission.ts";
+import { AUTOMATION_STUDIO_CANDIDATE_KEPT_CONDITION_DROPPED_CODE } from "./kept-condition-dropped-code.ts";
 
 /** The code a refused submission is counted under when its check names no closed code of its own. */
 export const AUTOMATION_STUDIO_CANDIDATE_SUBMISSION_REFUSED_CODE = "candidate.submission_refused";

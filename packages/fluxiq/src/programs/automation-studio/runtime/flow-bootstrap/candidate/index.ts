@@ -1,6 +1,7 @@
 export * from "./contracts.ts";
 export * from "./kept-step-hint.ts";
 export * from "./submission.ts";
+export * from "./kept-condition-dropped-code.ts";
 export * from "./submission-refusal.ts";
 export * from "./unchanged-submission.ts";
 export * from "./digest.ts";

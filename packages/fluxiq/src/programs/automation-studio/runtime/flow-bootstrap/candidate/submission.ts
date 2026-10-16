@@ -1,20 +1,25 @@
+// The submission controller: each candidate a model or Core sends is checked
+// and, when valid, becomes the next revision (the header of `submit` says
+// which are refused and why). The refusals and readings it composes are the
+// sibling files of this directory.
+
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceResendInvitation } from "../../llm/repeat-guard/index.ts";
 import { checkAutomationStudioFlowBootstrapCompletion, checkAutomationStudioFlowBootstrapPlanCompletion, type AutomationStudioFlowBootstrapCompletionVerdict } from "../../llm/harness-options/index.ts";
-import { automationStudioFlowBootstrapIssuePlace, automationStudioFlowBootstrapWrittenPlanBindingIssues, parseAutomationStudioFlowScript, type AutomationStudioFlowBootstrapIssueLocator } from "../authoring/index.ts";
+import { automationStudioFlowBootstrapWrittenPlanBindingIssues, parseAutomationStudioFlowScript } from "../authoring/index.ts";
 import { automationStudioInstructedActOptionalScriptIssues } from "../instructed-acts/index.ts";
 // Its own barrel, not result-verification's, whose reads import flow-bootstrap back (a module cycle).
 import { automationStudioResultKeptConditionsDropped, type AutomationStudioResultKeptConditionDrop, type AutomationStudioResultKeptConditionsCarrier } from "../../result-verification/standing-no/index.ts";
-import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
+import type { AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import { automationStudioFlowScriptWayOutIssues } from "../script-statements/index.ts";
 import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission, AutomationStudioFlowCandidateSubmissionHistory, AutomationStudioCandidateOriginalSourceBinding } from "./contracts.ts";
 import { automationStudioCandidateFingerprint as fingerprint } from "./digest.ts";
-import { automationStudioInterfaceOutputPort } from "./interface-output-port.ts";
 import { AutomationStudioCandidateKeptStepHint } from "./kept-step-hint.ts";
 import { automationStudioCandidateSameBehaviour, automationStudioCandidateUnchangedRefusal } from "./unchanged-submission.ts";
-
-/** The code a submission dropping a condition Core's record kept is refused under, once (`submit`, t641). */
-export const AUTOMATION_STUDIO_CANDIDATE_KEPT_CONDITION_DROPPED_CODE = "candidate.kept_condition_dropped";
+import { bindingRefusal } from "./binding-refusal.ts";
+import { changedPaths } from "./changed-paths.ts";
+import { keptConditionRefusal } from "./kept-condition-refusal.ts";
+import { partOutputPortIssues } from "./part-output-port-issues.ts";
+import { submissionText } from "./submission-text.ts";
 
 /** Session-local candidates, separate from discovery and the accepted Flow store. */
 export class AutomationStudioFlowCandidateSubmissionController {
@@ -47,7 +52,8 @@ export class AutomationStudioFlowCandidateSubmissionController {
     const source = binding.originalSources;
     if (Object.keys(binding).length !== 2 || !source || source.schemaVersion !== "candidate.original_sources.v1" || source.projectId !== input.projectId || source.flowId !== input.flowId
       || binding.originalInstructionsDigest !== fingerprint.source(source) || source.effectiveInstructionIds.map(id => {
-        const item = source.instructions.find(instruction => instruction.instructionId === id); if (!item) throw new Error("candidate.original_binding_invalid");
+        const item = source.instructions.find(instruction => instruction.instructionId === id);
+        if (!item) throw new Error("candidate.original_binding_invalid");
         return `${item.title}\n${item.body}`;
       }).join("\n") !== (input.instructionText ?? "")) throw new Error("candidate.original_binding_mismatch");
     this.originalSource = binding;
@@ -284,129 +290,4 @@ export class AutomationStudioFlowCandidateSubmissionController {
 /** A kept condition as a refusal of it is remembered: as written, and the revision whose trial showed it, so a later trial's showing may refuse once more. */
 function refusedKey(condition: { written: string; revision: number }): string {
   return `${condition.revision}\n${condition.written}`;
-}
-
-/**
- * The refusal of a submission that drops or changes a kept condition (header
- * of `submit`, t641): Core's words, and each condition as its trial's lines
- * named it, as its revision wrote it and the rows it kept out, with the
- * revision that still stands. One issue, so the loop counts it by its own code;
- * the model's next step is said by `./submission-refusal.ts`. `resend` is Core's
- * own mark that lets the repeat guard run the invited resend once (t650).
- */
-function keptConditionRefusal(dropped: AutomationStudioResultKeptConditionDrop, standing: AutomationStudioFlowCandidate | undefined): Extract<AutomationStudioFlowCandidateSubmission, { ok: false }>["check"] {
-  const code = AUTOMATION_STUDIO_CANDIDATE_KEPT_CONDITION_DROPPED_CODE;
-  return {
-    ok: false,
-    issueCodes: [code],
-    feedback: {
-      ok: false,
-      code,
-      resend: "accepted_once" satisfies AutomationStudioLlmEvidenceResendInvitation,
-      ...(standing ? { standingRevision: { revision: standing.revision, digest: standing.digest } } : {}),
-      keptConditions: dropped.dropped.map((condition) => ({
-        condition: condition.name,
-        revision: condition.revision,
-        written: JSON.parse(condition.written) as JsonValue,
-        keptOut: condition.keptOut.map((row) => ({ label: row.label, by: row.by, ...(row.texts ? { texts: [...row.texts] } : {}) }))
-      })),
-      // The issue's path names the conditions dropped, so a refusal for one kept
-      // condition and a later one for another are two refusals, not a run of one
-      // (`./submission-refusal.ts` `refusalCode`): each is a hint refused once,
-      // and hints must never add up to the run of refusals that ends a build.
-      issues: [{ code, message: dropped.said, path: dropped.dropped.map((condition) => condition.written).sort().join(" | ") }],
-      instruction: dropped.said
-    }
-  };
-}
-
-/**
- * The submitted Flow as the script reader reads it, so a resubmission that
- * differs only in what the reader ignores is the same Flow: line endings, the
- * spaces around each line, blank lines and whole-line comments
- * (`../authoring/parse.ts`). A JSON plan is read as its canonical JSON. Nothing
- * else of the input counts -- a new `summary` changes no step -- and an input
- * with neither has no text and is never "the same".
- */
-function submissionText(result: JsonObject): string | undefined {
-  if (typeof result.flow === "string") {
-    const lines = result.flow.split(/\r\n|\r|\n/u).map((line) => line.trim()).filter((line) => line && !line.startsWith("#") && !line.startsWith("//"));
-    return `flow\n${lines.join("\n")}`;
-  }
-  return result.plan !== undefined ? `plan\n${canonical(result.plan)}` : undefined;
-}
-
-/**
- * A candidate refused for its loops or bindings, for a step that answers an
- * interruption through its offer (`../script-statements/way-out-steps.ts`), or
- * for an optional step that does a requested act
- * (`../instructed-acts/optional-act-steps.ts`), under `code`. Every sentence is Core's own
- * (`../authoring/`, `../script-statements/`) and quotes only node keys, labels,
- * field names and output ids the model wrote -- and, for the way out, the words
- * of the control its step names, which the evidence already printed to it --
- * so each travels whole with its code and path, and with
- * the step it is about as the model wrote it (t378): a node key such as "s11"
- * is Core's, and names no step the model can find in its script.
- */
-function bindingRefusal(issues: readonly AutomationStudioFlowBootstrapIssue[], locator: AutomationStudioFlowBootstrapIssueLocator | undefined, code: string): Extract<AutomationStudioFlowCandidateSubmission, { ok: false }>["check"] {
-  return {
-    ok: false,
-    issueCodes: [...new Set(issues.map((issue) => issue.code))],
-    feedback: {
-      ok: false,
-      code,
-      issues: issues.map((issue) => {
-        const place = automationStudioFlowBootstrapIssuePlace(locator, issue.path);
-        return {
-          code: issue.code,
-          ...(issue.path ? { path: issue.path } : {}),
-          message: issue.message,
-          ...(place ? { step: place.step, ...(place.label === undefined ? {} : { label: place.label }), ...(place.line === undefined ? {} : { line: place.line }) } : {})
-        };
-      }),
-      instruction: "Each issue names the step it is about, by its line where the script has one. Correct every one and resubmit the entire candidate."
-    }
-  };
-}
-
-/**
- * A part's output bound to a port its step's node does not declare (t639),
- * or to its success or failure port, a route that hands on no value (t594's
- * rule, which only a subflow brief met): the value would be empty when the
- * Flow runs, and a step that reads it would read nothing. Refused naming the ports the node does declare
- * (`./interface-output-port.ts`). A whole candidate's parts are its own, so the
- * way out is to drop the output rather than to end a brief.
- */
-function partOutputPortIssues(
-  plan: AutomationStudioFlowBootstrapPlan,
-  nodes: Pick<Parameters<typeof checkAutomationStudioFlowBootstrapCompletion>[0], "registry" | "resolution">
-): AutomationStudioFlowBootstrapIssue[] {
-  return plan.subflows.flatMap((subflow, index) => (subflow.interface?.outputs ?? []).flatMap((output): AutomationStudioFlowBootstrapIssue[] => {
-    const read = automationStudioInterfaceOutputPort(subflow, output.metadata?.binding, nodes);
-    const way = "If no step of the part makes that value, drop the output, and have the step that needs the value read it where it is made.";
-    if (read?.kind === "route") {
-      return [{ severity: "error", code: "candidate.part_output_not_a_value", path: `plan.subflows.${index}`, message: `The output "${output.id}" of the part "${subflow.key}" is bound to the ${read.role} port "${read.port}" of one of its steps. That port says only whether the step ${read.role === "success" ? "worked" : "failed"}, and hands on no value. `
-        + "Bind the output to a value one of the part's own steps reads or makes: `output: <name> = $step.<label>.<output>`, naming an output that holds that value. " + way }];
-    }
-    if (read?.kind !== "unknown") return [];
-    return [{ severity: "error", code: "candidate.part_output_unknown_port", path: `plan.subflows.${index}`, message: `The output "${output.id}" of the part "${subflow.key}" is bound to "${read.port}" of one of its steps, and that step's node "${read.definitionId}" declares no output by that name: it declares only ${read.declared.join(", ") || "no output"}. That binding would hand on nothing when the Flow runs. `
-      + "Bind the output to an output the step's node declares and that holds the value: `output: <name> = $step.<label>.<output>`. " + way }];
-  }));
-}
-
-function changedPaths(before: JsonValue | undefined, after: JsonValue, path = "plan"): string[] {
-  if (before === undefined) return [path];
-  if (canonical(before) === canonical(after)) return [];
-  if (before && after && typeof before === "object" && typeof after === "object") {
-    const old = before as Record<string, JsonValue>, next = after as Record<string, JsonValue>;
-    return [...new Set([...Object.keys(old), ...Object.keys(next)])].sort().flatMap((key) => next[key] === undefined ? [`${path}.${key}`] : changedPaths(old[key], next[key]!, `${path}.${key}`));
-  }
-  return [path];
-}
-
-/** JSON object key order never changes the submitted graph identity. */
-function canonical(value: JsonValue): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key]!)}`).join(",")}}`;
-  return JSON.stringify(value);
 }
