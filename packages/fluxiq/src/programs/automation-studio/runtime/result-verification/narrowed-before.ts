@@ -30,12 +30,22 @@
 // Core reads three closed words of the domain's diff (`documentChanged`,
 // `locationChanged`, and whether `added` or `removed` hold lines) and
 // interprets none of its lines.
+//
+// **And what it chose and left out (t655).** Where the step chose one option of
+// a named group its page showed, the group, the option, every other option
+// still unchosen with the count the page showed beside it, and the result
+// counts the page stated before and after: read from the structured `groups`
+// and `resultCount` the domain puts beside each snapshot's view, never from a
+// line of the view (`./narrowing-group.ts`). A8 frozen pair 5 towels
+// (`run-mva6mlo8-f519063c`): a judge doubted such a step and could not see what
+// it had left out. Screened as the control's words are.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../model/index.ts";
 import { screenAutomationStudioLlmEvidence } from "../llm/index.ts";
 import { automationStudioModelFacingControlWords } from "../llm/model-facing/index.ts";
 import type { AutomationStudioResultNarrowingStep } from "./contracts/index.ts";
+import { automationStudioResultNarrowingGroup } from "./narrowing-group.ts";
 
 /** One traced attempt, as far as this reads it. */
 type TracedAttempt = {
@@ -43,7 +53,7 @@ type TracedAttempt = {
   status?: string | undefined;
   skipped?: unknown;
   stateHeld?: unknown;
-  stateRefs?: { stateDiff?: JsonObject } | undefined;
+  stateRefs?: { stateDiff?: JsonObject; beforeAction?: { summary?: JsonObject | undefined }; afterAction?: { summary?: JsonObject | undefined } } | undefined;
 };
 
 /** The steps before each read, by the read's node id; only reads that ran and had a step before them. */
@@ -72,11 +82,20 @@ export function automationStudioResultNarrowedBefore(input: {
       const node = nodes.get(attempt.nodeId);
       const control = controlOf(node, input.deniedEvidenceKeys);
       if (control.withheld) withheld = true;
+      // What it chose and left out, from the page's own groups (header, t655).
+      const group = automationStudioResultNarrowingGroup({
+        control: automationStudioModelFacingControlWords(node?.parameterValues),
+        before: attempt.stateRefs?.beforeAction?.summary,
+        after: attempt.stateRefs?.afterAction?.summary,
+        deniedEvidenceKeys: input.deniedEvidenceKeys
+      });
+      if (group.withheld) withheld = true;
       steps.push({
         nodeId: attempt.nodeId,
         ...(node?.label ? { label: node.label } : {}),
         ...(control.words ? { control: control.words } : {}),
-        ...(effect ? { effect } : {})
+        ...(effect ? { effect } : {}),
+        ...group.said
       });
     }
     if (steps.length) byRead.set(read, steps);

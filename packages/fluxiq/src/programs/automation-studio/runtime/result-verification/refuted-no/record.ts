@@ -44,9 +44,18 @@
 // nothing of what it did not see. Each read carries the steps that acted on
 // the page before it (`narrowedBefore`, t482). None for a build test's replayed
 // reads, which carry no counts (`./unseen-row-claim.ts`).
+//
+// **And the rows its conditions left out together (t655).** Every judged trial
+// of that run fell short by such rows (seen 23, kept 9, 12 alone). A read that
+// names them (`leftOutTogether`) counts them too: it is whole where `itemsSeen`
+// is what it kept, each condition's alone rows and these, every one said by a
+// label that may be said; their labels are rows it saw. The same listing,
+// where it is complete, says which sets of conditions left rows out together
+// (`together`): what a no's advice to remove several conditions brings back
+// (`./advice-condition.ts`).
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
+import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultConditionName } from "../read-account/index.ts";
 import {
   automationStudioRequestPhrases,
@@ -81,6 +90,7 @@ export function automationStudioResultNoRecord(input: {
   const storedLabels = [...new Set(stored.map((row) => row.label))];
   const pools = [...reads.map((read) => [...new Set([...read.labels, ...storedLabels])]), storedLabels];
   const seen = seenReads(summary);
+  const together = togetherSets(summary);
   const tested = summary.buildTest?.stores;
   const phrases = input.requestText?.trim() ? automationStudioRequestPhrases(input.requestText) : undefined;
   return {
@@ -94,7 +104,8 @@ export function automationStudioResultNoRecord(input: {
     nodeIds: summary.flowShape.map((step) => step.nodeId),
     conditions: automationStudioResultNoConditions(summary, leftOut, new Set(storedLabels)),
     isValue: valuesOf(summary, stored, leftOut),
-    ...(seen ? { seen, seenLabels: [...new Set(pools.flat())] } : {}),
+    ...(seen ? { seen, seenLabels: [...new Set([...pools.flat(), ...togetherLabels(summary)])] } : {}),
+    ...(together.length ? { together } : {}),
     ...(phrases ? { phrases, item: itemOf(storedLabels, phrases) } : {}),
     ...(input.wording ? { says: input.wording.says } : {}),
     ...(input.other ? { other: input.other } : {})
@@ -129,11 +140,43 @@ function seenReads(summary: AutomationStudioRunResultSummary): AutomationStudioR
   });
   return (summary.reads ?? []).filter((account) => !entry.has(account.nodeId)).map((account) => {
     const conditions = account.conditions ?? [];
-    const alone = conditions.reduce((total, condition) => total + (condition.alone ?? 0), 0);
-    const whole = setsWhole && account.unfiltered !== true && account.itemsSeen !== undefined
-      && conditions.every(namesEveryRow) && account.itemsSeen === account.kept + alone;
+    const whole = setsWhole && conditions.every(namesEveryRow) && togetherComplete(account);
     return { nodeId: account.nodeId, whole, narrowedBefore: account.narrowedBefore ?? [] };
   });
+}
+
+/**
+ * Whether a read's own counts say its rows left out by two or more conditions
+ * together are every one it names (header, t655): it counted the rows it
+ * looked at, did not answer unfiltered, each condition counted its alone rows,
+ * and what it looked at is what it kept, those and these, each said by a label
+ * that may be said.
+ */
+function togetherComplete(account: AutomationStudioResultReadAccount): boolean {
+  const conditions = account.conditions ?? [];
+  if (account.itemsSeen === undefined || account.unfiltered === true || conditions.some((condition) => condition.alone === undefined)) return false;
+  const alone = conditions.reduce((total, condition) => total + (condition.alone ?? 0), 0);
+  const rows = (account.leftOutTogether ?? []).flatMap((set) => set.rows);
+  return rows.every((row) => automationStudioRequestRowLabel(row) !== WITHHELD_LABEL) && account.itemsSeen === account.kept + alone + rows.length;
+}
+
+/** Every label a read's conditions left out together (header, t655): rows it saw. Not a subflow trial's entry's. */
+function togetherLabels(summary: AutomationStudioRunResultSummary): string[] {
+  const entry = new Set(summary.taskChecklist?.entry?.steps ?? []);
+  return (summary.reads ?? []).filter((account) => !entry.has(account.nodeId))
+    .flatMap((account) => (account.leftOutTogether ?? []).flatMap((set) => set.rows.map(automationStudioRequestRowLabel)));
+}
+
+/**
+ * For each read whose listing of rows left out together is complete (header),
+ * the sets of conditions, by number, that left a row out together; one entry
+ * per read, none for a node two accounts share or a subflow trial's entry.
+ */
+function togetherSets(summary: AutomationStudioRunResultSummary): NonNullable<AutomationStudioResultNoRecord["together"]> {
+  const entry = new Set(summary.taskChecklist?.entry?.steps ?? []);
+  const reads = (summary.reads ?? []).filter((account) => !entry.has(account.nodeId));
+  return reads.filter((account) => reads.filter((other) => other.nodeId === account.nodeId).length === 1 && togetherComplete(account))
+    .map((account) => ({ nodeId: account.nodeId, sets: (account.leftOutTogether ?? []).map((set) => [...set.conditions]) }));
 }
 
 /** Whether a condition counted the rows it alone left out and sent each by a label that may be said. */

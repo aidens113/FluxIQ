@@ -177,8 +177,9 @@ export type AutomationStudioBuildTestVerdict =
     /**
      * Only on an `unknown` where one call could not tell because of pages
      * Core's record says were all read (`AutomationStudioResultVerification.contradictedUnsure`,
-     * t503), or of rows merged by a dedupe Core's record says removed none
-     * (t628): Core's sentence naming that call, the record and what the re-ask
+     * t503), of rows merged by a dedupe Core's record says removed none
+     * (t628), or of a step choosing an option the request does not name where
+     * the option is the request's own words (t655): Core's sentence naming that call, the record and what the re-ask
      * answered. A doubt the record contradicts is no evidence against the Flow.
      */
     doubtContradicted?: string;
@@ -373,7 +374,8 @@ function doubtContradicted(outcome: AutomationStudioResultVerification): string 
     : reasked === "does_not_answer" ? " It was asked again with that record named and then said no: its reading is unconfirmedReading."
       : reasked === "answers" ? " It was asked again with that record named and then said it does what was asked."
         : " It was asked again with that record named and still could not tell.";
-  const doubted = marked.about === "dedupe" ? "saying the answer's dedupe merged distinct rows" : "saying the list has pages its read never reached";
+  const doubted = marked.about === "dedupe" ? "saying the answer's dedupe merged distinct rows"
+    : marked.about === "narrowing" ? "saying a step chose an option the request does not name" : "saying the list has pages its read never reached";
   return `Judge call ${marked.call} could not tell, ${doubted}; Core's record says otherwise: ${marked.record}${after}`;
 }
 

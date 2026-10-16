@@ -1230,7 +1230,9 @@ the judge of the build's test as `buildTest.notes`
 also carries `readRows`: the labels of the rows it returned and, per condition,
 the rows that condition alone left out, screened by the same function as the
 runtime judge's `leftOutOnlyByThis` (`build-test/read-rows.ts`), so the judge
-can see an asked row was dropped (live run `run-muqk713g`, cause C3). A test
+can see an asked row was dropped (live run `run-muqk713g`, cause C3), and,
+where the replay sent them, the rows two or more conditions left out together
+(`leftOutTogether`, t655), each set by condition number and name. A test
 stores nothing itself, so `buildTest.stores` says what the Flow would store:
 each dataset its steps' record outputs write, in Flow order, with the write
 mode, the steps, the rows those steps' reads returned in the test, every label

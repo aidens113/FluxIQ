@@ -44,6 +44,14 @@
 // the no falls through to the rows it names and the wording claims
 // (`./weigh.ts`). Core refutes only what it measured (t631 follow-up).
 //
+// **Unless the read names those rows (t655).** A read that sends the rows its
+// conditions left out together (`leftOutTogether`), and whose own counts say
+// it sent every one (`./record.ts`, `together`), says which set of conditions
+// left each out. Removing the named conditions brings one back only where
+// every condition it failed is among them: where no set is, none comes back
+// and the advice is weighed as above; where one is, Core has no account of
+// that row, and the advice is not refuted by its conditions.
+//
 // A condition whose rows Core cannot all account for, or whose rows the read
 // did not send, leaves the no standing too.
 
@@ -69,7 +77,7 @@ export type AutomationStudioResultAdvisedConditions = { conditions: AutomationSt
 /** The conditions a qualifying advice changes, where Core's record clears each (header); nothing otherwise. */
 export function automationStudioResultAdviceConditions(advice: string | undefined, record: AutomationStudioResultNoRecord): AutomationStudioResultAdvisedConditions | undefined {
   const conditions = automationStudioResultAdviceChangedConditions(advice, record);
-  if (!conditions || !conditions.every(cleared) || mayLeaveOutTogether(conditions)) return undefined;
+  if (!conditions || !conditions.every(cleared) || mayLeaveOutTogether(conditions, record)) return undefined;
   const reads = new Set((record.conditions ?? []).map((condition) => condition.nodeId));
   return { conditions, nodeIds: [...new Set(conditions.map((condition) => condition.nodeId))], findings: conditions.map((condition) => finding(condition, reads.size > 1)) };
 }
@@ -117,18 +125,26 @@ const SAVED_ANSWER = "recordOutput.process.where ";
 
 /**
  * Whether a row may have been left out only by several named conditions of one
- * read together, which no account names (header): two or more of them
+ * read together (header): where the read names every such row, whether one
+ * failed only named conditions (t655); else whether two or more of them
  * rejected rows another condition rejected too, or one's count is missing.
  */
-function mayLeaveOutTogether(conditions: readonly AutomationStudioResultNoCondition[]): boolean {
+function mayLeaveOutTogether(conditions: readonly AutomationStudioResultNoCondition[], record: AutomationStudioResultNoRecord): boolean {
   const byRead = new Map<string, AutomationStudioResultNoCondition[]>();
   for (const condition of conditions) {
     const key = `${condition.nodeId}\u0000${condition.name.startsWith(SAVED_ANSWER)}`;
     byRead.set(key, [...(byRead.get(key) ?? []), condition]);
   }
-  return [...byRead.values()].some((named) => named.length > 1
-    && (named.some((condition) => condition.rejected === undefined)
-      || named.filter((condition) => condition.rejected! > (condition.leftOut?.length ?? 0)).length > 1));
+  return [...byRead.values()].some((named) => {
+    if (named.length < 2) return false;
+    const listed = named[0]!.name.startsWith(SAVED_ANSWER) ? undefined : record.together?.find((read) => read.nodeId === named[0]!.nodeId);
+    if (listed) {
+      const numbers = new Set(named.map((condition) => condition.number));
+      return listed.sets.some((set) => set.every((number) => numbers.has(number)));
+    }
+    return named.some((condition) => condition.rejected === undefined)
+      || named.filter((condition) => condition.rejected! > (condition.leftOut?.length ?? 0)).length > 1;
+  });
 }
 
 /** Whether Core accounts for every row a condition alone left out (header). */

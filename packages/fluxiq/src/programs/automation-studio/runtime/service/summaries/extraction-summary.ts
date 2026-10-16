@@ -89,6 +89,19 @@
 // also failed another condition. Rows that are not one list per condition, or
 // a lead longer than its list, drop the summary, as any other malformed member
 // does.
+//
+// **And `conditions.togetherRows`: the rows two or more conditions left out
+// together** (t655). After its alone lead, each list holds rows another
+// condition rejected too (a playback's page sends those it shares with another
+// list, `apps/extension/src/content/actions/extract-list.ts`). A row with the
+// same values after the lead of two or more lists is one row those conditions
+// left out together: it is said once, as `{ failed, rows }` -- the conditions'
+// 0-based places and the rows that failed exactly those, each led by its label
+// as an alone row is. A row after one list's lead alone is not said: its
+// conditions would be a guess. `result-verification/read-account/` cuts each to
+// its label and screens it, as it does the alone rows; with them a read's rows
+// can name every row it saw (A8 frozen pair 5 `run-mva6mlm4-97fe42f9`: seen
+// 23, kept 9, 12 alone, two named nowhere).
 import { AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { isJsonRecord } from "../json-values.ts";
@@ -181,7 +194,9 @@ export function extractionSummaryFromOutputs(outputs: unknown): JsonObject | und
   const aloneObservations = summary.rejectedObservations === undefined ? undefined :
     aloneObservationRows(summary.rejectedObservations, summary.rejectedSamples, summary.rejectedSamplesAlone, fieldNames, reported ? (reported.rejected as number[]).length : -1);
   if (summary.rejectedObservations !== undefined && (!sampled || aloneObservations === undefined)) return undefined;
-  const conditions = reported && aloneRows ? { ...reported, aloneRows, ...(aloneObservations ? { aloneObservations } : {}) } : reported;
+  // The rows two or more conditions left out together, once each (see the header); only beside the alone rows they follow.
+  const togetherRows = sampled && aloneRows ? togetherRowGroups(summary.rejectedSamples as Array<Array<Record<string, string | null>>>, summary.rejectedSamplesAlone as number[], fieldNames) : [];
+  const conditions = reported && aloneRows ? { ...reported, aloneRows, ...(aloneObservations ? { aloneObservations } : {}), ...(togetherRows.length ? { togetherRows } : {}) } : reported;
   // The two counts a zero read is diagnosed by, absent from a producer that did
   // not count them and held to the same rule as every other count when sent.
   // They are deliberately not cross-checked against `recordCount` or against
@@ -290,6 +305,42 @@ function aloneRowLabels(samples: unknown, leads: unknown, fieldNames: readonly s
     }));
   }
   return labels;
+}
+
+/**
+ * The rows after the alone lead of two or more lists, grouped by the lists they
+ * are in: `{ failed, rows }` per set of conditions, in the order of those sets,
+ * each row once and led by its label (see the header). Called only on lists
+ * `aloneRowLabels` already held to their shape.
+ */
+function togetherRowGroups(samples: ReadonlyArray<ReadonlyArray<Record<string, string | null>>>, leads: readonly number[], fieldNames: readonly string[]): JsonObject[] {
+  const byRow = new Map<string, { row: Record<string, string | null>; failed: number[] }>();
+  samples.forEach((rows, index) => {
+    for (const row of rows.slice(leads[index] ?? 0)) {
+      const key = JSON.stringify(row);
+      const said = byRow.get(key) ?? { row, failed: [] };
+      if (!said.failed.includes(index)) said.failed.push(index);
+      byRow.set(key, said);
+    }
+  });
+  const bySet = new Map<string, { failed: number[]; rows: JsonObject[] }>();
+  for (const { row, failed } of byRow.values()) {
+    const label = failed.length > 1 ? rowLabel(row, fieldNames) : undefined;
+    if (label === undefined) continue;
+    const key = failed.join(",");
+    const set = bySet.get(key) ?? { failed, rows: [] };
+    set.rows.push(label);
+    bySet.set(key, set);
+  }
+  return [...bySet.values()].sort((a, b) => compareSets(a.failed, b.failed));
+}
+
+function compareSets(a: readonly number[], b: readonly number[]): number {
+  for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+    const difference = (a[index] ?? 0) - (b[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return a.length - b.length;
 }
 
 /** Validate against full witness lists, then retain exactly the same alone/label positions. */

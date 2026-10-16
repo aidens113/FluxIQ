@@ -35,6 +35,13 @@
 // names a condition by (`../read-account/condition-name.ts`), and its witnesses
 // lose their own copy of it: they sit under the condition they witness.
 
+// **And the rows two or more conditions left out together (t655).** A replay
+// that sends them gives `leftOutTogether`: per set of conditions, their names
+// and 0-based `conditionIndexes`, and the rows that failed exactly those, each
+// by its label alone. Each is said as `numbers` (from 1), `conditions` and the
+// rows' labels, screened as every other label here is; a set that is not that
+// shape is left out.
+
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioResultReadAloneRows } from "../read-account/index.ts";
 
@@ -74,11 +81,27 @@ function readRows(sent: JsonObject, deniedKeys: readonly string[]): { value: Jso
     });
     return said ? [{ ...(conditionIndex !== undefined ? { number: conditionIndex + 1 } : {}), condition: entry.condition, rows: said, ...(observations ? { observations: observations.map(underItsCondition) } : {}), ...notShown(entry.rowsNotShown) }] : [];
   }) : [];
-  if (!rows && !conditions.length) return undefined;
+  const together = Array.isArray(sent.leftOutTogether) ? sent.leftOutTogether.flatMap((entry): JsonObject[] => {
+    const said = togetherSet(entry, labels);
+    return said ? [said] : [];
+  }) : [];
+  if (!rows && !conditions.length && !together.length) return undefined;
   return {
-    value: { ...(rows ? { rows, ...notShown(sent.rowsNotShown) } : {}), ...(conditions.length ? { leftOutOnlyByThis: conditions } : {}) },
+    value: { ...(rows ? { rows, ...notShown(sent.rowsNotShown) } : {}), ...(conditions.length ? { leftOutOnlyByThis: conditions } : {}), ...(together.length ? { leftOutTogether: together } : {}) },
     withheld
   };
+}
+
+/** One set of conditions that left rows out together, as the judge is shown it (header); nothing for anything else. */
+function togetherSet(entry: JsonValue, labels: (list: JsonValue | undefined) => string[] | undefined): JsonObject | undefined {
+  if (!isObject(entry) || !Array.isArray(entry.conditions) || !Array.isArray(entry.conditionIndexes) || !Array.isArray(entry.rows)) return undefined;
+  const names = entry.conditions;
+  const places = entry.conditionIndexes;
+  if (names.length < 2 || names.length !== places.length) return undefined;
+  if (!names.every((name) => typeof name === "string" && name.trim() !== "" && name.length <= CONDITION_NAME_MAX)) return undefined;
+  if (!places.every((place) => typeof place === "number" && Number.isSafeInteger(place) && place >= 0) || new Set(places).size !== places.length) return undefined;
+  const rows = labels(entry.rows.map((row) => (isObject(row) ? Object.fromEntries(Object.entries(row).slice(0, 1)) as JsonObject : row)));
+  return rows ? { numbers: (places as number[]).map((place) => place + 1), conditions: names, rows } : undefined;
 }
 
 /** A witness under its condition, without its own index (header). */
