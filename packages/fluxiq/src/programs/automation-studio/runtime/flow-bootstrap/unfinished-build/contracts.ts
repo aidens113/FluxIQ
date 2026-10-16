@@ -55,7 +55,7 @@ export type AutomationStudioFlowBootstrapJudgeSpend = { inputTokens: number; out
  *
  * `oneCallSaidYes` is set only on an `unknown` whose two checks disagreed
  * because one of them said the test does what was asked (`model_disagreed`,
- * `../../result-verification/agreement.ts`): which pair it was, never what
+ * `../../result-verification/agreement/`): which pair it was, never what
  * either call said. A `no` then nothing said (`model_unconfirmed`) never sets
  * it. What `./progress.ts` measures a judge that stopped refuting by.
  *

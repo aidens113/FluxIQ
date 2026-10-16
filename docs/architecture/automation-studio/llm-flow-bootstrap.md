@@ -1843,7 +1843,7 @@ never run whole and names those steps.
 
 A build's yes is asked twice (t194-w71). The build-test judge's `yes` finishes
 a build, so its verification request sets `confirmAnswer`, and a first `yes` gets
-a second call with the same evidence (`result-verification/agreement.ts`). Two
+a second call with the same evidence (`result-verification/agreement/`). Two
 `yes` answers are a yes. A `yes` followed by a `no` is `model_disagreed`: unsure,
 carrying the `no` call's expected, observed and advice as `unconfirmedReading`,
 which the build reads as `unknown` and repairs with. A second call that answers

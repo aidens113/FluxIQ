@@ -164,7 +164,7 @@
 // re-testing a wrong revision, claiming a contradiction Core had not found. An
 // unsure now says a re-test is the better move only where Core's record
 // contradicts what kept the trial from a yes: the no's reading
-// (`unconfirmedReading.recordContradicts` is `whole`, `../../result-verification/agreement.ts`)
+// (`unconfirmedReading.recordContradicts` is `whole`, `../../result-verification/agreement/`)
 // or the unsure call's doubt (`doubtContradicted`); and says which, as a field
 // (`retestAdvised`), so the builder cannot claim one Core did not find. Where
 // none is, it says a re-test is still allowed, and to change the Flow for the
@@ -176,7 +176,7 @@
 // unsure's words still said "Nothing in Core's record contradicts what kept
 // this trial from a yes"; the builder dropped a correct condition on it. Where
 // the no's reading carries `recordContradicts: "part"`
-// (`../../result-verification/agreement.ts`, now on a split too), the words say
+// (`../../result-verification/agreement/`, now on a split too), the words say
 // Core's record contradicts part of it, as its label says, and to change the
 // Flow only for what the rest names where the trial's own evidence shows it.
 // `retestAdvised` stays false there: only `whole` advises a re-test (t641). A

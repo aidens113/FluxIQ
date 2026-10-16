@@ -5,7 +5,7 @@
 // judged test of its Flow stored nine rows and both judge calls said yes. The
 // playback of that same Flow stored the very same nine rows, read the same way,
 // and both calls said no, each blaming a step Core's own record said removed no
-// row. Two agreeing nos refute (`../agreement.ts`), so the run was failed, its
+// row. Two agreeing nos refute (`../agreement/`), so the run was failed, its
 // Flow re-authored, and the re-author broke it. The second call of each pair
 // reuses the first's cached prompt, so each pair is close to one draw: what
 // Core holds is four judgements, two each way, on evidence Core measured to be

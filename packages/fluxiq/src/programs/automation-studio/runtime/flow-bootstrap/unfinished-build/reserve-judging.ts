@@ -44,7 +44,7 @@
 //
 // **Nor where the judging can no longer be paid for whole.** A judgement is a
 // pair of calls, and a yes finishes the build only once the second confirms it
-// (`../../result-verification/agreement.ts`). The purse keeps that pair back only
+// (`../../result-verification/agreement/`). The purse keeps that pair back only
 // from calls that are not a judge's, so a round can open with too little left
 // for the pair itself. Live run `run-mux6nxst-c9bca37c` (D3-5) opened its next
 // round with 47 of 48 calls spent; the reserve judgement got its first call,

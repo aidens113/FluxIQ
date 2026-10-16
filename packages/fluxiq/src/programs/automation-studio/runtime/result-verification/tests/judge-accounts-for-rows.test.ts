@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../build-test/index.ts";
-import { automationStudioResultVerificationAgreement } from "../agreement.ts";
+import { automationStudioResultVerificationAgreement } from "../agreement/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "../repair-directive.ts";
 import {
   AutomationStudioRequestRowId, automationStudioRequestRowLabel, automationStudioRequestRowNaming, automationStudioRequestWording,

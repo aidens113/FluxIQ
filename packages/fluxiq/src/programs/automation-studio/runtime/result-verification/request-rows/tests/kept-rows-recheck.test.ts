@@ -2,7 +2,7 @@
 // names the kept rows Core flagged (t663, A8 towels `run-mvahlxuu-760d9e28`,
 // fix 2). Words only: the hold on a yes is `../../verdict.ts`'s.
 import { describe, expect, it, vi } from "vitest";
-import { automationStudioResultVerificationAgreement, automationStudioResultVerificationReaskContradicted } from "../../agreement.ts";
+import { automationStudioResultVerificationAgreement, automationStudioResultVerificationReaskContradicted } from "../../agreement/index.ts";
 import { automationStudioResultRefutedNoRecheckWords } from "../../refuted-no/index.ts";
 import { LAMPS_INSTRUCTION, LAMPS_REQUEST_TEXT, SAME_LAMP_NO, lampsRunSummary } from "../../refuted-no/tests/lamps-fixture.ts";
 import { automationStudioResultVerdict } from "../../verdict.ts";
@@ -38,7 +38,7 @@ describe("the re-ask of a refuted no", () => {
 });
 
 // The wiring (round 2): the agreement hands the flagged kept rows to the re-ask
-// of a refuted no (`../../agreement.ts`, `../../refuted-no/reask.ts`). The
+// of a refuted no (`../../agreement/`, `../../refuted-no/reask.ts`). The
 // lamps run of t607 -- a double no calling two distinct stored listings one,
 // which Core refutes -- with four more lamps stored, and a desk lamp bulb pack
 // kept without a rating.

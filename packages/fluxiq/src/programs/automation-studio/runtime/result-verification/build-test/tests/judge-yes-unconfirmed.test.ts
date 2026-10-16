@@ -3,7 +3,7 @@
 // is called: the agreement is built from scripted diagnoses and `verify` is injected.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts";
-import { automationStudioResultVerificationAgreement } from "../../agreement.ts";
+import { automationStudioResultVerificationAgreement } from "../../agreement/index.ts";
 import type { AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS, requestWordsRunSummary, requestWordsWording } from "../../request-rows/tests/request-words-fixture.ts";
 import { automationStudioResultVerdict } from "../../verdict.ts";

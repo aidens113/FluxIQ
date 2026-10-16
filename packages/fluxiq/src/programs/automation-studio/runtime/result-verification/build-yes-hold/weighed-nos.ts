@@ -10,7 +10,7 @@
 // (`recordContradicts`, the fact t641 and t652 put beside each label), and a no
 // that stands whole is never set aside.
 //
-// **Where the weighing comes from.** `../agreement.ts` weighs each call's no on
+// **Where the weighing comes from.** `../agreement/` weighs each call's no on
 // a double no and records it as the outcome's `weighedNos` field (t663,
 // `../contracts/verification.ts`), recomputed after a re-ask: one entry per
 // call, `recordContradicts` set where Core's record refutes any of that call's

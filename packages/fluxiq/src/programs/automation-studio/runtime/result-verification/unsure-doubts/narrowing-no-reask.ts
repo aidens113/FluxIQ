@@ -20,7 +20,7 @@
 // that did not come back usable leaves its call's answer as it was.
 //
 // The caller is the verification that asks the calls (`../verify.ts`), after
-// the agreement's own re-asks (`../agreement.ts`,
+// the agreement's own re-asks (`../agreement/`,
 // `automationStudioResultVerificationReaskContradicted`). Generic words, naming
 // no site or task.
 

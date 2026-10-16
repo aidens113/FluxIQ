@@ -13,7 +13,7 @@
 // of any realistic scenario.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts";
-import { automationStudioResultVerificationAgreement } from "../../agreement.ts";
+import { automationStudioResultVerificationAgreement } from "../../agreement/index.ts";
 import type { AutomationStudioResultNarrowingStep, AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioResultNoRecord, automationStudioResultRefutedReading } from "../../refuted-no/index.ts";
 import { automationStudioResultVerdict } from "../../verdict.ts";

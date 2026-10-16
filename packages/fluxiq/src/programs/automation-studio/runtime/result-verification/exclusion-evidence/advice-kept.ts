@@ -7,7 +7,7 @@
 // yes would read as a clean pass, and a runtime check's single yes would be
 // confirmed over a first reply that advised a change. So the call keeps the
 // advice: a taken yes is coded `answersWithChangeAdvised`, as the first reply
-// would have been with its quote (`../agreement.ts` does not confirm a single
+// would have been with its quote (`../agreement/` does not confirm a single
 // such yes), and a yes held again is `changeAdvised`, not a plain yes, and
 // carries the change the earlier ask named where its own reply named none.
 

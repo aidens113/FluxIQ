@@ -30,7 +30,7 @@
 //
 // **A judge that stopped refuting the Flow progressed (t193 round 1003).** A
 // `no` is two judge calls agreeing the test does not do what was asked
-// (`../../result-verification/agreement.ts`). A repair whose pair then split
+// (`../../result-verification/agreement/`). A repair whose pair then split
 // -- one call said it does (`model_disagreed`, so `unknown` with
 // `oneCallSaidYes`) -- got further: `judge_no_longer_refutes`. Live run
 // `run-musp4h2f-72e8ed99` ended not finished on such a repair, a Flow the

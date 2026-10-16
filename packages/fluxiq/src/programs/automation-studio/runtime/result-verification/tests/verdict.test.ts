@@ -6,7 +6,7 @@ import {
 } from "../request-rows/tests/request-words-fixture.ts";
 import { automationStudioResultCheckedRowsNamed } from "../request-rows/index.ts";
 import { automationStudioResultRecordedOutcome } from "../run-record.ts";
-import { automationStudioResultVerificationAgreement } from "../agreement.ts";
+import { automationStudioResultVerificationAgreement } from "../agreement/index.ts";
 import { automationStudioResultAdviceKept } from "../exclusion-evidence/index.ts";
 
 // The fail-closed rule, stated once and asserted from every direction.
@@ -152,7 +152,7 @@ describe("automationStudioResultVerdict", () => {
     });
     expect(verification.repair).toBeUndefined();
     // What it doubted is kept only as `unsureReading` (t503: an unsure beside a yes is
-    // weighed by it, `../agreement.ts`): never in the failure record, and never on a run.
+    // weighed by it, `../agreement/`): never in the failure record, and never on a run.
     expect(verification.unsureReading).toEqual({ expected: "two members", observed: "the table listed every member of the directory" });
     for (const recorded of [JSON.stringify(verification.failure), JSON.stringify(automationStudioResultRecordedOutcome({ ...verification, performed: true }))]) {
       expect(recorded).not.toContain("the table listed every member");

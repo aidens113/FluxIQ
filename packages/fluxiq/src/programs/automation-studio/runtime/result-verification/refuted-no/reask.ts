@@ -42,7 +42,7 @@ export async function automationStudioResultReaskRefutedNo(input: {
   kept?: readonly AutomationStudioRequestRowsKept[] | undefined;
   /** Asks call `call` once more, its copy carrying `recheck`. */
   ask: (recheck: string, call: 1 | 2) => Promise<Verification>;
-  /** The agreement rule over two answers, as `../agreement.ts` weighs them. */
+  /** The agreement rule over two answers, as `../agreement/` weighs them. */
   agree: (first: Verification, second: Verification) => Verification;
 }): Promise<Verification> {
   const marked = input.settled.refutedNo;
@@ -91,7 +91,7 @@ export async function automationStudioResultReaskRefutedNo(input: {
 
 /**
  * The refuted readings, each field labelled with its call and Core's finding,
- * as `../agreement.ts` labels a contradicted reading (t501), and the fact
+ * as `../agreement/` labels a contradicted reading (t501), and the fact
  * beside the labels for a gate to read (`recordContradicts`, t641).
  */
 function labelled(readings: ReadonlyArray<{ call: 1 | 2; reading: Reading; findings: string[] }>): (Reading & { recordContradicts: "whole" }) | undefined {

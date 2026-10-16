@@ -10,7 +10,7 @@
 //
 // **What Core keeps.** Each build test judged no carries Core's own record of
 // it (`./types.ts`; built by `../standing-no-record/` on a build test's double
-// no in `../agreement.ts`, and passed on by the build-test judge and the trial
+// no in `../agreement/`, and passed on by the build-test judge and the trial
 // services outside the feedback a model is shown): the rows it stored, the
 // conditions it read with, the stored rows a standing no called not the asked
 // kind (t628's path), and the conditions each standing no asks to remove. The

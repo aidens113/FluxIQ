@@ -298,7 +298,7 @@ describe("run murwcmx2: the judge's reading reaches the build", () => {
     expect(verdict.spent.calls).toBe(2);
   });
 
-  // Through the real check (`../verify.ts` hands the reads to `../agreement.ts`):
+  // Through the real check (`../verify.ts` hands the reads to `../agreement/`):
   // a reading of more pages, where every read's own account says its list ended,
   // is marked contradicted and follows the reading the record leaves standing.
   // That standing no keeps the verdict no: a refuted no beside it is labelled,
@@ -390,7 +390,7 @@ describe("run murwcmx2: a build's yes is confirmed by a second call", () => {
     expect(unconfirmed).not.toHaveProperty("answeredReading");
   });
 
-  // t296 (`../../agreement.ts`): a build-finishing yes needs a confirming yes. An unknown or a reply without an
+  // t296 (`../../agreement/`): a build-finishing yes needs a confirming yes. An unknown or a reply without an
   // answer confirms nothing, so the yes does not stand: the verdict is unknown and the build does not finish on it.
   it("yes, then unknown or a reply without an answer, is unknown -- the yes is not confirmed", async () => {
     for (const second of [{ answersRequest: "unknown" }, {}]) {
@@ -401,7 +401,7 @@ describe("run murwcmx2: a build's yes is confirmed by a second call", () => {
     }
   });
 
-  // Live run run-mux6nxst-c9bca37c (D3-5): a confirming call that did not come back usable confirms nothing (`../../agreement.ts`).
+  // Live run run-mux6nxst-c9bca37c (D3-5): a confirming call that did not come back usable confirms nothing (`../../agreement/`).
   it("yes, then a confirming call that failed, is unknown -- the yes is not confirmed", async () => {
     let call = 0;
     const provider: AutomationStudioLlmProvider = {

@@ -34,7 +34,7 @@ const TRIAL: AutomationStudioResultJudgedBuildTrial = { trialRunId: TRIAL_RUN, v
 type Named = AutomationStudioResultJudgedBuildTrial | AutomationStudioResultJudgedBuildTrialMissing | undefined;
 
 /**
- * What each judge's no says, weighed by the real agreement (`../../agreement.ts`
+ * What each judge's no says, weighed by the real agreement (`../../agreement/`
  * `weighedNos`, t663). Refuted in part: a count Core's record contradicts (2
  * rows stored, not 5) beside a claim about a stored row Core cannot check.
  * Standing whole: that claim alone.

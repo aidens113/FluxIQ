@@ -4,7 +4,7 @@
 // It is the same call, not a second judge: `verifyAutomationStudioRunResult`
 // with a summary that carries `buildTest` (`./summary.ts`), under the same
 // deadline (`../deadline.ts`), asked again on anything but yes and reconciled
-// the same way (`../agreement.ts`). Two things differ. Its first yes is asked
+// the same way (`../agreement/`). Two things differ. Its first yes is asked
 // again too (`confirmAnswer`), because a yes finishes the build: in live run
 // murwcmx2 build judges 0032 and 0051 got the same request but for one step
 // number, answered no and then yes, and the one yes finished the build on rows
@@ -23,7 +23,7 @@
 //                                                         judged no, unconfirmed
 //   unsure about pages Core's record says were all     -> that call asked once more
 //     read, beside a yes                                   with the record named
-//                                                         (`../agreement.ts`, t503); still
+//                                                         (`../agreement/`, t503); still
 //                                                         unsure, unknown saying so
 //                                                         (`doubtContradicted`)
 //   a no whose every reason Core's record refutes       -> that call asked once more with Core's
@@ -35,7 +35,7 @@
 //     temporary fault (`../verify.ts`)                     many times it was asked (t473)
 //   a call the build's purse would not pay for        -> not_judged, saying the spending limit stopped it
 //   every call answered yes, held for the exclusion    -> not_judged, saying why and carrying
-//     evidence it lacked (`../agreement.ts`)              `yesUnconfirmed` (t611)
+//     evidence it lacked (`../agreement/`)              `yesUnconfirmed` (t611)
 //   a yes held for its exclusion evidence that advised -> not_judged, saying why and carrying
 //     a change (`patchNeeded`, `../verdict.ts`)            `changeAdvised` and that yes's reading
 //                                                         with the change it named (t636)
@@ -69,7 +69,7 @@
 // after any first answer. A refused call never surfaces as a throw or as an
 // unsure verdict: the test was not judged, and the reason says the money ran
 // out. That holds for a refused confirmation of a first yes too: a yes checked
-// once is not confirmed (`../agreement.ts`, live run `run-mux6nxst-c9bca37c`,
+// once is not confirmed (`../agreement/`, live run `run-mux6nxst-c9bca37c`,
 // where it finished a build), and the first call's spend is still returned. A
 // confirmation that failed any other way leaves the yes unconfirmed: unknown. A cancelled
 // build is not a verdict: the cancellation is thrown, for the phases to end the
@@ -85,7 +85,7 @@
 // `unknown` and never a no.
 //
 // **A no carries Core's record of it (t633), and an unknown too (t652).**
-// Where the verification kept one (`standingNo`, `../agreement.ts`,
+// Where the verification kept one (`standingNo`, `../agreement/`,
 // `../standing-no/`), a no or an unknown hands it on:
 // the rows stored, the conditions read with, the stored rows a standing no
 // called not the asked kind, and the conditions each standing no asks to
@@ -291,7 +291,7 @@ export function automationStudioBuildTestJudge(deps: {
         instructions: deps.instructions,
         ...(deps.deniedEvidenceKeys ? { deniedEvidenceKeys: deps.deniedEvidenceKeys } : {}),
         ...(deps.provider ? { provider: deps.provider } : {}),
-        // A yes finishes the build, so it is confirmed by a second call like any other answer (`../agreement.ts`).
+        // A yes finishes the build, so it is confirmed by a second call like any other answer (`../agreement/`).
         confirmAnswer: true,
         // Under a purse each call is held at its true worst case there. Outside one, verify asks twice after any answer (`../verify.ts`), each call under this cap: half each, so the judgement never spends more than the build has left.
         ...(maxCostUsd !== undefined && !purse ? { maxEstimatedCostUsd: maxCostUsd / 2 } : {}),
@@ -303,7 +303,7 @@ export function automationStudioBuildTestJudge(deps: {
     if (deps.signal?.aborted) throw deps.signal.reason ?? new DOMException("The build was cancelled.", "AbortError");
     // A call the purse refused reaches verify as a harness failure, which it reads as an unsure verdict; the judge says what it was.
     const refused = purse?.refusal !== undefined && purse.refusal !== refusedBefore ? purse.refusal : undefined;
-    // A refused confirmation of a first yes confirms nothing (`../agreement.ts`, run-mux6nxst-c9bca37c): the outcome is unsure, so it is not judged here, with what the first call spent.
+    // A refused confirmation of a first yes confirms nothing (`../agreement/`, run-mux6nxst-c9bca37c): the outcome is unsure, so it is not judged here, with what the first call spent.
     const judgeSpend = bounded.settled ? spentBy(bounded.value.interventions) : { ...NOTHING_SPENT };
     if (refused?.code === "llm_budget.run_call_limit" && purse && callsBefore !== undefined) judgeSpend.calls = Math.max(0, purse.spentCalls() - callsBefore);
     const yesStood = bounded.settled && bounded.value.outcome.performed && bounded.value.outcome.verdict === "answers";
@@ -364,7 +364,7 @@ function heldAdvice(outcome: AutomationStudioResultVerification): { changeAdvise
   return { changeAdvised: true, ...(outcome.answeredReading ? { answeredReading: { ...outcome.answeredReading } } : {}) };
 }
 
-/** Core's sentence on an unsure call whose doubt about pages (t503) or a dedupe (t628) Core's record contradicts (`../agreement.ts`); nothing without one. */
+/** Core's sentence on an unsure call whose doubt about pages (t503) or a dedupe (t628) Core's record contradicts (`../agreement/`); nothing without one. */
 function doubtContradicted(outcome: AutomationStudioResultVerification): string | undefined {
   const marked = outcome.contradictedUnsure;
   if (!marked) return undefined;
