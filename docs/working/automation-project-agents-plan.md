@@ -665,6 +665,13 @@ Entries from 2026-10-13 to A8 wave 4 (t550-t611) are archived in
 - Outcome: Accepted
 - Follow-up: `result-verification/agreement.ts` is at exactly 800 lines: split it before the next addition; the confirmed-yes rule uses the call count (an exact re-ask flag needs judge.ts, candidate-trial and promotion)
 
+### 2026-10-16 — After A8 frozen pair 8 wave 42: judge text weighed whole, step blame by clause (t665); conditions left out together kept, request-worded filters re-asked (t666)
+- Agent: read-only debug of wave 42 `candidate` towels (downstream report `a8-towels-run-mvam0lys-debug.md`: t663 not involved); workers t665, t666 (two rounds: the record, verify and refusal wiring); supervisor kept t641's refuse-once rule (rejected the debug's fix D, a permanent block), kept t651 (no name-test pairs), built both during frozen pair 8 and merged only after wave 46 so the lanes stayed frozen, verified and integrated
+- Changed: t665 `llm/harness/provider-result.ts` reads a diagnosis text past its bound whole (`llm_output.diagnosis_text_past_bound`); `refuted-no/{weigh,missing-claim,named-rows,record,types}.ts`: step blame weighed clause by clause, clauses naming no row ignored for the stored-rows test, spelled labels name their row, together rows join the naming pools, "correctly excluded" is no reason; `docs/architecture/automation-studio/llm-flow-bootstrap.md`. t666 `standing-no/{kept-conditions,kept-steps}.ts`, `standing-no-record/record.ts`: conditions that leave rows out only together are kept and refused once; `unsure-doubts/narrowing-no-reask.ts` and `verify.ts`: a no blaming a request-worded filter is re-asked once; `flow-bootstrap/candidate/kept-step-hint.ts`: a one-time hint, never a block
+- Why: wave 42 `candidate` towels: revision 3 held the exact rows and was banned by a step-blame sentence that also named a condition; a clipped judge reply was mislabelled; later revisions dropped conditions and a filter on refuted advice
+- Validation: t665 after merging dev: tsc exit 0; result-verification, llm, candidate-trial, subflow-trial, flow-bootstrap -> 522 files, 5389 passed, 2 skipped; `pnpm check` -> passed; merged `2599fe17`. t666 after merging dev (t665 in): tsc exit 0; the same plus llm -> 529 files, 5415 passed, 2 skipped; `pnpm check` -> passed; merged `ac1e48a8`; pushed
+- Outcome: Accepted
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
