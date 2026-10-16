@@ -4,6 +4,7 @@ import { automationStudioLlmBuildPurseScope, type AutomationStudioLlmBuildPurse 
 import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_DRAFT_WITHHELD_NOTE, automationStudioLlmValueWithoutDeniedKeys } from "../../llm/harness/index.ts";
+import { automationStudioProjectCarriedScript } from "../amendment/index.ts";
 import { withAutomationStudioProjectAgent } from "../attribution/index.ts";
 import { automationStudioProjectSubflowBrief, type AutomationStudioProjectBuilderReturn, type AutomationStudioProjectFailingTrial, type AutomationStudioProjectReceiptRef, type AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
 import type { AutomationStudioHostLeaseScope, AutomationStudioHostResourceLease } from "../host-resources/index.ts";
@@ -176,8 +177,9 @@ const ACCEPTED = new WeakMap<AutomationStudioProjectDispatcherInput, AutomationS
 const STANDING = new WeakMap<AutomationStudioProjectDispatcherInput, AutomationStudioProjectDispatchStandingNos>();
 const YOUR_SUBFLOW_NOTE = "yourSubflow is your subflow as Core accepted it before this brief, at the revision it names: script is the whole text its builder sent, and steps are its steps as Core resolved them, each handle the script names (tN, extraction.N) there replaced by what it stood for on the page that builder saw. "
   + "Those handles came from that builder's looks, not yours, so the check knows none of them: find the same controls and reads on your own page and write the handles your looks give. Start from this script, change only what this repair asks, and keep every other step as it is.";
-const CARRIED_NOTE = "startsFrom is your subflow as an earlier brief built it, at the revision it names, before the plan gave it more to do: its trial passed then, but was never judged against the parts under addedParts or the outputs under renamedOutputs, so it is not done. "
-  + "script is the whole text its builder sent, each renamed output already bound as before under its new name, and steps are its steps as Core resolved them. Those handles came from that builder's looks, not yours: find the same controls and reads on your own page and write the handles your looks give. "
+const CARRIED_NOTE = "startsFrom is your subflow as an earlier brief built it, at the revision it names, before the plan changed it: its trial passed then, but was never judged against this brief's parts as they are now -- those under addedParts, and any whose facts or lasting acts changed -- or the outputs under renamedOutputs, so it is not done. "
+  + "script is the whole text its builder sent, already changed to fit this subflow: each renamed output bound as before under its new name, each output under removedOutputs taken out, its part renamed from the subflow under builtFor, or, under routerRun, unwrapped into the steps the router runs, which take no inputs and hand back no outputs. "
+  + "steps are its steps as Core resolved them. Those handles came from that builder's looks, not yours: find the same controls and reads on your own page and write the handles your looks give. "
   + "Submit it first with only that changed and test it: its trial is judged against every part of this brief, the added ones too. Change it only for what that trial shows missing, keeping every other step as it is.";
 const CARRIED_UNHELD_NOTE = "startsFrom names the revision of your subflow an earlier brief built before the plan gave it more to do, but its script is not held here. It was never judged against the parts under addedParts or the outputs under renamedOutputs: write the whole subflow for every part of this brief, then submit and test it.";
 const YOUR_SUBFLOW_UNHELD_NOTE = "yourSubflow names the revision of your subflow Core accepted before this brief, but its script is not held here. Look at what your subflow's steps meet on the page now and write the whole subflow, changing only what this repair asks.";
@@ -368,8 +370,11 @@ async function repairOf(dispatcher: AutomationStudioProjectDispatcherInput, brie
 /**
  * What a build brief's builder is shown of the proposal an amendment carried
  * for its subflow (`carriedFrom`, header, t658): its script with each renamed
- * output bound as before under its new name, its steps, the parts it was not
- * built for, and its calls for the opening call; undefined for any other brief.
+ * output bound as before under its new name and, after a narrowing or a merge
+ * (t671), each removed output's line taken out, its part renamed for the
+ * subflow it was merged into, or unwrapped into the router's own steps
+ * (`../amendment/carried-script.ts`); its steps, the parts it was not built
+ * for, and its calls for the opening call; undefined for any other brief.
  */
 function carriedOf(dispatcher: AutomationStudioProjectDispatcherInput, brief: AutomationStudioProjectSubflowBrief, mapped: AutomationStudioProjectDispatchScope, deniedKeys: readonly string[]): { said: JsonObject; calls: JsonObject[] | undefined; revision: number } | undefined {
   const from = brief.carriedFrom;
@@ -377,10 +382,14 @@ function carriedOf(dispatcher: AutomationStudioProjectDispatcherInput, brief: Au
   const ref = { briefId: from.briefId, revision: from.revision, digest: from.digest };
   const found = ACCEPTED.get(dispatcher)?.find(ref);
   const added = mapped.scope.parts.filter((part) => from.addedParts.includes(part.partId)).map((part) => ({ partId: part.partId, text: part.text }));
-  const changed: JsonObject = { ...(added.length ? { addedParts: added } : {}), ...(from.renamedOutputs.length ? { renamedOutputs: from.renamedOutputs.map((pair) => ({ ...pair })) } : {}) };
+  const changed: JsonObject = {
+    ...(added.length ? { addedParts: added } : {}), ...(from.renamedOutputs.length ? { renamedOutputs: from.renamedOutputs.map((pair) => ({ ...pair })) } : {}),
+    // What a narrowing or a merge changed, already written into the script shown (t671).
+    ...(from.removedOutputs?.length ? { removedOutputs: [...from.removedOutputs] } : {}), ...(from.builtFor ? { builtFor: from.builtFor } : {}), ...(from.routerRun ? { routerRun: true } : {})
+  };
   if (!found) return { said: { revision: from.revision, digest: from.digest, ...changed, note: CARRIED_UNHELD_NOTE }, calls: undefined, revision: from.revision };
   const shown = shownSubflow(found, ref, deniedKeys);
-  const script = typeof shown.shown.script === "string" ? { script: automationStudioProjectRenamedOutputs(shown.shown.script, from.renamedOutputs) } : {};
+  const script = typeof shown.shown.script === "string" ? { script: automationStudioProjectCarriedScript(automationStudioProjectRenamedOutputs(shown.shown.script, from.renamedOutputs), from, brief.subflowKey) } : {};
   return { said: { ...shown.shown, ...script, ...changed, note: CARRIED_NOTE }, calls: shown.calls, revision: from.revision };
 }
 
