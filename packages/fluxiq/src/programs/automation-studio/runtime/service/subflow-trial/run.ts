@@ -174,7 +174,9 @@ export async function runAutomationStudioSubflowTrial(request: AutomationStudioS
   const read = Feedback.judged({ verdict, summary, ...shown });
   const { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } = verdict.spent;
   // Core's record of a no, beside the feedback and never in it (header, t633).
-  const standingNo = read.verdict === "no" && verdict.verdict === "no" ? verdict.standingNo : undefined;
+  // An unsure split keeps Core's record too, so a condition it vindicated is held across the build (t652, fix 2);
+  // only a no is ever weighed as one by the gate's memory.
+  const standingNo = (read.verdict === "no" && verdict.verdict === "no") || (read.verdict === "unsure" && verdict.verdict === "unknown") ? verdict.standingNo : undefined;
   return answer(read.verdict, { ...read.feedback, partial: true, entryPrepared: executed.entryPrepared }, { ...ran, execution: "succeeded", ...(read.code ? { code: read.code } : {}), judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } }, acts, standingNo);
 }
 

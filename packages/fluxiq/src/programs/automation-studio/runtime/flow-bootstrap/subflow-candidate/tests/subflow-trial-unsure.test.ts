@@ -65,6 +65,19 @@ describe("an unsure subflow trial", () => {
     expect(((await part.test(receipt)).evidence as JsonObject).retestAdvised).toBe(false);
   });
 
+  it("never says nothing in Core's record contradicts a no it refutes in part (t652)", async () => {
+    const gate = new AutomationStudioSubflowTrialGate({ scope, latest: () => structuredClone(proposal), port: async (request) => unsure(request, { ...SPLIT, unconfirmedReading: { observed: "Judge call 1 (Core's record contradicts part of this reading: ...): ...", recordContradicts: "part" } }) });
+    const evidence = (await gate.test(receipt)).evidence as JsonObject;
+    const told = String(evidence.instruction);
+    expect(evidence.retestAdvised).toBe(false);
+    expect(told).not.toContain("Nothing in Core's record contradicts");
+    expect(told).toContain("Core's record contradicts part of the no's reading, as its label in unconfirmedReading says (retestAdvised is false)");
+    expect(told).toContain("Change the subflow only for what the rest of it names");
+    expect(told).toContain("core.submit_subflow");
+    expect(told).not.toMatch(/\b(?:paper|towels?|holders?|pickup|packs?|retailer|valueridge|sponsored)\b/iu);
+    expect(gate.completion(receipt as { revision: number; digest: string })).toMatchObject({ ok: false, feedback: { instruction: told, retestAdvised: false } });
+  });
+
   it("is said in words naming no site, task or product", async () => {
     for (const feedback of [SPLIT, { doubtContradicted: "Core's record says otherwise." }]) {
       const gate = new AutomationStudioSubflowTrialGate({ scope, latest: () => structuredClone(proposal), port: async (request) => unsure(request, feedback) });

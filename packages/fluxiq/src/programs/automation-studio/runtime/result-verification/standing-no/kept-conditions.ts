@@ -11,7 +11,7 @@
 // and no later revision held every clause again. Nothing remembered what
 // Core's own record had shown.
 //
-// **What Core keeps.** Each trial judged no hands its gate Core's record of it
+// **What Core keeps.** Each judged trial hands its gate Core's record of it
 // (`standingNo`, `./types.ts`), whose conditions now carry where they stand
 // (`nodeId`, `number`) and, where Core's record accounts for every row one left
 // out by itself and there is at least one, those rows (`keptOut`). The gate
@@ -26,6 +26,15 @@
 // (`keptConditions`), outside the feedback a model is shown, so the submission
 // controller that asks the gate about earlier revisions can hold a revision to
 // it (`./kept-condition-drop.ts`).
+//
+// **From any judged trial, not only a no (t652).** A8 frozen pair 5 candidate
+// towels `run-mva6mlo8-f519063c`: a correct revision was judged a split (one yes,
+// one no), so no record reached its gate, and the next revision dropped a
+// condition whose every row left out by itself Core had settled on the
+// request's own words. A trial judged unsure carries the record too
+// (`../agreement.ts`), and this memory reads it as it reads a no's: the rows
+// are Core's measurement, and a label test is never one (t651,
+// `../refuted-no/label-tested-condition.ts`).
 
 import { automationStudioResultStandingNoRecordOf } from "./record-shape.ts";
 import type { AutomationStudioResultKeptCondition } from "./types.ts";

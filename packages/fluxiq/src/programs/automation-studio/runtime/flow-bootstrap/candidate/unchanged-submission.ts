@@ -73,11 +73,16 @@
 // the build's own record did not take (`contradictedByBuild`) -- and says so
 // as a field (`standingRevision.retestAdvised`). Otherwise testing again stays
 // allowed, only where the trial shows no defect.
+//
+// **And never that nothing contradicts a no Core refutes in part (t652).**
+// Where that trial's no reading carries `recordContradicts: "part"`, the offer
+// says Core's record contradicts part of it, as its label says, and to change
+// the Flow only for what the rest names (`automationStudioCandidateRecordContradictsPart`).
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowBuildPlan } from "../plan/index.ts";
 import type { AutomationStudioCandidateTrialResult, AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission } from "./contracts.ts";
-import { automationStudioCandidateRetestAdvised } from "./trial-gate.ts";
+import { automationStudioCandidateRecordContradictsPart, automationStudioCandidateRetestAdvised } from "./trial-gate.ts";
 
 /** The parameter a step keeps its rows by, and its one display-only word; its `datasetId` decides where rows go (header). */
 const RECORD_OUTPUT = "recordOutput";
@@ -177,21 +182,24 @@ export function automationStudioCandidateUnchangedRefusal(input: {
 }
 
 /** A standing revision that may be tested again, and whether Core's findings make that the better move (header, t632, t641). */
-type Retest = { revision: number; digest: string; verdict: string; advised: boolean };
+type Retest = { revision: number; digest: string; verdict: string; advised: boolean; part: boolean };
 
 /** The revision still standing beside a refuted Flow, when its last trial allows testing it again (header, t632, t641). */
 function retestable(current: Current | undefined): Retest | undefined {
   const trial = current?.lastTrial;
   if (!current || !trial || !RETESTABLE.has(trial.verdict)) return undefined;
   const advised = trial.verdict === "unsure" && (typeof trial.feedback.contradictedByBuild === "string" || automationStudioCandidateRetestAdvised(trial));
-  return { revision: current.revision, digest: current.digest, verdict: trial.verdict, advised };
+  const part = !advised && trial.verdict === "unsure" && automationStudioCandidateRecordContradictsPart(trial);
+  return { revision: current.revision, digest: current.digest, verdict: trial.verdict, advised, part };
 }
 
 /** That testing the standing revision again is allowed, and the better move only on Core's findings (header, t632, t641). Generic words, naming no site or task. */
 function retestWords(retest: Retest, tools: Tools): string {
   const allowed = ` Revision ${retest.revision} still stands and its last trial answered ${retest.verdict}, so testing it again with ${tools.test}, using exactly revision ${retest.revision} and digest ${retest.digest}, is allowed until its retests run out. `;
-  return retest.advised
-    ? `${allowed}It is the better move here (retestAdvised is true): Core's record contradicts what kept that trial from a yes -- the no's reading, the doubt, or a no the build's own record did not take, as its feedback says -- so the change that contradicted reading asks for is not.`
+  if (retest.advised) return `${allowed}It is the better move here (retestAdvised is true): Core's record contradicts what kept that trial from a yes -- the no's reading, the doubt, or a no the build's own record did not take, as its feedback says -- so the change that contradicted reading asks for is not.`;
+  // Core's record contradicts part of the no's reading: never said to contradict nothing (header, t652).
+  return retest.part
+    ? `${allowed}Core's record contradicts part of the no's reading that kept that trial from a yes, as its label in unconfirmedReading says (retestAdvised is false): make no change for that part, and change the ${tools.subject} only for what the rest of it names where the trial's own reads, steps and stored rows show it.`
     : `${allowed}Nothing in Core's record contradicts what kept that trial from a yes (retestAdvised is false), so test it again only where its feedback, by the trial's own reads, steps and stored rows, shows no defect in the ${tools.subject} itself.`;
 }
 

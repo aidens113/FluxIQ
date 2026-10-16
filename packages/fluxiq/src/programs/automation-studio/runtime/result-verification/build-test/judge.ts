@@ -84,8 +84,9 @@
 // `not_judged` with the cause -- it says nothing about the Flow -- never
 // `unknown` and never a no.
 //
-// **A no carries Core's record of it (t633).** Where the verification kept
-// one (`standingNo`, `../agreement.ts`, `../standing-no/`), a no hands it on:
+// **A no carries Core's record of it (t633), and an unknown too (t652).**
+// Where the verification kept one (`standingNo`, `../agreement.ts`,
+// `../standing-no/`), a no or an unknown hands it on:
 // the rows stored, the conditions read with, the stored rows a standing no
 // called not the asked kind, and the conditions each standing no asks to
 // remove. A trial passes it to the gate that keeps the build's trials, which
@@ -151,6 +152,13 @@ export type AutomationStudioBuildTestVerdict =
      * or some of it (`part`), as the verification marks it (t641).
      */
     unconfirmedReading?: { expected?: string; observed?: string; advice?: string; recordContradicts?: "whole" | "part" | undefined };
+    /**
+     * Only on an `unknown` two calls reached: Core's own record of the judged
+     * test (`AutomationStudioResultVerification.standingNo`, `../standing-no/`,
+     * t652), for the gate that keeps the build's trials to keep the conditions
+     * it vindicated. Core-only, never model-facing; absent where none was kept.
+     */
+    standingNo?: AutomationStudioResultStandingNoRecord;
     /**
      * Only on an `unknown` whose two calls split (`model_disagreed`): what the
      * call that said yes compared (`AutomationStudioResultVerification.answeredReading`),
@@ -343,7 +351,9 @@ export function automationStudioBuildTestJudge(deps: {
     const answered = outcome.basis === "model_disagreed" ? outcome.answeredReading : undefined;
     // ...and a doubt about pages Core's record contradicts, said in Core's words (t503).
     const doubt = doubtContradicted(outcome);
-    return { verdict: "unknown", why: outcome.reason, ...carried, ...(reading ? { unconfirmedReading: { ...reading } } : {}), ...(answered ? { answeredReading: { ...answered } } : {}), ...(outcome.basis === "model_disagreed" ? { oneCallSaidYes: true as const } : {}), ...(doubt ? { doubtContradicted: doubt } : {}), spent };
+    // ...and Core's record of the judged test, for the gate that keeps the build's trials (t652); never model-facing.
+    const record = outcome.standingNo ? { standingNo: structuredClone(outcome.standingNo) } : {};
+    return { verdict: "unknown", why: outcome.reason, ...carried, ...(reading ? { unconfirmedReading: { ...reading } } : {}), ...(answered ? { answeredReading: { ...answered } } : {}), ...(outcome.basis === "model_disagreed" ? { oneCallSaidYes: true as const } : {}), ...(doubt ? { doubtContradicted: doubt } : {}), ...record, spent };
   };
 }
 
