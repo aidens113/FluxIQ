@@ -19,7 +19,8 @@
 // account of each (`advice-condition.ts`, found by `condition-references.ts`
 // over `record-conditions.ts`), and the rows a sentence names, whatever its
 // words (`row-reference-claim.ts`, `left-out-finding.ts`); a step's node id is
-// no row (`node-ids.ts`).
+// no row (`node-ids.ts`). And a condition said to have left out a row no read
+// saw, where a step narrowed the page first (`unseen-row-claim.ts`, t654).
 export * from "./advice-condition.ts";
 export * from "./condition-references.ts";
 export * from "./condition-wording.ts";
@@ -40,5 +41,6 @@ export * from "./request-text-test.ts";
 export * from "./row-reference-claim.ts";
 export * from "./sentences.ts";
 export * from "./types.ts";
+export * from "./unseen-row-claim.ts";
 export * from "./value-claim.ts";
 export * from "./weigh.ts";

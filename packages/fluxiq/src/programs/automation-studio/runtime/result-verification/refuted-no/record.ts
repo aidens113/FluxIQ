@@ -31,8 +31,21 @@
 // left-out row's label, a witness's value -- and no row's label: a judge quoting
 // such a value ("... whose value was "<value>"") names no row Core has no
 // record of (`./named-rows.ts`).
+//
+// **And which rows each read saw (t654).** A8 frozen pair 5 project
+// `run-mva6mlm4-97fe42f9` step 0046: a judge said a name condition "missed" a
+// row that a site filter had removed before the read, so no condition ever saw
+// it. A read's labels are every row it saw only where its own counts say so
+// (`seenWhole`): it counted the rows it looked at, those are the rows it kept
+// and the rows each condition alone left out, every condition sent each such
+// row by a label that may be said, the read did not answer unfiltered, and the
+// result's stored rows were sent whole and none was cut. A row two conditions
+// both rejected is in no label list, so a read whose counts do not add up says
+// nothing of what it did not see. Each read carries the steps that acted on
+// the page before it (`narrowedBefore`, t482). None for a build test's replayed
+// reads, which carry no counts (`./unseen-row-claim.ts`).
 
-import type { JsonObject } from "../../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultConditionName } from "../read-account/index.ts";
 import {
@@ -45,7 +58,7 @@ import {
 import { automationStudioResultConditionTestsLabel } from "./label-tested-condition.ts";
 import { automationStudioResultNoConditions } from "./record-conditions.ts";
 import { automationStudioResultRequestTextTest } from "./request-text-test.ts";
-import type { AutomationStudioResultNoClaim, AutomationStudioResultNoLeftOutRow, AutomationStudioResultNoRecord, AutomationStudioResultNoStoredRow } from "./types.ts";
+import type { AutomationStudioResultNoClaim, AutomationStudioResultNoLeftOutRow, AutomationStudioResultNoRecord, AutomationStudioResultNoSeenRead, AutomationStudioResultNoStoredRow } from "./types.ts";
 
 /** The record a no is weighed against (header). `requestText` gives the item phrase, `wording` the request's own words; `other` checks the claims the agreement checks itself. */
 export function automationStudioResultNoRecord(input: {
@@ -67,6 +80,7 @@ export function automationStudioResultNoRecord(input: {
   })));
   const storedLabels = [...new Set(stored.map((row) => row.label))];
   const pools = [...reads.map((read) => [...new Set([...read.labels, ...storedLabels])]), storedLabels];
+  const seen = seenReads(summary);
   const tested = summary.buildTest?.stores;
   const phrases = input.requestText?.trim() ? automationStudioRequestPhrases(input.requestText) : undefined;
   return {
@@ -80,10 +94,56 @@ export function automationStudioResultNoRecord(input: {
     nodeIds: summary.flowShape.map((step) => step.nodeId),
     conditions: automationStudioResultNoConditions(summary, leftOut, new Set(storedLabels)),
     isValue: valuesOf(summary, stored, leftOut),
+    ...(seen ? { seen, seenLabels: [...new Set(pools.flat())] } : {}),
     ...(phrases ? { phrases, item: itemOf(storedLabels, phrases) } : {}),
     ...(input.wording ? { says: input.wording.says } : {}),
     ...(input.other ? { other: input.other } : {})
   };
+}
+
+/** What a label that may not be said reads as (`../read-account/alone-rows.ts`). */
+const WITHHELD_LABEL = "(withheld)";
+
+/** One condition's counts, as a read account or a saved answer carries them. */
+type Counted = { rejected?: number | undefined; alone?: number | undefined; leftOutOnlyByThis?: string[] | undefined };
+
+/**
+ * Each read, whether its labels are every row it saw, and the steps before it
+ * (header, t654). Undefined where a build test's replayed reads stand beside
+ * them: those carry no counts, so Core cannot say it of every read.
+ */
+function seenReads(summary: AutomationStudioRunResultSummary): AutomationStudioResultNoSeenRead[] | undefined {
+  if ((summary.buildTest?.steps ?? []).some((step) => isObject(step.observed) && step.observed.readRows !== undefined)) return undefined;
+  const entry = new Set(summary.taskChecklist?.entry?.steps ?? []);
+  const sets = summary.recordSets.filter((set) => {
+    const passes = set.processing?.passes ?? [];
+    return !(entry.size > 0 && passes.length > 0 && passes.every((pass) => entry.has(pass.node)));
+  });
+  const setsWhole = sets.every((set) => {
+    if ((set.sampleRows?.length ?? 0) !== set.recordCount) return false;
+    const processing = set.processing;
+    if (!processing) return true;
+    if ((processing.cut ?? 0) > 0) return false;
+    const conditions = processing.conditions ?? [];
+    return conditions.every(namesEveryRow) && conditions.reduce((total, condition) => total + condition.alone, 0) === (processing.filteredOut ?? 0);
+  });
+  return (summary.reads ?? []).filter((account) => !entry.has(account.nodeId)).map((account) => {
+    const conditions = account.conditions ?? [];
+    const alone = conditions.reduce((total, condition) => total + (condition.alone ?? 0), 0);
+    const whole = setsWhole && account.unfiltered !== true && account.itemsSeen !== undefined
+      && conditions.every(namesEveryRow) && account.itemsSeen === account.kept + alone;
+    return { nodeId: account.nodeId, whole, narrowedBefore: account.narrowedBefore ?? [] };
+  });
+}
+
+/** Whether a condition counted the rows it alone left out and sent each by a label that may be said. */
+function namesEveryRow(condition: Counted): boolean {
+  const rows = condition.leftOutOnlyByThis ?? [];
+  return condition.alone !== undefined && rows.length === condition.alone && rows.every((row) => automationStudioRequestRowLabel(row) !== WITHHELD_LABEL);
+}
+
+function isObject(value: JsonValue | undefined): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 type Quoted = NonNullable<AutomationStudioResultNoLeftOutRow["quoted"]>;
