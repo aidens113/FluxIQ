@@ -134,6 +134,17 @@ describe("the lasting acts a trial landed", () => {
     expect(automationStudioCandidateTrialLandedActs(trace([attempt("add", "succeeded")]), graph)).toEqual([{ step: 1, definitionId: "web.output.dom-click", label: "Press add", control: "Add item", consequences: ["create_new"] }]);
   });
 
+  // t684, t679 open question 1: a part run through a Call Subflow step named no item, so its act could never be undone by one.
+  it("names the item a called part's step made, though the call's own diff, listed before it, already shows it", () => {
+    const withCall = { nodes: [...graph.nodes, { id: "call", definitionId: "builtin.control.call-subflow", parameterValues: { subflowId: "keep" } }] } as unknown as AutomationStudioFlowArtifact;
+    const diff = (before: string[], after: string[]) => ({ stateRefs: { stateDiff: { added: "line Oat milk", removed: "", documentChanged: false, items: { before, after } } } });
+    const child = trace([attempt("add", "succeeded", diff(["line:soap"], ["line:soap", "line:oat"]))]);
+    const call = { ...attempt("open", "succeeded", diff(["line:soap"], ["line:soap", "line:oat"])), nodeId: "call", definitionId: "builtin.control.call-subflow", subflowTarget: { subflowId: "keep", graphFlowId: "keep-graph", graphRevision: 1 }, childTrace: child };
+    // The step after the call lists the part's line as shown before it: it made nothing new.
+    const acts = automationStudioCandidateTrialLandedActs(trace([call, attempt("add", "succeeded", diff(["line:soap", "line:oat"], ["line:soap", "line:oat"]))]), withCall);
+    expect(acts.map(({ step, created }) => ({ step, created }))).toEqual([{ step: 2, created: ["line:oat"] }, { step: 3, created: undefined }]);
+  });
+
   // t598, t597 open question 3: Core's own nodes act on nothing outside the run.
   it("never answers a step of Core's own that acts on nothing outside the run, whatever it declared; a Core node that reaches outside is read as any step", () => {
     const core = {

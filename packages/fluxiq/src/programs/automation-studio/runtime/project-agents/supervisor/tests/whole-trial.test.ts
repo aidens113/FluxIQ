@@ -11,6 +11,10 @@ import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.t
 import { BUILD, planInput, project, subflow, taskSpecInput } from "./supervisor-fixture.ts";
 import { singleBuild } from "../../single-subflow/tests/single-build.ts";
 import { FIND, HOLD, brief, call, complete, dispatch, end, lastOf, reset, supervise, test, type Step } from "./supervisor-script.ts";
+import { AutomationStudioSiteResetProjectLedger } from "../../../flow-bootstrap/site-reset/index.ts";
+import type { AutomationStudioProjectSupervisorContext } from "../context.ts";
+import { AutomationStudioProjectSupervisorState } from "../state.ts";
+import { AutomationStudioProjectSupervisorWholeTrial } from "../whole-trial.ts";
 
 const TWO_PART = planInput([subflow("find_titles", ["p1"], { inputs: ["author"], outputs: ["titles"] }), subflow("place_hold", ["p2"], { inputs: ["titles"], outputs: ["shelf"] })], taskSpecInput([["p1", FIND, []], ["p2", HOLD, ["create_new"]]]));
 const BUILDS = [brief("find_titles", ["p1"]), brief("place_hold", ["p2"], ["find_titles"], { permittedActs: ["create_new"] })];
@@ -97,5 +101,23 @@ describe("a supervisor a guard stopped", () => {
     const view = await built.record.read(BUILD);
     expect(view?.record.ending?.reason).not.toContain("Still on the target");
     expect(built.ledger!.snapshot().acts.every((act) => !act.inPlace)).toBe(true);
+  });
+});
+
+// t684 (t683 open question 2): an ending held for a reset kept its reason through a test refused for that reset, so the reset's
+// answer said to end again, though the model had chosen to test.
+describe("a whole test refused for a reset", () => {
+  it("drops the reason an ending or a completion was held for, as a test that ran does", async () => {
+    const ledger = new AutomationStudioSiteResetProjectLedger();
+    const state = new AutomationStudioProjectSupervisorState();
+    const trial = new AutomationStudioProjectSupervisorWholeTrial({ ports: { projectLedger: ledger }, state });
+    const gate = { test: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "candidate.trial_reset_required", actsToUndo: [] } }) };
+    const context = { ports: { projectLedger: ledger }, state, gate, controller: { latest: () => undefined }, signal: undefined } as unknown as AutomationStudioProjectSupervisorContext;
+    for (const held of [{ by: "ending" as const }, { by: "completion" as const, complete: { revision: 2, digest: "d".repeat(64) } }]) {
+      state.resetToEnd = held;
+      const answered = await trial.test(context, { revision: 2, digest: "d".repeat(64) }, undefined);
+      expect(answered.evidence).toMatchObject({ ok: false, code: "project.trial_reset_required" });
+      expect(state.resetToEnd).toBeUndefined();
+    }
   });
 });

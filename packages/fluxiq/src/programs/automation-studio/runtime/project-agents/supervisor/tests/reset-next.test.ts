@@ -62,11 +62,12 @@ describe("the answer to a reset", () => {
     expect(GUIDANCE.next.afterResetNothingToTest).not.toContain("core.test_candidate");
   });
 
-  it("puts ending again first, then the test, while the latest assembled Flow may be tested", () => {
+  // t684: a reset sent for a held ending is answered by the state's reason (t683), so these words no longer ask which it was.
+  it("says only to test while the latest assembled Flow may be tested, asking nothing of why the reset was sent", () => {
     const words = GUIDANCE.next.afterReset;
-    expect(words).toContain("project.completion_reset_first");
-    expect(words.indexOf("end again")).toBeGreaterThan(-1);
-    expect(words.indexOf("end again")).toBeLessThan(words.indexOf("core.test_candidate"));
+    expect(words).toContain("core.test_candidate");
+    expect(words).not.toContain("project.completion_reset_first");
+    expect(words).not.toContain("end again");
   });
 });
 
@@ -145,6 +146,31 @@ describe("the answer to a reset sent because an ending was held for it", () => {
     ], project({ builder: blockedThird }));
     expect(run.feedback.map((entry) => entry.code)).toEqual(["project.completion_reset_first"]);
     expect(answersOf(run.shown)[2]!.next).toBe(GUIDANCE.next.afterResetNothingAssembled);
+  });
+});
+
+const TWO_PART = planInput(
+  [subflow("find_titles", ["p1"], { inputs: ["author"], outputs: ["titles"] }), subflow("place_hold", ["p2"], { inputs: ["titles"], outputs: ["shelf"] })],
+  taskSpecInput([["p1", FIND, []], ["p2", HOLD, ["create_new"]]])
+);
+const TWO_BRIEFS = [brief("find_titles", ["p1"]), brief("place_hold", ["p2"], ["find_titles"], { permittedActs: ["create_new"] })];
+
+// t684 (t683 open questions 1 and 2).
+describe("an ending after a whole test that ran after the last reset", () => {
+  it("is held for a reset, since the test left its own act on the target, then let through once that reset came back", async () => {
+    const run = await supervise([
+      call(IDS.writePlan, TWO_PART), dispatch(TWO_BRIEFS), call(IDS.assemble), test,
+      dispatch([reset()], "Put the target back before the whole test."), test,
+      end("blocked", REASON),
+      dispatch([reset()], "Put the target back: my ending was held."),
+      end("blocked", REASON)
+    ], project({ trial: () => "no", trialActs: true, ledger: {} }));
+    // The first test was refused for the builder's act; the ending after the second test, which left the supervisor's, was held.
+    expect(run.feedback.map((entry) => entry.code)).toEqual(["project.completion_reset_first"]);
+    expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build", "build"], ["reset"], ["reset"]]);
+    endsAgain(answersOf(run.shown).at(-1)!.next);
+    expect(run.ledger.snapshot().acts.filter((act) => act.inPlace)).toEqual([]);
+    expect(run.outcome.ending).toMatchObject({ outcome: "blocked", reason: REASON });
   });
 });
 

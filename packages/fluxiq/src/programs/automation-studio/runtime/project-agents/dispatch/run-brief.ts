@@ -16,6 +16,7 @@ import { AutomationStudioProjectDispatchOutputRefusals } from "./output-refusals
 import type { AutomationStudioProjectDispatchWholeTrial } from "./port.ts";
 import { AutomationStudioProjectDispatchReceipts } from "./receipts.ts";
 import { automationStudioProjectRenamedOutputs } from "./renamed-outputs.ts";
+import { automationStudioProjectDispatchResetDone } from "./reset-done.ts";
 import { runAutomationStudioProjectResetLoop } from "./reset-loop.ts";
 import type { AutomationStudioProjectDispatchScope } from "./scope.ts";
 import { AutomationStudioProjectDispatchStandingNos } from "./standing-nos.ts";
@@ -201,8 +202,6 @@ const YOUR_SUBFLOW_UNHELD_NOTE = "yourSubflow names the revision of your subflow
 
 /** What a return's reason may hold (`contracts/builder-return.ts`). */
 const MAX_REASON = 2000;
-/** A reset's `done`, as `./ending.ts` words it. */
-const RESET_DONE = "Every lasting act this build made is undone; the site is as the build found it.";
 
 /** A failed build-record write, carried past the brief's own catch. */
 class RecordWriteFailure extends Error {
@@ -292,10 +291,11 @@ async function run(input: {
     const loop = await untilEnded(signal, ports.ended, (stop) => runAutomationStudioProjectResetLoop({ brief, ports, remainingActs, allowance, signal: stop, callScope }));
     if ("ended" in loop) {
       // A reset that left nothing of the build in place did its one job, however its loop was stopped.
-      if (!(await remainingActs()).length) return endedAs(brief, "done", RESET_DONE, { ...spend, trials: receipts.list() });
+      if (!(await remainingActs()).length) return endedAs(brief, "done", automationStudioProjectDispatchResetDone(dispatcher.ledger), { ...spend, trials: receipts.list() });
       return endedAs(brief, "blocked", loop.ended, { ...spend, trials: receipts.list() });
     }
-    return ending.reset(brief, loop.ran, await remainingActs(), { ...spend, trials: receipts.list() });
+    // Its `done` names every act of the build that stayed in place, never "every act is undone" while one did (t684).
+    return ending.reset(brief, loop.ran, await remainingActs(), { ...spend, trials: receipts.list() }, automationStudioProjectDispatchResetDone(dispatcher.ledger));
   }
   const ports = await dispatcher.ports.builder(request);
   const runBuilder = dispatcher.runBuilder ?? runAutomationStudioSubflowBuilderLoop;

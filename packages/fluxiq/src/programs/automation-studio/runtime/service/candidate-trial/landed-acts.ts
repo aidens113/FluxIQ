@@ -53,6 +53,16 @@
 // trial had shown it. A token that is not a short opaque digest is not one.
 // Absent, the act is recorded as before, with no item.
 //
+// **A called part's steps name their items too (t684).** A plan of several
+// subflows runs each part through a Call Subflow step, and the run lists the
+// call before the steps it ran (`../summaries/frame-attempts.ts`). The call's
+// own diff spans its whole child: its page after lists every item the child's
+// steps made. Counting that page as an earlier step's would mark each of them
+// already shown, so the part's step that made one named none, and every reset
+// undo of it was refused `candidate.undo_wrong_target` (t679, open question 1).
+// A call's page before is still before its child; its page after is not, and
+// the child's own steps, and the steps after the call, list it themselves.
+//
 // **Core's own steps leave nothing (t598).** A step of one of Core's own nodes
 // that acts on nothing outside the run (`automationStudioNodeSideEffectClass`
 // `none`: a wait, a branch, a variable) is never a lasting act, whatever it
@@ -83,7 +93,8 @@ export function automationStudioCandidateTrialLandedActs(trace: AutomationStudio
   automationStudioTrialExecutedSteps(trace?.attempts ?? []).forEach(({ attempt }, index) => {
     const listed = itemsOf(attempt);
     const created = createdBy(attempt, listed, seen);
-    for (const item of [...(listed?.before ?? []), ...(listed?.after ?? [])]) seen.add(item);
+    // A called part's page after comes after its own steps, which list it themselves (header, t684).
+    for (const item of [...(listed?.before ?? []), ...(attempt.subflowTarget ? [] : listed?.after ?? [])]) seen.add(item);
     if (attempt.subflowTarget || attempt.stateHeld || attempt.skipped || automationStudioAttemptSettled(attempt).status !== "succeeded" || noEffectSeen(attempt)) return;
     const node = nodes.get(attempt.nodeId);
     // Core's own step, acting on nothing outside the run, leaves nothing, whatever it declared (header).

@@ -111,8 +111,9 @@ const EPSILON_USD = 1e-9;
  * its ending was held for one (`project.completion_reset_first`) and was told
  * to test an assembled Flow it never had. A call of resets only now says: with
  * nothing assembled, end again (or brief and assemble); with a Flow that cannot
- * be tested again, complete on its yes or end again; otherwise end again if an
- * ending was held for this reset, else test.
+ * be tested again, complete on its yes or end again; otherwise test (a reset
+ * sent so the build can end is t683's, below; t684 removed the held-ending
+ * branch from `afterReset`).
  *
  * **A reset sent so the build can end says so (t683).** The words above still
  * asked the model to remember whether its ending was held for the reset. The
