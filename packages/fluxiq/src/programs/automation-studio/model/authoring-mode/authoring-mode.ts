@@ -4,17 +4,19 @@
 // improvement, and the Lab -- takes the mode from here (or from Core resolving
 // it for them), never from a literal of its own.
 //
-// - `candidate` (the product default): the evidence-guided build explores,
+// - `project` (the product default since 2026-10-16, A8): a project supervisor
+//   breaks the task into parts, plans the Flow's subflows and their
+//   interfaces, dispatches a bounded builder per subflow, assembles their
+//   proposals into one candidate and tests that exact revision; promotion is
+//   the candidate's, unchanged. It became the default when the Lab comparison
+//   passed: on one frozen pair (A8 frozen pair 8) it passed every one of the
+//   five realistic tasks twice in a row, where `candidate` failed one of them
+//   (automation-project-agents-plan, A8 Run Plan).
+// - `candidate`: the evidence-guided build explores,
 //   submits the whole Flow as a draft and tests that exact revision; a supplied
 //   start hook resets the target first. Only a
 //   trial confirmed by two judges can produce a proposed adaptation for the
 //   chat or panel to apply; an unverified draft keeps the Flow unchanged.
-// - `project` (opt-in, automation-project-agents-plan): a project supervisor
-//   breaks the task into parts, plans the Flow's subflows and their
-//   interfaces, dispatches a bounded builder per subflow, assembles their
-//   proposals into one candidate and tests that exact revision; promotion is
-//   the candidate's, unchanged. Until the Lab comparison passes it is never
-//   the default.
 // - `legacy` (explicit opt-out): the evidence-guided build explores, tests and
 //   judges a draft and answers with a proposed adaptation. The chat applies it
 //   onto a blank Flow and asks before applying an improvement; the panel offers
@@ -36,7 +38,7 @@ export const AUTOMATION_STUDIO_AUTHORING_MODES = Object.freeze(["legacy", "candi
 export type AutomationStudioAuthoringMode = (typeof AUTOMATION_STUDIO_AUTHORING_MODES)[number];
 
 /** The mode when nothing is set. */
-export const AUTOMATION_STUDIO_AUTHORING_MODE_DEFAULT: AutomationStudioAuthoringMode = "candidate";
+export const AUTOMATION_STUDIO_AUTHORING_MODE_DEFAULT: AutomationStudioAuthoringMode = "project";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
