@@ -84,13 +84,13 @@ export function automationStudioProjectBuildSubflowTrials(input: {
     // A predecessor proposal an amendment kept still prepares the entry (t590).
     keptUnder: (subflowKey, madeUnder, planDigest) => input.proposals.keptUnder?.(subflowKey, madeUnder, planDigest) === true,
     currentPlanDigest: async (buildId) => buildId === ref.buildId ? (await input.records.read(ref))?.record.plans.at(-1)?.plan.digest ?? null : null,
-    judge: async ({ summary, scope, successCheck }) => {
+    judge: async ({ summary, scope, successCheck, possiblyLasting }) => {
       // The steps that prepared the entry, where predecessors ran in the trial (header, t599).
       const entry = AutomationStudioProjectBuildTaskChecklist.entry(summary, scope.predecessors.length ? input.proposals.predecessors(scope) : []);
       return await automationStudioBuildTestJudge({
         provider: input.judge.provider, timeoutMs: input.judge.timeoutMs, instructions: [scopeInstruction(scope, successCheck, projectId, flowId, entry !== undefined)],
         deniedEvidenceKeys: binding.deniedEvidenceKeys, projectId, flowId, signal: input.judge.signal
-      })({ summary, taskChecklist: await AutomationStudioProjectBuildTaskChecklist.subflow(source, scope, entry) });
+      })({ summary, taskChecklist: await AutomationStudioProjectBuildTaskChecklist.subflow(source, scope, entry, possiblyLasting) });
     }
   });
   // Each trial this port answered, until its gate tells the verdict it kept (header, t634).

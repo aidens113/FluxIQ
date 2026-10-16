@@ -37,6 +37,18 @@ describe("promoting a judged candidate", () => {
       candidateTrial: { candidateId: "candidate.1", revision: 2, digest, trial: { runId: "trial.2", verdict: "yes", calls: 2, start: "reset" }, trials: 2 } });
   });
 
+  it("carries the deciding trial's first-ask flag on the audit detail's trial, and none where its record has none (t677)", async () => {
+    for (const firstAskConfirmed of [true, false]) {
+      const { input, propose } = promotionFixture();
+      input.trials[1] = { ...input.trials[1]!, firstAskConfirmed, judge: { ...input.trials[1]!.judge, calls: 3 } };
+      await promoteAutomationStudioCandidateTrial(input);
+      expect(propose.mock.calls[0]![0]).toMatchObject({ candidateTrial: { trial: { runId: "trial.2", verdict: "yes", calls: 3, start: "reset", firstAskConfirmed } } });
+    }
+    const { input, propose } = promotionFixture();
+    await promoteAutomationStudioCandidateTrial(input);
+    expect(propose.mock.calls[0]![0]).not.toHaveProperty("candidateTrial.trial.firstAskConfirmed");
+  });
+
   // t378 W8: the saved Flow keeps the learned pace, not only the audit detail.
   // Until the plan node took a `paceMs`, this test held the plan unchanged.
   it("raises the matching node's pace in the proposed plan to what the deciding trial learned, and says so in the audit detail", async () => {

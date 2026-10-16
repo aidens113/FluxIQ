@@ -10,12 +10,16 @@ import type { AutomationStudioResultBuildYesHoldBecause } from "./because.ts";
  * verdict, how many judge calls reached it, and the digest of the request it
  * was judged against (`../../flow-version/instruction-digest.ts`). A yes stands
  * only once a second call confirmed it (t296), so `calls` is at least 2 on a
- * yes Core may hold to.
+ * yes Core may hold to. `firstAskConfirmed` is the verification's own word on
+ * whether its first two calls reached the yes with nothing re-asked of a
+ * different verdict (`../first-ask/`, t677); absent on a record written
+ * before it, where the hold counts `calls` instead.
  */
 export type AutomationStudioResultJudgedBuildTrial = {
   trialRunId: string;
   verdict: "yes" | "no" | "unsure" | "not_judged";
   calls: number;
+  firstAskConfirmed?: boolean | undefined;
   instructionDigest: string;
 };
 

@@ -3,7 +3,11 @@
 How source files are placed, named, sized, and divided in this repository.
 `AGENTS.md` carries the binding summary; this document is the full
 methodology. Size and density budgets are enforced by
-`scripts/structure-audit.mjs` as the first step of `pnpm check`.
+`scripts/structure-audit.mjs` as the first step of `pnpm check`, and before
+every push: `.githooks/pre-push` runs the audit and refuses a push it fails
+(t682), because a commit made straight on `dev` -- a ledger entry, a working
+document -- has no merge step to run it. `pnpm install` points git at
+`.githooks` (the root `prepare` script; a no-op outside a git checkout).
 
 ## The Gap This Closes
 
@@ -253,6 +257,12 @@ The detailed procedure for each, with the current offenders, is in the
   return type is checked and stays fine. The `as-never` rule enforces this in
   source and tests alike, reading the syntax tree so a comment or string does
   not count, with existing casts baselined per file.
+- **A regex escape a string swallows.** ``new RegExp(`\b${word}\b`)`` hands the
+  regex a backspace, not a word boundary, and `\d`, `\s`, `\w`, `\.` reach it
+  as plain characters; in October 2026 two Core tests never ran their check
+  this way. Double the backslash (`\\b`) or use `String.raw`. The
+  `regexp-template-escapes` rule fails such an escape in a `RegExp(...)`
+  pattern literal, in source and tests alike, with no baseline.
 - **Packing statements onto one line.** The line budget counts lines, so
   `let a: X | undefined; if (cond) doThing({ a });` or two imports on one line
   keep a file under it without making the file any smaller. On 2026-10-09

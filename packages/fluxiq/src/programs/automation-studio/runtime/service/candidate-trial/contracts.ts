@@ -72,6 +72,14 @@ export type AutomationStudioCandidateTrialRecord = {
    * (`./run.ts`, t473).
    */
   judgedAgain?: true;
+  /**
+   * On a yes only: whether the judge's yes was reached by its first two calls
+   * with nothing re-asked of a different verdict (`firstAskConfirmed` on the
+   * build-test judge's yes, `../../result-verification/first-ask/`, t677).
+   * Promotion carries it to the saved Flow's judged trial, which the playback
+   * hold reads in place of `judge.calls`. Absent where the judge did not say.
+   */
+  firstAskConfirmed?: boolean;
   judge: { calls: number; inputTokens: number; outputTokens: number; totalTokens: number; estimatedCostUsd: number };
 };
 

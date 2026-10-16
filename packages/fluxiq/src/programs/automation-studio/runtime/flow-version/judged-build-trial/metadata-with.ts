@@ -17,6 +17,7 @@ export function automationStudioMetadataWithJudgedBuildTrial(
     trialRunId: trial.trialRunId,
     verdict: trial.verdict,
     calls: trial.calls,
+    ...(trial.firstAskConfirmed !== undefined ? { firstAskConfirmed: trial.firstAskConfirmed } : {}),
     instructionDigest: trial.instructionDigest,
     adaptationId: trial.adaptationId,
     versions: trial.versions.map((version) => ({ graphFlowId: version.graphFlowId, revision: version.revision, ...(version.subflowId ? { subflowId: version.subflowId } : {}) }))

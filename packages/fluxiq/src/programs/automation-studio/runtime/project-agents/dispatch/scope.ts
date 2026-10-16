@@ -18,6 +18,14 @@ import { automationStudioProjectCallOrder } from "./call-order.ts";
 // for its subflow -- plan order between equals. A builder may leave such an
 // input unread (`flow-bootstrap/subflow-candidate/callable-target.ts`); every
 // other input is the person's value, which it must read.
+//
+// **The other parts are named (t676).** On three A8 Lab runs a builder did a
+// later part's lasting act while it explored, and its passing proposal did it
+// again when Core prepared the next builder's entry. The scope now carries the
+// task spec's parts this brief does not hold as `outOfScope`, by id and the
+// person's words, which the builder's brief names as other builders' parts
+// (`flow-bootstrap/subflow-candidate/builder-loop.ts`). Words only: nothing is
+// refused for doing one.
 
 export type AutomationStudioProjectDispatchScope = {
   scope: AutomationStudioSubflowScope;
@@ -47,6 +55,10 @@ export function automationStudioProjectDispatchScope(record: AutomationStudioPro
     parts,
     predecessors: [...brief.entry.predecessors]
   };
+  // The task's other parts, each another builder's subflow, told to this one so it knows them while it explores (header, t676).
+  const own = new Set(brief.parts);
+  const outOfScope = spec.parts.filter((part) => !own.has(part.id)).map((part) => ({ partId: part.id, text: part.quote.text }));
+  if (outOfScope.length) scope.outOfScope = outOfScope;
   if (brief.interface) scope.interface = structuredClone(brief.interface);
   const handedOn = brief.interface ? handedOnInputs(record, brief, plan.plan) : [];
   if (handedOn.length) scope.handedOn = handedOn;

@@ -84,6 +84,28 @@ describe("the build's judged trial, read off the saved Flow", () => {
     expect(because(await verify(checked({ flowMetadata: async () => automationStudioMetadataWithJudgedBuildTrial({}, firstAsk) }), { ...ran(SAVED), subflowId: "subflow.primary" }))).toBe("held");
   });
 
+  it("carries the trial's first-ask flag from apply to the check, which reads it in place of the call count (t677)", async () => {
+    // Apply's record from the proposal's audit, as promotion writes it with the trial record's flag.
+    const appliedFrom = async (calls: number, firstAskConfirmed: unknown) => await automationStudioAppliedJudgedBuildTrial({
+      adaptation: { adaptationId: "adaptation.library", auditEvents: [{ eventType: "created", detail: { candidateTrial: { trial: { runId: TRIAL_RUN, verdict: "yes", calls, start: "reset", firstAskConfirmed } as JsonObject } } }],
+        topology: { subflows: [{ subflow: { subflowId: "subflow.primary" }, graphFlow: { flowId: "flow-1.primary" } }] } },
+      parent: { flowId: "flow-1" },
+      readGraph: async (flowId) => ({ flowId, metadata: { graphRevision: 3 } }),
+      instructions: async () => [REQUEST]
+    });
+    const check = async (record: Awaited<ReturnType<typeof appliedFrom>>) => because(await verify(checked({ flowMetadata: async () => automationStudioMetadataWithJudgedBuildTrial({}, record) }), { ...ran(SAVED), subflowId: "subflow.primary" }));
+    // A confirmed yes behind a timed-out first call: three calls, held.
+    const retried = await appliedFrom(3, true);
+    expect(retried).toMatchObject({ calls: 3, firstAskConfirmed: true });
+    expect(await check(retried)).toBe("held");
+    // A two-call yes its verification says was re-asked of another verdict: not held to.
+    expect(await check(await appliedFrom(2, false))).toBe("trial_not_confirmed");
+    // A proposal made before the flag, or with no flag in it: the count decides, as before.
+    const unflagged = await appliedFrom(3, "yes");
+    expect(unflagged).not.toHaveProperty("firstAskConfirmed");
+    expect(await check(unflagged)).toBe("trial_not_confirmed");
+  });
+
   it("finds the rows differ where they do", async () => {
     expect(because(await verify(checked({ trialRows: [BOOKS[0]!] }), ran(SAVED)))).toBe("rows_differ");
   });

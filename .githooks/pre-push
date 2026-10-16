@@ -1,0 +1,11 @@
+#!/bin/sh
+# Refuse a push the structure audit fails (t682). `pnpm task finish` runs the
+# audit before a task merges, but a commit made straight on dev -- a ledger
+# entry, a working document -- has no such step; a stale
+# docs/working/README.md was committed that way. `pnpm install` points git
+# here (`prepare`); a worktree shares its config.
+if ! node scripts/structure-audit.mjs > /dev/null 2>&1; then
+  node scripts/structure-audit.mjs 2>&1 | grep -E "FAIL|structure-audit:"
+  echo "pre-push: the structure audit failed, so nothing was pushed. Fix it (pnpm structure:baseline regenerates docs/working/README.md), commit, and push again." >&2
+  exit 1
+fi

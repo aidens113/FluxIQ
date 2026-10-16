@@ -55,6 +55,12 @@
 // purse is asked to hold the trial's two judge calls at their worst case.
 // Where it cannot, the trial answers `not_judged` under
 // `subflow.trial_unaffordable`, with the figures, and nothing runs.
+//
+// **A possibly lasting step is named to the judge (t676).** The trial's acts
+// Core recorded `possible` -- a step that declared no lasting act yet changed
+// its own page -- are handed to the scoped judge by their steps' nodeIds
+// (`possiblyLasting`), so a step's own `consequences: none` cannot excuse it
+// (`../project-build/task-checklist.ts`).
 
 import { randomUUID } from "node:crypto";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -68,6 +74,7 @@ import {
   automationStudioCandidateTrialFeedback as Feedback,
   automationStudioCandidateTrialLandedActs,
   automationStudioCandidateTrialSummary,
+  automationStudioTrialExecutedSteps,
   automationStudioTrialJudgingShortfall,
   type AutomationStudioCandidateTrialStart
 } from "../candidate-trial/index.ts";
@@ -185,7 +192,8 @@ export async function runAutomationStudioSubflowTrial(request: AutomationStudioS
     return answer("not_judged", { code, trialRunId: runId, start: start.status, failure, partial: true, entryPrepared: executed.entryPrepared }, { ...ran, execution: "succeeded", code, judge: { ...NO_SPEND } }, acts);
   }
   const successCheck = judgedCheck(scope, proposal);
-  const verdict = await ports.judge({ summary, scope: structuredClone(scope) as AutomationStudioSubflowScope, ...(successCheck ? { successCheck } : {}) });
+  const possiblyLasting = possiblyLastingSteps(executed.trace?.attempts ?? [], acts);
+  const verdict = await ports.judge({ summary, scope: structuredClone(scope) as AutomationStudioSubflowScope, ...(successCheck ? { successCheck } : {}), ...(possiblyLasting.length ? { possiblyLasting } : {}) });
   signal.throwIfAborted();
   const read = Feedback.judged({ verdict, summary, ...shown });
   const { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } = verdict.spent;
@@ -194,6 +202,18 @@ export async function runAutomationStudioSubflowTrial(request: AutomationStudioS
   // only a no is ever weighed as one by the gate's memory.
   const standingNo = (read.verdict === "no" && verdict.verdict === "no") || (read.verdict === "unsure" && verdict.verdict === "unknown") ? verdict.standingNo : undefined;
   return answer(read.verdict, { ...read.feedback, partial: true, entryPrepared: executed.entryPrepared }, { ...ran, execution: "succeeded", ...(read.code ? { code: read.code } : {}), judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } }, acts, standingNo);
+}
+
+/**
+ * The steps, by nodeId, whose landed act is possible (header, t676): each act's
+ * step is its executed step's number (`../candidate-trial/landed-acts.ts`).
+ */
+function possiblyLastingSteps(attempts: Parameters<typeof automationStudioTrialExecutedSteps>[0], acts: readonly AutomationStudioCandidateTrialAct[]): string[] {
+  const steps = automationStudioTrialExecutedSteps(attempts);
+  return [...new Set(acts.filter((act) => act.possible).flatMap((act) => {
+    const nodeId = steps[act.step - 1]?.attempt.nodeId;
+    return nodeId ? [nodeId] : [];
+  }))];
 }
 
 /** The proposal is bound to exactly this scope and heads with its subflow. */

@@ -241,3 +241,25 @@ describe("a brief whose latest proposal has a standing yes", () => {
     expect(returned.reason).toBe("The builder stopped before completing (llm_evidence_loop.iteration_limit). Its last trial, of revision 1, answered yes, but revision 2 was submitted after it and was never tried.");
   });
 });
+
+// A8 frozen pair 8 (t676): a later builder's blocked ending "already done" was taken on its word. Core now checks the claim
+// (`doneBefore`, `flow-bootstrap/subflow-candidate/builder-loop.ts`), and the return says it as Core checked it.
+describe("a return whose builder said a subflow before it did its part", () => {
+  const WORDS = "The subflow before this one already adds the packet.";
+
+  it("says the part and the act Core checked after the builder's words", () => {
+    const returned = ending.built(brief, outcome({ proposal: undefined, ended: { outcome: "blocked", reason: WORDS, doneBefore: { part: "p3", act: "act-2" } } }), spend);
+    expect(returned.outcome).toBe("blocked");
+    expect(returned.doneBefore).toEqual({ part: "p3", act: "act-2" });
+    expect(returned.reason).toBe(`The builder ended this brief blocked: ${WORDS} Core checked the builder's claim: a subflow before this one already does this brief's part p3, by the act act-2, which the run that prepared this subflow's entry landed, and that part asks a lasting act.`);
+  });
+
+  it("says the part alone where the claim named no act, and nothing where there was no claim", () => {
+    const named = ending.built(brief, outcome({ proposal: undefined, ended: { outcome: "blocked", reason: WORDS, doneBefore: { part: "p3" } } }), spend);
+    expect(named.reason).toBe(`The builder ended this brief blocked: ${WORDS} Core checked the builder's claim: a subflow before this one already does this brief's part p3, and that part asks a lasting act.`);
+    const plain = ending.built(brief, outcome({ proposal: undefined, ended: { outcome: "blocked", reason: WORDS } }), spend);
+    expect(named.doneBefore).toEqual({ part: "p3" });
+    expect(plain.reason).toBe(`The builder ended this brief blocked: ${WORDS}`);
+    expect(plain).not.toHaveProperty("doneBefore");
+  });
+});

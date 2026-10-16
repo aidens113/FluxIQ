@@ -82,10 +82,25 @@ describe("the record on the Flow's metadata", () => {
     expect(automationStudioFlowJudgedBuildTrialFromMetadata(replaced)).toBeUndefined();
   });
 
+  it("carries the trial's first-ask flag where the proposal says it, and reads a record written before it without one (t677)", async () => {
+    for (const firstAskConfirmed of [true, false]) {
+      const { trial } = await applied({ ...YES, trial: { ...YES.trial, calls: 3, firstAskConfirmed } });
+      expect(trial).toMatchObject({ calls: 3, firstAskConfirmed });
+      const written = automationStudioMetadataWithJudgedBuildTrial(undefined, trial);
+      expect(automationStudioFlowJudgedBuildTrialFromMetadata(written)).toEqual(trial);
+    }
+    // A proposal made before the flag, or one whose flag is no flag, records none: the hold then counts calls.
+    for (const candidateTrial of [YES, { ...YES, trial: { ...YES.trial, firstAskConfirmed: "yes" } }]) {
+      const { trial } = await applied(candidateTrial);
+      expect(trial).not.toHaveProperty("firstAskConfirmed");
+      expect(automationStudioFlowJudgedBuildTrialFromMetadata(automationStudioMetadataWithJudgedBuildTrial(undefined, trial))).not.toHaveProperty("firstAskConfirmed");
+    }
+  });
+
   it("reads a damaged record as none", async () => {
     const { trial } = await applied(YES);
     const written = automationStudioMetadataWithJudgedBuildTrial(undefined, trial)[AUTOMATION_STUDIO_FLOW_JUDGED_BUILD_TRIAL_METADATA_KEY] as JsonObject;
-    for (const damaged of [{ ...written, verdict: "unsure" }, { ...written, calls: 1.5 }, { ...written, trialRunId: "" }, { ...written, instructionDigest: null }, { ...written, versions: [] }, { ...written, versions: [{ revision: 2 }] }, "yes"]) {
+    for (const damaged of [{ ...written, verdict: "unsure" }, { ...written, calls: 1.5 }, { ...written, firstAskConfirmed: "true" }, { ...written, trialRunId: "" }, { ...written, instructionDigest: null }, { ...written, versions: [] }, { ...written, versions: [{ revision: 2 }] }, "yes"]) {
       expect(automationStudioFlowJudgedBuildTrialFromMetadata({ [AUTOMATION_STUDIO_FLOW_JUDGED_BUILD_TRIAL_METADATA_KEY]: damaged as JsonObject })).toBeUndefined();
     }
   });

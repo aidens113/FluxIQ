@@ -19,7 +19,8 @@ export type AutomationStudioAppliedJudgedBuildTrialAdaptation = {
  * **The trial.** A candidate build's and a project build's whole-Flow
  * promotion both propose through one path, which names the trial whose yes
  * earned the proposal on the proposal's `created` audit event
- * (`candidateTrial.trial`: its run id, its verdict and its judge calls;
+ * (`candidateTrial.trial`: its run id, its verdict, its judge calls and, from
+ * t677, whether its yes was first-ask confirmed;
  * `../../service/candidate-trial/promotion.ts`). An adaptation without one --
  * an evidence-guided build, a repair's re-author -- records nothing.
  *
@@ -53,14 +54,15 @@ export async function automationStudioAppliedJudgedBuildTrial(input: {
 }
 
 /** The yes trial the proposal's `created` event names, where it names one whole. */
-function judgedYes(adaptation: AutomationStudioAppliedJudgedBuildTrialAdaptation): Pick<AutomationStudioFlowJudgedBuildTrial, "trialRunId" | "verdict" | "calls"> | undefined {
+function judgedYes(adaptation: AutomationStudioAppliedJudgedBuildTrialAdaptation): Pick<AutomationStudioFlowJudgedBuildTrial, "trialRunId" | "verdict" | "calls" | "firstAskConfirmed"> | undefined {
   const created = adaptation.auditEvents?.find((event) => event.eventType === "created");
   const candidateTrial = created?.detail.candidateTrial;
   if (!candidateTrial || typeof candidateTrial !== "object" || Array.isArray(candidateTrial)) return undefined;
   const trial = candidateTrial.trial;
   if (!trial || typeof trial !== "object" || Array.isArray(trial)) return undefined;
-  const { runId, verdict, calls } = trial;
+  const { runId, verdict, calls, firstAskConfirmed } = trial;
   if (typeof runId !== "string" || !runId.trim() || verdict !== "yes") return undefined;
   if (typeof calls !== "number" || !Number.isSafeInteger(calls) || calls < 1) return undefined;
-  return { trialRunId: runId, verdict, calls };
+  // The yes's first-ask fact where the proposal says it (t677); a proposal made before it, or a value that is no flag, says nothing.
+  return { trialRunId: runId, verdict, calls, ...(typeof firstAskConfirmed === "boolean" ? { firstAskConfirmed } : {}) };
 }

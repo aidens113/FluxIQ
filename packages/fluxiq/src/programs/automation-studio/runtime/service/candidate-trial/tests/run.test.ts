@@ -69,6 +69,21 @@ describe("one candidate trial", () => {
     expect(requests.every((request) => JSON.stringify(request.context.resultSummary?.startedWith) === JSON.stringify(startedWith))).toBe(true);
   });
 
+  it("records on a yes whether the judge said it was first-ask confirmed, and nothing where it did not say or the trial is no yes (t677)", async () => {
+    const fixture = trialFixture();
+    pressing(fixture);
+    fixture.ports.deniedEvidenceKeys = [];
+    // A confirmed yes behind a timed-out first call: three calls, and the judge's own word that it was first-ask confirmed.
+    fixture.setVerdict({ verdict: "yes", spent: { ...SPENT_TWO, calls: 3 }, firstAskConfirmed: true });
+    expect((await runAutomationStudioCandidateTrial(fixture.request(), fixture.ports)).record).toMatchObject({ verdict: "yes", firstAskConfirmed: true, judge: { calls: 3 } });
+    fixture.setVerdict({ verdict: "yes", spent: { ...SPENT_TWO, calls: 4 }, firstAskConfirmed: false });
+    expect((await runAutomationStudioCandidateTrial(fixture.request(), fixture.ports)).record).toMatchObject({ verdict: "yes", firstAskConfirmed: false });
+    fixture.setVerdict({ verdict: "yes", spent: { ...SPENT_TWO } });
+    expect((await runAutomationStudioCandidateTrial(fixture.request(), fixture.ports)).record).not.toHaveProperty("firstAskConfirmed");
+    fixture.setVerdict({ verdict: "unknown", why: "The two checks disagreed.", spent: { ...SPENT_TWO } });
+    expect((await runAutomationStudioCandidateTrial(fixture.request(), fixture.ports)).record).not.toHaveProperty("firstAskConfirmed");
+  });
+
   it("keeps the pace a refusal that asked the run to wait taught it, by the plan's keys, and tells the model what the press got past", async () => {
     const fixture = trialFixture();
     let presses = 0;

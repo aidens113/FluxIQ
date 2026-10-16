@@ -92,6 +92,17 @@ describe("a subflow trial's checklist", () => {
     expect(await AutomationStudioProjectBuildTaskChecklist.subflow({ records: records(), ref: REF }, whole)).not.toHaveProperty("outOfScope");
   });
 
+  // t676 (A8 crossborder round 1): a step that declared no lasting act changed its page, and the judge excused it on its own label.
+  it("names the subflow's own steps Core recorded possibly lasting, and leaves out the steps that prepared its entry", async () => {
+    const entry = { subflows: ["open"], steps: ["node.open.press"] };
+    const checklist = await AutomationStudioProjectBuildTaskChecklist.subflow({ records: records(), ref: REF }, scope("plan.1"), entry, ["node.open.press", "node.record.keep", "node.record.keep"]);
+    expect(checklist.possiblyLasting).toEqual(["node.record.keep"]);
+    expect(checklist.entry).toEqual(entry);
+    // Only the entry's steps: nothing of the subflow's own is named.
+    expect(await AutomationStudioProjectBuildTaskChecklist.subflow({ records: records(), ref: REF }, scope("plan.1"), entry, ["node.open.press"])).not.toHaveProperty("possiblyLasting");
+    expect(await AutomationStudioProjectBuildTaskChecklist.subflow({ records: records(), ref: REF }, scope("plan.1"))).not.toHaveProperty("possiblyLasting");
+  });
+
   it("falls back to the brief's own parts and words where the record holds no such spec", async () => {
     const empty = { read: async () => undefined } as unknown as Pick<AutomationStudioProjectBuildRecordStore, "read">;
     expect(await AutomationStudioProjectBuildTaskChecklist.subflow({ records: empty, ref: REF }, scope("plan.9"))).toEqual({
