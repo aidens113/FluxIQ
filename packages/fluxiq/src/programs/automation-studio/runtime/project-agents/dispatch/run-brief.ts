@@ -8,9 +8,12 @@ import { automationStudioProjectCarriedScript } from "../amendment/index.ts";
 import { withAutomationStudioProjectAgent } from "../attribution/index.ts";
 import { automationStudioProjectSubflowBrief, type AutomationStudioProjectBuilderReturn, type AutomationStudioProjectFailingTrial, type AutomationStudioProjectReceiptRef, type AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
 import type { AutomationStudioHostLeaseScope, AutomationStudioHostResourceLease } from "../host-resources/index.ts";
+// The value from its owner, not the barrel, which leads back here through the supervisor's assembly (a module cycle).
+import { AutomationStudioProjectWholeTestPort } from "../single-subflow/whole-test-port.ts";
 import { AutomationStudioProjectAcceptedSubflows } from "./accepted-subflows.ts";
 import { automationStudioProjectDispatchEnding as ending, type AutomationStudioProjectDispatchSpend } from "./ending.ts";
 import { AutomationStudioProjectDispatchOutputRefusals } from "./output-refusals.ts";
+import type { AutomationStudioProjectDispatchWholeTrial } from "./port.ts";
 import { AutomationStudioProjectDispatchReceipts } from "./receipts.ts";
 import { automationStudioProjectRenamedOutputs } from "./renamed-outputs.ts";
 import { runAutomationStudioProjectResetLoop } from "./reset-loop.ts";
@@ -138,6 +141,16 @@ import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectDispatc
 // (`revisionsAfter`, `../../flow-bootstrap/subflow-candidate/scoped-submission.ts`):
 // the towels repair was shown revision 3, numbered its own from 1, and spent
 // four decisions testing the earlier brief's revision 3.
+//
+// **A single-subflow plan's brief tests the judged whole run (t679).** Given
+// the dispatch's whole test (`wholeTrial`, `./port.ts`), a build or repair
+// brief's gate asks it in place of the subflow trial port, through
+// `../single-subflow/whole-test-port.ts`: each trial that ran is kept as the
+// gate weighed it, as above, the subflow trial port's start hook still runs
+// ahead of the gate's site reset, and a whole test that did not run is
+// answered to the builder as its refusal, never as a verdict. The whole
+// trial's judge runs under the supervisor's frame, so it is not this brief's
+// spend. A reset brief never gets it.
 
 type Role = "builder" | "repair";
 
@@ -206,6 +219,8 @@ export async function runAutomationStudioProjectDispatchBrief(input: {
   stop: AbortSignal;
   /** What a waiting brief's carve is split over (`./start-allowance.ts`, t627), and the dispatcher told once it was tried. */
   start?: { shares?: (() => number) | undefined; carved(): void } | undefined;
+  /** The single-subflow plan's whole test, which a build or repair brief's gate asks (header, t679). */
+  wholeTrial?: AutomationStudioProjectDispatchWholeTrial | undefined;
 }): Promise<AutomationStudioProjectBuilderReturn> {
   const { dispatcher, mapped, leases, stop } = input;
   let brief = input.brief;
@@ -263,6 +278,7 @@ async function run(input: {
   receipts: AutomationStudioProjectDispatchReceipts;
   spend: AutomationStudioProjectDispatchSpend;
   outputs: AutomationStudioProjectDispatchOutputRefusals;
+  wholeTrial?: AutomationStudioProjectDispatchWholeTrial | undefined;
 }): Promise<AutomationStudioProjectBuilderReturn> {
   const { dispatcher, brief, mapped, lease, signal, allowance, receipts, spend, outputs } = input;
   // Only a host that runs several agents at once needs the opening call scoped (`flow-bootstrap/subflow-candidate/builder-loop.ts`).
@@ -286,15 +302,19 @@ async function run(input: {
     spend.accepted = proposal;
     held.accepted(proposal);
   };
-  // Each script Core accepts is read off the submit tool's answer, then the ports' own observer wraps the loop (header).
-  const observe = (observed: AutomationStudioLlmEvidenceLoopInput) => {
-    const watched = outputs.watch(held.watch(brief.briefId, observed));
-    return ports.observe ? ports.observe(watched) : watched;
-  };
   // The gate's port: each trial kept as the gate weighed it, the subflow's earlier standing nos handed to it (header, t634).
   const standingNos = STANDING.get(dispatcher) ?? new AutomationStudioProjectDispatchStandingNos();
   STANDING.set(dispatcher, standingNos);
   const trialPort = (port: NonNullable<typeof ports.trial>) => automationStudioProjectDispatchTrialPort({ port, scope: mapped.scope, receipts, spend, standingNos, remember: (ref, trial) => remember(dispatcher, ref, trial) });
+  // A single-subflow plan's brief tests the judged whole run instead, through the same wrapper (header, t679).
+  const whole = input.wholeTrial ? new AutomationStudioProjectWholeTestPort(input.wholeTrial, ports.trial, trialPort) : undefined;
+  const gatePort = whole ? whole.port : ports.trial ? trialPort(ports.trial) : undefined;
+  // Each script Core accepts is read off the submit tool's answer, then the ports' own observer wraps the loop (header);
+  // a single-subflow brief's refused whole test is answered as its refusal first (header, t679).
+  const observe = (observed: AutomationStudioLlmEvidenceLoopInput) => {
+    const watched = outputs.watch(held.watch(brief.briefId, whole ? whole.observe(observed) : observed));
+    return ports.observe ? ports.observe(watched) : watched;
+  };
   const repair = await repairOf(dispatcher, brief, ports.deniedEvidenceKeys);
   // A build brief of a subflow whose proposal an amendment carried starts from it (header, t658).
   const carried = repair ? undefined : carriedOf(dispatcher, brief, mapped, ports.deniedEvidenceKeys);
@@ -307,7 +327,7 @@ async function run(input: {
     scope: mapped.scope,
     siblings: mapped.siblings,
     submission: { ...ports.submission, signal: stop },
-    ...(ports.trial ? { trial: { port: trialPort(ports.trial), ...(ports.reset ? { reset: ports.reset } : {}) } } : {}),
+    ...(gatePort ? { trial: { port: gatePort, ...(ports.reset ? { reset: ports.reset } : {}) } } : {}),
     ...(callScope !== undefined ? { callScope } : {}),
     ...(revisionsAfter !== undefined ? { revisionsAfter } : {}),
     observe,

@@ -88,6 +88,14 @@
 // supervisor's evidence holds the start page's route state, not its view
 // (`./role-tools.ts` strips the host tools' opening looks), and says so.
 //
+// **One subflow needs no assembly, reset or second test (t679).** On a plan
+// of one subflow the router runs, the builder's own test is the judged whole
+// test of the Flow assembled from its proposal
+// (`../single-subflow/single-subflow-trial.ts`). Steps 5 and 6 say there is then
+// nothing to assemble or reset, the dispatch answer says to complete on that
+// yes (`afterSingleWholeYes`), and an assembly of the same proposal says it is
+// the revision already judged (`afterAssembleTested`).
+//
 // No string here names a fingerprint field by name: the supervisor completes
 // and tests with the `complete` object assembly hands it, copied whole.
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_LOOK_BUDGET as LOOKS } from "./look-budget.ts";
@@ -105,8 +113,10 @@ const HOW_TO_WORK = [
     + "A part that only narrows, de-duplicates, orders or shapes what another part reads is carried by the subflow that reads it.",
   "3. Send briefs with project.dispatch, one for each subflow. A brief names its subflow and its parts; Core gives it its share of the money and calls left. A lasting act its parts do not ask for that moves money, deletes or sends goes to the person first; any other lasting act runs, is recorded as this build's, and the builder is told it was outside its brief. What runs before it is the plan's after unless you say otherwise. Briefs whose starts do not depend on each other may go in one call.",
   "4. Read each return. Done carries a proposal. Partial or blocked carries the builder's reason: send a changed brief, change the plan with project.amend_plan, or end honestly.",
-  "5. Once every subflow is done, call project.assemble. Core joins the proposals into one Flow: the subflow the router runs calls the others in order, each input taken from the earlier output of the same name.",
-  "6. Test that exact Flow with core.test_candidate. If this build left lasting acts on the target, first dispatch a reset brief, which puts the target back the way the build found it.",
+  "5. Once every subflow is done, call project.assemble. Core joins the proposals into one Flow: the subflow the router runs calls the others in order, each input taken from the earlier output of the same name. "
+    + "With one subflow there is nothing to assemble: its builder's test already ran the whole Flow from its start and was the judged whole test, so once its brief comes back done, complete with the complete object that answer carries.",
+  "6. Test that exact Flow with core.test_candidate. If this build left lasting acts on the target, first dispatch a reset brief, which puts the target back the way the build found it. "
+    + "With one subflow there is no such test or reset to send: its builder put the target back before its own test.",
   "7. Complete with the complete object project.assemble returned, and only after its test answered yes. If the task cannot be finished, complete with ended (blocked or partial) and your reason, once a brief has come back blocked or partial or a whole test has not passed. "
     + "Before you end, if this build left lasting acts on the target, dispatch a reset brief first; Core adds whatever is still left to your reason, so the person knows."
 ].join("\n");
@@ -213,7 +223,15 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
       + "Complete with the complete object under wholeTestStands: Core completes on that test and tells the person the Flow relies on the run's own recovery. Or send a changed repair brief, if what came back says what to change.",
     afterRepairUnchanged: "A brief came back done with a proposal that does exactly what the one before it did (changedNothing), so the build has not moved and whatever failed before still stands. "
       + "Do not brief that subflow again: test the latest assembled Flow again if its last test may be repeated, change the plan with project.amend_plan if the work is split wrong, or end honestly, with a reset brief first if this build left lasting acts on the target.",
-    afterAssemble: "Test this exact Flow next with core.test_candidate, passing the complete object above. Do not complete until its test answered yes."
+    afterAssemble: "Test this exact Flow next with core.test_candidate, passing the complete object above. Do not complete until its test answered yes.",
+    /**
+     * After a done return of a plan of one subflow, when its builder's own test -- the judged whole test of the Flow
+     * assembled from that very proposal -- answered yes (`./dispatch-tool.ts`, t679): the answer carries `complete`.
+     */
+    afterSingleWholeYes: "This plan is one subflow, so its builder's test was the judged whole test of the Flow assembled from the proposal it returned, and that test answered yes. "
+      + "Complete now with the complete object here. Do not assemble, reset or test again: that is the same Flow, already judged.",
+    /** After project.assemble answered with a revision a single subflow's test already judged yes (`./assemble-tool.ts`, t679). */
+    afterAssembleTested: "This is the revision the subflow's own test already assembled and judged yes (sameRevision), not a new one. Complete with the complete object above; do not test it again."
   }),
   /**
    * The way forward the loop's own notes name -- the spent look budget, the
@@ -226,7 +244,7 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     assemble: "Every subflow has a done proposal: join them into one Flow with project.assemble.",
     test: "Test the latest assembled Flow with core.test_candidate, passing the complete object project.assemble returned.",
     changeAfterNo: "The latest whole test did not answer yes: send a repair brief with project.dispatch for the subflow the judge's reasons point to, its failingReceipt naming that test, or change the plan with project.amend_plan, then assemble and test again.",
-    complete: "The latest assembled Flow's test answered yes: complete with the complete object project.assemble returned."
+    complete: "The latest assembled Flow's test answered yes: complete with its complete object, as project.assemble or, for a plan of one subflow, project.dispatch returned it."
   }),
   /** The words of each refusal. */
   refusals: Object.freeze({

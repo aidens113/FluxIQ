@@ -6,6 +6,7 @@ import type { AutomationStudioSubflowProposal } from "../../flow-bootstrap/subfl
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import { automationStudioProjectBuilderReturn, automationStudioProjectBuilderReturn as RETURN, automationStudioProjectSubflowBrief, type AutomationStudioProjectBuilderReturn, type AutomationStudioProjectStructurePlan, type AutomationStudioProjectSubflowBrief, type AutomationStudioProjectTrialRef } from "../contracts/index.ts";
 import { AutomationStudioProjectRecordRefusal } from "../record/index.ts";
+import { AutomationStudioProjectAssembledFrom, automationStudioProjectSingleSubflowPlan, automationStudioProjectSingleSubflowTrial } from "../single-subflow/index.ts";
 import { automationStudioProjectSupervisorBriefInput } from "./brief-input.ts";
 import { automationStudioProjectSupervisorBriefSizing } from "./brief-sizing.ts";
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
@@ -14,6 +15,7 @@ import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./gui
 import { automationStudioProjectSupervisorLeftOnTarget, type AutomationStudioProjectSupervisorLeftOnTarget } from "./left-on-target.ts";
 import type { AutomationStudioProjectSupervisorRescuedTest } from "./state.ts";
 import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-answer.ts";
+import { AutomationStudioProjectSupervisorWholeTrial } from "./whole-trial.ts";
 
 /** Floating-point slack, as the purse keeps it. */
 const EPSILON_USD = 1e-9;
@@ -132,6 +134,19 @@ const EPSILON_USD = 1e-9;
  * (`carriedFrom`), which the dispatcher shows its builder to start from and
  * test first (`../dispatch/run-brief.ts`). A brief as sent never names one
  * (`./brief-input.ts`).
+ *
+ * **A single-subflow plan's brief tests the judged whole run (t679).** While
+ * the plan in force is one subflow the router runs, the dispatch is handed the
+ * supervisor's whole test (`wholeTrial`, `../single-subflow/single-subflow-trial.ts`),
+ * which a build or repair brief's `core.test_subflow` asks: it assembles the
+ * proposal under test with `project.assemble`'s own code and tests that
+ * revision with the supervisor's gate, judge and receipts. The whole test it
+ * runs is the supervisor's own (`./whole-trial.ts`), made here per dispatch: its
+ * `test` reads only the context's gate and records, and the site reset its
+ * gate runs is the one the loop made it with. A done return whose proposal's
+ * assembly is the latest one and passed answers `afterSingleWholeYes` with its
+ * `complete` object; that brief was sized from what the build can give
+ * (`./brief-sizing.ts`).
  */
 export async function automationStudioProjectSupervisorDispatchTool(context: AutomationStudioProjectSupervisorContext, value: JsonObject): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
   const { ports, state } = context;
@@ -146,7 +161,7 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
   const onlyRescue = rescued !== undefined && sent.length > 0 && sent.length === (Array.isArray(value.briefs) ? value.briefs.length : -1) && sent.every((brief) => repairsRescued(brief, rescued));
   // Only a list of objects is sized; anything else is refused by the reading below, by its place.
   const sizing = ports.purse && Array.isArray(value.briefs) && sent.length === value.briefs.length && sent.length
-    ? automationStudioProjectSupervisorBriefSizing({ sent, purse: ports.purse, structure, done: new Set(state.latestDone().keys()), supervisorCalls: ports.finishing?.supervisorCalls ?? 0 })
+    ? automationStudioProjectSupervisorBriefSizing({ sent, purse: ports.purse, structure, done: new Set(state.latestDone().keys()), supervisorCalls: ports.finishing?.supervisorCalls ?? 0, ...(ports.finishing ? { finishingCalls: ports.finishing.supervisorCalls + ports.finishing.resetCalls } : {}) })
     : undefined;
   if (sizing && !sizing.ok) {
     const { ok: _ok, ...figures } = sizing;
@@ -192,9 +207,11 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
   await ports.record.recordDecision(ports.build, { kind: triage ? "triage" : "dispatch", reason: read.reason, briefIds: order.ordered.map((brief) => brief.briefId), planDigest: structure.digest });
   for (const brief of order.ordered) emitAutomationStudioProjectBriefCard({ brief, structurePlan: structure, taskSpec, ...(state.purposes[brief.subflowKey] ? { purpose: state.purposes[brief.subflowKey]! } : {}) });
   const signal = context.signal ?? new AbortController().signal;
+  // A single-subflow plan's whole test, which its build or repair brief tests through (header, t679).
+  const wholeTrial = singleWholeTrial(context);
   let given: readonly AutomationStudioProjectBuilderReturn[];
   try {
-    given = (await ports.dispatch({ briefs: order.ordered, signal })).returns;
+    given = (await ports.dispatch({ briefs: order.ordered, signal, ...(wholeTrial ? { wholeTrial } : {}) })).returns;
   } catch (error) {
     if (signal.aborted) throw error;
     return answer.refused("project.dispatch_failed", GUIDANCE.refusals.dispatchFailed, { briefIds: order.ordered.map((brief) => brief.briefId) }, { retry: true });
@@ -220,18 +237,49 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
   // A repair of the rescued whole test that came back not done or changed nothing: that test still stands (header).
   const short = rescued && order.ordered.some((brief, index) => brief.failingTrial?.verdict === "yes" && (returns[index]!.outcome !== "done" || unchanged.has(brief.briefId))) ? rescued : undefined;
   if (short) state.recoveryRepairsShort.set(short.key, "short");
+  // A single subflow's done return whose own test was the latest assembly's passing whole test (header, t679).
+  const singleYes = !short && !unchanged.size && allDone ? singleWholeYes(context, order.ordered, returns) : undefined;
   return answer.answered({
     ok: true,
     returns: order.ordered.map((brief, index) => compact(brief, returns[index]!, unchanged.get(brief.briefId), RETURN.closestTrial(state.answeredFor(brief.subflowKey).map(({ returned }) => returned)))),
     lastingActsInPlace: ports.projectLedger.snapshot().acts.filter((act) => act.inPlace).length,
     ...(short ? { wholeTestStands: { complete: { revision: short.revision, digest: short.digest } } } : {}),
+    ...(singleYes ? { complete: singleYes } : {}),
     // The briefs held back as repeats of blocked ones, beside the returns of the others (header, t638).
     ...(repeats.length ? { notSent: { code: "project.brief_repeated", instruction: GUIDANCE.refusals.briefRepeatedOthersSent, repeated: repeats } } : {}),
     // A return not done on an output its subflow could not make names both ends (header, t645).
     next: short ? GUIDANCE.next.afterRecoveryRepairShort : unchanged.size ? GUIDANCE.next.afterRepairUnchanged
       : !allDone ? unmadeOutputNext(structure, order.ordered.map((brief, index) => ({ brief, returned: returns[index]! }))) ?? GUIDANCE.next.afterReturnsNotDone
-        : reset ? afterReset(context) : GUIDANCE.next.afterReturnsDone
+        : reset ? afterReset(context) : singleYes ? GUIDANCE.next.afterSingleWholeYes : GUIDANCE.next.afterReturnsDone
   }, { acted: true });
+}
+
+/** The whole test a single-subflow plan's brief tests through (header, t679); undefined for any other plan. */
+function singleWholeTrial(context: AutomationStudioProjectSupervisorContext) {
+  const { ports, state, controller, gate } = context;
+  // The supervisor's own whole test: its `test` reads only this context (header).
+  const whole = new AutomationStudioProjectSupervisorWholeTrial({ ports, state });
+  return automationStudioProjectSingleSubflowTrial({ structure: state.structure, ports, controller, gate, kept: state.keptFromEarlierPlans(), test: (value, signal) => whole.test(context, value, signal) });
+}
+
+/**
+ * The `complete` object of the latest assembly when a done build or repair
+ * return of a single-subflow plan's subflow names the proposal it was
+ * assembled from and its whole test passed and may be completed on (header,
+ * t679); undefined otherwise.
+ */
+function singleWholeYes(context: AutomationStudioProjectSupervisorContext, briefs: readonly AutomationStudioProjectSubflowBrief[], returns: readonly AutomationStudioProjectBuilderReturn[]): { revision: number; digest: string } | undefined {
+  const { state, controller, gate } = context;
+  const key = automationStudioProjectSingleSubflowPlan(state.structure);
+  const latest = controller.latest();
+  if (key === undefined || !latest) return undefined;
+  const madeFrom = AutomationStudioProjectAssembledFrom.of(controller);
+  const passed = briefs.some((brief, index) => {
+    const proposal = returns[index]?.outcome === "done" ? returns[index]!.proposal : undefined;
+    return brief.kind !== "reset" && brief.subflowKey === key && proposal !== undefined && madeFrom.madeFrom(latest, [{ subflowKey: key, briefId: brief.briefId, revision: proposal.revision, digest: proposal.digest }]);
+  });
+  if (!passed || gate.standing(latest)?.verdict !== "yes" || !gate.completion({ revision: latest.revision, digest: latest.digest }).ok) return undefined;
+  return { revision: latest.revision, digest: latest.digest };
 }
 
 /** The next step after returns of which one is not done on an output its subflow could not make (header, t645), or undefined when none is. */
@@ -396,13 +444,13 @@ function standingKey(context: AutomationStudioProjectSupervisorContext): string 
  * something clears its subflow's mark.
  */
 async function changedNothing(context: AutomationStudioProjectSupervisorContext, briefs: readonly AutomationStudioProjectSubflowBrief[], returns: readonly AutomationStudioProjectBuilderReturn[], before: ReturnType<AutomationStudioProjectSupervisorContext["state"]["latestDone"]>): Promise<Map<string, { briefId: string; revision: number }>> {
-  const { ports, state } = context;
+  const { state } = context;
   const unchanged = new Map<string, { briefId: string; revision: number }>();
   for (const [index, brief] of briefs.entries()) {
     const returned = returns[index]!;
     const prior = before.get(brief.subflowKey);
     if (brief.kind === "reset" || returned.outcome !== "done" || !returned.proposal) continue;
-    const [now, then] = prior?.returned.proposal ? await Promise.all([proposalOf(ports, brief.briefId, returned), proposalOf(ports, prior.brief.briefId, prior.returned)]) : [undefined, undefined];
+    const [now, then] = prior?.returned.proposal ? await Promise.all([proposalOf(context, brief.briefId, returned), proposalOf(context, prior.brief.briefId, prior.returned)]) : [undefined, undefined];
     if (!prior || !now || !then || !automationStudioCandidateSameBehaviour(asPlan(now), asPlan(then))) {
       state.unchangedRepairs.delete(brief.subflowKey);
       continue;
@@ -414,10 +462,16 @@ async function changedNothing(context: AutomationStudioProjectSupervisorContext,
   return unchanged;
 }
 
-/** The proposal a done return names, read through the proposals port; undefined when it holds none by that name. */
-async function proposalOf(ports: AutomationStudioProjectSupervisorContext["ports"], briefId: string, returned: AutomationStudioProjectBuilderReturn): Promise<AutomationStudioSubflowProposal | undefined> {
+/**
+ * The proposal a done return names, read through the proposals port, or else
+ * as a single-subflow test kept it (`../single-subflow/assembled-from.ts`,
+ * t679: the build's store learns only proposals a scoped trial ran); undefined
+ * when neither holds one by that name.
+ */
+async function proposalOf(context: AutomationStudioProjectSupervisorContext, briefId: string, returned: AutomationStudioProjectBuilderReturn): Promise<AutomationStudioSubflowProposal | undefined> {
   const named = returned.proposal!;
-  const proposal = await ports.proposals({ briefId, subflowKey: named.subflowKey, revision: named.revision, digest: named.digest });
+  const ref = { briefId, subflowKey: named.subflowKey, revision: named.revision, digest: named.digest };
+  const proposal = (await context.ports.proposals(ref)) ?? AutomationStudioProjectAssembledFrom.of(context.controller).proposal(ref);
   return proposal && proposal.revision === named.revision && proposal.digest === named.digest ? proposal : undefined;
 }
 
