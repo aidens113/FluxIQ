@@ -5,5 +5,6 @@ export * from "./contracts.ts";
 export * from "./flow-graph-version.ts";
 export * from "./flow-versions-metadata.ts";
 export * from "./instruction-digest.ts";
+export * from "./judged-build-trial/index.ts";
 export * from "./run-flow-versions.ts";
 export * from "./stored-flow-versions.ts";
