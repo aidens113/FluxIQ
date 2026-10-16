@@ -6,7 +6,10 @@
 // moves only when Core's own prose does (`loop_verification` was re-pinned to
 // dev's judge prose after lane D F45, from dev's unmodified builder; both
 // verification pins moved again in t653 by exactly one sentence, the order
-// that puts the diagnosis before the summary, inserted after the fields). With
+// that puts the diagnosis before the summary, inserted after the fields; and
+// again in t660 by exactly one sentence, what the `resultCount` beside a
+// narrowing step means, inserted after the `narrowedBefore` step's effects).
+// With
 // them, the domain's text sits after Core's format, injection and schema rules
 // and before Core's task prose, set off by blank lines -- and every word of
 // Core's message is still there.
@@ -58,6 +61,25 @@ describe("a verification's system message", () => {
     expect(automationStudioDeepSeekSystemPrompt(request("loop_verification", { resultSummary: { flowShape: [] } }))).not.toContain("resultSummary.buildTest");
     expect(automationStudioDeepSeekSystemPrompt(CASES.loop_verification!)).not.toContain("resultSummary.buildTest");
     expect(automationStudioDeepSeekSystemPrompt(CASES.loop_verification_build_test!)).toContain("When resultSummary.buildTest is present");
+  });
+});
+
+// A8 frozen pair 6 candidate `run-mvac1av6-f7b0f9e2` (t660): two nos blamed a
+// site filter Core's record said removed no row (16 results before it, 16
+// after), and the prompt never said what that count is.
+describe("a verification's system message, on a narrowing step's result count", () => {
+  const SAID = "Its resultCount, where present, is the number of results the page itself stated just before that step (before) and just after it (after)";
+
+  it("says what the count means once, right after the narrowedBefore step's effects, to both verifications and no other task", () => {
+    for (const name of ["loop_verification", "loop_verification_build_test"]) {
+      const prompt = automationStudioDeepSeekSystemPrompt(CASES[name]!);
+      expect(prompt.split(SAID)).toHaveLength(2);
+      expect(prompt).toContain(`already_shown: the page already showed it). ${SAID}`);
+      expect(prompt).toContain("where both are given and after equals before, the step removed no row, whatever its words say");
+    }
+    for (const name of Object.keys(CASES).filter((key) => !key.startsWith("loop_verification"))) {
+      expect(automationStudioDeepSeekSystemPrompt(CASES[name]!)).not.toContain("resultCount");
+    }
   });
 });
 

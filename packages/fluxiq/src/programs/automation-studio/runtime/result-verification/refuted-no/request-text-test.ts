@@ -21,8 +21,17 @@
 // within a few words of it in the same clause ("not", "rather than", "leave
 // out", "except", "or"): the request then asks for something other than
 // exactly those words, and the condition is the judge's to weigh.
+//
+// **And a condition that leaves out what the request excludes (t660).** A
+// presence test that keeps the rows lacking a value, or a negated text test,
+// tests the request's own words where the request says what it leaves out --
+// the value Core read on the row, or the condition's text -- right after an
+// exclusion cue, and nowhere else (`./request-exclusion-test.ts`). A presence
+// test's text is the row's own witness, so it is read only where the caller
+// gives one (`witness`); a negated text test's is the condition's own.
 
 import { automationStudioRequestRowWords, type AutomationStudioRequestRowWord } from "../request-rows/index.ts";
+import { automationStudioResultRequestExclusionTest } from "./request-exclusion-test.ts";
 
 /** A positive text test as its account words it: subject, relation, then its quoted text or list of text. */
 const TEXT_TEST = /^(.+?) (not )?(contains|equals|startsWith|endsWith|matches) ((?:\[|").*)$/su;
@@ -44,12 +53,15 @@ const AFTER = 2;
 /**
  * The texts a condition tests where it tests the request's own words (header);
  * nothing where it is no positive literal text test, or any text it tests is
- * not the request's, or is said beside a cue.
+ * not the request's, or is said beside a cue. A condition that leaves out rows
+ * having something is read by the request's exclusion words instead, with the
+ * value Core read on the left-out row where the caller gives it (`witness`,
+ * header, t660).
  */
-export function automationStudioResultRequestTextTest(wording: string | undefined, requestText: string | undefined, says: ((text: string) => boolean) | undefined): string[] | undefined {
+export function automationStudioResultRequestTextTest(wording: string | undefined, requestText: string | undefined, says: ((text: string) => boolean) | undefined, witness?: string | undefined): string[] | undefined {
   if (!wording || !requestText || !says) return undefined;
   const match = TEXT_TEST.exec(wording);
-  if (!match || match[2] || !LITERAL.has(match[3]!)) return undefined;
+  if (!match || match[2] || !LITERAL.has(match[3]!)) return automationStudioResultRequestExclusionTest(wording, witness, requestText, says);
   const texts = operand(match[4]!);
   if (!texts?.length) return undefined;
   const request = automationStudioRequestRowWords(requestText);

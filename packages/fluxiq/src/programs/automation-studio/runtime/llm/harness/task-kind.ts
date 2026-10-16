@@ -36,7 +36,8 @@ export const AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS: Record<AutomationStudioLlmTa
   diagnosis_only_report: "automation-studio.diagnosis-only-report.v1",
   loop_plan: "automation-studio.loop-plan.v1",
   // v2 (t653): the judge is asked for its diagnosis before its summary, in the schema's order and in words.
-  loop_verification: "automation-studio.loop-verification.v2"
+  // v3 (t660): the judge is told what the result count Core shows beside a narrowing step means.
+  loop_verification: "automation-studio.loop-verification.v3"
 };
 
 /**

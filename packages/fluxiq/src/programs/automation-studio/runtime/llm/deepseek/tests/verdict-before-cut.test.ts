@@ -115,14 +115,14 @@ function request(taskKind: AutomationStudioLlmTaskRequest["taskKind"]): Automati
     timeoutMs: 20_000,
     estimatedInputTokens: 100,
     taskKind,
-    promptVersion: "automation-studio.loop-verification.v2",
+    promptVersion: "automation-studio.loop-verification.v3",
     expectedOutput: "diagnosis",
     tokenLimits: { maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 },
     maxEstimatedCostUsd: 0.25,
     context: {
       schemaVersion: "0.1",
       taskKind,
-      promptVersion: "automation-studio.loop-verification.v2",
+      promptVersion: "automation-studio.loop-verification.v3",
       projectId: "project.one",
       flowId: "flow.one",
       instructions: { instructions: [], instructionIds: [], diagnostics: [], tokenBudget: 8000, estimatedTokens: 0 }

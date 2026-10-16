@@ -298,9 +298,9 @@ function verificationRequest(summary: JsonObject, overrides: Partial<AutomationS
   return {
     ...base,
     taskKind: "loop_verification",
-    promptVersion: "automation-studio.loop-verification.v2",
+    promptVersion: "automation-studio.loop-verification.v3",
     expectedOutput: "diagnosis",
-    context: { ...base.context, taskKind: "loop_verification", promptVersion: "automation-studio.loop-verification.v2", resultSummary: summary as never },
+    context: { ...base.context, taskKind: "loop_verification", promptVersion: "automation-studio.loop-verification.v3", resultSummary: summary as never },
     ...overrides
   };
 }
