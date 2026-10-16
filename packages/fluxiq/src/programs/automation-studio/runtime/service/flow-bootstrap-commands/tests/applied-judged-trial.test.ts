@@ -6,6 +6,13 @@
 // unverified, while different rows are refuted as before. The rows are a
 // seed nursery's, written into each run's own store: the Start-to-End Flow the
 // build makes reads none.
+//
+// t664: the check is now asked as the service asks it for a routed playback,
+// with the Subflow the router chose (A8 towels `run-mvahlxuu-760d9e28`, whose
+// hold never fired because the port named no trial to such a run), and the
+// double no is weighed by the real agreement (`weighedNos`, t663): two nos
+// Core's record refutes in part are held; two that stand whole are refuted,
+// and every double no says why.
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -70,15 +77,27 @@ async function stored(service: AutomationStudioService, projectId: string, runId
   await service.runDatasets.processRunDatasets({ projectId, runId });
 }
 
-/** The run's result check over the service's own stores and saved Flow, with a judge that says no on every call. */
-async function checkedAsTheServiceChecks(service: AutomationStudioService, projectId: string, session: AutomationStudioRuntimeSession) {
+/**
+ * What each judge's no says: a count Core's record refutes (2 rows stored, not
+ * 5) beside a claim it cannot check; that claim alone stands whole. The claim
+ * names a condition, not a row: this run's summary withholds values, so a row's
+ * name is not one Core reads off it.
+ */
+const PART_REFUTED = { observed: "Only 5 rows were stored. Condition 1 should not have kept the hybrid packets." };
+const STANDS_WHOLE = { observed: "Condition 1 should not have kept the hybrid packets." };
+
+/** The run's result check over the service's own stores and saved Flow, with a judge that says no on every call, as `said` reads. */
+async function checkedAsTheServiceChecks(service: AutomationStudioService, projectId: string, session: AutomationStudioRuntimeSession, said: Record<string, string> = PART_REFUTED) {
   const asked: AutomationStudioLlmTaskRequest[] = [];
   const written: AutomationStudioRuntimeSession[] = [];
-  const next = await verifyAutomationStudioRuntimeSessionResult({ projectId, session, ports: {
+  // The Subflow the router chose, which `service.ts` hands every routed run's check (`route.selectedSubflow`) and records among the run's versions.
+  const subflowId = automationStudioFlowVersionsFromMetadata(session.metadata).find((version) => version.subflowId)?.subflowId;
+  expect(subflowId).toBeDefined();
+  const next = await verifyAutomationStudioRuntimeSessionResult({ projectId, session, subflowId, ports: {
     flowInstructionSet: (request) => service.getFlowInstructionSet(request),
     getFlowRunDetail: async () => null, saveFlowRunDetail: async (detail: AutomationStudioFlowRunDetail) => detail, writeRuntimeSession: async (_projectId, saved) => { written.push(saved); },
     listRunDatasets: (request) => service.runDatasets.listRunDatasets(request), getRunDatasetPage: (request) => service.runDatasets.getRunDatasetPage(request),
-    resolveProvider: async () => ({ provider: judging("no", asked) }),
+    resolveProvider: async () => ({ provider: judging("no", asked, undefined, said) }),
     // The port exactly as `service.ts` builds it for a run's result check.
     judgedBuildTrial: automationStudioResultJudgedBuildTrialOfSavedFlow({ flowMetadata: async (project, flow) => (await service.getFlow(project, flow)).metadata })
   } });
@@ -86,7 +105,7 @@ async function checkedAsTheServiceChecks(service: AutomationStudioService, proje
 }
 
 describe("a candidate build's judged trial, remembered by the Flow it saved", () => {
-  it("is recorded at apply, names the versions a playback runs, and holds that playback's double no on the trial's rows", async () => {
+  it("is recorded at apply, names the versions a playback runs, and holds that routed playback's partly refuted double no on the trial's rows", async () => {
     const built = await appliedCandidate();
     const { service, projectId, flowId } = built;
     const parent = await service.getFlow(projectId, flowId);
@@ -107,13 +126,17 @@ describe("a candidate build's judged trial, remembered by the Flow it saved", ()
     const ran = automationStudioFlowVersionsFromMetadata(playback.metadata);
     expect(ran.map((version) => [version.graphFlowId, version.revision])).toEqual(record!.versions.map((version) => [version.graphFlowId, version.revision]));
 
-    // The trial's rows and the playback's are the same: the double no is held, never a yes.
+    // The trial's rows and the playback's are the same, and the build's yes was a first-ask two-call yes: a double no Core refutes in part is held, never a yes.
     await stored(service, projectId, built.trialRunId, PACKETS);
     await stored(service, projectId, playback.runId, PACKETS);
     const same = await checkedAsTheServiceChecks(service, projectId, playback);
     expect(same.asked).toHaveLength(2);
     expect(same.next.status).toBe("succeeded");
-    expect(same.next.metadata?.resultVerification).toMatchObject({ status: "unverified", verdict: "unsure", basis: "model_disagreed", code: AUTOMATION_STUDIO_RESULT_BUILD_YES_DISAGREES });
+    expect(same.next.metadata?.resultVerification).toMatchObject({ status: "unverified", verdict: "unsure", basis: "model_disagreed", code: AUTOMATION_STUDIO_RESULT_BUILD_YES_DISAGREES, buildYesHold: { held: true, because: "held" } });
+    // The same playback whose nos stand whole against Core's record is refuted (t664).
+    const standing = await checkedAsTheServiceChecks(service, projectId, playback, STANDS_WHOLE);
+    expect(standing.next.status).toBe("failed");
+    expect(standing.next.metadata?.resultVerification).toMatchObject({ status: "refuted", verdict: "does_not_answer", basis: "model", buildYesHold: { held: false, because: "no_stands_whole" } });
   });
 
   it("refutes a playback's double no as before where its rows are not the trial's", async () => {
@@ -124,6 +147,6 @@ describe("a candidate build's judged trial, remembered by the Flow it saved", ()
     await stored(service, projectId, playback.runId, [PACKETS[0]!, { variety: "Brandywine Pink", price: "$2.75" }]);
     const differs = await checkedAsTheServiceChecks(service, projectId, playback);
     expect(differs.next.status).toBe("failed");
-    expect(differs.next.metadata?.resultVerification).toMatchObject({ status: "refuted", verdict: "does_not_answer", basis: "model" });
+    expect(differs.next.metadata?.resultVerification).toMatchObject({ status: "refuted", verdict: "does_not_answer", basis: "model", buildYesHold: { held: false, because: "rows_differ" } });
   });
 });
