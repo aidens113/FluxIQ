@@ -22,6 +22,13 @@
 // named by a quote, never by an id, the quotes are passed on with the record's
 // account of the rows each read saw (`./unseen-row-claim.ts`): a claim that a
 // condition left out a row no read saw is one Core can answer.
+//
+// **Nor a step's own words (t659).** A8 frozen pair 6 candidate towels
+// `run-mvac1av6-f7b0f9e2`: a judge quoted the option a step chose before the
+// read ("4 & up (32)"). That quote names the step, not a row, so a quote that is
+// a narrowing step's label, control words (with or without the count printed
+// beside them), chosen option or group (`./record.ts`, `narrowing`) names no
+// row Core cannot find.
 
 import {
   AutomationStudioRequestRowId,
@@ -58,7 +65,7 @@ export function automationStudioResultSentenceRows(said: string, record: Automat
   const storedLabels = new Set(stored.map((row) => row.label));
   // A label the result holds is named as a stored row: a sentence saying it is missing is held to that.
   const leftOut = record.leftOut.filter((row) => labels.has(row.label) && !storedLabels.has(row.label));
-  const quotes = quotesUnmatched(sentence, [...labels], record.says, record.isValue);
+  const quotes = quotesUnmatched(sentence, [...labels], record.says, record.isValue, stepWordsOf(record));
   const unmatched = idUnmatched || quotes.length > 0;
   // Every row Core cannot find named by a quote (header, t654).
   const unseen = !idUnmatched && quotes.length > 0 ? { unseen: { quotes, reads: record.seen, seenLabels: record.seenLabels } } : {};
@@ -129,13 +136,27 @@ function valuesAgree(sentence: string, wordCount: number, match: Match, found: r
   return rows.some((row) => automationStudioRequestRowValuesAgree(after, Object.values(row.cells)));
 }
 
-/** The quotes of two words or more that start as no named label does, and are neither the request's own words nor a value Core read (header). */
-function quotesUnmatched(sentence: string, named: readonly string[], says: ((text: string) => boolean) | undefined, isValue: ((text: string) => boolean) | undefined): string[] {
+/** A count in parentheses ending a control's words, as the page prints it beside an option. */
+const TRAILING_COUNT = /\s*\(\d{1,3}(?:,\d{3})+\)$|\s*\(\d+\)$/u;
+
+/** Whether a text is a narrowing step's own words (header, t659), compared folded. */
+function stepWordsOf(record: AutomationStudioResultNoRecord): (text: string) => boolean {
+  const words = new Set((record.narrowing?.steps ?? []).flatMap((step) =>
+    [step.label, step.control, step.control?.replace(TRAILING_COUNT, ""), step.chose, step.group].flatMap((text) => (text?.trim() ? [foldWords(text)] : []))));
+  return (text) => words.size > 0 && words.has(foldWords(text));
+}
+
+function foldWords(text: string): string {
+  return text.toLowerCase().replace(/\s+/gu, " ").replace(/[\s.,;:]+$/u, "").trim();
+}
+
+/** The quotes of two words or more that start as no named label does, and are neither the request's own words, a value Core read, nor a step's own words (header). */
+function quotesUnmatched(sentence: string, named: readonly string[], says: ((text: string) => boolean) | undefined, isValue: ((text: string) => boolean) | undefined, stepWords: (text: string) => boolean): string[] {
   const starts = named.map((label) => wordsOf(label));
   const unmatched: string[] = [];
   for (const quote of sentence.matchAll(QUOTED)) {
     const pieces = quote[1]!.split("\u2026").filter((piece) => piece.trim());
-    if (wordsOf(quote[1]!).length < 2 || (says && pieces.length > 0 && pieces.every((piece) => says(piece))) || isValue?.(quote[1]!) === true) continue;
+    if (wordsOf(quote[1]!).length < 2 || (says && pieces.length > 0 && pieces.every((piece) => says(piece))) || isValue?.(quote[1]!) === true || stepWords(quote[1]!)) continue;
     const words = wordsOf(pieces[0] ?? "");
     const start = words.slice(0, QUOTE_START_WORDS);
     if (!start.length || !starts.some((label) => start.every((word, index) => label[index] === word))) unmatched.push(quote[1]!);

@@ -47,6 +47,17 @@
 // The wording claims above remain the fallback, for the sentences whose
 // references alone settle nothing.
 //
+// **And what Core measured of the steps before a read (t659).** A8 frozen pair 6
+// candidate towels `run-mvac1av6-f7b0f9e2`: two nos blamed a step after which
+// the page stated as many results as before it. A sentence blaming only such
+// steps (`./unseen-row-claim.ts`), and advice that only removes or replaces
+// them (`./advice-condition.ts`), are refuted claims, where Core measured of each
+// step that it only added a choice and removed no row. And each sentence's
+// words for missing count only for their own clause; a stored row a clause
+// says the result keeps, beside rows called missing, is a reason Core cannot
+// refute (`./missing-claim.ts`, t659), so such a reading
+// is at most partly contradicted.
+//
 // The reading is wholly refuted when at least one sentence's claims are
 // refuted and no sentence stands. A reading that names nothing Core can check,
 // or anything Core cannot refute, is not: the no stands as before. Core never
@@ -54,19 +65,20 @@
 // no still refuted is taken as unsure.
 
 import type { AutomationStudioResultRepairDirective } from "../contracts/index.ts";
-import { automationStudioResultAdviceConditions } from "./advice-condition.ts";
+import { automationStudioResultAdviceConditions, automationStudioResultAdviceSteps } from "./advice-condition.ts";
 import { automationStudioResultConditionReferences } from "./condition-references.ts";
 import { automationStudioResultWithoutConditionWording } from "./condition-wording.ts";
 import { automationStudioResultCountClaim } from "./count-claim.ts";
 import { automationStudioResultDuplicateClaim } from "./duplicate-claim.ts";
 import { automationStudioResultExcludedKindClaim } from "./excluded-kind-claim.ts";
-import { automationStudioResultMissingClaim } from "./missing-claim.ts";
+import { automationStudioResultKeptRowClaim, automationStudioResultMissingClaim } from "./missing-claim.ts";
 import { automationStudioResultSentenceRows } from "./named-rows.ts";
 import { automationStudioResultNodeIdsSaid } from "./node-ids.ts";
 import { automationStudioResultRowReferenceClaim } from "./row-reference-claim.ts";
 import { automationStudioResultReadingSentences } from "./sentences.ts";
 import { automationStudioResultValueClaim } from "./value-claim.ts";
 import type { AutomationStudioResultNoClaim, AutomationStudioResultNoRecord, AutomationStudioResultNoWeighed } from "./types.ts";
+import { automationStudioResultNarrowingStepClaim } from "./unseen-row-claim.ts";
 
 /** Words that say something is wrong. */
 const NEGATIVE = /\b(?:not|no|never|none|nothing|missing|absent|wrong|incorrect(?:ly)?|fails?|failed|failing|instead|should|must|but|however|although|lacks?|lacking|without|exclud\w*|duplicat\w*|twice|extra|too\s+(?:many|few)|only)\b|n['’]t\b/iu;
@@ -83,18 +95,25 @@ export function automationStudioResultRefutedReading(reading: Reading | undefine
   let standing = false;
   // The conditions its advice changes, where Core's record clears every one (header, t631).
   const advised = automationStudioResultAdviceConditions(reading?.advice, record);
+  // The narrowing steps its advice removes or replaces, where Core measured each removed no row (header, t659).
+  const advisedSteps = automationStudioResultAdviceSteps(reading?.advice, record);
   // Each sentence less Core's own wording of the conditions it names: those are Core's words, not the judge's claim (`./condition-wording.ts`, t624).
   for (const sentence of automationStudioResultReadingSentences(reading?.observed).map(automationStudioResultWithoutConditionWording)) {
     const named = automationStudioResultSentenceRows(sentence, record);
+    const excludedKind = automationStudioResultExcludedKindClaim(sentence, named, record);
     const claims = [
       automationStudioResultDuplicateClaim(sentence, named, record),
-      automationStudioResultMissingClaim(sentence, named),
-      automationStudioResultExcludedKindClaim(sentence, named, record),
+      automationStudioResultMissingClaim(sentence, named, record),
+      excludedKind,
+      // A stored row a clause says is kept, beside rows called missing: about what the row is (header, t659).
+      excludedKind === undefined ? automationStudioResultKeptRowClaim(sentence, record) : undefined,
       automationStudioResultCountClaim(sentence, named, record),
       automationStudioResultValueClaim(sentence, named),
       record.other?.(sentence),
       // The rows it names, whatever its words (`./row-reference-claim.ts`, t631).
-      automationStudioResultRowReferenceClaim(sentence, named)
+      automationStudioResultRowReferenceClaim(sentence, named),
+      // A step Core measured as removing no row (header, t659).
+      automationStudioResultNarrowingStepClaim(sentence, named, record)
     ].filter((claim): claim is AutomationStudioResultNoClaim => claim !== undefined);
     for (const claim of claims) if (claim.refuted && claim.finding && !findings.includes(claim.finding)) findings.push(claim.finding);
     if (claims.length) {
@@ -113,9 +132,10 @@ export function automationStudioResultRefutedReading(reading: Reading | undefine
     const namesSomething = namesRows || conditions.length > 0 || CONDITION_NUMBER.test(sentence) || record.nodeIds.some((nodeId) => sentence.includes(nodeId));
     if (namesSomething && NEGATIVE.test(sentence)) standing = true;
   }
-  if (advised) {
+  for (const cleared of [advised, advisedSteps]) {
+    if (!cleared) continue;
     refuted += 1;
-    for (const finding of advised.findings) if (!findings.includes(finding)) findings.push(finding);
+    for (const finding of cleared.findings) if (!findings.includes(finding)) findings.push(finding);
   }
   return { wholly: refuted > 0 && !standing, findings };
 }

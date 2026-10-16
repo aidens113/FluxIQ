@@ -151,6 +151,15 @@ export type AutomationStudioResultNarrowingStep = {
   leftOptions?: Array<{ words: string; count?: number }>;
   /** The number of results the page stated before and after the step (its snapshot's `resultCount`), where it stated one. */
   resultCount?: { before?: number; after?: number };
+  /**
+   * True where the step only added a choice (t659, `../narrowing-group.ts`):
+   * exactly one option became chosen, found by its flip, in a group that showed
+   * no option chosen before the step. Then a `resultCount` the same before and
+   * after means the same rows, and the step removed none
+   * (`../refuted-no/unseen-row-claim.ts`). Absent otherwise -- a switch between
+   * options, a sort, or a step Core cannot say it of.
+   */
+  addedChoice?: boolean;
 };
 
 /** One set of conditions that left rows out together (`AutomationStudioResultReadAccount.leftOutTogether`): their numbers, from 1, and the rows by label. */

@@ -19,6 +19,17 @@
 // still unchosen after the step, each with the count the page showed before
 // it. A step that matches no group, or several, carries none.
 //
+// **And whether it only added a choice (t659).** A8 frozen pair 6 candidate
+// towels `run-mvac1av6-f7b0f9e2`: two nos blamed a step after which the page
+// stated as many results as before it, and Core could not say the step removed
+// no row, because a switch from one option to another (or a sort) can state the
+// same count with other rows. So `addedChoice` is true only where the option
+// was found by its flip -- exactly one option chosen after the step that was
+// shown unchosen before it -- its group showed no option chosen before the step,
+// and exactly one after it. A choice added to an empty group narrows the page
+// to rows it showed before; then as many after as before are the same rows
+// (`./refuted-no/unseen-row-claim.ts`). Never inferred from a control's words.
+//
 // **Screened as a control's words are** (`./narrowed-before.ts`): with no
 // denied-keys declaration, or where the group's or any option's words carry a
 // denied key or a credential shape, the group is left unsaid and `withheld`
@@ -32,7 +43,7 @@ import type { AutomationStudioResultNarrowingStep } from "./contracts/index.ts";
 type Group = { name: string; options: Array<{ words: string; count?: number; chosen: boolean }> };
 
 /** The parts of a narrowing step the page's groups say (header). */
-export type AutomationStudioResultNarrowingGroup = Pick<AutomationStudioResultNarrowingStep, "group" | "chose" | "leftOptions" | "resultCount">;
+export type AutomationStudioResultNarrowingGroup = Pick<AutomationStudioResultNarrowingStep, "group" | "chose" | "leftOptions" | "resultCount" | "addedChoice">;
 
 /** A count in parentheses ending a control's words, as the page prints it beside an option. */
 const TRAILING_COUNT = /\s*\(\d{1,3}(?:,\d{3})+\)$|\s*\(\d+\)$/u;
@@ -48,7 +59,8 @@ export function automationStudioResultNarrowingGroup(input: {
   const after = groupsOf(input.after);
   const resultCount = counts(input.before, input.after);
   const said: AutomationStudioResultNarrowingGroup = resultCount ? { resultCount } : {};
-  const chosen = flipped(before, after) ?? byControl(input.control, after.length ? after : before);
+  const flip = flipped(before, after);
+  const chosen = flip ?? byControl(input.control, after.length ? after : before);
   if (!chosen) return { said, withheld: false };
   const shown = before.find((group) => group.name === chosen.group) ?? after.find((group) => group.name === chosen.group)!;
   const now = (after.length ? after : before).find((group) => group.name === chosen.group);
@@ -57,7 +69,15 @@ export function automationStudioResultNarrowingGroup(input: {
     .map((option) => ({ words: option.words, ...(option.count !== undefined ? { count: option.count } : {}) }));
   const words = [chosen.group, chosen.words, ...leftOptions.map((option) => option.words)];
   if (input.deniedEvidenceKeys === undefined || words.some((text) => sayable(text, input.deniedEvidenceKeys!) === false)) return { said, withheld: true };
-  return { said: { group: chosen.group, chose: chosen.words, leftOptions, ...said }, withheld: false };
+  const added = flip !== undefined && onlyAdded(before, after, flip.group);
+  return { said: { group: chosen.group, chose: chosen.words, leftOptions, ...(added ? { addedChoice: true } : {}), ...said }, withheld: false };
+}
+
+/** Whether the group showed no option chosen before the step and exactly one after it (header, t659). */
+function onlyAdded(before: readonly Group[], after: readonly Group[], name: string): boolean {
+  const was = before.find((group) => group.name === name);
+  const now = after.find((group) => group.name === name);
+  return was !== undefined && now !== undefined && !was.options.some((option) => option.chosen) && now.options.filter((option) => option.chosen).length === 1;
 }
 
 /** The one option chosen after the step that was shown unchosen before it; nothing for none or several. */
