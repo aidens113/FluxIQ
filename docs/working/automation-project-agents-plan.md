@@ -1,9 +1,9 @@
 # Automation Project Agents Plan
 
 Status: Active
-Status detail: A1-A6 with W1-W4 delivered and pushed 2026-10-13 (mode project opt-in); hardening before A8 in progress; A7 and A8 follow. User decision 2026-10-13: concurrent agents in Core, the extension sets one at a time.
+Status detail: A1-A6 delivered; A8 passed on downstream frozen pair 8 (`project` 10 of 10) and `project` is the product default since 2026-10-16 (t667). A7 (project extend) and the one-part cost gap follow. User decision 2026-10-13: concurrent agents in Core, the extension sets one at a time.
 Created: 2026-10-13
-Last updated: 2026-10-13
+Last updated: 2026-10-16
 Owner: Senior supervisor agent
 Scope: Core's share of FluxIQ's product-level agent system for building an automation: the project supervisor, subflow builder and repair agent roles; the build record, task spec, structure plan, brief, return, allowance, host-resource scheduling and cancellation contracts; per-role tool scopes; assembly through the existing candidate submission, trial and promotion owners. Browser tab ownership, chat rendering and Lab qualification are downstream.
 Paired document: `C:\Users\osrs_\FluxStuff\!FluxIQWebExtension\docs\working\automation-project-agents-plan.md`
