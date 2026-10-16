@@ -47,13 +47,25 @@
 // quote in that sentence, or in the one either side of it within the same line
 // of the reply when that sentence names no row of its own: a quote beside
 // another row is that row's reason, never lent to its neighbour.
+//
+// **And the rows the result keeps that Core flagged (t663).** A8 towels
+// `run-mvahlxuu-760d9e28`: a kept holder, the only kept row without a value in
+// an answer column and the only one whose name did not write the request's
+// item phrase, passed a yes that never looked at it. A row so flagged
+// (`kept-without-asked-column.ts`, `kept-not-naming-the-item.ts`) has to be
+// named in a sentence that quotes the request -- read and lent as above -- and
+// here the quote may be of any of the request's words that carry something,
+// the words it searched by included: what asks for a kept row is the words
+// that name the item, which are usually the search. Whether the row is what
+// the quote asks for is the judge's to say; that it was looked at beside the
+// request's words is what Core checks.
 
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import type { AutomationStudioRequestWording } from "./request-wording.ts";
-import { automationStudioRequestRowNaming, automationStudioRequestTextNamesRow } from "./row-naming.ts";
+import { automationStudioRequestRowNaming, automationStudioRequestTextNamesRow, type AutomationStudioRequestRowNaming } from "./row-naming.ts";
 import { automationStudioRequestRowsReads } from "./summary-reads.ts";
-import type { AutomationStudioRequestRowsCondition, AutomationStudioRequestRowsUnquoted } from "./types.ts";
-import { automationStudioRequestRowWords } from "./words.ts";
+import type { AutomationStudioRequestRowsCondition, AutomationStudioRequestRowsKept, AutomationStudioRequestRowsUnquoted } from "./types.ts";
+import { automationStudioRequestRowWordCarries, automationStudioRequestRowWords } from "./words.ts";
 
 /** Where a line's sentences break: a sentence's end before the next one starts. */
 const SENTENCE_BREAK = /(?<=[.!?])\s+(?=[\p{Lu}"“‘'([])/gu;
@@ -68,10 +80,7 @@ type Sentence = { text: string; quotesRequest: boolean; namesRow?: boolean };
 export function automationStudioResultLeftOutRowsUnquoted(summary: AutomationStudioRunResultSummary, reply: string, wording: AutomationStudioRequestWording): AutomationStudioRequestRowsUnquoted[] {
   const { reads } = automationStudioRequestRowsReads(summary);
   const namings = reads.flatMap((read) => read.labels.map((label) => automationStudioRequestRowNaming(label, read.labels)));
-  const lines = reply.split(/\n+/u).map((line) => sentencesOf(line, wording).map((sentence) => ({ ...sentence, namesRow: namings.some((naming) => automationStudioRequestTextNamesRow(sentence.text, naming)) })));
-  // The sentences a row named in them is accounted for in: one that quotes the request, or sits beside one that does and names no row (header).
-  const lends = (sentence: Sentence | undefined): boolean => sentence?.quotesRequest === true && sentence.namesRow === false;
-  const accounting = lines.flatMap((line) => line.filter((sentence, at) => sentence.quotesRequest || lends(line[at - 1]) || lends(line[at + 1])).map((sentence) => sentence.text));
+  const accounting = accountingSentences(reply, namings, (quote) => wording.says(quote) && wording.ownWords(quote).length > 0);
   return reads.flatMap((read) => {
     const inResult = new Set(read.inResult);
     const where = { ...(read.step !== undefined ? { step: read.step } : {}), ...(read.nodeId !== undefined ? { nodeId: read.nodeId } : {}) };
@@ -92,6 +101,29 @@ export function automationStudioResultLeftOutRowsUnquoted(summary: AutomationStu
   });
 }
 
+/** Each flag with the kept rows the reply did not name in a sentence quoting the request's words (header, t663); none when it named them all. */
+export function automationStudioResultKeptRowsUnquoted(flags: readonly AutomationStudioRequestRowsKept[], reply: string, wording: AutomationStudioRequestWording): AutomationStudioRequestRowsKept[] {
+  if (!flags.length) return [];
+  const namings = flags.flatMap((flag) => flag.pool.map((label) => automationStudioRequestRowNaming(label, flag.pool)));
+  const quotes = (quote: string): boolean => wording.says(quote) && automationStudioRequestRowWords(quote).some((word) => automationStudioRequestRowWordCarries(word.word));
+  const accounting = accountingSentences(reply, namings, quotes);
+  return flags.flatMap((flag) => {
+    const rows = flag.rows.filter((label) => !accounting.some((sentence) => automationStudioRequestTextNamesRow(sentence, automationStudioRequestRowNaming(label, flag.pool))));
+    return rows.length ? [{ ...flag, rows }] : [];
+  });
+}
+
+/**
+ * The reply's sentences a row named in them is accounted for in: one that
+ * quotes the request as `quotes` reads a quote, or sits, in the same line,
+ * beside one that does and names no row of `namings` (header).
+ */
+function accountingSentences(reply: string, namings: readonly AutomationStudioRequestRowNaming[], quotes: (quote: string) => boolean): string[] {
+  const lines = reply.split(/\n+/u).map((line) => sentencesOf(line, quotes).map((sentence) => ({ ...sentence, namesRow: namings.some((naming) => automationStudioRequestTextNamesRow(sentence.text, naming)) })));
+  const lends = (sentence: Sentence | undefined): boolean => sentence?.quotesRequest === true && sentence.namesRow === false;
+  return lines.flatMap((line) => line.filter((sentence, at) => sentence.quotesRequest || lends(line[at - 1]) || lends(line[at + 1])).map((sentence) => sentence.text));
+}
+
 /** A settled condition's rows still out of the result, when no sentence that quotes the request, or sits beside one, names the condition (header); none otherwise. */
 function boundUnquoted(condition: AutomationStudioRequestRowsCondition, inResult: ReadonlySet<string>, accounting: readonly string[]): string[] {
   const settled = condition.settled;
@@ -106,11 +138,12 @@ function boundUnquoted(condition: AutomationStudioRequestRowsCondition, inResult
 }
 
 /**
- * A line's sentences, each with whether it quotes words of the request that
- * are its own (`request-wording.ts`). Quotations are found over the whole line
- * first, so a sentence never breaks inside one (header).
+ * A line's sentences, each with whether it quotes the request as `isRequestQuote`
+ * reads a quote -- for a left-out row, words of the request that are its own
+ * (`request-wording.ts`). Quotations are found over the whole line first, so a
+ * sentence never breaks inside one (header).
  */
-function sentencesOf(line: string, wording: AutomationStudioRequestWording): Sentence[] {
+function sentencesOf(line: string, isRequestQuote: (quote: string) => boolean): Sentence[] {
   const quotes = [...line.matchAll(QUOTE)].map((match) => ({ start: match.index, end: match.index + match[0].length, text: match[1] ?? match[2] ?? match[3] ?? match[4] ?? "" }));
   const breaks = [...line.matchAll(SENTENCE_BREAK)].map((match) => match.index).filter((at) => !quotes.some((quote) => at > quote.start && at < quote.end));
   const sentences: Sentence[] = [];
@@ -118,7 +151,7 @@ function sentencesOf(line: string, wording: AutomationStudioRequestWording): Sen
   for (const end of [...breaks, line.length]) {
     const text = line.slice(start, end);
     const own = quotes.filter((quote) => quote.start >= start && quote.start < end).map((quote) => quote.text).filter((quote) => quote.trim().length > 0);
-    if (text.trim()) sentences.push({ text, quotesRequest: own.some((quote) => wording.says(quote) && wording.ownWords(quote).length > 0) });
+    if (text.trim()) sentences.push({ text, quotesRequest: own.some(isRequestQuote) });
     start = end;
   }
   return sentences;

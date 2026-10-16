@@ -75,6 +75,18 @@
 // it compared (`answeredReading`), and is rechecked like any held yes
 // (`verify.ts`). It carries `changeAdvised` in place of `yesUnconfirmed`, which
 // is said only of a plain yes, and a recheck's yes keeps the advice's code.
+//
+// **And a yes looks at the rows the result keeps that Core measured as unlike
+// the rest (t663).** A8 towels `run-mvahlxuu-760d9e28`: a trial kept a holder
+// for the item beside the nine items asked for, and both re-asked judges said
+// yes; every gate above is about rows a condition left out. Core flags a kept
+// row that alone has no value in an answer column, or whose name alone does
+// not write the request's item phrase (`request-rows/kept-without-asked-column.ts`,
+// `request-rows/kept-not-naming-the-item.ts`, each with thresholds that keep an
+// ordinary list unflagged), and a yes has to name each flagged row in a
+// sentence quoting the request's words (`request-rows/unquoted-rows.ts`). One
+// that does not is held as a missing quote is, never refused: the row may be
+// exactly what was asked, and the hold asks only that it be looked at.
 
 import type { AutomationStudioLlmDiagnosisFields } from "../llm/index.ts";
 import {
@@ -91,9 +103,13 @@ import { automationStudioResultScreenedJudgement } from "./judgement-screen.ts";
 import { automationStudioResultRepairDirective } from "./repair-directive.ts";
 import {
   automationStudioResultCheckedRows,
+  automationStudioResultKeptNotNamingTheItem,
+  automationStudioResultKeptRowsUnquoted,
+  automationStudioResultKeptWithoutAskedColumn,
   automationStudioResultLeftOutRowsUnaccounted,
   automationStudioResultLeftOutRowsUnquoted,
   automationStudioResultLeftOutStatingAKeptNumber,
+  type AutomationStudioRequestRowsKept,
   type AutomationStudioRequestRowsKeptNumberLeftOut,
   type AutomationStudioRequestRowsUnquoted,
   type AutomationStudioRequestWording
@@ -181,6 +197,8 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
   if (verdict === "answers") {
     const unaccounted = automationStudioResultLeftOutRowsUnaccounted(input.summary, replyText(input));
     const unquoted = input.wording ? withoutUnaccounted(automationStudioResultLeftOutRowsUnquoted(input.summary, replyText(input), input.wording), unaccounted) : [];
+    // The rows the result keeps that Core measured as unlike every other kept row, each named beside a quote of the request (header, t663).
+    const kept = input.wording ? automationStudioResultKeptRowsUnquoted(automationStudioResultKeptRowsFlagged(input.summary, input.wording), replyText(input), input.wording) : [];
     // What the yes compared, screened as a no's is: a split shows it beside the no's (`./agreement.ts`, t477), and a held yes keeps it (t636).
     const read = automationStudioResultScreenedJudgement({ expected: input.diagnosis?.expected, observed: input.diagnosis?.observed }).judgement;
     const answeredReading = { ...(read?.expected ? { expected: read.expected } : {}), ...(read?.observed ? { observed: read.observed } : {}) };
@@ -188,13 +206,13 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
     // A held yes that advised a change keeps the change it named, screened as a no's advice is (header, t636).
     const advisedChange = advised ? automationStudioResultScreenedJudgement({ advice: advice(input) }).judgement?.advice : undefined;
     const heldReading = { ...answeredReading, ...(advisedChange ? { advice: advisedChange } : {}) };
-    if (unquoted.length && !unaccounted.length && !keptNumber.length) {
-      // A missing quote is a held yes, never a no, whether or not the yes also advised a change (header, t636).
-      const proof = automationStudioResultRepairDirective({ summary: input.summary, checked: unquoted.map(unquotedLine) });
+    if ((unquoted.length || kept.length) && !unaccounted.length && !keptNumber.length) {
+      // A missing quote is a held yes, never a no, whether or not the yes also advised a change (header, t636); so is a flagged kept row left unnamed (t663).
+      const proof = automationStudioResultRepairDirective({ summary: input.summary, checked: [...unquoted.map(unquotedLine), ...kept.map(keptLine)] });
       return {
         schemaVersion: "automation-studio.result-verification.v1", verdict: "unsure", basis: "model_unconfirmed",
         code: "core.result.exclusion_evidence_missing",
-        reason: "The affirmative judgement did not supply the required row-local exclusion evidence, so the result remains unconfirmed.",
+        reason: heldYesReason(unquoted.length > 0, kept.length > 0),
         observation, exclusionEvidenceMissing: proof.checked ?? [],
         // The call answered a plain yes and Core held it: said as a field, never left to the reason's words (t611). A yes advising a change is no plain yes.
         ...(advised ? { changeAdvised: true as const } : { yesUnconfirmed: true as const }),
@@ -313,6 +331,42 @@ function unquotedLine(entry: AutomationStudioRequestRowsUnquoted): string {
     return `The check answered yes without quoting, in a sentence that names ${entry.condition} (${where}), the request's words that state its bound. Core read ${one ? "the row" : `each of the ${entry.rows.length} rows`} it alone left out as failing that bound, so no quote is needed beside ${one ? "it" : "them"}; one quote of the request stating the bound is. If the request states no such bound, ${one ? "that row is one" : "those rows are ones"} it asks for.`;
   }
   return `The check answered yes without quoting, beside ${one ? "this row" : "each of these rows"}, words of the request that exclude ${one ? "it" : "each"}; ${one ? "it was" : "they were"} left out by ${entry.condition} alone (${where}) -- ${entry.rows.join(" | ")}. A row the request's own words do not exclude is one it asks for.`;
+}
+
+/**
+ * Every row the result keeps that Core flagged as unlike the rest (header,
+ * t663): alone without an answer column's value, or alone not writing the
+ * request's item phrase. What a yes is held to here, and what a refuted no's
+ * re-ask names (`./agreement.ts`, `./refuted-no/reask.ts`). None without
+ * the summary and the request.
+ */
+export function automationStudioResultKeptRowsFlagged(summary: AutomationStudioRunResultSummary | undefined, wording: AutomationStudioRequestWording | undefined): AutomationStudioRequestRowsKept[] {
+  if (!summary || !wording) return [];
+  return [...automationStudioResultKeptWithoutAskedColumn(summary), ...automationStudioResultKeptNotNamingTheItem(summary, wording.phrases)];
+}
+
+/**
+ * Core's line for one flag's kept rows a yes did not name beside a quote of the
+ * request (header, t663). It says what Core measured and asks for the row to
+ * be looked at; it never says the row is wrong, and never "the condition", which
+ * `request-rows/checked-rows-named.ts` reads as rows a request asks for.
+ */
+function keptLine(flag: AutomationStudioRequestRowsKept): string {
+  const one = flag.rows.length === 1;
+  const where = flag.datasetId !== undefined ? `record set ${flag.datasetId}` : flag.step !== undefined ? `Step ${flag.step}'s read` : `read ${flag.nodeId ?? "(unnamed)"}`;
+  const measured = flag.kind === "column"
+    ? `${one ? "the only one" : "the only ones"} of its ${flag.of} rows with no value in the column "${flag.missing}", which every other row carries`
+    : `${one ? "the only one" : "the only ones"} of its ${flag.of} kept rows whose name does not write "${flag.missing}", the request's own words, as every other kept row's name does`;
+  return `The check answered yes without naming, in a sentence that quotes in double quotes the request's own words for what it asks for, ${one ? "this row" : "these rows"} the result keeps in ${where}, ${measured}: ${flag.rows.join(" | ")}. Core measured only that; whether the request asks for ${one ? "this row" : "each"} is the check's to say, and a row the request does not ask for is one the result should not keep.`;
+}
+
+/** Why a yes was held, by what it left unaccounted for. */
+function heldYesReason(unquoted: boolean, kept: boolean): string {
+  const said = [
+    ...(unquoted ? ["the required row-local exclusion evidence"] : []),
+    ...(kept ? ["a quote of the request beside each row the result keeps that Core measured as unlike every other kept row"] : [])
+  ];
+  return `The affirmative judgement did not supply ${said.join(", or ")}, so the result remains unconfirmed.`;
 }
 
 /** The unquoted rows less those the named-rows check already reported for the same condition: one line per row is enough. */

@@ -19,10 +19,17 @@
 // judge must still name (`summary-with-row-ids.ts`). And, on that copy, the
 // left-out rows whose item is also in the result (`summary-with-also-in-result.ts`,
 // t624); and the exclusions the result's conditions already apply, which an
-// advice to keep them does not add (`applied-exclusions.ts`, t624).
+// advice to keep them does not add (`applied-exclusions.ts`, t624). And the
+// rows the result keeps that Core measured as unlike every other kept row
+// (t663): alone without a value in an answer column
+// (`kept-without-asked-column.ts`), or alone not writing the request's item
+// phrase (`kept-not-naming-the-item.ts`), each of which a yes names beside a
+// quote of the request (`unquoted-rows.ts`).
 export * from "./applied-exclusions.ts";
 export * from "./checked-rows.ts";
 export * from "./checked-rows-named.ts";
+export * from "./kept-not-naming-the-item.ts";
+export * from "./kept-without-asked-column.ts";
 export * from "./left-out-naming-the-item.ts";
 export * from "./left-out-stating-a-kept-number.ts";
 export * from "./named-of.ts";

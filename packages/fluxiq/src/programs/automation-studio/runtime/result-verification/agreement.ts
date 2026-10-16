@@ -148,7 +148,7 @@ import { automationStudioResultNamedStoredLabels, automationStudioResultStanding
 import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS as UNSETTLED } from "./unsettled/index.ts";
 import { automationStudioResultDoubtRecheckWords, automationStudioResultNarrowingDoubtContradicted } from "./unsure-doubts/index.ts";
 import { automationStudioResultOrderClaimContradicted } from "./value-readings/index.ts";
-import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "./verdict.ts";
+import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultKeptRowsFlagged } from "./verdict.ts";
 
 /** What one call that judged `does_not_answer` said. */
 type JudgeReading = NonNullable<AutomationStudioResultVerification["unconfirmedReading"]>;
@@ -255,13 +255,16 @@ function agree(input: AutomationStudioResultVerificationAgreementInput, reasked?
   if (first.verdict === "does_not_answer" && second.verdict === "does_not_answer") {
     // A no whose every reason Core's record refutes is marked, to be asked once more (t607, `./refuted-no/`).
     const refuted = refutedMark(input, [1, 2]);
+    const weighed = weighedNos(input);
     // Both readings, each its own call's and labelled so (`bothReadings`):
     // two calls with the same evidence reach identical Core findings, but their
     // prose can name different defects. Live run `run-mv6i27oi-a87fb247` (D1):
     // the first blamed paging against the record, the second named the two
     // stored rows that were wrong, and only the first was forwarded.
     return {
-      ...bothReadings(first, second, input.reads, input.recordSets, weighedNos(input)),
+      ...bothReadings(first, second, input.reads, input.recordSets, weighed),
+      // Each call's weighing as a field a gate reads (`./build-yes-hold/`, t664), never from the labels above; absent without the record.
+      ...(noRecordOf(input) ? { weighedNos: ([1, 2] as const).map((call) => ({ call, ...(weighed.has(call) ? { recordContradicts: weighed.get(call)!.wholly ? "whole" as const : "part" as const } : {}) })) } : {}),
       // Nothing about the steps: this file reads only the two verdicts, and a
       // build's test can pass with a step it excused failing. "Although every
       // step of the run succeeded" was said above "Step 15 (×) failed" (t193
@@ -316,7 +319,7 @@ async function reaskContradicted(input: Parameters<typeof automationStudioResult
     // A no whose every reason Core's record refutes, asked once more with Core's findings (t607, `./refuted-no/reask.ts`).
     const record = noRecordOf(input);
     if (settled.refutedNo && !settled.refutedNo.reasked && record) {
-      return automationStudioResultReaskRefutedNo({ first: input.first, second, settled, record, ask: input.ask, agree: (one, two) => agree({ ...input, first: one, second: two }) });
+      return automationStudioResultReaskRefutedNo({ first: input.first, second, settled, record, kept: automationStudioResultKeptRowsFlagged(input.summary, input.wording), ask: input.ask, agree: (one, two) => agree({ ...input, first: one, second: two }) });
     }
     return reaskUnstatedExclusion(input, settled, second);
   }
@@ -332,7 +335,7 @@ async function reaskContradicted(input: Parameters<typeof automationStudioResult
   // The doubt asked again said yes beside a no Core's record wholly refutes: that no is asked once more too (header, t628).
   const record = noRecordOf(input);
   if (reasked.verdict !== "answers" || !again.refutedNo || again.refutedNo.reasked || !record) return outcome;
-  const chained = await automationStudioResultReaskRefutedNo({ first, second: other, settled: outcome, record, ask: input.ask, agree: (one, two) => agree({ ...input, first: one, second: two }) });
+  const chained = await automationStudioResultReaskRefutedNo({ first, second: other, settled: outcome, record, kept: automationStudioResultKeptRowsFlagged(input.summary, input.wording), ask: input.ask, agree: (one, two) => agree({ ...input, first: one, second: two }) });
   // Every call asked, the two, the doubt's re-ask and the no's: the refuted re-ask counts from two.
   const calls = chained.verdicts?.length ?? chained.calls;
   return { ...chained, ...(calls !== undefined ? { calls } : {}), contradictedUnsure: done };

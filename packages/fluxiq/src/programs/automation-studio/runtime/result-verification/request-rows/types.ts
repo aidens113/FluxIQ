@@ -110,3 +110,27 @@ export type AutomationStudioRequestRowsUnquoted = {
    */
   bound?: true;
 };
+
+/**
+ * Rows the result keeps that Core measured as unlike every other row it keeps
+ * (t663): `column`, the rows alone with no value in a column the answer stores
+ * (`kept-without-asked-column.ts`); `item`, the rows whose names alone lack the
+ * request's phrase, as the request writes it, that every other kept row's name
+ * writes (`kept-not-naming-the-item.ts`). `missing` is that column's id or that
+ * phrase as the request says it; `rows` the rows by label; `of` how many rows
+ * were measured; `pool` every label a row has to be told apart from. A flag,
+ * never a verdict: whether the request asks for the row is the judge's to say.
+ */
+export type AutomationStudioRequestRowsKept = {
+  kind: "column" | "item";
+  /** The record set the rows are stored in, for a column flag. */
+  datasetId?: string;
+  /** A build test's step number, for an item flag on a test's read. */
+  step?: number;
+  /** A finished run's read node, for an item flag on a run's read. */
+  nodeId?: string;
+  missing: string;
+  rows: string[];
+  of: number;
+  pool: string[];
+};

@@ -70,6 +70,14 @@ export type AutomationStudioResultVerification = import("../standing-no/index.ts
   /** The calls whose no Core's record wholly refutes, and Core's findings (`./refuted-no/`, t607): each asked once more (`reasked`); a no still refuted is unsure. */
   refutedNo?: { calls: Array<1 | 2>; findings: string[]; reasked?: true };
   /**
+   * On a double no where Core's record could weigh them (`./agreement.ts`,
+   * t664): one entry per call, `recordContradicts` where the record refutes its
+   * no wholly or in part, absent where the no stands whole. Recomputed when a
+   * re-ask's answers are weighed again (`./refuted-no/reask.ts`). Read by
+   * `./build-yes-hold/weighed-nos.ts`; never model-facing.
+   */
+  weighedNos?: Array<{ call: 1 | 2; recordContradicts?: "whole" | "part" }>;
+  /**
    * Present exactly when the verification fails the run
    * (`automationStudioResultVerificationFailsRun`): what the run must report.
    */

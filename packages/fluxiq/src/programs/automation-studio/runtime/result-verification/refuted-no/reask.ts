@@ -16,9 +16,14 @@
 //   refute.
 //
 // Never asked twice: the outcome is marked `reasked`.
+//
+// The recheck also names the rows the result keeps that Core flagged as unlike
+// the rest (`kept`, t663): Core's record speaks only of the rows it names, and
+// a yes it brings back is held to the flagged rows by `../verdict.ts`.
 
 import type { AutomationStudioResultRepairDirective, AutomationStudioResultVerdict, AutomationStudioResultVerification } from "../contracts/index.ts";
 import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS as UNSETTLED } from "../unsettled/index.ts";
+import type { AutomationStudioRequestRowsKept } from "../request-rows/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../verdict.ts";
 import { automationStudioResultRefutedNoRecheckWords } from "./recheck-words.ts";
 import type { AutomationStudioResultNoRecord } from "./types.ts";
@@ -33,6 +38,8 @@ export async function automationStudioResultReaskRefutedNo(input: {
   second: Verification;
   settled: Verification;
   record: AutomationStudioResultNoRecord;
+  /** The rows the result keeps that Core flagged as unlike the rest (`../verdict.ts`, t663): named in the recheck, never weighed. */
+  kept?: readonly AutomationStudioRequestRowsKept[] | undefined;
   /** Asks call `call` once more, its copy carrying `recheck`. */
   ask: (recheck: string, call: 1 | 2) => Promise<Verification>;
   /** The agreement rule over two answers, as `../agreement.ts` weighs them. */
@@ -47,7 +54,7 @@ export async function automationStudioResultReaskRefutedNo(input: {
   for (const call of marked.calls) {
     const before = calls[call - 1]!;
     const findings = automationStudioResultRefutedReading(before.repair?.judgement, input.record).findings;
-    const again = await input.ask(automationStudioResultRefutedNoRecheckWords(findings.length ? findings : marked.findings), call);
+    const again = await input.ask(automationStudioResultRefutedNoRecheckWords(findings.length ? findings : marked.findings, input.kept), call);
     asked.push(again.verdict);
     const weighed = again.basis === "model" && again.verdict === "does_not_answer" ? automationStudioResultRefutedReading(again.repair?.judgement, input.record) : undefined;
     if (again.basis !== "model" || weighed?.wholly) {
