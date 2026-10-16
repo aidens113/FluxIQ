@@ -109,6 +109,12 @@
 // trials come back to the candidate controller's (`./submission-numbering.ts`).
 // What a trial or a judge said (`lastTrial`, `judged`) is never renumbered: it
 // already speaks of this brief's revisions.
+//
+// **An input another subflow hands on may go unread (t672).** A callable
+// subflow's inputs that an earlier subflow of the plan hands on are the
+// scope's `handedOn`. One no line reads is no refusal (`./callable-target.ts`):
+// the proposal carries it as `unneededInputs`, which the builder's answer and
+// its brief's return say, so the supervisor amends nothing for it.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { acceptAutomationStudioFlowBootstrapResult, parseAutomationStudioFlowScript } from "../authoring/index.ts";
 import {
@@ -166,6 +172,8 @@ export class AutomationStudioSubflowScopedSubmissionController {
   private readonly proposals = new Map<string, AutomationStudioSubflowProposal>();
   /** The success check a builder proposed in a JSON plan, which the plan reader does not keep, by the probe's candidate digest (header). */
   private readonly proposedChecks = new Map<string, NonNullable<AutomationStudioSubflowScope["successCheck"]>>();
+  /** The handed-on inputs no line of the submission reads, by the probe's candidate digest (header, t672). */
+  private readonly unneeded = new Map<string, string[]>();
   private current: AutomationStudioSubflowProposal | undefined;
   /** The lasting consequences the accepted revisions of this brief declared, in the order first seen (header). */
   private readonly lasting: string[] = [];
@@ -217,6 +225,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
     const submitted = await this.inner.submit(read.probe, this.candidateHistory(history));
     this.input.submission.signal?.throwIfAborted();
     if (submitted.ok && read.proposedCheck) this.proposedChecks.set(submitted.candidate.digest, read.proposedCheck);
+    if (submitted.ok && read.unneeded) this.unneeded.set(submitted.candidate.digest, read.unneeded);
     const latest = this.inner.latest();
     this.current = latest ? this.proposalOf(latest) : undefined;
     if (!submitted.ok) return automationStudioSubflowRenumberedRefusal(read.probe === result ? submitted : asSent(submitted, read.probe, result), this.offset);
@@ -230,7 +239,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
    * existing checks run on: the submission itself, or for a callable subflow
    * its script with the call that runs it (`./callable-target.ts`).
    */
-  private read(result: JsonObject): { issues: ScopeIssue[]; probe: JsonObject; proposedCheck?: NonNullable<AutomationStudioSubflowScope["successCheck"]> } {
+  private read(result: JsonObject): { issues: ScopeIssue[]; probe: JsonObject; proposedCheck?: NonNullable<AutomationStudioSubflowScope["successCheck"]>; unneeded?: string[] } {
     const issues: ScopeIssue[] = [];
     if (typeof result.flow === "string") {
       for (const block of parseAutomationStudioFlowScript(result.flow).script.blocks) {
@@ -239,19 +248,21 @@ export class AutomationStudioSubflowScopedSubmissionController {
       }
     }
     let probe = result;
+    let unneeded: string[] | undefined;
     const contract = this.scope.interface;
     if (contract) {
       // The JSON plan reader keeps no part interface, so a callable subflow is written as a script part.
       if (typeof result.flow !== "string") return { issues: [...issues, { code: "subflow.script_required", path: "plan", message: `"${this.scope.subflowKey}" is given inputs and hands back outputs, so it is written as a Flow script under "flow": \`part ${this.scope.subflowKey}: <what it does>\` with its \`input:\` and \`output:\` lines, its steps, then \`end\`.` }], probe };
-      const callable = automationStudioSubflowCallableProbe({ flow: result.flow, subflowKey: this.scope.subflowKey, contract });
+      const callable = automationStudioSubflowCallableProbe({ flow: result.flow, subflowKey: this.scope.subflowKey, contract, handedOn: this.scope.handedOn });
       if (callable.probe === undefined) return { issues: [...issues, ...callable.issues], probe };
       probe = { ...result, flow: callable.probe };
+      unneeded = callable.unneeded;
     }
     const accepted = acceptAutomationStudioFlowBootstrapResult({ result: probe, registry: this.input.submission.registry, resolution: this.input.submission.resolution, instructionText: this.instructionText });
     // A submission that cannot be read is refused by the probe's own checks, with every issue named.
     if (!accepted.ok) return { issues, probe };
     const read = this.planIssues(accepted.plan, result);
-    return { issues: [...issues, ...read.issues], probe, ...(read.proposedCheck ? { proposedCheck: read.proposedCheck } : {}) };
+    return { issues: [...issues, ...read.issues], probe, ...(read.proposedCheck ? { proposedCheck: read.proposedCheck } : {}), ...(unneeded ? { unneeded } : {}) };
   }
 
   private planIssues(plan: AutomationStudioFlowBootstrapPlan, result: JsonObject): { issues: ScopeIssue[]; proposedCheck?: NonNullable<AutomationStudioSubflowScope["successCheck"]> } {
@@ -325,6 +336,8 @@ export class AutomationStudioSubflowScopedSubmissionController {
     const submission = this.input.submission;
     const digest = automationStudioSubflowProposalDigest({ scope: this.identity, projectId: submission.projectId, flowId: submission.flowId, baseDependencyDigest: submission.baseDependencyDigest, instructionText: this.instructionText, subflows });
     const proposal: AutomationStudioSubflowProposal = { scope: { ...this.identity }, revision: candidate.revision + this.offset, digest, subflows, summary: candidate.summary, changedPaths: [...candidate.changedPaths] };
+    const unneeded = this.unneeded.get(candidate.digest);
+    if (unneeded) proposal.unneededInputs = [...unneeded];
     this.proposals.set(candidate.digest, proposal);
     return proposal;
   }

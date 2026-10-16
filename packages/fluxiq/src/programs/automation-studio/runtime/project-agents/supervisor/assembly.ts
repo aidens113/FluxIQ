@@ -10,6 +10,7 @@ import {
 import { automationStudioSubflowStepId, type AutomationStudioSubflowProposal } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID } from "../../../nodes/control-flow/index.ts";
 import type { AutomationStudioProjectStructurePlan } from "../contracts/index.ts";
+import { automationStudioProjectCallOrder, type AutomationStudioProjectCall } from "../dispatch/index.ts";
 
 /** One reason a Flow could not be assembled, with the subflow it is about. */
 export type AutomationStudioProjectAssemblyIssue = { code: string; subflowKey?: string; message: string };
@@ -106,7 +107,7 @@ export function automationStudioProjectAssembly(input: {
   if (main) {
     const callees = plan.subflows.filter((subflow) => subflow.interface && subflow !== main && !called.has(subflow.key));
     if (!callees.length) return { ok: false, issues: [{ code: "project.assemble_nothing_to_call", subflowKey: main.key, message: `"${main.key}" has no proposal and there is no callable subflow for it to call. Brief a builder for it, or change the plan.` }] };
-    const ordered = dependencyOrder(callees, input.predecessors);
+    const ordered = automationStudioProjectCallOrder(callees, input.predecessors);
     if (!ordered) return { ok: false, issues: [{ code: "project.assemble_cycle", subflowKey: main.key, message: "The callable subflows' predecessors make a circle, so they have no order to be called in. Change the briefs' predecessors or the plan." }] };
     composed = callsInOrder(main, ordered);
   }
@@ -174,31 +175,16 @@ function callsOf(subflow: AutomationStudioFlowBootstrapSubflow): string[] {
   });
 }
 
-/** The callees with each after the callees its predecessors name, plan order between equals; undefined for a circle. */
-function dependencyOrder(callees: readonly AutomationStudioFlowBootstrapSubflow[], predecessors: ReadonlyMap<string, readonly string[]>): AutomationStudioFlowBootstrapSubflow[] | undefined {
-  const keys = new Set(callees.map((callee) => callee.key));
-  const ordered: AutomationStudioFlowBootstrapSubflow[] = [];
-  const placed = new Set<string>();
-  while (ordered.length < callees.length) {
-    const next = callees.find((callee) => !placed.has(callee.key) && (predecessors.get(callee.key) ?? []).every((key) => !keys.has(key) || placed.has(key)));
-    if (!next) return undefined;
-    placed.add(next.key);
-    ordered.push(next);
-  }
-  return ordered;
-}
-
-/** The router-run subflow as one Call Subflow step per callee, in order, each input bound by name (header). */
-function callsInOrder(main: AutomationStudioFlowBootstrapSubflow, callees: readonly AutomationStudioFlowBootstrapSubflow[]): { subflow: AutomationStudioFlowBootstrapSubflow; calls: string[]; flowInputs: AutomationStudioProjectAssembled["flowInputs"] } {
+/** The router-run subflow as one Call Subflow step per callee, in order, each input bound as the call order says (header, `../dispatch/call-order.ts`). */
+function callsInOrder(main: AutomationStudioFlowBootstrapSubflow, ordered: readonly AutomationStudioProjectCall[]): { subflow: AutomationStudioFlowBootstrapSubflow; calls: string[]; flowInputs: AutomationStudioProjectAssembled["flowInputs"] } {
   const flowInputs: AutomationStudioProjectAssembled["flowInputs"] = [];
-  const nodes: AutomationStudioFlowBootstrapNode[] = callees.map((callee, index) => {
+  const nodes: AutomationStudioFlowBootstrapNode[] = ordered.map(({ subflow: callee, inputs: sources }, index) => {
     const inputs: JsonObject = {};
-    for (const port of callee.interface?.inputs ?? []) {
-      const from = callees.slice(0, index).map((earlier, at) => ({ earlier, at })).reverse().find(({ earlier }) => earlier.interface?.outputs.some((output) => output.id === port.id));
-      if (from) inputs[port.id] = { $state: { path: `$node.${stepKey(from.at)}.${port.id}` } };
+    for (const { id, from } of sources) {
+      if (from !== undefined) inputs[id] = { $state: { path: `$node.${stepKey(from)}.${id}` } };
       else {
-        inputs[port.id] = { $state: { path: port.id } };
-        flowInputs.push({ subflowKey: callee.key, input: port.id });
+        inputs[id] = { $state: { path: id } };
+        flowInputs.push({ subflowKey: callee.key, input: id });
       }
     }
     const outputs: JsonObject = Object.fromEntries((callee.interface?.outputs ?? []).map((output) => [output.id, output.id]));
@@ -214,7 +200,7 @@ function callsInOrder(main: AutomationStudioFlowBootstrapSubflow, callees: reado
   const requires = [...new Set([...(main.metadata?.requires ?? []), AUTOMATION_STUDIO_FLOW_BOOTSTRAP_REQUIREMENTS.subflowCalls])];
   const metadata = { ...structuredClone(main.metadata ?? {}), requires };
   const subflow: AutomationStudioFlowBootstrapSubflow = { key: main.key, name: main.name, role: main.role, nodes, edges, metadata };
-  return { subflow, calls: callees.map((callee) => callee.key), flowInputs };
+  return { subflow, calls: ordered.map((call) => call.subflow.key), flowInputs };
 }
 
 function stepKey(index: number): string {
