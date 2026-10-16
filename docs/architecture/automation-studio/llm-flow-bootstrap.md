@@ -33,8 +33,8 @@ adding an executable binding or granting a positive judgement.
 
 How the product's own creation and improvement builds are authored is one runtime
 setting with one owner, `model/authoring-mode/`: `FLUXIQ_AUTHORING_MODE` in the
-Core process environment, `candidate` (the default), `project` (opt-in) or
-`legacy`. Any other value refuses instead of falling back. Nothing else holds a
+Core process environment, `project` (the default since 2026-10-16), `candidate`
+or `legacy`. Any other value refuses instead of falling back. Nothing else holds a
 mode literal of its own.
 
 - `legacy` is the explicit opt-out for the evidence-guided draft behavior
@@ -57,12 +57,15 @@ mode literal of its own.
 
 `project` (automation-project-agents-plan, unit A5c) replaces the candidate
 build's single loop with a project supervisor and its builders, behind the same
-generation command, lock, purse, trial runner and promotion. It is opt-in until
-the Lab comparison (A8) shows it at least matches `candidate`; the default stays
-`candidate`.
+generation command, lock, purse, trial runner and promotion. It became the
+default on 2026-10-16, when the Lab comparison (A8) passed: on one frozen pair it
+passed each of the five realistic tasks twice in a row (10 of 10), where
+`candidate` failed one of them, at about 1.6 times `candidate`'s cost per build
+(downstream automation-project-agents-plan, A8 Run Plan). `candidate` stays
+selectable with `FLUXIQ_AUTHORING_MODE=candidate`.
 
 - **Who asks for it.** A request names `authoringMode: "project"`, or sends
-  `configured` to a Core started with `FLUXIQ_AUTHORING_MODE=project`. The chat's
+  `configured` to a Core whose mode is `project` (the default). The chat's
   build sends Core's configured mode as it is set, so a project Core builds
   `flow.createHere` and `flow.explore` in project mode. An extend is not yet a
   project build's (A7): the request refuses `project` with `mode: "extend"`, so

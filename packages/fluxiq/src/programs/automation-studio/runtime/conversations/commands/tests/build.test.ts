@@ -33,8 +33,8 @@ describe("explicit legacy authoring mode", () => {
   });
 });
 
-describe.each([undefined, "", "  ", "candidate"])("candidate authoring mode with setting %s", (mode) => {
-  beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", mode); });
+describe("explicit candidate authoring mode", () => {
+  beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", "candidate"); });
 
   it("refuses an answer that is not a valid candidate for this Flow", async () => {
     const { requests, context } = recording({ ok: true, payload: { candidate: { status: "draft", candidateId: "candidate", verification: "not_performed", promotionAllowed: false } } });
@@ -48,6 +48,28 @@ describe.each([undefined, "", "  ", "candidate"])("candidate authoring mode with
     const { requests, context } = recording({ ok: true, payload: { candidate: CANDIDATE } });
     expect(await buildAutomationStudioFlowFromConversation(context, { flowId: "flow", mode: "create" })).toMatchObject({ ok: true, status: "draft", candidate: { candidateId: "candidate", verification: "not_performed" } });
     expect(requests.map((request) => request.payload)).toEqual([expect.objectContaining({ evidenceGuided: true, authoringMode: "candidate", authSessionId: "session" })]);
+  });
+});
+
+describe.each([undefined, "", "  "])("unset authoring mode (setting %s) resolves to project", (mode) => {
+  beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", mode); });
+
+  it("refuses an answer that is not a valid candidate for this Flow", async () => {
+    const { requests, context } = recording({ ok: true, payload: { candidate: { status: "draft", candidateId: "candidate", verification: "not_performed", promotionAllowed: false } } });
+    expect(await buildAutomationStudioFlowFromConversation(context, { flowId: "flow", mode: "create" })).toMatchObject({ ok: false, kept: false });
+    expect(requests.map((request) => request.endpoint)).toEqual(["generate-flow-bootstrap-adaptation"]);
+    const proposal = recording({ ok: true, payload: { adaptation: { status: "proposed", adaptationId: "adaptation" } } });
+    expect(await buildAutomationStudioFlowFromConversation(proposal.context, { flowId: "flow", mode: "create" })).toMatchObject({ ok: false, kept: false });
+  });
+
+  it("requests a project build for a creation and a candidate build for an extend", async () => {
+    const { requests, context } = recording({ ok: true, payload: { candidate: CANDIDATE } });
+    expect(await buildAutomationStudioFlowFromConversation(context, { flowId: "flow", mode: "create" })).toMatchObject({ ok: true, status: "draft", candidate: { candidateId: "candidate", verification: "not_performed" } });
+    expect(await buildAutomationStudioFlowFromConversation(context, { flowId: "flow", mode: "extend" })).toMatchObject({ ok: true, status: "draft" });
+    expect(requests.map((request) => request.payload)).toEqual([
+      expect.objectContaining({ evidenceGuided: true, authoringMode: "project", authSessionId: "session" }),
+      expect.objectContaining({ evidenceGuided: true, authoringMode: "candidate", mode: "extend" })
+    ]);
   });
 });
 

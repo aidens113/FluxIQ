@@ -507,8 +507,8 @@ describe("the extension's chat, end to end in Core", () => {
     expect(result?.text).toMatch(/model key is locked/u);
   });
 
-  describe("in the default candidate authoring mode", () => {
-    beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", ""); });
+  describe("in the explicit candidate authoring mode", () => {
+    beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", "candidate"); });
 
     it("actual registry chat creation tests the candidate, applies its proposal and says the automation is ready", async () => {
       world = await createWorld({ unlocked: UNLOCKED_SESSION });

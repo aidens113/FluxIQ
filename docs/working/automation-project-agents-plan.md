@@ -27,8 +27,9 @@ user's words are in the paired document's `Why Now`.
   invariants and contracts below.
 - The supervisor replaces the single loop inside
   `generateFlowBootstrapAdaptation` behind a new authoring mode `project`;
-  the default stays `candidate` until the Lab shows `project` at least
-  matches it. A one-part task is a one-subflow plan, so there is one path.
+  it became the product default on 2026-10-16 (t667), when the Lab showed
+  `project` passing every A8 task twice in a row on one frozen pair where
+  `candidate` failed one. A one-part task is a one-subflow plan, so there is one path.
 - Builders are the existing candidate authoring loop with a subflow scope,
   started through the child-build entry the re-author path already uses
   (`service.ts:1495`, called at `:2512`).
@@ -672,12 +673,21 @@ Entries from 2026-10-13 to A8 wave 4 (t550-t611) are archived in
 - Validation: t665 after merging dev: tsc exit 0; result-verification, llm, candidate-trial, subflow-trial, flow-bootstrap -> 522 files, 5389 passed, 2 skipped; `pnpm check` -> passed; merged `2599fe17`. t666 after merging dev (t665 in): tsc exit 0; the same plus llm -> 529 files, 5415 passed, 2 skipped; `pnpm check` -> passed; merged `ac1e48a8`; pushed
 - Outcome: Accepted
 
+### 2026-10-16 — Project mode is the product default (t667)
+- Agent: supervisor (the flip, after A8 frozen pair 8 met the rule); worker t667 (the five tests that assumed the old default)
+- Changed: `model/authoring-mode/authoring-mode.ts` `AUTOMATION_STUDIO_AUTHORING_MODE_DEFAULT` = `project` and its header; `docs/architecture/automation-studio/llm-flow-bootstrap.md`; tests that checked candidate behaviour set it explicitly, new checks that unset or blank builds create/explore in `project` and an extend still sends `candidate`
+- Why: downstream A8 frozen pair 8: `project` 10 of 10 (two consecutive passes on each of five realistic tasks), `candidate` 9 of 9 run with towels failed, `project` about 1.6 times `candidate`'s cost per build
+- Validation: after merging dev: tsc exit 0; model, conversations, api, service-bootstrap, flow-bootstrap-commands, project-build -> 130 files, 830 passed; audit passed; `pnpm check` -> passed; merged `7527ae9b`; pushed
+- Outcome: Accepted
+- Follow-up: the cost gap (a one-part task run as several briefs); t668 splits `result-verification/agreement.ts`
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
   A1-A6 before the 2026-10-29 freeze behind mode `project`, `candidate`
   stays the default; flip only if the Lab comparison passes. Overrule to move
-  it after November 10.
+  it after November 10. Outcome: the comparison passed on 2026-10-16 (A8
+  frozen pair 8) and `project` is the default (t667).
 - **May the supervisor add required starting cases?** (user) Recommendation:
   yes, add-only, each citing instruction text, admitted through the case
   owner. It makes acceptance stricter, never looser.
