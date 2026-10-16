@@ -98,8 +98,8 @@ describe("a project build's whole-Flow trial, remembered by the Flow it saved", 
     const ran = automationStudioFlowVersionsFromMetadata(playback.metadata);
     expect(ran.length).toBeGreaterThan(0);
     for (const version of ran) expect(record!.versions).toContainEqual(expect.objectContaining({ graphFlowId: version.graphFlowId, revision: version.revision }));
-    // The port a run's result check is given names this trial for that playback.
+    // The port a run's result check is given names this trial for that playback, with its exact first-ask flag (t677).
     const port = automationStudioResultJudgedBuildTrialOfSavedFlow({ flowMetadata: async (project, flow) => (await service.getFlow(project, flow)).metadata });
-    await expect(port({ projectId, flowId, runId: playback.runId, flowVersions: ran })).resolves.toEqual({ trialRunId: built.trialRunId, verdict: "yes", calls: 2, instructionDigest: record!.instructionDigest });
+    await expect(port({ projectId, flowId, runId: playback.runId, flowVersions: ran })).resolves.toEqual({ trialRunId: built.trialRunId, verdict: "yes", calls: 2, firstAskConfirmed: true, instructionDigest: record!.instructionDigest });
   });
 });
