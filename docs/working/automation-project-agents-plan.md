@@ -29,14 +29,14 @@ existing submission controller, trial port and promotion; creation ends only on 
 **Cost gap (2026-10-16; plan, findings and units P1-P5 in the paired document's `Cost Gap Plan`).** `project` cost
 about 1.6 times `candidate` on pair 8. Two thirds of the gap is finished work thrown away: an unread handed-on value
 blocking a brief, and plan amends dropping done proposals; a predecessor's proposal re-doing a later part's act while
-Core prepared the entry; the supervisor's guidance teaching splits. Merged: t672 (an unread handed-on input passes,
-noted; `dispatch/call-order.ts` is the one binding rule), t673 (guidance: asks done on one page are one subflow).
-In flight: t671 (P1: a narrowing, merge, or act/fact change carries a done proposal; the carried script is rewritten
-to fit), t676 (P4: Core checks a "done before" ending; possible acts listed; builders told the other parts),
-t677 (an exact first-ask yes flag in place of the call count). Next: P5, a one-part plan whose builder's test is the
-judged whole run (design in the downstream report `cost-gap-core-code.md` (5)); then a live round in `project`.
+Core prepared the entry; the supervisor's guidance teaching splits. Merged: t671 (P1: a narrowing, merge, or act/fact
+change carries a done proposal), t672 (P2: an unread handed-on input passes), t673 (P3: asks done on one page are one
+subflow), t676 (P4: Core checks a "done before" ending), t677 (an exact first-ask yes flag). In flight: t679 (P5: a
+one-part plan's builder test is the judged whole run; part 1 on its branch), t683 (reset reason, durable fallback).
+Then a live round in `project`.
 
-**Also done 2026-10-16:** t674 split `result-verification/verdict.ts` into `verdict/`.
+**Also done 2026-10-16:** t674 and t681 split `verdict.ts` and `candidate/submission.ts`; t680 audits RegExp
+escapes; t682 runs the structure audit before every push.
 
 **Open follow-ups:** the reset-reason flag for a held ending (`completion.ts`/`state.ts`); the supervisor's fallback
 kept only in memory; `flow-bootstrap/candidate/submission.ts` past the 400-line advisory; A7 (project extend) after
@@ -694,6 +694,46 @@ Entries from 2026-10-13 to A8 wave 4 (t550-t611) are archived in
   pushed `f05a486c`
 - Outcome: Accepted
 - Follow-up: P1 t671, P4 t676, t677 in flight; P5 next; a mechanical check for `\b` in RegExp template literals
+
+
+### 2026-10-16 — Cost gap round 2: done work carried across amends (t671); a predecessor-did-my-part claim checked (t676); exact first-ask yes flag (t677)
+- Agent: workers t671 (two rounds), t676 (two rounds), t677; supervisor reviewed, re-ran, integrated in order
+  (t671, t677, t676)
+- Changed: t671 `project-agents/amendment/` (new): a done proposal is carried, not done, when an amend only narrows
+  its interface, changes its own parts' facts or lasting acts (reverses t595's drop), or merges other parts into it
+  (renamed, or turned router-run); `carried-script.ts` rewrites the carried script to fit; `dispatch/run-brief.ts`
+  `carriedOf`, `supervisor/dispatch-tool.ts` `carriedOnto`, `contracts/subflow-brief.ts`, `guidance.ts` `AMEND_PLAN`.
+  t676 `subflow-candidate/{builder-loop,done-before,brief-words}.ts`, `contracts/builder-return.ts`,
+  `dispatch/{scope,ending}.ts`, `service/project-build/{brief-ports,entry-note,subflow-trials,task-checklist}.ts`,
+  `service/subflow-trial/`, `result-verification/{build-test,contracts}/task-checklist.ts`: a dependent builder's
+  blocked ending before a submission names `doneBefore` (own acting part, an act the preparation run landed), else
+  refused (`subflow.done_before_refused`, `subflow.ending_too_soon`); possible acts listed; "end blocked" words only
+  for acting parts; `outOfScope` parts named; a possible act reaches the judge as possibly lasting. t677
+  `result-verification/first-ask/` (new): `firstAskConfirmed` recorded by `verify.ts`, carried by the judge, the
+  candidate trial record, the created audit event and the saved Flow's judged trial; the playback hold reads it, old
+  records keep the call count
+- Why: downstream cost gap P1 and P4 (`cost-gap-cross-part-act.md`); t677 open since t664
+- Validation: t671 after merging dev: tsc exit 0; vitest project-agents, project-build, subflow-candidate -> 87 files,
+  546 passed. t677 after merging dev: one project-build expectation of the old trial shape failed, updated; then
+  project-build -> 71 passed, and result-verification, candidate-trial, flow-version, project-agents, subflow-trial,
+  subflow-candidate passed. t676 after merging dev: tsc exit 0; vitest subflow-candidate, project-agents,
+  project-build, subflow-trial, result-verification, candidate-trial -> 233 files, 1758 passed. `pnpm task finish` ->
+  `pnpm check` passed for each; pushed
+- Outcome: Accepted
+
+### 2026-10-16 — RegExp escapes audited (t680); submission.ts split (t681); pushes run the audit (t682)
+- Agent: workers t680, t681; supervisor t682
+- Changed: t680 `scripts/structure-audit/rules/regexp-template-escapes.mjs` (new, mirrored downstream): a RegExp
+  literal whose string swallows an escape fails the audit. t681 `flow-bootstrap/candidate/submission.ts` 412 -> 292
+  lines, flat sibling files (a subdirectory passes the depth limit). t682 `.githooks/pre-push` runs the structure
+  audit and refuses a failing push; the root `prepare` script sets `core.hooksPath`; `docs/architecture/
+  code-structure.md`
+- Why: two checks never ran (`\b` in a template literal); the 400-line advisory; a stale `docs/working/README.md`
+  committed straight on dev, here and downstream
+- Validation: t680 rule tests 10 pass; audit exit 0 here and downstream; a planted `\b` fails it. t681 after merging
+  dev: tsc exit 0; vitest candidate, flow-bootstrap-commands, project-agents -> 79 files, 557 passed. t682
+  `sh .githooks/pre-push` -> exit 0 clean, exit 1 with a stale README (also with CRLF line endings). Pushed
+- Outcome: Accepted
 
 
 ## Open Questions
