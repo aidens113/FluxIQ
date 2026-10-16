@@ -36,6 +36,19 @@ const FAILED_STEP = trial("execution_failed", true, { code: "candidate.execution
 ] });
 
 describe("a brief's return reason", () => {
+  // A8 Lab `run-mvan7giv-4246aafb` (t672): an input an earlier subflow handed on, which no line needed, ended the brief
+  // blocked and the plan was amended. The proposal now carries it unread, and the return says no plan change is needed.
+  it("says, by name, the handed-on inputs its proposal does not read, before the money, and nothing when there are none", () => {
+    const unneeded: AutomationStudioSubflowProposal = { ...proposal, unneededInputs: ["packet"] };
+    const yes = { ...trial("yes", true, {}), revision: unneeded.revision, digest: unneeded.digest };
+    const done = ending.built(brief, outcome({ result: { subflowKey: "list_seeds", revision: 2, digest: unneeded.digest }, proposal: unneeded, trial: yes }), spend);
+    expect(done).toMatchObject({ outcome: "done", proposal: { revision: 2 } });
+    expect(done.reason).toBe("Revision 2 of the subflow was tried on its own and its trial answered yes. No step of this subflow reads its input \"packet\", which an earlier subflow hands on: this subflow did not need it, and the plan needs no change for that.");
+    const two = ending.built(brief, outcome({ proposal: { ...proposal, unneededInputs: ["packet", "shelf"] }, trial: undefined }), spend);
+    expect(two.reason).toContain("its inputs \"packet\", \"shelf\", which an earlier subflow hands on: this subflow did not need them");
+    expect(ending.built(brief, outcome({ trial: yes }), spend).reason).not.toContain("did not need");
+  });
+
   it("carries the builder's honest ending and the predecessor whose entry was missing", () => {
     const returned = ending.built(brief, outcome({ result: { ended: "blocked", reason: "Its entry is never prepared." }, ended: { outcome: "blocked", reason: "Its entry is never prepared." }, lastTrial: MISSING, trial: MISSING }), spend);
     expect(returned).toMatchObject({ outcome: "blocked", proposal: { subflowKey: "list_seeds", revision: 2 } });
@@ -122,7 +135,7 @@ describe("a brief's return reason", () => {
     expect(returned).toMatchObject({ outcome: "blocked" });
     expect(returned.reason).toBe("The builder failed: Flow Bootstrap generation failed (flow_bootstrap.evidence_repeat_without_progress). It was stopped by llm_evidence_loop.repeat_refused. "
       + "The calls it stopped on, latest first: core.submit_subflow answered subflow.scope_refused (subflow.input_unread: input \"packet\") (3 in a row); core.run_node on web.output.dom-extract_list answered web.inspect.succeeded. "
-      + "The plan gives this subflow a value no step of it reads: change the plan with project.amend_plan, so that it takes only values a step of it types or opens, or carry its parts in the subflow that reads that value.");
+      + "The plan gives this subflow a value the person gives the Flow, and no step of it reads that value: if another subflow is the one that uses it, change the plan with project.amend_plan to give it there; otherwise send a changed brief saying where this subflow uses it.");
     expect(returned.reason).not.toContain("b54daa6d");
     expect(returned.reason).not.toContain("candidate.last_submission");
     // With no issue carried, the code is said as it was, and no advice is given.

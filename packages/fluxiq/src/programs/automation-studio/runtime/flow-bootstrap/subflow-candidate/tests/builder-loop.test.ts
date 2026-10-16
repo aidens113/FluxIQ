@@ -78,6 +78,22 @@ describe("a subflow builder's loop", () => {
     expect(observed[0]!.finishingTools).toEqual({ submit: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, test: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID });
   });
 
+  // A8 Lab `run-mvan7giv-4246aafb` (t672): a handed-on input no line needed ended the brief blocked. It now passes, and
+  // the accepted answer says so, so the builder tests and completes instead.
+  it("says in the accepted answer that a handed-on input no line reads was not needed, and keeps it on the proposal", async () => {
+    const scope = testScope({ interface: { inputs: [{ id: "listingPage", name: "Listing page", valueType: { kind: "unknown" } }], outputs: [] }, handedOn: ["listingPage"] });
+    const unread = { kind: "tool_call", toolId: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, callId: "submit", input: script(["flow: Find the listings", "part find_listing: find the listings", "  input: listingPage", "  step: open the listings", "    node: web.browser.navigate", "    url: https://listings.test/all", "end"]) };
+    let answered: JsonObject | undefined;
+    const seen = (evidence: readonly Entry[]) => {
+      answered = [...evidence].reverse().find((entry) => entry.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!.value as JsonObject;
+      return test(evidence);
+    };
+    const { outcome } = await build([() => unread, seen, complete()], { scope });
+    expect(outcome.loop.ok, JSON.stringify(outcome.loop)).toBe(true);
+    expect(answered).toMatchObject({ ok: true, note: expect.stringContaining("No line of this subflow reads the input \"listingPage\", which another subflow hands on: this subflow does not need it, so this revision stands as it is and the supervisor is told.") });
+    expect(outcome.proposal?.unneededInputs).toEqual(["listingPage"]);
+  });
+
   // The plan the project supervisor writes gives no success check, which makes proposing one the builder's (t569).
   it("tells the builder to propose a success check in `done when:` terms when the plan gives none, and that a plan's check is the plan's", async () => {
     const said = async (scope: ReturnType<typeof testScope>) => {

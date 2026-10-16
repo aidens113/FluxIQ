@@ -1,12 +1,23 @@
+import type { AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/plan/index.ts";
 import type { AutomationStudioSubflowScope } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
 import { AutomationStudioProjectRecordRefusal, type AutomationStudioProjectBuildRecord } from "../record/index.ts";
+import { automationStudioProjectCallOrder } from "./call-order.ts";
 
 // A brief mapped onto the builder's scope (`flow-bootstrap/subflow-candidate/
 // contracts.ts`, which keeps plain fields so it need not wait on these
 // contracts): its parts as the verbatim spans the task spec quotes, the
 // subflow's interface and success check as the plan holds them, and the plan's
 // other subflow keys, which no part of its proposal may be keyed as.
+//
+// **Which inputs another subflow hands on (t672).** A callable subflow's
+// inputs that an earlier subflow of the plan hands back are the scope's
+// `handedOn`, read by the one rule assembly binds the calls by
+// (`./call-order.ts`): the plan's callable subflows in call order, each after
+// the predecessors its latest brief under this plan named -- this brief's own
+// for its subflow -- plan order between equals. A builder may leave such an
+// input unread (`flow-bootstrap/subflow-candidate/callable-target.ts`); every
+// other input is the person's value, which it must read.
 
 export type AutomationStudioProjectDispatchScope = {
   scope: AutomationStudioSubflowScope;
@@ -37,6 +48,8 @@ export function automationStudioProjectDispatchScope(record: AutomationStudioPro
     predecessors: [...brief.entry.predecessors]
   };
   if (brief.interface) scope.interface = structuredClone(brief.interface);
+  const handedOn = brief.interface ? handedOnInputs(record, brief, plan.plan) : [];
+  if (handedOn.length) scope.handedOn = handedOn;
   const successCheck = subflow.metadata?.["fluxiq.successCheck"];
   if (successCheck) scope.successCheck = structuredClone(successCheck);
   return {
@@ -44,4 +57,14 @@ export function automationStudioProjectDispatchScope(record: AutomationStudioPro
     siblings: plan.plan.subflows.map((candidate) => candidate.key).filter((key) => key !== brief.subflowKey),
     subflowName: subflow.name
   };
+}
+
+/** The brief's inputs an earlier callee hands on, by the call order assembly binds by (header); none when the order is a circle. */
+function handedOnInputs(record: AutomationStudioProjectBuildRecord, brief: AutomationStudioProjectSubflowBrief, plan: AutomationStudioFlowBootstrapPlan): string[] {
+  const predecessors = new Map<string, readonly string[]>();
+  for (const { brief: recorded } of record.briefs) if (recorded.planDigest === brief.planDigest) predecessors.set(recorded.subflowKey, recorded.entry.predecessors);
+  predecessors.set(brief.subflowKey, brief.entry.predecessors);
+  const ordered = automationStudioProjectCallOrder(plan.subflows.filter((subflow) => subflow.interface), predecessors);
+  const own = ordered?.find((call) => call.subflow.key === brief.subflowKey);
+  return (own?.inputs ?? []).filter((input) => input.from !== undefined).map((input) => input.id);
 }
