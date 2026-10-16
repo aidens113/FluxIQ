@@ -43,9 +43,16 @@
 // calling such a row missing says the condition is wrong, as a sentence that
 // names it does (`./record.ts`, `testsLabel`). Such a sentence stands. A row
 // left out by a condition over a column of its own is refuted as before.
+//
+// **And a row no read saw (t654).** Before a sentence naming only rows Core
+// holds no record of is left standing, it is asked whether it says a condition
+// left out a row no read ever saw, where Core can list every row each read saw
+// and a step acted on the page first (`./unseen-row-claim.ts`): no condition
+// saw that row, so none missed it.
 
 import { automationStudioResultLeftOutFinding } from "./left-out-finding.ts";
 import type { AutomationStudioResultNoClaim, AutomationStudioResultNoNamedRows } from "./types.ts";
+import { automationStudioResultUnseenRowClaim } from "./unseen-row-claim.ts";
 
 /** The nouns a judge calls the result's rows by. Generic, never any site's. */
 const ROWS = String.raw`(?:rows?|records?|items?|entries|listings?|products?)`;
@@ -74,6 +81,11 @@ const SPEAKS_OF_A_CONDITION = /\b(?:conditions?|filters?|bounds?|thresholds?|cri
 
 /** The claim a sentence makes that named rows are missing (header); nothing where it makes none or names no row. */
 export function automationStudioResultMissingClaim(sentence: string, named: AutomationStudioResultNoNamedRows): AutomationStudioResultNoClaim | undefined {
+  // A condition said to have left out a row no read saw (header, t654), whatever the words for missing.
+  if (named.unmatched && !named.stored.length && !named.leftOut.length) {
+    const unseen = automationStudioResultUnseenRowClaim(sentence, named);
+    if (unseen) return unseen;
+  }
   if (!MISSING.test(sentence)) return undefined;
   if (!named.stored.length && !named.leftOut.length) return named.unmatched ? { refuted: false } : undefined;
   if (named.unmatched) return { refuted: false };

@@ -1,6 +1,7 @@
 // The shapes a no is weighed in against Core's own record of the result it
 // judged (`./weigh.ts`, t607).
 
+import type { AutomationStudioResultNarrowingStep } from "../contracts/index.ts";
 import type { AutomationStudioRequestPhrases } from "../request-rows/index.ts";
 
 /** A row the result holds: its label (its first text column), and each text cell by column. */
@@ -73,6 +74,18 @@ export type AutomationStudioResultNoCondition = {
 };
 
 /**
+ * One list read as Core can say which rows it saw (`./record.ts`, t654):
+ * `whole` when its labels -- the rows it kept, and each row a condition alone
+ * left out -- are every row it looked at, by its own counts; `narrowedBefore`,
+ * the steps that acted on the page before it ran.
+ */
+export type AutomationStudioResultNoSeenRead = {
+  nodeId: string;
+  whole: boolean;
+  narrowedBefore: AutomationStudioResultNarrowingStep[];
+};
+
+/**
  * What a claim is weighed against: Core's own record of the judged result.
  * Built once per verification (`./record.ts`), never from a model's words.
  */
@@ -104,6 +117,14 @@ export type AutomationStudioResultNoRecord = {
   says?: ((text: string) => boolean) | undefined;
   /** The request phrase every stored row names first: the item asked for. Absent where they do not agree. */
   item?: string[] | undefined;
+  /**
+   * Each read the result was judged on, and whether its labels are every row it
+   * saw (t654); absent where Core cannot say it of every read (a build test's
+   * replayed reads carry no counts).
+   */
+  seen?: AutomationStudioResultNoSeenRead[] | undefined;
+  /** Every label any read saw, kept, stored or left out (t654). */
+  seenLabels?: string[] | undefined;
   /** A claim Core's agreement checks itself (pages, order): whether this sentence makes one, and whether the record refutes it. */
   other?: ((sentence: string) => AutomationStudioResultNoClaim | undefined) | undefined;
 };
@@ -114,6 +135,12 @@ export type AutomationStudioResultNoNamedRows = {
   leftOut: AutomationStudioResultNoLeftOutRow[];
   /** True when the sentence names, by a quote or an id, a row Core holds no record of. */
   unmatched: boolean;
+  /**
+   * Where every row Core holds no record of was named by a quote (never by an
+   * id), those quotes, with the record's account of what its reads saw
+   * (`./unseen-row-claim.ts`, t654). Absent otherwise.
+   */
+  unseen?: { quotes: string[]; reads?: AutomationStudioResultNoSeenRead[] | undefined; seenLabels?: string[] | undefined } | undefined;
 };
 
 /** One claim a sentence makes, and Core's finding where its record refutes it. */

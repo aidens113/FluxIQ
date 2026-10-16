@@ -17,6 +17,11 @@
 // pickup value was "Pickup tomorrow"") a quote of a value Core read on a row
 // that is no row's label (`./record.ts`, `isValue`); nor does a step's node id,
 // taken out first (`./node-ids.ts`).
+//
+// **And which quotes those are (t654).** Where every row Core cannot find was
+// named by a quote, never by an id, the quotes are passed on with the record's
+// account of the rows each read saw (`./unseen-row-claim.ts`): a claim that a
+// condition left out a row no read saw is one Core can answer.
 
 import {
   AutomationStudioRequestRowId,
@@ -41,11 +46,11 @@ const QUOTE_START_WORDS = 3;
 export function automationStudioResultSentenceRows(said: string, record: AutomationStudioResultNoRecord): AutomationStudioResultNoNamedRows {
   const sentence = automationStudioResultNodeIdsSaid(said, record.nodeIds).text;
   const labels = new Set<string>();
-  let unmatched = false;
+  let idUnmatched = false;
   for (const id of automationStudioRequestRowIds(sentence)) {
     if (MEASURE.test(id)) continue;
     const label = labelOfId(id, record);
-    if (label === undefined) unmatched = true;
+    if (label === undefined) idUnmatched = true;
     else labels.add(label);
   }
   for (const label of prefixNamed(sentence, record)) labels.add(label);
@@ -53,8 +58,11 @@ export function automationStudioResultSentenceRows(said: string, record: Automat
   const storedLabels = new Set(stored.map((row) => row.label));
   // A label the result holds is named as a stored row: a sentence saying it is missing is held to that.
   const leftOut = record.leftOut.filter((row) => labels.has(row.label) && !storedLabels.has(row.label));
-  if (!unmatched) unmatched = quotesUnmatched(sentence, [...labels], record.says, record.isValue);
-  return { stored, leftOut, unmatched };
+  const quotes = quotesUnmatched(sentence, [...labels], record.says, record.isValue);
+  const unmatched = idUnmatched || quotes.length > 0;
+  // Every row Core cannot find named by a quote (header, t654).
+  const unseen = !idUnmatched && quotes.length > 0 ? { unseen: { quotes, reads: record.seen, seenLabels: record.seenLabels } } : {};
+  return { stored, leftOut, unmatched, ...unseen };
 }
 
 /** The one label an id names: a stored row's cell, else a left-out label's text, else Core's short id for one label. */
@@ -121,17 +129,18 @@ function valuesAgree(sentence: string, wordCount: number, match: Match, found: r
   return rows.some((row) => automationStudioRequestRowValuesAgree(after, Object.values(row.cells)));
 }
 
-/** Whether a quote of two words or more starts as no named label does, and is neither the request's own words nor a value Core read (header). */
-function quotesUnmatched(sentence: string, named: readonly string[], says: ((text: string) => boolean) | undefined, isValue: ((text: string) => boolean) | undefined): boolean {
+/** The quotes of two words or more that start as no named label does, and are neither the request's own words nor a value Core read (header). */
+function quotesUnmatched(sentence: string, named: readonly string[], says: ((text: string) => boolean) | undefined, isValue: ((text: string) => boolean) | undefined): string[] {
   const starts = named.map((label) => wordsOf(label));
+  const unmatched: string[] = [];
   for (const quote of sentence.matchAll(QUOTED)) {
     const pieces = quote[1]!.split("\u2026").filter((piece) => piece.trim());
     if (wordsOf(quote[1]!).length < 2 || (says && pieces.length > 0 && pieces.every((piece) => says(piece))) || isValue?.(quote[1]!) === true) continue;
     const words = wordsOf(pieces[0] ?? "");
     const start = words.slice(0, QUOTE_START_WORDS);
-    if (!start.length || !starts.some((label) => start.every((word, index) => label[index] === word))) return true;
+    if (!start.length || !starts.some((label) => start.every((word, index) => label[index] === word))) unmatched.push(quote[1]!);
   }
-  return false;
+  return unmatched;
 }
 
 function wordsOf(text: string): string[] {
