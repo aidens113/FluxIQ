@@ -714,7 +714,9 @@ describe("the do-while repeat the schema teaches", () => {
     expect(change).toContain("To go through a list that continues -- the step that reads it, then the step that moves it on -- repeat on the read with while naming that step");
     expect(change).toContain("each pass reads once, and the Flow keeps each row once");
     for (const description of [change, properties.while!.description, properties.most!.description]) {
-      for (const word of ["page", "Next", "pagination", "scroll"]) expect(description).not.toMatch(new RegExp(`\b${word}`));
+      // Pagination words only: "as the page offers it" (an option's press) is not one. The check never ran before t673
+      // (`\b` in a template literal is a backspace).
+      for (const word of ["next page", "Next", "pagination", "scroll"]) expect(description).not.toMatch(new RegExp(`\\b${word}`));
     }
   });
 });
