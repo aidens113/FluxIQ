@@ -4,8 +4,9 @@
 // Model`, `Tool scopes`).
 //
 // Model guidance never teaches to the test (supervisor rule, 2026-10-09): the
-// example is a lending library's catalogue, a kind of site and an act no
-// realistic Lab scenario uses, with the same structure -- one part that reads,
+// examples are a library account, a community garden's booking and a lending
+// library's catalogue, kinds of site and acts no realistic Lab scenario uses:
+// one part; two asks done on one page in one subflow; and one part that reads,
 // one that makes a lasting act with what the first read. The guard beside it
 // (`./tests/guidance.test.ts`) holds every string here to the lists the in-run
 // repair instruction is held to.
@@ -77,6 +78,16 @@
 // reshaping subflow is refused once (`refusals.reshapeOnlyOnce`), the same
 // plan sent again taken.
 //
+// **Asks done on one page are one subflow (A8 crossborder, t673).**
+// `run-mvan7giv-4246aafb` planned two asks done on the same item page in one
+// pass as two subflows handing on a page value no step read, and spent five
+// briefs. Step 1 taught splitting and the only example split one sentence in
+// two. So step 1 says a find or open that only leads to an act belongs to that
+// act's part, step 2 says when to split and that the page is the hand-off, and
+// the example opens with a one-part and a two-asks-one-subflow plan. The
+// supervisor's evidence holds the start page's route state, not its view
+// (`./role-tools.ts` strips the host tools' opening looks), and says so.
+//
 // No string here names a fingerprint field by name: the supervisor completes
 // and tests with the `complete` object assembly hands it, copied whole.
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_LOOK_BUDGET as LOOKS } from "./look-budget.ts";
@@ -86,11 +97,11 @@ const READ_TASK = "Read the task: the person's instructions, word for word, unde
 
 const HOW_TO_WORK = [
   "You supervise this build. You do not operate the target and you never write a step: builders do, one subflow each, and they are the ones who explore the target, find what the task names and act on it. You plan, brief, read what comes back, assemble and test.",
-  `Plan from the task and a short look. The start page as the build found it is already in your evidence, and you may make at most ${LOOKS} more looks with the look tools, which change nothing; after them looking is withdrawn for the rest of the build. Something the task names that the start page does not show is not yours to find: finding it is what a builder's part is for.`,
-  "1. Write the plan with project.write_plan, once. taskSpec splits the task into parts: a part is one thing the person asked for, given as their exact words copied from one instruction (its sourceId and the text), with the facts that are true once it is done and the lasting acts it needs. Parts share no words: where one stretch of the person's words holds another, it is one part, or split it into stretches that do not overlap. Under notAsked, name what a builder might be tempted to do that nobody asked for. "
+  `Plan from the task and a short look. Your evidence already holds where the build starts: the start page's address, title, what covers it and the names of its controls, not the page itself. You may make at most ${LOOKS} more looks with the look tools, which change nothing; after them looking is withdrawn for the rest of the build. Something the task names that the start page does not show is not yours to find: finding it is what a builder's part is for.`,
+  "1. Write the plan with project.write_plan, once. taskSpec splits the task into parts: a part is one thing the person asked for, given as their exact words copied from one instruction (its sourceId and the text), with the facts that are true once it is done and the lasting acts it needs. Parts share no words: where one stretch of the person's words holds another, it is one part. Parts are for separate things the person asked for: a search, find or open that only leads to an act is no part, but belongs to the part of the act it serves. Under notAsked, name what a builder might be tempted to do that nobody asked for. "
     + "A part asks for something to be done or read. What the person says must stay as it is (nothing removed, nothing sent, nothing else changed) is no part: put it under notAsked, which the judge checks the whole run against, and give it no subflow.",
-  "2. In the same call, subflows: one for each piece of work a builder makes, as {key, name, purpose, parts, inputs, outputs, after}. parts are the ids of the parts it carries, and each part is carried by one subflow only; inputs are the values it takes and outputs the values it hands on, by name; after names the subflows that must run before it. A one-part task is one subflow with no inputs or outputs. Core writes the Flow's shape from this, and each builder proposes how its own subflow shows it is done. "
-    + "Hand a value on only when a step of a later subflow uses it, as a name it types or a row it opens. What an earlier subflow leaves on the target, such as a chosen branch or a page left open, is no value: say it with after alone. "
+  "2. In the same call, subflows: one for each piece of work a builder makes, as {key, name, purpose, parts, inputs, outputs, after}. parts are the ids of the parts it carries, and each part is carried by one subflow only; inputs are the values it takes and outputs the values it hands on, by name; after names the subflows that must run before it. A one-part task is one subflow with no inputs or outputs, and asks carried out on the same page in one pass are one subflow too. Split into several only where a later act needs a value read earlier, or where stretches act on different pages and each can be built and tested alone. Core writes the Flow's shape from this, and each builder proposes how its own subflow shows it is done. "
+    + "Hand a value on only when a step of a later subflow uses it, as a name it types or a row it opens. What an earlier subflow leaves on the target, such as a chosen branch or a page left open, is no value: the page is the hand-off, so say it with after alone. "
     + "A part that only narrows, de-duplicates, orders or shapes what another part reads is carried by the subflow that reads it.",
   "3. Send briefs with project.dispatch, one for each subflow. A brief names its subflow and its parts; Core gives it its share of the money and calls left. A lasting act its parts do not ask for that moves money, deletes or sends goes to the person first; any other lasting act runs, is recorded as this build's, and the builder is told it was outside its brief. What runs before it is the plan's after unless you say otherwise. Briefs whose starts do not depend on each other may go in one call.",
   "4. Read each return. Done carries a proposal. Partial or blocked carries the builder's reason: send a changed brief, change the plan with project.amend_plan, or end honestly.",
@@ -100,7 +111,10 @@ const HOW_TO_WORK = [
     + "Before you end, if this build left lasting acts on the target, dispatch a reset brief first; Core adds whatever is still left to your reason, so the person knows."
 ].join("\n");
 
-const EXAMPLE = "An example from a lending library's catalogue: \"Find the three newest titles by Ada Hart and place a hold on the first.\" "
+const EXAMPLE = "Examples. One part, from a library account: \"Renew every book on my loans that is due this week.\" One part, p1, the whole sentence; one subflow, renew_loans, parts [p1], no inputs or outputs. "
+  + "Two asks, one page, from a community garden's booking: \"Book plot 14 for the spring season and join its watering rota while you are on it.\" "
+  + "Parts: p1 \"Book plot 14 for the spring season\" (finding plot 14 is p1's, not a part), p2 \"join its watering rota\". Both are done on plot 14's page in one pass, so one subflow, book_plot, parts [p1, p2], no inputs or outputs. "
+  + "Two subflows, from a lending library's catalogue: \"Find the three newest titles by Ada Hart and place a hold on the first.\" "
   + "Parts: p1 \"Find the three newest titles by Ada Hart\" (fact: three titles are read), p2 \"place a hold on the first\" (fact: that title shows a hold; lasting act: create_new). "
   + "The catalogue's start page shows a search field and no titles by her, so finding them is p1's builder's work, not a look of yours. "
   + "Subflows: find_titles with parts [p1] and outputs [titles]; place_hold with parts [p2], inputs [titles] and after [find_titles]. "

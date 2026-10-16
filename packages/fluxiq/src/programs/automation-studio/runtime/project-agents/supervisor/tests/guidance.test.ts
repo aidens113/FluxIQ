@@ -29,10 +29,9 @@ describe("the supervisor's guidance", () => {
 
   it("names none of the ten realistic scenarios, their sites or their tasks", () => {
     for (const [at, text] of all) {
-      for (const scenario of SCENARIOS) {
-        expect(text.toLowerCase(), at).not.toContain(scenario);
-        for (const word of scenario.split("-")) expect(text.toLowerCase(), `${at}: ${word}`).not.toMatch(new RegExp(`\b${word}\b`, "u"));
-      }
+      // The names whole; their distinctive pieces are SITE_WORDS and LAB_TASK_WORDS. A per-piece check here never
+      // ran (`\b` in a template literal is a backspace, t673) and would only add plain words: everything, board, local.
+      for (const scenario of SCENARIOS) expect(text.toLowerCase(), at).not.toContain(scenario);
       expect(text.match(SITE_WORDS)?.[0], at).toBeUndefined();
       expect(text.match(LAB_TASK_WORDS)?.[0], at).toBeUndefined();
     }
@@ -53,6 +52,24 @@ describe("the supervisor's guidance", () => {
     const schema = automationStudioProjectSupervisorTools().find((tool) => tool.toolId === IDS.dispatch)!.inputSchema as JsonObject;
     const failing = ((((schema.properties as JsonObject).briefs as JsonObject).items as JsonObject).properties as JsonObject).failingReceipt;
     expect(failing).toEqual({ type: "object", properties: { kind: { type: "string", enum: ["subflow_trial", "candidate_trial"] }, receiptId: { type: "string" }, digest: { type: "string" } }, required: ["kind", "receiptId", "digest"], additionalProperties: false });
+  });
+
+  // t673: asks done on one page are one subflow; a find that only leads to an act is that act's; the page is the hand-off.
+  it("teaches when one subflow does and when to split, with examples from sites no Lab scenario uses", () => {
+    const { howToWork, example } = AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE;
+    expect(howToWork).not.toContain("split it into stretches");
+    expect(howToWork).toContain("a search, find or open that only leads to an act is no part, but belongs to the part of the act it serves");
+    expect(howToWork).toContain("asks carried out on the same page in one pass are one subflow too");
+    expect(howToWork).toContain("Split into several only where a later act needs a value read earlier, or where stretches act on different pages");
+    expect(howToWork).toContain("the page is the hand-off");
+    // The supervisor's evidence holds the start's route state, never the page view (`../role-tools.ts` strips opening looks).
+    expect(howToWork).not.toContain("The start page as the build found it is already in your evidence");
+    expect(howToWork).toContain("not the page itself");
+    expect(example).toContain("one subflow, renew_loans, parts [p1], no inputs or outputs");
+    expect(example).toContain("one subflow, book_plot, parts [p1, p2], no inputs or outputs");
+    expect(example).toContain("place_hold with parts [p2], inputs [titles] and after [find_titles]");
+    const forbidden = [...SCENARIOS, ...SCENARIOS.flatMap((scenario) => scenario.split("-")), "cart", "coupon", "hub", "towel", "earbud", "friend request", "pickup"];
+    for (const word of forbidden) expect(example.toLowerCase(), word).not.toMatch(new RegExp(`\\b${word}`, "u"));
   });
 
   it("keeps each tool description within what a provider takes", () => {
