@@ -47,6 +47,20 @@ describe("builder return", () => {
     expect(issues(builderReturn((value) => Object.assign(value, { outcome: "blocked", proposal: undefined })), brief())).toEqual([]);
   });
 
+  // t676: a blocked return carries the part a subflow before it already does, as Core checked the builder's claim.
+  it("reads a blocked return's done-before part and act, refuses either malformed, and binds it to a blocked return of the brief's own part", () => {
+    const blocked = (doneBefore: unknown) => builderReturn((value) => Object.assign(value, { outcome: "blocked", proposal: undefined, doneBefore }));
+    expect(parse(blocked({ part: "p2", act: "act-3" }))).toMatchObject({ status: "valid", value: { doneBefore: { part: "p2", act: "act-3" } } });
+    expect(parse(blocked({ part: "p2" }))).toEqual({ status: "valid", value: blocked({ part: "p2" }) });
+    expect(parse(blocked({ part: " p2" }))).toMatchObject({ status: "invalid", code: "project.invalid_id" });
+    expect(parse(blocked({ part: "p2", said: "x" }))).toMatchObject({ status: "invalid", code: "project.unknown_field" });
+    expect(parse(blocked({ act: "act-3" }))).toMatchObject({ status: "invalid" });
+    expect(issues(blocked({ part: "p2", act: "act-3" }), brief())).toEqual([]);
+    expect(issues(blocked({ part: "p9" }), brief()).map((issue) => issue.code)).toEqual(["project.return_done_before"]);
+    const partial = builderReturn((value) => Object.assign(value, { outcome: "partial", doneBefore: { part: "p2" } }));
+    expect(issues(partial, brief()).map((issue) => issue.code)).toEqual(["project.return_done_before"]);
+  });
+
   it("accepts a done reset without a proposal and refuses one that proposes a subflow", () => {
     const reset = brief((value) => Object.assign(value, { kind: "reset", parts: [], permittedActs: [] }));
     expect(issues(builderReturn((value) => delete value.proposal), reset)).toEqual([]);

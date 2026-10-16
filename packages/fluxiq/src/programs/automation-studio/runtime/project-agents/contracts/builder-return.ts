@@ -43,6 +43,12 @@ export type AutomationStudioProjectBuilderReturn = {
    * and the supervisor is told which subflow takes it (`../supervisor/dispatch-tool.ts`). Absent from returns before it.
    */
   unmadeOutput?: string;
+  /**
+   * A blocked return's part a subflow before this one already does, by the brief's part id, and the act the run that
+   * prepared its entry landed for it where the builder named one (t676): Core checked that claim before the builder's
+   * ending was taken (`../../flow-bootstrap/subflow-candidate/done-before.ts`). Absent from every other return.
+   */
+  doneBefore?: { part: string; act?: string };
   spentUsd: number;
   calls: number;
 };
@@ -61,6 +67,8 @@ export const automationStudioProjectBuilderReturn = Object.freeze({
     if (returned.proposal && returned.proposal.subflowKey !== brief.subflowKey) issues.push({ code: "project.return_subflow_mismatch", path: "return.proposal.subflowKey" });
     if (brief.kind === "survey" && returned.proposal) issues.push({ code: "project.return_survey_proposal", path: "return.proposal" });
     if (brief.kind !== "survey" && returned.findings) issues.push({ code: "project.return_findings_not_survey", path: "return.findings" });
+    // A part done before ends a brief blocked, and is one of the brief's own parts (t676).
+    if (returned.doneBefore !== undefined && (returned.outcome !== "blocked" || !brief.parts.includes(returned.doneBefore.part))) issues.push({ code: "project.return_done_before", path: "return.doneBefore" });
     if (returned.unmadeOutput !== undefined && (returned.outcome === "done" || !(brief.interface?.outputs ?? []).some((port) => port.id === returned.unmadeOutput))) issues.push({ code: "project.return_unmade_output", path: "return.unmadeOutput" });
     // A reset is done when nothing of the build is left to undo; it proposes no subflow.
     if (brief.kind === "reset" && returned.proposal) issues.push({ code: "project.return_reset_proposal", path: "return.proposal" });
@@ -111,7 +119,7 @@ function trialAbove(left: AutomationStudioProjectTrialRef, right: AutomationStud
 }
 
 function read(value: unknown): AutomationStudioProjectBuilderReturn {
-  const fields = shape.object(value, "return", ["briefId", "outcome", "reason", "trials", "spentUsd", "calls"], ["proposal", "interfaceRequest", "findings", "unmadeOutput"]);
+  const fields = shape.object(value, "return", ["briefId", "outcome", "reason", "trials", "spentUsd", "calls"], ["proposal", "interfaceRequest", "findings", "unmadeOutput", "doneBefore"]);
   const returned: AutomationStudioProjectBuilderReturn = {
     briefId: shape.storageId(fields.briefId, "return.briefId"),
     outcome: shape.oneOf(fields.outcome, "return.outcome", AUTOMATION_STUDIO_PROJECT_RETURN_OUTCOMES),
@@ -129,6 +137,10 @@ function read(value: unknown): AutomationStudioProjectBuilderReturn {
     returned.interfaceRequest = { change: shape.text(request.change, "return.interfaceRequest.change", LIMITS.reason), why: shape.text(request.why, "return.interfaceRequest.why", LIMITS.reason) };
   }
   if (fields.unmadeOutput !== undefined) returned.unmadeOutput = shape.id(fields.unmadeOutput, "return.unmadeOutput");
+  if (fields.doneBefore !== undefined) {
+    const doneBefore = shape.object(fields.doneBefore, "return.doneBefore", ["part"], ["act"]);
+    returned.doneBefore = { part: shape.id(doneBefore.part, "return.doneBefore.part"), ...(doneBefore.act !== undefined ? { act: shape.id(doneBefore.act, "return.doneBefore.act") } : {}) };
+  }
   if (fields.findings !== undefined) returned.findings = shape.array(fields.findings, "return.findings", LIMITS.findings).map((finding, index) => shape.text(finding, `return.findings.${index}`, LIMITS.finding));
   return returned;
 }

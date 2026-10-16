@@ -90,13 +90,41 @@
 // lines read none of an input another subflow hands on carries it as
 // `unneededInputs` (`./scoped-submission.ts`), and the accepted answer says so
 // in a `note`: the revision stands, and the supervisor is told.
-import type { JsonObject } from "../../../../../core/index.ts";
+//
+// **"A subflow before me did my part" is Core's to check (t676).** On three A8
+// Lab runs a dependent builder ended blocked as already done before it
+// submitted anything, and Core took it on its word -- once for a part that
+// only reads, which no subflow before it can ever do. That ending now names
+// what did it, `doneBefore: {"part": "<part id>", "act": "<act id>"}`, and is
+// admitted only when the part is this brief's, asks a lasting act, and the act,
+// where it names one, is one the run that prepared its entry landed: the act
+// ids its opening look listed under `predecessorsLeftOnSite`
+// (`./done-before.ts`). Otherwise it is refused `subflow.done_before_refused`:
+// a part that asks no lasting act gets its result only from this subflow's
+// own steps; an act that is not the preparation run's is
+// this build's act from exploration, which every trial's reset undoes. The
+// admitted claim rides on the outcome's ending for the brief's return. The
+// words that tell a dependent builder to end blocked are said only where a
+// part of its brief asks a lasting act, and the task's other parts are named
+// as other builders' parts (`outOfScope`, `./brief-words.ts`): doing one while
+// exploring is allowed, but it changes where that builder starts until a
+// reset, and no step of this subflow does it.
+// Words and a completion claim only: no act is refused before it runs. A
+// blocked ending before anything was tried that names no such part is too soon
+// again, as before t594: an entry never prepared, or a page that cannot do the
+// brief's parts, reaches its honest ending through one trial, which says why.
+// A permission the person did not give, or a check only a person can pass,
+// ends the brief through its own signal, never this check.
+import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceCompletionCheck, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
+import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT } from "../plan/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY } from "../../llm/decision-handlers/index.ts";
 import { automationStudioCandidateSubmissionRefusal } from "../candidate/index.ts";
 import type { AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
-import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialResult } from "./contracts.ts";
+import type { AutomationStudioSubflowDoneBefore, AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialResult } from "./contracts.ts";
+import { automationStudioSubflowBriefWords } from "./brief-words.ts";
+import { automationStudioSubflowDoneBefore, automationStudioSubflowEntryLeft } from "./done-before.ts";
 import { automationStudioSubflowBuilderTools } from "./role-tools.ts";
 import { AutomationStudioSubflowScopedSubmissionController } from "./scoped-submission.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID } from "./submit-tool.ts";
@@ -125,9 +153,8 @@ const ENDING_TOO_SOON = "subflow.ending_too_soon";
 const ENDING_AFTER_YES = "subflow.ending_after_yes";
 const ENDING_OUTCOMES: ReadonlySet<unknown> = new Set(["blocked", "partial"]);
 const RECEIPT_KEYS: ReadonlySet<string> = new Set(["subflowKey", "revision", "digest"]);
-const ENDING_KEYS: ReadonlySet<string> = new Set(["ended", "reason"]);
+const ENDING_KEYS: ReadonlySet<string> = new Set(["ended", "reason", "doneBefore"]);
 const MAX_ENDING_REASON = 2000;
-
 /** How a builder may end its brief without a passing proposal, as its tools and refusals say it (header). */
 const HONEST_ENDING = "If nothing this brief can change would make its trial pass -- a subflow before it never prepares its entry, or the site cannot do what its parts ask -- "
   + "end the brief instead: complete with {\"ended\": \"blocked\", \"reason\": \"<why, in a sentence>\"}, or \"partial\" in place of \"blocked\" while a proposal stands.";
@@ -143,63 +170,26 @@ export type AutomationStudioSubflowBuilderOutcome = {
   loop: Awaited<ReturnType<typeof runAutomationStudioLlmEvidenceLoop>>;
   proposal: AutomationStudioSubflowProposal | undefined;
   trial: ReturnType<AutomationStudioSubflowTrialGate["standing"]>;
-  ended?: { outcome: "blocked" | "partial"; reason: string } | undefined;
+  /** The honest ending; `doneBefore` only on a blocked one whose claim Core admitted (header, t676). */
+  ended?: { outcome: "blocked" | "partial"; reason: string; doneBefore?: AutomationStudioSubflowDoneBefore } | undefined;
   lastTrial?: AutomationStudioSubflowTrialResult | undefined;
   promotionAllowed: false;
 };
 
 /**
- * What the submit tool says of the subflow's success check (t569). A scope
- * with one: it is the plan's, as before, byte for byte. A scope with none --
- * the plan the project supervisor writes gives none -- proposing one is the
- * builder's, in the script's own `done when:` terms
- * (`../plan/flow-script-format.ts`): where the line goes for this kind of
- * subflow, and that it becomes the subflow's check, which its trial is judged
- * against (`./scoped-submission.ts`, `../../service/subflow-trial/run.ts`).
+ * Why a dependent builder's blocked ending is refused before anything was tried when it names no part done before
+ * (header, t676): the claim's shape where a part of its brief asks a lasting act, and otherwise that a trial comes first.
  */
-function successCheckRule(scope: AutomationStudioSubflowScope): string {
-  if (scope.successCheck !== undefined) return "Its success check is the plan's; leave out `done when:` for it or write exactly that.";
-  const where = scope.interface ? `inside its own \`part ${scope.subflowKey}:\` block, before its first step` : "outside every block, after its last step";
-  return `The plan gives it no success check, so propose one with it: a \`done when: <fact>\` line ${where}, saying what the page shows once it worked, for example \`done when: text t11 contains "Booked"\`. `
-    + "It becomes this subflow's success check, and its trial is judged against it.";
+function untriedEnding(scope: AutomationStudioSubflowScope, trials: boolean): string {
+  const claim = automationStudioSubflowDoneBefore.acting(scope).length ? `If a subflow before it already did one of its parts, end it now with exactly ${automationStudioSubflowDoneBefore.shape}. ` : "";
+  return `Nothing of this brief has been submitted or tried yet. ${claim}For any other reason -- its entry not prepared, or the site unable to do what its parts ask -- `
+    + `submit the subflow with ${AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID}${trials ? ` and test it with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}` : ""} first: ${trials ? "its trial says why it cannot pass, and " : ""}the brief can then end blocked saying so.`;
 }
 
-/**
- * The brief, as the submit tool says it (header, t570): the parts this subflow
- * does, in the person's own words, and how it is written -- for a callable
- * subflow the exact `part`, `input:` and `output:` lines, by the names its
- * interface gives, which is what the scoped submission holds it to
- * (`./callable-target.ts`).
- */
-function briefWords(scope: AutomationStudioSubflowScope): string {
-  const key = scope.subflowKey;
-  const parts = scope.parts.map((part) => `"${part.text}"`).join("; ");
-  const own = `Your brief is the subflow "${key}" alone. It does only ${scope.parts.length === 1 ? "this part" : "these parts"} of the task: ${parts}. Any other part of the task is another builder's subflow: write none of its steps here.${alreadyDone(scope)}`;
-  const contract = scope.interface;
-  if (!contract) return `${own} The router runs it, so it takes no inputs and hands back no outputs: write its steps outside every block, and any helper it needs as a part those steps call.`;
-  const inputs = contract.inputs.map((port) => port.id);
-  const outputs = contract.outputs.map((port) => port.id);
-  const lines = [`part ${key}: <what it does>`, ...inputs.map((name) => `  input: ${name}`), ...outputs.map((name) => `  output: ${name} = $step.<label>.<output>`), "  step <label>: <what it does>", "    node: ...", "end"];
-  const given = inputs.length ? `is given exactly ${names(inputs)}` : "is given no value";
-  const handed = outputs.length ? `hands back exactly ${names(outputs)}` : "hands back no value";
-  return `${own} Other subflows call it: it ${given} and ${handed}. So write it as one part with exactly these lines, its steps inside, and nothing outside every block:\n${lines.join("\n")}\n`
-    +(outputs.length ? "Each output line names one of the part's own steps by its label and the output it binds. " : "")
-    + "Any helper it needs is a further part it calls.";
-}
-
-/**
- * What a dependent builder is told of its part already done at its entry
- * (header, t594): nothing for a scope with no predecessors.
- */
-function alreadyDone(scope: AutomationStudioSubflowScope): string {
-  if (!scope.predecessors.length) return "";
-  return ` ${scope.predecessors.length === 1 ? "The subflow" : "The subflows"} ${names(scope.predecessors)} ${scope.predecessors.length === 1 ? "runs" : "run"} before it and ${scope.predecessors.length === 1 ? "leaves" : "leave"} the page where it starts. `
-    + "If the page there already shows what one of its parts asks as done, a subflow before it did that part: write no step for it, and if nothing of this brief is left to do, "
-    + `end the brief: complete with {"ended": "blocked", "reason": "<which part is already done, and which subflow did it>"}, so the plan can change.`;
-}
-
-function names(values: readonly string[]): string {
-  return values.map((value) => `"${value}"`).join(", ");
+/** A tool's answer's evidence, where the answer is a tool execution; undefined for any other answer. */
+function executionEvidence(ran: Awaited<ReturnType<AutomationStudioLlmEvidenceLoopInput["executeTool"]>>): JsonValue | undefined {
+  if (typeof ran !== "object" || ran === null || Array.isArray(ran) || ran.kind !== "llm_evidence_tool_execution") return undefined;
+  return (ran as { evidence?: JsonValue }).evidence;
 }
 
 export async function runAutomationStudioSubflowBuilderLoop(input: {
@@ -232,10 +222,12 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   let tried = false;
   let lastTrial: AutomationStudioSubflowTrialResult | undefined;
   let ended: AutomationStudioSubflowBuilderOutcome["ended"];
+  /** The acts the run that prepared this builder's entry landed, as its opening look listed them (header, t676). */
+  let entryActs: string[] = [];
   const submitTool: AutomationStudioLlmEvidenceTool = {
     toolId: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, effect: "observe",
-    description: `Submit your subflow "${subflowKey}", written as a Flow script under "flow"${input.scope.interface ? "" : `, or a JSON plan under "plan"`}. The description of "flow" opens with your brief -- the parts of the task this subflow does, in the person's words, and how it is written -- then gives the format and examples: hold whatever you submit to that brief. Write no \`when:\` line and no other subflow: which situation runs which subflow is the structure plan's. ${successCheckRule(input.scope)} Static validity returns a draft revision and digest, never acceptance. Correct every diagnostic and resubmit the whole subflow. Then test that exact revision with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}, and complete with the subflowKey, revision and digest only after its trial answers yes. ${HONEST_ENDING}`,
-    inputSchema: { type: "object", properties: { flow: { type: "string", description: `${briefWords(input.scope)}\nThis subflow as a script. ${AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT}` }, plan: { type: "object" }, summary: { type: "string" } }, additionalProperties: false }
+    description: `Submit your subflow "${subflowKey}", written as a Flow script under "flow"${input.scope.interface ? "" : `, or a JSON plan under "plan"`}. The description of "flow" opens with your brief -- the parts of the task this subflow does, in the person's words, and how it is written -- then gives the format and examples: hold whatever you submit to that brief. Write no \`when:\` line and no other subflow: which situation runs which subflow is the structure plan's. ${automationStudioSubflowBriefWords.successCheck(input.scope)} Static validity returns a draft revision and digest, never acceptance. Correct every diagnostic and resubmit the whole subflow. Then test that exact revision with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}, and complete with the subflowKey, revision and digest only after its trial answers yes. ${HONEST_ENDING}`,
+    inputSchema: { type: "object", properties: { flow: { type: "string", description: `${automationStudioSubflowBriefWords.brief(input.scope)}\nThis subflow as a script. ${AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT}` }, plan: { type: "object" }, summary: { type: "string" } }, additionalProperties: false }
   };
   const receiptCheck = (result: JsonObject): AutomationStudioLlmEvidenceCompletionCheck => {
     const proposal = controller.latest();
@@ -266,11 +258,17 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
     if (!ENDING_OUTCOMES.has(result.ended) || !reason || Object.keys(result).some((key) => !ENDING_KEYS.has(key))) return shapeRefused();
     // A dependent builder may find its part already done at its entry, with nothing to submit (header, t594).
     if (!tried && !(result.ended === "blocked" && input.scope.predecessors.length)) return endingRefused(ENDING_TOO_SOON, `Nothing of this brief has been submitted or tried yet, so there is nothing to end on. Submit the subflow with ${AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID}${gate.available ? ` and test it with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}` : ""} first.`);
+    // A dependent builder's blocked ending before anything was tried is only "a subflow before it did my part"; for any other
+    // reason -- its entry not prepared, a page that cannot do its parts -- its first trial says why, so it tries first (header, t676).
+    if (!tried && result.doneBefore === undefined) return endingRefused(ENDING_TOO_SOON, untriedEnding(input.scope, gate.available));
+    // Before anything was tried, and wherever it is named, "a subflow before it did my part" is Core's to check (header, t676).
+    const claim = result.doneBefore !== undefined || !tried ? automationStudioSubflowDoneBefore.check(input.scope, result.ended, result.doneBefore, entryActs) : undefined;
+    if (claim && !claim.ok) return endingRefused(claim.code, claim.instruction);
     const proposal = passed();
     if (proposal) {
       return endingRefused(ENDING_AFTER_YES, `Revision ${proposal.revision} of this subflow passed its trial, so the brief is done: complete with exactly {"subflowKey": ${JSON.stringify(subflowKey)}, "revision": ${proposal.revision}, "digest": "${proposal.digest}"}.`);
     }
-    ended = { outcome: result.ended as "blocked" | "partial", reason: reason.slice(0, MAX_ENDING_REASON) };
+    ended = { outcome: result.ended as "blocked" | "partial", reason: reason.slice(0, MAX_ENDING_REASON), ...(claim?.ok ? { doneBefore: claim.doneBefore } : {}) };
     return { ok: true };
   };
   // A receipt beside an ending (header, t601): read by what Core holds for the proposal it names, never refused for carrying both.
@@ -311,7 +309,12 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
         }
         return answered;
       }
-      if (call.toolId !== AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID) return input.loop.executeTool(call);
+      if (call.toolId !== AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID) {
+        const ran = await input.loop.executeTool(call);
+        // What the preparation run landed, as the opening look's entry note lists it (header, t676).
+        if (isOpeningCall(call.callId)) entryActs = automationStudioSubflowEntryLeft.acts(executionEvidence(ran));
+        return ran;
+      }
       tried = true;
       const submitted = await controller.submit(call.value, { trialOf: (proposal) => gate.standing(proposal), refuted: (digest) => gate.refuted(digest) });
       if (!submitted.ok) {
@@ -347,8 +350,12 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
 function completionSchema(subflowKey: string): JsonObject {
   return {
     type: "object",
-    description: "Either the receipt of the latest proposal once its trial answered yes -- exactly subflowKey, revision and digest -- or an honest ending -- exactly ended and reason. A receipt whose trial answered yes is taken as the brief done whatever else it carries.",
-    properties: { subflowKey: { type: "string", const: subflowKey }, revision: { type: "integer" }, digest: { type: "string" }, ended: { type: "string", enum: ["blocked", "partial"] }, reason: { type: "string" } },
+    description: "Either the receipt of the latest proposal once its trial answered yes -- exactly subflowKey, revision and digest -- or an honest ending -- exactly ended and reason, and doneBefore only where a subflow before this one did one of its parts. A receipt whose trial answered yes is taken as the brief done whatever else it carries.",
+    properties: {
+      subflowKey: { type: "string", const: subflowKey }, revision: { type: "integer" }, digest: { type: "string" }, ended: { type: "string", enum: ["blocked", "partial"] }, reason: { type: "string" },
+      // The part a subflow before this one did, and the act its entry note lists for it (header, t676).
+      doneBefore: { type: "object", description: "Only on a blocked ending of a brief whose part a subflow before it did: that part's id, and the act id its entry note lists under predecessorsLeftOnSite for it.", properties: { part: { type: "string" }, act: { type: "string" } }, required: ["part"], additionalProperties: false }
+    },
     anyOf: [{ required: ["subflowKey", "revision", "digest"] }, { required: ["ended", "reason"] }],
     additionalProperties: false
   };

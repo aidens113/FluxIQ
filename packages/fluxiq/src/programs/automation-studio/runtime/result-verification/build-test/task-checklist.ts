@@ -39,6 +39,16 @@
 // their own trials. The same `entry` takes their reads out of the rows a yes
 // accounts for (`../request-rows/summary-reads.ts`). A trial with no
 // predecessors, and a whole trial, is told exactly what it was.
+//
+// **A press that declared nothing is no proof it left nothing (t676).** On A8
+// crossborder round 1 (`run-mvan7giv-4246aafb`) a subflow's step pressed
+// another part's control, declared `consequences: none`, and changed its page;
+// Core recorded the act as possibly lasting, and the judge excused the press
+// as non-lasting on its own label and answered yes. A subflow trial's
+// checklist now carries those steps of the subflow's own (`possiblyLasting`,
+// by nodeId), and its label says such a step may have made a lasting act: it
+// is judged by what it changed, against asked and outOfScope, never by the
+// label it declared.
 
 import type { AutomationStudioResultTaskChecklist, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 
@@ -52,6 +62,8 @@ export type AutomationStudioBuildTestTaskChecklist = {
   outOfScope?: ReadonlyArray<{ id: string; words: string }> | undefined;
   /** A subflow trial's only: the earlier subflows Core ran in it to prepare its entry, by key, and every step of theirs, by nodeId (header, t599). */
   entry?: { subflows: readonly string[]; steps: readonly string[] } | undefined;
+  /** A subflow trial's only: its own steps, by nodeId, whose act Core recorded possibly lasting (header, t676). */
+  possiblyLasting?: readonly string[] | undefined;
 };
 
 /** The section's own label: what it is, that the instructions win, and how the judge uses it. */
@@ -70,11 +82,16 @@ const ENTRY = "Before this subflow, this trial ran the subflows entry.subflows n
   + "What they read, kept, left out or pressed, a lasting act among them, is not this subflow's doing: it is never a reason to answer no, never a step to remove or change, and a yes need not account for the rows their reads kept or left out. "
   + "Judge this subflow by its own steps, from the page those steps found.";
 
+/** Said when a subflow trial's own steps include one Core recorded possibly lasting (header, t676). */
+const POSSIBLY_LASTING = "possiblyLasting holds, by nodeId, steps of this subflow that declared no lasting act yet changed their own page where they acted, so Core recorded each as possibly lasting. "
+  + "Such a step's own consequences label is no proof it left nothing: judge it by what it changed, as a step that may have made a lasting act, against asked and outOfScope.";
+
 /** `summary` with the checklist as its labelled supplementary section, `taskChecklist`; the summary itself is not changed. */
 export function automationStudioBuildTestSummaryWithTaskChecklist(summary: AutomationStudioRunResultSummary, checklist: AutomationStudioBuildTestTaskChecklist): AutomationStudioRunResultSummary {
   const outOfScope = checklist.outOfScope ?? [];
   const entry = checklist.entry?.steps.length ? checklist.entry : undefined;
-  const said = [SUPPLEMENTARY, ...(outOfScope.length ? [entry ? OUT_OF_SCOPE_WITH_ENTRY : OUT_OF_SCOPE] : []), ...(entry ? [ENTRY] : [])];
+  const possiblyLasting = checklist.possiblyLasting ?? [];
+  const said = [SUPPLEMENTARY, ...(outOfScope.length ? [entry ? OUT_OF_SCOPE_WITH_ENTRY : OUT_OF_SCOPE] : []), ...(entry ? [ENTRY] : []), ...(possiblyLasting.length ? [POSSIBLY_LASTING] : [])];
   const taskChecklist: AutomationStudioResultTaskChecklist = {
     supplementary: said.join(" "),
     asked: checklist.parts.map((part) => ({ part: part.id, words: part.words, goalFacts: [...part.goalFacts], lastingActs: [...part.lastingActs] })),
@@ -82,5 +99,6 @@ export function automationStudioBuildTestSummaryWithTaskChecklist(summary: Autom
   };
   if (outOfScope.length) taskChecklist.outOfScope = outOfScope.map((part) => ({ part: part.id, words: part.words }));
   if (entry) taskChecklist.entry = { subflows: [...entry.subflows], steps: [...entry.steps] };
+  if (possiblyLasting.length) taskChecklist.possiblyLasting = [...possiblyLasting];
   return { ...summary, taskChecklist };
 }

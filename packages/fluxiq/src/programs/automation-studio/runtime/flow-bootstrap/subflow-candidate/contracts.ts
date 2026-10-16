@@ -45,7 +45,27 @@ export type AutomationStudioSubflowScope = {
    * the Flow. Absent, every input is.
    */
   handedOn?: readonly string[];
+  /**
+   * The task spec's other parts, each another builder's subflow, by id and the
+   * person's words, when the dispatcher carries them (t676): the builder is
+   * told them, so a lasting act of one it does while exploring is known as
+   * another builder's part, never a step of its own
+   * (`./builder-loop.ts`). Absent, it is told only that other parts exist.
+   */
+  outOfScope?: readonly AutomationStudioSubflowOutOfScopePart[];
 };
+
+/** A part of the task another builder's subflow does (t676), by id and the person's words. */
+export type AutomationStudioSubflowOutOfScopePart = { partId: string; text: string };
+
+/**
+ * What a dependent builder's blocked ending says a subflow before it did
+ * (t676): one of its own parts, by id, and the act the run that prepared its
+ * entry landed for it, where it names one. Core admits it only when the part
+ * asks a lasting act and that act is the preparation run's
+ * (`./builder-loop.ts`).
+ */
+export type AutomationStudioSubflowDoneBefore = { part: string; act?: string };
 
 /** What binds a proposal, a trial and its receipt to one brief of one plan. */
 export type AutomationStudioSubflowScopeIdentity = Pick<AutomationStudioSubflowScope, "buildId" | "briefId" | "planDigest" | "subflowKey">;

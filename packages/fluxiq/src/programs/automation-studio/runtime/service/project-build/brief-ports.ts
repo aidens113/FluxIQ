@@ -5,7 +5,7 @@ import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConse
 import { observeAutomationStudioEvidenceLoop } from "../../activity/index.ts";
 import { automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapPersonNeeded, flowBootstrapEvidenceUnusableDecisionFailure, type AutomationStudioBootstrapAccounting, type AutomationStudioFlowBootstrapActionPermissions, type AutomationStudioFlowBootstrapPersonNeeded } from "../../flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY, AUTOMATION_STUDIO_SITE_RESET_WORDS, AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetCalls, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetTarget, type AutomationStudioSiteResetTrialReset } from "../../flow-bootstrap/site-reset/index.ts";
-import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, type AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, automationStudioSubflowEntryLeft, type AutomationStudioSubflowEntryLeftAct, type AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, AUTOMATION_STUDIO_NODE_WRITE_KEY, automationStudioFlowDraftReplayClearedCode, automationStudioHarnessOptionRegistry, automationStudioLlmNodeDescriptions, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceToolExecutionResult, type AutomationStudioLlmHarnessInput } from "../../llm/index.ts";
 import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectBriefPortFactory, AutomationStudioProjectBriefPortRequest } from "../../project-agents/index.ts";
@@ -14,7 +14,7 @@ import { automationStudioCandidateStallCode, automationStudioCandidateSubmission
 import { automationStudioFlowBootstrapUnusableDecisions, type generateAutomationStudioFlowCandidateDraft } from "../flow-bootstrap-commands/index.ts";
 import type { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
 import type { AutomationStudioProjectBuildDecisions } from "./decisions.ts";
-import type { AutomationStudioProjectBuildEntry } from "./entry-preparation.ts";
+import { automationStudioProjectBuildEntryNote } from "./entry-note.ts";
 import { AutomationStudioProjectBuildPermissions } from "./permissions.ts";
 import { AutomationStudioProjectBuildPhaseStart } from "./phase-start.ts";
 import type { AutomationStudioProjectBuildProposals } from "./proposals.ts";
@@ -88,6 +88,18 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // holds it (its id and what it did, the step and the control), the same form a
 // trial's `leftOnSite` takes, with what to do when a part of the builder's own
 // asks for one of them.
+//
+// **What a prepared entry says depends on what the brief's parts ask (t676).**
+// On three A8 Lab runs a later builder ended blocked as "already done"; once
+// its parts only read, so no predecessor could have done them, and once the
+// act that did it was a press that declared nothing, so it was left out of
+// `predecessorsLeftOnSite`. A possible act the preparation run landed is now
+// listed too, marked `possibly`, and the note (`./entry-note.ts`) says "what
+// they did is already done" and "end the brief blocked" only to a brief with a
+// part that asks a lasting act; one whose parts only read is told to explore
+// and build from here. The ending names the part and the act under
+// `doneBefore`, and the builder loop reads the listed act ids back off this
+// note to check it (`flow-bootstrap/subflow-candidate/done-before.ts`).
 //
 // **A prepared entry is the builder's arrival** (t585, A8 launch 6). The
 // domain counts a build arrived only once it has gone to the start location,
@@ -268,8 +280,9 @@ export function automationStudioProjectBuildBriefPorts(input: {
       const arrived = entry.kind === "prepared" && opensArriving;
       const absorbedActs = started.record.putBack?.map((act) => act.act);
       // What the preparation run landed, as the project ledger holds it (header, t638).
-      const landed = entry.kind === "prepared" ? project.ledger.snapshot().acts.filter((act) => act.inPlace && !act.possible && act.ref.startsWith(`${entry.runId}#`)).map(({ act, did }) => ({ act, did })) : [];
-      const loop = told({ ...placed, tools }, { start: started.told, entry: entryNote(request.scope.subflowKey, entry, absorbedActs, landed), permittedActs: request.brief.permittedActs, arrived });
+      // A possible act is listed too, marked `possibly` (t676): a press that declared nothing yet changed its page may be a part's act.
+      const landed: AutomationStudioSubflowEntryLeftAct[] = entry.kind === "prepared" ? project.ledger.snapshot().acts.filter((act) => act.inPlace && act.ref.startsWith(`${entry.runId}#`)).map(({ act, did, possible }) => ({ act, did, ...(possible ? { possibly: true as const } : {}) })) : [];
+      const loop = told({ ...placed, tools }, { start: started.told, entry: automationStudioProjectBuildEntryNote(request.scope, entry, absorbedActs, landed), permittedActs: request.brief.permittedActs, arrived });
       // The domain's denied keys, which the dispatcher withholds from a repair's `yourSubflow` (`project-agents/dispatch/run-brief.ts`, t625).
       return { loop, submission: { ...submission, permissionFor: built.permissions.planStep }, trial, reset, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...built.submissions.observe(observed), decide: built.decide(observed.completionSchema) }), ended: built.ended, deniedEvidenceKeys: binding.deniedEvidenceKeys };
     },
@@ -363,33 +376,6 @@ function lookingInPlace(tool: Tool): Tool {
   return tool.initialObservation?.arrival ? { ...tool, initialObservation: { input: tool.initialObservation.input } } : tool;
 }
 
-/**
- * What a dependent builder's opening look says about its entry; nothing for a
- * subflow the build's start begins. `absorbed` names the acts of this build
- * the start hook put back before its predecessors ran, and `landed` the
- * lasting acts the run that prepared the entry left on the site (header).
- */
-function entryNote(subflowKey: string, entry: AutomationStudioProjectBuildEntry, absorbed: readonly string[] | undefined, landed: ReadonlyArray<{ act: string; did: string }> = []): JsonObject | undefined {
-  if (entry.kind === "start") return undefined;
-  const names = entry.predecessors.map((key) => `"${key}"`).join(", ");
-  const putBack = absorbed?.length ? { absorbedByStartReset: [...absorbed] } : {};
-  if (entry.kind === "prepared") {
-    if (!landed.length) return { prepared: true, note: PREPARED(names, subflowKey), ...putBack };
-    const note = `${PREPARED(names, subflowKey)} Their lasting acts are under predecessorsLeftOnSite: each is on the site now, even where a page has not caught up with it. `
-      + "If one of them is what a part of yours asks for, a subflow before yours already does it: do not do it again, and end the brief blocked naming that act, so the plan can change.";
-    return { prepared: true, note, predecessorsLeftOnSite: landed.map((act) => ({ ...act })), ...putBack };
-  }
-  const why = entry.missing?.length
-    ? `${entry.missing.map((key) => `"${key}"`).join(", ")} has no proposal whose trial passed yet, so Core could not run it first`
-    : entry.failed
-      ? `Core ran them to reach your entry, but "${entry.failed}" did not run to its end (${entry.code})`
-      : `Core could not run them to reach your entry (${entry.code})`;
-  return { prepared: false, code: entry.code, note: `Your subflow "${subflowKey}" begins where ${names} leave the site, but ${why}. This page is not your subflow's entry: what you see and do here may differ from what your subflow meets when it runs after them.`, ...putBack };
-}
-
-/** The note of a prepared entry, before what its predecessors left (header). */
-const PREPARED = (names: string, subflowKey: string) => `Before this first look, Core ran the passing proposals of the subflows before yours (${names}) once, in order, so the site is where your subflow "${subflowKey}" begins. Explore and build from here; what they did is already done, so do not do it again.`;
-
 /** The key Core's opening look of a builder on its prepared entry carries, which the web domain reads as its arrival (header). */
 const ARRIVED_KEY = "arrived";
 /** The key beside a brief's opening look that says how its start was made (header, `./phase-start-told.ts`). */
@@ -412,7 +398,7 @@ function told<L extends { executeTool: Execute }>(loop: L, said: { start: JsonOb
     const ran = await inner(said.arrived && opening ? { ...call, value: { ...call.value, [ARRIVED_KEY]: true } } : call);
     if (opening && (said.start || said.entry)) {
       const started = said.start ? beside(ran, PHASE_START_KEY, said.start) : ran;
-      return said.entry ? beside(started, "entry", said.entry) : started;
+      return said.entry ? beside(started, automationStudioSubflowEntryLeft.entryKey, said.entry) : started;
     }
     if (said.role === "reset" && call.value[AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY] !== undefined) return ran;
     const outside = landedOutside(call.value, ran, said.permittedActs);

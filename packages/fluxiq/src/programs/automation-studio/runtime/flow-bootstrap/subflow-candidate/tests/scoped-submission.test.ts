@@ -339,7 +339,7 @@ describe("a subflow builder's scoped submission", () => {
     expect(refused.check.issueCodes).toEqual(["subflow.lasting_act_missing"]);
     const said = JSON.stringify(refused.check.feedback);
     expect(said).toContain("ask for a lasting act (create_new), and no step of this submission declares one");
-    expect(said).toContain("a subflow before it did it: end the brief blocked and say so");
+    expect(said).toContain("a subflow before it did it: end the brief blocked and say so, naming the part and the act under doneBefore");
     // Declared on the step that does it -- in whatever class the builder judges it -- the submission stands.
     const act = ["step: save it", "  node: web.dom.click", "  selector: .save", "  consequences: modify_existing"];
     expect((await controller(asking).submit(script([...OPEN, ...act]))).ok).toBe(true);
