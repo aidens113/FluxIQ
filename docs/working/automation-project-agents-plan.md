@@ -635,6 +635,13 @@ Entries from 2026-10-13 to A8 wave 4 (t550-t611) are archived in
 - Outcome: Accepted
 - Follow-up: t655 (in flight, paired): reads list rows several conditions left out (so t654 can fire) and the snapshot carries structured groups (t652's fix 3)
 
+### 2026-10-15 — Reads account for rows several conditions removed; a narrowing doubt is asked again (t655, Core half)
+- Agent: worker t655-reads-say-what-they-left-out (two rounds: the producers were outside round 1), paired with downstream; supervisor verified and integrated
+- Changed: `service/summaries/extraction-summary.ts` admits `conditions.togetherRows`; `result-verification/read-account/together-rows.ts` (new) and `accounts.ts` list rows left out by more than one condition; `refuted-no/record.ts` counts them, so t654's completeness test can pass and its refutation fire on a real read; the t631 joint guard uses the listing when complete; `narrowing-group.ts` (new) and `narrowed-before.ts` carry a narrowing step's group, chosen option, left-out options with counts and result counts, from structured page data only; `unsure-doubts/` (new) and `agreement.ts`: an unsure whose doubt says a step chose an option the request does not name, where its words pass the request-text test, is asked once more; a no never on this ground
+- Why: wave 27 towels: t654 could never fire (two rows left out jointly were listed nowhere) and a doubt about a site filter matching the request's words could not be answered (t652 fix 3)
+- Validation: after merging dev (t652-t654 in): tsc exit 0; result-verification, service/summaries, candidate-trial, subflow-trial, llm, flow-bootstrap -> 518 files, 5362 passed, 2 skipped; audit passed; `pnpm check` -> passed; merged `299c722e`
+- Outcome: Accepted. Not proven live that real pages give identical row records across conditions (if not, rows do not group and nothing is refuted)
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
