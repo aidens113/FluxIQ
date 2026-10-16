@@ -31,15 +31,14 @@ about 1.6 times `candidate` on pair 8. Two thirds of the gap is finished work th
 blocking a brief, and plan amends dropping done proposals; a predecessor's proposal re-doing a later part's act while
 Core prepared the entry; the supervisor's guidance teaching splits. Merged: t671 (P1: a narrowing, merge, or act/fact
 change carries a done proposal), t672 (P2: an unread handed-on input passes), t673 (P3: asks done on one page are one
-subflow), t676 (P4: Core checks a "done before" ending), t677 (an exact first-ask yes flag). In flight: t679 (P5: a
-one-part plan's builder test is the judged whole run; part 1 on its branch), t683 (reset reason, durable fallback).
-Then a live round in `project`.
+subflow), t676 (P4: Core checks a "done before" ending), t677 (an exact first-ask yes flag). Also t679 (P5: a one-part plan's
+builder test is the judged whole run) and t683 (the reset reason). In flight: t684 (in-part acts a reset cannot undo).
+Then the cost round in `project`.
 
 **Also done 2026-10-16:** t674 and t681 split `verdict.ts` and `candidate/submission.ts`; t680 audits RegExp
 escapes; t682 runs the structure audit before every push.
 
-**Open follow-ups:** the reset-reason flag for a held ending (`completion.ts`/`state.ts`); the supervisor's fallback
-kept only in memory; `flow-bootstrap/candidate/submission.ts` past the 400-line advisory; A7 (project extend) after
+**Open follow-ups:** A7 (project extend) after
 held-topology units 1-4; a mechanical check for `\b` in RegExp template literals (two tests silently never ran).
 
 **Not claimed:** that agents fix wrong judgements; that the cost fixes lower cost live (no live round yet).
@@ -734,6 +733,29 @@ Entries from 2026-10-13 to A8 wave 4 (t550-t611) are archived in
   dev: tsc exit 0; vitest candidate, flow-bootstrap-commands, project-agents -> 79 files, 557 passed. t682
   `sh .githooks/pre-push` -> exit 0 clean, exit 1 with a stale README (also with CRLF line endings). Pushed
 - Outcome: Accepted
+
+
+### 2026-10-16 — One-part plans test once (t679); the reset reason recorded (t683)
+- Agent: workers t679 (two rounds), t683; supervisor resolved the `supervisor/dispatch-tool.ts` merge conflict (t679's
+  `complete` and t683's `completeAgain` on one answer, both kept: they follow different brief kinds), committed the
+  baseline entry t681 removed, integrated
+- Changed: t679 `project-agents/single-subflow/` (new), `dispatch/{port,dispatcher,run-brief,types}.ts`,
+  `supervisor/{assemble-tool,dispatch-tool,brief-sizing,guidance,whole-trial}.ts`, `subflow-candidate/{builder-loop,
+  subflow-trial-gate}.ts`, `service/project-build/run.ts`: on a plan of one router-run subflow the builder's test is
+  the judged whole trial of the exact assembled revision, under the supervisor's purse frame, completed on in three
+  supervisor decisions; the brief is sized near the whole purse and keeps no judge calls back; the proposals store
+  learns single-path trials; old one-part tests moved to the new path or to two-subflow plans. t683
+  `supervisor/{state,completion,dispatch-tool,supervisor-loop}.ts`: `resetToEnd` records why a reset was asked for;
+  the answer after it says end or `completeAgain`, never test; the t637 fallback stays in memory (no supervisor is
+  restarted mid-build), said in the header
+- Why: downstream cost gap P5; follow-ups of t637 and t638
+- Validation: t679 after merging dev (t683 in): tsc exit 0; vitest project-agents, project-build, subflow-candidate,
+  subflow-trial, flow-bootstrap/candidate, candidate-trial -> 150 files, 971 passed. t683: tsc exit 0; vitest
+  project-agents, project-build -> 70 files, 465 passed. `pnpm task finish` -> `pnpm check` passed for both; pushed
+  `c30a1a32`
+- Outcome: Accepted
+- Follow-up: t684 (a reset cannot undo an act made inside a part subflow's trial yet says every act is undone; t683's
+  three reset gaps), in flight
 
 
 ## Open Questions
