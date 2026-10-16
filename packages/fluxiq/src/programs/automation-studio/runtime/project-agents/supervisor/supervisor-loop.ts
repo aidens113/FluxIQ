@@ -404,7 +404,9 @@ const LATEST_PASS_RESET_REASON = "The supervisor stopped before completing, so C
  * build's last other brief, a plan is in force and a purse can size it. Its
  * dispatch is the supervisor's own tool, so it is recorded, shown and sized as
  * any brief is; a refusal of it, a purse that cannot pay for it, or the run's
- * bound stopping it, leaves the ending to name what is left.
+ * bound stopping it, leaves the ending to name what is left. The state keeps
+ * that it was sent so the build can end (`resetToEnd`, t683), so its answer
+ * says the build ends now rather than offering a test.
  */
 async function resetBeforeEnding(context: AutomationStudioProjectSupervisorContext, pastTheBound: () => boolean, reason = CORE_RESET_REASON): Promise<void> {
   const { ports, state } = context;
@@ -417,6 +419,8 @@ async function resetBeforeEnding(context: AutomationStudioProjectSupervisorConte
   const subflowKey = ownerKey && keys.has(ownerKey) ? ownerKey : structure.plan.subflows[0]?.key;
   if (!subflowKey) return;
   const value = { reason, briefs: [{ kind: "reset", subflowKey, entry: { caseId: "observed-current", predecessors: [] } }] };
+  // Sent so the build can end, and its answer says so, never to test (`./state.ts`, `resetToEnd`, t683).
+  state.resetToEnd = { by: "core" };
   try {
     await withAutomationStudioProjectAgent({ role: "supervisor" }, () => automationStudioLlmBuildPurseRun(ports.purse, () => automationStudioProjectSupervisorDispatchTool(context, value)));
   } catch (error) {
