@@ -253,6 +253,12 @@ The detailed procedure for each, with the current offenders, is in the
   return type is checked and stays fine. The `as-never` rule enforces this in
   source and tests alike, reading the syntax tree so a comment or string does
   not count, with existing casts baselined per file.
+- **A regex escape a string swallows.** ``new RegExp(`\b${word}\b`)`` hands the
+  regex a backspace, not a word boundary, and `\d`, `\s`, `\w`, `\.` reach it
+  as plain characters; in October 2026 two Core tests never ran their check
+  this way. Double the backslash (`\\b`) or use `String.raw`. The
+  `regexp-template-escapes` rule fails such an escape in a `RegExp(...)`
+  pattern literal, in source and tests alike, with no baseline.
 - **Packing statements onto one line.** The line budget counts lines, so
   `let a: X | undefined; if (cond) doThing({ a });` or two imports on one line
   keep a file under it without making the file any smaller. On 2026-10-09
