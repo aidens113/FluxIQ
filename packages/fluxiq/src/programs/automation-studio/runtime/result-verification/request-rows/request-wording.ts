@@ -23,7 +23,7 @@
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioRequestAppliedExclusions } from "./applied-exclusions.ts";
-import { automationStudioRequestPhrases } from "./request-phrases.ts";
+import { automationStudioRequestPhrases, type AutomationStudioRequestPhrases } from "./request-phrases.ts";
 import { automationStudioRequestRowsReads } from "./summary-reads.ts";
 import { automationStudioRequestRowWordCarries, automationStudioRequestRowWords } from "./words.ts";
 
@@ -47,6 +47,8 @@ export type AutomationStudioRequestWording = {
    * out. False for a text with no words of its own.
    */
   applied(text: string): boolean;
+  /** The request's phrases (`request-phrases.ts`): what a kept row's name is measured against (`kept-not-naming-the-item.ts`, t663). */
+  phrases: AutomationStudioRequestPhrases;
 };
 
 /**
@@ -77,7 +79,8 @@ export function automationStudioRequestWording(
     says: (text) => runs(words, wordsOf(text)),
     ownWords,
     has: (word) => said.has(word),
-    applied: automationStudioRequestAppliedExclusions(summary, ownWords)
+    applied: automationStudioRequestAppliedExclusions(summary, ownWords),
+    phrases: automationStudioRequestPhrases(requestText)
   };
 }
 
