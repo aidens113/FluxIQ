@@ -42,9 +42,30 @@ const DIAGNOSIS_OUTPUT_SCHEMA = {
     metadata: JSON_METADATA_SCHEMA
   }
 } as const;
+// A result verification's answer, the verdict first (t653). The same members,
+// ordered so the model writes `kind` and the closed `diagnosis` -- the verdict
+// is its `answersRequest` -- before it narrates in `summary`. Live run
+// `run-mva6mlo8-f519063c`: four of 21 judge replies wrote `summary` first,
+// repeated one sentence in it until the provider's output ceiling cut them
+// off, and left no verdict at all. Written first, the verdict survives such a
+// cut, and the reply envelope reads it (`./verdict-before-cut.ts`). No limit
+// changes: this orders what the model writes and caps nothing.
+const VERIFICATION_OUTPUT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["kind", "diagnosis", "summary"],
+  properties: {
+    kind: DIAGNOSIS_OUTPUT_SCHEMA.properties.kind,
+    diagnosis: DIAGNOSIS_FIELDS_SCHEMA,
+    confidence: DIAGNOSIS_OUTPUT_SCHEMA.properties.confidence,
+    summary: DIAGNOSIS_OUTPUT_SCHEMA.properties.summary,
+    metadata: JSON_METADATA_SCHEMA
+  }
+} as const;
 
 /** The shape a task's answer must satisfy, or `undefined` where the task declares none. */
 export function automationStudioDeepSeekOutputSchema(request: AutomationStudioLlmTaskRequest): Record<string, unknown> | undefined {
+  if (request.taskKind === "loop_verification") return VERIFICATION_OUTPUT_SCHEMA;
   if (automationStudioLlmTaskExpectsDiagnosis(request.taskKind)) return DIAGNOSIS_OUTPUT_SCHEMA;
   if (request.taskKind === "evidence_tool_decision" && request.context.evidenceLoop) return {
     type: "object",

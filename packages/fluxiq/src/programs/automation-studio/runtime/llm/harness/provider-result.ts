@@ -68,7 +68,7 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
     : kind === "evidence_tool_decision"
       ? [...commonFields, "decision"]
     : kind === "diagnosis"
-      ? [...commonFields, "confidence", "diagnosis"]
+      ? [...commonFields, "confidence", "diagnosis", "truncatedAfterVerdict"]
     : kind === "instruction_suggestion"
       ? [...commonFields, "instructions"]
     : kind === "no_repair"
@@ -85,6 +85,8 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
   } else if (kind === "diagnosis") {
     if (value.confidence !== undefined && (!isFiniteNumber(value.confidence) || value.confidence < 0 || value.confidence > 1)) diagnostics.push({ severity: "error", code: "llm_output.invalid_confidence", message: "Diagnosis confidence must be between 0 and 1.", path: "response.confidence" });
     validateUnknownDiagnosisFields(value.diagnosis, diagnostics);
+    // An adapter's mark that the reply was cut after its verdict (t653): `true` or absent, nothing else.
+    if (value.truncatedAfterVerdict !== undefined && value.truncatedAfterVerdict !== true) diagnostics.push({ severity: "error", code: "llm_output.invalid_truncated_after_verdict", message: "A diagnosis cut after its verdict is marked true or not at all.", path: "response.truncatedAfterVerdict" });
   } else if (kind === "runtime_patch") {
     if (!Array.isArray(value.patches)) diagnostics.push({ severity: "error", code: "llm_output.invalid_patches", message: "Runtime patches must be an array.", path: "response.patches" });
     else {

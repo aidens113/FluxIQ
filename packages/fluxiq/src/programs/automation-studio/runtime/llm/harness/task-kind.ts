@@ -35,7 +35,8 @@ export const AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS: Record<AutomationStudioLlmTa
   change_proposal_generation: "automation-studio.change-proposal-generation.v1",
   diagnosis_only_report: "automation-studio.diagnosis-only-report.v1",
   loop_plan: "automation-studio.loop-plan.v1",
-  loop_verification: "automation-studio.loop-verification.v1"
+  // v2 (t653): the judge is asked for its diagnosis before its summary, in the schema's order and in words.
+  loop_verification: "automation-studio.loop-verification.v2"
 };
 
 /**

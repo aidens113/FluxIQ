@@ -4,7 +4,9 @@
 // before a domain could add to it: `system-prompt-pins.json` was written from
 // the source as it stood before the change (t237 W1), and is the pin; a pin
 // moves only when Core's own prose does (`loop_verification` was re-pinned to
-// dev's judge prose after lane D F45, from dev's unmodified builder). With
+// dev's judge prose after lane D F45, from dev's unmodified builder; both
+// verification pins moved again in t653 by exactly one sentence, the order
+// that puts the diagnosis before the summary, inserted after the fields). With
 // them, the domain's text sits after Core's format, injection and schema rules
 // and before Core's task prose, set off by blank lines -- and every word of
 // Core's message is still there.

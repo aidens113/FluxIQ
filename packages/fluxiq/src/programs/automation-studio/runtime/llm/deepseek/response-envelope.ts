@@ -15,6 +15,7 @@ import { AUTOMATION_STUDIO_EVIDENCE_DECISION_MAX_SUMMARY_LENGTH } from "./output
 import type { AutomationStudioDeepSeekModel } from "./models.ts";
 import { isRecord } from "./json-record.ts";
 import { automationStudioDeepSeekClosedContent } from "./unclosed-content.ts";
+import { automationStudioDeepSeekVerdictBeforeCut } from "./verdict-before-cut.ts";
 
 /** The answer and what it cost, read out of the reply the provider sent. */
 export function parseAutomationStudioDeepSeekEnvelope(
@@ -31,14 +32,18 @@ export function parseAutomationStudioDeepSeekEnvelope(
   const choice = value.choices[0];
   if (!isRecord(choice) || !isRecord(choice.message)) malformed({ case: "envelope_shape", ...finishReasonOf(choice) }, paid);
   if (typeof choice.message.content !== "string") malformed({ case: "content_missing", ...finishReasonOf(choice) }, paid);
+  // A result verification cut off after its diagnosis closed still gave its
+  // verdict, and only that is read (t653, `./verdict-before-cut.ts`); every
+  // other cut reply is refused as before, and is asked again by its caller.
+  let cutAfterVerdict: Record<string, unknown> | undefined;
   if (choice.finish_reason === "length") {
     if (choice.message.content.trim() === "") {
       refusePaid("llm.provider_output_padding_truncated", "DeepSeek reached the configured output-token limit without substantive content.", paid);
     }
-    refusePaid("llm.provider_output_truncated", "DeepSeek stopped at the configured output-token limit.", paid);
-  }
-  if (choice.finish_reason !== "stop") malformed({ case: "finish_reason", ...finishReasonOf(choice), contentChars: choice.message.content.length }, paid);
-  const structured = parseDeepSeekJsonContent(choice.message.content, paid);
+    cutAfterVerdict = request.taskKind === "loop_verification" ? automationStudioDeepSeekVerdictBeforeCut(choice.message.content) : undefined;
+    if (!cutAfterVerdict) refusePaid("llm.provider_output_truncated", "DeepSeek stopped at the configured output-token limit.", paid);
+  } else if (choice.finish_reason !== "stop") malformed({ case: "finish_reason", ...finishReasonOf(choice), contentChars: choice.message.content.length }, paid);
+  const structured = cutAfterVerdict ?? parseDeepSeekJsonContent(choice.message.content, paid);
   const usage = value.usage;
   if (!isRecord(usage)) usageInvalid(paid);
   const inputTokens = nonNegativeInteger(usage.prompt_tokens);
@@ -49,7 +54,7 @@ export function parseAutomationStudioDeepSeekEnvelope(
   if (inputTokens > request.tokenLimits.maxInputTokens || totalTokens > request.tokenLimits.maxTotalTokens) usageLimitExceeded(paid);
   const cacheHitInputTokens = automationStudioDeepSeekCacheHitInputTokens(usage, inputTokens);
   return {
-    response: parseDeepSeekStructuredResponse(structured, request, paid),
+    response: parseDeepSeekStructuredResponse(structured, request, paid, cutAfterVerdict !== undefined),
     usage: {
       inputTokens,
       outputTokens,
@@ -60,10 +65,15 @@ export function parseAutomationStudioDeepSeekEnvelope(
   };
 }
 
-function parseDeepSeekStructuredResponse(structured: unknown, request: AutomationStudioLlmTaskRequest, paid: AutomationStudioLlmUsageSummary | undefined): AutomationStudioLlmStructuredResponse {
+function parseDeepSeekStructuredResponse(structured: unknown, request: AutomationStudioLlmTaskRequest, paid: AutomationStudioLlmUsageSummary | undefined, cut = false): AutomationStudioLlmStructuredResponse {
   const outputInvalid: () => never = () => refusePaid("llm.provider_output_invalid", "DeepSeek returned output that does not satisfy the requested structure.", paid);
   if (automationStudioLlmTaskExpectsDiagnosis(request.taskKind)) {
     if (!isRecord(structured) || structured.kind !== "diagnosis") outputInvalid();
+    // Only Core says a reply was cut after its verdict (t653, `./verdict-before-cut.ts`): a whole reply's own claim is dropped.
+    if (structured.truncatedAfterVerdict !== undefined && !cut) {
+      const { truncatedAfterVerdict: _claimed, ...answered } = structured;
+      return answered as AutomationStudioLlmStructuredResponse;
+    }
     return structured as AutomationStudioLlmStructuredResponse;
   }
   if (request.taskKind === "runtime_patch") {
