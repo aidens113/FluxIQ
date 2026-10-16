@@ -627,6 +627,14 @@ Entries from 2026-10-13 to A8 wave 4 (t550-t611) are archived in
 - Outcome: Accepted, inert on real reads so far: on all 12 judged trials of `run-mva6mlo8` the counts fall short (e.g. seen 23, kept 9, alone 12: two rows were left out by more than one condition and are listed nowhere), so the rule would not have fired
 - Follow-up: t655 (after t652): the domain's read account lists rows left out by more than one condition (`node-run/rejected-rows.ts`), and Core counts them, so a read's labels can be complete
 
+### 2026-10-15 — After A8 frozen pair 5 wave 27: a split's no labelled, conditions kept from any trial (t652); a looping judge reply keeps its verdict (t653)
+- Agent: workers t652-split-labelled-and-filters-recorded (partial: fix 3 needs structured page groups, moved to t655), t653-judge-verdict-survives-a-loop (two rounds: a typed flag instead of a summary sentence, the prompt version bumped); supervisor made t652's two service lines and checked the standing-no memory still weighs only a no, verified and integrated
+- Changed: t652 `result-verification/agreement.ts` labels a split's no where Core's record refutes it (`recordContradicts`), the trial gates and `unchanged-submission.ts` no longer say nothing contradicts a partly refuted no, a retest is advised only for a whole refutation; every outcome two judge calls reach keeps Core's record and `service/{candidate,subflow}-trial/run.ts` hand an unsure split's record to the gate, so a vindicated condition is held from any trial (never a label test). t653 `llm/deepseek/output-schema.ts` and `llm/diagnosis-instructions.ts` (prompt `automation-studio.loop-verification.v2`; the two loop_verification pins moved by one sentence): kind and diagnosis before summary; `llm/deepseek/verdict-before-cut.ts` reads a reply cut at the output ceiling for a verdict closed before the cut, a typed `truncatedAfterVerdict` only Core sets carries it, and `verify.ts` counts such a no or unknown, and a yes only on whole fields
+- Why: wave 27 towels (both modes): correct reads disputed by judges, splits left unlabelled, kept conditions only from a double no, four judge replies looping to the ceiling and lost
+- Validation: t652 after merging dev (with the service lines): tsc exit 0; result-verification, flow-bootstrap, candidate-trial, subflow-trial, project-agents -> 335 files, 3537 passed; `pnpm check` -> passed; merged `ea98368e`. t653 after merging dev: tsc exit 0; llm, result-verification, candidate-trial, subflow-trial -> 324 files, 3034 passed; `pnpm check` -> passed; merged `bb5909d3`
+- Outcome: Accepted
+- Follow-up: t655 (in flight, paired): reads list rows several conditions left out (so t654 can fire) and the snapshot carries structured groups (t652's fix 3)
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
