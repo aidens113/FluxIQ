@@ -681,6 +681,13 @@ Entries from 2026-10-13 to A8 wave 4 (t550-t611) are archived in
 - Outcome: Accepted
 - Follow-up: the cost gap (a one-part task run as several briefs); t668 splits `result-verification/agreement.ts`
 
+### 2026-10-16 — result-verification/agreement.ts split into agreement/ (t668)
+- Agent: worker t668-split-agreement-module; supervisor pointed every comment and the architecture doc at the new directory (not the historical reports or the generated reference), verified and integrated
+- Changed: `result-verification/agreement.ts` (800 lines, the hard limit) becomes `result-verification/agreement/` (21 files, the largest 146 lines; the barrel carries the old header and exports only the old names); callers import through the barrel; no behaviour, name or assertion changed
+- Why: t663 left the file at exactly 800 lines, so the next judging change would have failed the audit
+- Validation: after merging dev (t667 in): tsc exit 0; result-verification, candidate-trial, subflow-trial, flow-bootstrap, llm, model, conversations -> 568 files, 5757 passed, 2 skipped; audit passed; `pnpm check` -> passed; pushed
+- Outcome: Accepted
+
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
