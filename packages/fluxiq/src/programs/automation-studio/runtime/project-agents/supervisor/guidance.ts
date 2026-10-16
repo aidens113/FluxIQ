@@ -68,6 +68,15 @@
 // what to do instead. A subflow that could not make a value the plan asks it to
 // hand on is answered by naming both ends (`afterOutputUnmade`).
 //
+// **What an amendment carries, and a reshaping subflow refused once (A8 towels
+// `run-mvac0nmw`, t658).** The supervisor dispatched a subflow t630 had warned
+// only reshapes, and the amendment that then folded it into the reading
+// subflow dropped that subflow's passing proposal. The amend tool and the next
+// steps now name `proposalsCarried`, a proposal carried to its subflow's next
+// build brief, which still needs that brief's own yes; and a plan holding a
+// reshaping subflow is refused once (`refusals.reshapeOnlyOnce`), the same
+// plan sent again taken.
+//
 // No string here names a fingerprint field by name: the supervisor completes
 // and tests with the `complete` object assembly hands it, copied whole.
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_LOOK_BUDGET as LOOKS } from "./look-budget.ts";
@@ -107,7 +116,8 @@ const WRITE_PLAN = "Write the task spec and the plan, once. taskSpec: parts, eac
 const AMEND_PLAN = "Replace the plan with a new revision: the fields of project.write_plan, plus reason. Briefs sent under the old plan no longer count. Write only your own subflows: the one the router runs is Core's, and Core adds it again. "
   + "A done proposal is kept where the new plan leaves its subflow as it was: the same key, the same parts with the same lasting acts, facts and words, the same inputs and outputs, and the same after, with every subflow it runs after kept too. "
   + "A part whose words only gain or lose a word or two at either end is the same part: its proposal is kept and listed with reworded. A part whose facts changed drops it, since its trial was judged against the old facts. Every other proposal made under the old plan is dropped. "
-  + "The answer lists proposalsKept and proposalsDropped, each dropped one with what changed: send briefs only for the dropped subflows and the new ones. "
+  + "A done proposal whose subflow the new plan only gives more parts, or whose outputs it only adds to or renames, is carried: its next build brief starts from it, and it counts as done only once that brief's own trial answers yes on every part. "
+  + "The answer lists proposalsKept and proposalsDropped, each dropped one with what changed, and proposalsCarried: send briefs only for the carried and dropped subflows and the new ones. "
   + "Changing words does not change what a builder writes: amend to change what the subflows are, not to get past a refusal. "
   + "Every stretch of the person's words a part of the plan in force holds stays in a part of the new one, split or joined in any way, and never goes under notAsked: to give a part up, end honestly with ended instead.";
 
@@ -161,8 +171,10 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
   next: Object.freeze({
     afterPlan: "Send briefs for the subflows with project.dispatch, those with nothing to run after first.",
     afterPlanWarned: "The plan was written with the warnings above, each by its path. If one applies, change the plan with project.amend_plan before any brief; otherwise send briefs with project.dispatch, those with nothing to run after first.",
-    afterAmend: "The plan was changed. A subflow under proposalsKept keeps its done proposal and needs no brief. Send briefs with project.dispatch for each subflow under proposalsDropped and each new one, those with nothing to run after first; once every subflow has a done proposal, call project.assemble.",
-    afterAmendWarned: "The plan was changed, with the warnings above, each by its path. If one applies, change the plan again with project.amend_plan before any brief. Otherwise, a subflow under proposalsKept keeps its done proposal and needs no brief: send briefs with project.dispatch for each subflow under proposalsDropped and each new one, those with nothing to run after first.",
+    afterAmend: "The plan was changed. A subflow under proposalsKept keeps its done proposal and needs no brief. Send briefs with project.dispatch for each subflow under proposalsCarried or proposalsDropped and each new one, those with nothing to run after first; once every subflow has a done proposal, call project.assemble.",
+    afterAmendWarned: "The plan was changed, with the warnings above, each by its path. If one applies, change the plan again with project.amend_plan before any brief. Otherwise, a subflow under proposalsKept keeps its done proposal and needs no brief: send briefs with project.dispatch for each subflow under proposalsCarried or proposalsDropped and each new one, those with nothing to run after first.",
+    /** Beside each proposal an amendment carried (`./plan-tool.ts`, t658). */
+    carried: "This subflow's done proposal is carried, not done: its trial was not judged against the parts or outputs this plan added. Send it a build brief: its builder starts from that proposal, tests it first, and changes it only for what that trial shows missing.",
     afterReturnsDone: "Every brief sent came back done. Send briefs for any subflow still without a done proposal, or call project.assemble once every one has one.",
     afterReturnsNotDone: "A brief came back partial or blocked. Read its reason: send a changed brief for that subflow, change the plan with project.amend_plan, or end honestly.",
     /**
@@ -206,6 +218,9 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     planExists: "A plan is already written. Change it with project.amend_plan, saying why.",
     noPlan: "There is no plan yet. Write the task spec and the subflows with project.write_plan first.",
     planRefused: "The plan was not written: every listed issue says what to correct, by its path in what you sent. Send the whole plan again with each one corrected.",
+    /** A plan holding a subflow that only reshapes what another reads, refused once (`./plan-tool.ts`, t658). */
+    reshapeOnlyOnce: "The plan was not written: each listed subflow only reshapes rows another subflow reads, and why says what to do. A subflow such as this once cost a build most of its money, so Core refuses it once. "
+      + "Carry its parts in the subflow that reads and send the plan without it. Keep it only if its builder must open or read something on the target for each row: then send the same plan again, and Core takes it.",
     briefRefused: "No brief was sent: every listed issue names the brief and what to correct. Send the briefs again with each one corrected.",
     predecessorNotDone: "A brief names a predecessor that has no done proposal and is not sent in the same call. Send that subflow's brief first, or in the same call.",
     dispatchCycle: "The briefs' predecessors make a circle, so none of them can start. Give each brief only subflows that come before it.",
@@ -279,7 +294,7 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     // A written plan's warnings, each by its own code (`./plan-input.ts`, `./plan-tool.ts`): what to do if it applies.
     "project.plan_value_unused": "No other subflow takes this value. Keep it only if it is what the Flow hands back to the person; otherwise remove it, and if a later subflow needs what this one leaves on the target, order it with after instead.",
     "project.plan_subflow_constraint": "This subflow neither makes a lasting act nor hands anything on. If its parts read something the person asked for, keep it. If they only say what must stay as it is, they are constraints: put them under notAsked, drop those parts and this subflow, and amend the plan.",
-    /** A warning, not a refusal (`./plan-input.ts`, t630): a builder that opens or reads something for each row is such a subflow too. */
+    /** A warning refused once (`./plan-input.ts`, t630; `./plan-tool.ts`, t658): a builder that opens or reads something for each row is such a subflow too. */
     "project.plan_subflow_reshape_only": "This subflow takes rows an earlier subflow reads, makes no lasting act and hands on nothing another subflow takes. "
       + "If its parts only keep, drop, de-duplicate, order or choose columns of those rows, they are that read's own condition and processing: carry them in the subflow that reads, drop this one, and amend the plan. "
       + "Keep it only if its builder must open or read something on the target for each row."

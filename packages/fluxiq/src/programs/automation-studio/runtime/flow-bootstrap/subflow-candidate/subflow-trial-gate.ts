@@ -262,6 +262,8 @@ export class AutomationStudioSubflowTrialGate {
     signal?: AbortSignal | undefined;
     /** The site reset before each trial (header): the brief's ledger and start check. Absent, a trial runs on the site as it stands. */
     reset?: AutomationStudioSiteResetTrialReset | undefined;
+    /** The earlier brief's revision this brief starts from, which its own are numbered on from (header, t658). */
+    revisionsAfter?: number | undefined;
   }) {
     if (input.port !== undefined && typeof input.port !== "function") throw new Error("subflow.trial_port_invalid");
     // Earlier briefs' standing nos, at revisions below 1, oldest first (header, t634).
@@ -270,6 +272,13 @@ export class AutomationStudioSubflowTrialGate {
   }
 
   get available(): boolean { return this.input.port !== undefined; }
+
+  /** What a stale refusal says first of a revision at or below the one this brief starts from (header, t658); nothing for any other. */
+  private earlierBrief(revision: number): string {
+    const after = this.input.revisionsAfter;
+    if (after === undefined || revision < 1 || revision > after) return "";
+    return `Revision ${revision} is not one of this brief's: it is an earlier brief's, the one this brief was shown and starts from, and it cannot be tested here. This brief's own revisions are numbered on from ${after}. `;
+  }
 
   async test(value: JsonObject, callSignal?: AbortSignal): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
     const revision = value.revision;
@@ -282,8 +291,12 @@ export class AutomationStudioSubflowTrialGate {
     const port = this.input.port;
     if (!port) return refused("subflow.trial_unavailable", "No subflow trial runner is available here. Complete with the latest subflowKey, revision and digest; the proposal stays untried.");
     const latest = this.input.latest();
-    if (!latest) return refused("subflow.trial_stale_revision", "There is no valid latest proposal to test. Submit this subflow with core.submit_subflow, then test the revision and digest it returns.");
-    if (latest.revision !== revision || latest.digest !== digest) return refused("subflow.trial_stale_revision", "Only the latest proposal can be tested. Test the revision and digest given here.", { latestRevision: latest.revision, latestDigest: latest.digest });
+    // A revision at or below the one this brief starts from is an earlier brief's, said so beside this brief's own (header, t658).
+    const earlier = this.earlierBrief(revision as number);
+    if (!latest) return refused("subflow.trial_stale_revision", `${earlier}There is no valid latest proposal to test. Submit this subflow with core.submit_subflow, then test the revision and digest it returns.`, earlier ? { earlierRevision: revision as number } : {});
+    if (latest.revision !== revision || latest.digest !== digest) {
+      return refused("subflow.trial_stale_revision", `${earlier}Only the latest proposal can be tested. Test the revision and digest given here.`, { latestRevision: latest.revision, latestDigest: latest.digest, ...(earlier ? { earlierRevision: revision as number } : {}) });
+    }
     const closed = this.closedDigests.get(latest.digest);
     if (closed) return refused("subflow.trial_unchanged_after_no", "This exact proposal was already tried and judged no. Change it to address that feedback, submit it, then test the new revision.", { previousFeedback: closed });
     const tried = this.trials.get(key(latest)) ?? 0;

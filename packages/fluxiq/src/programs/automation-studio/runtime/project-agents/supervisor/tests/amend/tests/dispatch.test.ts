@@ -9,10 +9,10 @@
 // (t590): the dependent is sent on it and assembled with it, the build is told
 // which it kept, and the amendment's answer lists what it kept and dropped.
 import { describe, expect, it } from "vitest";
-import type { JsonObject } from "../../../../../../core/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE, AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
-import { planInput, subflow, taskSpecInput } from "./supervisor-fixture.ts";
-import { FIND, HOLD, NOTE, brief, call, complete, dispatch, end, supervise, test } from "./supervisor-script.ts";
+import type { JsonObject } from "../../../../../../../../core/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE, AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../../../index.ts";
+import { planInput, subflow, taskSpecInput } from "../../supervisor-fixture.ts";
+import { FIND, HOLD, NOTE, brief, call, complete, dispatch, end, supervise, test } from "../../supervisor-script.ts";
 
 const TWO = planInput([
   subflow("find_titles", ["p1"], { inputs: ["author"], outputs: ["titles"] }),

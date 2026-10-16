@@ -45,6 +45,17 @@ import type { AutomationStudioProjectTaskSpec } from "./task-spec.ts";
 // the trial's own step record (its `absorbed` and `interruptions` entries and
 // the paces the run learned), never from what the page said, with what the
 // gate says the Flow needs there. A `yes` with none is still no failing trial.
+//
+// **A build brief may start from a carried proposal (A8 towels
+// `run-mvac0nmw`, t658).** An amendment moved a reshaping part into the
+// subflow that reads and renamed its output, and Core dropped that subflow's
+// judged-yes proposal, though it already stored exactly what the moved part
+// asked. A proposal whose subflow the amendment only gave more parts, or whose
+// outputs it only added to or renamed, is now carried (`../supervisor/state.ts`):
+// the next build brief of that subflow names it (`carriedFrom`), its builder
+// starts from it, and its own trial is judged against every part, the new ones
+// with them, before the brief can be done. Core sets it; a brief as sent never
+// carries one (`../supervisor/brief-input.ts`).
 
 /** A trial verdict that is not a pass. */
 type FailedVerdict = Exclude<AutomationStudioCandidateTrialVerdict, "yes">;
@@ -105,6 +116,21 @@ export type AutomationStudioProjectSubflowBrief = {
   failingReceipt?: AutomationStudioProjectReceiptRef;
   /** Repair only, beside its receipt: what that trial said, when Core held it as the brief was sent (header). */
   failingTrial?: AutomationStudioProjectFailingTrial;
+  /** Build only: the done proposal an amendment that only added to this subflow carried for it (header), set by Core, never by the supervisor. */
+  carriedFrom?: AutomationStudioProjectCarriedProposal;
+};
+
+/**
+ * A done proposal carried across an amendment that only gave its subflow more
+ * parts, or added or renamed its outputs (header): the brief, revision and
+ * digest that name it, the parts it was not built for, and each output renamed.
+ */
+export type AutomationStudioProjectCarriedProposal = {
+  briefId: string;
+  revision: number;
+  digest: string;
+  addedParts: string[];
+  renamedOutputs: Array<{ from: string; to: string }>;
 };
 
 /** `iterations` is the builder loop's own most, so no brief can carry a length its loop refuses (t577). `said`, `step` and `scalar` bound a failing trial, in JSON characters. */
@@ -221,7 +247,7 @@ function isObject(value: unknown): value is JsonObject {
 }
 
 function read(value: unknown): AutomationStudioProjectSubflowBrief {
-  const fields = shape.object(value, "brief", ["briefId", "kind", "planDigest", "subflowKey", "parts", "entry", "allowanceUsd", "maxIterations", "permittedActs"], ["interface", "maxCalls", "recordingExcerpt", "failingReceipt", "failingTrial"]);
+  const fields = shape.object(value, "brief", ["briefId", "kind", "planDigest", "subflowKey", "parts", "entry", "allowanceUsd", "maxIterations", "permittedActs"], ["interface", "maxCalls", "recordingExcerpt", "failingReceipt", "failingTrial", "carriedFrom"]);
   const kind = shape.oneOf(fields.kind, "brief.kind", AUTOMATION_STUDIO_PROJECT_BRIEF_KINDS);
   const parts = shape.ids(fields.parts, "brief.parts", LIMITS.parts);
   if (kind !== "survey" && kind !== "reset" && !parts.length) return shape.refuse("project.brief_no_parts", "brief.parts");
@@ -254,5 +280,25 @@ function read(value: unknown): AutomationStudioProjectSubflowBrief {
   if (fields.recordingExcerpt !== undefined) brief.recordingExcerpt = shape.text(fields.recordingExcerpt, "brief.recordingExcerpt", LIMITS.excerpt);
   if (fields.failingReceipt !== undefined) brief.failingReceipt = readAutomationStudioProjectReceiptRef(fields.failingReceipt, "brief.failingReceipt");
   if (fields.failingTrial !== undefined) brief.failingTrial = readFailingTrial(fields.failingTrial, "brief.failingTrial");
+  if (fields.carriedFrom !== undefined) {
+    if (kind !== "build") return shape.refuse("project.brief_carried_from", "brief.carriedFrom");
+    brief.carriedFrom = readCarried(fields.carriedFrom, "brief.carriedFrom");
+  }
   return brief;
+}
+
+/** A carried proposal as a recorded brief holds it (header); throws a refusal for `shape.parse`. */
+function readCarried(value: unknown, path: string): AutomationStudioProjectCarriedProposal {
+  const fields = shape.object(value, path, ["briefId", "revision", "digest", "addedParts", "renamedOutputs"]);
+  const renamedOutputs = shape.array(fields.renamedOutputs, `${path}.renamedOutputs`, LIMITS.parts).map((entry, index) => {
+    const pair = shape.object(entry, `${path}.renamedOutputs.${index}`, ["from", "to"]);
+    return { from: shape.id(pair.from, `${path}.renamedOutputs.${index}.from`), to: shape.id(pair.to, `${path}.renamedOutputs.${index}.to`) };
+  });
+  return {
+    briefId: shape.storageId(fields.briefId, `${path}.briefId`),
+    revision: shape.count(fields.revision, `${path}.revision`, 1),
+    digest: shape.digest(fields.digest, `${path}.digest`),
+    addedParts: shape.ids(fields.addedParts, `${path}.addedParts`, LIMITS.parts),
+    renamedOutputs
+  };
 }

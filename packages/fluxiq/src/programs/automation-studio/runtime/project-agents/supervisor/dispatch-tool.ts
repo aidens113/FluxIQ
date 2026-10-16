@@ -122,6 +122,14 @@ const EPSILON_USD = 1e-9;
  * `../dispatch/output-refusals.ts`) makes the next step name, from the plan in
  * force, the subflows that take that value, the value and the producer, and
  * what to change (`unmadeOutputNext`). Only the plan's keys and port names.
+ *
+ * **A build brief of a carried subflow starts from its proposal (A8 towels
+ * `run-mvac0nmw`, t658).** An amendment that only added to a subflow carries
+ * its done proposal (`./state.ts`); each build brief of that subflow while it
+ * has no done proposal under the plan in force is named with it
+ * (`carriedFrom`), which the dispatcher shows its builder to start from and
+ * test first (`../dispatch/run-brief.ts`). A brief as sent never names one
+ * (`./brief-input.ts`).
  */
 export async function automationStudioProjectSupervisorDispatchTool(context: AutomationStudioProjectSupervisorContext, value: JsonObject): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
   const { ports, state } = context;
@@ -147,7 +155,8 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
     const survey = read.issues.some((issue) => issue.code === "project.brief_survey_unavailable");
     return answer.refused(survey ? "project.brief_survey_unavailable" : "project.brief_refused", survey ? GUIDANCE.refusals.surveyUnavailable : GUIDANCE.refusals.briefRefused, { issues: read.issues.map(worded) });
   }
-  const failing = failingTrials(context, read.briefs, rescued);
+  // A build brief of a subflow whose proposal the plan in force carried starts from it (`./state.ts`, t658).
+  const failing = carriedOnto(context, failingTrials(context, read.briefs, rescued));
   if (failing.issues.length) return answer.refused("project.brief_refused", GUIDANCE.refusals.briefRefused, { issues: failing.issues });
   // A brief that repeats a blocked one is held back; the others go, unless none is left or one left runs after a repeat (header).
   const repeats = repeatedBriefs(context, failing.briefs);
@@ -291,6 +300,22 @@ function failingTrials(context: AutomationStudioProjectSupervisorContext, briefs
     return brief;
   });
   return { briefs: read, issues };
+}
+
+/**
+ * Each build brief of a subflow whose done proposal the plan in force carried
+ * (`./state.ts`, t658) named with it, as `carriedFrom`: what its builder starts
+ * from and tests first (`../dispatch/run-brief.ts`). Every other brief as read.
+ */
+function carriedOnto(context: AutomationStudioProjectSupervisorContext, read: { briefs: AutomationStudioProjectSubflowBrief[]; issues: Issue[] }): { briefs: AutomationStudioProjectSubflowBrief[]; issues: Issue[] } {
+  const carried = context.state.carriedForward();
+  const briefs = read.briefs.map((brief) => {
+    const found = brief.kind === "build" ? carried.get(brief.subflowKey) : undefined;
+    const proposal = found?.answered.returned.proposal;
+    if (!found || !proposal) return brief;
+    return { ...brief, carriedFrom: { briefId: found.answered.brief.briefId, revision: proposal.revision, digest: proposal.digest, addedParts: [...found.addedParts], renamedOutputs: found.renamedOutputs.map((pair) => ({ ...pair })) } };
+  });
+  return { briefs, issues: read.issues };
 }
 
 /** An issue of a brief's reading or the build record's refusal, by its code and path, with what it means where Core has words for its code (header, t630). */

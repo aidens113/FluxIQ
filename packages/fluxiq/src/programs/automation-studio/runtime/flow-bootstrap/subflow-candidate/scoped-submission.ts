@@ -92,6 +92,23 @@
 // (`keptConditions`, `./subflow-trial-gate.ts`), and the history handed to the
 // candidate controller carries them through, so a brief's proposals are held
 // to its own trials as a whole candidate's are.
+//
+// **A brief's revisions are numbered on from the one it starts from (A8 towels
+// `run-mvac0nmw`, t658).** A repair builder was shown the subflow it repaired
+// at "revision 3" of an earlier brief, its own first proposal was revision 1,
+// and it spent four decisions testing revision 3, refused
+// `subflow.trial_stale_revision`, before it saw the two were not the same. A
+// brief shown an earlier brief's revision -- a repair's, or a proposal an
+// amendment carried -- now numbers its own on from it (`revisionsAfter`): from
+// 3, its first accepted revision is 4. The candidate controller this one wraps
+// numbers from 1 and is not this module's, so the numbering is translated at
+// this boundary only: a proposal's revision, a refusal's, and the revisions its
+// refusal names (its `revision`, the standing revision, each kept condition's,
+// and "revision N" in its instruction and issue messages) go out on this
+// brief's numbering, and the kept conditions handed back in from this brief's
+// trials come back to the candidate controller's (`./submission-numbering.ts`).
+// What a trial or a judge said (`lastTrial`, `judged`) is never renumbered: it
+// already speaks of this brief's revisions.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { acceptAutomationStudioFlowBootstrapResult, parseAutomationStudioFlowScript } from "../authoring/index.ts";
 import {
@@ -113,6 +130,7 @@ import { automationStudioSubflowRouteOutputs } from "./route-outputs.ts";
 import { automationStudioSubflowPartKey, automationStudioSubflowRekeyedParts } from "./part-keys.ts";
 import type { AutomationStudioSubflowScopeIssue } from "./scope-issue.ts";
 import { automationStudioSubflowProposalDigest } from "./subflow-digest.ts";
+import { automationStudioSubflowRenumberedRefusal } from "./submission-numbering.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID } from "./submit-tool.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID } from "./subflow-trial-gate.ts";
 
@@ -151,13 +169,20 @@ export class AutomationStudioSubflowScopedSubmissionController {
   private current: AutomationStudioSubflowProposal | undefined;
   /** The lasting consequences the accepted revisions of this brief declared, in the order first seen (header). */
   private readonly lasting: string[] = [];
+  /** How far this brief's revisions are numbered past the candidate controller's (header, t658). */
+  private readonly offset: number;
 
   constructor(private readonly input: {
     scope: AutomationStudioSubflowScope;
     /** Every other subflow key of the structure plan: what no part may be keyed as. */
     siblings: readonly string[];
     submission: Omit<CandidateControllerInput, "instructionText" | "originalSource">;
+    /** The earlier brief's revision this brief starts from: its own are numbered on from it (header, t658). Absent, from 1. */
+    revisionsAfter?: number | undefined;
   }) {
+    const after = input.revisionsAfter ?? 0;
+    if (!Number.isSafeInteger(after) || after < 0) throw new Error("subflow.scope_invalid");
+    this.offset = after;
     this.scope = fingerprint.snapshot(JSON.parse(JSON.stringify(input.scope)) as AutomationStudioSubflowScope);
     const { buildId, briefId, planDigest, subflowKey } = this.scope;
     if (![buildId, briefId, planDigest, subflowKey].every((value) => typeof value === "string" && value.length > 0)) throw new Error("subflow.scope_invalid");
@@ -186,14 +211,15 @@ export class AutomationStudioSubflowScopedSubmissionController {
     if (read.issues.length) {
       // A refusal invalidates the standing proposal, as a refused whole candidate does.
       this.current = undefined;
-      return { ok: false, revision: this.inner.lastAccepted()?.revision ?? 0, check: scopeRefusal(read.issues) };
+      const last = this.inner.lastAccepted();
+      return { ok: false, revision: last ? last.revision + this.offset : 0, check: scopeRefusal(read.issues) };
     }
     const submitted = await this.inner.submit(read.probe, this.candidateHistory(history));
     this.input.submission.signal?.throwIfAborted();
     if (submitted.ok && read.proposedCheck) this.proposedChecks.set(submitted.candidate.digest, read.proposedCheck);
     const latest = this.inner.latest();
     this.current = latest ? this.proposalOf(latest) : undefined;
-    if (!submitted.ok) return read.probe === result ? submitted : asSent(submitted, read.probe, result);
+    if (!submitted.ok) return automationStudioSubflowRenumberedRefusal(read.probe === result ? submitted : asSent(submitted, read.probe, result), this.offset);
     const proposal = this.proposalOf(submitted.candidate);
     for (const consequence of lastingOf(proposal.subflows)) if (!this.lasting.includes(consequence)) this.lasting.push(consequence);
     return { ok: true, proposal: structuredClone(proposal) };
@@ -298,7 +324,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
     const subflows = automationStudioSubflowRekeyedParts(target, parts, { targetWrittenKey: written.key });
     const submission = this.input.submission;
     const digest = automationStudioSubflowProposalDigest({ scope: this.identity, projectId: submission.projectId, flowId: submission.flowId, baseDependencyDigest: submission.baseDependencyDigest, instructionText: this.instructionText, subflows });
-    const proposal: AutomationStudioSubflowProposal = { scope: { ...this.identity }, revision: candidate.revision, digest, subflows, summary: candidate.summary, changedPaths: [...candidate.changedPaths] };
+    const proposal: AutomationStudioSubflowProposal = { scope: { ...this.identity }, revision: candidate.revision + this.offset, digest, subflows, summary: candidate.summary, changedPaths: [...candidate.changedPaths] };
     this.proposals.set(candidate.digest, proposal);
     return proposal;
   }
@@ -311,7 +337,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
     if (trialOf) adapted.trialOf = (candidate) => {
       const proposal = this.proposals.get(candidate.digest);
       const trial = proposal ? trialOf(proposal) : undefined;
-      return trial ? candidateTrial(trial, candidate) : undefined;
+      return trial ? candidateTrial(trial, candidate, this.offset) : undefined;
     };
     if (refuted) adapted.refuted = (digest) => {
       const proposal = this.proposals.get(digest);
@@ -359,11 +385,11 @@ function canLast(node: AutomationStudioFlowBootstrapNode): boolean {
 }
 
 /** A partial verdict as the unchanged-submission rule reads a trial: the probe's revision and digest, the verdict and its feedback. */
-function candidateTrial(trial: AutomationStudioSubflowTrialResult & AutomationStudioResultKeptConditionsCarrier, candidate: Pick<AutomationStudioFlowCandidate, "revision" | "digest">): AutomationStudioCandidateTrialResult {
+function candidateTrial(trial: AutomationStudioSubflowTrialResult & AutomationStudioResultKeptConditionsCarrier, candidate: Pick<AutomationStudioFlowCandidate, "revision" | "digest">, offset: number): AutomationStudioCandidateTrialResult {
   const read: AutomationStudioCandidateTrialResult & AutomationStudioResultKeptConditionsCarrier = { revision: candidate.revision, digest: candidate.digest, verdict: trial.verdict, feedback: structuredClone(trial.feedback) };
   if (trial.trialRunId) read.trialRunId = trial.trialRunId;
-  // The conditions the subflow gate kept (t641, `./subflow-trial-gate.ts`), for the candidate controller to hold the next proposal to.
-  if (trial.keptConditions?.length) read.keptConditions = structuredClone(trial.keptConditions);
+  // The conditions the subflow gate kept (t641, `./subflow-trial-gate.ts`), for the candidate controller to hold the next proposal to, on its own numbering (header, t658).
+  if (trial.keptConditions?.length) read.keptConditions = trial.keptConditions.map((condition) => ({ ...structuredClone(condition), revision: condition.revision - offset }));
   return read;
 }
 

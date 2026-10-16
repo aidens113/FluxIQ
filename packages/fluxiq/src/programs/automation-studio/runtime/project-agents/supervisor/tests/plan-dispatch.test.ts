@@ -21,7 +21,8 @@ describe("a written plan's warnings", () => {
       subflow("shape_titles", ["p3"], { inputs: ["titles"], outputs: ["rows"], after: ["find_titles"] }),
       subflow("note_hold", ["p2"], { inputs: ["titles"], after: ["find_titles"] })
     ], taskSpecInput([["p1", FIND, []], ["p2", HOLD, []], ["p3", NOTE, []]]));
-    const run = await supervise([call(IDS.writePlan, plan), end("blocked")]);
+    // A subflow that only reshapes is refused once (t658): the same plan sent again is written, its warnings beside it.
+    const run = await supervise([call(IDS.writePlan, plan), call(IDS.writePlan, plan), end("blocked")]);
     const warnings = lastOf(run.seen, IDS.writePlan)!.warnings as JsonObject[];
     const words: Readonly<Record<string, string>> = GUIDANCE.planIssues;
     expect(warnings.map((warning) => [warning.code, warning.path])).toEqual([
