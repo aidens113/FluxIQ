@@ -13,6 +13,11 @@
 // same object under a `where` list: keys in any order, any step, any subflow,
 // since step keys and the step that reads change between revisions. Nothing
 // here reads a run: only plans, which the gates already hold.
+//
+// **And a step as a Flow wrote it (t666, `./kept-steps.ts`).** A step is found
+// by its node id the same way, and written as its parameters, as JSON with
+// keys sorted; a later plan writes it still where any step of any subflow has
+// the same parameters.
 
 /** A plan as a condition is found in: its subflows' steps, each with its key and parameters. */
 export type AutomationStudioResultConditionPlan = { subflows: ReadonlyArray<{ key: string; nodes: ReadonlyArray<{ key: string; parameters?: unknown }> }> };
@@ -48,6 +53,17 @@ export function automationStudioResultWrittenConditions(plan: AutomationStudioRe
   };
   for (const subflow of plan?.subflows ?? []) for (const node of subflow.nodes) visit(node.parameters);
   return written;
+}
+
+/** The step `nodeId` names, as the plan wrote its parameters (header); nothing where it is not one step, or has no parameters. */
+export function automationStudioResultWrittenStep(plan: AutomationStudioResultConditionPlan | undefined, nodeId: string): string | undefined {
+  const parameters = plan ? stepOf(plan, nodeId)?.parameters : undefined;
+  return isRecord(parameters) ? canonical(parameters) : undefined;
+}
+
+/** Every step of the plan, as `automationStudioResultWrittenStep` gives one. */
+export function automationStudioResultWrittenSteps(plan: AutomationStudioResultConditionPlan | undefined): Set<string> {
+  return new Set((plan?.subflows ?? []).flatMap((subflow) => subflow.nodes.flatMap((node) => (isRecord(node.parameters) ? [canonical(node.parameters)] : []))));
 }
 
 /** The one step whose node id names it by its subflow's and its own key, else by its own key alone; none where it is not one. */

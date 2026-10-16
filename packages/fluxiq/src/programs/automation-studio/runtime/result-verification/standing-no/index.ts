@@ -35,13 +35,23 @@
 // one (`./kept-condition-drop.ts`). A record read back from a port is read by
 // `./record-shape.ts`.
 //
-// This directory reads nothing of a run but those records and the plans the
-// gates hold, so the gates import it without the reads that import the
+// **And sets of conditions that left rows out only together, and steps that
+// chose the request's own words (t666).** A set whose every such row Core's
+// record accounts for is kept as one (`./kept-conditions.ts`, `members`), and
+// refused once where a plan writes none of it (`./kept-condition-drop.ts`). A
+// step before the read that chose, in a named group, an option whose words are
+// the request's own is found in the trial's feedback, and a plan that no longer
+// has it and tests those words nowhere gets a one-time hint
+// (`./kept-steps.ts`).
+//
+// This directory reads nothing of a run but those records, a trial's
+// feedback and the plans the gates hold, so the gates import it without the reads that import the
 // flow-bootstrap back; the builder of a record, which does, is
 // `../standing-no-record/`.
 export * from "./contradiction.ts";
 export * from "./kept-condition-drop.ts";
 export * from "./kept-conditions.ts";
+export * from "./kept-steps.ts";
 export * from "./memory.ts";
 export * from "./record-shape.ts";
 export * from "./types.ts";

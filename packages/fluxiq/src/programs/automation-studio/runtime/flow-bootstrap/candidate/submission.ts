@@ -10,6 +10,7 @@ import { automationStudioFlowScriptWayOutIssues } from "../script-statements/ind
 import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission, AutomationStudioFlowCandidateSubmissionHistory, AutomationStudioCandidateOriginalSourceBinding } from "./contracts.ts";
 import { automationStudioCandidateFingerprint as fingerprint } from "./digest.ts";
 import { automationStudioInterfaceOutputPort } from "./interface-output-port.ts";
+import { AutomationStudioCandidateKeptStepHint } from "./kept-step-hint.ts";
 import { automationStudioCandidateSameBehaviour, automationStudioCandidateUnchangedRefusal } from "./unchanged-submission.ts";
 
 /** The code a submission dropping a condition Core's record kept is refused under, once (`submit`, t641). */
@@ -24,6 +25,8 @@ export class AutomationStudioFlowCandidateSubmissionController {
   private readonly accepted: AutomationStudioFlowCandidate[] = [];
   /** Each kept condition, as written and by the revision whose trial showed it, a submission was already refused for dropping (t641): refused once, never twice. */
   private readonly keptRefused = new Set<string>();
+  /** The one-time hints for a dropped step that chose the request's own words (t666, `./kept-step-hint.ts`). */
+  private readonly keptSteps = new AutomationStudioCandidateKeptStepHint();
   /** The current revision's Flow as the script reader reads it (`submissionText`), to tell an unchanged resubmission (t464). */
   private currentText: string | undefined;
   private readonly originalSource: AutomationStudioCandidateOriginalSourceBinding | undefined;
@@ -117,6 +120,10 @@ export class AutomationStudioFlowCandidateSubmissionController {
    * accepted, so the refusal is a hint the model can override, never a block. A
    * Flow Core composed (`submitComposed`) is held to nothing here: no model
    * wrote it.
+   *
+   * **And once, one that no longer reads the request's words a step chose
+   * (t666):** refused `candidate.kept_step_dropped` once, after any kept-condition
+   * refusal, and accepted when sent again (`./kept-step-hint.ts`).
    */
   async submit(result: JsonObject, history: AutomationStudioFlowCandidateSubmissionHistory = {}): Promise<AutomationStudioFlowCandidateSubmission> {
     return this.submitChecked(result, history, () => checkAutomationStudioFlowBootstrapCompletion({ ...this.input, result, handleReach: "view_history" }), true);
@@ -191,6 +198,12 @@ export class AutomationStudioFlowCandidateSubmissionController {
     if (dropped) {
       this.current = standing;
       return { ok: false, revision, check: keptConditionRefusal(dropped, standing) };
+    }
+    // A step that chose the request's own words, no longer had and tested nowhere: hinted once (header of `submit`, t666).
+    const hinted = holdKept ? this.keptSteps.hint({ accepted: this.accepted, plan: plan.plan, history, requestText: this.input.instructionText, subject: this.input.refusalTools?.subject, standing }) : undefined;
+    if (hinted) {
+      this.current = standing;
+      return { ok: false, revision, check: hinted };
     }
     const candidate: AutomationStudioFlowCandidate = {
       revision, digest, baseDependencyDigest: this.input.baseDependencyDigest,

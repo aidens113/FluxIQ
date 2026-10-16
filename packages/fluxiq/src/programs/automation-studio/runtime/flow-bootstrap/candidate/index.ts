@@ -1,4 +1,5 @@
 export * from "./contracts.ts";
+export * from "./kept-step-hint.ts";
 export * from "./submission.ts";
 export * from "./submission-refusal.ts";
 export * from "./unchanged-submission.ts";

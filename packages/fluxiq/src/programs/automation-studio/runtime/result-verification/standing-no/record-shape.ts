@@ -2,8 +2,16 @@
 // trial's result hands it to a gate as any value a port answered, so a value
 // not of the record's shape is no record. Moved here from `./memory.ts` so the
 // gate's kept conditions (`./kept-conditions.ts`) read a record the same way.
+// Its sets of conditions that left rows out only together (t666, `together`)
+// are read the same way: a set not of the shape makes the record none.
 
-import type { AutomationStudioResultStandingNoCall, AutomationStudioResultStandingNoCondition, AutomationStudioResultStandingNoKeptOutRow, AutomationStudioResultStandingNoRecord } from "./types.ts";
+import type {
+  AutomationStudioResultStandingNoCall,
+  AutomationStudioResultStandingNoCondition,
+  AutomationStudioResultStandingNoKeptOutRow,
+  AutomationStudioResultStandingNoRecord,
+  AutomationStudioResultStandingNoTogether
+} from "./types.ts";
 
 /** A copy of `value` where it has the record's shape (`./types.ts`); nothing otherwise. */
 export function automationStudioResultStandingNoRecordOf(value: unknown): AutomationStudioResultStandingNoRecord | undefined {
@@ -12,13 +20,26 @@ export function automationStudioResultStandingNoRecordOf(value: unknown): Automa
   const conditions = value.conditions.map(conditionOf);
   const standing = value.standing.map(callOf);
   if (conditions.some((condition) => !condition) || standing.some((call) => !call)) return undefined;
+  const together = value.together === undefined ? [] : Array.isArray(value.together) ? value.together.map(togetherOf) : [undefined];
+  if (together.some((set) => !set)) return undefined;
   return {
     stored: [...value.stored],
     storedWhole: value.storedWhole,
     conditions: conditions as AutomationStudioResultStandingNoCondition[],
     ...(value.upheldKind?.length ? { upheldKind: [...value.upheldKind] } : {}),
-    standing: standing as AutomationStudioResultStandingNoCall[]
+    standing: standing as AutomationStudioResultStandingNoCall[],
+    ...(together.length ? { together: together as AutomationStudioResultStandingNoTogether[] } : {})
   };
+}
+
+/** A copy of one set of conditions that left rows out only together (`./types.ts`); nothing where it is not of the shape. */
+function togetherOf(value: unknown): AutomationStudioResultStandingNoTogether | undefined {
+  if (!isObject(value) || typeof value.nodeId !== "string" || !strings(value.rows) || !Array.isArray(value.numbers)) return undefined;
+  const numbers = value.numbers;
+  if (numbers.length < 2 || !numbers.every((number) => Number.isSafeInteger(number) && (number as number) >= 1)) return undefined;
+  const keptOut = value.keptOut === undefined ? undefined : automationStudioResultKeptOutRowsOf(value.keptOut);
+  if (value.keptOut !== undefined && !keptOut) return undefined;
+  return { nodeId: value.nodeId, numbers: [...numbers as number[]], rows: [...value.rows], ...(keptOut ? { keptOut } : {}) };
 }
 
 function conditionOf(value: unknown): AutomationStudioResultStandingNoCondition | undefined {
@@ -51,7 +72,7 @@ function callOf(value: unknown): AutomationStudioResultStandingNoCall | undefine
   return { call: value.call, ...(value.drops !== undefined ? { drops: [...value.drops] } : {}) };
 }
 
-function isObject(value: unknown): value is Record<string, unknown> & { stored?: unknown; storedWhole?: unknown; conditions?: unknown; standing?: unknown; upheldKind?: unknown } {
+function isObject(value: unknown): value is Record<string, unknown> & { stored?: unknown; storedWhole?: unknown; conditions?: unknown; standing?: unknown; upheldKind?: unknown; together?: unknown } {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 

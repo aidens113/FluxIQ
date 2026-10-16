@@ -27,6 +27,13 @@
 // (`../refuted-no/record-conditions.ts`) -- those rows (`keptOut`): it left out
 // nothing the request asks for, whatever the judges said of it. The gate keeps
 // such conditions across the build's trials (`../standing-no/kept-conditions.ts`).
+//
+// **And the conditions that left rows out only together (t666).** Each read's
+// sets of conditions that left rows out only together, where its listing of
+// them is complete (`../refuted-no/record.ts`, `together`), with those rows,
+// and, where another copy of every one is in the result, those rows as kept
+// out (`keptOut`). Together rows carry no value Core read, so the request's
+// words never account for one here. The gate keeps such a set as one.
 
 import type { AutomationStudioRunResultSummary, AutomationStudioResultVerification } from "../contracts/index.ts";
 import {
@@ -38,9 +45,9 @@ import {
   type AutomationStudioResultNoCondition,
   type AutomationStudioResultNoRecord
 } from "../refuted-no/index.ts";
-import { automationStudioRequestKindExclusionLabels, type AutomationStudioRequestWording } from "../request-rows/index.ts";
+import { automationStudioRequestKindExclusionLabels, automationStudioRequestRowLabel, type AutomationStudioRequestWording } from "../request-rows/index.ts";
 import { automationStudioResultNamedStoredLabels } from "./named-stored.ts";
-import type { AutomationStudioResultStandingNoCall, AutomationStudioResultStandingNoKeptOutRow, AutomationStudioResultStandingNoRecord } from "../standing-no/index.ts";
+import type { AutomationStudioResultStandingNoCall, AutomationStudioResultStandingNoKeptOutRow, AutomationStudioResultStandingNoRecord, AutomationStudioResultStandingNoTogether } from "../standing-no/index.ts";
 
 /** Core's aside on the value a condition read on a kept row (`../read-account/condition.ts`): it may differ between revisions. */
 const KEPT_ROW_ASIDE = /\s*\(read\s.*?\son\sa\srow\sit\skept\)/giu;
@@ -66,6 +73,7 @@ export function automationStudioResultStandingNoRecord(input: {
     standing.push({ call, ...(drops ? { drops } : {}) });
   }
   const stored = [...new Set(record.stored.map((row) => row.label))];
+  const together = togetherOf(summary, record, new Set(stored));
   return {
     stored,
     storedWhole: storedWhole(summary, record),
@@ -81,8 +89,26 @@ export function automationStudioResultStandingNoRecord(input: {
       };
     }),
     ...(upheld.size ? { upheldKind: [...upheld] } : {}),
-    standing
+    standing,
+    ...(together.length ? { together } : {})
   };
+}
+
+/**
+ * Each set of conditions that left rows out only together, of each read whose
+ * listing of them is complete (header, t666): its rows, and those rows as kept
+ * out where another copy of every one is in the result.
+ */
+function togetherOf(summary: AutomationStudioRunResultSummary, record: AutomationStudioResultNoRecord, stored: ReadonlySet<string>): AutomationStudioResultStandingNoTogether[] {
+  return (record.together ?? []).flatMap(({ nodeId, sets }) => {
+    const listed = (summary.reads ?? []).find((read) => read.nodeId === nodeId)?.leftOutTogether ?? [];
+    // `sets` is that listing's conditions, in its order (`../refuted-no/record.ts`).
+    return sets.map((numbers, index) => {
+      const rows = (listed[index]?.rows ?? []).map(automationStudioRequestRowLabel);
+      const kept = rows.length > 0 && rows.every((label) => stored.has(label));
+      return { nodeId, numbers: [...numbers], rows, ...(kept ? { keptOut: rows.map((label) => ({ label, by: "also_in_result" as const })) } : {}) };
+    });
+  });
 }
 
 /**

@@ -111,6 +111,7 @@ import { automationStudioResultCheckActivity } from "./check-activity.ts";
 import { automationStudioResultCoreObservation } from "./core-observation.ts";
 import { automationStudioResultSummaryWithPagingWords, automationStudioResultSummaryWithUnreadColumns } from "./read-account/index.ts";
 import { automationStudioRequestWording, automationStudioResultSummaryWithAlsoInResult, automationStudioResultSummaryWithLeftOutNamingTheItem, automationStudioResultSummaryWithRowIds } from "./request-rows/index.ts";
+import { automationStudioResultReaskNarrowingNo } from "./unsure-doubts/index.ts";
 import { automationStudioResultVerdict } from "./verdict.ts";
 import { automationStudioResultAdviceKept, automationStudioResultExclusionEvidenceRecheck } from "./exclusion-evidence/index.ts";
 import { emitAutomationStudioActivity } from "../activity/index.ts";
@@ -221,9 +222,12 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
   // A contradicted unsure beside a yes is asked once more, with Core's record named (header, t503); so is a split's no
   // whose advice adds an exclusion the request never states (t515), and each no whose every reason Core's record
   // refutes (t607). The agreement names the call to ask.
-  const outcome = await automationStudioResultVerificationReaskContradicted({
-    ...input, settled,
-    ask: (recheck, call) => askCheck({ ...request, summary: { ...request.summary, recheck } }, provider, call, interventions, true)
+  const ask = (recheck: string, call: 1 | 2) => askCheck({ ...request, summary: { ...request.summary, recheck } }, provider, call, interventions, true);
+  const reasked = await automationStudioResultVerificationReaskContradicted({ ...input, settled, ask });
+  // Where nothing was asked again, a no blaming only steps that chose the request's own words is asked once more (t666, `./unsure-doubts/narrowing-no-reask.ts`).
+  const outcome = await automationStudioResultReaskNarrowingNo({
+    settled: reasked, first, second, reads: request.summary.reads, requestText, says: wording?.says, ask,
+    agree: (one, two) => automationStudioResultVerificationAgreement({ ...input, first: one, second: two })
   });
   return said({ outcome: { ...outcome, performed: true }, interventions });
 }

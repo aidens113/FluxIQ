@@ -35,9 +35,23 @@
 // (`../agreement.ts`), and this memory reads it as it reads a no's: the rows
 // are Core's measurement, and a label test is never one (t651,
 // `../refuted-no/label-tested-condition.ts`).
+//
+// **And conditions that left rows out only together, kept as one (t666).** A8
+// frozen pair 8 candidate towels `run-mvam0lys-2d3eb090`: two name conditions
+// each left out no row by themselves, and together kept out a row the request
+// does not ask for. A judge advised removing both, since they "alone rejected 0
+// rows"; nothing here kept them, the next revision dropped both, and the row
+// came back. Core's record now carries each read's sets of conditions that
+// left rows out only together (`together`, t655), with those rows where it
+// accounts for every one (`keptOut`), as it does for one condition's. Such a
+// set is kept as one entry (`members`): no one of its conditions left a row out
+// by itself, so dropping one keeps the rows out, and only a plan that writes
+// none of them as written brings them back (`./kept-condition-drop.ts`). A
+// later record showing the same set, as written, leaving out a row Core does
+// not account for takes it out again, as for one condition.
 
 import { automationStudioResultStandingNoRecordOf } from "./record-shape.ts";
-import type { AutomationStudioResultKeptCondition } from "./types.ts";
+import type { AutomationStudioResultKeptCondition, AutomationStudioResultStandingNoRecord, AutomationStudioResultStandingNoTogether } from "./types.ts";
 import { automationStudioResultWrittenCondition, type AutomationStudioResultConditionPlan } from "./written-conditions.ts";
 
 /** The most conditions a gate keeps; the latest are kept. */
@@ -68,7 +82,24 @@ export class AutomationStudioResultKeptConditionMemory {
         this.kept.delete(written);
       }
     }
+    for (const set of record.together ?? []) this.rememberTogether(trial.revision, record, set, trial.plan);
     for (const written of [...this.kept.keys()].slice(0, Math.max(0, this.kept.size - MAX_KEPT))) this.kept.delete(written);
+  }
+
+  /** One set of conditions that left rows out only together, kept as one where Core's record accounts for every such row (header, t666). */
+  private rememberTogether(revision: number, record: AutomationStudioResultStandingNoRecord, set: AutomationStudioResultStandingNoTogether, plan: AutomationStudioResultConditionPlan): void {
+    const members = set.numbers.map((number) => {
+      const condition = record.conditions.find((one) => one.nodeId === set.nodeId && one.number === number);
+      const written = condition ? automationStudioResultWrittenCondition(plan, condition) : undefined;
+      return condition && written !== undefined ? { name: condition.name, written } : undefined;
+    });
+    if (members.length < 2 || members.some((member) => !member)) return;
+    const found = members as Array<{ name: string; written: string }>;
+    const key = `[${[...new Set(found.map((member) => member.written))].sort().join(",")}]`;
+    this.kept.delete(key);
+    if (set.keptOut?.length) {
+      this.kept.set(key, { name: found.map((member) => member.name).join(" and "), revision, written: key, keptOut: structuredClone(set.keptOut), members: found });
+    }
   }
 
   /** Every condition kept, oldest first, as copies. */
