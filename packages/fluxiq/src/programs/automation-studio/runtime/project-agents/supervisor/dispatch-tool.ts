@@ -12,7 +12,7 @@ import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { automationStudioProjectSupervisorDispatchOrder } from "./dispatch-order.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";
 import { automationStudioProjectSupervisorLeftOnTarget, type AutomationStudioProjectSupervisorLeftOnTarget } from "./left-on-target.ts";
-import type { AutomationStudioProjectSupervisorRescuedTest } from "./state.ts";
+import type { AutomationStudioProjectSupervisorResetToEnd, AutomationStudioProjectSupervisorRescuedTest } from "./state.ts";
 import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-answer.ts";
 
 /** Floating-point slack, as the purse keeps it. */
@@ -112,6 +112,17 @@ const EPSILON_USD = 1e-9;
  * be tested again, complete on its yes or end again; otherwise end again if an
  * ending was held for this reset, else test.
  *
+ * **A reset sent so the build can end says so (t683).** The words above still
+ * asked the model to remember whether its ending was held for the reset. The
+ * state now keeps why (`resetToEnd`, `./state.ts`): an ending or a completion
+ * on the fallback held `project.completion_reset_first` (`./completion.ts`), or
+ * Core's own reset before an ending a guard forced (`./supervisor-loop.ts`).
+ * While it is set, a call of resets only is answered, done or not, with
+ * ending again now (`AFTER_RESET_TO_END`), or completing again with the
+ * fallback's complete object (`completeAgain`), never a test; a repeated reset
+ * is refused with the same way forward. A call sending any other brief is the
+ * build going on and drops it.
+ *
  * **After a producer could not make a value, both ends are named (A8 frozen
  * pair 3 bigbox, t645).** `run-mv9zn5ob-d929084d` planned a value its first
  * subflow could not make and its second only took by name; the plan cannot
@@ -187,6 +198,8 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
     if (!(error instanceof AutomationStudioProjectRecordRefusal)) throw error;
     return answer.refused("project.brief_refused", GUIDANCE.refusals.briefRefused, { issues: [worded(error)] });
   }
+  // Any brief other than a reset is the build going on: a reset after it is not for an ending held before it (header, t683).
+  if (order.ordered.some((brief) => brief.kind !== "reset")) state.resetToEnd = undefined;
   // A brief for a subflow that already came back short is a triage of that return.
   const triage = order.ordered.some((brief) => earlier.some((answered) => answered.brief.subflowKey === brief.subflowKey && answered.returned.outcome !== "done"));
   await ports.record.recordDecision(ports.build, { kind: triage ? "triage" : "dispatch", reason: read.reason, briefIds: order.ordered.map((brief) => brief.briefId), planDigest: structure.digest });
@@ -217,6 +230,8 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
   const unchanged = await changedNothing(context, order.ordered, returns, before);
   const allDone = returns.every((returned) => returned.outcome === "done");
   const reset = order.ordered.every((brief) => brief.kind === "reset");
+  // A call of resets only, sent so the build can end, is answered with ending (or completing) again, done or not (header, t683).
+  const toEnd = reset ? state.resetToEnd : undefined;
   // A repair of the rescued whole test that came back not done or changed nothing: that test still stands (header).
   const short = rescued && order.ordered.some((brief, index) => brief.failingTrial?.verdict === "yes" && (returns[index]!.outcome !== "done" || unchanged.has(brief.briefId))) ? rescued : undefined;
   if (short) state.recoveryRepairsShort.set(short.key, "short");
@@ -225,10 +240,12 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
     returns: order.ordered.map((brief, index) => compact(brief, returns[index]!, unchanged.get(brief.briefId), RETURN.closestTrial(state.answeredFor(brief.subflowKey).map(({ returned }) => returned)))),
     lastingActsInPlace: ports.projectLedger.snapshot().acts.filter((act) => act.inPlace).length,
     ...(short ? { wholeTestStands: { complete: { revision: short.revision, digest: short.digest } } } : {}),
+    ...(toEnd?.by === "completion" ? { completeAgain: { ...toEnd.complete } } : {}),
     // The briefs held back as repeats of blocked ones, beside the returns of the others (header, t638).
     ...(repeats.length ? { notSent: { code: "project.brief_repeated", instruction: GUIDANCE.refusals.briefRepeatedOthersSent, repeated: repeats } } : {}),
     // A return not done on an output its subflow could not make names both ends (header, t645).
     next: short ? GUIDANCE.next.afterRecoveryRepairShort : unchanged.size ? GUIDANCE.next.afterRepairUnchanged
+      : toEnd ? AFTER_RESET_TO_END[toEnd.by]
       : !allDone ? unmadeOutputNext(structure, order.ordered.map((brief, index) => ({ brief, returned: returns[index]! }))) ?? GUIDANCE.next.afterReturnsNotDone
         : reset ? afterReset(context) : GUIDANCE.next.afterReturnsDone
   }, { acted: true });
@@ -350,6 +367,26 @@ function sentKey(context: AutomationStudioProjectSupervisorContext, brief: Autom
   });
 }
 
+/**
+ * What a call of resets only says to do next when it was sent so the build can
+ * end (header, t683), by why: the supervisor's held ending, its held completion
+ * on the fallback, or Core's own reset before an ending a guard forced.
+ */
+const AFTER_RESET_TO_END: Readonly<Record<AutomationStudioProjectSupervisorResetToEnd["by"], string>> = Object.freeze({
+  ending: "The reset came back. It was sent because your ending was held for it (project.completion_reset_first), and nothing holds that ending back now: end again now with ended and your reason. Do not test the Flow for it; Core names in your ending whatever is still on the target.",
+  completion: "The reset came back. It was sent because your completion on the build's last passing revision was held for it (project.completion_reset_first), and nothing holds that completion back now: complete again now with the complete object under completeAgain. Do not test the Flow for it; Core names whatever is still on the target.",
+  core: "The reset came back. Core sent it because the build is ending, so the build ends now; Core names whatever is still on the target."
+});
+
+/** The refusal of a repeated reset sent so the build can end (header, t683): no reset was run, and the ending or completion it was for is not held back. */
+const RESET_REPEATED_TO_END: Readonly<Record<AutomationStudioProjectSupervisorResetToEnd["by"], string>> = Object.freeze({
+  ending: "The last brief was a reset that came back without undoing everything, and the target still holds exactly what it left, as listed: another reset would only do the same, so none was run. "
+    + "That reset was sent for your ending (project.completion_reset_first), which nothing holds back now: end again now with ended and your reason, and Core names what is left.",
+  completion: "The last brief was a reset that came back without undoing everything, and the target still holds exactly what it left, as listed: another reset would only do the same, so none was run. "
+    + "That reset was sent for your completion on the build's last passing revision (project.completion_reset_first), which nothing holds back now: complete again now with the complete object under completeAgain, and Core names what is left.",
+  core: "The last brief was a reset that came back without undoing everything, and the target still holds exactly what it left, as listed: another reset would only do the same, so none was run. Core sent that reset because the build is ending, so the build ends now and Core names what is left."
+});
+
 /** What a call of resets only says to do next (header, t638): nothing assembled, a Flow that cannot be tested again, or one that may be. */
 function afterReset(context: AutomationStudioProjectSupervisorContext): string {
   if (!context.controller.latest()) return GUIDANCE.next.afterResetNothingAssembled;
@@ -434,7 +471,11 @@ function repeatedReset(context: AutomationStudioProjectSupervisorContext): Autom
   if (!latest || !before || before.briefId !== latest.briefId || !state.resetCameBackLast()) return undefined;
   const left = automationStudioProjectSupervisorLeftOnTarget(ports);
   if (leftKey(left) !== before.left) return undefined;
-  return answer.refused("project.reset_repeated", controller.latest() ? GUIDANCE.refusals.resetRepeatedTest : GUIDANCE.refusals.resetRepeatedEnd, {
+  // A reset sent so the build can end says to end (or complete) again, never to test (header, t683).
+  const toEnd = state.resetToEnd;
+  const instruction = toEnd ? RESET_REPEATED_TO_END[toEnd.by] : controller.latest() ? GUIDANCE.refusals.resetRepeatedTest : GUIDANCE.refusals.resetRepeatedEnd;
+  return answer.refused("project.reset_repeated", instruction, {
+    ...(toEnd?.by === "completion" ? { completeAgain: { ...toEnd.complete } } : {}),
     lastReset: { briefId: before.briefId, outcome: before.outcome, reason: before.reason },
     leftOnTarget: left.acts.map((act) => ({ act: act.act, did: act.did, brief: act.brief, undoable: act.undoable }))
   }, { retry: true });

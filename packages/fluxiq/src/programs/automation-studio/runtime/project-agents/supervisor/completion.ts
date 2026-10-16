@@ -5,7 +5,7 @@ import type { AutomationStudioLlmEvidenceCompletionCheck } from "../../llm/evide
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";
 import { automationStudioProjectSupervisorLeftOnTarget } from "./left-on-target.ts";
-import type { AutomationStudioProjectSupervisorCompletedOnPass, AutomationStudioProjectSupervisorRecoveryShortfall, AutomationStudioProjectSupervisorReliesOnRecovery, AutomationStudioProjectSupervisorStandingRescue } from "./state.ts";
+import type { AutomationStudioProjectSupervisorCompletedOnPass, AutomationStudioProjectSupervisorRecoveryShortfall, AutomationStudioProjectSupervisorReliesOnRecovery, AutomationStudioProjectSupervisorResetToEnd, AutomationStudioProjectSupervisorStandingRescue } from "./state.ts";
 
 /** How many times an ending is held back for a reset before it is let through with what is left named (header). */
 const MAX_HELD_FOR_RESET = 2;
@@ -94,14 +94,25 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_COMPLETION_SCHEMA: JsonObject 
  * the same reset rule (`completed`), rather than being refused as not the
  * latest; one naming any other revision that is not the latest is refused
  * `project.completion_not_latest` as before.
+ *
+ * **A refusal for the reset keeps why (t683).** Each
+ * `project.completion_reset_first` refusal sets the state's `resetToEnd`: an
+ * ending held, or a completion on the fallback held with its complete object.
+ * The answer to the reset then says to end, or complete, again now
+ * (`./dispatch-tool.ts`), rather than asking the model to remember why it sent
+ * the reset and offering a test it does not need.
  */
 export function automationStudioProjectSupervisorCompletion(context: AutomationStudioProjectSupervisorContext, ended: (ending: AutomationStudioProjectSupervisorEnded) => void): (result: JsonObject) => AutomationStudioLlmEvidenceCompletionCheck {
   let heldForReset = 0;
-  /** The reset rule before an ending, or a completion on the fallback (header): a refusal while a reset could still undo this build's acts, else what is left. */
-  const resetFirst = (): { refusal: AutomationStudioLlmEvidenceCompletionCheck | undefined; left: ReturnType<typeof automationStudioProjectSupervisorLeftOnTarget> } => {
+  /**
+   * The reset rule before an ending, or a completion on the fallback (header): a refusal while a reset could still undo this build's acts, else what is left.
+   * A refusal keeps why the reset is asked for (`for`, t683), so the answer after it says to end or complete again, never to test.
+   */
+  const resetFirst = (held: AutomationStudioProjectSupervisorResetToEnd): { refusal: AutomationStudioLlmEvidenceCompletionCheck | undefined; left: ReturnType<typeof automationStudioProjectSupervisorLeftOnTarget> } => {
     const left = automationStudioProjectSupervisorLeftOnTarget(context.ports);
     if (!left.note || !left.undoable || context.state.resetCameBackLast() || heldForReset >= MAX_HELD_FOR_RESET) return { refusal: undefined, left };
     heldForReset += 1;
+    context.state.resetToEnd = held;
     return { refusal: refused("project.completion_reset_first", GUIDANCE.completion.resetFirst, { actsInPlace: left.acts.filter((act) => act.undoable).map((act) => ({ act: act.act, did: act.did, brief: act.brief })) }), left };
   };
   return (result) => {
@@ -120,7 +131,7 @@ export function automationStudioProjectSupervisorCompletion(context: AutomationS
         return { ok: true };
       }
       if (!rescue && !context.state.anyNotDone() && !context.state.wholeTrialFailed) return refused("project.completion_ended_too_soon", GUIDANCE.completion.endedTooSoon);
-      const { refusal, left } = resetFirst();
+      const { refusal, left } = resetFirst({ by: "ending" });
       if (refusal) return refusal;
       // The build's fallback stands: once the reset rule held, the ending completes on it (header, t637).
       if (rescue) {
@@ -136,7 +147,7 @@ export function automationStudioProjectSupervisorCompletion(context: AutomationS
       // A completion naming the build's fallback completes on it, once the reset rule held (header, t637).
       const rescue = names ? context.state.standingRescue(context.controller, context.gate) : undefined;
       if (rescue?.fallback && rescue.fallback.revision === result.revision && rescue.fallback.digest === result.digest) {
-        const { refusal, left } = resetFirst();
+        const { refusal, left } = resetFirst({ by: "completion", complete: { revision: rescue.fallback.revision, digest: rescue.fallback.digest } });
         if (refusal) return refusal;
         automationStudioProjectSupervisorReliesOnRecovery(context, "completed", { rescue, left: left.note });
         return { ok: true };
