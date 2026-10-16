@@ -284,7 +284,10 @@ describe("a dependent builder's entry", () => {
     const entry = (run.firstSeen.second?.[0]?.value as JsonObject).entry as JsonObject;
     expect(entry.predecessorsLeftOnSite).toEqual([{ act: "act-3", did: expect.stringMatching(/^trial step \d+ /u) }]);
     expect(entry.note).toContain("Their lasting acts are under predecessorsLeftOnSite");
-    expect(entry.note).toContain("end the brief blocked naming that act");
+    // The second's part only reads, so no predecessor can have done it: it is told to build from here, never to end blocked (t676).
+    expect(entry.note).toContain("Your parts ask for no lasting act, so none of these is a part of yours: build your parts from this page.");
+    expect(entry.note).not.toContain("end the brief blocked");
+    expect(entry.note).not.toContain("what they did is already done");
   });
 });
 

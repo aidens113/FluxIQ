@@ -123,7 +123,7 @@ describe("a subflow builder's loop", () => {
       return flowDescription(tool);
     };
     const routed = await said(testScope());
-    expect(routed).toContain("Your brief is the subflow \"find_listing\" alone. It does only this part of the task: \"Find the listings on the listings page\".");
+    expect(routed).toContain("Your brief is the subflow \"find_listing\" alone. It does only this part of the task: \"Find the listings on the listings page\" (part p1).");
     expect(routed).toContain("write its steps outside every block");
     const callable = await said(testScope({ interface: { inputs: [{ id: "listingUrl", name: "Listing URL", valueType: { kind: "unknown" } }], outputs: [{ id: "price", name: "Price", valueType: { kind: "unknown" } }] } }));
     expect(callable).toContain("it is given exactly \"listingUrl\" and hands back exactly \"price\"");
@@ -146,7 +146,7 @@ describe("a subflow builder's loop", () => {
     expect(outcome.loop.ok, JSON.stringify(outcome.loop)).toBe(true);
     expect(executed[0]).toBe("initial.core.run_node");
     const tool = observed[0]!.tools.find((offered) => offered.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!;
-    expect(flowDescription(tool)).toContain(`"${parts[0]!.text}"; "${parts[1]!.text}"`);
+    expect(flowDescription(tool)).toContain(`"${parts[0]!.text}" (part p1); "${parts[1]!.text}" (part p2)`);
   });
 
   it("keeps the submit tool's own description inside its bound, however long the brief", async () => {
@@ -159,6 +159,29 @@ describe("a subflow builder's loop", () => {
       expect(tool.description.length).toBeLessThanOrEqual(AUTOMATION_STUDIO_TOOL_DESCRIPTION_MAX);
       expect(flowDescription(tool)).toContain(parts[5]!.text);
     }
+  });
+
+  // A8 frozen pair 8 (t676): a builder did a later part's lasting act while it explored, and nothing named that part as another builder's.
+  it("names the task's other parts as other builders' parts, and tells a dependent builder to end blocked only when a part of its own asks a lasting act", async () => {
+    const said = async (scope: ReturnType<typeof testScope>) => {
+      const { observed } = await build([submit], { scope });
+      return flowDescription(observed[0]!.tools.find((offered) => offered.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!);
+    };
+    const outOfScope = [{ partId: "p2", text: "Book the earliest seat" }, { partId: "p3", text: "Write the host a note" }];
+    const named = await said(testScope({ predecessors: [], outOfScope }));
+    expect(named).toContain("The task's other parts are another builder's subflow: \"Book the earliest seat\" (part p2); \"Write the host a note\" (part p3).");
+    expect(named).toContain("Doing one of them while you explore is allowed, but it is another builder's part: it changes where that builder's subflow starts until a reset puts the site back, and no step of this subflow does it");
+    expect(named).not.toContain("Any other part of the task is another builder's subflow");
+    // Without the other parts carried, the brief says only that they exist, as before.
+    expect(await said(testScope({ predecessors: [] }))).toContain("Any other part of the task is another builder's subflow: write none of its steps here.");
+    // A dependent brief whose parts only read is never told to end blocked: no subflow before it can do a read.
+    const reading = await said(testScope());
+    expect(reading).toContain("Its parts ask for no lasting act, so no subflow before it can have done one of them: build them from that page with this subflow's own steps.");
+    expect(reading).not.toContain("\"ended\": \"blocked\", \"reason\": \"<which part");
+    const acting = await said(testScope({ parts: [{ partId: "p1", sourceId: "instruction.1", text: "Reserve a seat for the evening talk", lastingActs: ["create_new"] }] }));
+    expect(acting).toContain("a subflow before it did that part: write no step for it");
+    expect(acting).toContain("\"doneBefore\": {\"part\": \"<that part's id>\", \"act\": \"<the act id the entry note lists under predecessorsLeftOnSite for it>\"}}");
+    expect(acting).toContain("Only a part that asks a lasting act (\"p1\") can be done before it");
   });
 
   it("counts its allowance's calls in its budget, keeping its finishing trials' judges back", async () => {

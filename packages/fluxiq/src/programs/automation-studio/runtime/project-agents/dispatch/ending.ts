@@ -1,7 +1,7 @@
 import { parseAutomationStudioFlowBootstrapGenerationError } from "../../flow-bootstrap/generation-failure/index.ts";
 import type { AutomationStudioSiteResetNamedAct } from "../../flow-bootstrap/site-reset/index.ts";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import type { AutomationStudioSubflowBuilderOutcome, AutomationStudioSubflowProposal, AutomationStudioSubflowTrialResult } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import type { AutomationStudioSubflowBuilderOutcome, AutomationStudioSubflowDoneBefore, AutomationStudioSubflowProposal, AutomationStudioSubflowTrialResult } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResult } from "../../llm/index.ts";
 import { automationStudioCandidateRefusalCodes as refusalCodes } from "../../service/candidate-failure/index.ts";
@@ -98,6 +98,16 @@ import { automationStudioProjectDispatchAllowanceSaid, type AutomationStudioProj
 // so the supervisor sent a repair "since the act is already done". Each
 // finding's `said` -- Core's own sentence -- is now carried after the trial's
 // account, by its code, bounded as the rest; the key is read structurally.
+//
+// **A part done before is said as Core checked it (t676).** A dependent
+// builder's blocked ending that a subflow before it did one of its parts is
+// admitted only once Core checked it (`doneBefore`,
+// `flow-bootstrap/subflow-candidate/builder-loop.ts`): the part asks a lasting
+// act, and the act it names is one the run that prepared its entry landed. The
+// return's reason says that claim after the builder's words, by the part's id
+// and the act's, so the supervisor reads Core's check and not only the
+// builder's sentence, and the return carries it as `doneBefore`
+// (`contracts/builder-return.ts`).
 
 /** What a return's reason may hold (`contracts/builder-return.ts`). */
 const MAX_REASON = 2000;
@@ -147,7 +157,11 @@ export const automationStudioProjectDispatchEnding = Object.freeze({
     if (outcome.loop.ok && outcome.ended) {
       // The builder's own ending; `partial` only while a proposal stands (header).
       const as = outcome.ended.outcome === "partial" && proposal ? "partial" : "blocked";
-      return returned(brief, as, `The builder ended this brief ${as}: ${clipped(outcome.ended.reason, MAX_ENDING_WORDS)}${lastTrial}`, spend, proposal);
+      const value = returned(brief, as, `The builder ended this brief ${as}: ${clipped(outcome.ended.reason, MAX_ENDING_WORDS)}${doneBeforeSaid(outcome.ended.doneBefore)}${lastTrial}`, spend, proposal);
+      // The claim Core checked rides on a blocked return as well as in its words (header, t676).
+      const doneBefore = outcome.ended.doneBefore;
+      if (as === "blocked" && doneBefore) value.doneBefore = { part: doneBefore.part, ...(doneBefore.act !== undefined ? { act: doneBefore.act } : {}) };
+      return value;
     }
     if (outcome.loop.ok && proposal) {
       const verdict = outcome.trial?.verdict;
@@ -279,6 +293,13 @@ function refusedSaid(code: string, refused: LastRefused, brief: AutomationStudio
   const outputs = refused.outputs.length ? refused.outputs.map((name) => `"${name}"`).join(", ") : undefined;
   const said = (issue: string) => (issue === INPUT_UNREAD ? `${issue}: ${inputsSaid(brief)}` : OUTPUT_CODES.has(issue) && outputs ? `${issue}: output ${outputs}` : issue);
   return `${refused.family} (${refused.codes.map(said).join(", ")})`;
+}
+
+/** What a return says of a part a subflow before this one did, as Core admitted the builder's claim (header, t676); nothing without one. */
+function doneBeforeSaid(doneBefore: AutomationStudioSubflowDoneBefore | undefined): string {
+  if (!doneBefore || !SAYABLE.test(doneBefore.part)) return "";
+  const act = doneBefore.act !== undefined && SAYABLE.test(doneBefore.act) ? `, by the act ${doneBefore.act}, which the run that prepared this subflow's entry landed` : "";
+  return ` Core checked the builder's claim: a subflow before this one already does this brief's part ${doneBefore.part}${act}, and that part asks a lasting act.`;
 }
 
 /** What a return says of the handed-on inputs its proposal does not read (header, t672), by the names Core checked; nothing when there are none. */

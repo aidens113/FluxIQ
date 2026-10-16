@@ -299,7 +299,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
     if (asked.length && !declared.length) {
       issues.push({ code: "subflow.lasting_act_missing", path: "flow", message: `The parts of "${this.scope.subflowKey}" ask for a lasting act (${asked.join(", ")}), and no step of this submission declares one, so it cannot do what its parts ask. `
         + "The step that does the act changes the site, and it stays: declare it on that step, `consequences: <act>`, and change nothing else. "
-        + "If the page already shows that act done where this subflow starts, a subflow before it did it: end the brief blocked and say so, so the plan can change." });
+        + "If the page already shows that act done where this subflow starts, a subflow before it did it: end the brief blocked and say so, naming the part and the act under doneBefore ({\"part\": \"<the part's id>\", \"act\": \"<the act id its entry note lists>\"}), so the plan can change." });
     } else if (this.lasting.length && !declared.length) {
       issues.push({ code: "subflow.lasting_act_dropped", path: "flow", message: `An earlier revision of "${this.scope.subflowKey}" that Core accepted did a lasting act (${this.lasting.join(", ")}), and this one does none, so it cannot do what its parts ask. `
         + "Keep the step that does the act, its consequences declared, and change only what the last refusal or trial feedback names. If the act cannot be done here, end the brief honestly instead." });

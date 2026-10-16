@@ -29,7 +29,7 @@ const test: Step = (evidence) => ({ kind: "tool_call", toolId: AUTOMATION_STUDIO
 const receipt: Step = (evidence) => ({ kind: "complete", result: { subflowKey: "find_listing", ...receiptOf(evidence) } });
 const end = (result: JsonObject): Step => () => ({ kind: "complete", result });
 
-async function build(steps: Step[], answer: Answer = MISSING, scope = testScope()) {
+async function build(steps: Step[], answer: Answer = MISSING, scope = testScope(), opening: JsonObject = { ok: true }) {
   const observed: AutomationStudioLlmEvidenceLoopInput[] = [];
   const shown: JsonObject[][] = [];
   let index = 0;
@@ -43,7 +43,8 @@ async function build(steps: Step[], answer: Answer = MISSING, scope = testScope(
     loop: {
       tools: [look], maxIterations: steps.length + 1, maxToolCalls: steps.length + 2,
       unusableDecisions: { maxConsecutive: steps.length, maxInARow: steps.length, stalled: () => new Error("stalled") },
-      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true }),
+      // The opening look carries what Core's entry note says, as the brief's port adds it (t676); every other call answers ok.
+      executeTool: async (call) => ({ kind: "llm_evidence_tool_execution", evidence: call.callId.startsWith("initial.") ? opening : { ok: true }, effectApplied: false, targetsUnchanged: true }),
       decide: async ({ evidence }) => {
         shown.push(evidence.filter((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID).map((entry) => entry.value as JsonObject));
         const step = steps[index++];
@@ -56,6 +57,10 @@ async function build(steps: Step[], answer: Answer = MISSING, scope = testScope(
 }
 
 const WHY = "The subflow before this one never prepared its entry, so its trial cannot pass.";
+/** A dependent scope whose one part asks a lasting act (t676). */
+const ACTING = testScope({ parts: [{ partId: "p1", sourceId: "instruction.1", text: "Reserve a seat for the evening talk", lastingActs: ["create_new"] }] });
+/** The opening look of a prepared entry, as the brief's port adds Core's note beside it: what the preparation run landed, a possible act among them. */
+const ENTRY: JsonObject = { ok: true, entry: { prepared: true, note: "Core ran the subflows before yours.", predecessorsLeftOnSite: [{ act: "act-2", did: "create_new" }, { act: "act-3", did: "pressed a control", possibly: true }] } };
 
 describe("a subflow builder's honest ending", () => {
   it("ends blocked with its reason once a trial answered, carrying the ending and that last trial", async () => {
@@ -103,23 +108,92 @@ describe("a subflow builder's honest ending", () => {
   });
 
   // A8 launch 7 (t594): every prepared entry of a dependent subflow started with its part already done by the subflow before it,
-  // and its builders resubmitted a step that could not be named until the repeat guard ended each brief.
+  // and its builders resubmitted a step that could not be named until the repeat guard ended each brief. Since t676 the ending names
+  // the part and the act, and Core checks both.
+  // t676: before it, any dependent builder's blocked ending before a try was taken. An entry that was never prepared, or a
+  // page that cannot do its parts, now reaches its honest ending through one trial, which says why.
+  it("ends a dependent brief whose entry was never prepared blocked after one trial says so, never before", async () => {
+    const reading = testScope({ parts: [{ partId: "p1", sourceId: "instruction.1", text: "Read the listings on the listings page", lastingActs: [] }] });
+    const { outcome, shown } = await build([end({ ended: "blocked", reason: WHY }), submit, test, end({ ended: "blocked", reason: WHY })], MISSING, reading, { ok: true, entry: { prepared: false, code: "subflow.trial_predecessor_missing" } });
+    const early = shown.flat().find((feedback) => feedback.code === "subflow.ending_too_soon")!;
+    expect(early.instruction).not.toContain("doneBefore");
+    expect(early.instruction).toContain("its trial says why it cannot pass, and the brief can then end blocked saying so");
+    expect(outcome.ended).toEqual({ outcome: "blocked", reason: WHY });
+    expect(outcome.lastTrial).toMatchObject({ entryPrepared: false, feedback: { code: "subflow.trial_predecessor_missing" } });
+  });
+
   it("tells a dependent builder that a part already done at its entry was a subflow before it, and takes its blocked ending before anything was tried", async () => {
     const DONE = "The page already shows the renewal done where this subflow starts; the subflow before it did that part.";
-    const dependent = await build([end({ ended: "blocked", reason: DONE })]);
+    const dependent = await build([end({ ended: "blocked", reason: DONE, doneBefore: { part: "p1", act: "act-2" } })], MISSING, ACTING, ENTRY);
     expect(dependent.outcome.loop.ok, JSON.stringify(dependent.outcome.loop)).toBe(true);
-    expect(dependent.outcome.ended).toEqual({ outcome: "blocked", reason: DONE });
+    expect(dependent.outcome.ended).toEqual({ outcome: "blocked", reason: DONE, doneBefore: { part: "p1", act: "act-2" } });
     expect(JSON.stringify(dependent.shown.flat())).not.toContain("subflow.ending_too_soon");
     const flow = (dependent.observed[0]!.tools.find((tool) => tool.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!.inputSchema as { properties: { flow: { description: string } } }).properties.flow.description;
     expect(flow).toContain("The subflow \"sign_in\" runs before it and leaves the page where it starts.");
     expect(flow).toContain("a subflow before it did that part: write no step for it");
-    expect(flow).toContain("complete with {\"ended\": \"blocked\", \"reason\": \"<which part is already done, and which subflow did it>\"}");
+    expect(flow).toContain("complete with {\"ended\": \"blocked\", \"reason\": \"<which part is already done, and which subflow did it>\", \"doneBefore\": {\"part\": \"<that part's id>\"");
+    expect(dependent.observed[0]!.completionSchema).toMatchObject({ properties: { doneBefore: { type: "object", required: ["part"], additionalProperties: false } } });
     // A partial ending still needs something tried, and a builder with no predecessor is told nothing of it.
-    const partial = await build([end({ ended: "partial", reason: DONE }), end({ ended: "blocked", reason: DONE })]);
+    const partial = await build([end({ ended: "partial", reason: DONE }), end({ ended: "blocked", reason: DONE, doneBefore: { part: "p1" } })], MISSING, ACTING, ENTRY);
     expect(JSON.stringify(partial.shown.flat())).toContain("subflow.ending_too_soon");
+    expect(partial.outcome.ended).toEqual({ outcome: "blocked", reason: DONE, doneBefore: { part: "p1" } });
     const first = await build([submit, test, end({ ended: "blocked", reason: WHY })], MISSING, testScope({ predecessors: [] }));
     const firstFlow = (first.observed[0]!.tools.find((tool) => tool.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!.inputSchema as { properties: { flow: { description: string } } }).properties.flow.description;
     expect(firstFlow).not.toContain("runs before it");
+  });
+
+  // A8 frozen pair 8 (t676): a later builder ended blocked as "already done" before it submitted anything and Core took its word --
+  // once for a part that only reads, which no subflow before it can do, costing a merge and a rebuild.
+  describe("a claim that a subflow before it did its part", () => {
+    const DONE = "The subflow before this one already did this part.";
+    const refusals = (shown: JsonObject[][]) => shown.flat().filter((feedback) => feedback.code === "subflow.done_before_refused");
+
+    it("is refused for a part that asks no lasting act: its result comes only from this subflow's own steps", async () => {
+      const reading = testScope({ parts: [{ partId: "p1", sourceId: "instruction.1", text: "Read the listings on the listings page", lastingActs: [] }] });
+      const { outcome, shown } = await build([end({ ended: "blocked", reason: DONE, doneBefore: { part: "p1" } }), submit, test, end({ ended: "blocked", reason: WHY })], MISSING, reading, ENTRY);
+      expect(refusals(shown)[0]!.instruction).toBe("This brief's part asks for no lasting act, so no subflow before this one can have done it: its result comes only from this subflow's own steps; build it from this page.");
+      // Once something was tried, its own honest ending is taken as before.
+      expect(outcome.ended).toEqual({ outcome: "blocked", reason: WHY });
+    });
+
+    it("is refused when it names no part, or a part that is not this brief's", async () => {
+      const { outcome, shown } = await build([end({ ended: "blocked", reason: DONE }), end({ ended: "blocked", reason: DONE, doneBefore: { part: "p9" } }), end({ ended: "blocked", reason: DONE, doneBefore: { part: "p1" } })], MISSING, ACTING, ENTRY);
+      // Naming no part is too soon: any other reason to end is one a trial says first.
+      const unnamed = shown.flat().find((feedback) => feedback.code === "subflow.ending_too_soon")!;
+      expect(unnamed.instruction).toContain("If a subflow before it already did one of its parts, end it now with exactly {\"ended\": \"blocked\"");
+      expect(unnamed.instruction).toContain("For any other reason -- its entry not prepared, or the site unable to do what its parts ask -- submit the subflow");
+      const [unknown] = refusals(shown);
+      expect(unknown!.instruction).toBe("\"p9\" is no part of this brief, whose parts are \"p1\": name one of them, by its id, under doneBefore.part.");
+      expect(outcome.ended).toEqual({ outcome: "blocked", reason: DONE, doneBefore: { part: "p1" } });
+    });
+
+    it("is refused when its act is not one the run that prepared the entry landed: that act is this build's from exploration", async () => {
+      const { outcome, shown } = await build([end({ ended: "blocked", reason: DONE, doneBefore: { part: "p1", act: "act-9" } }), end({ ended: "blocked", reason: DONE, doneBefore: { part: "p1", act: "act-2" } })], MISSING, ACTING, ENTRY);
+      expect(refusals(shown)[0]!.instruction).toBe("\"act-9\" is not an act the run that prepared this subflow's entry landed (the acts it landed are \"act-2\", \"act-3\", as the entry note lists them under predecessorsLeftOnSite): it is this build's act from exploration, which every trial's reset undoes; build the step that does it.");
+      expect(outcome.ended).toEqual({ outcome: "blocked", reason: DONE, doneBefore: { part: "p1", act: "act-2" } });
+      // With no entry note, no act is the preparation run's.
+      const bare = await build([end({ ended: "blocked", reason: DONE, doneBefore: { part: "p1", act: "act-2" } }), end({ ended: "blocked", reason: DONE, doneBefore: { part: "p1" } })], MISSING, ACTING);
+      expect(refusals(bare.shown)[0]!.instruction).toContain("(it landed none, as the entry note lists them under predecessorsLeftOnSite)");
+    });
+
+    it("is admitted when the part asks a lasting act and the act is the preparation run's, a possible one included", async () => {
+      const { outcome, shown } = await build([end({ ended: "blocked", reason: DONE, doneBefore: { part: "Reserve a seat for the evening talk", act: "act-3" } })], MISSING, ACTING, ENTRY);
+      expect(outcome.loop.ok, JSON.stringify(outcome.loop)).toBe(true);
+      // The part is kept by its id, whichever way the builder named it.
+      expect(outcome.ended).toEqual({ outcome: "blocked", reason: DONE, doneBefore: { part: "p1", act: "act-3" } });
+      expect(refusals(shown)).toEqual([]);
+    });
+
+    it("is refused for a builder with no subflow before it, and as partial", async () => {
+      const early = await build([end({ ended: "blocked", reason: DONE, doneBefore: { part: "p1" } }), submit, test, end({ ended: "blocked", reason: DONE, doneBefore: { part: "p1" } }), end({ ended: "blocked", reason: WHY })], MISSING, testScope({ ...ACTING, predecessors: [] }));
+      const said = early.shown.flat();
+      expect(said[0]!.code).toBe("subflow.ending_too_soon");
+      expect(refusals(early.shown)[0]!.instruction).toContain("No subflow runs before this one, so none can have done one of its parts");
+      expect(early.outcome.ended).toEqual({ outcome: "blocked", reason: WHY });
+      const partial = await build([submit, test, end({ ended: "partial", reason: DONE, doneBefore: { part: "p1" } }), end({ ended: "partial", reason: WHY })], MISSING, ACTING, ENTRY);
+      expect(refusals(partial.shown)[0]!.instruction).toContain("ends the brief blocked, never partial");
+      expect(partial.outcome.ended).toEqual({ outcome: "partial", reason: WHY });
+    });
   });
 
   it("maps a partial ending through, and keeps no ending when the loop did not complete with one", async () => {

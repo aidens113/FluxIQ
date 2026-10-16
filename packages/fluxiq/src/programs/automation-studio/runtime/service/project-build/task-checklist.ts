@@ -24,6 +24,12 @@ import type { AutomationStudioBuildTestTaskChecklist, AutomationStudioRunResultS
 //   every proposal as a part, so none reuses an assembled id), with the steps
 //   whose `subflowId` names one of those subflows (the trial root's calls).
 //
+// - **And the subflow's own steps Core recorded possibly lasting** (t676):
+//   a step that declared no lasting act yet changed its own page
+//   (`possiblyLasting`, by nodeId, from the trial's landed acts), so the judge
+//   cannot excuse it as non-lasting on its own label. A step the entry holds is
+//   the predecessors' setup, never named here.
+//
 // **How the whole trials find the record.** They are made in the service
 // before the project build's record exists (`./whole-trials.ts`), so the
 // project build binds its record to the trial environment it was handed, the
@@ -51,14 +57,18 @@ export const AutomationStudioProjectBuildTaskChecklist = Object.freeze({
 
   /**
    * The checklist a subflow trial is judged against: the brief's parts, under the task spec its plan names, the whole task's `notAsked`,
-   * the spec's other parts as out of this subflow's scope, and the steps that prepared its entry where any ran (header).
+   * the spec's other parts as out of this subflow's scope, the steps that prepared its entry where any ran, and its own
+   * steps Core recorded possibly lasting (header, t676).
    */
-  async subflow(source: Source, scope: AutomationStudioSubflowScope, entry?: AutomationStudioBuildTestTaskChecklist["entry"]): Promise<AutomationStudioBuildTestTaskChecklist> {
+  async subflow(source: Source, scope: AutomationStudioSubflowScope, entry?: AutomationStudioBuildTestTaskChecklist["entry"], possiblyLasting?: readonly string[]): Promise<AutomationStudioBuildTestTaskChecklist> {
     const record = (await source.records.read(source.ref))?.record;
     const plan = record?.plans.find((entry) => entry.plan.digest === scope.planDigest)?.plan;
     const spec: AutomationStudioProjectTaskSpec | undefined = plan ? record?.taskSpecs.find((entry) => entry.taskSpec.digest === plan.taskSpecDigest)?.taskSpec : undefined;
     const own = new Set(scope.parts.map((part) => part.partId));
     const others = (spec?.parts ?? []).filter((part) => !own.has(part.id)).map((part) => ({ id: part.id, words: part.quote.text }));
+    // The subflow's own possibly lasting steps; the entry's are its predecessors' setup (header, t676).
+    const setup = new Set(entry?.steps ?? []);
+    const possibly = [...new Set(possiblyLasting ?? [])].filter((step) => !setup.has(step));
     return {
       parts: scope.parts.map((part) => {
         const known = spec?.parts.find((candidate) => candidate.id === part.partId);
@@ -66,7 +76,8 @@ export const AutomationStudioProjectBuildTaskChecklist = Object.freeze({
       }),
       notAsked: [...(spec?.notAsked ?? [])],
       ...(others.length ? { outOfScope: others } : {}),
-      ...(entry?.steps.length ? { entry: { subflows: [...entry.subflows], steps: [...entry.steps] } } : {})
+      ...(entry?.steps.length ? { entry: { subflows: [...entry.subflows], steps: [...entry.steps] } } : {}),
+      ...(possibly.length ? { possiblyLasting: possibly } : {})
     };
   },
 

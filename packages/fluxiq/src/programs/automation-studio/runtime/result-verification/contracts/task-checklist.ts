@@ -24,4 +24,13 @@ export type AutomationStudioResultTaskChecklist = {
    * out-of-scope step (`./build-test/task-checklist.ts`). Absent otherwise.
    */
   entry?: { subflows: string[]; steps: string[] };
+  /**
+   * A subflow trial's only (t676): the steps of this subflow, by nodeId, that
+   * declared no lasting act yet changed their own page where they acted, so
+   * Core recorded each as possibly lasting
+   * (`../../service/candidate-trial/landed-acts.ts`). Their own
+   * `consequences: none` is no proof they left nothing
+   * (`./build-test/task-checklist.ts`). Absent where there is none.
+   */
+  possiblyLasting?: string[];
 };
