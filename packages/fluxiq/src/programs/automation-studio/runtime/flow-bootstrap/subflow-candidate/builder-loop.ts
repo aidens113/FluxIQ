@@ -210,12 +210,19 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   accepted?: ((proposal: Readonly<AutomationStudioSubflowProposal>) => void) | undefined;
   /** Wraps the loop's input before it runs, as the candidate loop's `observe` does. */
   observe?: ((loop: AutomationStudioLlmEvidenceLoopInput) => AutomationStudioLlmEvidenceLoopInput) | undefined;
+  /**
+   * The revision of an earlier brief's proposal this brief is shown and starts
+   * from -- a repair's, or one an amendment carried -- which its own revisions
+   * are numbered on from (`./scoped-submission.ts`, t658). Absent, they start at 1.
+   */
+  revisionsAfter?: number | undefined;
 }): Promise<AutomationStudioSubflowBuilderOutcome> {
   const signals = [input.loop.signal, input.submission.signal].filter((value): value is AbortSignal => value !== undefined);
   const signal = signals.length ? AbortSignal.any(signals) : undefined;
   const submission: ScopedInput["submission"] = signal ? { ...input.submission, signal } : input.submission;
-  const controller = new AutomationStudioSubflowScopedSubmissionController({ scope: input.scope, siblings: input.siblings, submission });
-  const gate = new AutomationStudioSubflowTrialGate({ scope: input.scope, latest: () => controller.latest(), port: input.trial?.port, signal, ...(input.trial?.reset ? { reset: input.trial.reset } : {}) });
+  const after = input.revisionsAfter !== undefined ? { revisionsAfter: input.revisionsAfter } : {};
+  const controller = new AutomationStudioSubflowScopedSubmissionController({ scope: input.scope, siblings: input.siblings, submission, ...after });
+  const gate = new AutomationStudioSubflowTrialGate({ scope: input.scope, latest: () => controller.latest(), port: input.trial?.port, signal, ...(input.trial?.reset ? { reset: input.trial.reset } : {}), ...after });
   const subflowKey = input.scope.subflowKey;
   let tried = false;
   let lastTrial: AutomationStudioSubflowTrialResult | undefined;

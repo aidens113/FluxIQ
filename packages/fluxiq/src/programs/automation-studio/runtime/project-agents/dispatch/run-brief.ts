@@ -11,6 +11,7 @@ import { AutomationStudioProjectAcceptedSubflows } from "./accepted-subflows.ts"
 import { automationStudioProjectDispatchEnding as ending, type AutomationStudioProjectDispatchSpend } from "./ending.ts";
 import { AutomationStudioProjectDispatchOutputRefusals } from "./output-refusals.ts";
 import { AutomationStudioProjectDispatchReceipts } from "./receipts.ts";
+import { automationStudioProjectRenamedOutputs } from "./renamed-outputs.ts";
 import { runAutomationStudioProjectResetLoop } from "./reset-loop.ts";
 import type { AutomationStudioProjectDispatchScope } from "./scope.ts";
 import { AutomationStudioProjectDispatchStandingNos } from "./standing-nos.ts";
@@ -121,6 +122,21 @@ import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectDispatc
 // ends the brief blocked as the brief's own ending does, with the plan's
 // advice, and a return that is not done after such a refusal names the output
 // (`unmadeOutput`), so the supervisor is told which subflow takes it.
+//
+// **A build brief starts from a proposal an amendment carried, and every
+// brief's revisions follow the one it is shown (A8 towels `run-mvac0nmw`,
+// t658).** An amendment that only gave a subflow more parts, or added or
+// renamed its outputs, carries its done proposal (`../supervisor/state.ts`) and
+// names it on the next build brief (`carriedFrom`). That builder's opening
+// look shows it under `startsFrom` -- its script, each renamed output bound as
+// before under its new name (`./renamed-outputs.ts`), its steps, and the parts
+// it was not built for -- its opening call carries its calls as a repair's does
+// (t648), and the builder is told to submit it first and test it: a yes there
+// is a yes on every part. And a brief shown an earlier brief's revision, a
+// repair's `yourSubflow` or a carried one, numbers its own revisions on from it
+// (`revisionsAfter`, `../../flow-bootstrap/subflow-candidate/scoped-submission.ts`):
+// the towels repair was shown revision 3, numbered its own from 1, and spent
+// four decisions testing the earlier brief's revision 3.
 
 type Role = "builder" | "repair";
 
@@ -128,6 +144,8 @@ type Role = "builder" | "repair";
 const MAX_TRIALS_KEPT = 200;
 /** The key a repair's failing trial is shown under, beside the opening look's evidence. */
 const REPAIR_KEY = "repairOf";
+/** The key a carried proposal is shown under at a build brief's opening look (header, t658). */
+const CARRIED_KEY = "startsFrom";
 /** The key a repair's opening call carries the repaired proposal's calls under, for the domain (header, t648). */
 const REPAIRS_KEY = "repairs";
 const REPAIR_NOTE = "This brief repairs your subflow after the trial named here did not pass: its verdict, the step it stopped at (failedStep: its number, label, node, failure code and what happened) and the rest of what its run and its judge said (said). "
@@ -158,6 +176,10 @@ const ACCEPTED = new WeakMap<AutomationStudioProjectDispatcherInput, AutomationS
 const STANDING = new WeakMap<AutomationStudioProjectDispatcherInput, AutomationStudioProjectDispatchStandingNos>();
 const YOUR_SUBFLOW_NOTE = "yourSubflow is your subflow as Core accepted it before this brief, at the revision it names: script is the whole text its builder sent, and steps are its steps as Core resolved them, each handle the script names (tN, extraction.N) there replaced by what it stood for on the page that builder saw. "
   + "Those handles came from that builder's looks, not yours, so the check knows none of them: find the same controls and reads on your own page and write the handles your looks give. Start from this script, change only what this repair asks, and keep every other step as it is.";
+const CARRIED_NOTE = "startsFrom is your subflow as an earlier brief built it, at the revision it names, before the plan gave it more to do: its trial passed then, but was never judged against the parts under addedParts or the outputs under renamedOutputs, so it is not done. "
+  + "script is the whole text its builder sent, each renamed output already bound as before under its new name, and steps are its steps as Core resolved them. Those handles came from that builder's looks, not yours: find the same controls and reads on your own page and write the handles your looks give. "
+  + "Submit it first with only that changed and test it: its trial is judged against every part of this brief, the added ones too. Change it only for what that trial shows missing, keeping every other step as it is.";
+const CARRIED_UNHELD_NOTE = "startsFrom names the revision of your subflow an earlier brief built before the plan gave it more to do, but its script is not held here. It was never judged against the parts under addedParts or the outputs under renamedOutputs: write the whole subflow for every part of this brief, then submit and test it.";
 const YOUR_SUBFLOW_UNHELD_NOTE = "yourSubflow names the revision of your subflow Core accepted before this brief, but its script is not held here. Look at what your subflow's steps meet on the page now and write the whole subflow, changing only what this repair asks.";
 
 /** What a return's reason may hold (`contracts/builder-return.ts`). */
@@ -272,7 +294,12 @@ async function run(input: {
   STANDING.set(dispatcher, standingNos);
   const trialPort = (port: NonNullable<typeof ports.trial>) => automationStudioProjectDispatchTrialPort({ port, scope: mapped.scope, receipts, spend, standingNos, remember: (ref, trial) => remember(dispatcher, ref, trial) });
   const repair = await repairOf(dispatcher, brief, ports.deniedEvidenceKeys);
-  const loop = repair ? shownAtOpening(ports.loop, repair.said, repair.calls) : ports.loop;
+  // A build brief of a subflow whose proposal an amendment carried starts from it (header, t658).
+  const carried = repair ? undefined : carriedOf(dispatcher, brief, mapped, ports.deniedEvidenceKeys);
+  const opening = repair ? { key: REPAIR_KEY, ...repair } : carried ? { key: CARRIED_KEY, ...carried } : undefined;
+  const loop = opening ? shownAtOpening(ports.loop, opening.key, opening.said, opening.calls) : ports.loop;
+  // Its own revisions are numbered on from the one it is shown, so the two are never confused (header, t658).
+  const revisionsAfter = opening?.revision;
   const outcome = await untilEnded(signal, outputs.ending(ports.ended), (stop) => runBuilder({
     loop: { ...loop, maxIterations: brief.maxIterations, signal: stop, purse: allowance },
     scope: mapped.scope,
@@ -280,6 +307,7 @@ async function run(input: {
     submission: { ...ports.submission, signal: stop },
     ...(ports.trial ? { trial: { port: trialPort(ports.trial), ...(ports.reset ? { reset: ports.reset } : {}) } } : {}),
     ...(callScope !== undefined ? { callScope } : {}),
+    ...(revisionsAfter !== undefined ? { revisionsAfter } : {}),
     observe,
     accepted
   }));
@@ -322,7 +350,7 @@ function remember(dispatcher: AutomationStudioProjectDispatcherInput, ref: Autom
  * call carries (`calls`, t648) when the build holds it (header); undefined for
  * any other brief.
  */
-async function repairOf(dispatcher: AutomationStudioProjectDispatcherInput, brief: AutomationStudioProjectSubflowBrief, deniedKeys: readonly string[]): Promise<{ said: JsonObject; calls: JsonObject[] | undefined } | undefined> {
+async function repairOf(dispatcher: AutomationStudioProjectDispatcherInput, brief: AutomationStudioProjectSubflowBrief, deniedKeys: readonly string[]): Promise<{ said: JsonObject; calls: JsonObject[] | undefined; revision: number | undefined } | undefined> {
   const receipt = brief.failingReceipt;
   if (brief.kind !== "repair" || !receipt) return undefined;
   const named: JsonObject = { kind: receipt.kind, receiptId: receipt.receiptId };
@@ -332,8 +360,28 @@ async function repairOf(dispatcher: AutomationStudioProjectDispatcherInput, brie
   const yours = await yourSubflow(dispatcher, brief, seen?.ran, deniedKeys);
   const subflow = yours ? { yourSubflow: yours.shown } : {};
   const calls = yours?.calls;
-  if (trial) return { said: { receipt: named, ...structuredClone(trial), note: trial.verdict === "yes" ? REPAIR_RESCUED_NOTE : REPAIR_NOTE, ...subflow }, calls };
-  return { said: seen ? { receipt: named, verdict: "yes", note: REPAIR_PASSED_NOTE, ...subflow } : { receipt: named, note: REPAIR_UNHELD_NOTE, ...subflow }, calls };
+  const revision = yours?.revision;
+  if (trial) return { said: { receipt: named, ...structuredClone(trial), note: trial.verdict === "yes" ? REPAIR_RESCUED_NOTE : REPAIR_NOTE, ...subflow }, calls, revision };
+  return { said: seen ? { receipt: named, verdict: "yes", note: REPAIR_PASSED_NOTE, ...subflow } : { receipt: named, note: REPAIR_UNHELD_NOTE, ...subflow }, calls, revision };
+}
+
+/**
+ * What a build brief's builder is shown of the proposal an amendment carried
+ * for its subflow (`carriedFrom`, header, t658): its script with each renamed
+ * output bound as before under its new name, its steps, the parts it was not
+ * built for, and its calls for the opening call; undefined for any other brief.
+ */
+function carriedOf(dispatcher: AutomationStudioProjectDispatcherInput, brief: AutomationStudioProjectSubflowBrief, mapped: AutomationStudioProjectDispatchScope, deniedKeys: readonly string[]): { said: JsonObject; calls: JsonObject[] | undefined; revision: number } | undefined {
+  const from = brief.carriedFrom;
+  if (brief.kind !== "build" || !from) return undefined;
+  const ref = { briefId: from.briefId, revision: from.revision, digest: from.digest };
+  const found = ACCEPTED.get(dispatcher)?.find(ref);
+  const added = mapped.scope.parts.filter((part) => from.addedParts.includes(part.partId)).map((part) => ({ partId: part.partId, text: part.text }));
+  const changed: JsonObject = { ...(added.length ? { addedParts: added } : {}), ...(from.renamedOutputs.length ? { renamedOutputs: from.renamedOutputs.map((pair) => ({ ...pair })) } : {}) };
+  if (!found) return { said: { revision: from.revision, digest: from.digest, ...changed, note: CARRIED_UNHELD_NOTE }, calls: undefined, revision: from.revision };
+  const shown = shownSubflow(found, ref, deniedKeys);
+  const script = typeof shown.shown.script === "string" ? { script: automationStudioProjectRenamedOutputs(shown.shown.script, from.renamedOutputs) } : {};
+  return { said: { ...shown.shown, ...script, ...changed, note: CARRIED_NOTE }, calls: shown.calls, revision: from.revision };
 }
 
 /**
@@ -344,12 +392,17 @@ async function repairOf(dispatcher: AutomationStudioProjectDispatcherInput, brie
  * parameters}` screened the same way, for the opening call (t648) when the build
  * holds it. Undefined when no brief of it came back done with one.
  */
-async function yourSubflow(dispatcher: AutomationStudioProjectDispatcherInput, brief: AutomationStudioProjectSubflowBrief, ran: ProposalRef | undefined, deniedKeys: readonly string[]): Promise<{ shown: JsonObject; calls: JsonObject[] | undefined } | undefined> {
+async function yourSubflow(dispatcher: AutomationStudioProjectDispatcherInput, brief: AutomationStudioProjectSubflowBrief, ran: ProposalRef | undefined, deniedKeys: readonly string[]): Promise<{ shown: JsonObject; calls: JsonObject[] | undefined; revision: number } | undefined> {
   const held = ACCEPTED.get(dispatcher);
   const ref = (ran && held?.find(ran) ? ran : undefined) ?? (await latestDone(dispatcher, brief));
   if (!ref) return undefined;
   const found = held?.find(ref);
-  if (!found) return { shown: { revision: ref.revision, digest: ref.digest, note: YOUR_SUBFLOW_UNHELD_NOTE }, calls: undefined };
+  if (!found) return { shown: { revision: ref.revision, digest: ref.digest, note: YOUR_SUBFLOW_UNHELD_NOTE }, calls: undefined, revision: ref.revision };
+  return { ...shownSubflow(found, ref, deniedKeys), revision: ref.revision };
+}
+
+/** An accepted proposal as a builder is shown it (header, t622, t625): its script or plan and its resolved steps, the domain's `deniedKeys` withheld, and its calls for the opening call (t648). */
+function shownSubflow(found: NonNullable<ReturnType<AutomationStudioProjectAcceptedSubflows["find"]>>, ref: ProposalRef, deniedKeys: readonly string[]): { shown: JsonObject; calls: JsonObject[] } {
   // A copy for the model, the domain's denied keys withheld; the proposal Core keeps is never touched (header).
   let withheld = 0;
   const shown = (value: JsonObject): JsonObject => {
@@ -390,17 +443,17 @@ function acceptedOf(dispatcher: AutomationStudioProjectDispatcherInput): Automat
 type Execute = AutomationStudioLlmEvidenceLoopInput["executeTool"];
 
 /**
- * `loop`, its opening call carrying the repaired proposal's `calls` under
- * `repairs` when there are any (t648), and its opening look answered with
- * `said` beside its evidence under `repairOf` (header).
+ * `loop`, its opening call carrying the repaired or carried proposal's `calls`
+ * under `repairs` when there are any (t648), and its opening look answered with
+ * `said` beside its evidence under `key`: `repairOf`, or `startsFrom` (header).
  */
-function shownAtOpening<L extends { executeTool: Execute }>(loop: L, said: JsonObject, calls: readonly JsonObject[] | undefined): L {
+function shownAtOpening<L extends { executeTool: Execute }>(loop: L, key: string, said: JsonObject, calls: readonly JsonObject[] | undefined): L {
   const inner = loop.executeTool;
   const executeTool: Execute = async (call) => {
     if (!isOpeningCall(call.callId)) return await inner(call);
     const ran = await inner(calls?.length ? { ...call, value: { ...call.value, [REPAIRS_KEY]: structuredClone([...calls]) } } : call);
-    if (isExecution(ran)) return { ...ran, evidence: isObject(ran.evidence) ? { ...ran.evidence, [REPAIR_KEY]: said } : { [REPAIR_KEY]: said, evidence: ran.evidence } };
-    return isObject(ran) ? { ...ran, [REPAIR_KEY]: said } : { [REPAIR_KEY]: said, evidence: ran };
+    if (isExecution(ran)) return { ...ran, evidence: isObject(ran.evidence) ? { ...ran.evidence, [key]: said } : { [key]: said, evidence: ran.evidence } };
+    return isObject(ran) ? { ...ran, [key]: said } : { [key]: said, evidence: ran };
   };
   return { ...loop, executeTool };
 }

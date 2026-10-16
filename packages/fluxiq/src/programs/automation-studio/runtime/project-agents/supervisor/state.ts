@@ -1,5 +1,6 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmissionController, AutomationStudioFlowCandidateTrialGate } from "../../flow-bootstrap/candidate/index.ts";
+import type { AutomationStudioFlowBootstrapInterface } from "../../flow-bootstrap/plan/index.ts";
 import type { AutomationStudioProjectBuilderReturn, AutomationStudioProjectReceiptRef, AutomationStudioProjectStructurePlan, AutomationStudioProjectSubflowBrief, AutomationStudioProjectTaskSpec } from "../contracts/index.ts";
 import type { AutomationStudioProjectBuildRecordView } from "../record/index.ts";
 
@@ -15,7 +16,24 @@ export type AutomationStudioProjectSupervisorCarried = {
   dropped: ReadonlyMap<string, readonly string[]>;
   /** Each kept subflow whose parts the amendment only reworded, with those part ids (header, t595). */
   reworded: ReadonlyMap<string, readonly string[]>;
+  /** Each subflow the amendment only added to, its proposal carried to its next brief, never done on it (header, t658). */
+  forward: ReadonlyMap<string, AutomationStudioProjectSupervisorCarriedForward>;
 };
+
+/**
+ * A done proposal an amendment carried (header, t658): its brief and return,
+ * what changed in words, the parts it was not built for and each output the
+ * amendment renamed.
+ */
+export type AutomationStudioProjectSupervisorCarriedForward = {
+  answered: AutomationStudioProjectSupervisorAnswered;
+  why: readonly string[];
+  addedParts: readonly string[];
+  renamedOutputs: ReadonlyArray<{ from: string; to: string }>;
+};
+
+/** What changed for a subflow when the change only added to it (header, t658): the parts and the outputs' renames. */
+type Additive = { addedParts: string[]; renamedOutputs: Array<{ from: string; to: string }> };
 
 /**
  * A repair that came back done with a proposal doing exactly what the one it
@@ -141,6 +159,22 @@ const PROPOSING: ReadonlySet<AutomationStudioProjectSubflowBrief["kind"]> = new 
  * most `EDGE_WORDS` words at its ends, with the same instruction, lasting acts
  * and facts, keeps it, named under `reworded` in the amendment's answer.
  *
+ * **An amendment that only adds to a subflow carries its proposal (A8 towels
+ * `run-mvac0nmw`, t658).** The supervisor moved a part that only shaped the
+ * rows into the subflow that read them and renamed that subflow's output, and
+ * the judged-yes proposal was dropped for "its inputs or outputs changed" and
+ * "its parts changed", though it already stored what the moved part asked; the
+ * build spent the rest of its money earning it again and did not. Now, when
+ * the only changes are parts added beside the ones it was built for (each of
+ * those the same or reworded) and outputs added or renamed, with its inputs,
+ * key, role, success check and `after` as they were, the proposal is carried
+ * (`forward`): not done -- its trial never judged the new parts, so it counts
+ * for nothing towards assembly or completion -- but named on the next build
+ * brief of that subflow (`carriedFrom`, `./dispatch-tool.ts`), whose builder
+ * starts from it and tests it first (`../dispatch/run-brief.ts`). A yes on that
+ * trial is a yes on every part. Any other change drops it, as before. A carried
+ * subflow is not kept, so what runs after it is dropped, as after any not kept.
+ *
  * **A pass the run rescued is repaired, or relied on and said (t603).** Social
  * `run-mv8mebid-84ada5bd` passed its whole test only on the runtime's own
  * recovery when the site asked it to slow down, and its repair was refused as
@@ -224,10 +258,12 @@ export class AutomationStudioProjectSupervisorState {
   completedOn: AutomationStudioFlowCandidate | undefined;
   /** The most recent whole-test pass with its Flow and trial receipt, its rescued test when it was rescued, until a later pass replaces it (header, t637). */
   private fallback: { candidate: AutomationStudioFlowCandidate; receiptId: string; rescued?: AutomationStudioProjectSupervisorRescuedTest } | undefined;
+  /** Each subflow a plan was refused once for only reshaping what another reads, by its key and parts (`./plan-tool.ts`, t658): sent again, it is taken. */
+  readonly reshapeRefused = new Set<string>();
   /** Every plan and task spec this build has had, by digest: what an amendment's comparison reads. */
   private readonly plans = new Map<string, AutomationStudioProjectStructurePlan>();
   private readonly specs = new Map<string, AutomationStudioProjectTaskSpec>();
-  private carried: AutomationStudioProjectSupervisorCarried = { kept: new Map(), dropped: new Map(), reworded: new Map() };
+  private carried: AutomationStudioProjectSupervisorCarried = { kept: new Map(), dropped: new Map(), reworded: new Map(), forward: new Map() };
 
   /** Reads the record's task specs and plans (the latest in force), every brief and every return written. */
   load(view: AutomationStudioProjectBuildRecordView): void {
@@ -304,6 +340,12 @@ export class AutomationStudioProjectSupervisorState {
   droppedByEarlierPlans(): Map<string, readonly string[]> {
     const current = this.doneUnderPlan();
     return new Map([...this.carried.dropped].filter(([key]) => !current.has(key)));
+  }
+
+  /** Each proposal the plan in force carried to its subflow's next build brief, while that subflow has no done proposal under it (header, t658). */
+  carriedForward(): Map<string, AutomationStudioProjectSupervisorCarriedForward> {
+    const current = this.doneUnderPlan();
+    return new Map([...this.carried.forward].filter(([key]) => !current.has(key)));
   }
 
   /** The latest build or repair brief of `subflowKey` answered under the plan in force, with its return. */
@@ -463,7 +505,7 @@ export class AutomationStudioProjectSupervisorState {
   /** Which earlier plans' latest done proposals the plan in force keeps, and what changed for each it drops (header). */
   private carry(): AutomationStudioProjectSupervisorCarried {
     const structure = this.structure;
-    if (!structure) return { kept: new Map(), dropped: new Map(), reworded: new Map() };
+    if (!structure) return { kept: new Map(), dropped: new Map(), reworded: new Map(), forward: new Map() };
     const current = this.doneUnderPlan();
     const earlier = new Map<string, AutomationStudioProjectSupervisorAnswered>();
     for (const brief of this.briefs) {
@@ -487,18 +529,27 @@ export class AutomationStudioProjectSupervisorState {
     const kept = new Map<string, AutomationStudioProjectSupervisorAnswered>();
     const dropped = new Map<string, readonly string[]>();
     const reworded = new Map<string, readonly string[]>();
+    const forward = new Map<string, AutomationStudioProjectSupervisorCarriedForward>();
     for (const [key, answered] of earlier) {
       const why = changed.get(key)!;
-      if (why.length) dropped.set(key, why);
+      const { additive } = compared.get(key)!;
+      // Changed only by what it added, its own words its own (header, t658): carried, never done.
+      if (additive) forward.set(key, { answered, why: [...why], ...structuredClone(additive) });
+      else if (why.length) dropped.set(key, why);
       else kept.set(key, answered);
       const parts = compared.get(key)!.reworded;
       if (!why.length && parts.length) reworded.set(key, parts);
     }
-    return { kept, dropped, reworded };
+    return { kept, dropped, reworded, forward };
   }
 
-  /** What the plan in force changed for `key` against the plan `brief` was built under, in words (empty when nothing did), and the parts it only reworded (header). */
-  private changes(key: string, brief: AutomationStudioProjectSubflowBrief): { why: string[]; reworded: string[] } {
+  /**
+   * What the plan in force changed for `key` against the plan `brief` was built
+   * under, in words (empty when nothing did); the parts it only reworded; and,
+   * when it changed only by adding parts and adding or renaming outputs, what it
+   * added (`additive`, header, t658).
+   */
+  private changes(key: string, brief: AutomationStudioProjectSubflowBrief): { why: string[]; reworded: string[]; additive?: Additive } {
     const now = this.structure!;
     const then = this.plans.get(brief.planDigest);
     const ours = now.plan.subflows.find((subflow) => subflow.key === key);
@@ -519,8 +570,34 @@ export class AutomationStudioProjectSupervisorState {
     const after = this.after[key];
     if (!after) changed.push("what runs before it is not known to this run");
     else if (!same([...new Set(after)].sort(), [...new Set(brief.entry.predecessors)].sort())) changed.push("what runs before it changed");
-    return { why: changed, reworded: compared.filter(([, change]) => change === "reworded").map(([id]) => id) };
+    const reworded = compared.filter(([, change]) => change === "reworded").map(([id]) => id);
+    // Only parts added beside its own, each of those the same or reworded, and outputs added or renamed (header, t658).
+    const own = new Map(compared);
+    const keepsItsParts = partsThen.every((id) => own.get(id) === "same" || own.get(id) === "reworded");
+    const outputs = changed.every((why) => ADDITIVE_REASONS.has(why)) && keepsItsParts ? outputsAdded(theirs.interface, ours.interface) : undefined;
+    if (!changed.length || !outputs) return { why: changed, reworded };
+    return { why: changed, reworded, additive: { addedParts: partsNow.filter((id) => !partsThen.includes(id)), renamedOutputs: outputs } };
   }
+}
+
+/** The reasons an amendment that only added to a subflow gives (header, t658): its parts, its outputs. */
+const ADDITIVE_REASONS: ReadonlySet<string> = new Set(["its inputs or outputs changed", "its parts changed"]);
+
+/**
+ * The outputs `now` renamed from `then`, each old name to the new one in the
+ * order written, when `now` only added or renamed outputs (header, t658): the
+ * same inputs, every output kept as it was or renamed, none lost. Undefined
+ * otherwise, and when one side has an interface and the other none.
+ */
+function outputsAdded(then: AutomationStudioFlowBootstrapInterface | undefined, now: AutomationStudioFlowBootstrapInterface | undefined): Array<{ from: string; to: string }> | undefined {
+  if (!then || !now) return then === now ? [] : undefined;
+  if (!same(then.inputs, now.inputs)) return undefined;
+  const ids = (ports: AutomationStudioFlowBootstrapInterface["outputs"]) => ports.map((port) => port.id);
+  const gone = ids(then.outputs).filter((id) => !ids(now.outputs).includes(id));
+  const fresh = ids(now.outputs).filter((id) => !ids(then.outputs).includes(id));
+  const stayed = then.outputs.filter((port) => !gone.includes(port.id));
+  if (gone.length > fresh.length || stayed.some((port) => !same(port, now.outputs.find((other) => other.id === port.id)))) return undefined;
+  return gone.map((from, index) => ({ from, to: fresh[index]! }));
 }
 
 /** Whether the gate's `entry` is a step whose own record says the site asked the run to slow down (header): an absorbed refusal carrying the site's wait, a closed layer of kind `rate_limit`, or a pace the run learned for it, which only such a wait raises. */

@@ -68,6 +68,8 @@ export function automationStudioProjectSupervisorBriefInput(input: {
     const subflow = structure.plan.subflows.find((candidate) => candidate.key === written.subflowKey);
     const whole: JsonObject = { ...written, briefId: input.nextId(), planDigest: structure.digest };
     delete whole.interface;
+    // A carried proposal is Core's to name (`./dispatch-tool.ts`, t658), never the supervisor's.
+    delete whole.carriedFrom;
     if (subflow?.interface) whole.interface = structuredClone(subflow.interface) as unknown as JsonObject;
     if (whole.parts === undefined && written.kind === "reset") whole.parts = [];
     whole.permittedActs = written.kind === "reset" ? [] : askedActs(taskSpec, whole.parts);

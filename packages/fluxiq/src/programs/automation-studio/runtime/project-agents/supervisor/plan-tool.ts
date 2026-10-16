@@ -1,6 +1,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { emitAutomationStudioProjectPlanCard } from "../../activity/project/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceResendInvitation } from "../../llm/repeat-guard/index.ts";
 import { AutomationStudioProjectRecordRefusal } from "../record/index.ts";
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";
@@ -34,6 +35,24 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
  * and each refusal's issue carries what it means in words (`why`, from
  * `GUIDANCE.planIssues`) where Core has words for its code. A kept proposal
  * whose parts the amendment only reworded is listed with them (`reworded`).
+ *
+ * **A subflow that only reshapes is refused once (A8 towels `run-mvac0nmw`,
+ * t658).** t630 warned on a subflow that takes rows another reads, makes no
+ * lasting act and hands on nothing another takes; the towels run was told so
+ * at its first plan, dispatched it anyway, and lost most of its money to the
+ * split, the second build to do so. A warning the model can pass over does not
+ * hold, so a written or amended plan holding such a subflow is now refused,
+ * with the warning's words and `resend: "accepted_once"` (t650), once for each
+ * such subflow by its key and parts (`reshapeRefused`, `./state.ts`): the same
+ * subflow sent again is taken, with the warning beside it, since only the
+ * model can tell that its builder must open or read something for each row.
+ * A refusal is a hint the model may override once, never a block.
+ *
+ * **A carried proposal is listed (t658).** An amendment that only added parts
+ * to a subflow, or added or renamed its outputs, carries its done proposal
+ * (`./state.ts`): the answer lists it under `proposalsCarried`, with the parts
+ * and renames it was not built for, and says its next build brief starts from
+ * it and is tested on every part.
  */
 export async function automationStudioProjectSupervisorPlanTool(context: AutomationStudioProjectSupervisorContext, value: JsonObject, mode: "write" | "amend"): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
   const { ports, state } = context;
@@ -44,6 +63,12 @@ export async function automationStudioProjectSupervisorPlanTool(context: Automat
   // An amendment is read against the plan in force, whose words it may not drop (`./plan-input.ts`, t645).
   const read = automationStudioProjectSupervisorPlanInput(value, ports.sources, mode === "amend" ? state.taskSpec : undefined);
   if (!read.ok) return answer.refused("project.plan_refused", GUIDANCE.refusals.planRefused, { issues: worded(read.issues) });
+  // A subflow that only reshapes what another reads is refused once; the same subflow sent again is taken, as a hint (header, t658).
+  const reshaped = reshapeOnly(read, value).filter((found) => !state.reshapeRefused.has(found.key));
+  if (reshaped.length) {
+    for (const found of reshaped) state.reshapeRefused.add(found.key);
+    return answer.refused("project.plan_refused", GUIDANCE.refusals.reshapeOnlyOnce, { issues: worded(reshaped.map((found) => found.issue)), diagnostics: { resend: RESEND_ACCEPTED_ONCE } });
+  }
   try {
     if (state.taskSpec?.digest !== read.taskSpec.digest) await ports.record.recordTaskSpec(ports.build, read.taskSpec, ports.sources);
     await ports.record.recordPlan(ports.build, read.structure);
@@ -77,12 +102,43 @@ export async function automationStudioProjectSupervisorPlanTool(context: Automat
     // What the amendment did with the done proposals made under earlier plans (`./state.ts`, t590).
     ...(mode === "amend" ? {
       proposalsKept: [...carried.kept].map(([subflowKey, { brief }]) => ({ subflowKey, briefId: brief.briefId, ...(carried.reworded.has(subflowKey) ? { reworded: [...carried.reworded.get(subflowKey)!] } : {}) })),
-      proposalsDropped: [...carried.dropped].map(([subflowKey, why]) => ({ subflowKey, why: [...why] }))
+      proposalsDropped: [...carried.dropped].map(([subflowKey, why]) => ({ subflowKey, why: [...why] })),
+      // Each proposal carried to its subflow's next build brief, which starts from it and is judged on every part (`./state.ts`, t658).
+      ...(carried.forward.size ? {
+        proposalsCarried: [...carried.forward].map(([subflowKey, found]) => ({
+          subflowKey, briefId: found.answered.brief.briefId, revision: found.answered.returned.proposal!.revision, why: [...found.why],
+          ...(found.addedParts.length ? { addedParts: [...found.addedParts] } : {}),
+          ...(found.renamedOutputs.length ? { renamedOutputs: found.renamedOutputs.map((pair) => ({ ...pair })) } : {}),
+          instruction: GUIDANCE.next.carried
+        }))
+      } : {})
     } : {}),
     ...(read.warnings.length ? { warnings: read.warnings.map(warned) } : {}),
     next: mode === "amend" ? (read.warnings.length ? GUIDANCE.next.afterAmendWarned : GUIDANCE.next.afterAmend) : read.warnings.length ? GUIDANCE.next.afterPlanWarned : GUIDANCE.next.afterPlan
   });
 }
+
+/** The mark that lets the identical call sent again run once (`../../llm/repeat-guard/resend-admission.ts`, t650). */
+const RESEND_ACCEPTED_ONCE: AutomationStudioLlmEvidenceResendInvitation = "accepted_once";
+
+/**
+ * Each subflow the plan's reading warned only reshapes what another reads
+ * (`./plan-input.ts`, t630), with its warning as an issue and a key -- its own
+ * key and parts -- by which a refusal of it is remembered (header, t658).
+ */
+function reshapeOnly(read: { warnings: ReadonlyArray<{ code: string; path: string }>; structure: { partOf: Record<string, string[]> } }, value: JsonObject): Array<{ key: string; issue: { code: string; path: string } }> {
+  const sent = Array.isArray(value.subflows) ? value.subflows : [];
+  return read.warnings.flatMap((warning) => {
+    const at = warning.code === RESHAPE_ONLY ? /^subflows\.(\d+)$/u.exec(warning.path) : null;
+    const subflow = at ? sent[Number(at[1])] : undefined;
+    const key = subflow && typeof subflow === "object" && !Array.isArray(subflow) && typeof subflow.key === "string" ? subflow.key : undefined;
+    if (key === undefined) return [];
+    return [{ key: JSON.stringify([key, [...(read.structure.partOf[key] ?? [])].sort()]), issue: { code: warning.code, path: warning.path } }];
+  });
+}
+
+/** The warning on a subflow that only reshapes what another reads (`./plan-input.ts`, t630). */
+const RESHAPE_ONLY = "project.plan_subflow_reshape_only";
 
 /** Each issue with what it means in words where Core has words for its code (header), and a dropped part's id and words (t645). */
 function worded(issues: ReadonlyArray<{ code: string; path: string; part?: string; dropped?: string }>): JsonObject[] {
