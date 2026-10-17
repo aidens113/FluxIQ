@@ -95,8 +95,17 @@ export class ClientGatewayRuntimeTransport implements FluxIQRuntimeTransport {
     return () => this.handlers.delete(handler);
   }
 
+  /**
+   * A browser that reconnects keeps its clientId, so one client can have
+   * several sessions. Only a paired session whose socket is still open can
+   * answer a command, and of those the newest is the browser as it is now.
+   */
   private selectSession(command: FluxIQRuntimeCommand, context: FluxIQRuntimeDispatchContext): ClientGatewaySession | undefined {
-    const ready = this.gateway.snapshot().sessions.filter((session) => session.status === "ready");
+    // Reversed first so that, the sort being stable, a tie goes to the later session.
+    const ready = this.gateway.snapshot().sessions
+      .filter((session) => session.status === "ready" && session.disconnectedAt === undefined)
+      .reverse()
+      .sort((left, right) => right.connectedAt - left.connectedAt);
     const preferred = context.preferredSessionId
       ? ready.find((session) => session.sessionId === context.preferredSessionId)
       : context.preferredClientId

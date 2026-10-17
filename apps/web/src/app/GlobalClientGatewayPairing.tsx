@@ -47,12 +47,26 @@ export function pairingExpiryLabel(expiresAt: number, nowMs: number): string {
   return seconds ? `Expires in ${seconds}s` : "Expired";
 }
 
+/**
+ * The notice for an approval the gateway closed for good: the client is no
+ * longer waiting (its browser disconnected, or it is already paired) or the
+ * request is gone. Any other failure leaves the request pending to try again.
+ */
+export function closedPairingNotice(status: number, result: { error?: string; code?: string } | undefined): string | null {
+  if (status === 409 && result?.code?.startsWith("pairing.")) return result.error ?? "This pairing can no longer be approved.";
+  if (status === 404) return result?.error ?? "This pairing request is no longer available.";
+  return null;
+}
+
 export function GlobalClientGatewayPairing() {
   const [snapshot, setSnapshot] = useState<ClientGatewaySnapshot>({});
   const [dismissedCodes, setDismissedCodes] = useState<string[]>([]);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [busyAction, setBusyAction] = useState<"approve" | "reject" | null>(null);
   const [actionError, setActionError] = useState("");
+  // Outlives the request it is about: the request leaves the list at the next
+  // poll, and the person must still learn that nothing was paired.
+  const [closedNotice, setClosedNotice] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -105,7 +119,14 @@ export function GlobalClientGatewayPairing() {
 
   const pendingPairing = pending[0];
   const pendingSession = (snapshot.sessions ?? []).find((session) => session.sessionId === pendingPairing?.requestedBySessionId);
-  if (!pendingPairing) return null;
+  if (!pendingPairing) return closedNotice ? (
+    <Modal description="The pairing request closed before it was approved." title="Pairing not completed" onClose={() => setClosedNotice("")}>
+      <InlineNotice message={closedNotice} title="Nothing was paired" tone="error" />
+      <div className="modal-actions">
+        <Button data-modal-submit onClick={() => setClosedNotice("")} variant="primary">Close</Button>
+      </div>
+    </Modal>
+  ) : null;
 
   function removePairing(pairingCode: string) {
     setDismissedCodes((codes) => [...codes.filter((code) => code !== pairingCode), pairingCode].slice(-20));
@@ -117,6 +138,7 @@ export function GlobalClientGatewayPairing() {
     if (!pairingCode || busyAction) return;
     setBusyAction(action);
     setActionError("");
+    setClosedNotice("");
     const endpoint = action === "approve" ? "approve-pairing" : "dismiss-pairing";
     try {
       const response = await fetch(`/api/client-gateway/${endpoint}`, {
@@ -125,7 +147,13 @@ export function GlobalClientGatewayPairing() {
         body: JSON.stringify({ pairingCode })
       });
       if (!response.ok) {
-        const result = await response.json().catch(() => undefined) as { error?: string } | undefined;
+        const result = await response.json().catch(() => undefined) as { error?: string; code?: string } | undefined;
+        const closed = action === "approve" ? closedPairingNotice(response.status, result) : null;
+        if (closed) {
+          setClosedNotice(closed);
+          removePairing(pairingCode);
+          return;
+        }
         setActionError(result?.error ?? `The pairing request could not be ${action === "approve" ? "approved" : "rejected"}.`);
         return;
       }
@@ -146,6 +174,7 @@ export function GlobalClientGatewayPairing() {
   return (
     <Modal busy={Boolean(busyAction)} closeOnEscape={!busyAction} description="Confirm that the reference code matches the client requesting access." title="Client pairing request" onClose={dismissPairingPrompt}>
       {pending.length > 1 ? <InlineNotice message={`Showing request 1 of ${pending.length}. The next request will open after this one is resolved.`} tone="info" /> : null}
+      {closedNotice ? <InlineNotice message={closedNotice} title="Previous request not paired" tone="warning" /> : null}
       {actionError ? <InlineNotice message={actionError} title="Pairing unchanged" tone="error" /> : null}
       {snapshot.webRuntime?.clientGatewayError ? <InlineNotice message={snapshot.webRuntime.clientGatewayError} title="Gateway issue" tone="warning" /> : null}
       <div className="automation-client-pairing-modal">

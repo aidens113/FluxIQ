@@ -75,3 +75,8 @@ it("does not automatically resume a complete or pollMs zero checklist", async ()
   const sources = source(); await mount(sources, { pollMs: 100, complete: () => true }); await act(async () => { doc.visibilityState = "visible"; listeners.forEach((fn) => fn()); }); expect(sources.loadGatewaySnapshot).toHaveBeenCalledTimes(1);
   await act(async () => renderer!.update(<Harness sources={sources} pollMs={0} />)); await act(async () => listeners.forEach((fn) => fn())); expect(sources.loadGatewaySnapshot).toHaveBeenCalledTimes(1);
 });
+it("accepts the healthy runtime summary the web route sends, whose gateway error is null", async () => {
+  const healthy = { sessions: [], pairings: [], webRuntime: { clientGatewayPublicUrl: null, clientGatewayListening: true, clientGatewayError: null } };
+  await mount(source({ loadGatewaySnapshot: async () => ({ ok: true, payload: healthy }) as any }));
+  expect(latest.readings.gateway).toEqual({ status: "loaded", value: healthy });
+});

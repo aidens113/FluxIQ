@@ -18,7 +18,7 @@ describe("onboarding steps", () => {
   });
 
   it("marks every step done when all three conditions hold", () => {
-    const steps = onboardingSteps(readings({ gateway: { status: "loaded", value: { ...listening, sessions: [{ sessionId: "s1" }] } }, keys: { status: "loaded", value: [deepSeekKey] } }), NOW);
+    const steps = onboardingSteps(readings({ gateway: { status: "loaded", value: { ...listening, sessions: [{ sessionId: "s1", status: "ready" }] } }, keys: { status: "loaded", value: [deepSeekKey] } }), NOW);
     expect(steps.map((step) => step.state)).toEqual(["done", "done", "done"]);
     expect(steps[1]!.detail).toBe("1 browser extension is connected.");
   });
@@ -39,7 +39,7 @@ describe("onboarding steps", () => {
   });
 
   it("makes the key step current once the runtime and pairing are done, and links to Secret Keys", () => {
-    const steps = onboardingSteps(readings({ gateway: { status: "loaded", value: { ...listening, sessions: [{ sessionId: "s1" }, { sessionId: "s2" }] } } }), NOW);
+    const steps = onboardingSteps(readings({ gateway: { status: "loaded", value: { ...listening, sessions: [{ sessionId: "s1", status: "ready" }, { sessionId: "s2", status: "ready" }] } } }), NOW);
     expect(steps.map((step) => step.state)).toEqual(["done", "done", "current"]);
     expect(steps[1]!.detail).toBe("2 browser extensions are connected.");
     expect(steps[2]!.action.href).toBe("/programs/secret-keys");
@@ -71,5 +71,22 @@ describe("onboarding steps", () => {
     expect(JSON.stringify(steps)).not.toContain("REF-123");
     const expired = { ...listening, pairings: [{ pairingCode: "OLD", expiresAt: NOW - 1 }] };
     expect(onboardingSteps(readings({ gateway: { status: "loaded", value: expired } }), NOW)[1]!.detail).toBe("No browser extension is connected yet.");
+  });
+
+  it("counts only a ready session that has not disconnected as a connected browser", () => {
+    const ready = { ...listening, sessions: [{ sessionId: "s1", status: "ready" }] };
+    const readySteps = onboardingSteps(readings({ gateway: { status: "loaded", value: ready } }), NOW);
+    expect(readySteps[1]).toMatchObject({ state: "done", detail: "1 browser extension is connected." });
+    const disconnected = { ...listening, sessions: [{ sessionId: "s1", status: "ready", disconnectedAt: NOW - 5 }] };
+    const disconnectedSteps = onboardingSteps(readings({ gateway: { status: "loaded", value: disconnected } }), NOW);
+    expect(disconnectedSteps[1]).toMatchObject({ state: "current", detail: "No browser extension is connected yet." });
+    const gone = { ...listening, sessions: [{ sessionId: "s1", status: "disconnected", disconnectedAt: NOW - 5 }] };
+    expect(onboardingSteps(readings({ gateway: { status: "loaded", value: gone } }), NOW)[1]!.state).toBe("current");
+  });
+
+  it("reads a session waiting for pairing as waiting, not connected", () => {
+    const waiting = { ...listening, sessions: [{ sessionId: "s1", status: "pairing_required" }] };
+    const steps = onboardingSteps(readings({ gateway: { status: "loaded", value: waiting } }), NOW);
+    expect(steps[1]).toMatchObject({ state: "current", detail: expect.stringContaining("pairing request is waiting") });
   });
 });

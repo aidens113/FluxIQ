@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLIENT_GATEWAY_PROTOCOL_VERSION, ClientGatewayService, type ClientGatewayClientMessage } from "../../client-gateway/index.ts";
+import { CLIENT_GATEWAY_PROTOCOL_VERSION, ClientGatewayService, type ClientGatewayClientMessage, type ClientGatewaySession } from "../../client-gateway/index.ts";
 import { RuntimeService, ClientGatewayRuntimeTransport } from "../index.ts";
 
 describe("ClientGatewayRuntimeTransport", () => {
@@ -63,6 +63,46 @@ describe("ClientGatewayRuntimeTransport", () => {
       message: "clicked"
     }));
     await expect(resultPromise).resolves.toMatchObject({ status: "succeeded", message: "clicked" });
+  });
+
+  // t707 C3: the browser reconnects with the same clientId, so one clientId can
+  // have several sessions. Commands went to the first `ready` one in the list,
+  // an older session, and the build waited forever on its answer.
+  it("sends a client's commands to its newest live session", async () => {
+    let clock = 1_000;
+    const gateway = new ClientGatewayService({ commandTimeoutMs: 1000, now: () => clock });
+    const older = await pairGatewayClient(gateway, "extension.twice", "user.web");
+    clock += 10;
+    const newer = await pairGatewayClient(gateway, "extension.twice", "user.web");
+    const transport = new ClientGatewayRuntimeTransport({ gateway });
+
+    const dispatched = transport.dispatch({ kind: "execute_action", domainId: "web-automation", actionType: "web.dom.click" }, { preferredClientId: "extension.twice" });
+    expect(lastExecuteCommandId(gateway, older.sessionId)).toBe("");
+    const commandId = lastExecuteCommandId(gateway, newer.sessionId);
+    expect(commandId).not.toBe("");
+    await gateway.receive(newer.sessionId, clientMessage("client.action_result", { commandId, status: "succeeded", message: "clicked" }));
+    await expect(dispatched).resolves.toMatchObject({ status: "succeeded" });
+    await gateway.close();
+  });
+
+  it("never selects a ready session whose socket has gone", async () => {
+    const live = gatewaySession({ sessionId: "session.live", connectedAt: 1_000 });
+    const orphan = gatewaySession({ sessionId: "session.orphan", connectedAt: 2_000, disconnectedAt: 2_500 });
+    const sentTo: string[] = [];
+    const gateway = {
+      onEvent: () => () => undefined,
+      snapshot: () => ({ sessions: [orphan, live], pairings: [], trustedClients: [], auditLog: [], enabled: true }),
+      executeAction: (sessionId: string, command: { commandId?: string }) => {
+        sentTo.push(sessionId);
+        return { result: Promise.resolve({ commandId: command.commandId ?? "command", status: "succeeded" }) };
+      }
+    } as unknown as ClientGatewayService;
+    const transport = new ClientGatewayRuntimeTransport({ gateway });
+
+    await transport.dispatch({ kind: "execute_action", domainId: "web-automation", actionType: "web.dom.click" }, { preferredClientId: "extension.orphaned" });
+    await transport.dispatch({ kind: "execute_action", domainId: "web-automation", actionType: "web.dom.click" }, { preferredSessionId: "session.orphan" });
+    await transport.dispatch({ kind: "execute_action", domainId: "web-automation", actionType: "web.dom.click" });
+    expect(sentTo).toEqual(["session.live", "session.live", "session.live"]);
   });
 
   it("rejects dispatch when no ready gateway client matches", async () => {
@@ -193,6 +233,20 @@ function lastExecuteCommandId(gateway: ClientGatewayService, sessionId: string):
   const executes = gateway.outbound(sessionId).filter((message) => message.type === "server.execute_action");
   const last = executes[executes.length - 1];
   return last?.type === "server.execute_action" ? last.payload.commandId : "";
+}
+
+function gatewaySession(overrides: Partial<ClientGatewaySession> & { sessionId: string }): ClientGatewaySession {
+  return {
+    clientId: "extension.orphaned",
+    clientType: "extension",
+    name: "Web Extension",
+    status: "ready",
+    connectedAt: 1_000,
+    lastSeenAt: 1_000,
+    capabilities: [{ id: "web.actions", kind: "action", actionTypes: ["web.dom.click"], metadata: { domainId: "web-automation" } }],
+    metadata: { domainId: "web-automation" },
+    ...overrides
+  };
 }
 
 async function pairGatewayClient(gateway: ClientGatewayService, clientId: string, approvedByUserId: string, options: { sessionDomain?: boolean } = {}) {

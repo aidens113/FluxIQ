@@ -49,8 +49,16 @@ function pairingCheck(readings: OnboardingReadings, nowMs: number): StepCheck {
   if (gateway.status === "loading") return { ...step, satisfied: false, detail: "Checking for a connected browser extension..." };
   if (gateway.status === "failed") return { ...step, satisfied: false, detail: "Connected browsers could not be checked.", problem: gateway.error };
   const sessions = gateway.value.sessions ?? [];
-  if (sessions.length) return { ...step, satisfied: true, detail: sessions.length === 1 ? "1 browser extension is connected." : `${sessions.length} browser extensions are connected.` };
-  const waiting = (gateway.value.pairings ?? []).some((pairing) => !pairing.consumedAt && Number(pairing.expiresAt ?? 0) > nowMs);
+  const connected = sessions.filter((session) => session.status === "ready" && session.disconnectedAt === undefined).length;
+  if (connected === 1) {
+    return { ...step, satisfied: true, detail: "1 browser extension is connected." };
+  }
+  if (connected > 1) {
+    return { ...step, satisfied: true, detail: `${connected} browser extensions are connected.` };
+  }
+  const sessionWaiting = sessions.some((session) => session.status === "pairing_required" && session.disconnectedAt === undefined);
+  const pairingWaiting = (gateway.value.pairings ?? []).some((pairing) => !pairing.consumedAt && Number(pairing.expiresAt ?? 0) > nowMs);
+  const waiting = sessionWaiting || pairingWaiting;
   return { ...step, satisfied: false, detail: waiting ? "A pairing request is waiting. Confirm it in the \"Client pairing request\" prompt." : "No browser extension is connected yet." };
 }
 

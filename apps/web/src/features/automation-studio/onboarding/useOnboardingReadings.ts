@@ -82,7 +82,7 @@ function timestamp(value: unknown) { return typeof value === "number" ? Number.i
 
 function validGateway(value: unknown): value is OnboardingReadings["gateway"] extends OnboardingReading<infer T> ? T : never {
   if (!object(value)) return false;
-  if (!optional(value, "webRuntime", (runtime) => object(runtime) && optional(runtime, "clientGatewayListening", (v) => typeof v === "boolean") && optional(runtime, "clientGatewayError", (v) => typeof v === "string"))) return false;
+  if (!optional(value, "webRuntime", (runtime) => object(runtime) && optional(runtime, "clientGatewayListening", (v) => typeof v === "boolean") && optional(runtime, "clientGatewayError", (v) => v === null || typeof v === "string"))) return false;
   if (!optional(value, "sessions", (sessions) => Array.isArray(sessions) && sessions.every((session) => object(session) && typeof session.sessionId === "string"))) return false;
   return optional(value, "pairings", (pairings) => Array.isArray(pairings) && pairings.every((pairing) => object(pairing) && optional(pairing, "consumedAt", timestamp) && optional(pairing, "expiresAt", timestamp)));
 }

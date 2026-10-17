@@ -11,6 +11,15 @@ import type { InternalSession } from "./types.ts";
 
 import type { ClientGatewayFacadePorts } from "./facade-ports.ts";
 
+/**
+ * An approval refused because the client is not waiting for it. `code` is what
+ * the web approval route reads to show the person `message` instead of success.
+ */
+type PairingRefusal = Error & { code: "pairing.client_disconnected" | "pairing.not_waiting" };
+
+const CLIENT_DISCONNECTED = "The browser disconnected before this pairing was approved, so nothing was paired. Reconnect from the browser to get a new code.";
+const NOT_WAITING = "This client is no longer waiting for pairing approval, so nothing was paired.";
+
 type PairingFlowCollaborators = {
   config: ClientGatewayConfig;
   pairings: ClientGatewayPairingRegistry;
@@ -71,6 +80,9 @@ export class ClientGatewayPairingFlow {
     await this.facade.ready();
     this.pairings.pruneExpired();
     const pairing = this.pairings.get(pairingCode);
+    if (!pairing && this.pairings.withdrawalReason(pairingCode) !== undefined) {
+      throw this.refuse(pairingCode, "pairing.client_disconnected", CLIENT_DISCONNECTED);
+    }
     if (!pairing || pairing.consumedAt || !pairing.requestedBySessionId) return null;
     const approvedByUserId = input.approvedByUserId.trim();
     if (!approvedByUserId) throw new Error("Approving operator is required.");
@@ -97,6 +109,17 @@ export class ClientGatewayPairingFlow {
       clientId: pairing.requestedByClientId ?? null
     });
     return true;
+  }
+
+  /**
+   * Take back the challenges of a session that went away. Its socket is gone, so
+   * a token minted for it now could never arrive and nothing should still offer
+   * the challenge for approval.
+   */
+  withdrawForSession(sessionId: string, reason: string): void {
+    for (const pairingCode of this.pairings.withdrawForSession(sessionId, reason)) {
+      this.audit.record("pairing.withdrawn", "Client pairing challenge withdrawn because its session ended.", { pairingCode, sessionId, reason });
+    }
   }
 
   /** The challenge a session is waiting on, reusing an unexpired one if it has it. */
@@ -129,8 +152,11 @@ export class ClientGatewayPairingFlow {
   private async complete(sessionId: string, pairingCode: string, approvedByUserId: string): Promise<ClientGatewaySession | null> {
     this.pairings.pruneExpired();
     const pairing = this.pairings.get(pairingCode);
+    if (!pairing || pairing.consumedAt) return null;
     const session = this.sessions.get(sessionId);
-    if (!pairing || pairing.consumedAt || !session) return null;
+    if (!session) throw this.refuse(pairingCode, "pairing.client_disconnected", CLIENT_DISCONNECTED);
+    const refusal = this.refusalFor(session, pairingCode);
+    if (refusal) throw refusal;
     const { trustedClient, token } = await this.trustedClients.register({
       clientId: session.clientId,
       clientType: session.clientType,
@@ -139,6 +165,17 @@ export class ClientGatewayPairingFlow {
       // The domain the person saw this client declare when they approved it.
       domainId: declaredDomainId(session.metadata)
     });
+    // Saving the trust is asynchronous, and the browser can leave meanwhile.
+    // Trust for a session that is no longer waiting would hand its one-time
+    // token to a closed socket, so take the trust back and say so.
+    const replaced = this.sessions.get(sessionId) !== session || this.pairings.get(pairingCode) !== pairing;
+    const lateRefusal = replaced
+      ? this.refuse(pairingCode, "pairing.client_disconnected", CLIENT_DISCONNECTED)
+      : this.refusalFor(session, pairingCode) ?? (pairing.consumedAt ? this.refuse(pairingCode, "pairing.not_waiting", NOT_WAITING) : undefined);
+    if (lateRefusal) {
+      await this.trustedClients.revoke(trustedClient, "pairing session ended before approval completed");
+      throw lateRefusal;
+    }
     const now = trustedClient.approvedAt;
     pairing.consumedAt = now;
     pairing.sessionId = sessionId;
@@ -162,5 +199,19 @@ export class ClientGatewayPairingFlow {
     });
     await this.events.emit({ type: "session.ready", session: this.sessions.toPublic(session) });
     return this.sessions.toPublic(session);
+  }
+
+  /** Why a session cannot take this approval now, or nothing when it is waiting for it. */
+  private refusalFor(session: InternalSession, pairingCode: string): PairingRefusal | undefined {
+    if (session.status === "disconnected" || session.disconnectedAt !== undefined) {
+      return this.refuse(pairingCode, "pairing.client_disconnected", CLIENT_DISCONNECTED);
+    }
+    if (session.status !== "pairing_required") return this.refuse(pairingCode, "pairing.not_waiting", NOT_WAITING);
+    return undefined;
+  }
+
+  private refuse(pairingCode: string, code: PairingRefusal["code"], message: string): PairingRefusal {
+    this.audit.record("pairing.refused", "Client pairing approval refused; no trust was kept.", { pairingCode, code });
+    return Object.assign(new Error(message), { code });
   }
 }

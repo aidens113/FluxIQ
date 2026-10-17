@@ -505,6 +505,8 @@ describe("the extension's chat, end to end in Core", () => {
     expect(result?.text).toMatch(/The Flow "[^"]+" has no steps yet, but it keeps your instruction, so you can build it again\./u);
     expect(result?.text).not.toMatch(/Before that I created the Flow/u);
     expect(result?.text).toMatch(/model key is locked/u);
+    // How to unlock it: Secret Keys has no unlock control, signing in again is what unlocks (t707).
+    expect(result?.text).toMatch(/sign out of FluxIQ and sign in again/u);
   });
 
   describe("in the explicit candidate authoring mode", () => {

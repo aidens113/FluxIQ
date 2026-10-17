@@ -11,6 +11,8 @@ export type ClientSession = {
   status?: string;
   activeRecordingId?: string;
   lastSeenAt?: number | string;
+  /** Set once the session's socket closed; a disconnected session is not a connected browser. */
+  disconnectedAt?: number | string;
   capabilities?: readonly ClientCapability[];
 };
 
@@ -40,7 +42,8 @@ export type ClientGatewaySnapshot = {
   webRuntime?: {
     clientGatewayPublicUrl?: string;
     clientGatewayListening?: boolean;
-    clientGatewayError?: string;
+    // The web route sends null on a healthy runtime (`lib/fluxiq.ts`), a message when the gateway failed to start.
+    clientGatewayError?: string | null;
     hostModuleLoaded?: boolean;
     automationStudio?: {
       nativeImporterRuntimeBound?: boolean;

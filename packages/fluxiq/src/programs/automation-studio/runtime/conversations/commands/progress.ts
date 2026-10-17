@@ -53,7 +53,7 @@ export function automationStudioConversationCommandProgress(_title: string, keyL
       const opening = account.ending ? `${account.ending.replace(/\.$/u, "")}.` : CALL_CAUSE.test(plainCause) ? `${plainCause.charAt(0).toUpperCase()}${plainCause.slice(1)}.` : `I stopped because ${plainCause}.`;
       const distance = account.left ?? (steps.length ? `Before that I ${joined(steps)}.` : "Nothing was changed.");
       const kept = account.kept ? ` ${account.kept}` : "";
-      const locked = keyLocked ? " Your model key is locked for this browser: unlock your keys in FluxIQ, then ask again." : "";
+      const locked = keyLocked ? " Your model key is locked for this browser: sign out of FluxIQ and sign in again, which unlocks your keys, then ask again." : "";
       return { status: "failed", summary: `${opening} ${distance}${kept}${locked}`, error: plainCause, ...ids };
     }
   };
