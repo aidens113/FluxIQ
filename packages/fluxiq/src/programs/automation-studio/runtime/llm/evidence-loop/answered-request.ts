@@ -6,7 +6,7 @@
 // note follows it naming the entry to read. It is one of the loop's three
 // refusal channels -- beside a refused completion
 // (`./completion-check.ts`) and a refused amendment
-// (`../draft-amendment-feedback.ts`) -- and all three say the same three
+// (`../draft-amendment-feedback/index.ts`) -- and all three say the same three
 // things: what happened, how close the loop is to stopping, and what to do
 // instead.
 

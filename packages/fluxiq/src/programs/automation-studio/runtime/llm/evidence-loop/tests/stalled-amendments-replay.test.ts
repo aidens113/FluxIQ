@@ -37,7 +37,7 @@ import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../../evidence-loop.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { automationStudioLlmEvidenceAmendmentMemory } from "../amendment-memory.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID } from "../../draft-amendment-feedback.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID } from "../../draft-amendment-feedback/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, AutomationStudioLlmUnusableDecisionError } from "../../unusable-decision.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID } from "../index.ts";
 

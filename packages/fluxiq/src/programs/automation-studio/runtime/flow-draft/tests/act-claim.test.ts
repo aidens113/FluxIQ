@@ -38,7 +38,7 @@ describe("claiming an act on a step", () => {
 // cart to the single pack's, and the 3-Pack press stayed in the Flow with no
 // act -- and was pressed again in the next test. The move is applied, never
 // refused, and the amendment's answer says which step the act left, in the
-// numbers the whole decision leaves (`../../llm/draft-amendment-feedback.ts`
+// numbers the whole decision leaves (`../../llm/draft-amendment-feedback/index.ts`
 // tells it).
 describe("an act that moves off a step in the Flow", () => {
   it("is applied, and names the step it left, which now does no act", () => {

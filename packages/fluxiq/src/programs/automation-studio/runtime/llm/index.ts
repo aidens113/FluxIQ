@@ -89,7 +89,7 @@ export * from "./evidence-recall/index.ts";
 export {
   AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID,
   automationStudioLlmEvidenceDraftAmendmentFeedback
-} from "./draft-amendment-feedback.ts";
+} from "./draft-amendment-feedback/index.ts";
 export * from "./harness-options/index.ts";
 // A bound domain's own system instructions (`domain-instructions/`): public
 // because a downstream domain types the `systemInstructions` it binds with

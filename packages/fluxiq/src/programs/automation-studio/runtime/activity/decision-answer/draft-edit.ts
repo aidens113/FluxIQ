@@ -58,7 +58,7 @@ type Evidence = Parameters<AutomationStudioLlmEvidenceLoopInput["decide"]>[0]["e
 type Stalled = Parameters<NonNullable<AutomationStudioLlmEvidenceLoopInput["unusableDecisions"]>["stalled"]>[0];
 type Answer = Parameters<typeof automationStudioActivityDraftEditCard>[0];
 
-/** The refusal entries' tool ids (`../../llm/draft-amendment-feedback.ts`, `../../llm/repeat-guard/feedback.ts`), read as plain strings so this module does not reach into the loop. */
+/** The refusal entries' tool ids (`../../llm/draft-amendment-feedback/index.ts`, `../../llm/repeat-guard/feedback.ts`), read as plain strings so this module does not reach into the loop. */
 const AMENDMENT_CHECK = "core.amendment_check";
 const REPEAT_CHECK = "core.repeat_check";
 /** The loop's entry for a reply it could not use as a decision (`../../llm/unusable-decision.ts`). */

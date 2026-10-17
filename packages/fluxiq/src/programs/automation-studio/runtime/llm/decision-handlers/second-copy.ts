@@ -7,13 +7,13 @@
 // (`../../flow-draft/second-copy.ts`) is not added: no act claim, no openers,
 // no reversal. It stays in the draft as `taken`, the evidence it is, and the
 // model is told so beside the call's own answer, under the entry an amendment
-// refused is told under (`../draft-amendment-feedback.ts`, `second_copy`) --
+// refused is told under (`../draft-amendment-feedback/index.ts`, `second_copy`) --
 // the way an act the call's add moved off another step is told
 // (`./amendment.ts`, `automationStudioLlmEvidenceClaimWrittenAct`). Called from
 // the loop's `draftRecord` (`../evidence-loop.ts`).
 import { automationStudioFlowDraftSecondCopy, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioLlmDecisionContextSupersede } from "../decision-context/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID, automationStudioLlmEvidenceDraftAmendmentFeedback } from "../draft-amendment-feedback.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID, automationStudioLlmEvidenceDraftAmendmentFeedback } from "../draft-amendment-feedback/index.ts";
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext } from "./types.ts";
 
 /**
