@@ -782,6 +782,14 @@ describe("the policy where the result is a Flow", () => {
     expect(sentence).not.toMatch(/shop|store|seller|retailer|pickup|cart|order|feed|social|job|towel|valueridge/iu);
   });
 
+  // t690 (t686 fix 2): two site filters, each one word of one request phrase, keep rows meeting each word apart;
+  // only a row's own text shows it meets the phrase. The example is a venue listing's, no Lab scenario's.
+  it("says a site filter's option words do not show each kept row meets the request; a row's own text does", () => {
+    const sentence = "A site filter's option words do not show that each row it keeps meets the request's words; a row's own text does: on a venue listing with separate Outdoor and Weekend filters, a request for outdoor seating this weekend is still checked against each row's own text in the read's where.";
+    expect(AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION).toContain(sentence);
+    expect(sentence).not.toMatch(/shop|store|seller|retailer|pickup|cart|order|feed|social|job|towel|valueridge|auction|classified|marketplace|photo|company|professional|friend/iu);
+  });
+
   it("says add is for a step run or written, and that write implies it", () => {
     const schema = buildAutomationStudioLlmEvidenceLoopDecisionSchema([go], { type: "object" }, true, false, true);
     const add = ((schema.oneOf as JsonObject[]).find((variant) => (variant.properties as JsonObject).toolId !== undefined)!.properties as JsonObject).add as JsonObject;

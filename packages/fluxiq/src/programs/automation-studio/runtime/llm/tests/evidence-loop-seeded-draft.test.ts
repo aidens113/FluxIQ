@@ -10,6 +10,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftReplayable } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftScheduledCandidateCall } from "../../flow-draft/scheduled-candidate/index.ts";
 import { automationStudioFlowDraftSeedFromFlow } from "../node-tools/index.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../evidence-loop.ts";
 import { automationStudioLlmEvidenceLoopSeedSteps } from "../loop-configuration.ts";
@@ -98,5 +99,28 @@ describe("a loop that starts from a draft", () => {
     const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: vi.fn(), draft: { seed: seed() } });
     expect(result.ok).toBe(false);
     expect(result.steps.map((step) => step.id)).toEqual(["f1", "f2"]);
+  });
+
+  // t690 (t688, Lab steps 0095-0120): a stall used to deep-copy the draft, which
+  // lends a step no scheduled candidate, so the next round read every saved step
+  // as never run in this build and the model reran each one alone.
+  it("hands a stall on refused completions the saved steps still scheduled to run as saved", async () => {
+    const saved = automationStudioFlowDraftSeedFromFlow({ nodes: [{ id: "saved", definitionId: "fixture.open", metadata: { declaredConsequences: [] } }], edges: [], startPages: { saved: { location: "fixture://start" } } });
+    const handed: AutomationStudioFlowDraftStep[][] = [];
+    const stalledError = new Error("stalled");
+    const decide = vi.fn().mockResolvedValue({ kind: "complete", result: { summary: "Kept the Flow as it was." } });
+    const checkCompletion = vi.fn().mockResolvedValue({ ok: false, issueCodes: ["fixture.not_yet"], feedback: { reason: "fixture" } });
+    await expect(runAutomationStudioLlmEvidenceLoop({
+      tools, decide, executeTool: vi.fn(), draft: { seed: saved.steps }, dryRun: false, checkCompletion, maxIterations: 10, propagateDecisionErrors: true,
+      unusableDecisions: {
+        maxConsecutive: 2,
+        stalled: (progress) => {
+          handed.push([...progress.steps]);
+          return stalledError;
+        }
+      }
+    })).rejects.toBe(stalledError);
+    expect(handed).toHaveLength(1);
+    expect(automationStudioFlowDraftScheduledCandidateCall(handed[0]![0]!)).toEqual({ input: handed[0]![0]!.input, from: { location: "fixture://start" } });
   });
 });

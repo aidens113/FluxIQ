@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../../../build-test/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../../contracts/index.ts";
-import { CAMPSITE_REQUEST, CAMP_REGION, campsiteInstruction, campsiteRunSummary } from "../../../refuted-no/tests/campsite-fixture.ts";
+import { CAMPSITE_REQUEST, CAMP_OSPREY, CAMP_REGION, campsiteInstruction, campsiteRunSummary } from "../../../refuted-no/tests/campsite-fixture.ts";
 import { CAMPSITE_YES } from "../../../refuted-no/tests/campsite-readings-fixture.ts";
 
 const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 };
@@ -75,5 +75,16 @@ describe("a no blaming a step that chose the request's own words, through the ve
     expect(verdict).toMatchObject({ verdict: "unknown" });
     expect(verdict.spent.calls).toBe(2);
     expect(seen).toHaveLength(2);
+  });
+
+  // t690 (t686 "Not verified"): the verification never passed Core's record to this re-ask, so a reason the record
+  // refutes beside the blame kept the no standing. Here the other reason calls a campsite the read left out stored.
+  it("is asked once more where its only other reason is one Core's record refutes", async () => {
+    const withMisread = { ...blaming("Lakeshore"), observed: `${blaming("Lakeshore").observed} Stored 4 rows including "${CAMP_OSPREY}", which is closed for the season.` };
+    const { provider, seen } = answering(withMisread, CAMPSITE_YES, CAMPSITE_YES);
+    const verdict = await judge(provider, REQUEST)({ summary: summary("Lakeshore"), budget: { maxCostUsd: 0.2 } });
+    expect(verdict).toMatchObject({ verdict: "yes" });
+    expect(verdict.spent.calls).toBe(3);
+    expect(JSON.stringify(seen[2])).toContain("Core did not see the rows such a step removed");
   });
 });

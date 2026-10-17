@@ -3,7 +3,7 @@ import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS,
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID,
   automationStudioFlowDraftDropReversals, automationStudioFlowDraftKeepOpeners,
-  automationStudioFlowDraftReplaySignature,
+  automationStudioFlowDraftReplaySignature, automationStudioFlowDraftStepCopy,
   automationStudioFlowDraftStepIsAction,
   automationStudioFlowDraftStepIsProposable, automationStudioFlowDraftStepWordsOf, automationStudioFlowDraftSetRoutePlaces,
   type AutomationStudioFlowDraftStep
@@ -314,7 +314,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       noProgress.redirect(step.iteration);
       return undefined;
     }
-    return { error: input.unusableDecisions!.stalled({ issueCodes, trace: [...trace], accounting: { ...accounting }, steps: draftSteps.map((draftStep) => structuredClone(draftStep)) }) };
+    return { error: input.unusableDecisions!.stalled({ issueCodes, trace: [...trace], accounting: { ...accounting }, steps: draftSteps.map((draftStep) => automationStudioFlowDraftStepCopy(draftStep)) }) };
   };
   // An unusable decision, answered: recorded, then either told to the model as
   // evidence before it is asked again, or the error that ends the loop.

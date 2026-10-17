@@ -159,4 +159,6 @@ export * from "./reask-contradicted.ts";
 // The advice a builder is shown of a judged trial, less a wholly refuted reading's (t687).
 export { automationStudioResultAdviceShown } from "./refuted-labelled.ts";
 export type { AutomationStudioResultVerificationAgreementInput } from "./types.ts";
+// Core's record a no is weighed against, for the narrowing re-ask the verification asks after these (t690).
+export { noRecordOf as automationStudioResultVerificationNoRecord } from "./no-record.ts";
 export * from "./verification-agreement.ts";

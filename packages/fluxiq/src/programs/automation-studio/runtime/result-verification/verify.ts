@@ -108,7 +108,7 @@ import {
   type AutomationStudioLlmTokenLimits
 } from "../llm/index.ts";
 import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "./contracts/index.ts";
-import { automationStudioResultVerificationAgreement, automationStudioResultVerificationAskAgain, automationStudioResultVerificationReaskContradicted } from "./agreement/index.ts";
+import { automationStudioResultVerificationAgreement, automationStudioResultVerificationAskAgain, automationStudioResultVerificationNoRecord, automationStudioResultVerificationReaskContradicted } from "./agreement/index.ts";
 import { automationStudioResultCheckActivity } from "./check-activity.ts";
 import { automationStudioResultCoreObservation } from "./core-observation.ts";
 import { automationStudioResultSummaryWithPagingWords, automationStudioResultSummaryWithUnreadColumns } from "./read-account/index.ts";
@@ -232,9 +232,10 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
     return askCheck({ ...request, summary: { ...request.summary, recheck } }, provider, call, trail, true);
   };
   const reasked = await automationStudioResultVerificationReaskContradicted({ ...input, settled, ask });
-  // Where nothing was asked again, a no blaming only steps that chose the request's own words is asked once more (t666, `./unsure-doubts/narrowing-no-reask.ts`).
+  // Where nothing was asked again, a no blaming only steps that chose the request's own words is asked once more (t666, `./unsure-doubts/narrowing-no-reask.ts`);
+  // Core's record settles its other reasons as it does every re-ask's (t686), so a reason the record refutes leaves it askable (t690).
   const outcome = await automationStudioResultReaskNarrowingNo({
-    settled: reasked, first, second, reads: request.summary.reads, requestText, says: wording?.says, ask,
+    settled: reasked, first, second, reads: request.summary.reads, requestText, says: wording?.says, ask, record: automationStudioResultVerificationNoRecord(input),
     agree: (one, two) => automationStudioResultVerificationAgreement({ ...input, first: one, second: two })
   });
   const confirmed = automationStudioResultFirstAskConfirmed({ confirmAnswer, outcome, first, second, verdictChanged: trail.verdictChanged, reasks: trail.reasks });
