@@ -13,7 +13,7 @@
 // dropped without a word. The row read `llm_evidence_loop.draft_unchanged` and
 // the model was asked again with nothing to correct -- which is exactly the
 // defect a refused amendment stopped having
-// (`../draft-amendment-feedback.ts`), surviving on the one path that produced
+// (`../draft-amendment-feedback/index.ts`), surviving on the one path that produced
 // no refusal to carry. `run_by_the_loop` could not occur on the loop path at
 // all, because the only code that produced it was the code this filtered past.
 //

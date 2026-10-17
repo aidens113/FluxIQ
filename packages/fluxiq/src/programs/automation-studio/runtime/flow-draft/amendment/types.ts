@@ -77,7 +77,7 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
   /**
    * `over_not_before` only: the step the repeat named as `over`, so the
    * telling can say, in the draft's numbers, which step lists the rows and
-   * what a loop over them still needs (`../../llm/draft-amendment-feedback.ts`).
+   * what a loop over them still needs (`../../llm/draft-amendment-feedback/index.ts`).
    * Live run 37 (`run-muq5v4zg-39182b58`) sent `13 repeat over 13` on its
    * filtered listing with no press after it, and was told the rule in general.
    * `repeat_taken_off`: the step the repeat taken off was over; absent for a
@@ -112,7 +112,7 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
   /**
    * `act_already_named` only: the act the amendment named, so the telling can
    * say whether the checklist already shows it done and, when it does, which
-   * acts are still to do (`../../llm/draft-amendment-feedback.ts`). Live run
+   * acts are still to do (`../../llm/draft-amendment-feedback/index.ts`). Live run
    * `run-muqiojz4-04a7a8fc` named `a2.quantity` on its step five decisions
    * running while the checklist showed it done and `a3` still to do.
    * `act_not_done_there`: the act whose claim was refused.
@@ -143,7 +143,7 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
    * `target` of its size press, as the draft showed it, and was told to name
    * "a parameter it already has, as the draft shows it" -- which it had, four
    * decisions running. The telling says a press has no value to vary
-   * (`../../llm/draft-amendment-feedback.ts`); the code stays, since the chat
+   * (`../../llm/draft-amendment-feedback/index.ts`); the code stays, since the chat
    * wording is keyed by it.
    */
   control?: true;
@@ -158,7 +158,7 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
   /**
    * The step the amendment named is the attempt a rerun replaced: the number of
    * the step standing in its place, so the telling can say to change that one
-   * instead (`../../llm/draft-amendment-feedback.ts`, live run
+   * instead (`../../llm/draft-amendment-feedback/index.ts`, live run
    * `run-musp474o-e0ed7432`). Refused under `./replaced-attempt.ts`'s reason.
    */
   replacedBy?: number;

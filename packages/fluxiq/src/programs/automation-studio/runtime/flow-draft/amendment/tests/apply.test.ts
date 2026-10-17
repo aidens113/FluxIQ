@@ -316,7 +316,7 @@ describe("binding a step's arguments", () => {
   // selector, so `target` is no value it ran with. The refusal keeps its code
   // and says it named the control (`control`), which the answer tells as a
   // press rather than as a key the model invented
-  // (`../../../llm/draft-amendment-feedback.ts`).
+  // (`../../../llm/draft-amendment-feedback/index.ts`).
   it("marks a bind of the control a press acted on, which the draft shows but the step ran with no value at", () => {
     const draft: AutomationStudioFlowDraftStep[] = [{
       position: 1, id: "d9", iteration: 9, actionId: "web.output.dom-click",
@@ -377,7 +377,7 @@ describe("a repeat on an act that sits before its listing, run murz83zy", () => 
 
   it("applies the reorder and the repeat in one decision, both numbered as the draft was shown", () => {
     const draft = pressedBeforeListing();
-    // What the refusal tells it to send (`../../../llm/draft-amendment-feedback.ts`):
+    // What the refusal tells it to send (`../../../llm/draft-amendment-feedback/index.ts`):
     // the listing moves to the act's place, and the repeat names the act, its
     // confirmation and the listing by the numbers shown; the draft is
     // renumbered once, after the decision.

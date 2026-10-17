@@ -87,7 +87,7 @@ describe("the trace stored on a build", () => {
   });
 
   // A refused amendment reaches the model during the build
-  // (`../../../llm/draft-amendment-feedback.ts`) and reached nothing afterwards:
+  // (`../../../llm/draft-amendment-feedback/index.ts`) and reached nothing afterwards:
   // this function re-parses the row that is stored, so a reason dropped here is
   // a reason no run's artifacts ever show.
   it("keeps which of a decision's amendments changed nothing and why, so a run's record says more than one word about seven of them", () => {

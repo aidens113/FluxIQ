@@ -1,6 +1,6 @@
 // What the amendment handler tells the model about a refused amendment: every
 // refusal names its way out, in the draft's own numbers
-// (`../../draft-amendment-feedback.ts`, told by `../amendment.ts`).
+// (`../../draft-amendment-feedback/index.ts`, told by `../amendment.ts`).
 //
 // Split from `../../tests/draft-amendment-feedback.test.ts`, which is at the
 // line limit, for the two t287 causes: run `run-mustvzvg-99695308` C4 (an

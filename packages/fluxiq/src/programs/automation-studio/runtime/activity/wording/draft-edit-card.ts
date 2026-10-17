@@ -22,7 +22,7 @@ const SAID: Readonly<Record<AutomationStudioFlowDraftAmendmentRefusal["reason"],
 
 /**
  * The loop's codes the card's record carries, read as plain strings so this
- * module does not reach into the loop (`../../llm/draft-amendment-feedback.ts`,
+ * module does not reach into the loop (`../../llm/draft-amendment-feedback/index.ts`,
  * `../../llm/repeat-guard/feedback.ts`).
  */
 const AMENDMENTS_REFUSED = "llm_evidence_loop.draft_amendments_refused";

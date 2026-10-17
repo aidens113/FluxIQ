@@ -28,7 +28,7 @@ import type { AutomationStudioLlmEvidenceRestoredStep } from "./completion-check
 import type { AutomationStudioLlmEvidenceLoopDraftChange } from "./draft-change.ts";
 import type { AutomationStudioLlmEvidenceLoopDraftShown } from "./draft-shown.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID, type AutomationStudioLlmEvidenceLoopProgress } from "../evidence-progress/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID } from "../draft-amendment-feedback.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID } from "../draft-amendment-feedback/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID } from "../repeat-guard/index.ts";
 import { automationStudioLlmStepLogAnswer, type AutomationStudioLlmStepLogAnswerStep, type AutomationStudioLlmStepLogCoreEntry } from "../step-log/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID } from "../unusable-decision.ts";

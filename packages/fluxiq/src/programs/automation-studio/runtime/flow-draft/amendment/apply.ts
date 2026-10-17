@@ -46,7 +46,7 @@ type ActMove = { act: string; from: number; to: number };
  *
  * Borrowed from the routing refusals -- "it named a step the Flow does not
  * contain" -- because a reason of its own has to be explained in
- * `../../llm/draft-amendment-feedback.ts` and allowed in
+ * `../../llm/draft-amendment-feedback/index.ts` and allowed in
  * `../../flow-bootstrap/evidence-loop-steps.ts`, which other work held when this
  * landed. A dedicated reason replaces it here, in this one place.
  */
