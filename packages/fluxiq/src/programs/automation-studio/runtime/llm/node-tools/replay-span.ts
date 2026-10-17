@@ -39,7 +39,15 @@
 // the Flow stops there. The bound is the routing's `most`, else the Repeat
 // node's own default, and reaching it ends the loop: not a failure, unlike a
 // list's bound, because the Repeat node leaves on `done` and the Flow carries
-// on. `ended` from any other member, or outside a do-while, reads as `failed`.
+// on. `ended` from any other member, or outside a do-while, reads as `failed`,
+// and ends the loop too: the list that member moves has no more pages, so a
+// later pass would only send it again to hear the same (t688, live run
+// `run-mvblov2i-abb7d82e`: a next page repeated over a read's 8 rows answered
+// "no next page" on pass 2 and was sent 6 times more, in each of three tests).
+// A do-while that a run cuts short of its last step -- a rerun's put-back does
+// again only the steps before the rerun one -- is not run as a loop: nothing in
+// it could end the loop, and the same run sent its read 50 times, the Repeat's
+// whole bound, before rerunning the next page that would have ended it.
 // A last member the test only checks never moves on, so the span runs once.
 //
 // **When the test knows no rows, nothing changes.** A list step that was only
@@ -218,7 +226,11 @@ export function automationStudioFlowDraftReplaySpanPlan(input: {
   if (!first || routing?.kind !== "repeat") return undefined;
   // A do-while names no earlier step: it is planned from its routing alone, and never reaches the plans over one (see the header).
   if (automationStudioFlowDraftRepeatIsWhile(routing)) {
-    return { kind: "do-while", members: spanMembers(input.steps, input.run, input.index, routing.through), most: repeatBound(routing.most) };
+    const members = spanMembers(input.steps, input.run, input.index, routing.through);
+    // A run that stops before the span's last step -- the steps a rerun's put-back does again before that very step --
+    // has nothing that could end the loop: it is not run as one (see the header).
+    if (automationStudioFlowDraftStepId(members.at(-1)!) !== routing.through) return undefined;
+    return { kind: "do-while", members, most: repeatBound(routing.most) };
   }
   if (!input.nodeOf) return undefined;
   const over = input.run.slice(0, input.index).find((candidate) => automationStudioFlowDraftStepId(candidate) === routing.over);
@@ -391,11 +403,13 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
   // One pass of every member, on `row` for a list: `stopped` when the walk
   // stops, `ended` when a do-while's last member ended the loop, `failed` when
   // a member did not pass, else `passed`.
-  const runPass = async (pass: number, row?: JsonObject): Promise<"stopped" | "ended" | "failed" | "passed"> => {
+  const runPass = async (pass: number, row?: JsonObject): Promise<"stopped" | "ended" | "failed" | "passed" | "no_more"> => {
     // What the members before this one produced on this pass, and nothing of the pass before.
     const produced = new Map<string, JsonObject>();
     let ended = false;
     let failed = false;
+    // A member other than a do-while's last that answered `ended`: the list has no more pages, so no pass after this one can move it (see the header).
+    let noMore = false;
     for (const member of plan.members) {
       const mode = input.modeOf(member);
       const node = input.nodeOf?.(member.actionId);
@@ -407,8 +421,10 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
         const callId = `${input.callIdOf(member)}.pass.${pass}`;
         const answer: AutomationStudioFlowDraftReplayAnswer = built ? await sendPass(pass, callId, member, built.value) : { readable: false };
         // The loop ending on its last member's `ended` is that pass passing, not the step failing.
-        const ends = member === ender && answer.readable && answer.result.resultCode === AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.ended;
+        const answeredEnded = answer.readable && answer.result.resultCode === AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.ended;
+        const ends = member === ender && answeredEnded;
         if (ends) ended = true;
+        else if (answeredEnded) noMore = true;
         const status = ends ? "replayed" : answer.readable ? automationStudioNodeReplayStatus(answer.result.resultCode, mode) : "failed";
         answered = { pass, status, ...(answer.readable && answer.result.resultCode ? { resultCode: answer.result.resultCode } : {}) };
         observe(member, callId, answer, status, pass, mode);
@@ -421,13 +437,16 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
         if (input.stops?.(member)) return "stopped";
       }
     }
-    return failed ? "failed" : ended ? "ended" : "passed";
+    return noMore ? "no_more" : failed ? "failed" : ended ? "ended" : "passed";
   };
   if (plan.kind === "list") {
     overBound = plan.rows.length > bound;
     for (const [at, row] of (overBound ? [] : plan.rows).entries()) {
       count = at + 1;
-      if (await runPass(count, row) === "stopped") { stopped = true; break; }
+      const ran = await runPass(count, row);
+      if (ran === "stopped") { stopped = true; break; }
+      // A member that answered `ended` is never sent again: the list it moves has no more pages (see the header).
+      if (ran === "no_more") break;
     }
   } else if (plan.kind === "do-while") {
     // A last member the test only checks never moves on, so the span runs once.
@@ -449,8 +468,9 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
     while (holds) {
       if (count >= bound) { overBound = true; break; }
       count += 1;
-      if (await runPass(count) === "stopped") { stopped = true; break; }
-      if (once) break;
+      const ran = await runPass(count);
+      if (ran === "stopped") { stopped = true; break; }
+      if (once || ran === "no_more") break;
       const built = automationStudioFlowDraftReplayPassCall(plan.over, checkMode, undefined, undefined, input.earlier);
       if (!built || "unresolved" in built) break;
       const callId = `${input.callIdOf(plan.over)}.pass.${count + 1}`;

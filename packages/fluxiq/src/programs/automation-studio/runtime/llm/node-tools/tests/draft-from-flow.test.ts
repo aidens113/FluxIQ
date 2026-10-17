@@ -47,9 +47,11 @@ describe("a Flow read back as a draft", () => {
     expect(seed.steps[0]!.priorExecution).toBeUndefined();
   });
 
-  it("refuses a first step with no captured start, changed configuration and copied steps", () => {
+  // t688 (`run-mvblov2i-abb7d82e`): an unchanged first step whose start was never captured is sent where the target
+  // stands, as its Flow's playback sends it (`../../../flow-draft/starts-where-it-stands.ts`); it no longer stops the test.
+  it("replays a first step with no captured start, and refuses changed configuration and copied steps", () => {
     const node = { id: "saved", definitionId: "fixture.open", metadata: { declaredConsequences: [] } };
-    expect(automationStudioFlowDraftReplayable(automationStudioFlowDraftSeedFromFlow({ nodes: [node], edges: [] }).steps)).toBe(false);
+    expect(automationStudioFlowDraftReplayable(automationStudioFlowDraftSeedFromFlow({ nodes: [node], edges: [] }).steps)).toBe(true);
     const seed = declaredSeed();
     expect(automationStudioFlowDraftReplayable(seed.steps.map((step) => ({ ...step })))).toBe(false);
     seed.steps[0]!.input.parameters = { changed: true };

@@ -49,6 +49,7 @@ import {
   type AutomationStudioResultRepairPurse
 } from "../../recovery/refuted-result/index.ts";
 import { automationStudioLlmCurrentFlowPurse } from "../../llm/build-purse/index.ts";
+import { automationStudioLlmBuildTrace } from "../../llm/evidence-progress/index.ts";
 import { automationStudioReauthorBuild, type AutomationStudioReauthorBuildDependencies, type AutomationStudioReauthorBuilt } from "./reauthor-build.ts";
 
 type RepairRequest = Parameters<AutomationStudioRefutedResultRepairPort>[0];
@@ -77,7 +78,9 @@ export type AutomationStudioRefutedResultRepairPortDependencies = AutomationStud
 /** The port the verification calls for a refuted run. */
 export function automationStudioRefutedResultRepairPort(deps: AutomationStudioRefutedResultRepairPortDependencies): AutomationStudioRefutedResultRepairPort {
   const now = deps.now ?? Date.now;
-  return async (refuted) => {
+  // The repair, its re-author build and its patch ladder each say when they start and end in the build trace, so a
+  // repair that goes quiet after its build says where (t688, run-mvblov2i-abb7d82e: 5 minutes with nothing logged).
+  const repair: AutomationStudioRefutedResultRepairPort = async (refuted) => {
     const flowId = deps.flowId();
     // Opened where an earlier pass of this run's repair left it, so a re-run
     // refuted again spends from the same total rather than a fresh one; in a
@@ -97,7 +100,7 @@ export function automationStudioRefutedResultRepairPort(deps: AutomationStudioRe
     const brief = automationStudioReauthorBrief({ projectId: decision.projectId, flowId: decision.flowId, current: refuted.current, history: refuted.history, maxAttempts: refuted.maxAttempts, now: now() });
     // The re-author may conclude the Flow needs no change (W17, run-muw5zv4m): it then
     // ends with no failure, so neither the ladder nor a re-run follows it below.
-    const { detail: repaired, built, purse } = await automationStudioReauthorBuild({
+    const { detail: repaired, built, purse } = await automationStudioLlmBuildTrace.timed("reauthor-build", () => automationStudioReauthorBuild({
       deps, projectId: decision.projectId, flowId: decision.flowId, brief, purse: opened, detail: refuted.detail, now, nothingToChange: true,
       record: (detail: AutomationStudioFlowRunDetail, attempt: AutomationStudioReauthorBuilt) => automationStudioRefutedResultReauthored({
         detail,
@@ -106,7 +109,7 @@ export function automationStudioRefutedResultRepairPort(deps: AutomationStudioRe
         attempt: refuted.current.attempt,
         brief: briefRecord(refuted, brief)
       })
-    });
+    }), (done) => `edit=${done.built.adaptationId === undefined ? "no" : "yes"} code=${done.built.failure?.code ?? "-"}`);
     // A build that produced no edit at all degrades to the smaller repair --
     // the patch ladder a refutation the route does not take is given -- rather
     // than ending the repair with nothing tried (`run-mulxk0ro-36bf090d`) -- unless a build that
@@ -119,6 +122,7 @@ export function automationStudioRefutedResultRepairPort(deps: AutomationStudioRe
     }
     return automationStudioResultRepairWithPurse(repaired, purse);
   };
+  return (refuted) => automationStudioLlmBuildTrace.timed("result-repair", () => repair(refuted));
 }
 
 /**
@@ -132,7 +136,7 @@ async function patchLadder(
   purse: AutomationStudioResultRepairPurse
 ): Promise<{ detail: AutomationStudioFlowRunDetail; purse: AutomationStudioResultRepairPurse; ran: boolean }> {
   if (!automationStudioResultRepairPurseAllowsPart(purse)) return { detail, purse: automationStudioResultRepairPurseRefused(purse, "patch_ladder"), ran: false };
-  const annotated = await deps.annotate({ ...refuted, detail }, automationStudioResultRepairPurseLeftUsd(purse));
+  const annotated = await automationStudioLlmBuildTrace.timed("patch-ladder", () => deps.annotate({ ...refuted, detail }, automationStudioResultRepairPurseLeftUsd(purse)));
   return { detail: annotated, purse: automationStudioResultRepairPurseCharged(purse, recoverySpend(detail, annotated)), ran: true };
 }
 

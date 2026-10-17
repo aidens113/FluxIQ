@@ -12,7 +12,7 @@
 // do-while (read-list design S2) runs its span until its last step ends it.
 // The llm barrel first, as `../../decision-context/tests/recorded-runs.ts` says why.
 import { describe, expect, it } from "vitest";
-import { replayAutomationStudioFlowDraft, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../index.ts";
+import { automationStudioFlowDraftReplaySteps, replayAutomationStudioFlowDraft, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_LOOP_BOUND_CODE, AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE, type AutomationStudioFlowDraftReplayNode } from "../replay-span.ts";
@@ -382,6 +382,42 @@ describe("a do-while repeat, in the build's test", () => {
       [2, 2, [ROWS[1]]], [3, 2, undefined]
     ]);
     for (const each of replayed.observations) expect(JSON.stringify(each.evidence)).not.toContain("Ada");
+  });
+});
+
+// t688, live run `run-mvblov2i-abb7d82e`. Each of its three tests ran the next page
+// over the read's 8 rows: pass 2 answered "no next page" and passes 3-8 sent it
+// again to hear the same. And a rerun of that next page did again the read before
+// it on its own page -- a do-while cut short of its last step -- and sent the read
+// 50 times, the Repeat's whole bound, with nothing in the run able to end it.
+describe("a page loop whose next page says there is no next page", () => {
+  const ENDED = "core.replay.ended";
+  const EIGHT: JsonObject[] = Array.from({ length: 8 }, (_, at) => ({ name: `Row ${at + 1}` }));
+
+  it("sends a member that answered ended no more: the loop over the list ends there", async () => {
+    const executor = host({ rows: EIGHT, answers: { "dryrun.1.2.pass.2": ENDED } });
+    const steps = [
+      step(1, "node.list", {}, { where: "all" }),
+      step(2, "node.press", { routing: { kind: "repeat", over: "d1", through: "d2" } }, { target: "#next" })
+    ];
+    const replayed = await test(steps, executor);
+    expect(executor.calls.map((call) => call.callId)).toEqual(["dryrun.1.reset", "dryrun.1.1", "dryrun.1.2.pass.1", "dryrun.1.2.pass.2"]);
+    // A next page done once per row is not the page loop the Flow needs: it still does not pass.
+    expect(replayed.verdict.outcomes.find((outcome) => outcome.step === 2)).toMatchObject({ status: "failed", resultCode: ENDED });
+    expect(replayed.verdict.ok).toBe(false);
+  });
+
+  it("does not run as a loop a do-while the run stops short of: its read is done again once, never to the bound", async () => {
+    const executor = host({ rows: ROWS });
+    const steps = [
+      step(1, "node.press", {}, { target: "#open" }),
+      step(2, "node.list", { routing: { kind: "repeat", through: "d3", while: "d3" } }, { where: "all" }),
+      step(3, "node.press", {}, { target: "#next" })
+    ];
+    // What a rerun of step 3 does again before it on its own page: step 2 alone.
+    const done = await automationStudioFlowDraftReplaySteps({ executeTool: executor.executeTool, steps, run: [steps[1]!], callIdOf: (each) => `rerun.3.place.${each.position}`, reanchor: false, nodeOf });
+    expect(executor.calls.map((call) => call.callId)).toEqual(["rerun.3.place.2"]);
+    expect(done.outcomes).toMatchObject([{ step: 2, status: "replayed" }]);
   });
 });
 

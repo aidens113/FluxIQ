@@ -635,3 +635,24 @@ describe("a completion on the very draft the last test refused", () => {
     expect(run.lastVerdict()).not.toHaveProperty("unchanged");
   });
 });
+
+// t688, live run `run-mvblov2i-abb7d82e`: its three tests left no line in core.log, and the last five minutes of
+// the repair none either. A test now says when it starts and ends in the build trace, with codes only.
+describe("the build trace of a test", () => {
+  it("says when the test starts and ends, and how it went", async () => {
+    vi.stubEnv("FLUXIQ_BUILD_PROGRESS_TRACE", "1");
+    const lines: string[] = [];
+    const log = vi.spyOn(console, "log").mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+    try {
+      const run = harness([step(1), step(2)], { 2: FAILED });
+      await run.complete();
+    } finally {
+      log.mockRestore();
+      vi.unstubAllEnvs();
+    }
+    const traced = lines.filter((line) => line.includes("[FluxIQ build-trace]")).map((line) => line.replace(/^.*Z /u, "").replace(/ms=\d+/u, "ms=N"));
+    expect(traced).toEqual(["dry-run start", "dry-run end ms=N attempt=1 ok=false steps=2 reset=ok"]);
+  });
+});

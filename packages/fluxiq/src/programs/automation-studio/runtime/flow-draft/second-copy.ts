@@ -18,12 +18,27 @@
 //       host's code, `./step.ts`), and no step of the Flow that changes
 //       something lies between them in draft order. A read after a kept press
 //       -- a filter, a sort, the next page -- reads other rows, so it is no copy.
+//   (c) the kept step was carried from the Flow being changed -- seeded `f<n>`,
+//       or a rerun standing for one (`standsFor`) -- both name the same node
+//       parameters (`input.parameters`, compared with its keys in order), and
+//       a kept step that changes something lies between the carried step and
+//       the joining one. The carried step is that step, at its own place in
+//       the Flow, whatever page each started on and whatever each declared:
+//       running it in this build is a rerun of it (amend_draft rerun), which
+//       puts the page back where it starts. A copy added after the Flow moved
+//       on runs it a second time. Live run `run-mvblov2i-abb7d82e` (t688):
+//       told to run the saved steps in this build, the repair ran the saved
+//       navigate (0095) and the Pickup filter (0108) again as new calls with
+//       `add`, and the Flow ended with a second navigate and a second Pickup
+//       filter after its page loop. A press done again right after itself --
+//       "+" twice -- has nothing between, so it is no copy.
 //
 // Applied wherever a step joins the Flow by the model's word: a call with `add`
 // (`../llm/decision-handlers/second-copy.ts`), and an `add` or `keep` amendment
 // (`./amendment/apply.ts`, `second_copy`). Re-adding the attempt a rerun
 // replaced is refused on its own (`./amendment/replaced-attempt.ts`).
 import type { JsonValue } from "../../../../core/index.ts";
+import { automationStudioFlowDraftStepCarried } from "./carried-step/index.ts";
 import { automationStudioFlowDraftStepIsProposable, type AutomationStudioFlowDraftStep } from "./step.ts";
 
 type Step = AutomationStudioFlowDraftStep;
@@ -34,7 +49,22 @@ export function automationStudioFlowDraftSecondCopy(steps: readonly Step[], step
   const ordered = [...steps].sort((a, b) => a.position - b.position);
   return ordered.find((kept) => kept !== step && kept.disposition === "kept" && automationStudioFlowDraftStepIsProposable(kept)
     && kept.actionId === step.actionId && kept.toolId === step.toolId
-    && (sameAct(kept, step) || sameRead(ordered, kept, step)));
+    && (sameAct(kept, step) || sameRead(ordered, kept, step) || sameCarried(ordered, kept, step)));
+}
+
+/** Rule (c): the step carried from the Flow being changed, run again as a new step after the Flow moved on. */
+function sameCarried(ordered: readonly Step[], kept: Step, step: Step): boolean {
+  if (!automationStudioFlowDraftStepCarried(kept) && !automationStudioFlowDraftStepCarried({ id: kept.standsFor })) return false;
+  if (automationStudioFlowDraftStepCarried(step) || canonical(parametersOf(kept)) !== canonical(parametersOf(step))) return false;
+  // A step not yet in the list stands after its last step, where the loop appends it.
+  const at = ordered.indexOf(step);
+  const [from, to] = [ordered.indexOf(kept), at < 0 ? ordered.length : at].sort((a, b) => a - b) as [number, number];
+  return ordered.slice(from + 1, to).some((between) => between.disposition === "kept" && between.effect === "mutate");
+}
+
+/** The node parameters a step's argument names, or nothing. */
+function parametersOf(step: Step): JsonValue {
+  return step.input.parameters ?? null;
 }
 
 /** Rule (a): the same press, with the same argument, from the same known page state. */

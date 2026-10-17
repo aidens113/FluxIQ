@@ -39,6 +39,14 @@
 // the steps on either side of it are what the test runs
 // (`../../flow-draft/carried-step/`).
 //
+// **A carried first step with no captured start is sent where the target
+// stands (t688).** The reset puts the target back where the first step
+// started; a saved Flow's first step whose start the run being repaired never
+// captured has nowhere recorded, and its Flow's own playback sends it from
+// wherever the target is. So does the test, with no reset, rather than the
+// model being made to rerun it so that a start is recorded
+// (`../../flow-draft/starts-where-it-stands.ts`, live run `run-mvblov2i-abb7d82e`).
+//
 // **A step that comes back unreadable is a failed step**, never a skipped one.
 // A host that does not implement the replay answers something this cannot read,
 // and the honest reading of that is "this step was not demonstrably run again",
@@ -80,6 +88,7 @@ import {
   automationStudioFlowDraftPrecedingProposedStep,
   automationStudioFlowDraftRepeatIsWhile,
   automationStudioFlowDraftReplayFrom,
+  automationStudioFlowDraftStartsWhereItStands,
   automationStudioFlowDraftReplayOutcomeVerified,
   automationStudioFlowDraftReplayOutcomeWord,
   automationStudioFlowDraftStepId,
@@ -204,15 +213,20 @@ export async function replayAutomationStudioFlowDraft(input: AutomationStudioFlo
   const outcomes: AutomationStudioFlowDraftReplayOutcome[] = [];
   const observations: AutomationStudioFlowDraftReplayResult["observations"] = [];
   const first = sent[0];
-  if (!from || !first) return { verdict: verdictOf(input, "failed", outcomes), observations };
-  const resetCallId = `dryrun.${input.attempt}.reset`;
-  const reset = await call(input, resetCallId, automationStudioNodeReplayToolId(first), automationStudioNodeReplayResetCall(from));
-  if (!reset.readable || reset.result.resultCode === AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.resetFailed || reset.result.effectApplied !== true) {
-    return {
-      verdict: verdictOf(input, "failed", outcomes),
-      observations,
-      ...(reset.readable ? { evidence: { callId: resetCallId, toolId: automationStudioNodeReplayToolId(first), value: reset.result.evidence } } : {})
-    };
+  // A carried first step whose run captured no start is sent where the target stands, with no reset, as its Flow's
+  // own playback sends it (`../../flow-draft/starts-where-it-stands.ts`, t688); any other draft needs its start.
+  const standing = !from && automationStudioFlowDraftStartsWhereItStands(sent);
+  if ((!from && !standing) || !first) return { verdict: verdictOf(input, "failed", outcomes), observations };
+  if (from) {
+    const resetCallId = `dryrun.${input.attempt}.reset`;
+    const reset = await call(input, resetCallId, automationStudioNodeReplayToolId(first), automationStudioNodeReplayResetCall(from));
+    if (!reset.readable || reset.result.resultCode === AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.resetFailed || reset.result.effectApplied !== true) {
+      return {
+        verdict: verdictOf(input, "failed", outcomes),
+        observations,
+        ...(reset.readable ? { evidence: { callId: resetCallId, toolId: automationStudioNodeReplayToolId(first), value: reset.result.evidence } } : {})
+      };
+    }
   }
   const done = await automationStudioFlowDraftReplaySteps({
     executeTool: input.executeTool,
