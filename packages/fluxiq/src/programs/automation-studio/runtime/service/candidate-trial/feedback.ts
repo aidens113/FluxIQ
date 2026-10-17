@@ -141,6 +141,12 @@
 // is shown as it was, with Core's findings in its label. A reading Core refutes
 // in part, and every other, is shown as it was.
 
+//
+// **A yes says whether the converse question confirmed it (t692).** A judged
+// yes carries the judge's `firstAskConfirmed` (t691: its confirming call asked
+// the converse, each stored row against the request's words, and both said
+// yes), the fact the builder's gate reads for a read Core flagged as keeping
+// every item it saw (`../../flow-bootstrap/subflow-candidate/subflow-trial-gate.ts`).
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../../../model/index.ts";
 import { automationStudioZeroPassLoopBodies } from "../../executor/graph-navigation/index.ts";
@@ -231,7 +237,8 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
     const processedOut = automationStudioTrialProcessedOutFeedback(input.summary);
     const stored: JsonObject = { rows: input.summary.totalRecordCount, refused: input.summary.totalRefusedCount, missingRequired: input.summary.totalRowsMissingRequired, ...(processedOut ? { processedOut } : {}) };
     const common: JsonObject = { trialRunId: input.trialRunId, start: input.start, stored, ...(reads.length ? { reads, ...pagingNote(reads) } : {}), ...steps(input.trace, input.graph, input.wayOuts) };
-    if (judged.verdict === "yes") return { verdict: "yes", feedback: { ...common, judge: "The trial was judged twice to do what the instruction asks." } };
+    // Whether the yes was confirmed by the converse question (t691), the fact a gate's row check reads (t692).
+    if (judged.verdict === "yes") return { verdict: "yes", feedback: { ...common, judge: "The trial was judged twice to do what the instruction asks.", ...(judged.firstAskConfirmed !== undefined ? { firstAskConfirmed: judged.firstAskConfirmed } : {}) } };
     if (judged.verdict === "no") {
       return { verdict: "no", code: "candidate.trial_judged_no", feedback: { ...common, code: "candidate.trial_judged_no", judge: compact({ expected: judged.expected, observed: judged.observed, advice: automationStudioResultAdviceShown(judged.advice), stillAchievable: judged.stillAchievable }), ...(judged.findings.length ? { findings: [...judged.findings] } : {}), ...(judged.fix?.length ? { fix: [...judged.fix] } : {}), ...(judged.checked?.length ? { checked: [...judged.checked] } : {}) } };
     }

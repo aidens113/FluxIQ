@@ -423,3 +423,16 @@ describe("the judge's rule for rows Core settled, numbered conditions and presen
     expect(said).toContain("library");
   });
 });
+
+// Every judge is told what Core's `keptEveryRow` flag on a read means (t692,
+// `../diagnosis-instructions.ts`): nothing in that read chose which rows the
+// answer holds, so a yes holds each row it stored to the request's own words.
+describe("the judges' prompt on keptEveryRow (t692)", () => {
+  it("says what a read's keptEveryRow means, to the post-run check and the build-test judge alike", () => {
+    for (const buildTest of [false, true]) {
+      const prompt = automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest });
+      expect(prompt).toContain("resultSummary.reads[].keptEveryRow, where present, is Core's flag on a read with no condition that kept every item it saw");
+      expect(prompt).toContain("answer yes only if the request's own words ask for each row it stored");
+    }
+  });
+});

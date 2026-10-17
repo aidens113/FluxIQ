@@ -79,6 +79,11 @@
 // under the conditions it failed, by label, so a read's labels can name every
 // row it saw.
 //
+// **A read that kept every item it saw, after an act repeated over a narrower
+// read of the same list, carries Core's flag (`kept-every-row.ts`, t692)**,
+// where the caller gives the Flow's edges (`flowEdges`), which say what list a
+// loop walks: each row it stored must be checked against the request's words.
+//
 // **Every read, every condition and every dedupe key** (user, 2026-09-30:
 // "Remove ANY AND ALL LIMITS ON THE NUMBER OF ELEMENTS PASSED TO MODEL. DO NOT
 // HIDE INFORMATION"). Until then a judge saw four reads, eight conditions each
@@ -86,12 +91,13 @@
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS } from "@fluxiq/contracts/automation-studio";
-import type { AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../model/index.ts";
+import type { AutomationStudioFlowEdge, AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../model/index.ts";
 import { automationStudioEvidenceKey } from "../../llm/index.ts";
 import type { AutomationStudioResultConditionObservation, AutomationStudioResultLeftOutObservation, AutomationStudioResultReadAccount } from "../contracts/index.ts";
 import { automationStudioResultReadAloneRows } from "./alone-rows.ts";
 import { automationStudioResultReadConditionColumn, automationStudioResultReadConditionText } from "./condition.ts";
 import { automationStudioResultReadDedupe } from "./dedupe.ts";
+import { automationStudioResultReadKeptEveryRow } from "./kept-every-row.ts";
 import { automationStudioResultReadLoopedAccount } from "./looped-account.ts";
 import { automationStudioResultReadParameters } from "./read-parameters.ts";
 import { automationStudioResultReadLoopPasses } from "./loop-passes.ts";
@@ -122,6 +128,12 @@ export type AutomationStudioResultReadAccountsInput = {
    * `flowNodes`, as a trial's merged graph holds the parts' nodes (header).
    */
   calledNodes?: ReadonlyMap<string, readonly AutomationStudioFlowNode[]> | undefined;
+  /**
+   * The Flow's edges, with `flowNodes`: what list each loop walks. Given, a read
+   * that kept every item it saw after an act repeated over a narrower read of
+   * the same list carries `keptEveryRow` (header, t692). Absent, none does.
+   */
+  flowEdges?: readonly AutomationStudioFlowEdge[] | undefined;
 };
 
 /**
@@ -179,7 +191,11 @@ export function automationStudioResultReadAccounts(input: AutomationStudioResult
     });
     return automationStudioResultReadLoopedAccount({ passes, attempts, stop: loop.stop, pageLimit: mostPasses(authored(attempt, loop.repeatNodeId)) });
   });
-  return { reads, authoredNodes };
+  if (!input.flowEdges) return { reads, authoredNodes };
+  // A read that kept every item it saw after an act repeated over a narrower read of the same list (header, t692).
+  const speaking = [...latest.values()].map(({ attempt }) => attempt);
+  const flags = automationStudioResultReadKeptEveryRow({ reads, nodes: authoredNodes, speaking, flowNodes: input.flowNodes ?? [], flowEdges: input.flowEdges, actionAttempts: run });
+  return { reads: reads.map((read, index) => flags[index] ? { ...read, keptEveryRow: flags[index] } : read), authoredNodes };
 }
 
 /** Whether a node's authored conditions are as many as the read counted rejections for; true where either is not said. */

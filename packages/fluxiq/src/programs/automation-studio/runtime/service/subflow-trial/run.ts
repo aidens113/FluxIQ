@@ -61,14 +61,23 @@
 // its own page -- are handed to the scoped judge by their steps' nodeIds
 // (`possiblyLasting`), so a step's own `consequences: none` cannot excuse it
 // (`../project-build/task-checklist.ts`).
+//
+// **A flagged read rides beside the result, with what the converse said
+// (t692).** A read Core flagged as keeping every item it saw after an act over
+// a narrower read of the same list (`keptEveryRow`, the trial summary's read
+// accounts) is carried beside the result, Core-only, with the rows it stored;
+// and the outcome says whether the judge's yes was confirmed by its second
+// call asking the converse question (`firstAskConfirmed`, t691), which the
+// port's `checkRows` answers the builder's gate with (`./port.ts`). Both are
+// set on every judged trial, so a flagged yes is never left without its check.
 
 import { randomUUID } from "node:crypto";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import type { AutomationStudioCandidateTrialAct } from "../../flow-bootstrap/candidate/index.ts";
-import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialKeptEveryRowRead, AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult, AutomationStudioSubflowTrialRowCheck } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { runAutomationStudioDetachedSubflow, type AutomationStudioCandidateStartReceipt, type AutomationStudioDetachedSubflowIdentity, type AutomationStudioDetachedSubflowProposal } from "../../flow-bootstrap/verification/index.ts";
-import { automationStudioResultReadAccounts, type AutomationStudioResultStandingNoCarrier, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
+import { automationStudioResultReadAccounts, type AutomationStudioBuildTestVerdict, type AutomationStudioResultStandingNoCarrier, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import {
   automationStudioCandidateFrameEvidence,
   automationStudioCandidateTrialFeedback as Feedback,
@@ -90,8 +99,10 @@ const UNAFFORDABLE = "subflow.trial_unaffordable";
 /** One partial trial's answer and Core's record of it. */
 export type AutomationStudioSubflowTrialOutcome = {
   /** The builder's answer, with Core's record of a no beside its feedback (header, t633). */
-  result: AutomationStudioSubflowTrialResult & AutomationStudioResultStandingNoCarrier;
+  result: AutomationStudioSubflowTrialResult & AutomationStudioResultStandingNoCarrier & { keptEveryRow?: AutomationStudioSubflowTrialKeptEveryRowRead[] };
   record: AutomationStudioSubflowTrialRecord;
+  /** Whether a judged yes was confirmed by the converse question, for the port's `checkRows` (header, t692). Absent where nothing was judged. */
+  rowCheck?: AutomationStudioSubflowTrialRowCheck;
 };
 
 /**
@@ -201,7 +212,15 @@ export async function runAutomationStudioSubflowTrial(request: AutomationStudioS
   // An unsure split keeps Core's record too, so a condition it vindicated is held across the build (t652, fix 2);
   // only a no is ever weighed as one by the gate's memory.
   const standingNo = (read.verdict === "no" && verdict.verdict === "no") || (read.verdict === "unsure" && verdict.verdict === "unknown") ? verdict.standingNo : undefined;
-  return answer(read.verdict, { ...read.feedback, partial: true, entryPrepared: executed.entryPrepared }, { ...ran, execution: "succeeded", ...(read.code ? { code: read.code } : {}), judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } }, acts, standingNo);
+  const judgedTrial = answer(read.verdict, { ...read.feedback, partial: true, entryPrepared: executed.entryPrepared }, { ...ran, execution: "succeeded", ...(read.code ? { code: read.code } : {}), judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } }, acts, standingNo);
+  return withRowCheck(judgedTrial, summary, verdict);
+}
+
+/** A judged trial with its flagged reads beside the result and whether the converse confirmed its yes (header, t692). */
+function withRowCheck(outcome: AutomationStudioSubflowTrialOutcome, summary: AutomationStudioRunResultSummary, verdict: AutomationStudioBuildTestVerdict): AutomationStudioSubflowTrialOutcome {
+  const flagged = (summary.reads ?? []).flatMap((read): AutomationStudioSubflowTrialKeptEveryRowRead[] => (read.keptEveryRow ? [{ nodeId: read.nodeId, kept: read.kept, keptEveryRow: structuredClone(read.keptEveryRow) }] : []));
+  const converse = verdict.verdict === "yes" && verdict.firstAskConfirmed === true ? "confirmed" : "unconfirmed";
+  return { ...outcome, result: { ...outcome.result, ...(flagged.length ? { keptEveryRow: flagged } : {}) }, rowCheck: { converse } };
 }
 
 /**

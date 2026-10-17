@@ -19,7 +19,9 @@ import type { AutomationStudioRequestRowsKept } from "../request-rows/index.ts";
 
 /** The recheck a call whose every reason for no Core's record refutes is asked again with (header); `kept`, the kept rows Core flagged, said after the record. */
 export function automationStudioResultRefutedNoRecheckWords(findings: readonly string[], kept: readonly AutomationStudioRequestRowsKept[] = []): string {
-  const flagged = kept.flatMap((flag) => flag.rows.map((row) => flag.kind === "column"
+  const flagged = kept.flatMap((flag) => flag.rows.map((row) => flag.kind === "every_row"
+    ? `${row} was stored by read ${flag.nodeId ?? "(unnamed)"}, which has no condition and kept every item it saw after a step ran once per row of the fewer that read ${flag.missing} kept`
+    : flag.kind === "column"
     ? `${row} has no value in the column "${flag.missing}", which every other row carries`
     : `${row} has a name that does not write "${flag.missing}", the request's own words, which every other kept row's name writes`));
   return "This same evidence was judged before, and that answer was no for reasons Core's own record of this run contradicts. "

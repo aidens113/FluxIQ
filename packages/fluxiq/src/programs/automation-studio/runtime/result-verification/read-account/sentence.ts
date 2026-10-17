@@ -22,6 +22,10 @@
 // `run-muqk713g`'s judges, told "It does not deduplicate." of one that had left
 // out two such rows, all asked for the dedupe it already did. So such a read is
 // said to leave them out, with its count where it sent one.
+//
+// **A read Core flagged as keeping every item it saw after an act repeated
+// over a narrower read of the same list says Core's sentence for it** in the
+// full length (`kept-every-row.ts`, t692).
 
 import type { AutomationStudioResultReadAccount } from "../contracts/index.ts";
 import { automationStudioResultConditionName, automationStudioResultReadPageBoundSentence, automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./index.ts";
@@ -85,6 +89,8 @@ function fullTail(read: AutomationStudioResultReadAccount): string {
     }
   }
   if (read.unfiltered) lines.push("Every row failed its conditions, so it answered with the unfiltered rows.");
+  // A read that kept every item it saw after an act repeated over a narrower read of the same list (`kept-every-row.ts`, t692).
+  if (read.keptEveryRow) lines.push(read.keptEveryRow.said);
   return lines.length ? ` ${lines.join(" ")}` : "";
 }
 

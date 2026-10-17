@@ -18,8 +18,14 @@
 // **A trial the purse cannot judge puts nothing back (t661).** `prepareStart`
 // runs no hook when the purse cannot hold the trial's two judge calls: the
 // trial will not start (`./run.ts`).
+//
+// **A flagged yes is answered from the converse (t692).** Every judged trial's
+// outcome says whether its yes was confirmed by the judge's converse question
+// (`./run.ts`); the port keeps that by the trial's run id and answers the
+// gate's `checkRows` with it, for this build's trials only. A trial it does
+// not know is answered nothing, so its yes is not taken.
 
-import type { AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import type { AutomationStudioSubflowTrialPreparingPort, AutomationStudioSubflowTrialRowCheck } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioTrialJudgingShortfall, automationStudioTrialLargestJudgePrompt, type AutomationStudioCandidateTrialStart } from "../candidate-trial/index.ts";
 import { runAutomationStudioSubflowTrial } from "./run.ts";
 import { automationStudioSubflowTrialStart } from "./start.ts";
@@ -34,6 +40,8 @@ export function automationStudioSubflowTrialPort(buildId: string, ports: Automat
   const records: AutomationStudioSubflowTrialRecord[] = [];
   /** The start the hook made ahead of the reset check, by brief, revision and digest, for that trial only (header). */
   const ready = new Map<string, AutomationStudioCandidateTrialStart>();
+  /** Whether each judged trial's yes was confirmed by the converse question, by its run id (header, t692). */
+  const converse = new Map<string, AutomationStudioSubflowTrialRowCheck>();
   const port: AutomationStudioSubflowTrialPreparingPort = async (request) => {
     // A request of another build runs nothing; the run refuses a proposal of another scope itself.
     if (request.scope.buildId !== buildId) {
@@ -54,8 +62,11 @@ export function automationStudioSubflowTrialPort(buildId: string, ports: Automat
     // The judge calls are held at the largest prompt an earlier partial trial's judge was sent (`../candidate-trial/judging-fits.ts`, t661).
     const trial = await runAutomationStudioSubflowTrial(request, ports, start, automationStudioTrialLargestJudgePrompt(records));
     records.push(structuredClone(trial.record));
+    if (trial.rowCheck && trial.result.trialRunId) converse.set(trial.result.trialRunId, { ...trial.rowCheck });
     return trial.result;
   };
+  // The gate's row check, answered from the converse of this build's own trials (header, t692).
+  port.checkRows = async ({ scope, trialRunId }) => (scope.buildId === buildId && trialRunId ? converse.get(trialRunId) : undefined);
   if (ports.prepareStart) {
     port.prepareStart = async ({ scope, revision, digest, signal }) => {
       // Another build's trial is refused unrun, so nothing is put back for it.

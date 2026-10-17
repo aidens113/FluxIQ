@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioFlowEdge, AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../model/index.ts";
 import { summarizeAutomationStudioRunResult } from "../result-summary.ts";
 
 // What leaves the process for a verification, and what may not.
@@ -308,5 +309,41 @@ describe("each record set's processing account", () => {
     // No declaration, no row and no wording: absent means nobody said.
     const undeclared = summarizeAutomationStudioRunResult({ recordSets: [input] }).recordSets[0]?.processing;
     expect(undeclared?.conditions).toEqual([{ number: 1, rejected: 2, alone: 2 }, { number: 2, rejected: 1, alone: 1 }, { number: 3, rejected: 0, alone: 0 }]);
+  });
+});
+
+// A run's summary flags a read that kept every item it saw after an act over a
+// narrower read of the same list (t692, `../result-summary.ts`), from the
+// Flow's edges, which say what list a loop walks: the judge is shown the flag
+// beside that read. A shop's returns desk: the returns of at most 50 are
+// approved, then the returns list is read with no condition.
+describe("a run summary's reads after an act over a narrower read (t692)", () => {
+  const nodes: AutomationStudioFlowNode[] = [
+    { id: "s3", definitionId: "unit.list", parameterValues: { list: { item: "returns", fields: { title: { kind: "text" } }, where: [{ field: "amount", atMost: 50 }] } } },
+    { id: "s4", definitionId: "builtin.control.for-each" },
+    { id: "s5", definitionId: "unit.press", metadata: { declaredConsequences: ["modify_existing"] } },
+    { id: "s7", definitionId: "unit.list", parameterValues: { list: { item: "returns", fields: { title: { kind: "text" } } } } }
+  ];
+  const edges: AutomationStudioFlowEdge[] = [
+    { id: "e1", sourceNodeId: "s3", sourcePortId: "records", targetNodeId: "s4", targetPortId: "items" },
+    { id: "e2", sourceNodeId: "s4", sourcePortId: "body", targetNodeId: "s5" },
+    { id: "e3", sourceNodeId: "s5", targetNodeId: "s4" },
+    { id: "e4", sourceNodeId: "s4", sourcePortId: "done", targetNodeId: "s7" }
+  ];
+  let order = 0;
+  const attempt = (nodeId: string, extra: Partial<AutomationStudioFlowRunActionAttemptRecord> = {}): AutomationStudioFlowRunActionAttemptRecord =>
+    ({ attemptId: `a${++order}`, nodeId, definitionId: nodes.find((node) => node.id === nodeId)!.definitionId, order, status: "succeeded", startedAt: order, ...extra });
+  const read = (seen: number, kept: number, rejected?: number[]) => ({ metadata: { extraction: { recordCount: kept, pagesRead: 1, truncated: false, itemsSeen: seen, ...(rejected ? { conditions: { applied: seen, kept, rejected } } : {}) } } });
+  const actionAttempts = [attempt("s3", read(7, 3, [4])), attempt("s4", { route: "body" }), attempt("s5"), attempt("s4", { route: "done" }), attempt("s7", read(7, 7))];
+
+  it("flag the read that kept every item after an act over a narrower read of the same list, given the Flow's edges", () => {
+    const summary = summarizeAutomationStudioRunResult({ recordSets: [], flowNodes: nodes, flowEdges: edges, actionAttempts, deniedEvidenceKeys: [] });
+    expect(summary.reads?.find((entry) => entry.nodeId === "s7")?.keptEveryRow).toMatchObject({ narrowerRead: "s3", narrowerSeen: 7, narrowerKept: 3, actedBy: ["s5"] });
+    expect(summary.reads?.find((entry) => entry.nodeId === "s3")).not.toHaveProperty("keptEveryRow");
+  });
+
+  it("flag nothing where the caller gives no edges", () => {
+    const summary = summarizeAutomationStudioRunResult({ recordSets: [], flowNodes: nodes, actionAttempts, deniedEvidenceKeys: [] });
+    expect(summary.reads?.some((entry) => entry.keptEveryRow)).toBe(false);
   });
 });

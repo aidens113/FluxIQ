@@ -7,7 +7,9 @@
 // the real subflow trial gate over the port a single-subflow brief's gate is
 // given (`../whole-test-port.ts`, as `../../dispatch/run-brief.ts` makes it).
 // Each whole trial's result may carry Core's record of it (`standingNo`), as
-// the service's candidate trial port carries it (`service/candidate-trial/run.ts`).
+// the service's candidate trial port carries it (`service/candidate-trial/run.ts`),
+// and may be judged by a caller's own judge (`judged`): its verdict and
+// feedback replace the fixture's, as a real judge's would (t692).
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import type { AutomationStudioCandidateTrialPort, AutomationStudioCandidateTrialResult, AutomationStudioFlowCandidate } from "../../../flow-bootstrap/candidate/index.ts";
@@ -42,14 +44,19 @@ export function gatedSingleBuild(options: {
   trial?: (attempt: number) => AutomationStudioCandidateTrialResult["verdict"];
   /** Core's record each whole trial's result carries, by the Flow that ran; none when it answers undefined. */
   standingNo?: (candidate: Readonly<AutomationStudioFlowCandidate>, verdict: string) => unknown;
+  /** Each whole trial's verdict and feedback from a caller's own judge, by its number; the fixture's when absent (header). */
+  judged?: (attempt: number) => Promise<Pick<AutomationStudioCandidateTrialResult, "verdict" | "feedback">>;
 }) {
   const built = project(options.trial ? { trial: options.trial } : {});
   const registry: AutomationStudioNodeRegistry = refusalTestRegistry([READ_LIST]);
   const submission = refusalTestSubmission(registry);
   built.ports.submission = { ...built.ports.submission, registry };
   const whole = built.ports.trial!;
+  let judgedTrials = 0;
   const ran: AutomationStudioCandidateTrialPort = async (request) => {
-    const result = await whole.port(request);
+    const fixtureResult = await whole.port(request);
+    const judged = options.judged ? await options.judged(++judgedTrials) : undefined;
+    const result = judged ? { ...fixtureResult, verdict: judged.verdict, feedback: judged.feedback } : fixtureResult;
     const standingNo = options.standingNo?.(request.candidate, result.verdict);
     return standingNo === undefined ? result : { ...result, standingNo };
   };

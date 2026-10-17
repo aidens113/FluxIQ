@@ -47,6 +47,8 @@ export function automationStudioProjectDispatchTrialPort(input: {
     return result;
   };
   if (port.prepareStart) asked.prepareStart = port.prepareStart;
+  // The gate's row check for a yes over a flagged read, answered by the brief's own port (t692).
+  if (port.checkRows) asked.checkRows = port.checkRows;
   const earlier = standingNos.earlier(scope);
   if (earlier.length) asked.standingNos = earlier;
   asked.weighed = (trial) => {
