@@ -4,7 +4,9 @@
 // dispatcher replaced by one whose builders submit their subflow through the
 // real scoped submission controller and then test it as a builder's gate would
 // ask its port: through the dispatch's `wholeTrial` when it has one, under the
-// brief's own purse scope and attribution. A reset brief is the fixture's.
+// brief's own purse scope and attribution -- one allowance carved as the brief
+// starts and closed as it ends, as `../../dispatch/run-brief.ts` does. A reset
+// brief is the fixture's.
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { refusalTestSubmission } from "../../../flow-bootstrap/candidate/tests/refusal-domain-fixture.ts";
 import { AutomationStudioSubflowScopedSubmissionController, type AutomationStudioSubflowProposal, type AutomationStudioSubflowScope } from "../../../flow-bootstrap/subflow-candidate/index.ts";
@@ -45,7 +47,7 @@ export function singleBuild(options: Parameters<typeof project>[0] & {
         continue;
       }
       built.dispatched.push({ briefs: [structuredClone(brief)], signal: request.signal });
-      returns.push(await builder(brief, request));
+      returns.push(await asBuilder(brief, () => builder(brief, request)));
     }
     return { returns };
   };
@@ -61,7 +63,7 @@ export function singleBuild(options: Parameters<typeof project>[0] & {
       if (!request.wholeTrial) return { briefId: brief.briefId, outcome: "done", reason: "Untried.", proposal: { subflowKey: brief.subflowKey, revision: last.revision, digest: last.digest }, trials: [], spentUsd: 0, calls: 1 };
       for (let tested = 0; tested < (options.testsPerScript ?? 1); tested += 1) {
         await options.beforeTest?.(brief, built.ledger);
-        const answer = await asBuilder(brief, () => request.wholeTrial!({ scope: structuredClone(scope), proposal: structuredClone(last!), signal: request.signal }));
+        const answer = await request.wholeTrial({ scope: structuredClone(scope), proposal: structuredClone(last!), signal: request.signal });
         answers.push(answer);
         if (!("trial" in answer)) continue;
         trials.push({ kind: "subflow_trial", receiptId: answer.trial.trialRunId ?? `${brief.briefId}.trial-${trials.length + 1}`, digest: "c".repeat(64), verdict: answer.trial.verdict });
@@ -71,13 +73,13 @@ export function singleBuild(options: Parameters<typeof project>[0] & {
     }
     return { briefId: brief.briefId, outcome: "partial", reason: "No test of the subflow answered yes.", ...(last ? { proposal: { subflowKey: brief.subflowKey, revision: last.revision, digest: last.digest } } : {}), trials, spentUsd: 0.02, calls: 6 };
   }
-  /** Runs `test` as the brief's builder does: its attribution and, given a purse, inside an allowance carved for it. */
-  async function asBuilder<T>(brief: AutomationStudioProjectSubflowBrief, test: () => Promise<T>): Promise<T> {
+  /** Runs `work` as the brief's builder does: its attribution and, given a purse, inside the one allowance carved for it. */
+  async function asBuilder<T>(brief: AutomationStudioProjectSubflowBrief, work: () => Promise<T>): Promise<T> {
     const purse: AutomationStudioLlmBuildPurse | undefined = options.purse;
     const carved = purse?.allowance({ role: "builder", briefId: brief.briefId, usd: Math.min(brief.allowanceUsd, purse.allocatableUsd()) });
     if (carved && !carved.ok) throw new Error("allowance refused");
     try {
-      return await withAutomationStudioProjectAgent({ role: "builder", briefId: brief.briefId }, () => automationStudioLlmBuildPurseScope(carved?.allowance, test));
+      return await withAutomationStudioProjectAgent({ role: "builder", briefId: brief.briefId }, () => automationStudioLlmBuildPurseScope(carved?.allowance, work));
     } finally {
       carved?.allowance.close();
     }

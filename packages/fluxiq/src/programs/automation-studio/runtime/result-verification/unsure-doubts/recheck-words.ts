@@ -5,17 +5,26 @@
 // (t503), rows a dedupe merged (t628, `../refuted-no/dedupe-doubt.ts`), and a step said to
 // choose an option the request does not name (t655, `./narrowing.ts`).
 // Core's words, naming no site or task.
+//
+// A step's record says what Core measured -- the option it chose, its group,
+// the counts the page stated -- and never that the step is right (t686, A8
+// cost round `run-mvblov2i-abb7d82e`). So the frame for a narrowing doubt says
+// too what that record cannot show: a site filter's option words do not show
+// that each kept row meets the request's words; a row's own text does.
 
-/** Per kind of doubt: what the call took to be so, whose record says otherwise, and what a reading is held to. */
+/** Per kind of doubt: what the call took to be so, whose record says otherwise, what a reading is held to, and what that record cannot show. */
 const DOUBTED = {
-  pages: ["it took the list to have pages its read never reached", "Core's own record of each paging read", "any reading about pages"],
-  dedupe: ["it took the answer's dedupe to have merged distinct rows into one", "Core's own record of this answer", "any reading about repeated or merged rows"],
-  narrowing: ["it took a step to have chosen an option the request does not name", "Core's own record of that step and the request's own words", "any reading about that step"]
+  pages: ["it took the list to have pages its read never reached", "Core's own record of each paging read", "any reading about pages", ""],
+  dedupe: ["it took the answer's dedupe to have merged distinct rows into one", "Core's own record of this answer", "any reading about repeated or merged rows", ""],
+  narrowing: [
+    "it took a step to have chosen an option the request does not name", "Core's own record of that step and the request's own words", "any reading about that step",
+    "A site filter's option words do not show that each kept row meets the words of the request; a row's own text does. "
+  ]
 } as const;
 
 /** The recheck a contradicted doubt of kind `about` (pages where absent) is asked again with, naming `record` (header). */
 export function automationStudioResultDoubtRecheckWords(about: keyof typeof DOUBTED | undefined, record: string): string {
-  const [took, whose, held] = DOUBTED[about ?? "pages"];
-  return `This same evidence was judged before, and that answer could not tell because ${took}. ${whose} says otherwise: ${record} `
+  const [took, whose, held, unshown] = DOUBTED[about ?? "pages"];
+  return `This same evidence was judged before, and that answer could not tell because ${took}. ${whose} says otherwise: ${record} ${unshown}`
     + `Answer again from the evidence, holding ${held} to that record; answer unknown only for a doubt the record does not settle.`;
 }

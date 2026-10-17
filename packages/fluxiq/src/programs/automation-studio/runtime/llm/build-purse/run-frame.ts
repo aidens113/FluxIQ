@@ -16,6 +16,11 @@
 // scope's inherits what was there. Along one chain that is exactly the old
 // single field; two chains that diverge share only the frames above where they
 // split, and a run reads its own.
+//
+// **A frame may name a judge's backstop (t685).** A scope opened with one
+// (`./judge-backstop.ts`) holds each judge call made inside it against the
+// frame's purse first and, when that purse cannot pay, against the backstop
+// (`./purse.ts`, `hold`).
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { AutomationStudioLlmBuildPurse } from "./purse.ts";
@@ -26,6 +31,8 @@ export type AutomationStudioLlmBuildPurseFrame = {
   readonly purse: AutomationStudioLlmBuildPurse;
   refusal: AutomationStudioLlmBuildPurseRefusal | undefined;
   readonly parent: AutomationStudioLlmBuildPurseFrame | undefined;
+  /** The purse a judge call this frame's purse cannot pay is held against instead (header); one the purse was carved from. */
+  readonly judgeBackstop?: AutomationStudioLlmBuildPurse | undefined;
 };
 
 const frames = new AsyncLocalStorage<AutomationStudioLlmBuildPurseFrame>();
@@ -44,13 +51,22 @@ export function automationStudioLlmBuildPurseFramesOf(purse: AutomationStudioLlm
   return found;
 }
 
+/** The judge's backstop the innermost frame of `purse` naming one names, on the current async chain (header); none outside such a scope. */
+export function automationStudioLlmBuildPurseJudgeBackstopOf(purse: AutomationStudioLlmBuildPurse): AutomationStudioLlmBuildPurse | undefined {
+  for (const frame of automationStudioLlmBuildPurseFramesOf(purse)) {
+    if (frame.judgeBackstop) return frame.judgeBackstop;
+  }
+  return undefined;
+}
+
 /**
  * Run `call` in a new frame of `purse`. `cleared` starts it with no refusal and
  * clears the enclosing frames of the purse with it, as a run's start always
  * did; otherwise it starts with the refusal already visible here.
+ * `judgeBackstop` names the frame's judge backstop (header).
  */
-export async function automationStudioLlmBuildPurseInFrame<T>(purse: AutomationStudioLlmBuildPurse, cleared: boolean, call: () => Promise<T>): Promise<T> {
-  const frame: AutomationStudioLlmBuildPurseFrame = { purse, refusal: cleared ? undefined : purse.refusal, parent: frames.getStore() };
+export async function automationStudioLlmBuildPurseInFrame<T>(purse: AutomationStudioLlmBuildPurse, cleared: boolean, call: () => Promise<T>, judgeBackstop?: AutomationStudioLlmBuildPurse): Promise<T> {
+  const frame: AutomationStudioLlmBuildPurseFrame = { purse, refusal: cleared ? undefined : purse.refusal, parent: frames.getStore(), ...(judgeBackstop ? { judgeBackstop } : {}) };
   return await frames.run(frame, async () => {
     if (cleared) purse.refusal = undefined;
     return await call();

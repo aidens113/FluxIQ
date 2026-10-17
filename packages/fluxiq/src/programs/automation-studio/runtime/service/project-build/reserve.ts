@@ -19,6 +19,14 @@ import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, type AutomationStudioLlmBuil
 // priced so far, or at `unpriced` before any has been, so the reserve grows
 // with the judge calls this build actually makes. Judges draw on it; every
 // other call -- each brief's allowance among them -- must leave it.
+//
+// **A single-subflow brief's tests are the brief's (t685).** On a plan of one
+// subflow the router runs, each builder test is the judged whole run
+// (`project-agents/single-subflow/single-subflow-trial.ts`). Its judge is paid
+// by the brief's allowance, with the reserve only as its backstop
+// (`llm/build-purse/judge-backstop.ts`): t679 had the reserve pay every such
+// test, and Lab run `run-mvblai1v-a31e7593` spent its four calls on two tests
+// and refused the third with the brief's allowance almost untouched.
 
 // **And the calls of the build's own finishing (t570).** Builders' call shares
 // never take what the build needs after them: the supervisor's assembly, the
