@@ -32,8 +32,9 @@ blocking a brief, and plan amends dropping done proposals; a predecessor's propo
 Core prepared the entry; the supervisor's guidance teaching splits. Merged: t671 (P1: a narrowing, merge, or act/fact
 change carries a done proposal), t672 (P2: an unread handed-on input passes), t673 (P3: asks done on one page are one
 subflow), t676 (P4: Core checks a "done before" ending), t677 (an exact first-ask yes flag). Also t679 (P5: a one-part plan's
-builder test is the judged whole run) and t683 (the reset reason). In flight: t684 (in-part acts a reset cannot undo).
-Then the cost round in `project`.
+builder test is the judged whole run) and t683 (the reset reason). Also t684 (in-part acts a reset could not undo) and t685 (one-part tests paid by
+the brief). Downstream cost round 1: four of five passed at well under pair 8's calls; towels failed on a judging
+defect (t686-t688 in flight).
 
 **Also done 2026-10-16:** t674 and t681 split `verdict.ts` and `candidate/submission.ts`; t680 audits RegExp
 escapes; t682 runs the structure audit before every push.
@@ -756,6 +757,27 @@ Entries from 2026-10-13 to A8 wave 4 (t550-t611) are archived in
 - Outcome: Accepted
 - Follow-up: t684 (a reset cannot undo an act made inside a part subflow's trial yet says every act is undone; t683's
   three reset gaps), in flight
+
+
+### 2026-10-16 — A reset undoes in-part acts (t684); one-part tests paid by the brief (t685)
+- Agent: workers t684, t685; supervisor fixed one stale dispatch-tool.ts header line, verified, integrated
+- Changed: t684 `service/candidate-trial/landed-acts.ts`: a Call Subflow step's page-after showed its child's item, so
+  that item counted as seen before and the child's step named nothing; only the call's page-before now counts.
+  `dispatch/reset-done.ts` (new): a reset that comes back done names every act still on the site. `supervisor/
+  {completion,state,whole-trial,guidance}.ts`: a whole test after a reset ends `resetCameBackLast`; every test clears
+  `resetToEnd`; `afterReset`'s t638 branch removed. t685 `llm/build-purse/judge-backstop.ts` (new), `purse.ts`,
+  `run-frame.ts`, `single-subflow/single-subflow-trial.ts`, `subflow-candidate/builder-loop.ts`: a single-path judge
+  call is paid by the brief's allowance and its top-ups first, held on the build purse (the reserve) only when they
+  refuse; the builder's finishing keep is back to 4 calls
+- Why: t684 found by t679 moving the reset tests to two subflows; t685 from downstream cost round 1
+  (`run-mvblai1v-a31e7593`: the third single-path test refused unaffordable with the reserve spent, ~$0.02 of $0.25 used)
+- Validation: t684 after merging dev: tsc exit 0; vitest project-agents, project-build, subflow-trial, candidate-trial,
+  subflow-candidate -> 125 files, 804 passed. t685: tsc exit 0; vitest llm, project-agents, project-build,
+  flow-bootstrap, candidate-trial, subflow-trial -> 497 files, 4963 passed, 2 skipped. `pnpm task finish` -> `pnpm
+  check` passed for both; pushed `d5103343`
+- Outcome: Accepted
+- Follow-up: downstream cost round 1's towels failure (a false judged yes from the t666 narrowing re-ask; a condition
+  in the request's own exclusion words dropped on refuted advice; a result repair that applied nothing): t686-t688
 
 
 ## Open Questions
