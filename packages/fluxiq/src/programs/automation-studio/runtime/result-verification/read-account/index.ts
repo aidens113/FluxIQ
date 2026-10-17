@@ -11,14 +11,17 @@
 // the columns its own conditions keep empty (`emptied-columns.ts`), the
 // columns its rows store (`stored-columns.ts`), the
 // instruction's named columns no stored column reads (`unread-columns.ts`),
-// and the summary as a model is shown it, without Core's `testedLabel`
-// (`without-tested-label.ts`).
+// the summary as a model is shown it, without Core's `testedLabel`
+// (`without-tested-label.ts`), and Core's flag on a read that kept every item
+// it saw after an act repeated over a narrower read of the same list
+// (`kept-every-row.ts`).
 export * from "./accounts.ts";
 export * from "./alone-rows.ts";
 export * from "./condition.ts";
 export * from "./condition-name.ts";
 export * from "./dedupe.ts";
 export * from "./judge-paging.ts";
+export * from "./kept-every-row.ts";
 export * from "./loop-passes.ts";
 export * from "./looped-account.ts";
 export * from "./page-bound-sentence.ts";

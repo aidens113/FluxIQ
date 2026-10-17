@@ -22,12 +22,17 @@
 // `run-muqk713g`'s judges, told "It does not deduplicate." of one that had left
 // out two such rows, all asked for the dedupe it already did. So such a read is
 // said to leave them out, with its count where it sent one.
+//
+// **A read Core flagged as keeping every item it saw after an act repeated
+// over a narrower read of the same list says Core's sentence for it** in the
+// full length (`kept-every-row.ts`, t692).
 
 import type { AutomationStudioResultReadAccount } from "../contracts/index.ts";
+import type { AutomationStudioResultKeptEveryRowCarrier } from "./kept-every-row.ts";
 import { automationStudioResultConditionName, automationStudioResultReadPageBoundSentence, automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./index.ts";
 
 /** Core's sentence for how one read went. */
-export function automationStudioResultReadSentence(read: AutomationStudioResultReadAccount, length: "brief" | "full"): string {
+export function automationStudioResultReadSentence(read: AutomationStudioResultReadAccount & AutomationStudioResultKeptEveryRowCarrier, length: "brief" | "full"): string {
   const seen = read.itemsSeen !== undefined ? ` of ${read.itemsSeen} items seen` : "";
   const attempts = read.keptPerPage
     ? ` (${read.keptPerPage.join(", ")} by page, one pass of its loop each)`
@@ -55,7 +60,7 @@ function briefTail(read: AutomationStudioResultReadAccount): string {
   return parts.length ? `; ${parts.join(", ")}` : "";
 }
 
-function fullTail(read: AutomationStudioResultReadAccount): string {
+function fullTail(read: AutomationStudioResultReadAccount & AutomationStudioResultKeptEveryRowCarrier): string {
   const lines: string[] = [];
   const stop = automationStudioResultReadStop(read);
   if (read.keptPerPage) {
@@ -85,6 +90,8 @@ function fullTail(read: AutomationStudioResultReadAccount): string {
     }
   }
   if (read.unfiltered) lines.push("Every row failed its conditions, so it answered with the unfiltered rows.");
+  // A read that kept every item it saw after an act repeated over a narrower read of the same list (`kept-every-row.ts`, t692).
+  if (read.keptEveryRow) lines.push(read.keptEveryRow.said);
   return lines.length ? ` ${lines.join(" ")}` : "";
 }
 
