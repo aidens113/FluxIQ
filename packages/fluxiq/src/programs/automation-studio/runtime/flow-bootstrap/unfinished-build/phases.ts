@@ -194,6 +194,7 @@ import type { AutomationStudioFlowBootstrapIncompleteDraftPointer } from "../inc
 import type { AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS } from "../../loop-limits/index.ts";
 import { automationStudioLlmStepLogScope } from "../../llm/step-log/index.ts";
+import { automationStudioLlmBuildTrace } from "../../llm/evidence-progress/index.ts";
 import { automationStudioFlowBootstrapBudgetExhausted, type AutomationStudioFlowBootstrapCostSpending, type AutomationStudioFlowBootstrapNextRoundHold } from "./budget-exhausted.ts";
 import type {
   AutomationStudioFlowBootstrapJudgeSpend,
@@ -411,6 +412,8 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       outcome = error;
     }
     const ending = automationStudioFlowBootstrapRoundEnding(outcome);
+    // Every step between rounds is traced, so a build that goes quiet after a round says where (t688, run-mvblov2i-abb7d82e).
+    automationStudioLlmBuildTrace.line(`round end round=${round} kind=${ending.kind}${"stopped" in ending ? ` stopped=${ending.stopped}` : ""}`);
     // Every round publishes its rows: one that stopped short with the ending, the one that finished with the Flow.
     record.push(...numberedAcrossBuild(ending.kind === "finished" || ending.kind === "other" ? ending.loop.trace : ending.progress.trace, spent.iterations));
     // What the rounds before this one spent: without the build's purse a repair's loop holds only what they left, so its refusal's spend is this round's alone.
@@ -472,7 +475,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       const judged = await automationStudioFlowBootstrapJudgeUnfinished({
         round, stopped, steps: ending.steps, lastIssueCodes: ending.lastIssueCodes,
         // The test's steps are logged as this round's test (`../../llm/step-log/`); a test the judge reads next says so.
-        ...(ending.kind === "unfinished" || atReserve ? { test: (steps: AutomationStudioFlowDraftStep[]) => automationStudioLlmStepLogScope.run({ round, phase: "test" }, () => (atReserve || shortJudged ? input.test(steps, { judged: true }) : input.test(steps))) } : {}),
+        ...(ending.kind === "unfinished" || atReserve ? { test: (steps: AutomationStudioFlowDraftStep[]) => automationStudioLlmBuildTrace.timed("round-test", () => automationStudioLlmStepLogScope.run({ round, phase: "test" }, () => (atReserve || shortJudged ? input.test(steps, { judged: true }) : input.test(steps))), traceTested) } : {}),
         replayable: input.replayable, checklist: input.checklist
       });
       const cancelled = (): AutomationStudioFlowBootstrapBuildPhasesOutcome => ({ kind: "ended", loop: { ok: false, code: "llm_evidence_loop.cancelled", trace: [...ending.progress.trace], steps: ending.steps, accounting: { ...ending.progress.accounting } }, accounting: spent, rounds, trace: [...record] });
@@ -503,6 +506,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
     /** The next round's worst case, where the purse could not fund it though it was not spent: what a cost ending says it needed. */
     let unfunded: AutomationStudioFlowBootstrapNextRoundHold | undefined;
     const end = async (kind: "not_doable" | AutomationStudioFlowBootstrapBudgetBound | { notFinished: AutomationStudioFlowBootstrapStoodStill } | { unreadable: AutomationStudioLlmEvidenceLoopUnreadable } | { providerUnavailable: AutomationStudioLlmEvidenceLoopProviderUnavailable }, noRoute?: AutomationStudioFlowBootstrapNoRouteLeft): Promise<AutomationStudioFlowBootstrapBuildPhasesOutcome> => {
+      automationStudioLlmBuildTrace.line(`build ending round=${round} kind=${typeof kind === "string" ? kind : Object.keys(kind)[0] ?? "-"}`);
       const kept = await input.keep(kind === "not_doable" || typeof kind === "object" ? (stopped === "budget" ? "budget" : stopped) : "budget", phase2.lastIssueCodes, seed, phase2.completionAttempts);
       const checklist = input.checklist(seed);
       const told = { judgement, checklist, rounds, decisions: spent.iterations, stops: [...stops] };
@@ -588,7 +592,13 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       resume: resume()
     };
     startSignature = automationStudioFlowDraftReplaySignature(seed);
+    automationStudioLlmBuildTrace.line(`round next round=${round + 1} stopped=${stopped}`);
   }
+}
+
+/** What a round's test answered, as the build trace says it: codes only. */
+function traceTested(refusal: "cancelled" | "evidence_limit" | { issueCodes: readonly string[] } | undefined): string {
+  return `test=${refusal === undefined ? "clean" : typeof refusal === "string" ? refusal : "refused"}`;
 }
 
 /** Whether the judge said no, with what was asked still achievable or unsure, and named what to change: what buys one more round after one without measured progress. */

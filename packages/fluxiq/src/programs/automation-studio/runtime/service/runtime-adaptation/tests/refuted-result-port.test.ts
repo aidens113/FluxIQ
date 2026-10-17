@@ -521,3 +521,33 @@ describe("a re-author that concludes the Flow needs no change", () => {
     expect(automationStudioRefutedResultRerunsFlow(result!)).toBe(true);
   });
 });
+
+// t688, live run `run-mvblov2i-abb7d82e`: the repair's build ended at 23:44:59 and nothing was logged until the run
+// settled at 23:50:02. The repair, its build and its patch ladder now say when each starts and ends.
+describe("the build trace of a repair", () => {
+  it("says when the repair, its build and its patch ladder start and end, in codes", async () => {
+    vi.stubEnv("FLUXIQ_BUILD_PROGRESS_TRACE", "1");
+    const lines: string[] = [];
+    const log = vi.spyOn(console, "log").mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+    try {
+      const generate = vi.fn(async () => {
+        throw new AutomationStudioLlmRequestRefusedError("llm.request.evidence_denied_key", "refused");
+      });
+      await automationStudioRefutedResultRepairPort(deps({ generate: generate as unknown as AutomationStudioRefutedResultRepairPortDependencies["generate"] }))(request);
+    } finally {
+      log.mockRestore();
+      vi.unstubAllEnvs();
+    }
+    const traced = lines.filter((line) => line.includes("[FluxIQ build-trace]")).map((line) => line.replace(/^.*Z /u, "").replace(/ms=\d+/u, "ms=N"));
+    expect(traced).toEqual([
+      "result-repair start",
+      "reauthor-build start",
+      "reauthor-build end ms=N edit=no code=flow_bootstrap.request_refused_evidence_denied_key",
+      "patch-ladder start",
+      "patch-ladder end ms=N",
+      "result-repair end ms=N"
+    ]);
+  });
+});

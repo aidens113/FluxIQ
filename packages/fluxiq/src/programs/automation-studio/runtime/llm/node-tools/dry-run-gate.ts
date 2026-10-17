@@ -34,7 +34,12 @@
 //     `unknown` or a yes about no test, and a re-authored Flow was approved and
 //     applied before anything ran it whole. An unchanged carried step is run as
 //     its scheduled candidate, and a carried Merge is passed through, so neither
-//     is refused (t274-c4, `../../flow-draft/carried-step/`).
+//     is refused (t274-c4, `../../flow-draft/carried-step/`). Nor is an
+//     unchanged carried first step whose start the run being repaired never
+//     captured: it is sent where the target stands, as its Flow's playback
+//     sends it. Refusing it `cannot_run_again` made live run
+//     `run-mvblov2i-abb7d82e`'s repair rerun the saved steps one at a time,
+//     two of them as duplicates (t688, `../../flow-draft/starts-where-it-stands.ts`).
 //   - A written step the test never came to -- inside a repeat whose list had
 //     no rows in the test, so it ran zero times, or a repeat the test could not
 //     walk row by row, where it did not pass on the explored row (t252,
@@ -79,6 +84,7 @@ import {
   automationStudioFlowDraftReplayOutcomeBlocks,
   automationStudioFlowDraftReplayOutcomeKey,
   automationStudioFlowDraftSometimesPresentStepIds,
+  automationStudioFlowDraftStartsWhereItStands,
   automationStudioFlowDraftStepId,
   automationStudioFlowDraftStepIsProposed,
   automationStudioFlowDraftExemptStepIds,
@@ -88,6 +94,7 @@ import {
 } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepCarried, automationStudioFlowDraftStepCarriedJoin, automationStudioFlowDraftStepCarriedPassedOver, automationStudioFlowDraftStepNotRunInThisBuild } from "../../flow-draft/carried-step/index.ts";
 import { automationStudioFlowBootstrapDraftStepIsWritable } from "./draft-step.ts";
+import { automationStudioLlmBuildTrace } from "../evidence-progress/index.ts";
 import { replayAutomationStudioFlowDraft, type AutomationStudioFlowDraftReplayInput } from "./replay-draft.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE, type AutomationStudioFlowDraftReplayObservation } from "./replay-span.ts";
 
@@ -333,7 +340,9 @@ export function automationStudioFlowDraftDryRunGate(
     const cannotRun = tested.filter((step) => !automationStudioFlowDraftStepCarriedPassedOver(step)).filter((step) => step.scheduledCandidate !== undefined
       ? !automationStudioFlowDraftScheduledCandidateCall(step) || !input.nodeOf?.(step.actionId)?.outputAction?.fixed
       : step.ranWith === undefined || step.replay === undefined);
-    const noStart = !cannotRun.length && tested.length > 0 && automationStudioFlowDraftReplayFrom(tested) === undefined;
+    // A carried first step whose run captured no start is not one: the test sends it where the target stands, as its
+    // Flow's playback does, rather than asking the model to rerun it (`../../flow-draft/starts-where-it-stands.ts`, t688).
+    const noStart = !cannotRun.length && tested.length > 0 && automationStudioFlowDraftReplayFrom(tested) === undefined && !automationStudioFlowDraftStartsWhereItStands(tested);
     // Only a Flow-authoring caller is refused for steps it cannot run again, or
     // for a Flow with no step that ran in this build (one the model wrote out
     // whole in its reply), which is refused naming no step. Carried steps are
@@ -367,7 +376,8 @@ export function automationStudioFlowDraftDryRunGate(
     const startView = await look("start_view", undefined);
     let replay: Awaited<ReturnType<typeof replayAutomationStudioFlowDraft>>;
     try {
-      replay = await replayAutomationStudioFlowDraft({
+      // The test says when it starts and ends in the build trace: tests of live run `run-mvblov2i-abb7d82e` left none (t688).
+      replay = await automationStudioLlmBuildTrace.timed("dry-run", () => replayAutomationStudioFlowDraft({
         steps: input.steps,
         attempt: attempts,
         executeTool: input.executeTool,
@@ -375,7 +385,7 @@ export function automationStudioFlowDraftDryRunGate(
         ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}),
         ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}),
         ...(input.signal ? { signal: input.signal } : {})
-      });
+      }), (ran) => `attempt=${attempts} ok=${ran.verdict.ok} steps=${ran.verdict.outcomes.length} reset=${ran.verdict.reset}`);
     } catch {
       // Only a cancellation or a raised permission request reaches here, and
       // both end the run: the caller reads which it was from the signal.

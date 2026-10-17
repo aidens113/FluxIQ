@@ -81,14 +81,60 @@ describe("fresh full tests of carried saved configurations", () => {
   });
 
   // A saved step whose node must declare and did not is never run blind (supervisor review, t439).
-  it.each(["declaration", "start", "copy", "edit"])("refuses missing or invalid %s before dispatch", async (kind) => {
-    let steps = savedCandidate({ ...(kind === "declaration" ? { missingDeclarations: true } : {}), ...(kind === "start" ? { missingStart: true } : {}) });
+  it.each(["declaration", "copy", "edit"])("refuses missing or invalid %s before dispatch", async (kind) => {
+    let steps = savedCandidate({ ...(kind === "declaration" ? { missingDeclarations: true } : {}) });
     if (kind === "copy") steps = steps.map((step) => ({ ...step }));
     if (kind === "edit") steps[0]!.input.parameters = { selector: "#other" };
     let calls = 0;
     const gate = automationStudioFlowDraftDryRunGate({ enabled: true, requireRunnable: true, steps, nodeOf: () => mappedCandidateNode,
       executeTool: async () => { calls++; return answer("core.replay.replayed", true); }, accountEvidence: () => 0, showEvidence: () => undefined, targetMoved: () => undefined });
     expect(await gate()).toEqual({ issueCodes: ["llm_evidence_loop.full_run_required"] });
+    expect(calls).toBe(0);
+  });
+
+  // t688, live run `run-mvblov2i-abb7d82e` (0080, 0086): the repaired run captured no start for the saved Flow's first
+  // node, the gate refused it `cannot_run_again`, and the model reran the saved steps one at a time. The saved Flow's own
+  // playback sends its first step from where the target stands; so does the test, with no reset.
+  it("sends an unchanged saved first step whose start was never captured where the target stands, with no reset", async () => {
+    const steps = savedCandidate({ missingStart: true });
+    const calls: JsonObject[] = [];
+    const gate = automationStudioFlowDraftDryRunGate({ enabled: true, requireRunnable: true, steps, nodeOf: () => mappedCandidateNode,
+      executeTool: async ({ value }) => {
+        calls.push(value);
+        return answer("core.replay.replayed", true);
+      },
+      accountEvidence: () => 0, showEvidence: () => undefined, targetMoved: () => undefined });
+    expect(await gate()).toBeUndefined();
+    expect(calls.map((call) => call.replay)).toEqual(["step"]);
+    expect(calls[0]).toMatchObject({ node: "fixture.open", parameters: { selector: "#open", text: "authored" } });
+    expect(Object.hasOwn(calls[0]!, "from")).toBe(false);
+    const replayed: JsonObject[] = [];
+    const result = await replayAutomationStudioFlowDraft({ steps: savedCandidate({ missingStart: true }), attempt: 1, nodeOf: () => mappedCandidateNode,
+      executeTool: async ({ value }) => {
+        replayed.push(value);
+        return answer("core.replay.replayed", true);
+      } });
+    expect(replayed.map((call) => call.replay)).toEqual(["step"]);
+    expect(result.verdict).toMatchObject({ ok: true, reset: "ok" });
+  });
+
+  it("still needs a start for a saved first step that was changed, or for a step this build ran", async () => {
+    const changed = savedCandidate({ missingStart: true });
+    changed[0]!.input.parameters = { selector: "#other" };
+    let calls = 0;
+    const gate = automationStudioFlowDraftDryRunGate({ enabled: true, requireRunnable: true, steps: changed, nodeOf: () => mappedCandidateNode,
+      executeTool: async () => {
+        calls++;
+        return answer("core.replay.replayed", true);
+      },
+      accountEvidence: () => 0, showEvidence: () => undefined, targetMoved: () => undefined });
+    expect(await gate()).toEqual({ issueCodes: ["llm_evidence_loop.full_run_required"] });
+    const ran: AutomationStudioFlowDraftStep = { position: 1, id: "d1", iteration: 1, actionId: "fixture.open", input: { node: "fixture.open", parameters: {} }, ranWith: { node: "fixture.open", parameters: {} }, effect: "mutate", effectApplied: true, disposition: "kept", proposes: true, replay: {} };
+    const result = await replayAutomationStudioFlowDraft({ steps: [ran], attempt: 1, executeTool: async () => {
+      calls++;
+      return answer("core.replay.replayed", true);
+    } });
+    expect(result.verdict).toMatchObject({ ok: false, reset: "failed" });
     expect(calls).toBe(0);
   });
 

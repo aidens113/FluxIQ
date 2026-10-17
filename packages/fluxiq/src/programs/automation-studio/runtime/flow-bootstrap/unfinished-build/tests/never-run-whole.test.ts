@@ -13,7 +13,7 @@
 // have not run, progress is fewer of them or a changed Flow, the rounds go on
 // while money and rounds allow, and an ending that comes then says the Flow as
 // it stands was never run whole.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { automationStudioFlowBootstrapRepairingNotRunSaid } from "../not-done.ts";
 import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplaySignature, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepCarried, type AutomationStudioLlmEvidenceLoopAccounting, type AutomationStudioLlmEvidenceLoopResult } from "../../../llm/index.ts";
@@ -286,5 +286,47 @@ describe("the person is told how many steps did not run, never the draft's step 
     expect(said).toBe("The Flow could not be tested from its start: 4 of its steps came from the Flow being changed and have not run in this build. The last round ran none of them again. Repairing it live, running each again so the whole Flow can be tested and judged.");
     expect(said).not.toMatch(/steps? \d/u);
     expect(automationStudioFlowBootstrapRepairingNotRunSaid([3], false)).toBe("The Flow could not be tested from its start: one of its steps came from the Flow being changed and has not run in this build. Repairing it live, running it again so the whole Flow can be tested and judged.");
+  });
+});
+
+// t688, live run `run-mvblov2i-abb7d82e`: the repair's last round stopped at 23:44:08, its test ran until 23:44:59, and
+// nothing was logged until the run settled at 23:50:02. Every step between rounds -- how a round ended, the test of
+// what it left, the round that follows or the build's ending -- now says so in the build trace, in codes.
+describe("the build trace between rounds", () => {
+  const traced = async (on: "0" | "1"): Promise<string[]> => {
+    vi.stubEnv("FLUXIQ_BUILD_PROGRESS_TRACE", on);
+    const lines: string[] = [];
+    const log = vi.spyOn(console, "log").mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+    try {
+      const whole = () => [ran(1, "d1"), ran(2, "d2")];
+      const { input } = harness([
+        (request) => stall(request, whole()),
+        (request) => stall(request, request.repair!.seed.map((each) => structuredClone(each)))
+      ], { seedSignature: undefined });
+      await runAutomationStudioFlowBootstrapBuildPhases(input);
+    } finally {
+      log.mockRestore();
+      vi.unstubAllEnvs();
+    }
+    return lines.filter((line) => line.includes("[FluxIQ build-trace]")).map((line) => line.replace(/^.*Z /u, "").replace(/ms=\d+/u, "ms=N"));
+  };
+
+  it("says how each round ended, the test of what it left, the next round and the build's ending", async () => {
+    expect(await traced("1")).toEqual([
+      "round end round=0 kind=unfinished stopped=unusable_decisions",
+      "round-test start",
+      "round-test end ms=N test=clean",
+      "round next round=1 stopped=unusable_decisions",
+      "round end round=1 kind=unfinished stopped=unusable_decisions",
+      "round-test start",
+      "round-test end ms=N test=clean",
+      "build ending round=1 kind=notFinished"
+    ]);
+  });
+
+  it("says nothing when the trace is off", async () => {
+    expect(await traced("0")).toEqual([]);
   });
 });
