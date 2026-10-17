@@ -34,7 +34,8 @@ change carries a done proposal), t672 (P2: an unread handed-on input passes), t6
 subflow), t676 (P4: Core checks a "done before" ending), t677 (an exact first-ask yes flag). Also t679 (P5: a one-part plan's
 builder test is the judged whole run) and t683 (the reset reason). Also t684 (in-part acts a reset could not undo) and t685 (one-part tests paid by
 the brief). Downstream cost round 1: four of five passed at well under pair 8's calls; towels failed on a judging
-defect, fixed by t686-t690. Cost round 2 running.
+defect, fixed by t686-t690. Round 2 passed four of five at $0.031 a build (pair 8 `project` $0.108); social
+failed on a false yes over extra rows, fixed by t691-t693. Round 3 running.
 
 **Also done 2026-10-16:** t674 and t681 split `verdict.ts` and `candidate/submission.ts`; t680 audits RegExp
 escapes; t682 runs the structure audit before every push.
@@ -649,6 +650,29 @@ Entries for 2026-10-14 (t613, t617) and 2026-10-15 (A8 waves 5 to frozen pair 5,
 - Validation: after merging dev each: t686 -> 392 files, 3865 passed; t687 -> 396 files, 3882 passed; t688 -> 542
   files, 5702 passed; t689 -> 229 files, 1664 passed; t690 -> 636 files, 6259 passed (the areas each touched, tsc exit
   0 each); `pnpm task finish` -> `pnpm check` passed for each; pushed `807e4ebe`
+- Outcome: Accepted
+
+
+### 2026-10-17 — Extra rows need a reason (t691); a keep-everything read is a doubt (t692); the condition account (t693); feedback split (t694)
+- Agent: workers t691 (its converse-ask wiring needed `verify.ts`; the supervisor applied its tested patch as a
+  separate commit), t692 (four rounds), t693 (paired with downstream), t694; supervisor verified and integrated
+- Changed: t691 `result-verification/request-rows/` (`storedThoughLeftOut`), `agreement/{said,ask-again}.ts`,
+  `first-ask/`, `verify.ts`: rows another read stored though a condition left them out need a yes that names them
+  with the request's words; the confirming judge call asks the converse (each stored row against the request's words)
+  instead of repeating the first. t692 `read-account/kept-every-row.ts` (new) and its wiring through the summary,
+  the judge prompt (+ pins), the trial gate and both trial ports: a read with no condition that kept every row after
+  an act over a narrower read of the same list is flagged, and each of its rows must be named beside it. t693
+  `flow-draft/condition-account.ts`, `llm/repeat-guard/narrowed-nothing.ts`, the draft statement's `conditions`: a
+  repair is told which condition kept every row and up to three values it read. t694 `llm/draft-amendment-feedback.ts`
+  -> `llm/draft-amendment-feedback/`
+- Why: downstream cost round 2 social (`run-mvbr0w7e-6a01c05b`): a final unfiltered read stored 8 rows where the answer
+  holds 4, an also-in-result note vouched for the extra rows, the confirming call was an identical temperature-0
+  repeat, and a repair resent one condition six times
+- Validation: t693 after merging dev: llm, flow-draft, flow-bootstrap -> 429 files, 4633 passed (downstream domain
+  1271 passed). t691 after merging dev: result-verification, candidate-trial, subflow-trial, flow-bootstrap,
+  project-agents, project-build -> 421 files, 3997 passed. t694: llm, flow-draft, flow-bootstrap -> 4633 passed. t692
+  after merging dev: seven directories green but `llm/deepseek/tests/system-prompt.test.ts` (pins), fixed; llm -> 211
+  files, 2053 passed. tsc exit 0 each; `pnpm task finish` -> `pnpm check` passed each; pushed `f406dcb4`
 - Outcome: Accepted
 
 
