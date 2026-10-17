@@ -13,6 +13,7 @@
 // never names the draft (`../repeat-guard/candidate-feedback.ts`). Never an
 // endless loop, and never silent.
 
+import { automationStudioFlowDraftStepCopy } from "../../flow-draft/index.ts";
 import { automationStudioLlmDecisionContextSignature, automationStudioLlmDecisionContextSupersede } from "../decision-context/index.ts";
 import { automationStudioLlmEvidenceLoopFailure as failure, type AutomationStudioLlmEvidenceLoopDecision, type AutomationStudioLlmEvidenceLoopResult } from "../evidence-loop/index.ts";
 import {
@@ -116,7 +117,7 @@ export function automationStudioLlmEvidenceRepeatStop(
   if (input.unusableDecisions) {
     const stall = recoverAt === undefined ? { kind: "stall" as const, issueCodes: [issueCode] } : automationStudioLlmEvidenceStallRecovery(context, recoverAt, [issueCode]);
     if (stall.kind === "recover") return stall;
-    return { kind: "stalled", error: input.unusableDecisions.stalled({ issueCodes: stall.issueCodes, trace: [...trace], accounting: { ...accounting }, steps: draftSteps.map((step) => structuredClone(step)) }) };
+    return { kind: "stalled", error: input.unusableDecisions.stalled({ issueCodes: stall.issueCodes, trace: [...trace], accounting: { ...accounting }, steps: draftSteps.map((step) => automationStudioFlowDraftStepCopy(step)) }) };
   }
   return { kind: "end", result: failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting) };
 }

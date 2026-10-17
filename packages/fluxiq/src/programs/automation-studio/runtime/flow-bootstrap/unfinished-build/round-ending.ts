@@ -17,8 +17,10 @@
 // unusable_decisions`), and with the candidates gone the repair seed
 // (`./judgement.ts`) had nothing to carry: the next round would have listed the
 // unchanged carried steps 1, 2, 4 and 5 for a live rerun the domain refuses.
-import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
-import { automationStudioFlowDraftCopyScheduledCandidate } from "../../flow-draft/scheduled-candidate/index.ts";
+// The loop's stalls hand over copies too, all made by one function
+// (`../../flow-draft/scheduled-candidate/step-copy.ts`), so a candidate survives
+// both copies (t690).
+import { automationStudioFlowDraftStepCopy } from "../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResult } from "../../llm/index.ts";
 import type { AutomationStudioLlmEvidenceLoopBudgetBound } from "../../llm/evidence-loop/index.ts";
 import type { AutomationStudioFlowBootstrapBudgetBound } from "../generation-failure/index.ts";
@@ -38,7 +40,7 @@ export function automationStudioFlowBootstrapRoundEnding(
 ): AutomationStudioFlowBootstrapRoundEnding {
   if (outcome instanceof AutomationStudioFlowBootstrapUnfinishedStall) {
     const { issueCodes, trace, accounting, steps } = outcome.progress;
-    return { kind: "unfinished", stopped: "unusable_decisions", steps: steps.map(stallCopy), lastIssueCodes: [...issueCodes], completionAttempts: 0, progress: { trace, accounting } };
+    return { kind: "unfinished", stopped: "unusable_decisions", steps: steps.map((step) => automationStudioFlowDraftStepCopy(step)), lastIssueCodes: [...issueCodes], completionAttempts: 0, progress: { trace, accounting } };
   }
   if (outcome.ok) return { kind: "finished", loop: outcome };
   const progress = { trace: outcome.trace, accounting: outcome.accounting };
@@ -60,14 +62,4 @@ export function automationStudioFlowBootstrapRoundEnding(
     return { kind: "budget", bound: BUDGET_BOUNDS[exhaustion.budgetBound], ...held };
   }
   return { kind: "unfinished", stopped: exhaustion.bound === "tool_calls" ? "tool_calls" : "iterations", ...held };
-}
-
-/** A stalled round's step, copied so the loop cannot change it, keeping a candidate it still stands on. */
-function stallCopy(step: AutomationStudioFlowDraftStep): AutomationStudioFlowDraftStep {
-  const copy = structuredClone(step);
-  if (step.scheduledCandidate !== undefined) {
-    copy.scheduledCandidate = step.scheduledCandidate;
-    automationStudioFlowDraftCopyScheduledCandidate(step, copy);
-  }
-  return copy;
 }

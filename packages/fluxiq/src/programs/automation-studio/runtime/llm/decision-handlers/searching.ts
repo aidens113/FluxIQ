@@ -14,6 +14,7 @@
 // is byte for byte as it was.
 
 import type { JsonObject } from "../../../../../core/index.ts";
+import { automationStudioFlowDraftStepCopy } from "../../flow-draft/index.ts";
 import { automationStudioLlmDecisionContextSupersede } from "../decision-context/index.ts";
 import { automationStudioLlmEvidenceCanonicalJson } from "../evidence-loop-decision.ts";
 import { automationStudioLlmEvidenceLoopFailure as failure } from "../evidence-loop/index.ts";
@@ -53,7 +54,7 @@ export function automationStudioLlmEvidenceSearchingWithoutActing(
     if (input.unusableDecisions) {
       const stall = automationStudioLlmEvidenceStallRecovery(context, iteration, [AUTOMATION_STUDIO_LLM_EVIDENCE_SEARCHING_CODE]);
       if (stall.kind === "recover") return stall;
-      return { kind: "stalled", error: input.unusableDecisions.stalled({ issueCodes: stall.issueCodes, trace: [...trace], accounting: { ...accounting }, steps: draftSteps.map((step) => structuredClone(step)) }) };
+      return { kind: "stalled", error: input.unusableDecisions.stalled({ issueCodes: stall.issueCodes, trace: [...trace], accounting: { ...accounting }, steps: draftSteps.map((step) => automationStudioFlowDraftStepCopy(step)) }) };
     }
     return { kind: "end", result: failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting) };
   }

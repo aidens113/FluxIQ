@@ -27,6 +27,7 @@
 // model; the warning names the category and the issues, by code and line,
 // instead (`reasonWords`), and `refusal` carries the kind without it.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import { automationStudioFlowDraftStepCopy } from "../../flow-draft/index.ts";
 import { automationStudioLlmDecisionContextSupersede } from "../decision-context/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_SAME_REFUSALS_IN_A_ROW } from "../evidence-progress/index.ts";
 import { automationStudioLlmEvidenceLoopFailure as failure, type AutomationStudioLlmEvidenceLoopResult } from "../evidence-loop/index.ts";
@@ -53,7 +54,7 @@ export function automationStudioLlmEvidenceRefusedOfAKind(
   const { input, trace, accounting, draftSteps, evidence } = context;
   if (inARow >= AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_SAME_REFUSALS_IN_A_ROW) {
     if (input.unusableDecisions) {
-      const error = input.unusableDecisions.stalled({ issueCodes: [issueCode], trace: [...trace], accounting: { ...accounting }, steps: draftSteps.map((step) => structuredClone(step)) });
+      const error = input.unusableDecisions.stalled({ issueCodes: [issueCode], trace: [...trace], accounting: { ...accounting }, steps: draftSteps.map((step) => automationStudioFlowDraftStepCopy(step)) });
       if (input.propagateDecisionErrors) throw error;
     }
     return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);

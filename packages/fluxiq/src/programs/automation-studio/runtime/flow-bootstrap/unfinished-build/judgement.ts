@@ -69,8 +69,7 @@
 // round's test still runs those steps as saved.
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioFlowDraftStepCarriedJoin } from "../../flow-draft/carried-step/index.ts";
-import { automationStudioFlowDraftCopyScheduledCandidate } from "../../flow-draft/scheduled-candidate/index.ts";
-import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplayOutcomeWord, automationStudioFlowDraftReplaySignature, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplayOutcomeWord, automationStudioFlowDraftReplaySignature, automationStudioFlowDraftStepCopy, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import type { AutomationStudioRequestRowsNamed } from "../../result-verification/request-rows/index.ts";
 import { automationStudioInstructedActsNotDone, type AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
 import { automationStudioFlowBootstrapJudgeInSeedNumbers } from "./test-step-numbers.ts";
@@ -104,18 +103,12 @@ export type AutomationStudioFlowBootstrapUnfinishedTest = (steps: AutomationStud
  * would list it for a live rerun (t274-c4).
  */
 export function automationStudioFlowBootstrapRepairSeed(steps: readonly AutomationStudioFlowDraftStep[]): AutomationStudioFlowDraftStep[] {
-  return steps.filter(automationStudioFlowDraftStepIsProposed).map((step, index) => {
-    const copy = structuredClone(step);
+  return steps.filter(automationStudioFlowDraftStepIsProposed).map((step, index) => automationStudioFlowDraftStepCopy(step, (copy) => {
     delete copy.callId;
     delete copy.replayed;
     copy.position = index + 1;
     copy.iteration = 0;
-    if (step.scheduledCandidate !== undefined) {
-      copy.scheduledCandidate = step.scheduledCandidate;
-      automationStudioFlowDraftCopyScheduledCandidate(step, copy);
-    }
-    return copy;
-  });
+  }));
 }
 
 /**

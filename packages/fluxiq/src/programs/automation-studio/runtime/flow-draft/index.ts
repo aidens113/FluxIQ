@@ -24,6 +24,8 @@ export * from "./dry-run.ts";
 export * from "./starts-where-it-stands.ts";
 // An untested change to an optional saved step goes back to its saved version before the Flow is saved (t439).
 export { automationStudioFlowDraftKeepSavedUntestedEdits, type AutomationStudioFlowDraftKeptSaved } from "./carried-step/index.ts";
+// A draft handed over at a stall or to a repair is copied keeping each scheduled candidate (t690).
+export { automationStudioFlowDraftStepCopy } from "./scheduled-candidate/index.ts";
 export * from "./draft.ts";
 export * from "./entry.ts";
 export * from "./excused.ts";
