@@ -1,7 +1,7 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialVerdict, type AutomationStudioFlowCandidateSubmissionController, type AutomationStudioFlowCandidateTrialGate } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult } from "../../flow-bootstrap/subflow-candidate/index.ts";
-import { automationStudioLlmBuildPurseScope } from "../../llm/build-purse/index.ts";
+import { automationStudioLlmBuildPurseJudgeBackstopScope, automationStudioLlmBuildPurseScope, automationStudioLlmCurrentBuildPurse, type AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import { withAutomationStudioProjectAgent } from "../attribution/index.ts";
 import type { AutomationStudioProjectStructurePlan } from "../contracts/index.ts";
@@ -26,12 +26,23 @@ import { automationStudioProjectSingleSubflowPlan } from "./single-subflow-plan.
 //   `candidate_trial` receipt, notes a failed whole test, keeps the build's
 //   fallback and leaves the gate's standing verdict -- the creation rule's
 //   evidence, unchanged;
-// - under the supervisor's purse frame and attribution, as Core's own reset
-//   before an ending runs (`../supervisor/supervisor-loop.ts`), so its judge
-//   draws on the build's judging reserve and not on the builder's allowance.
-//   A scope frame, not a run frame: a refused judge call fails as the trial
-//   reports it, never as a thrown refusal the builder's gate would read as a
-//   failed port.
+// - under the supervisor's attribution, so the record names the judge the
+//   supervisor's, as Core's own reset before an ending runs
+//   (`../supervisor/supervisor-loop.ts`);
+// - paid as a candidate builder's trials are (t685): under a scope of the
+//   brief's allowance -- the purse the builder's gate asks the test under --
+//   with the build's purse as the judge's backstop
+//   (`llm/build-purse/judge-backstop.ts`). The judge draws on the allowance and
+//   its top-ups first and on the build's judging reserve only when they cannot
+//   pay, so a test is refused unaffordable only when neither can. t679 ran it
+//   under the build's purse alone, where the open allowance's money is kept
+//   from every other call: Lab run `run-mvblai1v-a31e7593` spent the reserve's
+//   four judge calls on two tests and its third was refused with ~$0.23 of the
+//   $0.25 unspent, most of it the brief's own. Asked outside an allowance
+//   carved from the build's purse, the test runs under that purse as t679 did.
+//   A scope, not a run, and what the allowance's refusal was before the test
+//   is put back after it: a refused judge call fails as the trial reports it,
+//   never as a thrown refusal the builder's gate would read as a failed port.
 //
 // The builder's gate has put the site back first (its project reset, and the
 // start hook ahead of it); the whole gate then checks every ledger again
@@ -69,7 +80,7 @@ const WORDS = Object.freeze({
   judgedNo: "Your subflow joins into a whole Flow that was already tried and judged no (refusal has what the judge said), so it was not tried again. Change your subflow to answer that, submit it with core.submit_subflow, then test the new revision.",
   resetRequired: "Before the whole Flow could run, lasting acts this build made were still on the site, as listed under actsToUndo, so nothing ran. Undo each with the site's own controls, then test the same revision and digest again. "
     + "An act the site offers no control to undo goes under cannotUndo when you test again, and the test then runs with it already done; name only an act you tried to undo and could not.",
-  unaffordable: "Core did not start this test: the money kept for judging the build's whole run cannot pay its two judge calls, so nothing ran and no judge was asked (refusal has the figures). "
+  unaffordable: "Core did not start this test: neither this brief's money nor the money kept for judging the build's whole run can pay its two judge calls, so nothing ran and no judge was asked (refusal has the figures). "
     + "Testing again is refused the same way, so do not test again or change your subflow for it: end the brief partial and say so.",
   notRun: "Core did not run the whole Flow joined from this revision, for the reason under refusal. Change your subflow for what it names, submit it with core.submit_subflow, then test the new revision."
 });
@@ -101,10 +112,35 @@ export function automationStudioProjectSingleSubflowTrial(input: AutomationStudi
     }
     const { candidate } = assembled;
     const complete = { revision: candidate.revision, digest: candidate.digest };
-    // The supervisor's judge, on the judging reserve (header).
-    const ran = await withAutomationStudioProjectAgent({ role: "supervisor" }, () => automationStudioLlmBuildPurseScope(ports.purse, () => input.test({ ...complete }, request.signal)));
+    // The supervisor's judge, paid by the brief's allowance with the judging reserve as its backstop (header, t685).
+    const ran = await withAutomationStudioProjectAgent({ role: "supervisor" }, () => paidByBrief(ports.purse, () => input.test({ ...complete }, request.signal)));
     return answerOf(request, ran, complete);
   };
+}
+
+/**
+ * Runs `test` under the brief's allowance with `purse` as its judge's backstop,
+ * when the test is asked under an allowance carved from `purse`; else under
+ * `purse` itself, as t679 did (header). The allowance's refusal is put back as
+ * it was before the test.
+ */
+async function paidByBrief<T>(purse: AutomationStudioLlmBuildPurse | undefined, test: () => Promise<T>): Promise<T> {
+  const allowance = automationStudioLlmCurrentBuildPurse();
+  if (!purse || !allowance || !carvedFrom(allowance, purse)) return await automationStudioLlmBuildPurseScope(purse, test);
+  const was = allowance.refusal;
+  try {
+    return await automationStudioLlmBuildPurseJudgeBackstopScope(allowance, purse, test);
+  } finally {
+    allowance.refusal = was;
+  }
+}
+
+/** Whether `allowance` was carved from `purse`, directly or through another allowance. */
+function carvedFrom(allowance: AutomationStudioLlmBuildPurse, purse: AutomationStudioLlmBuildPurse): boolean {
+  for (let above = allowance.parent; above; above = above.parent) {
+    if (above === purse) return true;
+  }
+  return false;
 }
 
 /** The whole test's answer in the builder's terms (header): a trial of the proposal under test, or a refusal. */
