@@ -96,6 +96,7 @@ import { automationStudioFlowDraftPathToStep } from "./path-to-step.ts";
 import { automationStudioFlowDraftStepById } from "./routing.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_REANCHORED_CODE } from "./site-memory.ts";
 import { automationStudioFlowDraftReplayOutcomeWord } from "./verify-only.ts";
+import { automationStudioFlowDraftStartsWhereItStands } from "./starts-where-it-stands.ts";
 
 /** The entry a dry run's verdict is shown to the model under. */
 export const AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID = "core.dry_run";
@@ -223,7 +224,8 @@ export function automationStudioFlowDraftReplayable(steps: readonly AutomationSt
   if (!proposed.length) return false;
   // An optional carried step the test cannot run is passed over, never a reason the draft cannot be tested (`./carried-step/`, t439).
   if (!proposed.every((step) => automationStudioFlowDraftStepCarriedPassedOver(step) || (step.scheduledCandidate !== undefined ? automationStudioFlowDraftScheduledCandidateCall(step) !== undefined : step.ranWith !== undefined && step.replay !== undefined))) return false;
-  return automationStudioFlowDraftReplayFrom(steps) !== undefined;
+  // A carried first step whose run captured no start is sent where the target stands, as its Flow's playback sends it (`./starts-where-it-stands.ts`, t688).
+  return automationStudioFlowDraftReplayFrom(steps) !== undefined || automationStudioFlowDraftStartsWhereItStands(steps);
 }
 
 /** Where a replay of this draft starts: what the first proposed step that is sent found (a carried join is not sent). */

@@ -92,3 +92,40 @@ describe("a second copy of a kept read", () => {
     expect(automationStudioFlowDraftSecondCopy(lookOnly, lookOnly[1]!)).toBeUndefined();
   });
 });
+
+// t688, live run `run-mvblov2i-abb7d82e` (0095, 0108): told to run the saved steps in this build, the repair ran the
+// saved navigate and the Pickup filter again as new calls with `add`, after the Flow's page loop, and the Flow ended
+// with a second navigate and a second Pickup filter (dry run steps 15-16).
+describe("a second copy of a step carried from the Flow being changed", () => {
+  const carried = (n: number, url: string): Step => ({
+    position: n, id: `f${n}`, iteration: 0, actionId: "web.navigate", toolId: "core.run_node",
+    input: { node: "web.navigate", parameters: { url, newTab: false } }, effect: "mutate", proposes: true, disposition: "kept"
+  });
+  const added = (n: number, url: string): Step => ({
+    position: n, id: `d${n}`, iteration: n, actionId: "web.navigate", toolId: "core.run_node",
+    // Keys in another order, and a declaration the saved step never had: the same node parameters all the same.
+    input: { node: "web.navigate", parameters: { newTab: false, url }, consequences: [] },
+    ranWith: { node: "web.navigate", parameters: { newTab: false, url } },
+    effect: "mutate", effectApplied: true, stateBefore: "s-filtered", stateAfter: "s-search", disposition: "taken"
+  });
+
+  it("copies the carried step once the Flow moved on after it, whatever page each started on", () => {
+    const steps = [carried(1, "https://shop.test/search?q=towels"), press(2, "t-filter", "s-search", "s-filtered"), added(3, "https://shop.test/search?q=towels")];
+    expect(automationStudioFlowDraftSecondCopy(steps, steps[2]!)).toBe(steps[0]);
+  });
+
+  it("copies a rerun that stands for a carried step the same way", () => {
+    const rerun: Step = { ...added(1, "https://shop.test/search?q=towels"), id: "d9", standsFor: "f1", disposition: "kept" };
+    const steps = [rerun, press(2, "t-filter", "s-search", "s-filtered"), added(3, "https://shop.test/search?q=towels")];
+    expect(automationStudioFlowDraftSecondCopy(steps, steps[2]!)).toBe(steps[0]);
+  });
+
+  it("is no copy right after itself, with other parameters, or of a step this build ran itself", () => {
+    const again = [carried(1, "https://shop.test/a"), added(2, "https://shop.test/a")];
+    expect(automationStudioFlowDraftSecondCopy(again, again[1]!)).toBeUndefined();
+    const other = [carried(1, "https://shop.test/a"), press(2, "t-filter", "s-search", "s-filtered"), added(3, "https://shop.test/b")];
+    expect(automationStudioFlowDraftSecondCopy(other, other[2]!)).toBeUndefined();
+    const built = [{ ...added(1, "https://shop.test/a"), disposition: "kept" as const, stateBefore: "s-home" }, press(2, "t-filter", "s-search", "s-filtered"), added(3, "https://shop.test/a")];
+    expect(automationStudioFlowDraftSecondCopy(built, built[2]!)).toBeUndefined();
+  });
+});
