@@ -46,7 +46,11 @@ import { automationStudioProjectSingleSubflowPlan } from "../single-subflow/inde
 // (`finishingCalls`), never less than the even share, and every call the purse
 // can carve. Until any call has settled nothing is priced, and the even share
 // stands; so it does for a build that keeps no finishing calls back. Every
-// other brief and plan is sized as above.
+// other brief and plan is sized as above. That money pays its builder's tests
+// too: each test's judge draws on the brief's allowance first, and on the
+// judging reserve only when the allowance cannot pay (t685,
+// `../single-subflow/single-subflow-trial.ts`), so the reserve is still whole
+// for the judged run and repair round after the brief.
 
 /** A reset brief's least calls: one decision that undoes, and one that completes. */
 const MIN_RESET_CALLS = 2;
