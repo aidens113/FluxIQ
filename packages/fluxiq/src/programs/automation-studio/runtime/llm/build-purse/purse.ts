@@ -45,15 +45,16 @@
 // kept back from every other call by `./judging-reserve.ts` (t254); the
 // allowances carved from the purse for each brief by `./allowance-book.ts`
 // (t534); the top-ups an allowance draws from the purse it was carved from when
-// its next call does not fit it (`./top-up.ts`, t627); and a refusal's figures
-// are written by `./cost-refusal.ts`. This class composes them and decides,
+// its next call does not fit it (`./top-up.ts`, t627); the backstop a judge
+// call an allowance cannot pay is held against instead (`./judge-backstop.ts`,
+// t685); and a refusal's figures are written by `./cost-refusal.ts`. This class composes them and decides,
 // call by call, whether a call is held.
 
 import { AutomationStudioLlmBuildPurseAllowanceBook, type AutomationStudioLlmBuildPurseAllowanceRefusal, type AutomationStudioLlmBuildPurseAllowanceRequest, type AutomationStudioLlmBuildPurseAttributedSpend, type AutomationStudioLlmBuildPurseAttribution } from "./allowance-book.ts";
 import { automationStudioLlmBuildPurseCostRefusal } from "./cost-refusal.ts";
 import { AUTOMATION_STUDIO_LLM_BUILD_PURSE_EPSILON_USD } from "./epsilon.ts";
 import { AutomationStudioLlmBuildPurseJudgingReserve } from "./judging-reserve.ts";
-import { automationStudioLlmBuildPurseFramesOf } from "./run-frame.ts";
+import { automationStudioLlmBuildPurseFramesOf, automationStudioLlmBuildPurseJudgeBackstopOf } from "./run-frame.ts";
 import { AutomationStudioLlmBuildPurseLedger } from "./settlement-ledger.ts";
 import { AutomationStudioLlmBuildPurseTopUps, type AutomationStudioLlmBuildPurseTopUp } from "./top-up.ts";
 import type { AutomationStudioLlmBuildPurseCall, AutomationStudioLlmBuildPurseHeld, AutomationStudioLlmBuildPurseJudging, AutomationStudioLlmBuildPurseOptions, AutomationStudioLlmBuildPurseRefusal } from "./types.ts";
@@ -312,10 +313,24 @@ export class AutomationStudioLlmBuildPurse {
    * or refused only once nothing is left while none has. A call that is not a
    * judge's must also leave what is kept back for judging (`keptBackUsd`). On an
    * allowance the call is then held against each purse above, and a refusal
-   * there is this allowance's too.
+   * there is this allowance's too. A judge's call inside a scope that names a
+   * backstop (`./judge-backstop.ts`, t685) this purse cannot pay is held
+   * against the backstop on its own instead, and the refusal met first is put
+   * back when the backstop pays; when neither can, the backstop's refusal is the
+   * answer.
    */
   hold(call: AutomationStudioLlmBuildPurseCall): AutomationStudioLlmBuildPurseHeld {
-    return this.holdFor(call, undefined);
+    const backstop = call.judge ? automationStudioLlmBuildPurseJudgeBackstopOf(this) : undefined;
+    if (!backstop || backstop === this) return this.holdFor(call, undefined);
+    const before: Array<[AutomationStudioLlmBuildPurse, AutomationStudioLlmBuildPurseRefusal | undefined]> = [];
+    for (let owner: AutomationStudioLlmBuildPurse | undefined = this; owner; owner = owner.parent) before.push([owner, owner.refusal]);
+    const own = this.holdFor(call, undefined);
+    if (own.ok) return own;
+    const backed = backstop.holdFor(call, undefined);
+    if (!backed.ok) return backed;
+    // The backstop paid, so the refusal met first refused no call.
+    for (const [owner, was] of before) owner.refusal = was;
+    return backed;
   }
 
   /** Hold `call`, made under `via` when it is one of this purse's allowances: what the other open allowances still hold is left alone, `via`'s own is not. */
