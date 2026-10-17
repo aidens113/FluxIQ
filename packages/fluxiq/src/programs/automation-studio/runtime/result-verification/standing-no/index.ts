@@ -44,6 +44,13 @@
 // has it and tests those words nowhere gets a one-time hint
 // (`./kept-steps.ts`).
 //
+// **And conditions written in the request's own exclusion words (t687).** A
+// condition Core's record shows leaving rows out by what the request itself
+// says to leave out (`excludes`) is kept even where Core cannot account for
+// every row it left out, and released only by a later record showing it left
+// out a row Core reads as asked for (`./kept-conditions.ts`); its refusal says
+// the request's words (`./kept-condition-drop.ts`).
+//
 // This directory reads nothing of a run but those records, a trial's
 // feedback and the plans the gates hold, so the gates import it without the reads that import the
 // flow-bootstrap back; the builder of a record, which does, is
