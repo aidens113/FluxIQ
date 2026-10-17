@@ -59,10 +59,28 @@
 // that name the item, which are usually the search. Whether the row is what
 // the quote asks for is the judge's to say; that it was looked at beside the
 // request's words is what Core checks.
+//
+// **And the left-out rows another read stored (t691).** A8
+// `run-mvbr0w7e-6a01c05b`: a read's condition left four rows out of what the
+// Flow acted on, a later read with no condition stored all eight, and a yes
+// that never said why the answer held those four was taken, because a row "in
+// the result" was exempt here. Only a row the same read stored is still exempt
+// (`inResult` less the read's `storedElsewhere`, `summary-reads.ts`); a row
+// another read stored is held to the rules above as a left-out row, and more:
+// it has to be named in a sentence that names a read that stored it, by its
+// node id (`row-naming.ts`), and quotes the request -- read and lent as
+// above, the quote any of the request's words that carry something, as for a
+// kept row, since what is asked is why the answer holds it. A yes that does not
+// is held for those rows, marked `stored` with the reads that stored them.
+// Whether the quoted words ask for the row in the answer is the judge's to say;
+// that the judge was made to look at each one beside the read that stored it is
+// what Core checks. A library's example: renew the overdue books, then list
+// the books now shown as renewed; a last read that also stores the books never
+// renewed has to say, of each, why it is there.
 
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import type { AutomationStudioRequestWording } from "./request-wording.ts";
-import { automationStudioRequestRowNaming, automationStudioRequestTextNamesRow, type AutomationStudioRequestRowNaming } from "./row-naming.ts";
+import { automationStudioRequestRowNaming, automationStudioRequestTextNamesRead, automationStudioRequestTextNamesRow, type AutomationStudioRequestRowNaming } from "./row-naming.ts";
 import { automationStudioRequestRowsReads } from "./summary-reads.ts";
 import type { AutomationStudioRequestRowsCondition, AutomationStudioRequestRowsKept, AutomationStudioRequestRowsUnquoted } from "./types.ts";
 import { automationStudioRequestRowWordCarries, automationStudioRequestRowWords } from "./words.ts";
@@ -76,13 +94,20 @@ const QUOTE = /"([^"\n]{0,400})"|“([^”\n]{0,400})”|‘([^’\n]{1,400})’
 /** One sentence of a reply, whether it quotes the request's own words, and whether it names a row of any read. */
 type Sentence = { text: string; quotesRequest: boolean; namesRow?: boolean };
 
+/** A sentence a row named in it is accounted for in, and that sentence with the ones beside it that lent it a quote (header). */
+type Accounting = { text: string; beside: string };
+
 /** Each condition with the left-out rows the reply did not name beside a quote of the request's excluding words; none when it did for all. */
 export function automationStudioResultLeftOutRowsUnquoted(summary: AutomationStudioRunResultSummary, reply: string, wording: AutomationStudioRequestWording): AutomationStudioRequestRowsUnquoted[] {
   const { reads } = automationStudioRequestRowsReads(summary);
   const namings = reads.flatMap((read) => read.labels.map((label) => automationStudioRequestRowNaming(label, read.labels)));
-  const accounting = accountingSentences(reply, namings, (quote) => wording.says(quote) && wording.ownWords(quote).length > 0);
+  const accounting = accountingSentences(reply, namings, (quote) => wording.says(quote) && wording.ownWords(quote).length > 0).map((sentence) => sentence.text);
+  // A stored row is asked for by any of the request's words that carry something, as a kept row is (header, t663, t691).
+  const storedAccounting = accountingSentences(reply, namings, carryingQuote(wording));
   return reads.flatMap((read) => {
-    const inResult = new Set(read.inResult);
+    // A row another read stored is no copy of this read's own (header, t691).
+    const elsewhere = new Map((read.storedElsewhere ?? []).map((entry) => [entry.label, entry.by]));
+    const inResult = new Set(read.inResult.filter((label) => !elsewhere.has(label)));
     const where = { ...(read.step !== undefined ? { step: read.step } : {}), ...(read.nodeId !== undefined ? { nodeId: read.nodeId } : {}) };
     return read.conditions.flatMap((condition): AutomationStudioRequestRowsUnquoted[] => {
       const settled = new Set(condition.settled?.labels ?? []);
@@ -93,9 +118,11 @@ export function automationStudioResultLeftOutRowsUnquoted(summary: AutomationStu
         return !accounting.some((sentence) => automationStudioRequestTextNamesRow(sentence, naming));
       });
       const bound = boundUnquoted(condition, inResult, accounting);
+      const stored = storedUnquoted(condition, elsewhere, storedAccounting, read.labels);
       return [
         ...(rows.length ? [{ ...where, condition: condition.condition, rows }] : []),
-        ...(bound.length ? [{ ...where, condition: condition.condition, rows: bound, bound: true as const }] : [])
+        ...(bound.length ? [{ ...where, condition: condition.condition, rows: bound, bound: true as const }] : []),
+        ...(stored.rows.length ? [{ ...where, condition: condition.condition, rows: stored.rows, stored: stored.by }] : [])
       ];
     });
   });
@@ -105,23 +132,52 @@ export function automationStudioResultLeftOutRowsUnquoted(summary: AutomationStu
 export function automationStudioResultKeptRowsUnquoted(flags: readonly AutomationStudioRequestRowsKept[], reply: string, wording: AutomationStudioRequestWording): AutomationStudioRequestRowsKept[] {
   if (!flags.length) return [];
   const namings = flags.flatMap((flag) => flag.pool.map((label) => automationStudioRequestRowNaming(label, flag.pool)));
-  const quotes = (quote: string): boolean => wording.says(quote) && automationStudioRequestRowWords(quote).some((word) => automationStudioRequestRowWordCarries(word.word));
-  const accounting = accountingSentences(reply, namings, quotes);
+  const accounting = accountingSentences(reply, namings, carryingQuote(wording)).map((sentence) => sentence.text);
   return flags.flatMap((flag) => {
     const rows = flag.rows.filter((label) => !accounting.some((sentence) => automationStudioRequestTextNamesRow(sentence, automationStudioRequestRowNaming(label, flag.pool))));
     return rows.length ? [{ ...flag, rows }] : [];
   });
 }
 
+/** Whether a quote is of the request's words that carry something, the words it searched by included (header, t663). */
+function carryingQuote(wording: AutomationStudioRequestWording): (quote: string) => boolean {
+  return (quote) => wording.says(quote) && automationStudioRequestRowWords(quote).some((word) => automationStudioRequestRowWordCarries(word.word));
+}
+
 /**
  * The reply's sentences a row named in them is accounted for in: one that
  * quotes the request as `quotes` reads a quote, or sits, in the same line,
- * beside one that does and names no row of `namings` (header).
+ * beside one that does and names no row of `namings` (header). Each comes with
+ * itself and the sentences that lent it a quote, where a read that stored the
+ * row may be named instead (t691).
  */
-function accountingSentences(reply: string, namings: readonly AutomationStudioRequestRowNaming[], quotes: (quote: string) => boolean): string[] {
+function accountingSentences(reply: string, namings: readonly AutomationStudioRequestRowNaming[], quotes: (quote: string) => boolean): Accounting[] {
   const lines = reply.split(/\n+/u).map((line) => sentencesOf(line, quotes).map((sentence) => ({ ...sentence, namesRow: namings.some((naming) => automationStudioRequestTextNamesRow(sentence.text, naming)) })));
   const lends = (sentence: Sentence | undefined): boolean => sentence?.quotesRequest === true && sentence.namesRow === false;
-  return lines.flatMap((line) => line.filter((sentence, at) => sentence.quotesRequest || lends(line[at - 1]) || lends(line[at + 1])).map((sentence) => sentence.text));
+  return lines.flatMap((line) => line.flatMap((sentence, at) => {
+    const lenders = [line[at - 1], line[at + 1]].flatMap((beside) => beside && lends(beside) ? [beside] : []);
+    if (!sentence.quotesRequest && !lenders.length) return [];
+    return [{ text: sentence.text, beside: [sentence.text, ...lenders.map((lender) => lender.text)].join(" ") }];
+  }));
+}
+
+/**
+ * A condition's left-out rows another read stored that no accounting sentence
+ * names beside a read that stored them (header, t691), and those reads; none
+ * when it named them all.
+ */
+function storedUnquoted(condition: AutomationStudioRequestRowsCondition, elsewhere: ReadonlyMap<string, readonly string[]>, accounting: readonly Accounting[], pool: readonly string[]): { rows: string[]; by: string[] } {
+  if (!elsewhere.size) return { rows: [], by: [] };
+  const by = new Set<string>();
+  const rows = condition.rows.filter((_row, index) => {
+    const reads = elsewhere.get(condition.labels[index]!);
+    if (!reads) return false;
+    const naming = automationStudioRequestRowNaming(condition.labels[index]!, pool);
+    const named = accounting.some((sentence) => automationStudioRequestTextNamesRow(sentence.text, naming) && reads.some((node) => automationStudioRequestTextNamesRead(sentence.beside, node)));
+    if (!named) for (const node of reads) by.add(node);
+    return !named;
+  });
+  return { rows, by: [...by] };
 }
 
 /** A settled condition's rows still out of the result, when no sentence that quotes the request, or sits beside one, names the condition (header); none otherwise. */

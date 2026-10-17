@@ -60,6 +60,25 @@
 //
 // **A row may say Core's short id before it** (`row-id.ts`, t599), on the
 // judge's copy: a row is read as its label without it.
+//
+// **And which read stored a left-out row (t691).** A8 `run-mvbr0w7e-6a01c05b`:
+// a read's condition left four rows out of what the Flow then acted on, and a
+// later read with no condition stored all eight rows of the same list. Core told the judge the four were "another copy
+// of the same item ... kept" (`summary-with-also-in-result.ts`, t624) and
+// exempted them from every quote (`unquoted-rows.ts`), so a yes over an answer
+// holding four rows it should not hold was taken. That note was written for a
+// second copy inside one read; here a different read stored them.
+//
+// A record set's collectors are the read nodes its processing passes name
+// (`processing.passes[].node`). A left-out row's label stored in a
+// set the same read collected is that read's own copy. Where every set holding
+// it names its collectors and none is that read, it is stored by another read:
+// `automationStudioRequestRowsStoredBy` returns those reads. A set that names
+// no collector could be any read's, so a label it holds is never said to be
+// stored elsewhere: what Core cannot tell it does not claim. A run's read
+// carries `storedElsewhere`: each label one of its conditions left out that
+// another read stored and this read did not, with those reads. Its `inResult`
+// still holds every stored label; `unquoted-rows.ts` reads the two together.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts/index.ts";
@@ -93,7 +112,7 @@ export function automationStudioRequestRowsReads(summary: AutomationStudioRunRes
   // A record set only the entry's steps collected is the entry's too.
   const entrySet = (set: AutomationStudioResultRecordSetSummary): boolean => entrySteps.size > 0 && (set.processing?.passes.length ?? 0) > 0 && set.processing!.passes.every((pass) => entrySteps.has(pass.node));
   const recordSets = summary.recordSets.filter((set) => !entrySet(set));
-  const stored = recordSets.flatMap(storedRows);
+  const stored = recordSets.flatMap(automationStudioRequestRowsStoredOf);
   const reads: AutomationStudioRequestRowsRead[] = [];
   for (const step of summary.buildTest?.steps ?? []) {
     const sent = isObject(step.observed) ? step.observed.readRows : undefined;
@@ -130,8 +149,18 @@ export function automationStudioRequestRowsReads(summary: AutomationStudioRunRes
       collecting.conditions.push(...conditions);
       collecting.labels = unique([...collecting.labels, ...conditions.flatMap((entry) => entry.labels)]);
     } else {
-      reads.push(read({ nodeId: nodes[0] ?? set.datasetId }, storedRows(set).map((row) => row.label), storedLabels, conditions));
+      reads.push(read({ nodeId: nodes[0] ?? set.datasetId }, automationStudioRequestRowsStoredOf(set).map((row) => row.label), storedLabels, conditions));
     }
+  }
+  // The left-out rows another read stored, never this read's own copy (header, t691).
+  const storedBy = automationStudioRequestRowsStoredBy(recordSets);
+  for (const entry of reads) {
+    if (entry.nodeId === undefined) continue;
+    const elsewhere = unique(entry.conditions.flatMap((condition) => condition.labels)).flatMap((label) => {
+      const by = storedBy(entry.nodeId!, label);
+      return by ? [{ label, by }] : [];
+    });
+    if (elsewhere.length) entry.storedElsewhere = elsewhere;
   }
   return { reads, stored };
 }
@@ -184,14 +213,37 @@ function wordsOf(text: string): string[] {
   return automationStudioRequestRowWords(text).map((word) => word.word);
 }
 
-/** A record set's sampled rows, each by its label -- its first column holding text -- and every text cell. */
-function storedRows(set: AutomationStudioResultRecordSetSummary): AutomationStudioRequestRowsStored[] {
+/**
+ * A record set's sampled rows, each by its label -- its first column holding
+ * text -- and every text cell.
+ */
+export function automationStudioRequestRowsStoredOf(set: AutomationStudioResultRecordSetSummary): AutomationStudioRequestRowsStored[] {
   return (set.sampleRows ?? []).flatMap((row: JsonObject) => {
     const cells = Object.values(row).filter((value): value is string => typeof value === "string" && value.trim().length > 0);
     const column = set.columns.find((id) => typeof row[id] === "string" && (row[id] as string).trim().length > 0);
     const label = column !== undefined ? (row[column] as string) : cells[0];
     return label === undefined ? [] : [{ label, cells }];
   });
+}
+
+/**
+ * For a read and a label it left out: the reads that stored that label, where
+ * none of them is that read and Core knows each (header); none otherwise --
+ * the label is not stored, or that read, or a read Core cannot name, stored it.
+ */
+export function automationStudioRequestRowsStoredBy(recordSets: readonly AutomationStudioResultRecordSetSummary[]): (nodeId: string, label: string) => string[] | undefined {
+  const holders = new Map<string, Array<readonly string[] | undefined>>();
+  for (const set of recordSets) {
+    const nodes = [...new Set((set.processing?.passes ?? []).map((pass) => pass.node))];
+    for (const label of new Set(automationStudioRequestRowsStoredOf(set).map((row) => row.label))) {
+      holders.set(label, [...(holders.get(label) ?? []), nodes.length ? nodes : undefined]);
+    }
+  }
+  return (nodeId, label) => {
+    const sets = holders.get(label);
+    if (!sets || sets.some((collectors) => collectors === undefined || collectors.includes(nodeId))) return undefined;
+    return [...new Set(sets.flatMap((collectors) => collectors ?? []))];
+  };
 }
 
 function strings(value: JsonValue | undefined): string[] {
