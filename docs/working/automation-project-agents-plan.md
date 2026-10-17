@@ -34,7 +34,7 @@ change carries a done proposal), t672 (P2: an unread handed-on input passes), t6
 subflow), t676 (P4: Core checks a "done before" ending), t677 (an exact first-ask yes flag). Also t679 (P5: a one-part plan's
 builder test is the judged whole run) and t683 (the reset reason). Also t684 (in-part acts a reset could not undo) and t685 (one-part tests paid by
 the brief). Downstream cost round 1: four of five passed at well under pair 8's calls; towels failed on a judging
-defect (t686-t688 in flight).
+defect, fixed by t686-t690. Cost round 2 running.
 
 **Also done 2026-10-16:** t674 and t681 split `verdict.ts` and `candidate/submission.ts`; t680 audits RegExp
 escapes; t682 runs the structure audit before every push.
@@ -778,6 +778,30 @@ Entries from 2026-10-13 to A8 wave 4 (t550-t611) are archived in
 - Outcome: Accepted
 - Follow-up: downstream cost round 1's towels failure (a false judged yes from the t666 narrowing re-ask; a condition
   in the request's own exclusion words dropped on refuted advice; a result repair that applied nothing): t686-t688
+
+
+### 2026-10-16 — Judging fixes from downstream cost round 1 (t686-t690)
+- Agent: workers t686, t687, t688, t689 (two rounds), t690; supervisor verified, decided t689's inheritance across
+  repair briefs of the same subflow, integrated in order
+- Changed: t686 `result-verification/agreement/no-reasons.ts` (new): a re-asked answer replaces a no only when every
+  reason it gave is the kind its recheck addresses or refuted by Core's record (refuted-no, unstated-exclusion and
+  narrowing re-asks); `unsure-doubts/{narrowing,recheck-words,split-facets}.ts`: row names removed before step
+  matching; recheck words state what was measured, never "the request itself says" for split one-word options. t687
+  `standing-no-record/request-exclusion.ts` (new), `standing-no/{kept-conditions,kept-condition-drop}.ts`,
+  `agreement/refuted-labelled.ts`, `candidate-trial/feedback.ts`: a condition in the request's own exclusion words is
+  kept until a left-out row the request asks for releases it; wholly refuted advice is not passed on. t688
+  `flow-draft/starts-where-it-stands.ts` (new), `llm/node-tools/{dry-run-gate,replay-draft,replay-span}.ts`: the result
+  repair starts where it stands, "no next page" ends a page loop, duplicate steps refused. t689 `single-subflow/
+  {single-subflow-trial,assembled-from}.ts`, `subflow-candidate/subflow-trial-gate.ts`: the single path carries the
+  judged run's kept conditions to the builder (a t679 regression). t690 `flow-draft/scheduled-candidate/step-copy.ts`
+  (new): round stalls keep scheduled candidates; the page-loop hint; the builder's read line; `verify.ts` passes the
+  record to the narrowing re-ask
+- Why: downstream cost round 1 towels (`run-mvblov2i-abb7d82e`): a false judged yes from a re-asked no, a kept
+  condition dropped on refuted advice, a result repair that applied nothing
+- Validation: after merging dev each: t686 -> 392 files, 3865 passed; t687 -> 396 files, 3882 passed; t688 -> 542
+  files, 5702 passed; t689 -> 229 files, 1664 passed; t690 -> 636 files, 6259 passed (the areas each touched, tsc exit
+  0 each); `pnpm task finish` -> `pnpm check` passed for each; pushed `807e4ebe`
+- Outcome: Accepted
 
 
 ## Open Questions
