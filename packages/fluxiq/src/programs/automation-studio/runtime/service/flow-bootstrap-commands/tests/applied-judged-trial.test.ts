@@ -114,7 +114,8 @@ describe("a candidate build's judged trial, remembered by the Flow it saved", ()
     const primary = (await service.getFlowSubflow(projectId, flowId, subflows.subflows[0]!.subflowId))!;
     const graph = await service.getFlow(projectId, primary.graphFlowId!);
     expect(record).toEqual({
-      trialRunId: built.trialRunId, verdict: "yes", calls: 2, adaptationId: built.adaptationId,
+      // t677: the judge's first-ask yes (both checks yes, two calls) is recorded as such.
+      trialRunId: built.trialRunId, verdict: "yes", calls: 2, firstAskConfirmed: true, adaptationId: built.adaptationId,
       instructionDigest: automationStudioFlowInstructionDigest(await service.getFlowInstructionSet({ projectId, flowId })),
       versions: [automationStudioFlowGraphVersion({ flow: parent }), automationStudioFlowGraphVersion({ flow: graph, subflowId: primary.subflowId })]
     });
