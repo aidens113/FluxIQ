@@ -120,11 +120,13 @@
 // `trialIsWhole`, its port's test is the whole Flow joined from its proposal
 // and judged as the build's run (`../../project-agents/single-subflow/`): the
 // test tool and a yes say so (`./subflow-trial-gate.ts`, `whole`), the submit
-// answer's next step says a yes completes the brief, and its budget keeps back
-// no judge calls (`keptForFinishing: 0`), since that judge is paid from the
-// build's judging reserve, not from this builder's allowance. Its wrap-up then
-// begins with its own decisions left, which a brief's least calls
-// (`AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS`) still hold.
+// answer's next step says a yes completes the brief. Its budget keeps back the
+// judge calls of its finishing trials as every builder's does
+// (`AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS`): that judge is paid from
+// this builder's allowance first, with the build's judging reserve only as its
+// backstop (t685, `../../llm/build-purse/judge-backstop.ts`), so the builder
+// keeps calls for a last test. t679 kept none, since the judge then drew on the
+// reserve alone.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceCompletionCheck, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
@@ -306,8 +308,8 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   };
   const discovery: AutomationStudioLlmEvidenceLoopInput = {
     ...input.loop, draft: false, dryRun: false, discoveryOnly: true,
-    // Its turns, its allowance's dollars and its calls, less its finishing trials' judges (header, t570); none where they are the build's (t679).
-    budget: { ...(input.loop.budget ?? {}), countCalls: { keptForFinishing: whole ? 0 : AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS } },
+    // Its turns, its allowance's dollars and its calls, less its finishing trials' judges (header, t570), a whole test's too (t685).
+    budget: { ...(input.loop.budget ?? {}), countCalls: { keptForFinishing: AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS } },
     finishingTools: { submit: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, test: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID },
     tools: [...automationStudioSubflowBuilderTools(input.loop.tools), submitTool, gate.tool],
     // The receipt of the latest proposal, or an honest ending (header): either whole, and a passing receipt stands whatever else it carries (t601).

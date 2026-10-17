@@ -129,6 +129,17 @@
 // `answeredReading`, so the builder can weigh the change instead of seeing a
 // bare not-judged. It is never `yesUnconfirmed`: the judge did not accept the
 // Flow as it is. Without the field the feedback is as it was.
+//
+// **A reading Core's record wholly refutes shows what it observed, never its
+// advice (t687).** A8 cost round `run-mvblov2i-abb7d82e`: a no's reading came
+// labelled "contradicted by Core's record", and the builder followed its advice
+// anyway, dropping a condition the request asks for. A judged no's `advice`,
+// and an unsure's `unconfirmedReading.advice`, now leave out each call's part
+// whose label says Core's record wholly refutes that reading, saying so in its
+// place (`automationStudioResultAdviceShown`,
+// `../../result-verification/agreement/refuted-labelled.ts`); its `observed`
+// is shown as it was, with Core's findings in its label. A reading Core refutes
+// in part, and every other, is shown as it was.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../../../model/index.ts";
@@ -137,6 +148,7 @@ import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTr
 import type { AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
 import { automationStudioAttemptSettled } from "../../flow-change/index.ts";
 import { automationStudioModelFacingControlWords, automationStudioModelFacingFailureText } from "../../llm/model-facing/index.ts";
+import { automationStudioResultAdviceShown } from "../../result-verification/agreement/index.ts";
 import { automationStudioResultSummaryWithPagingWords, type AutomationStudioBuildTestVerdict, type AutomationStudioResultReadAccount, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import { automationStudioTrialAbsorbedFeedback } from "./absorbed.ts";
 import { automationStudioTrialCheckStepFeedback } from "./check-step.ts";
@@ -221,13 +233,13 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
     const common: JsonObject = { trialRunId: input.trialRunId, start: input.start, stored, ...(reads.length ? { reads, ...pagingNote(reads) } : {}), ...steps(input.trace, input.graph, input.wayOuts) };
     if (judged.verdict === "yes") return { verdict: "yes", feedback: { ...common, judge: "The trial was judged twice to do what the instruction asks." } };
     if (judged.verdict === "no") {
-      return { verdict: "no", code: "candidate.trial_judged_no", feedback: { ...common, code: "candidate.trial_judged_no", judge: compact({ expected: judged.expected, observed: judged.observed, advice: judged.advice, stillAchievable: judged.stillAchievable }), ...(judged.findings.length ? { findings: [...judged.findings] } : {}), ...(judged.fix?.length ? { fix: [...judged.fix] } : {}), ...(judged.checked?.length ? { checked: [...judged.checked] } : {}) } };
+      return { verdict: "no", code: "candidate.trial_judged_no", feedback: { ...common, code: "candidate.trial_judged_no", judge: compact({ expected: judged.expected, observed: judged.observed, advice: automationStudioResultAdviceShown(judged.advice), stillAchievable: judged.stillAchievable }), ...(judged.findings.length ? { findings: [...judged.findings] } : {}), ...(judged.fix?.length ? { fix: [...judged.fix] } : {}), ...(judged.checked?.length ? { checked: [...judged.checked] } : {}) } };
     }
     if (judged.verdict === "unknown") {
       const split = judged.answeredReading !== undefined;
       // A doubt about pages Core's record contradicts, in Core's words, and how to weigh it (t503).
       const doubt = judged.doubtContradicted;
-      return { verdict: "unsure", code: "candidate.trial_unconfirmed", feedback: { ...common, code: "candidate.trial_unconfirmed", why: judged.why, ...(judged.unconfirmedReading ? { unconfirmedReading: compact({ ...judged.unconfirmedReading }) } : {}),
+      return { verdict: "unsure", code: "candidate.trial_unconfirmed", feedback: { ...common, code: "candidate.trial_unconfirmed", why: judged.why, ...(judged.unconfirmedReading ? { unconfirmedReading: compact({ ...judged.unconfirmedReading, advice: automationStudioResultAdviceShown(judged.unconfirmedReading.advice) }) } : {}),
         ...(doubt ? { doubtContradicted: doubt } : {}),
         ...(split ? { answeredReading: compact({ ...judged.answeredReading }), readings: (judged.unconfirmedReading ? SPLIT_NOTE : UNREAD_SPLIT_NOTE) + (paged ? PAGING_SPLIT_NOTE : "") + (doubt ? DOUBT_NOTE : "") } : doubt ? { readings: DOUBT_ALONE_NOTE } : {}) } };
     }

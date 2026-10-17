@@ -19,12 +19,22 @@
 // refuted no, an unstated exclusion), so no call is asked twice, and a re-ask
 // that did not come back usable leaves its call's answer as it was.
 //
+// **Only where such steps are every reason it gives (t686).** A8 cost round
+// `run-mvblov2i-abb7d82e`: a correct no that also called a step harmless was
+// asked again here, and the yes took its place. The header above promised
+// "only such steps"; the code checked only that each step it found was one.
+// Now a no is asked again only where every reason it states is such a blame or
+// refuted by Core's record (`../agreement/no-reasons.ts`, through
+// `./narrowing.ts`), and the recheck says what a site filter's option words
+// cannot show.
+//
 // The caller is the verification that asks the calls (`../verify.ts`), after
 // the agreement's own re-asks (`../agreement/`,
 // `automationStudioResultVerificationReaskContradicted`). Generic words, naming
 // no site or task.
 
 import type { AutomationStudioResultReadAccount, AutomationStudioResultVerdict, AutomationStudioResultVerification } from "../contracts/index.ts";
+import type { AutomationStudioResultNoRecord } from "../refuted-no/index.ts";
 import { automationStudioResultNarrowingNoBlamed } from "./narrowing.ts";
 
 /**
@@ -40,6 +50,8 @@ export async function automationStudioResultReaskNarrowingNo(input: {
   reads?: readonly AutomationStudioResultReadAccount[] | undefined;
   requestText?: string | undefined;
   says?: ((text: string) => boolean) | undefined;
+  /** Core's record of the judged result (`../refuted-no/`): the rows it holds, and what refutes a no's other reasons (t686). Absent, a reason is settled only as such a blame. */
+  record?: AutomationStudioResultNoRecord | undefined;
   ask: (recheck: string, call: 1 | 2) => Promise<AutomationStudioResultVerification>;
   agree: (first: AutomationStudioResultVerification, second: AutomationStudioResultVerification) => AutomationStudioResultVerification;
 }): Promise<AutomationStudioResultVerification> {
@@ -61,10 +73,10 @@ export async function automationStudioResultReaskNarrowingNo(input: {
   return { ...again, verdicts, calls: verdicts.length };
 }
 
-/** Core's words on the steps a model's no blames, where it blames only steps choosing the request's own words (`./narrowing.ts`); nothing otherwise. */
-function blamedBy(verification: AutomationStudioResultVerification, input: { reads?: readonly AutomationStudioResultReadAccount[] | undefined; requestText?: string | undefined; says?: ((text: string) => boolean) | undefined }): string | undefined {
+/** Core's words on the steps a model's no blames, where such blames are every reason it gives (`./narrowing.ts`, t686); nothing otherwise. */
+function blamedBy(verification: AutomationStudioResultVerification, input: { reads?: readonly AutomationStudioResultReadAccount[] | undefined; requestText?: string | undefined; says?: ((text: string) => boolean) | undefined; record?: AutomationStudioResultNoRecord | undefined }): string | undefined {
   if (!isNo(verification)) return undefined;
-  return automationStudioResultNarrowingNoBlamed(verification.repair?.judgement, input.reads, input.requestText, input.says);
+  return automationStudioResultNarrowingNoBlamed(verification.repair?.judgement, input.reads, input.requestText, input.says, input.record);
 }
 
 function isNo(verification: AutomationStudioResultVerification): boolean {
@@ -76,5 +88,6 @@ function recheckWords(record: string): string {
   return "This same evidence was judged before, and that answer said the result does not answer the request because of a step that acted on the page before the read. "
     + `Core's own record of that step and the request's own words: ${record} `
     + "Core did not see the rows such a step removed, so its record settles nothing about them. "
+    + "A site filter's option words do not show that each kept row meets the words of the request; a row's own text does. "
     + "Answer again from the evidence; answer no over such a step only where you quote the evidence or the words of the request that the option it chose fails.";
 }

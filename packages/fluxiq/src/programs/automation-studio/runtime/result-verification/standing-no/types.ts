@@ -25,6 +25,22 @@ export type AutomationStudioResultStandingNoCondition = {
    * nothing the request asks for (t641). Absent otherwise.
    */
   keptOut?: AutomationStudioResultStandingNoKeptOutRow[] | undefined;
+  /**
+   * Where it leaves rows out for having something (a presence test keeping the
+   * rows that lack a value, or a negated text test) and Core read, on at least
+   * one row it alone left out, a value the request itself says to leave out
+   * (`../refuted-no/request-text-test.ts`, its exclusion reading), and on none a
+   * value it does not: the request's words for what it leaves out (t687,
+   * `../standing-no-record/request-exclusion.ts`). Absent otherwise.
+   */
+  excludes?: string[] | undefined;
+  /**
+   * Where it is such a test and Core read, on a row it alone left out with no
+   * other copy in the result, a value the request does not say to leave out:
+   * those rows' labels -- by Core's own reading, rows the request asks for
+   * (t687). Absent where none.
+   */
+  askedFor?: string[] | undefined;
 };
 
 /**
@@ -128,8 +144,20 @@ export type AutomationStudioResultKeptCondition = {
   revision: number;
   /** The condition as that revision wrote it, as JSON with its keys sorted: what a later submission is matched by (`./written-conditions.ts`). */
   written: string;
-  /** Each row it alone left out, with how Core's record accounts for it; for a set, each row they left out together. */
+  /**
+   * Each row it alone left out, with how Core's record accounts for it; for a
+   * set, each row they left out together. Empty only for a condition kept by
+   * the request's own words for what it leaves out (`excludes`, t687), whose
+   * rows Core did not account for every one of.
+   */
   keptOut: AutomationStudioResultStandingNoKeptOutRow[];
+  /**
+   * Present where the condition leaves rows out by what the request itself
+   * says to leave out (t687, `./kept-conditions.ts`): the request's words. Such
+   * a condition is kept until a later record shows it leaving out a row Core
+   * reads as asked for (`askedFor`), never on rows Core cannot account for.
+   */
+  excludes?: string[] | undefined;
   /**
    * Present for a set of conditions kept as one (t666): each, as the trial's
    * lines named it and as its revision wrote it, two or more. `name` then

@@ -18,6 +18,12 @@
 // rows out only beside the others, so any one kept as written keeps them out.
 // Refused once, as one condition is, and said as the conditions that left
 // those rows out together.
+//
+// **A condition kept by the request's own exclusion words (t687,
+// `./kept-conditions.ts`, `excludes`)** is refused once the same way, and said
+// by those words: that Core read them on rows it left out, and none it read
+// that the request does not say to leave out, with any rows it alone left out
+// that Core accounts for. It may carry no such row.
 
 import { automationStudioResultKeptOutRowsOf } from "./record-shape.ts";
 import type { AutomationStudioResultKeptCondition, AutomationStudioResultKeptConditionDrop, AutomationStudioResultStandingNoKeptOutRow } from "./types.ts";
@@ -48,12 +54,15 @@ function keptOf(value: unknown): AutomationStudioResultKeptCondition[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry): AutomationStudioResultKeptCondition[] => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
-    const { name, revision, written, keptOut, members } = entry as Record<string, unknown>;
+    const { name, revision, written, keptOut, members, excludes } = entry as Record<string, unknown>;
     const rows = automationStudioResultKeptOutRowsOf(keptOut);
-    if (typeof name !== "string" || typeof revision !== "number" || !Number.isSafeInteger(revision) || typeof written !== "string" || !rows?.length) return [];
-    if (members === undefined) return [{ name, revision, written, keptOut: rows }];
+    // Kept by the request's own exclusion words, it may carry no row (t687).
+    const words = Array.isArray(excludes) && excludes.length > 0 && excludes.every((word) => typeof word === "string") ? { excludes: [...excludes as string[]] } : undefined;
+    if (excludes !== undefined && !words) return [];
+    if (typeof name !== "string" || typeof revision !== "number" || !Number.isSafeInteger(revision) || typeof written !== "string" || !rows || (!rows.length && !words)) return [];
+    if (members === undefined) return [{ name, revision, written, keptOut: rows, ...words }];
     const set = membersOf(members);
-    return set ? [{ name, revision, written, keptOut: rows, members: set }] : [];
+    return set && rows.length ? [{ name, revision, written, keptOut: rows, members: set }] : [];
   });
 }
 
@@ -74,10 +83,31 @@ function said(dropped: readonly AutomationStudioResultKeptCondition[], subject: 
   const it = one ? "it" : "them";
   const each = dropped.map((condition) => condition.members
     ? `${capital(condition.name)}, as revision ${condition.revision} wrote them (${condition.members.map((member) => member.written).join(" and ")}), left out together only ${rowsSaid(condition.keptOut)}; no one of them left ${condition.keptOut.length === 1 ? "it" : "them"} out by itself, so keeping any one of them as written keeps ${condition.keptOut.length === 1 ? "it" : "them"} out.`
-    : `${capital(condition.name)}, as revision ${condition.revision} wrote it (${condition.written}), left out by itself only ${rowsSaid(condition.keptOut)}.`).join(" ");
-  return `Core's record of this build's trials shows ${one ? "a condition" : "conditions"} leaving out only rows the request does not ask for, and this ${subject} no longer writes ${it} as ${one ? "it was" : "they were"} written. ${each} `
-    + `Dropping or changing ${it} brings rows like those back. Keep ${it} as written, make the other changes you meant, and submit the whole ${subject} again. `
+    : condition.excludes?.length
+      ? excludesSaid(condition)
+      : `${capital(condition.name)}, as revision ${condition.revision} wrote it (${condition.written}), left out by itself only ${rowsSaid(condition.keptOut)}.`).join(" ");
+  const byWords = dropped.filter((condition) => condition.excludes?.length).length;
+  // A condition kept by the request's own exclusion words is said as one (t687); every other drop reads as it did.
+  const shows = byWords === 0
+    ? `${one ? "a condition" : "conditions"} leaving out only rows the request does not ask for`
+    : byWords === dropped.length
+      ? `${one ? "a condition" : "conditions"} leaving out rows by what the request itself says to leave out`
+      : "conditions leaving out rows by what the request itself says to leave out, or only rows it does not ask for";
+  const back = byWords === 0 ? "rows like those back" : "back rows the request says to leave out";
+  return `Core's record of this build's trials shows ${shows}, and this ${subject} no longer writes ${it} as ${one ? "it was" : "they were"} written. ${each} `
+    + `Dropping or changing ${it} brings ${back}. Keep ${it} as written, make the other changes you meant, and submit the whole ${subject} again. `
     + `If you mean to drop or change ${it} anyway, submit the same change again: Core refuses this once, not twice.`;
+}
+
+/**
+ * A condition kept by the request's own exclusion words (t687): the request's
+ * words, that Core read them on rows it left out, and the rows it left out by
+ * itself that Core accounts for, where any.
+ */
+function excludesSaid(condition: AutomationStudioResultKeptCondition): string {
+  const words = (condition.excludes ?? []).map((word) => JSON.stringify(word)).join(", ");
+  const rows = condition.keptOut.length ? ` By itself it left out ${rowsSaid(condition.keptOut)}.` : "";
+  return `${capital(condition.name)}, as revision ${condition.revision} wrote it (${condition.written}), leaves out rows by what the request itself says to leave out (${words}): Core read what those words name on rows it left out, and on none of them a value the request does not say to leave out.${rows}`;
 }
 
 /** The rows a condition kept out, each with how Core's record accounts for it. */

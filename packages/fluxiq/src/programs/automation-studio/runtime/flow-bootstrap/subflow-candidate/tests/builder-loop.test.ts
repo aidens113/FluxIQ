@@ -191,8 +191,8 @@ describe("a subflow builder's loop", () => {
     expect(observed[0]!.budget).toEqual({ countCalls: { keptForFinishing: AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS } });
   });
 
-  // t679: a single-subflow plan's test is the judged whole run, whose judge the build's reserve pays.
-  it("says a whole-run test is the build's judged run, and keeps back no judge calls for it", async () => {
+  // t679: a single-subflow plan's test is the judged whole run; t685: its judge is paid by the builder's allowance first, so its calls are kept back.
+  it("says a whole-run test is the build's judged run, and keeps back its finishing trials' judge calls as any builder does", async () => {
     let next: unknown;
     const testing = (evidence: readonly Entry[]) => {
       next = ([...evidence].reverse().find((entry) => entry.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!.value as JsonObject).next;
@@ -200,14 +200,14 @@ describe("a subflow builder's loop", () => {
     };
     const { outcome, observed, offered } = await build([submit, testing, complete()], { whole: true });
     expect(outcome.loop.ok, JSON.stringify(outcome.loop)).toBe(true);
-    expect(observed[0]!.budget).toEqual({ countCalls: { keptForFinishing: 0 } });
+    expect(observed[0]!.budget).toEqual({ countCalls: { keptForFinishing: AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS } });
     const testTool = observed[0]!.tools.find((tool) => tool.toolId === AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID)!;
     expect(testTool.description).toContain("This test is the build's judged run: a yes completes this brief");
     expect(testTool.description).not.toContain("it counts for this brief only");
     expect(String(next)).toContain("This test runs the whole Flow from its start as the build's judged run; a yes completes this brief.");
     expect(offered[0]).toContain(AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID);
-    // Its wrap-up still fits a brief's least calls: they hold the wrap-up's decisions with room to spare.
-    expect(AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS).toBeGreaterThan(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS);
+    // Its wrap-up and the judges it keeps back fit a brief's least calls.
+    expect(AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS).toBeGreaterThanOrEqual(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS + AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS);
     // A subflow test says what it always said.
     const plain = await build([submit]);
     expect(plain.observed[0]!.tools.find((tool) => tool.toolId === AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID)!.description).toContain("it counts for this brief only");

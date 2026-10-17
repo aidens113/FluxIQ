@@ -152,8 +152,9 @@ import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectDispatc
 // to the builder as its refusal, never as a verdict, and each trial's proposal
 // is told to the build's proposals (`trialled`, `./types.ts`). The builder's
 // loop is told its test is the whole run (`trialIsWhole`). The whole trial's
-// judge runs under the supervisor's frame, so it is not this brief's spend. A
-// reset brief never gets it.
+// judge is paid as any builder's trial is, by this brief's allowance, with the
+// build's judging reserve as its backstop when the allowance cannot pay (t685,
+// `../single-subflow/single-subflow-trial.ts`). A reset brief never gets it.
 
 type Role = "builder" | "repair";
 
