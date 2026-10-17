@@ -1,6 +1,8 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig, mergeConfig } from "vitest/config";
+import base from "./vitest.config.ts";
 
-export default defineConfig({
+// Inherits `vitest.config.ts`, so `@fluxiq/contracts` resolves to its source here too.
+export default mergeConfig(base, defineConfig({
   test: {
     include: ["src/programs/tests/index.test.ts", "src/programs/tests/permission-matrix.test.ts", "src/programs/_shared/tests/storage.test.ts"],
     coverage: {
@@ -11,4 +13,4 @@ export default defineConfig({
       thresholds: { statements: 65, branches: 70, functions: 60, lines: 65 }
     }
   }
-});
+}));

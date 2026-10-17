@@ -175,6 +175,7 @@ describe("a project build whose supervisor's replies arrive and end it without a
     expect(diagnostic).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked"] });
     expect(diagnostic.ending).toBeUndefined();
     expect(seen.some((event) => event.detail?.title === "The supervisor ended the build: it could not finish the Flow.")).toBe(true);
-    expect(chatCause(diagnostic)).toBe("the build failed: the supervisor ended it because it could not finish the Flow");
+    // t649: the chat cause carries the supervisor's own reason (`endedBecause`) after its ending.
+    expect(chatCause(diagnostic)).toBe("the build failed: the supervisor ended it because it could not finish the Flow: nothing on the page can do this");
   });
 });
