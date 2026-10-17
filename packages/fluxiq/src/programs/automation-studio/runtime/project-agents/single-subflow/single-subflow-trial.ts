@@ -1,6 +1,7 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialVerdict, type AutomationStudioFlowCandidateSubmissionController, type AutomationStudioFlowCandidateTrialGate } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import type { AutomationStudioResultKeptCondition, AutomationStudioResultKeptConditionsCarrier } from "../../result-verification/standing-no/index.ts";
 import { automationStudioLlmBuildPurseJudgeBackstopScope, automationStudioLlmBuildPurseScope, automationStudioLlmCurrentBuildPurse, type AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import { withAutomationStudioProjectAgent } from "../attribution/index.ts";
@@ -55,6 +56,35 @@ import { automationStudioProjectSingleSubflowPlan } from "./single-subflow-plan.
 // the Flow could not be assembled, its composed submission was refused, the
 // whole gate would not run it -- is no verdict: it comes back as `refused`, in
 // the builder's terms (`../dispatch/port.ts`).
+//
+// **The conditions Core's record kept reach the builder's gate (t689).** The
+// builder's gate remembers, from a scoped trial, the conditions Core's record
+// of it showed keep out only rows the request does not ask for
+// (`keptConditions`, `flow-bootstrap/subflow-candidate/subflow-trial-gate.ts`),
+// read off the record the trial's result carries beside its feedback
+// (`standingNo`), and its controller refuses once a proposal that drops one.
+// This path's answer was built from the whole test's evidence alone, which
+// never carries that record (the whole gate keeps it from every model), so the
+// builder's gate remembered nothing and a single-path build could drop a
+// condition its own record had vindicated (A8 towels-like list build,
+// `run-mvblov2i-abb7d82e`). The whole gate reads that record itself, against
+// the composed Flow, and keeps what it found on the verdict it stands
+// (`standing`); so the answer now carries those kept conditions, every time a
+// test is judged, on the builder's numbering: each is named by the proposal of
+// this subflow its whole revision was assembled from (`./assembled-from.ts`),
+// this brief's where it made it. Conditions an earlier brief's judged run kept
+// are inherited too (coordinator, t689): on this path a repair rebuilds the same
+// subflow, and Core keeps a condition from any trial of it (t633, t644), so a
+// repair is held to what the build brief before it was held to. A scoped
+// brief's gate still keeps only its own trials' (`subflow-trial-gate.ts`). One
+// shown by a whole revision no proposal of this subflow made is left out. A
+// condition is matched by how it is
+// written, which assembly copies unchanged, so the builder's proposal is held
+// to exactly what the Flow was. The list is the whole gate's latest, conditions
+// it took out again included, so the builder's gate replaces what it carried
+// before with it. `standingNo` itself is not carried: the whole gate weighs a
+// later no against it across every brief of the build, and weighed again by the
+// builder's gate it would be counted twice.
 //
 // Every other plan gets no such test: `undefined`.
 
@@ -114,8 +144,27 @@ export function automationStudioProjectSingleSubflowTrial(input: AutomationStudi
     const complete = { revision: candidate.revision, digest: candidate.digest };
     // The supervisor's judge, paid by the brief's allowance with the judging reserve as its backstop (header, t685).
     const ran = await withAutomationStudioProjectAgent({ role: "supervisor" }, () => paidByBrief(ports.purse, () => input.test({ ...complete }, request.signal)));
-    return answerOf(request, ran, complete);
+    return answerOf(request, ran, complete, keptOf(request, gate.standing(complete), AutomationStudioProjectAssembledFrom.of(controller)));
   };
+}
+
+/**
+ * The conditions the whole gate kept as of the test of `complete` (header,
+ * t689), on the builder's numbering: each named by the proposal of this
+ * subflow its whole revision was assembled from -- this brief's where it made
+ * it, an earlier brief's otherwise, which a repair inherits -- and one no
+ * proposal of this subflow made left out. Undefined where the whole gate
+ * stands no verdict for it.
+ */
+function keptOf(request: AutomationStudioSubflowTrialRequest, standing: ReturnType<AutomationStudioProjectSingleSubflowTrialInput["gate"]["standing"]>, made: AutomationStudioProjectAssembledFrom): AutomationStudioResultKeptCondition[] | undefined {
+  if (!standing) return undefined;
+  const { scope } = request;
+  const carried = (standing as AutomationStudioResultKeptConditionsCarrier).keptConditions ?? [];
+  return carried.flatMap((condition) => {
+    const from = made.madeOf(condition.revision)?.filter((entry) => entry.subflowKey === scope.subflowKey) ?? [];
+    const proposal = from.find((entry) => entry.briefId === scope.briefId) ?? from[0];
+    return proposal ? [{ ...structuredClone(condition), revision: proposal.revision }] : [];
+  });
 }
 
 /**
@@ -144,7 +193,7 @@ function carvedFrom(allowance: AutomationStudioLlmBuildPurse, purse: AutomationS
 }
 
 /** The whole test's answer in the builder's terms (header): a trial of the proposal under test, or a refusal. */
-function answerOf(request: AutomationStudioSubflowTrialRequest, ran: AutomationStudioLlmEvidenceToolExecutionResult, complete: { revision: number; digest: string }): AutomationStudioProjectDispatchWholeTrialAnswer {
+function answerOf(request: AutomationStudioSubflowTrialRequest, ran: AutomationStudioLlmEvidenceToolExecutionResult, complete: { revision: number; digest: string }, kept: AutomationStudioResultKeptCondition[] | undefined): AutomationStudioProjectDispatchWholeTrialAnswer {
   const evidence = isObject(ran.evidence) ? ran.evidence : {};
   const verdict = verdictOf(evidence.verdict);
   if (verdict === undefined || evidence.revision !== complete.revision || evidence.digest !== complete.digest) return refusalOf(evidence);
@@ -157,7 +206,7 @@ function answerOf(request: AutomationStudioSubflowTrialRequest, ran: AutomationS
     // A pass the run rescued says so to the builder too; the supervisor answers it with a repair (`../supervisor/completion.ts`).
     ...(Array.isArray(evidence.slowDown) ? { slowDown: structuredClone(evidence.slowDown) } : {})
   };
-  const trial: AutomationStudioSubflowTrialResult = {
+  const trial: AutomationStudioSubflowTrialResult & AutomationStudioResultKeptConditionsCarrier = {
     partial: true,
     scope: "subflow",
     identity: { buildId: scope.buildId, briefId: scope.briefId, planDigest: scope.planDigest, subflowKey: scope.subflowKey },
@@ -168,6 +217,8 @@ function answerOf(request: AutomationStudioSubflowTrialRequest, ran: AutomationS
     entryPrepared: true
   };
   if (trialRunId) trial.trialRunId = trialRunId;
+  // The whole gate's kept conditions, every time, so the builder's gate replaces what it carried before (header, t689).
+  if (kept) trial.keptConditions = kept;
   return { trial };
 }
 

@@ -12,6 +12,13 @@ import type { AutomationStudioProjectProposalRef } from "../supervisor/index.ts"
 // only from the scoped subflow trial port (`service/project-build/subflow-trials.ts`,
 // `weighed`), which a single-subflow brief's test no longer asks.
 //
+// **Which proposals a whole revision was assembled from, by its number alone
+// (t689).** The whole gate names the revision whose trial showed a kept
+// condition by its number only; a single-subflow test hands those conditions
+// to its builder's gate on the builder's own numbering
+// (`./single-subflow-trial.ts`), so the proposals behind a revision are read
+// back by that number too. One controller numbers its revisions once each.
+//
 // Kept per submission controller, which is made once per supervisor run
 // (`../supervisor/supervisor-loop.ts`), and weakly, so a finished run's
 // memory goes with it.
@@ -27,6 +34,8 @@ const MEMORY = new WeakMap<object, AutomationStudioProjectAssembledFrom>();
 export class AutomationStudioProjectAssembledFrom {
   /** Each whole revision's proposals, by the revision's key. */
   private readonly made = new Map<string, string>();
+  /** Each whole revision's proposals, by the revision's number (header, t689). */
+  private readonly byRevision = new Map<number, AutomationStudioProjectAssembledProposal[]>();
   /** Each proposal a single-subflow whole test assembled, by its brief, revision and digest. */
   private readonly proposals = new Map<string, AutomationStudioSubflowProposal>();
 
@@ -42,6 +51,13 @@ export class AutomationStudioProjectAssembledFrom {
   /** `candidate` was assembled from exactly `from`. */
   note(candidate: { revision: number; digest: string }, from: readonly AutomationStudioProjectAssembledProposal[]): void {
     this.made.set(candidateKey(candidate), fromKey(from));
+    this.byRevision.set(candidate.revision, from.map((entry) => ({ ...entry })));
+  }
+
+  /** The proposals the whole revision numbered `revision` was assembled from, as copies; undefined for one this run did not assemble (header, t689). */
+  madeOf(revision: number): AutomationStudioProjectAssembledProposal[] | undefined {
+    const from = this.byRevision.get(revision);
+    return from ? from.map((entry) => ({ ...entry })) : undefined;
   }
 
   /** Whether `candidate` was assembled from exactly `from`, in any order. */

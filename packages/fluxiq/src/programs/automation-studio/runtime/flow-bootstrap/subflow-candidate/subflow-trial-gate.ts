@@ -159,6 +159,18 @@
 // `whole`, the gate's tool says that a test runs the whole Flow from its start
 // as the build's judged run and that a yes completes the brief, and a yes says
 // the same, never that it is a partial trial for this brief only.
+//
+// **And the conditions the whole gate kept reach this gate (t689).** That
+// test's answer carries no record of its own (`standingNo` stays with the
+// whole gate, which weighs a later no against it), so nothing reached this
+// gate's memory and its controller let a proposal drop a condition Core's
+// record had kept. The port's result may now carry kept conditions another
+// gate already found (`keptConditions`, Core-only, never shown to a model):
+// that gate's latest list, on this brief's numbering
+// (`../../project-agents/single-subflow/single-subflow-trial.ts`). A trial
+// whose entry was prepared replaces the list carried before with it, conditions
+// it no longer holds included, and the conditions this gate keeps for each
+// trial are its own memory's with the carried ones beside them.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import {
@@ -175,6 +187,7 @@ import {
 import {
   AutomationStudioResultKeptConditionMemory,
   AutomationStudioResultStandingNoMemory,
+  type AutomationStudioResultKeptCondition,
   type AutomationStudioResultKeptConditionsCarrier,
   type AutomationStudioResultStandingNoContradiction
 } from "../../result-verification/standing-no/index.ts";
@@ -304,6 +317,8 @@ export class AutomationStudioSubflowTrialGate {
   private readonly standingNos = new AutomationStudioResultStandingNoMemory();
   /** The conditions Core's record showed keep out only rows the request does not ask for (header, t641). */
   private readonly keptConditions = new AutomationStudioResultKeptConditionMemory();
+  /** The kept conditions the latest prepared trial's port carried, found by another gate (header, t689). */
+  private carriedKept: AutomationStudioResultKeptCondition[] = [];
   private readonly fallbackSignal = new AbortController().signal;
 
   constructor(private readonly input: {
@@ -397,7 +412,9 @@ export class AutomationStudioSubflowTrialGate {
     const leftOnSite = this.input.reset?.trialRan(answer.acts ?? [], answer.trialRunId);
     // What Core's record of this trial shows its conditions kept out, as the proposal that ran wrote them (header, t641).
     if (answer.entryPrepared) this.keptConditions.remember({ revision: answer.revision, standingNo: asked.standingNo, plan: latest.subflows ? { subflows: latest.subflows } : undefined });
-    const keptConditions = this.keptConditions.conditions();
+    // What another gate found, carried by the port, replaces what it carried before (header, t689).
+    if (answer.entryPrepared && asked.keptConditions) this.carriedKept = asked.keptConditions;
+    const keptConditions = withCarried(this.keptConditions.conditions(), this.carriedKept);
     this.verdicts.set(key(answer), keptConditions.length ? { ...answer, keptConditions } : answer);
     if (answer.verdict === "no" && answer.entryPrepared) this.closedDigests.set(answer.digest, answer.feedback);
     const retestsLeft = TRANSIENT.has(answer.verdict) || !answer.entryPrepared ? AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION - (tried + 1) : 0;
@@ -444,7 +461,7 @@ export class AutomationStudioSubflowTrialGate {
   }
 
   /** The trial's answer as the gate keeps it, and Core's record of a no it carried beside it, unread (header, t633). */
-  private async ask(port: AutomationStudioSubflowTrialPort, latest: AutomationStudioSubflowProposal, signal: AbortSignal, startedWith: readonly string[]): Promise<{ answer: AutomationStudioSubflowTrialResult; standingNo?: unknown; notRun?: AutomationStudioSubflowTrialNotRun["notRun"] }> {
+  private async ask(port: AutomationStudioSubflowTrialPort, latest: AutomationStudioSubflowProposal, signal: AbortSignal, startedWith: readonly string[]): Promise<{ answer: AutomationStudioSubflowTrialResult; standingNo?: unknown; keptConditions?: AutomationStudioResultKeptCondition[]; notRun?: AutomationStudioSubflowTrialNotRun["notRun"] }> {
     const scope = this.input.scope;
     const identity: AutomationStudioSubflowScopeIdentity = { buildId: scope.buildId, briefId: scope.briefId, planDigest: scope.planDigest, subflowKey: scope.subflowKey };
     const failed = (code: string): { answer: AutomationStudioSubflowTrialResult } => ({ answer: { partial: true, scope: "subflow", identity: { ...identity }, revision: latest.revision, digest: latest.digest, verdict: "execution_failed", feedback: { code }, entryPrepared: false } });
@@ -471,8 +488,26 @@ export class AutomationStudioSubflowTrialGate {
     if (result.trialRunId) kept.trialRunId = result.trialRunId;
     if (Array.isArray(result.acts) && result.acts.length) kept.acts = structuredClone(result.acts);
     const standingNo = (result as { standingNo?: unknown }).standingNo;
-    return { answer: kept, ...(standingNo !== undefined ? { standingNo } : {}) };
+    // Kept conditions another gate found, where the port carries them (header, t689).
+    const carried = carriedKept((result as AutomationStudioResultKeptConditionsCarrier).keptConditions);
+    return { answer: kept, ...(standingNo !== undefined ? { standingNo } : {}), ...(carried ? { keptConditions: carried } : {}) };
   }
+}
+
+/** The kept conditions a port's result carries (header, t689): copies of the entries of their shape; undefined where it carries no list. */
+function carriedKept(value: unknown): AutomationStudioResultKeptCondition[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.flatMap((entry): AutomationStudioResultKeptCondition[] => {
+    if (!isJsonObject(entry)) return [];
+    const { name, revision, written, keptOut } = entry;
+    return typeof name === "string" && Number.isSafeInteger(revision) && typeof written === "string" && Array.isArray(keptOut) && keptOut.length ? [structuredClone(entry) as unknown as AutomationStudioResultKeptCondition] : [];
+  });
+}
+
+/** This gate's own kept conditions, then each carried one it does not keep as written already (header, t689). */
+function withCarried(own: AutomationStudioResultKeptCondition[], carried: readonly AutomationStudioResultKeptCondition[]): AutomationStudioResultKeptCondition[] {
+  const written = new Set(own.map((condition) => condition.written));
+  return [...own, ...carried.filter((condition) => !written.has(condition.written)).map((condition) => structuredClone(condition))];
 }
 
 /** The port's own account of a trial it did not run (header, t679), when it gave a well-formed one; undefined otherwise. */
