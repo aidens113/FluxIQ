@@ -23,6 +23,7 @@ import {
   type AutomationStudioFlowDraftStepChange,
   type AutomationStudioFlowDraftStepReplay,
   type AutomationStudioFlowDraftStepToggle,
+  automationStudioFlowDraftConditionAccount,
   automationStudioFlowDraftControlWords,
   automationStudioFlowDraftHoldsBinding,
   automationStudioFlowDraftTranslateBindings,
@@ -237,7 +238,7 @@ function closedCode(value: unknown): value is string {
 function readCallRecord(value: unknown, evidence: JsonValue, resultCode: unknown): { draft: NonNullable<AutomationStudioLlmEvidenceToolExecutionResult["draft"]> } | { refused: AutomationStudioLlmEvidenceToolResultCheck } | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) return { refused: "draft.not_object" };
-  if (!exactKeys(value, ["actionId", "input", "ranWith", "effect", "proposes", "replay", "control", "interruption", "written", "toggle", "reads", "changed"])) return { refused: "draft.unknown_key" };
+  if (!exactKeys(value, ["actionId", "input", "ranWith", "effect", "proposes", "replay", "control", "interruption", "written", "toggle", "reads", "changed", "conditions"])) return { refused: "draft.unknown_key" };
   if (value.actionId !== undefined && !validId(value.actionId)) return { refused: "draft.action_id" };
   if (value.input !== undefined && !isJsonObject(value.input)) return { refused: "draft.input" };
   if (value.ranWith !== undefined && !isJsonObject(value.ranWith)) return { refused: "draft.ran_with" };
@@ -268,6 +269,9 @@ function readCallRecord(value: unknown, evidence: JsonValue, resultCode: unknown
   // words, so screened line by line as a control's are; a bad line is withheld, never refused,
   // and only a statement that changed something can say it.
   const changed = value.effect === "mutate" ? changedOf(value.changed, evidence) : undefined;
+  // What each of a read's conditions kept and rejected (`../flow-draft/condition-account.ts`, t693): its values are
+  // page words, screened as a control's are; withheld whole, never refused, when it is not one, and only a read says it.
+  const conditions = value.effect === "observe" ? automationStudioFlowDraftConditionAccount(value.conditions, evidence) : undefined;
   return { draft: {
     ...(value.actionId === undefined ? {} : { actionId: value.actionId }),
     ...(value.input === undefined ? {} : { input: value.input }),
@@ -280,7 +284,8 @@ function readCallRecord(value: unknown, evidence: JsonValue, resultCode: unknown
     ...(written ? { written: true as const } : {}),
     ...(toggle ? { toggle } : {}),
     ...(reads === undefined ? {} : { reads }),
-    ...(changed === undefined ? {} : { changed })
+    ...(changed === undefined ? {} : { changed }),
+    ...(conditions === undefined ? {} : { conditions })
   } };
 }
 

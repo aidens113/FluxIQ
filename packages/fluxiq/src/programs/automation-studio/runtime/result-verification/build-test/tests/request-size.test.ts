@@ -58,7 +58,10 @@ async function requestSent(observedStateKeys?: readonly string[]): Promise<Autom
   await automationStudioBuildTestJudge({ instructions: [instruction], deniedEvidenceKeys: DENIED, projectId: "project-1", flowId: "flow-1", provider })({ summary, budget: { maxCostUsd: 1 } });
   // A yes is confirmed by a second call with the same evidence (`../judge.ts`, live run murwcmx2).
   expect(seen).toHaveLength(2);
-  expect(seen[1]?.context).toEqual(seen[0]?.context);
+  // The first ask's evidence again, with the converse question on the confirming call's copy (t691, `../../agreement/ask-again.ts`).
+  const { recheck, ...confirming } = seen[1]!.context.resultSummary!;
+  expect({ ...seen[1]!.context, resultSummary: confirming }).toEqual(seen[0]?.context);
+  expect(recheck).toContain("converse question");
   return seen[0]!;
 }
 

@@ -7,7 +7,9 @@
 // (`unquoted-rows.ts`, `unaccounted-rows.ts`). A settled row needs no naming,
 // nor does a row whose item is also in the result (`leftOutAlsoInResult`,
 // `summary-with-also-in-result.ts`, t624, made first on the copy), and a withheld
-// label is no row's own, so none of them is given one.
+// label is no row's own, so none of them is given one. A row another read
+// stored though this condition left it out (`storedThoughLeftOut`, t691) is
+// one a yes must name, settled or not, so it is given one.
 //
 // **The judge's copy only.** The summary given is never changed, and the
 // checks of a reply read the summary without ids: the id is the label's own
@@ -16,8 +18,10 @@
 // every other reader of the summary see the rows exactly as before.
 
 import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts/index.ts";
+import type { AutomationStudioResultReadCondition } from "../read-condition.ts";
 import { AutomationStudioRequestRowId } from "./row-id.ts";
 import { automationStudioRequestRowLabel } from "./summary-reads.ts";
+import type { AutomationStudioRequestRowsStoredMark } from "./types.ts";
 
 /** What a label that may not be said reads as (`../read-account/alone-rows.ts`). */
 const WITHHELD_LABEL = "(withheld)";
@@ -37,7 +41,11 @@ export function automationStudioResultSummaryWithRowIds(summary: AutomationStudi
   };
   const reads = summary.reads?.map((read): AutomationStudioResultReadAccount => !read.conditions?.some((entry) => entry.leftOutOnlyByThis?.length) ? read : {
     ...read,
-    conditions: read.conditions.map((entry) => entry.leftOutOnlyByThis?.length ? { ...entry, leftOutOnlyByThis: said(entry.leftOutOnlyByThis, [...(entry.leftOutSettled ?? []), ...(entry.leftOutAlsoInResult ?? [])]) } : entry)
+    conditions: read.conditions.map((entry: AutomationStudioResultReadCondition & AutomationStudioRequestRowsStoredMark) => {
+      if (!entry.leftOutOnlyByThis?.length) return entry;
+      const named = new Set(entry.storedThoughLeftOut ?? []);
+      return { ...entry, leftOutOnlyByThis: said(entry.leftOutOnlyByThis, [...(entry.leftOutSettled ?? []), ...(entry.leftOutAlsoInResult ?? [])].filter((row) => !named.has(row))) };
+    })
   });
   const recordSets = summary.recordSets.map((set): AutomationStudioResultRecordSetSummary => !set.processing?.conditions?.some((entry) => entry.leftOutOnlyByThis?.length) ? set : {
     ...set,

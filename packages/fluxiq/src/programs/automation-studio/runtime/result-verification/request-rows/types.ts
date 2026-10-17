@@ -51,6 +51,12 @@ export type AutomationStudioRequestRowsRead = {
   conditions: AutomationStudioRequestRowsCondition[];
   /** Every distinct label of the read, kept, stored or left out: what a row has to be told apart from. */
   labels: string[];
+  /**
+   * A finished run's left-out labels that another read stored and this read did
+   * not (`summary-reads.ts`, t691), each with the reads that stored it. Absent when
+   * there are none, and on a build test's read.
+   */
+  storedElsewhere?: Array<{ label: string; by: string[] }>;
 };
 
 /** A finished run's stored row: its label and every text cell, for an id a judgement names. */
@@ -109,7 +115,23 @@ export type AutomationStudioRequestRowsUnquoted = {
    * bound. Absent for rows the yes did not quote beside.
    */
   bound?: true;
+  /**
+   * The reads that stored the rows, where this condition left them out of what
+   * the Flow acted on and another read stored them (t691,
+   * `storedThoughLeftOut`): the yes did not name each in a sentence that names
+   * that read and quotes the request's words asking for it in the answer.
+   * Absent for every other kind of row.
+   */
+  stored?: string[];
 };
+
+/**
+ * What the judge's copy adds to a read condition (`summary-with-also-in-result.ts`,
+ * t691): `storedThoughLeftOut`, the rows of `leftOutOnlyByThis`, as given
+ * there, that another read stored and this read did not, and `storedAnyway`,
+ * Core's sentence naming those reads and what a yes must show of each row.
+ */
+export type AutomationStudioRequestRowsStoredMark = { storedThoughLeftOut?: string[]; storedAnyway?: string };
 
 /**
  * Rows the result keeps that Core measured as unlike every other row it keeps

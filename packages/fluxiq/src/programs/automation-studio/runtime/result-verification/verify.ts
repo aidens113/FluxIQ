@@ -59,6 +59,17 @@
 // Such a yes reached by its two checks with nothing re-asked of a different
 // verdict says so (`firstAskConfirmed`, `./first-ask/`, t677).
 //
+// **That confirming call asks the converse question (t691).** A8
+// `run-mvbr0w7e-6a01c05b`: the confirming request was byte for byte the
+// first's, at temperature 0, and both said yes over an answer holding rows it
+// should not have held -- one opinion counted twice. A first yes a build test
+// confirms is now asked, on the second call's copy (`recheck`), the converse
+// (`./agreement/ask-again.ts`): each stored row against the request's words
+// that ask for it in the answer. It is screened as every recheck is; where it
+// cannot be sent, the second call repeats the first and the trail says so
+// (`secondAsked`), so the yes is never called first-ask confirmed on it.
+// Its answer is weighed beside the first as before.
+//
 // **An unsure beside a yes whose doubt Core's record contradicts is asked once
 // more (t503).** Lane C round 17 (`run-mv6lgqi6-4bfab2e1`, trial 3): one check
 // could not tell because later pages were never read, where every paging read's
@@ -103,12 +114,13 @@ import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowInstruction,
 import {
   automationStudioLlmProviderFailureSpendsCall,
   runAutomationStudioLlmHarness,
+  screenAutomationStudioLlmEvidence,
   type AutomationStudioLlmProvider,
   type AutomationStudioLlmRunBudgetLedger,
   type AutomationStudioLlmTokenLimits
 } from "../llm/index.ts";
 import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "./contracts/index.ts";
-import { automationStudioResultVerificationAgreement, automationStudioResultVerificationAskAgain, automationStudioResultVerificationNoRecord, automationStudioResultVerificationReaskContradicted } from "./agreement/index.ts";
+import { automationStudioResultVerificationAgreement, automationStudioResultVerificationAskAgain, automationStudioResultVerificationConfirmingAsk, automationStudioResultVerificationNoRecord, automationStudioResultVerificationReaskContradicted } from "./agreement/index.ts";
 import { automationStudioResultCheckActivity } from "./check-activity.ts";
 import { automationStudioResultCoreObservation } from "./core-observation.ts";
 import { automationStudioResultSummaryWithPagingWords, automationStudioResultSummaryWithUnreadColumns } from "./read-account/index.ts";
@@ -217,7 +229,9 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
   if (!automationStudioResultVerificationAskAgain(first, { confirmAnswer })) {
     return said({ outcome: { ...automationStudioResultVerificationAgreement({ first }), performed: true }, interventions });
   }
-  const second = await askCheck(request, provider, 2, trail);
+  // A first yes a build test confirms is asked the converse question, never the same one again (header, t691).
+  const converse = screenedRecheck(automationStudioResultVerificationConfirmingAsk(first, request.summary, { confirmAnswer }), request.deniedEvidenceKeys);
+  const second = await askCheck(converse ? { ...request, summary: { ...request.summary, recheck: converse } } : request, provider, 2, trail);
   // The request as the judges read it: a split's no whose advice excludes by words it never states is marked and asked again (t515, `./agreement.ts`).
   const wording = automationStudioRequestWording(request.instructions, request.summary);
   // The summary and the request's text: Core's record a no's every reason is weighed against (t607, `./refuted-no/`).
@@ -238,7 +252,7 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
     settled: reasked, first, second, reads: request.summary.reads, requestText, says: wording?.says, ask, record: automationStudioResultVerificationNoRecord(input),
     agree: (one, two) => automationStudioResultVerificationAgreement({ ...input, first: one, second: two })
   });
-  const confirmed = automationStudioResultFirstAskConfirmed({ confirmAnswer, outcome, first, second, verdictChanged: trail.verdictChanged, reasks: trail.reasks });
+  const confirmed = automationStudioResultFirstAskConfirmed({ confirmAnswer, outcome, first, second, verdictChanged: trail.verdictChanged, reasks: trail.reasks, secondAsked: converse ? "converse" : "same" });
   return said({ outcome: { ...outcome, performed: true, ...(confirmed ? { firstAskConfirmed: true as const } : {}) }, interventions });
 }
 
@@ -394,6 +408,17 @@ function askAgainAfter(error: { code: string; metadata?: Record<string, unknown>
   if (error.code.startsWith("llm_output.")) return true;
   const status = error.metadata?.providerStatus;
   return automationStudioLlmProviderFailureSpendsCall({ code: error.code, status: typeof status === "number" ? status : undefined });
+}
+
+/**
+ * A recheck the verification may send, screened as the exclusion-evidence
+ * recheck is (`./exclusion-evidence/recheck.ts`): none without the domain's
+ * denied keys, or where it would carry one or anything secret-shaped (t691).
+ */
+function screenedRecheck(recheck: string | undefined, deniedKeys: readonly string[] | undefined): string | undefined {
+  if (recheck === undefined || deniedKeys === undefined) return undefined;
+  const screened = screenAutomationStudioLlmEvidence({ recheck }, deniedKeys);
+  return screened.deniedKey || screened.secretShaped ? undefined : recheck;
 }
 
 /** `{ [key]: value }`, or nothing when the value is undefined, for an optional field that may not be set to `undefined`. */

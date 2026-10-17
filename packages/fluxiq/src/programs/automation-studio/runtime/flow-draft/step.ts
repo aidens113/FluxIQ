@@ -86,6 +86,17 @@ export type AutomationStudioFlowDraftStepToggle = { key: string; to: "on" | "off
  */
 export type AutomationStudioFlowDraftStepChange = { words: string; how: "appeared" | "went" | "reads" | "rose" };
 
+/**
+ * One condition of a step that keeps some of the items it reads, in the host's
+ * count, positionally as the step's argument lists its conditions: how many
+ * items it `kept` (held of) and `rejected`, and `keptValues`, a few of the
+ * values it read on the items the step kept. Values are page text, carried only
+ * where the call's own evidence shows them (`./step-conditions.ts`); Core reads
+ * the counts to say a condition narrowed nothing, and quotes the values beside
+ * it (`../llm/condition-narrowed-nothing.ts`, t693).
+ */
+export type AutomationStudioFlowDraftStepCondition = { kept: number; rejected: number; keptValues: string[] };
+
 export type AutomationStudioFlowDraftStep = {
   /** Where it is in the draft, counting from 1: what an amendment names. */
   position: number;
@@ -199,6 +210,17 @@ export type AutomationStudioFlowDraftStep = {
    * (`./second-copy.ts`). Only the host can name the list, so it does.
    */
   reads?: string;
+  /**
+   * What each of a read's conditions did, as the host stated it on its own
+   * call (`AutomationStudioFlowDraftStepCondition`). Only a step whose effect is
+   * `observe` carries it, and only where the host counted conditions.
+   *
+   * Run `run-mvbr0w7e-6a01c05b`'s repair resent one condition that every row
+   * met six decisions running, each refused as unchanged and told to inspect
+   * the result: nothing said the condition had left out no row, or what it read
+   * on the rows it kept. The refusal now says both (t693).
+   */
+  conditions?: AutomationStudioFlowDraftStepCondition[];
   /**
    * The id of the step this one undid or was undone by, set when Core took it
    * out of the Flow for that (`./reversal.ts`): both halves of a pair carry

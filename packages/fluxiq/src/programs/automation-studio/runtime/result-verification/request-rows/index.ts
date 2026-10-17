@@ -24,7 +24,12 @@
 // (t663): alone without a value in an answer column
 // (`kept-without-asked-column.ts`), or alone not writing the request's item
 // phrase (`kept-not-naming-the-item.ts`), each of which a yes names beside a
-// quote of the request (`unquoted-rows.ts`).
+// quote of the request (`unquoted-rows.ts`). And which read stored a row a
+// condition left out (t691, `summary-reads.ts`): a row another read stored is
+// marked on the judge's copy (`storedThoughLeftOut`, `summary-with-also-in-result.ts`),
+// held against a yes that does not name it beside that read
+// (`unquoted-rows.ts`, naming the read as `row-naming.ts` reads it), and said
+// in Core's line (`stored-line.ts`).
 export * from "./applied-exclusions.ts";
 export * from "./checked-rows.ts";
 export * from "./checked-rows-named.ts";
@@ -39,6 +44,7 @@ export * from "./rerun-rows.ts";
 export * from "./row-id.ts";
 export * from "./row-values.ts";
 export * from "./row-naming.ts";
+export * from "./stored-line.ts";
 export * from "./summary-reads.ts";
 export * from "./summary-with-also-in-result.ts";
 export * from "./summary-with-left-out-naming-the-item.ts";

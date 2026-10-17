@@ -1,5 +1,6 @@
 // The judge's copy of a summary, with each read condition's left-out rows whose
-// item is also in the result said so (t624).
+// item is also in the result said so (t624) -- and which read stored them
+// (t691).
 //
 // **Why.** A8 bigbox `run-mv96rz6d-745e2940`: a presence condition alone left
 // out six rows that were second copies of items whose first copy the read kept
@@ -11,16 +12,34 @@
 //
 // **Which rows.** A row of a read condition's `leftOutOnlyByThis` whose label
 // -- the row as given, less Core's id and its tested value
-// (`summary-reads.ts`) -- is a stored row's label, over every record set the
-// summary holds. A withheld label is no row's own, so it is never marked. They
-// are listed, as given, in `leftOutAlsoInResult`, with `alsoInResult`, Core's
-// sentence. Nothing else changes: the rows stay in `leftOutOnlyByThis`.
+// (`summary-reads.ts`) -- is a stored row's label in a record set the same read
+// collected, or one whose collector Core cannot name (`summary-reads.ts`). A
+// withheld label is no row's own, so it is never marked. They are listed, as
+// given, in `leftOutAlsoInResult`, with `alsoInResult`, Core's sentence.
+// Nothing else changes: the rows stay in `leftOutOnlyByThis`.
+//
+// **Not a row another read stored (t691).** A8 `run-mvbr0w7e-6a01c05b`: a
+// read's condition left four rows out of what the Flow acted on, and a later
+// read with no condition stored all eight. This file called the four "another
+// copy of the same item ... kept", which vouched for exactly the rows the
+// answer should not have held, and both judges said yes. A left-out row whose
+// stored copies all came from other reads' record sets is listed instead in
+// `storedThoughLeftOut`, with `storedAnyway`, Core's sentence naming those
+// reads: the condition left them out of the act, and that read stored them,
+// so a yes has to name each beside that read and the request's words that ask
+// for it in the answer (`unquoted-rows.ts`). A library's example: renew the
+// overdue books, then list the books now shown as renewed; a last read that
+// also stores the books never renewed has to say why each is there.
 //
 // **The judge's copy only.** As `summary-with-row-ids.ts`: the summary given is
 // never changed, and the verdict reads the rows as before.
 
 import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../contracts/index.ts";
-import { automationStudioRequestRowLabel, automationStudioRequestRowsReads } from "./summary-reads.ts";
+import type { AutomationStudioResultReadCondition } from "../read-condition.ts";
+// The leaf, not the barrel: `../read-account/` reaches `../../llm/`, which reaches this directory (`summary-reads.ts`).
+import { automationStudioResultConditionName } from "../read-account/condition-name.ts";
+import { automationStudioRequestRowLabel, automationStudioRequestRowsReads, automationStudioRequestRowsStoredBy } from "./summary-reads.ts";
+import type { AutomationStudioRequestRowsStoredMark } from "./types.ts";
 
 /** What a label that may not be said reads as (`../read-account/alone-rows.ts`). */
 const WITHHELD_LABEL = "(withheld)";
@@ -29,22 +48,44 @@ const WITHHELD_LABEL = "(withheld)";
 const ALSO_IN_RESULT = "Each row in leftOutAlsoInResult is one this condition alone left out whose label is also a row of the result: "
   + "another copy of the same item was kept, so that item is not missing from the result, and none of these rows is an item the condition took out of it.";
 
-/** The summary with each read condition's left-out rows that are also in the result marked (header); the same object when there are none. */
+/** Core's sentence beside the rows another read stored (header, t691). */
+function storedAnyway(condition: string, by: readonly string[]): string {
+  const reads = by.map((node) => `read ${node}`).join(" and ");
+  return `In this read, ${condition} left the rows in storedThoughLeftOut out of what the Flow acted on, and ${reads} stored them: each is a row of the result, not another copy of a row this read kept. `
+    + `A yes names each of them in a sentence that names ${reads} by its nodeId and quotes, in double quotes, the request's own words that ask for that row in the answer. `
+    + "Where the request does not ask for a row in its answer, the result should not hold it, and the answer is no.";
+}
+
+/** The summary with each read condition's left-out rows that are also in the result, or that another read stored, marked (header); the same object when there are none. */
 export function automationStudioResultSummaryWithAlsoInResult(summary: AutomationStudioRunResultSummary): AutomationStudioRunResultSummary {
   if (!summary.reads?.some((read) => read.conditions?.some((entry) => entry.leftOutOnlyByThis?.length))) return summary;
   const stored = new Set(automationStudioRequestRowsReads(summary, true).stored.map((row) => row.label));
+  const storedBy = automationStudioRequestRowsStoredBy(summary.recordSets);
   let changed = false;
   const reads = summary.reads.map((read): AutomationStudioResultReadAccount => {
     if (!read.conditions?.length) return read;
     let marked = false;
-    const conditions = read.conditions.map((entry) => {
-      const also = (entry.leftOutOnlyByThis ?? []).filter((row) => {
+    const conditions = read.conditions.map((entry, index): AutomationStudioResultReadCondition & AutomationStudioRequestRowsStoredMark => {
+      const also: string[] = [];
+      const elsewhere: string[] = [];
+      const by = new Set<string>();
+      for (const row of entry.leftOutOnlyByThis ?? []) {
         const label = automationStudioRequestRowLabel(row);
-        return label !== WITHHELD_LABEL && stored.has(label);
-      });
-      if (!also.length) return entry;
+        if (label === WITHHELD_LABEL || !stored.has(label)) continue;
+        const others = storedBy(read.nodeId, label);
+        if (!others) also.push(row);
+        else {
+          elsewhere.push(row);
+          for (const node of others) by.add(node);
+        }
+      }
+      if (!also.length && !elsewhere.length) return entry;
       marked = true;
-      return { ...entry, leftOutAlsoInResult: [...new Set(also)], alsoInResult: ALSO_IN_RESULT };
+      return {
+        ...entry,
+        ...(also.length ? { leftOutAlsoInResult: [...new Set(also)], alsoInResult: ALSO_IN_RESULT } : {}),
+        ...(elsewhere.length ? { storedThoughLeftOut: [...new Set(elsewhere)], storedAnyway: storedAnyway(automationStudioResultConditionName(entry.number ?? index + 1, entry.condition), [...by]) } : {})
+      };
     });
     if (!marked) return read;
     changed = true;

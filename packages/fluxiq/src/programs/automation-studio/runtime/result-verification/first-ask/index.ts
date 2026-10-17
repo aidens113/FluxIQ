@@ -34,6 +34,22 @@
 //
 // A runtime result check (no `confirmAnswer`) never carries the flag: its yes
 // is one call's and was never confirmed.
+//
+// **Under the converse ask (t691).** A confirming check no longer repeats the
+// first question: for a first yes it asks the converse, each stored row against
+// the request's words that ask for it (`../agreement/ask-again.ts`). The flag
+// keeps its meaning -- the first ask's yes, confirmed by the second check with
+// nothing re-asked of a different verdict -- and that meaning is now true of
+// it: the second check is an independent one, so its yes confirms the first.
+// The converse is the second check itself, not a re-ask after the two, so it
+// adds nothing to `reasks`; a recheck of a held yes inside either check clears
+// nothing, as before. What changed is one more condition: a second check that
+// asked the same question again (`secondAsked: "same"`) confirms nothing, since
+// an identical temperature-0 repeat is one opinion counted twice, and the flag
+// is withheld. A caller that does not say what its second check asked
+// (`secondAsked` absent) is read as before t691, so a trail recorded by an
+// older caller keeps its meaning; `../verify.ts` says it for every
+// verification it makes.
 
 export * from "./confirmed.ts";
 export * from "./model-said.ts";
