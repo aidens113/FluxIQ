@@ -6,7 +6,7 @@
 // call -- which is what lets one tool run a whole library of actions.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import type { AutomationStudioFlowDraftStepChange, AutomationStudioFlowDraftStepReplay, AutomationStudioFlowDraftStepToggle } from "../../flow-draft/index.ts";
+import type { AutomationStudioFlowDraftStepChange, AutomationStudioFlowDraftStepCondition, AutomationStudioFlowDraftStepReplay, AutomationStudioFlowDraftStepToggle } from "../../flow-draft/index.ts";
 
 export type AutomationStudioLlmEvidenceToolExecutionResult = {
   kind: "llm_evidence_tool_execution";
@@ -214,5 +214,17 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
      * caller sends it**: the key list of a statement is exact.
      */
     changed?: AutomationStudioFlowDraftStepChange[];
+    /**
+     * The caller's word for what each of a read's conditions did, in the order
+     * the call's argument lists them: `kept` and `rejected` counts, and
+     * `keptValues`, a few values it read on the items the call kept. Carried
+     * only on a statement whose `effect` is `observe`, whole or not at all
+     * (`../../flow-draft/condition-account.ts`): each value only when the
+     * call's own evidence shows it and it is plain, at most three. Core tells an
+     * unchanged rerun of a read which condition left out no row
+     * (`../repeat-guard/narrowed-nothing.ts`, t693). **Learned here before any
+     * caller sends it**: the key list of a statement is exact.
+     */
+    conditions?: AutomationStudioFlowDraftStepCondition[];
   };
 };
