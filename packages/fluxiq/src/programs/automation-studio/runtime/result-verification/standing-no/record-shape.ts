@@ -45,6 +45,8 @@ function togetherOf(value: unknown): AutomationStudioResultStandingNoTogether | 
 function conditionOf(value: unknown): AutomationStudioResultStandingNoCondition | undefined {
   if (!isObject(value) || typeof value.name !== "string" || (value.key !== undefined && typeof value.key !== "string") || (value.leftOutAlone !== undefined && !strings(value.leftOutAlone))) return undefined;
   if ((value.nodeId !== undefined && typeof value.nodeId !== "string") || (value.number !== undefined && !Number.isSafeInteger(value.number))) return undefined;
+  // Its standing as an exclusion the request states (t687): words, or rows, each a list of text.
+  if ((value.excludes !== undefined && !strings(value.excludes)) || (value.askedFor !== undefined && !strings(value.askedFor))) return undefined;
   const keptOut = value.keptOut === undefined ? undefined : automationStudioResultKeptOutRowsOf(value.keptOut);
   if (value.keptOut !== undefined && !keptOut) return undefined;
   return {
@@ -53,7 +55,9 @@ function conditionOf(value: unknown): AutomationStudioResultStandingNoCondition 
     ...(value.leftOutAlone !== undefined ? { leftOutAlone: [...value.leftOutAlone] } : {}),
     ...(typeof value.nodeId === "string" ? { nodeId: value.nodeId } : {}),
     ...(typeof value.number === "number" ? { number: value.number } : {}),
-    ...(keptOut ? { keptOut } : {})
+    ...(keptOut ? { keptOut } : {}),
+    ...(value.excludes?.length ? { excludes: [...value.excludes] } : {}),
+    ...(value.askedFor?.length ? { askedFor: [...value.askedFor] } : {})
   };
 }
 

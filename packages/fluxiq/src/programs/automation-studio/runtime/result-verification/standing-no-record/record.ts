@@ -34,6 +34,14 @@
 // and, where another copy of every one is in the result, those rows as kept
 // out (`keptOut`). Together rows carry no value Core read, so the request's
 // words never account for one here. The gate keeps such a set as one.
+//
+// **And the conditions written in the request's own exclusion words (t687).**
+// Each condition that leaves rows out for having something says, where Core's
+// record measured it (`./request-exclusion.ts`), the request's words it leaves
+// rows out by (`excludes`), or the rows it left out on which Core read a value
+// the request does not say to leave out (`askedFor`). The gate keeps the first
+// across the build's trials whether or not Core accounts for every row, and
+// releases it only on the second.
 
 import type { AutomationStudioRunResultSummary, AutomationStudioResultVerification } from "../contracts/index.ts";
 import {
@@ -47,6 +55,7 @@ import {
 } from "../refuted-no/index.ts";
 import { automationStudioRequestKindExclusionLabels, automationStudioRequestRowLabel, type AutomationStudioRequestWording } from "../request-rows/index.ts";
 import { automationStudioResultNamedStoredLabels } from "./named-stored.ts";
+import { automationStudioResultConditionRequestExclusion } from "./request-exclusion.ts";
 import type { AutomationStudioResultStandingNoCall, AutomationStudioResultStandingNoKeptOutRow, AutomationStudioResultStandingNoRecord, AutomationStudioResultStandingNoTogether } from "../standing-no/index.ts";
 
 /** Core's aside on the value a condition read on a kept row (`../read-account/condition.ts`): it may differ between revisions. */
@@ -85,7 +94,8 @@ export function automationStudioResultStandingNoRecord(input: {
         ...(condition.leftOut ? { leftOutAlone: condition.leftOut.map((row) => row.label) } : {}),
         nodeId: condition.nodeId,
         number: condition.number,
-        ...(keptOut ? { keptOut } : {})
+        ...(keptOut ? { keptOut } : {}),
+        ...automationStudioResultConditionRequestExclusion(condition, record, summary)
       };
     }),
     ...(upheld.size ? { upheldKind: [...upheld] } : {}),

@@ -49,6 +49,20 @@
 // none of them as written brings them back (`./kept-condition-drop.ts`). A
 // later record showing the same set, as written, leaving out a row Core does
 // not account for takes it out again, as for one condition.
+//
+// **And a condition written in the request's own exclusion words, whatever
+// Core accounts for (t687).** A8 cost round `run-mvblov2i-abb7d82e`: a
+// presence condition left out every row the page marked with what the request
+// says to leave out; a judge's advice to drop it, labelled wholly contradicted
+// by Core's record, was followed, and the next revision stored rows the
+// request excludes. Where Core's record shows a condition leaving rows out by
+// what the request itself says to leave out (`excludes`,
+// `../standing-no-record/request-exclusion.ts`), it is kept even without
+// `keptOut`, carrying those words. A later record releases it only by showing
+// it left out a row on which Core read a value the request does not say to
+// leave out (`askedFor`): a row it cannot account for -- one sent without its
+// value, one it did not read -- never does, since the request asks for the
+// condition whatever those rows are.
 
 import { automationStudioResultStandingNoRecordOf } from "./record-shape.ts";
 import type { AutomationStudioResultKeptCondition, AutomationStudioResultStandingNoRecord, AutomationStudioResultStandingNoTogether } from "./types.ts";
@@ -74,11 +88,15 @@ export class AutomationStudioResultKeptConditionMemory {
     for (const condition of record.conditions) {
       const written = automationStudioResultWrittenCondition(trial.plan, condition);
       if (written === undefined) continue;
-      if (condition.keptOut?.length) {
+      const excludes = condition.excludes?.length ? { excludes: [...condition.excludes] } : {};
+      if (condition.askedFor?.length) {
+        // It left out a row on which Core read a value the request does not say to leave out (header, t687).
         this.kept.delete(written);
-        this.kept.set(written, { name: condition.name, revision: trial.revision, written, keptOut: structuredClone(condition.keptOut) });
-      } else if (condition.leftOutAlone?.length) {
-        // It left out, by itself, a row Core's record does not account for (header).
+      } else if (condition.keptOut?.length || condition.excludes?.length) {
+        this.kept.delete(written);
+        this.kept.set(written, { name: condition.name, revision: trial.revision, written, keptOut: structuredClone(condition.keptOut ?? []), ...excludes });
+      } else if (condition.leftOutAlone?.length && !this.kept.get(written)?.excludes?.length) {
+        // It left out, by itself, a row Core's record does not account for (header); never the release of one the request's words keep (t687).
         this.kept.delete(written);
       }
     }
