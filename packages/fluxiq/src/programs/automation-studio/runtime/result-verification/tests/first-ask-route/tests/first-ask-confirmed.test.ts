@@ -98,7 +98,8 @@ describe("a yes reached by re-asking a call that said otherwise", () => {
 
   it("is not first-ask confirmed after a split's no asked again (t515)", async () => {
     const quoted = { answersRequest: "yes", observed: `Copper Garden Tools Pair is left out, as the request says "leaving out out-of-stock items". Replacement Handle for Garden Tools is left out, as the request says "replacement parts".` };
-    const no = { answersRequest: "no", observed: "A row that is not a tool was left out.", changed: "Add a condition that excludes refurbished bundles such as the Copper Garden Tools Pair row." };
+    // A kept row its advice would exclude: the reason the t515 recheck addresses (t686, `../../../agreement/no-reasons.ts`).
+    const no = { answersRequest: "no", observed: "A refurbished bundle was stored.", changed: "Add a condition that excludes refurbished bundles such as the Copper Garden Tools Pair row." };
     const report = await verify(scripted([{ answer: quoted }, { answer: no }, { answer: quoted }]).provider, { summary: requestWordsRunSummary(), instructions: [instruction("Collect the catalogue", REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS)] });
     expect(report.outcome).toMatchObject({ verdict: "answers", verdicts: ["answers", "does_not_answer", "answers"], calls: 3 });
     expect(flag(report)).toBeUndefined();

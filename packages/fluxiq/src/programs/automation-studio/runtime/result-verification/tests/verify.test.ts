@@ -303,7 +303,8 @@ describe("a verification held to the request's own words", () => {
 
   it("asks a split's no once more when its advice excludes by words the request never states", async () => {
     const quoted = yesSaying("as the request says \"replacement parts\"");
-    const no = { answersRequest: "no", observed: "A row that is not a tool was left out.", changed: "Add a condition that excludes refurbished bundles such as the Copper Garden Tools Pair row." };
+    // A kept row its advice would exclude: the reason the t515 recheck addresses (t686, `../agreement/no-reasons.ts`).
+    const no = { answersRequest: "no", observed: "A refurbished bundle was stored.", changed: "Add a condition that excludes refurbished bundles such as the Copper Garden Tools Pair row." };
     const { provider, seen } = scripted([{ answer: quoted }, { answer: no }, { answer: quoted }]);
     const report = await held(provider, { confirmAnswer: true });
     expect(seen).toHaveLength(3);

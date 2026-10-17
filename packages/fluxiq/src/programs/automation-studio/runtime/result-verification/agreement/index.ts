@@ -130,9 +130,22 @@
 // more with the request's words and the options the step left out
 // (`../unsure-doubts/recheck-words.ts`); its answer takes its place.
 //
+// **A re-ask takes a no's place only where Core settled every reason it gave
+// (t686).** A8 cost round `run-mvblov2i-abb7d82e`: a correct no was asked again
+// on a recheck about steps before the read alone (t666), because one of its
+// sentences named such a step, and the yes took its place. Every re-ask whose
+// answer can take a no's place -- a refuted no (t607), a split's unstated
+// exclusion (t515) and a no blaming steps that chose the request's words (t666)
+// -- now cuts the no's `observed` and `advice` into the reasons they state, by
+// one rule (`no-reasons.ts`), and asks only where each reason is the kind its
+// recheck addresses or Core's record refutes it. Otherwise the no stands.
+// Whether a first verdict is asked a second time (`ask-again.ts`) is no re-ask:
+// that second answer is weighed beside the first and replaces nothing.
+//
 // The agreement itself is `verification-agreement.ts` over `agree.ts`; the
 // re-asks are `reask-contradicted.ts`; whether a first verdict is asked again
-// is `ask-again.ts`. The rest are the pieces they weigh with: the record a no
+// is `ask-again.ts`; whether a no's reasons let it be asked again is
+// `no-reasons.ts`. The rest are the pieces they weigh with: the record a no
 // is weighed against (`no-record.ts`, `weighed-no.ts`), the readings the
 // record contradicts (`record-contradictions.ts`, `contradicted-unsure.ts`,
 // `both-readings.ts`, `refuted-labelled.ts`), a split's unstated exclusion
@@ -141,6 +154,7 @@
 // `standing-record.ts`).
 
 export * from "./ask-again.ts";
+export * from "./no-reasons.ts";
 export * from "./reask-contradicted.ts";
 export type { AutomationStudioResultVerificationAgreementInput } from "./types.ts";
 export * from "./verification-agreement.ts";
