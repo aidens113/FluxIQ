@@ -18,6 +18,8 @@ export * from "./amendment/index.ts";
 export * from "./bindable/index.ts";
 export * from "./binding-forms.ts";
 export * from "./binding-render.ts";
+// What each of a read's conditions kept and rejected, as its host stated it (t693).
+export * from "./condition-account.ts";
 export * from "./control-words.ts";
 export * from "./dry-run.ts";
 // A carried Flow whose first step has no captured start is tested from where the target stands (t688).

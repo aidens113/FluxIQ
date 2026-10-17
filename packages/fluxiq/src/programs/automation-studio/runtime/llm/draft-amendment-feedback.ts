@@ -20,7 +20,8 @@
 // same way a refused completion is (`./evidence-loop.ts`): one evidence entry,
 // under this module's own tool id, naming each refused amendment by the step
 // number the model wrote and a reason from a closed set. Codes, sentences Core
-// wrote, and integers -- never a value from a page. There is nothing else in a
+// wrote, and integers -- never a value from a page but the few a read's own call
+// showed (`./repeat-guard/narrowed-nothing.ts`, t693). Nothing else is in a
 // refusal: it is Core's own bookkeeping about a number.
 //
 // **It does not guess.** A refusal names the step the model named, and nothing
@@ -137,7 +138,8 @@
 // names it (`instead`); `next` is that sentence.
 
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioFlowDraftAmendmentRefusal, AutomationStudioFlowDraftUnreachedStep } from "../flow-draft/index.ts";
+import type { AutomationStudioFlowDraftAmendmentRefusal, AutomationStudioFlowDraftStepCondition, AutomationStudioFlowDraftUnreachedStep } from "../flow-draft/index.ts";
+import { automationStudioLlmEvidenceNarrowedNothing } from "./repeat-guard/index.ts";
 
 /** The evidence entry a refused amendment's feedback arrives under. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID = "core.amendment_check";
@@ -345,6 +347,8 @@ type AutomationStudioDraftAmendmentFeedbackStep = {
   callId?: string;
   /** The host says the step answered a layer in front of the page (`../flow-draft/step.ts`): never a loop's act (`rowAct`). */
   interruption?: true;
+  /** What each of a read's conditions kept, as its host said (`../flow-draft/step.ts`): an unchanged rerun names one that left out no row. */
+  conditions?: readonly AutomationStudioFlowDraftStepCondition[];
 };
 
 /**
@@ -354,9 +358,9 @@ type AutomationStudioDraftAmendmentFeedbackStep = {
  * `over_not_before`: the listing is whichever of the two steps named only
  * reads -- `over`, or the step the repeat was put on (`13 repeat over 13`).
  * `changes_nothing`: about a step that did not work, that the same call would
- * be refused again (header, C4); otherwise the step rerun unchanged, when it
- * only reads; when an act after it already repeats over it, that a read after
- * the act is a new step.
+ * be refused again (header, C4); a read with a condition that left out no row,
+ * that condition and what it read (t693); otherwise the step rerun unchanged,
+ * when it only reads; when an act repeats over it, a read after it is a new step.
  */
 function nextStep(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[]): string | undefined {
   const at = (position: number | undefined) => position === undefined ? undefined : steps.find((step) => step.position === position);
@@ -377,8 +381,7 @@ function nextStep(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: rea
     if (listing && didNotWork(listing)) return refusedAgain(listing);
     if (!reads(listing)) return undefined;
     const loop = repeatOver(listing, steps);
-    if (loop) return readAfterAct(listing.position, loop.position);
-    return `Step ${listing.position}'s identical request was not sent again. Inspect the previous result: only if it actually returned the intended rows should you go on to the act; otherwise correct the failed/refused argument or gather new evidence. If those rows are right: ${rowAct(listing.position, steps)}`;
+    return automationStudioLlmEvidenceNarrowedNothing(listing) ?? (loop ? readAfterAct(listing.position, loop.position) : `Step ${listing.position}'s identical request was not sent again. Inspect the previous result: only if it actually returned the intended rows should you go on to the act; otherwise correct the failed/refused argument or gather new evidence. If those rows are right: ${rowAct(listing.position, steps)}`);
   }
   return undefined;
 }
