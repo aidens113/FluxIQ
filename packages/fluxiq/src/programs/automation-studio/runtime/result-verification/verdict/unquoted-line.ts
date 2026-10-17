@@ -1,4 +1,4 @@
-import type { AutomationStudioRequestRowsUnquoted } from "../request-rows/index.ts";
+import { automationStudioRequestRowsStoredLine, type AutomationStudioRequestRowsUnquoted } from "../request-rows/index.ts";
 
 /** A presence test as Core names it (`read-account/condition-name.ts`, `read-account/condition.ts`): its wording ends `is present` or `is absent`. */
 const PRESENCE_CONDITION = / is (?:present|absent)\)$/u;
@@ -17,6 +17,8 @@ const PRESENCE_CONDITION = / is (?:present|absent)\)$/u;
  * (t599), asking for what it tests.
  */
 export function unquotedLine(entry: AutomationStudioRequestRowsUnquoted): string {
+  // Rows another read stored though this condition left them out of the act: rows the result keeps, said so (t691).
+  if (entry.stored) return automationStudioRequestRowsStoredLine(entry);
   const where = entry.step !== undefined ? `Step ${entry.step}` : `Read ${entry.nodeId ?? "(unnamed)"}`;
   const one = entry.rows.length === 1;
   if (entry.bound && PRESENCE_CONDITION.test(entry.condition)) {

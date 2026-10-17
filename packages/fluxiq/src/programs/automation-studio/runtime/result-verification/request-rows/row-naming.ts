@@ -15,12 +15,22 @@
 // shows before each left-out row a judge must still name
 // (`summary-with-row-ids.ts`). The id is the label's, so it is counted only
 // where no other row of the read has the same one or holds it in its text.
+//
+// **And how a read is named (t691).** A yes over a row another read stored
+// names that read beside it (`unquoted-rows.ts`): by its whole node id, or by
+// the last dot-separated part a judge writes for it (`s14`).
 
 import { AutomationStudioRequestRowId } from "./row-id.ts";
 import { automationStudioRequestRowIds, automationStudioRequestRowWords } from "./words.ts";
 
 /** The ways a row may be named: the words of its distinguishing prefix, and its own ids. */
 export type AutomationStudioRequestRowNaming = { prefix: string[]; ids: string[] };
+
+/** Where a text's node-id-shaped tokens break: anything that cannot be part of one. */
+const TOKEN_BREAK = /[^\p{L}\p{N}_.-]+/u;
+
+/** A token's leading and trailing dots and dashes, which end a sentence rather than an id. */
+const TOKEN_EDGES = /^[.-]+|[.-]+$/gu;
 
 /** The fewest words a prefix that names a row has, unless the label is shorter. */
 const PREFIX_MIN_WORDS = 4;
@@ -52,6 +62,21 @@ export function automationStudioRequestTextNamesRow(text: string, naming: Automa
     if (naming.ids.some((id) => ids.has(id))) return true;
   }
   return naming.prefix.length > 0 && contains(wordsOf(text), naming.prefix);
+}
+
+/**
+ * Whether a text names a read by its node id (t691, `unquoted-rows.ts`): the
+ * whole id, or its last dot-separated part on its own -- a judge writes `s14`
+ * for `flow.part.s14` -- compared without case. A part is a whole token, so
+ * `s14` is not named by `s140`.
+ */
+export function automationStudioRequestTextNamesRead(text: string, nodeId: string): boolean {
+  const id = nodeId.toLowerCase();
+  const last = id.slice(id.lastIndexOf(".") + 1);
+  return text.toLowerCase().split(TOKEN_BREAK).some((raw) => {
+    const token = raw.replace(TOKEN_EDGES, "");
+    return token.length > 0 && (token === id || token === last || token.endsWith(`.${last}`));
+  });
 }
 
 function wordsOf(text: string): string[] {

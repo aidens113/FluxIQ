@@ -359,8 +359,10 @@ describe("run murwcmx2: a build's yes is confirmed by a second call", () => {
     const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
     expect(seen).toHaveLength(2);
     expect(verdict).toEqual({ verdict: "yes", spent: { inputTokens: 1800, outputTokens: 120, totalTokens: 1920, estimatedCostUsd: 0.002, calls: 2 }, firstAskConfirmed: true });
-    // The same evidence both times, each call under half of what the build has left.
-    expect(seen[1]?.context).toEqual(seen[0]?.context);
+    // The first ask's evidence both times, the converse question on the confirming call's copy (t691, `../../agreement/ask-again.ts`), each call under half of what the build has left.
+    const { recheck, ...confirming } = seen[1]!.context.resultSummary!;
+    expect({ ...seen[1]!.context, resultSummary: confirming }).toEqual(seen[0]?.context);
+    expect(recheck).toContain("converse question");
     expect(seen.map((call) => call.maxEstimatedCostUsd)).toEqual([0.1, 0.1]);
   });
 

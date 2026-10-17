@@ -142,6 +142,19 @@
 // Whether a first verdict is asked a second time (`ask-again.ts`) is no re-ask:
 // that second answer is weighed beside the first and replaces nothing.
 //
+// **A confirming check asks the converse, and a yes that never says why the
+// result keeps rows another read stored is not taken (t691).** A8
+// `run-mvbr0w7e-6a01c05b`: a read's condition left rows out of what the Flow
+// acted on, a later read with no condition stored them all, and a build test's
+// two judges said yes on byte-identical temperature-0 requests -- one opinion
+// counted twice. The second call that confirms a first yes now asks the
+// converse question (`ask-again.ts`, `automationStudioResultVerificationConfirmingAsk`):
+// for each stored row, does the request ask for it in its answer, with the
+// words that do. And a yes over such rows is held unless it names each beside
+// the read that stored it and the request's words asking for it
+// (`../request-rows/unquoted-rows.ts`, `stored`); `said.ts` says so in Core's
+// words wherever a split or an unsure is explained.
+//
 // The agreement itself is `verification-agreement.ts` over `agree.ts`; the
 // re-asks are `reask-contradicted.ts`; whether a first verdict is asked again
 // is `ask-again.ts`; whether a no's reasons let it be asked again is
