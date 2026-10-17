@@ -7,7 +7,7 @@
 // calls cannot answer for any of them.
 
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioFlowDraftStepChange, AutomationStudioFlowDraftStepReplay, AutomationStudioFlowDraftStepToggle } from "../../flow-draft/index.ts";
+import type { AutomationStudioFlowDraftStepChange, AutomationStudioFlowDraftStepCondition, AutomationStudioFlowDraftStepReplay, AutomationStudioFlowDraftStepToggle } from "../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "./tool.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "./tool-execution.ts";
 import { automationStudioLlmEvidenceDiagnostic } from "../evidence-diagnostic/index.ts";
@@ -43,7 +43,7 @@ export function automationStudioLlmEvidenceCallRecord(
   tool: AutomationStudioLlmEvidenceTool,
   input: JsonObject,
   execution?: { draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] }
-): { actionId: string; toolId?: string; input: JsonObject; ranWith?: JsonObject; effect: "observe" | "mutate"; proposes?: boolean; replay?: AutomationStudioFlowDraftStepReplay; control?: string; interruption?: true; written?: true; toggle?: AutomationStudioFlowDraftStepToggle; reads?: string; changed?: AutomationStudioFlowDraftStepChange[] } {
+): { actionId: string; toolId?: string; input: JsonObject; ranWith?: JsonObject; effect: "observe" | "mutate"; proposes?: boolean; replay?: AutomationStudioFlowDraftStepReplay; control?: string; interruption?: true; written?: true; toggle?: AutomationStudioFlowDraftStepToggle; reads?: string; changed?: AutomationStudioFlowDraftStepChange[]; conditions?: AutomationStudioFlowDraftStepCondition[] } {
   const declared = execution?.draft;
   const actionId = declared?.actionId ?? tool.toolId;
   return {
@@ -71,6 +71,9 @@ export function automationStudioLlmEvidenceCallRecord(
     ...(declared?.reads === undefined ? {} : { reads: declared.reads }),
     // What the press changed on the page it stayed on, already screened on the parse path;
     // Core reads which step did an act from it (`../../flow-draft/step.ts`, week report W1).
-    ...(declared?.changed === undefined ? {} : { changed: declared.changed.map((line) => ({ words: line.words, how: line.how })) })
+    ...(declared?.changed === undefined ? {} : { changed: declared.changed.map((line) => ({ words: line.words, how: line.how })) }),
+    // What each of a read's conditions kept, already screened on the parse path; an unchanged rerun of the
+    // read is told which condition left out no row (`../repeat-guard/narrowed-nothing.ts`, t693).
+    ...(declared?.conditions === undefined ? {} : { conditions: declared.conditions.map((entry) => ({ kept: entry.kept, rejected: entry.rejected, keptValues: [...entry.keptValues] })) })
   };
 }
