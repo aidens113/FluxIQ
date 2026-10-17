@@ -1,6 +1,6 @@
 // An unchanged rerun of a read whose condition left out no row is told that
 // condition and what it read, instead of the act after the read (t693,
-// `../narrowed-nothing.ts`, through `../../draft-amendment-feedback.ts`).
+// `../narrowed-nothing.ts`, through `../../draft-amendment-feedback/index.ts`).
 //
 // Run `run-mvbr0w7e-6a01c05b`'s result repair spent 45% of the run resending one
 // condition that every row met, six identical decisions, each told to inspect

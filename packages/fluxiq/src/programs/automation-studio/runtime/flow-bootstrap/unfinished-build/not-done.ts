@@ -100,7 +100,7 @@ const BLOCKED_WORDS: ReadonlyArray<readonly [RegExp, string]> = [
   [/permission/u, "a step needed your permission"],
   [/^llm_output\.|malformed|unreadable|provider_output/u, "the replies it got back could not be read"],
   [/^llm_evidence_loop\.(?:already_answered|already_observed|look_withdrawn|no_progress)/u, "it kept looking again at what it had already seen"],
-  // Its edits to the draft, refused again and again (`../../llm/draft-amendment-feedback.ts`).
+  // Its edits to the draft, refused again and again (`../../llm/draft-amendment-feedback/index.ts`).
   [/^llm_evidence_loop\.draft_amendments?_(?:refused|undone)$/u, "it kept trying changes to the Flow that changed nothing"],
   // A call refused unrun, because the same call had already failed or changed nothing there (`../../llm/repeat-guard/`).
   // Not "retrying things that had already failed": live-C round 3 (R3-U-8, run-mux6naez-6c20f26e) said

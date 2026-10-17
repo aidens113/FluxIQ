@@ -1,7 +1,7 @@
 // A call with `add` whose step copies a step already in the Flow stays taken,
 // and the model is told so beside the call (`../second-copy.ts`,
 // `../../../flow-draft/second-copy.ts`), in the words an amendment refused
-// `second_copy` is told in (`../../draft-amendment-feedback.ts`). Live run
+// `second_copy` is told in (`../../draft-amendment-feedback/index.ts`). Live run
 // `run-murwdp4f-35f976d2` (C9, rows 0038-0046): the call `click t1212, add`
 // repeated step 18's press from the same results page and became step 21, a
 // second copy in the Flow. Live run `run-muq4oaof-464f5bce` (cause 3) kept two
@@ -11,7 +11,7 @@ import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
 import { automationStudioLlmEvidenceParseToolExecutionResult } from "../../evidence-loop-decision.ts";
 import { automationStudioLlmEvidenceCallRecord } from "../../evidence-loop/index.ts";
-import { automationStudioLlmEvidenceDraftAmendmentFeedback } from "../../draft-amendment-feedback.ts";
+import { automationStudioLlmEvidenceDraftAmendmentFeedback } from "../../draft-amendment-feedback/index.ts";
 import type { AutomationStudioFlowDraftAmendmentRefusal } from "../../../flow-draft/index.ts";
 
 const go = { toolId: "go", description: "Go or press.", inputSchema: { type: "object" }, effect: "mutate" as const };
@@ -101,7 +101,7 @@ describe("a call with add that copies a step already in the Flow", () => {
   });
 });
 
-// The words both refusals are told in (`../../draft-amendment-feedback.ts`,
+// The words both refusals are told in (`../../draft-amendment-feedback/index.ts`,
 // `second_copy`): the step that already does it, as `copyOf` and in `next`.
 describe("the feedback a step not added as a second copy is told", () => {
   const steps = [{ position: 1, effect: "mutate" }, { position: 2, effect: "observe" }, { position: 3, effect: "mutate" }, { position: 4, effect: "observe" }];

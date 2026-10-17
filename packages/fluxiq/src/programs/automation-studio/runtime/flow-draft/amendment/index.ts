@@ -66,7 +66,7 @@
 // after it moving down, `./move.ts`). A listing after its act (`9 repeat over
 // 18`, live run `run-murz83zy-5030820f`, R8) is moved with `18 reorder to 9`
 // beside `9 repeat over 18`, and the refusal carries `over` and `through` so its
-// telling can write both (`../../llm/draft-amendment-feedback.ts`). A repeat the
+// telling can write both (`../../llm/draft-amendment-feedback/index.ts`). A repeat the
 // decision writes is checked once its moves are done, so the two may come in
 // either order. The draft the model reads next is numbered 1..n in the order
 // the steps then stand.

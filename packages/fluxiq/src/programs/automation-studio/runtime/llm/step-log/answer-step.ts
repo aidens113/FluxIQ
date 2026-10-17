@@ -24,7 +24,7 @@ export type AutomationStudioLlmStepLogAnsweredRow = {
   progress?: unknown;
   /**
    * The whole `core.amendment_check` value Core put in front of the model for
-   * this decision (`../draft-amendment-feedback.ts`): each refusal's `next`, the
+   * this decision (`../draft-amendment-feedback/index.ts`): each refusal's `next`, the
    * positions, the reasons' sentences and the progress counts. Run
    * `run-musp8nz1-dbd3905a` (t174-w108 R3) kept only the codes here, so what
    * the model read was in the next request alone.

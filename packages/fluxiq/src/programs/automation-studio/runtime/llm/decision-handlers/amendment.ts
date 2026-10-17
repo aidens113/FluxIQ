@@ -13,7 +13,7 @@ import {
   automationStudioLlmEvidenceRepeatRefusalNote,
   type AutomationStudioLlmEvidenceRepeatedOutcome
 } from "../repeat-guard/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENTS_REFUSED_CODE, automationStudioLlmEvidenceDraftAmendmentFeedback } from "../draft-amendment-feedback.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENTS_REFUSED_CODE, automationStudioLlmEvidenceDraftAmendmentFeedback } from "../draft-amendment-feedback/index.ts";
 import {
   automationStudioLlmEvidenceHeldAmendments,
   automationStudioLlmEvidenceLoopFailure as failure,
@@ -193,7 +193,7 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // and the history do: step 0061 of `run-musq0b1m-0472cfa0` was told 0 beside
   // an `appliedCount` of 1 (t174-w116).
   // An act moved off a step left in the Flow is told too, on an edit that
-  // landed whole: information, never a refusal (`../draft-amendment-feedback.ts`, `moved`).
+  // landed whole: information, never a refusal (`../draft-amendment-feedback/index.ts`, `moved`).
   const moved = amended.moved ?? [];
   // A step of the Flow the decision newly left after one that does not bring it
   // to its page is told the same way: beside the refusals, never as one, so it
@@ -408,7 +408,7 @@ function tell(
     ...(sameDraftAs === undefined ? {} : { sameDraftAsIteration: sameDraftAs }),
     ...(moved.length ? { moved } : {}),
     ...(unreached.length ? { unreached } : {}),
-    // What is still to do, for an act named again that the checklist shows done (`../draft-amendment-feedback.ts`).
+    // What is still to do, for an act named again that the checklist shows done (`../draft-amendment-feedback/index.ts`).
     actsNotDone: context.input.draft ? context.input.draft.actsMissing?.(context.draftSteps) : undefined
   });
   // Said first, so it is read before the refusals it explains (above, `keepOnly`).

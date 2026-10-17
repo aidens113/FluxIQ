@@ -18,7 +18,7 @@
 // model's to decide -- it may do something the Flow needs besides the act -- so
 // the claim answers the steps it took the act from, and the amendment's answer
 // names each one left in the Flow with no act (`./amendment/apply.ts`,
-// `../llm/draft-amendment-feedback.ts`).
+// `../llm/draft-amendment-feedback/index.ts`).
 
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
 

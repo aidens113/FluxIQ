@@ -1,5 +1,5 @@
 // What the amendment handler tells the model about a refusal about a listing
-// read page by page (`../../draft-amendment-feedback.ts`, `rowAct`, told by
+// read page by page (`../../draft-amendment-feedback/index.ts`, `rowAct`, told by
 // `../amendment.ts`, t690). Split from `../../tests/draft-amendment-feedback.test.ts`,
 // which is at the line limit, as `./refusal-way-out.test.ts` was. In t688's
 // Lab run (steps 0183-0184) step 13 already read the list page by page, repeating while the next-page press at 14 succeeded,

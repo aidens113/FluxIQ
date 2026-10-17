@@ -31,7 +31,7 @@
 // A drop put back is refused `strands_a_step`. A step left unreached is not a
 // refusal and never travels as one: it is returned on its own (`unreached`),
 // beside the refusals, and told to the model on its own
-// (`../../llm/draft-amendment-feedback.ts`).
+// (`../../llm/draft-amendment-feedback/index.ts`).
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioFlowDraftStepIsProposable, type AutomationStudioFlowDraftStep } from "../step.ts";
 import { automationStudioFlowDraftReach, type AutomationStudioFlowDraftReach } from "./reach.ts";
