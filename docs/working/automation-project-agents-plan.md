@@ -40,7 +40,7 @@ defect (t686-t688 in flight).
 escapes; t682 runs the structure audit before every push.
 
 **Open follow-ups:** A7 (project extend) after
-held-topology units 1-4; a mechanical check for `\b` in RegExp template literals (two tests silently never ran).
+held-topology units 1-4.
 
 **Not claimed:** that agents fix wrong judgements; that the cost fixes lower cost live (no live round yet).
 
