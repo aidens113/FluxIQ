@@ -32,6 +32,13 @@
 // read. An execution-failed trial's reads come from the run record alone and
 // carry none.
 
+//
+// **And Core's flag on a read that kept every item it saw after an act over a
+// narrower read of the same list (t692)**, as the read account carries it
+// (`keptEveryRow`): node ids, counts and Core's sentence, never a row. The
+// builder reads why its last read is in doubt, and a single-subflow plan's
+// whole test carries it to the builder's gate from here
+// (`../../project-agents/single-subflow/single-subflow-trial.ts`).
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../model/index.ts";
 import { automationStudioResultConditionName, type AutomationStudioResultReadAccount } from "../../result-verification/index.ts";
@@ -57,7 +64,9 @@ export function automationStudioTrialReadsFeedback(reads: readonly AutomationStu
       ...(conditions.length ? { conditions } : {}),
       ...(read.unfiltered ? { unfiltered: true } : {}),
       said: said(read, conditions),
-      ...(read.narrowedBefore?.length ? { narrowedBefore: read.narrowedBefore.map((step) => ({ ...step })), beforeRead: BEFORE_READ } : {})
+      ...(read.narrowedBefore?.length ? { narrowedBefore: read.narrowedBefore.map((step) => ({ ...step })), beforeRead: BEFORE_READ } : {}),
+      // Core's flag on a read that kept every item it saw after an act over a narrower read of the same list (t692).
+      ...(read.keptEveryRow ? { keptEveryRow: structuredClone(read.keptEveryRow) } : {})
     };
   });
 }

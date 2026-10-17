@@ -1,5 +1,5 @@
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
-import { automationStudioResultKeptNotNamingTheItem, automationStudioResultKeptWithoutAskedColumn, type AutomationStudioRequestRowsKept, type AutomationStudioRequestWording } from "../request-rows/index.ts";
+import { automationStudioResultKeptEveryRowFlagged, automationStudioResultKeptNotNamingTheItem, automationStudioResultKeptWithoutAskedColumn, type AutomationStudioRequestRowsKept, type AutomationStudioRequestWording } from "../request-rows/index.ts";
 
 /**
  * Every row the result keeps that Core flagged as unlike the rest (header,
@@ -10,5 +10,6 @@ import { automationStudioResultKeptNotNamingTheItem, automationStudioResultKeptW
  */
 export function automationStudioResultKeptRowsFlagged(summary: AutomationStudioRunResultSummary | undefined, wording: AutomationStudioRequestWording | undefined): AutomationStudioRequestRowsKept[] {
   if (!summary || !wording) return [];
-  return [...automationStudioResultKeptWithoutAskedColumn(summary), ...automationStudioResultKeptNotNamingTheItem(summary, wording.phrases)];
+  // And every row a read stored that kept every item it saw after an act over a narrower read (t692).
+  return [...automationStudioResultKeptWithoutAskedColumn(summary), ...automationStudioResultKeptNotNamingTheItem(summary, wording.phrases), ...automationStudioResultKeptEveryRowFlagged(summary)];
 }

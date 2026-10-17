@@ -96,6 +96,7 @@ import { automationStudioScreenedNodeParameters } from "../recovery/repair-conte
 import type {
   AutomationStudioResultEndView,
   AutomationStudioResultFlowStepSummary,
+  AutomationStudioResultKeptEveryRow,
   AutomationStudioResultRecordSetSummary,
   AutomationStudioRunResultSummary
 } from "./contracts/index.ts";
@@ -239,14 +240,16 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
   if (started?.withheld) withheld = true;
   // How each list read went (`read-account/`): pages, why paging stopped, and
   // what each condition rejected, so a judge is not shown a step's name alone.
-  const accounted = automationStudioResultReadAccounts({ actionAttempts: input.actionAttempts, flowNodes, deniedEvidenceKeys: input.deniedEvidenceKeys, ...(input.calledNodes ? { calledNodes: input.calledNodes } : {}) });
+  // With the Flow's edges, a read that kept every item it saw after an act over a narrower read of the same list is flagged (t692).
+  const accounted = automationStudioResultReadAccounts({ actionAttempts: input.actionAttempts, flowNodes, deniedEvidenceKeys: input.deniedEvidenceKeys, ...(input.calledNodes ? { calledNodes: input.calledNodes } : {}), ...(input.flowEdges ? { flowEdges: input.flowEdges } : {}) });
   // And the steps that acted on the page before each read (`./narrowed-before.ts`, t482), for a read of this Flow's own nodes.
   const own = accounted.reads.filter((read) => flowNodes.some((node) => node.id === read.nodeId && node.definitionId === read.definitionId));
   const narrowed = automationStudioResultNarrowedBefore({ readNodeIds: own.map((read) => read.nodeId), flowNodes, attempts: input.sessionAttempts, deniedEvidenceKeys: input.deniedEvidenceKeys });
   if (narrowed.withheld) withheld = true;
   const narrowedReads = accounted.reads.map((read) => {
     const before = own.includes(read) ? narrowed.byRead.get(read.nodeId) : undefined;
-    return before ? { ...read, narrowedBefore: before } : read;
+    const flagged = read.keptEveryRow ? { ...read, keptEveryRow: withStoredIn(read.keptEveryRow, read.nodeId, input.recordSets) } : read;
+    return before ? { ...flagged, narrowedBefore: before } : flagged;
   });
   // How Core read the values each condition and sort compared (t511), from the rows already screened above.
   // Each read by the very node it was told by (t574): a part's read is never matched again by id among the root's nodes.
@@ -270,6 +273,16 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
     withheld,
     ...(ended?.endView ? { endView: ended.endView } : {})
   };
+}
+
+/**
+ * A flagged read's flag with the record sets it stored (t692): each set whose
+ * writers (`nodeIds`) or collecting passes name the read, so a yes is held to
+ * each of their rows whether or not the set says its passes.
+ */
+function withStoredIn(flag: AutomationStudioResultKeptEveryRow, nodeId: string, recordSets: readonly AutomationStudioResultRecordSetInput[]): AutomationStudioResultKeptEveryRow {
+  const storedIn = recordSets.filter((set) => set.summary.nodeIds?.includes(nodeId) || set.summary.processing?.passes.some((pass) => pass.node === nodeId)).map((set) => set.summary.datasetId);
+  return storedIn.length ? { ...flag, storedIn: [...new Set(storedIn)] } : flag;
 }
 
 /**

@@ -1,6 +1,6 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialVerdict, type AutomationStudioFlowCandidateSubmissionController, type AutomationStudioFlowCandidateTrialGate } from "../../flow-bootstrap/candidate/index.ts";
-import type { AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import type { AutomationStudioSubflowTrialKeptEveryRowRead, AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult, AutomationStudioSubflowTrialRowCheck } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioResultKeptCondition, AutomationStudioResultKeptConditionsCarrier } from "../../result-verification/standing-no/index.ts";
 import { automationStudioLlmBuildPurseJudgeBackstopScope, automationStudioLlmBuildPurseScope, automationStudioLlmCurrentBuildPurse, type AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
@@ -85,6 +85,16 @@ import { automationStudioProjectSingleSubflowPlan } from "./single-subflow-plan.
 // before with it. `standingNo` itself is not carried: the whole gate weighs a
 // later no against it across every brief of the build, and weighed again by the
 // builder's gate it would be counted twice.
+//
+// **And the reads Core flagged, with what the converse said (t692).** The whole
+// test's feedback carries each read's `keptEveryRow`, Core's flag on a read that
+// kept every item it saw after an act over a narrower read of the same list
+// (`service/candidate-trial/reads.ts`), and a yes says whether its second judge
+// call asked the converse question and agreed (`firstAskConfirmed`,
+// `service/candidate-trial/feedback.ts`). The flagged reads ride beside the
+// trial, Core-only, as the builder's gate reads them, and the trial's row check
+// (`rowCheck`) beside it, which the whole test's port answers the gate's
+// `checkRows` with (`./whole-test-port.ts`), so a flagged yes always has its check.
 //
 // Every other plan gets no such test: `undefined`.
 
@@ -219,7 +229,19 @@ function answerOf(request: AutomationStudioSubflowTrialRequest, ran: AutomationS
   if (trialRunId) trial.trialRunId = trialRunId;
   // The whole gate's kept conditions, every time, so the builder's gate replaces what it carried before (header, t689).
   if (kept) trial.keptConditions = kept;
-  return { trial };
+  // The reads Core flagged and whether the converse confirmed the yes, beside the trial (header, t692).
+  return { trial: withRowCheck(trial, evidence) };
+}
+
+/** A whole test's trial with the reads its feedback flagged beside it, and its row check (header, t692). */
+function withRowCheck(trial: AutomationStudioSubflowTrialResult, evidence: JsonObject): AutomationStudioSubflowTrialResult {
+  const feedback = isObject(evidence.feedback) ? evidence.feedback : {};
+  const flagged = list(feedback.reads).flatMap((read): AutomationStudioSubflowTrialKeptEveryRowRead[] => {
+    if (!isObject(read) || typeof read.nodeId !== "string" || typeof read.kept !== "number" || !isObject(read.keptEveryRow)) return [];
+    return [{ nodeId: read.nodeId, kept: read.kept, keptEveryRow: structuredClone(read.keptEveryRow) as unknown as AutomationStudioSubflowTrialKeptEveryRowRead["keptEveryRow"] }];
+  });
+  const rowCheck: AutomationStudioSubflowTrialRowCheck = { converse: trial.verdict === "yes" && feedback.firstAskConfirmed === true ? "confirmed" : "unconfirmed" };
+  return Object.assign(trial, { ...(flagged.length ? { keptEveryRow: flagged } : {}), rowCheck });
 }
 
 /** A whole test that did not run, in the builder's terms (header): never a verdict. */

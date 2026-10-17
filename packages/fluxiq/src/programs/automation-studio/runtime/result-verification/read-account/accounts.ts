@@ -97,7 +97,7 @@ import type { AutomationStudioResultConditionObservation, AutomationStudioResult
 import { automationStudioResultReadAloneRows } from "./alone-rows.ts";
 import { automationStudioResultReadConditionColumn, automationStudioResultReadConditionText } from "./condition.ts";
 import { automationStudioResultReadDedupe } from "./dedupe.ts";
-import { automationStudioResultReadKeptEveryRow, type AutomationStudioResultKeptEveryRowCarrier } from "./kept-every-row.ts";
+import { automationStudioResultReadKeptEveryRow } from "./kept-every-row.ts";
 import { automationStudioResultReadLoopedAccount } from "./looped-account.ts";
 import { automationStudioResultReadParameters } from "./read-parameters.ts";
 import { automationStudioResultReadLoopPasses } from "./loop-passes.ts";
@@ -153,7 +153,7 @@ export type AutomationStudioResultReadAccountsInput = {
  * a reader of the same reads (`../value-readings/`) uses the very node, never
  * one found again by id.
  */
-export function automationStudioResultReadAccounts(input: AutomationStudioResultReadAccountsInput): { reads: Array<AutomationStudioResultReadAccount & AutomationStudioResultKeptEveryRowCarrier>; authoredNodes: Array<AutomationStudioFlowNode | undefined> } {
+export function automationStudioResultReadAccounts(input: AutomationStudioResultReadAccountsInput): { reads: AutomationStudioResultReadAccount[]; authoredNodes: Array<AutomationStudioFlowNode | undefined> } {
   const latest = new Map<string, { attempt: AutomationStudioFlowRunActionAttemptRecord; extraction: JsonObject; attempts: number }>();
   const run = input.actionAttempts ?? [];
   for (const attempt of run) {

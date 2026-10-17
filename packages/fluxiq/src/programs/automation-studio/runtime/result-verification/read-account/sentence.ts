@@ -28,11 +28,10 @@
 // full length (`kept-every-row.ts`, t692).
 
 import type { AutomationStudioResultReadAccount } from "../contracts/index.ts";
-import type { AutomationStudioResultKeptEveryRowCarrier } from "./kept-every-row.ts";
 import { automationStudioResultConditionName, automationStudioResultReadPageBoundSentence, automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./index.ts";
 
 /** Core's sentence for how one read went. */
-export function automationStudioResultReadSentence(read: AutomationStudioResultReadAccount & AutomationStudioResultKeptEveryRowCarrier, length: "brief" | "full"): string {
+export function automationStudioResultReadSentence(read: AutomationStudioResultReadAccount, length: "brief" | "full"): string {
   const seen = read.itemsSeen !== undefined ? ` of ${read.itemsSeen} items seen` : "";
   const attempts = read.keptPerPage
     ? ` (${read.keptPerPage.join(", ")} by page, one pass of its loop each)`
@@ -60,7 +59,7 @@ function briefTail(read: AutomationStudioResultReadAccount): string {
   return parts.length ? `; ${parts.join(", ")}` : "";
 }
 
-function fullTail(read: AutomationStudioResultReadAccount & AutomationStudioResultKeptEveryRowCarrier): string {
+function fullTail(read: AutomationStudioResultReadAccount): string {
   const lines: string[] = [];
   const stop = automationStudioResultReadStop(read);
   if (read.keptPerPage) {

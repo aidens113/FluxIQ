@@ -40,7 +40,7 @@ import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../model/index.ts";
 import { automationStudioActivityLoops } from "../../activity/loop/index.ts";
 import { automationStudioNodeActLasts } from "../../executor/defensive/index.ts";
-import type { AutomationStudioResultReadAccount } from "../contracts/index.ts";
+import type { AutomationStudioResultKeptEveryRow, AutomationStudioResultReadAccount } from "../contracts/index.ts";
 import { automationStudioResultReadParameters } from "./read-parameters.ts";
 
 /** The list loop: a section run once for each row of a list (`nodes/control-flow/for-each.ts`). */
@@ -53,28 +53,6 @@ const CORE_STEP = /^builtin\./u;
 const KEEPING_KEYS: ReadonlySet<string> = new Set(["where", "fields", "dedupe", "paginate", "recordOutput"]);
 /** A bound on a read: how few, how many, how long. */
 const BOUND_KEY = /^(min|max|timeout)/u;
-
-/**
- * Core's flag on a read that kept every item it saw after an act was repeated
- * over a narrower read of the same list (header). Node ids and counts, and
- * Core's sentence for them.
- */
-export type AutomationStudioResultKeptEveryRow = {
-  /** The earlier read whose kept rows the act was repeated over. */
-  narrowerRead: string;
-  /** What that read saw and kept. */
-  narrowerSeen: number;
-  narrowerKept: number;
-  /** The lasting steps repeated once per row of that read that succeeded at least once, in run order. */
-  actedBy: string[];
-  /** How Core found the two reads read one list: the loop's rows come from the earlier read, and both have one read target. */
-  sameList: "items_edge_and_read_target";
-  /** Core's sentence: what was measured, and the check it asks for. */
-  said: string;
-};
-
-/** A read account that may carry the flag. */
-export type AutomationStudioResultKeptEveryRowCarrier = { keptEveryRow?: AutomationStudioResultKeptEveryRow };
 
 /**
  * The flag for each read, aligned with `reads`: undefined for a read it does

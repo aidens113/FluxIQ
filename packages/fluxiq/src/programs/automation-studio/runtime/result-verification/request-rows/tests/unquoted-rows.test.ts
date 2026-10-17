@@ -4,7 +4,11 @@
 // and the named-rows guard, which asks only that a row be named, took both.
 import { describe, expect, it } from "vitest";
 import { automationStudioRequestWording } from "../request-wording.ts";
-import { automationStudioResultLeftOutRowsUnquoted } from "../unquoted-rows.ts";
+import { judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
+import { automationStudioBuildTestJudge } from "../../build-test/index.ts";
+import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
+import { automationStudioResultKeptEveryRowFlagged, automationStudioResultLeftOutRowsUnquoted } from "../unquoted-rows.ts";
+import { RENEWALS_KEPT, RENEWALS_LEFT_OUT, RENEWALS_LIST_READ, RENEWALS_ACT_READ, RENEWALS_REQUEST_EVERY_LOAN, RENEWALS_YES, renewalsInstructions, renewalsRunSummary } from "./renewals-fixture.ts";
 import {
   REQUEST_WORDS_NAMES, REQUEST_WORDS_HANDLE, REQUEST_WORDS_OUT_OF_STOCK, REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS,
   requestWordsRunSummary, requestWordsWording
@@ -87,5 +91,57 @@ The request says "leaving out out-of-stock items".`
   it("holds no words to a request that says nothing", () => {
     expect(automationStudioRequestWording([], requestWordsRunSummary())).toBeUndefined();
     expect(automationStudioRequestWording([{ title: "", body: "  " }], requestWordsRunSummary())).toBeUndefined();
+  });
+});
+
+// Every row a read stored that kept every item it saw after an act over a
+// narrower read of the same list (t692): a kept row Core flagged, named beside
+// that read with the request's words, whether or not the record set says its
+// collecting passes. The loans of `./renewals-fixture.ts` (A8
+// `run-mvbr0w7e-6a01c05b`'s shape): with no passes, t691's stored-row rule has
+// no read to hold the four unrenewed loans to, and judge 0032's yes -- which
+// lists every loan beside the bound's quote and says the last read "holds all
+// 8 rows" -- was taken though both calls, the second the converse, said yes.
+describe("every row a flagged read stored (t692)", () => {
+  const TITLES = [...RENEWALS_LEFT_OUT, ...RENEWALS_KEPT].map(([title]) => title);
+  /** The fixture's summary with the last read flagged, storing the renewed-loans set, and no set saying its passes. */
+  const flagged = (): AutomationStudioRunResultSummary => {
+    const summary = renewalsRunSummary();
+    for (const set of summary.recordSets) delete set.processing;
+    const last = summary.reads!.find((read) => read.nodeId === RENEWALS_LIST_READ)!;
+    last.keptEveryRow = { narrowerRead: RENEWALS_ACT_READ, narrowerSeen: 8, narrowerKept: 4, actedBy: ["node.loans.renew_overdue.s11"], sameList: "items_edge_and_read_target", said: "Core's flag.", storedIn: ["renewed-loans-s14"] };
+    return summary;
+  };
+  const judged = async (summary: AutomationStudioRunResultSummary, observed: string, request?: string) => {
+    let calls = 0;
+    const provider = mockProvider(async () => {
+      calls += 1;
+      return judgeReply("yes", { expected: RENEWALS_YES.diagnosis.expected, observed });
+    });
+    const verdict = await automationStudioBuildTestJudge({ provider, instructions: renewalsInstructions(request), deniedEvidenceKeys: [], projectId: "project-1", flowId: "flow-1" })({ summary });
+    return { verdict, calls };
+  };
+
+  it("are each a kept row Core flagged, from the sets the read stored, with no passes in reach", () => {
+    expect(automationStudioResultKeptEveryRowFlagged(flagged())).toEqual([
+      { kind: "every_row", datasetId: "renewed-loans-s14", nodeId: RENEWALS_LIST_READ, missing: RENEWALS_ACT_READ, rows: expect.arrayContaining(TITLES), of: 8, pool: expect.arrayContaining(TITLES) }
+    ]);
+    expect(automationStudioResultKeptEveryRowFlagged(renewalsRunSummary())).toEqual([]);
+  });
+
+  it("hold a converse-confirmed yes that never names them beside that read: it is not taken", async () => {
+    const { verdict, calls } = await judged(flagged(), RENEWALS_YES.diagnosis.observed);
+    // Both calls said yes, the second the converse; Core then held it and asked again for the rows it lacked, which no answer gave.
+    expect(calls).toBeGreaterThanOrEqual(2);
+    expect(verdict.verdict).toBe("not_judged");
+    // Without the flag, the same two yeses over the same passless summary were taken (the gap t692 closes).
+    const unflagged = flagged();
+    delete unflagged.reads!.find((read) => read.nodeId === RENEWALS_LIST_READ)!.keptEveryRow;
+    expect((await judged(unflagged, RENEWALS_YES.diagnosis.observed)).verdict.verdict).toBe("yes");
+  });
+
+  it("take a yes that names each beside that read with the request's words asking for it", async () => {
+    const observed = `${RENEWALS_YES.diagnosis.observed} s14 stores ${TITLES.join(", ")} because the request asks for "every loan on the list, renewed or not".`;
+    expect((await judged(flagged(), observed, RENEWALS_REQUEST_EVERY_LOAN)).verdict).toMatchObject({ verdict: "yes", firstAskConfirmed: true });
   });
 });

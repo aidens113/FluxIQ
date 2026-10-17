@@ -77,11 +77,26 @@
 // what Core checks. A library's example: renew the overdue books, then list
 // the books now shown as renewed; a last read that also stores the books never
 // renewed has to say, of each, why it is there.
+//
+// **And every row a read stored that kept every item it saw after an act over
+// a narrower read of the same list (t692).** Such a read carries Core's flag
+// (`keptEveryRow`, `../read-account/kept-every-row.ts`), with the record sets
+// it stored (`storedIn`, from the run's own record of each set's writers, so
+// whether a set says its collecting passes does not matter). Nothing in that
+// read chose which rows the answer holds, so each row of those sets is a kept
+// row Core flagged (`every_row`, `automationStudioResultKeptEveryRowFlagged`):
+// held, as t663's are, to being named in a sentence that quotes the request's
+// words that carry something, and, as a row another read stored is (t691), in
+// one that names that read by its node id: a sentence that lists every row
+// beside a quote of the bound that narrowed the act says nothing of why the
+// answer holds them. A yes the converse question confirmed (t691) is
+// held to it as any yes is: that both calls said yes is not that either looked
+// at each row.
 
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import type { AutomationStudioRequestWording } from "./request-wording.ts";
 import { automationStudioRequestRowNaming, automationStudioRequestTextNamesRead, automationStudioRequestTextNamesRow, type AutomationStudioRequestRowNaming } from "./row-naming.ts";
-import { automationStudioRequestRowsReads } from "./summary-reads.ts";
+import { automationStudioRequestRowsReads, automationStudioRequestRowsStoredOf } from "./summary-reads.ts";
 import type { AutomationStudioRequestRowsCondition, AutomationStudioRequestRowsKept, AutomationStudioRequestRowsUnquoted } from "./types.ts";
 import { automationStudioRequestRowWordCarries, automationStudioRequestRowWords } from "./words.ts";
 
@@ -132,10 +147,30 @@ export function automationStudioResultLeftOutRowsUnquoted(summary: AutomationStu
 export function automationStudioResultKeptRowsUnquoted(flags: readonly AutomationStudioRequestRowsKept[], reply: string, wording: AutomationStudioRequestWording): AutomationStudioRequestRowsKept[] {
   if (!flags.length) return [];
   const namings = flags.flatMap((flag) => flag.pool.map((label) => automationStudioRequestRowNaming(label, flag.pool)));
-  const accounting = accountingSentences(reply, namings, carryingQuote(wording)).map((sentence) => sentence.text);
+  const accounting = accountingSentences(reply, namings, carryingQuote(wording));
   return flags.flatMap((flag) => {
-    const rows = flag.rows.filter((label) => !accounting.some((sentence) => automationStudioRequestTextNamesRow(sentence, automationStudioRequestRowNaming(label, flag.pool))));
+    // A row a flagged read stored is named beside that read too, as a row another read stored is (header, t691, t692).
+    const read = flag.kind === "every_row" ? flag.nodeId : undefined;
+    const rows = flag.rows.filter((label) => !accounting.some((sentence) => automationStudioRequestTextNamesRow(sentence.text, automationStudioRequestRowNaming(label, flag.pool))
+      && (read === undefined || automationStudioRequestTextNamesRead(sentence.beside, read))));
     return rows.length ? [{ ...flag, rows }] : [];
+  });
+}
+
+/**
+ * Every row a flagged read stored (header, t692): for each read that carries
+ * `keptEveryRow`, one flag per record set it stored, with that set's rows by
+ * label. None where the read names no set or the set shows no row.
+ */
+export function automationStudioResultKeptEveryRowFlagged(summary: AutomationStudioRunResultSummary): AutomationStudioRequestRowsKept[] {
+  return (summary.reads ?? []).flatMap((read) => {
+    const flag = read.keptEveryRow;
+    const storedIn = new Set(flag?.storedIn ?? []);
+    if (!flag || !storedIn.size) return [];
+    return summary.recordSets.filter((set) => storedIn.has(set.datasetId)).flatMap((set): AutomationStudioRequestRowsKept[] => {
+      const labels = [...new Set(automationStudioRequestRowsStoredOf(set).map((row) => row.label))];
+      return labels.length ? [{ kind: "every_row", datasetId: set.datasetId, nodeId: read.nodeId, missing: flag.narrowerRead, rows: labels, of: set.recordCount, pool: labels }] : [];
+    });
   });
 }
 

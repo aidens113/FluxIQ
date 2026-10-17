@@ -121,6 +121,43 @@ export type AutomationStudioResultReadAccount = {
    * summary of a run whose trace was in hand.
    */
   narrowedBefore?: AutomationStudioResultNarrowingStep[];
+  /**
+   * Core's flag on a read that has no condition and kept every item it saw,
+   * after a lasting step ran once per row of an earlier read of the same list
+   * whose conditions kept fewer (t692, `../read-account/kept-every-row.ts`).
+   * A8 cost round 2 `run-mvbr0w7e-6a01c05b`: such a read stored all 8 rows of
+   * a list where the request asked for the 4 acted on, and both trial judges
+   * said yes. Nothing in the read chose which rows the answer holds, so each
+   * row it stored is to be checked against the request's words. Absent where
+   * it does not hold, or the caller gave no edges.
+   */
+  keptEveryRow?: AutomationStudioResultKeptEveryRow;
+};
+
+/**
+ * Core's flag on a read that kept every item it saw after an act was repeated
+ * over a narrower read of the same list (`../read-account/kept-every-row.ts`,
+ * t692). Node ids and counts, and Core's sentence for them.
+ */
+export type AutomationStudioResultKeptEveryRow = {
+  /** The earlier read whose kept rows the act was repeated over. */
+  narrowerRead: string;
+  /** What that read saw and kept. */
+  narrowerSeen: number;
+  narrowerKept: number;
+  /** The lasting steps repeated once per row of that read that succeeded at least once, in run order. */
+  actedBy: string[];
+  /** How Core found the two reads read one list: the loop's rows come from the earlier read, and both have one read target. */
+  sameList: "items_edge_and_read_target";
+  /** Core's sentence: what was measured, and the check it asks for. */
+  said: string;
+  /**
+   * The record sets this read stored, by dataset id, as the run's own record
+   * says (`../result-summary.ts`): the sets whose writers or collecting passes
+   * name it. Each row of them a yes must name beside the request's words
+   * (`../request-rows/unquoted-rows.ts`). Absent where none is known.
+   */
+  storedIn?: string[];
 };
 
 /**

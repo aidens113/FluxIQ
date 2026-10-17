@@ -173,25 +173,27 @@
 // trial are its own memory's with the carried ones beside them.
 //
 // **A yes over a read that kept every item it saw, after an act repeated over a
-// narrower read of the same list, is asked again with a row check (t692).** A8
+// narrower read of the same list, stands only on the converse check (t692).** A8
 // cost round 2 `run-mvbr0w7e-6a01c05b`: a single-subflow test acted on the 4
 // rows of 8 a condition kept, then read the same list with no condition and
 // stored all 8; both judge calls said the table holds all 8 rows and yes, and
 // the Flow was promoted on it. Core's read accounts now flag such a read
 // (`keptEveryRow`, `../../result-verification/read-account/kept-every-row.ts`),
-// and the port may carry the flagged reads beside its result (`keptEveryRow`,
-// Core-only). On a yes whose entry was prepared and that carries one, the gate
-// asks the port's `checkRows` to ask the judge again with that check: for each
-// flagged read, each row it stored, by its place from 1, whether the request
-// asks for it in its answer and the request's words that do. The yes is taken
-// only where that answer accounts for every stored row of every flagged read
-// and names words for each it asks for. A row the check says the request does
-// not ask for makes the trial a no (`subflow.trial_rows_not_asked`), which
-// closes the proposal as any no does; an answer that leaves a row unaccounted
-// or names no words, a check that fails, or a port with no `checkRows` makes
-// it unsure (`subflow.trial_rows_unaccounted`): the yes is not taken, the
-// revision is not closed, and the builder is told why in Core's words, with
-// the flag's sentence for each read.
+// which the judge is shown, and the port carries the flagged reads beside its
+// result (`keptEveryRow`, Core-only). The check that holds each row such a read
+// stored to the request's words is the judge's own confirming call: since
+// t691 it asks the converse question, each stored row against the request's
+// words that ask for it in the answer
+// (`../../result-verification/agreement/ask-again.ts`), and a yes both calls
+// gave, the second the converse, is `firstAskConfirmed`. So on a yes whose
+// entry was prepared and that carries a flagged read, the gate asks the port's
+// `checkRows` whether that yes was so confirmed; no second copy of the per-row
+// question is asked. A confirmed yes stands, and its feedback says why. One
+// that was not -- a yes reached through re-asks, or on a repeat of the first
+// question -- a check that fails, or a port with no `checkRows` is not taken:
+// the trial is unsure (`subflow.trial_rows_unaccounted`), its revision is not
+// closed, and the builder is told why in Core's words with the flag's sentence
+// for each read; a test of the same revision asks the judge again.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import {
@@ -212,7 +214,7 @@ import {
   type AutomationStudioResultKeptConditionsCarrier,
   type AutomationStudioResultStandingNoContradiction
 } from "../../result-verification/standing-no/index.ts";
-import type { AutomationStudioResultKeptEveryRow } from "../../result-verification/read-account/index.ts";
+import type { AutomationStudioResultKeptEveryRow } from "../../result-verification/contracts/index.ts";
 import { automationStudioSiteResetExploredOnAbsorbed, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowScopeIdentity, AutomationStudioSubflowTrialPort, AutomationStudioSubflowTrialResult } from "./contracts.ts";
 
@@ -230,8 +232,8 @@ export type AutomationStudioSubflowTrialPreparingPort = AutomationStudioSubflowT
   /** Told each trial the gate asked, as the gate weighed it (header, t634). */
   weighed?: ((trial: AutomationStudioSubflowTrialWeighed) => void) | undefined;
   /**
-   * Asks the judge again with the row check, for a yes over flagged reads
-   * (header, t692), and answers an `AutomationStudioSubflowTrialRowCheck`.
+   * Whether the trial's yes over flagged reads was confirmed by the converse
+   * question (header, t692): an `AutomationStudioSubflowTrialRowCheck`.
    * Absent, such a yes is not taken.
    */
   checkRows?: ((input: { scope: AutomationStudioSubflowScope; revision: number; digest: string; trialRunId?: string | undefined; reads: AutomationStudioSubflowTrialKeptEveryRowRead[]; signal: AbortSignal }) => Promise<unknown>) | undefined;
@@ -241,11 +243,11 @@ export type AutomationStudioSubflowTrialPreparingPort = AutomationStudioSubflowT
 export type AutomationStudioSubflowTrialKeptEveryRowRead = { nodeId: string; kept: number; keptEveryRow: AutomationStudioResultKeptEveryRow };
 
 /**
- * The judge's answer to the row check (header, t692): for each flagged read,
- * each row it stored by its place from 1, whether the request asks for it in
- * its answer, and the request's own words that do.
+ * The port's answer to the row check (header, t692): `confirmed` where the
+ * trial's yes was given by both judge calls, the second asking the converse
+ * question of each stored row (`firstAskConfirmed`); `unconfirmed` otherwise.
  */
-export type AutomationStudioSubflowTrialRowCheck = { reads: Array<{ read: string; rows: Array<{ row: number; asked: boolean; words?: string }> }> };
+export type AutomationStudioSubflowTrialRowCheck = { converse: "confirmed" | "unconfirmed" };
 
 /**
  * A trial the port did not run (header, t679), carried beside the result it
@@ -335,20 +337,18 @@ const CONTRADICTED_RETESTABLE = "The judge answered no, but Core's record of thi
   + "So that no is not taken: this revision is unsure, not closed. Test this same revision again, with the same revision and digest (retestsLeft says how many times), and do not make the change that no asks for. "
   + "Change the subflow only for a defect the trial's own reads, steps and stored rows show, submit it with core.submit_subflow, then test the new revision.";
 
-/** The codes of a yes the row check did not let stand (header, t692). */
-const ROWS_NOT_ASKED = "subflow.trial_rows_not_asked";
+/** The code of a yes the row check did not let stand (header, t692). */
 const ROWS_UNACCOUNTED = "subflow.trial_rows_unaccounted";
 
 /** What the feedback says of a row check, by its outcome (header, t692). Generic words. */
 const FLAGGED = "Core flagged a read that kept every item it saw after an act ran over a narrower read of the same list (keptEveryRow says what Core measured)";
 const ROW_CHECK_WORDS = Object.freeze({
-  asked: `The judges answered yes. ${FLAGGED}, so Core asked the judge again to check each row that read stored against the request's words; it named the request's words asking for every one of them, so the yes stands.`,
-  notAsked: `The judges answered yes, but ${FLAGGED}. Asked again to check each row that read stored against the request's words, the judge found rows the request does not ask for in its answer (rowsNotAsked gives each read and those rows' places, from 1), so the trial is judged no.`,
-  unaccounted: `The judges answered yes, but ${FLAGGED}, and Core could not get a check that accounts for each row that read stored with the request's words that ask for it. So this yes is not taken: the trial is unsure, and this revision is not closed.`
+  confirmed: `The judges answered yes. ${FLAGGED}, and the second judge call asked the converse question, each row the result stores against the request's words that ask for it in the answer, and answered yes too, so the yes stands.`,
+  unconfirmed: `The judges answered yes, but ${FLAGGED}, and this yes was not given by a second call asking the converse question of each row the result stores, so it is not taken: the trial is unsure, and this revision is not closed.`
 });
 
 /** Said for a yes the row check could not confirm while the revision may still be tested (header, t692). Generic words. */
-const ROWS_UNACCOUNTED_RETESTABLE = "The judges answered yes, but a read of this subflow kept every item it saw after an act ran over a narrower read of the same list, and no check accounted for each row it stored, so this revision cannot complete yet. "
+const ROWS_UNACCOUNTED_RETESTABLE = "The judges answered yes, but a read of this subflow kept every item it saw after an act ran over a narrower read of the same list, and the yes was not confirmed by a judge call asking of each row it stored whether the request asks for it, so this revision cannot complete yet. "
   + "Read keptEveryRow: each row such a read stores must be one the request's own words ask for in its answer. If the request asks for only some of them, give that read a condition that keeps exactly those, submit the subflow with core.submit_subflow, then test the new revision; "
   + "if it asks for every one of them, test this same revision again (retestsLeft says how many times).";
 
@@ -522,8 +522,7 @@ export class AutomationStudioSubflowTrialGate {
 
   /**
    * A yes over flagged reads, as the row check leaves it (header, t692): the
-   * yes where the check accounts for every stored row of every read with the
-   * request's words; a no where it says a row is not asked for; else unsure.
+   * yes where the port says the converse question confirmed it; else unsure.
    */
   private async checkRows(port: AutomationStudioSubflowTrialPreparingPort, yes: AutomationStudioSubflowTrialResult, reads: AutomationStudioSubflowTrialKeptEveryRowRead[], signal: AbortSignal): Promise<AutomationStudioSubflowTrialResult> {
     let raw: unknown;
@@ -531,14 +530,13 @@ export class AutomationStudioSubflowTrialGate {
       raw = port.checkRows ? await port.checkRows({ scope: structuredClone(this.input.scope), revision: yes.revision, digest: yes.digest, ...(yes.trialRunId ? { trialRunId: yes.trialRunId } : {}), reads: structuredClone(reads), signal }) : undefined;
     } catch (error) {
       if (signal.aborted) throw error;
-      // A check that failed accounts for nothing; its error text is never shown.
+      // A check that failed confirms nothing; its error text is never shown.
       raw = undefined;
     }
     const flagged = reads.map((read) => ({ read: read.nodeId, said: read.keptEveryRow.said }));
-    const outcome = rowCheckOutcome(raw, reads);
-    if (outcome === "asked") return { ...yes, feedback: { ...yes.feedback, keptEveryRow: flagged, rowCheck: ROW_CHECK_WORDS.asked } };
-    if (outcome === "unaccounted") return { ...yes, verdict: "unsure", feedback: { ...yes.feedback, code: ROWS_UNACCOUNTED, keptEveryRow: flagged, rowCheck: ROW_CHECK_WORDS.unaccounted } };
-    return { ...yes, verdict: "no", feedback: { ...yes.feedback, code: ROWS_NOT_ASKED, keptEveryRow: flagged, rowsNotAsked: outcome.notAsked, rowCheck: ROW_CHECK_WORDS.notAsked } };
+    const confirmed = isJsonObject(raw) && raw.converse === "confirmed";
+    if (confirmed) return { ...yes, feedback: { ...yes.feedback, keptEveryRow: flagged, rowCheck: ROW_CHECK_WORDS.confirmed } };
+    return { ...yes, verdict: "unsure", feedback: { ...yes.feedback, code: ROWS_UNACCOUNTED, keptEveryRow: flagged, rowCheck: ROW_CHECK_WORDS.unconfirmed } };
   }
 
   /** The trial's answer as the gate keeps it, and Core's record of a no it carried beside it, unread (header, t633). */
@@ -585,28 +583,6 @@ function flaggedReads(value: unknown): AutomationStudioSubflowTrialKeptEveryRowR
     const flag = entry.keptEveryRow;
     return isJsonObject(flag) && typeof flag.said === "string" && flag.said ? [structuredClone(entry) as unknown as AutomationStudioSubflowTrialKeptEveryRowRead] : [];
   });
-}
-
-/**
- * What a row check's answer comes to (header, t692): `asked` where it accounts
- * for every stored row of every flagged read, each place once, and names words
- * for each row it asks for; the places it says are not asked for, by read,
- * where it accounts for every row and some are not; `unaccounted` otherwise.
- */
-function rowCheckOutcome(raw: unknown, reads: readonly AutomationStudioSubflowTrialKeptEveryRowRead[]): "asked" | "unaccounted" | { notAsked: Array<{ read: string; rows: number[]; of: number }> } {
-  const answered = isJsonObject(raw) && Array.isArray(raw.reads) ? raw.reads.filter(isJsonObject) : [];
-  const notAsked: Array<{ read: string; rows: number[]; of: number }> = [];
-  for (const read of reads) {
-    const entry = answered.find((candidate) => candidate.read === read.nodeId);
-    const rows = entry && Array.isArray(entry.rows) ? entry.rows.filter(isJsonObject) : [];
-    const places = new Set(rows.map((row) => row.row));
-    const whole = rows.length === read.kept && places.size === read.kept && [...places].every((place) => Number.isSafeInteger(place) && (place as number) >= 1 && (place as number) <= read.kept);
-    const worded = rows.every((row) => row.asked === false || (row.asked === true && typeof row.words === "string" && row.words.trim().length > 0));
-    if (!whole || !worded) return "unaccounted";
-    const out = rows.filter((row) => row.asked === false).map((row) => row.row as number).sort((one, two) => one - two);
-    if (out.length) notAsked.push({ read: read.nodeId, rows: out, of: read.kept });
-  }
-  return notAsked.length ? { notAsked } : "asked";
 }
 
 /** The kept conditions a port's result carries (header, t689): copies of the entries of their shape; undefined where it carries no list. */

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../../model/index.ts";
 import type { AutomationStudioGraphExecutionTrace } from "../../../executor/index.ts";
-import type { AutomationStudioBuildTestVerdict, AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../../../result-verification/index.ts";
+import type { AutomationStudioBuildTestVerdict, AutomationStudioResultKeptEveryRow, AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../../../result-verification/index.ts";
 import { automationStudioCandidateTrialFeedback, automationStudioTrialReadsFeedback } from "../index.ts";
 
 const graph = { nodes: [{ id: "s6", definitionId: "web.output.dom-extract_list", label: "read the requests" }] } as unknown as AutomationStudioFlowArtifact;
@@ -136,5 +136,35 @@ describe("a trial's read, with the steps that acted on the page before it", () =
     const [read] = automationStudioTrialReadsFeedback([listing(4)], graph);
     expect(read).not.toHaveProperty("narrowedBefore");
     expect(read).not.toHaveProperty("beforeRead");
+  });
+});
+
+// A trial's feedback carries Core's flag on a read that kept every item it saw
+// after an act over a narrower read of the same list, and a yes says whether
+// the converse question confirmed it (t692, `../reads.ts`, `../feedback.ts`):
+// the facts a single-subflow plan's whole test hands the builder's gate.
+describe("a trial's feedback over a read Core flagged (t692)", () => {
+  const FLAG: AutomationStudioResultKeptEveryRow = { narrowerRead: "s3", narrowerSeen: 7, narrowerKept: 3, actedBy: ["s5"], sameList: "items_edge_and_read_target", said: "Step s7 read the same list as step s3." };
+  const SPENT = { calls: 2, inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0 };
+  const summary: AutomationStudioRunResultSummary = {
+    schemaVersion: "automation-studio.run-result-summary.v1", totalRecordCount: 7, totalRefusedCount: 0, totalRowsMissingRequired: 0, recordSetCount: 1, recordSets: [], flowShape: [], withheld: false,
+    reads: [
+      { nodeId: "s3", definitionId: "unit.list", pagesRead: 1, truncated: false, itemsSeen: 7, kept: 3 },
+      { nodeId: "s7", definitionId: "unit.list", pagesRead: 1, truncated: false, itemsSeen: 7, kept: 7, keptEveryRow: FLAG }
+    ]
+  };
+
+  it("carries the flag on that read alone", () => {
+    const reads = automationStudioTrialReadsFeedback(summary.reads, undefined);
+    expect(reads[1]).toMatchObject({ nodeId: "s7", kept: 7, keptEveryRow: FLAG });
+    expect(reads[0]).not.toHaveProperty("keptEveryRow");
+  });
+
+  it("says on a yes whether the converse question confirmed it, and nothing of it where the judge did not say", () => {
+    for (const firstAskConfirmed of [true, false]) {
+      const told = automationStudioCandidateTrialFeedback.judged({ verdict: { verdict: "yes", spent: SPENT, firstAskConfirmed }, summary, trialRunId: "trial.1", start: "reset" });
+      expect(told).toMatchObject({ verdict: "yes", feedback: { firstAskConfirmed, reads: [{ nodeId: "s3" }, { nodeId: "s7", keptEveryRow: FLAG }] } });
+    }
+    expect(automationStudioCandidateTrialFeedback.judged({ verdict: { verdict: "yes", spent: SPENT }, summary, trialRunId: "trial.1", start: "reset" }).feedback).not.toHaveProperty("firstAskConfirmed");
   });
 });

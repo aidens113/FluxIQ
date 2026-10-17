@@ -1,5 +1,5 @@
 import type { AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
-import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialNotRun, AutomationStudioSubflowTrialPreparingPort, AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialNotRun, AutomationStudioSubflowTrialPreparingPort, AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult, AutomationStudioSubflowTrialRowCheck } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioProjectDispatchWholeTrial } from "../dispatch/index.ts";
 
 // The port a single-subflow brief's gate is given in place of its subflow
@@ -24,6 +24,11 @@ import type { AutomationStudioProjectDispatchWholeTrial } from "../dispatch/inde
 //   to the gate as a trial its port did not run (`notRun`,
 //   `flow-bootstrap/subflow-candidate/subflow-trial-gate.ts`), which the gate
 //   answers as that refusal: nothing is listed, counted, weighed or recorded.
+// - **A yes over a read Core flagged is answered from the converse (t692).**
+//   The whole test's trial carries its row check (`rowCheck`,
+//   `./single-subflow-trial.ts`): whether its yes was confirmed by the judge's
+//   converse question. The port keeps it by the trial's run id, hands the
+//   trial on without it, and answers the gate's `checkRows` with it.
 
 /** Told each trial's proposal with the verdict its gate kept (header). */
 export type AutomationStudioProjectWholeTestTried = (scope: AutomationStudioSubflowScope, proposal: Readonly<AutomationStudioSubflowProposal>, verdict: AutomationStudioCandidateTrialVerdict) => void;
@@ -42,6 +47,8 @@ export class AutomationStudioProjectWholeTestPort {
     let ran: AutomationStudioSubflowTrialResult | undefined;
     /** The request of the trial in flight, until its gate tells the verdict it kept. */
     let asked: AutomationStudioSubflowTrialRequest | undefined;
+    /** Each whole test's row check, by its run id (header, t692). */
+    const converse = new Map<string, AutomationStudioSubflowTrialRowCheck>();
     // What the wrapper lists is the whole test's answer, handed through as it came.
     const answered: AutomationStudioSubflowTrialPreparingPort = async () => ran!;
     if (scoped?.prepareStart) answered.prepareStart = scoped.prepareStart;
@@ -50,12 +57,16 @@ export class AutomationStudioProjectWholeTestPort {
       asked = undefined;
       const answer = await whole(request);
       if ("refused" in answer) return notRun(request, answer.refused);
-      ran = answer.trial;
+      const { rowCheck, ...trial } = answer.trial as AutomationStudioSubflowTrialResult & { rowCheck?: AutomationStudioSubflowTrialRowCheck };
+      if (rowCheck && trial.trialRunId) converse.set(trial.trialRunId, { ...rowCheck });
+      ran = trial;
       asked = request;
       return await kept(request);
     };
     if (kept.prepareStart) port.prepareStart = kept.prepareStart;
     if (kept.standingNos) port.standingNos = kept.standingNos;
+    // The gate's row check, from the whole test's own converse (header, t692).
+    port.checkRows = async ({ trialRunId }) => (trialRunId ? converse.get(trialRunId) : undefined);
     port.weighed = (trial) => {
       kept.weighed?.(trial);
       const request = asked;
