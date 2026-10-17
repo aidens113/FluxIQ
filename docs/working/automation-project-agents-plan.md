@@ -1,9 +1,9 @@
 # Automation Project Agents Plan
 
 Status: Active
-Status detail: A1-A6 delivered; A8 passed (downstream frozen pair 8) and `project` is the product default since 2026-10-16 (t667). Now: the cost gap (P1-P5; t672, t673 merged). User decision 2026-10-13: concurrent agents in Core, the extension one at a time.
+Status detail: A1-A6 delivered; A8 passed and `project` is the product default (t667); the cost gap is closed (t671-t693): `project` passed 10 of 10 on one frozen downstream source at $0.028 a build. User decision 2026-10-13: concurrent agents in Core, the extension one at a time.
 Created: 2026-10-13
-Last updated: 2026-10-16
+Last updated: 2026-10-17
 Owner: Senior supervisor agent
 Scope: Core's share of FluxIQ's product-level agent system for building an automation: the project supervisor, subflow builder and repair agent roles; the build record, task spec, structure plan, brief, return, allowance, host-resource scheduling and cancellation contracts; per-role tool scopes; assembly through the existing candidate submission, trial and promotion owners. Browser tab ownership, chat rendering and Lab qualification are downstream.
 Paired document: `C:\Users\osrs_\FluxStuff\!FluxIQWebExtension\docs\working\automation-project-agents-plan.md`
@@ -13,37 +13,41 @@ Related: [MVP final month plan](./mvp-final-month-plan.md), [state-aware recover
 
 ## Current State
 
-**Built, qualified and the product default (2026-10-16); now closing its cost gap.** The user asked for "a system of
+**Built, qualified, the product default, and its cost gap closed (2026-10-17).** The user asked for "a system of
 different agents for managing different parts of a automation project ... the current one we have for actually
 building subflows, but that gets spawned by a senior supervisor, much like we have in this repo." Units A1-A6 are
-delivered; A8 passed on downstream frozen pair 8 (`project` 10 of 10, `candidate` 9 of 9 run with towels failed) and
-`project` became the default authoring mode (t667; an extend still builds `candidate`; `candidate` and `legacy` stay
-selectable with `FLUXIQ_AUTHORING_MODE`). The evidence for why is in `Why Now` of the paired document.
+delivered; A8 passed on downstream frozen pair 8 and `project` became the default authoring mode (t667; an extend
+still builds `candidate`; `candidate` and `legacy` stay selectable with `FLUXIQ_AUTHORING_MODE`). The evidence for why
+is in `Why Now` of the paired document.
 
 **Design (supervisor recommendations, user may overrule):** five roles (project supervisor, subflow builder, repair
 agent; validator and promotion owner stay existing services); builders are the candidate authoring loop with a
 subflow scope; **Core runs builders concurrently, the domain sets how many** (user, 2026-10-13; the web domain
 declares 1); one Flow purse with a reserve for the judged whole run and one repair round; assembly through the
-existing submission controller, trial port and promotion; creation ends only on one judged whole-Flow run.
+existing submission controller, trial port and promotion; creation ends only on one judged whole-Flow run. A plan of
+one router-run subflow tests once: its builder's test is the judged whole run (t679), paid by its brief with the
+reserve as backstop (t685).
 
-**Cost gap (2026-10-16; plan, findings and units P1-P5 in the paired document's `Cost Gap Plan`).** `project` cost
-about 1.6 times `candidate` on pair 8. Two thirds of the gap is finished work thrown away: an unread handed-on value
-blocking a brief, and plan amends dropping done proposals; a predecessor's proposal re-doing a later part's act while
-Core prepared the entry; the supervisor's guidance teaching splits. Merged: t671 (P1: a narrowing, merge, or act/fact
-change carries a done proposal), t672 (P2: an unread handed-on input passes), t673 (P3: asks done on one page are one
-subflow), t676 (P4: Core checks a "done before" ending), t677 (an exact first-ask yes flag). Also t679 (P5: a one-part plan's
-builder test is the judged whole run) and t683 (the reset reason). Also t684 (in-part acts a reset could not undo) and t685 (one-part tests paid by
-the brief). Downstream cost round 1: four of five passed at well under pair 8's calls; towels failed on a judging
-defect, fixed by t686-t690. Round 2 passed four of five at $0.031 a build (pair 8 `project` $0.108); social
-failed on a false yes over extra rows, fixed by t691-t693. Round 3 running.
+**Cost gap closed (plan, findings and the cost rounds in the paired document's `Cost Gap Plan`).** On one frozen
+source (downstream cost rounds 3 and 4, Core `f406dcb4`), `project` passed 10 of 10 at $0.028 a build at the full
+price rate, against frozen pair 8's $0.108 (`project`) and $0.067 (`candidate`). The units: t671 (a narrowing, merge
+or act/fact amend carries done work), t672 (an unread handed-on input passes), t673 (asks done on one page are one
+subflow), t676 (a "done before" ending is checked), t679 (one-part plans test once); then the defects the live rounds
+found: t684 (in-part acts a reset could not undo), t685 (single-path funding), t686 (a re-asked answer replaces a no
+only when every reason is settled), t687 (request-exclusion conditions kept), t688 and t690 (the repair lane), t689
+(the single path carries kept conditions), t691 (extra rows need a reason; the confirming call asks the converse),
+t692 (a keep-everything read is a doubt), t693 (a repair told what its condition kept).
 
-**Also done 2026-10-16:** t674 and t681 split `verdict.ts` and `candidate/submission.ts`; t680 audits RegExp
-escapes; t682 runs the structure audit before every push.
+**Also done 2026-10-16/17:** t674, t681, t694 splits (`verdict/`, `candidate/submission.ts`,
+`llm/draft-amendment-feedback/`); t677 (exact first-ask yes flag); t683 (reset reason; the fallback stays in memory
+by design); t680 (a structure-audit rule for RegExp literals whose string swallows an escape); t682 (a push the
+structure audit fails is refused); t695 (the handoff sweep: vitest reads contracts from source, as tsc does).
 
-**Open follow-ups:** A7 (project extend) after
-held-topology units 1-4.
+**Open follow-ups:** A7 (project extend) after held-topology units 1-4; `service/subflow-trial/` and
+`completion-attempt.ts:59` shallow copies drop scheduled candidates (no hand-over to the next round, left by t690);
+watch live builds for false holds from t691/t692's stricter yes (none in the frozen pair).
 
-**Not claimed:** that agents fix wrong judgements; that the cost fixes lower cost live (no live round yet).
+**Not claimed:** that agents fix wrong judgements in general; that the cost result holds beyond the five A8 tasks.
 
 ---
 
@@ -691,3 +695,21 @@ Entries for 2026-10-14 (t613, t617) and 2026-10-15 (A8 waves 5 to frozen pair 5,
   person can correct it with a new turn.
 - **One model for every role?** (supervisor, settle in A5) Default: same
   provider and model per role, configurable per role.
+### 2026-10-17 — The cost gap is closed; handoff sweep fixed forward (t695)
+- Agent: supervisor (downstream cost rounds 3 and 4, the sweep, handoff); worker t695
+- Changed: Current State rewritten for the closed cost gap. t695 `packages/fluxiq/vitest.config.ts` (maps
+  `@fluxiq/contracts` to source as tsc does; `vitest.quality.config.ts` inherits it), `packages/fluxiq/tests/
+  vitest-config.test.ts` (new guard), `service/flow-bootstrap-commands/tests/applied-judged-trial.test.ts` (t677's
+  `firstAskConfirmed`), `service/tests/provider-unavailable-authoring-modes.test.ts` (t649's screened reason)
+- Why: downstream rounds 3 and 4 on one frozen source (Core `f406dcb4`) passed 10 of 10 at $0.028 a build (frozen pair 8:
+  `project` $0.108, `candidate` $0.067); the twice-daily sweep at handoff found 18 failures: 16 host-lease tests read an
+  untracked compiled contracts dist from before the refusal codes existed (b673e70e), two pinned shapes t677 and t649
+  had deliberately changed
+- Validation: sweep `pnpm exec vitest run` (packages/fluxiq, dev `0fcca029`) -> "Test Files 7 failed | 1407 passed | 3
+  skipped (1418)", "Tests 18 failed | 12448 passed | 7 skipped", 19m25s. t695 after merging dev: tsc exit 0; `pnpm exec
+  vitest run tests src/client-gateway ...` (the `tests` filter matched every test path, so the whole suite) -> "Test
+  Files 1415 passed | 3 skipped (1418)", "Tests 12475 passed | 7 skipped (12482)"; `pnpm task finish` -> `pnpm check`
+  passed; pushed `57ea2d5e`
+- Outcome: Accepted
+
+
