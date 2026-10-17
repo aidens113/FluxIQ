@@ -157,3 +157,12 @@ It now forwards `checkRows`. Without this, every flagged yes on a scoped brief w
 - No live run.
 - The `every_row` rule reads the rows a summary shows (`sampleRows`). A set with more rows than are shown is held only to the ones shown, as t663's flags already are.
 - A flagged read whose stored rows land in a set Core cannot link to it (no `nodeIds` match and no passes) gets no `every_row` flag. It is still covered by the flag in the judge's summary and by the gate's converse check.
+
+## Round 4: the verification system-prompt pins
+
+- **Cause:** `llm/deepseek/tests/system-prompt.test.ts` pins the verification system prompt byte for byte in `system-prompt-pins.json`. Round 2's `keptEveryRow` sentence in `llm/diagnosis-instructions.ts` changed that prompt, so 4 of its tests failed (`loop_verification` and `loop_verification_build_test`, each with and without domain instructions). The coordinator found this after merging Core dev `93df47e9`.
+- **Fix:** in `system-prompt-pins.json` only, I inserted the same sentence into the `loop_verification` and `loop_verification_build_test` pins, at the place it holds in the source: right after "…so check each kept row against the request's own words, not the filter's label. ".
+  - A script confirmed the anchor occurs once in each of those two pins and nowhere else, and that every other pin is unchanged after the edit.
+  - `git diff --stat` shows the file with 2 insertions and 2 deletions (the two pin lines).
+  - Nothing else changed.
+- **Validation:** `npx vitest run src/programs/automation-studio/runtime/llm`, the whole llm directory including deepseek: `Test Files 211 passed (211)`, `Tests 2053 passed (2053)`.
