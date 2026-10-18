@@ -405,6 +405,13 @@ required, are refused deterministically, because neither can be excused by any
 reading of any request. Everything else is put to one `loop_verification` call,
 asked twice when the first answer is not `yes`.
 
+Search wording describes how to retrieve candidates unless the request explicitly
+requires literal title or name text. Judges still compare each candidate's actual
+type and content with the request; matching a query alone proves no qualification.
+When a judge claims a condition alone omitted named rows, Core checks those names
+against stored rows and excluded-copy evidence before following repair advice.
+Claims containing a genuinely missing row remain refusals.
+
 **An empty result is judged like any other, as of 2026-09-24.** Until then a run
 that stored no rows was exempt: an empty record set was recorded
 `core.result.no_records` and a run with no record set at all
