@@ -178,6 +178,11 @@ const AUTHORED_CODES: ReadonlySet<string> = new Set([
   "flow_script.repeat_most_misplaced",
   "flow_script.repeat_pace_misplaced",
   "flow_script.repeat_pace_invalid",
+  // A second span over a listing its block already walks, with other steps
+  // between the two (`../script-statements/adjacent-list-repeats.ts`): the
+  // sentence names only the two lines and the listing's label the model wrote,
+  // and says to write each pass as one span.
+  "flow_script.repeat_over_twice",
   // **Every script refusal a builder can meet has its words (t608).** Everything-store
   // `run-mv8p0p7c` (0153) was refused `flow_script.part_interface_invalid` with a
   // code, a line and no sentence, resent the same script three times, and the
