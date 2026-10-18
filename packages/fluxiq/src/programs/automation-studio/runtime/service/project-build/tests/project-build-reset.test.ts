@@ -70,12 +70,15 @@ import type { AutomationStudioActionConsequence, AutomationStudioActionDeclarati
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { automationStudioActivityHub } from "../../../activity/index.ts";
 import { parseAutomationStudioFlowBootstrapGenerationError } from "../../../flow-bootstrap/index.ts";
-import { AUTOMATION_STUDIO_SITE_RESET_WORDS, AutomationStudioSiteResetLedger } from "../../../flow-bootstrap/site-reset/index.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_WORDS, AutomationStudioSiteResetLedger, AutomationStudioSiteResetProjectLedger } from "../../../flow-bootstrap/site-reset/index.ts";
 import type { AutomationStudioHostRuntimeBoundary, AutomationStudioHostStateSnapshotRef } from "../../../host-runtime.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
+import * as trialPorts from "../../candidate-trial/index.ts";
+import { automationStudioProjectBuildWholeTrials } from "../whole-trials.ts";
+import { automationStudioProjectBuildResetCalls } from "../reset-calls.ts";
 import { automationStudioTestDeclaredStepResolution } from "./declared-step-resolution.ts";
 import { automationStudioTestSettledBuilds } from "./settled-builds.ts";
 
@@ -608,4 +611,56 @@ describe("a reset brief", () => {
     expect(run.cart).toEqual(["dish-soap", "herb-tea"]);
     expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "done" }], lastingActsInPlace: 0 });
   });
+});
+
+
+it("whole-trial collection authority comes from original builder routing, never late reads or another resource", async () => {
+  for (const kind of ["original", "late", "other-resource", "malformed"] as const) {
+    const project = new AutomationStudioSiteResetProjectLedger();
+    project.forBrief("supervisor");
+    const collection = (scope: string, subjects: string[], other = false) => ({ scope: `${other ? "other:" : ""}${scope}`, group: other ? "g:other" : "g:page", subjects, states: Object.fromEntries(subjects.map((subject) => [subject, `v:${subject}`])) });
+    const original = [collection("p:active", ["s:existing", "s:baseline"]), collection("p:saved", ["s:archived"])];
+    const other = kind === "other-resource";
+    const beforeMove = [collection("p:active", ["s:existing", "s:baseline", "s:new"], other), collection("p:saved", ["s:archived"], other)];
+    const moved = [collection("p:active", ["s:baseline", "s:new"], other), collection("p:saved", ["s:existing", "s:archived"], other)];
+    const witnessedAfter = structuredClone(moved);
+    if (kind === "malformed") delete witnessedAfter[1]!.states["s:existing"];
+    const trialActs = [
+      { step: 1, definitionId: "demo.add", consequences: ["create_new" as const], spot: { subject: "s:new" } },
+      { step: 2, definitionId: "demo.move", consequences: ["modify_existing" as const], spot: { scope: beforeMove[0]!.scope, subject: "s:existing" }, collections: { before: beforeMove, after: witnessedAfter } }
+    ];
+    const mock = vi.spyOn(trialPorts, "automationStudioCandidateTrialPort").mockReturnValue({
+      port: async () => ({ revision: 1, digest: "digest", verdict: "yes", feedback: {}, trialRunId: "whole.1", acts: trialActs }),
+      records: () => [], spent: () => ({ calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 })
+    });
+    try {
+      // The whole-trial owner exists BEFORE any builder observation, as in the service.
+      const environment = { projectId: "project", flowId: "flow" } as Parameters<typeof automationStudioProjectBuildWholeTrials>[0]["environment"];
+      const trials = automationStudioProjectBuildWholeTrials({ candidateId: "candidate", environment, binding: {} as AutomationStudioLlmEvidenceRuntimeBinding, judge: { provider: mockProvider(async () => { throw new Error("No model expected"); }), instructions: [] }, ledger: project });
+      const builder = automationStudioProjectBuildResetCalls(project, project.forBrief("builder"));
+      if (kind === "late") builder.explored({ callId: "prior", toolId: "core.run_node", landed: true, declared: { permitted: true, effect: "mutate", consequences: ["create_new"], control: { name: "Add", kind: "button" }, verb: "press" } });
+      builder.observed({ state: {}, differs: [], collections: original });
+      // Actual whole-trial port records acts under supervisor; no manual baseline seed.
+      await trials.port({} as Parameters<typeof trials.port>[0]);
+      const acts = project.snapshot().acts.filter((act) => act.owner === "supervisor");
+      expect(acts).toHaveLength(2);
+      const reset = automationStudioProjectBuildResetCalls(project, project.forBrief("reset"));
+      reset.observed({ state: {}, differs: [], collections: moved });
+      const addControl = { scope: moved[0]!.scope, subject: "s:new" };
+      const moveControl = { scope: moved[1]!.scope, subject: "s:existing" };
+      const deletion = reset.target(acts[0]!.act, { effect: "mutate", consequences: ["delete"], control: addControl });
+      const inverse = reset.target(acts[1]!.act, { effect: "mutate", consequences: ["modify_existing"], control: moveControl });
+      expect(deletion.kind).toBe(kind === "original" || kind === "malformed" ? "admit" : "refused");
+      expect(inverse.kind).toBe(kind === "original" ? "admit" : "refused");
+      if (kind !== "original") continue;
+      for (const [index, consequences, control] of [[0, ["delete"], addControl], [1, ["modify_existing"], moveControl]] as const) {
+        reset.explored({ callId: `undo.${index}`, toolId: "core.run_node", landed: true, undoes: acts[index]!.act, on: "subject", declared: { permitted: true, effect: "mutate", consequences: [...consequences], control: { name: "Inverse", kind: "button", ...control }, verb: "press" } });
+      }
+      reset.observed({ state: {}, differs: [], collections: original });
+      expect(await project.forBrief("supervisor").beforeTrial(async () => ({ moved: false }))).toEqual({ kind: "admit" });
+      expect(project.snapshot().acts.filter((act) => act.inPlace)).toEqual([]);
+    } finally {
+      mock.mockRestore();
+    }
+  }
 });

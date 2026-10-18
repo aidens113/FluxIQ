@@ -19,5 +19,5 @@ const UNDOES: JsonObject = {
 export function automationStudioSiteResetUndoesTool(tool: AutomationStudioLlmEvidenceTool): AutomationStudioLlmEvidenceTool {
   const properties = tool.inputSchema.properties;
   if (tool.toolId !== AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID || typeof properties !== "object" || properties === null || Array.isArray(properties)) return tool;
-  return { ...tool, inputSchema: { ...tool.inputSchema, properties: { ...properties, [AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY]: { ...UNDOES } } } };
+  return { ...tool, description: tool.description + " Before creating an effect whose undo removes an item from another page or list, inspect that destination's complete item inventory first. The reset needs positive evidence that its subject did not already exist there. An existing item's quantity requires an exact inverse; a matching name or a partial change is insufficient.", inputSchema: { ...tool.inputSchema, properties: { ...properties, [AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY]: { ...UNDOES } } } };
 }

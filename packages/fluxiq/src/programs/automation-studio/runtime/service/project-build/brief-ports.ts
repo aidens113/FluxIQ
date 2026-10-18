@@ -131,7 +131,8 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // 2-4). Its `core.run_node` offers no `write`, since a reset writes no Flow.
 // Its completion may name under `cannotUndo` the acts the site offers no
 // control to reverse, and those reach every ledger before it looks again, so
-// such an act ends the reset kept rather than stalled
+// such an act ends the reset unresolved. Modern reversible effects still
+// refuse ordinary trials until baseline restoration is proved
 // (`project-agents/dispatch/reset-loop.ts`). An undo aimed at another item's
 // control is refused in a reset's words: undo another listed act, or name it
 // under `cannotUndo`, never "test again", since a reset has no test. A lasting
@@ -192,7 +193,7 @@ const RESET_COMPLETION: JsonObject = {
       type: "array",
       uniqueItems: true,
       items: { type: "string", pattern: "^act-[1-9][0-9]{0,3}$" },
-      description: "Only the listed acts the site offers no control to reverse, after you looked for one on the item each acted on: each is then kept, trials run with it already done, and the judge is told. Never an act you could undo."
+      description: "Only the listed acts the site offers no control to reverse, after you looked for one on the item each acted on: report these as unresolved. Reversible effects still require proved restoration before an ordinary trial. Never an act you could undo."
     }
   },
   additionalProperties: false
@@ -335,9 +336,10 @@ const RESET_TASK = [
   "This brief is a reset, not a build: write no Flow and no subflow, and carry out no part of the person's task.",
   "Your only task is to undo the lasting acts this build made, listed below, each through the site's own controls on the item it acted on, naming the act under `undoes` on the call that undoes it.",
   "Each act says how it was done and, where it was read, the page it was made on: go there to find it.",
+  "Before creating an effect that must later be removed from another page or list, inspect that destination's complete item inventory first so the reset has evidence of what already exists. Remove only a subject proved absent there before this build's act. A matching name alone never proves ownership of an existing item or its quantity; an unproved inverse stays unresolved.",
   "Leave everything that was on the site before the build began, and do nothing else on the site.",
   "Complete with a one-sentence summary once none of the listed acts is left.",
-  "If the site offers no control on an act's own item that reverses it, do not keep trying and never act on another item instead: complete and name that act under `cannotUndo`, and it is kept as done."
+  "If the site offers no control on an act's own item that reverses it, do not keep trying and never act on another item instead: complete with an honest unresolved summary and name that act under `cannotUndo`; an ordinary trial still requires proved restoration of reversible effects."
 ].join(" ");
 
 /** A reset brief's task as one Core instruction, listing every act of the build still in place now (header). */

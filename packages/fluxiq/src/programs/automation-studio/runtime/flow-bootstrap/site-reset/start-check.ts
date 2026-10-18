@@ -115,8 +115,9 @@ export class AutomationStudioSiteResetStartCheck {
       if (!stateAnswer(read)) return { unread: "no_answer" };
       const lines = linesOf(read.lines);
       const items = stringsOf(read.items);
+      const subjects = stringsOf(read.subjects);
       for (const item of items ?? []) this.seen.add(item);
-      return this.steady({ state: structuredClone(read.state), differs: [...read.differs], ...(typeof read.location === "string" && read.location ? { location: read.location } : {}), ...(lines ? { lines } : {}), ...(items ? { items: [...new Set(items)] } : {}) });
+      return this.steady({ state: structuredClone(read.state), differs: [...read.differs], ...(typeof read.location === "string" && read.location ? { location: read.location } : {}), ...(lines ? { lines } : {}), ...(items ? { items: [...new Set(items)] } : {}), ...(subjects ? { subjects: [...new Set(subjects)] } : {}), ...(typeof read.scope === "string" ? { scope: read.scope } : {}), ...(collectionsOf(read.collections) ? { collections: collectionsOf(read.collections)! } : {}) });
     } catch (error) {
       if (signal?.aborted) throw error;
       this.lastFailure = error;
@@ -277,4 +278,12 @@ function stateAnswer(value: unknown): value is { state: JsonObject; differs: str
 
 function isObject(value: unknown): value is Record<string, unknown> & JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Only a fully shaped opaque inventory can witness a collection's absence. */
+function collectionsOf(value: unknown): Array<{ scope: string; group: string; subjects: string[]; states: Record<string, string> }> | undefined {
+  if (!Array.isArray(value) || value.length > 2_000) return undefined;
+  const token = (entry: unknown): entry is string => typeof entry === "string" && /^[A-Za-z0-9:_-]{1,128}$/u.test(entry);
+  if (!value.every((entry) => isObject(entry) && token(entry.scope) && token(entry.group) && Array.isArray(entry.subjects) && entry.subjects.length <= 2_000 && entry.subjects.every(token) && isObject(entry.states) && Object.keys(entry.states).length === entry.subjects.length && entry.subjects.every((subject) => Object.hasOwn(entry.states as object, subject) && token((entry.states as Record<string, unknown>)[subject])))) return undefined;
+  return value.map((entry) => ({ scope: entry.scope as string, group: entry.group as string, subjects: [...entry.subjects as string[]], states: { ...entry.states as Record<string, string> } }));
 }
