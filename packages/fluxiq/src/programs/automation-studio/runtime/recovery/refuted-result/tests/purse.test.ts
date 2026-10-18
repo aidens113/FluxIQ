@@ -37,6 +37,15 @@ describe("the repair's purse, carrying the Flow's spend", () => {
     expect(automationStudioResultRepairPurseAllowsPart(automationStudioResultRepairPurse(run(), undefined, CEILING))).toBe(false);
   });
 
+  it("keeps an unreported part unknown and refuses further parts on later passes", () => {
+    const unknown = automationStudioResultRepairPurseCharged(automationStudioResultRepairPurse(run()), { reachedProvider: true });
+    expect(unknown.unreportedParts).toBe(1);
+    expect(automationStudioResultRepairPurseAllowsPart(unknown)).toBe(false);
+    const recorded = automationStudioResultRepairWithPurse(run(), unknown);
+    expect(automationStudioResultRepairPurseAllowsPart(automationStudioResultRepairPurse(recorded))).toBe(false);
+    expect(recorded.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]).toMatchObject({ purse: { unreportedParts: 1 } });
+  });
+
   it("records what it carried, and opens every later pass from what the Flow has spent, not from the run's own figure", () => {
     const opened = automationStudioResultRepairPurseCharged(automationStudioResultRepairPurse(run(), undefined, usd(CEILING * 0.4)), { costUsd: usd(CEILING * 0.2), calls: 4, reachedProvider: true });
     const recorded = automationStudioResultRepairWithPurse(run(), opened);

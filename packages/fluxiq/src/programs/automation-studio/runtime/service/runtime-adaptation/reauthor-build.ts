@@ -14,6 +14,7 @@
 // come to disagree about it.
 
 import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioLlmBuildPurseCharged } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowRunDetail } from "../../../model/index.ts";
 import { automationStudioFlowBootstrapFailureDiagnosticOf, flowBootstrapPhaseFailure, type AutomationStudioFlowBootstrapFailureDiagnostic } from "../../flow-bootstrap/generation-failure/index.ts";
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
@@ -57,7 +58,7 @@ export type AutomationStudioReauthorBuildDependencies = {
    * throws what it answers: a completion of the seeded draft unchanged ends
    * the build as "nothing to change" (`recovery/refuted-result/nothing-to-change.ts`).
    */
-  generate(request: AutomationStudioGenerateFlowBootstrapAdaptationInput, brief: AutomationStudioFlowInstruction, costLeftUsd: number, startPages: Readonly<Record<string, JsonObject>>, ending?: AutomationStudioReauthorEndingWatch): Promise<AutomationStudioGenerateFlowBootstrapAdaptationResult>;
+  generate(request: AutomationStudioGenerateFlowBootstrapAdaptationInput, brief: AutomationStudioFlowInstruction, costLeftUsd: number, startPages: Readonly<Record<string, JsonObject>>, ending?: AutomationStudioReauthorEndingWatch, onCharged?: (receipt: AutomationStudioLlmBuildPurseCharged | undefined) => void): Promise<AutomationStudioGenerateFlowBootstrapAdaptationResult>;
   /** Approves the adaptation. Nothing here applies it: the judged re-run does (`./judged-reauthor.ts`). */
   approve(input: { projectId: string; flowId: string; adaptationId: string; actorId: string }): Promise<unknown>;
   /** Rejects a held edit an earlier attempt of this run left waiting, which this attempt replaces. */
@@ -111,6 +112,8 @@ export async function automationStudioReauthorBuild(input: {
       return { failure: COST_BOUND_FAILURE, durationMs: 0 };
     }
     const costLeftUsd = automationStudioResultRepairPurseLeftUsd(purse);
+    let charged: AutomationStudioLlmBuildPurseCharged | undefined;
+    let observed = false, inconsistent = false;
     const built = await automationStudioReauthorRefutedResult({
       now,
       generate: async () => {
@@ -128,7 +131,11 @@ export async function automationStudioReauthorBuild(input: {
             projectId, flowId, mode: "extend", evidenceGuided: true,
             caller: { actorUserId: caller.actorUserId, actorSessionId: caller.actorSessionId },
             ...(deps.permittedConsequences?.length ? { permittedConsequences: [...deps.permittedConsequences] } : {})
-          }, brief, costLeftUsd, startPages, ...(ending ? [ending] : []));
+          }, brief, costLeftUsd, startPages, ending, (receipt) => {
+            if (observed && ["calls", "chargedCostUsd", "pendingCalls", "pendingCostUsd", "unreportedZeroChargeCalls"].some((key) => charged?.[key as keyof AutomationStudioLlmBuildPurseCharged] !== receipt?.[key as keyof AutomationStudioLlmBuildPurseCharged])) inconsistent = true;
+            observed = true;
+            charged = receipt;
+          });
         } catch (error) {
           // The build ended where its completion check threw for the watch: not
           // a failure, the re-author's conclusion. What the build's catch kept
@@ -148,7 +155,8 @@ export async function automationStudioReauthorBuild(input: {
     // A build that made an edit called the model; a failed one says whether
     // its request went out, and its loop how many decisions it made. Either
     // is charged what it reported.
-    purse = automationStudioResultRepairPurseCharged(purse, {
+    const measured = observed ? settledCharge(charged, inconsistent, built) : undefined;
+    purse = automationStudioResultRepairPurseCharged(purse, measured ?? {
       costUsd: (built.accounting ?? built.failure?.accounting)?.estimatedCostUsd,
       calls: built.failure?.evidenceLoop?.decisionCount,
       // A build that ended "nothing to change" was ended by a decision, so it asked the model.
@@ -172,6 +180,15 @@ export async function automationStudioReauthorBuild(input: {
     detail = input.record(detail, built);
   }
   return { detail, built, purse };
+}
+
+/** Only this invocation's completed owning receipt can replace the older reported-cost reader. */
+function settledCharge(receipt: AutomationStudioLlmBuildPurseCharged | undefined, inconsistent: boolean, built: AutomationStudioReauthorBuilt): { costUsd?: number; calls?: number; reachedProvider: boolean } {
+  if (!receipt || inconsistent || ![receipt.calls, receipt.pendingCalls, receipt.unreportedZeroChargeCalls].every((value) => Number.isSafeInteger(value) && value >= 0)
+    || ![receipt.chargedCostUsd, receipt.pendingCostUsd].every((value) => Number.isFinite(value) && value >= 0)
+    || receipt.pendingCalls !== 0 || receipt.pendingCostUsd !== 0 || receipt.unreportedZeroChargeCalls > receipt.calls || receipt.unreportedZeroChargeCalls > 0) return { reachedProvider: true };
+  if (receipt.calls === 0 && (receipt.chargedCostUsd !== 0 || built.adaptationId !== undefined || built.nothingToChange !== undefined || built.failure?.providerInvocation !== "not_attempted")) return { reachedProvider: true };
+  return { costUsd: receipt.chargedCostUsd, calls: receipt.calls, reachedProvider: receipt.calls > 0 };
 }
 
 /**

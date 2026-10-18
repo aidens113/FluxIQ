@@ -3,6 +3,7 @@ import type { AutomationStudioRecordSchema } from "@fluxiq/contracts/automation-
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../../model/index.ts";
 import { verifyAutomationStudioRuntimeSessionResult } from "../run-outcome.ts";
+import { AutomationStudioLlmRunPurse } from "../../llm/index.ts";
 import { ANSWER, UNAVAILABLE, datasetSummary, flow, harness, instruction, provider, runDetail, session, verify } from "./run-outcome-harness.ts";
 // The whole path, driven end to end: a run that finished without a failed step,
 // its stored records read, one question asked, and the run's own record written
@@ -15,6 +16,29 @@ import { ANSWER, UNAVAILABLE, datasetSummary, flow, harness, instruction, provid
 // reason anyone noticed is that the test facility held a written answer key.
 
 describe("verifyAutomationStudioRuntimeSessionResult", () => {
+  it.each([undefined, { costAccounting: { calls: 1 }, providerCalls: [], providerCallsOmitted: 0 }])("refuses paid reentry with unknown accounting instead of dispatching (%j)", async (gate) => {
+    const context = harness({ answer: ANSWER.yes });
+    const next = await verify(context, { runPurse: new AutomationStudioLlmRunPurse({ runId: session().runId, gate }) });
+    expect(context.requests).toHaveLength(0);
+    expect(next.metadata?.resultVerification).toMatchObject({ performed: false, code: "llm_budget.accounting_history_unavailable" });
+    expect(context.saved.at(-1)?.metadata?.llmGate).toMatchObject({ ...(gate ?? {}), accountingDiagnostic: { code: "llm_budget.accounting_history_unavailable" } });
+  });
+
+  it("charges missing provider usage conservatively and keeps reported figures absent", async () => {
+    const context = harness({ answer: ANSWER.yes });
+    const configured = provider(ANSWER.yes, context.requests);
+    const answered = configured.runTask;
+    configured.runTask = async (request) => {
+      const response = await answered(request);
+      return typeof response === "object" && response !== null && "response" in response ? { response: response.response } : response;
+    };
+    context.ports.resolveProvider = async () => ({ provider: configured });
+    await verify(context);
+    const gate = context.saved.at(-1)?.metadata?.llmGate as JsonObject;
+    expect(gate.costAccounting).toMatchObject({ calls: 1, pendingCalls: 0 });
+    expect(gate.providerCalls).toEqual([expect.objectContaining({ reported: { inputTokens: null, outputTokens: null, totalTokens: null, estimatedCostUsd: null }, charged: expect.objectContaining({ tokens: "reserved", cost: "reserved" }) })]);
+  });
+
   it("retains a settled paid first check when its actual second confirmation dispatch is pending at the deadline", async () => {
     vi.useFakeTimers();
     const context = harness();
@@ -42,7 +66,10 @@ describe("verifyAutomationStudioRuntimeSessionResult", () => {
       expect.soft(detail?.interventions).toEqual(expect.arrayContaining([expect.objectContaining({
         tokenUsage: expect.objectContaining({ inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 })
       })]));
-      expect.soft(detail?.metadata?.llmGate).not.toEqual(expect.objectContaining({ costAccounting: expect.objectContaining({ calls: 0, pendingCalls: 0 }) }));
+      expect(detail?.metadata?.llmGate).toMatchObject({
+        costAccounting: { calls: 1, pendingCalls: 1, inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 },
+        providerCalls: [expect.objectContaining({ taskKind: "loop_verification" })], providerCallsOmitted: 0
+      });
     } finally {
       const writes = context.saved.length;
       const request = context.requests[1];

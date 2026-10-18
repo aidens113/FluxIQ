@@ -2180,6 +2180,27 @@ or from the reservation. A record never holds prompt text, response text, or a
 diagnostic message. The receipt lists at most 250 calls, and
 `metadata.llmGate.providerCallsOmitted` counts any beyond that.
 
+Routine result checks, their rechecks, and in-run or detached runtime recovery
+share one run-owned canonical ledger. Per-call grants and temporary repair
+cost windows keep their own limits without replacing the run's total. A later
+incompatible narrower run profile refuses new paid dispatch. Continued runs
+restore only settled, fully itemized, internally consistent receipts; omitted,
+pending, malformed or unknown history is preserved and refuses another paid
+call. A queued session with no prior execution or model evidence starts fresh.
+Deterministic runs still record explicit zero use only when it is established.
+The gate projection replaces its accounting fields from this ledger while
+retaining recovery diagnostics; saving the same receipt never charges it again.
+
+A re-author build retains its separate creation purse. Its private charged
+receipt reports only that generation's own settled and pending reservations,
+excluding carried spend and parent totals. The outer repair purse consumes
+that charge once, including a conservative priced hold after a timeout, so
+recoverable attempts retain their remaining grant. Reported free calls are
+known zero; an unpriced, unreported zero hold is unknown. Pending or unknown
+part costs prevent further parts. Provider-reported usage is never invented
+from these charges, and these build receipts are not part of the runtime
+ledger's itemized call list.
+
 Evidence-guided Flow Bootstrap follows the same model. Its loop makes at most
 64 decisions, or fewer when the resolution declares a call count, with at most
 one more tool call than decisions. No decision has a cost share: each is held

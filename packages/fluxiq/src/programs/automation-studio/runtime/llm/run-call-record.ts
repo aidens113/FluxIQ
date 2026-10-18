@@ -29,16 +29,13 @@
 // Nothing here carries prompt text, response text or a diagnostic message:
 // identifiers, codes and numbers only, each bounded.
 
-// Through the directory barrels. `harness/index.ts` exports `run.ts`, which
-// imports this module, so this is a cycle; it is safe only because both values
-// below are read inside functions, never while the module is evaluating.
 import {
   AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS,
-  type AutomationStudioLlmTaskKind,
-  type AutomationStudioLlmUsageSummary
-} from "./harness/index.ts";
+  type AutomationStudioLlmTaskKind
+} from "./harness/task-kind.ts";
+import type { AutomationStudioLlmUsageSummary } from "./harness/index.ts";
 import type { AutomationStudioLlmRunBudgetAllowance } from "./run-budget.ts";
-import { isAutomationStudioLoopStage, type AutomationStudioLoopStage } from "./stages/index.ts";
+import { isAutomationStudioLoopStage, type AutomationStudioLoopStage } from "./stages/protocol.ts";
 
 /** What a call is, known before it is sent. */
 export type AutomationStudioLlmRunCallDescription = {

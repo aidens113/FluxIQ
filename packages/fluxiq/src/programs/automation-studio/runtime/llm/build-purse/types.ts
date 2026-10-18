@@ -5,6 +5,15 @@
 import type { AutomationStudioLlmUsageSummary } from "../harness/index.ts";
 import type { AutomationStudioLlmBuildPurseAttribution } from "./allowance-book.ts";
 
+/** This purse's own canonical charges, excluding carried spend and external aggregate accounting. */
+export type AutomationStudioLlmBuildPurseCharged = {
+  calls: number;
+  chargedCostUsd: number;
+  pendingCalls: number;
+  pendingCostUsd: number;
+  unreportedZeroChargeCalls: number;
+};
+
 /** Why a call was not sent, in figures. */
 export type AutomationStudioLlmBuildPurseRefusal = {
   code: "llm_budget.run_call_limit";

@@ -100,6 +100,8 @@ export * from "./domain-instructions/index.ts";
 export * from "./node-tools/index.ts";
 export * from "./stages/index.ts";
 export * from "./run-budget.ts";
+export * from "./purse/index.ts";
+export type { AutomationStudioLlmBuildPurseCharged } from "./build-purse/index.ts";
 export { automationStudioLlmBuildCallRecord } from "./run-call-record.ts";
 export type {
   AutomationStudioLlmBuildCall,

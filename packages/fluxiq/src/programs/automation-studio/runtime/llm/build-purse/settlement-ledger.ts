@@ -18,6 +18,8 @@ import { AUTOMATION_STUDIO_LLM_BUILD_PURSE_EPSILON_USD } from "./epsilon.ts";
 import type { AutomationStudioLlmBuildPurseHold, AutomationStudioLlmBuildPurseOptions } from "./types.ts";
 
 export class AutomationStudioLlmBuildPurseLedger {
+  /** Settled calls whose zero charge came from an unpriced hold, never a reported free call. */
+  unreportedZeroChargeCalls = 0;
   /** Calls that reported costing more than they were held at. */
   breaches = 0;
   /** What those calls cost beyond their holds, summed. */
@@ -64,6 +66,7 @@ export class AutomationStudioLlmBuildPurseLedger {
         const reported = usage?.estimatedCostUsd;
         const valid = typeof reported === "number" && Number.isFinite(reported) && reported >= 0;
         const chargedUsd = valid ? reported : heldUsd;
+        if (!valid && chargedUsd === 0) this.unreportedZeroChargeCalls += 1;
         this.settled += chargedUsd;
         this.events.onSettled?.(chargedUsd);
         if (valid) this.largestReported = Math.max(this.largestReported, reported);
