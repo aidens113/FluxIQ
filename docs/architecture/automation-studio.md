@@ -546,6 +546,14 @@ Core's words naming the request's words and the options the step left out
 still needs two yeses. A doubt naming any step whose option is not the
 request's own words stands, and a no is never asked again on this ground.
 
+A read account reports an explicit extraction dedupe first, then the effective
+`recordOutput.process.dedupe` where the domain moved collection processing
+out of a one-page read. Its `dedupes` and `dedupeBy` therefore describe the
+dataset operation even when the page request itself has no dedupe. With neither
+declaration requesting dedupe, a recognized read reports `dedupes: false`;
+`dedupeBy` is omitted unless screened keys are available. Page values are
+never copied into it.
+
 A read account also carries `leftOutTogether` (t655,
 `result-verification/read-account/together-rows.ts`) where the read sent them:
 each set of conditions (numbered from 1) with the rows that failed exactly
