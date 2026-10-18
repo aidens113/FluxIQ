@@ -15,6 +15,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
       + `Undo each act listed under actsToUndo with core.run_node, adding "${UNDOES}": "<act>" to that call: remove what the act added, or set back what it changed. `
       + "stillThere lists what the act changed on its own page that is still there; an act counts as undone only once that is gone. "
       + "An undo may act only on the act's own item -- the same row or card it acted on, told apart from the others -- or on what the act itself created; a control on any other item, or on one that cannot be told apart, is refused unrun. "
+      + "Before creating an effect that must later be removed from another page or list, inspect that destination's complete item inventory first so the reset has evidence of what already exists. Remove only a subject proved absent there before this build's act. A matching name alone never proves ownership of an existing item or its quantity; an unproved inverse stays unresolved. "
       + "Removing only what the act created needs no permission; anything else is asked. Do not change anything that was there before the build began. "
       + (differs ? "differs lists what is still not as the build found it. " : "")
       + "If the site offers no control that reverses an act, do not keep trying: test the same revision again with its id under cannotUndo, and the trial runs with that act already done. "
@@ -41,8 +42,8 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
   },
   /** A call whose `undoes` names an act kept because the site cannot undo it. */
   keptAct(): string {
-    return "That act is one this build could not undo on this site, so it is kept: every trial runs with it already done, and the judge is told. It was not run. "
-      + `Do not try to undo it again; make the call without "${UNDOES}" if it does something else, or test the same revision again.`;
+    return "That act remains unresolved on this site. This call was not run. A reversible effect still requires proved baseline restoration before an ordinary trial. "
+      + `Do not try to undo it again; make the call without "${UNDOES}" if it does something else, or report the unresolved reset honestly.`;
   },
   /**
    * An undo whose control is not on the act's own item, nor on what it created

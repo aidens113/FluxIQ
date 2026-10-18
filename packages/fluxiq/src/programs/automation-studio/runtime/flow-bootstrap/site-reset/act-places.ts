@@ -30,7 +30,7 @@
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../../llm/index.ts";
-import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY, type AutomationStudioSiteResetPlace, type AutomationStudioSiteResetReadAnswer } from "./contracts.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY, type AutomationStudioSiteResetPlace, type AutomationStudioSiteResetRead, type AutomationStudioSiteResetReadAnswer } from "./contracts.ts";
 
 /** The classes whose act the reset may have to look for. */
 const LOOKED_FOR: ReadonlySet<string> = new Set(["create_new", "modify_existing", "delete"]);
@@ -38,7 +38,7 @@ const LOOKED_FOR: ReadonlySet<string> = new Set(["create_new", "modify_existing"
 /** Runs `run` for `call`, reading the target around it when it makes or undoes an act. */
 export async function automationStudioSiteResetPlacedCall<T>(input: {
   call: { callId: string; toolId: string; value: JsonObject };
-  ledger: { actOf(callId: string): string | undefined; placed(act: string, place: AutomationStudioSiteResetPlace): void; undoSeen(act: string, changedInPlace: boolean): void; noEffect?(act: string): void };
+  ledger: { observed?(read: AutomationStudioSiteResetRead): void; actOf(callId: string): string | undefined; placed(act: string, place: AutomationStudioSiteResetPlace): void; undoSeen(act: string, changedInPlace: boolean): void; noEffect?(act: string): void };
   reader: {
     read(start?: JsonObject, signal?: AbortSignal): Promise<AutomationStudioSiteResetReadAnswer>;
     /** A read with live content left out (`./start-check.ts`); absent, `read`. */
@@ -54,15 +54,27 @@ export async function automationStudioSiteResetPlacedCall<T>(input: {
   const undoes = call.value[AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY];
   const consequences = call.value.consequences;
   const acts = undoes === undefined && Array.isArray(consequences) && consequences.some((consequence) => typeof consequence === "string" && LOOKED_FOR.has(consequence));
-  if (typeof undoes !== "string" && !acts) return await input.run();
+  if (typeof undoes !== "string" && !acts) {
+    const ran = await input.run();
+    const observed = await reader.read(undefined, signal);
+    if (!("unread" in observed)) ledger.observed?.(observed);
+    return ran;
+  }
   const before = await reader.read(undefined, signal);
+  if (!("unread" in before)) ledger.observed?.(before);
   // Every item seen before the act, its own page's included: none of them is one it created.
   const seen = "unread" in before ? undefined : reader.seenItems?.();
   const ran = await input.run();
   // A target that could not be read is left to the ledger, which then decides as it did before.
-  if ("unread" in before) return ran;
+  if ("unread" in before) {
+    const observed = await reader.read(undefined, signal);
+    if (!("unread" in observed)) ledger.observed?.(observed);
+    return ran;
+  }
   const after = reader.settled ? await reader.settled(before.state, signal) : await reader.read(before.state, signal);
   if ("unread" in after) return ran;
+  ledger.observed?.(after);
+  if (typeof undoes !== "string" && !acts) return ran;
   // Where neither read can say which page it was, nothing is claimed (header).
   if (before.location === undefined || after.location === undefined) return ran;
   const stayed = after.location === before.location;
@@ -80,6 +92,6 @@ export async function automationStudioSiteResetPlacedCall<T>(input: {
     ledger.noEffect?.(act);
     return ran;
   }
-  ledger.placed(act, { state: before.state, location: before.location, changed: after.differs, ...(after.lines ? { lines: after.lines } : {}), ...(created.length ? { created } : {}) });
+  ledger.placed(act, { state: before.state, location: before.location, changed: after.differs, ...(before.collections && after.collections ? { collections: { before: before.collections, after: after.collections } } : {}), ...(after.lines ? { lines: after.lines } : {}), ...(created.length ? { created } : {}) });
   return ran;
 }

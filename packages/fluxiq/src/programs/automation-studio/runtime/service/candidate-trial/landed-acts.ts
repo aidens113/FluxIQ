@@ -42,8 +42,10 @@
 // wrote from the snapshots just before and just after it, in the forms a
 // declaration and a `startState` read already take:
 //
-// - `spot`: `{ item?, dialog? }`, the opaque tokens of where the step's control
-//   sat on the page before it;
+// - `spot`: `{ item?, dialog?, subject?, page? }`, the opaque tokens of where
+//   the step's control sat on the page before it, and of what it and that page
+//   are about (t719), which tie an undo elsewhere -- the basket line an add on
+//   a detail page made -- to the step's act;
 // - `items`: `{ before, after }`, the opaque tokens of the items -- rows, cards,
 //   list lines -- each of those two pages listed.
 //
@@ -106,7 +108,8 @@ export function automationStudioCandidateTrialLandedActs(trace: AutomationStudio
     if (!consequences.length && !possible) return;
     const control = automationStudioModelFacingControlWords(node.parameterValues);
     const spot = spotOf(attempt);
-    acts.push({ step: index + 1, definitionId: attempt.definitionId, ...(node.label ? { label: node.label } : {}), ...(control ? { control } : {}), consequences, ...(possible ? { possible: true as const } : {}), ...(spot ? { spot } : {}), ...(created.length ? { created } : {}) });
+    const collections = collectionsOf(attempt);
+    acts.push({ step: index + 1, definitionId: attempt.definitionId, ...(node.label ? { label: node.label } : {}), ...(control ? { control } : {}), consequences, ...(possible ? { possible: true as const } : {}), ...(spot ? { spot } : {}), ...(collections ? { collections } : {}), ...(created.length ? { created } : {}) });
   });
   return acts;
 }
@@ -127,12 +130,12 @@ const PLACE_TOKEN = /^[A-Za-z0-9:_-]{1,128}$/u;
 /** More items than any page lists is no list of a page's items. */
 const MAX_ITEMS = 2_000;
 
-/** The diff's `spot`, where it gave a token for the item or the dialog the step's control sat in (header). */
+/** The diff's `spot`, where it gave a token for the item or the dialog the step's control sat in, or for what it and its page are about (header, t719). */
 function spotOf(attempt: AutomationStudioNodeAttemptTrace): AutomationStudioSiteResetSpot | undefined {
   const spot = attempt.stateRefs?.stateDiff?.spot;
   if (!isObject(spot)) return undefined;
-  const item = token(spot.item), dialog = token(spot.dialog);
-  return item || dialog ? { ...(item ? { item } : {}), ...(dialog ? { dialog } : {}) } : undefined;
+  const item = token(spot.item), dialog = token(spot.dialog), subject = token(spot.subject), page = token(spot.page), scope = token(spot.scope);
+  return item || dialog || subject || page || scope ? { ...(item ? { item } : {}), ...(dialog ? { dialog } : {}), ...(subject ? { subject } : {}), ...(page ? { page } : {}), ...(scope ? { scope } : {}) } : undefined;
 }
 
 /** The diff's `items`: the tokens the page before the step and the page after it listed; a side not listed is absent (header). */
@@ -179,4 +182,33 @@ function changedInPlace(attempt: AutomationStudioNodeAttemptTrace): boolean {
 /** A diff side the domain wrote something on. */
 function written(value: JsonValue | undefined): boolean {
   return typeof value === "string" ? value.trim().length > 0 : Array.isArray(value) ? value.length > 0 : false;
+}
+
+
+/** Immediate complete inventory tokens from the domain; malformed or partial maps cannot prove a transfer. */
+function collectionsOf(attempt: AutomationStudioNodeAttemptTrace): AutomationStudioSiteResetTrialActPlace["collections"] {
+  const witness = attempt.stateRefs?.stateDiff?.collections;
+  if (!isObject(witness)) return undefined;
+  const read = (value: JsonValue | undefined): NonNullable<AutomationStudioSiteResetTrialActPlace["collections"]>["before"] | undefined => {
+    if (!Array.isArray(value) || value.length > MAX_ITEMS) return undefined;
+    const found: NonNullable<AutomationStudioSiteResetTrialActPlace["collections"]>["before"] = [];
+    const scopes = new Set<string>();
+    for (const entry of value) {
+      if (!isObject(entry)) return undefined;
+      const scope = token(entry.scope), group = token(entry.group), subjects = tokens(entry.subjects);
+      if (!scope || !group || !subjects || !Array.isArray(entry.subjects) || entry.subjects.length !== subjects.length || scopes.has(scope) || !isObject(entry.states)) return undefined;
+      const states: Record<string, string> = {};
+      for (const subject of subjects) {
+        const state = token(entry.states[subject]);
+        if (!state) return undefined;
+        states[subject] = state;
+      }
+      if (Object.keys(entry.states).length !== subjects.length) return undefined;
+      scopes.add(scope);
+      found.push({ scope, group, subjects, states });
+    }
+    return found;
+  };
+  const before = read(witness.before), after = read(witness.after);
+  return before && after ? { before, after } : undefined;
 }

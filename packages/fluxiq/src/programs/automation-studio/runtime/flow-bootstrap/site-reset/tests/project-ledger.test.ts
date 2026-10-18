@@ -128,3 +128,17 @@ describe("a project build's possibly lasting acts (t593)", () => {
     expect(find.possiblyInPlace().map((act) => act.act)).toEqual(["act-1"]);
   });
 });
+
+
+it("adopts immutable original inventories without replacing an owner's current observation", () => {
+  const project = new AutomationStudioSiteResetProjectLedger();
+  const own = project.forBrief("supervisor");
+  const collection = { scope: "p:list", group: "g:resource", subjects: [] as string[], states: {} as Record<string, string> };
+  project.observed({ state: {}, differs: [], collections: [collection] });
+  collection.subjects.push("s:new");
+  collection.states["s:new"] = "v:new";
+  own.observed({ state: {}, differs: [], collections: [collection] }, false);
+  expect(project.forBrief("supervisor")).toBe(own);
+  own.trialRan([{ step: 1, definitionId: "demo.add", consequences: ["create_new"], spot: { subject: "s:new" } }]);
+  expect(own.target("act-1", { effect: "mutate", consequences: ["delete"], control: { scope: "p:list", subject: "s:new" } })).toMatchObject({ kind: "admit" });
+});

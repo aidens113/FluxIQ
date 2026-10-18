@@ -107,7 +107,8 @@ import {
   type AutomationStudioActionPermissionAction,
   type AutomationStudioActionPermissionCheck,
   type AutomationStudioActionPermissionRequest,
-  type AutomationStudioInstructedConsequence
+  type AutomationStudioInstructedConsequence,
+  type AutomationStudioReadActionDeclaration
 } from "../action-permissions/index.ts";
 import type { AutomationStudioAuthoringMode } from "../../model/authoring-mode/index.ts";
 import { automationStudioActivityAskPort } from "../activity/index.ts";
@@ -121,6 +122,7 @@ import {
   type AutomationStudioSiteResetCalls,
   type AutomationStudioSiteResetClaim,
   type AutomationStudioSiteResetDeclared,
+  type AutomationStudioSiteResetSpot,
   type AutomationStudioSiteResetTarget
 } from "./site-reset/contracts.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS } from "./site-reset/words.ts";
@@ -352,7 +354,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
         target = siteReset.target(undo.act, {
           effect: action.effect,
           consequences: action.effect === "observe" ? [] : action.consequences,
-          control: { ...(action.controlItem !== null ? { item: action.controlItem } : {}), ...(action.controlDialog !== null ? { dialog: action.controlDialog } : {}) }
+          control: placeOf(action)
         });
         // Another item's control: never acted on, and nobody is asked about it.
         if (target.kind === "refused") return { permitted: false, missing: [], requestId: null };
@@ -365,6 +367,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       siteReset.explored({
         callId: call.callId,
         toolId: call.toolId,
+        ...(typeof value.node === "string" ? { operation: value.node } : {}),
         ...(undo ? { undoes: undo.act } : {}),
         ...(declared ? { declared } : {}),
         ...(target?.kind === "admit" ? { on: target.on } : {}),
@@ -455,11 +458,21 @@ function declaredAs(gate: AutomationStudioActionPermissionGate, declaration: Aut
     consequences: read.effect === "observe" ? [] : automationStudioConsequencesInOrder(read.consequences),
     control: {
       name: gate.carriedControlName(read.controlName), kind: read.controlKind,
-      // Opaque, compared only for equality, and never carried to a person (t475).
-      ...(read.controlItem !== null ? { item: read.controlItem } : {}),
-      ...(read.controlDialog !== null ? { dialog: read.controlDialog } : {})
+      // Opaque, compared only for equality, and never carried to a person (t475, t719).
+      ...placeOf(read)
     },
     verb: read.verb
+  };
+}
+
+/** The opaque place tokens a declaration gave its control (t475, t719): where it sits and what it and its page are about; each absent where it gave none. */
+function placeOf(read: AutomationStudioReadActionDeclaration): AutomationStudioSiteResetSpot {
+  return {
+    ...(read.controlItem !== null ? { item: read.controlItem } : {}),
+    ...(read.controlDialog !== null ? { dialog: read.controlDialog } : {}),
+    ...(read.controlSubject !== null ? { subject: read.controlSubject } : {}),
+    ...(read.controlPage !== null ? { page: read.controlPage } : {}),
+    ...(read.controlScope !== null ? { scope: read.controlScope } : {})
   };
 }
 

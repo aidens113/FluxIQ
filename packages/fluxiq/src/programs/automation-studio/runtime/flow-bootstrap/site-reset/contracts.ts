@@ -26,8 +26,17 @@ export type AutomationStudioSiteResetUndo = { act: string; allowed: readonly Aut
  * item -- row, card, list item -- and the dialog, compared only for equality.
  * Absent where the control sits in no item, or in no dialog. Two absent items
  * are never the same item (t479).
+ *
+ * And what it is about (t719), as opaque tokens of one kind, so either may
+ * equal the other: `subject`, the title of the item it sits in, or for a
+ * control in no item the nearest titled part of the page around it; `page`,
+ * what its page is about (its main heading). An act whose effect shows on
+ * another page or in another list -- an add from a detail page whose line
+ * appears in the basket, a line moved to a saved list -- has no item an undo
+ * there can match, and is tied to that undo by these instead (`./ledger.ts`,
+ * `target`). Absent where the domain found none.
  */
-export type AutomationStudioSiteResetSpot = { item?: string; dialog?: string };
+export type AutomationStudioSiteResetSpot = { item?: string; dialog?: string; subject?: string; page?: string; scope?: string };
 
 /**
  * What an undo call may do to the control the domain is about to act on
@@ -41,9 +50,12 @@ export type AutomationStudioSiteResetSpot = { item?: string; dialog?: string };
  * - `follow_up`: a control in a dialog, with no item, after an undo of the
  *   same act landed on its own or created item: the site asking to confirm.
  * - `moving`: nothing lasting and no item -- going to a page, opening a view.
+ * - `subject`: a control about what the act was about (t719), by a positive
+ *   match of their `subject` tokens -- the act's `page` too where it sat in no
+ *   item -- with a class that reverses the act's; nothing unasked.
  */
 export type AutomationStudioSiteResetTarget =
-  | { kind: "admit"; on: "created" | "own" | "follow_up" | "moving"; allowed: readonly AutomationStudioActionConsequence[] }
+  | { kind: "admit"; on: "created" | "own" | "follow_up" | "moving" | "subject"; allowed: readonly AutomationStudioActionConsequence[] }
   | { kind: "refused"; evidence: JsonObject & { code: string } };
 
 /**
@@ -62,7 +74,7 @@ export type AutomationStudioSiteResetDeclared = {
   permitted: boolean;
   effect: AutomationStudioActionEffect;
   consequences: readonly AutomationStudioActionConsequence[];
-  /** The control as the gate carries it to a person: `name` is null where it was withheld. `item` and `dialog` are the domain's opaque tokens (t475). */
+  /** The control as the gate carries it to a person: `name` is null where it was withheld. `item`, `dialog`, `subject` and `page` are the domain's opaque tokens (t475, t719). */
   control: { name: string | null; kind: string | null } & AutomationStudioSiteResetSpot;
   verb: string;
 };
@@ -71,6 +83,8 @@ export type AutomationStudioSiteResetDeclared = {
 export type AutomationStudioSiteResetExplored = {
   callId: string;
   toolId: string;
+  /** Registered operation that landed; repeated effects are grouped only on the same control and source. */
+  operation?: string;
   /** The act this call undoes, when its claim was read as an undo. */
   undoes?: string;
   /** The last action the domain put to the gate for this call; absent when it put none. */
@@ -119,6 +133,11 @@ export type AutomationStudioSiteResetRead = {
   lines?: AutomationStudioSiteResetLines;
   /** The opaque tokens of the items -- rows, cards -- on the page, in the same form a declaration's `control.item` takes (t475). */
   items?: string[];
+  /** All subjects on this observed scope, including singleton and hidden records. */
+  subjects?: string[];
+  /** Positively complete, resource-bound collection inventories; only these can witness absence. */
+  collections?: Array<{ scope: string; group: string; subjects: string[]; states: Record<string, string> }>;
+  scope?: string;
 };
 
 /** A read, or why there is none: the domain has no `startState`, it answered nothing usable, or reading failed (kept on the start check as `failure`). */
@@ -134,6 +153,8 @@ export type AutomationStudioSiteResetPlace = {
   state: JsonObject;
   location: string;
   changed: string[];
+  /** Immediate complete before/after evidence, never reconstructed during reset. */
+  collections?: AutomationStudioSiteResetTrialActPlace["collections"];
   lines?: AutomationStudioSiteResetLines;
   /**
    * The items that were on its page after the act and not before it (t475):
@@ -211,7 +232,12 @@ export type AutomationStudioSiteResetTrialAct = {
  * before. Absent where the diff said nothing of them; then no undo of it can
  * be tied to an item.
  */
-export type AutomationStudioSiteResetTrialActPlace = { spot?: AutomationStudioSiteResetSpot; created?: string[] };
+export type AutomationStudioSiteResetTrialActPlace = {
+  spot?: AutomationStudioSiteResetSpot;
+  created?: string[];
+  /** Domain-neutral opaque complete inventories captured immediately around this effect. */
+  collections?: { before: NonNullable<AutomationStudioSiteResetRead["collections"]>; after: NonNullable<AutomationStudioSiteResetRead["collections"]> };
+};
 
 /**
  * How a trial's start was made (t475). `startReset`: the deployment's start

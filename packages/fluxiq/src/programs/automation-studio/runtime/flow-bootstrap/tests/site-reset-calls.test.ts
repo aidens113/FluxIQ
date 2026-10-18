@@ -92,6 +92,20 @@ describe("a candidate build's undo through the permission wrapper", () => {
     expect(reset.explored[0]?.declared?.control).toEqual({ name: null, kind: "button", item: "item:abc", dialog: "dialog:def" });
   });
 
+  it("passes what the control and its page are about to the ledger, on an undo and on the act it records (t719)", async () => {
+    const reset = ledger(() => DELETE_OK);
+    const run = build({ siteReset: reset.calls });
+    const placed = { ...REMOVE, control: { ...REMOVE.control, item: "i:line", subject: "s:kettle", page: "s:basket" } };
+    await run.call("call.1", { declaration: placed as unknown as JsonObject, undoes: "act-1" });
+    await run.call("call.2", { declaration: { ...placed, consequences: ["create_new"] } as unknown as JsonObject });
+
+    expect(reset.targets).toEqual([["act-1", { item: "i:line", subject: "s:kettle", page: "s:basket" }]]);
+    expect(reset.explored.map((call) => call.declared?.control)).toEqual([
+      { name: null, kind: "button", item: "i:line", subject: "s:kettle", page: "s:basket" },
+      { name: null, kind: "button", item: "i:line", subject: "s:kettle", page: "s:basket" }
+    ]);
+  });
+
   it("refuses an undo on a control the ledger refuses, unrun: the domain is told no, nobody is asked, and the model gets the ledger's words (t475)", async () => {
     const evidence = { ok: false, code: "candidate.undo_wrong_target", act: "act-1" };
     const reset = ledger(() => DELETE_OK, () => ({ kind: "refused", evidence }));

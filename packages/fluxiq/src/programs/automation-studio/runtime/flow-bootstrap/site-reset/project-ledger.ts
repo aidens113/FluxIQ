@@ -27,6 +27,7 @@
 //   each `possible`; it is never in place to undo, so it refuses nothing, and
 //   a phase's start asks the brief's ledger whether it may still be there.
 
+import type { AutomationStudioSiteResetRead } from "./contracts.ts";
 import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetRecordedAct } from "./ledger.ts";
 
 /** The highest act number `undoes` can name (`^act-[1-9][0-9]{0,3}$`), as a single ledger keeps it. */
@@ -50,6 +51,7 @@ export type AutomationStudioSiteResetProjectLedgerOptions = {
 export class AutomationStudioSiteResetProjectLedger {
   private readonly briefs = new Map<string, AutomationStudioSiteResetLedger>();
   private readonly acts: AutomationStudioSiteResetProjectAct[] = [];
+  private readonly originals = new Map<string, NonNullable<AutomationStudioSiteResetRead["collections"]>[number]>();
   private next = 1;
   private writing: Promise<void> = Promise.resolve();
   private failure: { error: unknown } | undefined;
@@ -63,15 +65,27 @@ export class AutomationStudioSiteResetProjectLedger {
   forBrief(briefId: string): AutomationStudioSiteResetLedger {
     if (typeof briefId !== "string" || !briefId) throw new TypeError("A brief's ledger needs a non-empty brief id.");
     const known = this.briefs.get(briefId);
-    if (known) return known;
+    if (known) {
+      known.adoptOriginalCollections([...this.originals.values()]);
+      return known;
+    }
     const ledger = new AutomationStudioSiteResetLedger({
       owner: briefId,
       nextActId: () => this.nextActId(),
       sink: (recorded) => this.recorded(briefId, recorded),
       possible: true
     });
+    ledger.adoptOriginalCollections([...this.originals.values()]);
     this.briefs.set(briefId, ledger);
     return ledger;
+  }
+
+  /** Immutable original evidence only before the first known lasting effect anywhere in this project. */
+  observed(read: AutomationStudioSiteResetRead): void {
+    if (this.acts.some((act) => !act.possible)) return;
+    for (const collection of read.collections ?? []) {
+      if (!this.originals.has(collection.scope)) this.originals.set(collection.scope, structuredClone(collection));
+    }
   }
 
   /** Every act of the build in the order recorded, with its owner and whether its brief still has it to undo. */
