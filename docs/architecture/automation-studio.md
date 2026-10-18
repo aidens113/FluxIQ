@@ -405,6 +405,13 @@ required, are refused deterministically, because neither can be excused by any
 reading of any request. Everything else is put to one `loop_verification` call,
 asked twice when the first answer is not `yes`.
 
+Search wording describes how to retrieve candidates unless the request explicitly
+requires literal title or name text. Judges still compare each candidate's actual
+type and content with the request; matching a query alone proves no qualification.
+When a judge claims a condition alone omitted named rows, Core checks those names
+against stored rows and excluded-copy evidence before following repair advice.
+Claims containing a genuinely missing row remain refusals.
+
 **An empty result is judged like any other, as of 2026-09-24.** Until then a run
 that stored no rows was exempt: an empty record set was recorded
 `core.result.no_records` and a run with no record set at all
@@ -545,6 +552,14 @@ Core's words naming the request's words and the options the step left out
 (`result-verification/unsure-doubts/recheck-words.ts`); its answer takes its place, so a yes
 still needs two yeses. A doubt naming any step whose option is not the
 request's own words stands, and a no is never asked again on this ground.
+
+A read account reports an explicit extraction dedupe first, then the effective
+`recordOutput.process.dedupe` where the domain moved collection processing
+out of a one-page read. Its `dedupes` and `dedupeBy` therefore describe the
+dataset operation even when the page request itself has no dedupe. With neither
+declaration requesting dedupe, a recognized read reports `dedupes: false`;
+`dedupeBy` is omitted unless screened keys are available. Page values are
+never copied into it.
 
 A read account also carries `leftOutTogether` (t655,
 `result-verification/read-account/together-rows.ts`) where the read sent them:
