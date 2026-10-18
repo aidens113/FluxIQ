@@ -5,6 +5,7 @@ import type { AutomationStudioFlowBootstrapInterface } from "../../flow-bootstra
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import { automationStudioProjectAskedActs } from "./asked-acts.ts";
 import { automationStudioProjectDigest } from "./digest.ts";
+import { automationStudioProjectEarlierAttempt, type AutomationStudioProjectEarlierAttempt } from "./earlier-attempt.ts";
 import { automationStudioProjectJsonShape as shape, type AutomationStudioProjectParse } from "./json-shape.ts";
 import { readAutomationStudioProjectReceiptRef, type AutomationStudioProjectReceiptRef } from "./receipt-ref.ts";
 import type { AutomationStudioProjectStructurePlan } from "./structure-plan.ts";
@@ -64,6 +65,13 @@ import type { AutomationStudioProjectTaskSpec } from "./task-spec.ts";
 // (`routerRun`), so the dispatcher shows its builder a script that already
 // fits (`../dispatch/run-brief.ts`). Each is absent when it does not apply, so
 // a brief recorded before them reads as it did.
+//
+// **A brief after a builder stopped for repeating itself carries that attempt
+// (live lane 1 fix 1, `run-mvcx8na6-9554a3f1`).** A build or repair brief of a
+// subflow whose latest return came back with its builder stopped by the
+// no-progress guard names that brief, its reason and the lasting acts it left
+// (`earlierAttempt`, `./earlier-attempt.ts`), so its new builder is shown what
+// was tried and takes another path. Core sets it, never the supervisor.
 
 /** A trial verdict that is not a pass. */
 type FailedVerdict = Exclude<AutomationStudioCandidateTrialVerdict, "yes">;
@@ -126,6 +134,8 @@ export type AutomationStudioProjectSubflowBrief = {
   failingTrial?: AutomationStudioProjectFailingTrial;
   /** Build only: the done proposal an amendment that only added to this subflow carried for it (header), set by Core, never by the supervisor. */
   carriedFrom?: AutomationStudioProjectCarriedProposal;
+  /** Build or repair: the earlier brief of this subflow whose builder the no-progress guard stopped (header), set by Core, never by the supervisor. */
+  earlierAttempt?: AutomationStudioProjectEarlierAttempt;
 };
 
 /**
@@ -261,7 +271,7 @@ function isObject(value: unknown): value is JsonObject {
 }
 
 function read(value: unknown): AutomationStudioProjectSubflowBrief {
-  const fields = shape.object(value, "brief", ["briefId", "kind", "planDigest", "subflowKey", "parts", "entry", "allowanceUsd", "maxIterations", "permittedActs"], ["interface", "maxCalls", "recordingExcerpt", "failingReceipt", "failingTrial", "carriedFrom"]);
+  const fields = shape.object(value, "brief", ["briefId", "kind", "planDigest", "subflowKey", "parts", "entry", "allowanceUsd", "maxIterations", "permittedActs"], ["interface", "maxCalls", "recordingExcerpt", "failingReceipt", "failingTrial", "carriedFrom", "earlierAttempt"]);
   const kind = shape.oneOf(fields.kind, "brief.kind", AUTOMATION_STUDIO_PROJECT_BRIEF_KINDS);
   const parts = shape.ids(fields.parts, "brief.parts", LIMITS.parts);
   if (kind !== "survey" && kind !== "reset" && !parts.length) return shape.refuse("project.brief_no_parts", "brief.parts");
@@ -297,6 +307,10 @@ function read(value: unknown): AutomationStudioProjectSubflowBrief {
   if (fields.carriedFrom !== undefined) {
     if (kind !== "build") return shape.refuse("project.brief_carried_from", "brief.carriedFrom");
     brief.carriedFrom = readCarried(fields.carriedFrom, "brief.carriedFrom");
+  }
+  if (fields.earlierAttempt !== undefined) {
+    if (kind !== "build" && kind !== "repair") return shape.refuse("project.brief_earlier_attempt", "brief.earlierAttempt");
+    brief.earlierAttempt = automationStudioProjectEarlierAttempt.read(fields.earlierAttempt, "brief.earlierAttempt");
   }
   return brief;
 }

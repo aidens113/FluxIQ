@@ -179,7 +179,7 @@ describe("a project build its time limit stops", () => {
       kind: "note", status: "failed",
       text: TEST_ONE_TEXT
     });
-    expect(seen.some((event) => event.detail?.title === "The supervisor ended the build: it could not finish the Flow.")).toBe(false);
+    expect(seen.some((event) => event.detail?.title === "FluxIQ could not finish the Flow.")).toBe(false);
     // The time limit's row is Core's words alone; the brief's own return row may quote its builder.
     expect(JSON.stringify(told)).not.toContain(MODEL_REASON);
   });
@@ -255,9 +255,9 @@ describe("a project build its time limit stops", () => {
 });
 
 /** What each case's time limit tells the person (header). */
-const TEST_ONE_TEXT = "None of its 2 parts passed its own test. Left: a part tested once whose last test could not be confirmed; and a part tested once whose last test could not be confirmed. The whole Flow was not assembled, so it was never tested as one. Nothing this build did is still on the target.";
-const TEST_TWO_TEXT = "Of its 2 parts, 2 passed their own test. A whole Flow was assembled and tested from its start, and its last whole test was judged not to do what was asked; it is kept as a draft, and nothing was put into the Flow. Nothing this build did is still on the target.";
-const TEST_THREE_TEXT = "Its one part did not pass its own test. Left: a part tested once whose last test could not be confirmed. A whole Flow was assembled and tested from its start, and its last whole test could not be confirmed; it is kept as a draft, and nothing was put into the Flow. Nothing this build did is still on the target.";
+const TEST_ONE_TEXT = "None of its 2 parts passed its own test. Left: a part tested once whose last test could not be confirmed; and a part tested once whose last test could not be confirmed. The whole Flow was not assembled, so it was never tested as one. The build left no change on the site that it knows of.";
+const TEST_TWO_TEXT = "Of its 2 parts, 2 passed their own test. A whole Flow was assembled and tested from its start, and its last whole test was judged not to do what was asked; it is kept as a draft, and nothing was put into the Flow. The build left no change on the site that it knows of.";
+const TEST_THREE_TEXT = "Its one part did not pass its own test. Left: a part tested once whose last test could not be confirmed. A whole Flow was assembled and tested from its start, and its last whole test could not be confirmed; it is kept as a draft, and nothing was put into the Flow. The build left no change on the site that it knows of.";
 
 /** The service over `provider`, with a blank project and Flow to build. */
 async function serviceWith(provider: ReturnType<typeof mockProvider>) {

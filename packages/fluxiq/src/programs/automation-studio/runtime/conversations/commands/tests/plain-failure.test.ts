@@ -60,8 +60,8 @@ describe("a failed build's stored answer", () => {
       error: "Flow Bootstrap generation failed (flow_bootstrap.post_provider_validation_failed).",
       payload: { diagnostic: { code: "flow_bootstrap.post_provider_validation_failed", stage: "post_provider_validation", issueCodes: [`project.build_${outcome}`] } }
     });
-    expect(ended("partial")).toBe("the build failed: the supervisor ended it with only part of the Flow built");
-    expect(ended("blocked")).toBe("the build failed: the supervisor ended it because it could not finish the Flow");
+    expect(ended("partial")).toBe("the build failed: FluxIQ stopped with the Flow only partly built");
+    expect(ended("blocked")).toBe("the build failed: FluxIQ could not finish the Flow");
     expect(ended("partial")).not.toContain("what the model wrote");
     // The stage's words stay for a failure there that carries no ending of the supervisor's.
     expect(automationStudioConversationCallCause("the build", { ok: false, error: "x", payload: { diagnostic: { code: "flow_bootstrap.post_provider_validation_failed", stage: "post_provider_validation" } } }))
@@ -131,9 +131,9 @@ describe("a supervisor's reason for ending a build", () => {
       error: "Flow Bootstrap generation failed (flow_bootstrap.post_provider_validation_failed).",
       payload: { diagnostic: { code: "flow_bootstrap.post_provider_validation_failed", stage: "post_provider_validation", issueCodes, ...(endedBecause === undefined ? {} : { endedBecause }) } }
     });
-    expect(ended(["project.build_blocked"], "The item can't be collected from this branch.")).toBe("the build failed: the supervisor ended it because it could not finish the Flow: the item can't be collected from this branch");
-    expect(ended(["project.build_partial"], "FluxIQ could not reach the last page.")).toBe("the build failed: the supervisor ended it with only part of the Flow built: FluxIQ could not reach the last page");
-    expect(ended(["project.build_blocked"])).toBe("the build failed: the supervisor ended it because it could not finish the Flow");
+    expect(ended(["project.build_blocked"], "The item can't be collected from this branch.")).toBe("the build failed: FluxIQ could not finish the Flow: the item can't be collected from this branch");
+    expect(ended(["project.build_partial"], "FluxIQ could not reach the last page.")).toBe("the build failed: FluxIQ stopped with the Flow only partly built: FluxIQ could not reach the last page");
+    expect(ended(["project.build_blocked"])).toBe("the build failed: FluxIQ could not finish the Flow");
     expect(ended(["project.build_time_limit", "project.build_blocked"], "The item can't be collected.")).toBe("the build failed: it reached its time limit before a whole test of the Flow passed");
   });
 });

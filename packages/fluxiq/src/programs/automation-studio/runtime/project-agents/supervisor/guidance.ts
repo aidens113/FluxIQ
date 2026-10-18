@@ -118,7 +118,8 @@ const HOW_TO_WORK = [
   "6. Test that exact Flow with core.test_candidate. If this build left lasting acts on the target, first dispatch a reset brief, which puts the target back the way the build found it. "
     + "With one subflow there is no such test or reset to send: its builder put the target back before its own test.",
   "7. Complete with the complete object project.assemble returned, and only after its test answered yes. If the task cannot be finished, complete with ended (blocked or partial) and your reason, once a brief has come back blocked or partial or a whole test has not passed. "
-    + "Before you end, if this build left lasting acts on the target, dispatch a reset brief first; Core adds whatever is still left to your reason, so the person knows."
+    + "Before you end, if this build left lasting acts on the target, dispatch a reset brief first; Core adds whatever is still left to your reason, so the person knows. "
+    + "The person who asked for the Flow reads your reason as it is: write it for them in plain words, saying what could not be done and why, as they would see it on the target. Never put codes, tool or subflow names, or this build's own terms (brief, builder, proposal, assembly, port, lasting act) in it."
 ].join("\n");
 
 const EXAMPLE = "Examples. One part, from a library account: \"Renew every book on my loans that is due this week.\" One part, p1, the whole sentence; one subflow, renew_loans, parts [p1], no inputs or outputs. "
@@ -201,7 +202,9 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     /** Beside each proposal an amendment carried (`./plan-tool.ts`, t658). */
     carried: "This subflow's done proposal is carried, not done: its trial was not judged against the parts or outputs this plan added. Send it a build brief: its builder starts from that proposal, tests it first, and changes it only for what that trial shows missing.",
     afterReturnsDone: "Every brief sent came back done. Send briefs for any subflow still without a done proposal, or call project.assemble once every one has one.",
-    afterReturnsNotDone: "A brief came back partial or blocked. Read its reason: send a changed brief for that subflow, change the plan with project.amend_plan, or end honestly.",
+    /** A return marked stoppedRepeating may be sent once more unchanged (`./dispatch-tool.ts`, lane-1 fix 1). */
+    afterReturnsNotDone: "A brief came back partial or blocked. Read its reason: send a changed brief for that subflow, change the plan with project.amend_plan, or end honestly. "
+      + "A return marked stoppedRepeating had its builder stopped for repeating calls without progress: its brief may be sent once more unchanged, and its new builder is shown that earlier attempt.",
     /**
      * After a brief came back not done on an output the plan asks its subflow to hand on and none of its steps makes
      * (`./dispatch-tool.ts`, t645): {producer}, {value} and {takers} filled in, each in quotes.
@@ -273,10 +276,12 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     resetRepeatedEnd: "The last brief was a reset that came back without undoing everything, and the target still holds exactly what it left, as listed: another reset would only do the same, so none was run. "
       + "What a reset tried and could not undo is kept and no longer holds a whole test back. Nothing is assembled yet: send the briefs still needed and call project.assemble, then test; or end honestly with ended and your reason, and Core names what is left.",
     briefRepeated: "No brief was sent: each listed brief is the same as its subflow's latest brief, which came back blocked for the reason shown, and nothing it starts from has changed since, so its builder could only do the same. "
-      + "Change what the builder is given (its parts, what runs before it, a recordingExcerpt, or the trial a repair starts from), change the plan with project.amend_plan if that subflow cannot do its parts, or end honestly with ended and your reason.",
+      + "Change what the builder is given (its parts, what runs before it, a recordingExcerpt, or the trial a repair starts from), change the plan with project.amend_plan if that subflow cannot do its parts, or end honestly with ended and your reason."
+      + " Only a brief whose latest return says stoppedRepeating, its builder stopped for repeating calls without progress, may be sent once more unchanged, its new builder shown the earlier attempt; a second such stop is refused the same way.",
     /** Beside the returns when only some briefs of a call repeated a blocked one (`./dispatch-tool.ts`, t638): the others were sent. */
     briefRepeatedOthersSent: "The briefs under repeated were not sent: each is the same as its subflow's latest brief, which came back blocked for the reason shown, and nothing it starts from has changed since, so its builder could only do the same. "
-      + "The other briefs of this call were sent, and their returns are under returns. For each brief under repeated, change what its builder is given (its parts, what runs before it, a recordingExcerpt, or the trial a repair starts from), change the plan with project.amend_plan if that subflow cannot do its parts, or end honestly with ended and your reason.",
+      + "The other briefs of this call were sent, and their returns are under returns. For each brief under repeated, change what its builder is given (its parts, what runs before it, a recordingExcerpt, or the trial a repair starts from), change the plan with project.amend_plan if that subflow cannot do its parts, or end honestly with ended and your reason."
+      + " Only a brief whose latest return says stoppedRepeating, its builder stopped for repeating calls without progress, may be sent once more unchanged, its new builder shown the earlier attempt; a second such stop is refused the same way.",
     repairUnchangedTest: "No brief was sent: each listed subflow's latest brief came back with a proposal that does exactly what the one before it did, and the plan and the latest whole test stand as they did then, so another brief would change nothing. "
       + "That test may be repeated: test the latest assembled Flow again with core.test_candidate, with the same complete object. If it fails the same way, change the plan with project.amend_plan or end honestly.",
     repairUnchangedAssemble: "No brief was sent: each listed subflow's latest brief came back with a proposal that does exactly what the one before it did, so another would change nothing. Nothing is assembled yet: send the briefs still needed, call project.assemble and test the Flow, or end honestly.",

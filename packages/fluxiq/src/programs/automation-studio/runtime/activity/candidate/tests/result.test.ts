@@ -58,6 +58,14 @@ describe("testing a candidate's whole Flow, in words", () => {
     expect(test({ ok: false, verdict: "execution_failed", feedback: { code: "executor.cancelled", steps: [{ step: 1, status: "succeeded" }, { step: 2, status: "succeeded" }] } })?.words).toBe("the Flow stopped before its end: 2 steps done");
   });
 
+  // Lane 3 (`run-mvcvzwk1-c1d869e4`): a builder's own test whose port threw, and a repeat that stopped for making no progress.
+  it("a part's test whose runner failed, and a loop that went round without getting anywhere, say so in a person's words", () => {
+    expect(said(automationStudioActivityCandidateResult("core.test_subflow", ran({ ok: false, verdict: "execution_failed", feedback: { code: "subflow.trial_port_failed" } })))).toMatchObject({ words: "the test couldn't run the Flow" });
+    const actual = "Passes 2 to 4 of this repeat stored no new rows and left the page as it was, so the loop stopped before pass 5 instead of doing the same again.";
+    expect(said(test({ ok: false, verdict: "execution_failed", feedback: { code: "candidate.execution_incomplete", steps: [{ step: 1, status: "succeeded" }, { step: 2, status: "failed", failureCode: "repeat.no_progress", happened: "The step ended somewhere other than expected.", actual }] } }))?.words)
+      .toBe("step 2 didn't work: passes 2 to 4 of this repeat stored no new rows and left the page as it was, so the loop stopped before pass 5 instead of doing the same again; 1 step done");
+  });
+
   it("names at most two steps that did not work, and counts the rest", () => {
     const steps = [1, 2, 3, 4].map((step) => ({ step, status: "failed", happened: "The step ran and did not work." }));
     expect(test({ ok: false, verdict: "no", feedback: { steps } })?.words).toBe("the Flow ran, but it didn't do what you asked: step 1 didn't work and was passed over: the step ran and did not work; step 2 didn't work and was passed over: the step ran and did not work; 2 more didn't work");

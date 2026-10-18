@@ -154,7 +154,7 @@ describe("screened field feedback from the actual provider schema", () => {
       issueCodes: error.issueCodes, ...(error.fieldIssues ? { fieldIssues: error.fieldIssues } : {}),
       stepsWithoutProgress: 1, maxStepsWithoutProgress: 3
     });
-    expect(feedback.fieldIssues).toBeUndefined();
+    expect(feedback.fieldIssues).toEqual([{ code: "llm_output.unexpected_field", path: "response.decision", expectedPath: "response.decision.input" }]); // closed, run-mvcwp3wh-bcea2115
     expect(JSON.stringify({ diagnostics: invalid.diagnostics, error, feedback })).not.toMatch(/PRIVATE_FIELD_NAME|PRIVATE_FIELD_VALUE/);
   });
 

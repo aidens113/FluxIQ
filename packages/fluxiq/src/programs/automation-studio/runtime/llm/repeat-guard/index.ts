@@ -4,6 +4,7 @@
 // for an unchanged read, the condition that left out no row (t693) -- and
 // whether a call wrote its step rather than ran it (t707 D1).
 export * from "./candidate-feedback.ts";
+export * from "./covered-refused.ts";
 export * from "./draft-key.ts";
 export * from "./feedback.ts";
 export * from "./narrowed-nothing.ts";

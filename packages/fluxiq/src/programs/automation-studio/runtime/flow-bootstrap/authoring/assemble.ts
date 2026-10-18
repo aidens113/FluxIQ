@@ -69,7 +69,7 @@ import { authoringNestedValue, authoringParameterValue, authoringSetAtPath, auth
 import { routeAutomationStudioFlowScriptRepeats } from "./draft-routing.ts";
 import {
   automationStudioFlowBootstrapSubflowRequires,
-  automationStudioFlowScriptCalledParts,
+  automationStudioFlowScriptAdjacentListRepeats, automationStudioFlowScriptCalledParts,
   automationStudioFlowScriptCallStep,
   automationStudioFlowScriptEntryPoints,
   automationStudioFlowScriptFacts,
@@ -134,13 +134,14 @@ export function assembleAutomationStudioFlowScriptPlan(input: {
     ? { definition: library.find((definition) => definition.id === step.node), candidates: [] }
     : matchAuthoringDefinition(step.node ?? step.description, definitions);
   const definitionOf = (step: AutomationStudioFlowScriptStep): AutomationStudioNodeDefinition | undefined => match(step).definition;
-  // A step that runs a part becomes the call node that runs it
-  // (`../script-statements/called-parts.ts`), and each block's `optional:`,
-  // `only after:` and `repeat` statements become the steps that wire them
+  // Adjacent steps repeating over one listing are one span (`../script-statements/adjacent-list-repeats.ts`);
+  // then a step that runs a part becomes the call node that runs it (`../script-statements/called-parts.ts`),
+  // and each block's `optional:`, `only after:` and `repeat` statements become the steps that wire them
   // (`../script-statements/guarded-steps.ts`, `./draft-routing.ts`), before
   // anything else reads the block; a block with none comes through as it was.
-  const called = automationStudioFlowScriptCalledParts(input.script.blocks);
-  issues.push(...called.issues);
+  const spanned = automationStudioFlowScriptAdjacentListRepeats(input.script.blocks);
+  const called = automationStudioFlowScriptCalledParts(spanned.blocks);
+  issues.push(...spanned.issues, ...called.issues);
   const subflowKeys = blockSubflowKeys(called.blocks);
   const callable = input.registry.get(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS.callSubflow, input.resolution) !== undefined;
   const partByLabel = new Map([...called.parts.values()].map((part) => [part.label, part]));

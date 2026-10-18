@@ -5,6 +5,7 @@ export * from "./asked-acts.ts";
 export * from "./builder-return.ts";
 export * from "./decision-log-entry.ts";
 export * from "./digest.ts";
+export * from "./earlier-attempt.ts";
 export * from "./instruction-source.ts";
 export * from "./json-shape.ts";
 export * from "./receipt-ref.ts";

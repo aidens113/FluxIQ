@@ -70,6 +70,8 @@ export function automationStudioProjectSupervisorBriefInput(input: {
     delete whole.interface;
     // A carried proposal is Core's to name (`./dispatch-tool.ts`, t658), never the supervisor's.
     delete whole.carriedFrom;
+    // So is the earlier attempt a builder was stopped on (`./dispatch-tool.ts`, lane-1 fix 1).
+    delete whole.earlierAttempt;
     if (subflow?.interface) whole.interface = structuredClone(subflow.interface) as unknown as JsonObject;
     if (whole.parts === undefined && written.kind === "reset") whole.parts = [];
     whole.permittedActs = written.kind === "reset" ? [] : askedActs(taskSpec, whole.parts);

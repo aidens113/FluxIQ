@@ -108,6 +108,17 @@ import { automationStudioProjectDispatchAllowanceSaid, type AutomationStudioProj
 // and the act's, so the supervisor reads Core's check and not only the
 // builder's sentence, and the return carries it as `doneBefore`
 // (`contracts/builder-return.ts`).
+//
+// **A builder stopped for repeating itself is marked so (live lane 1 fix 1,
+// `run-mvcx8na6-9554a3f1`).** Its return was blocked with the guard's codes in
+// words, and the supervisor's second brief of that subflow was refused as a
+// repeat its builder could only do again. A return that is not done because the
+// no-progress guard stopped its loop -- a loop that returned
+// `llm_evidence_loop.repeat_without_progress`, or threw Core's build failure
+// `flow_bootstrap.evidence_repeat_without_progress` -- now carries
+// `stoppedRepeating`, read from those codes and never from the reason, so the
+// supervisor may send that brief once more with the attempt shown
+// (`../supervisor/dispatch-tool.ts`).
 
 /** What a return's reason may hold (`contracts/builder-return.ts`). */
 const MAX_REASON = 2000;
@@ -122,6 +133,9 @@ const MAX_FINDING_WORDS = 400;
 const FRAME_STEP = /^builtin\.control\./u;
 /** How many of a stopped loop's last answered calls its return names, a run of the same answer said once. */
 const MAX_LAST_CALLS = 8;
+/** The no-progress guard's stop, as a loop returns it and as Core's build failure publishes it (header, lane-1 fix 1). */
+const LOOP_REPEATED = "llm_evidence_loop.repeat_without_progress";
+const BUILD_REPEATED = "flow_bootstrap.evidence_repeat_without_progress";
 /** A code or id that may be said: no whitespace, so never a sentence the model wrote. */
 const SAYABLE = /^[a-z0-9_.:-]{1,120}$/iu;
 
@@ -172,7 +186,10 @@ export const automationStudioProjectDispatchEnding = Object.freeze({
       return returned(brief, "partial", `${why}${lastTrial}`, spend, proposal);
     }
     const ended = outcome.loop.ok ? "The builder completed without a proposal of its subflow." : stopReason(brief, outcome.loop, spend.allowance);
-    return returned(brief, proposal ? "partial" : "blocked", `${ended}${lastTrial}`, spend, proposal);
+    const value = returned(brief, proposal ? "partial" : "blocked", `${ended}${lastTrial}`, spend, proposal);
+    // The guard's own code, never the reason's words (header, lane-1 fix 1); an allowance refusal is not this stop.
+    if (!outcome.loop.ok && outcome.loop.code === LOOP_REPEATED && !spend.allowance?.refusal) value.stoppedRepeating = true;
+    return value;
   },
 
   /** A builder or reset that threw, or was stopped. */
@@ -186,7 +203,10 @@ export const automationStudioProjectDispatchEnding = Object.freeze({
     // A standing yes for the latest accepted proposal is done, the throw said after it (header, t611): the same check as a returned loop's.
     const passed = passedProposal(spend.accepted, spend.trial);
     if (passed) return passedDone(brief, passed, why, spend);
-    return returned(brief, spend.accepted ? "partial" : "blocked", why, spend, spend.accepted);
+    const value = returned(brief, spend.accepted ? "partial" : "blocked", why, spend, spend.accepted);
+    // Core's build failure for the guard's stop, read structurally (header, lane-1 fix 1).
+    if (!stopped && !refusal && parseAutomationStudioFlowBootstrapGenerationError(error)?.code === BUILD_REPEATED) value.stoppedRepeating = true;
+    return value;
   },
 
   /** Why Core stopped a brief whose builder was refused one output under two different bindings (header, t645): the output by its interface name, the codes, and the plan's advice. */

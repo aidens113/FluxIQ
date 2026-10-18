@@ -81,7 +81,7 @@ const BY_CODE: ReadonlyArray<readonly [RegExp, Words]> = [
   ...HANDLE_WORDS,
   [/^bootstrap\.required_input_unconnected$/u, { one: "a step wasn't given what it works on from an earlier step", many: "{some} steps weren't given what they work on from earlier steps",
     named: "the step {step} wasn't given what it works on from an earlier step", namedMany: "the steps {steps} weren't given what they work on from earlier steps" }],
-  [/^bootstrap\.(?:invalid_parameter_value|parameter_contract_violation|parameter_contract_failed)$/u, { one: "a step was given a setting it can't use", many: "{some} steps were given settings they can't use",
+  [/^bootstrap\.(?:invalid_parameter_value|parameter_schema_mismatch|parameter_contract_violation|parameter_contract_failed)$/u, { one: "a step was given a setting it can't use", many: "{some} steps were given settings they can't use",
     named: "the step {step} was given a setting it can't use", namedMany: "the steps {steps} were given settings they can't use" }],
   [/^bootstrap\.unknown_parameter$/u, { one: "a step was given a setting it doesn't take", many: "{some} steps were given settings they don't take",
     named: "the step {step} was given a setting it doesn't take", namedMany: "the steps {steps} were given settings they don't take" }],

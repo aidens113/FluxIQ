@@ -186,11 +186,13 @@ const BUDGET_WORDS: Readonly<Record<string, string>> = Object.freeze({
  * Crossborder `run-mv8c76i3-61b9ca89` ended partial and the person read "The
  * build failed: what the model wrote could not be used", its stage's words,
  * since the code it fails under is the stage's own: the model wrote nothing
- * unusable. Its ending is said for what it was (t595).
+ * unusable. Its ending is said for what it was (t595), in a person's words:
+ * the person never met a supervisor, and read "the supervisor ended it
+ * because it could not finish the Flow" (t567 lane 4).
  */
 const SUPERVISOR_ENDING_WORDS: Readonly<Record<string, string>> = Object.freeze({
-  "project.build_partial": "the supervisor ended it with only part of the Flow built",
-  "project.build_blocked": "the supervisor ended it because it could not finish the Flow"
+  "project.build_partial": "FluxIQ stopped with the Flow only partly built",
+  "project.build_blocked": "FluxIQ could not finish the Flow"
 });
 
 /**

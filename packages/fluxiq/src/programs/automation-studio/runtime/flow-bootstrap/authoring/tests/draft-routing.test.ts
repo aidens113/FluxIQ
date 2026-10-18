@@ -659,3 +659,26 @@ describe("a span that repeats while its own last step succeeds", () => {
     expect(assembled.issues.map((issue) => issue.code)).toContain("flow_draft.repeat_body_is_routed");
   });
 });
+
+describe("adjacent drafted steps that each repeat over one list (t567)", () => {
+  it("are one span over it, the plan the first step's repeat through the last builds", () => {
+    const adjacent = assemble([
+      step(1, "read", { target: ".row" }),
+      step(2, "press", { target: ".row-open" }, { kind: "repeat", through: "d2", over: "d1" }),
+      step(3, "press", { target: ".row-keep" }, { kind: "repeat", through: "d3", over: "d1" }),
+      step(4, "press", { target: "#done" })
+    ]);
+    const through = assemble([
+      step(1, "read", { target: ".row" }),
+      step(2, "press", { target: ".row-open" }, { kind: "repeat", through: "d3", over: "d1" }),
+      step(3, "press", { target: ".row-keep" }),
+      step(4, "press", { target: "#done" })
+    ]);
+
+    expect(adjacent.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    expect(wiring(adjacent.plan!)).toEqual(wiring(through.plan!));
+    expect(wiring(adjacent.plan!).filter((edge) => edge.startsWith("web.output.dom-extract_list:records"))).toHaveLength(1);
+    expect(adjacent.plan!.subflows[0]!.nodes.filter((node) => node.definitionId === "builtin.control.for-each")).toHaveLength(1);
+    expect(validateAutomationStudioFlowBootstrapPlan({ plan: adjacent.plan!, registry, resolution }).ok).toBe(true);
+  });
+});

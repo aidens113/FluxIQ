@@ -136,6 +136,7 @@ import { automationStudioProjectSupervisorPlanning } from "./planning.ts";
 import type { AutomationStudioProjectSupervisorPorts } from "./ports.ts";
 import { automationStudioProjectSupervisorReadTask } from "./read-task.ts";
 import { automationStudioProjectSupervisorHostTools } from "./role-tools.ts";
+import { automationStudioProjectSupervisorStopReason } from "../stop-reason/index.ts";
 import { AutomationStudioProjectSupervisorState, type AutomationStudioProjectSupervisorCompletedOnPass, type AutomationStudioProjectSupervisorRecoveryShortfall, type AutomationStudioProjectSupervisorReliesOnRecovery } from "./state.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "./tool-ids.ts";
 import { automationStudioProjectSupervisorTools } from "./tools.ts";
@@ -323,7 +324,7 @@ async function supervise(input: SupervisorInput, clock: Clock): Promise<Automati
           ? { outcome: "cancelled", reason: "The build was cancelled." }
           : unanswered
             ? { outcome: state.anyDone() ? "partial" : "blocked", reason: providerStoppedReason(unanswered.providerUnavailable, automationStudioProjectSupervisorLeftOnTarget(ports).undoable) }
-            : { outcome: state.anyDone() ? "partial" : "blocked", reason: `The supervisor stopped before a whole trial passed (${stoppedBy ?? "unknown"}).` };
+            : { outcome: state.anyDone() ? "partial" : "blocked", reason: automationStudioProjectSupervisorStopReason({ loop, stalledOn: stalled?.issueCodes }) };
   // A guard or the time limit stopped the loop: the target is put back, where a reset brief still can and inside the bound, before the ending names what is left (header).
   // A provider that stopped answering is not asked to (header, t621): its ending names what is left instead.
   if (!outOfMoney && !cancelled && !unanswered && finished !== ended && !personEnded(stalled?.error)) await resetBeforeEnding({ ...context, signal: ending }, () => outOfTime(ending));

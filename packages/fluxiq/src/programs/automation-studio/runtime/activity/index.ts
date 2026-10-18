@@ -43,12 +43,15 @@ export {
   automationStudioActivityCompletionRefusal,
   automationStudioActivityDecision,
   automationStudioActivityDraftEditCard,
+  automationStudioActivityEndedReason,
   automationStudioActivityHumanLabel,
   automationStudioActivityIssuesOf,
   automationStudioActivityIssueWords,
+  automationStudioActivityLeftTold,
   automationStudioActivityPersonWords,
   automationStudioActivityReasonText,
   automationStudioActivityRecoveryChoice,
   automationStudioActivityToolCall,
+  type AutomationStudioActivityLeftAct,
   type AutomationStudioRecoveryNext
 } from "./wording/index.ts";

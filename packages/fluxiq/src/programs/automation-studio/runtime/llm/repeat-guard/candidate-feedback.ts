@@ -40,6 +40,7 @@
 
 import type { JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceRepeatedOutcome } from "./outcomes.ts";
+import { automationStudioLlmEvidenceRepeatCoveredRefused } from "./covered-refused.ts";
 import { automationStudioLlmEvidenceRepeatPermissionRefused } from "./permission-refused.ts";
 
 /** The candidate submission tool (`../../flow-bootstrap/candidate/authoring-loop.ts`), read as a plain string so this module does not reach into the build. */
@@ -60,6 +61,16 @@ const AUTOMATION_STUDIO_LLM_EVIDENCE_PERMISSION_REPEAT_INSTRUCTION = "You alread
   + "Sending it again cannot get past that, on this page or any other, so it was not run. Do not make this call again. "
   + "If it was meant to undo something this build did, that is already undone or is not this build's: check what this build did against what the page shows. "
   + "Then go on without it: take a way that needs no such permission, or test or submit the candidate with what you have.";
+
+/**
+ * Said instead for a press refused because a layer over the page covered its
+ * control (`./covered-refused.ts`, `run-mvcwem7d-34689f55`: a builder's press,
+ * three times more, until its brief ended).
+ */
+const COVERED = "You already made this exact press, and it was refused because something over the page covers its control (then.resultCode, then.resultReason), so nothing was pressed. "
+  + "It is refused the same way until that layer is gone. The earlier answer, under sameAsCall, names the layer and, where it can, the controls that close it. "
+  + "Press one of those first, or another control inside that layer -- never a control the page marks as covered by it. "
+  + "Then this press may be made again: a call made after the page has changed is not a repeat.";
 
 const SAME_LOOK = "You already made this exact look -- the same tool with the same input -- on this exact page, and it answered the same twice: its answer is above, under sameAsCall. "
   + "The page has not changed, so asking again answers the same again; it was not run. "
@@ -199,6 +210,7 @@ export function automationStudioLlmEvidenceCandidateRepeatInstruction(input: {
   }
   if (earlier.outcome === "same_answer") return { instruction: SAME_LOOK + ending(inARow, maxInARow, "the same look") };
   if (earlier.handleUnshown) return { instruction: HANDLE_UNSHOWN + ending(inARow, maxInARow, "this call") };
+  if (automationStudioLlmEvidenceRepeatCoveredRefused(earlier)) return { instruction: COVERED + ending(inARow, maxInARow, "this press") };
   if (automationStudioLlmEvidenceRepeatPermissionRefused(earlier)) return { instruction: AUTOMATION_STUDIO_LLM_EVIDENCE_PERMISSION_REPEAT_INSTRUCTION + ending(inARow, maxInARow, "this call") };
   return { instruction: SAME_CALL + ending(inARow, maxInARow, "this call") };
 }

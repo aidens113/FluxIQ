@@ -12,9 +12,10 @@ describe("the note for a refused repeat", () => {
   });
 
   it("keeps the plain repeat note for any other failure", () => {
-    const note = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier: { callId: "c1", outcome: "failed", resultCode: "web.action.rejected.target_covered" } });
-    expect(note.then).toEqual({ outcome: "failed", resultCode: "web.action.rejected.target_covered" });
+    const note = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier: { callId: "c1", outcome: "failed", resultCode: "web.action.rejected.target_disabled" } });
+    expect(note.then).toEqual({ outcome: "failed", resultCode: "web.action.rejected.target_disabled" });
     expect(String(note.instruction)).not.toMatch(/never shown/u);
+    expect(String(note.instruction)).not.toMatch(/covers its control/u);
   });
 
   it("says a call the permission gate refused cannot get past it by being sent again (t471)", () => {
