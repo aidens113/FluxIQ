@@ -1,7 +1,7 @@
 # Breadth Round Core Integration
 
 Status: Active
-Status detail: All87 scraping expectations positive;9accepted tasks/6sites. Corrected no-hook reset run-mvdl5eg0-a56fdad7 and provider-free saved crossborder replay-mvdl3yxn-b1d9134d allocated. Installed Chrome exact creation/confirmed verdict and zero-call replay verified; strict creation accounting held. Isolated accounting design active; live source trees frozen.
+Status detail: All87 scraping expectations positive;10accepted tasks/7sites. Crossborder exact10rows40fields saved replay passed with fresh person ask and explicitzero calls; corrected no-hook reset run-mvdl5eg0-a56fdad7 failed53calls/$0.032546700, cause diagnosed. Installed Chrome exact creation/confirmed verdict and zero-call replay verified; strict creation accounting held. Isolated accounting design active; live source trees frozen.
 Created: 2026-10-17
 Last updated: 2026-10-18
 Owner: Codex senior supervisor
@@ -15,13 +15,13 @@ The user authorized continuing the downstream breadth handoff with live tests. T
 
 - **Source pushed:** Coree58e4cf9/downstream988cab68. Later Coreab47ab32/downstream125e0fa5 contain documentation only; live trees and installed proof retain frozen source. Numeric guard, retry/reset ledger, drawing and judge corrections are integrated. Optional storage pooling remains excluded; no causality established for its timing failures.
 - **Positive data requirement enforced downstream:** all87 dataset tasks among108 have nonempty record-by-record expectations; five formerly empty variants and actual browser paths revised together. Launch guard rejects absent/empty/count-only/inconsistent scraping expectations. Selected-card field discovery fixed with generic equivalence checks and actual positive browser proof. Ordinary user searches returning no matches keep normal Core semantics.
-- **Accepted continuation:** company apprentices21calls/$0.016375290, bigbox towels29/$0.026501940 and professional lead contact49/$0.029735034; exact oracle/reported verdict and successful0-call goal replay independently inspected. Historical plus continuation:9accepted tasks across6sites.
-- **Crossborder:** run-mvdism0y-ba67f226 exact10rows/40fields/oracle/reported pass,21calls/$0.024137868, harness0. Requested replay1 was skipped by downstream applied-repair-only gating; full acceptance remains incomplete. Bounded downstream runner fix in progress, no Core change needed.
-- **Reset:** corrected canonical run-mvdhyf9k-3afd7eb6 failed54calls/$0.035059812, actual startResetfalse, no Flow/replay. Actual current-source installed/gateway/project-build proof isolated a pointer-only span missing its subject. Downstream54325eb4 now uses the existing interactable predicate; root66cases plus strengthened realgateway exactbaseline/cleantrial proof passed and source is integrated downstreama8b7266b. Canonical paid no-hook rerun remains pending; Core reset ledger unchanged.
+- **Accepted continuation:** company apprentices21calls/$0.016375290, bigbox towels29/$0.026501940 and professional lead contact49/$0.029735034; exact oracle/reported verdict and successful0-call goal replay independently inspected. Historical plus continuation:10accepted tasks across7sites.
+- **Crossborder accepted:** run-mvdism0y-ba67f226 exact10rows/40fields/oracle/reportedpass,21calls/$0.024137868. Corrected saved replay-mvdl3yxn-b1d9134d independently passed exactordereddata/finalstate/explicit0calls and a fresh UUID personcheck answeredviaCore. Core723e0ae8 and downstream65be76e0 integrated after own narrow gates; no savedFlow/hash/key changes.
+- **Reset:** downstream54325eb4 pointer-subject fix independently66cases plus actualgateway exactoriginalrestoration/cleantrial passed. Corrected paid no-hook run-mvdl5eg0-a56fdad7 still failed53calls/$0.032546700/noFlow: first destinationbaseline read after lastingAdd. Undo refusal correctly protects unobservedoriginals. Explicit preactdestination admission design active, no blindretry; Core reset source unchanged.
 - **Other lanes:** auction run-mvdi0946-d897f3cb failed134calls/$0.148715013, no Flow; optional converted-price-only condition dropped valid direct-price records, admission failures also recorded. Required debug written before retry. Positive photo failed; bounded diagnosis active. Social explicit disclosure failure-composition fix already passed focused unit/type/browser gates; paid reruns remain owed.
-- **Totals:**14completed continuation runs,921calls/$0.807907290:3accepted,9failed,1unverified empty run,1whole-run pass with failed saved replay. Historical and installed-proof spend separate.
+- **Totals:**15completed continuation runs,974calls/$0.840453990:4accepted,10failed,1unverified empty run. Historical and installed-proof spend separate.
 - **Installed proof:** actual Chrome155 package0.1.0 enabled without runtime/manifest errors, normal fresh login/Finish setup completed. Real extension-chat creation and explicitowner confirmed4row/12field whole run are verified; creationaccounting missing. Separate actualNoLLM replay independently passes exactdata/finalizedallzero. Dedicated accounting diagnosis active; Edge proof pending. Existing lease protects shared Coree58 for the whole proof. Edge creation/replay still owed; Firefox unavailable.
-- **Next:** finish downstream replay correction/current-source reset diagnostic; actual positive live acceptance for remaining sites and repaired tasks; genuine Chrome/Edge create/replay. Two daily whole-build allowances consumed; narrow checks/builds only. No user input needed.
+- **Next:** isolated shared creation-accounting purse with canonical settledreceipt restoration; strict preactbaseline admission design; remaining auction/classifieds/photo and owed positive reruns; fixed genuineChrome/Edge acceptance. No whole sweep remaining today, no user input needed. SharedCoree58 lease stays untouched.
 
 ## Worker Briefs
 
@@ -44,6 +44,17 @@ The user authorized continuing the downstream breadth handoff with live tests. T
 - Reuse canonical run-budget/harness reservation/settlement and current itemization. Existing limits apply to the whole run; resultcheck calls must not reset the purse or overwrite prior repair spend. Missing usage remains conservative.
 - No whole suites/builds (user twice-daily allowance consumed); no code until root approves concrete map. SharedCore and all live lanes frozen. Agent report afteractualsource/API evidence, then implementationbrief follows.
 
+### Supervisor brief: shared creation accounting implementation
+- Worker held_lane_review in pairedt563 only; own Core files in exact initial map from downstream reports/codex-creation-accounting-fix.md, their owning tests, plus canonical runtime/llm/run-budget.ts and tests/run-budget.test.ts for validated restoration. Downstream own existing fix report only. Root owns authored architecture/shared plans/commits.
+- Root approves single shared run-owned canonical purse across routine checks/rechecks/in-run and detached recovery, lower-layer profile compatibility alias, focused canonical gate projection. No provider/authority/schema/protocol/browser changes; sharedCoree58/Chrome/live lanes unchanged.
+- First reproduce missing paid receipt by extending existing caller-paid-result-check service case; require registered public full-detail and persisted receipt calls1/pending0/itemized1/omitted0/cost0.001/usage4+2=6. Record red actual exit before product edit.
+- Choose validated canonical restoration for SETTLED, internally consistent same-run existing receipts, so supported paid continuation retains prior spend. Canonical ledger alone owns validation/arithmetic; no second fake purse. Preserve omitted records/count/cost provenance and request identity; no double counting.
+- Unknown/malformed/missing-paid/pending history must preserve existing receipt and fail closed before another paid dispatch with an accounting-specific diagnostic. Never derive prior total from verdict.calls or zero-default unknown fields. New deterministic replay/newrun stays usable.
+- Preserve per-call standing grants versus global run ceilings. Later incompatible global profile must fail closed without resetting/widening the ledger; do not add general constrain API without concrete need. Existing provider resolution/permissions unchanged.
+- Required regressions: clean paid publicdetail, repair+check additive and idempotent writes, same-run settled restoration and duplicate identity, pending/unknown/malformed reentry refusal, no-model exactzero unaffected, timeout/missingusage conservative. Existing canonical harness reserve/settle semantics reused; propose any additional owner before editing it.
+- Gates focused owning tests max2workers, Core package typecheck and structureaudit with nativeexit observed. No whole suites/builds or sharedCorebuild; no live/UI/provider launch. Library build only after root source/tests review.
+- Keep modules narrow, barrels current, no catch-all expansion or any casts to hide provider profile types. Report files/counts/exits/limits and remaining uncertainties. Never commit/merge/push or edit shared plan.
+
 ## Work Ledger
 
 ### 2026-10-17 — Continuation and paired integration record
@@ -53,6 +64,14 @@ The user authorized continuing the downstream breadth handoff with live tests. T
 - Validation: t563 focused vitest -> 41/41; fluxiq:check -> exit 0; structure audit -> passed (401 warnings, 1154 baselined). t567 target normalizer -> 10/10.
 - Outcome: Partial; no held feature has yet been merged or pushed in this continuation.
 - Follow-up: storage comparison, safe reset proof and downstream live acceptance.
+
+
+### 2026-10-18 - Crossborder accepted; reset failure retained
+- Validation: root independently inspected actual saved replay-mvdl3yxn-b1d9134d receipt and realperson sidecar: exactordered10/10records40/40fields/noextras, finalstatepassed, Flowhash unchanged, savedoriginretained, keys1->1preserved, providersdisabled and explicit0calls/accounted/provider/intervention/harness. Freshperson-needed UUID answeredviaCore/person_done, clearedtrue, pollfailures0, permissions0. Provider-free verdictunverified remains separate from original paidwholejudgepass.
+- Crossborder now accepted with originalrun21calls/$0.024137868 plus actualsavedreplay0. Overall10accepted tasks/7sites; continuation15completed/974calls/$0.840453990:4accepted,10failed,1unverifiedempty. Historical and installed costs separate.
+- Validation: after currentdevdocs merged into pairedt566, root independently reran Core15person tests and downstream2lifecycle tests, bothnative0; both actualstructureaudits native0. Downstream-first/Core-own-repository noff integration completed. Lane/task stays active for assigned readonly classifieds diagnosis; persistent evidence retained, no lifecycle deletion while breadth work continues.
+- Root independently inspected reset run-mvdl5eg0-a56fdad7 terminalevaluation: failed/runtime.behavior, noFlow,263342ms; readiness confirms startResetfalse and fixtureResetBetweenTrialsfalse.53calls/$0.032546700; firstdestinationbaseline read occurred after lastingAdd, unlike positivegateway diagnostic. Requireddebug written, no blindretry; explicit preactdestination admission design underway.
+- Accounting worker authorized isolated failfirst+sharedcanonicalpurse implementation with validated settledreceipt restoration; unknown/malformed/pendingpaid history failclosed. No sharedCore/Chrome mutation or whole suite/build authorization.
 
 ## Open Questions
 
