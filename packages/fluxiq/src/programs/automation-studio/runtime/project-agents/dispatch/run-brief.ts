@@ -155,6 +155,14 @@ import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectDispatc
 // judge is paid as any builder's trial is, by this brief's allowance, with the
 // build's judging reserve as its backstop when the allowance cannot pay (t685,
 // `../single-subflow/single-subflow-trial.ts`). A reset brief never gets it.
+//
+// **A builder after one stopped for repeating itself is shown that attempt (live
+// lane 1 fix 1, `run-mvcx8na6-9554a3f1`).** A build or repair brief carrying
+// `earlierAttempt` (`../contracts/earlier-attempt.ts`) shows it at the opening
+// look under `earlierAttempt`, beside `repairOf` or `startsFrom` when the brief
+// has one: the earlier brief, how it ended and the calls it stopped on, the
+// lasting acts it left, and in generic words that the guard stopped it for
+// repeating calls without progress and that this builder takes another path.
 
 type Role = "builder" | "repair";
 
@@ -164,6 +172,11 @@ const MAX_TRIALS_KEPT = 200;
 const REPAIR_KEY = "repairOf";
 /** The key a carried proposal is shown under at a build brief's opening look (header, t658). */
 const CARRIED_KEY = "startsFrom";
+/** The key an earlier attempt the no-progress guard stopped is shown under at the opening look (header, lane-1 fix 1). */
+const EARLIER_KEY = "earlierAttempt";
+const EARLIER_NOTE = "earlierAttempt is an earlier builder of this subflow that Core stopped before it finished, for repeating calls that made no progress. "
+  + "reason says how it ended and the calls it stopped on, latest first; lastingActs are the lasting acts it made that are still on the target, so the page may already show them. "
+  + "Do not take the same path again: start from what the page shows now, and when a call does not move you on, try a different way to do your parts instead of the same calls. Submit and test as soon as your steps do your parts.";
 /** The key a repair's opening call carries the repaired proposal's calls under, for the domain (header, t648). */
 const REPAIRS_KEY = "repairs";
 const REPAIR_NOTE = "This brief repairs your subflow after the trial named here did not pass: its verdict, the step it stopped at (failedStep: its number, label, node, failure code and what happened) and the rest of what its run and its judge said (said). "
@@ -321,7 +334,10 @@ async function run(input: {
   // A build brief of a subflow whose proposal an amendment carried starts from it (header, t658).
   const carried = repair ? undefined : carriedOf(dispatcher, brief, mapped, ports.deniedEvidenceKeys);
   const opening = repair ? { key: REPAIR_KEY, ...repair } : carried ? { key: CARRIED_KEY, ...carried } : undefined;
-  const loop = opening ? shownAtOpening(ports.loop, opening.key, opening.said, opening.calls) : ports.loop;
+  // An earlier attempt the no-progress guard stopped is shown beside it (header, lane-1 fix 1).
+  const earlier = brief.earlierAttempt ? { [EARLIER_KEY]: { ...structuredClone(brief.earlierAttempt), note: EARLIER_NOTE } } : {};
+  const shown: JsonObject = { ...(opening ? { [opening.key]: opening.said } : {}), ...earlier };
+  const loop = Object.keys(shown).length ? shownAtOpening(ports.loop, shown, opening?.calls) : ports.loop;
   // Its own revisions are numbered on from the one it is shown, so the two are never confused (header, t658).
   const revisionsAfter = opening?.revision;
   const outcome = await untilEnded(signal, outputs.ending(ports.ended), (stop) => runBuilder({
@@ -478,15 +494,16 @@ type Execute = AutomationStudioLlmEvidenceLoopInput["executeTool"];
 /**
  * `loop`, its opening call carrying the repaired or carried proposal's `calls`
  * under `repairs` when there are any (t648), and its opening look answered with
- * `said` beside its evidence under `key`: `repairOf`, or `startsFrom` (header).
+ * each of `shown` beside its evidence under its key: `repairOf` or `startsFrom`,
+ * and `earlierAttempt` (header).
  */
-function shownAtOpening<L extends { executeTool: Execute }>(loop: L, key: string, said: JsonObject, calls: readonly JsonObject[] | undefined): L {
+function shownAtOpening<L extends { executeTool: Execute }>(loop: L, shown: JsonObject, calls: readonly JsonObject[] | undefined): L {
   const inner = loop.executeTool;
   const executeTool: Execute = async (call) => {
     if (!isOpeningCall(call.callId)) return await inner(call);
     const ran = await inner(calls?.length ? { ...call, value: { ...call.value, [REPAIRS_KEY]: structuredClone([...calls]) } } : call);
-    if (isExecution(ran)) return { ...ran, evidence: isObject(ran.evidence) ? { ...ran.evidence, [key]: said } : { [key]: said, evidence: ran.evidence } };
-    return isObject(ran) ? { ...ran, [key]: said } : { [key]: said, evidence: ran };
+    if (isExecution(ran)) return { ...ran, evidence: isObject(ran.evidence) ? { ...ran.evidence, ...shown } : { ...shown, evidence: ran.evidence } };
+    return isObject(ran) ? { ...ran, ...shown } : { ...shown, evidence: ran };
   };
   return { ...loop, executeTool };
 }

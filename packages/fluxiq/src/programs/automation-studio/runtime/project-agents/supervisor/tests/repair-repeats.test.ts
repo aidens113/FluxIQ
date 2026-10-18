@@ -6,8 +6,9 @@
 // sent a brief again, unchanged, after it came back blocked.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
+import type { AutomationStudioSiteResetProjectLedger } from "../../../flow-bootstrap/site-reset/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE, AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
-import { planInput, project, subflow, taskSpecInput, type BuilderPlan } from "./supervisor-fixture.ts";
+import { STOPPED_REASON, planInput, project, subflow, taskSpecInput, type BuilderPlan } from "./supervisor-fixture.ts";
 import { FIND, HOLD, assembled, brief, call, dispatch, end, supervise, test, type Entry } from "./supervisor-script.ts";
 
 /** A script any callable subflow with no interface may be built with. */
@@ -201,5 +202,87 @@ describe("a brief sent again after it came back blocked", () => {
       end("blocked")
     ], project({ builder: blockedFirst }));
     expect(answersOf(run.shown, IDS.dispatch)[1]).toMatchObject({ ok: true, returns: [{ briefId: "brief-2", outcome: "done" }] });
+  });
+});
+
+// Live lane 1 fix 1 (`run-mvcx8na6-9554a3f1`): a builder looped between two pages until the no-progress guard
+// stopped it, and the supervisor's second brief of that subflow, unchanged, was refused `project.brief_repeated`
+// with most of the build's money unspent. The first such stop of a subflow under the plan in force now lets the
+// same brief go, carrying the earlier attempt; a second such stop, and every other blocked return, is refused as before.
+describe("a brief sent again after its builder was stopped for repeating itself", () => {
+  it("is sent the first time, carrying the earlier attempt's reason and the lasting acts it left", async () => {
+    let ledger: AutomationStudioSiteResetProjectLedger | undefined;
+    const stoppedFirst: BuilderPlan = (_brief, attempt) => (attempt === 1 ? "stopped" : "done");
+    const built = project({
+      builder: stoppedFirst,
+      // The stopped builder left one lasting act on the target, as its explored press would.
+      onBrief: (sent) => {
+        if (sent.briefId === "brief-1") ledger!.forBrief("brief-1").trialRan([{ step: 1, definitionId: "web.output.dom-click", label: "press the add control", consequences: ["create_new"] }], "trial-stopped");
+      }
+    });
+    ledger = built.ledger;
+    const run = await supervise([
+      call(IDS.writePlan, ONE_PART),
+      dispatch([brief("main", ["p1"])]),
+      dispatch([brief("main", ["p1"])], "Its builder was stopped for repeating itself; send it once more."),
+      end("blocked")
+    ], built);
+    const [stopped, again] = answersOf(run.shown, IDS.dispatch);
+    expect(stopped).toMatchObject({ ok: true, returns: [{ briefId: "brief-1", outcome: "blocked", stoppedRepeating: true, reason: STOPPED_REASON }], next: GUIDANCE.next.afterReturnsNotDone });
+    expect(again).toMatchObject({ ok: true, returns: [{ briefId: "brief-2", outcome: "done" }] });
+    expect(again).not.toHaveProperty("notSent");
+    const sent = run.dispatched[1]!.briefs[0]!;
+    expect(sent.earlierAttempt).toEqual({ briefId: "brief-1", kind: "build", reason: STOPPED_REASON, lastingActs: [{ act: expect.any(String), did: expect.any(String) }] });
+    expect(run.dispatched[0]!.briefs[0]).not.toHaveProperty("earlierAttempt");
+    // The record holds it too, so a supervisor started again reads the same brief.
+    expect(run.view!.record.briefs[1]!.brief.earlierAttempt).toEqual(sent.earlierAttempt);
+  });
+
+  it("is refused project.brief_repeated after a second such stop under the same plan", async () => {
+    const run = await supervise([
+      call(IDS.writePlan, ONE_PART),
+      dispatch([brief("main", ["p1"])]),
+      dispatch([brief("main", ["p1"])], "Send it once more."),
+      dispatch([brief("main", ["p1"])], "And again."),
+      end("blocked")
+    ], project({ builder: () => "stopped" }));
+    const [, second, third] = answersOf(run.shown, IDS.dispatch);
+    expect(second).toMatchObject({ ok: true, returns: [{ briefId: "brief-2", outcome: "blocked", stoppedRepeating: true }] });
+    expect(run.dispatched[1]!.briefs[0]!.earlierAttempt).toMatchObject({ briefId: "brief-1" });
+    expect(third).toMatchObject({ ok: false, code: "project.brief_repeated", instruction: GUIDANCE.refusals.briefRepeated, repeated: [{ path: "briefs.0", subflowKey: "main", lastBrief: { briefId: "brief-2", outcome: "blocked" } }] });
+    expect(run.dispatched).toHaveLength(2);
+  });
+
+  it("is still refused when the blocked return was for another reason, and carries no earlier attempt when changed", async () => {
+    const blockedFirst: BuilderPlan = (_brief, attempt) => (attempt === 1 ? "blocked" : "done");
+    const run = await supervise([
+      call(IDS.writePlan, ONE_PART),
+      dispatch([brief("main", ["p1"])]),
+      dispatch([brief("main", ["p1"])], "Try again."),
+      dispatch([brief("main", ["p1"], [], { recordingExcerpt: "The search box is under Browse." })], "It is under Browse."),
+      end("blocked")
+    ], project({ builder: blockedFirst }));
+    const [, repeated, changed] = answersOf(run.shown, IDS.dispatch);
+    expect(repeated).toMatchObject({ ok: false, code: "project.brief_repeated" });
+    expect(changed).toMatchObject({ ok: true, returns: [{ briefId: "brief-2", outcome: "done" }] });
+    expect(run.dispatched[1]!.briefs[0]).not.toHaveProperty("earlierAttempt");
+  });
+
+  it("never takes an earlier attempt the supervisor wrote itself", async () => {
+    const written = { briefId: "brief-9", kind: "build", reason: "Made up.", lastingActs: [] };
+    const run = await supervise([
+      call(IDS.writePlan, ONE_PART),
+      dispatch([brief("main", ["p1"], [], { earlierAttempt: written })]),
+      end("blocked")
+    ], project());
+    expect(run.dispatched[0]!.briefs[0]).not.toHaveProperty("earlierAttempt");
+  });
+
+  it("is named in the guidance: a stopped builder's brief may go once more, its builder shown the earlier attempt", () => {
+    for (const words of [GUIDANCE.refusals.briefRepeated, GUIDANCE.refusals.briefRepeatedOthersSent, GUIDANCE.next.afterReturnsNotDone]) {
+      expect(words).toContain("stoppedRepeating");
+      expect(words).toContain("once more unchanged");
+      expect(words).toContain("earlier attempt");
+    }
   });
 });

@@ -44,8 +44,11 @@ const SCRIPTS: Record<string, string[]> = {
   note_shelf: ["flow: Note the shelf", "part note_shelf: note the shelf", "  input: shelf", "  step: open the hold", "    node: web.browser.navigate", "    url: https://library.test/holds", "  step: type the shelf", "    node: web.dom.type", "    selector: .shelf", "    text: $input.shelf", "end"]
 };
 
-/** What the stub dispatcher answers a brief with: done unless the test says otherwise. */
-export type BuilderPlan = (brief: AutomationStudioProjectSubflowBrief, attempt: number) => "done" | "blocked" | "partial";
+/** A stopped builder's reason, as `../../dispatch/ending.ts` words a guard's stop: codes and Core's ids only. */
+export const STOPPED_REASON = "The builder failed: Flow Bootstrap generation failed (flow_bootstrap.evidence_repeat_without_progress). It was stopped by llm_evidence_loop.repeat_refused. The calls it stopped on, latest first: core.run_node on web.browser.navigate answered web.action.succeeded (4 in a row).";
+
+/** What the stub dispatcher answers a brief with: done unless the test says otherwise; `stopped` is blocked with its builder stopped for repeating itself (lane-1 fix 1). */
+export type BuilderPlan = (brief: AutomationStudioProjectSubflowBrief, attempt: number) => "done" | "blocked" | "partial" | "stopped";
 
 /**
  * A build with its ports. The dispatcher runs the real scoped submission
@@ -117,6 +120,10 @@ export function project(options: {
       if (brief.kind === "reset") {
         const undone = await resetOnLedger(ledger);
         returns.push({ briefId: brief.briefId, outcome: undone ? "done" : "blocked", reason: undone ? "Every act of this build is undone." : "The site offers no control that undoes these acts.", trials: [], spentUsd: 0.001, calls: 2 });
+        continue;
+      }
+      if (outcome === "stopped") {
+        returns.push({ briefId: brief.briefId, outcome: "blocked", reason: STOPPED_REASON, trials: [], spentUsd: 0.01, calls: 5, stoppedRepeating: true });
         continue;
       }
       if (outcome !== "done") {

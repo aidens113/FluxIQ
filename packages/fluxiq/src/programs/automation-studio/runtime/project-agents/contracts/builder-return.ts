@@ -49,6 +49,13 @@ export type AutomationStudioProjectBuilderReturn = {
    * ending was taken (`../../flow-bootstrap/subflow-candidate/done-before.ts`). Absent from every other return.
    */
   doneBefore?: { part: string; act?: string };
+  /**
+   * Set on a return that is not done when Core's no-progress guard stopped its builder for repeating calls that made
+   * no progress (live lane 1 fix 1): read from the loop's own failure code (`../dispatch/ending.ts`), never from the
+   * reason's words. One brief of its subflow may then be sent again unchanged, carrying this attempt
+   * (`earlierAttempt`, `./subflow-brief.ts`; `../supervisor/dispatch-tool.ts`). Absent from every other return.
+   */
+  stoppedRepeating?: true;
   spentUsd: number;
   calls: number;
 };
@@ -69,6 +76,8 @@ export const automationStudioProjectBuilderReturn = Object.freeze({
     if (brief.kind !== "survey" && returned.findings) issues.push({ code: "project.return_findings_not_survey", path: "return.findings" });
     // A part done before ends a brief blocked, and is one of the brief's own parts (t676).
     if (returned.doneBefore !== undefined && (returned.outcome !== "blocked" || !brief.parts.includes(returned.doneBefore.part))) issues.push({ code: "project.return_done_before", path: "return.doneBefore" });
+    // A builder stopped for repeating itself never ends its brief done (lane-1 fix 1).
+    if (returned.stoppedRepeating !== undefined && returned.outcome === "done") issues.push({ code: "project.return_stopped_repeating", path: "return.stoppedRepeating" });
     if (returned.unmadeOutput !== undefined && (returned.outcome === "done" || !(brief.interface?.outputs ?? []).some((port) => port.id === returned.unmadeOutput))) issues.push({ code: "project.return_unmade_output", path: "return.unmadeOutput" });
     // A reset is done when nothing of the build is left to undo; it proposes no subflow.
     if (brief.kind === "reset" && returned.proposal) issues.push({ code: "project.return_reset_proposal", path: "return.proposal" });
@@ -119,7 +128,7 @@ function trialAbove(left: AutomationStudioProjectTrialRef, right: AutomationStud
 }
 
 function read(value: unknown): AutomationStudioProjectBuilderReturn {
-  const fields = shape.object(value, "return", ["briefId", "outcome", "reason", "trials", "spentUsd", "calls"], ["proposal", "interfaceRequest", "findings", "unmadeOutput", "doneBefore"]);
+  const fields = shape.object(value, "return", ["briefId", "outcome", "reason", "trials", "spentUsd", "calls"], ["proposal", "interfaceRequest", "findings", "unmadeOutput", "doneBefore", "stoppedRepeating"]);
   const returned: AutomationStudioProjectBuilderReturn = {
     briefId: shape.storageId(fields.briefId, "return.briefId"),
     outcome: shape.oneOf(fields.outcome, "return.outcome", AUTOMATION_STUDIO_PROJECT_RETURN_OUTCOMES),
@@ -141,6 +150,7 @@ function read(value: unknown): AutomationStudioProjectBuilderReturn {
     const doneBefore = shape.object(fields.doneBefore, "return.doneBefore", ["part"], ["act"]);
     returned.doneBefore = { part: shape.id(doneBefore.part, "return.doneBefore.part"), ...(doneBefore.act !== undefined ? { act: shape.id(doneBefore.act, "return.doneBefore.act") } : {}) };
   }
+  if (fields.stoppedRepeating !== undefined) returned.stoppedRepeating = fields.stoppedRepeating === true ? true : shape.refuse("project.not_true", "return.stoppedRepeating");
   if (fields.findings !== undefined) returned.findings = shape.array(fields.findings, "return.findings", LIMITS.findings).map((finding, index) => shape.text(finding, `return.findings.${index}`, LIMITS.finding));
   return returned;
 }
