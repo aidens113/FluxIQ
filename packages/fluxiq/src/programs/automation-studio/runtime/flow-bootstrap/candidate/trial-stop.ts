@@ -109,7 +109,7 @@ function next(stop: JsonObject, retestable: boolean, resubmit: string): string {
     return `More passes would read the same again, so testing this revision unchanged would stop the same way. Change the repeat's span so each pass reaches rows it has not read yet: its last step has to change the page, or answer ended when nothing more comes. Then ${resubmit}, and test the new revision.`;
   }
   if (stop.kind === "step") {
-    return `Read that step's entry under steps: what it says happened, and whether trying again may pass (retryable). ${retestable ? "If it may, test this same revision again; otherwise correct" : "Correct"} that step, ${resubmit}, then test the new revision.`;
+    return `Read that step's entry under steps: what it says happened, and whether trying again may pass (retryable). Trace the preceding steps and compare the context they reached with what the failed step needs; the cause may be an earlier step. ${retestable ? "If it may, test this same revision again; otherwise correct" : "Correct"} the step that caused the failure, ${resubmit}, then test the new revision.`;
   }
   if (stop.kind === "trial_runner") {
     return retestable
