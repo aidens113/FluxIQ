@@ -6,7 +6,7 @@ import {
   type AutomationStudioNodeDefinition,
   type AutomationStudioNodeParameterContract
 } from "../../../../nodes/index.ts";
-import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapNode, type AutomationStudioFlowBootstrapPlan } from "../index.ts";
+import { automationStudioFlowBootstrapIssueFeedback, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapNode, type AutomationStudioFlowBootstrapPlan } from "../index.ts";
 
 // A generated plan must be refused wherever the runtime would refuse it, so a
 // malformed structured value never reaches dispatch. These rows cover the three
@@ -307,5 +307,48 @@ describe("a record output whose processing names a field it does not keep", () =
     // t510 (F2): a sort key is kept stored and hidden with process.columns, and the issue names it in its detail.
     expect(issue!.message).toContain("process.columns");
     expect(issue!.detail).toEqual({ field: "secret", valid: ["name"] });
+  });
+});
+
+// A structured value that does not fit the schema its node publishes for it is
+// refused here, which a submission is held to, before any trial runs (lane 3,
+// `run-mvcvzwk1-c1d869e4`; the fit itself is `../../parameter-schema/`).
+describe("a structured parameter that does not fit its node's published schema", () => {
+  const published = extractDefinition({
+    recordsPath: "result.extracted",
+    parameterSchema: {
+      type: "object",
+      properties: { items: { type: "object", required: ["item"], additionalProperties: false, properties: { item: { type: "string" }, limit: { type: "integer" } } } }
+    }
+  });
+
+  it("is refused at the parameter, naming the field and the fields it takes", () => {
+    const plan = planWith(extractNode({ items: { row: ".row" } }));
+    const result = validateAutomationStudioFlowBootstrapPlan({ plan, registry: registry(undefined, published), resolution });
+
+    expect(result.ok).toBe(false);
+    expect(result.issues.map((issue) => [issue.code, issue.path, issue.detail])).toEqual([
+      ["bootstrap.parameter_schema_mismatch", "plan.subflows.0.nodes.0.parameters.items", { field: "items.item", valid: ["item", "limit"] }],
+      ["bootstrap.parameter_schema_mismatch", "plan.subflows.0.nodes.0.parameters.items", { field: "items.row", valid: ["item", "limit"] }]
+    ]);
+  });
+
+  it("is fed back with Core's sentence, the field, the names allowed and the node", () => {
+    const plan = planWith(extractNode({ items: { row: ".row" } }));
+    const issues = validateAutomationStudioFlowBootstrapPlan({ plan, registry: registry(undefined, published), resolution }).issues;
+
+    const [first] = automationStudioFlowBootstrapIssueFeedback({ issues, plan, registry: registry(undefined, published), resolution });
+
+    expect(first).toMatchObject({
+      code: "bootstrap.parameter_schema_mismatch",
+      message: "The step's \"items\" lacks its required field \"item\". The fields \"items\" takes are \"item\" and \"limit\". Write it with \"item\".",
+      field: "items.item",
+      valid: ["item", "limit"],
+      node: "domain.demo.extract"
+    });
+  });
+
+  it("passes when it fits", () => {
+    expect(codes(planWith(extractNode({ items: { item: ".row", limit: 3 } })), registry(undefined, published))).toEqual([]);
   });
 });

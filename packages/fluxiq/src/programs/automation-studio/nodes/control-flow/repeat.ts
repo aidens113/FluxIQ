@@ -15,6 +15,11 @@
 // failure: a list that ran out of pages and a loop that reached its bound are
 // both the loop ending.
 //
+// A loop that goes round without getting anywhere is the one exception: the
+// executor fails this node's arrival for the next pass once the last three
+// passes stored no new rows and left the page as it was (`repeat.no_progress`,
+// `runtime/executor/repeat-progress/`), and the run ends there.
+//
 // The place is kept through `context.iteration`, as For Each keeps its own, so
 // a parked run carries it and the executor grants each pass its steps
 // (`runtime/executor/graph-run.ts`). The kept state's `items` is always empty:

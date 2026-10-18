@@ -194,6 +194,17 @@
 // the trial is unsure (`subflow.trial_rows_unaccounted`), its revision is not
 // closed, and the builder is told why in Core's words with the flag's sentence
 // for each read; a test of the same revision asks the judge again.
+//
+// **An execution-failed trial says what stopped it, and the same stop twice
+// closes the revision (lane 3, `run-mvcvzwk1-c1d869e4`).** Two whole tests of
+// one revision came back with `candidate.trial_port_failed` and nothing else,
+// the instruction sent the builder to a failed step no feedback named, and it
+// tested the same revision again, blind. Every `execution_failed` answer now
+// carries `stoppedBy` in its feedback (`../candidate/trial-stop.ts`), the
+// instruction names it -- a trial runner that failed is never said to be a
+// subflow before this one that did -- and two trials of one revision that
+// stopped the same way close it, as the whole gate's t368 rule does: the answer
+// carries no re-test and a later test is refused `subflow.trial_same_failure`.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import {
@@ -203,6 +214,7 @@ import {
   automationStudioCandidateRecordContradictsPart,
   automationStudioCandidateRetestAdvised,
   automationStudioCandidateStartedWithSaid,
+  automationStudioCandidateTrialStop as Stop,
   type AutomationStudioCandidateTrialPrepared,
   type AutomationStudioCandidateTrialVerdict
 } from "../candidate/index.ts";
@@ -353,6 +365,13 @@ const ROWS_UNACCOUNTED_RETESTABLE = "The judges answered yes, but a read of this
   + "if it asks for every one of them, test this same revision again (retestsLeft says how many times).";
 
 /** Said instead when a predecessor did not run to its end: the target never started where it should. */
+/** The first sentence of every execution-failed instruction (header, lane 3): what stopped the trial follows it (`../candidate/trial-stop.ts`). */
+const EXECUTION_FAILED_HEAD = "The subflow did not run to its end, so this revision cannot complete.";
+/** How the builder's words say to submit a change. */
+const RESUBMIT = "submit the subflow with core.submit_subflow";
+/** What the builder is told once a revision stopped the same way at the same step twice (header, lane 3). */
+const SAME_FAILURE_INSTRUCTION = `This revision stopped at the same step with the same failure in two trials, so testing it again would fail the same way. Change that step, or the steps that lead to it, ${RESUBMIT}, then test the new revision.`;
+
 const ENTRY_NOT_PREPARED = "A subflow that runs before this one did not run to its end, so this subflow did not start from its prepared entry and the verdict says nothing about it. Test this revision again; if it keeps failing there, complete with outcome blocked and say why.";
 
 /** The model-facing partial test tool and the builder's completion rule bound to its verdicts. */
@@ -368,6 +387,9 @@ export class AutomationStudioSubflowTrialGate {
   private readonly verdicts = new Map<string, AutomationStudioSubflowTrialResult & AutomationStudioResultKeptConditionsCarrier>();
   private readonly closedDigests = new Map<string, JsonObject>();
   private readonly trials = new Map<string, number>();
+  /** How each revision's execution-failed trials stopped, and the revisions that stopped the same way twice, with what stopped them (header, lane 3). */
+  private readonly stops = new Map<string, Set<string>>();
+  private readonly repeatedFailures = new Map<string, JsonObject>();
   /** The brief's standing nos that upheld rows of a kind, for a later no to be held to (header, t633). */
   private readonly standingNos = new AutomationStudioResultStandingNoMemory();
   /** The conditions Core's record showed keep out only rows the request does not ask for (header, t641). */
@@ -423,6 +445,8 @@ export class AutomationStudioSubflowTrialGate {
     }
     const closed = this.closedDigests.get(latest.digest);
     if (closed) return refused("subflow.trial_unchanged_after_no", "This exact proposal was already tried and judged no. Change it to address that feedback, submit it, then test the new revision.", { previousFeedback: closed });
+    const repeated = this.repeatedFailures.get(key(latest));
+    if (repeated) return refused("subflow.trial_same_failure", repeatedInstruction(repeated), { failedStep: repeated });
     const tried = this.trials.get(key(latest)) ?? 0;
     if (tried >= AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION) {
       return refused("subflow.trial_retest_limit", `This exact revision has been tested ${tried} times without a yes, so it is not tested again. Change the step the last feedback names, submit the subflow, then test the new revision.`, { trials: tried, maxTrials: AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION });
@@ -464,7 +488,8 @@ export class AutomationStudioSubflowTrialGate {
     const explored = weighedAnswer.verdict !== "yes" && weighedAnswer.entryPrepared
       ? automationStudioSiteResetExploredOnAbsorbed({ absorbed: absorbedActs, owner: this.input.scope.briefId, steps: (latest.subflows ?? []).flatMap((subflow) => subflow.nodes ?? []), ran: weighedAnswer.acts, whose: "subflow" })
       : [];
-    const answer = explored.length ? withCoreFindings(weighedAnswer, explored) : weighedAnswer;
+    // An execution-failed trial says what stopped it, in its own feedback (header, lane 3).
+    const answer = Stop.told(explored.length ? withCoreFindings(weighedAnswer, explored) : weighedAnswer);
     // The port is told the gate's verdict, even of a trial a stop then cuts short (header, t634).
     const stood = answer.verdict === "no" && answer.entryPrepared && asked.standingNo !== undefined;
     port.weighed?.({ answer: structuredClone(answer), ...(stood ? { standingNo: structuredClone(asked.standingNo) } : {}) });
@@ -477,17 +502,19 @@ export class AutomationStudioSubflowTrialGate {
     const keptConditions = withCarried(this.keptConditions.conditions(), this.carriedKept);
     this.verdicts.set(key(answer), keptConditions.length ? { ...answer, keptConditions } : answer);
     if (answer.verdict === "no" && answer.entryPrepared) this.closedDigests.set(answer.digest, answer.feedback);
-    const retestsLeft = TRANSIENT.has(answer.verdict) || !answer.entryPrepared ? AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION - (tried + 1) : 0;
+    const repeatedStep = this.recordStop(answer);
+    const retestsLeft = !repeatedStep && (TRANSIENT.has(answer.verdict) || !answer.entryPrepared) ? AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION - (tried + 1) : 0;
     const evidence: JsonObject = {
       ok: answer.verdict === "yes", partial: true, verdict: answer.verdict, subflowKey: answer.identity.subflowKey, revision: answer.revision, digest: answer.digest,
       entryPrepared: answer.entryPrepared, feedback: answer.feedback, promotionCredit: false,
-      instruction: instructionFor(answer, retestsLeft > 0, this.input.whole === true),
+      instruction: repeatedStep ? repeatedInstruction(repeatedStep) : instructionFor(answer, retestsLeft > 0, this.input.whole === true),
+      ...(repeatedStep ? { failedStep: repeatedStep } : {}),
       ...(reset?.kind === "admit" && reset.startedWith ? { startedWith: reset.startedWith } : {}),
       ...(absorbed.length ? { absorbedByStartReset: absorbed } : {}),
       ...(leftOnSite?.length ? { leftOnSite: leftOnSite.map(namedAct) } : {})
     };
     if (answer.trialRunId) evidence.trialRunId = answer.trialRunId;
-    if (TRANSIENT.has(answer.verdict) || !answer.entryPrepared) evidence.retestsLeft = retestsLeft;
+    if (TRANSIENT.has(answer.verdict) || !answer.entryPrepared || repeatedStep) evidence.retestsLeft = retestsLeft;
     // Whether Core's record contradicts what kept an unsure from a yes: the fact its instruction rests on (header, t641).
     if (answer.verdict === "unsure" && answer.entryPrepared && retestsLeft > 0 && typeof answer.feedback.contradictedByBuild !== "string") evidence.retestAdvised = automationStudioCandidateRetestAdvised(answer);
     const answered: AutomationStudioLlmEvidenceToolExecutionResult = { kind: "llm_evidence_tool_execution", evidence, effectApplied: true, targetsUnchanged: false, resultCode: `subflow.trial_${answer.verdict}` };
@@ -503,9 +530,29 @@ export class AutomationStudioSubflowTrialGate {
     const closed = this.closedDigests.get(receipt.digest);
     if (closed) return refusal("subflow.trial_unchanged_after_no", "This exact proposal was judged no and has not changed. Change it, submit it, test the new revision, and complete only after a yes.", { previousFeedback: closed });
     if (!answer) return refusal("subflow.trial_required", `Test this proposal first: call ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} with revision ${receipt.revision} and digest ${receipt.digest}, and complete only after it answers yes for that revision and digest.`);
+    const repeated = this.repeatedFailures.get(key(receipt));
+    if (repeated) return refusal(`subflow.trial_${answer.verdict}`, repeatedInstruction(repeated), { verdict: answer.verdict, entryPrepared: answer.entryPrepared, failedStep: repeated, trialFeedback: answer.feedback });
     const retestable = (this.trials.get(key(receipt)) ?? 0) < AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION;
     const advised = answer.verdict === "unsure" && answer.entryPrepared && retestable && typeof answer.feedback.contradictedByBuild !== "string" ? { retestAdvised: automationStudioCandidateRetestAdvised(answer) } : {};
     return refusal(`subflow.trial_${answer.verdict}`, instructionFor(answer, retestable, this.input.whole === true), { verdict: answer.verdict, entryPrepared: answer.entryPrepared, trialFeedback: answer.feedback, ...advised });
+  }
+
+  /**
+   * Records how an `execution_failed` trial stopped, and answers what stopped it
+   * when an earlier trial of the same revision stopped the same way, which
+   * closes the revision to re-testing (header, lane 3; the whole gate's t368 rule).
+   */
+  private recordStop(answer: AutomationStudioSubflowTrialResult): JsonObject | undefined {
+    const signature = Stop.signature(answer);
+    if (!signature) return undefined;
+    const seen = this.stops.get(key(answer)) ?? new Set<string>();
+    const repeated = seen.has(signature);
+    seen.add(signature);
+    this.stops.set(key(answer), seen);
+    if (!repeated) return undefined;
+    const stop = Stop.of(answer.feedback);
+    this.repeatedFailures.set(key(answer), stop);
+    return stop;
   }
 
   /** The judge's feedback when a proposal with this digest was judged no; undefined otherwise. */
@@ -549,8 +596,8 @@ export class AutomationStudioSubflowTrialGate {
       raw = await port({ scope: structuredClone(scope), proposal: deepFreeze(structuredClone(latest)), signal, ...(startedWith.length ? { startedWith: [...startedWith] } : {}) });
     } catch (error) {
       if (signal.aborted) throw error;
-      // The port's own error text may carry page or account detail, so the model is told only that it failed.
-      return failed("subflow.trial_port_failed");
+      // The port's own error text may carry page or account detail, so the model is told only its kind (header, lane 3).
+      return { answer: { ...failed("subflow.trial_port_failed").answer, feedback: Stop.portFailed("subflow.trial_port_failed", error) } };
     }
     // A trial the port did not run, said as the port says it (header, t679).
     const notRun = notRunOf(raw);
@@ -612,7 +659,9 @@ function notRunOf(raw: unknown): AutomationStudioSubflowTrialNotRun["notRun"] | 
 
 /** What a trial's answer tells the builder to do next (header); `retestable`, whether this revision may still be tested again; `whole`, whether the test was the judged whole run (t679). */
 function instructionFor(answer: AutomationStudioSubflowTrialResult, retestable: boolean, whole = false): string {
-  if (!answer.entryPrepared) return ENTRY_NOT_PREPARED;
+  // Core's own trial runner that failed is no subflow before this one that did (header, lane 3).
+  const runner = answer.verdict === "execution_failed" && Stop.of(answer.feedback).kind === "trial_runner";
+  if (!answer.entryPrepared && !runner) return ENTRY_NOT_PREPARED;
   // A control on the page but not shown: a step before it must show it, never a test of the same revision (header, t661).
   const notShown = automationStudioCandidateNotShownInstruction(answer, "submit the subflow with core.submit_subflow");
   if (notShown) return notShown;
@@ -625,7 +674,14 @@ function instructionFor(answer: AutomationStudioSubflowTrialResult, retestable: 
     // Core's record contradicts part of the no's reading: never said to contradict nothing (header, t652).
     return automationStudioCandidateRecordContradictsPart(answer) ? UNSURE_PART_CONTRADICTED : UNSURE_RETESTABLE;
   }
+  // What stopped it, after the verdict's own first sentence (header, lane 3).
+  if (answer.verdict === "execution_failed") return Stop.instruction(answer, { head: EXECUTION_FAILED_HEAD, retestable, resubmit: RESUBMIT });
   return whole && answer.verdict === "yes" ? WHOLE_YES : INSTRUCTIONS[answer.verdict];
+}
+
+/** What the builder is told once a revision stopped the same way twice, by what stopped it (header, lane 3). */
+function repeatedInstruction(stop: JsonObject): string {
+  return stop.kind === "trial_runner" ? Stop.sameRunnerFailure(RESUBMIT) : `${String(stop.said)} ${SAME_FAILURE_INSTRUCTION}`;
 }
 
 function key(receipt: { revision: number; digest: string }): string { return `${receipt.revision}\n${receipt.digest}`; }

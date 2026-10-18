@@ -10,7 +10,8 @@
 //
 // A parameter value the runtime would refuse is refused here, so a malformed
 // structured value never reaches dispatch: record outputs, the output a policy
-// action runs, and a domain's bound parameter contract are all checked.
+// action runs, the JSON Schema a node publishes for a parameter, and a domain's
+// bound parameter contract are all checked.
 //
 // A name, by contrast, is resolved before it is checked. A parameter key that
 // is plainly one of the node's own, written with a slip, is corrected in the
@@ -29,6 +30,7 @@ import {
   type AutomationStudioNodeParameterContract,
   type AutomationStudioNodeRegistryResolution
 } from "../../../nodes/index.ts";
+import { automationStudioParameterSchemaMisfits } from "../parameter-schema/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS,
   type AutomationStudioFlowBootstrapIssue,
@@ -240,16 +242,31 @@ function validateParameters(values: JsonObject, definition: AutomationStudioNode
       issues.push(error("bootstrap.invalid_parameter_value", "Node parameter value does not satisfy its definition.", parameterPath));
       continue;
     }
+    // A domain's bound contract is asked first: its refusal names the grammar
+    // the domain reads, with the accepted shape beside it, which says more than
+    // a schema misfit about the same value. Only a value the contract accepts
+    // is held to the schema the node publishes for the parameter, field by field
+    // (`../parameter-schema/`): each misfit in Core's sentence, with the field
+    // and what the schema allows there as its detail.
+    const contractCodes = contract && !nestedBindingPath ? contractIssueCodes(contract, definition.id, parameter.id, value) : [];
+    const misfits = contractCodes.length ? [] : automationStudioParameterSchemaMisfits({ definition, parameterId: parameter.id, value });
+    if (misfits.length) {
+      for (const misfit of misfits) {
+        issues.push({ ...error(SCHEMA_MISMATCH, misfit.message, parameterPath), detail: { field: misfit.field, ...(misfit.valid ? { valid: misfit.valid } : {}) } });
+      }
+      continue;
+    }
     if (nestedBindingPath) continue;
     if (recordOutput) issues.push(...recordOutputIssues(value, definition, parameterPath));
     if (namesOutput && (typeof value !== "string" || !scope.outputIds().has(value))) {
       issues.push(error("bootstrap.unknown_output_reference", "Parameter names an output that no available node declares.", parameterPath));
     }
-    if (contract) for (const code of contractIssueCodes(contract, definition.id, parameter.id, value)) {
-      issues.push(error(code, "Node parameter value does not satisfy its domain contract.", parameterPath));
-    }
+    for (const code of contractCodes) issues.push(error(code, "Node parameter value does not satisfy its domain contract.", parameterPath));
   }
 }
+
+/** A structured value that does not fit the schema its node publishes for it. */
+const SCHEMA_MISMATCH = "bootstrap.parameter_schema_mismatch";
 
 /**
  * Core's own parameters whose value is the id of an output to dispatch. The
