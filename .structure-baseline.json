@@ -938,7 +938,6 @@
       "packages/fluxiq/src/programs/automation-studio/storage/project/content-protection.ts": 3,
       "packages/fluxiq/src/programs/automation-studio/storage/project/tests/schema.test.ts": 3,
       "scripts/tests/clean-library-output.test.mjs": 3,
-      "apps/web/src/app/get-started/tests/page.test.tsx": 2,
       "apps/web/src/features/automation-studio/adaptations/change-diff.ts": 2,
       "apps/web/src/features/automation-studio/conversation/capabilities/tests/core-contract-arguments.ts": 2,
       "apps/web/src/features/automation-studio/flow-editor/palette-preferences-repository.ts": 2,
