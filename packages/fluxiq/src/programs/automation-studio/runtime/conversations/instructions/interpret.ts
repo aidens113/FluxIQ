@@ -133,7 +133,7 @@ export function automationStudioConversationModelProblem(error: unknown): string
   const name = error instanceof Error ? error.name : "";
   if (/timeout|aborted/u.test(code) || name === "TimeoutError" || name === "AbortError") return "the model did not answer in time";
   if (/rate_limited/u.test(code)) return "the model was too busy to answer";
-  if (/secret_unavailable/u.test(code)) return "your model key is locked for this session, so unlock your keys to let the model read your messages";
+  if (/secret_unavailable/u.test(code)) return "your model key is locked for this session, so sign out of FluxIQ and sign in again to unlock your keys and let the model read your messages";
   if (/auth|secret/u.test(code)) return "the model's credentials were not accepted";
   if (/network|http|redirect/u.test(code)) return "the model could not be reached";
   // Never the code itself: the thread keeps these words, and shows them again (t276).

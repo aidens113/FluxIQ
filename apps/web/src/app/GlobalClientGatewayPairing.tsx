@@ -1,7 +1,7 @@
 "use client";
 
 import { QrCode } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, InlineNotice, Modal } from "../features/programs/shared-ui";
 
 export type ClientPairingRequest = {
@@ -47,12 +47,66 @@ export function pairingExpiryLabel(expiresAt: number, nowMs: number): string {
   return seconds ? `Expires in ${seconds}s` : "Expired";
 }
 
+/**
+ * The notice for an approval the gateway closed for good: the client is no
+ * longer waiting (its browser disconnected, or it is already paired) or the
+ * request is gone. Any other failure leaves the request pending to try again.
+ */
+export function closedPairingNotice(status: number, result: { error?: string; code?: string } | undefined): string | null {
+  if (status === 409 && result?.code?.startsWith("pairing.")) return result.error ?? "This pairing can no longer be approved.";
+  if (status === 404) return result?.error ?? "This pairing request is no longer available.";
+  return null;
+}
+
+export type PairingNotice = {
+  title: string;
+  message: string;
+  tone: "error" | "info";
+};
+
+/**
+ * Why a request the operator was shown left the list without their approve or
+ * dismiss. The snapshot keeps an approved request (with consumedAt) and its
+ * expiry; a request the gateway withdrew when the browser disconnected is gone
+ * before it expires, as is one dismissed or replaced elsewhere.
+ */
+export function vanishedPairingNotice(shown: ClientPairingRequest, pairings: ClientPairingRequest[], nowMs: number): PairingNotice {
+  const current = pairings.find((pairing) => pairing.pairingCode === shown.pairingCode);
+  if (current?.consumedAt) {
+    return {
+      title: "Paired elsewhere",
+      message: "This request was approved from another window, so the browser is already paired.",
+      tone: "info"
+    };
+  }
+  if ((current?.expiresAt ?? shown.expiresAt) <= nowMs) {
+    return {
+      title: "Nothing was paired",
+      message: "The pairing request expired before you confirmed, so nothing was paired. Connect again from the browser to get a new code.",
+      tone: "error"
+    };
+  }
+  return {
+    title: "Nothing was paired",
+    message: "The request closed before you confirmed, usually because the browser disconnected, so nothing was paired. Connect again from the browser to get a new code.",
+    tone: "error"
+  };
+}
+
+function closedApprovalNotice(message: string): PairingNotice {
+  return { title: "Nothing was paired", message, tone: "error" };
+}
+
 export function GlobalClientGatewayPairing() {
   const [snapshot, setSnapshot] = useState<ClientGatewaySnapshot>({});
   const [dismissedCodes, setDismissedCodes] = useState<string[]>([]);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [busyAction, setBusyAction] = useState<"approve" | "reject" | null>(null);
   const [actionError, setActionError] = useState("");
+  // Outlives the request it is about: the request leaves the list at the next
+  // poll, and the person must still learn that nothing was paired.
+  const [closedNotice, setClosedNotice] = useState<PairingNotice | null>(null);
+  const shownPairing = useRef<ClientPairingRequest | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,8 +158,26 @@ export function GlobalClientGatewayPairing() {
   }, [pending.length]);
 
   const pendingPairing = pending[0];
+  // A request leaving the modal without this operator's approve or dismiss
+  // (those mark it dismissed first) was withdrawn, expired or resolved
+  // elsewhere; say which instead of letting it vanish.
+  useEffect(() => {
+    const shown = shownPairing.current;
+    shownPairing.current = pendingPairing ?? null;
+    if (!shown || shown.pairingCode === pendingPairing?.pairingCode) return;
+    if (dismissedCodes.includes(shown.pairingCode)) return;
+    setClosedNotice(vanishedPairingNotice(shown, snapshot.pairings ?? [], Date.now()));
+  }, [dismissedCodes, pendingPairing, snapshot.pairings]);
+
   const pendingSession = (snapshot.sessions ?? []).find((session) => session.sessionId === pendingPairing?.requestedBySessionId);
-  if (!pendingPairing) return null;
+  if (!pendingPairing) return closedNotice ? (
+    <Modal description="The pairing request closed before you confirmed it." title="Pairing request closed" onClose={() => setClosedNotice(null)}>
+      <InlineNotice message={closedNotice.message} title={closedNotice.title} tone={closedNotice.tone} />
+      <div className="modal-actions">
+        <Button data-modal-submit onClick={() => setClosedNotice(null)} variant="primary">Close</Button>
+      </div>
+    </Modal>
+  ) : null;
 
   function removePairing(pairingCode: string) {
     setDismissedCodes((codes) => [...codes.filter((code) => code !== pairingCode), pairingCode].slice(-20));
@@ -117,6 +189,7 @@ export function GlobalClientGatewayPairing() {
     if (!pairingCode || busyAction) return;
     setBusyAction(action);
     setActionError("");
+    setClosedNotice(null);
     const endpoint = action === "approve" ? "approve-pairing" : "dismiss-pairing";
     try {
       const response = await fetch(`/api/client-gateway/${endpoint}`, {
@@ -125,7 +198,13 @@ export function GlobalClientGatewayPairing() {
         body: JSON.stringify({ pairingCode })
       });
       if (!response.ok) {
-        const result = await response.json().catch(() => undefined) as { error?: string } | undefined;
+        const result = await response.json().catch(() => undefined) as { error?: string; code?: string } | undefined;
+        const closed = action === "approve" ? closedPairingNotice(response.status, result) : null;
+        if (closed) {
+          setClosedNotice(closedApprovalNotice(closed));
+          removePairing(pairingCode);
+          return;
+        }
         setActionError(result?.error ?? `The pairing request could not be ${action === "approve" ? "approved" : "rejected"}.`);
         return;
       }
@@ -146,6 +225,7 @@ export function GlobalClientGatewayPairing() {
   return (
     <Modal busy={Boolean(busyAction)} closeOnEscape={!busyAction} description="Confirm that the reference code matches the client requesting access." title="Client pairing request" onClose={dismissPairingPrompt}>
       {pending.length > 1 ? <InlineNotice message={`Showing request 1 of ${pending.length}. The next request will open after this one is resolved.`} tone="info" /> : null}
+      {closedNotice ? <InlineNotice message={closedNotice.message} title={`Previous request: ${closedNotice.title.toLowerCase()}`} tone={closedNotice.tone === "error" ? "warning" : "info"} /> : null}
       {actionError ? <InlineNotice message={actionError} title="Pairing unchanged" tone="error" /> : null}
       {snapshot.webRuntime?.clientGatewayError ? <InlineNotice message={snapshot.webRuntime.clientGatewayError} title="Gateway issue" tone="warning" /> : null}
       <div className="automation-client-pairing-modal">

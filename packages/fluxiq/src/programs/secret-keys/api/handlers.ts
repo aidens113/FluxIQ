@@ -1,4 +1,4 @@
-import type { GlobalProgramApiRegistry } from "../../_shared/api.ts";
+import type { GlobalProgramApiRegistry, ProgramApiActor } from "../../_shared/api.ts";
 import { isJsonObject } from "../../_shared/storage.ts";
 import type { IdentityAccessService } from "../../identity-access/index.ts";
 import {
@@ -10,7 +10,7 @@ import {
   type SecretKeyAuthorizationPayload,
   type UpdateSecretKeyRequest
 } from "./contracts.ts";
-import type { SecretKeysService } from "../runtime/service.ts";
+import type { SecretKeyActorSession, SecretKeysService } from "../runtime/service.ts";
 
 // The acting user's id, never the payload, names whose password seals a value:
 // it becomes the seal's `sealedByUserId` on create, rotate, and an upgrading reveal.
@@ -33,7 +33,8 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
       if (payload.metadata !== undefined && !isJsonObject(payload.metadata)) return { ok: false, error: "metadata must be a JSON object" };
       const authorization = await authorizeSecretMutation(identityAccess, payload, { requireTotp: false });
       if (!authorization.ok) return authorization;
-      return { ok: true, payload: await service.createKey({ ...payload, createdBy: request.actor?.userId }) };
+      const actorSession = await verifiedActorSession(identityAccess, payload, request.actor);
+      return { ok: true, payload: await service.createKey({ ...payload, createdBy: request.actor?.userId, actorSession }) };
     }
   });
   registry.register({
@@ -47,7 +48,8 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
       if (payload.metadata !== undefined && !isJsonObject(payload.metadata)) return { ok: false, error: "metadata must be a JSON object" };
       const authorization = await authorizeSecretMutation(identityAccess, payload);
       if (!authorization.ok) return authorization;
-      return { ok: true, payload: await service.updateKey(payload) };
+      const actorSession = await verifiedActorSession(identityAccess, payload, request.actor);
+      return { ok: true, payload: await service.updateKey({ ...payload, actorSession }) };
     }
   });
   registry.register({
@@ -60,7 +62,8 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
       if (!payload?.id || !payload.value) return { ok: false, error: "id and value are required" };
       const authorization = await authorizeSecretMutation(identityAccess, payload);
       if (!authorization.ok) return authorization;
-      return { ok: true, payload: await service.rotateKey({ ...payload, actorUserId: request.actor?.userId }) };
+      const actorSession = await verifiedActorSession(identityAccess, payload, request.actor);
+      return { ok: true, payload: await service.rotateKey({ ...payload, actorUserId: request.actor?.userId, actorSession }) };
     }
   });
   registry.register({
@@ -89,6 +92,20 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
       return { ok: true, payload: { deleted: await service.deleteKey(payload.id) } };
     }
   });
+}
+
+/**
+ * The caller's own signed-in session, after `authorizeSecretMutation` verified
+ * the password against it: the session that checked the password must be the
+ * caller's, still live, and the caller's user. Its expiry bounds how long the
+ * key stays held. Undefined otherwise, and then no session takes the key.
+ */
+async function verifiedActorSession(identityAccess: IdentityAccessService | undefined, payload: SecretKeyAuthorizationPayload, actor: ProgramApiActor | undefined): Promise<SecretKeyActorSession | undefined> {
+  if (!identityAccess || !actor || !payload.authSessionId || payload.authSessionId !== actor.sessionId) return undefined;
+  // An unknown or expired session reads as null; a store that cannot be read throws, and the request fails with it.
+  const context = await identityAccess.validateSession(payload.authSessionId);
+  if (!context || context.user.id !== actor.userId) return undefined;
+  return { sessionId: context.session.id, userId: context.user.id, expiresAtMs: context.session.expiresAtMs };
 }
 
 async function authorizeSecretMutation(identityAccess: IdentityAccessService | undefined, payload: SecretKeyAuthorizationPayload, options: { requireTotp?: boolean } = {}): Promise<{ ok: true } | { ok: false; error: string; requiresRecheck: true }> {

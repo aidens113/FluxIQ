@@ -52,6 +52,9 @@ export class ClientGatewaySessionRegistry {
 
   requireReady(sessionId: string): InternalSession {
     const session = this.require(sessionId);
+    // A session whose socket has gone can never answer, so a command to it
+    // fails here rather than waiting out its timeout.
+    if (session.disconnectedAt !== undefined) throw new Error("Client session is disconnected.");
     if (session.status !== "ready") throw new Error("Client session is not paired.");
     return session;
   }
@@ -78,10 +81,12 @@ export class ClientGatewaySessionRegistry {
     return { ...publicSession };
   }
 
+  /** A paired session of the trusted client that still has its socket, the one a token may act as. */
   findReadyByTrustedClient(trustedClientId: string): InternalSession | undefined {
-    return this.list().find((candidate) => candidate.status === "ready" && candidate.trustedClientId === trustedClientId);
+    return this.list().find((candidate) => candidate.status === "ready" && candidate.disconnectedAt === undefined && candidate.trustedClientId === trustedClientId);
   }
 
+  /** Every session still marked paired, live or not, so revoking or replacing one ends them all. */
   listReadyByTrustedClient(trustedClientId: string): InternalSession[] {
     return this.list().filter((candidate) => candidate.status === "ready" && candidate.trustedClientId === trustedClientId);
   }

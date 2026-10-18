@@ -18,6 +18,17 @@ import { SecretValueSealer } from "./value-sealer.ts";
 export type { SecretKeyCredentialChange, SecretKeyCredentialChangeInput } from "./credential-changes.ts";
 export type { SecretRevealAuthorizationMetadata } from "./held-keys.ts";
 
+/**
+ * The signed-in session of the person changing a key, as the caller verified
+ * it: its id, its user and when it expires. Only that user's own session takes
+ * the key, and never past `expiresAtMs`.
+ */
+export type SecretKeyActorSession = {
+  sessionId: string;
+  userId: string;
+  expiresAtMs: number;
+};
+
 type CreateSecretKeyInput = {
   name: string;
   value: string;
@@ -31,6 +42,8 @@ type CreateSecretKeyInput = {
   metadata?: JsonObject;
   /** The creating user; also stamped on the seal as `sealedByUserId`. */
   createdBy?: string | undefined;
+  /** The creator's own signed-in session, whose password was just verified: the new key is usable there at once. */
+  actorSession?: SecretKeyActorSession | undefined;
   nowMs?: number;
 };
 
@@ -44,6 +57,8 @@ type UpdateSecretKeyInput = {
   description?: string;
   enabled?: boolean;
   metadata?: JsonObject;
+  /** The editor's own signed-in session: a key it already holds stays held across the edit. */
+  actorSession?: SecretKeyActorSession | undefined;
   nowMs?: number;
 };
 
@@ -53,6 +68,8 @@ type RotateSecretKeyInput = {
   authorizationPassword?: string;
   /** The user whose password seals the new value, stamped as `sealedByUserId`. */
   actorUserId?: string | undefined;
+  /** The rotating user's own signed-in session, whose password was just verified: the new value is usable there at once. */
+  actorSession?: SecretKeyActorSession | undefined;
   nowMs?: number;
 };
 
@@ -111,9 +128,9 @@ export class SecretKeysService {
     const id = `secret:${randomUUID()}`;
     const name = cleanRequired(input.name, "name");
     const createdBy = cleanOptional(input.createdBy);
-    const { sealed, key } = await this.sealer.seal({ id, value: input.value, updatedAtMs: now }, requirePassword(input.authorizationPassword), createdBy);
-    key.fill(0);
-    const record: SecretKeyRecord = {
+    const password = requirePassword(input.authorizationPassword);
+    // Every field that can refuse its input is read before the seal, so nothing throws while its key is unheld and unzeroed.
+    const fields: Omit<SecretKeyRecord, "sealed"> = {
       id,
       name,
       kind: normalizeKind(input.kind),
@@ -128,11 +145,14 @@ export class SecretKeysService {
       lastRotatedAtMs: now,
       ...(input.metadata ? { metadata: input.metadata } : {}),
       recordType: "secret-key",
-      encrypted: true,
-      sealed
+      encrypted: true
     };
+    const { sealed, key } = await this.sealer.seal({ id, value: input.value, updatedAtMs: now }, password, createdBy);
+    const record: SecretKeyRecord = { ...fields, sealed };
     this.store.set(record);
+    const unlockNeeded = this.holdForActor(record, key, input.actorSession, createdBy);
     await this.store.persist(id);
+    if (unlockNeeded && input.actorSession) await this.unlockActorSession(input.actorSession, password);
     return toSummary(record);
   }
 
@@ -152,8 +172,13 @@ export class SecretKeysService {
       ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
       updatedAtMs
     };
+    // An edit leaves the seal as it is, so the editor's own held key still opens it; every other holder is revoked.
+    const actorUnlock = this.liveActorUnlock(input.actorSession);
+    const kept = actorUnlock?.decryptionKeys.get(existing.id);
+    const keptKey = kept ? Buffer.from(kept.decryptionKey) : undefined;
     this.store.set(next);
     this.heldKeys.revokeKey(existing.id);
+    if (actorUnlock && keptKey) actorUnlock.decryptionKeys.set(existing.id, { keyUpdatedAtMs: next.updatedAtMs, decryptionKey: keptKey });
     await this.store.persist(existing.id);
     return toSummary(next);
   }
@@ -164,9 +189,13 @@ export class SecretKeysService {
     const existing = this.store.require(input.id);
     const password = requirePassword(input.authorizationPassword);
     const now = Math.max(input.nowMs ?? Date.now(), existing.updatedAtMs + 1);
-    const { sealed, key } = await this.sealer.seal({ id: existing.id, value: input.value, updatedAtMs: now }, password, cleanOptional(input.actorUserId));
-    key.fill(0);
-    const current = this.store.require(existing.id);
+    const actorUserId = cleanOptional(input.actorUserId);
+    const { sealed, key } = await this.sealer.seal({ id: existing.id, value: input.value, updatedAtMs: now }, password, actorUserId);
+    const current = this.store.get(existing.id);
+    if (!current) {
+      key.fill(0);
+      throw new Error(`Unknown secret key: ${existing.id}`);
+    }
     const next: SecretKeyRecord = {
       ...current,
       updatedAtMs: Math.max(now, current.updatedAtMs + 1),
@@ -176,7 +205,9 @@ export class SecretKeysService {
     };
     this.store.set(next);
     this.heldKeys.revokeKey(current.id);
+    const unlockNeeded = this.holdForActor(next, key, input.actorSession, actorUserId);
     await this.store.persist(current.id);
+    if (unlockNeeded && input.actorSession) await this.unlockActorSession(input.actorSession, password);
     return toSummary(next);
   }
 
@@ -393,6 +424,43 @@ export class SecretKeysService {
   close(): void {
     this.heldKeys.revokeAll();
     this.credentialChanges.forgetAll();
+  }
+
+  /**
+   * Hands the key a create or rotation just sealed `record` with to the acting
+   * user's own live session, which then holds it like a key opened at sign-in;
+   * zeroes it otherwise. Synchronous with the record write, so the key opens the
+   * record's current seal when it is held. Only the user the seal is stamped for,
+   * only their own session. True when that session holds no unlock at all (a
+   * sign-in this process has not unlocked), so the caller unlocks it with the
+   * password it just verified.
+   */
+  private holdForActor(record: SecretKeyRecord, key: Buffer, actorSession: SecretKeyActorSession | undefined, sealedByUserId: string | undefined): boolean {
+    if (!actorSession || !sealedByUserId || actorSession.userId !== sealedByUserId || actorSession.expiresAtMs <= this.now()) {
+      key.fill(0);
+      return false;
+    }
+    const unlock = this.liveActorUnlock(actorSession);
+    if (!unlock) {
+      key.fill(0);
+      return this.heldKeys.session(actorSession.sessionId) === undefined;
+    }
+    unlock.decryptionKeys.get(record.id)?.decryptionKey.fill(0);
+    unlock.decryptionKeys.set(record.id, { keyUpdatedAtMs: record.updatedAtMs, decryptionKey: key });
+    return false;
+  }
+
+  /** The acting user's own held, unexpired session unlock, or undefined. */
+  private liveActorUnlock(actorSession: SecretKeyActorSession | undefined): HeldSessionUnlock | undefined {
+    if (!actorSession) return undefined;
+    const unlock = this.heldKeys.session(actorSession.sessionId);
+    return unlock && unlock.userId === actorSession.userId && unlock.expiresAtMs > this.now() ? unlock : undefined;
+  }
+
+  /** Unlocks the acting user's session with the password the caller verified, as sign-in does; a failure leaves the key written and the session locked. */
+  private async unlockActorSession(actorSession: SecretKeyActorSession, password: string): Promise<void> {
+    if (this.heldKeys.session(actorSession.sessionId) !== undefined) return;
+    await this.unlockSession({ sessionId: actorSession.sessionId, userId: actorSession.userId, authorizationPassword: password, expiresAtMs: actorSession.expiresAtMs }).catch(/* best-effort: the key is already written and stays usable after the next sign-in, which is the old behaviour */ () => undefined);
   }
 
   /**

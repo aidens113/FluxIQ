@@ -61,7 +61,11 @@ export class ClientGatewayLifecycle {
     const session = this.sessions.get(sessionId);
     if (!session) return null;
     const next: InternalSession = { ...session, status: "disconnected", disconnectedAt: this.config.now(), lastSeenAt: this.config.now() };
+    delete next.pendingPairingCode;
     this.sessions.replace(sessionId, next);
+    // A pairing the person has not approved yet can no longer reach this
+    // browser; it reconnects in a new session that asks with a new code.
+    this.pairingFlow.withdrawForSession(sessionId, reason);
     void next.socket?.close?.(1000, reason);
     this.audit.record("session.disconnected", "Client disconnected.", { sessionId, reason });
     void this.events.emit({ type: "session.disconnected", session: this.sessions.toPublic(next) });

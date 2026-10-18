@@ -22,7 +22,10 @@ export type OnboardingViewProps = {
 /**
  * First-run setup: runtime, pairing, DeepSeek key, in that order, each shown
  * as done, current, or blocked with one concrete action. Then the one-line
- * explanation of how FluxIQ uses AI and the three ways to start.
+ * explanation of how FluxIQ uses AI and the three ways to start. It renders
+ * outside Studio, so its `onboarding-*` classes are styled by the hosting
+ * route's stylesheet (`app/get-started/get-started.css`) and it uses no
+ * `automation-*` class, which only the Studio route's stylesheet defines.
  */
 export function OnboardingView(props: OnboardingViewProps) {
   const pollMs = props.pollMs ?? 5_000;
@@ -41,27 +44,27 @@ export function OnboardingView(props: OnboardingViewProps) {
 
 function OnboardingLayout(props: OnboardingViewProps & { steps: OnboardingStep[]; complete: boolean; onRefresh(): void; eligible(): boolean }) {
   return (
-    <section aria-label="Get started with FluxIQ" className="automation-runs-workspace automation-onboarding">
-      <header>
-        <div><strong>Get started</strong><span>{props.complete ? "FluxIQ is ready." : "Three steps before your first automation."}</span></div>
+    <section aria-label="Get started with FluxIQ" className="onboarding">
+      <header className="onboarding-header">
+        <div><strong>Setup checklist</strong><span>{props.complete ? "FluxIQ is ready." : "Three steps before your first automation."}</span></div>
         <button className="button" onClick={props.onRefresh} type="button"><RefreshCcw aria-hidden size={14} />Check again</button>
       </header>
-      <ol className="automation-onboarding-steps">
+      <ol className="onboarding-steps">
         {props.steps.map((step, index) => (
-          <li aria-current={step.state === "current" ? "step" : undefined} className={`automation-onboarding-step ${step.state}`} data-state={step.state} data-step={step.id} key={step.id}>
+          <li aria-current={step.state === "current" ? "step" : undefined} className={`onboarding-step ${step.state}`} data-state={step.state} data-step={step.id} key={step.id}>
             <StepIcon state={step.state} />
             <div>
               <strong>{index + 1}. {step.title}</strong>
-              <span className="automation-onboarding-state">{step.state === "done" ? "Done" : step.state === "current" ? "Next" : `Blocked: finish step ${props.steps.findIndex((candidate) => candidate.id === step.blockedBy) + 1} first`}</span>
+              <span className="onboarding-state">{step.state === "done" ? "Done" : step.state === "current" ? "Next" : `Blocked: finish step ${props.steps.findIndex((candidate) => candidate.id === step.blockedBy) + 1} first`}</span>
               <span>{step.detail}</span>
-              {step.problem ? <span className="automation-runtime-message" role="alert"><AlertCircle aria-hidden size={14} />{step.problem}</span> : null}
+              {step.problem ? <span className="inline-notice error onboarding-problem" role="alert"><AlertCircle aria-hidden size={14} />{step.problem}</span> : null}
               {step.state === "done" ? null : <StepAction onOpenConnectedBrowsers={props.onOpenConnectedBrowsers} step={step} secretKeysHref={props.secretKeysHref} eligible={props.eligible} />}
             </div>
           </li>
         ))}
       </ol>
-      <p className="automation-onboarding-message">{ONBOARDING_COPY.valueMessage}</p>
-      <div aria-label="Start an automation" className="automation-onboarding-start" role="group">
+      <p className="onboarding-message">{ONBOARDING_COPY.valueMessage}</p>
+      <div aria-label="Start an automation" className="onboarding-start" role="group">
         {ONBOARDING_COPY.startOptions.map((option) => (
           <button className="button" key={option.id} onClick={() => props.onStart(option.id)} type="button"><strong>{option.label}</strong><span>{option.description}</span></button>
         ))}
@@ -73,7 +76,7 @@ function OnboardingLayout(props: OnboardingViewProps & { steps: OnboardingStep[]
 function StepAction(props: { step: OnboardingStep; onOpenConnectedBrowsers: (() => void) | undefined; secretKeysHref: string | undefined; eligible(): boolean }) {
   const action = props.step.action;
   return (
-    <div className="automation-onboarding-action" data-action-for={props.step.id}>
+    <div className="onboarding-action" data-action-for={props.step.id}>
       <span>{action.label}: {action.location}</span>
       {action.command ? <code>{action.command}</code> : null}
       {action.href ? <a className="button" href={props.secretKeysHref ?? action.href} onClick={(event: MouseEvent<HTMLAnchorElement>) => { if (!props.eligible()) event.preventDefault(); }}>Open Secret Keys</a> : null}
