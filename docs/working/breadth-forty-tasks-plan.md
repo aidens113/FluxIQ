@@ -1,7 +1,7 @@
 # Breadth Round Core Integration
 
 Status: Active
-Status detail: Codex continuation is validating held storage, reset, result-verification and target-contract changes before downstream live acceptance.
+Status detail: Storage optimization excluded; judge, trial feedback and social accounting fixes pushed. Reset transfer/original-project authority and two further judge repairs remain under integrated validation; downstream company/social live acceptance is active.
 Created: 2026-10-17
 Last updated: 2026-10-17
 Owner: Codex senior supervisor
@@ -23,6 +23,12 @@ The downstream document `../!FluxIQWebExtension/docs/working/breadth-forty-tasks
 - Social collection-processing dedupe accounting (t5667005f611) is merged locally alongside downstream opt-in excluded-link identity and explicit complete-text reads. Supervisor Core25/25 and integrated Core37/37 passed; downstream independent unit/domain and Chromium proof passed, final paired build/type/audits green. Paid social acceptance remains pending.
 - R1's reviewed new-line witness is committed only on paired t719 (Core4bb74570/c61455d3); supervisor24 Core tests and downstream67/36 tests passed. Canonical install also needs a proved collection-transfer inverse after both exploration and trial acts, so generic opaque per-step pre/post collection witnesses and ordered baseline restoration are being added there before dev acceptance. No scenario/browser behavior moves into Core.
 - Downstream company live run reached118 provider calls ($0.082465122), seven trials, no promoted Flow. The extension returned ended for a hidden load-more before scroll-loaded batches; downstream owns that repair. Source stayed frozen during the run; no Core build race recurred.
+- Last observed paired push: Core5add836b/downstream1164196e. The generic social accounting and preceding-navigation feedback above are pushed; paid acceptance remains separate.
+- Continuation Bigbox run failed despite its full oracle passing: a claim that a condition "alone left out" stored copies bypassed missing-claim parsing. Bounded modifier repair and negative controls committed only in t5635a652d4a. Crossborder failed after an initially correct10-row answer because judges imposed literal search-title wording; the same commit adds generic retrieval-query guidance, retaining explicit type/content requirements and conservative kind/refutation guards. Supervisor independently passed45changed-file tests; worker integrated111tests/typecheck/audits passed, final library/downstream gates active. Live proof is still required.
+- R1 transfer proof now preserves ordered inventories and baseline row states across both collections. Supervisor found that whole-project trial ownership lacked the builder's original baseline; t719 now has an actual routed service fail-first regression and immutable original inventories shared only before the project's first known lasting effect. Late observations and other resources cannot seed authority; adoption never overwrites current observations. Final validation and paid model-reset-only proof remain pending, so this is not accepted on dev.
+- Downstream hybrid paging repair passed focused tests and real Chromium2/2 reaching all28cards; fresh company run-mvdes30x-65848f60 is preparing its isolated web build. Social recent-group-posts ended failed59calls/$0.047741538, no Flow; the builder did not author a disclosure loop on every page before its full-text read. The refusal remains truthful; supported generic repair feedback is under investigation. No new accepted full live pass is claimed.
+
+Judge repair t563 is now merged to paired dev after111integrated focused tests, all affected typechecks and audits, frozen library build, and supervisor45changed-file tests. Reset authority is committed only on t7198c638a46; supervisor60/60 and worker136/136 passed, then latest dev was merged into both task trees for final integrated gates. No new live pass is claimed.
 
 Next: independently verify and merge safe R1 after live proof; integrate held lane changes with narrow gates; observe downstream live acceptance. Optional storage pooling no longer blocks this round. No full suite is required for each merge under the user's twice-daily sweep policy.
 

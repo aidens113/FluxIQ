@@ -55,6 +55,29 @@ const record = () => automationStudioResultNoRecord({ summary: summary(), reques
 const EXPECTED = "Every atlas that can be borrowed.";
 
 describe("a condition said to have left out a title whose label is a stored row (t659)", () => {
+  it("refutes a condition said to have alone left out stored copies in a colon and semicolon list", () => {
+    const evidence = summary();
+    evidence.reads![0]!.conditions![0]!.leftOutSettled = [RIVERS, COASTAL, ISLANDS];
+    const observed = `But condition 1 (reserve is absent) alone left out two borrowable atlases: ${RIVERS}; ${COASTAL}.`;
+    const weighed = automationStudioResultRefutedReading({ expected: EXPECTED, observed }, automationStudioResultNoRecord({ summary: evidence, requestText: REQUEST }));
+    expect(weighed.wholly).toBe(true);
+    expect(weighed.findings.join(" ")).toContain(`"${RIVERS}" is in the stored rows: another copy of it was kept.`);
+    expect(weighed.findings.join(" ")).toContain(`"${COASTAL}" is in the stored rows: another copy of it was kept.`);
+  });
+
+  it("leaves an alone claim standing when its list includes a genuinely missing title", () => {
+    for (const settled of [false, true]) {
+      const evidence = summary();
+      if (settled) evidence.reads![0]!.conditions![0]!.leftOutSettled = [RIVERS, COASTAL, ISLANDS];
+      const observed = `Condition 1 (reserve is absent) alone left out two borrowable atlases: ${RIVERS}; ${ISLANDS}.`;
+      expect(automationStudioResultRefutedReading({ observed }, automationStudioResultNoRecord({ summary: evidence, requestText: REQUEST })).wholly).toBe(false);
+    }
+  });
+
+  it("leaves an alone claim standing when no condition left a copy of the stored title out", () => {
+    expect(automationStudioResultRefutedReading({ observed: `Condition 1 alone left out "${PASSES}".` }, record()).wholly).toBe(false);
+  });
+
   it("is refuted, whatever the sentence says of the condition: another copy was kept", () => {
     const weighed = automationStudioResultRefutedReading({ expected: EXPECTED, observed: `Condition 1 (reserve is absent) left out "${RIVERS}", a qualifying atlas.` }, record());
     expect(weighed).toEqual({ wholly: true, findings: [`"${RIVERS}" is in the stored rows: another copy of it was kept.`] });
