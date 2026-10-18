@@ -2239,6 +2239,13 @@ beside `metadata.llmGate.permissions`, which lists the classes `granted`,
 `instructed` and `lapsed` (`granted` is the run's `permittedConsequences`). A
 person's answer reaches the next run as that run's `permittedConsequences`.
 
+Automatic person-needed questions mint a fresh opaque `person-needed.UUID`
+identity for each new question. A node attempt identifier is local to its
+execution and cannot identify a question in the project-wide conversation
+store across repeated Flow runs. `raisedBy.attemptId` retains the originating
+attempt; a durable resume keeps the already-persisted ask identity. Continue,
+Stop, expiry and the per-run question cap retain their existing behavior.
+
 **A request raised while exploring is put to the person, in the run's own
 thread.** Where the run has a parking port bound -- every run that has a
 conversation does -- the exploration opens the gate's request as the same
