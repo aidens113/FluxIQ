@@ -42,8 +42,10 @@
 // wrote from the snapshots just before and just after it, in the forms a
 // declaration and a `startState` read already take:
 //
-// - `spot`: `{ item?, dialog? }`, the opaque tokens of where the step's control
-//   sat on the page before it;
+// - `spot`: `{ item?, dialog?, subject?, page? }`, the opaque tokens of where
+//   the step's control sat on the page before it, and of what it and that page
+//   are about (t719), which tie an undo elsewhere -- the basket line an add on
+//   a detail page made -- to the step's act;
 // - `items`: `{ before, after }`, the opaque tokens of the items -- rows, cards,
 //   list lines -- each of those two pages listed.
 //
@@ -127,12 +129,12 @@ const PLACE_TOKEN = /^[A-Za-z0-9:_-]{1,128}$/u;
 /** More items than any page lists is no list of a page's items. */
 const MAX_ITEMS = 2_000;
 
-/** The diff's `spot`, where it gave a token for the item or the dialog the step's control sat in (header). */
+/** The diff's `spot`, where it gave a token for the item or the dialog the step's control sat in, or for what it and its page are about (header, t719). */
 function spotOf(attempt: AutomationStudioNodeAttemptTrace): AutomationStudioSiteResetSpot | undefined {
   const spot = attempt.stateRefs?.stateDiff?.spot;
   if (!isObject(spot)) return undefined;
-  const item = token(spot.item), dialog = token(spot.dialog);
-  return item || dialog ? { ...(item ? { item } : {}), ...(dialog ? { dialog } : {}) } : undefined;
+  const item = token(spot.item), dialog = token(spot.dialog), subject = token(spot.subject), page = token(spot.page);
+  return item || dialog || subject || page ? { ...(item ? { item } : {}), ...(dialog ? { dialog } : {}), ...(subject ? { subject } : {}), ...(page ? { page } : {}) } : undefined;
 }
 
 /** The diff's `items`: the tokens the page before the step and the page after it listed; a side not listed is absent (header). */

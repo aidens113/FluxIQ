@@ -83,8 +83,16 @@ export type AutomationStudioActionDeclaration = {
    * shows them, and reads them only to tie an undo of a build's own act to
    * that act's own item (`../flow-bootstrap/site-reset/`). Absent: the control
    * sits in no item, or in no dialog. A domain sends a digest, never the words.
+   *
+   * `subject` and `page`, opaque tokens of one kind, say what the control is
+   * about -- its item's title, or for a control in no item the nearest titled
+   * part of the page around it -- and what its page is about, its main heading
+   * (t719). Read for the same one purpose: an act whose effect shows on another
+   * page or in another list, such as an add from a detail page whose line
+   * appears in a basket, is tied to its undo there by them. Absent where the
+   * domain found none.
    */
-  control: { name: string; kind?: string; item?: string; dialog?: string };
+  control: { name: string; kind?: string; item?: string; dialog?: string; subject?: string; page?: string };
   verb: string;
   effect?: AutomationStudioActionEffect;
 };
@@ -137,6 +145,9 @@ export type AutomationStudioReadActionDeclaration = {
   /** The opaque item and dialog tokens the domain gave the control; null where it gave none. */
   controlItem: string | null;
   controlDialog: string | null;
+  /** The opaque tokens of what the control and its page are about (t719); null where it gave none. */
+  controlSubject: string | null;
+  controlPage: string | null;
   verb: string;
   /** Stated or, where the domain said nothing, `mutate`. */
   effect: AutomationStudioActionEffect;
@@ -159,10 +170,10 @@ export function readAutomationStudioActionDeclaration(value: unknown): Automatio
   if (!Array.isArray(consequences) || consequences.length > 10) throw new AutomationStudioActionDeclarationError("consequences_missing");
   if (!consequences.every(isAutomationStudioActionConsequence)) throw new AutomationStudioActionDeclarationError("consequence_unrecognised");
   const control = value.control;
-  if (!isRecord(control) || !hasOnlyFields(control, ["name", "kind", "item", "dialog"])) throw new AutomationStudioActionDeclarationError("control_shape");
+  if (!isRecord(control) || !hasOnlyFields(control, ["name", "kind", "item", "dialog", "subject", "page"])) throw new AutomationStudioActionDeclarationError("control_shape");
   if (typeof control.name !== "string" || !control.name.trim() || control.name.length > MAX_NAME_INPUT) throw new AutomationStudioActionDeclarationError("control_name_invalid");
   if (control.kind !== undefined && (typeof control.kind !== "string" || !KIND.test(control.kind))) throw new AutomationStudioActionDeclarationError("control_kind_invalid");
-  for (const key of ["item", "dialog"] as const) {
+  for (const key of ["item", "dialog", "subject", "page"] as const) {
     const token = control[key];
     if (token !== undefined && (typeof token !== "string" || !PLACE_TOKEN.test(token))) throw new AutomationStudioActionDeclarationError("control_place_invalid");
   }
@@ -177,6 +188,8 @@ export function readAutomationStudioActionDeclaration(value: unknown): Automatio
     controlKind: typeof control.kind === "string" ? control.kind : null,
     controlItem: typeof control.item === "string" ? control.item : null,
     controlDialog: typeof control.dialog === "string" ? control.dialog : null,
+    controlSubject: typeof control.subject === "string" ? control.subject : null,
+    controlPage: typeof control.page === "string" ? control.page : null,
     verb: value.verb,
     effect: value.effect ?? "mutate"
   };

@@ -15,6 +15,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
       + `Undo each act listed under actsToUndo with core.run_node, adding "${UNDOES}": "<act>" to that call: remove what the act added, or set back what it changed. `
       + "stillThere lists what the act changed on its own page that is still there; an act counts as undone only once that is gone. "
       + "An undo may act only on the act's own item -- the same row or card it acted on, told apart from the others -- or on what the act itself created; a control on any other item, or on one that cannot be told apart, is refused unrun. "
+      + "Where an act's effect shows on another page or in another list -- a line it added that appears elsewhere, an item it moved to another list -- undo it there, on the line or item about the same thing it acted on. "
       + "Removing only what the act created needs no permission; anything else is asked. Do not change anything that was there before the build began. "
       + (differs ? "differs lists what is still not as the build found it. " : "")
       + "If the site offers no control that reverses an act, do not keep trying: test the same revision again with its id under cannotUndo, and the trial runs with that act already done. "

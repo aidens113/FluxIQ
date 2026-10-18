@@ -335,6 +335,7 @@ const RESET_TASK = [
   "This brief is a reset, not a build: write no Flow and no subflow, and carry out no part of the person's task.",
   "Your only task is to undo the lasting acts this build made, listed below, each through the site's own controls on the item it acted on, naming the act under `undoes` on the call that undoes it.",
   "Each act says how it was done and, where it was read, the page it was made on: go there to find it.",
+  "Where an act's effect shows on another page or in another list -- a line it added that appears elsewhere, an item it moved to another list -- undo it there, on the line or item about the same thing it acted on.",
   "Leave everything that was on the site before the build began, and do nothing else on the site.",
   "Complete with a one-sentence summary once none of the listed acts is left.",
   "If the site offers no control on an act's own item that reverses it, do not keep trying and never act on another item instead: complete and name that act under `cannotUndo`, and it is kept as done."

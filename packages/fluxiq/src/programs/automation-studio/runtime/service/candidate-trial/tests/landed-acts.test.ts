@@ -134,6 +134,22 @@ describe("the lasting acts a trial landed", () => {
     expect(automationStudioCandidateTrialLandedActs(trace([attempt("add", "succeeded")]), graph)).toEqual([{ step: 1, definitionId: "web.output.dom-click", label: "Press add", control: "Add item", consequences: ["create_new"] }]);
   });
 
+  // t719: an add pressed on a detail page sits in no item; what it and its page are about is what ties its undo in the basket to it.
+  it("carries what its step's control and page are about, off the step's state diff, as opaque tokens only", () => {
+    const diff = (spot: JsonObject) => ({ stateRefs: { stateDiff: { added: "text \"Added to basket\"", removed: "", documentChanged: false, spot } } });
+    const acts = automationStudioCandidateTrialLandedActs(trace([
+      attempt("add", "succeeded", diff({ subject: "s:seller", page: "s:kettle" })),
+      attempt("add", "succeeded", diff({ item: "i:card", subject: "s:kettle" })),
+      // Words are no token: a spot of words alone is no spot.
+      attempt("add", "succeeded", diff({ subject: "a kettle, in words", page: 7 }))
+    ]), graph);
+    expect(acts.map(({ step, spot }) => ({ step, spot }))).toEqual([
+      { step: 1, spot: { subject: "s:seller", page: "s:kettle" } },
+      { step: 2, spot: { item: "i:card", subject: "s:kettle" } },
+      { step: 3, spot: undefined }
+    ]);
+  });
+
   // t684, t679 open question 1: a part run through a Call Subflow step named no item, so its act could never be undone by one.
   it("names the item a called part's step made, though the call's own diff, listed before it, already shows it", () => {
     const withCall = { nodes: [...graph.nodes, { id: "call", definitionId: "builtin.control.call-subflow", parameterValues: { subflowId: "keep" } }] } as unknown as AutomationStudioFlowArtifact;

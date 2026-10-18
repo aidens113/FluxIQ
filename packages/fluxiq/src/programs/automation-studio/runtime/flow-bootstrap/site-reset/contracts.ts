@@ -26,8 +26,17 @@ export type AutomationStudioSiteResetUndo = { act: string; allowed: readonly Aut
  * item -- row, card, list item -- and the dialog, compared only for equality.
  * Absent where the control sits in no item, or in no dialog. Two absent items
  * are never the same item (t479).
+ *
+ * And what it is about (t719), as opaque tokens of one kind, so either may
+ * equal the other: `subject`, the title of the item it sits in, or for a
+ * control in no item the nearest titled part of the page around it; `page`,
+ * what its page is about (its main heading). An act whose effect shows on
+ * another page or in another list -- an add from a detail page whose line
+ * appears in the basket, a line moved to a saved list -- has no item an undo
+ * there can match, and is tied to that undo by these instead (`./ledger.ts`,
+ * `target`). Absent where the domain found none.
  */
-export type AutomationStudioSiteResetSpot = { item?: string; dialog?: string };
+export type AutomationStudioSiteResetSpot = { item?: string; dialog?: string; subject?: string; page?: string };
 
 /**
  * What an undo call may do to the control the domain is about to act on
@@ -41,9 +50,12 @@ export type AutomationStudioSiteResetSpot = { item?: string; dialog?: string };
  * - `follow_up`: a control in a dialog, with no item, after an undo of the
  *   same act landed on its own or created item: the site asking to confirm.
  * - `moving`: nothing lasting and no item -- going to a page, opening a view.
+ * - `subject`: a control about what the act was about (t719), by a positive
+ *   match of their `subject` tokens -- the act's `page` too where it sat in no
+ *   item -- with a class that reverses the act's; nothing unasked.
  */
 export type AutomationStudioSiteResetTarget =
-  | { kind: "admit"; on: "created" | "own" | "follow_up" | "moving"; allowed: readonly AutomationStudioActionConsequence[] }
+  | { kind: "admit"; on: "created" | "own" | "follow_up" | "moving" | "subject"; allowed: readonly AutomationStudioActionConsequence[] }
   | { kind: "refused"; evidence: JsonObject & { code: string } };
 
 /**
@@ -62,7 +74,7 @@ export type AutomationStudioSiteResetDeclared = {
   permitted: boolean;
   effect: AutomationStudioActionEffect;
   consequences: readonly AutomationStudioActionConsequence[];
-  /** The control as the gate carries it to a person: `name` is null where it was withheld. `item` and `dialog` are the domain's opaque tokens (t475). */
+  /** The control as the gate carries it to a person: `name` is null where it was withheld. `item`, `dialog`, `subject` and `page` are the domain's opaque tokens (t475, t719). */
   control: { name: string | null; kind: string | null } & AutomationStudioSiteResetSpot;
   verb: string;
 };

@@ -126,6 +126,29 @@
 // admitted on them exactly as on an explored act's. Where the diff gave
 // neither, it is recorded as before. A start hook takes it back as before.
 //
+// **An undo is tied to its act by what both are about, too (t719).** An act
+// whose effect shows on another page or in another list had no item an undo
+// there could match: an Add to Cart pressed on a detail page sits in no row and
+// its line appears in the basket, and a Save for later moves its line to a
+// list whose control is another one. Every undo of them was refused
+// `candidate.undo_wrong_target`, the act kept, and on the install proof of
+// t707 (round 3) each later trial ran on what the earlier ones left, the
+// basket growing from 2 lines to 8 with 5 saved. The domain now says
+// what a control is about (`subject`: its item's title, or for a control in no
+// item the nearest titled part of the page around it) and what its page is
+// about (`page`: its main heading), as opaque tokens of one kind. An undo is
+// admitted on a control whose `subject` equals the act's -- or, for an act
+// that sat in no item, the act's `page`, which is what a detail page's own
+// controls act on -- by a positive match only (t479: a token missing on either
+// side never matches, so a line about anything else, the soap the basket held
+// before the build, is refused as before), and only for classes that reverse
+// the act's (`REVERSES`): an add is undone by a removal or a change, a change
+// by a change, a removal by creating again. Nothing is removed unasked on it:
+// only an item the act created is (`created`). A dialog that follows such an
+// undo may confirm it once, as one that follows an undo on the act's own item.
+// An act of a class no control takes back -- money moved, a message sent --
+// stays not undoable whatever it is about.
+//
 // A phase runs from the build's start, or from one trial to the next. The
 // policy before a trial (`./trial-policy.ts`) reads it.
 
@@ -152,6 +175,12 @@ import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "./words.ts";
 const UNDOABLE: ReadonlySet<AutomationStudioActionConsequence> = new Set(["create_new", "modify_existing", "delete"]);
 /** The classes no control of the site takes back. */
 const IRREVERSIBLE: ReadonlySet<AutomationStudioActionConsequence> = new Set(["move_money", "send_or_publish"]);
+/** For each undoable class, the classes an undo tied to its act by subject may declare (header, t719): what reverses it, and nothing else lasting. */
+const REVERSES: Readonly<Partial<Record<AutomationStudioActionConsequence, readonly AutomationStudioActionConsequence[]>>> = {
+  create_new: ["delete", "modify_existing"],
+  modify_existing: ["modify_existing"],
+  delete: ["create_new", "modify_existing"]
+};
 /** The highest act number `undoes` can name (`^act-[1-9][0-9]{0,3}$`); no build comes near it, and past it nothing more is recorded. */
 const MAX_ACT = 9999;
 /** Reset refusals that named an act still there, after which it is kept: the site is taken to offer no way to undo it. */
@@ -168,6 +197,8 @@ type Act = {
   call?: string;
   /** The name of the control the exploration call acted on, as the gate carried it; absent when withheld or for a trial's act (t647). */
   control?: string;
+  /** The lasting classes it declared: what an undo tied to it by subject may reverse (header, t719). */
+  consequences: readonly AutomationStudioActionConsequence[];
   undoable: boolean;
   undone: boolean;
   /** The call that last tried to undo it, as the model gave its id. */
@@ -184,7 +215,7 @@ type Act = {
   spot?: AutomationStudioSiteResetSpot;
   /** The items it created, as its own page showed them (t475), a trial step's read off its own diff (t598). */
   createdItems: string[];
-  /** In this phase an undo of it landed on its own item (`own`) or on one it created (`created`): a dialog that follows may confirm it. */
+  /** In this phase an undo of it landed on its own item (`own`, or one about the same thing, t719) or on one it created (`created`): a dialog that follows may confirm it. */
   chain?: "own" | "created" | undefined;
   /** What it changed that was still there when the reset last looked. */
   stillThere?: string[];
@@ -258,6 +289,8 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     if (act.spot && sameItem(act.spot, declared.control)) return { kind: "admit", on: "own", allowed: [] };
     if (item === undefined && dialog !== undefined && act.chain) return { kind: "admit", on: "follow_up", allowed: act.chain === "created" && !act.spent ? ["delete"] : [] };
     if (item === undefined && dialog === undefined && declared.consequences.length === 0) return { kind: "admit", on: "moving", allowed: [] };
+    // About what the act was about, by a positive match, reversing its classes only (header, t719).
+    if (aboutTheAct(act, declared.control) && reverses(act.consequences, declared.consequences)) return { kind: "admit", on: "subject", allowed: [] };
     act.kept = true;
     return { kind: "refused", evidence: { ok: false, code: "candidate.undo_wrong_target", act: act.id, instruction: WORDS.wrongTarget(), cannotUndo: [namedAct(act)] } };
   }
@@ -279,16 +312,15 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       const unasked = call.on === "created" || (call.on === "follow_up" && act.chain === "created");
       if (unasked && declared.consequences.includes("delete")) act.spent = true;
       if (call.on === "own" || call.on === "created") act.chain = call.on;
+      // An undo on a control about the act's own thing may be confirmed once, as one on its own item (header, t719).
+      else if (call.on === "subject") act.chain = "own";
       // The site's one confirmation of that undo is given: no further lasting dialog press follows from it (header, t479).
       else if (call.on === "follow_up" && declared.consequences.some((consequence) => UNDOABLE.has(consequence) || IRREVERSIBLE.has(consequence))) act.chain = undefined;
       return;
     }
     if (!call.landed || !declared?.permitted || declared.effect !== "mutate") return;
     const words = [declared.verb, declared.control.name === null ? "" : JSON.stringify(declared.control.name), declared.control.kind ?? ""];
-    const spot: AutomationStudioSiteResetSpot = {
-      ...(declared.control.item !== undefined ? { item: declared.control.item } : {}),
-      ...(declared.control.dialog !== undefined ? { dialog: declared.control.dialog } : {})
-    };
+    const spot = spotOf(declared.control) ?? {};
     // A press on a named control that declared nothing lasting is possibly lasting, where this ledger records those (header).
     const possible = this.options.possible === true && declared.control.name !== null;
     this.record(words.filter((word) => word.trim()).join(" ").trim(), call.callId, declared.consequences, call.callId, spot, possible, [], declared.control.name ?? undefined);
@@ -442,7 +474,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     const undoable = !consequences.some((consequence) => IRREVERSIBLE.has(consequence));
     // Said as possibly lasting wherever it is named, since some answers carry only what an act did (header).
     const words = lasting ? did || "an act" : `${did || "an act"} (${POSSIBLY_LASTING})`;
-    const act: Act = { id, did: words, ref, ...(call ? { call } : {}), ...(control?.trim() ? { control: control.trim() } : {}), ...(spot ? { spot } : {}), createdItems: [...new Set(created)], undoable, undone: false, attempts: 0, spent: false, askedFor: 0, kept: false, possible: !lasting };
+    const act: Act = { id, did: words, ref, ...(call ? { call } : {}), ...(control?.trim() ? { control: control.trim() } : {}), ...(spot ? { spot } : {}), createdItems: [...new Set(created)], consequences: [...consequences], undoable, undone: false, attempts: 0, spent: false, askedFor: 0, kept: false, possible: !lasting };
     this.acts.push(act);
     this.next += 1;
     // A possibly lasting act never makes a reset due: it refuses no trial (header).
@@ -461,10 +493,37 @@ function sameItem(spot: AutomationStudioSiteResetSpot, control: AutomationStudio
   return (spot.dialog ?? null) === (control.dialog ?? null);
 }
 
-/** A trial step's spot, copied, or none when it named neither an item nor a dialog. */
+/**
+ * Whether `control` is about what `act` was about (header, t719): its `subject`
+ * equals the act's, or the act's `page` where the act sat in no item. Both
+ * tokens present and equal; a token missing on either side is never a match.
+ */
+function aboutTheAct(act: Act, control: AutomationStudioSiteResetSpot): boolean {
+  if (control.subject === undefined) return false;
+  if (act.spot?.subject === control.subject) return true;
+  return act.spot?.item === undefined && act.spot?.page === control.subject;
+}
+
+/** Whether every lasting class an undo declares reverses one of the act's (header, t719); declaring none reverses nothing and is no harm. */
+function reverses(acted: readonly AutomationStudioActionConsequence[], undo: readonly AutomationStudioActionConsequence[]): boolean {
+  const allowed = new Set(acted.flatMap((consequence) => REVERSES[consequence] ?? []));
+  return undo.every((consequence) => allowed.has(consequence));
+}
+
+/** A spot's tokens, copied, or none when it named none of them. */
+function spotOf(spot: AutomationStudioSiteResetSpot | undefined): AutomationStudioSiteResetSpot | undefined {
+  const copied: AutomationStudioSiteResetSpot = {
+    ...(spot?.item !== undefined ? { item: spot.item } : {}),
+    ...(spot?.dialog !== undefined ? { dialog: spot.dialog } : {}),
+    ...(spot?.subject !== undefined ? { subject: spot.subject } : {}),
+    ...(spot?.page !== undefined ? { page: spot.page } : {})
+  };
+  return Object.keys(copied).length > 0 ? copied : undefined;
+}
+
+/** A trial step's spot, copied, or none when it named nothing. */
 function trialSpot(spot: AutomationStudioSiteResetSpot | undefined): AutomationStudioSiteResetSpot | undefined {
-  if (spot?.item === undefined && spot?.dialog === undefined) return undefined;
-  return { ...(spot.item !== undefined ? { item: spot.item } : {}), ...(spot.dialog !== undefined ? { dialog: spot.dialog } : {}) };
+  return spotOf(spot);
 }
 
 /** An act as the model is shown it. */
