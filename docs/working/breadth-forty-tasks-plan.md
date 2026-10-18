@@ -25,6 +25,15 @@ The user authorized continuing the downstream breadth handoff with live tests. T
 
 ## Worker Briefs
 
+### Supervisor brief: fresh classifieds furniture positive extraction
+- Supervisor owns paired t566/slot3; prior carbonprice failed/debugged unchanged and no same-task retry. Root committed its reports/debug4b7a76da before currentdev refresh. NEW task local-classifieds-nearby-furniture, source catalog instruction/oracle unchanged.
+- Own NEW report codex-classifieds-furniture.md plus required newdebug; positive7orderedrows/28values(title/price/location/url), accountunchanged. Source workflow and pinned answers inspected privately; all108task providerfree audit remains accepted. No fixture/wording/expectedanswer model hints.
+- ONE normal owning realextensionchat project build/judgedwhole/separatezero replay after own3Corelibs refreshed normally for published accounting. No overrides/fullworkspace sweeps/sharedCorewrites. Fresh absent workspace codex-classifieds-furniture-t566-20261018-r1, slot3owner t566/bf-slot-3/pidnull.
+- Process FLUXIQ_LAB_INSTANCE=bf-slot-3, FLUXIQ_TEST_TARGET=persistent-isolated, FLUXIQ_BUILD_CACHE_DIR=off. Command pnpm.cmd lab run local-classifieds --live-llm --llm-profile lab-create-flow --llm-provider deepseek --llm-model deepseek-flash --authoring-mode project --llm-task create-flow --instruction-task local-classifieds-nearby-furniture --target persistent-isolated --workspace codex-classifieds-furniture-t566-20261018-r1 --model-reset-only --replays 1 --llm-max-cost-usd 0.25 --llm-max-calls 250 --llm-max-run-tokens 48000000
+- Freeze source/HEADs after refresh throughrun. Normal balance/previousdebug/positive-data/sourcecurrency guards/prelude required; no directAPI Flow creation/manualdata hiding. Observe authenticated actualCore startResetfalse; caller fixturepolicy echo never reported as observedstate.
+- Require exactpositiveordered oracle/account/reportedjudge and explicit0provider/cost/noharness replay. Capture finalizedcost/pending/unrecorded/IDs, no rawpage/model rows/secrets. Honestfirstcause/debug before any retry. Preserve profiles/evidence and old6404 untouched. Continue supervising other3workers during asynchronous live preparation/run.
+
+
 ### Supervisor brief: fresh auction buy-it-now quote lane
 - Worker held_lane_review; own paired t563/slot1 only. Completed accounting proof/gates remain preserved. Root owns branch refresh after paired dev publication; until explicit refreshed-source handoff, read-only preparation only.
 - Own NEW docs/working/breadth-forty-tasks-plan/reports/codex-auction-buy-now-quote.md and required new run debug after terminal. Read source-owned auction-marketplace/breadth/buy-it-now-quote.ts and minimal launcher owners; exact catalog instruction/oracle unchanged. Positive1row/3values plus unchangedaccount, no Confirm/pay/bid/watch.
