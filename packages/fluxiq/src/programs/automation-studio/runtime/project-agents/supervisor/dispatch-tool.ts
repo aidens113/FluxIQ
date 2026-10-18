@@ -4,7 +4,7 @@ import { automationStudioCandidateSameBehaviour } from "../../flow-bootstrap/can
 import type { AutomationStudioFlowBuildPlan } from "../../flow-bootstrap/plan/index.ts";
 import type { AutomationStudioSubflowProposal } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
-import { automationStudioProjectBuilderReturn, automationStudioProjectBuilderReturn as RETURN, automationStudioProjectSubflowBrief, type AutomationStudioProjectBuilderReturn, type AutomationStudioProjectStructurePlan, type AutomationStudioProjectSubflowBrief, type AutomationStudioProjectTrialRef } from "../contracts/index.ts";
+import { automationStudioProjectBuilderReturn, automationStudioProjectBuilderReturn as RETURN, automationStudioProjectEarlierAttempt as EARLIER, automationStudioProjectSubflowBrief, type AutomationStudioProjectBuilderReturn, type AutomationStudioProjectStructurePlan, type AutomationStudioProjectSubflowBrief, type AutomationStudioProjectTrialRef } from "../contracts/index.ts";
 import { AutomationStudioProjectRecordRefusal } from "../record/index.ts";
 import { AutomationStudioProjectAssembledFrom, automationStudioProjectSingleSubflowPlan, automationStudioProjectSingleSubflowTrial } from "../single-subflow/index.ts";
 import { automationStudioProjectSupervisorBriefInput } from "./brief-input.ts";
@@ -159,6 +159,22 @@ const EPSILON_USD = 1e-9;
  * assembly is the latest one and passed answers `afterSingleWholeYes` with its
  * `complete` object; that brief was sized from what the build can give
  * (`./brief-sizing.ts`).
+ *
+ * **A builder stopped for repeating itself may be briefed once more (live lane
+ * 1 fix 1, `run-mvcx8na6-9554a3f1`).** A builder looped between two pages until
+ * the no-progress guard stopped it, so it never submitted and nothing could be
+ * repaired; the second brief of that subflow, unchanged, was refused
+ * `project.brief_repeated`, and the build ended blocked with most of its money
+ * unspent. That stop is the model's variance, not a brief that can only do the
+ * same. A return the guard stopped is marked `stoppedRepeating` from the loop's
+ * own code (`../dispatch/ending.ts`), and the first such blocked return of a
+ * subflow under the plan in force does not make the same brief a repeat: it is
+ * sent. Every build or repair brief of a subflow whose latest return is so
+ * marked carries that attempt (`earlierAttempt`, `../contracts/earlier-attempt.ts`):
+ * its brief id, its reason, which names the calls it stopped on, and the
+ * lasting acts it left on the target, which its builder is shown with words to
+ * take another path (`../dispatch/run-brief.ts`). A second such stop under the
+ * same plan, and every other blocked return, is refused as before.
  */
 export async function automationStudioProjectSupervisorDispatchTool(context: AutomationStudioProjectSupervisorContext, value: JsonObject): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
   const { ports, state } = context;
@@ -197,7 +213,8 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
   if (refusedWhole && sending.some((brief) => brief.entry.predecessors.some((key) => held.has(key)))) return refusedWhole;
   const spent = unchangedAgain(context, sending);
   if (spent) return spent;
-  const order = automationStudioProjectSupervisorDispatchOrder(sending, new Set(state.latestDone().keys()), state.droppedByEarlierPlans());
+  // A brief after a builder the no-progress guard stopped carries that attempt (header, lane-1 fix 1).
+  const order = automationStudioProjectSupervisorDispatchOrder(withEarlierAttempt(context, sending), new Set(state.latestDone().keys()), state.droppedByEarlierPlans());
   if (!order.ok) return refusedWhole ?? answer.refused(order.code === "cycle" ? "project.dispatch_cycle" : "project.predecessor_not_done", order.code === "cycle" ? GUIDANCE.refusals.dispatchCycle : GUIDANCE.refusals.predecessorNotDone, { issues: order.issues });
   const requestedUsd = order.ordered.reduce((sum, brief) => sum + brief.allowanceUsd, 0);
   const canGiveUsd = ports.purse?.allocatableUsd();
@@ -447,8 +464,32 @@ function repeatedBriefs(context: AutomationStudioProjectSupervisorContext, brief
   return briefs.flatMap((brief, index) => {
     const last = brief.kind === "reset" ? undefined : context.state.latestFor(brief.subflowKey);
     if (!last || last.returned.outcome !== "blocked" || last.returned.calls === 0) return [];
+    // A builder stopped for repeating itself is sent once more; only a second such stop under this plan is a repeat (header, lane-1 fix 1).
+    if (last.returned.stoppedRepeating && stopsRepeating(context, brief.subflowKey) < 2) return [];
     const was = context.state.sentAs.get(last.brief.briefId);
     return was !== undefined && was === sentKey(context, brief) ? [{ path: `briefs.${index}`, subflowKey: brief.subflowKey, lastBrief: { briefId: last.brief.briefId, outcome: last.returned.outcome, reason: last.returned.reason } }] : [];
+  });
+}
+
+/** How many returns of `subflowKey`'s briefs under the plan in force had their builder stopped for repeating itself (header, lane-1 fix 1). */
+function stopsRepeating(context: AutomationStudioProjectSupervisorContext, subflowKey: string): number {
+  return context.state.answeredUnderPlan().filter((answered) => answered.brief.subflowKey === subflowKey && answered.returned.stoppedRepeating === true).length;
+}
+
+/**
+ * Each build or repair brief of a subflow whose latest return is not done because
+ * its builder was stopped for repeating itself, carrying that attempt (header,
+ * lane-1 fix 1): its brief, reason, and the lasting acts it left on the target.
+ * Every other brief as it is.
+ */
+function withEarlierAttempt(context: AutomationStudioProjectSupervisorContext, briefs: readonly AutomationStudioProjectSubflowBrief[]): AutomationStudioProjectSubflowBrief[] {
+  let left: AutomationStudioProjectSupervisorLeftOnTarget | undefined;
+  return briefs.map((brief) => {
+    const last = brief.kind === "build" || brief.kind === "repair" ? context.state.latestFor(brief.subflowKey) : undefined;
+    if (!last || last.returned.outcome === "done" || last.returned.stoppedRepeating !== true) return brief;
+    left ??= automationStudioProjectSupervisorLeftOnTarget(context.ports);
+    const lastingActs = left.acts.filter((act) => act.brief === last.brief.briefId).map((act) => ({ act: act.act, did: act.did }));
+    return { ...brief, earlierAttempt: EARLIER.of({ briefId: last.brief.briefId, kind: last.brief.kind === "repair" ? "repair" : "build", reason: last.returned.reason, lastingActs }) };
   });
 }
 
@@ -586,6 +627,8 @@ function compact(brief: AutomationStudioProjectSubflowBrief, returned: Automatio
     ...(closest && returned.outcome !== "done" ? { repairFrom: { failingReceipt: RETURN.trialRef(closest), instruction: REPAIR_FROM } } : {}),
     spentUsd: returned.spentUsd,
     calls: returned.calls,
+    // Its builder was stopped for repeating itself, so its brief may be sent once more (header, lane-1 fix 1).
+    ...(returned.stoppedRepeating ? { stoppedRepeating: true } : {}),
     ...(returned.interfaceRequest ? { interfaceRequest: { change: returned.interfaceRequest.change, why: returned.interfaceRequest.why } } : {}),
     ...(returned.findings ? { findings: [...returned.findings] } : {}),
     // The output its latest submission was refused on, which the next step names with the subflows taking it (t645).
