@@ -1,7 +1,7 @@
 # Breadth Round Core Integration
 
 Status: Active
-Status detail: Positive corpus87/108;11acceptedtasks/8sites. Classifiedsfurniture exact7x4/wholeoracle/judge/separatezero replay accepted. Canonicalreset r6live; photoPriya failed90calls/nofullanswer. Labpaidcheckoverlap proven independently, boundedtelemetryfix dispatchedt563; no blind retry/empty acceptance.
+Status detail: Positive corpus87/108;11acceptedtasks/8sites. Classifiedsfurniture exact7x4/wholeoracle/judge/separatezero replay accepted. Canonicalreset r6 exactdata/zero replay but paidjury disagreed, held. PhotoPriya failed90calls/nofullanswer. Labpaidcheckoverlap fix independently verified50cases and sameinput23calls; no blind retry/empty acceptance.
 Created: 2026-10-17
 Last updated: 2026-10-18
 Owner: Codex senior supervisor
@@ -24,6 +24,15 @@ The user authorized continuing the downstream breadth handoff with live tests. T
 - **Next:** finish photo/furniture exactpositive live trials and resetr6; diagnose auction scalaranswer/table gap and prove suspectedduplicatejudgecost before boundedsourcefix. Keep failedrunsfailed, continue selective remainingpositive tasks/owed repairedfailures. Narrow checks only; two daily whole sweeps consumed. No userinputneeded.
 
 ## Worker Briefs
+
+### Supervisor brief: auction whole-judge evidence audit
+- Worker storage_comparison, existingpaired t567 source remains down2fc5289c/Core868d541e plus supervisorpreservedphoto report/debug. ReadONLY investigation; no source/HEAD/build/browser/provider/model/replay/server/DBwrites. Own NEW docs/working/breadth-forty-tasks-plan/reports/codex-auction-judge-proof-audit.md only, never sharedplan/otherreports.
+- Actualauctionrun-mveba82m-fd0616dc/whole809fbf14-222b-4312-8a8b-eb21088f0678 on down97a28451/Core868d541e: Coreconfirmed/reportedpass BUT owningrecordoraclefailed, noanswerdataset/outputObject/outputports. Rootindependently restoredcanonicalpaidcheck1 and privatelycompared7actualactions/3wrongscalaroutputs tosourceexpected1row3fields: wrongfixedlisting vsrequiredauction-bin. No task/oracleweakening or falseaccept. Accountunchanged held.
+- Read originalglobal C:/Users/osrs_/FluxStuff/lab-runs/2026-10-18/run-mveba82m-fd0616dc/steps including read_task/write_plan/activebrief/finaljudge request+response; ownedt563 finalbundle snapshots creation-context/flow-lane/liveLLM. Root closedverifiedproof own t563/node_modules/codex-root-auction-receipt-verified.json mayberead (no need rerunSQLite or editotherworktree). Allrawpage/model/scalarvalues private, projectscopeonly.
+- Establish actualwholepaidjudge originalinstruction/sourcebinding/goalconditions and which scalar/node/page evidencepacket actuallyincluded. Does fulloriginalinstruction reachcheck oronlynarrowpart/derivedgoal? Does packet expose auctionformat contradiction/wrongitem/fullreturnedanswer absence, or omit requiredproof? Judgeacceptancefromunproved/incompletefacts vs transport/scope/drop vs modelreasoning mistake mustbedistinguished.
+- Initially inspect own Core packages/fluxiq/src/programs/automation-studio/runtime/result-verification/run-outcome.ts and actualcaller/packet/prompt owners traced fromthere; minimalreadonly rg discovery allowed, atmost6sourceowners beforereporting needmore. OwnCore868 matchesrun. No MVP/backgrounddocs/broadrefactor. Compareknown sourcecontracts ratherthan inventfixture-shaped judgehints/expectedanswers.
+- Report closed originalquote equality/conditionpresence/evidenceclasses/missingproof codes/requesthashes, exactfirstdivergence/owner/testseams and leastgenericfix ONLY ifsourcebugproved; otherwise honestmodel-verdict error. No artificialyes, extra modelvote, unchangedpaidrerun or implicit3scalar-to-row assembly. R6correctgoal/modeldisagreement is separatelyowned byreset_review; coordinate closedfindings via root ratherthan reading itsliveprofile.
+
 
 ### Supervisor continuation: furniture separate saved-Flow replay
 - Root owns t566/slot3 unchangedfrozen7adf4dbd/868d541e. Actual whole run-mvebbnwm-47169b0d native0/evaluationpassed: exactordered7rows/28fields/0unexpected/nonstrings0/accountoracle/reportedpass/harness0. Not yet completeacceptance until separate replay.
@@ -406,6 +415,9 @@ Earlier paired history: [nine retained entries](./breadth-forty-tasks-plan/archi
 - Later independent furniture replay accepted: replay-mvebxqrj-11dfde69 native0/goalpassed/exactordered7x4/accountgoal/providercalls0/accounted0/harness0/factoryoff/keyspreserved, before==afterhash==originalcreationhash. Productproviderfreeverdictunverified retained. Root sourcecheckedstrictallzero accountingowner. Overall11acceptedtasks/8sites; continuation5accepted. Root report committedt566; no newpaidspend.
 - PhotoPriya run-mvebbeom-a60886e1 terminalfailed/noFlow/oracle/judge/replay/harness0:90calls/$0.073051758/unrecorded0/uncounted[], canonicalaccountingnull,175steps/8trials. Final1correctexpectedsubsetrow/3fields vsrequired5rows/15fields;4missing, no falseemptyacceptance. Worker firstcause/scope/automaticrepeatprogress diagnosis+requireddebug active. Current22completed/1328calls/reportedestimated$1.155664998:5accepted/16failed/1unverifiedempty; telemetryduplicate correctionpending.
 - Root independently reviewed+SHAverified+rereadreadonly auctionreceipt helper native0: unique SAMErun/request check1/cost$0.001041924/pending0/omitted0, reported24vs23actualsteplines, all3wrongfixedlistingvalues/noanswerdata. Root preservedcbb2d35c and refreshedt563downf47380fc/Corea62d3330/clean; boundedLabspendfix IMPLEMENTATION nowreleased under writtenbrief. No duplicateproviderbilling, no Flow/oracle/datarepair or paidretry.
+
+- Validation: supervisor independently reran telemetry five-file50/50 tests and exact actual auction same-input recomputation native0. Original source copy differs only by UTF8 BOM; normalized tracked source identical. Fixed owner reports23calls/$0.016103250 vsoriginal24/$0.017145174, removes exact canonical check1/$0.001041924; original artifacts and failed oracle unchanged. Runner check and both audits passed; bounded source integration next.
+- Reset r6 run-mvebqbm4-b3f3b742 exactordered2rows/6values/finalstate and separate zero-model replay passed, but paid whole model_disagreed/core.result.verdicts_disagree; acceptance HELD. Raw63calls/$0.052895436 retained. Current23completed/1391rawcalls/reportedestimated$1.208560434:5accepted/16failed/1oldempty/1held. No user input needed; next positive tasks prepared after telemetry publication.
 
 ## Open Questions
 
