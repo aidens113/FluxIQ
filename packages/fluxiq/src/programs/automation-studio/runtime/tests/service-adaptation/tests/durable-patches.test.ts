@@ -181,6 +181,33 @@ describe("AutomationStudioService recording persistence", () => {
     expect((await getPrimarySubflowGraph(service, project.id, flow.flowId)).edges).toEqual([]);
   });
 
+  it("retains a domain drawing token after applying a target repair and reopening storage", async () => {
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Opaque target repair" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.opaque-target", name: "Opaque target" });
+    const primary = await installPrimaryRouter(service, project.id, flow.flowId, {
+      nodes: [{ id: "action.press", definitionId: "builtin.policy.action", parameterValues: { parameters: { target: { selector: "#old" } } } }],
+      edges: []
+    });
+    const target = { kind: "element", fingerprint: { tagName: "button", drawing: "shape:opaque-123" }, source: "runtime" };
+    await service.saveFlowAdaptation({
+      schemaVersion: "0.1", projectId: project.id, flowId: flow.flowId, subflowId: primary.subflow.subflowId,
+      adaptationId: "adaptation.opaque-target", trigger: "Control identity changed", status: "validated",
+      patch: [{ kind: "edit_action_target", targetId: "action.press", summary: "Keep the domain's opaque identity.", after: target }],
+      validationResults: [{ runId: "run.opaque-validation", status: "succeeded", checkedAt: 20 }],
+      author: "runtime", riskLevel: "low", createdAt: 10, updatedAt: 10
+    });
+    await service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.opaque-target", action: "apply" });
+    await service.close();
+    services.delete(service);
+    const reopened = createService({ dataDir: tempRoot, seedFixture: false });
+    await expect(getPrimarySubflowGraph(reopened, project.id, flow.flowId)).resolves.toMatchObject({
+      nodes: expect.arrayContaining([expect.objectContaining({
+        id: "action.press", parameterValues: { parameters: { target } }
+      })])
+    });
+  });
+
   it("rolls back created subflows and rejects invalid durable mutations", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Durable Subflow Rollback" });

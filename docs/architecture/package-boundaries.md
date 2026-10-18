@@ -108,6 +108,23 @@ commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
 
+### Next minor (unreleased): an element target keeps a domain's drawing digest (`fluxiq`)
+
+`normalizeAutomationStudioElementTarget` used to drop every fingerprint field it
+did not declare, so a domain's own identity signal was lost from a target
+override's `parameters.target` the moment Core rewrote it for dispatch. Read
+this entry if you write element targets or read their fingerprints.
+
+**Added.**
+- `drawing?: string` on `AutomationStudioElementTargetFingerprint` (and so on
+  `AutomationStudioElementTargetCandidate`): an opaque digest of what a control
+  draws, written by the domain that captured it. Core keeps it from the target
+  or its `metadata` when it is one token of at most 64 printable characters with
+  no whitespace, and drops any other value rather than truncating it. Core never
+  scores or compares it, and it does not make a target identifiable on its own.
+
+**Unchanged.** Every other undeclared fingerprint key is still dropped.
+
 ### Next minor (unreleased): a retried step is judged by its retry, and a kept re-author is a durable change (`fluxiq`)
 
 Every node gets a first attempt and up to three automatic retries, and the
