@@ -22,6 +22,7 @@ import type { AutomationStudioRuntimeSessionVerificationInput } from "./run-outc
 import { automationStudioResultVerificationStatus } from "./verification-status.ts";
 import type { verifyAutomationStudioRunResult } from "./verify.ts";
 import { automationStudioZeroProviderGate } from "./zero-provider-run.ts";
+import { automationStudioResultRunAccounting } from "./accounting/index.ts";
 
 /**
  * The schedule's decision as the run record holds it, with the verdict this run
@@ -129,6 +130,7 @@ export async function automationStudioResultRecordOnRunDetail(
   if (!detail) return undefined;
   // In this save and no other, so the verdict and the run's zero cost are one write.
   const zeroGate = automationStudioZeroProviderGate(detail, interventions, verificationSettled);
+  const accounting = automationStudioResultRunAccounting(input.runPurse, session.runId, detail.metadata?.llmGate);
   const failed = outcome.performed === true && automationStudioResultVerificationFailsRun(outcome);
   const scheduled = automationStudioResultRecordedCheck(input, outcome);
   // Answered as well as saved, because the repair that may follow continues
@@ -159,11 +161,11 @@ export async function automationStudioResultRecordOnRunDetail(
       resultVerification: automationStudioResultRecordedOutcome(outcome),
       ...(scheduled ? { resultCheck: scheduled } : {}),
       ...(failed && outcome.performed === true && outcome.failure ? { resultVerificationFailure: { category: outcome.failure.category, code: outcome.failure.code } } : {}),
-      ...(zeroGate ? { llmGate: zeroGate } : {})
+      ...(accounting || zeroGate ? { llmGate: accounting ?? zeroGate! } : {})
     }
   };
   await input.ports.saveFlowRunDetail(recorded);
-  return { detail: recorded, askedNoModel: zeroGate !== undefined };
+  return { detail: recorded, askedNoModel: zeroGate !== undefined && accounting === undefined };
 }
 
 /**

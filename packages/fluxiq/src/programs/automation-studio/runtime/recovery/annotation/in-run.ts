@@ -21,18 +21,18 @@ import type {
   AutomationStudioLlmContextPacket,
   AutomationStudioLlmInRunRepairContext,
   AutomationStudioLlmRunBudgetLedger,
+  AutomationStudioLlmRunBudgetProfile,
   AutomationStudioRuntimePatch
 } from "../../llm/index.ts";
 import type { AutomationStudioRuntimePatchKind } from "../plan.ts";
 import type { AutomationStudioRuntimeRecoveryPatchOutcome } from "./patches.ts";
-import type { AutomationStudioRecoveryRunBudget } from "./run-budget.ts";
 
 /** A recovery made while the run is held at its failing step. */
 export type AutomationStudioInRunRecovery = {
   /** What the patch request is held to: the unit, its contract, the incident and the run's history. */
   slot: AutomationStudioLlmInRunRepairContext;
   /** The run's one purse, opened by its first in-run recovery that resolves a model and drawn on by every later one. */
-  purse: { current?: { budget: AutomationStudioRecoveryRunBudget; ledger: AutomationStudioLlmRunBudgetLedger } };
+  purse: { current?: { budget: AutomationStudioLlmRunBudgetProfile; ledger: AutomationStudioLlmRunBudgetLedger } };
   /**
    * Overlays the model's patches on the held run, under the recovery's one
    * permission gate. Returns what the run detail records; the overlay itself

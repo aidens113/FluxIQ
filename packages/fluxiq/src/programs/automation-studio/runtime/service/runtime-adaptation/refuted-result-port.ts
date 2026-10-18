@@ -50,6 +50,7 @@ import {
 } from "../../recovery/refuted-result/index.ts";
 import { automationStudioLlmCurrentFlowPurse } from "../../llm/build-purse/index.ts";
 import { automationStudioLlmBuildTrace } from "../../llm/evidence-progress/index.ts";
+import { AutomationStudioLlmRunBudgetLedger } from "../../llm/index.ts";
 import { automationStudioReauthorBuild, type AutomationStudioReauthorBuildDependencies, type AutomationStudioReauthorBuilt } from "./reauthor-build.ts";
 
 type RepairRequest = Parameters<AutomationStudioRefutedResultRepairPort>[0];
@@ -152,8 +153,15 @@ function recoverySpend(before: AutomationStudioFlowRunDetail, after: AutomationS
   const gate = after.metadata?.llmGate;
   if (!gate || gate === before.metadata?.llmGate || typeof gate !== "object" || Array.isArray(gate)) return { reachedProvider: false };
   const record = gate as JsonObject;
+  if ("providerCalls" in record || "providerCallsOmitted" in record) {
+    const change = AutomationStudioLlmRunBudgetLedger.receiptChange(before.metadata?.llmGate, record);
+    return change ? { ...change, reachedProvider: change.calls > 0 } : { reachedProvider: true };
+  }
   const accounting = record.costAccounting;
   const counted = accounting && typeof accounting === "object" && !Array.isArray(accounting) ? accounting as JsonObject : undefined;
+  if (record.accountingDiagnostic !== undefined || counted?.pendingCalls !== undefined && counted.pendingCalls !== 0) return { reachedProvider: true };
+  // Older part-only receipts had no itemized list. Keep that explicit format;
+  // never use it as a fallback for a malformed canonical receipt.
   return { costUsd: counted?.estimatedCostUsd, calls: counted?.calls, reachedProvider: record.invoked === true };
 }
 

@@ -3,9 +3,10 @@
 // call, recorded `flow_bootstrap.unexpected_error`, and did nothing more.
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
-import { AutomationStudioFlowBootstrapGenerationError, automationStudioFlowBootstrapGenerationCatch, flowBootstrapBuildEndingFailure, flowBootstrapPhaseFailure } from "../../../flow-bootstrap/index.ts";
+import { AutomationStudioFlowBootstrapGenerationError, automationStudioFlowBootstrapGenerationCatch, flowBootstrapBuildEndingFailure, flowBootstrapPhaseFailure, flowBootstrapHarnessFailure } from "../../../flow-bootstrap/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, AutomationStudioLlmRequestRefusedError, automationStudioLlmRunCostCeilingUsd } from "../../../llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, AutomationStudioLlmRunBudgetLedger, AutomationStudioLlmRequestRefusedError, AutomationStudioLlmProviderError, AutomationStudioLlmProviderRetryLedger, automationStudioLlmRunCostCeilingUsd, runAutomationStudioLlmHarness } from "../../../llm/index.ts";
+import { AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseScope } from "../../../llm/build-purse/index.ts";
 import {
   AUTOMATION_STUDIO_REFUTED_RESULT_NODE_ID,
   AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY,
@@ -136,17 +137,116 @@ describe("a re-author whose build fails", () => {
 
   it("builds again once after a failure that may pass, and holds what the second build made", async () => {
     let calls = 0;
-    const generate = vi.fn(async () => {
+    const generate = vi.fn<AutomationStudioRefutedResultRepairPortDependencies["generate"]>(async (_request, _brief, costLeftUsd, _startPages, _ending, onCharged) => {
       calls += 1;
-      if (calls === 1) throw flowBootstrapPhaseFailure("provider_request", undefined, "flow_bootstrap.provider_timeout");
-      return automationStudioReauthorProposed("adaptation.two", {});
+      const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: costLeftUsd });
+      try {
+        const result = await automationStudioLlmBuildPurseScope(purse, () => runAutomationStudioLlmHarness({
+          taskKind: "runtime_diagnosis", projectId: "project.one", flowId: "flow.one", runId: "run.one", requestId: `generation.${calls}`, instructions: [],
+          tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 }, maxEstimatedCostUsd: 0.1,
+          providerRetry: { wait: async () => {}, ledger: new AutomationStudioLlmProviderRetryLedger() },
+          provider: { metadata: { provider: "mock", model: "mock" }, estimateCostUsd: () => 0.01, runTask: async () => {
+            if (calls === 1) throw new AutomationStudioLlmProviderError("llm.provider_timeout", "Synthetic timeout", true);
+            return { response: { kind: "diagnosis", summary: "Synthetic answer." } };
+          } }
+        }));
+        expect(result.usage).toBeUndefined();
+        if (!result.ok) throw flowBootstrapHarnessFailure(result);
+        return automationStudioReauthorProposed("adaptation.two", {});
+      } finally {
+        onCharged?.(purse.chargedReceipt());
+        // Repeated identical delivery is observation, not another charge.
+        onCharged?.(purse.chargedReceipt());
+      }
     });
-    const result = await automationStudioRefutedResultRepairPort(deps({ generate: generate as never }))(request);
+    const result = await automationStudioRefutedResultRepairPort(deps({ generate }))(request);
     expect(generate).toHaveBeenCalledTimes(2);
     expect(marker(result)).toMatchObject({ routed: true, adaptationId: "adaptation.two", held: true });
     expect(marker(result).degraded).toBeUndefined();
     expect(marker(result).attempts).toHaveLength(2);
     expect(marker(result).attempts[0]).toMatchObject({ code: "flow_bootstrap.provider_timeout", retryable: true });
+    expect(marker(result).attempts[0].accounting).not.toHaveProperty("estimatedCostUsd");
+    expect(marker(result).attempts[0].accounting).not.toHaveProperty("inputTokens");
+    expect(generate.mock.calls[0]?.[2]).toBe(automationStudioLlmRunCostCeilingUsd());
+    expect(generate.mock.calls[1]?.[2]).toBeCloseTo(automationStudioLlmRunCostCeilingUsd() - 0.01, 9);
+    expect(marker(result).purse).toMatchObject({ spentUsd: 0.02, averagedCalls: 2 });
+  });
+
+  it("preserves an unaccounted timeout as unknown and refuses another paid build", async () => {
+    const generate = vi.fn(async () => { throw flowBootstrapPhaseFailure("provider_request", undefined, "flow_bootstrap.provider_timeout"); });
+    const result = await automationStudioRefutedResultRepairPort(deps({ generate }))(request);
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(marker(result).purse).toMatchObject({ unreportedParts: 1 });
+    expect(marker(result).attempts[0]).toMatchObject({ code: "flow_bootstrap.provider_timeout", retryable: true });
+  });
+
+  it.each([true, false])("distinguishes genuinely reported free retries from unpriced unreported zero charges (reported=%j)", async (reported) => {
+    let calls = 0;
+    const generate = vi.fn<AutomationStudioRefutedResultRepairPortDependencies["generate"]>(async (_request, _brief, costLeftUsd, _pages, _ending, onCharged) => {
+      calls += 1;
+      const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: costLeftUsd });
+      try {
+        const result = await automationStudioLlmBuildPurseScope(purse, () => runAutomationStudioLlmHarness({
+          taskKind: "runtime_diagnosis", projectId: "project.one", flowId: "flow.one", runId: "run.one", instructions: [],
+          tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 }, maxEstimatedCostUsd: 0.1,
+          providerRetry: { wait: async () => {}, ledger: new AutomationStudioLlmProviderRetryLedger() },
+          provider: { metadata: { provider: "mock", model: "mock" }, ...(reported ? { estimateCostUsd: () => 0 } : {}), runTask: async () => {
+            const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0 };
+            if (calls === 1) throw reported
+              ? new AutomationStudioLlmProviderError("llm.provider_rate_limited", "Synthetic free refusal", true, 429, undefined, undefined, undefined, undefined, undefined, usage)
+              : new AutomationStudioLlmProviderError("llm.provider_timeout", "Synthetic unpriced timeout", true);
+            return { response: { kind: "diagnosis", summary: "Synthetic answer." }, usage };
+          } }
+        }));
+        if (!result.ok) throw flowBootstrapHarnessFailure(result);
+        return automationStudioReauthorProposed("adaptation.free", {});
+      } finally {
+        onCharged?.(purse.chargedReceipt());
+      }
+    });
+    const result = await automationStudioRefutedResultRepairPort(deps({ generate }))(request);
+    expect(generate).toHaveBeenCalledTimes(reported ? 2 : 1);
+    if (reported) {
+      expect(marker(result)).toMatchObject({ adaptationId: "adaptation.free", held: true, purse: { spentUsd: 0, averagedCalls: 2 } });
+      expect(marker(result).purse.unreportedParts).toBeUndefined();
+    } else expect(marker(result).purse).toMatchObject({ unreportedParts: 1 });
+  });
+
+  it.each([
+    undefined,
+    { calls: 1, chargedCostUsd: 0.01, pendingCalls: 1, pendingCostUsd: 0.02, unreportedZeroChargeCalls: 0 },
+    { calls: 1, chargedCostUsd: NaN, pendingCalls: 0, pendingCostUsd: 0, unreportedZeroChargeCalls: 0 }
+  ])("refuses another paid build when its internal charged callback is missing or unsettled (%j)", async (receipt) => {
+    const generate = vi.fn<AutomationStudioRefutedResultRepairPortDependencies["generate"]>(async (_request, _brief, _left, _pages, _ending, onCharged) => {
+      onCharged?.(receipt);
+      throw flowBootstrapPhaseFailure("provider_request", undefined, "flow_bootstrap.provider_timeout");
+    });
+    const result = await automationStudioRefutedResultRepairPort(deps({ generate }))(request);
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(marker(result).purse).toMatchObject({ unreportedParts: 1 });
+  });
+
+  it("keeps an actual unsent harness refusal at known zero only with its owning settled receipt", async () => {
+    const generate = vi.fn<AutomationStudioRefutedResultRepairPortDependencies["generate"]>(async (_request, _brief, costLeftUsd, _pages, _ending, onCharged) => {
+      const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: costLeftUsd });
+      try {
+        const result = await automationStudioLlmBuildPurseScope(purse, () => runAutomationStudioLlmHarness({
+          taskKind: "runtime_diagnosis", projectId: "project.one", flowId: "flow.one", runId: "run.one", instructions: [],
+          tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 }, maxEstimatedCostUsd: 0.1,
+          provider: { metadata: { provider: "mock", model: "mock" }, estimateCostUsd: () => 0.01, runTask: async () => {
+            throw new AutomationStudioLlmProviderError("llm.provider_input_budget_exceeded", "Synthetic unsent refusal", false, undefined, { providerInvocation: "not_attempted", providerResponse: "not_received" });
+          } }
+        }));
+        expect(result.providerInvocation).toBe("not_attempted");
+        throw flowBootstrapHarnessFailure(result);
+      } finally {
+        onCharged?.(purse.chargedReceipt());
+      }
+    });
+    const result = await automationStudioRefutedResultRepairPort(deps({ generate }))(request);
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(marker(result).purse.spentUsd).toBe(0);
+    expect(marker(result).purse.unreportedParts).toBeUndefined();
   });
 
   it("still says what it tried when the patch ladder throws as well", async () => {
@@ -297,6 +397,41 @@ describe("the repair's one purse", () => {
     const second = await automationStudioRefutedResultRepairPort(deps({ annotate: spentLadder as never }))({ ...notWrongAnswer, detail: spentDetail });
     expect(spentLadder).not.toHaveBeenCalled();
     expect(marker(second).purse).toMatchObject({ refusedParts: ["patch_ladder"], bound: "cost" });
+  });
+
+  it("charges only the new canonical ladder calls, preserving the earlier check's receipt once", async () => {
+    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 1000, maxOutputTokensPerRun: 500, maxEstimatedCostUsdPerRun: CEILING });
+    const spend = (requestId: string, cost: number) => {
+      const hold = ledger.reserve({ runId: "run.one", requestId, estimatedInputTokens: 1, maxOutputTokens: 1, maxEstimatedCostUsd: cost });
+      expect(hold.ok).toBe(true);
+      if (hold.ok) hold.lease.complete({ inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: cost });
+    };
+    const gate = () => ({ invoked: true, costAccounting: ledger.snapshot("run.one"), providerCalls: ledger.callRecords("run.one").calls, providerCallsOmitted: 0 });
+    spend("prior.check", usd(CEILING * 0.1));
+    const earlier = { ...detail, metadata: { [AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY]: { attempted: true, attempts: 1, code: "core.result.unconfirmed" }, llmGate: gate() } };
+    const annotate = vi.fn<AutomationStudioRefutedResultRepairPortDependencies["annotate"]>(async (refuted) => {
+      spend("new.repair", usd(CEILING * 0.2));
+      return { ...refuted.detail, metadata: { ...(refuted.detail.metadata ?? {}), llmGate: gate() } };
+    });
+    const result = await automationStudioRefutedResultRepairPort(deps({ annotate }))({ ...request, detail: earlier });
+    expect(marker(result).purse).toMatchObject({ spentUsd: usd(CEILING * 0.2), averagedCalls: 1 });
+    expect(marker(result).purse.unreportedParts).toBeUndefined();
+    expect(result?.metadata?.llmGate).toMatchObject({ costAccounting: { calls: 2, estimatedCostUsd: expect.closeTo(CEILING * 0.3) } });
+  });
+
+  it("keeps a pending canonical part unknown and refuses another part rather than granting its apparent remainder", async () => {
+    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 1000, maxOutputTokensPerRun: 500, maxEstimatedCostUsdPerRun: CEILING });
+    const earlier = { ...detail, metadata: { [AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY]: { attempted: true, attempts: 1, code: "core.result.unconfirmed" } } };
+    const annotate = vi.fn<AutomationStudioRefutedResultRepairPortDependencies["annotate"]>(async (refuted) => {
+      expect(ledger.reserve({ runId: "run.one", requestId: "pending.repair", estimatedInputTokens: 1, maxOutputTokens: 1, maxEstimatedCostUsd: usd(CEILING * 0.2) }).ok).toBe(true);
+      return { ...refuted.detail, metadata: { ...(refuted.detail.metadata ?? {}), llmGate: { invoked: true, costAccounting: ledger.snapshot("run.one"), providerCalls: [], providerCallsOmitted: 0 } } };
+    });
+    const port = automationStudioRefutedResultRepairPort(deps({ annotate }));
+    const first = await port({ ...request, detail: earlier });
+    expect(marker(first).purse).toMatchObject({ unreportedParts: 1 });
+    expect(marker(first).purse.averagedCalls).toBeUndefined();
+    await port({ ...request, detail: first! });
+    expect(annotate).toHaveBeenCalledTimes(1);
   });
 });
 

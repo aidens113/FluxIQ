@@ -11,6 +11,7 @@ import type { AutomationStudioIncidentRepair } from "../../../executor/lifecycle
 import { annotateAutomationStudioRunDetailWithRuntimeLlm } from "../../../recovery/index.ts";
 import { AutomationStudioFlowBootstrapCreationSpendStore, AutomationStudioFlowPaths, AutomationStudioProjectPaths, type AutomationStudioProjectStore } from "../../index.ts";
 import { bindAutomationStudioInRunRepair } from "../in-run-repair.ts";
+import { AutomationStudioLlmRunPurse, AutomationStudioLlmRunBudgetLedger } from "../../../llm/index.ts";
 import { IN_RUN_REPAIR_FLOW_ID, IN_RUN_REPAIR_PROJECT_ID, IN_RUN_REPAIR_RUN_ID, inRunRepairHandlerPatch, inRunRepairRequest, inRunRepairWorld, type InRunRepairWorld } from "./in-run-repair-fixture.ts";
 
 function bind(world: InRunRepairWorld) {
@@ -46,6 +47,15 @@ afterEach(() => {
 });
 
 describe("the in-run repair a run session supplies", () => {
+  it("draws diagnosis and patch from the caller's run-owned canonical purse", async () => {
+    const world = inRunRepairWorld();
+    const runPurse = new AutomationStudioLlmRunPurse();
+    bindAutomationStudioInRunRepair({ context: world.context, graphOptions: world.graphOptions, ports: world.ports, runId: IN_RUN_REPAIR_RUN_ID, runPurse });
+    expect((await repair(world)).kind).toBe("overlay");
+    expect(runPurse.current?.ledger.snapshot(IN_RUN_REPAIR_RUN_ID)).toMatchObject({ calls: 2, pendingCalls: 0 });
+    expect(runPurse.current?.ledger.callRecords(IN_RUN_REPAIR_RUN_ID).calls.map((call) => call.taskKind)).toEqual(["runtime_diagnosis", "runtime_patch"]);
+  });
+
   it("keeps records for separate incidents distinct at an identical timestamp", async () => {
     const world = inRunRepairWorld({ scripts: [{ patches: [inRunRepairHandlerPatch()] }, { patches: [inRunRepairHandlerPatch()] }] });
     bind(world);
@@ -251,6 +261,21 @@ describe("the in-run repair of a Lab-scoped run", () => {
     return store;
   };
   const underFlow = async <T>(store: AutomationStudioFlowBootstrapCreationSpendStore, run: () => Promise<T>) => await store.withFlowPurse(IN_RUN_REPAIR_PROJECT_ID, IN_RUN_REPAIR_FLOW_ID, 0.04, run);
+
+  it("restores prior .06 spend under the run's global .10 while only NEW repair draws on the Flow's .04 remainder", async () => {
+    const store = await memoryStore(0.06);
+    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 50_000, maxEstimatedCostUsdPerRun: 0.1 });
+    const prior = ledger.reserve({ runId: IN_RUN_REPAIR_RUN_ID, requestId: "prior.check", estimatedInputTokens: 1, maxOutputTokens: 1, maxEstimatedCostUsd: 0.06 });
+    if (prior.ok) prior.lease.complete({ inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0.06 });
+    const runPurse = new AutomationStudioLlmRunPurse({ runId: IN_RUN_REPAIR_RUN_ID, gate: { costAccounting: ledger.snapshot(IN_RUN_REPAIR_RUN_ID), providerCalls: ledger.callRecords(IN_RUN_REPAIR_RUN_ID).calls, providerCallsOmitted: 0 } });
+    const world = inRunRepairWorld({ scripts: [{ patches: [inRunRepairHandlerPatch()], costUsd: 0.005 }], policy: { maxEstimatedCostUsdPerRun: 0.1 } });
+    bindAutomationStudioInRunRepair({ context: world.context, graphOptions: world.graphOptions, ports: world.ports, runId: IN_RUN_REPAIR_RUN_ID, runPurse });
+    const answer = await store.withFlowPurse(IN_RUN_REPAIR_PROJECT_ID, IN_RUN_REPAIR_FLOW_ID, 0.1, async () => await repair(world));
+    expect(answer.kind).toBe("overlay");
+    expect(runPurse.current?.budget.ledger.maxEstimatedCostUsdPerRun).toBe(0.1);
+    expect(runPurse.current?.ledger.snapshot(IN_RUN_REPAIR_RUN_ID)).toMatchObject({ calls: 3, pendingCalls: 0 });
+    expect(runPurse.diagnostic).toBeUndefined();
+  });
 
   it("draws only on what the Flow's creation left, and adds what it spent to the Flow's record", async () => {
     const store = await memoryStore(0.02);

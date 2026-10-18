@@ -50,6 +50,7 @@ import {
   runAutomationStudioLlmHarness,
   sanitizeAutomationStudioLlmFailureEvidence,
   type AutomationStudioLlmProvider,
+  type AutomationStudioLlmRunPurse,
   type AutomationStudioRuntimeSessionLlm
 } from "../../llm/index.ts";
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
@@ -62,6 +63,7 @@ import type {
   AutomationStudioRuntimeAdaptationContext
 } from "../../service.ts";
 import type { AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
+import { automationStudioResultRunAccounting } from "../../result-verification/accounting/index.ts";
 // The read-account barrel, not the result-verification one: `result-verification/run-outcome.ts` calls into recovery (`../refuted-result/brief.ts` says the same).
 import { automationStudioResultSummaryWithoutTestedLabel } from "../../result-verification/read-account/index.ts";
 import { buildAutomationStudioRuntimeRecoveryContext } from "../context.ts";
@@ -98,6 +100,7 @@ export type AutomationStudioRuntimeRecoveryAnnotationInput = {
   graphOptions?: AutomationStudioGraphExecutionOptions | undefined;
   /** Present when a person asked the model into this run: who asked (whose key pays), and what for. */
   llmExecution?: AutomationStudioRuntimeSessionLlm | undefined;
+  runPurse?: AutomationStudioLlmRunPurse | undefined;
   /** The lasting consequences the run's caller already allowed its actions to have. Absent, none: each is asked about. */
   permittedConsequences?: readonly AutomationStudioActionConsequence[] | undefined;
   useReusableContext?: true | undefined;
@@ -131,6 +134,12 @@ export type AutomationStudioRuntimeRecoveryAnnotationInput = {
 export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   input: AutomationStudioRuntimeRecoveryAnnotationInput
 ): Promise<AutomationStudioFlowRunDetail> {
+  const detail = await annotateRunDetail(input);
+  const accounting = automationStudioResultRunAccounting(input.runPurse, detail.summary.runId, detail.metadata?.llmGate);
+  return accounting ? { ...detail, metadata: { ...(detail.metadata ?? {}), llmGate: accounting } } : detail;
+}
+
+async function annotateRunDetail(input: AutomationStudioRuntimeRecoveryAnnotationInput): Promise<AutomationStudioFlowRunDetail> {
   const ports = input.ports;
   // The run is adapting from here, which the chat shows, until it takes a step again.
   automationStudioMarkRunAdapting(input.graphOptions?.runControl);
@@ -267,13 +276,13 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     resolution: providerResolution,
     maxTokensPerRun: input.context.settings.budgets?.maxTokensPerRun,
     policyMaxEstimatedCostUsdPerRun: input.context.policy.maxEstimatedCostUsdPerRun,
-    costLeftUsd: input.costLeftUsd,
+    costLeftUsd: input.runPurse ? undefined : input.costLeftUsd,
     model: provider?.metadata.model
   });
   // What one call may reserve, priced at the rate in force as that call is made
   // rather than once here: a recovery can run from off-peak into a peak window
   // (`run-budget.ts`, t254). Read it in each call's request, never hoisted.
-  const maxEstimatedCostUsdPerCall = (): number => (input.inRun?.purse.current?.budget ?? budget).maxEstimatedCostUsdPerCallAt();
+  const maxEstimatedCostUsdPerCall = (): number => budget.maxEstimatedCostUsdPerCallAt();
   const requestedTokenLimits = providerResolution?.tokenLimits;
   let failureEvidence: JsonObject | undefined;
   if (provider && failedAttempt && ports.llmEvidenceRuntime?.captureSanitizedFailureEvidence) {
@@ -338,9 +347,20 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   // An in-run recovery draws on the run's one purse, opened by the first one
   // that resolved a model: the cost ceiling is the run's, whatever the number
   // of incidents. Any other recovery is a whole run's recovery of its own.
-  const purse = input.inRun?.purse.current ?? { budget, ledger: new AutomationStudioLlmRunBudgetLedger(budget.ledger) };
+  const shared = provider && input.runPurse ? input.runPurse.open(input.detail.summary.runId, budget) : undefined;
+  if (provider && input.runPurse && !shared) return {
+    ...input.detail,
+    metadata: { ...(input.detail.metadata ?? {}), llmGate: {
+      ...(typeof input.detail.metadata?.llmGate === "object" && input.detail.metadata.llmGate !== null && !Array.isArray(input.detail.metadata.llmGate) ? input.detail.metadata.llmGate : {}),
+      accountingDiagnostic: { ...input.runPurse.diagnostic! }
+    } }
+  };
+  const purse = shared ? input.runPurse!.current! : input.inRun?.purse.current ?? { budget, ledger: new AutomationStudioLlmRunBudgetLedger(budget.ledger) };
   if (input.inRun && provider && !input.inRun.purse.current) input.inRun.purse.current = purse;
   const runBudget = purse.ledger;
+  const window = input.costLeftUsd === undefined ? undefined : runBudget.openCostWindow(input.detail.summary.runId, input.costLeftUsd);
+  if (window?.ok === false) return { ...input.detail, metadata: { ...(input.detail.metadata ?? {}), llmGate: { code: window.diagnostic.code, reason: window.diagnostic.message, invoked: false } } };
+  try {
   const reusableContextResult = input.useReusableContext === true && failureEvidence
     ? await ports.reusableLlmContextForFreshEvidence({
       optedIn: true, taskKind: "runtime_diagnosis", projectId: input.context.projectId, flowId: input.context.flowId,
@@ -712,6 +732,9 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     ...withIntervention,
     summary: flowRunSummaryWithInterventionSummaries(withIntervention)
   };
+  } finally {
+    if (window?.ok) window.close();
+  }
 }
 
 /**

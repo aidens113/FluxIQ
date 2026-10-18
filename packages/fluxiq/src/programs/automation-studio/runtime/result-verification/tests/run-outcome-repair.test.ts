@@ -71,6 +71,7 @@ describe("the re-run a repair earns", () => {
     // Flow answered the question, which is the whole point of the loop.
     expect(next.status).toBe("succeeded");
     expect((next.metadata?.resultVerification as JsonObject).status).toBe("confirmed");
+    expect(context.saved.at(-1)?.metadata?.llmGate).toMatchObject({ costAccounting: { calls: 3, pendingCalls: 0, estimatedCostUsd: 0.003 }, providerCallsOmitted: 0 });
   });
 
   // The re-run is judged as a repair, so the check that judges it is the one

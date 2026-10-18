@@ -75,7 +75,8 @@ import {
   type AutomationStudioFlowGraphVersion
 } from "../flow-version/index.ts";
 import { automationStudioAttemptInputs, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../executor/index.ts";
-import { automationStudioLlmBuildTrace, type AutomationStudioLlmProvider, type AutomationStudioLlmTokenLimits } from "../llm/index.ts";
+import { AutomationStudioLlmRunPurse, automationStudioLlmBuildTrace, type AutomationStudioLlmProvider, type AutomationStudioLlmTokenLimits } from "../llm/index.ts";
+import { resolveAutomationStudioRecoveryRunBudget } from "../recovery/annotation/index.ts";
 
 import {
   automationStudioRefutedResultRerunsFlow,
@@ -130,6 +131,9 @@ export type AutomationStudioResultVerificationProvider = {
   tokenLimits?: Partial<AutomationStudioLlmTokenLimits>;
   timeoutMs?: number;
   maxEstimatedCostUsd?: number;
+  maxCallsPerRun?: number;
+  maxTotalTokensPerRun?: number;
+  maxTotalEstimatedCostUsd?: number;
 };
 
 /** Everything the verification reaches outside itself. */
@@ -245,6 +249,7 @@ export type AutomationStudioResultVerificationPorts = {
 
 export type AutomationStudioRuntimeSessionVerificationInput = {
   ports: AutomationStudioResultVerificationPorts;
+  runPurse?: AutomationStudioLlmRunPurse | undefined;
   projectId: string;
   session: AutomationStudioRuntimeSession;
   /** The Flow that ran, for its authored shape. */
@@ -299,6 +304,7 @@ export type AutomationStudioRuntimeSessionVerificationInput = {
 export async function verifyAutomationStudioRuntimeSessionResult(
   input: AutomationStudioRuntimeSessionVerificationInput
 ): Promise<AutomationStudioRuntimeSession> {
+  input = { ...input, runPurse: input.runPurse ?? new AutomationStudioLlmRunPurse() };
   if (input.session.status !== "succeeded") return await repairFailedStep(input);
   // Which graphs this run executed, and at which revision, as the run itself
   // recorded when its session was written. Read from the session rather than
@@ -568,6 +574,23 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
   const instructions = await input.ports.flowInstructionSet({ projectId: input.projectId, flowId: session.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
   const instructionDigest = automationStudioFlowInstructionDigest(instructions);
   const resolved = await input.ports.resolveProvider?.({ projectId: input.projectId, flowId: session.flowId });
+  const budget = resolved ? resolveAutomationStudioRecoveryRunBudget({
+    explicitRunBudget: true,
+    // A standing check's per-call grant must never become the run's total.
+    resolution: {
+      ...(resolved.maxCallsPerRun !== undefined ? { maxCallsPerRun: resolved.maxCallsPerRun } : {}),
+      ...(resolved.maxTotalTokensPerRun !== undefined ? { maxTotalTokensPerRun: resolved.maxTotalTokensPerRun } : {}),
+      ...(resolved.maxTotalEstimatedCostUsd !== undefined ? { maxTotalEstimatedCostUsd: resolved.maxTotalEstimatedCostUsd } : {}),
+      ...(resolved.tokenLimits ? { tokenLimits: resolved.tokenLimits } : {})
+    },
+    policyMaxEstimatedCostUsdPerRun: input.policy?.maxEstimatedCostUsdPerRun,
+    model: resolved.provider.metadata.model
+  }) : undefined;
+  const runBudget = budget && input.runPurse ? input.runPurse.open(session.runId, budget) : undefined;
+  if (resolved && input.runPurse && !runBudget) return withResult({ interventions: [], outcome: {
+    schemaVersion: "automation-studio.result-verification.v1", performed: false,
+    code: input.runPurse.diagnostic!.code, reason: input.runPurse.diagnostic!.message
+  } }, instructionDigest);
   const verified = await verifyAutomationStudioRunResult({
     projectId: input.projectId,
     flowId: session.flowId,
@@ -578,11 +601,13 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     ...(runDetail ? { runDetail } : {}),
     ...(input.ports.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: input.ports.deniedEvidenceKeys } : {}),
     ...(resolved ? { provider: resolved.provider } : {}),
+    ...(runBudget ? { runBudget } : {}),
     recordIntervention,
     ...(input.policy ? { policy: input.policy } : {}),
     ...(resolved?.tokenLimits ? { tokenLimits: resolved.tokenLimits } : {}),
     ...(resolved?.timeoutMs !== undefined ? { timeoutMs: resolved.timeoutMs } : {}),
-    ...(costCeiling(input, resolved) !== undefined ? { maxEstimatedCostUsd: costCeiling(input, resolved) } : {}),
+    ...(budget && runBudget ? { maxEstimatedCostUsd: Math.min(costCeiling(input, resolved) ?? Number.POSITIVE_INFINITY, budget.maxEstimatedCostUsdPerCallAt()) }
+      : costCeiling(input, resolved) !== undefined ? { maxEstimatedCostUsd: costCeiling(input, resolved) } : {}),
     ...(input.signal ? { signal: input.signal } : {})
   });
   // A double no on the rows the build's two yeses judged is held where Core's record refutes part of each no; every double no says why (header, t660, t664).

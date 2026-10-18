@@ -3,6 +3,102 @@ import { AutomationStudioLlmRunBudgetLedger } from "../run-budget.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP } from "../flow-execution-limits/index.ts";
 
 describe("Automation Studio LLM run budget ledger", () => {
+  it("bounds new holds in nested cost windows without charging unrelated old holds, and closes idempotently", () => {
+    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 1000, maxOutputTokensPerRun: 500, maxEstimatedCostUsdPerRun: 0.1 });
+    const reserve = (requestId: string, cost: number) => ledger.reserve({ runId: "run.window", requestId, estimatedInputTokens: 1, maxOutputTokens: 1, maxEstimatedCostUsd: cost });
+    const old = reserve("old", 0.02);
+    const outer = ledger.openCostWindow("run.window", 0.03);
+    const patch = reserve("patch", 0.02);
+    expect(old.ok && outer.ok && patch.ok).toBe(true);
+    expect(reserve("oversubscribed", 0.02)).toMatchObject({ ok: false, diagnostic: { code: "llm_budget.run_cost_limit" } });
+    if (patch.ok) patch.lease.release();
+    const inner = ledger.openCostWindow("run.window", 0.01);
+    expect(reserve("nested", 0.02).ok).toBe(false);
+    if (inner.ok) {
+      inner.close();
+      inner.close();
+    }
+    const actual = reserve("actual", 0.02);
+    expect(actual.ok).toBe(true);
+    if (actual.ok) actual.lease.complete({ inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0.025 });
+    expect(ledger.snapshot("run.window")).toMatchObject({ calls: 1, budgetBreaches: 1, pendingCalls: 1 });
+    expect(reserve("window_spent", 0.01).ok).toBe(false);
+    if (outer.ok) {
+      outer.close();
+      outer.close();
+    }
+    expect(reserve("after_close", 0.01).ok).toBe(true);
+  });
+
+  it("restores .06 globally then grants .04 of NEW repair cost without double subtraction", () => {
+    const limits = { maxTotalTokensPerRun: 1000, maxOutputTokensPerRun: 500, maxEstimatedCostUsdPerRun: 0.1 };
+    const source = new AutomationStudioLlmRunBudgetLedger(limits);
+    const paid = source.reserve({ runId: "run.restore", requestId: "prior", estimatedInputTokens: 1, maxOutputTokens: 1, maxEstimatedCostUsd: 0.06 });
+    if (paid.ok) paid.lease.complete({ inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0.06 });
+    const before = { costAccounting: source.snapshot("run.restore"), providerCalls: source.callRecords("run.restore").calls, providerCallsOmitted: 0 };
+    const ledger = new AutomationStudioLlmRunBudgetLedger(limits);
+    expect(ledger.restore("run.restore", before)).toBe(true);
+    expect(ledger.openCostWindow("run.restore", 0.04).ok).toBe(true);
+    const next = ledger.reserve({ runId: "run.restore", requestId: "new", estimatedInputTokens: 1, maxOutputTokens: 1, maxEstimatedCostUsd: 0.04 });
+    expect(next.ok).toBe(true);
+    if (next.ok) next.lease.complete({ inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0.04 });
+    const after = { costAccounting: ledger.snapshot("run.restore"), providerCalls: ledger.callRecords("run.restore").calls, providerCallsOmitted: 0 };
+    expect(AutomationStudioLlmRunBudgetLedger.receiptChange(before, after)).toMatchObject({ calls: 1, costUsd: expect.closeTo(0.04) });
+    const reorder = (value: unknown): unknown => Array.isArray(value) ? value.map(reorder) : value !== null && typeof value === "object"
+      ? Object.fromEntries(Object.entries(value).reverse().map(([key, entry]) => [key, reorder(entry)])) : value;
+    expect(AutomationStudioLlmRunBudgetLedger.receiptChange(reorder(before), reorder(after))).toMatchObject({ calls: 1, costUsd: expect.closeTo(0.04) });
+    const altered = structuredClone(before);
+    altered.providerCalls[0]!.model = "different-model";
+    expect(AutomationStudioLlmRunBudgetLedger.receiptChange(altered, after)).toBeUndefined();
+    expect(AutomationStudioLlmRunBudgetLedger.receiptChange(before, { ...after, costAccounting: { ...after.costAccounting, pendingCalls: 1 } })).toBeUndefined();
+  });
+
+  it("refuses invalid window limits and makes a zero window refuse every new hold", () => {
+    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 1000, maxOutputTokensPerRun: 500 });
+    for (const limit of [NaN, Infinity, -1]) expect(ledger.openCostWindow("run.window", limit).ok).toBe(false);
+    expect(ledger.openCostWindow("run.window", 0).ok).toBe(true);
+    expect(ledger.reserve({ runId: "run.window", requestId: "zero", estimatedInputTokens: 1, maxOutputTokens: 1, maxEstimatedCostUsd: 0.001 }).ok).toBe(false);
+    const globallyBound = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 1000, maxOutputTokensPerRun: 500, maxEstimatedCostUsdPerRun: 0.1 });
+    expect(globallyBound.openCostWindow("run.large_window", 20).ok).toBe(true);
+    expect(globallyBound.reserve({ runId: "run.large_window", requestId: "allowed", estimatedInputTokens: 1, maxOutputTokens: 1, maxEstimatedCostUsd: 0.05 }).ok).toBe(true);
+    expect(globallyBound.reserve({ runId: "run.large_window", requestId: "globally_refused", estimatedInputTokens: 1, maxOutputTokens: 1, maxEstimatedCostUsd: 0.06 }).ok).toBe(false);
+  });
+
+  it("restores only internally consistent settled receipts and retains reserved charge provenance", () => {
+    const limits = { maxCallsPerRun: 4, maxTotalTokensPerRun: 1000, maxOutputTokensPerRun: 500, maxEstimatedCostUsdPerRun: 0.1 };
+    const source = new AutomationStudioLlmRunBudgetLedger(limits);
+    const hold = source.reserve({ runId: "run.restore", requestId: "request.unknown_usage", estimatedInputTokens: 10, maxOutputTokens: 20, maxEstimatedCostUsd: 0.01, allowance: "exploration" });
+    if (hold.ok) hold.lease.complete();
+    const receipt = { costAccounting: source.snapshot("run.restore"), providerCalls: source.callRecords("run.restore").calls, providerCallsOmitted: 0 };
+    const restored = new AutomationStudioLlmRunBudgetLedger(limits);
+    expect(restored.restore("run.restore", receipt)).toBe(true);
+    expect(restored.snapshot("run.restore")).toEqual(receipt.costAccounting);
+    expect(restored.callRecords("run.restore").calls).toEqual(receipt.providerCalls);
+    expect(restored.callRecords("run.restore").calls[0]?.charged).toMatchObject({ tokens: "reserved", cost: "reserved" });
+    expect(restored.restore("run.restore", receipt)).toBe(false);
+    for (const mutate of [
+      (value: typeof receipt) => { value.costAccounting.estimatedCostUsd = 0; },
+      (value: typeof receipt) => { value.providerCalls[0]!.charged.tokens = "reported"; },
+      (value: typeof receipt) => { value.providerCalls[0]!.sequence = 2; },
+      (value: typeof receipt) => { value.providerCalls.push(structuredClone(value.providerCalls[0]!));
+        value.costAccounting.calls = 2; },
+      (value: typeof receipt) => { value.costAccounting.pendingCalls = 1; },
+      (value: typeof receipt) => { value.providerCallsOmitted = 1; }
+    ]) {
+      const malformed = structuredClone(receipt);
+      mutate(malformed);
+      const ledger = new AutomationStudioLlmRunBudgetLedger(limits);
+      expect(ledger.restore("run.restore", malformed)).toBe(false);
+      expect(ledger.snapshot("run.restore").calls).toBe(0);
+    }
+    const zero = new AutomationStudioLlmRunBudgetLedger(limits);
+    expect(zero.restore("run.zero", { costAccounting: zero.snapshot("run.zero"), providerCalls: [], providerCallsOmitted: 0 })).toBe(true);
+    for (const extra of [
+      { ...receipt, providerCalls: [{ ...receipt.providerCalls[0], privateField: "synthetic-private-marker" }] },
+      { ...receipt, providerCalls: [{ ...receipt.providerCalls[0], charged: { ...receipt.providerCalls[0]!.charged, privateField: "synthetic-private-marker" } }] }
+    ]) expect(new AutomationStudioLlmRunBudgetLedger(limits).restore("run.restore", extra)).toBe(false);
+  });
+
   it("atomically reserves calls and worst-case output, then releases unused capacity on completion", () => {
     const ledger = new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 2, maxTotalTokensPerRun: 1000, maxOutputTokensPerRun: 400, maxEstimatedCostUsdPerRun: 0.25 });
     const diagnosis = ledger.reserve({ runId: "run.one", requestId: "request.diagnosis", estimatedInputTokens: 200, maxOutputTokens: 200, maxEstimatedCostUsd: 0.1 });

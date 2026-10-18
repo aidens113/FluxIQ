@@ -1,5 +1,8 @@
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP, AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "./flow-execution-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS } from "./harness/task-kind.ts";
+import { isAutomationStudioLoopStage } from "./stages/protocol.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP } from "./flow-execution-limits/run-call-backstop.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "./flow-execution-limits/run-cost-ceiling.ts";
 import {
   automationStudioLlmRunCallRecord,
   type AutomationStudioLlmRunCallDescription,
@@ -117,6 +120,7 @@ type RunState = {
   records: AutomationStudioLlmRunCallRecord[];
   /** Calls counted past the record limit, so the receipt can say it is short. */
   unrecordedCalls: number;
+  costWindows: Map<symbol, { limitUsd: number; spentUsd: number; pending: Set<string> }>;
 };
 
 export class AutomationStudioLlmRunBudgetLedger {
@@ -132,6 +136,35 @@ export class AutomationStudioLlmRunBudgetLedger {
     }
     if ((limits.maxEstimatedCostUsdPerRun ?? AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD) > 10) throw new Error("maxEstimatedCostUsdPerRun exceeds the server ceiling.");
     this.maxCallsPerRun = limits.maxCallsPerRun ?? AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP;
+  }
+
+  /** Restore only a complete settled receipt. A failed validation never changes the ledger. */
+  restore(runId: string, receipt: unknown): boolean {
+    if (!/^[a-z0-9_.:-]{1,200}$/i.test(runId) || this.states.has(runId) || !record(receipt)) return false;
+    const state = restoredState(receipt);
+    if (!state) return false;
+    this.states.set(runId, state);
+    return true;
+  }
+
+  /** The new portion of two settled canonical receipts; retained identities and charges are immutable. */
+  static receiptChange(before: unknown, after: unknown): { calls: number; costUsd: number } | undefined {
+    const current = restoredState(after), previous = before === undefined ? createRunState() : restoredState(before);
+    if (!current || !previous || current.calls < previous.calls || current.estimatedCostUsd < previous.estimatedCostUsd
+      || previous.records.some((item, index) => JSON.stringify(item) !== JSON.stringify(current.records[index]))) return undefined;
+    return { calls: current.calls - previous.calls, costUsd: current.estimatedCostUsd - previous.estimatedCostUsd };
+  }
+
+  /** A temporary additional-cost grant, enforced by the same canonical reservations, including patch holds. */
+  openCostWindow(runId: string, additionalCostUsd: number): { ok: true; close(): void } | { ok: false; diagnostic: AutomationStudioLlmRunBudgetDiagnostic } {
+    if (!/^[a-z0-9_.:-]{1,200}$/i.test(runId) || !Number.isFinite(additionalCostUsd) || additionalCostUsd < 0) return {
+      ok: false, diagnostic: { code: "llm_budget.invalid_reservation", message: "The additional-cost grant is invalid." }
+    };
+    const state = this.states.get(runId) ?? createRunState();
+    const key = Symbol("cost-window");
+    state.costWindows.set(key, { limitUsd: additionalCostUsd, spentUsd: 0, pending: new Set() });
+    this.states.set(runId, state);
+    return { ok: true, close: () => { state.costWindows.delete(key); } };
   }
 
   reserve(input: AutomationStudioLlmRunBudgetReservationInput): AutomationStudioLlmRunBudgetReservation {
@@ -163,6 +196,10 @@ export class AutomationStudioLlmRunBudgetLedger {
       return { ok: false, diagnostic: { code: "llm_budget.run_output_limit", message: "The per-run LLM output-token budget cannot reserve this request." } };
     }
     if (state.estimatedCostUsd + reservedCost + requestedCost > (this.limits.maxEstimatedCostUsdPerRun ?? AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD)) return { ok: false, diagnostic: { code: "llm_budget.run_cost_limit", message: "The per-run LLM estimated-cost budget cannot reserve this request." } };
+    for (const window of state.costWindows.values()) {
+      const held = [...window.pending].reduce((sum, requestId) => sum + (state.pending.get(requestId)?.estimatedCostUsd ?? 0), 0);
+      if (window.spentUsd + held + requestedCost > window.limitUsd) return { ok: false, diagnostic: { code: "llm_budget.run_cost_limit", message: "The repair's additional-cost grant cannot reserve this request." } };
+    }
     state.pending.set(input.requestId, {
       inputTokens: input.estimatedInputTokens,
       outputTokens: input.maxOutputTokens,
@@ -172,6 +209,7 @@ export class AutomationStudioLlmRunBudgetLedger {
       ...(input.call ? { call: input.call } : {})
     });
     this.states.set(input.runId, state);
+    for (const window of state.costWindows.values()) window.pending.add(input.requestId);
     let completed = false;
     return {
       ok: true,
@@ -202,6 +240,7 @@ export class AutomationStudioLlmRunBudgetLedger {
           const costBreach = validCost && suppliedCost > reserved.estimatedCostUsd;
           const estimatedCostUsd = validCost ? suppliedCost : reserved.estimatedCostUsd;
           state.estimatedCostUsd += estimatedCostUsd;
+          for (const window of state.costWindows.values()) if (window.pending.delete(input.requestId)) window.spentUsd += estimatedCostUsd;
           if (tokenBreach || costBreach) state.budgetBreaches += 1;
           if (state.records.length >= AUTOMATION_STUDIO_LLM_RUN_CALL_RECORD_LIMIT) {
             state.unrecordedCalls += 1;
@@ -222,6 +261,7 @@ export class AutomationStudioLlmRunBudgetLedger {
           if (completed) return;
           completed = true;
           state.pending.delete(input.requestId);
+          for (const window of state.costWindows.values()) window.pending.delete(input.requestId);
         }
       }
     };
@@ -259,9 +299,77 @@ export class AutomationStudioLlmRunBudgetLedger {
 }
 
 function createRunState(): RunState {
-  return { calls: 0, explorationCalls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0, budgetBreaches: 0, completedRequestIds: new Set(), pending: new Map(), records: [], unrecordedCalls: 0 };
+  return { calls: 0, explorationCalls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0, budgetBreaches: 0, completedRequestIds: new Set(), pending: new Map(), records: [], unrecordedCalls: 0, costWindows: new Map() };
 }
 
 function nonNegativeInteger(value: number | undefined): number | undefined {
   return Number.isInteger(value) && value! >= 0 ? value : undefined;
+}
+
+function record(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
+function count(value: unknown): value is number { return typeof value === "number" && Number.isSafeInteger(value) && value >= 0; }
+function cost(value: unknown): value is number { return typeof value === "number" && Number.isFinite(value) && value >= 0; }
+function identifier(value: unknown): boolean { return value === null || typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:+-]{0,199}$/u.test(value); }
+function keys(value: Record<string, unknown>, allowed: readonly string[]): boolean { return Object.keys(value).every((key) => allowed.includes(key)); }
+
+/** Validate every field before retaining a persisted canonical record, including charge provenance. */
+function runCall(value: unknown): value is AutomationStudioLlmRunCallRecord {
+  if (!record(value) || !keys(value, ["sequence", "requestId", "taskKind", "stage", "allowance", "promptVersion", "provider", "model", "validation", "reported", "charged", "budgetBreach"])
+    || !count(value.sequence) || typeof value.requestId !== "string" || !/^[a-z0-9_.:-]{1,200}$/i.test(value.requestId)
+    || value.allowance !== "run" && value.allowance !== "exploration" || typeof value.budgetBreach !== "boolean"
+    || value.taskKind !== null && !(typeof value.taskKind === "string" && Object.hasOwn(AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS, value.taskKind))
+    || value.stage !== null && !isAutomationStudioLoopStage(value.stage)
+    || ![value.promptVersion, value.provider, value.model].every(identifier)) return false;
+  if (value.validation !== null && (!record(value.validation) || !keys(value.validation, ["ok", "issueCodes"]) || typeof value.validation.ok !== "boolean" || !Array.isArray(value.validation.issueCodes)
+    || value.validation.issueCodes.length > 16 || !value.validation.issueCodes.every((item) => typeof item === "string" && /^[a-z][a-z0-9_.-]{0,127}$/u.test(item)))) return false;
+  const charged = value.charged, reported = value.reported;
+  if (!record(charged) || !record(reported) || !keys(charged, ["inputTokens", "outputTokens", "totalTokens", "estimatedCostUsd", "tokens", "cost"])
+    || !keys(reported, ["inputTokens", "outputTokens", "totalTokens", "estimatedCostUsd"]) || ![charged.inputTokens, charged.outputTokens, charged.totalTokens].every(count)
+    || !cost(charged.estimatedCostUsd) || charged.totalTokens !== Number(charged.inputTokens) + Number(charged.outputTokens)
+    || ![reported.inputTokens, reported.outputTokens, reported.totalTokens].every((item) => item === null || count(item))
+    || reported.estimatedCostUsd !== null && !cost(reported.estimatedCostUsd)) return false;
+  const reportedTokens = count(reported.inputTokens) && count(reported.outputTokens) && reported.totalTokens === reported.inputTokens + reported.outputTokens;
+  if (charged.tokens !== (reportedTokens ? "reported" : "reserved") || charged.cost !== (cost(reported.estimatedCostUsd) ? "reported" : "reserved")) return false;
+  return (!reportedTokens || ["inputTokens", "outputTokens", "totalTokens"].every((key) => charged[key] === reported[key]))
+    && (charged.cost !== "reported" || charged.estimatedCostUsd === reported.estimatedCostUsd);
+}
+
+function restoredState(receipt: unknown): RunState | undefined {
+  if (!record(receipt)) return undefined;
+  const snapshot = receipt.costAccounting;
+  const calls = receipt.providerCalls;
+  if (!record(snapshot) || !keys(snapshot, ["calls", "explorationCalls", "inputTokens", "outputTokens", "totalTokens", "estimatedCostUsd", "budgetBreaches", "pendingCalls"])
+    || !Array.isArray(calls) || receipt.providerCallsOmitted !== 0 || snapshot.pendingCalls !== 0) return undefined;
+  for (const key of ["calls", "explorationCalls", "inputTokens", "outputTokens", "totalTokens", "budgetBreaches"]) if (!count(snapshot[key])) return undefined;
+  if (!cost(snapshot.estimatedCostUsd) || snapshot.calls !== calls.length || calls.length > AUTOMATION_STUDIO_LLM_RUN_CALL_RECORD_LIMIT) return undefined;
+  const state = createRunState();
+  for (const candidate of calls) {
+    if (!runCall(candidate) || candidate.sequence !== state.calls + 1 || state.completedRequestIds.has(candidate.requestId!)) return undefined;
+    state.completedRequestIds.add(candidate.requestId!);
+    state.calls += 1;
+    if (candidate.allowance === "exploration") state.explorationCalls += 1;
+    state.inputTokens += candidate.charged.inputTokens;
+    state.outputTokens += candidate.charged.outputTokens;
+    state.totalTokens += candidate.charged.totalTokens;
+    state.estimatedCostUsd += candidate.charged.estimatedCostUsd;
+    if (candidate.budgetBreach) state.budgetBreaches += 1;
+    state.records.push(canonicalCall(candidate));
+  }
+  for (const key of ["calls", "explorationCalls", "inputTokens", "outputTokens", "totalTokens", "budgetBreaches"] as const) if (state[key] !== snapshot[key]) return undefined;
+  if (Math.abs(state.estimatedCostUsd - snapshot.estimatedCostUsd) > 1e-9) return undefined;
+  // Keep the persisted total rather than introducing rounding drift on reentry.
+  state.estimatedCostUsd = snapshot.estimatedCostUsd;
+  return state;
+}
+
+/** Fixed field order is serialization detail, never receipt identity. */
+function canonicalCall(value: AutomationStudioLlmRunCallRecord): AutomationStudioLlmRunCallRecord {
+  return {
+    sequence: value.sequence, requestId: value.requestId, taskKind: value.taskKind, stage: value.stage, allowance: value.allowance,
+    promptVersion: value.promptVersion, provider: value.provider, model: value.model,
+    validation: value.validation ? { ok: value.validation.ok, issueCodes: [...value.validation.issueCodes] } : null,
+    reported: { inputTokens: value.reported.inputTokens, outputTokens: value.reported.outputTokens, totalTokens: value.reported.totalTokens, estimatedCostUsd: value.reported.estimatedCostUsd },
+    charged: { inputTokens: value.charged.inputTokens, outputTokens: value.charged.outputTokens, totalTokens: value.charged.totalTokens, estimatedCostUsd: value.charged.estimatedCostUsd, tokens: value.charged.tokens, cost: value.charged.cost },
+    budgetBreach: value.budgetBreach
+  };
 }

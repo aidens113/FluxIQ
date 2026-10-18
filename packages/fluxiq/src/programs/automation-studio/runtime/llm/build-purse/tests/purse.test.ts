@@ -12,6 +12,20 @@ const PEAK_CLOCK = (): number => Date.UTC(2026, 8, 30, 2);
 const call = (projectedCostUsd: number | undefined) => ({ projectedCostUsd, estimatedInputTokens: 477_506, maxOutputTokens: 8_000 });
 
 describe("a build's purse", () => {
+  it("publishes only its own canonical charges, excluding carried and external reported aggregates", () => {
+    const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 1, carriedUsd: 0.3, spentUsd: () => 0.2 });
+    const held = purse.hold(call(0.02));
+    expect(purse.chargedReceipt()).toEqual({ calls: 0, chargedCostUsd: 0, pendingCalls: 1, pendingCostUsd: 0.02, unreportedZeroChargeCalls: 0 });
+    if (held.ok) {
+      held.hold.settle();
+      held.hold.settle();
+    }
+    expect(purse.chargedReceipt()).toEqual({ calls: 1, chargedCostUsd: 0.02, pendingCalls: 0, pendingCostUsd: 0, unreportedZeroChargeCalls: 0 });
+    expect(purse.spentUsd()).toBe(0.5);
+    const released = purse.hold(call(0.02));
+    if (released.ok) released.hold.release();
+    expect(purse.chargedReceipt()).toEqual({ calls: 1, chargedCostUsd: 0.02, pendingCalls: 0, pendingCostUsd: 0, unreportedZeroChargeCalls: 0 });
+  });
   it("refuses a call whose worst case would take what is spent past the ceiling, before it is sent", () => {
     // `run-mup2u8o3-6697c4be`: $0.154 spent, and the ninth decision priced at
     // worst at 477,506 uncached input tokens and 8,000 reply tokens.

@@ -117,6 +117,7 @@ export function automationStudioResultRepairPurseLeftUsd(purse: AutomationStudio
  * said how many calls it made -- enough for one more call at their average.
  */
 export function automationStudioResultRepairPurseAllowsPart(purse: AutomationStudioResultRepairPurse): boolean {
+  if (purse.unreportedParts > 0) return false;
   const left = automationStudioResultRepairPurseLeftUsd(purse);
   if (left <= 0) return false;
   return purse.averagedCalls === 0 || left >= roundUsd(purse.averagedUsd / purse.averagedCalls);

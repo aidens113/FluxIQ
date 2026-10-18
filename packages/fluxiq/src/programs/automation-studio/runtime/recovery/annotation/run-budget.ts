@@ -33,7 +33,7 @@ import {
   estimateAutomationStudioDeepSeekCostUsd,
   isAutomationStudioDeepSeekModel,
   resolveAutomationStudioLlmTokenLimits,
-  type AutomationStudioLlmRunBudgetLimits,
+  type AutomationStudioLlmRunBudgetProfile,
   type AutomationStudioLlmTokenLimits
 } from "../../llm/index.ts";
 
@@ -90,30 +90,8 @@ export type AutomationStudioRecoveryRunBudgetInput = {
   now?: (() => number) | undefined;
 };
 
-export type AutomationStudioRecoveryRunBudget = {
-  /** What the run's ledger is constructed with. Every field is set. */
-  ledger: Required<AutomationStudioLlmRunBudgetLimits>;
-  /** What one call may reserve against the purse before it knows what it spent,
-   * priced when the budget was resolved. A ceiling: the harness reserves the
-   * request's own measured size, priced by the provider, under it
-   * (`../../llm/harness/run.ts`). At the window profile this ceiling is the
-   * whole purse, and only that keeps it from binding. A call does not take
-   * this figure: it takes `maxEstimatedCostUsdPerCallAt()`, read as the call is
-   * made, because a recovery resolved off-peak can run into a peak window. */
-  maxEstimatedCostUsdPerCall: number;
-  /**
-   * The same ceiling priced at the rate in force at `atMs` -- the budget's
-   * clock now, when absent (t254). Every call reads it as it is made, so one
-   * made at peak is held at the peak rate and one made off-peak at half of
-   * it, whenever the recovery's budget was set. Only the worst-case term moves
-   * with the clock; the even share, the resolver's per-call cost and the purse
-   * bound it exactly as they bound `maxEstimatedCostUsdPerCall`.
-   */
-  maxEstimatedCostUsdPerCallAt(atMs?: number): number;
-  /** The call count the resolver declared, when it declared one. Absent means
-   * the ledger's count is only Core's backstop, and no stage should plan by it. */
-  declaredCallsPerRun?: number;
-};
+/** Compatibility name; the profile belongs to the lower LLM layer. */
+export type AutomationStudioRecoveryRunBudget = AutomationStudioLlmRunBudgetProfile;
 
 /** The limits one recovery runs under. */
 export function resolveAutomationStudioRecoveryRunBudget(input: AutomationStudioRecoveryRunBudgetInput): AutomationStudioRecoveryRunBudget {
