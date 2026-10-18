@@ -130,6 +130,8 @@ const CORPUS: CorpusCase[] = [
   { name: "a repeat most no span can take", lines: [...open, ...click("more", ["  repeat most: 3"])], codes: ["flow_script.repeat_most_misplaced"] },
   { name: "a repeat pace no span can take", lines: [...open, ...click("more", ["  repeat pace: 6 s"])], codes: ["flow_script.repeat_pace_misplaced"] },
   { name: "a repeat pace that is not a time", lines: [...open, ...list("rows"), ...click("buy", ["  repeat over: rows", "  repeat pace: soon"])], codes: ["flow_script.repeat_pace_invalid"] },
+  // A second span over one listing with other steps between the two (t567, `../../script-statements/adjacent-list-repeats.ts`).
+  { name: "a listing repeated over twice with a step between", lines: [...open, ...list("rows"), ...click("buy", ["  repeat over: rows"]), ...wait("check"), ...click("keep", ["  repeat over: rows"])], codes: ["flow_script.repeat_over_twice"] },
   // The candidate's binding checks.
   { name: "a row read outside every loop", lines: [...open, "step: type the name", "  node: web.dom.type", "  selector: #q", "  text: $row.name"], codes: ["flow_draft.row_binding_outside_loop"] },
   { name: "a row field the listing does not read", lines: [...open, ...list("rows"), "step: type the colour", "  node: web.dom.type", "  selector: #q", "  text: $row.colour", "  repeat over: rows"], codes: ["flow_draft.row_binding_unknown_field"] },
