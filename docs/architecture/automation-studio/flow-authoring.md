@@ -599,12 +599,16 @@ Flow reads back as that routing on the read
 (`runtime/llm/node-tools/{seeded-loops,draft-from-flow}.ts`), so it can be
 repaired.
 
-**Collection.** Each pass of the read is a new attempt, so it appends a new
+**Collection.** By default, each pass of the read is a new attempt, so it appends a new
 batch to the read's own dataset: assembly always writes an extraction's
 `recordOutput` (`runtime/flow-bootstrap/authoring/assembled-record-output.ts`),
 its id the slug of the step's words then its stable step id
 (`<slug>-<stepId>`), its write mode `append` unless the model wrote
-`replace`. What the run keeps of those rows is decided when the run ends: see
+`replace`. An explicit `purpose: "intermediate"` instead retains validated
+rows for computation and row loops without writing an answer dataset; it
+cannot satisfy an answer-table requirement or remove read/action evidence.
+Absent purpose still means an answer, including automatically derived outputs.
+What the run keeps of answer rows is decided when the run ends: see
 [record outputs and run-end processing](../automation-studio-native-nodes.md#record-outputs-and-run-end-processing).
 
 ### Selecting a terminal recovery cause

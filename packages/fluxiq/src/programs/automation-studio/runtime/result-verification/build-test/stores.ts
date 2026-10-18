@@ -124,6 +124,7 @@ export function automationStudioBuildTestStores(input: {
     const node = nodeOf.get(step);
     const output = recordOutput(node);
     if (!node || !output) continue;
+    if (output.parsed?.purpose === "intermediate") continue;
     const unsayable = automationStudioLocatorShapedText(output.dataset);
     if (unsayable) withheld = true;
     const dataset = unsayable ? WITHHELD_LABEL : output.dataset;

@@ -13,7 +13,7 @@ export type AutomationStudioRecordOutputParseResult =
   | { ok: true; output: AutomationStudioRecordOutput }
   | { ok: false; issues: string[] };
 
-const OUTPUT_KEYS: ReadonlySet<string> = new Set(["datasetId", "label", "recordsPath", "schema", "writeMode", "maxRecords", "process"]);
+const OUTPUT_KEYS: ReadonlySet<string> = new Set(["datasetId", "label", "recordsPath", "schema", "writeMode", "maxRecords", "process", "purpose"]);
 const WRITE_MODES: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_RECORD_WRITE_MODES);
 
 /**
@@ -46,7 +46,9 @@ function parseOutput(value: unknown, options: AutomationStudioRecordParseOptions
     return null;
   }
   if (!Object.keys(value).every((key) => OUTPUT_KEYS.has(key))) issues.add("record_output.unknown_key");
-  const { datasetId, label, recordsPath, schema, writeMode, maxRecords, process } = value;
+  const { datasetId, label, recordsPath, schema, writeMode, maxRecords, process, purpose } = value;
+  if (Object.hasOwn(value, "purpose") && purpose !== "answer" && purpose !== "intermediate") issues.add("record_output.invalid_purpose");
+  if (purpose === "intermediate" && process !== undefined && (!isPlainRecord(process) || Object.keys(process).length > 0)) issues.add("record_output.intermediate_process_unsupported");
   if (!isDatasetId(datasetId)) issues.add("record_output.invalid_dataset_id");
   if (label !== undefined && !isLabel(label)) issues.add("record_output.invalid_label");
   if (recordsPath === undefined) issues.add("record_output.missing_records_path");
@@ -62,6 +64,7 @@ function parseOutput(value: unknown, options: AutomationStudioRecordParseOptions
   if (parsedProcess !== undefined && !parsedProcess.ok) for (const issue of parsedProcess.issues) issues.add(issue);
   if (issues.size > 0 || !parsedSchema.ok || !isDatasetId(datasetId) || typeof recordsPath !== "string" || !isWriteMode(writeMode)) return null;
   const output: AutomationStudioRecordOutput = { datasetId, recordsPath, schema: parsedSchema.schema, writeMode };
+  if (purpose === "answer" || purpose === "intermediate") output.purpose = purpose;
   if (typeof label === "string") output.label = label;
   if (typeof maxRecords === "number") output.maxRecords = maxRecords;
   if (parsedProcess?.ok === true) output.process = parsedProcess.processing;

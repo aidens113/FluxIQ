@@ -68,6 +68,7 @@ export function captureAutomationStudioRecordBatch(request: AutomationStudioReco
   const found = segments ? valueAtPath(outputs.result, segments) : undefined;
   if (!segments || !Array.isArray(found)) return { result: recordsMissing(dispatched, parsed.output.recordsPath) };
   const validated = validateAutomationStudioRecords(found, parsed.output.schema, { maxRecords: parsed.output.maxRecords });
+  if (parsed.output.purpose === "intermediate" && (validated.invalidCount > 0 || validated.truncated)) return { result: incompleteIntermediate(dispatched) };
   // Rows were found and not one of them could be stored. That is the schema
   // failing to describe what the output produces, and the output cannot be
   // asked again for a shape it does not have, so the node fails here with the
@@ -78,7 +79,7 @@ export function captureAutomationStudioRecordBatch(request: AutomationStudioReco
     ...dispatched,
     outputs: { ...outputs, result: replacedAtPath(outputs.result, segments, rows), records: rows }
   };
-  return { result, batch: recordBatch(request, parsed.output, validated) };
+  return parsed.output.purpose === "intermediate" ? { result } : { result, batch: recordBatch(request, parsed.output, validated) };
 }
 
 // Present and not null declares a record output, the rule the policy action and
@@ -128,6 +129,9 @@ export function captureAutomationStudioWrittenRecords(request: AutomationStudioW
   const found = payload && Object.hasOwn(payload, "records") ? payload.records : undefined;
   if (!payload || !Array.isArray(found)) return { result: writtenRecordsMissing(), effect: withheldWrittenRecords(effect) };
   const validated = validateAutomationStudioRecords(found, parsed.output.schema, { maxRecords: parsed.output.maxRecords });
+  if (parsed.output.purpose === "intermediate" && (validated.invalidCount > 0 || validated.truncated)) {
+    return { result: incompleteIntermediate({ status: "success", route: "success" }), effect: withheldWrittenRecords(effect) };
+  }
   // Rows to write and a schema that refuses every one of them: the same total
   // loss the dispatched capture above refuses to report as success, for the
   // same reason.
@@ -137,8 +141,14 @@ export function captureAutomationStudioWrittenRecords(request: AutomationStudioW
   return {
     result: { status: "success", route: "success", outputs: { records: validated.rows } },
     effect: { ...effect, payload: { ...payload, records: validated.rows } },
-    batch: recordBatch(request, parsed.output, validated)
+    ...(parsed.output.purpose === "intermediate" ? {} : { batch: recordBatch(request, parsed.output, validated) })
   };
+}
+
+/** A transient control list has no stored loss account: never silently use a partial list. */
+function incompleteIntermediate(dispatched: AutomationNodeExecutionResult): AutomationNodeExecutionResult {
+  return failedCapture(withheldPayload(dispatched), "Intermediate records were invalid or truncated; the control list cannot be used partially.",
+    { category: "output_not_observed", code: "record_output.intermediate_incomplete", retryable: false, stage: "dispatch" });
 }
 
 function recordBatch(request: Pick<AutomationStudioRecordCaptureRequest, "nodeId" | "attemptId" | "callFlowAttemptPath">, output: AutomationStudioRecordOutput, validated: AutomationStudioRecordValidationResult): AutomationStudioRecordBatch {

@@ -31,6 +31,7 @@ import { authoringError, authoringWarning } from "./issue.ts";
 import { isJsonObject } from "./values.ts";
 
 const KEY_SYNONYMS: ReadonlyMap<string, string> = new Map([
+  ["purpose", "purpose"],
   ["datasetid", "datasetId"], ["dataset", "datasetId"], ["datasetname", "datasetId"], ["table", "datasetId"], ["id", "datasetId"],
   ["label", "label"], ["title", "label"], ["name", "label"],
   ["recordspath", "recordsPath"], ["path", "recordsPath"], ["records", "recordsPath"], ["rowspath", "recordsPath"],

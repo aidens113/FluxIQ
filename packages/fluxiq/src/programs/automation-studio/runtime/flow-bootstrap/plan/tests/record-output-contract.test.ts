@@ -30,6 +30,15 @@ const policyAction = builtin("builtin.policy.action");
 const writeRecords = builtin("builtin.data.write-records");
 
 describe("the record output contract a model is shown", () => {
+  it("explains explicit computation ownership in both actual catalog forms", () => {
+    const contract = automationStudioFlowBootstrapRecordOutputContract(extractList);
+    for (const text of [contract.text, contract.condensedText]) {
+      expect(text).toContain("purpose: answer|intermediate");
+      expect(text).toContain("absent means answer");
+      expect(text).toContain("never saves or clears");
+      expect(text).toContain("Read conditions, coverage and actions remain evidence");
+    }
+  });
   it.each([
     ["the list extraction", extractList],
     ["the policy action", policyAction],
@@ -55,7 +64,7 @@ describe("the record output contract a model is shown", () => {
 
   it("lists exactly the keys the parser accepts, and requires exactly the ones it requires", () => {
     const contract = automationStudioFlowBootstrapRecordOutputContract(policyAction);
-    const full: JsonObject = { ...contract.example, label: "Items", maxRecords: 10, recordsPath: "result.records", process: { dedupe: { by: ["name"] } } };
+    const full: JsonObject = { ...contract.example, label: "Items", maxRecords: 10, recordsPath: "result.records", process: { dedupe: { by: ["name"] } }, purpose: "answer" };
 
     expect(Object.keys(full).sort()).toEqual([...contract.keys].sort());
     expect(parseAutomationStudioRecordOutput(full)).toMatchObject({ ok: true });

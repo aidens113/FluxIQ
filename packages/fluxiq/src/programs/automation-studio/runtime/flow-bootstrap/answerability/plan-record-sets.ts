@@ -18,6 +18,7 @@
 // names and what their definitions declare, which is the same information
 // `../plan/validation.ts` already holds a record output to its contract with.
 import type { JsonValue } from "../../../../../core/index.ts";
+import { parseAutomationStudioRecordOutput } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import { automationStudioFlowBootstrapSuppliedRecordsPath, type AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import type { AutomationStudioFlowBootstrapPlanRecordSets } from "./contracts.ts";
@@ -37,8 +38,15 @@ export function automationStudioFlowBootstrapPlanRecordSets(input: {
       // validation under its own code; it is not this check's to answer.
       const definition = input.registry.get(node.definitionId, input.resolution);
       if (!definition) continue;
-      if (automationStudioFlowBootstrapSuppliedRecordsPath(definition) !== undefined) returning.push(node.key);
       const parameter = definition.parameters.find((candidate) => candidate.ui?.control === "record-output");
+      const value = parameter ? node.parameters?.[parameter.id] : undefined;
+      const path = automationStudioFlowBootstrapSuppliedRecordsPath(definition);
+      const parsed = typeof value === "object" && value !== null && !Array.isArray(value)
+        ? parseAutomationStudioRecordOutput({ ...value, ...(path === undefined ? {} : { recordsPath: path }) }) : undefined;
+      // Only a fully validated explicit marker changes answer capability.
+      // The node still computes rows and remains among all steps above.
+      if (parsed?.ok && parsed.output.purpose === "intermediate") continue;
+      if (path !== undefined) returning.push(node.key);
       if (parameter && savesARecordSet(node.parameters?.[parameter.id])) storing.push(node.key);
     }
   }
