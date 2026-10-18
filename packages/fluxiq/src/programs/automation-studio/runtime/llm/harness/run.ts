@@ -271,7 +271,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
   let reported: AutomationStudioLlmUsageSummary | undefined;
   try {
     reported = automationStudioLlmProviderPaidUsage(isRecord(call.result) ? call.result.usage : undefined);
-    providerResult = parseAutomationStudioLlmProviderResult(call.result, expectedOutput, input.flowBootstrap);
+    providerResult = parseAutomationStudioLlmProviderResult(call.result, expectedOutput, input.flowBootstrap, input.evidenceLoop?.tools);
   } catch {
     const diagnostics = [...context.instructions.diagnostics, { severity: "error" as const, code: "llm_output.invalid_provider_result", message: "LLM provider result parsing failed." }, ...retryDiagnostics];
     if (reservation?.ok) reservation.lease.complete(reported, callOutcome(diagnostics));

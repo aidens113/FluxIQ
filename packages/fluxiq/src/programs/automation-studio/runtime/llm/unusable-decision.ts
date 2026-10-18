@@ -34,6 +34,17 @@
 // decision alike stops a model that is fixing its mistakes one at a time. So
 // the loop hands the model the issue codes and the shape a decision takes, and
 // treats a decision refused for a set of issues it has not seen as new.
+//
+// Where the fault is a known piece of grammar it says which, from Core's own
+// constants: `write` beside the input, a key beside a tool call's input that is
+// none of its own, a decision `kind` that is none of the three. And a reply
+// whose brackets did not match or never closed is told how a tool call nests.
+// Both are run-mvcwp3wh-bcea2115's (2026-10-17): every plan the supervisor sent
+// put an input key beside `input`, ten were unreadable for one closer too many
+// or too few, the two that were read were refused with no path, and the model
+// was never told which key was misplaced. A key the tool's own input schema
+// declares is now moved into `input` before the check
+// (`./harness/tool-call-keys/folded.ts`); any other is named here.
 
 import type { JsonObject } from "../../../../core/index.ts";
 import { automationStudioLlmProviderFailureSpendsCall } from "./failure-disposition.ts";
@@ -75,30 +86,49 @@ export type AutomationStudioLlmUnusableDecisionOffers = { tools: boolean; comple
 
 /**
  * A closed grammar correction, never a provider-authored key or value: a
- * `write` placed beside the input instead of in it, or a decision `kind` that
- * is none of the three (R4: `kind: "callId"` was refused nine times and the
- * model was never told which field was at fault).
+ * `write` placed beside the input instead of in it, any other key beside a
+ * tool call's input that is none of its own (run-mvcwp3wh-bcea2115), or a
+ * decision `kind` that is none of the three (R4: `kind: "callId"` was refused
+ * nine times and the model was never told which field was at fault).
  */
 export type AutomationStudioLlmUnusableDecisionFieldIssue =
   | { code: "llm_output.unexpected_field"; path: "response.decision.write"; expectedPath: "response.decision.input.write" }
+  | { code: "llm_output.unexpected_field"; path: "response.decision"; expectedPath: "response.decision.input" }
   | { code: "llm_output.invalid_evidence_decision"; path: "response.decision.kind"; allowed: ["tool_call", "complete", "amend_draft"] };
 
 const WRITE_FIELD_ISSUE: AutomationStudioLlmUnusableDecisionFieldIssue = { code: "llm_output.unexpected_field", path: "response.decision.write", expectedPath: "response.decision.input.write" };
+const INPUT_FIELD_ISSUE: AutomationStudioLlmUnusableDecisionFieldIssue = { code: "llm_output.unexpected_field", path: "response.decision", expectedPath: "response.decision.input" };
 const KIND_FIELD_ISSUE: AutomationStudioLlmUnusableDecisionFieldIssue = { code: "llm_output.invalid_evidence_decision", path: "response.decision.kind", allowed: ["tool_call", "complete", "amend_draft"] };
+
+/** Every known correction, in the order the model is told them. */
+const KNOWN_FIELD_ISSUES: readonly AutomationStudioLlmUnusableDecisionFieldIssue[] = [WRITE_FIELD_ISSUE, INPUT_FIELD_ISSUE, KIND_FIELD_ISSUE];
+
+/** Where a correction says the field belongs, when it says one. */
+function expectedPathOf(value: unknown): unknown {
+  return value && typeof value === "object" ? (value as { expectedPath?: unknown }).expectedPath : undefined;
+}
 
 /**
  * Each known correction the issues name whose code was listed, rebuilt from
- * Core's own constant: nothing a caller passed is carried through.
+ * Core's own constant: nothing a caller passed is carried through. Two share a
+ * code, so the place a correction sends the field is matched as well.
  */
 function screenedFieldIssues(issues: readonly AutomationStudioLlmUnusableDecisionFieldIssue[] | undefined, codes: readonly string[]): AutomationStudioLlmUnusableDecisionFieldIssue[] {
-  return [WRITE_FIELD_ISSUE, KIND_FIELD_ISSUE]
-    .filter((known) => codes.includes(known.code) && issues?.some((issue) => issue?.code === known.code && issue.path === known.path))
+  return KNOWN_FIELD_ISSUES
+    .filter((known) => codes.includes(known.code) && issues?.some((issue) => issue?.code === known.code && issue.path === known.path
+      && expectedPathOf(issue) === expectedPathOf(known)))
     .map((known) => ({ ...known }));
 }
 
-/** The diagnostics a field correction is read from, by the code and path the harness gave them. */
-function fieldIssuesOf(errors: readonly { code: string; path?: string | undefined }[]): AutomationStudioLlmUnusableDecisionFieldIssue[] {
-  return [WRITE_FIELD_ISSUE, KIND_FIELD_ISSUE].filter((known) => errors.some((diagnostic) => diagnostic.code === known.code && diagnostic.path === known.path));
+/**
+ * The diagnostics a field correction is read from, by the code and path the
+ * harness gave them. A key beside a tool call's input shares its path with
+ * every other unexpected key of a decision, so that one is read only where the
+ * harness also said where the key belongs (`./harness/provider-result.ts`).
+ */
+function fieldIssuesOf(errors: readonly { code: string; path?: string | undefined; metadata?: unknown }[]): AutomationStudioLlmUnusableDecisionFieldIssue[] {
+  return KNOWN_FIELD_ISSUES.filter((known) => errors.some((diagnostic) => diagnostic.code === known.code && diagnostic.path === known.path
+    && (known !== INPUT_FIELD_ISSUE || expectedPathOf(diagnostic.metadata) === expectedPathOf(known))));
 }
 
 const DECISION_FEEDBACK_INSTRUCTION = "Your previous decision could not be used, for the listed issue codes, and nothing ran. "
@@ -106,6 +136,15 @@ const DECISION_FEEDBACK_INSTRUCTION = "Your previous decision could not be used,
 
 const UNREADABLE_INSTRUCTION = "Nothing ran and nothing changed. Answer the same question again, with exactly one complete JSON object of the accepted shape and nothing before or after it. "
   + "Keep it short: a rerun's input carries only the keys that change.";
+
+/**
+ * The unreadable cases a bracket was miscounted in. Ten replies of
+ * run-mvcwp3wh-bcea2115 closed a tool call's input before its last key and then
+ * lost count of their closers, so the model is told how a tool call nests.
+ */
+const BRACKET_CASES: ReadonlySet<string> = new Set(["content_mismatched", "content_unclosed"]);
+
+const TOOL_CALL_NESTING_INSTRUCTION = "A tool call is {kind, callId, toolId, input: {...}}: every key of the tool's input goes inside input, and input closes before the decision does.";
 
 /**
  * What an issue the loop itself refuses a decision for means, where the code
@@ -130,10 +169,12 @@ const ISSUE_INSTRUCTIONS: Readonly<Record<string, string>> = {
     + "Write {\"$input\": \"<name>\", \"test\": <the value to test with>} with a name of letters and digits that starts lower case, or {\"$row\": \"<field>\"}, and nothing else in that object; {\"$step\": <n>, \"output\": \"<output id>\"} for the output of the earlier step n, as that step's node declares it, with \"path\": \"<field>\" for one field of a record output; n must be a step before this one that worked and is in the draft."
 };
 
-/** What each field correction tells the model, keyed by its code. */
-const FIELD_ISSUE_INSTRUCTIONS: Readonly<Record<AutomationStudioLlmUnusableDecisionFieldIssue["code"], string>> = {
-  "llm_output.unexpected_field": "Place write at response.decision.input.write, inside the tool call input, rather than response.decision.write. This corrects grammar only; existing permission and tool checks still apply.",
-  "llm_output.invalid_evidence_decision": "The field at fault is response.decision.kind: it must be exactly \"tool_call\", \"complete\" or \"amend_draft\", and a tool call also carries callId, toolId and input. This corrects grammar only; existing permission and tool checks still apply."
+/** What each field correction tells the model, keyed by its path: two share a code. */
+const FIELD_ISSUE_INSTRUCTIONS: Readonly<Record<AutomationStudioLlmUnusableDecisionFieldIssue["path"], string>> = {
+  "response.decision.write": "Place write at response.decision.input.write, inside the tool call input, rather than response.decision.write. This corrects grammar only; existing permission and tool checks still apply.",
+  // run-mvcwp3wh-bcea2115: an input key beside `input`. `add`, `act` and `place` are the decision schema's own, beside it.
+  "response.decision": "A tool call holds only kind, callId, toolId and input, and add, act or place where the decision schema lists them beside input; every other key goes inside response.decision.input, where the tool's input schema declares it. This corrects grammar only; existing permission and tool checks still apply.",
+  "response.decision.kind": "The field at fault is response.decision.kind: it must be exactly \"tool_call\", \"complete\" or \"amend_draft\", and a tool call also carries callId, toolId and input. This corrects grammar only; existing permission and tool checks still apply."
 };
 
 /**
@@ -228,6 +269,8 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
   if (input.unreadable) {
     const { reply, inARow, maxInARow } = input.unreadable;
     const said = automationStudioLlmUnreadableReplySaid({ case: reply?.case, issueCodes: input.issueCodes });
+    // Said only where a tool call could have been the answer.
+    const nesting = reply && BRACKET_CASES.has(reply.case) && (!input.offers || input.offers.tools) ? ` ${TOOL_CALL_NESTING_INSTRUCTION}` : "";
     return {
       ok: false,
       code: "llm_evidence_loop.reply_unreadable",
@@ -236,7 +279,7 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
       unreadableInARow: inARow,
       maxUnreadableInARow: maxInARow,
       accepted: acceptedDecision(input.offers),
-      instruction: `Your previous reply could not be read: ${said}. ${UNREADABLE_INSTRUCTION} ${maxInARow} unreadable replies in a row stop this build; that was ${inARow}.`
+      instruction: `Your previous reply could not be read: ${said}. ${UNREADABLE_INSTRUCTION}${nesting} ${maxInARow} unreadable replies in a row stop this build; that was ${inARow}.`
     };
   }
   return {
@@ -248,7 +291,7 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
     ...(fieldIssues.length ? { fieldIssues } : {}),
     accepted: acceptedDecision(input.offers),
     instruction: [DECISION_FEEDBACK_INSTRUCTION,
-      ...fieldIssues.map((issue) => FIELD_ISSUE_INSTRUCTIONS[issue.code]),
+      ...fieldIssues.map((issue) => FIELD_ISSUE_INSTRUCTIONS[issue.path]),
       ...[...new Set(input.issueCodes)].flatMap((code) => ISSUE_INSTRUCTIONS[code] ?? [])].join(" ")
   };
 }
