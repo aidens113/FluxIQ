@@ -16,6 +16,25 @@ const head = "The candidate did not run to its end, so this revision cannot comp
 const tell = (feedback: JsonObject, retestable = true) => Stop.instruction(failed(feedback), { head, retestable, resubmit: "submit the whole candidate" });
 
 describe("what stopped an execution-failed trial", () => {
+  it("asks for preceding context when a later step fails, without assuming the failed step caused it", () => {
+    const feedback = { steps: [
+      { step: 1, definitionId: "builtin.data.choose", label: "choose a document", status: "succeeded" },
+      { step: 2, definitionId: "builtin.data.lookup", label: "read its revision", status: "failed", failureCode: "record.not_found" }
+    ] };
+    for (const retestable of [true, false]) {
+      const said = tell(feedback, retestable);
+      expect(said).toContain('Step 2 ("read its revision") failed');
+      expect(said).toContain("Trace the preceding steps");
+      expect(said).toContain("compare the context they reached with what the failed step needs");
+      expect(said).toContain("the cause may be an earlier step");
+      expect(said).not.toContain("correct that step");
+      expect(said).not.toContain("Correct that step");
+      expect(said.includes("test this same revision again")).toBe(retestable);
+      expect(said).not.toMatch(LAB_TASK_WORDS);
+    }
+    expect(Stop.of(feedback)).toMatchObject({ kind: "step", step: 2, failureCode: "record.not_found" });
+  });
+
   it("names the failed step the run stopped at, how often it ran before, and what it saw", () => {
     const stop = Stop.of({ code: "candidate.execution_incomplete", steps: [read, onward, { ...read, step: 8 }, { ...onward, step: 9, status: "failed", failureCode: "web.target.not_found", actual: "The list had no further page." }] });
     expect(stop).toMatchObject({ kind: "step", step: 9, label: "move the list on", failureCode: "web.target.not_found", ranBefore: 1 });
