@@ -138,6 +138,15 @@
 // what answered an earlier no; with none left, it says to change the Flow for
 // a defect the trial shows.
 //
+// **An execution-failed trial always says what stopped it (lane 3,
+// `run-mvcvzwk1-c1d869e4`).** A port that threw was answered with its code
+// alone, and the instruction sent the builder to a failed step no feedback
+// named. Every `execution_failed` answer now carries `stoppedBy` in its
+// feedback -- the failed step, the limit or the trial runner that ended it,
+// with how often the step ran before (`./trial-stop.ts`) -- the instruction
+// names it, and two trials whose runner failed the same way close the revision
+// as two stops at one step do.
+//
 // With no port injected the test tool says `candidate.trial_unavailable` and
 // completion keeps its old meaning: the latest valid submission ends as an
 // unverified draft, which is all a deployment without a trial runner can make.
@@ -213,6 +222,7 @@ import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvi
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS } from "../plan/index.ts";
 import { automationStudioCandidateStartedWithSaid } from "./started-with.ts";
+import { automationStudioCandidateTrialStop as Stop } from "./trial-stop.ts";
 // Its own barrel, not result-verification's, whose reads import flow-bootstrap back (a module cycle).
 import {
   AutomationStudioResultKeptConditionMemory,
@@ -273,6 +283,9 @@ const UNAFFORDABLE_CODE = "candidate.trial_unaffordable";
 /** What the model is told when a trial did not start because the purse cannot pay its judge calls (header, t661). Generic words. */
 const UNAFFORDABLE_INSTRUCTION = "Core did not start this trial: the money this build has left cannot pay the two judge calls that judge a trial, so nothing ran and no judge was asked (notRun has the figures). "
   + "Testing again is refused the same way while that stands, so do not test again, and do not spend calls changing the Flow for a trial that cannot run.";
+
+/** The first sentence of every execution-failed instruction (header): what stopped the trial follows it. */
+const EXECUTION_FAILED_HEAD = "The candidate did not run to its end, so this revision cannot complete.";
 
 /** What the model is told when a revision failed the same way twice. */
 const SAME_FAILURE_INSTRUCTION = "This revision stopped at the same step with the same failure in two trials, so testing it again would fail the same way. Change that step, or remove it if it only checks the act before it (the judge reads the page the run ends on), submit the whole candidate, then test the new revision.";
@@ -407,7 +420,8 @@ export class AutomationStudioFlowCandidateTrialGate {
     const explored = weighedAnswer.verdict !== "yes"
       ? automationStudioSiteResetExploredOnAbsorbed({ absorbed: absorbedActs, steps: (latest.buildPlan?.plan?.subflows ?? []).flatMap((subflow) => subflow.nodes ?? []), ran: weighedAnswer.acts, whose: "flow" })
       : [];
-    const answer = explored.length ? withCoreFindings(weighedAnswer, explored) : weighedAnswer;
+    // An execution-failed trial says what stopped it, in its own feedback (header).
+    const answer = Stop.told(explored.length ? withCoreFindings(weighedAnswer, explored) : weighedAnswer);
     // What Core's record of this trial shows its conditions kept out, as the revision that ran wrote them (header, t641).
     this.keptConditions.remember({ revision: answer.revision, standingNo: asked.standingNo, plan: latest.buildPlan?.plan });
     const keptConditions = this.keptConditions.conditions();
@@ -463,10 +477,10 @@ export class AutomationStudioFlowCandidateTrialGate {
    * closes the revision to re-testing (header).
    */
   private recordStop(answer: AutomationStudioCandidateTrialResult): JsonObject | undefined {
-    if (answer.verdict !== "execution_failed") return undefined;
-    const step = stoppingStep(answer.feedback);
-    if (!step) return undefined;
-    const signature = JSON.stringify(step);
+    // The same step, node and failure, or the trial runner failing with the same kind of error (header).
+    const signature = Stop.signature(answer);
+    if (!signature) return undefined;
+    const step = stoppingStep(answer.feedback) ?? Stop.of(answer.feedback);
     const seen = this.stoppedAt.get(key(answer)) ?? new Set<string>();
     const repeated = seen.has(signature);
     seen.add(signature);
@@ -514,8 +528,8 @@ export class AutomationStudioFlowCandidateTrialGate {
       raw = await trial.port({ candidateId: trial.candidateId, revision: latest.revision, digest: latest.digest, signal, candidate: deepFreeze(structuredClone(latest)), ...(startedWith.length ? { startedWith: [...startedWith] } : {}) });
     } catch (error) {
       if (signal.aborted) throw error;
-      // The port's own error text may carry page or account detail, so the model is told only that it failed.
-      return failed("candidate.trial_port_failed");
+      // The port's own error text may carry page or account detail, so the model is told only its kind (header).
+      return { answer: { ...failed("candidate.trial_port_failed").answer, feedback: Stop.portFailed("candidate.trial_port_failed", error) } };
     }
     const result = raw as Partial<AutomationStudioCandidateTrialResult> | null;
     if (!result || typeof result !== "object" || Array.isArray(result)
@@ -638,6 +652,8 @@ function standingInstruction(answer: AutomationStudioCandidateTrialResult, retes
     if (automationStudioCandidateRetestAdvised(answer)) return UNSURE_RETEST_ADVISED;
     return automationStudioCandidateRecordContradictsPart(answer) ? UNSURE_PART_CONTRADICTED : UNSURE_RETESTABLE;
   }
+  // What stopped it, after the verdict's own first sentence (header).
+  if (answer.verdict === "execution_failed") return Stop.instruction(answer, { head: EXECUTION_FAILED_HEAD, retestable, resubmit: "submit the whole candidate" });
   return INSTRUCTIONS[answer.verdict];
 }
 
@@ -672,7 +688,8 @@ function repeatedInstruction(answer: AutomationStudioCandidateTrialResult | unde
   const notShown = automationStudioCandidateNotShownInstruction(answer);
   if (notShown) return notShown;
   const onPage = onPageStep(answer);
-  return onPage ? stillNotFoundInstruction(onPage) : SAME_FAILURE_INSTRUCTION;
+  if (onPage) return stillNotFoundInstruction(onPage);
+  return answer && Stop.of(answer.feedback).kind === "trial_runner" ? Stop.sameRunnerFailure("submit the whole candidate") : SAME_FAILURE_INSTRUCTION;
 }
 
 /** One step a trial listed, with the paces the run learned for it; a learned pace whose step is not listed stands alone. */

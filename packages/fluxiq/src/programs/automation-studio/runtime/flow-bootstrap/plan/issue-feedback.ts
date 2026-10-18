@@ -141,6 +141,10 @@ const AUTHORED_CODES: ReadonlySet<string> = new Set([
   "bootstrap.missing_output_action",
   "bootstrap.definition_unavailable",
   "bootstrap.invalid_consequences",
+  // A structured value that does not fit the schema its node publishes for it
+  // (`../parameter-schema/fit.ts`): the sentence names only the parameter, the
+  // field and the fields or words that schema declares, never the value.
+  "bootstrap.parameter_schema_mismatch",
   "flow_draft.no_steps",
   "flow_draft.routing_unavailable",
   "flow_draft.step_not_written",
@@ -362,7 +366,7 @@ export function automationStudioFlowBootstrapIssueFeedback(input: {
 }
 
 /** The issues about one of a node's parameters that name the node, for `core.describe_nodes` (header, t514). */
-const NODE_NAMED_CODES: ReadonlySet<string> = new Set(["bootstrap.unknown_parameter", "bootstrap.invalid_parameter_value", "bootstrap.handle_unresolved"]);
+const NODE_NAMED_CODES: ReadonlySet<string> = new Set(["bootstrap.unknown_parameter", "bootstrap.invalid_parameter_value", "bootstrap.parameter_schema_mismatch", "bootstrap.handle_unresolved"]);
 const UNRESOLVED_CODE = "bootstrap.handle_unresolved";
 const UNKNOWN_PARAMETER_CODE = "bootstrap.unknown_parameter";
 

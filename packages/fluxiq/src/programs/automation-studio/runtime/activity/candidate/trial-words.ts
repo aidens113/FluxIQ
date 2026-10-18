@@ -32,6 +32,7 @@ const NOT_RUN_FALLBACK = "the test couldn't start";
 /** A failed run that never reached a step, by the gate's or the runner's code. */
 const NO_STEP: Readonly<Record<string, string>> = Object.freeze({
   "candidate.trial_port_failed": "the test couldn't run the Flow",
+  "subflow.trial_port_failed": "the test couldn't run the Flow",
   "candidate.trial_result_invalid": "the test's answer couldn't be read",
   "candidate.trial_result_mismatch": "the test answered about other steps than these"
 });
@@ -43,7 +44,10 @@ const MAX_NAME = 40;
 /** A control handle as a view prints it (`t478`), which a label the model wrote may carry. */
 const HANDLE = /^\(?[a-z]\d{2,}\)?[,.;:]?$/u;
 
-type Step = { step?: unknown; label?: unknown; control?: unknown; status?: unknown; skipped?: unknown; happened?: unknown; waitedFor?: unknown; textPresence?: unknown };
+type Step = { step?: unknown; label?: unknown; control?: unknown; status?: unknown; skipped?: unknown; happened?: unknown; waitedFor?: unknown; textPresence?: unknown; failureCode?: unknown; actual?: unknown };
+
+/** A repeat that went round without getting anywhere (`../../executor/repeat-progress/`): its own sentence says which passes. */
+const NO_PROGRESS = "repeat.no_progress";
 
 const objectOf = (value: unknown): Record<string, unknown> | undefined => (value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined);
 const lowerFirst = (text: string): string => `${text.charAt(0).toLowerCase()}${text.slice(1)}`;
@@ -67,6 +71,7 @@ function whyFailed(step: Step): string {
     if (step.textPresence === "absent") return `“${awaited}” wasn't on the page`;
     return `the page didn't show “${awaited}”`;
   }
+  if (step.failureCode === NO_PROGRESS) return sentence(step.actual) ?? "its last passes found nothing new";
   return sentence(step.happened) ?? "it didn't work";
 }
 

@@ -39,6 +39,7 @@ import {
   type AutomationStudioStepLoopContext
 } from "./step-loop/index.ts";
 import { AUTOMATION_STUDIO_REQUIRED_OUTCOME_UNKNOWN } from "./command-scope/index.ts";
+import { automationStudioRepeatNoProgress } from "./repeat-progress/index.ts";
 import { automationStudioTraceWithholding, automationStudioWithholdRunInputs, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
 import { automationStudioActivityHold, automationStudioActivityLoopWords, automationStudioActivityStepAnnounced, automationStudioActivityStepNumbers, emitAutomationStudioActivityStep } from "../activity/index.ts";
@@ -425,6 +426,12 @@ async function executeAutomationStudioGraph(
       ctx.pendingRetry = undefined;
       delete lifecycle.pending;
       delete lifecycle.entry;
+      // A do-while loop whose last passes made no progress ends here, naming the passes, before it starts another (`repeat-progress/`).
+      const stalled = automationStudioRepeatNoProgress({ node, attempt, attempts, nodesById: ctx.nodesById });
+      if (stalled) {
+        attempts.push(regionId ? { ...stalled, regionId } : stalled);
+        return { ...automationStudioEndedTrace(ctx, "failed", node.id, stalled.message ?? "The loop made no progress."), ...(stalled.failure ? { failure: stalled.failure } : {}) };
+      }
       const tracedAttempt = region?.kind === "policy" ? { ...attempt, policyDecision: policyDecisionForAttempt(node, attempt) } : attempt;
       const attemptIndex = attempts.length;
       attempts.push(regionId ? { ...tracedAttempt, regionId } : tracedAttempt);
