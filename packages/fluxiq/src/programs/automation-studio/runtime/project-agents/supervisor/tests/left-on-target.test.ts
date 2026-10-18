@@ -74,3 +74,28 @@ describe("an ending with possibly lasting presses on the target", () => {
     expect(left.note!.endsWith("; and 2 earlier such presses.")).toBe(true);
   });
 });
+
+// A job-board build's failed chat (t567 lane 4) showed this note as it was: every press, one link
+// four times, an overlay's close control as `click "–" div`, with the ledger's terms after each.
+describe("an ending the person reads", () => {
+  function clicked(callId: string, name: string, kind: string, verb = "click"): AutomationStudioSiteResetExplored {
+    return { callId, toolId: "core.run_node", landed: true, declared: { permitted: true, effect: "mutate", consequences: [], control: { name, kind }, verb } };
+  }
+
+  it("says what is left in plain words, each press once, and keeps the ledger's words for the record", () => {
+    const ledger = new AutomationStudioSiteResetProjectLedger();
+    const brief = ledger.forBrief("brief-1");
+    brief.explored(clicked("c1", "Reject non-essential", "button"));
+    brief.explored(clicked("c2", "What", "input", "type text"));
+    brief.explored(clicked("c3", "No thanks", "link"));
+    brief.explored(clicked("c4", "–", "div"));
+    for (let press = 5; press <= 8; press += 1) brief.explored(clicked(`c${press}`, "Platform Engineer", "link"));
+    const told: Array<string | undefined> = [];
+    const left = automationStudioProjectSupervisorLeftOnTarget({ projectLedger: ledger, leftAtEnding: (said) => told.push(said.told) });
+
+    expect(left.note).toContain("click \"Platform Engineer\" link (declared no lasting act, but had an effect: possibly lasting)");
+    expect(left.told).toBe("The build left no change on the site that it knows of. It also clicked “Reject non-essential”, “No thanks” and “Platform Engineer”, which changed the page and might have left something behind, so check them if you need the site exactly as it was.");
+    left.reason("Done.");
+    expect(told).toEqual([left.told]);
+  });
+});

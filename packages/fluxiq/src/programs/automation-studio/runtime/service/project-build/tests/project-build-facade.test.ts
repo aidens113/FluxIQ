@@ -375,8 +375,8 @@ describe("a project build through the actual service", () => {
     // The code every debug and the Lab read is the build's own, as before t590.
     expect(diagnostic).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked"] });
     expect(diagnostic!.ending).toBeUndefined();
-    const told = seen.find((event) => event.detail?.title === "The supervisor ended the build: it could not finish the Flow.");
-    expect(told?.detail).toMatchObject({ kind: "note", status: "failed", text: "The control the task names is not on the start page. No other way to it was found. Nothing this build did is still on the target." });
+    const told = seen.find((event) => event.detail?.title === "FluxIQ could not finish the Flow.");
+    expect(told?.detail).toMatchObject({ kind: "note", status: "failed", text: "The control the task names is not on the start page. No other way to it was found. The build left no change on the site that it knows of." });
     // The failure carries why beside the supervisor's ending, so the chat's ending and the build's last row say it (t649).
     expect(diagnostic!.endedBecause).toBe("The control the task names is not on the start page. No other way to it was found.");
   });

@@ -31,6 +31,14 @@
 // acts in place, as possibly still there and never as there, the latest few by
 // name and the rest counted, as a phase start names them. Nothing asks a reset
 // for them, so they change neither `undoable` nor a reset's due.
+//
+// **The person reads it in plain words (t567 lane 4).** The note above is the
+// ledger's words, for the build record and the run's evidence. The chat showed
+// it as it was: every press, repeats and all, with "declared no lasting act,
+// but had an effect: possibly lasting" after each. What the person is told
+// (`told`) says each act that may have changed something lasting once, by verb
+// and name, and says plainly when nothing did (`activity/wording/left-told.ts`).
+import { automationStudioActivityLeftTold, type AutomationStudioActivityLeftAct } from "../../activity/index.ts";
 import type { AutomationStudioProjectSupervisorPorts } from "./ports.ts";
 
 /** Each act still on the target, as the ledger names it, and a line for the person when anything is left. */
@@ -43,6 +51,8 @@ export type AutomationStudioProjectSupervisorLeftOnTarget = {
   undoable: boolean;
   /** Core's line naming everything left, for the ending's reason; undefined when nothing is. */
   note: string | undefined;
+  /** What is left, in a person's words, said even when nothing is (header, `activity/wording/left-told.ts`). */
+  told: string;
   /** An ending's reason with the note after it, within the record's 2000 characters: the model's words give way, never Core's note. */
   reason: (said: string) => string;
 };
@@ -59,12 +69,12 @@ export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<Automa
     const claim = ledger.forBrief(owner).claim(act);
     return claim.kind === "refused" && claim.evidence.code === "candidate.undo_act_kept";
   };
-  const acts: Array<AutomationStudioProjectSupervisorLeftOnTarget["acts"][number] & { line: string }> = [];
+  const acts: Array<AutomationStudioProjectSupervisorLeftOnTarget["acts"][number] & { line: string; stays?: AutomationStudioActivityLeftAct["stays"] }> = [];
   for (const act of ledger.snapshot().acts) {
     const named = { act: act.act, did: act.did, brief: act.owner };
-    if (!act.undoable) acts.push({ ...named, undoable: false, line: `${act.did} (cannot be undone by FluxIQ)` });
+    if (!act.undoable) acts.push({ ...named, undoable: false, line: `${act.did} (cannot be undone by FluxIQ)`, stays: "irreversible" });
     else if (act.inPlace) acts.push({ ...named, undoable: true, line: act.did });
-    else if (kept(act.act, act.owner)) acts.push({ ...named, undoable: false, line: `${act.did} (the site offers no way to undo it)` });
+    else if (kept(act.act, act.owner)) acts.push({ ...named, undoable: false, line: `${act.did} (the site offers no way to undo it)`, stays: "kept" });
   }
   const lines = acts.map((act) => act.line);
   const possibly = possiblyLeft(ledger);
@@ -75,13 +85,14 @@ export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<Automa
     named.length ? `Possibly still on the target, though nothing checked: ${named.map((act) => act.did).join("; ")}${leftOut ? `; and ${leftOut} earlier such ${leftOut === 1 ? "press" : "presses"}` : ""}.` : ""
   ].filter((sentence) => sentence);
   const note = sentences.length ? sentences.join(" ") : undefined;
+  const told = automationStudioActivityLeftTold(acts.map((act) => ({ did: act.did, ...(act.stays ? { stays: act.stays } : {}) })), possibly);
   const fitted = note ? note.slice(0, MAX_REASON - 2) : undefined;
   const reason = (said: string) => {
     // The ending is being named: the build hears what is left in Core's words (header).
-    ports.leftAtEnding?.({ note });
+    ports.leftAtEnding?.({ note, told });
     return fitted ? `${said.slice(0, MAX_REASON - fitted.length - 1).trimEnd()} ${fitted}`.trim() : said.slice(0, MAX_REASON);
   };
-  return { acts: acts.map(({ line: _line, ...act }) => act), possibly, undoable: acts.some((act) => act.undoable), note, reason };
+  return { acts: acts.map(({ line: _line, stays: _stays, ...act }) => act), possibly, undoable: acts.some((act) => act.undoable), note, told, reason };
 }
 
 /** Every brief's possibly lasting presses that may still be on the target, in the order the build made them (header). */

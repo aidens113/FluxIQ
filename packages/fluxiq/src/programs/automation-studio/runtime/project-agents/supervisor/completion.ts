@@ -17,7 +17,7 @@ export type AutomationStudioProjectSupervisorEnded = { outcome: "blocked" | "par
 export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_COMPLETION_SCHEMA: JsonObject = {
   type: "object",
   description: "Either the complete object of the latest assembly -- exactly revision and digest -- or an honest ending -- exactly ended and reason. A result naming a revision and digest is read as completing on that revision, whatever else it carries.",
-  properties: { revision: { type: "integer" }, digest: { type: "string" }, ended: { type: "string", enum: ["blocked", "partial"] }, reason: { type: "string" } },
+  properties: { revision: { type: "integer" }, digest: { type: "string" }, ended: { type: "string", enum: ["blocked", "partial"] }, reason: { type: "string", description: "Read by the person as it is: plain words about what could not be done and why, with no codes, tool or subflow names, or build terms." } },
   additionalProperties: false
 };
 

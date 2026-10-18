@@ -23,7 +23,11 @@
 // (`./way-out-steps.ts`), which the candidate submission asks
 // (`../candidate/submission.ts`). Since t498 a second check on a built plan: a
 // step inside a loop whose record output replaces the run's rows on every pass
-// (`./record-replace-in-repeat.ts`), which the completion check asks.
+// (`./record-replace-in-repeat.ts`), which the completion check asks. Since
+// t567 the lowering every other reader of a block's spans runs after: adjacent
+// steps that each repeat over one listing read as one span over it
+// (`./adjacent-list-repeats.ts`), which the assembler runs first.
+export * from "./adjacent-list-repeats.ts";
 export * from "./called-parts.ts";
 export * from "./entry-points.ts";
 export * from "./fact-condition.ts";
