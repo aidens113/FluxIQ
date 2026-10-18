@@ -71,10 +71,11 @@ describe.each(TRIALS)("$trial: two yeses over an exact answer whose text test le
     const verdict = await judge(provider)({ summary: audiobooksRunSummary(), taskChecklist, budget: { maxCostUsd: 0.2 } });
     expect(verdict).toMatchObject({ verdict: "yes" });
     expect(verdict.spent.calls).toBe(2);
-    // The judge was shown the settled rows, and the left-out copies of stored items said so.
+    // The judge was shown the settled rows; the left-out copies of stored items are settled too, so their
+    // condition's own settled accounts for them and they are not listed again as in the result (live-lane-1 fix 4).
     const shown = JSON.stringify(seen[0]);
     expect(shown).toContain("leftOutSettled");
-    expect(shown).toContain("leftOutAlsoInResult");
+    expect(shown).not.toContain("leftOutAlsoInResult");
   });
 
   it("without the witnesses the same yes is held, as it was before: the rows were never settled", async () => {

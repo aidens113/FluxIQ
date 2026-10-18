@@ -30,6 +30,8 @@
 // such a step (`weigh.ts`); a left-out claim held to the clauses naming a row
 // (`missing-claim.ts`); a label spelled whole named whatever follows it, and
 // rows left out together telling labels apart (`named-rows.ts`, `record.ts`).
+// And (live-lane-1 fix 4) a clause granting that rows a condition left out came
+// back by another copy is no reason of a no (`weigh.ts`).
 export * from "./advice-condition.ts";
 export * from "./condition-references.ts";
 export * from "./condition-wording.ts";
