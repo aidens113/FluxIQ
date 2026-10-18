@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { pairingExpiryLabel, pairingSnapshot, pairingSnapshotsEqual, pendingPairingRequests, type ClientPairingRequest } from "../GlobalClientGatewayPairing";
+import { closedPairingNotice, pairingExpiryLabel, pairingSnapshot, pairingSnapshotsEqual, pendingPairingRequests, vanishedPairingNotice, type ClientPairingRequest } from "../GlobalClientGatewayPairing";
 
 const nowMs = 1_000_000;
 const request = (overrides: Partial<ClientPairingRequest> = {}): ClientPairingRequest => ({
@@ -52,5 +52,41 @@ describe("Global client pairing dismissal", () => {
     const layout = readFileSync(new URL("../layout.tsx", import.meta.url), "utf8");
     expect(layout).toContain('auth?.role.permissions.includes("runtime.control")');
     expect(layout).toContain("pairingEligible ? <GlobalClientGatewayPairing /> : null");
+  });
+
+  // t707 C2: when the browser left while the person read the code, the panel
+  // must say so and keep saying so after the request drops out of the list.
+  it("treats a refused or vanished approval as closed and keeps the gateway's reason", () => {
+    const reason = "The browser disconnected before this pairing was approved, so nothing was paired. Reconnect from the browser to get a new code.";
+    expect(closedPairingNotice(409, { error: reason, code: "pairing.client_disconnected" })).toBe(reason);
+    expect(closedPairingNotice(404, { error: "Pairing request is no longer available." })).toBe("Pairing request is no longer available.");
+    expect(closedPairingNotice(500, { error: "boom" })).toBeNull();
+    expect(closedPairingNotice(409, { error: "conflict", code: "other.thing" })).toBeNull();
+  });
+
+  it("shows a closed approval's notice even once no request is pending", () => {
+    const source = readFileSync(new URL("../GlobalClientGatewayPairing.tsx", import.meta.url), "utf8");
+    expect(source).toContain("if (!pendingPairing) return closedNotice ?");
+  });
+  // t707 P2: a request the person was reading that disappears without their
+  // approve or dismiss must not just vanish; the panel says why, honestly.
+  it("explains a shown request that vanished without this operator acting on it", () => {
+    const shown = request();
+    const withdrawn = vanishedPairingNotice(shown, [], nowMs);
+    expect(withdrawn.title).toBe("Nothing was paired");
+    expect(withdrawn.message).toContain("nothing was paired");
+    expect(withdrawn.message).toContain("Connect again from the browser");
+    const expired = vanishedPairingNotice(request({ expiresAt: nowMs - 1 }), [], nowMs);
+    expect(expired.title).toBe("Nothing was paired");
+    expect(expired.message).toContain("expired");
+    const approvedElsewhere = vanishedPairingNotice(shown, [request({ consumedAt: nowMs })], nowMs);
+    expect(approvedElsewhere.title).toBe("Paired elsewhere");
+    expect(approvedElsewhere.message).not.toContain("nothing was paired");
+  });
+
+  it("raises the vanished notice only for requests this operator did not resolve", () => {
+    const source = readFileSync(new URL("../GlobalClientGatewayPairing.tsx", import.meta.url), "utf8");
+    expect(source).toContain("if (dismissedCodes.includes(shown.pairingCode)) return;");
+    expect(source).toContain("setClosedNotice(vanishedPairingNotice(shown, snapshot.pairings ?? [], Date.now()));");
   });
 });

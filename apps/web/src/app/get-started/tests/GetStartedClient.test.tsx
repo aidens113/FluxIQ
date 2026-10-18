@@ -15,15 +15,25 @@ import { GetStartedClient } from "../GetStartedClient";
 type Responses = { gateway: unknown; keys: unknown };
 function stubFetch(responses: Responses) {
   const requested: string[] = [];
-  vi.stubGlobal("fetch", vi.fn(async (input: string) => {
+  vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
     const url = String(input);
     requested.push(url);
     const body = url.startsWith("/api/programs/automation-studio/client-gateway-snapshot") ? responses.gateway
+      : url.startsWith("/api/programs/automation-studio/list-client-gateway-items") ? listedItems(responses.gateway, init)
       : url.startsWith("/api/programs/secret-keys/snapshot") ? responses.keys
       : { ok: false, error: `unexpected ${url}` };
     return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
   }));
   return requested;
+}
+
+// The real snapshot endpoint sends counts only; the session and pairing lists come
+// from the paged items endpoint, so the stub serves the fixture's lists there.
+function listedItems(gateway: unknown, init?: RequestInit) {
+  const kind = (JSON.parse(String(init?.body ?? "{}")) as { kind?: string }).kind;
+  const payload = (gateway as { payload?: Record<string, unknown> }).payload ?? {};
+  const items = kind === "pairings" ? payload.pairings : payload.sessions;
+  return { ok: true, payload: { items: Array.isArray(items) ? items : [] } };
 }
 
 const textOf = (node: ReactTestInstance): string => node.children.map((child) => typeof child === "string" ? child : textOf(child)).join("");
@@ -94,7 +104,7 @@ describe("/get-started", () => {
 
   it("shows every step done once paired with a global DeepSeek key, and never renders the key", async () => {
     stubFetch({
-      gateway: { ok: true, payload: { enabled: true, sessions: [{ sessionId: "s1" }], pairings: [], webRuntime: { clientGatewayListening: true } } },
+      gateway: { ok: true, payload: { enabled: true, sessions: [{ sessionId: "s1", status: "ready" }], pairings: [], webRuntime: { clientGatewayListening: true } } },
       keys: { ok: true, payload: { keys: [{ id: "k1", name: "Work key", kind: "llm", provider: "DeepSeek", scope: "global", enabled: true }] } }
     });
     const view = await render();

@@ -95,7 +95,7 @@ describe("OnboardingView", () => {
   });
 
   it("links the key step to Secret Keys and never renders key values", async () => {
-    const view = await mount(sources({ loadGatewaySnapshot: vi.fn(async () => ({ ok: true, payload: { ...listening, sessions: [{ sessionId: "s1" }] } })) }));
+    const view = await mount(sources({ loadGatewaySnapshot: vi.fn(async () => ({ ok: true, payload: { ...listening, sessions: [{ sessionId: "s1", status: "ready" }] } })) }));
     const key = step(view.root, "deepseek-key");
     expect(key.props["data-state"]).toBe("current");
     expect(key.findAll((node) => node.type === "a" && node.props.href === "/programs/secret-keys")).toHaveLength(1);
@@ -106,7 +106,7 @@ describe("OnboardingView", () => {
     const loadSecretKeys = vi.fn()
       .mockResolvedValueOnce({ ok: true, payload: { keys: [] } })
       .mockResolvedValue({ ok: true, payload: { keys: [{ id: "k", name: "Mine", kind: "llm", provider: "DeepSeek", scope: "global", enabled: true }] } });
-    const loadGatewaySnapshot = vi.fn(async () => ({ ok: true, payload: { ...listening, sessions: [{ sessionId: "s1" }] } }));
+    const loadGatewaySnapshot = vi.fn(async () => ({ ok: true, payload: { ...listening, sessions: [{ sessionId: "s1", status: "ready" }] } }));
     const onOpenConnectedBrowsers = vi.fn();
     const view = await mount(sources({ loadGatewaySnapshot, loadSecretKeys }), vi.fn(), { onOpenConnectedBrowsers });
     expect(step(view.root, "deepseek-key").props["data-state"]).toBe("current");
