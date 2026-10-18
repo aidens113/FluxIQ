@@ -13,6 +13,31 @@ Related: [package boundaries](../architecture/package-boundaries.md), [current s
 
 ## Current State
 
+**Next revision owed: the user's later directions (2026-10-18), not yet folded into the sections below.** Whoever
+next works on this plan revises it around these first; each is the user's own instruction.
+
+1. **The website repository exists:** https://github.com/aidens113/FluxIQWebsite is the current public site
+   (getfluxiq.com). Refine this plan around it: read that repository, then say what must be added there (the
+   sign-up and sign-in pages, the backend call that provisions a user into Core through `platform.provisioning`,
+   how it deploys beside or in front of the Core panel) versus what lives in Core. The plan's "new `apps/site`
+   package" idea must be reconciled with that existing repository; prefer the user's repository as the public
+   site unless reading it shows a reason not to, and say which.
+2. **Simulate locally first:** for now the website side is built and exercised in a local test repository that
+   stands in for FluxIQWebsite (sign-up page, backend provisioning call, a Core panel it talks to, the extension
+   signing in), not in the real repository. Write that plan down and keep it for when the real side is
+   implemented.
+3. **Tenancy is an enterprise feature, and permissions are modelled on AWS IAM.** Workspace separation is
+   sold as an enterprise-type feature while Core stays freemium: a company has its own workers (users), and each
+   worker only reaches the data its permissions allow. Design permissions like AWS IAM: principals (users,
+   roles, service identities), resources with stable names, actions per resource type, policies that allow or
+   deny actions on resource patterns with conditions, explicit deny winning, least privilege by default, groups
+   and roles to attach policies to, and an audit of every decision. The single-user local and self-hosted modes
+   keep working with a default policy that grants the one owner everything. Revise identity, tenancy and the
+   own-data rule onto this model; the `user` role becomes one predefined policy.
+4. **The timeline is too long.** The user is confident the work finishes faster than this plan's estimate
+   (about 80 agent-days, hosted gate about 11-28, Chrome submission about 12-01). Re-cut the schedule with parallel
+   lanes and say what genuinely forces each date; do not pad.
+
 **What is true now.** This is a plan, revised 2026-10-18 after the user's answers. No code has changed. The baseline comes from a read-only audit on 2026-10-17, and its load-bearing claims were re-checked in the code.
 
 **User decisions** (2026-10-17 and 2026-10-18):
