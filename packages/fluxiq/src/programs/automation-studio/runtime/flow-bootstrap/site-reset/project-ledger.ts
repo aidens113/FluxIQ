@@ -27,6 +27,7 @@
 //   each `possible`; it is never in place to undo, so it refuses nothing, and
 //   a phase's start asks the brief's ledger whether it may still be there.
 
+import { AutomationStudioSiteResetCreateBaselines } from "./create-baselines.ts";
 import type { AutomationStudioSiteResetRead } from "./contracts.ts";
 import { automationStudioSiteResetInvalidCollectionGroups } from "./collection-groups.ts";
 import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetRecordedAct } from "./ledger.ts";
@@ -50,6 +51,7 @@ export type AutomationStudioSiteResetProjectLedgerOptions = {
 };
 
 export class AutomationStudioSiteResetProjectLedger {
+  private readonly createBaselines = new AutomationStudioSiteResetCreateBaselines();
   private readonly briefs = new Map<string, AutomationStudioSiteResetLedger>();
   private readonly acts: AutomationStudioSiteResetProjectAct[] = [];
   private readonly originals = new Map<string, NonNullable<AutomationStudioSiteResetRead["collections"]>[number]>();
@@ -72,6 +74,7 @@ export class AutomationStudioSiteResetProjectLedger {
     }
     const ledger = new AutomationStudioSiteResetLedger({
       owner: briefId,
+      createBaselines: this.createBaselines,
       nextActId: () => this.nextActId(),
       sink: (recorded) => this.recorded(briefId, recorded),
       possible: true
@@ -83,6 +86,7 @@ export class AutomationStudioSiteResetProjectLedger {
 
   /** Immutable original evidence only before the first known lasting effect anywhere in this project. */
   observed(read: AutomationStudioSiteResetRead): void {
+    this.createBaselines.observed(read, !this.acts.some((act) => !act.possible));
     if (this.acts.some((act) => !act.possible)) return;
     const collections = read.collections ?? [];
     const invalid = automationStudioSiteResetInvalidCollectionGroups(collections);

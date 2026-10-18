@@ -164,6 +164,20 @@ build made and nothing that was there before it began
   trial's trace by `service/candidate-trial/landed-acts.ts`) become acts too.
   An act that moved money or sent something cannot be undone and is never asked
   for.
+- **Original destination before exploratory creation.** Project builders opt
+  into a preflight for identified, purely `create_new` exploration. Before the
+  effect executes, its trusted resource and subject must have an exact
+  same-scope original absence witness, or a `resetDestination` reference issued
+  by an earlier complete original destination observation. The reference is
+  build-only, bounded and opaque; the domain never receives this envelope key.
+  Original inventories and their counts remain immutable across owners. No
+  first read after a lasting act can establish original authority. A missing,
+  foreign, partial or malformed witness refuses without an effect or permission
+  question, and safe observation followed by a retry remains available. Missing
+  preflight capability also refuses. A reference does not grant an inverse;
+  the strict restoration checks still apply. Ordinary candidate mode, finalized
+  runs, irreversible classes and unseen or dynamic trial actions do not gain
+  this exploratory preflight.
 - **Undo through the normal tool.** In candidate mode with a trial runner,
   `core.run_node` takes an optional `undoes: "act-N"`. The wrapper strips it
   before the domain sees the call. The ledger accepts it only for an act still
@@ -194,12 +208,16 @@ build made and nothing that was there before it began
 - **Acts the site cannot undo.** An act the reset made no progress on, or asked
   for twice, or one the model names under `core.test_candidate`'s `cannotUndo`
   once the reset has listed it, is kept: never asked for again, refused if
-  named (`candidate.undo_act_kept`), and every later trial runs with it in
+  named (`candidate.undo_act_kept`). For legacy acts without identified
+  resource-scoped ownership, later trials run with it in
   place under `startedWith.cannotUndo`, with words telling the model to make
   the Flow pass over an item already done. The trial request carries
   `startedWith` lines (`candidate/started-with.ts`), and the judge reads them as
   `resultSummary.startedWith`: already done, neither the run's doing nor its
   failure.
+  Modern identified reversible acts instead require positive restoration of
+  their original collections; `cannotUndo` or keeping an unproved act cannot
+  admit an ordinary trial on leftovers.
 - **The start state.** As the build begins, right after the loop's opening
   arrival, Core asks the domain's optional `startState` binding for the state
   to keep. Before a trial that is due, the gate takes the target back to the

@@ -7,6 +7,23 @@ const add = { callId: "add", toolId: "core.run_node", landed: true, declared: { 
 const deletion = { effect: "mutate" as const, consequences: ["delete" as const], control: { subject: "s:document", scope: "p:destination" } };
 
 describe("project reset observation routing", () => {
+  it("shares issued original creation receipts across owners and refuses new post-effect or foreign-resource authority", () => {
+    const project = new AutomationStudioSiteResetProjectLedger();
+    const first = automationStudioProjectBuildResetCalls(project, project.forBrief("first"));
+    first.observed({ ...read([]), resource: "r:one" });
+    const ref = first.destinationReceipts!()[0]!.ref;
+    const second = automationStudioProjectBuildResetCalls(project, project.forBrief("second"));
+    const declaration = { ...add.declared, control: { ...add.declared.control, resource: "r:one", scope: "p:source" } };
+    expect(second.createBaseline!(declaration, ref)).toEqual({ kind: "admit" });
+    expect(second.createBaseline!({ ...declaration, control: { ...declaration.control, resource: "r:other" } }, ref)).toMatchObject({ kind: "refused" });
+    second.explored(add);
+    const late = { ...read([]), resource: "r:one", scope: "p:late-page", location: "late", collections: [{ ...read([]).collections[0]!, scope: "p:late", group: "g:late" }] };
+    first.observed(late);
+    expect(first.destinationReceipts!()).toEqual([]);
+    const third = automationStudioProjectBuildResetCalls(project, project.forBrief("third"));
+    expect(third.createBaseline!(declaration, ref)).toEqual({ kind: "admit" });
+    expect(third.createBaseline!(declaration, "destination-2")).toMatchObject({ kind: "refused" });
+  });
   it("keeps the builder's pre-effect destination witness and routes reset observations back to its owner", async () => {
     const project = new AutomationStudioSiteResetProjectLedger();
     const builder = project.forBrief("builder");

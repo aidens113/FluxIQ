@@ -36,7 +36,7 @@ export type AutomationStudioSiteResetUndo = { act: string; allowed: readonly Aut
  * there can match, and is tied to that undo by these instead (`./ledger.ts`,
  * `target`). Absent where the domain found none.
  */
-export type AutomationStudioSiteResetSpot = { item?: string; dialog?: string; subject?: string; page?: string; scope?: string };
+export type AutomationStudioSiteResetSpot = { item?: string; dialog?: string; subject?: string; page?: string; scope?: string; resource?: string };
 
 /**
  * What an undo call may do to the control the domain is about to act on
@@ -97,6 +97,9 @@ export type AutomationStudioSiteResetExplored = {
 
 /** The ledger, as the build's permission wrapper sees it. */
 export type AutomationStudioSiteResetCalls = {
+  /** A builder-only recoverable precondition, independent of lasting-act permission. */
+  createBaseline?(declared: Pick<AutomationStudioSiteResetDeclared, "effect" | "consequences" | "control">, reference: unknown): { kind: "admit" } | { kind: "refused"; evidence: JsonObject & { code: string } };
+  destinationReceipts?(): Array<{ ref: string; ordinal: number; count: number }>;
   claim(undoes: unknown): AutomationStudioSiteResetClaim;
   /** Asked, for an undo, of each action the domain puts to the gate, before it acts (t475). */
   target(act: string, declared: { effect: AutomationStudioActionEffect; consequences: readonly AutomationStudioActionConsequence[]; control: AutomationStudioSiteResetSpot }): AutomationStudioSiteResetTarget;
@@ -138,6 +141,8 @@ export type AutomationStudioSiteResetRead = {
   /** Positively complete, resource-bound collection inventories; only these can witness absence. */
   collections?: Array<{ scope: string; group: string; subjects: string[]; states: Record<string, string> }>;
   scope?: string;
+  /** Trusted opaque resource identity shared across locations; never a page-supplied id. */
+  resource?: string;
 };
 
 /** A read, or why there is none: the domain has no `startState`, it answered nothing usable, or reading failed (kept on the start check as `failure`). */

@@ -9,6 +9,11 @@ import { AutomationStudioActionDeclarationError, readAutomationStudioActionDecla
 const PRESS = { consequences: ["delete"], control: { name: "Delete", kind: "button" }, verb: "press" };
 
 describe("a declaration's place tokens", () => {
+  it("accepts only a bounded opaque optional resource, without changing consequence semantics", () => {
+    expect(readAutomationStudioActionDeclaration({ ...PRESS, control: { ...PRESS.control, resource: "r:trusted" } })).toMatchObject({ controlResource: "r:trusted", consequences: ["delete"] });
+    expect(readAutomationStudioActionDeclaration(PRESS).controlResource).toBeNull();
+    for (const resource of ["", "raw session and tab", "x".repeat(129), 7, null]) expect(() => readAutomationStudioActionDeclaration({ ...PRESS, control: { ...PRESS.control, resource } })).toThrow(AutomationStudioActionDeclarationError);
+  });
   it("reads the subject and page tokens beside the item and dialog, and none where the domain gave none", () => {
     expect(readAutomationStudioActionDeclaration({ ...PRESS, control: { ...PRESS.control, item: "i:line", dialog: "d:drawer", subject: "s:kettle", page: "s:basket" } })).toMatchObject({
       controlItem: "i:line",
