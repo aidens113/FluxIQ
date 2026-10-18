@@ -338,11 +338,14 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     }
     // A look changes nothing, wherever it looks.
     if (declared.effect === "observe") return { kind: "admit", on: "moving", allowed: [] };
-    const unproved = (): AutomationStudioSiteResetTarget => ({ kind: "refused", evidence: { ok: false, code: "candidate.undo_unproved", act: act.id, instruction: "That call has no proved exact inverse on its target and was not run. Retarget the build-owned effect on a destination observed before it was created, and declare the inverse honestly. Looking or navigating is safe; an undeclared control press or a matching name alone proves no restoration.", actsToUndo: this.inPlace() } });
+    const unproved = (): AutomationStudioSiteResetTarget => {
+      const other = this.otherObservedEffect(act, declared);
+      return { kind: "refused", evidence: { ok: false, code: "candidate.undo_unproved", act: act.id, instruction: WORDS.unprovedUndo(other !== undefined), actsToUndo: this.inPlace(), ...(other ? { otherActsWithObservedEffect: [other] } : {}) } };
+    };
     if (act.strictReset && declared.consequences.length === 0 && (declared.control.scope !== undefined || declared.control.subject !== undefined || declared.control.item !== undefined)) return unproved();
     if (act.transfer && declared.consequences.length > 0) {
       const transfer = act.transfer;
-      if (!act.spent && declared.consequences.length === 1 && declared.consequences[0] === "modify_existing" && declared.control.scope === transfer.scope && declared.control.subject === transfer.subject && this.currentGroups.get(transfer.scope) === transfer.group && this.latestGroupScopes.get(transfer.group)?.has(transfer.origin) && this.latestGroupScopes.get(transfer.group)?.has(transfer.scope) && !this.currentSubjects.get(transfer.origin)?.has(transfer.subject) && this.currentSubjects.get(transfer.scope)?.has(transfer.subject) && this.currentStates.get(transfer.scope)?.get(transfer.subject) === transfer.state) {
+      if (this.transferTarget(act, declared)) {
         act.subjectUndo = { scope: transfer.scope, subject: transfer.subject, group: transfer.group, origin: transfer.origin };
         return { kind: "admit", on: "subject", allowed: ["modify_existing"] };
       }
@@ -381,6 +384,30 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     if (act.strictReset) return unproved();
     act.kept = true;
     return { kind: "refused", evidence: { ok: false, code: "candidate.undo_wrong_target", act: act.id, instruction: WORDS.wrongTarget(), cannotUndo: [namedAct(act)] } };
+  }
+
+  /** The existing admission predicate, without assigning inverse evidence. */
+  private transferTarget(act: Act, declared: Parameters<AutomationStudioSiteResetLedger["target"]>[1]): boolean {
+    const transfer = act.transfer;
+    return !!(transfer && !act.spent && declared.consequences.length === 1 && declared.consequences[0] === "modify_existing" && declared.control.scope === transfer.scope && declared.control.subject === transfer.subject && this.currentGroups.get(transfer.scope) === transfer.group && this.latestGroupScopes.get(transfer.group)?.has(transfer.origin) && this.latestGroupScopes.get(transfer.group)?.has(transfer.scope) && !this.currentSubjects.get(transfer.origin)?.has(transfer.subject) && this.currentSubjects.get(transfer.scope)?.has(transfer.subject) && this.currentStates.get(transfer.scope)?.get(transfer.subject) === transfer.state);
+  }
+
+  /** Information only: no probe may authorize, consume or reassign an act. */
+  private otherObservedEffect(act: Act, declared: Parameters<AutomationStudioSiteResetLedger["target"]>[1]): AutomationStudioSiteResetNamedAct | undefined {
+    const scope = act.spot?.scope, subject = act.spot?.subject;
+    const first = this.acts.indexOf(act), baseline = scope ? this.observedScopes.get(scope) : undefined;
+    if (!scope || !subject || act.consequences.length !== 1 || act.consequences[0] !== "modify_existing" || !baseline || baseline.beforeAct >= first + 1 || !baseline.subjects.has(subject)) return undefined;
+    const others = this.acts.slice(first + 1).filter(other => {
+      if (!this.claimable(other) || other.spot?.scope !== scope || other.spot?.subject !== subject || other.transfer?.origin !== scope || !this.transferTarget(other, declared)) return false;
+      const resources = [act.spot?.resource, other.spot?.resource, declared.control.resource];
+      if (resources.some(resource => resource !== undefined) && (!resources[0] || resources.some(resource => resource !== resources[0]))) return false;
+      const group = other.transfer.group, sequence = this.acts.indexOf(other) + 1;
+      const fresh = this.latestGroupScopes.get(group);
+      const original = [...this.observedScopes].filter(([, entry]) => entry.group === group && entry.beforeAct < sequence);
+      // Feedback is stricter than admission: require the fresh whole group.
+      return (this.groupObservedAfter.get(group) ?? -1) >= sequence && fresh?.size === original.length && original.every(([originalScope]) => fresh.has(originalScope));
+    });
+    return others.length === 1 ? namedAct(others[0]!) : undefined;
   }
 
   explored(call: AutomationStudioSiteResetExplored): void {
@@ -703,7 +730,8 @@ function spotOf(spot: AutomationStudioSiteResetSpot | undefined): AutomationStud
     ...(spot?.dialog !== undefined ? { dialog: spot.dialog } : {}),
     ...(spot?.subject !== undefined ? { subject: spot.subject } : {}),
     ...(spot?.page !== undefined ? { page: spot.page } : {}),
-    ...(spot?.scope !== undefined ? { scope: spot.scope } : {})
+    ...(spot?.scope !== undefined ? { scope: spot.scope } : {}),
+    ...(spot?.resource !== undefined ? { resource: spot.resource } : {})
   };
   return Object.keys(copied).length > 0 ? copied : undefined;
 }

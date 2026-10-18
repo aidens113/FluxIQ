@@ -67,6 +67,12 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
     return "That undo was not allowed, so nothing was done and this act remains unresolved. An identified reversible effect still requires proved restoration; any trial explicitly admitted with other unresolved acts reports them to its judge. "
       + "Do not repeat a refused effect. Retarget only with positive ownership and inverse evidence, or report the unresolved reset honestly.";
   },
+  /** An unproved claim stays refused, even when another owned effect is observed. */
+  unprovedUndo(other: boolean): string {
+    return "That call has no proved exact inverse on its target and was not run. Inspect what this build created or changed and the original observations needed to restore it; declare the inverse honestly. "
+      + (other ? `Another recorded act on this item has its own observed effect. Inspect its receipt and explicitly name its id in "${UNDOES}" if that is the effect you are reversing. This information does not reassign or execute the refused claim. ` : "")
+      + "Looking or navigating is safe; an undeclared control press or a matching name alone proves no restoration. Remaining effects still require fresh complete original-state evidence before an ordinary trial.";
+  },
   /** A call whose `undoes` names no act of this build that may be undone now. */
   unknownAct(acts: boolean): string {
     return `"${UNDOES}" may name only an act of this build that core.test_candidate listed under actsToUndo, and only on the call that undoes it. `
