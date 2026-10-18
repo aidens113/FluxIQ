@@ -1,7 +1,7 @@
 # Breadth Round Core Integration
 
 Status: Active
-Status detail: All87 scraping expectations positive;10accepted tasks/7sites. Social changed-source run-mvdln2dd-6bc98e25 live in isolatedt567. t719 exploratory original-baseline guard and t563 shared accounting/charged-build handoff under focused validation; neither source accepted yet. Installed Chrome functional proof preserved; strict paid accounting/Edge acceptance pending.
+Status detail: All87 scraping expectations positive;10accepted tasks/7sites. Social changed-source run-mvdln2dd-6bc98e25 failed47calls/$0.058921614, no promotedFlow; exclusion-evidence diagnosis active. t719 exploratory original-baseline guard passed focused gates and is entering isolated installed-gateway proof; t563 accounting focused gates/collector passed, fixed-artifact preparation active. Neither live source unit accepted yet. Installed Chrome functional proof preserved; strict paid accounting/Edge acceptance pending.
 Created: 2026-10-17
 Last updated: 2026-10-18
 Owner: Codex senior supervisor
@@ -19,9 +19,9 @@ The user authorized continuing the downstream breadth handoff with live tests. T
 - **Crossborder accepted:** run-mvdism0y-ba67f226 exact10rows/40fields/oracle/reportedpass,21calls/$0.024137868. Corrected saved replay-mvdl3yxn-b1d9134d independently passed exactordereddata/finalstate/explicit0calls and a fresh UUID personcheck answeredviaCore. Core723e0ae8 and downstream65be76e0 integrated after own narrow gates; no savedFlow/hash/key changes.
 - **Reset:** downstream54325eb4 pointer-subject fix independently66cases plus actualgateway exactoriginalrestoration/cleantrial passed. Corrected paid no-hook run-mvdl5eg0-a56fdad7 still failed53calls/$0.032546700/noFlow: first destinationbaseline read after lastingAdd. Undo refusal correctly protects unobservedoriginals. Explicit preactdestination admission design active, no blindretry; Core reset source unchanged.
 - **Other lanes:** auction run-mvdi0946-d897f3cb failed134calls/$0.148715013, no Flow; optional converted-price-only condition dropped valid direct-price records, admission failures also recorded. Required debug written before retry. Positive photo failed; bounded diagnosis active. Social explicit disclosure failure-composition fix already passed focused unit/type/browser gates; paid reruns remain owed.
-- **Totals:**15completed continuation runs,974calls/$0.840453990:4accepted,10failed,1unverified empty run. Historical and installed-proof spend separate.
+- **Totals:**16completed continuation runs,1021calls/$0.899375604:4accepted,11failed,1unverified empty run. Historical and installed-proof spend separate.
 - **Installed proof:** actual Chrome155 package0.1.0 enabled without runtime/manifest errors, normal fresh login/Finish setup completed. Real extension-chat creation and explicitowner confirmed4row/12field whole run are verified; creationaccounting missing. Separate actualNoLLM replay independently passes exactdata/finalizedallzero. Dedicated accounting diagnosis active; Edge proof pending. Existing lease protects shared Coree58 for the whole proof. Edge creation/replay still owed; Firefox unavailable.
-- **Next:** finish isolatedaccounting/charged-handoff and exploratoryreset admission checks/actualgateway; inspect live socialrun; remaining auction/classifieds/photo and owed positive reruns; fixedartifact Chrome/Edge acceptance. No whole sweep remaining today, no user input needed. SharedCoree58 lease untouched.
+- **Next:** finish isolatedaccounting/charged-handoff and exploratoryreset admission checks/actualgateway; diagnose social exclusion evidence; remaining auction/classifieds/photo and owed positive reruns; fixedartifact Chrome/Edge acceptance. No whole sweep remaining today, no user input needed. SharedCoree58 lease untouched.
 
 ## Worker Briefs
 
@@ -74,8 +74,23 @@ The user authorized continuing the downstream breadth handoff with live tests. T
 - Actualtransport addendum: exact Core site-reset/start-check.ts and llm/harness-options/binding.ts plus existing site-reset/tests/start-check.test.ts approved to preserve optional trustedopaque resource otherwise dropped between private startcapture and projectobservation. Strictreadvalidation unchanged, no modelresource substitution.
 - Actualadapter addendum: Core service/project-build/acts-record.ts and confirmed existing owningacts-record test approved to forward createBaseline/destinationReceipts, otherwise silentlydropped. Opted-in project guard must failclosed/recoverably for identifiedpurecreate when requiredcapability absent; no optionalchain bypass. Nonqualifying/irreversible/nonlasting paths unchanged; actualservice proof remainsrequired.
 - Compatibility: additive control.resource is accepted by updatedCore parser and emitted by updateddomain adapter; olderCore rejects that newfield, so pairedCore/domain source must integrate/push together. Existingextension browsertransport unchanged. FrozeninstalledChrome/sharedCoree58 retains matchingoldsource, not upgraded during proof.
+- Downstream declaration addendum: exact domain/src/runtime/llm-evidence/tools.ts startState return signature optional resource?:string alignment approved after actual domaincheck TS omission; existing observe output/Core binding already carry it. No runtime change. All readers must end before edit; rerun focused evidence tests/domaincheck, and helpertype only after completed domain build.
 - Gates focused Core/domain owning tests, touchedCore/domain package typechecks, both audits; max2workers/cacheoff, no whole suite/build/sharedCorebuild. Root source/tests review BEFORE ownCore libraries/domain/extension build and providerfree browserrelease; no paidretry authorized.
 - No extraowners without concreteproposal, modelguidance only generic no site/task/answer examples. SharedCoree58/Chrome preserved. Ownreport/newdebug updated, no sharedplan/commit/merge/push.
+
+### Supervisor brief: explicit intermediate record output
+- Worker storage_comparison in paired t567 only. Read Current State and final bounded design in own reports/codex-social-positive-rerun.md. Existing failedrun/debug/artifacts preserved. No paid/browser/build during initial red/source phase.
+- Own seven Core production files ONLY: packages/contracts/src/record-sets/{output,parse-output}.ts; under packages/fluxiq/src/programs/automation-studio/runtime: flow-bootstrap/authoring/record-output.ts, flow-bootstrap/plan/record-output-contract.ts, flow-bootstrap/answerability/plan-record-sets.ts, executor/record-capture.ts, result-verification/build-test/stores.ts.
+- Own exact eight Core test files in final design plus downstream extract-list/tests/reconciled-record-output.test.ts and plan-resolution/extraction/tests/run-record-output.test.ts under their existing domain owners; own existing report. No shared docs/commits/push.
+- Optional purpose answer|intermediate, absent answer. Explicit intermediate fully parses/schema-validates/allowlists/enforces sensitivity and retains actual validated outputs.records/native row aliases/loop state/read accounts/actions/conditions; emits NO durable batch in BOTH capture paths. No matcher exemption, dataset-name/shape heuristic or inferred purpose.
+- Reject unknown/null/malformed purpose. Initial intermediate rejects nonempty process, and fails capture on invalid/truncated rows rather than hiding lost-row signal; intentional schema field exclusion remains allowed. Answer/default append/replace unchanged. Intermediate same-ID replace cannot clear a saved answer.
+- Compiler canonicalization and saved Flow parameterJSON must preserve explicit purpose. Static answerability cannot count intermediate-only output as a durable answer; actual computation/loop capability remains. build-test reconstruction must agree with runtime nonpersist semantics, retaining all read/action/coverage evidence.
+- RED FIRST actual compiler->real service capture/store->close/reopen->same saved Flow rerun, generic deterministic native control rows/real row-bound loop/separate final answer. No stub compiler/capture/storage/summary. Assert actual outputs/loop/action evidence and positive answer; current/reopen read coverage is HARD GATE. If missing durable evidence seam, stop/propose owner; no SQL/summary expansion preauthorized.
+- Negative controls: unmarked/explicit-answer helper wrong rows still trigger storedElsewhere; multiple actual answer tables remain visible; wrong final extra/missing rows/columns/conditions still refused; upstream intermediate does not hide lasting acts/final-state obligations. Actual invalid/truncated/schema/encryption/sameID cases required.
+- Exact existing test owners: contracts record-sets/tests/parse-output; authoring/tests/read-record-output; plan/tests/record-output-contract; answerability/tests/check; executor/tests/record-capture; build-test/tests/stores; service/datasets/tests/service-wiring; request-rows/tests/stored-though-left-out. Adjacent focused integration test only if budget requires, propose exact path before adding.
+- No SQL/store schema, summary type, summary-reads/unquoted matcher/recheck transport production edits. Existing failedcandidate has no purpose and remains failed. Generic model contract text only, no scenario-shaped examples/guidance/fixture/oracle edits.
+- Compatibility: older Core rejects field; contracts/runtime/downstream build currency coordinated, old savedFlows/runs unchanged. Downstream production not authorized; exact regression-only owners above first, propose any actual adapter loss.
+- Gates owning changed tests/package typechecks + existing wrong-finalset cross-read/recheck safety tests, both audits, max2workers/cacheoff. No whole suites. Library build and actual realistic providerfree browser proof only after root review/release; paid rerun separately held.
 
 ## Work Ledger
 
@@ -108,33 +123,35 @@ The user authorized continuing the downstream breadth handoff with live tests. T
 - Root reviewed actualsource chains and wrote authoredarchitecture changes in owningisolatedtrees. Next synccurrentdev/commit source, regenerate2removed Corebaselineentries throughowningscript, then ownlibrary-only builds and downstream/browser checks. No newproductsource integrated/pushed or live acceptanceclaimed yet.
 - Social run-mvdln2dd-6bc98e25 remainslive on frozen9f/3dd; helperrows notfinalanswer. Earlier looptrial65 endedno after realclickambiguity, model changedcandidate and trialscontinue. Completedcontinuation counts remain15/974/$0.840453990 until terminalreceipt.
 
-## Open Questions
-
-None requiring user input.
-
 ### 2026-10-17 ? R1 source accepted; company paid pass
+- Validation: not validated anew for this documentation-only relocation; the historical entry does not retain an exact command receipt. Existing reported outcomes below are preserved as history.
 - Supervisor merged t719 source (Core01c9e703/downstreamd7332a87) using the user's narrow merge gates after all unit/type/browser/audit validation. This revises the earlier merge-after-live order; source acceptance and paid behavior acceptance are separate. The explicit --model-reset-only canonical run must prove actual model resets with no fixture start hook.
 - Company run-mvdes30x-65848f60 passed final exact oracle/reported verdict and one0-provider-call goal replay,21calls/$0.016375290. Held drawing/reveal/hybrid source is separately combining R1 before final acceptance. No browser-specific code enters Core.
 
 ### 2026-10-17 ? Company integration and failed canonical reset proof
+- Validation: not validated anew for this documentation-only relocation; the historical entry does not retain an exact command receipt. Existing reported outcomes below are preserved as history.
 - Company source merged locally Corea4faf79f/downstream3b40df41; final combined52Core/32domain/147extension tests, all affected package checks, Core libraries and audits observed passing. Full company live oracle and zero-call goal replay passed. Documentation reconciliation precedes paired push.
 - Canonical run-mvdflu8o-d99d3100 failed53calls/$0.034600230 with startReset=false; no promoted Flow or replay. Failed declared transfer plus undeclared retry lacked provenance; strict cannotUndo permanently blocked correction; cross-page create disappeared from gate without positive destination restoration. Supervisor inspected debug; bounded fix brief in paired downstream plan authorizes existing site-reset ledger/act-places/words and owning tests, with retry mechanism review before implementation. No new paid release.
 
 ### 2026-10-17 ? Independent reset verification and bounded follow-up
+- Validation: not validated anew for this documentation-only relocation; the historical entry does not retain an exact command receipt. Existing reported outcomes below are preserved as history.
 - Supervisor source review and independent58/58 actual ledger/service/facade/instruction tests passed; no library rebuilt during that reader. Same-page strict created-item inverse and malformed-fingerprint regressions then reproduced4 failures, bounded follow-up assigned in existing ledger/tests. Positive ownership and exact complete baseline remain mandatory; no public contract or permission expansion.
 - Downstream social closed-reason composition independently43/43 passed; final browser/type/audit gates pending. Read-only auction and conditional jobs now live in isolated lanes; their source stays frozen. No new accepted reset/live result claimed.
 
 ### 2026-10-17 ? Positive-data scraping acceptance requirement
+- Validation: not validated anew for this documentation-only relocation; the historical entry does not retain an exact command receipt. Existing reported outcomes below are preserved as history.
 - User now requires actual matching, nonempty verifiable data for every scraping task. Downstream owns corpus/fixture/workflow/oracle revisions and launch guard;87 dataset tasks audited,82 positive,5 empty variants must change. No generic real-user empty-search behavior change requested in Core.
 - Job run-mvdgaz8z-27ff3d1b had oracle0/0 pass but product unverified, CLI1, no replay;69calls/$0.056217954, not accepted. Downstream investigation found extraction selectors tied to transient selected-card styling; judge caution must not be forced to yes. Existing Core reset fix remains independently bounded.
 
 ### 2026-10-18 ? Positive scraping data and final reset combination
+- Validation: not validated anew for this documentation-only relocation; the historical entry does not retain an exact command receipt. Existing reported outcomes below are preserved as history.
 - User requires actual matching data for every scraping test. Downstream owns fixture/oracle/workflow and pre-provider launch guard corrections; no ordinary product empty-search behavior or Core public contract changes. Corpus108 tasks/87 dataset tasks, five formerly empty variants being corrected and browser-proven.
 - Core negated text-pattern guard committed d5701ec4/merged3fb6b891 after fail-first and49 guard/verdict cases, package check/audit; supervisor independent10/10 passed. Negative text matching with incidental digits does not declare a numeric quantity range. Positive text-number and typed numeric checks retained. Auction paid run failed93calls/$0.110640684; no Flow/oracle/replay, rerun pending.
 - Reset bounded correction Core3815be32 merged latestdev into branchfe2d8422, downstreama173a02b. Source review and independent58 then15 delta tests accepted; final owning67, preserved ledger35/words3/facade11, domain111, extension2 and actual-ledger realistic browser4 passed, with all affected package checks/audits. Final combined ledger50+numeric10 passed60/60 and both audits; Core final libraries/check active. No new paid canonical pass claimed.
 - Last pushed Coreb2721f85/downstream7abd7bfa. Numeric local integration and forthcoming reset correction are not yet pushed. Downstream continuation9completed runs:2accepted passes/6failures/1unverified,517calls/$0.467974827.
 
 ### 2026-10-18 - Positive-data acceptance and remaining reset seam
+- Validation: not validated anew for this documentation-only relocation; the historical entry does not retain an exact command receipt. Existing reported outcomes below are preserved as history.
 - Positive-data launch guard/corpus and selected-field equivalence source accepted and pushed downstream988cab68; all87dataset tasks have positive expected records, five formerly empty variants browser-proven. Root independent13guard/corpus,22field and actualpostdev field browser1, owning70/types/audits passed. Generic Core normal empty-search behavior unchanged.
 - Professional-network-kade-lead-contact run-mvdi9e8u-678c35df passed exact1row/2fields/finalstate and reported judge,49calls/$0.029735034, runtime repair rev1->2; requested replay1 succeeded0calls/no model/harness. With company/bigbox continuation accepted3, historical total9tasks/6sites.
 - Corrected no-hook canonical run-mvdhyf9k-3afd7eb6 failed54calls/$0.035059812, no Flow/oracle/replay. Actual startReset=false/fixtureResetBetweenTrials=false. CorrectnewrowDelete0094 was refused despite original Cart visits; no weakening of inverse requirements. Existing browser4 bridged ledger manually and did not prove real background/gateway/project-build transport.
@@ -142,16 +159,19 @@ None requiring user input.
 - Downstream continuation11completed,620calls/$0.532769673:3accepted/7fail/1unverified; historical spend separate. Auction/photo/crossborder stillactive; installed Chrome fresh profile/current verified package normalUI proof ongoing. Two daily whole-build sweeps consumed; narrowchecks/builds only.
 
 ### 2026-10-18 - Auction terminal receipt and installed package
+- Validation: not validated anew for this documentation-only relocation; the historical entry does not retain an exact command receipt. Existing reported outcomes below are preserved as history.
 - Auction run-mvdi0946-d897f3cb ended CLI1,134calls/$0.148715013, no Flow/final oracle/replay; required root-cause review assigned before any retry. Continuation12completed,754calls/$0.681484686:3accepted/8failed/1unverified. Photo and crossborder remain active.
 - Fresh isolated Chrome155 release0.1.0 installed through normal Load unpacked; structural release card enabled with zero runtime/manifest errors. Pairing, creation and replay still pending; package installation alone is not automation acceptance. Shared Coree58 and live sources stay frozen; subsequent paired plan commits contain documentation only.
 
 ### 2026-10-18 - Actual transport reset red and clean replay gap
+- Validation: not validated anew for this documentation-only relocation; the historical entry does not retain an exact command receipt. Existing reported outcomes below are preserved as history.
 - Installed MV3 actualCoregateway/registeredweb/projectbuild diagnostic36570 genuinely reached dirty trial and refused correct inverse with candidate.undo_unproved. Original/current passive scopes survived transport; inverse declaration lacked subject. Quantity1 icon control versus quantity2 textual control is a hypothesis pending current-source comparison, not a claimed Core ledger defect.
 - Root committed bounded diagnostic737c9d5c on t719 and merged current downstream dev; Coree58 unchanged. Exact provider-free current-source rerun is authorized, no paid/product fix yet.
 - Crossborder run-mvdism0y-ba67f226 CLI0 passed exact10rows/40fields/oracle/judge,21calls/$0.024137868, harness0. Requested replay1 silently skipped because no repair was applied; full acceptance incomplete. Four-file runner correction red-first5 failures then41pass, review found unqualified creation still skipping receipts; bounded follow-up underway.
 - Genuine Chrome normal source-backed login and Finish setup succeeded in fresh isolated profile; provider/project/extensionchat/zero-call proof ongoing. No credential values recorded. Source/package/sharedCore stay frozen.
 
 ### 2026-10-18 - Saved crossborder replay failed at declared person check
+- Validation: not validated anew for this documentation-only relocation; the historical entry does not retain an exact command receipt. Existing reported outcomes below are preserved as history.
 - Root saved replay replay-mvdjb3nf-5da28870 CLI1: exactsavedFlowhash unchanged, servedretainedorigin, modelprovidersdisabled, storedkeypreserved. next_page stopped user_intervention_required/web.intervention.required; only7of10records, finalstatefalse. Provideraccountingnull/unknown, no zero-call claim.
 - Initial creation actor can play declared person checks; saved replay lacks its startLabPerson wiring. Existingactor no-model humanask feasibility needs evidence before a fix; readonly worker brief downstream. No challenge bypass or oracle weakening.
 - Root clean-replay source16925172 integrated with independent41cases/audit; actual same-invocation clean replay remains unproven. Photo finalfailure146calls/$0.102284736 integrated, originalcandidate visited only first12-cell grid with no scrolling, so zero records correctly rejected.
@@ -166,3 +186,29 @@ None requiring user input.
 - Same saved crossborder Flow provider-free replay-mvdl3yxn-b1d9134d allocated in t566/bf-slot3; owning production-host startup pending. Core723e0ae8/downstream65be76e0 remain task-only until actual fresh ask/exact10rows40fields/finalizedzero proof is independently inspected.
 - Isolated t563 agent maps one shared creation-check/recovery accounting purse before implementation. Existing installed Chrome proof/profile/sharedCoree58 lease remains unchanged. Missing paid accounting remains unknown, never zero.
 - Validation: supervisor inspected both main git statuses and actual worker allocation receipts; no terminal live acceptance claimed. Narrow source gates already recorded; no new whole suite or manual whole build.
+
+### 2026-10-18 - Resumed agents; isolated source frozen for library preparation
+
+- User requested resuming existing agents. Reset/accounting agents resumed with own-tree three-library builds only, process cacheoff, no whole builds/sharedCore mutation. Existing installedChrome proof/profile remains unchanged.
+- Root committed reviewed reset Core4ae19d30/downstreamc0b18aa8 and accounting Corecb704f47/downstreamce53486f locally on their task branches; not integrated/pushed. Accounting architecture79e55db9 preceded currentdev merge. Live acceptance remains pending; no paid or UI release.
+- Validation: reset120/120 and accounting188/188 independently passed; accounting post-dev/person integration63/63 plus package typecheck native0. Both Core audits native0. Accounting generated baseline strictly reduced two counts and removed two cycles, no new waiver. Updated reset domain/helper gates await its own library build.
+- Root independently inspected social terminal evaluation and both live receipts: failed/runtime.behavior, flowCreatedfalse, finalcandidate not_judged,5trials,47calls/$0.058921614, observedunrecorded0/runSpenduncounted[]. No oracle/reportedverdict/replay. Agent read-only finaltrial positive comparison3orderedrecords/15fields is a claim pending root verification, not acceptance. Required debug/exclusion investigation active; no blind retry.
+- Continuation now16completed/1021calls/$0.899375604:4accepted,11failed,1unverifiedempty. Overall10accepted tasks/7sites unchanged. Historical and installed spend separate.
+
+### 2026-10-18 - Supervisor resumed after premature turn end
+
+- Root ended previous turn after agent resumption, leaving required reviews waiting; user asked why work stopped. Existing agents resumed with concrete next releases; no user approval required.
+- Reset exact tools.ts declaration reviewed/committed downstream9595c615; Core4ae19d30 unchanged. Released extension-only e2e build then single installed-project spec workers1/retries0/fresh isolatedprofile, provider-disabled. Required preact0dispatch/positiveoriginal2/2/Add3/2/strictinverse/exactordered2/2/cleantrial remains acceptance gate.
+- Accounting ownCorecb704f47 library prep independently read log0. Released proposed narrow downstream currentness/type/build/support registry steps and ownCore web:build ONLY for fixed installed proof, never whole/sharedCore build. Collector frozen for root independent review; fresh package must use nonexisting owned scratch paths. No new host/UI/provider release yet.
+- Social source unchanged. Released report-only explicit-output-ownership design: current all-stored-sets answer contract is obeyed, recheck packet intact; no matcher suppression. Require compiler/current/reopen provenance and wrong-finalset controls before product code.
+- Validation: worker reset30/30/domaincheck/build/helpertype/audit0; root reviewed one-field declaration. Accounting worker collector46assertions0 pending independent run. Social helper scripts reviewed read-only before root execution.
+
+### 2026-10-18 - Independent collector and social provenance checks
+
+- Validation: root independently reviewed collector telemetry/public-export realpath scope/canonical Ledger.restore and proof gate, syntax native0, hash c68698c558e6210aef085098cef4f2c432ab3b5457d42d382afcaa0c2fec80ea, selftest19telemetry+13oracle+14canonical=46/native0. Accepted only for new fixed t563 proof; old unknown paid run remains held.
+- Validation: root reviewed both read-only social helpers then executed native0. Finaltrial main dataset exact3orderedrecords/15fields/0unexpected. All4 captured judge/recheck pairs reproduce missingexclusion hold; identical evidence besides recheck, both missingprooflines present after row-ID normalization, all12 flagged storedElsewhere rows present. No recheck transport defect or acceptedFlow inferred.
+- Reset extension-only e2e build and exact installedproject diagnostic released on frozen9595c615/4ae19d30. Accounting ownproductionWeb and downstream narrow artifact prep active on cb704f47/ce53486f, collector frozen. New host/UI/provider release awaits gates/package/ownership, with no further user approval question.
+
+## Open Questions
+
+None requiring user input.
