@@ -14,9 +14,108 @@ import type { AutomationStudioActionDeclaration, AutomationStudioActionPermissio
 import type { AutomationStudioAsk, AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../parking/index.ts";
 import { automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapUnansweredSaid } from "../action-permissions.ts";
 import { automationStudioInstructedActs } from "../instructed-acts/index.ts";
+import { AutomationStudioSiteResetLedger } from "../site-reset/index.ts";
 
 const CHECKOUT: AutomationStudioActionDeclaration = { consequences: ["move_money"], control: { name: "Continue to checkout", kind: "button" }, verb: "press" };
 const PLACE: AutomationStudioActionDeclaration = { consequences: ["move_money"], control: { name: "Place order", kind: "button" }, verb: "press" };
+
+it("refuses an identified exploratory creation before execution when no original destination was observed", async () => {
+  const ledger = new AutomationStudioSiteResetLedger();
+  let executed = 0;
+  const permissions = automationStudioFlowBootstrapActionPermissions({
+    permittedConsequences: ["create_new"], instructionIds: [], siteReset: ledger, requireCreateBaseline: true,
+    executeTool: async (call) => {
+      const verdict = await call.permission!({ consequences: ["create_new"], control: { name: "Create", subject: "s:document", scope: "p:source" }, verb: "press" });
+      if (verdict.permitted) executed++;
+      return { kind: "llm_evidence_tool_execution", evidence: { ok: verdict.permitted }, effectApplied: verdict.permitted };
+    }
+  });
+  const result = await permissions.executeTool({ callId: "create", toolId: "core.run_node", value: { node: "example.create", parameters: {}, consequences: ["create_new"] } });
+  expect(executed).toBe(0);
+  expect(result).toMatchObject({ evidence: { code: "candidate.create_baseline_required" }, effectApplied: false, targetsUnchanged: true });
+  expect(ledger.inPlace()).toEqual([]);
+  expect(permissions.signal.aborted).toBe(false);
+  expect(permissions.request()).toBeUndefined();
+});
+
+it("recovers through observed original authority and an issued ref, strips it, and preserves strict own inverse proof", async () => {
+  const own = new AutomationStudioSiteResetLedger();
+  const calls = own;
+  const read = (subjects: string[]) => ({ state: {}, differs: [], resource: "r:one", scope: "p:destination", collections: [{ scope: "p:destination", group: "g:destination", subjects, states: Object.fromEntries(subjects.map(subject => [subject, `v:${subject}`])) }] });
+  const inputs: JsonObject[] = [];
+  let creates = 0, removals = 0;
+  const permissions = automationStudioFlowBootstrapActionPermissions({
+    permittedConsequences: ["create_new"], instructionIds: [], siteReset: calls, requireCreateBaseline: true,
+    executeTool: async (call) => {
+      inputs.push(call.value);
+      const undo = call.callId === "undo";
+      const observe = call.callId === "observe";
+      const verdict = await call.permission!({ consequences: observe ? [] : undo ? ["delete"] : ["create_new"], effect: observe ? "observe" : "mutate", control: { name: "Control", subject: "s:document", resource: "r:one", scope: undo ? "p:destination" : "p:source" }, verb: "press" });
+      if (verdict.permitted && !observe) undo ? removals++ : creates++;
+      if (verdict.permitted && observe) calls.observed(read(["s:original"]));
+      return { kind: "llm_evidence_tool_execution", evidence: { ok: verdict.permitted }, effectApplied: verdict.permitted && !observe };
+    }
+  });
+  const run = (callId: string, extra: JsonObject = {}) => permissions.executeTool({ callId, toolId: "core.run_node", value: { node: "example.create", parameters: {}, consequences: callId === "observe" ? [] : ["create_new"], ...extra } });
+  expect(await run("missing")).toMatchObject({ resultCode: "candidate.create_baseline_required" });
+  expect(creates).toBe(0);
+  expect(own.inPlace()).toEqual([]);
+  await run("observe");
+  const ref = calls.destinationReceipts!()[0]!.ref;
+  expect(ref).toBe("destination-1");
+  expect(await run("create", { resetDestination: ref })).toMatchObject({ evidence: { ok: true } });
+  expect(creates).toBe(1);
+  expect(inputs.every(input => !Object.hasOwn(input, "resetDestination"))).toBe(true);
+  expect(permissions.signal.aborted).toBe(false);
+  expect(permissions.request()).toBeUndefined();
+  calls.observed(read(["s:original", "s:document"]));
+  expect(await own.beforeTrial(async () => ({ moved: false }))).toMatchObject({ kind: "refuse" });
+  expect(await run("undo", { undoes: "act-1", consequences: ["delete"] })).toMatchObject({ evidence: { ok: true } });
+  expect(removals).toBe(1);
+  calls.observed(read(["s:original"]));
+  expect(await own.beforeTrial(async () => ({ moved: false }))).toEqual({ kind: "admit" });
+});
+
+it("fails closed if an opted-in project adapter omits preflight, while preserving other paths", async () => {
+  for (const [optIn, consequences, expected] of [
+    [true, ["create_new"], false], [false, ["create_new"], true],
+    [true, ["send_or_publish"], true], [true, ["move_money"], true],
+    [true, ["create_new", "send_or_publish"], true], [true, [], true]
+  ] as const) {
+    const own = new AutomationStudioSiteResetLedger();
+    let executed = 0;
+    const permissions = automationStudioFlowBootstrapActionPermissions({
+      requireCreateBaseline: optIn, permittedConsequences: ["create_new", "send_or_publish", "move_money"], instructionIds: [],
+      siteReset: { claim: value => own.claim(value), target: (act, declared) => own.target(act, declared), explored: call => own.explored(call) },
+      executeTool: async call => {
+        const verdict = await call.permission!({ effect: "mutate", consequences: [...consequences], control: { name: "Control", subject: "s:document", resource: "r:one" }, verb: "press" });
+        if (verdict.permitted) executed++;
+        return { kind: "llm_evidence_tool_execution", evidence: { ok: verdict.permitted }, effectApplied: verdict.permitted };
+      }
+    });
+    const result = await permissions.executeTool({ callId: "create", toolId: "core.run_node", value: { node: "example.create", parameters: {}, consequences: [...consequences] } });
+    expect(executed).toBe(expected ? 1 : 0);
+    if (!expected) expect(result).toMatchObject({ resultCode: "candidate.create_baseline_unavailable", effectApplied: false, targetsUnchanged: true });
+    expect(permissions.signal.aborted).toBe(false);
+    expect(permissions.request()).toBeUndefined();
+  }
+});
+
+it("does not treat an item's page as its subject when the project adapter omits preflight", async () => {
+  const own = new AutomationStudioSiteResetLedger();
+  let executed = 0;
+  const permissions = automationStudioFlowBootstrapActionPermissions({
+    requireCreateBaseline: true, permittedConsequences: ["create_new"], instructionIds: [],
+    siteReset: { claim: value => own.claim(value), target: (act, declared) => own.target(act, declared), explored: call => own.explored(call) },
+    executeTool: async call => {
+      const verdict = await call.permission!({ effect: "mutate", consequences: ["create_new"], control: { name: "Control", item: "i:row", page: "s:page", resource: "r:one" }, verb: "press" });
+      if (verdict.permitted) executed++;
+      return { kind: "llm_evidence_tool_execution", evidence: { ok: verdict.permitted }, effectApplied: verdict.permitted };
+    }
+  });
+  expect(await permissions.executeTool({ callId: "create", toolId: "core.run_node", value: { node: "example.create", parameters: {}, consequences: ["create_new"] } })).toMatchObject({ evidence: { ok: true } });
+  expect(executed).toBe(1);
+});
 
 type Answer = "grant" | "deny" | undefined;
 

@@ -15,9 +15,14 @@ const UNDOES: JsonObject = {
     + "Removing what that act created needs no permission. Never for anything that was there before the build began."
 };
 
+const DESTINATION: JsonObject = {
+  type: "string", pattern: "^destination-[1-9][0-9]{0,3}$",
+  description: "For an identified reversible create_new: the ref printed under resetDestinations.collections by an earlier observation of its complete original destination inventory. Observe the destination before creating anything there, then return and supply its ref. Never invent a ref or use another resource. An exact same-scope original inventory can satisfy this without a ref. This is a build reset precondition, not permission or proof of a future inverse."
+};
+
 /** `tool` with `undoes` among its input's properties when it is the library tool; any other tool unchanged. */
-export function automationStudioSiteResetUndoesTool(tool: AutomationStudioLlmEvidenceTool): AutomationStudioLlmEvidenceTool {
+export function automationStudioSiteResetUndoesTool(tool: AutomationStudioLlmEvidenceTool, options: { createBaselines?: boolean } = {}): AutomationStudioLlmEvidenceTool {
   const properties = tool.inputSchema.properties;
   if (tool.toolId !== AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID || typeof properties !== "object" || properties === null || Array.isArray(properties)) return tool;
-  return { ...tool, description: tool.description + " Before creating an effect whose undo removes an item from another page or list, inspect that destination's complete item inventory first. The reset needs positive evidence that its subject did not already exist there. An existing item's quantity requires an exact inverse; a matching name or a partial change is insufficient.", inputSchema: { ...tool.inputSchema, properties: { ...properties, [AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY]: { ...UNDOES } } } };
+  return { ...tool, description: tool.description + " Before creating an effect whose undo removes an item from another page or list, inspect that destination's complete item inventory first. The reset needs positive evidence that its subject did not already exist there. An existing item's quantity requires an exact inverse; a matching name or a partial change is insufficient.", inputSchema: { ...tool.inputSchema, properties: { ...properties, [AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY]: { ...UNDOES }, ...(options.createBaselines ? { resetDestination: { ...DESTINATION } } : {}) } } };
 }

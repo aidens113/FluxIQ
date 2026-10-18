@@ -92,7 +92,7 @@ export type AutomationStudioActionDeclaration = {
    * appears in a basket, is tied to its undo there by them. Absent where the
    * domain found none.
    */
-  control: { name: string; kind?: string; item?: string; dialog?: string; subject?: string; page?: string; scope?: string };
+  control: { name: string; kind?: string; item?: string; dialog?: string; subject?: string; page?: string; scope?: string; resource?: string };
   verb: string;
   effect?: AutomationStudioActionEffect;
 };
@@ -149,6 +149,8 @@ export type AutomationStudioReadActionDeclaration = {
   controlSubject: string | null;
   controlPage: string | null;
   controlScope: string | null;
+  /** Trusted opaque resource identity, compared only inside builder reset preconditions. */
+  controlResource: string | null;
   verb: string;
   /** Stated or, where the domain said nothing, `mutate`. */
   effect: AutomationStudioActionEffect;
@@ -171,10 +173,10 @@ export function readAutomationStudioActionDeclaration(value: unknown): Automatio
   if (!Array.isArray(consequences) || consequences.length > 10) throw new AutomationStudioActionDeclarationError("consequences_missing");
   if (!consequences.every(isAutomationStudioActionConsequence)) throw new AutomationStudioActionDeclarationError("consequence_unrecognised");
   const control = value.control;
-  if (!isRecord(control) || !hasOnlyFields(control, ["name", "kind", "item", "dialog", "subject", "page", "scope"])) throw new AutomationStudioActionDeclarationError("control_shape");
+  if (!isRecord(control) || !hasOnlyFields(control, ["name", "kind", "item", "dialog", "subject", "page", "scope", "resource"])) throw new AutomationStudioActionDeclarationError("control_shape");
   if (typeof control.name !== "string" || !control.name.trim() || control.name.length > MAX_NAME_INPUT) throw new AutomationStudioActionDeclarationError("control_name_invalid");
   if (control.kind !== undefined && (typeof control.kind !== "string" || !KIND.test(control.kind))) throw new AutomationStudioActionDeclarationError("control_kind_invalid");
-  for (const key of ["item", "dialog", "subject", "page", "scope"] as const) {
+  for (const key of ["item", "dialog", "subject", "page", "scope", "resource"] as const) {
     const token = control[key];
     if (token !== undefined && (typeof token !== "string" || !PLACE_TOKEN.test(token))) throw new AutomationStudioActionDeclarationError("control_place_invalid");
   }
@@ -192,6 +194,7 @@ export function readAutomationStudioActionDeclaration(value: unknown): Automatio
     controlSubject: typeof control.subject === "string" ? control.subject : null,
     controlPage: typeof control.page === "string" ? control.page : null,
     controlScope: typeof control.scope === "string" ? control.scope : null,
+    controlResource: typeof control.resource === "string" ? control.resource : null,
     verb: value.verb,
     effect: value.effect ?? "mutate"
   };

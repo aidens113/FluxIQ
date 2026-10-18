@@ -34,6 +34,7 @@ export type RecordFieldChange = {
 };
 
 type OutputSettings = {
+  purpose?: AutomationStudioRecordOutput["purpose"];
   datasetId: string;
   label: string;
   recordsPath: string;
@@ -69,6 +70,7 @@ export function readRecordOutputDraft(value: unknown): AutomationStudioRecordOut
   const fields = Array.isArray(schema.fields) ? schema.fields.map(readField) : [];
   const primaryKey = Array.isArray(schema.primaryKey) ? schema.primaryKey.filter((id): id is string => typeof id === "string") : [];
   return recordOutput({
+    ...(source.purpose === "answer" || source.purpose === "intermediate" ? { purpose: source.purpose } : {}),
     datasetId: text(source.datasetId),
     label: text(source.label),
     recordsPath: text(source.recordsPath),
@@ -86,6 +88,7 @@ export function toggleRecordOutput(value: unknown, enabled: boolean): Automation
 export function updateRecordOutputSettings(output: AutomationStudioRecordOutput, change: RecordOutputSettingsChange): AutomationStudioRecordOutput {
   const current = settingsOf(output);
   return recordOutput({
+    ...(current.purpose === undefined ? {} : { purpose: current.purpose }),
     datasetId: change.datasetId ?? current.datasetId,
     label: change.label ?? current.label,
     recordsPath: change.recordsPath ?? current.recordsPath,
@@ -195,6 +198,7 @@ function recordOutput(settings: OutputSettings, fields: AutomationStudioRecordFi
     schema,
     writeMode: settings.writeMode
   };
+  if (settings.purpose !== undefined) output.purpose = settings.purpose;
   if (settings.label.trim() !== "") output.label = settings.label;
   if (settings.maxRecords !== null) output.maxRecords = settings.maxRecords;
   return output;
@@ -209,6 +213,7 @@ function recordField(parts: FieldParts): AutomationStudioRecordField {
 
 function settingsOf(output: AutomationStudioRecordOutput): OutputSettings {
   return {
+    ...(output.purpose === undefined ? {} : { purpose: output.purpose }),
     datasetId: output.datasetId,
     label: output.label ?? "",
     recordsPath: output.recordsPath,

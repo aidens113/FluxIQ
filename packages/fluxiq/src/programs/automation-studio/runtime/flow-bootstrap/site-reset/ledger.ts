@@ -145,6 +145,7 @@
 // A phase runs from the build's start, or from one trial to the next. The
 // policy before a trial (`./trial-policy.ts`) reads it.
 
+import { AutomationStudioSiteResetCreateBaselines } from "./create-baselines.ts";
 import type { AutomationStudioActionConsequence, AutomationStudioActionEffect } from "../../action-permissions/index.ts";
 import type {
   AutomationStudioSiteResetAbsorbedAct,
@@ -154,6 +155,7 @@ import type {
   AutomationStudioSiteResetClaim,
   AutomationStudioSiteResetComparison,
   AutomationStudioSiteResetDecision,
+  AutomationStudioSiteResetDeclared,
   AutomationStudioSiteResetExplored,
   AutomationStudioSiteResetNamedAct,
   AutomationStudioSiteResetPlace,
@@ -241,6 +243,8 @@ export type AutomationStudioSiteResetLedgerOptions = {
   sink?: (recorded: AutomationStudioSiteResetRecordedAct) => void;
   /** Records a press with an effect but no lasting class as possibly lasting (header, t593); absent, it is not recorded, as before. */
   possible?: boolean;
+  /** Shared original receipts for every owner of one project build. */
+  createBaselines?: AutomationStudioSiteResetCreateBaselines;
 };
 
 /** One act as a ledger recorded it, for its sink. */
@@ -248,6 +252,7 @@ export type AutomationStudioSiteResetRecordedAct = AutomationStudioSiteResetName
 
 export class AutomationStudioSiteResetLedger implements AutomationStudioSiteResetCalls {
   private readonly acts: Act[] = [];
+  private readonly createBaselines: AutomationStudioSiteResetCreateBaselines;
   private next = 1;
   private readonly observedScopes = new Map<string, { beforeAct: number; subjects: ReadonlySet<string>; group: string; states: ReadonlyMap<string, string> }>();
   /** Last act sequence already recorded when this group's complete read landed. */
@@ -261,7 +266,12 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
 
   constructor(options: AutomationStudioSiteResetLedgerOptions = {}) {
     this.options = { ...options };
+    this.createBaselines = options.createBaselines ?? new AutomationStudioSiteResetCreateBaselines();
   }
+
+  createBaseline(declared: Pick<AutomationStudioSiteResetDeclared, "effect" | "consequences" | "control">, reference: unknown) { return this.createBaselines.check(declared, reference); }
+
+  destinationReceipts() { return this.createBaselines.receipts(); }
 
   /** Original project evidence predates every lasting act; adoption never changes current observations. */
   adoptOriginalCollections(collections: NonNullable<AutomationStudioSiteResetRead["collections"]>): void {
@@ -274,6 +284,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
 
   /** A passive whole-scope observation; the first read is a baseline only for later acts. */
   observed(read: AutomationStudioSiteResetRead, baseline = true): void {
+    this.createBaselines.observed(read, baseline);
     const observed = new Map<string, Set<string>>();
     const collections = read.collections ?? [];
     const invalid = invalidCollectionGroups(collections);
@@ -648,6 +659,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     // Said as possibly lasting wherever it is named, since some answers carry only what an act did (header).
     const words = lasting ? did || "an act" : `${did || "an act"} (${POSSIBLY_LASTING})`;
     const act: Act = { id, did: words, ref, ...(call ? { call } : {}), ...(control?.trim() ? { control: control.trim() } : {}), ...(operation ? { operation } : {}), ...(spot ? { spot } : {}), createdItems: [...new Set(created)], strictReset: lasting && (spot?.subject !== undefined || spot?.page !== undefined || spot?.scope !== undefined), consequences: [...consequences], undoable, undone: false, attempts: 0, spent: false, askedFor: 0, kept: false, possible: !lasting };
+    if (lasting) this.createBaselines.seal();
     this.acts.push(act);
     this.next += 1;
     // A possibly lasting act never makes a reset due: it refuses no trial (header).

@@ -30,6 +30,15 @@ function domain(differs: string[][] = [[]], options: { arrival?: JsonObject; thr
 }
 
 describe("site reset start check", () => {
+  it("preserves only the domain's bounded opaque resource field, never a value inside opaque state", async () => {
+    for (const resource of ["r:trusted", undefined, "", "raw session and tab", "x".repeat(129)]) {
+      const check = new AutomationStudioSiteResetStartCheck({ binding: { startState: async () => ({ state: { resource: "r:model-supplied" }, differs: [], ...(resource === undefined ? {} : { resource }) }) }, projectId: "p", flowId: "f", tools: [], executeTool: async () => ({}) });
+      const read = await check.read();
+      expect(read).toHaveProperty("state");
+      if ("unread" in read) throw new Error("expected a valid passive state");
+      expect(read.resource).toBe(resource === "r:trusted" ? "r:trusted" : undefined);
+    }
+  });
   it("reads the start once with the permission that denies anything gated, and never again", async () => {
     const fake = domain();
     const check = new AutomationStudioSiteResetStartCheck({ binding: fake.binding, projectId: "p", flowId: "f", tools: [runNode], executeTool: fake.executeTool });

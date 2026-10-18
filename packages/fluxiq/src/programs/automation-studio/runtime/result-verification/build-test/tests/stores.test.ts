@@ -89,6 +89,19 @@ function judged(input: { nodes?: AutomationStudioFlowNode[]; six?: JsonObject; s
 }
 
 describe("what the Flow a build proposes would store, as its test's reads filled it", () => {
+  it("omits only validated explicit intermediate stores while keeping reads and same-ID saved answers", () => {
+    const intermediate = { ...recordOutput("replace"), purpose: "intermediate" };
+    const onlyAnswer = judged({ nodes: nodes(intermediate, recordOutput("append")) });
+    expect(onlyAnswer.buildTest?.stores).toEqual([
+      { dataset: DATASET, writeMode: "append", steps: [7], passes: 1, collected: 10, answer: { rows: 10, labels: FILTERED } }
+    ]);
+    expect(onlyAnswer.buildTest?.steps).toEqual(judged().buildTest?.steps);
+    const answerThenIntermediate = judged({ nodes: nodes(recordOutput("append"), intermediate) });
+    expect(answerThenIntermediate.buildTest?.stores?.[0]).toMatchObject({ collected: 20, answer: { rows: 20, labels: PAGE_ONE } });
+    for (const purpose of ["answer", "unknown", null]) {
+      expect(judged({ nodes: nodes({ ...recordOutput("append"), purpose }, recordOutput("append", "other")) }).buildTest?.stores).toHaveLength(2);
+    }
+  });
   it("run-muw60j7c's two reads into one dataset: 30 rows, every label in order, the three stored twice", () => {
     const summary = judged();
     // Labels alone: the answer is the collected rows as they came, and nothing says what it removed.
