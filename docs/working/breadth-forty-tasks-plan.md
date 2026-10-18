@@ -1,7 +1,7 @@
 # Breadth Round Core Integration
 
 Status: Active
-Status detail: All87 scraping expectations positive;10accepted tasks/7sites. Social changed-source run-mvdln2dd-6bc98e25 live in isolatedt567. t719 exploratory original-baseline guard and t563 shared accounting/charged-build handoff under focused validation; neither source accepted yet. Installed Chrome functional proof preserved; strict paid accounting/Edge acceptance pending.
+Status detail: All87 scraping expectations positive;10accepted tasks/7sites. Social changed-source run-mvdln2dd-6bc98e25 failed47calls/$0.058921614, no promotedFlow; exclusion-evidence diagnosis active. t719 exploratory original-baseline guard and t563 shared accounting/charged-build handoff under focused validation; neither source accepted yet. Installed Chrome functional proof preserved; strict paid accounting/Edge acceptance pending.
 Created: 2026-10-17
 Last updated: 2026-10-18
 Owner: Codex senior supervisor
@@ -19,9 +19,9 @@ The user authorized continuing the downstream breadth handoff with live tests. T
 - **Crossborder accepted:** run-mvdism0y-ba67f226 exact10rows/40fields/oracle/reportedpass,21calls/$0.024137868. Corrected saved replay-mvdl3yxn-b1d9134d independently passed exactordereddata/finalstate/explicit0calls and a fresh UUID personcheck answeredviaCore. Core723e0ae8 and downstream65be76e0 integrated after own narrow gates; no savedFlow/hash/key changes.
 - **Reset:** downstream54325eb4 pointer-subject fix independently66cases plus actualgateway exactoriginalrestoration/cleantrial passed. Corrected paid no-hook run-mvdl5eg0-a56fdad7 still failed53calls/$0.032546700/noFlow: first destinationbaseline read after lastingAdd. Undo refusal correctly protects unobservedoriginals. Explicit preactdestination admission design active, no blindretry; Core reset source unchanged.
 - **Other lanes:** auction run-mvdi0946-d897f3cb failed134calls/$0.148715013, no Flow; optional converted-price-only condition dropped valid direct-price records, admission failures also recorded. Required debug written before retry. Positive photo failed; bounded diagnosis active. Social explicit disclosure failure-composition fix already passed focused unit/type/browser gates; paid reruns remain owed.
-- **Totals:**15completed continuation runs,974calls/$0.840453990:4accepted,10failed,1unverified empty run. Historical and installed-proof spend separate.
+- **Totals:**16completed continuation runs,1021calls/$0.899375604:4accepted,11failed,1unverified empty run. Historical and installed-proof spend separate.
 - **Installed proof:** actual Chrome155 package0.1.0 enabled without runtime/manifest errors, normal fresh login/Finish setup completed. Real extension-chat creation and explicitowner confirmed4row/12field whole run are verified; creationaccounting missing. Separate actualNoLLM replay independently passes exactdata/finalizedallzero. Dedicated accounting diagnosis active; Edge proof pending. Existing lease protects shared Coree58 for the whole proof. Edge creation/replay still owed; Firefox unavailable.
-- **Next:** finish isolatedaccounting/charged-handoff and exploratoryreset admission checks/actualgateway; inspect live socialrun; remaining auction/classifieds/photo and owed positive reruns; fixedartifact Chrome/Edge acceptance. No whole sweep remaining today, no user input needed. SharedCoree58 lease untouched.
+- **Next:** finish isolatedaccounting/charged-handoff and exploratoryreset admission checks/actualgateway; diagnose social exclusion evidence; remaining auction/classifieds/photo and owed positive reruns; fixedartifact Chrome/Edge acceptance. No whole sweep remaining today, no user input needed. SharedCoree58 lease untouched.
 
 ## Worker Briefs
 
@@ -166,3 +166,11 @@ None requiring user input.
 - Same saved crossborder Flow provider-free replay-mvdl3yxn-b1d9134d allocated in t566/bf-slot3; owning production-host startup pending. Core723e0ae8/downstream65be76e0 remain task-only until actual fresh ask/exact10rows40fields/finalizedzero proof is independently inspected.
 - Isolated t563 agent maps one shared creation-check/recovery accounting purse before implementation. Existing installed Chrome proof/profile/sharedCoree58 lease remains unchanged. Missing paid accounting remains unknown, never zero.
 - Validation: supervisor inspected both main git statuses and actual worker allocation receipts; no terminal live acceptance claimed. Narrow source gates already recorded; no new whole suite or manual whole build.
+
+### 2026-10-18 - Resumed agents; isolated source frozen for library preparation
+
+- User requested resuming existing agents. Reset/accounting agents resumed with own-tree three-library builds only, process cacheoff, no whole builds/sharedCore mutation. Existing installedChrome proof/profile remains unchanged.
+- Root committed reviewed reset Core4ae19d30/downstreamc0b18aa8 and accounting Corecb704f47/downstreamce53486f locally on their task branches; not integrated/pushed. Accounting architecture79e55db9 preceded currentdev merge. Live acceptance remains pending; no paid or UI release.
+- Validation: reset120/120 and accounting188/188 independently passed; accounting post-dev/person integration63/63 plus package typecheck native0. Both Core audits native0. Accounting generated baseline strictly reduced two counts and removed two cycles, no new waiver. Updated reset domain/helper gates await its own library build.
+- Root independently inspected social terminal evaluation and both live receipts: failed/runtime.behavior, flowCreatedfalse, finalcandidate not_judged,5trials,47calls/$0.058921614, observedunrecorded0/runSpenduncounted[]. No oracle/reportedverdict/replay. Agent read-only finaltrial positive comparison3orderedrecords/15fields is a claim pending root verification, not acceptance. Required debug/exclusion investigation active; no blind retry.
+- Continuation now16completed/1021calls/$0.899375604:4accepted,11failed,1unverifiedempty. Overall10accepted tasks/7sites unchanged. Historical and installed spend separate.
