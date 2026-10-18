@@ -18,6 +18,7 @@ import {
 } from "./structured-response.ts";
 import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskRequest } from "./task-request.ts";
 import { AUTOMATION_STUDIO_RUNTIME_PATCH_HANDLER_EVENTS } from "./runtime-patch-schema.ts";
+import { automationStudioLlmToolCallKeysFolded } from "../tool-call-keys/index.ts";
 
 /** Every runtime patch kind a model may answer with; the in-run repair's two are offered only when a request declares them. */
 const RUNTIME_PATCH_KINDS: readonly string[] = ["temporary_action_sequence", "temporary_wait_retry", "temporary_target_override", "temporary_recovery_subflow_call", "temporary_reroute", "add_handler", "replace_unit"];
@@ -25,7 +26,13 @@ const RUNTIME_PATCH_KINDS: readonly string[] = ["temporary_action_sequence", "te
 export function parseAutomationStudioLlmProviderResult(
   value: unknown,
   expectedOutput: AutomationStudioLlmTaskRequest["expectedOutput"],
-  flowBootstrap?: AutomationStudioLlmHarnessInput["flowBootstrap"]
+  flowBootstrap?: AutomationStudioLlmHarnessInput["flowBootstrap"],
+  /**
+   * The tools the evidence decision was offered, so a key of a tool's input
+   * written beside `input` is moved into it before the decision is checked
+   * (`../tool-call-keys/folded.ts`, run-mvcwp3wh-bcea2115). Absent, nothing moves.
+   */
+  evidenceTools?: NonNullable<AutomationStudioLlmHarnessInput["evidenceLoop"]>["tools"]
 ): {
   response?: AutomationStudioLlmStructuredResponse;
   usage?: AutomationStudioLlmUsageSummary;
@@ -38,7 +45,7 @@ export function parseAutomationStudioLlmProviderResult(
   }
   rejectUnexpectedFields(value, ["response", "usage", "diagnostics"], "providerResult", diagnostics);
   const responseDiagnostics: AutomationStudioLlmDiagnostic[] = [];
-  const response = parseAutomationStudioLlmStructuredResponse(value.response, responseDiagnostics, flowBootstrap?.size);
+  const response = parseAutomationStudioLlmStructuredResponse(value.response, responseDiagnostics, flowBootstrap?.size, evidenceTools);
   diagnostics.push(...parseProviderDiagnostics(value.diagnostics), ...responseDiagnostics);
   if (response) diagnostics.push(...validateAutomationStudioLlmOutput(response, expectedOutput, flowBootstrap));
   const usage = parseAutomationStudioLlmUsage(value.usage, diagnostics);
@@ -50,7 +57,12 @@ export function parseAutomationStudioLlmProviderResult(
   };
 }
 
-function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics: AutomationStudioLlmDiagnostic[], size?: AutomationStudioFlowBootstrapSizeLimits): AutomationStudioLlmStructuredResponse | undefined {
+function parseAutomationStudioLlmStructuredResponse(
+  value: unknown,
+  diagnostics: AutomationStudioLlmDiagnostic[],
+  size?: AutomationStudioFlowBootstrapSizeLimits,
+  evidenceTools?: NonNullable<AutomationStudioLlmHarnessInput["evidenceLoop"]>["tools"]
+): AutomationStudioLlmStructuredResponse | undefined {
   if (!isRecord(value)) {
     diagnostics.push({ severity: "error", code: "llm_output.invalid_response", message: "LLM response must be an object.", path: "response" });
     return undefined;
@@ -61,7 +73,9 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
     return undefined;
   }
   const commonFields = ["kind", "summary", "metadata"];
-  // An evidence decision as read: the one sent, or the tool call it can only be (`inferredEvidenceToolCall`).
+  // An evidence decision as read: the one sent, or the tool call it can only be
+  // (`inferredEvidenceToolCall`), with any key of its tool's input written
+  // beside `input` moved into it (`foldedEvidenceToolCall`).
   let decision: unknown = value.decision;
   rejectUnexpectedFields(value, kind === "flow_bootstrap"
     ? [...commonFields, "plan"]
@@ -80,7 +94,10 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
     const parsed = parseAutomationStudioFlowBootstrapPlan(value.plan, size);
     diagnostics.push(...parsed.issues.map((issue) => ({ ...issue, severity: issue.severity, path: issue.path ? `response.${issue.path}` : "response.plan" })));
   } else if (kind === "evidence_tool_decision") {
-    decision = inferredEvidenceToolCall(value.decision, diagnostics);
+    // Folded before the check, so the unexpected-field refusal below and every
+    // later reader -- the tool's input checks, permissions, the repeat guard --
+    // see the input the call meant.
+    decision = foldedEvidenceToolCall(inferredEvidenceToolCall(value.decision, diagnostics), evidenceTools, diagnostics);
     validateUnknownEvidenceToolDecision(decision, diagnostics);
   } else if (kind === "diagnosis") {
     if (value.confidence !== undefined && (!isFiniteNumber(value.confidence) || value.confidence < 0 || value.confidence > 1)) diagnostics.push({ severity: "error", code: "llm_output.invalid_confidence", message: "Diagnosis confidence must be between 0 and 1.", path: "response.confidence" });
@@ -241,6 +258,29 @@ function inferredEvidenceToolCall(value: unknown, diagnostics: AutomationStudioL
   return { ...value, kind: "tool_call", callId };
 }
 
+/**
+ * A tool call with every key of its tool's input written beside `input` moved
+ * into it (`../tool-call-keys/folded.ts`, run-mvcwp3wh-bcea2115), said as an
+ * `info` diagnostic that names the keys from the tool's schema, never the
+ * reply's words; the decision as it came when nothing moved.
+ */
+function foldedEvidenceToolCall(
+  value: unknown,
+  tools: NonNullable<AutomationStudioLlmHarnessInput["evidenceLoop"]>["tools"] | undefined,
+  diagnostics: AutomationStudioLlmDiagnostic[]
+): unknown {
+  const folded = automationStudioLlmToolCallKeysFolded(value, tools);
+  if (!folded) return value;
+  diagnostics.push({
+    severity: "info",
+    code: "llm_output.key_moved_into_input",
+    message: "A key the tool's input schema declares was written beside the tool call's input and was moved into it.",
+    path: "response.decision",
+    metadata: { toolId: folded.toolId, movedKeys: folded.movedKeys }
+  });
+  return folded.decision;
+}
+
 /** `call.` and the FNV-1a hash of the tool and its input: the same call, the same id. */
 function derivedCallId(toolId: string, input: JsonObject): string {
   let hash = 0x811c9dc5;
@@ -398,12 +438,16 @@ function parseProviderDiagnostics(value: unknown): AutomationStudioLlmDiagnostic
 
 function rejectUnexpectedFields(value: Record<string, unknown>, allowed: string[], path: string, diagnostics: AutomationStudioLlmDiagnostic[]): void {
   const allowedFields = new Set(allowed);
+  const besideToolCallInput = path === "response.decision" && value.kind === "tool_call";
   for (const key of Object.keys(value)) {
     if (!allowedFields.has(key)) diagnostics.push({
       severity: "error", code: "llm_output.unexpected_field", message: "Provider output contained an unexpected field.",
       // Only a known grammar key can refine this path. Reflecting arbitrary
       // provider keys would carry private text through the diagnostic channel.
-      path: path === "response.decision" && value.kind === "tool_call" && key === "write" ? "response.decision.write" : path
+      path: besideToolCallInput && key === "write" ? "response.decision.write" : path,
+      // Any other key beside a tool call's input belongs inside it, or nowhere
+      // (run-mvcwp3wh-bcea2115): said by Core's constant, never by the key.
+      ...(besideToolCallInput && key !== "write" ? { metadata: { expectedPath: "response.decision.input" } } : {})
     });
   }
 }

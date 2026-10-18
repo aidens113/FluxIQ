@@ -3,6 +3,7 @@
 // draft a part run is keyed on, and the one resend a refusal invites -- with,
 // for an unchanged read, the condition that left out no row (t693).
 export * from "./candidate-feedback.ts";
+export * from "./covered-refused.ts";
 export * from "./draft-key.ts";
 export * from "./feedback.ts";
 export * from "./narrowed-nothing.ts";

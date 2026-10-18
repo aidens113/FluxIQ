@@ -5,6 +5,7 @@
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioLlmEvidenceCandidateRepeatInstruction } from "./candidate-feedback.ts";
+import { automationStudioLlmEvidenceRepeatCoveredRefused } from "./covered-refused.ts";
 import type { AutomationStudioLlmEvidenceRepeatedOutcome } from "./outcomes.ts";
 import { automationStudioLlmEvidenceRepeatPermissionRefused } from "./permission-refused.ts";
 
@@ -34,6 +35,16 @@ const PERMISSION_INSTRUCTION = "You already made this exact call, and it was ref
   + "it would do something gated -- delete, move money, send or publish -- that nobody granted, or that the person declined. "
   + "Sending it again cannot get past that, on this page or any other, so it was not run. Do not make this call again. "
   + "Go on without it: take a way that needs no such permission, or amend the draft so no step needs it. Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
+
+/**
+ * Said instead for a press refused because a layer over the page covered its
+ * control (`./covered-refused.ts`, `run-mvcwem7d-34689f55`): no other input
+ * gets past it, but closing the layer does, and the press may then be made again.
+ */
+const COVERED_INSTRUCTION = "You already made this exact press, and it was refused because something over the page covers its control (then.resultCode, then.resultReason), so nothing was pressed. "
+  + "It is refused the same way until that layer is gone. The earlier answer, under sameAsCall, names the layer and, where it can, the controls that close it. "
+  + "Press one of those first, or another control inside that layer -- never a control the page marks as covered by it. "
+  + "Then this press may be made again: a call made after the page has changed is not a repeat. Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
 
 /** Said instead for a look that already answered the same on this page (`same_answer`). */
 const LOOK_INSTRUCTION = "You already made this exact look -- the same tool with the same input -- on this exact page, and it answered the same twice: its answer is above, under sameAsCall. "
@@ -89,12 +100,13 @@ function failedAmendmentInstruction(rerunStep: number | undefined): string {
   return `${FAILED_AMENDMENT_INSTRUCTION} To correct it, rerun step ${rerunStep} with a corrected argument, {"step": ${rerunStep}, "change": "rerun", "input": {<only the keys that change>}}, changing what then.resultCode names: a key the input does not write stays in the step's argument, so a key the refusal named has to be set to null, or its object written out again without it.`;
 }
 
-/** The instruction for one earlier outcome: a look, a part run, an amendment, a handle never shown, or any other call. */
+/** The instruction for one earlier outcome: a look, a part run, an amendment, a handle never shown, a covered press, or any other call. */
 function instructionFor(earlier: AutomationStudioLlmEvidenceRepeatedOutcome, rerunStep?: number): string {
   if (earlier.outcome === "same_answer") return LOOK_INSTRUCTION;
   if (earlier.outcome === "same_draft") return DRAFT_INSTRUCTION;
   if (earlier.outcome === "same_amendment") return earlier.rerunFailed ? failedAmendmentInstruction(rerunStep) : AMENDMENT_INSTRUCTION;
   if (earlier.handleUnshown) return HANDLE_UNSHOWN_INSTRUCTION;
+  if (automationStudioLlmEvidenceRepeatCoveredRefused(earlier)) return COVERED_INSTRUCTION;
   return automationStudioLlmEvidenceRepeatPermissionRefused(earlier) ? PERMISSION_INSTRUCTION : INSTRUCTION;
 }
 
