@@ -1,7 +1,7 @@
 # Breadth Round Core Integration
 
 Status: Active
-Status detail: Positive corpus enforced;10accepted tasks/7sites. Reset firstunit published/browserproven but canonicalr5 failed67calls/$0.043542330; exact remaining act diagnosis active. Explicit intermediate output passed independent176narrow cases, real-content browser proof pending. Fixed-accounting genuine Chrome chat build active on short c3 profile; Edge held.
+Status detail: Positive corpus enforced;10accepted tasks/7sites. Fixed-accounting Chrome exact4rows/12values/paidledger and separate0call replay independently accepted; Edge e3 released after exactowned Chrome stop. Explicit intermediate output passed176independent cases and final realistic browser, integration next. Reset firstunit published/browserproven, canonicalr5 failed; retry diagnostic observation seam under repair.
 Created: 2026-10-17
 Last updated: 2026-10-18
 Owner: Codex senior supervisor
@@ -24,6 +24,18 @@ The user authorized continuing the downstream breadth handoff with live tests. T
 - **Next:** finish fresh fixed-accounting installedChrome/Edge proof and changed-source canonicalreset r5; diagnose social exclusion evidence; remaining auction/classifieds/photo and owed positive reruns; fixedartifact Chrome/Edge acceptance. No whole sweep remaining today, no user input needed. SharedCoree58 lease untouched.
 
 ## Worker Briefs
+
+### Supervisor brief: short-profile genuine Edge creation and replay
+- Worker: held_lane_review; own t563 report codex-creation-accounting-fix.md only; frozen source Corecb704f47/downstreamce53486f. No commits, source/helper/build edits or shared documents.
+- Root independently verified both Chrome collectors and live artifact hashes: paid whole18311e53 confirmed exact4rows/12values,1call/$0.002081724; replayeb6df4a5 exactdata/allzero/unverifiedgoalproof; full artifacts and originalinstruction unchanged. Build spend separate.
+- Release exact OWN Chrome launcher2636 stop through existing serve owner protocol, preserving c3 profile/evidence. Verify stopped and step leases released; never touch old launcher6404/sharedCoree58 or failed long-profile root.
+- Then recheck existing config-edge-e3.json exact ownpair/browseredge/company-website/.25, absent codex-installed-edge-e3 root, ports3711/4711/3721/9361 free. Root checked these scopes/free ports before dispatch.
+- Start ONE unchanged helper normal hidden Edge host, fresh isolated profile, same verified0.1.0 unpacked/package SHA5e00078bc61f0d9f71cebe04c4b21d4580afdf5420b374015b3ecb6d756f58e7. No launch installation flags, profile resets, state hand edits or API-created Flow.
+- Genuine native Developer mode/Load unpacked UI, own fresh normal setup/key/project/pair approval. Real extension-chat exact company-website-apprentices instruction ONE build; ordinary own fixture Home baseline before each run.
+- ONE supported normal UI judged whole (Explore and adapt) and ONE separate explicit No LLM replay. Use frozen approved collector for exactpositive4rows/12values/oracle/finalstate and canonical itemized paid ledger; replay must explicitallzero. Unknown accounting held, no manufactured verdict.
+- Preserve before/after/replay artifact hashes and original instruction binding; print only closed receipts, identities/counts/hashes, never secrets/raw rows/model text. Stop/report exact failure; no blind repeated paid builds. Normal existing .25 guard remains; authoring spend not mislabeled as whole-run cost.
+- Validation: root independently read final social browser positive1pass/26helper/26full/one26rowfinalbatch; reset retry diagnostic failed before retryexecution, no correct-inverse claim or productfix accepted. All three lanes continue; no user input needed.
+
 
 ### Supervisor brief: repeatable person asks and saved replay actor
 - Worker storage_comparison; isolated paired t566 trees, root merged currentdev on both; no active readers. SharedCore beside t721 stays frozen/read-only.
@@ -95,6 +107,7 @@ The user authorized continuing the downstream breadth handoff with live tests. T
 - Gates owning changed tests/package typechecks + existing wrong-finalset cross-read/recheck safety tests, both audits, max2workers/cacheoff. No whole suites. Library build and actual realistic providerfree browser proof only after root review/release; paid rerun separately held.
 - Browser source scope approved: ONLY apps/extension/e2e/content/tests/extraction/tests/social-read-completion.spec.ts third normally-authored ForEach case. Explicit intermediate helper must propagate and produce no Core batch; actual positive final answer batch/full text/row-bound disclosure remains. RealChromium content/pageworld/domainresolver/Coreloopcapture coverage only, not installedbackground/chat/SQL/reopen/judgment. Show diff before root browser release; owning narrowed test:content --grep command only, no paid.
 - Browser release: root reviewed thirdcase diff plus independently145Core/contracts+31normaldomain cases/native0. Approve final closed structural console receipt after assertions (counts/IDs/schema/flags only), then normal pnpm.cmd --filter @fluxiq-web-extension/extension test:content -- social-read-completion.spec.ts --grep "normally authored optional For Each" --workers=1 --retries=0. Processcacheoff; no full/Core/Web/shared build/paid. Freeze source after receipt-only edit; inspect actual exit and positive final-only batch.
+- After firstbrowserpositive26helper/26full/oneanswer26x2, extensiontype found observer Promise<void> invalid. Approve samecase actual in-memory batch sink returning typed summary backed by retained rows/append-replace/batchKey state; digest uses public storedschema plus test-local JSONhash, no privatealgorithm clone/newproductionexport/SQLclaim. Showdiff then normaltypecheck+samebrowser rerun on changedsource; no product edit or paid rerun.
 
 ### Supervisor brief: fresh fixed-accounting installed Chrome proof
 - Worker held_lane_review; frozen own t563 Corecb704f47/downstreamce53486f and existing ownreport. Root independently accepted collector c68698c558e6210aef085098cef4f2c432ab3b5457d42d382afcaa0c2fec80ea/46checks and reviewed current package/build logs/config scope. No source/helper/build changes while host leased.
@@ -114,6 +127,17 @@ The user authorized continuing the downstream breadth handoff with live tests. T
 - Actual readiness must show Corecandidate/startResetfalse and fixtureResetBetweenTrialsfalse; authenticate real projectchat/extension and model reset path, never claim flags alone prove it. If any reset hook enabled, stop before provider activity and report admission defect.
 - Full canonical quantity2/newCart/saved-line move/exactoriginal protections must be verified against unchanged positive final-state oracle. Firstunit new-row proof alone does not establish wholecanonical. Require whole productjudgment plus requested successful savedgoalreplay explicit0provider/harness, retainFlow hashes and real costs.
 - Freeze source/HEAD while run. Report allocation/normalpreparation/activity; inspect actual terminal evaluation/accounting/readiness/oracle/judge/replay. Failure gets required debug/rootcause before any retry; unknown/missing accounting staysunknown. No user approval question, no paid repeat on unchanged source.
+
+### Supervisor brief: failed-save versus successful-retry reset diagnostic
+- Worker reset_review in paired t719 only, frozen product source152b87ad/32864aea. Read Current State + finalized r5debug/ownreport. Root independently verified r5terminal67calls/$0.043542330/noFlow and live precreate raw tool receipts; no paid repeat.
+- Own ONLY apps/extension/e2e/site-reset/tests/installed-project.spec.ts for a bounded diagnostic variant plus existing ownreport/r5debug. No Core/product/fixture/oracle/guidance edits. Existing273line test may parameterize same public harness; preserve original golden case. If budget/helper needed, propose exact file before expanding.
+- Drive actualinstalledMV3->realCoregateway->registeredprojectservice on unchanged realistic everythingstore; normal site controls/typed scripted provider only. Original2Cart/2Saved positive inventory before Add; new owncreated row, original firstCart Save request fails, Tryagain moves SAMEoriginalrow; delete ownnew; attempt wrongfailedSave act inverse mustrefuse/no browserdispatch; then attempt correctsuccessfulRetry act inverse using fresh observed control.
+- Act references come from actualCore tool receipts/declared history, not hand-seeded ledger/private pending state or guessed ordinals. Preserve runtime retries/declarations/strict ownership; record actualeffective consequences and completed transport metadata. Do not assume correct retry inverse succeeds in advance.
+- Require exactoriginal2/2/order/hash and cleantrial ifcorrectclaimworks. If it fails, preserve red structural witness and firstcausal capture, never rewrite expected result to pretend whole reset passed. Need no new permission semantics or hidden fixture reset.
+- Compare failedact versus successfulretry subject/scope/rowanchor/effect witnesses with closedhashes/counts/codes only. Action10misclaim is known; privateact11transfer witness remains UNKNOWN until actualdiagnostic. Rejectedwrongclaim mustnotdispatchclick, before/after state stable.
+- Source-only narrow helper typecheck/audit beforebrowser; show diff/exactselectednewcase command for rootreview/release. No Core/Web/wholebuild/paid. Existingextensionartifact current unless normalowning check provesotherwise; do not rebuild by default.
+- After diagnostic, propose bounded actualowning productmap only ifred; ifgreen assess generic feedback/retryprovenance need from observedreceipts, no fixture-shaped modeladvice or automatic wrongact permission.
+- Browser release: root reviewed395line parameterized diff, truthful temporarymove authorization/receipt-based refs/no dispatch wrongclaim/exactpositivebaseline assertions; helpertype/audit0. RELEASE ONLY newcase via pnpm.cmd exec playwright test -c e2e/playwright.config.ts e2e/site-reset/tests/installed-project.spec.ts --grep "distinguishes a failed save" --workers=1 --retries=0 --reporter=list --output=e2e/test-results/reset-retry-project-20261018 (extensioncwd/cacheoff). No rebuild/paid/product mutation; preserve closedred ifcorrectretryref stillrefused.
 
 ## Work Ledger
 
@@ -202,6 +226,11 @@ Earlier paired history: [nine retained entries](./breadth-forty-tasks-plan/archi
 - Validation: root social source review plus independent9Corefiles128/128 and contracts17/17, current normal domain3files31/31/native0. Real compiler/service/SQLite/close/reopen/row-bound acts/positiveanswer and wrongfinalset controls covered; browser diagnostic pending. Worker130 uses3case recheck while root used1case buildexclusion, no count conflation.
 - Validation: root verified first fresh Chrome ownership/CDP155, packagehash/14unpacked bytes and collector46; longprofile bootstrap actual IO/LockFile/Directory251/log262. Exactowned26924 stopped/profilepreserved; short c3 root samebinary comparativeGET_STATUS succeeds, DB233/maxfile249. Root independently rechecked launcher2636/CDP155/scoped4targets/failedrootpreserved. Normalsetup/pair/chat still active; no new paid acceptance. Edge shortconfig prepared/hostheld; old6404/e58 remains untouched.
 - Outcome: Partial; sourceunits and liveacceptance remain distinct. Continue all three agents without waiting for user approval.
+
+### 2026-10-18 - Chrome strict acceptance and Edge release
+- Validation: supervisor independently ran both actual Chrome collectors native0 and public live artifact hash command native0. Judged18311e53 confirmed exact4rows/12values, calls1/itemized1/pending0/omitted0/$0.002081724/canonicalrestoretrue; separate replayeb6df4a5 exactsameoracle/finalizedallzero/unverifiedproviderfreegoal. Full saved artifacts before/after/replay equal; original instruction bound.
+- Validation: final changed-source social browser log independently read1passed3.1m, helper26/full26 and sole answer/full batch26rows/2fields/invalid0/truncatedfalse; worker extensioncheck and both audits0. Source integration pending. Reset retry diagnostic red BEFORE retry execution; no correct-inverse claim tested, read-only structural diagnosis continues.
+- Released exactown Chrome2636 stop with profile/evidence preserved, then one fresh short-profile Edge e3 normal host/install/chat/judged/zero proof on same frozen pair. Old6404/sharedCoree58 untouched. Root checked absent Edge root and all four free ports. Accounting source not yet integrated; canonicalreset/socialpaid proofs still owed. Continuation totals unchanged; installed spend separate.
 
 ## Open Questions
 
