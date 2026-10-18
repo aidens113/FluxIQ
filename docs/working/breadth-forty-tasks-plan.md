@@ -47,3 +47,7 @@ None requiring user input.
 ### 2026-10-17 ? Independent reset verification and bounded follow-up
 - Supervisor source review and independent58/58 actual ledger/service/facade/instruction tests passed; no library rebuilt during that reader. Same-page strict created-item inverse and malformed-fingerprint regressions then reproduced4 failures, bounded follow-up assigned in existing ledger/tests. Positive ownership and exact complete baseline remain mandatory; no public contract or permission expansion.
 - Downstream social closed-reason composition independently43/43 passed; final browser/type/audit gates pending. Read-only auction and conditional jobs now live in isolated lanes; their source stays frozen. No new accepted reset/live result claimed.
+
+### 2026-10-17 ? Positive-data scraping acceptance requirement
+- User now requires actual matching, nonempty verifiable data for every scraping task. Downstream owns corpus/fixture/workflow/oracle revisions and launch guard;87 dataset tasks audited,82 positive,5 empty variants must change. No generic real-user empty-search behavior change requested in Core.
+- Job run-mvdgaz8z-27ff3d1b had oracle0/0 pass but product unverified, CLI1, no replay;69calls/$0.056217954, not accepted. Downstream investigation found extraction selectors tied to transient selected-card styling; judge caution must not be forced to yes. Existing Core reset fix remains independently bounded.
