@@ -1,9 +1,9 @@
 # Breadth Round Core Integration
 
 Status: Active
-Status detail: Storage optimization excluded; judge/feedback/social fixes pushed. R1 source accepted after integrated narrow/browser gates; paid model-reset-only proof failed; bounded ledger/feedback correction active. Downstream company passed full oracle and0-call goal replay; its combined source is accepted and pushed. Social supported recovery/closed failure feedback proof active.
+Status detail: Storage optimization excluded; judge/feedback/social fixes pushed. R1 source accepted after integrated narrow/browser gates; paid model-reset-only proof failed; bounded ledger/feedback correction active. Downstream company passed full oracle and0-call goal replay; its combined source is accepted and pushed. Downstream social recovery source accepted after real browser proof. Numeric exclusion guard merged locally; final reset correction combination building.
 Created: 2026-10-17
-Last updated: 2026-10-17
+Last updated: 2026-10-18
 Owner: Codex senior supervisor
 Scope: Domain-neutral storage, reset authorization, result verification and target preservation required by the downstream breadth round. Browser tests, scenarios and install proof remain downstream.
 Paired document: `breadth-forty-tasks-plan.md` in FluxIQWebExtension
@@ -51,3 +51,9 @@ None requiring user input.
 ### 2026-10-17 ? Positive-data scraping acceptance requirement
 - User now requires actual matching, nonempty verifiable data for every scraping task. Downstream owns corpus/fixture/workflow/oracle revisions and launch guard;87 dataset tasks audited,82 positive,5 empty variants must change. No generic real-user empty-search behavior change requested in Core.
 - Job run-mvdgaz8z-27ff3d1b had oracle0/0 pass but product unverified, CLI1, no replay;69calls/$0.056217954, not accepted. Downstream investigation found extraction selectors tied to transient selected-card styling; judge caution must not be forced to yes. Existing Core reset fix remains independently bounded.
+
+### 2026-10-18 ? Positive scraping data and final reset combination
+- User requires actual matching data for every scraping test. Downstream owns fixture/oracle/workflow and pre-provider launch guard corrections; no ordinary product empty-search behavior or Core public contract changes. Corpus108 tasks/87 dataset tasks, five formerly empty variants being corrected and browser-proven.
+- Core negated text-pattern guard committed d5701ec4/merged3fb6b891 after fail-first and49 guard/verdict cases, package check/audit; supervisor independent10/10 passed. Negative text matching with incidental digits does not declare a numeric quantity range. Positive text-number and typed numeric checks retained. Auction paid run failed93calls/$0.110640684; no Flow/oracle/replay, rerun pending.
+- Reset bounded correction Core3815be32 merged latestdev into branchfe2d8422, downstreama173a02b. Source review and independent58 then15 delta tests accepted; final owning67, preserved ledger35/words3/facade11, domain111, extension2 and actual-ledger realistic browser4 passed, with all affected package checks/audits. Final combined ledger50+numeric10 passed60/60 and both audits; Core final libraries/check active. No new paid canonical pass claimed.
+- Last pushed Coreb2721f85/downstream7abd7bfa. Numeric local integration and forthcoming reset correction are not yet pushed. Downstream continuation9completed runs:2accepted passes/6failures/1unverified,517calls/$0.467974827.
