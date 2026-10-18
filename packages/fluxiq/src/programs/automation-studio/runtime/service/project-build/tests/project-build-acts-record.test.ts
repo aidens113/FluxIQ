@@ -43,6 +43,17 @@ async function recorded() {
 }
 
 describe("the project ledger's acts in the build record", () => {
+  it("preserves the original-baseline capability and issued refs through the actual recording adapter", () => {
+    const project = new AutomationStudioSiteResetProjectLedger();
+    const owner = project.forBrief("builder");
+    owner.observed({ state: {}, differs: [], resource: "r:one", collections: [{ scope: "p:destination", group: "g:destination", subjects: ["s:existing"], states: { "s:existing": "v:original" } }] });
+    const calls = AutomationStudioProjectBuildActsRecord.of(project).calls(owner);
+    const ref = calls.destinationReceipts!()[0]!.ref;
+    const declaration = { effect: "mutate" as const, consequences: ["create_new" as const], control: { name: null, kind: null, resource: "r:one", subject: "s:document", scope: "p:source" } };
+    expect(calls.createBaseline!(declaration, undefined)).toMatchObject({ kind: "refused" });
+    expect(calls.createBaseline!(declaration, ref)).toEqual({ kind: "admit" });
+    expect(project.snapshot().acts).toEqual([]);
+  });
   it("writes each brief's explored and trial acts as they are recorded, with owner and class, readable after a restart", async () => {
     const { projects, store } = await recorded();
     const ledger = new AutomationStudioSiteResetProjectLedger();

@@ -115,6 +115,7 @@ async function build(input: {
   builderFirst?: (subflowKey: string, evidence: readonly Entry[]) => JsonObject | undefined;
   permittedConsequences?: AutomationStudioActionConsequence[];
   prepareStart?: AutomationStudioServiceOptions["prepareCandidateStart"];
+  startState?: NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>["startState"];
 }) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-project-build-brief-ports-"));
   /** Each builder's evidence at its first decision, by subflow. */
@@ -143,7 +144,7 @@ async function build(input: {
   });
   const service = new AutomationStudioService({
     dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 80, maxEstimatedCostUsd: 0.1 }),
-    llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: input.tools, executeTool: input.executeTool, resolvePlanNodeParameters: automationStudioTestDeclaredStepResolution } as unknown as NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>,
+    llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: input.tools, executeTool: input.executeTool, ...(input.startState ? { startState: input.startState } : {}), resolvePlanNodeParameters: automationStudioTestDeclaredStepResolution } as unknown as NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>,
     ...(input.prepareStart ? { prepareCandidateStart: input.prepareStart } : {})
   });
   service.bindNativeNodeRuntime(saveRuntime());
@@ -374,4 +375,77 @@ describe("a brief whose builder never reads the input the plan gives it", () => 
     expect(reason).not.toMatch(/subflow\.scope_refused:[0-9a-f]{8}/u);
     expect(reason).not.toContain("candidate.last_submission");
   });
+});
+
+it("requires a pre-create baseline through normal project ports and recovers via an actual observation/ref retry", async () => {
+  let at = "source", phase = 0, creates = 0, removals = 0;
+  let reference: string | undefined, act: string | undefined;
+  const rows = ["s:baseline"];
+  const inputs: JsonObject[] = [];
+  const plan = {
+    taskSpec: { parts: [{ id: "p1", quote: { sourceId: "instruction.build", text: TASK }, goalFacts: ["The Flow runs from its start to its end"], lastingActs: ["create_new"] }], notAsked: [] },
+    subflows: [{ key: "keep", name: "Keep", parts: ["p1"] }]
+  };
+  const invoke = (callId: string, node: string, consequences: string[] = [], extra: JsonObject = {}): JsonObject => ({ kind: "tool_call", callId, toolId: "core.run_node", input: { node, parameters: {}, consequences, ...extra } });
+  const run = await build({
+    plan, briefs: [{ kind: "build", subflowKey: "keep", parts: ["p1"], permittedActs: ["create_new"], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.02, maxIterations: 20 }], permittedConsequences: ["create_new"],
+    tools: [{ toolId: "core.run_node", description: "Run an observed operation", effect: "mutate", perCallEffect: true, inputSchema: { type: "object", properties: { node: { type: "string" }, parameters: { type: "object" }, consequences: { type: "array", items: { type: "string" } } } }, initialObservation: { input: { node: "example.look", parameters: {}, consequences: [] } } }],
+    startState: async () => ({ state: { at }, differs: [], location: at, resource: "r:one", scope: `p:${at}`, collections: at === "destination" ? [{ scope: "p:destination", group: "g:destination", subjects: [...rows], states: Object.fromEntries(rows.map(row => [row, `v:${row}`])) }] : [] }),
+    executeTool: async (call) => {
+      inputs.push(call.value);
+      const operation = call.value.node;
+      if (operation === "example.destination" || operation === "example.source") at = operation === "example.destination" ? "destination" : "source";
+      if (operation !== "example.create" && operation !== "example.remove") return { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false };
+      const removing = operation === "example.remove";
+      const verdict = await call.permission!({ consequences: removing ? ["delete"] : ["create_new"], effect: "mutate", control: { name: "Control", subject: "s:document", resource: "r:one", scope: removing ? "p:destination" : "p:source" }, verb: "press" });
+      if (verdict.permitted) {
+        if (removing) {
+          rows.splice(rows.indexOf("s:document"), 1);
+          removals++;
+        } else {
+          rows.push("s:document");
+          creates++;
+        }
+      }
+      return { kind: "llm_evidence_tool_execution", evidence: { ok: verdict.permitted }, effectApplied: verdict.permitted };
+    },
+    builderFirst: (_key, evidence) => {
+      phase++;
+      if (phase === 1) return invoke("create.missing", "example.create", ["create_new"]);
+      if (phase === 2) {
+        expect(lastOf(evidence, "core.run_node")).toMatchObject({ code: "candidate.create_baseline_required" });
+        expect(creates).toBe(0);
+        return invoke("destination", "example.destination");
+      }
+      if (phase === 3) {
+        const destinations = lastOf(evidence, "core.run_node")?.resetDestinations as { collections?: Array<{ ref: string }> } | undefined;
+        reference = destinations?.collections?.[0]?.ref;
+        if (!reference) return { kind: "complete", result: { subflowKey: "keep", revision: 0, digest: "missing-original-receipt" } };
+        return invoke("source", "example.source");
+      }
+      if (phase === 4) return invoke("create.retry", "example.create", ["create_new"], { resetDestination: reference! });
+      if (phase === 5) return undefined; // the normal builder submits its subflow
+      const submitted = lastOf(evidence, "core.submit_subflow")!;
+      const candidate = { revision: submitted.revision as number, digest: submitted.digest as string };
+      if (phase === 6) return { kind: "tool_call", callId: "test.dirty", toolId: "core.test_subflow", input: candidate };
+      if (phase === 7) {
+        const dirty = lastOf(evidence, "core.test_subflow")!;
+        expect(dirty.code).toBe("candidate.trial_reset_required");
+        act = (dirty.actsToUndo as JsonObject[])[0]!.act as string;
+        return invoke("undo.destination", "example.destination");
+      }
+      if (phase === 8) return invoke("undo", "example.remove", ["delete"], { undoes: act! });
+      if (phase === 9) return { kind: "tool_call", callId: "test.clean", toolId: "core.test_subflow", input: candidate };
+      return undefined;
+    }
+  });
+  let failed: { diagnostic?: { code?: string; issueCodes?: string[] }; message?: string } | undefined;
+  await run.run().catch(error => { failed = error; });
+  if (!reference) throw new Error(JSON.stringify({ phase, failure: failed?.diagnostic, message: failed?.message, inputs: inputs.map(input => input.node), seen: (run.latestSeen.keep ?? []).map(entry => ({ callId: entry.callId, keys: Object.keys(entry.value as object), code: (entry.value as JsonObject).code })) }));
+  expect(reference).toMatch(/^destination-[1-9][0-9]*$/u);
+  expect(creates).toBe(1);
+  expect(removals).toBe(1);
+  expect(rows).toEqual(["s:baseline"]);
+  expect(inputs.every(input => !Object.hasOwn(input, "resetDestination"))).toBe(true);
+  expect(lastOf(run.latestSeen.keep ?? [], "core.test_subflow")).toMatchObject({ verdict: "yes" });
 });

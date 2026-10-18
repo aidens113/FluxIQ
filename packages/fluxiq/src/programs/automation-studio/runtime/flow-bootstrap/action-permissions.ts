@@ -223,6 +223,8 @@ export type AutomationStudioFlowBootstrapActionPermissions = {
 };
 
 export function automationStudioFlowBootstrapActionPermissions(input: {
+  /** Project-builder exploration only; other authoring and finalized run paths are unchanged. */
+  requireCreateBaseline?: boolean;
   /** The consequences the build was permitted. Absent permits nothing. */
   permittedConsequences: readonly string[] | undefined;
   /** The instructions the build carries out: the reason any action was wanted. */
@@ -343,8 +345,20 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       let declared: AutomationStudioSiteResetDeclared | undefined;
       // For an undo, where the control the domain is about to act on sits, read before it acts (t475).
       let target: AutomationStudioSiteResetTarget | undefined;
+      let createRefusal: { evidence: JsonObject & { code: string } } | undefined;
       const permission: AutomationStudioActionPermissionCheck = async (declaration) => {
         if (!undo) {
+          const action = readAutomationStudioActionDeclaration(declaration);
+          const needsBaseline = action.effect === "mutate" && action.consequences.length === 1 && action.consequences[0] === "create_new" && (action.controlSubject !== null || (action.controlItem === null && action.controlPage !== null));
+          let baseline: ReturnType<NonNullable<AutomationStudioSiteResetCalls["createBaseline"]>> | undefined;
+          if (input.requireCreateBaseline === true && call.toolId === "core.run_node" && typeof value.node === "string") {
+            if (siteReset.createBaseline) baseline = siteReset.createBaseline({ effect: action.effect, consequences: action.effect === "observe" ? [] : action.consequences, control: { name: null, kind: null, ...placeOf(action) } }, call.value.resetDestination);
+            else if (needsBaseline) baseline = { kind: "refused", evidence: { ok: false, code: "candidate.create_baseline_unavailable", instruction: "This creation was not run because the build's original-state preflight is unavailable. Looking and navigating remain safe; report the unavailable precondition instead of creating an unproved effect. No new permission is required." } };
+          }
+          if (baseline?.kind === "refused") {
+            createRefusal = baseline;
+            return { permitted: false, missing: [], requestId: null };
+          }
           const verdict = await check(declaration);
           declared = declaredAs(gate, declaration, verdict.permitted);
           return verdict;
@@ -364,6 +378,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       };
       const execution = await input.executeTool({ ...call, value, permission });
       gate.observe(execution);
+      if (createRefusal) return { kind: "llm_evidence_tool_execution", evidence: createRefusal.evidence, effectApplied: false, targetsUnchanged: true, resultCode: createRefusal.evidence.code };
       siteReset.explored({
         callId: call.callId,
         toolId: call.toolId,
@@ -439,9 +454,8 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
  * asked about and goes to the domain as it came.
  */
 function claimed(siteReset: AutomationStudioSiteResetCalls, value: JsonObject): { value: JsonObject; claim: AutomationStudioSiteResetClaim } {
-  if (!Object.prototype.hasOwnProperty.call(value, AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY)) return { value, claim: { kind: "none" } };
-  const { [AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY]: undoes, ...rest } = value;
-  return { value: rest, claim: siteReset.claim(undoes) };
+  const { resetDestination: _destination, [AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY]: undoes, ...rest } = value;
+  return { value: rest, claim: undoes === undefined ? { kind: "none" } : siteReset.claim(undoes) };
 }
 
 /**
@@ -472,7 +486,8 @@ function placeOf(read: AutomationStudioReadActionDeclaration): AutomationStudioS
     ...(read.controlDialog !== null ? { dialog: read.controlDialog } : {}),
     ...(read.controlSubject !== null ? { subject: read.controlSubject } : {}),
     ...(read.controlPage !== null ? { page: read.controlPage } : {}),
-    ...(read.controlScope !== null ? { scope: read.controlScope } : {})
+    ...(read.controlScope !== null ? { scope: read.controlScope } : {}),
+    ...(read.controlResource !== null ? { resource: read.controlResource } : {})
   };
 }
 
