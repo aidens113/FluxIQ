@@ -1,0 +1,159 @@
+/* First-run setup: the page body below the directory heading. */
+.get-started-body {
+  padding: 0 var(--space-xl) var(--space-xl);
+}
+
+.get-started-domains {
+  display: grid;
+  gap: var(--space-md);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.get-started-domains > li {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-xs);
+}
+
+/* The onboarding checklist rendered by features/automation-studio/onboarding. */
+.onboarding {
+  display: grid;
+  gap: var(--space-lg);
+  max-width: 880px;
+}
+
+.onboarding-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-panel);
+  padding: var(--space-md) var(--space-lg);
+}
+
+.onboarding-header > div,
+.onboarding-step > div {
+  display: grid;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.onboarding-header span,
+.onboarding-step > div > span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-body-small);
+}
+
+.onboarding-steps {
+  display: grid;
+  gap: var(--space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.onboarding-step {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  padding: var(--space-md) var(--space-lg);
+}
+
+.onboarding-step > svg {
+  margin-top: 1px;
+  color: var(--color-text-muted);
+}
+
+.onboarding-step.done > svg {
+  color: var(--color-success);
+}
+
+.onboarding-step.current {
+  border-color: var(--color-selected-border);
+}
+
+.onboarding-step.current > svg {
+  color: var(--color-primary);
+}
+
+.onboarding-step.blocked {
+  opacity: 0.72;
+}
+
+.onboarding-step .onboarding-state {
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+}
+
+.onboarding-step.done .onboarding-state {
+  color: var(--color-success);
+}
+
+.onboarding-step.current .onboarding-state {
+  color: var(--color-primary);
+}
+
+.onboarding-problem {
+  align-items: center;
+  font-size: var(--font-size-body-small);
+}
+
+.onboarding-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+
+.onboarding-action code {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-tool);
+  padding: var(--space-xxs) var(--space-compact);
+  font-size: var(--font-size-compact);
+}
+
+.onboarding-message {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-body-small);
+}
+
+.onboarding-start {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-sm);
+}
+
+.onboarding-start > .button {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-xs);
+  height: auto;
+  padding: var(--space-md);
+  text-align: left;
+  white-space: normal;
+}
+
+.onboarding-start > .button span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  font-weight: normal;
+}
+
+@media (max-width: 720px) {
+  .get-started-body {
+    padding-inline: var(--space-md);
+  }
+}

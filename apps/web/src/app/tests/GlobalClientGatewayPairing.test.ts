@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { closedPairingNotice, pairingExpiryLabel, pairingSnapshot, pairingSnapshotsEqual, pendingPairingRequests, type ClientPairingRequest } from "../GlobalClientGatewayPairing";
+import { closedPairingNotice, pairingExpiryLabel, pairingSnapshot, pairingSnapshotsEqual, pendingPairingRequests, vanishedPairingNotice, type ClientPairingRequest } from "../GlobalClientGatewayPairing";
 
 const nowMs = 1_000_000;
 const request = (overrides: Partial<ClientPairingRequest> = {}): ClientPairingRequest => ({
@@ -67,5 +67,26 @@ describe("Global client pairing dismissal", () => {
   it("shows a closed approval's notice even once no request is pending", () => {
     const source = readFileSync(new URL("../GlobalClientGatewayPairing.tsx", import.meta.url), "utf8");
     expect(source).toContain("if (!pendingPairing) return closedNotice ?");
+  });
+  // t707 P2: a request the person was reading that disappears without their
+  // approve or dismiss must not just vanish; the panel says why, honestly.
+  it("explains a shown request that vanished without this operator acting on it", () => {
+    const shown = request();
+    const withdrawn = vanishedPairingNotice(shown, [], nowMs);
+    expect(withdrawn.title).toBe("Nothing was paired");
+    expect(withdrawn.message).toContain("nothing was paired");
+    expect(withdrawn.message).toContain("Connect again from the browser");
+    const expired = vanishedPairingNotice(request({ expiresAt: nowMs - 1 }), [], nowMs);
+    expect(expired.title).toBe("Nothing was paired");
+    expect(expired.message).toContain("expired");
+    const approvedElsewhere = vanishedPairingNotice(shown, [request({ consumedAt: nowMs })], nowMs);
+    expect(approvedElsewhere.title).toBe("Paired elsewhere");
+    expect(approvedElsewhere.message).not.toContain("nothing was paired");
+  });
+
+  it("raises the vanished notice only for requests this operator did not resolve", () => {
+    const source = readFileSync(new URL("../GlobalClientGatewayPairing.tsx", import.meta.url), "utf8");
+    expect(source).toContain("if (dismissedCodes.includes(shown.pairingCode)) return;");
+    expect(source).toContain("setClosedNotice(vanishedPairingNotice(shown, snapshot.pairings ?? [], Date.now()));");
   });
 });

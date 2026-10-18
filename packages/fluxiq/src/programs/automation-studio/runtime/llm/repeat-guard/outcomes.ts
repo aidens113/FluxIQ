@@ -159,6 +159,21 @@
 // a run of looks, but records no outcome for its key: the identical plain
 // call is the first attempt of that input there, and runs.
 //
+// **A written step is not an attempt of its input (t707 D1).** An install
+// build's builders wrote steps with `core.run_node` `write: true`, each
+// answered `core.run_node.written` ("Added to the Flow, not run yet"). A
+// written step is a `mutate` with no effect applied by design, so it was
+// recorded here as `failed`, and every identical call after it on that page was
+// refused "it was already tried exactly this way and did not work" until the
+// builder stalled. The step had gone into the Flow; nothing failed. A call the
+// host answered as written (`./written-call.ts`) records no outcome under its
+// key, as a check does (below): the identical write runs, is checked again, and
+// the Flow's own second-copy rule keeps it out, telling the model which step
+// already does it (`../../flow-draft/second-copy.ts`, `second_copy`) -- or, if
+// that step was dropped since, it joins again. Running the step now is another
+// input (no `write`), so it was never keyed with the write. A write the host
+// refused is a refused call, recorded as any is.
+//
 // **A refused candidate submission sent again is answered with its issues.**
 // Lane C (`run-mv0fuotv-805294d7`, C2) resent one refused script three times
 // and was told each time to amend a draft that candidate mode does not have.
@@ -206,6 +221,8 @@
 // - A call whose earlier outcome said to wait and try again: a rate limit, a
 //   control briefly disabled, a page still loading (`./retry-later.ts`).
 // - A call that threw: nothing answered it, so it is not a repeat.
+// - A step written and not run (`core.run_node.written`): it was added, not
+//   tried (above).
 // - The judgement's and the repair's replays: they go through the dry-run gate
 //   (`../node-tools/dry-run-gate.ts`), not through the loop's calls. A replay
 //   moves the page without the loop seeing it, so the last state seen is
@@ -217,6 +234,7 @@ import { automationStudioLlmEvidenceCanonicalJson } from "../evidence-loop-decis
 import { automationStudioLlmEvidenceResendAdmission } from "./resend-admission.ts";
 import { automationStudioLlmEvidenceRetriesLater } from "./retry-later.ts";
 import { automationStudioLlmEvidenceSearchStreak, type AutomationStudioLlmEvidenceSearchStreak } from "./searching.ts";
+import { automationStudioLlmEvidenceCallWritten } from "./written-call.ts";
 
 
 /**
@@ -411,6 +429,11 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
       // A call that met a precondition an earlier refusal named lifted it, wherever that refusal was keyed (header, t587).
       const metPrecondition = !call.refused && met(call);
       if (state === undefined) return;
+      // A written step was added, never performed: nothing failed or changed nothing under its key (header, t707 D1).
+      if (automationStudioLlmEvidenceCallWritten(call)) {
+        outcomes.delete(key(call.toolId, call.input, state));
+        return;
+      }
       if (look && !call.refused) {
         const at = key(call.toolId, call.input, state);
         const answer = call.answer === undefined ? undefined : createHash("sha256").update(call.answer).digest("hex");
