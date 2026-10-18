@@ -40,6 +40,8 @@ export function automationStudioProjectBuildResetCalls(project: AutomationStudio
         if (ledger !== own) ledger.observed(read, false);
       }
     },
+    createBaseline: (declared, reference) => own.createBaseline(declared, reference),
+    destinationReceipts: () => own.destinationReceipts(),
     claim: (undoes) => owner(undoes).claim(undoes),
     target: (act, declared) => owner(act).target(act, declared),
     explored: (call) => owner(call.undoes).explored(call),

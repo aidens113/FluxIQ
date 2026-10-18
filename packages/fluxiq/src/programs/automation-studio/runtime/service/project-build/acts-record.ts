@@ -63,6 +63,8 @@ export class AutomationStudioProjectBuildActsRecord {
   /** `calls`, with each explored call's declared classes kept and the acts it recorded written. */
   calls(calls: AutomationStudioSiteResetCalls): AutomationStudioSiteResetCalls {
     return {
+      ...(calls.createBaseline ? { createBaseline: (declared, reference) => calls.createBaseline!(declared, reference) } satisfies Pick<AutomationStudioSiteResetCalls, "createBaseline"> : {}),
+      ...(calls.destinationReceipts ? { destinationReceipts: () => calls.destinationReceipts!() } : {}),
       claim: (undoes) => calls.claim(undoes),
       target: (act, declared) => calls.target(act, declared),
       explored: (call) => {

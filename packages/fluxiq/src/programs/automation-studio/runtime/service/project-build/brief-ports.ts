@@ -232,14 +232,14 @@ export function automationStudioProjectBuildBriefPorts(input: {
     const routing = await startAutomationStudioBuildRouting({ hostRuntime: project.hostRuntime, projectId, flowId, flowInputs: project.flowInputs, start: "first_look", pageless: [AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID] });
     const permittedActs: readonly string[] = request.brief.permittedActs;
     const permittedConsequences = (project.permissions.permittedConsequences ?? []).filter((consequence) => permittedActs.includes(consequence)) as AutomationStudioActionConsequence[];
-    const permissions = automationStudioFlowBootstrapActionPermissions({ ...project.permissions, permittedConsequences, siteReset: input.acts.calls(siteReset), executeTool: project.cancellation.tool(harness.executeTool) });
+    const permissions = automationStudioFlowBootstrapActionPermissions({ ...project.permissions, permittedConsequences, requireCreateBaseline: true, siteReset: input.acts.calls(siteReset), executeTool: project.cancellation.tool(harness.executeTool) });
     AutomationStudioProjectBuildPermissions.of(project).add(permissions);
     const personNeeded = automationStudioFlowBootstrapPersonNeeded({ executeTool: permissions.executeTool, tools: harness.tools, signal: AbortSignal.any([permissions.signal, request.signal]), clearedResultCode: automationStudioFlowDraftReplayClearedCode, ...(project.personAsk ? { ask: project.personAsk } : {}) });
     const denied = binding.deniedEvidenceKeys;
     const now = Date.now();
     const declarations: AutomationStudioFlowInstruction = {
       schemaVersion: "0.1", instructionId: "core.project_action_declarations", title: "Declare lasting actions and observe their original destinations",
-      body: "Before making a reversible lasting effect, observe its destination's complete original inventory. Declare the lasting consequences of every recovery press as honestly as the original operation, even when its control offers recovery from an error. Truly nonlasting actions keep an empty declaration. A successful control press or a vanished source message does not prove destination restoration. Return every identified original collection to its original ordered rows and values before another trial; report unproved restoration honestly.",
+      body: "Before making a reversible lasting effect, observe its destination's complete original inventory. Identified reversible create_new exploration requires its issued resetDestinations.collections ref under resetDestination, unless exact same-scope original evidence already proves absence; a missing baseline refusal changes nothing, so observe safely and retry. Declare the lasting consequences of every recovery press as honestly as the original operation, even when its control offers recovery from an error. Truly nonlasting actions keep an empty declaration. A successful control press or a vanished source message does not prove destination restoration. Return every identified original collection to its original ordered rows and values before another trial; report unproved restoration honestly.",
       scope: { kind: "flow", projectId, flowId }, priority: Number.MIN_SAFE_INTEGER, status: "active", requirement: "required", tags: ["generation"], createdAt: now, updatedAt: now, metadata: { source: "core.project_action_declarations" }
     };
     const runHarness = async (call: AutomationStudioLlmHarnessInput) => {
@@ -282,7 +282,7 @@ export function automationStudioProjectBuildBriefPorts(input: {
       const { entry } = started;
       startIsBuilds = !project.ledger.snapshot().acts.some((act) => act.inPlace);
       const placed = placing(built.loop, placedAt(calls, pages), reader, { capture: true, signal: request.signal });
-      const tools = placed.tools.map((tool) => automationStudioSiteResetUndoesTool(entry.kind === "prepared" ? lookingInPlace(tool) : tool));
+      const tools = placed.tools.map((tool) => automationStudioSiteResetUndoesTool(entry.kind === "prepared" ? lookingInPlace(tool) : tool, { createBaselines: true }));
       // Arrived only where there is a start to arrive at: the opening tool declares an arrival (header).
       const arrived = entry.kind === "prepared" && opensArriving;
       const absorbedActs = started.record.putBack?.map((act) => act.act);
@@ -305,7 +305,7 @@ export function automationStudioProjectBuildBriefPorts(input: {
       // Its start is not the build's: a reset never captures one, and decides on each act's own page.
       const placed = placing(built.loop, placedAt(calls, pages), check, { capture: false, signal: request.signal });
       // Its run-node calls offer `undoes` and no `write`; a lasting press of its own is told as outside it (header).
-      const tools = built.loop.tools.map((tool) => withoutWrite(automationStudioSiteResetUndoesTool(tool)));
+      const tools = built.loop.tools.map((tool) => withoutWrite(automationStudioSiteResetUndoesTool(tool, { createBaselines: true })));
       const loop = observeAutomationStudioEvidenceLoop({ ...told({ ...placed, tools }, { start: started.told, entry: undefined, permittedActs: request.brief.permittedActs, arrived: false, role: "reset" }), decide: built.decide(RESET_COMPLETION) });
       return { loop, remainingActs: (cannotUndo) => remainingActs(project.ledger, check, request.signal, cannotUndo), ended: built.ended };
     }
@@ -313,7 +313,7 @@ export function automationStudioProjectBuildBriefPorts(input: {
 }
 
 type Execute = AutomationStudioLlmEvidenceLoopInput["executeTool"];
-type PlacedLedger = Parameters<typeof automationStudioSiteResetPlacedCall>[0]["ledger"];
+type PlacedLedger = Parameters<typeof automationStudioSiteResetPlacedCall>[0]["ledger"] & { destinationReceipts?(): Array<{ ref: string; ordinal: number; count: number }> };
 
 /** `loop` with every call that makes or undoes an act read around in place, the start read around the opening call when `capture`. */
 function placing<L extends { executeTool: Execute }>(loop: L, ledger: PlacedLedger, reader: AutomationStudioSiteResetStartCheck, options: { capture: boolean; signal: AbortSignal }): L {
@@ -324,7 +324,8 @@ function placing<L extends { executeTool: Execute }>(loop: L, ledger: PlacedLedg
     if (options.capture && !opening) await reader.capture(signal);
     const ran = opening ? await inner(call) : await automationStudioSiteResetPlacedCall({ call, ledger, reader, signal, run: () => inner(call) });
     if (options.capture && opening) await reader.capture(signal);
-    return ran;
+    const receipts = ledger.destinationReceipts?.() ?? [];
+    return receipts.length ? beside(ran, "resetDestinations", { collections: receipts }) : ran;
   };
   return { ...loop, executeTool };
 }
