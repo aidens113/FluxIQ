@@ -23,6 +23,21 @@ function plusNode() {
 }
 
 describe("a read's account", () => {
+  it("reports collection-wide dedupe from the authored record output after paging moved off the read", () => {
+    const node = earbudsNode();
+    const read = node.parameterValues!.extractList as { dedupe?: unknown };
+    delete read.dedupe;
+    node.parameterValues!.recordOutput = { process: { dedupe: { by: ["url"] }, columns: ["name", "price"] } };
+    const { reads } = automationStudioResultReadAccounts({ actionAttempts: [earbudsAttempt()], flowNodes: [node], deniedEvidenceKeys: [] });
+    expect(reads[0]).toMatchObject({ dedupes: true, dedupeBy: ["url"] });
+  });
+
+  it("an explicit read dedupe still takes precedence over a different authored record-output dedupe", () => {
+    const node = earbudsNode();
+    node.parameterValues!.recordOutput = { process: { dedupe: { by: ["name"] } } };
+    const { reads } = automationStudioResultReadAccounts({ actionAttempts: [earbudsAttempt()], flowNodes: [node], deniedEvidenceKeys: [] });
+    expect(reads[0]).toMatchObject({ dedupes: true, dedupeBy: ["url"] });
+  });
   it("says the pages, the stop, the items, and each condition as written with the rows it rejected", () => {
     const { reads } = automationStudioResultReadAccounts({ actionAttempts: [earbudsAttempt()], flowNodes: [earbudsNode()], deniedEvidenceKeys: [] });
     expect(reads).toEqual([{
