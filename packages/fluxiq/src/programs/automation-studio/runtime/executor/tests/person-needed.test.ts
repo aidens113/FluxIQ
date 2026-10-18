@@ -103,7 +103,7 @@ describe("a step that meets something only a person can get past", () => {
 
     expect(asked).toHaveLength(1);
     expect(asked[0]).toMatchObject({
-      askId: "check.attempt.2",
+      askId: expect.stringMatching(/^person-needed\./),
       kind: "choice",
       parks: true,
       status: "pending",
@@ -244,7 +244,7 @@ describe("a run parked durably on a person-needed ask", () => {
     expect(run.status).toBe("succeeded");
     expect(run.attempts.map((attempt) => attempt.nodeId)).toEqual(["start", "check", "read", "done"]);
     expect(host.executed).toEqual(["check", "read"]);
-    expect(attemptOf(run, "check")?.ask).toMatchObject({ status: "answered", route: "success", personNeeded: true });
+    expect(attemptOf(run, "check")?.ask).toMatchObject({ askId: trace.parked!.ask.askId, status: "answered", route: "success", personNeeded: true });
   });
 
   it.each([
@@ -253,7 +253,8 @@ describe("a run parked durably on a person-needed ask", () => {
   ])("resumes down failed on %s and ends with the person-needed ending", async (_case, resumption, resumedAt, said) => {
     const { trace, host, flow } = await parkedAtCheck();
 
-    const resumed = await resumeAutomationStudioGraph({ flow, trace, resumption, options: { ...host.options, now: () => resumedAt } });
+    const actualResumption = resumption.kind === "answer" ? { ...resumption, answer: { ...resumption.answer, askId: trace.parked!.ask.askId } } : resumption;
+    const resumed = await resumeAutomationStudioGraph({ flow, trace, resumption: actualResumption, options: { ...host.options, now: () => resumedAt } });
 
     expect(resumed.outcome).toBe("resumed");
     const run = (resumed as { trace: AutomationStudioGraphExecutionTrace }).trace;
@@ -303,5 +304,35 @@ describe("a check that is still there after Continue", () => {
     expect(parks).toBe(AUTOMATION_STUDIO_PERSON_NEEDED_ASKS_PER_RUN);
     expect(trace.status).toBe("failed");
     expect(trace.message).toContain(`asked ${AUTOMATION_STUDIO_PERSON_NEEDED_ASKS_PER_RUN} times`);
+  });
+});
+
+
+describe("person asks across repeated saved Flow runs", () => {
+  it("persists a fresh question instead of reusing an earlier answered receipt", async () => {
+    const stored = new Map<string, AutomationStudioAskAnswer | null>();
+    const asked: AutomationStudioAsk[] = [];
+    const port: AutomationStudioParkingPort = {
+      open: (ask) => {
+        if (stored.has(ask.askId)) throw new Error("duplicate project ask identity");
+        stored.set(ask.askId, null);
+        asked.push(ask);
+      },
+      awaitAnswer: (ask) => {
+        expect(stored.get(ask.askId)).toBeNull();
+        const answer = choice(ask.askId, AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION);
+        stored.set(ask.askId, answer);
+        return Promise.resolve(answer);
+      }
+    };
+    const flow = pageFlow(["check", "read"]);
+    const first = await runAutomationStudioGraph(flow, { ...pageHost(new Set(["check"])).options, parking: port });
+    const second = await runAutomationStudioGraph(flow, { ...pageHost(new Set(["check"])).options, parking: port });
+    expect(first.status).toBe("succeeded");
+    expect(second.status).toBe("succeeded");
+    expect(asked).toHaveLength(2);
+    expect(asked[0]!.askId).not.toBe(asked[1]!.askId);
+    expect(asked[0]!.raisedBy.attemptId).toBe(asked[1]!.raisedBy.attemptId);
+    expect(stored.size).toBe(2);
   });
 });

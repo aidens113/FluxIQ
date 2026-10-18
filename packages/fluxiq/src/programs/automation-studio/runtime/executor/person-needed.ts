@@ -23,6 +23,7 @@
 // run stops asking and ends, because a loop that keeps knocking on the same
 // check is the thing the ask exists to replace.
 
+import { randomUUID } from "node:crypto";
 import type { AutomationStudioFlowNode } from "../../model/index.ts";
 import {
   AUTOMATION_STUDIO_PERSON_NEEDED_CONTROL_KIND,
@@ -77,8 +78,10 @@ export function automationStudioPersonNeededStep(input: {
   if (asked >= AUTOMATION_STUDIO_PERSON_NEEDED_ASKS_PER_RUN) {
     return { kind: "exhausted", message: endingMessage(input.node, input.attempt, `a person was asked ${asked} times and the check was still there`) };
   }
-  const ask = automationStudioAskInEffects([automationStudioAskEffect(automationStudioPersonNeededAskDraft({ askId: input.attempt.attemptId }))], {
-    askId: input.attempt.attemptId,
+  // Attempts are unique only within a run; conversations store asks across runs.
+  const askId = `person-needed.${randomUUID()}`;
+  const ask = automationStudioAskInEffects([automationStudioAskEffect(automationStudioPersonNeededAskDraft({ askId }))], {
+    askId,
     stage: "execution",
     nodeId: input.node.id,
     definitionId: input.node.definitionId,
