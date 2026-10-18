@@ -356,7 +356,7 @@ supported `process` shapes in both full and condensed help: `dedupe.by`, `where`
 `sort`, `limit`, `columns` and `minRows`, with the same field and value constraints.
 Unsupported processing keys remain validation errors.
 
-Read-list redesign, stage S1. A node that carries a `recordOutput` stores the
+Read-list redesign, stage S1. By default, a node that carries a `recordOutput` stores the
 rows its output returns as a batch of a run dataset
 (`storage/project/run-dataset-store.ts`, `appendBatch`). With `writeMode:
 "append"`, the default assembly writes, each batch continues after the last
@@ -371,6 +371,25 @@ node a `recordOutput`, its id the slug of the step's words then the step's
 stable id (`runtime/flow-bootstrap/authoring/assembled-record-output.ts`,
 `record-output.ts`). A Flow that reaches a domain with no `recordOutput`
 (recorded or hand-built) keeps whatever dataset the domain derives.
+
+**Intermediate rows.** `recordOutput.purpose` accepts `answer` or
+`intermediate`; an omitted purpose retains the durable answer behavior above.
+An explicitly intermediate output validates and allowlists its rows with the
+same schema and sensitivity rules, and returns them for computation and row
+loops, but emits no dataset batch. It cannot clear an existing dataset, even
+with the same dataset ID and `writeMode: "replace"`. Invalid or truncated
+intermediate rows fail capture rather than silently losing controls. A
+nonempty `process` is refused for this purpose: processing finalizes a durable
+answer, whereas transient controls must be filtered by their read or computation.
+
+The compiler, saved Flow parameters and parameter editor preserve the explicit
+purpose. Intermediate-only output cannot satisfy answer-table requirements.
+Its reads, conditions and actions remain verification evidence in current and
+reopened runs; only the nonexistent answer batch is absent. The build-test
+answer reconstruction follows the same rule. No dataset name, schema shape or
+loop usage implies intermediate purpose, and existing stored datasets remain
+answers. Older Core versions reject the new field, so contracts and runtime
+must be deployed together.
 
 **The answer.** When the graph run ends -- succeeded, failed, cancelled, or
 thrown -- and before its result is verified, Core processes every dataset

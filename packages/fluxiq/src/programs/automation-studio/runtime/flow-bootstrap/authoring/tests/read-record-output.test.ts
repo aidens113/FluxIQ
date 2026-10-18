@@ -61,6 +61,17 @@ describe("a read with no record output", () => {
 });
 
 describe("a record output the model wrote", () => {
+  it("preserves explicit intermediate ownership through script and JSON assembly", () => {
+    const [output] = recordOutputs(readStep("Read a working list", ['  recordOutput: {"purpose":"intermediate"}']));
+    expect(output).toMatchObject({ purpose: "intermediate", writeMode: "append" });
+    const accepted = acceptAutomationStudioFlowBootstrapResult({ registry, resolution, result: {
+      plan: { subflows: [{ key: "main", nodes: [{ definitionId: extractListDefinition.id, parameters: {
+        extractList: JSON.parse(READ) as JsonObject, recordOutput: { purpose: "intermediate" }
+      } }] }] }
+    } });
+    expect(accepted.ok).toBe(true);
+    if (accepted.ok) expect(accepted.plan.subflows[0]?.nodes[0]?.parameters?.recordOutput).toMatchObject({ purpose: "intermediate" });
+  });
   it("keeps a written dataset id as written", () => {
     const [output] = recordOutputs(readStep("Read the product list", ["  recordOutput.datasetId: plus_earbuds"]));
 

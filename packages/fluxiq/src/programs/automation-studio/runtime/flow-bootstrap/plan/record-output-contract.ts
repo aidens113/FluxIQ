@@ -62,7 +62,7 @@ export type AutomationStudioFlowBootstrapRecordOutputContract = {
   example: JsonObject;
 };
 
-const KEYS = ["datasetId", "label", "recordsPath", "schema", "writeMode", "maxRecords", "process"] as const;
+const KEYS = ["datasetId", "label", "recordsPath", "schema", "writeMode", "maxRecords", "process", "purpose"] as const;
 const ALWAYS_REQUIRED = ["datasetId", "schema", "writeMode"] as const;
 
 /**
@@ -209,15 +209,16 @@ export function automationStudioFlowBootstrapRecordOutputContract(definition: Au
   const handlings = AUTOMATION_STUDIO_RECORD_FIELD_HANDLINGS.filter((handling) => handling !== "encrypt").join("|");
   const writeModes = AUTOMATION_STUDIO_RECORD_WRITE_MODES.join("|");
   const processing = processingText();
+  const purpose = "purpose: answer|intermediate, optional; absent means answer. Intermediate validates and returns rows for computation/loops but never saves or clears a durable answer dataset, even with replace. It cannot satisfy a requested answer table. Read conditions, coverage and actions remain evidence. Intermediate refuses invalid/truncated rows and nonempty process; filter the actual read/computation instead.";
   const text = [
-    `${nullable ? "null, or an object" : "Required: an object"} with only these keys: datasetId, schema, writeMode, and optional label, maxRecords, recordsPath, process.`,
+    `${nullable ? "null, or an object" : "Required: an object"} with only these keys: datasetId, schema, writeMode, and optional label, maxRecords, recordsPath, process, purpose.`,
     "datasetId: 1-200 of A-Za-z0-9._:-.",
     `schema: {schemaVersion:"0.1", fields:[{id, label, valueType, required?, handling?}]}; ids A-Za-z0-9_-, labels unique; valueType ${valueTypes}; handling ${handlings}, where exclude: never stored, for a value that must not be kept, and not the way a field leaves the answer.`,
     `writeMode: ${writeModes}. maxRecords: 1-${AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS.maxRecordsCeiling}.`,
     supplied ? "recordsPath: leave out, this node supplies it." : "recordsPath: required, dot path to the rows in the result.",
-    processing
+    processing, purpose
   ].join(" ");
-  const condensedText = `${nullable ? "null, or only" : "Required, only"}: datasetId, schema {schemaVersion:"0.1",fields:[{id,label,valueType}]}, writeMode ${writeModes}; optional label, maxRecords, process${supplied ? ", recordsPath (supplied)." : "; recordsPath required."} ${processing}`;
+  const condensedText = `${nullable ? "null, or only" : "Required, only"}: datasetId, schema {schemaVersion:"0.1",fields:[{id,label,valueType}]}, writeMode ${writeModes}; optional label, maxRecords, process, purpose${supplied ? ", recordsPath (supplied)." : "; recordsPath required."} ${processing} ${purpose}`;
   return {
     keys: [...KEYS],
     requiredKeys: supplied ? [...ALWAYS_REQUIRED] : [...ALWAYS_REQUIRED, "recordsPath"],

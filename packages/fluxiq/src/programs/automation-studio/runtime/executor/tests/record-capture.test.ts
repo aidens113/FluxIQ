@@ -47,6 +47,34 @@ function capture(declaredEffect: { type: string; payload?: JsonValue }, dispatch
 }
 
 describe("capturing the rows a record output declares", () => {
+  it.each(["dispatch", "write"])("validates intermediate %s rows and aliases without emitting a durable batch", (path) => {
+    const declaration = { ...recordOutput, purpose: "intermediate", writeMode: "replace" };
+    const original = [{ name: EXTRACTED, secret: EXCLUDED, extra: UNKNOWN }];
+    const captured = path === "dispatch"
+      ? capture(effect(declaration), answer({ page: { items: original } }))
+      : captureAutomationStudioWrittenRecords({ nodeId: "write", attemptId: "write.1", effect: { type: "records.write", payload: { recordOutput: declaration, records: original } } });
+    expect(captured.result.status).toBe("success");
+    expect(captured.result.outputs?.records).toEqual([{ name: EXTRACTED }]);
+    expect(captured.batch).toBeUndefined();
+    expect(JSON.stringify(captured)).not.toContain(EXCLUDED);
+    expect(JSON.stringify(captured)).not.toContain(UNKNOWN);
+    if (path === "dispatch") expect(((captured.result.outputs?.result as JsonObject).page as JsonObject).items).toBe(captured.result.outputs?.records);
+  });
+
+  it.each(["dispatch", "write"])("fails incomplete intermediate %s rows and unavailable encryption", (path) => {
+    const run = (declaration: JsonObject, records: JsonObject[]) => path === "dispatch"
+      ? capture(effect(declaration), answer({ page: { items: records } }))
+      : captureAutomationStudioWrittenRecords({ nodeId: "write", attemptId: "write.1", effect: { type: "records.write", payload: { recordOutput: declaration, records } } });
+    const declaration = { ...recordOutput, purpose: "intermediate" };
+    for (const captured of [run(declaration, [{ name: EXTRACTED }, { price: 4 }]), run({ ...declaration, maxRecords: 1 }, [{ name: EXTRACTED }, { name: "second" }])]) {
+      expect(captured.result).toMatchObject({ status: "failed", failure: { code: "record_output.intermediate_incomplete" } });
+      expect(captured.batch).toBeUndefined();
+      expect(JSON.stringify(captured)).not.toContain(EXTRACTED);
+    }
+    const encrypted = run({ ...declaration, schema: { schemaVersion: "0.1", fields: [{ ...nameField, handling: "encrypt" }] } }, [{ name: EXTRACTED }]);
+    expect(encrypted.result).toMatchObject({ status: "failed", failure: { code: "record_output.encrypt_unavailable" } });
+    expect(encrypted.batch).toBeUndefined();
+  });
   it("writes the validated rows to records and hands them on in a batch with the stored schema", () => {
     const { result, batch } = capture(effect(recordOutput), answer(extractedPayload()));
 
