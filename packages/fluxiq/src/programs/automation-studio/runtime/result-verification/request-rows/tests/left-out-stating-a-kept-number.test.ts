@@ -80,6 +80,19 @@ describe("automationStudioResultLeftOutStatingAKeptNumber", () => {
     expect(automationStudioResultLeftOutStatingAKeptNumber(summary([read(wording, ["Plan draft 7 — title: Plan draft 7"])], [set(KEPT)]))).toEqual([]);
   });
 
+  it("does not treat digits in a negated document-title pattern as a quantity range", () => {
+    const documents = set([{ title: "Guide 4", editors: "4 editors" }, { title: "Guide 12", editors: "12 editors" }]);
+    const excluded = ["Archived guide 4 — title: Archived guide 4"];
+    const wording = "title not matches [\"Archived guide 4\"]";
+    expect(automationStudioResultLeftOutStatingAKeptNumber(summary([read(wording, excluded)], [documents]))).toEqual([]);
+  });
+
+  it("still checks a positive numeric text pattern alongside a negated text pattern", () => {
+    const wording = `${PATTERN} and not matches ["archived 4"]`;
+    const found = automationStudioResultLeftOutStatingAKeptNumber(summary([read(wording, LEFT_OUT)], [set(KEPT)]));
+    expect(found.map((entry) => entry.numbers)).toEqual([[4]]);
+  });
+
   it("does not flag a bound, or a condition that also keeps a set of numbers by equals", () => {
     expect(automationStudioResultLeftOutStatingAKeptNumber(summary([read("editors atLeast 4", LEFT_OUT)], [set(KEPT)]))).toEqual([]);
     expect(automationStudioResultLeftOutStatingAKeptNumber(summary([read("editors equals [4, 12] and contains [\"4\"]", LEFT_OUT)], [set(KEPT)]))).toEqual([]);

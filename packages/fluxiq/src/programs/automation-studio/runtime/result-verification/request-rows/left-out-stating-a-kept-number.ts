@@ -24,7 +24,8 @@
 //
 // **What is not flagged.** A text test whose comparison writes no digit is
 // about text, not a quantity (`name not contains "charging case"`). A condition
-// that also compares a number by `equals` keeps a set of numbers rather than a
+// that negates `matches` excludes a textual pattern; its digits do not establish
+// a quantity range. A condition that also compares a number by `equals` keeps a set of numbers rather than a
 // range, so a number between two kept ones may rightly be out. A row the result
 // holds anyway is not missing. A read that answered with its unfiltered rows
 // kept nothing by its conditions. With no kept row whose number can be read,
@@ -103,6 +104,7 @@ function textTestAboutANumber(wording: string): { subject: string } | undefined 
     const start = relation.index + relation[0].length;
     const operand = bare.slice(start, relations[index + 1]?.index ?? bare.length).replace(/\s+and$/u, "").trim();
     const key = relation[1]!;
+    if (key === "matches" && relation[0].trimStart().startsWith("not ")) continue;
     const text = operand.startsWith("\"") || operand.startsWith("[\"");
     if (key === "equals" && !text) return undefined;
     if ((TEXT_RELATIONS.has(key) || key === "equals") && WRITES_A_NUMBER.test(operand)) aboutANumber = true;
