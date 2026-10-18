@@ -15,10 +15,10 @@ The user authorized continuing the downstream forty-task handoff, including live
 The downstream document `../!FluxIQWebExtension/docs/working/breadth-forty-tasks-plan.md` owns execution order, worker briefs and browser evidence.
 
 - Held storage change `72abeeab` is being compared against dev in t707, rebuilding production dist for each half because crash probes load dist.
-- Held result-verification change `94c3c49f` in t563 passed supervisor-run focused tests: 4 files, 41 tests. Fluxiq typecheck and structure audit passed. Live judge acceptance remains unverified.
+- Result-verification change `94c3c49f` in t563 is merged to local dev after supervisor-run focused tests: 4 files, 41 tests. Fluxiq typecheck and structure audit passed. Live judge acceptance remains unverified.
 - Held drawing-token normalization `4d90c6e7` in t567 passed supervisor-run normalizer tests: 10 tests. Its production build and downstream transport validation are in progress.
 - R1 in t719 is not accepted: subject equality alone cannot authorize removing a pre-existing same-subject item, and an arbitrary changed page cannot prove an exact inverse. The reset worker is adding generic pre-act destination observations and positive completion evidence; unproved inverses must fail closed.
-- The downstream Lab is adding lifetime use of Core's existing build-cache step locks. Core contains no browser-specific lock or scenario code.
+- The downstream Lab's lifetime use of Core's existing build-cache step locks is merged to downstream local dev; supervisor reran 18 real-process/guard tests and the audit. Core contains no browser-specific lock or scenario code. Raw commands bypassing Core's cache remain outside the protection.
 
 Next: settle storage A/B; independently verify and merge safe R1 after live proof; integrate held lane changes with narrow gates; observe downstream live acceptance. No full suite is required for each merge under the user's twice-daily sweep policy.
 
