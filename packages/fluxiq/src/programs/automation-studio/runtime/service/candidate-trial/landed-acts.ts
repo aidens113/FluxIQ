@@ -108,7 +108,8 @@ export function automationStudioCandidateTrialLandedActs(trace: AutomationStudio
     if (!consequences.length && !possible) return;
     const control = automationStudioModelFacingControlWords(node.parameterValues);
     const spot = spotOf(attempt);
-    acts.push({ step: index + 1, definitionId: attempt.definitionId, ...(node.label ? { label: node.label } : {}), ...(control ? { control } : {}), consequences, ...(possible ? { possible: true as const } : {}), ...(spot ? { spot } : {}), ...(created.length ? { created } : {}) });
+    const collections = collectionsOf(attempt);
+    acts.push({ step: index + 1, definitionId: attempt.definitionId, ...(node.label ? { label: node.label } : {}), ...(control ? { control } : {}), consequences, ...(possible ? { possible: true as const } : {}), ...(spot ? { spot } : {}), ...(collections ? { collections } : {}), ...(created.length ? { created } : {}) });
   });
   return acts;
 }
@@ -181,4 +182,33 @@ function changedInPlace(attempt: AutomationStudioNodeAttemptTrace): boolean {
 /** A diff side the domain wrote something on. */
 function written(value: JsonValue | undefined): boolean {
   return typeof value === "string" ? value.trim().length > 0 : Array.isArray(value) ? value.length > 0 : false;
+}
+
+
+/** Immediate complete inventory tokens from the domain; malformed or partial maps cannot prove a transfer. */
+function collectionsOf(attempt: AutomationStudioNodeAttemptTrace): AutomationStudioSiteResetTrialActPlace["collections"] {
+  const witness = attempt.stateRefs?.stateDiff?.collections;
+  if (!isObject(witness)) return undefined;
+  const read = (value: JsonValue | undefined): NonNullable<AutomationStudioSiteResetTrialActPlace["collections"]>["before"] | undefined => {
+    if (!Array.isArray(value) || value.length > MAX_ITEMS) return undefined;
+    const found: NonNullable<AutomationStudioSiteResetTrialActPlace["collections"]>["before"] = [];
+    const scopes = new Set<string>();
+    for (const entry of value) {
+      if (!isObject(entry)) return undefined;
+      const scope = token(entry.scope), group = token(entry.group), subjects = tokens(entry.subjects);
+      if (!scope || !group || !subjects || !Array.isArray(entry.subjects) || entry.subjects.length !== subjects.length || scopes.has(scope) || !isObject(entry.states)) return undefined;
+      const states: Record<string, string> = {};
+      for (const subject of subjects) {
+        const state = token(entry.states[subject]);
+        if (!state) return undefined;
+        states[subject] = state;
+      }
+      if (Object.keys(entry.states).length !== subjects.length) return undefined;
+      scopes.add(scope);
+      found.push({ scope, group, subjects, states });
+    }
+    return found;
+  };
+  const before = read(witness.before), after = read(witness.after);
+  return before && after ? { before, after } : undefined;
 }

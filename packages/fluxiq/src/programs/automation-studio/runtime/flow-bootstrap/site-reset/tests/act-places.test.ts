@@ -140,3 +140,13 @@ describe("site reset reads around an act", () => {
     expect(act.placed).toEqual([]);
   });
 });
+
+
+it("carries immediate complete pre/post inventories with an explored effect", async () => {
+  const collection = { scope: "p:list", group: "g:page", subjects: ["s:document"], states: { "s:document": "v:two" } };
+  const before = { ...at("documents"), collections: [collection] };
+  const after = { ...at("documents", ["moved"]), collections: [{ ...collection, subjects: ["s:other"], states: { "s:other": "v:one" } }] };
+  const h = harness([before, after], "act-1");
+  await h.run({ callId: "move", value: { node: "demo.move", consequences: ["modify_existing"] } });
+  expect(h.placed[0]?.[1].collections).toEqual({ before: before.collections, after: after.collections });
+});

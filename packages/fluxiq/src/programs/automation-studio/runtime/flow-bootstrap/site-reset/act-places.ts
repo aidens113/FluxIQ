@@ -92,6 +92,6 @@ export async function automationStudioSiteResetPlacedCall<T>(input: {
     ledger.noEffect?.(act);
     return ran;
   }
-  ledger.placed(act, { state: before.state, location: before.location, changed: after.differs, ...(after.lines ? { lines: after.lines } : {}), ...(created.length ? { created } : {}) });
+  ledger.placed(act, { state: before.state, location: before.location, changed: after.differs, ...(before.collections && after.collections ? { collections: { before: before.collections, after: after.collections } } : {}), ...(after.lines ? { lines: after.lines } : {}), ...(created.length ? { created } : {}) });
   return ran;
 }

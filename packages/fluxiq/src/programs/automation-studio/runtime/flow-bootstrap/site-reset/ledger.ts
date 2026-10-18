@@ -207,7 +207,9 @@ type Act = {
   /** An unasked removal of what it created landed: spent. */
   spent: boolean;
   /** Destination whose witnessed-new subject a removal must make absent. */
-  subjectUndo?: { scope: string; subject: string; group: string };
+  subjectUndo?: { scope: string; subject: string; group: string; origin?: string };
+  /** A pure transition witnessed immediately around this effect; later reset reads cannot manufacture it. */
+  transfer?: { origin: string; scope: string; group: string; subject: string; state: string };
   /** Its own page before it, and what it changed there. */
   place?: AutomationStudioSiteResetPlace;
   /** Where the control it acted on sat; absent when that is not known (a trial's act whose step's diff gave none, t598). */
@@ -258,6 +260,13 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     this.options = { ...options };
   }
 
+  /** Original project evidence predates every lasting act; adoption never changes current observations. */
+  adoptOriginalCollections(collections: NonNullable<AutomationStudioSiteResetRead["collections"]>): void {
+    for (const collection of collections) {
+      if (!this.observedScopes.has(collection.scope)) this.observedScopes.set(collection.scope, { beforeAct: 0, subjects: new Set(collection.subjects), group: collection.group, states: new Map(Object.entries(collection.states)) });
+    }
+  }
+
   /** A passive whole-scope observation; the first read is a baseline only for later acts. */
   observed(read: AutomationStudioSiteResetRead, baseline = true): void {
     const observed = new Map<string, Set<string>>();
@@ -293,8 +302,8 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
 
   /**
    * Whether an undo of `actId` may act on the control the domain declared,
-   * read before it acts (header). A refusal keeps the act: it is never asked
-   * for again, and the control is not acted on.
+   * read before it acts. Modern refusals leave the act correctable; no refused
+   * control runs, and unresolved strict effects still block ordinary trials.
    */
   target(actId: string, declared: { effect: AutomationStudioActionEffect; consequences: readonly AutomationStudioActionConsequence[]; control: AutomationStudioSiteResetSpot }): AutomationStudioSiteResetTarget {
     const act = this.acts.find((entry) => entry.id === actId);
@@ -306,8 +315,16 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     if (declared.effect === "observe") return { kind: "admit", on: "moving", allowed: [] };
     const unproved = (): AutomationStudioSiteResetTarget => ({ kind: "refused", evidence: { ok: false, code: "candidate.undo_unproved", act: act.id, instruction: "That call has no proved exact inverse on its target and was not run. Retarget the build-owned effect on a destination observed before it was created, and declare the inverse honestly. Looking or navigating is safe; an undeclared control press or a matching name alone proves no restoration.", actsToUndo: this.inPlace() } });
     if (act.strictReset && declared.consequences.length === 0 && (declared.control.scope !== undefined || declared.control.subject !== undefined || declared.control.item !== undefined)) return unproved();
+    if (act.transfer && declared.consequences.length > 0) {
+      const transfer = act.transfer;
+      if (!act.spent && declared.consequences.length === 1 && declared.consequences[0] === "modify_existing" && declared.control.scope === transfer.scope && declared.control.subject === transfer.subject && this.currentGroups.get(transfer.scope) === transfer.group && this.latestGroupScopes.get(transfer.group)?.has(transfer.origin) && this.latestGroupScopes.get(transfer.group)?.has(transfer.scope) && !this.currentSubjects.get(transfer.origin)?.has(transfer.subject) && this.currentSubjects.get(transfer.scope)?.has(transfer.subject) && this.currentStates.get(transfer.scope)?.get(transfer.subject) === transfer.state) {
+        act.subjectUndo = { scope: transfer.scope, subject: transfer.subject, group: transfer.group, origin: transfer.origin };
+        return { kind: "admit", on: "subject", allowed: ["modify_existing"] };
+      }
+      return unproved();
+    }
     const { item, dialog } = declared.control;
-    if (item !== undefined && act.createdItems.includes(item)) return { kind: "admit", on: "created", allowed: act.spent ? [] : ["delete"] };
+    if (item !== undefined && act.createdItems.includes(item) && (!act.strictReset || act.consequences.includes("create_new"))) return { kind: "admit", on: "created", allowed: act.spent ? [] : ["delete"] };
     if (act.spot && sameItem(act.spot, declared.control)) return { kind: "admit", on: "own", allowed: [] };
     if (item === undefined && dialog !== undefined && act.chain) return { kind: "admit", on: "follow_up", allowed: act.chain === "created" && !act.spent ? ["delete"] : [] };
     if (item === undefined && dialog === undefined && declared.consequences.length === 0) return { kind: "admit", on: "moving", allowed: [] };
@@ -354,7 +371,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       act.attempts += 1;
       act.undoneBy = call.callId;
       const unasked = call.on === "created" || (call.on === "subject" && act.subjectUndo !== undefined) || (call.on === "follow_up" && act.chain === "created");
-      if (unasked && declared.consequences.includes("delete")) act.spent = true;
+      if (unasked && (declared.consequences.includes("delete") || act.subjectUndo?.origin !== undefined)) act.spent = true;
       if (call.on === "own" || call.on === "created") act.chain = call.on;
       // An undo on a control about the act's own thing may be confirmed once, as one on its own item (header, t719).
       else if (call.on === "subject") act.chain = "own";
@@ -379,6 +396,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
   placed(act: string, place: AutomationStudioSiteResetPlace): void {
     const entry = this.acts.find((candidate) => candidate.id === act);
     if (!entry) return;
+    this.witnessTransfer(entry, place.collections);
     if (place.created?.length) entry.createdItems = [...new Set([...entry.createdItems, ...place.created])];
     if (place.changed.length > 0) {
       entry.place = { state: structuredClone(place.state), location: place.location, changed: [...place.changed], ...(place.lines ? { lines: { gone: [...place.lines.gone], added: [...place.lines.added] } } : {}) };
@@ -470,20 +488,54 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     return { kind: "admit", ...(answer.startedWith ? { startedWith: answer.startedWith } : {}) };
   }
 
+  /** One complete collection restored in its original order, including every baseline row value. */
+  private collectionRestored(scope: string): boolean {
+    const before = this.observedScopes.get(scope), now = this.currentSubjects.get(scope), states = this.currentStates.get(scope);
+    const ordered = [...(now ?? [])];
+    return !!before && !!now && !!states && this.currentGroups.get(scope) === before.group && ordered.length === before.subjects.size && [...before.subjects].every((subject, index) => ordered[index] === subject && states.get(subject) === before.states.get(subject));
+  }
+
+  /** Freeze only a pure, unambiguous immediate transition; no later current observation establishes ownership. */
+  private witnessTransfer(act: Act, witness: AutomationStudioSiteResetPlace["collections"]): void {
+    if (act.transfer || !witness || act.consequences.length !== 1 || act.consequences[0] !== "modify_existing" || !act.spot?.scope || !act.spot.subject) return;
+    if ([...witness.before, ...witness.after].some((collection) => new Set(collection.subjects).size !== collection.subjects.length || Object.keys(collection.states).length !== collection.subjects.length || collection.subjects.some((subject) => typeof collection.states[subject] !== "string" || !collection.states[subject]))) return;
+    const subject = act.spot.subject;
+    const origin = witness.before.find((collection) => collection.scope === act.spot!.scope);
+    const baseline = origin && this.observedScopes.get(origin.scope);
+    const sequence = this.acts.indexOf(act) + 1;
+    if (!origin || !baseline || baseline.beforeAct >= sequence || baseline.group !== origin.group || !baseline.subjects.has(subject) || !origin.subjects.includes(subject)) return;
+    const before = witness.before.filter((collection) => collection.group === origin.group);
+    const after = witness.after.filter((collection) => collection.group === origin.group);
+    if (new Set(before.map((collection) => collection.scope)).size !== before.length || new Set(after.map((collection) => collection.scope)).size !== after.length) return;
+    if (before.filter((collection) => collection.subjects.includes(subject)).length !== 1 || after.filter((collection) => collection.subjects.includes(subject)).length !== 1) return;
+    const destination = after.find((collection) => collection.scope !== origin.scope && collection.subjects.includes(subject));
+    const destinationBefore = destination && before.find((collection) => collection.scope === destination.scope);
+    const destinationBaseline = destination && this.observedScopes.get(destination.scope);
+    const originAfter = after.find((collection) => collection.scope === origin.scope);
+    if (!destination || !destinationBefore || !destinationBaseline || destinationBaseline.group !== origin.group || destinationBaseline.beforeAct >= sequence || destinationBaseline.subjects.has(subject) || !originAfter || originAfter.subjects.includes(subject) || !destination.states[subject]) return;
+    // Other rows and their order must survive the effect, on both collections and captured siblings.
+    if (before.length !== after.length || before.some((collection) => {
+      const current = after.find((candidate) => candidate.scope === collection.scope);
+      const expected = collection.subjects.filter((value) => value !== subject);
+      const actual = current?.subjects.filter((value) => value !== subject);
+      return !current || !actual || actual.length !== expected.length || expected.some((value, index) => actual[index] !== value || collection.states[value] !== current.states[value]);
+    })) return;
+    act.transfer = { origin: origin.scope, scope: destination.scope, group: origin.group, subject, state: destination.states[subject] };
+  }
+
   /** A vanished subject is insufficient if its list lost baseline data or it moved into a sibling list. */
   private subjectRestored(act: Act): boolean {
     const inverse = act.subjectUndo;
     if (!inverse) return false;
-    const baseline = this.observedScopes.get(inverse.scope);
-    const current = this.currentSubjects.get(inverse.scope);
-    const states = this.currentStates.get(inverse.scope);
-    if (!baseline || !current || !states || current.size !== baseline.subjects.size || [...baseline.subjects].some((subject) => !current.has(subject) || states.get(subject) !== baseline.states.get(subject))) return false;
+    if (!this.collectionRestored(inverse.origin ?? inverse.scope)) return false;
     const fresh = this.latestGroupScopes.get(inverse.group);
     for (const [scope, before] of this.observedScopes) {
-      if (before.group === inverse.group && before.beforeAct < this.acts.indexOf(act) + 1 && !fresh?.has(scope)) return false;
+      if (before.group === inverse.group && before.beforeAct < this.acts.indexOf(act) + 1 && (!fresh?.has(scope) || (inverse.origin !== undefined && !this.collectionRestored(scope)))) return false;
     }
     for (const [scope, subjects] of this.currentSubjects) {
-      if (scope === inverse.scope || this.currentGroups.get(scope) !== inverse.group || !subjects.has(inverse.subject)) continue;
+      if (this.currentGroups.get(scope) !== inverse.group) continue;
+      if (inverse.origin !== undefined && fresh?.has(scope) && !this.observedScopes.has(scope) && subjects.size > 0) return false;
+      if (scope === inverse.scope || !subjects.has(inverse.subject)) continue;
       const before = this.observedScopes.get(scope);
       if (!before || before.beforeAct >= this.acts.indexOf(act) + 1 || !before.subjects.has(inverse.subject) || before.states.get(inverse.subject) !== this.currentStates.get(scope)?.get(inverse.subject)) return false;
     }
@@ -505,7 +557,8 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       const label = act.label ? JSON.stringify(act.label) : act.definitionId;
       const did = `trial step ${act.step} ${label}${act.control ? ` on ${JSON.stringify(act.control)}` : ""}`;
       // Where its step's control sat and what it made, as exploration records an act (header, t598).
-      this.record(did, `${trialRunId ?? "trial"}#step-${act.step}`, act.consequences, undefined, trialSpot(act.spot), this.options.possible === true && act.possible === true, act.created, act.control, act.definitionId);
+      const recorded = this.record(did, `${trialRunId ?? "trial"}#step-${act.step}`, act.consequences, undefined, trialSpot(act.spot), this.options.possible === true && act.possible === true, act.created, act.control, act.definitionId);
+      if (recorded) this.witnessTransfer(recorded, act.collections);
     }
     // A possibly lasting act is not answered as left: it is answered under `possiblyInPlace` (header).
     return this.acts.filter((act) => act.undoable && !act.undone && !act.possible).map(namedAct);
@@ -549,7 +602,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     return act.undoable && !act.undone && !act.kept;
   }
 
-  private record(did: string, ref: string, consequences: readonly AutomationStudioActionConsequence[], call?: string, spot?: AutomationStudioSiteResetSpot, possible = false, created: readonly string[] = [], control?: string, operation?: string): void {
+  private record(did: string, ref: string, consequences: readonly AutomationStudioActionConsequence[], call?: string, spot?: AutomationStudioSiteResetSpot, possible = false, created: readonly string[] = [], control?: string, operation?: string): Act | undefined {
     const lasting = consequences.some((consequence) => UNDOABLE.has(consequence) || IRREVERSIBLE.has(consequence));
     if (!lasting && !possible) return;
     const id = this.options.nextActId ? this.options.nextActId() : this.next <= MAX_ACT ? `act-${this.next}` : undefined;
@@ -563,6 +616,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     // A possibly lasting act never makes a reset due: it refuses no trial (header).
     if (lasting) this.phase = { ...this.phase, recorded: this.phase.recorded + 1 };
     this.options.sink?.({ ...namedAct(act), ...(this.options.owner !== undefined ? { owner: this.options.owner } : {}), ref, undoable });
+    return act;
   }
 }
 

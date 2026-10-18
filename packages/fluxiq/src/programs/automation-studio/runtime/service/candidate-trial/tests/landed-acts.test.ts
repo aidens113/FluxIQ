@@ -176,3 +176,13 @@ describe("the lasting acts a trial landed", () => {
     expect(acts).toEqual([{ step: 3, definitionId: "builtin.policy.action", label: "Recorded save", consequences: ["create_new"] }]);
   });
 });
+
+
+it("carries bounded opaque immediate collection witnesses into a trial act and rejects malformed ones", () => {
+  const collection = { scope: "p:list", group: "g:page", subjects: ["s:document"], states: { "s:document": "v:two" } };
+  const collections = { before: [collection], after: [{ ...collection, subjects: ["s:other"], states: { "s:other": "v:one" } }] };
+  const run = (witness: JsonObject) => automationStudioCandidateTrialLandedActs(trace([attempt("add", "succeeded", { stateRefs: { stateDiff: { added: ["moved"], removed: ["old"], collections: witness } } })]), graph)[0];
+  expect(run(collections)?.collections).toEqual(collections);
+  expect(run({ before: [{ ...collection, subjects: ["s:document", "s:document"] }], after: [collection] })?.collections).toBeUndefined();
+  expect(run({ before: [collection], after: [{ ...collection, states: {} }] })?.collections).toBeUndefined();
+});

@@ -62,12 +62,12 @@ export function automationStudioProjectBuildWholeTrials(input: {
   const trials = automationStudioCandidateTrialPort(input.candidateId, { ...environment, ...automationStudioProjectBuildTrialReads(binding, projectId, flowId), judge });
   const ledger = input.ledger;
   if (!ledger) return trials;
-  const supervisor = ledger.forBrief(AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER);
   const arrival = AutomationStudioProjectBuildPhaseStart.arrival(binding.runsNodes?.arrival, environment);
   const run: AutomationStudioCandidateTrialPort = async (request) => {
     const result = await trials.port(request);
     if (result.acts?.length) {
-      supervisor.trialRan(result.acts, result.trialRunId);
+      // Refresh original pre-effect scope authority without overwriting current evidence.
+      ledger.forBrief(AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER).trialRan(result.acts, result.trialRunId);
       AutomationStudioProjectBuildActsRecord.of(ledger).trialRan(result.acts, result.trialRunId);
     }
     // How its start was made, as every phase of the build is told (header).

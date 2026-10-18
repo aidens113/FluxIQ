@@ -26,11 +26,29 @@ describe("project reset observation routing", () => {
     const other = project.forBrief("other");
     other.explored({ ...add, declared: { ...add.declared, consequences: [] } });
     const first = automationStudioProjectBuildResetCalls(project, project.forBrief("first"));
-    first.observed(read([]));
+    const independent = read([]);
+    independent.scope = "p:independent";
+    independent.collections[0]!.scope = "p:independent";
+    independent.collections[0]!.group = "g:independent";
+    first.observed(independent);
     other.explored(add);
     const second = automationStudioProjectBuildResetCalls(project, other);
     second.observed(read(["s:document"]));
     const act = other.actOf("add")!;
     expect(second.target(act, deletion)).toMatchObject({ kind: "refused" });
   });
+});
+
+
+it("does not create original project authority from first observations after a lasting act", () => {
+  const project = new AutomationStudioSiteResetProjectLedger();
+  const owner = project.forBrief("builder");
+  const builder = automationStudioProjectBuildResetCalls(project, owner);
+  builder.explored(add);
+  builder.observed(read([]));
+  const whole = project.forBrief("supervisor");
+  whole.trialRan([{ step: 1, definitionId: "demo.add", consequences: ["create_new"], spot: { subject: "s:document" } }]);
+  const reset = automationStudioProjectBuildResetCalls(project, project.forBrief("reset"));
+  reset.observed(read(["s:document"]));
+  expect(reset.target("act-2", deletion)).toMatchObject({ kind: "refused" });
 });

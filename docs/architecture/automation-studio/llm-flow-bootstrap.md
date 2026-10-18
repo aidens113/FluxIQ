@@ -2809,3 +2809,37 @@ closed. Restoration compares every baseline row's semantic state fingerprint
 and subject inventory. Newly moved owned subjects or changed baseline-owned
 subjects in sibling complete collections refute restoration. Those sibling
 inventories must be freshly observed on the same captured resource/page.
+
+
+A reversible transfer between complete collections also requires immediate
+before/after witnesses around the original effect. Exploration passes its
+passive captures through the placed call; trial acts carry the same bounded
+opaque inventories from the step's own state diff. A later reset observation
+cannot invent that transition. The origin must match the original control's
+scope and contain the subject before the act; exactly one same-resource/page
+destination gains that subject and lacked it in its pre-act baseline. All
+other rows and their order must survive the transition. Core freezes the moved
+row's immediate destination fingerprint, so a later quantity/state edit prevents
+admission of the inverse. Deletion is never a transfer inverse.
+
+One modify inverse can act on the unchanged witnessed destination subject. It
+is spent once when it lands. Completion requires the exact original ordered
+subject sequences and baseline row-state fingerprints in origin, destination
+and captured sibling collections. A fake inverse, swapped baseline rows or
+changed quantities remains unresolved and blocks an ordinary trial. A missing
+complete baseline, missing immediate trial/exploration witness or ambiguous
+same-subject destination fails closed. No collection selector, URL, browser
+resource identifier or row value enters this Core contract.
+
+
+Whole-project trial ownership shares original inventory authority explicitly.
+The project ledger retains immutable first complete scope/group inventories only
+while no known lasting project act has been recorded. A mere possible effect
+from a nonlasting UI press does not close that boundary. Later reset reads never
+become original authority. Each owner can adopt these original inventories,
+keyed by the domain's trusted opaque resource-bound scope, without replacing its
+current observations. Whole-trial recording refreshes the supervisor owner from
+that authority before recording its acts; a per-step move's before snapshot may
+already contain an earlier trial creation and is not the original whole-site
+baseline. Missing original authority stays unresolved. Current evidence from
+another resource cannot prove restoration of a different scope.

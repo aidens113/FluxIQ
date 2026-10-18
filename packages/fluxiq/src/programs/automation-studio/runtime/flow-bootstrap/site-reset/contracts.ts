@@ -153,6 +153,8 @@ export type AutomationStudioSiteResetPlace = {
   state: JsonObject;
   location: string;
   changed: string[];
+  /** Immediate complete before/after evidence, never reconstructed during reset. */
+  collections?: AutomationStudioSiteResetTrialActPlace["collections"];
   lines?: AutomationStudioSiteResetLines;
   /**
    * The items that were on its page after the act and not before it (t475):
@@ -230,7 +232,12 @@ export type AutomationStudioSiteResetTrialAct = {
  * before. Absent where the diff said nothing of them; then no undo of it can
  * be tied to an item.
  */
-export type AutomationStudioSiteResetTrialActPlace = { spot?: AutomationStudioSiteResetSpot; created?: string[] };
+export type AutomationStudioSiteResetTrialActPlace = {
+  spot?: AutomationStudioSiteResetSpot;
+  created?: string[];
+  /** Domain-neutral opaque complete inventories captured immediately around this effect. */
+  collections?: { before: NonNullable<AutomationStudioSiteResetRead["collections"]>; after: NonNullable<AutomationStudioSiteResetRead["collections"]> };
+};
 
 /**
  * How a trial's start was made (t475). `startReset`: the deployment's start

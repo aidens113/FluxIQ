@@ -247,3 +247,127 @@ describe("reset preserves effects which predate the build", () => {
     expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1"]);
   });
 });
+
+
+describe("positive collection-transfer inverses", () => {
+  const origin = { scope: "p:active", subject: "s:document", item: "i:document" };
+  const destination = { scope: "p:archive", subject: "s:document", item: "i:stored-document" };
+  const collection = (scope: string, subjects: string[], changed: Record<string, string> = {}) => ({ scope, group: "g:page", subjects, states: Object.fromEntries(subjects.map((subject) => [subject, changed[subject] ?? `v:${subject}`])) });
+  const before = () => [collection(origin.scope, ["s:document", "s:baseline"]), collection(destination.scope, ["s:archived"]), collection("p:sibling", ["s:spare"])];
+  const after = () => [collection(origin.scope, ["s:baseline"]), collection(destination.scope, ["s:document", "s:archived"], { "s:document": "v:stored:2" }), collection("p:sibling", ["s:spare"])];
+  const observed = (ledger: AutomationStudioSiteResetLedger, collections = before()) => ledger.observed({ state: {}, location: "collections", differs: [], collections });
+  const move = (trial = false, witness = true) => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    observed(ledger);
+    if (trial) ledger.trialRan([{ step: 1, definitionId: "demo.move", consequences: ["modify_existing"], spot: origin, ...(witness ? { collections: { before: before(), after: after() } } : {}) }]);
+    else {
+      ledger.explored(acted("move", ["modify_existing"], {}, origin));
+      if (witness) ledger.placed("act-1", { state: {}, location: "collections", changed: ["moved"], collections: { before: before(), after: after() } });
+    }
+    observed(ledger, after());
+    return ledger;
+  };
+  const inverse = (ledger: AutomationStudioSiteResetLedger) => {
+    expect(ledger.target("act-1", aim(["modify_existing"], destination))).toEqual({ kind: "admit", on: "subject", allowed: ["modify_existing"] });
+    ledger.explored(acted("inverse", ["modify_existing"], { undoes: "act-1", on: "subject" }, destination));
+  };
+
+  it("restores explored and trial transfers only from immediate equivalent witnesses and spends one inverse", async () => {
+    for (const trial of [false, true]) {
+      const ledger = move(trial);
+      inverse(ledger);
+      expect(ledger.claim("act-1")).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_already_done" } });
+      observed(ledger);
+      expect(await ledger.beforeTrial(back)).toEqual({ kind: "admit" });
+      expect(ledger.inPlace()).toEqual([]);
+    }
+  });
+
+  it("refuses deletion and later quantitative edits of the moved subject", () => {
+    const ledger = move();
+    expect(ledger.target("act-1", aim(["delete"], destination))).toMatchObject({ kind: "refused" });
+    const edited = after();
+    edited[1]!.states["s:document"] = "v:stored:3";
+    observed(ledger, edited);
+    expect(ledger.target("act-1", aim(["modify_existing"], destination))).toMatchObject({ kind: "refused" });
+  });
+
+  it("never invents an immediate effect witness from a later complete observation", () => {
+    for (const trial of [false, true]) expect(move(trial, false).target("act-1", aim(["modify_existing"], destination))).toMatchObject({ kind: "refused" });
+  });
+
+  it("rejects incomplete, cross-resource, pre-existing destination and wrong-origin transition witnesses", () => {
+    for (const kind of ["partial", "resource", "existing", "origin"] as const) {
+      const ledger = new AutomationStudioSiteResetLedger();
+      const was = before(), now = after();
+      if (kind === "partial") was.splice(1, 1);
+      if (kind === "resource") now[1]!.group = "g:other";
+      if (kind === "existing") was[1] = collection(destination.scope, ["s:document", "s:archived"]);
+      if (kind === "origin") {
+        was[0]!.scope = "p:unrelated";
+        now[0]!.scope = "p:unrelated";
+      }
+      observed(ledger, was);
+      ledger.trialRan([{ step: 1, definitionId: "demo.move", consequences: ["modify_existing"], spot: origin, collections: { before: was, after: now } }]);
+      observed(ledger, now);
+      expect(ledger.target("act-1", aim(["modify_existing"], destination))).toMatchObject({ kind: "refused" });
+    }
+  });
+
+  it("requires exact ordered baseline restoration including sibling values, never a fake inverse", async () => {
+    for (const defect of ["fake", "order", "quantity", "sibling"] as const) {
+      const ledger = move(true);
+      inverse(ledger);
+      const restored = defect === "fake" ? after() : before();
+      if (defect === "order") restored[0]!.subjects.reverse();
+      if (defect === "quantity") restored[0]!.states["s:document"] = "v:changed-quantity";
+      if (defect === "sibling") restored[2]!.states["s:spare"] = "v:changed-sibling";
+      observed(ledger, restored);
+      expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    }
+  });
+
+  it("can reverse a retry's pure transfer despite transient error text before the move", async () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    observed(ledger);
+    const retry = before();
+    retry[0]!.states["s:document"] = "v:two-with-transient-retry-error";
+    observed(ledger, retry);
+    ledger.explored(acted("retry-move", ["modify_existing"], {}, origin));
+    ledger.placed("act-1", { state: {}, location: "collections", changed: ["moved"], collections: { before: retry, after: after() } });
+    observed(ledger, after());
+    inverse(ledger);
+    observed(ledger);
+    expect(await ledger.beforeTrial(back)).toEqual({ kind: "admit" });
+  });
+
+  it("moving back an earlier quantity edit never absorbs that edit or proves whole reset", async () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    observed(ledger);
+    ledger.explored(acted("quantity", ["modify_existing"], {}, origin));
+    const edited = before(), moved = after();
+    edited[0]!.states["s:document"] = "v:quantity-three";
+    moved[1]!.states["s:document"] = "v:stored:3";
+    observed(ledger, edited);
+    ledger.explored(acted("move", ["modify_existing"], {}, origin));
+    ledger.placed("act-2", { state: {}, location: "collections", changed: ["moved"], collections: { before: edited, after: moved } });
+    observed(ledger, moved);
+    expect(ledger.target("act-2", aim(["modify_existing"], destination))).toMatchObject({ kind: "admit" });
+    ledger.explored(acted("inverse", ["modify_existing"], { undoes: "act-2", on: "subject" }, destination));
+    observed(ledger, edited);
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    expect(ledger.inPlace().map((act) => act.act)).toContain("act-1");
+  });
+
+  it("rejects swapped baseline rows after a new-line removal too", async () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    const scope = "p:list";
+    observed(ledger, [collection(scope, ["s:a", "s:b"])]);
+    ledger.explored(acted("create", ["create_new"], {}, { subject: "s:document" }));
+    observed(ledger, [collection(scope, ["s:a", "s:b", "s:document"])]);
+    expect(ledger.target("act-1", aim(["delete"], { scope, subject: "s:document" }))).toMatchObject({ kind: "admit" });
+    ledger.explored(acted("remove", ["delete"], { undoes: "act-1", on: "subject" }, { scope, subject: "s:document" }));
+    observed(ledger, [collection(scope, ["s:b", "s:a"])]);
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+  });
+});

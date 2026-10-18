@@ -29,10 +29,12 @@ export function automationStudioProjectBuildResetCalls(project: AutomationStudio
   };
   return {
     observed: (read) => {
+      project.observed(read);
       own.observed(read);
       // The reset sees the resource it is undoing. Update evidence for acts
       // already owned elsewhere, but never seed a different brief's baseline:
-      // concurrent builders may use independent resources with the same scope.
+      // independent resources must have different opaque scopes. Only original
+      // pre-effect project authority, adopted explicitly, can seed another owner.
       for (const brief of new Set(project.snapshot().acts.map((act) => act.owner))) {
         const ledger = project.forBrief(brief);
         if (ledger !== own) ledger.observed(read, false);
