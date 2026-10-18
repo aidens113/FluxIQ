@@ -367,6 +367,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       siteReset.explored({
         callId: call.callId,
         toolId: call.toolId,
+        ...(typeof value.node === "string" ? { operation: value.node } : {}),
         ...(undo ? { undoes: undo.act } : {}),
         ...(declared ? { declared } : {}),
         ...(target?.kind === "admit" ? { on: target.on } : {}),
@@ -470,7 +471,8 @@ function placeOf(read: AutomationStudioReadActionDeclaration): AutomationStudioS
     ...(read.controlItem !== null ? { item: read.controlItem } : {}),
     ...(read.controlDialog !== null ? { dialog: read.controlDialog } : {}),
     ...(read.controlSubject !== null ? { subject: read.controlSubject } : {}),
-    ...(read.controlPage !== null ? { page: read.controlPage } : {})
+    ...(read.controlPage !== null ? { page: read.controlPage } : {}),
+    ...(read.controlScope !== null ? { scope: read.controlScope } : {})
   };
 }
 

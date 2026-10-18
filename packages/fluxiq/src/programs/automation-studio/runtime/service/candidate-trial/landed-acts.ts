@@ -133,8 +133,8 @@ const MAX_ITEMS = 2_000;
 function spotOf(attempt: AutomationStudioNodeAttemptTrace): AutomationStudioSiteResetSpot | undefined {
   const spot = attempt.stateRefs?.stateDiff?.spot;
   if (!isObject(spot)) return undefined;
-  const item = token(spot.item), dialog = token(spot.dialog), subject = token(spot.subject), page = token(spot.page);
-  return item || dialog || subject || page ? { ...(item ? { item } : {}), ...(dialog ? { dialog } : {}), ...(subject ? { subject } : {}), ...(page ? { page } : {}) } : undefined;
+  const item = token(spot.item), dialog = token(spot.dialog), subject = token(spot.subject), page = token(spot.page), scope = token(spot.scope);
+  return item || dialog || subject || page || scope ? { ...(item ? { item } : {}), ...(dialog ? { dialog } : {}), ...(subject ? { subject } : {}), ...(page ? { page } : {}), ...(scope ? { scope } : {}) } : undefined;
 }
 
 /** The diff's `items`: the tokens the page before the step and the page after it listed; a side not listed is absent (header). */

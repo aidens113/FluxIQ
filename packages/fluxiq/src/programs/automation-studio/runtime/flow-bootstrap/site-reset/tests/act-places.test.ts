@@ -65,12 +65,12 @@ describe("site reset reads around an act", () => {
     expect([...words.seen, ...link.seen, ...remove.seen]).toEqual([["act-1", false], ["act-2", false], ["act-3", true]]);
   });
 
-  it("reads nothing around a look, a call that declares nothing lasting, or another tool", async () => {
+  it("observes destinations after non-undo calls without placing an act, and leaves other tools alone", async () => {
     const h = harness([]);
     await h.run({ callId: "look", value: { node: "demo.look", consequences: [] } });
     await h.run({ callId: "pay", value: { node: "demo.pay", consequences: ["move_money"] } });
     await h.run({ callId: "find", toolId: "web.find_on_page", value: { text: "x" } });
-    expect(h.asked).toEqual([]);
+    expect(h.asked).toEqual([undefined, undefined]);
     expect(h.ran()).toBe(3);
   });
 

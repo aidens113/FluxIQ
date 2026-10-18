@@ -1,4 +1,4 @@
-import type { AutomationStudioSiteResetCalls, AutomationStudioSiteResetLedger, AutomationStudioSiteResetPlace, AutomationStudioSiteResetProjectLedger } from "../../flow-bootstrap/site-reset/index.ts";
+import type { AutomationStudioSiteResetCalls, AutomationStudioSiteResetLedger, AutomationStudioSiteResetPlace, AutomationStudioSiteResetRead, AutomationStudioSiteResetProjectLedger } from "../../flow-bootstrap/site-reset/index.ts";
 
 // What a reset brief's permission gate tells the ledger (unit A5c). A reset
 // undoes acts other agents made -- each builder's, and the supervisor's whole
@@ -17,6 +17,7 @@ import type { AutomationStudioSiteResetCalls, AutomationStudioSiteResetLedger, A
 // reset's ledger.
 
 export function automationStudioProjectBuildResetCalls(project: AutomationStudioSiteResetProjectLedger, own: AutomationStudioSiteResetLedger): AutomationStudioSiteResetCalls & {
+  observed(read: AutomationStudioSiteResetRead): void;
   actOf(callId: string): string | undefined;
   placed(act: string, place: AutomationStudioSiteResetPlace): void;
   undoSeen(act: string, changedInPlace: boolean): void;
@@ -27,6 +28,16 @@ export function automationStudioProjectBuildResetCalls(project: AutomationStudio
     return found ? project.forBrief(found.owner) : own;
   };
   return {
+    observed: (read) => {
+      own.observed(read);
+      // The reset sees the resource it is undoing. Update evidence for acts
+      // already owned elsewhere, but never seed a different brief's baseline:
+      // concurrent builders may use independent resources with the same scope.
+      for (const brief of new Set(project.snapshot().acts.map((act) => act.owner))) {
+        const ledger = project.forBrief(brief);
+        if (ledger !== own) ledger.observed(read, false);
+      }
+    },
     claim: (undoes) => owner(undoes).claim(undoes),
     target: (act, declared) => owner(act).target(act, declared),
     explored: (call) => owner(call.undoes).explored(call),

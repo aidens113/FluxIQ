@@ -2768,3 +2768,44 @@ calls for refusal, and uncertain quantity or cohort evidence calls for unknown.
 These are model instructions, not a deterministic arithmetic or completeness
 proof. Existing answer schemas, two-call agreement and candidate promotion gates
 remain unchanged; an independent runtime oracle is still needed for live proof.
+
+
+### Cross-page reset ownership
+
+A title match identifies a subject; it does not prove that deleting its whole
+line reverses only this build's effects. Passive reset reads therefore expose
+opaque, resource-bound complete collection inventories. A domain must positively
+establish completeness; absence in a partial or merely rendered list never
+establishes ownership. The ledger retains the first complete read of each
+scope and its act sequence. A cross-page subject deletion needs a create-new
+act, a complete read of the destination before that act, absence of the
+subject in that baseline, and its positive presence at the undo. It is
+admitted once without another permission question. Completion requires a
+later complete read of that same scope to prove that subject disappeared;
+an arbitrary page change is insufficient.
+
+The same witnessed removal can restore repeated creations from one registered
+operation on the same identified source and control. It does not absorb an
+unrelated creation sharing the same subject. The complete baseline must predate
+each creation. Existing baseline quantities never authorize deleting a whole
+line. Subject-only quantitative modifications are not an exact inverse and
+are refused until a deterministic inverse witness is available.
+
+Modern subject- or scope-bearing declared reversible acts cannot admit an
+ordinary trial on leftovers. cannotUndo remains an honest unresolved result;
+Core refuses the trial with candidate.trial_reset_unproved until positive
+baseline restoration is observed. Wrong-target modern undo attempts are
+recoverable and can retarget before anything is pressed. Declaring no lasting
+consequence on an undo's modern control press does not bypass ownership.
+Undeclared possible effects, irreversible effects, and legacy domains with
+neither subject nor scope tokens retain their existing policy.
+
+Project resets route current inventories to the ledger owning an act without
+seeding another builder's baseline from an independent resource. Distinct
+resource scopes cannot overwrite each other's current inventories. Builders
+are told to inspect a destination's complete item inventory before creating
+effects they will later need to remove there; missing prior observation fails
+closed. Restoration compares every baseline row's semantic state fingerprint
+and subject inventory. Newly moved owned subjects or changed baseline-owned
+subjects in sibling complete collections refute restoration. Those sibling
+inventories must be freshly observed on the same captured resource/page.

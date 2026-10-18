@@ -32,7 +32,8 @@
 //   held before the build -- because a one-line list names no row, and two
 //   missing items compared equal. A dialog alone is no identity either: a
 //   drawer can hold several lines no token tells apart. Where no reverse is
-//   positively identified, the act is kept (`startedWith.cannotUndo`).
+//   positively identified, legacy unscoped acts are kept. Modern scoped acts
+//   remain unresolved and refuse an ordinary trial until restored.
 // - **One lasting press per confirmation (t479).** A dialog control with no
 //   item follows an undo that landed on the act's own or created item only
 //   once with a lasting class: the site's one confirmation. After it, the
@@ -46,11 +47,10 @@
 //   Once per act: an unasked removal that landed spends it, and a later claim
 //   on that act is refused before anything runs (`candidate.undo_already_done`).
 //   Any other removal is gated exactly as any call is, and asked.
-// - **An undo refused is an act kept, at once (t475).** A control refused as
-//   another item's, or an undo the gate refused, keeps the act: it is never
-//   asked for again and every trial runs with it in place, saying so under
-//   `startedWith.cannotUndo`. Lane D round 10 build 2 sent refused undos until
-//   the repeat guard ended the build.
+// - **Legacy unscoped refusals keep an act (t475).** These retain the older
+//   startedWith.cannotUndo policy. Modern scoped wrong-target attempts are
+//   recoverable: nothing runs, and the build can correct its target. An unproved
+//   modern inverse never admits an ordinary trial on leftovers.
 // - **Only an act whose effect appeared is recorded (t475).** An act whose own
 //   page read the same just after it as just before (`noEffect`) left nothing
 //   the site shows, and is not asked for: lane B round 10 was told to undo an
@@ -64,15 +64,15 @@
 // before a trial the reset goes back to that page and looks: the act is undone
 // once none of what it changed there is still there (`beforeTrial`). An act
 // with no such place -- a trial's act, or one whose page could not be read --
-// counts as undone once an undo of it landed and changed the page it was made
-// on (`undoSeen`); where the target cannot be read at all, a landed undo counts
-// as it did before.
+// uses the older undoSeen fallback only for legacy unscoped effects. Modern
+// scoped reversible effects require positive baseline restoration instead.
 //
-// **An act the site cannot undo does not trap the build.** An act still there
+// **Legacy unscoped acts can be kept.** An act still there
 // after the reset asked for it twice, or one the model names under
 // `cannotUndo` once the reset has asked for it, is kept: never asked for
 // again, and every trial runs with it in place, saying so under
-// `startedWith.cannotUndo` (`./trial-policy.ts`).
+// `startedWith.cannotUndo` (`./trial-policy.ts`). Modern scoped reversible acts
+// still refuse ordinary trials; cannotUndo is an honest unresolved outcome.
 //
 // **A start hook's reset asks the model for nothing (t475, t479).** When the
 // deployment's start hook has just put the site back (`startReset`), every act
@@ -126,28 +126,21 @@
 // admitted on them exactly as on an explored act's. Where the diff gave
 // neither, it is recorded as before. A start hook takes it back as before.
 //
-// **An undo is tied to its act by what both are about, too (t719).** An act
-// whose effect shows on another page or in another list had no item an undo
-// there could match: an Add to Cart pressed on a detail page sits in no row and
-// its line appears in the basket, and a Save for later moves its line to a
-// list whose control is another one. Every undo of them was refused
-// `candidate.undo_wrong_target`, the act kept, and on the install proof of
-// t707 (round 3) each later trial ran on what the earlier ones left, the
-// basket growing from 2 lines to 8 with 5 saved. The domain now says
-// what a control is about (`subject`: its item's title, or for a control in no
-// item the nearest titled part of the page around it) and what its page is
-// about (`page`: its main heading), as opaque tokens of one kind. An undo is
-// admitted on a control whose `subject` equals the act's -- or, for an act
-// that sat in no item, the act's `page`, which is what a detail page's own
-// controls act on -- by a positive match only (t479: a token missing on either
-// side never matches, so a line about anything else, the soap the basket held
-// before the build, is refused as before), and only for classes that reverse
-// the act's (`REVERSES`): an add is undone by a removal or a change, a change
-// by a change, a removal by creating again. Nothing is removed unasked on it:
-// only an item the act created is (`created`). A dialog that follows such an
-// undo may confirm it once, as one that follows an undo on the act's own item.
-// An act of a class no control takes back -- money moved, a message sent --
-// stays not undoable whatever it is about.
+// **Cross-page inverses need a destination baseline (t719 review).** A
+// subject/title says which item an effect concerns; it never proves that the
+// whole item belongs to the build. Before adding something whose removal will
+// happen elsewhere, the build observes that destination. The domain supplies
+// an opaque scope and its subject tokens, including singleton/hidden items.
+// The ledger retains the first such read and the local act sequence. A
+// subject-only deletion is admitted only for create_new when that scope was
+// read before the act, the subject was absent then and is present now. It is
+// unasked once and completes only after a fresh read restores the whole baseline
+// inventory and row states, without moving the subject into a sibling
+// collection. An existing line's quantities, or an unseen destination,
+// cannot meet this proof. Unproved quantity inverses stay refused; a changed
+// page alone never marks a subject inverse complete. A project reset updates
+// the act owner's current observation without manufacturing a baseline for a
+// different brief's independent resource.
 //
 // A phase runs from the build's start, or from one trial to the next. The
 // policy before a trial (`./trial-policy.ts`) reads it.
@@ -164,6 +157,7 @@ import type {
   AutomationStudioSiteResetExplored,
   AutomationStudioSiteResetNamedAct,
   AutomationStudioSiteResetPlace,
+  AutomationStudioSiteResetRead,
   AutomationStudioSiteResetSpot,
   AutomationStudioSiteResetTarget,
   AutomationStudioSiteResetTrialAct
@@ -183,7 +177,7 @@ const REVERSES: Readonly<Partial<Record<AutomationStudioActionConsequence, reado
 };
 /** The highest act number `undoes` can name (`^act-[1-9][0-9]{0,3}$`); no build comes near it, and past it nothing more is recorded. */
 const MAX_ACT = 9999;
-/** Reset refusals that named an act still there, after which it is kept: the site is taken to offer no way to undo it. */
+/** Reset attempts before keeping an unresolved act; strict reversible acts then refuse ordinary trials. */
 const ASKED_BEFORE_KEPT = 2;
 /** What a possibly lasting act's words end with (header, t593). */
 const POSSIBLY_LASTING = "declared no lasting act, but had an effect: possibly lasting";
@@ -197,9 +191,12 @@ type Act = {
   call?: string;
   /** The name of the control the exploration call acted on, as the gate carried it; absent when withheld or for a trial's act (t647). */
   control?: string;
+  operation?: string;
   /** The lasting classes it declared: what an undo tied to it by subject may reverse (header, t719). */
   consequences: readonly AutomationStudioActionConsequence[];
   undoable: boolean;
+  /** Subject-bearing effects require positive baseline restoration, never an ordinary trial on leftovers. */
+  strictReset: boolean;
   undone: boolean;
   /** The call that last tried to undo it, as the model gave its id. */
   undoneBy?: string;
@@ -209,6 +206,8 @@ type Act = {
   undoChanged?: boolean;
   /** An unasked removal of what it created landed: spent. */
   spent: boolean;
+  /** Destination whose witnessed-new subject a removal must make absent. */
+  subjectUndo?: { scope: string; subject: string; group: string };
   /** Its own page before it, and what it changed there. */
   place?: AutomationStudioSiteResetPlace;
   /** Where the control it acted on sat; absent when that is not known (a trial's act whose step's diff gave none, t598). */
@@ -247,11 +246,32 @@ export type AutomationStudioSiteResetRecordedAct = AutomationStudioSiteResetName
 export class AutomationStudioSiteResetLedger implements AutomationStudioSiteResetCalls {
   private readonly acts: Act[] = [];
   private next = 1;
+  private readonly observedScopes = new Map<string, { beforeAct: number; subjects: ReadonlySet<string>; group: string; states: ReadonlyMap<string, string> }>();
+  private readonly currentSubjects = new Map<string, ReadonlySet<string>>();
+  private readonly currentStates = new Map<string, ReadonlyMap<string, string>>();
+  private readonly currentGroups = new Map<string, string>();
+  private readonly latestGroupScopes = new Map<string, ReadonlySet<string>>();
   private phase: AutomationStudioSiteResetPhase = { recorded: 0, refusals: 0, startDiffersSent: false };
   private readonly options: AutomationStudioSiteResetLedgerOptions;
 
   constructor(options: AutomationStudioSiteResetLedgerOptions = {}) {
     this.options = { ...options };
+  }
+
+  /** A passive whole-scope observation; the first read is a baseline only for later acts. */
+  observed(read: AutomationStudioSiteResetRead, baseline = true): void {
+    const observed = new Map<string, Set<string>>();
+    for (const collection of read.collections ?? []) {
+      const subjects = new Set(collection.subjects);
+      if (baseline && !this.observedScopes.has(collection.scope)) this.observedScopes.set(collection.scope, { beforeAct: this.acts.length, subjects, group: collection.group, states: new Map(Object.entries(collection.states)) });
+      this.currentSubjects.set(collection.scope, subjects);
+      this.currentStates.set(collection.scope, new Map(Object.entries(collection.states)));
+      this.currentGroups.set(collection.scope, collection.group);
+      const scopes = observed.get(collection.group) ?? new Set<string>();
+      scopes.add(collection.scope);
+      observed.set(collection.group, scopes);
+    }
+    for (const [group, scopes] of observed) this.latestGroupScopes.set(group, scopes);
   }
 
   claim(undoes: unknown): AutomationStudioSiteResetClaim {
@@ -284,13 +304,36 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     }
     // A look changes nothing, wherever it looks.
     if (declared.effect === "observe") return { kind: "admit", on: "moving", allowed: [] };
+    const unproved = (): AutomationStudioSiteResetTarget => ({ kind: "refused", evidence: { ok: false, code: "candidate.undo_unproved", act: act.id, instruction: "That call has no proved exact inverse on its target and was not run. Retarget the build-owned effect on a destination observed before it was created, and declare the inverse honestly. Looking or navigating is safe; an undeclared control press or a matching name alone proves no restoration.", actsToUndo: this.inPlace() } });
+    if (act.strictReset && declared.consequences.length === 0 && (declared.control.scope !== undefined || declared.control.subject !== undefined || declared.control.item !== undefined)) return unproved();
     const { item, dialog } = declared.control;
     if (item !== undefined && act.createdItems.includes(item)) return { kind: "admit", on: "created", allowed: act.spent ? [] : ["delete"] };
     if (act.spot && sameItem(act.spot, declared.control)) return { kind: "admit", on: "own", allowed: [] };
     if (item === undefined && dialog !== undefined && act.chain) return { kind: "admit", on: "follow_up", allowed: act.chain === "created" && !act.spent ? ["delete"] : [] };
     if (item === undefined && dialog === undefined && declared.consequences.length === 0) return { kind: "admit", on: "moving", allowed: [] };
     // About what the act was about, by a positive match, reversing its classes only (header, t719).
-    if (aboutTheAct(act, declared.control) && reverses(act.consequences, declared.consequences)) return { kind: "admit", on: "subject", allowed: [] };
+    if (aboutTheAct(act, declared.control) && reverses(act.consequences, declared.consequences)) {
+      const { scope, subject } = declared.control;
+      const baseline = scope === undefined ? undefined : this.observedScopes.get(scope);
+      // A name is identity, never evidence that the whole effect is ours.
+      // Only deleting a subject absent on a positively observed destination
+      // before this act is an exact inverse here. Quantitative edits need a
+      // deterministic inverse witness, which this seam does not yet supply.
+      if (scope !== undefined && subject !== undefined && baseline && baseline.beforeAct < this.acts.indexOf(act) + 1 && !baseline.subjects.has(subject) && this.currentSubjects.get(scope)?.has(subject) && act.consequences.includes("create_new") && declared.consequences.length === 1 && declared.consequences[0] === "delete") {
+        act.subjectUndo = { scope, subject, group: baseline.group };
+        // Repeated executions of one registered creation on the same source
+        // control can share a newly-created destination line. Its disappearance
+        // restores them all; a second destructive press would touch baseline.
+        if (act.operation && act.control && act.spot?.scope) {
+          for (const other of this.acts) {
+            if (other === act || !this.claimable(other) || other.operation !== act.operation || other.control !== act.control || other.spot?.scope !== act.spot.scope || other.spot?.subject !== act.spot.subject || other.spot?.page !== act.spot.page || other.spot?.item !== act.spot.item || other.spot?.dialog !== act.spot.dialog || other.consequences.length !== 1 || other.consequences[0] !== "create_new" || baseline.beforeAct >= this.acts.indexOf(other) + 1 || !aboutTheAct(other, declared.control)) continue;
+            other.subjectUndo = { scope, subject, group: baseline.group };
+          }
+        }
+        return { kind: "admit", on: "subject", allowed: ["delete"] };
+      }
+    }
+    if (act.strictReset) return unproved();
     act.kept = true;
     return { kind: "refused", evidence: { ok: false, code: "candidate.undo_wrong_target", act: act.id, instruction: WORDS.wrongTarget(), cannotUndo: [namedAct(act)] } };
   }
@@ -307,9 +350,10 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       }
       // Only a call that acted on the site is an attempt: a look leaves the act as it was.
       if (!call.landed || act.spent || !declared?.permitted || declared.effect !== "mutate") return;
+      if (call.on === "subject" && act.subjectUndo === undefined) return;
       act.attempts += 1;
       act.undoneBy = call.callId;
-      const unasked = call.on === "created" || (call.on === "follow_up" && act.chain === "created");
+      const unasked = call.on === "created" || (call.on === "subject" && act.subjectUndo !== undefined) || (call.on === "follow_up" && act.chain === "created");
       if (unasked && declared.consequences.includes("delete")) act.spent = true;
       if (call.on === "own" || call.on === "created") act.chain = call.on;
       // An undo on a control about the act's own thing may be confirmed once, as one on its own item (header, t719).
@@ -323,7 +367,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     const spot = spotOf(declared.control) ?? {};
     // A press on a named control that declared nothing lasting is possibly lasting, where this ledger records those (header).
     const possible = this.options.possible === true && declared.control.name !== null;
-    this.record(words.filter((word) => word.trim()).join(" ").trim(), call.callId, declared.consequences, call.callId, spot, possible, [], declared.control.name ?? undefined);
+    this.record(words.filter((word) => word.trim()).join(" ").trim(), call.callId, declared.consequences, call.callId, spot, possible, [], declared.control.name ?? undefined, call.operation);
   }
 
   /** The act the exploration call `callId` made, if it made one. */
@@ -358,8 +402,9 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
   }
 
   /**
-   * The reset before a trial: acts named under `cannotUndo` kept, every act
-   * still to undo looked for on its own page, then the policy applied to this
+   * The reset before a trial: cannotUndo keeps unresolved acts, strict
+   * reversible leftovers refuse, and other acts are looked for before the policy
+   * applies to this
    * phase. `checks.compare` is asked only when it is needed, and once. After a
    * start hook (`startReset`), every act counts undone and the trial runs, with
    * nothing compared or asked (header, t479).
@@ -391,17 +436,26 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     }
     let moved = false;
     // A possibly lasting act an undo was tried on is judged as any act is, though it is never asked for (header).
-    for (const act of this.acts.filter((entry) => this.claimable(entry))) {
+    for (const act of this.acts.filter((entry) => this.claimable(entry) || (entry.strictReset && entry.undoable && !entry.undone && entry.kept))) {
+      if (act.subjectUndo) {
+        // Changing a page is insufficient: require disappearance of precisely
+        // the subject we proved absent before the act, on that same scope.
+        if (this.subjectRestored(act)) act.undone = true;
+        if (!act.undone && act.askedFor >= ASKED_BEFORE_KEPT) act.kept = true;
+        continue;
+      }
       const looked = act.place && asked.compareAt ? await asked.compareAt(act.place) : undefined;
       moved = moved || looked?.moved === true;
       if (looked?.differs && act.place) {
         act.stillThere = this.stillThere(act, act.place, looked);
         if (!act.stillThere.length) act.undone = true;
-      } else if (act.attempts > 0 && act.undoChanged !== false) {
+      } else if (!act.strictReset && act.attempts > 0 && act.undoChanged !== false) {
         act.undone = true;
       }
       if (!act.undone && !act.possible && act.askedFor >= ASKED_BEFORE_KEPT) act.kept = true;
     }
+    const unproved = this.unprovedReset();
+    if (unproved) return unproved;
     const kept = this.acts.filter((act) => act.undoable && !act.undone && act.kept).map(namedAct);
     const answer = await automationStudioSiteResetTrialPolicy({ phase: { ...this.phase }, inPlace: this.inPlace(), kept, compare });
     if (answer.kind === "refuse") {
@@ -411,7 +465,36 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     }
     // A trial admitted with acts still to undo -- the reset made no progress, or was asked too often -- runs with them, and so will every later one.
     if (answer.startedWith?.acts !== undefined) for (const act of this.acts) if (this.toUndo(act)) act.kept = true;
+    const unresolved = this.unprovedReset();
+    if (unresolved) return unresolved;
     return { kind: "admit", ...(answer.startedWith ? { startedWith: answer.startedWith } : {}) };
+  }
+
+  /** A vanished subject is insufficient if its list lost baseline data or it moved into a sibling list. */
+  private subjectRestored(act: Act): boolean {
+    const inverse = act.subjectUndo;
+    if (!inverse) return false;
+    const baseline = this.observedScopes.get(inverse.scope);
+    const current = this.currentSubjects.get(inverse.scope);
+    const states = this.currentStates.get(inverse.scope);
+    if (!baseline || !current || !states || current.size !== baseline.subjects.size || [...baseline.subjects].some((subject) => !current.has(subject) || states.get(subject) !== baseline.states.get(subject))) return false;
+    const fresh = this.latestGroupScopes.get(inverse.group);
+    for (const [scope, before] of this.observedScopes) {
+      if (before.group === inverse.group && before.beforeAct < this.acts.indexOf(act) + 1 && !fresh?.has(scope)) return false;
+    }
+    for (const [scope, subjects] of this.currentSubjects) {
+      if (scope === inverse.scope || this.currentGroups.get(scope) !== inverse.group || !subjects.has(inverse.subject)) continue;
+      const before = this.observedScopes.get(scope);
+      if (!before || before.beforeAct >= this.acts.indexOf(act) + 1 || !before.subjects.has(inverse.subject) || before.states.get(inverse.subject) !== this.currentStates.get(scope)?.get(inverse.subject)) return false;
+    }
+    return true;
+  }
+
+  /** Reversible modern effects cannot be waved through as cannotUndo leftovers. */
+  private unprovedReset(): AutomationStudioSiteResetDecision | undefined {
+    const acts = this.acts.filter((act) => act.strictReset && act.undoable && !act.undone && act.kept).map(namedAct);
+    if (!acts.length) return undefined;
+    return { kind: "refuse", moved: false, evidence: { ok: false, code: "candidate.trial_reset_unproved", actsToRestore: acts, instruction: "The build's reversible effects have not been proved restored to their original state. An ordinary trial on these leftovers would not measure a fresh run. Restore the original state through its own controls; a matching name, a partial change, or cannotUndo does not prove restoration." } };
   }
 
   /** A trial ran: a new phase starts with what was still in place and the trial's own acts, which are answered as left on the site. */
@@ -422,7 +505,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       const label = act.label ? JSON.stringify(act.label) : act.definitionId;
       const did = `trial step ${act.step} ${label}${act.control ? ` on ${JSON.stringify(act.control)}` : ""}`;
       // Where its step's control sat and what it made, as exploration records an act (header, t598).
-      this.record(did, `${trialRunId ?? "trial"}#step-${act.step}`, act.consequences, undefined, trialSpot(act.spot), this.options.possible === true && act.possible === true, act.created);
+      this.record(did, `${trialRunId ?? "trial"}#step-${act.step}`, act.consequences, undefined, trialSpot(act.spot), this.options.possible === true && act.possible === true, act.created, act.control, act.definitionId);
     }
     // A possibly lasting act is not answered as left: it is answered under `possiblyInPlace` (header).
     return this.acts.filter((act) => act.undoable && !act.undone && !act.possible).map(namedAct);
@@ -466,7 +549,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     return act.undoable && !act.undone && !act.kept;
   }
 
-  private record(did: string, ref: string, consequences: readonly AutomationStudioActionConsequence[], call?: string, spot?: AutomationStudioSiteResetSpot, possible = false, created: readonly string[] = [], control?: string): void {
+  private record(did: string, ref: string, consequences: readonly AutomationStudioActionConsequence[], call?: string, spot?: AutomationStudioSiteResetSpot, possible = false, created: readonly string[] = [], control?: string, operation?: string): void {
     const lasting = consequences.some((consequence) => UNDOABLE.has(consequence) || IRREVERSIBLE.has(consequence));
     if (!lasting && !possible) return;
     const id = this.options.nextActId ? this.options.nextActId() : this.next <= MAX_ACT ? `act-${this.next}` : undefined;
@@ -474,7 +557,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     const undoable = !consequences.some((consequence) => IRREVERSIBLE.has(consequence));
     // Said as possibly lasting wherever it is named, since some answers carry only what an act did (header).
     const words = lasting ? did || "an act" : `${did || "an act"} (${POSSIBLY_LASTING})`;
-    const act: Act = { id, did: words, ref, ...(call ? { call } : {}), ...(control?.trim() ? { control: control.trim() } : {}), ...(spot ? { spot } : {}), createdItems: [...new Set(created)], consequences: [...consequences], undoable, undone: false, attempts: 0, spent: false, askedFor: 0, kept: false, possible: !lasting };
+    const act: Act = { id, did: words, ref, ...(call ? { call } : {}), ...(control?.trim() ? { control: control.trim() } : {}), ...(operation ? { operation } : {}), ...(spot ? { spot } : {}), createdItems: [...new Set(created)], strictReset: lasting && (spot?.subject !== undefined || spot?.page !== undefined || spot?.scope !== undefined), consequences: [...consequences], undoable, undone: false, attempts: 0, spent: false, askedFor: 0, kept: false, possible: !lasting };
     this.acts.push(act);
     this.next += 1;
     // A possibly lasting act never makes a reset due: it refuses no trial (header).
@@ -490,7 +573,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
  */
 function sameItem(spot: AutomationStudioSiteResetSpot, control: AutomationStudioSiteResetSpot): boolean {
   if (spot.item === undefined || control.item === undefined || spot.item !== control.item) return false;
-  return (spot.dialog ?? null) === (control.dialog ?? null);
+  return (spot.dialog ?? null) === (control.dialog ?? null) && (spot.scope ?? null) === (control.scope ?? null);
 }
 
 /**
@@ -516,7 +599,8 @@ function spotOf(spot: AutomationStudioSiteResetSpot | undefined): AutomationStud
     ...(spot?.item !== undefined ? { item: spot.item } : {}),
     ...(spot?.dialog !== undefined ? { dialog: spot.dialog } : {}),
     ...(spot?.subject !== undefined ? { subject: spot.subject } : {}),
-    ...(spot?.page !== undefined ? { page: spot.page } : {})
+    ...(spot?.page !== undefined ? { page: spot.page } : {}),
+    ...(spot?.scope !== undefined ? { scope: spot.scope } : {})
   };
   return Object.keys(copied).length > 0 ? copied : undefined;
 }

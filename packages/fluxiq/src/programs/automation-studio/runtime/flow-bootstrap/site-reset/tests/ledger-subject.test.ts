@@ -27,77 +27,179 @@ const KETTLE_LINE: AutomationStudioSiteResetSpot = { item: "i:kettle-line", subj
 /** A line the basket held before the build began. */
 const SOAP_LINE: AutomationStudioSiteResetSpot = { item: "i:soap-line", subject: "s:soap", page: "s:basket" };
 
-describe("an undo tied to its act by what both are about (t719)", () => {
-  it("admits the removal of a basket line the act added from another page, asked rather than unasked", () => {
+describe("observed destination witnesses for cross-page reset", () => {
+  const destination = { scope: "p:destination", subject: "s:document" };
+  const observe = (ledger: AutomationStudioSiteResetLedger, subjects: string[]) => ledger.observed({ state: {}, location: "destination", differs: [], scope: destination.scope, subjects, collections: [{ scope: destination.scope, group: "g:page", subjects, states: Object.fromEntries(subjects.map((subject) => [subject, `v:${subject}`])) }] });
+  const add = (ledger: AutomationStudioSiteResetLedger) => ledger.explored(acted("add", ["create_new"], {}, { subject: "s:document", page: "s:document" }));
+  const witnessed = () => {
     const ledger = new AutomationStudioSiteResetLedger();
-    ledger.explored(acted("call.add", ["create_new"], {}, DETAIL_ADD));
-    expect(ledger.target("act-1", aim(["delete"], KETTLE_LINE))).toEqual({ kind: "admit", on: "subject", allowed: [] });
-    // Lowering its quantity reverses an add too.
-    expect(ledger.target("act-1", aim(["modify_existing"], KETTLE_LINE))).toEqual({ kind: "admit", on: "subject", allowed: [] });
-    expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1"]);
+    observe(ledger, ["s:baseline"]);
+    add(ledger);
+    observe(ledger, ["s:baseline", "s:document"]);
+    return ledger;
+  };
+
+  it("admits deletion only for a positively witnessed new subject, including a singleton", () => {
+    const ledger = witnessed();
+    expect(ledger.target("act-1", aim(["delete"], destination))).toEqual({ kind: "admit", on: "subject", allowed: ["delete"] });
   });
 
-  it("an add-to-cart trial act: its undo on the line it made elsewhere is admitted, lands, and the next trial runs", async () => {
+  it("refuses deletion of the same product when it already existed before the add", () => {
     const ledger = new AutomationStudioSiteResetLedger();
-    expect(ledger.trialRan([{ step: 3, definitionId: "demo.click", label: "add the item to the basket", consequences: ["create_new"], spot: DETAIL_ADD }], "trial.1")).toEqual([{ act: "act-1", did: "trial step 3 \"add the item to the basket\"" }]);
-    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required" } });
-    expect(ledger.claim("act-1")).toEqual({ kind: "undo", undo: { act: "act-1", allowed: [] } });
-    expect(ledger.target("act-1", aim(["delete"], KETTLE_LINE))).toEqual({ kind: "admit", on: "subject", allowed: [] });
-    ledger.explored(acted("undo.add", ["delete"], { undoes: "act-1", on: "subject" }, KETTLE_LINE));
-    ledger.undoSeen("act-1", true);
+    observe(ledger, ["s:document"]);
+    add(ledger);
+    observe(ledger, ["s:document"]);
+    expect(ledger.target("act-1", aim(["delete"], destination))).toMatchObject({ kind: "refused" });
+  });
+
+  it("refuses an ordinary trial on a pre-existing quantity left unresolved, including cannotUndo", async () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    observe(ledger, ["s:document"]);
+    add(ledger);
+    observe(ledger, ["s:document"]);
+    ledger.target("act-1", aim(["delete"], destination));
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    expect(await ledger.beforeTrial(back, ["act-1"])).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_unproved", actsToRestore: [{ act: "act-1" }] } });
+  });
+
+  it("requires exact restoration for modern scope-only controls with no usable title", async () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.explored(acted("add", ["create_new"], {}, { scope: "p:source" }));
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    expect(await ledger.beforeTrial(back, ["act-1"])).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_unproved" } });
+  });
+
+  it("recovers from a wrong destination by allowing retargeting before anything was pressed", () => {
+    const ledger = witnessed();
+    expect(ledger.target("act-1", aim(["delete"], { ...destination, scope: "p:wrong" }))).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_unproved" } });
+    expect(ledger.claim("act-1")).toMatchObject({ kind: "undo" });
+    expect(ledger.target("act-1", aim(["delete"], destination))).toMatchObject({ kind: "admit" });
+  });
+
+  it("cannot bypass ownership by declaring no lasting consequence on an undo's control press", () => {
+    const ledger = witnessed();
+    expect(ledger.target("act-1", aim([], destination))).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_unproved" } });
+    expect(ledger.claim("act-1")).toMatchObject({ kind: "undo" });
+  });
+
+  it("one removal restores repeated creations by the same registered control without a second destructive press", async () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    observe(ledger, ["s:baseline"]);
+    ledger.trialRan([
+      { step: 1, definitionId: "demo.press", control: "Add", consequences: ["create_new"], spot: { subject: "s:document", scope: "p:source" } },
+      { step: 2, definitionId: "demo.press", control: "Add", consequences: ["create_new"], spot: { subject: "s:document", scope: "p:source" } }
+    ]);
+    observe(ledger, ["s:baseline", "s:document"]);
+    expect(ledger.target("act-1", aim(["delete"], destination))).toMatchObject({ kind: "admit" });
+    ledger.explored(acted("undo", ["delete"], { undoes: "act-1", on: "subject" }, destination));
+    observe(ledger, ["s:baseline"]);
     expect(await ledger.beforeTrial(back)).toEqual({ kind: "admit" });
     expect(ledger.inPlace()).toEqual([]);
   });
 
-  it("refuses an undo on a line about something else, and keeps the act, as before (t479)", () => {
+  it("cannot absorb an unrelated creation merely because it names the same subject", async () => {
     const ledger = new AutomationStudioSiteResetLedger();
-    ledger.explored(acted("call.add", ["create_new"], {}, DETAIL_ADD));
-    expect(ledger.target("act-1", aim(["delete"], SOAP_LINE))).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_wrong_target", act: "act-1" } });
-    expect(ledger.claim("act-1")).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_act_kept" } });
+    observe(ledger, ["s:baseline"]);
+    ledger.trialRan([
+      { step: 1, definitionId: "demo.press", control: "Add", consequences: ["create_new"], spot: { subject: "s:document", scope: "p:source" } },
+      { step: 2, definitionId: "demo.other", control: "Add elsewhere", consequences: ["create_new"], spot: { subject: "s:document", scope: "p:source" } }
+    ]);
+    observe(ledger, ["s:baseline", "s:document"]);
+    ledger.target("act-1", aim(["delete"], destination));
+    ledger.explored(acted("undo", ["delete"], { undoes: "act-1", on: "subject" }, destination));
+    observe(ledger, ["s:baseline"]);
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-2"]);
   });
 
-  it("matches only on a token present on both sides: no subject on the control, or none on the act, is no match", () => {
-    for (const [act, control] of [[DETAIL_ADD, { item: "i:kettle-line" }], [{}, KETTLE_LINE], [{ subject: "s:seller" }, KETTLE_LINE]] as const) {
+  it("ordinary page DOM absence without a complete collection never grants deletion", () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.observed({ state: {}, differs: [], scope: destination.scope, subjects: [] });
+    add(ledger);
+    observe(ledger, ["s:document"]);
+    expect(ledger.target("act-1", aim(["delete"], destination))).toMatchObject({ kind: "refused" });
+  });
+
+  const twoLists = (ledger: AutomationStudioSiteResetLedger, active: string[], saved: string[], changedSavedState?: string) => ledger.observed({ state: {}, differs: [], collections: [
+    { scope: destination.scope, group: "g:page", subjects: active, states: Object.fromEntries(active.map((subject) => [subject, `v:${subject}`])) },
+    { scope: "p:saved", group: "g:page", subjects: saved, states: Object.fromEntries(saved.map((subject) => [subject, changedSavedState ?? `v:${subject}`])) }
+  ] });
+
+  it("does not count a purported Delete as restored when it moved the new subject into a sibling list", async () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    twoLists(ledger, ["s:baseline"], ["s:stored"]);
+    add(ledger);
+    twoLists(ledger, ["s:baseline", "s:document"], ["s:stored"]);
+    ledger.target("act-1", aim(["delete"], destination));
+    ledger.explored(acted("fake-delete", ["delete"], { undoes: "act-1", on: "subject" }, destination));
+    twoLists(ledger, ["s:baseline"], ["s:stored", "s:document"]);
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1"]);
+  });
+
+  it("preserves a same-subject sibling row that already existed, including its quantity state", async () => {
+    for (const changed of [false, true]) {
       const ledger = new AutomationStudioSiteResetLedger();
-      ledger.explored(acted("call.add", ["create_new"], {}, act));
-      expect(ledger.target("act-1", aim(["delete"], control))).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_wrong_target" } });
+      twoLists(ledger, ["s:baseline"], ["s:document"]);
+      add(ledger);
+      twoLists(ledger, ["s:baseline", "s:document"], ["s:document"]);
+      ledger.target("act-1", aim(["delete"], destination));
+      ledger.explored(acted("delete", ["delete"], { undoes: "act-1", on: "subject" }, destination));
+      twoLists(ledger, ["s:baseline"], ["s:document"], changed ? "v:quantity-changed" : undefined);
+      expect((await ledger.beforeTrial(back)).kind).toBe(changed ? "refuse" : "admit");
     }
   });
 
-  it("reads the act's page as what it was about only where the act sat in no item: a line's act is about its line", () => {
-    const ledger = new AutomationStudioSiteResetLedger();
-    // Moving one basket line to the saved list: the line's own item and title, on the basket page.
-    ledger.explored(acted("call.save", ["modify_existing"], {}, { item: "i:case-line", subject: "s:case", page: "s:basket" }));
-    // A page-level control titled by the basket's heading is not the case's line.
-    expect(ledger.target("act-1", aim(["modify_existing"], { subject: "s:basket" }))).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_wrong_target" } });
+  it("requires the original collection's baseline rows and values, not merely disappearance of the new subject", async () => {
+    const ledger = witnessed();
+    ledger.target("act-1", aim(["delete"], destination));
+    ledger.explored(acted("delete-too-much", ["delete"], { undoes: "act-1", on: "subject" }, destination));
+    observe(ledger, []);
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
   });
 
-  it("admits moving a saved line back, on the saved list's own control, by the line's title", () => {
+  it("does not establish a baseline by first reading a destination after the act", () => {
     const ledger = new AutomationStudioSiteResetLedger();
-    ledger.explored(acted("call.save", ["modify_existing"], {}, { item: "i:case-line", subject: "s:case", page: "s:basket" }));
-    // The saved list's line is alone, so it has no item token; its nearest titled part names the same thing.
-    expect(ledger.target("act-1", aim(["modify_existing"], { subject: "s:case", page: "s:basket" }))).toEqual({ kind: "admit", on: "subject", allowed: [] });
+    add(ledger);
+    observe(ledger, ["s:document"]);
+    expect(ledger.target("act-1", aim(["delete"], destination))).toMatchObject({ kind: "refused" });
   });
 
-  it("admits only a class that reverses the act's: a removal never undoes a change, and a change made in its place never creates", () => {
-    const changed = new AutomationStudioSiteResetLedger();
-    changed.explored(acted("call.save", ["modify_existing"], {}, { item: "i:case-line", subject: "s:case" }));
-    expect(changed.target("act-1", aim(["delete"], { subject: "s:case" }))).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_wrong_target" } });
-    const added = new AutomationStudioSiteResetLedger();
-    added.explored(acted("call.add", ["create_new"], {}, DETAIL_ADD));
-    expect(added.target("act-1", aim(["create_new"], KETTLE_LINE))).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_wrong_target" } });
-    const removed = new AutomationStudioSiteResetLedger();
-    removed.explored(acted("call.remove", ["delete"], {}, { subject: "s:collection" }));
-    expect(removed.target("act-1", aim(["create_new"], { subject: "s:collection" }))).toEqual({ kind: "admit", on: "subject", allowed: [] });
-    expect(removed.target("act-1", aim(["move_money"], { subject: "s:collection" }))).toMatchObject({ kind: "refused" });
+  it("never treats a same-heading page as the observed destination", () => {
+    const ledger = witnessed();
+    expect(ledger.target("act-1", aim(["delete"], { ...destination, scope: "p:other" }))).toMatchObject({ kind: "refused" });
   });
 
-  it("lets the site's one confirmation follow an undo admitted by subject, as it follows one on the act's own item", () => {
+  it("refuses unproved quantitative modifications even with a new-subject witness", () => {
+    const ledger = witnessed();
+    expect(ledger.target("act-1", aim(["modify_existing"], destination))).toMatchObject({ kind: "refused" });
+  });
+
+  it("requires the admitted subject to actually disappear before the next trial", async () => {
+    const ledger = witnessed();
+    expect(ledger.target("act-1", aim(["delete"], destination))).toMatchObject({ kind: "admit" });
+    ledger.explored(acted("undo", ["delete"], { undoes: "act-1", on: "subject" }, destination));
+    ledger.undoSeen("act-1", true);
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    observe(ledger, ["s:baseline"]);
+    expect(await ledger.beforeTrial(back)).toEqual({ kind: "admit" });
+    expect(ledger.inPlace()).toEqual([]);
+  });
+
+  it("spends a witnessed deletion once, preventing repeated undo presses", () => {
+    const ledger = witnessed();
+    ledger.target("act-1", aim(["delete"], destination));
+    ledger.explored(acted("undo", ["delete"], { undoes: "act-1", on: "subject" }, destination));
+    expect(ledger.claim("act-1")).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_already_done" } });
+  });
+
+  it("does not overwrite the pre-effect baseline with later observations", () => {
     const ledger = new AutomationStudioSiteResetLedger();
-    ledger.explored(acted("call.follow", ["modify_existing"], {}, { subject: "s:person", page: "s:person" }));
-    expect(ledger.target("act-1", aim(["modify_existing"], { subject: "s:person" }))).toMatchObject({ kind: "admit", on: "subject" });
-    ledger.explored(acted("undo.follow", ["modify_existing"], { undoes: "act-1", on: "subject" }, { subject: "s:person" }));
-    expect(ledger.target("act-1", aim(["modify_existing"], { dialog: "d:confirm" }))).toEqual({ kind: "admit", on: "follow_up", allowed: [] });
+    observe(ledger, ["s:document"]);
+    observe(ledger, []);
+    add(ledger);
+    observe(ledger, ["s:document"]);
+    expect(ledger.target("act-1", aim(["delete"], destination))).toMatchObject({ kind: "refused" });
   });
 });
 
@@ -120,5 +222,28 @@ describe("an act with no honest reverse (t719)", () => {
     ledger.explored(acted("call.post", ["create_new", "send_or_publish"], {}, { subject: "s:thread" }));
     expect(ledger.inPlace()).toEqual([]);
     expect(ledger.target("act-1", aim(["delete"], { subject: "s:thread" }))).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_unknown_act" } });
+  });
+});
+
+// Preservation regressions discovered in review. A product identity alone does
+// not prove that the whole product line was created by this build.
+describe("reset preserves effects which predate the build", () => {
+  it("refuses removing an existing subject after an add whose destination creation was never witnessed", () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    // Before this build the destination already held two units. An add on a
+    // different page increments that line; its subject is unchanged.
+    ledger.trialRan([{ step: 1, definitionId: "demo.press", consequences: ["create_new"], spot: { subject: "s:document", page: "s:document" } }]);
+    expect(ledger.target("act-1", aim(["delete"], { item: "i:existing-document", subject: "s:document" }))).toMatchObject({ kind: "refused" });
+  });
+
+  it("does not treat one changed undo as proof that the exact original effect disappeared", async () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.trialRan([{ step: 1, definitionId: "demo.press", consequences: ["modify_existing"], spot: { subject: "s:document" } }]);
+    // The act changed a value by two. A single undo changed it by one; the
+    // only evidence the current seam provides is that something changed.
+    ledger.explored(acted("undo.partial", ["modify_existing"], { undoes: "act-1", on: "subject" }, { subject: "s:document" }));
+    ledger.undoSeen("act-1", true);
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1"]);
   });
 });

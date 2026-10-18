@@ -36,7 +36,7 @@ export type AutomationStudioSiteResetUndo = { act: string; allowed: readonly Aut
  * there can match, and is tied to that undo by these instead (`./ledger.ts`,
  * `target`). Absent where the domain found none.
  */
-export type AutomationStudioSiteResetSpot = { item?: string; dialog?: string; subject?: string; page?: string };
+export type AutomationStudioSiteResetSpot = { item?: string; dialog?: string; subject?: string; page?: string; scope?: string };
 
 /**
  * What an undo call may do to the control the domain is about to act on
@@ -83,6 +83,8 @@ export type AutomationStudioSiteResetDeclared = {
 export type AutomationStudioSiteResetExplored = {
   callId: string;
   toolId: string;
+  /** Registered operation that landed; repeated effects are grouped only on the same control and source. */
+  operation?: string;
   /** The act this call undoes, when its claim was read as an undo. */
   undoes?: string;
   /** The last action the domain put to the gate for this call; absent when it put none. */
@@ -131,6 +133,11 @@ export type AutomationStudioSiteResetRead = {
   lines?: AutomationStudioSiteResetLines;
   /** The opaque tokens of the items -- rows, cards -- on the page, in the same form a declaration's `control.item` takes (t475). */
   items?: string[];
+  /** All subjects on this observed scope, including singleton and hidden records. */
+  subjects?: string[];
+  /** Positively complete, resource-bound collection inventories; only these can witness absence. */
+  collections?: Array<{ scope: string; group: string; subjects: string[]; states: Record<string, string> }>;
+  scope?: string;
 };
 
 /** A read, or why there is none: the domain has no `startState`, it answered nothing usable, or reading failed (kept on the start check as `failure`). */
