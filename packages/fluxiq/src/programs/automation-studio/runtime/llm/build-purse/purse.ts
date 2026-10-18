@@ -57,7 +57,7 @@ import { AutomationStudioLlmBuildPurseJudgingReserve } from "./judging-reserve.t
 import { automationStudioLlmBuildPurseFramesOf, automationStudioLlmBuildPurseJudgeBackstopOf } from "./run-frame.ts";
 import { AutomationStudioLlmBuildPurseLedger } from "./settlement-ledger.ts";
 import { AutomationStudioLlmBuildPurseTopUps, type AutomationStudioLlmBuildPurseTopUp } from "./top-up.ts";
-import type { AutomationStudioLlmBuildPurseCall, AutomationStudioLlmBuildPurseHeld, AutomationStudioLlmBuildPurseJudging, AutomationStudioLlmBuildPurseOptions, AutomationStudioLlmBuildPurseRefusal } from "./types.ts";
+import type { AutomationStudioLlmBuildPurseCall, AutomationStudioLlmBuildPurseCharged, AutomationStudioLlmBuildPurseHeld, AutomationStudioLlmBuildPurseJudging, AutomationStudioLlmBuildPurseOptions, AutomationStudioLlmBuildPurseRefusal } from "./types.ts";
 
 /** What ties an allowance to the purse it was carved from. Set only by `allowance`. */
 type AutomationStudioLlmBuildPurseLink = {
@@ -148,6 +148,11 @@ export class AutomationStudioLlmBuildPurse {
   /** Actual logical provider questions settled by this build, excluding interpretation. */
   spentCalls(): number {
     return this.ledger.calls.spentCalls();
+  }
+
+  /** One generation's own held/settled work, never its carried or parent's spend. */
+  chargedReceipt(): AutomationStudioLlmBuildPurseCharged {
+    return { calls: this.ledger.calls.spentCalls(), chargedCostUsd: this.ledger.settledUsd(), pendingCalls: this.ledger.calls.pendingCalls(), pendingCostUsd: this.ledger.pendingUsd(), unreportedZeroChargeCalls: this.ledger.unreportedZeroChargeCalls };
   }
 
   /** What calls in flight are held at. */

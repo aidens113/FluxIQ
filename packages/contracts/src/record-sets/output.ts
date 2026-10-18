@@ -32,6 +32,8 @@ export const AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS = Object.freeze({
  * `parseAutomationStudioRecordOutput`.
  */
 export type AutomationStudioRecordOutput = {
+  /** Absent/answer saves a durable answer. Intermediate validates and returns rows for computation only; it never writes or clears a dataset. */
+  purpose?: "answer" | "intermediate";
   datasetId: string;
   label?: string;
   /** Dot-separated path to the row array inside the node's `result` output. Required: Core never assumes one. */

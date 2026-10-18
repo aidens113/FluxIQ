@@ -21,6 +21,23 @@ function issuesOf(value: unknown, options?: AutomationStudioRecordParseOptions):
 }
 
 describe("parseAutomationStudioRecordOutput", () => {
+  it("preserves explicit purpose, defaults old outputs unchanged, and refuses ambiguous ownership", () => {
+    for (const purpose of ["answer", "intermediate"]) {
+      expect(parseAutomationStudioRecordOutput({ ...VALID, purpose })).toEqual({ ok: true, output: { ...VALID, purpose } });
+    }
+    expect(parseAutomationStudioRecordOutput(VALID)).toEqual({ ok: true, output: VALID });
+    for (const purpose of [null, undefined, false, "helper", "", {}, []]) {
+      expect(issuesOf({ ...VALID, purpose })).toContain("record_output.invalid_purpose");
+    }
+  });
+
+  it("allows only empty answer processing for intermediate rows", () => {
+    expect(issuesOf({ ...VALID, purpose: "intermediate", process: {} })).toEqual([]);
+    for (const process of [{ limit: 1 }, { dedupe: { by: ["title"] } }, null]) {
+      expect(issuesOf({ ...VALID, purpose: "intermediate", process })).toContain("record_output.intermediate_process_unsupported");
+    }
+    expect(issuesOf({ ...VALID, purpose: "answer", process: { limit: 1 } })).toEqual([]);
+  });
   it("round-trips a valid record output into fresh objects", () => {
     const result = parseAutomationStudioRecordOutput(VALID);
     expect(result).toEqual({ ok: true, output: VALID });

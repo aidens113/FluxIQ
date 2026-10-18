@@ -40,6 +40,15 @@ function sample(): AutomationStudioRecordOutput {
 const ids = (output: AutomationStudioRecordOutput) => output.schema.fields.map((field) => field.id);
 
 describe("record output draft", () => {
+  it.each(["answer", "intermediate"] as const)("preserves %s ownership through draft edits without adding a role to old outputs", (purpose) => {
+    const output = { ...sample(), purpose };
+    const edits = [readRecordOutputDraft(output), toggleRecordOutput(output, true),
+      updateRecordOutputSettings(output, { label: "Edited" }), addRecordField(output), removeRecordField(output, 0),
+      moveRecordField(output, 0, 1), updateRecordField(output, 0, { label: "Edited" }),
+      setRecordFieldHandling(output, 0, "exclude"), setRecordPrimaryKey(output, "name")];
+    for (const edited of edits) expect(edited).toHaveProperty("purpose", purpose);
+    expect(readRecordOutputDraft(sample())).not.toHaveProperty("purpose");
+  });
   it("writes null when saving is turned off, and keeps or starts a draft when it is turned on", () => {
     expect(toggleRecordOutput(sample(), false)).toBeNull();
     expect(toggleRecordOutput(null, false)).toBeNull();

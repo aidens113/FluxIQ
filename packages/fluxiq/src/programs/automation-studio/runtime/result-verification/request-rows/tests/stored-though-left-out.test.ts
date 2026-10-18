@@ -68,6 +68,14 @@ describe("the judge's copy of rows another read stored", () => {
 });
 
 describe("a yes over rows another read stored", () => {
+  it("does not hide genuinely retained answer rows merely because their read feeds a control loop", () => {
+    const summary = renewalsRunSummary();
+    expect(summary.recordSets).toHaveLength(2);
+    // Ownership must change at capture, never by teaching this matcher to
+    // ignore a stored answer based on a helper name or the downstream acts.
+    expect(automationStudioResultLeftOutRowsUnquoted(summary, reply(RENEWALS_YES.diagnosis, RENEWALS_YES.summaryText), renewalsWording()))
+      .toMatchObject([{ stored: [RENEWALS_LIST_READ], rows: RENEWALS_LEFT_OUT_ROWS }]);
+  });
   it("is held where it never names each beside that read and the request's words (judge 0032's reply)", () => {
     const unquoted = automationStudioResultLeftOutRowsUnquoted(renewalsRunSummary(), reply(RENEWALS_YES.diagnosis, RENEWALS_YES.summaryText), renewalsWording());
     expect(unquoted).toEqual([{ nodeId: RENEWALS_ACT_READ, condition: "condition 1 (daysOverdue atLeast 5)", rows: RENEWALS_LEFT_OUT_ROWS, stored: [RENEWALS_LIST_READ] }]);

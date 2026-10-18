@@ -47,7 +47,7 @@ import type { AutomationStudioGraphExecutionOptions } from "../../executor/index
 import type { AutomationStudioIncidentRepair, AutomationStudioIncidentRepairRequest, AutomationStudioRepairUnit } from "../../executor/lifecycle-run/index.ts";
 import { automationStudioLlmCurrentFlowPurse } from "../../llm/build-purse/index.ts";
 import { prepareAutomationStudioInRunRepair, type AutomationStudioInRunRepairPreparation } from "../../live-patch.ts";
-import type { AutomationStudioRuntimePatch, AutomationStudioRuntimePatchUnit, AutomationStudioRuntimeSessionLlm } from "../../llm/index.ts";
+import type { AutomationStudioLlmRunPurse, AutomationStudioRuntimePatch, AutomationStudioRuntimePatchUnit, AutomationStudioRuntimeSessionLlm } from "../../llm/index.ts";
 import {
   annotateAutomationStudioRunDetailWithRuntimeLlm,
   automationStudioInRunRepairSlot,
@@ -74,6 +74,7 @@ export type AutomationStudioInRunRepairBinding = {
   ports: AutomationStudioRuntimeRecoveryPorts;
   runId: string;
   llmExecution?: AutomationStudioRuntimeSessionLlm | undefined;
+  runPurse?: AutomationStudioLlmRunPurse | undefined;
   permittedConsequences?: readonly AutomationStudioActionConsequence[] | undefined;
   authorizedExternalSideEffects?: boolean | undefined;
   useReusableContext?: true | undefined;
@@ -93,7 +94,7 @@ export function bindAutomationStudioInRunRepair(input: AutomationStudioInRunRepa
   const repairs = learns && input.context.behavior.invokeLlm;
   if (!learns) return input.context;
   const ledger = new AutomationStudioInRunRepairLedger();
-  const purse: Purse = {};
+  const purse: Purse = input.runPurse ?? {};
   // The recovery reads the ledger off the context it is given, as the one after the run does.
   const repairing: AutomationStudioInRunRepairBinding = { ...input, context: { ...input.context, inRunRepairs: ledger } };
   if (repairs) input.graphOptions.repairIncident = (request) => repairIncident(repairing, ledger, purse, request);
@@ -154,7 +155,7 @@ async function repairIncident(
   // record as it settles (`../runtime-adaptation/flow-spend.ts`). With nothing left the recovery is refused on cost before any model
   // is asked (`../../recovery/annotation/early-refusal.ts`).
   const flowPurse = automationStudioLlmCurrentFlowPurse();
-  if (flowPurse) delete purse.current;
+  if (flowPurse && !input.runPurse) delete purse.current;
   const costLeftUsd = flowPurse ? Math.floor(flowPurse.leftUsd() * 1_000_000_000) / 1_000_000_000 : undefined;
   const recovered = await annotateAutomationStudioRunDetailWithRuntimeLlm({
     ports: input.ports,
@@ -166,6 +167,7 @@ async function repairIncident(
     ...(input.authorizedExternalSideEffects !== undefined ? { authorizedExternalSideEffects: input.authorizedExternalSideEffects } : {}),
     graphOptions: input.graphOptions,
     ...(input.llmExecution ? { llmExecution: input.llmExecution } : {}),
+    ...(input.runPurse ? { runPurse: input.runPurse } : {}),
     ...(input.permittedConsequences?.length ? { permittedConsequences: input.permittedConsequences } : {}),
     ...(input.useReusableContext ? { useReusableContext: true as const } : {}),
     ...(costLeftUsd === undefined ? {} : { costLeftUsd }),

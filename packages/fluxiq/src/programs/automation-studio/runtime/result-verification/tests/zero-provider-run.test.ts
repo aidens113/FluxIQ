@@ -6,6 +6,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowRunDetail } from "../../../model/index.ts";
 import { automationStudioZeroProviderGate } from "../zero-provider-run.ts";
+import { AutomationStudioLlmRunPurse } from "../../llm/index.ts";
 import { ANSWER, harness, provider, runDetail, session, verify } from "./run-outcome-harness.ts";
 
 const ZERO_GATE = { invoked: false, ok: true, costAccounting: { calls: 0, explorationCalls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0, budgetBreaches: 0, pendingCalls: 0 }, providerCalls: [], providerCallsOmitted: 0 };
@@ -33,6 +34,15 @@ describe("the gate of a run that asked no model anything", () => {
 });
 
 describe("a finished run's verification, for a run that asked no model anything", () => {
+  it("does not publish zero or a replay for continued unknown history, even when no provider is selected", async () => {
+    const context = harness({ withProvider: false });
+    const record = vi.fn(async () => undefined);
+    context.ports.recordAdaptationReplays = record;
+    await verify(context, { session: session({ trace: TRACE }), runPurse: new AutomationStudioLlmRunPurse({ runId: session().runId, gate: undefined }) });
+    expect(context.saved.at(-1)?.metadata?.llmGate).toMatchObject({ accountingDiagnostic: { code: "llm_budget.accounting_history_unavailable" } });
+    expect(context.saved.at(-1)?.metadata?.llmGate).not.toHaveProperty("costAccounting");
+    expect(record).not.toHaveBeenCalled();
+  });
   it("never certifies zero or records a replay when a dispatched provider question remains pending at the verification deadline", async () => {
     vi.useFakeTimers();
     const context = harness();
@@ -76,7 +86,7 @@ describe("a finished run's verification, for a run that asked no model anything"
     expect(dispatch).not.toHaveBeenCalled();
     expect(context.requests).toHaveLength(0);
     const detail = context.saved.at(-1);
-    expect(detail?.metadata?.llmGate).toBeUndefined();
+    expect(detail?.metadata?.llmGate).toMatchObject({ costAccounting: { calls: 0, pendingCalls: 0 }, providerCalls: [], providerCallsOmitted: 0 });
     expect(detail?.interventions).toHaveLength(1);
     expect(detail?.interventions[0]?.provider).toBeUndefined();
     expect(detail?.interventions[0]?.tokenUsage).toBeUndefined();
@@ -94,12 +104,12 @@ describe("a finished run's verification, for a run that asked no model anything"
     expect(record).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-1", runId: session().runId, checkedAt: 500, trace: TRACE, subflowId: "subflow" }));
   });
 
-  it("writes no gate and records no replay for a run whose result a model judged", async () => {
+  it("writes the canonical paid receipt and records no replay for a run whose result a model judged", async () => {
     const context = harness({ answer: ANSWER.yes });
     const record = vi.fn(async () => undefined);
     context.ports.recordAdaptationReplays = record;
     await verify(context, { session: session({ trace: TRACE }) });
-    expect(context.saved.at(-1)?.metadata?.llmGate).toBeUndefined();
+    expect(context.saved.at(-1)?.metadata?.llmGate).toMatchObject({ costAccounting: { calls: 1, pendingCalls: 0 }, providerCalls: [expect.objectContaining({ taskKind: "loop_verification" })], providerCallsOmitted: 0 });
     expect(record).not.toHaveBeenCalled();
   });
 

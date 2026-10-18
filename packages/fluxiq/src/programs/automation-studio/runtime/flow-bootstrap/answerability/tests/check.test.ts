@@ -50,6 +50,21 @@ function check(plan: AutomationStudioFlowBootstrapPlan, instructionText: string)
 }
 
 describe("a build may not propose a Flow that cannot answer the instruction", () => {
+  it("does not count an explicitly intermediate list as a durable answer capability", () => {
+    const read = { definitionId: "web.output.dom-extract_list", parameters: { recordOutput: {
+      datasetId: "working", purpose: "intermediate", writeMode: "append",
+      schema: { schemaVersion: "0.1", fields: [{ id: "name", label: "Name", valueType: "string" }] }
+    } } };
+    const verdict = check(planOf(read), EARBUDS);
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.cannotAnswer.steps).toEqual([read.definitionId]);
+    for (const purpose of ["answer", undefined]) {
+      const declaration = { ...read.parameters.recordOutput } as JsonObject;
+      if (purpose === undefined) delete declaration.purpose;
+      else declaration.purpose = purpose;
+      expect(check(planOf({ ...read, parameters: { recordOutput: declaration } }), LAMP).ok).toBe(true);
+    }
+  });
   it("refuses a Flow with no record set in it against an instruction that asks for a table", () => {
     const verdict = check(planOf(
       "web.output.browser-navigate",

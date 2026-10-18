@@ -228,6 +228,14 @@ describe("a run whose caller pays only for the checks that judge a repair", () =
     expect(found.standingCalls).toEqual([]);
     expect(run.metadata?.resultVerification).toMatchObject({ performed: true, verdict: "answers" });
     expect(run.metadata?.resultCheck).toMatchObject({ checked: true, code: AUTOMATION_STUDIO_RESULT_CHECK_CODES.afterRepair, status: "confirmed" });
+    expect(detail?.metadata?.llmGate).toMatchObject({
+      costAccounting: { calls: 3, pendingCalls: 0, inputTokens: 18, outputTokens: 10, totalTokens: 28, estimatedCostUsd: 0.004 },
+      providerCalls: [
+        expect.objectContaining({ sequence: 1, taskKind: "runtime_diagnosis" }),
+        expect.objectContaining({ sequence: 2, taskKind: "runtime_patch" }),
+        expect.objectContaining({ sequence: 3, taskKind: "loop_verification" })
+      ], providerCallsOmitted: 0
+    });
   });
 });
 
@@ -297,6 +305,41 @@ describe("the chat's Run it, asked from a session that is not paired", () => {
 });
 
 describe("a run whose caller pays for every check, as before", () => {
+  it("executes a legitimately unused precreated queued session with its first paid check", { timeout: 180_000 }, async () => {
+    const found = await harness({ clean: true });
+    const queued = await found.service.startRuntimeSession({ projectId: found.projectId, flowId: found.flowId });
+    expect(queued.status).toBe("queued");
+    expect(found.callerCalls).toHaveLength(0);
+    const next = await found.service.runRuntimeSession({ projectId: found.projectId, runId: queued.runId, llmExecution });
+    expect(next.status).toBe("succeeded");
+    expect(verifications(found)).toHaveLength(1);
+    const detail = await found.service.getFlowRunDetail(found.projectId, next.runId);
+    expect(detail?.metadata?.llmGate).toMatchObject({ costAccounting: { calls: 1, pendingCalls: 0, estimatedCostUsd: 0.001 }, providerCallsOmitted: 0 });
+  });
+
+  it("refuses a queued session whose durable metadata already contains unknown paid activity", { timeout: 180_000 }, async () => {
+    const found = await harness({ clean: true });
+    const queued = await found.service.startRuntimeSession({ projectId: found.projectId, flowId: found.flowId, metadata: { llmGate: { invoked: true } } });
+    const next = await found.service.runRuntimeSession({ projectId: found.projectId, runId: queued.runId, llmExecution });
+    expect(verifications(found)).toHaveLength(0);
+    expect(next.metadata?.resultVerification).toMatchObject({ performed: false, code: "llm_budget.accounting_history_unavailable" });
+  });
+
+  it("continues a settled same-run paid receipt without recounting its first check", { timeout: 180_000 }, async () => {
+    const found = await harness({ clean: true });
+    const first = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId, llmExecution });
+    const before = await found.service.getFlowRunDetail(found.projectId, first.runId);
+    const next = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId, runId: first.runId, llmExecution });
+    const detail = await found.service.getFlowRunDetail(found.projectId, next.runId);
+    expect(next.runId).toBe(first.runId);
+    expect(verifications(found)).toHaveLength(2);
+    expect(detail?.metadata?.llmGate).toMatchObject({ costAccounting: { calls: 2, pendingCalls: 0, inputTokens: 8, outputTokens: 4, totalTokens: 12, estimatedCostUsd: 0.002 }, providerCallsOmitted: 0 });
+    const gate = detail?.metadata?.llmGate as JsonObject;
+    const original = before?.metadata?.llmGate as JsonObject;
+    expect(gate.providerCalls).toHaveLength(2);
+    expect((gate.providerCalls as unknown[])[0]).toEqual((original.providerCalls as unknown[])[0]);
+  });
+
   it("is judged with the caller's key even when the schedule would not sample it", { timeout: 180_000 }, async () => {
     const found = await harness({ clean: true });
     const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId, llmExecution });
@@ -305,5 +348,17 @@ describe("a run whose caller pays for every check, as before", () => {
     expect(verifications(found)).toEqual([{ taskKind: "loop_verification", hasCaller: true }]);
     expect(found.standingCalls).toEqual([]);
     expect(run.metadata?.resultVerification).toMatchObject({ performed: true, verdict: "answers" });
+    const persisted = await found.service.getFlowRunDetail(found.projectId, run.runId);
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, found.service);
+    const response = await automationStudioConversationCommandPort({ registry, actor: asPerson, scope: { domainId: "example" } })
+      .call("get-flow-run-detail", { projectId: found.projectId, runId: run.runId });
+    expect(response.ok).toBe(true);
+    const gate = {
+      costAccounting: { calls: 1, pendingCalls: 0, inputTokens: 4, outputTokens: 2, totalTokens: 6, estimatedCostUsd: 0.001 },
+      providerCalls: [expect.objectContaining({ sequence: 1, taskKind: "loop_verification" })], providerCallsOmitted: 0
+    };
+    expect(persisted?.metadata?.llmGate).toMatchObject(gate);
+    expect(response.payload).toMatchObject({ runDetail: { metadata: { llmGate: gate } } });
   });
 });
