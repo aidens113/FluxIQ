@@ -42,6 +42,8 @@ export type AutomationStudioProjectSupervisorKept = { planDigest: string; madeUn
  * - `leftAtEnding`: told, as an ending's reason is made, Core's own line of
  *   what this build still has on the target, or none (`./left-on-target.ts`,
  *   t590): what a failed build's chat message says, never the model's words.
+ *   `note` is the ledger's words, for the record; `told` the same in a
+ *   person's words, which the chat says (t567 lane 4).
  * - `submission`: what the whole candidate's submission controller is made
  *   with, exactly as the candidate authoring loop's.
  * - `trial`: the whole candidate's trial runner and judge. Absent, the
@@ -68,7 +70,7 @@ export type AutomationStudioProjectSupervisorPorts = {
   proposals: (ref: AutomationStudioProjectProposalRef) => AutomationStudioSubflowProposal | undefined | Promise<AutomationStudioSubflowProposal | undefined>;
   projectLedger: Pick<AutomationStudioSiteResetProjectLedger, "snapshot" | "forBrief">;
   kept?: ((kept: AutomationStudioProjectSupervisorKept) => void) | undefined;
-  leftAtEnding?: ((left: { note: string | undefined }) => void) | undefined;
+  leftAtEnding?: ((left: { note: string | undefined; told?: string }) => void) | undefined;
   submission: ConstructorParameters<typeof AutomationStudioFlowCandidateSubmissionController>[0];
   trial?: { candidateId: string; port: AutomationStudioCandidateTrialPort } | undefined;
   purse?: AutomationStudioLlmBuildPurse | undefined;

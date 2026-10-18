@@ -5,10 +5,12 @@ export { automationStudioActivityAction, type AutomationStudioActivityCallWords 
 export { automationStudioActivityCheckRefusalReasons, automationStudioActivityCompletionRefusal } from "./completion-refusal.ts";
 export { automationStudioActivityDecision } from "./decision.ts";
 export { automationStudioActivityDraftEditCard } from "./draft-edit-card.ts";
+export { automationStudioActivityEndedReason } from "./ended-reason.ts";
 export { automationStudioActivityFailureCodeWords } from "./failure-code-words.ts";
 export { automationStudioActivityHumanLabel } from "./human-label.ts";
 export { automationStudioActivityIssueWords, type AutomationStudioActivityIssue } from "./issue-words.ts";
 export { automationStudioActivityIssuesOf } from "./issues-of.ts";
+export { automationStudioActivityLeftTold, type AutomationStudioActivityLeftAct } from "./left-told.ts";
 export { automationStudioActivityPersonWords } from "./person-words.ts";
 export { automationStudioActivityReasonText } from "./reason-text.ts";
 export { automationStudioActivityRecoveryChoice, type AutomationStudioRecoveryNext } from "./recovery-choice.ts";

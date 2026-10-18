@@ -118,7 +118,8 @@ const HOW_TO_WORK = [
   "6. Test that exact Flow with core.test_candidate. If this build left lasting acts on the target, first dispatch a reset brief, which puts the target back the way the build found it. "
     + "With one subflow there is no such test or reset to send: its builder put the target back before its own test.",
   "7. Complete with the complete object project.assemble returned, and only after its test answered yes. If the task cannot be finished, complete with ended (blocked or partial) and your reason, once a brief has come back blocked or partial or a whole test has not passed. "
-    + "Before you end, if this build left lasting acts on the target, dispatch a reset brief first; Core adds whatever is still left to your reason, so the person knows."
+    + "Before you end, if this build left lasting acts on the target, dispatch a reset brief first; Core adds whatever is still left to your reason, so the person knows. "
+    + "The person who asked for the Flow reads your reason as it is: write it for them in plain words, saying what could not be done and why, as they would see it on the target. Never put codes, tool or subflow names, or this build's own terms (brief, builder, proposal, assembly, port, lasting act) in it."
 ].join("\n");
 
 const EXAMPLE = "Examples. One part, from a library account: \"Renew every book on my loans that is due this week.\" One part, p1, the whole sentence; one subflow, renew_loans, parts [p1], no inputs or outputs. "

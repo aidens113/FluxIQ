@@ -1,4 +1,4 @@
-import { automationStudioActivityReasonText, emitAutomationStudioActivity, observeAutomationStudioEvidenceLoop } from "../../activity/index.ts";
+import { automationStudioActivityEndedReason, emitAutomationStudioActivity, observeAutomationStudioEvidenceLoop } from "../../activity/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE,
   AutomationStudioFlowBootstrapGenerationError,
@@ -147,6 +147,18 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // so the advice is the last thing the person reads; no reset was sent, since
 // it would need the same silent provider (`project-agents/supervisor/
 // supervisor-loop.ts`), so the note is what tells the person what to take back.
+//
+// **The person reads all of it in plain words (t567 lane 4).** A job-board
+// build's failed chat listed every press the build made in the ledger's terms
+// ("click \"No thanks\" link (declared no lasting act, but had an effect:
+// possibly lasting)", one press four times), and its ending read "the single
+// subflow ... was briefed twice and both builders failed with flow bootstrap.…
+// (bootstrap.source port cardinality)". What is left is said as the
+// supervisor's ledger tells it in a person's words (`left.told`,
+// `activity/wording/left-told.ts`); the ledger's own note stays in the
+// record. The supervisor's reason is said only in what of it is plain
+// (`activity/wording/ended-reason.ts`), and Core's own words for the ending name no
+// supervisor. The failure's codes and diagnostic are unchanged.
 
 type DraftInput = Parameters<typeof generateAutomationStudioFlowCandidateDraft>[0];
 type DraftResult = { record: AutomationStudioFlowCandidateDraftRecord; trial: AutomationStudioCandidateTrialResult | undefined };
@@ -164,7 +176,7 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   // What the plan in force kept of earlier plans' proposals, as the supervisor tells it (header).
   let kept: AutomationStudioProjectSupervisorKept | undefined;
   // What the supervisor's ending left on the target, in Core's words, as it named it (header).
-  let left: { note: string | undefined } | undefined;
+  let left: { note: string | undefined; told?: string } | undefined;
   const proposals: AutomationStudioProjectBuildProposals & AutomationStudioProjectBuildKeptProposals = Object.assign(new AutomationStudioProjectBuildProposals(), {
     keptUnder: (subflowKey: string, madeUnder: string, planDigest: string) => kept?.planDigest === planDigest && kept.madeUnder.get(subflowKey) === madeUnder
   });
@@ -261,7 +273,7 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   if (outcome.timedOut && outcome.status === "ended" && outcome.trial?.verdict !== "yes") {
     const subflows = partSubflows((await records.read(ref))?.record.plans.at(-1)?.plan.partOf);
     const words = timeLimitWords(subflows, trials, { tested: trial?.verdict });
-    const title = words.title, text = `${words.tested} ${left?.note ?? NOTHING_LEFT}`;
+    const title = words.title, text = `${words.tested} ${left?.told ?? NOTHING_LEFT}`;
     emitAutomationStudioActivity({ phase: "building", label: title, detail: { kind: "note", title, text, status: "failed" } });
     // The trial's own code stays its code; the time limit goes beside it (header, t608).
     return { record, trial: trial ? { ...trial, feedback: { ...trial.feedback, endingCodes: [TIME_LIMIT_CODE] } } : undefined };
@@ -287,10 +299,10 @@ const MAX_MESSAGE = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE;
 const MAX_ENDED_REASON = 240;
 /** The supervisor's recorded ending, by its kind, in Core's words (header); its reason is said after, screened. */
 const ENDED_WORDS = Object.freeze({
-  partial: "The supervisor ended the build with only part of the Flow built.",
-  blocked: "The supervisor ended the build: it could not finish the Flow."
+  partial: "FluxIQ stopped with the Flow only partly built.",
+  blocked: "FluxIQ could not finish the Flow."
 });
-const NOTHING_LEFT = "Nothing this build did is still on the target.";
+const NOTHING_LEFT = "The build left no change on the site that it knows of.";
 
 /** One subflow's trials: how many ran, what the last answered, and whether any answered yes. */
 type Tried = { count: number; last: AutomationStudioCandidateTrialVerdict; passed: boolean };
@@ -349,12 +361,13 @@ function spoken(ms: number): string {
  * its own has Core's note of what is left after its message, and any other is
  * shown the ending's kind and that note as a chat row before it is thrown.
  */
-function toldEnding(failure: Error, recorded: AutomationStudioProjectBuildEnding | undefined, left: { note: string | undefined } | undefined, timedOut?: { title: string; tested: string }): Error {
+function toldEnding(failure: Error, recorded: AutomationStudioProjectBuildEnding | undefined, left: { note: string | undefined; told?: string } | undefined, timedOut?: { title: string; tested: string }): Error {
   if (!recorded || (recorded.outcome !== "partial" && recorded.outcome !== "blocked") || !(failure instanceof AutomationStudioFlowBootstrapGenerationError)) return failure;
   const { diagnostic } = failure;
   if (PERSON_CODES.has(diagnostic.code)) return failure;
   // A silent provider's ending leaves the target to this build, which says what is left of it, or that nothing is (header, t619).
-  const note = left?.note ?? (diagnostic.ending?.kind === "provider_unavailable" ? NOTHING_LEFT : undefined);
+  // What is left, in a person's words; the ledger's note stays in the record (header, t567 lane 4).
+  const note = left?.note !== undefined ? left.told ?? left.note : diagnostic.ending?.kind === "provider_unavailable" ? left?.told ?? NOTHING_LEFT : undefined;
   if (diagnostic.ending) {
     if (!note) return failure;
     // A silent provider's ending closes on its advice to try again later; what is left is said before it (t621).
@@ -365,8 +378,9 @@ function toldEnding(failure: Error, recorded: AutomationStudioProjectBuildEnding
   const title = timedOut?.title ?? ENDED_WORDS[recorded.outcome];
   // Why the supervisor ended it, in its screened words, before what is left (header, t649).
   // The record keeps Core's note after the model's words (`project-agents/record/store.ts`); the note is said once, last.
-  const own = note && recorded.reason.endsWith(note) ? recorded.reason.slice(0, -note.length) : recorded.reason;
-  const why = timedOut ? undefined : automationStudioActivityReasonText(own, MAX_ENDED_REASON);
+  const own = left?.note && recorded.reason.endsWith(left.note) ? recorded.reason.slice(0, -left.note.length) : recorded.reason;
+  // Only what of the supervisor's reason is plain is said (header, t567 lane 4).
+  const why = timedOut ? undefined : automationStudioActivityEndedReason(own, MAX_ENDED_REASON);
   const text = timedOut ? `${timedOut.tested} ${note ?? NOTHING_LEFT}` : `${why ? `${/[.!?…]$/u.test(why) ? why : `${why}.`} ` : ""}${note ?? NOTHING_LEFT}`;
   emitAutomationStudioActivity({ phase: "building", label: title, detail: { kind: "note", title, text, status: "failed" } });
   // The failure carries why too, beside the supervisor's ending it explains, so the build's last row and the chat's ending say it (header, t649).

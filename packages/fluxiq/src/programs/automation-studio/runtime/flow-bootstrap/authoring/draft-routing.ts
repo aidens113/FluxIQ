@@ -380,15 +380,35 @@ function scriptSpan(input: {
 
 /**
  * The steps as the Flow is written from them: each one the host says answered
- * an interruption, with no act and no routing of its own, routed `optional`.
- * A copy; the draft's own steps are left as the model authored them.
+ * an interruption, with no act and no routing of its own, routed `optional`;
+ * and a repeat over a list written right after, or inside, a span over the
+ * same list made part of that span (t567), as a script's is
+ * (`../script-statements/adjacent-list-repeats.ts`): a list's rows leave on one
+ * connection, so two loops over it cannot be built, and the drafted second
+ * one met only `bootstrap.source_port_cardinality`. A copy; the draft's own
+ * steps are left as the model authored them.
  */
 function effectiveSteps(steps: readonly AutomationStudioFlowDraftRoutedStep[]): readonly AutomationStudioFlowDraftRoutedStep[] {
   const interruptions = automationStudioFlowDraftInterruptionStepIds(steps.map((entry) => entry.step));
-  if (!interruptions.size) return steps;
-  return steps.map((entry) => interruptions.has(automationStudioFlowDraftStepId(entry.step))
+  const out = !interruptions.size ? [...steps] : steps.map((entry) => interruptions.has(automationStudioFlowDraftStepId(entry.step))
     ? { ...entry, step: { ...entry.step, routing: { kind: "optional" as const } } }
     : entry);
+  const ids = out.map((entry) => automationStudioFlowDraftStepId(entry.step));
+  for (const [head, entry] of out.entries()) {
+    const routing = entry.step.routing;
+    if (routing?.kind !== "repeat" || routing.over === undefined || ids.indexOf(routing.through) < head) continue;
+    let through = routing.through;
+    for (let next = head + 1; next <= ids.indexOf(through) + 1 && next < out.length; next += 1) {
+      const member = out[next]!.step.routing;
+      if (member?.kind !== "repeat" || member.over !== routing.over || ids.indexOf(member.through) < next) continue;
+      if (ids.indexOf(member.through) > ids.indexOf(through)) through = member.through;
+      const step = { ...out[next]!.step };
+      delete step.routing;
+      out[next] = { ...out[next]!, step };
+    }
+    if (through !== routing.through) out[head] = { ...entry, step: { ...entry.step, routing: { ...routing, through } } };
+  }
+  return out;
 }
 
 /**

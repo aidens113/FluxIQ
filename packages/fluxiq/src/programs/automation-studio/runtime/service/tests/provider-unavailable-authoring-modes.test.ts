@@ -79,7 +79,7 @@ const SILENT_ENDING: Readonly<Record<Mode, string>> = {
   candidate: "The build stopped because the AI model provider did not answer: 3 requests in a row got no answer -- it did not answer before the time allowed for each request ran out. "
     + "Nothing was built: no Flow was created or changed, and nothing on the page was changed. What the Flow should do is kept, so you can try again later, once the provider is answering.",
   project: "The build stopped because the AI model provider did not answer: 3 requests in a row got no answer -- it did not answer before the time allowed for each request ran out. "
-    + "Nothing was built: no Flow was created or changed. Nothing this build did is still on the target. What the Flow should do is kept, so you can try again later, once the provider is answering."
+    + "Nothing was built: no Flow was created or changed. The build left no change on the site that it knows of. What the Flow should do is kept, so you can try again later, once the provider is answering."
 };
 
 describe.each<Mode>(["candidate", "project"])("a %s build whose model provider answers nothing", (mode) => {
@@ -107,6 +107,7 @@ describe.each<Mode>(["candidate", "project"])("a %s build whose model provider a
     const said = JSON.stringify(seen);
     expect(said).not.toContain("what the model wrote");
     expect(said).not.toContain("The supervisor ended the build");
+    expect(said).not.toContain("FluxIQ could not finish the Flow");
     expect(said).not.toContain(PROVIDER_WORDS);
     expect(cause).not.toContain(PROVIDER_WORDS);
     expect(seen.at(-1)).toMatchObject({ phase: "failed", label: "Build stopped: the AI model provider is not responding", final: true, detail: { status: "failed", text: message } });
@@ -174,8 +175,8 @@ describe("a project build whose supervisor's replies arrive and end it without a
     expect(requests.length).toBeGreaterThan(3);
     expect(diagnostic).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked"] });
     expect(diagnostic.ending).toBeUndefined();
-    expect(seen.some((event) => event.detail?.title === "The supervisor ended the build: it could not finish the Flow.")).toBe(true);
+    expect(seen.some((event) => event.detail?.title === "FluxIQ could not finish the Flow.")).toBe(true);
     // t649: the chat cause carries the supervisor's own reason (`endedBecause`) after its ending.
-    expect(chatCause(diagnostic)).toBe("the build failed: the supervisor ended it because it could not finish the Flow: nothing on the page can do this");
+    expect(chatCause(diagnostic)).toBe("the build failed: FluxIQ could not finish the Flow: nothing on the page can do this");
   });
 });
