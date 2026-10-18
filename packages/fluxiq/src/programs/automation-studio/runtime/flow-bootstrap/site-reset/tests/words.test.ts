@@ -6,6 +6,15 @@ import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "../index.ts";
 // fix 4): a reset has no test to run.
 
 describe("site reset words for an undo aimed at another item", () => {
+  it("keeps an unproved inverse refused and requires an explicit other act claim", () => {
+    expect(WORDS.unprovedUndo(false)).toContain("created or changed");
+    expect(WORDS.unprovedUndo(false)).not.toContain("Another recorded act");
+    const words = WORDS.unprovedUndo(true);
+    expect(words).toContain("Another recorded act");
+    expect(words).toContain("explicitly name its id");
+    expect(words).toContain("fresh complete original-state evidence");
+    expect(words).toContain("was not run");
+  });
   it("does not promise a modern trial on leftovers or mistake source disappearance for restoration", () => {
     const words = WORDS.resetRequired(false);
     expect(words).toContain("Their disappearance alone does not prove");

@@ -424,6 +424,91 @@ describe("positive collection-transfer inverses", () => {
     }
   });
 
+  it("refuses the earlier claim but names a unique later witnessed effect without consuming either act", async () => {
+    for (const resource of ["r:one", undefined]) {
+      const ledger = new AutomationStudioSiteResetLedger();
+      const source = { ...origin, ...(resource ? { resource } : {}) };
+      const target = { ...destination, ...(resource ? { resource } : {}) };
+      observed(ledger);
+      ledger.explored(acted("first-attempt", ["modify_existing"], {}, source));
+      ledger.explored(acted("successful-retry", ["modify_existing"], {}, source));
+      ledger.placed("act-2", { state: {}, location: "collections", changed: ["moved"], collections: { before: before(), after: after() } });
+      observed(ledger, after());
+      const pending = ledger.inPlace();
+      for (let attempt = 0; attempt < 2; attempt++) {
+        expect(ledger.target("act-1", aim(["modify_existing"], target))).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_unproved", otherActsWithObservedEffect: [{ act: "act-2", call: "successful-retry" }] } });
+        expect(ledger.inPlace()).toEqual(pending);
+        expect(ledger.claim("act-2")).toMatchObject({ kind: "undo" });
+      }
+      expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+      expect(ledger.target("act-2", aim(["modify_existing"], target))).toMatchObject({ kind: "admit" });
+      ledger.explored(acted("explicit-inverse", ["modify_existing"], { undoes: "act-2", on: "subject" }, target));
+      expect(ledger.claim("act-2")).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_already_done" } });
+      observed(ledger);
+      expect(await ledger.beforeTrial(back)).toEqual({ kind: "admit" });
+      expect(ledger.inPlace()).toEqual([]);
+    }
+  });
+
+  it.each(["subject", "scope", "claimed-resource", "retry-resource", "target-resource", "missing-claimed-resource", "missing-retry-resource", "missing-target-resource", "empty-resource", "group", "no-baseline", "partial-baseline", "late-baseline", "missing-witness", "partial-current", "malformed-current", "changed-state", "stale-current", "earlier-only", "ambiguous", "spent", "undone", "mixed", "irreversible", "undeclared", "mixed-claim", "irreversible-claim", "undeclared-claim"])("does not suggest another act with %s evidence", async defect => {
+    const ledger = new AutomationStudioSiteResetLedger({ possible: true });
+    const first: AutomationStudioSiteResetSpot = { ...origin, resource: "r:one" };
+    const retry: AutomationStudioSiteResetSpot = { ...origin, resource: "r:one" };
+    const target: AutomationStudioSiteResetSpot = { ...destination, resource: "r:one" };
+    if (defect === "subject") first.subject = "s:baseline";
+    if (defect === "scope") first.scope = "p:sibling";
+    if (defect === "claimed-resource") first.resource = "r:other";
+    if (defect === "retry-resource") retry.resource = "r:other";
+    if (defect === "target-resource") target.resource = "r:other";
+    if (defect === "missing-claimed-resource") delete first.resource;
+    if (defect === "missing-retry-resource") delete retry.resource;
+    if (defect === "missing-target-resource") delete target.resource;
+    if (defect === "empty-resource") first.resource = "";
+    const firstClasses: AutomationStudioActionConsequence[] = defect === "mixed-claim" ? ["modify_existing", "create_new"] : defect === "irreversible-claim" ? ["modify_existing", "send_or_publish"] : defect === "undeclared-claim" ? [] : ["modify_existing"];
+    const retryClasses: AutomationStudioActionConsequence[] = defect === "mixed" ? ["modify_existing", "create_new"] : defect === "irreversible" ? ["modify_existing", "send_or_publish"] : defect === "undeclared" ? [] : ["modify_existing"];
+    if (defect !== "no-baseline" && defect !== "late-baseline") observed(ledger, defect === "partial-baseline" ? before().slice(0, 1) : before());
+    if (defect === "stale-current") observed(ledger, after());
+    let claimed = "act-1", candidate = "act-2";
+    if (defect === "earlier-only") {
+      ledger.explored(acted("successful-retry", retryClasses, {}, retry));
+      ledger.placed("act-1", { state: {}, location: "collections", changed: ["moved"], collections: { before: before(), after: after() } });
+      ledger.explored(acted("later-intent", firstClasses, {}, first));
+      claimed = "act-2";
+      candidate = "act-1";
+    } else {
+      ledger.explored(acted("first-intent", firstClasses, {}, first));
+      if (defect === "late-baseline") observed(ledger);
+      ledger.explored(acted("successful-retry", retryClasses, {}, retry));
+      if (defect !== "missing-witness") ledger.placed("act-2", { state: {}, location: "collections", changed: ["moved"], collections: { before: before(), after: after() } });
+    }
+    const current = after();
+    if (defect === "group") current[1]!.group = "g:foreign";
+    if (defect === "partial-current") current.splice(2, 1);
+    if (defect === "malformed-current") delete current[2]!.states["s:spare"];
+    if (defect === "changed-state") current[1]!.states["s:document"] = "v:changed";
+    if (defect !== "stale-current") observed(ledger, current);
+    if (defect === "ambiguous") {
+      ledger.explored(acted("separate-return", ["modify_existing"], {}, target));
+      observed(ledger);
+      ledger.explored(acted("another-forward", ["modify_existing"], {}, retry));
+      ledger.placed("act-4", { state: {}, location: "collections", changed: ["moved"], collections: { before: before(), after: after() } });
+      observed(ledger, after());
+    }
+    if (defect === "spent" || defect === "undone") {
+      expect(ledger.target(candidate, aim(["modify_existing"], target))).toMatchObject({ kind: "admit" });
+      ledger.explored(acted("explicit-inverse", ["modify_existing"], { undoes: candidate, on: "subject" }, target));
+      if (defect === "undone") {
+        observed(ledger);
+        expect(await ledger.beforeTrial(back)).toEqual({ kind: "admit" });
+      }
+    }
+    const pending = ledger.inPlace();
+    const result = ledger.target(claimed, aim(["modify_existing"], target));
+    expect(result.kind).toBe("refused");
+    if (result.kind === "refused") expect(result.evidence).not.toHaveProperty("otherActsWithObservedEffect");
+    expect(ledger.inPlace()).toEqual(pending);
+  });
+
   it("does not promote an undeclared retry into a declared transfer witness", () => {
     const ledger = new AutomationStudioSiteResetLedger({ possible: true });
     observed(ledger);
@@ -504,6 +589,7 @@ describe("positive collection-transfer inverses", () => {
     ledger.explored(acted("move", ["modify_existing"], {}, origin));
     ledger.placed("act-2", { state: {}, location: "collections", changed: ["moved"], collections: { before: edited, after: moved } });
     observed(ledger, moved);
+    expect(ledger.target("act-1", aim(["modify_existing"], destination))).toMatchObject({ kind: "refused", evidence: { otherActsWithObservedEffect: [{ act: "act-2" }] } });
     expect(ledger.target("act-2", aim(["modify_existing"], destination))).toMatchObject({ kind: "admit" });
     ledger.explored(acted("inverse", ["modify_existing"], { undoes: "act-2", on: "subject" }, destination));
     observed(ledger, edited);

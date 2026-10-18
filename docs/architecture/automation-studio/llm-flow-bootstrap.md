@@ -2848,6 +2848,18 @@ on that original scope and subject. No permission or declared consequence is
 inferred from an undeclared recovery press. Moving back a row with a changed
 quantity cannot settle the earlier quantity edit or the whole reset.
 
+An unproved undo claim is refused without dispatch. When exactly one later
+recorded act on the same original item and scope has its own independently
+witnessed transfer matching the current target, the refusal may include
+`otherActsWithObservedEffect`. This is informational: the builder must inspect
+that receipt and explicitly name its act id in a new claim. Looking up the hint
+does not assign an inverse, consume authority or settle either act. The original
+admission predicate stays unchanged. The hint additionally requires a fresh,
+complete original collection group and, when any resource identity is present,
+matching positive identities on the claimed act, the later act and the target.
+Ambiguous, spent, foreign or incomplete evidence produces no suggestion.
+Original-state proof still gates the next ordinary trial.
+
 Project resets route current inventories to the ledger owning an act without
 seeding another builder's baseline from an independent resource. Distinct
 resource scopes cannot overwrite each other's current inventories. Builders
