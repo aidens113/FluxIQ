@@ -264,6 +264,15 @@ element's `implicitRole` counts as its `role`, and the parameters' own `text` â€
 the action's argument, typed text for instance â€” never becomes the target's
 `visibleText`.
 
+The normalized fingerprint keeps only the fields
+`AutomationStudioElementTargetFingerprint` declares and drops every other key.
+One of them, `drawing`, is opaque to Core: a domain's digest of what a control
+draws, kept as a single token of at most 64 printable characters without
+whitespace (anything else is dropped, never truncated), read from the target or
+its `metadata`, and copied onto candidates as well. Core does not score,
+compare or count it as an identifying signal; it is carried so a stored or
+repaired target keeps the identity its domain saved.
+
 Recording proposal review surfaces this identity as a compact element target
 summary. The summary favors visible text, accessible name, label, ID/test ID,
 role, and confidence, with selectors shown as supporting detail evidence.

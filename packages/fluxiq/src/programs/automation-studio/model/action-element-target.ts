@@ -22,6 +22,14 @@ export type AutomationStudioElementTargetFingerprint = {
   classNames?: string[];
   bounds?: StateBounds;
   attributes?: Record<string, string>;
+  /**
+   * An opaque digest of what a control draws, written by the domain that
+   * captured it (a web domain hashes an icon's geometry, for one). Core keeps it
+   * so a stored or repaired target loses none of the identity it was saved
+   * with, and never reads, scores or compares it: only the domain that wrote it
+   * knows what it means. Kept only as one bounded token (`readDrawing`).
+   */
+  drawing?: string;
   metadata?: JsonObject;
 };
 
@@ -149,12 +157,13 @@ function normalizeFingerprint(value: unknown, readsText = true): AutomationStudi
     classNames: readStringArray(value.classNames) ?? readStringArray(metadata.classNames),
     bounds: readBounds(value.bounds) ?? readBounds(metadata.bounds),
     attributes: sanitizeAttributes(value.attributes) ?? sanitizeAttributes(metadata.attributes),
+    drawing: readDrawing(value.drawing) ?? readDrawing(metadata.drawing),
     metadata: sanitizeJsonObject(metadata, promotedFingerprintMetadataKeys)
   });
 }
 
 function validateFingerprint(fingerprint: AutomationStudioElementTargetFingerprint, issues: AutomationStudioElementTargetValidationIssue[], path: string): void {
-  for (const key of ["visibleText", "accessibleName", "label", "id", "testId", "automationId", "entityId", "entityKind", "tagName", "role", "selector", "xpath", "queryPath", "url"] as const) {
+  for (const key of ["visibleText", "accessibleName", "label", "id", "testId", "automationId", "entityId", "entityKind", "tagName", "role", "selector", "xpath", "queryPath", "url", "drawing"] as const) {
     const value = fingerprint[key];
     if (value !== undefined && !value.trim()) issue(issues, "warning", "element_target.empty_signal", `Element target ${key} is empty and should be omitted.`, `${path}.${key}`);
   }
@@ -193,6 +202,21 @@ function readStatePath(value: unknown): AutomationStudioElementTargetFingerprint
   const namespace = safeString(value.namespace);
   const path = safeString(value.path);
   return namespace && path ? { namespace, path } : undefined;
+}
+
+/** Longest drawing digest kept. A digest is a short token; anything longer is not one, and a cut digest names nothing, so it is dropped rather than truncated. */
+const MAX_DRAWING_LENGTH = 64;
+
+/**
+ * A drawing digest, as one opaque token: printable, without whitespace, and at
+ * most `MAX_DRAWING_LENGTH` long. The shape is checked so the field can never
+ * carry page text or a long value under an identity name; what the token says
+ * is the writing domain's business.
+ */
+function readDrawing(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const token = value.trim();
+  return token.length > 0 && token.length <= MAX_DRAWING_LENGTH && /^[!-~]+$/u.test(token) ? token : undefined;
 }
 
 function readBounds(value: unknown): StateBounds | undefined {
@@ -256,7 +280,7 @@ function isSensitiveKey(key: string): boolean {
   return /password|passwd|passcode|secret|token|credential|authorization|cookie|session|csrf/i.test(key);
 }
 
-const promotedFingerprintMetadataKeys = new Set(["visibleText", "accessibleName", "ariaLabel", "label", "id", "testId", "dataTestId", "automationId", "entityId", "entityKind", "tagName", "role", "selector", "xpath", "queryPath", "statePath", "url", "classNames", "bounds", "attributes"]);
+const promotedFingerprintMetadataKeys = new Set(["visibleText", "accessibleName", "ariaLabel", "label", "id", "testId", "dataTestId", "automationId", "entityId", "entityKind", "tagName", "role", "selector", "xpath", "queryPath", "statePath", "url", "classNames", "bounds", "attributes", "drawing"]);
 
 function issue(issues: AutomationStudioElementTargetValidationIssue[], severity: "error" | "warning", code: string, message: string, path: string): void {
   issues.push({ severity, code, message, path });

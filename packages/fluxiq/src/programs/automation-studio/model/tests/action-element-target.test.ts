@@ -126,6 +126,44 @@ describe("automation studio element targets", () => {
     });
   });
 
+  it("keeps a drawing digest as an opaque token through every shape it arrives in, and still drops unknown fields", () => {
+    // A repaired target, flat as a domain resolves it: the digest survives, the
+    // fields Core does not declare do not.
+    const repaired = normalizeAutomationStudioElementTarget({
+      handles: { element: "t4" },
+      handleResolution: "named",
+      selector: "span.x9k2",
+      tagName: "span",
+      classNames: ["x9k2"],
+      drawing: "d1.q8f2k7",
+      unknownSignal: "kept nowhere"
+    }, { source: "runtime" });
+    expect(repaired?.fingerprint).toEqual({ selector: "span.x9k2", tagName: "span", classNames: ["x9k2"], drawing: "d1.q8f2k7" });
+    expect(JSON.stringify(repaired)).not.toContain("kept nowhere");
+
+    // Already canonical (Core's own rewrite, normalized again), on a candidate,
+    // from metadata, and from an action's element.
+    const canonical = normalizeAutomationStudioElementTarget({
+      kind: "element",
+      fingerprint: { selector: "#a", drawing: "d1.q8f2k7", stray: 1 },
+      candidates: [{ candidateId: "c1", selector: "#a", drawing: "d1.q8f2k7" }]
+    });
+    expect(canonical?.fingerprint).toEqual({ selector: "#a", drawing: "d1.q8f2k7" });
+    expect(canonical?.candidates?.[0]?.drawing).toBe("d1.q8f2k7");
+    expect(normalizeAutomationStudioElementTarget({ selector: "#a", metadata: { drawing: "d1.zz" } })?.fingerprint).toEqual({ selector: "#a", drawing: "d1.zz" });
+    expect(normalizeAutomationStudioElementTarget({ selector: "#a", element: { tagName: "button", drawing: "d1.q8f2k7" } })?.fingerprint.drawing).toBe("d1.q8f2k7");
+
+    // Not a token: page words, a long value, or a non-string are not kept, and never cut down to one.
+    for (const drawing of ["Save this job", "d".repeat(65), 42, "", "  "]) {
+      expect(normalizeAutomationStudioElementTarget({ selector: "#a", drawing })?.fingerprint).toEqual({ selector: "#a" });
+    }
+    expect(normalizeAutomationStudioElementTarget({ selector: "#a", drawing: "d".repeat(64) })?.fingerprint.drawing).toBe("d".repeat(64));
+  });
+
+  it("does not count a drawing as an identifying signal of its own", () => {
+    expect(normalizeAutomationStudioElementTarget({ tagName: "span", drawing: "d1.q8f2k7" })).toBeNull();
+  });
+
   it("keeps an authored role over the implied one, and reads parameters without an element as before", () => {
     expect(normalizeAutomationStudioElementTarget({ selector: "#tab", element: { role: "tab", implicitRole: "button", tagName: "button" } })?.fingerprint.role).toBe("tab");
     expect(normalizeAutomationStudioElementTarget({ selector: "#search", text: "Search" })?.fingerprint).toEqual({ selector: "#search", visibleText: "Search" });
