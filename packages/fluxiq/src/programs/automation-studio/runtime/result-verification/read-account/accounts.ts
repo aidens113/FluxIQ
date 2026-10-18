@@ -236,7 +236,13 @@ function account(
   const paginate = authored?.paginate;
   const pageLimit = isRecord(paginate) ? firstLimit(paginate) : undefined;
   const columns = isRecord(authored?.fields) ? Object.keys(authored.fields) : [];
-  const dedupe = authored ? automationStudioResultReadDedupe(authored.dedupe, columns) : undefined;
+  const recordOutput = node?.parameterValues?.recordOutput;
+  const process = isRecord(recordOutput) && isRecord(recordOutput.process) ? recordOutput.process : undefined;
+  const readDedupe = authored ? automationStudioResultReadDedupe(authored.dedupe, columns) : undefined;
+  // One-page reads move collection-wide dedupe into recordOutput.process.
+  // An explicit read dedupe takes precedence; otherwise report the processing
+  // declaration actually applied to the stored collection.
+  const dedupe = readDedupe?.dedupes === true ? readDedupe : process?.dedupe === undefined ? readDedupe : automationStudioResultReadDedupe(process.dedupe, columns);
   const dedupeBy = dedupe && deniedKeys ? columnKeys(dedupe.by, deniedKeys) : [];
   // A read that moves page by page leaves out a row identical to an earlier page's, dedupe or none:
   // said by the read's own count, or by its authored paging where the count did not reach the record.
