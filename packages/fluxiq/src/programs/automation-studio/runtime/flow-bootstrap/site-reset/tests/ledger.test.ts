@@ -263,7 +263,7 @@ describe("site reset ledger", () => {
     ledger.explored(acted("call.undo", ["delete"], { undoes: "act-1", on: "created" }));
     const claim = ledger.claim("act-1");
     expect(claim).toMatchObject({ kind: "refused", evidence: { ok: false, code: "candidate.undo_already_done", act: "act-1", undoneBy: "call.undo", actsToUndo: [] } });
-    if (claim.kind === "refused") expect(String(claim.evidence.instruction)).toContain("checked on its own page before the next trial");
+    if (claim.kind === "refused") expect(String(claim.evidence.instruction)).toContain("Positive original-state evidence is checked before the next trial");
   });
 
   it("leaves an act's removal unspent when the undo only looked, put nothing to the gate, or removed on its own item rather than a created one", () => {

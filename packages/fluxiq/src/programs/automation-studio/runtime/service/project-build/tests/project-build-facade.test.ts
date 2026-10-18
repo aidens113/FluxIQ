@@ -258,6 +258,9 @@ describe("a project build through the actual service", () => {
       expect(instructions!.text).not.toContain("own search");
     }
     for (const { instructions } of builders) expect(instructions).toEqual({ domainId: "isolated", version: "isolated.v1", text: operating });
+    const first = [...run.builderSaw.values()][0]![0]!;
+    expect(first).toContain("Declare the lasting consequences of every recovery press");
+    expect(first).toContain("Truly nonlasting actions keep an empty declaration");
   });
 
   // The plan the supervisor writes gives no success check, so the builder's own is its subflow's, and its trial is judged against it (t569).

@@ -44,6 +44,59 @@ describe("observed destination witnesses for cross-page reset", () => {
     expect(ledger.target("act-1", aim(["delete"], destination))).toEqual({ kind: "admit", on: "subject", allowed: ["delete"] });
   });
 
+  it("keeps a cross-page create pending when its source popup disappears without an inverse", async () => {
+    const ledger = witnessed();
+    ledger.placed("act-1", { state: {}, location: "source", changed: ["created notice"], lines: { gone: [], added: ["created notice"] } });
+    const checks = { compare: back, compareAt: async () => ({ moved: false, differs: [], lines: { gone: [], added: [] } }) };
+    expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "refuse" });
+    expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1"]);
+  });
+
+  it("does not infer no lasting effect from an unchanged modern source page", async () => {
+    const ledger = witnessed();
+    ledger.noEffect("act-1");
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    expect(ledger.target("act-1", aim(["delete"], destination))).toMatchObject({ kind: "admit" });
+  });
+
+  it("keeps modern cannotUndo effects listed and allows later positively proved correction", async () => {
+    const ledger = witnessed();
+    await ledger.beforeTrial(back);
+    expect(await ledger.beforeTrial(back, ["act-1"])).toMatchObject({ kind: "refuse" });
+    expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1"]);
+    expect(ledger.claim("act-1")).toMatchObject({ kind: "undo" });
+    expect(ledger.target("act-1", aim(["delete"], destination))).toMatchObject({ kind: "admit" });
+    ledger.explored(acted("remove", ["delete"], { undoes: "act-1", on: "subject" }, destination));
+    observe(ledger, ["s:baseline"]);
+    expect(await ledger.beforeTrial(back)).toEqual({ kind: "admit" });
+  });
+
+  it("requires positive complete baseline proof even for a strict same-page created item", async () => {
+    for (const known of [true, false]) {
+      const ledger = new AutomationStudioSiteResetLedger();
+      if (known) observe(ledger, ["s:baseline"]);
+      ledger.explored(acted("create-in-list", ["create_new"], {}, destination));
+      ledger.placed("act-1", { state: {}, location: "destination", changed: ["created"], created: ["i:created"] });
+      observe(ledger, ["s:baseline", "s:document"]);
+      const control = { ...destination, item: "i:created" };
+      expect(ledger.target("act-1", aim(["delete"], control))).toMatchObject(known ? { kind: "admit", on: "subject" } : { kind: "refused" });
+      if (!known) continue;
+      ledger.explored(acted("remove", ["delete"], { undoes: "act-1", on: "subject" }, control));
+      observe(ledger, ["s:baseline"]);
+      expect(await ledger.beforeTrial(back)).toEqual({ kind: "admit" });
+    }
+  });
+
+  it("invalidates a cached new-subject inverse when a fresh same-group sibling is malformed", () => {
+    const ledger = witnessed();
+    expect(ledger.target("act-1", aim(["delete"], destination))).toMatchObject({ kind: "admit" });
+    ledger.observed({ state: {}, differs: [], collections: [
+      { scope: destination.scope, group: "g:page", subjects: ["s:baseline", "s:document"], states: { "s:baseline": "v:s:baseline", "s:document": "v:s:document" } },
+      { scope: "p:sibling", group: "g:page", subjects: ["s:other", "s:other"], states: { "s:other": "v:other" } }
+    ] });
+    expect(ledger.target("act-1", aim(["delete"], destination))).toMatchObject({ kind: "refused" });
+  });
+
   it("refuses deletion of the same product when it already existed before the add", () => {
     const ledger = new AutomationStudioSiteResetLedger();
     observe(ledger, ["s:document"]);
@@ -339,6 +392,105 @@ describe("positive collection-transfer inverses", () => {
     inverse(ledger);
     observed(ledger);
     expect(await ledger.beforeTrial(back)).toEqual({ kind: "admit" });
+  });
+
+  it("a declared retry inverse also restores its failed original intent only with fresh exact whole-group evidence", async () => {
+    for (const defect of ["none", "quantity", "order", "sibling", "partial", "resource"] as const) {
+      const ledger = new AutomationStudioSiteResetLedger();
+      observed(ledger);
+      ledger.explored(acted("first-attempt", ["modify_existing"], {}, origin));
+      // Baseline evidence from before a press is never its restoration.
+      expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+      const retry = before();
+      retry[0]!.states["s:document"] = "v:transient-retry-error";
+      observed(ledger, retry);
+      ledger.explored(acted("retry", ["modify_existing"], {}, origin));
+      ledger.placed("act-2", { state: {}, location: "collections", changed: ["moved"], collections: { before: retry, after: after() } });
+      observed(ledger, after());
+      expect(ledger.target("act-2", aim(["modify_existing"], destination))).toMatchObject({ kind: "admit" });
+      ledger.explored(acted("inverse", ["modify_existing"], { undoes: "act-2", on: "subject" }, destination));
+      const restored = before();
+      if (defect === "quantity") restored[0]!.states["s:document"] = "v:changed";
+      if (defect === "order") restored[0]!.subjects.reverse();
+      if (defect === "sibling") restored[2]!.states["s:spare"] = "v:changed";
+      if (defect === "partial") restored.splice(2, 1);
+      if (defect === "resource") for (const entry of restored) {
+        entry.group = "g:other";
+        entry.scope = `other:${entry.scope}`;
+      }
+      observed(ledger, restored);
+      expect((await ledger.beforeTrial(back)).kind).toBe(defect === "none" ? "admit" : "refuse");
+      if (defect !== "none") expect(ledger.inPlace().map((act) => act.act)).toContain("act-1");
+    }
+  });
+
+  it("does not promote an undeclared retry into a declared transfer witness", () => {
+    const ledger = new AutomationStudioSiteResetLedger({ possible: true });
+    observed(ledger);
+    ledger.explored(acted("first-attempt", ["modify_existing"], {}, origin));
+    ledger.explored(acted("undeclared-retry", [], {}, origin));
+    ledger.placed("act-2", { state: {}, location: "collections", changed: ["moved"], collections: { before: before(), after: after() } });
+    observed(ledger, after());
+    expect(ledger.target("act-1", aim(["modify_existing"], destination))).toMatchObject({ kind: "refused" });
+    expect(ledger.target("act-2", aim(["modify_existing"], destination))).toMatchObject({ kind: "refused" });
+  });
+
+  it("settles a truly failed declared press from fresh complete original evidence without a needless inverse", async () => {
+    for (const defect of ["none", "stale", "no-baseline", "partial", "resource"] as const) {
+      const ledger = new AutomationStudioSiteResetLedger();
+      if (defect !== "no-baseline") observed(ledger);
+      ledger.explored(acted("failed-press", ["modify_existing"], {}, origin));
+      const restored = before();
+      if (defect === "partial") restored.splice(1, 1);
+      if (defect === "resource") for (const entry of restored) {
+        entry.group = "g:other";
+        entry.scope = `other:${entry.scope}`;
+      }
+      if (defect !== "stale") observed(ledger, restored);
+      expect((await ledger.beforeTrial(back)).kind).toBe(defect === "none" ? "admit" : "refuse");
+    }
+  });
+
+  it.each(["baseline-missing", "current-missing", "both-missing", "blank", "extra"])("refuses original-state settlement with %s fingerprints", async (defect) => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    const was = before(), now = before();
+    if (defect === "baseline-missing" || defect === "both-missing") delete was[0]!.states["s:document"];
+    if (defect === "current-missing" || defect === "both-missing") delete now[0]!.states["s:document"];
+    if (defect === "blank") {
+      was[0]!.states["s:document"] = "";
+      now[0]!.states["s:document"] = "";
+    }
+    if (defect === "extra") {
+      was[0]!.states["s:unknown"] = "v:unknown";
+      now[0]!.states["s:unknown"] = "v:unknown";
+    }
+    observed(ledger, was);
+    ledger.explored(acted("failed-press", ["modify_existing"], {}, origin));
+    observed(ledger, now);
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+  });
+
+  it.each(["original-subject", "current-subject", "original-sibling", "current-sibling", "original-scope", "current-scope"])("never normalizes duplicate %s evidence into whole-group restoration", async (defect) => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    const was = before(), now = before();
+    const bad = defect.startsWith("original") ? was : now;
+    if (defect.endsWith("subject")) bad[0]!.subjects.push("s:document");
+    if (defect.endsWith("sibling")) bad[2]!.subjects.push("s:spare");
+    if (defect.endsWith("scope")) bad.push(structuredClone(bad[2]!));
+    ledger.adoptOriginalCollections(was);
+    ledger.explored(acted("failed-press", ["modify_existing"], {}, origin));
+    observed(ledger, now);
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+  });
+
+  it("invalidates a cached transfer inverse for a malformed fresh sibling and recovers on valid evidence", () => {
+    const ledger = move();
+    const invalid = after();
+    invalid[2]!.subjects.push("s:spare");
+    observed(ledger, invalid);
+    expect(ledger.target("act-1", aim(["modify_existing"], destination))).toMatchObject({ kind: "refused" });
+    observed(ledger, after());
+    expect(ledger.target("act-1", aim(["modify_existing"], destination))).toMatchObject({ kind: "admit" });
   });
 
   it("moving back an earlier quantity edit never absorbs that edit or proves whole reset", async () => {

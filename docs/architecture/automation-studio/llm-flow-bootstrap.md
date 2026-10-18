@@ -2800,6 +2800,36 @@ consequence on an undo's modern control press does not bypass ownership.
 Undeclared possible effects, irreversible effects, and legacy domains with
 neither subject nor scope tokens retain their existing policy.
 
+An identified reversible act stays listed and correctable after cannotUndo or
+repeated refused trials. A source notification disappearing, or an unchanged
+source-page read, never clears that act: a destination effect may persist.
+The source diff remains diagnostic evidence only. A truly failed declared
+press can settle without a needless inverse when a fresh complete read proves
+its original resource group unchanged. This requires an original complete
+scope containing the same subject, every original group inventory in original
+order with identical row fingerprints, no extra scopes, and a group read after
+the act was recorded. Pre-act, incomplete, late-baseline and other-resource
+observations cannot satisfy it.
+
+Identified created-item tokens use the same positive complete-scope proof as
+cross-page subject deletion. Every original and current subject needs a defined
+nonempty fingerprint, with exact fingerprint cardinality. The shared internal
+collection-group validator runs before project original Maps, ledger baseline
+adoption and current subject Sets. Duplicate subjects or scopes, missing row
+states and malformed sibling inventories invalidate the entire group. A bad
+fresh read also invalidates cached inverse-admission evidence; it cannot leave
+an earlier positive snapshot usable. Valid original authority is immutable and
+a later genuinely complete current read can restore current evidence.
+
+Project builders receive generic consequence-declaration guidance before their
+first decision. Recovery presses must truthfully declare the same lasting
+operation they perform; truly nonlasting actions retain an empty declaration.
+A declared retry gets its own immediate effect witness and inverse. Restoring
+the exact original whole resource group also settles an earlier failed intent
+on that original scope and subject. No permission or declared consequence is
+inferred from an undeclared recovery press. Moving back a row with a changed
+quantity cannot settle the earlier quantity edit or the whole reset.
+
 Project resets route current inventories to the ledger owning an act without
 seeding another builder's baseline from an independent resource. Distinct
 resource scopes cannot overwrite each other's current inventories. Builders

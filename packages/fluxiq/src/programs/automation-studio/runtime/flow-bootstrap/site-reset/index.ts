@@ -2,6 +2,7 @@
 // Not re-exported from `../index.ts`, for the reason `../candidate/` is not:
 // the start check drives calls through the evidence loop's tools.
 export * from "./act-places.ts";
+export * from "./collection-groups.ts";
 export * from "./contracts.ts";
 export * from "./explored-on-absorbed.ts";
 export * from "./ledger.ts";

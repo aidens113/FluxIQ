@@ -236,9 +236,15 @@ export function automationStudioProjectBuildBriefPorts(input: {
     AutomationStudioProjectBuildPermissions.of(project).add(permissions);
     const personNeeded = automationStudioFlowBootstrapPersonNeeded({ executeTool: permissions.executeTool, tools: harness.tools, signal: AbortSignal.any([permissions.signal, request.signal]), clearedResultCode: automationStudioFlowDraftReplayClearedCode, ...(project.personAsk ? { ask: project.personAsk } : {}) });
     const denied = binding.deniedEvidenceKeys;
+    const now = Date.now();
+    const declarations: AutomationStudioFlowInstruction = {
+      schemaVersion: "0.1", instructionId: "core.project_action_declarations", title: "Declare lasting actions and observe their original destinations",
+      body: "Before making a reversible lasting effect, observe its destination's complete original inventory. Declare the lasting consequences of every recovery press as honestly as the original operation, even when its control offers recovery from an error. Truly nonlasting actions keep an empty declaration. A successful control press or a vanished source message does not prove destination restoration. Return every identified original collection to its original ordered rows and values before another trial; report unproved restoration honestly.",
+      scope: { kind: "flow", projectId, flowId }, priority: Number.MIN_SAFE_INTEGER, status: "active", requirement: "required", tags: ["generation"], createdAt: now, updatedAt: now, metadata: { source: "core.project_action_declarations" }
+    };
     const runHarness = async (call: AutomationStudioLlmHarnessInput) => {
       const shown = routing.shown(call.evidenceLoop!.evidence, denied);
-      return await project.runHarness({ ...call, ...(task ? { instructions: task() } : {}), evidenceLoop: {...call.evidenceLoop!, evidence: shown.evidence.map((item) => ({ ...item })) }, flowBootstrap: { ...call.flowBootstrap!, routing: shown.context, describedNodeIds: nodeDescriptions.ids() } });
+      return await project.runHarness({ ...call, instructions: task ? task() : [...call.instructions, declarations], evidenceLoop: {...call.evidenceLoop!, evidence: shown.evidence.map((item) => ({ ...item })) }, flowBootstrap: { ...call.flowBootstrap!, routing: shown.context, describedNodeIds: nodeDescriptions.ids() } });
     };
     const decide = (completionSchema: JsonObject | undefined) => input.decisions.decide({ runHarness, wrapDecision: routing.observing, completionSchema });
     const { purse: _purse, signal: _signal, budget: _budget, maxIterations: _maxIterations, tools: _tools, executeTool: _executeTool, nodeOf: _nodeOf, ...limits } = draft.loop;
