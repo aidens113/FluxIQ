@@ -83,6 +83,26 @@
 // say that much only, so they are set aside before a sentence is asked whether
 // it says something is wrong; any other word for wrong in it still counts.
 //
+// **Rows said to have come back are no reason (live-lane-1 fix 4).** Run
+// `run-mvd8ypsv-32cde667` steps 0056 and 0057, over an exact answer: "Condition
+// 1 left out 5 rows, but 4 of them (...) are also in the result via another
+// copy, so not missing." Each row it names is a stored row a condition also
+// left a copy of, so it agrees with Core's record, yet it named a condition and
+// rows and said "but", "not" and "missing", so it stood beside the one refuted
+// sentence calling a settled row absent -- the no's only complaint -- neither no
+// was wholly refuted or asked again, and the run ended unverified. So each
+// sentence is weighed without its clauses (`automationStudioResultReasonClauses`)
+// that only grant that rows came back: every row the clause names is a stored
+// row of which a condition also left a copy out, it names no left-out row and
+// no row Core cannot find, it says the result holds them (`IN_RESULT`: "is also
+// in the result", "are among the stored rows", "not missing", "came back"), and
+// once those words and a leading "but" are set aside nothing in it says
+// something is wrong. The rest of the sentence is weighed as before; a sentence
+// that is nothing else names nothing. A clause that grants a row came back and
+// says anything else of it ("... is in the result but is not the item asked
+// for") is kept, and so is one naming a row no condition left a copy of. And
+// "wrongly" is a word for wrong, as "wrong" is.
+//
 // The reading is wholly refuted when at least one sentence's claims are
 // refuted and no sentence stands. A reading that names nothing Core can check,
 // or anything Core cannot refute, is not: the no stands as before. Core never
@@ -106,7 +126,7 @@ import type { AutomationStudioResultNoClaim, AutomationStudioResultNoRecord, Aut
 import { automationStudioResultNarrowingStepClaim, automationStudioResultNarrowingStepsNamed } from "./unseen-row-claim.ts";
 
 /** Words that say something is wrong. */
-const NEGATIVE = /\b(?:not|no|never|none|nothing|missing|absent|wrong|incorrect(?:ly)?|fails?|failed|failing|instead|should|must|but|however|although|lacks?|lacking|without|exclud\w*|duplicat\w*|twice|extra|too\s+(?:many|few)|only)\b|n['’]t\b/iu;
+const NEGATIVE = /\b(?:not|no|never|none|nothing|missing|absent|wrong(?:ly)?|incorrect(?:ly)?|fails?|failed|failing|instead|should|must|but|however|although|lacks?|lacking|without|exclud\w*|duplicat\w*|twice|extra|too\s+(?:many|few)|only)\b|n['’]t\b/iu;
 /** A condition named by its number, as Core names it. */
 const CONDITION_NUMBER = /\bcondition\s+\d+\b/iu;
 
@@ -115,6 +135,32 @@ type Reading = NonNullable<AutomationStudioResultRepairDirective["judgement"]>;
 
 /** Words that say a row was left out as it should be: no word that something is wrong (header, t665). Generic, never any site's. */
 const APPROVED = /\b(?:correctly|rightly|properly|appropriately|validly|legitimately|accurately)\s+(?:been\s+)?(?:excluded|dropped|left\s+out|removed|rejected|filtered\s+out|omitted|skipped)\b|\b(?:excluded|dropped|left\s+out|removed|rejected|filtered\s+out|omitted|skipped)\s+(?:correctly|rightly|properly|appropriately|validly|legitimately|accurately)\b/giu;
+
+/** Words that say the rows named are in the result (header, live-lane-1 fix 4). Generic, never any site's. */
+const IN_RESULT = /\b(?:is|are|was|were)\s+(?:also\s+|still\s+)?(?:in|among|part\s+of)\s+the\s+(?:result|stored\s+rows|answer|output|table)\b|\b(?:is|are|was|were)\s+(?:also\s+|still\s+)?(?:kept|stored|returned)\b|\b(?:so\s+)?(?:not|never)\s+missing\b|\bcame\s+back\b/giu;
+/** A contrast word a clause cut at ", but" begins with: it sets the clause against the one before, and says nothing of its own rows. */
+const LEADING_CONTRAST = /^\s*(?:but|however|yet|though|although)\b,?/iu;
+
+/** The sentence less each clause that only grants that rows a condition left out came back (header, live-lane-1 fix 4); the sentence itself where it has none. */
+function withoutRowsInResult(sentence: string, record: AutomationStudioResultNoRecord): string {
+  let rest = sentence;
+  for (const clause of automationStudioResultReasonClauses(sentence)) if (grantsRowsBack(clause, record)) rest = rest.replace(clause, " ");
+  return rest === sentence ? sentence : rest.replace(/\s+/gu, " ").trim();
+}
+
+/** Whether one clause only grants that rows a condition left out came back (header, live-lane-1 fix 4). */
+function grantsRowsBack(clause: string, record: AutomationStudioResultNoRecord): boolean {
+  if (!clause.match(IN_RESULT)) return false;
+  const named = automationStudioResultSentenceRows(clause, record);
+  if (!named.stored.length || named.leftOut.length || named.unmatched) return false;
+  if (!named.stored.every((row) => record.leftOut.some((left) => left.label === row.label))) return false;
+  return !saysWrong(clause.replace(IN_RESULT, " ").replace(LEADING_CONTRAST, " "));
+}
+
+/** Whether a text says something is wrong, once words that say a row was rightly left out are set aside (header, t665). */
+function saysWrong(text: string): boolean {
+  return NEGATIVE.test(text.replace(APPROVED, " "));
+}
 
 /** How one sentence, or one clause of one, weighs: refuted, a reason that stands, or neither. */
 type Weight = "refuted" | "standing" | "none";
@@ -132,7 +178,8 @@ export function automationStudioResultRefutedReading(reading: Reading | undefine
   // The narrowing steps its advice removes or replaces, where Core measured each removed no row (header, t659).
   const advisedSteps = automationStudioResultAdviceSteps(reading?.advice, record);
   // Each sentence less Core's own wording of the conditions it names: those are Core's words, not the judge's claim (`./condition-wording.ts`, t624).
-  for (const sentence of automationStudioResultReadingSentences(reading?.observed).map(automationStudioResultWithoutConditionWording)) {
+  // And without its clauses that only grant that rows a condition left out came back (header, live-lane-1 fix 4).
+  for (const sentence of automationStudioResultReadingSentences(reading?.observed).map(automationStudioResultWithoutConditionWording).map((each) => withoutRowsInResult(each, record))) {
     const whole = weighed(sentence, record, advised);
     // Clause by clause, where a clause blames only steps Core measured as removing no row (header, t665).
     const clauses = whole.weight === "refuted" ? undefined : byClause(sentence, record, advised);
@@ -185,7 +232,7 @@ function weighed(sentence: string, record: AutomationStudioResultNoRecord, advis
   const conditionsAlone = !namesRows && !steps.length && !automationStudioResultNarrowingStepsNamed(sentence, record).steps.length;
   const said = around !== undefined && !conditionsAlone ? around : sentence;
   // A row said rightly left out says nothing is wrong (header, t665).
-  return { weight: namesSomething && NEGATIVE.test(said.replace(APPROVED, " ")) ? "standing" : "none", findings };
+  return { weight: namesSomething && saysWrong(said) ? "standing" : "none", findings };
 }
 
 /**

@@ -31,6 +31,15 @@
 // overdue books, then list the books now shown as renewed; a last read that
 // also stores the books never renewed has to say why each is there.
 //
+// **Never a row Core settled (live-lane-1 fix 4).** Run `run-mvd8ypsv-32cde667`
+// steps 0056 and 0057: a presence test alone left out five rows, all five in
+// its `leftOutSettled` (Core read on each the value the request says to leave
+// out), and four were also listed here. Both judges read the one left unlisted
+// as missing and answered no over an exact answer. A settled row is already
+// accounted for by its condition's own `settled`, so it is not listed here as
+// well, and Core's sentence says that a row this list leaves out is not thereby
+// missing: the condition's own entry accounts for it.
+//
 // **The judge's copy only.** As `summary-with-row-ids.ts`: the summary given is
 // never changed, and the verdict reads the rows as before.
 
@@ -46,7 +55,9 @@ const WITHHELD_LABEL = "(withheld)";
 
 /** Core's sentence beside the marked rows (header). */
 const ALSO_IN_RESULT = "Each row in leftOutAlsoInResult is one this condition alone left out whose label is also a row of the result: "
-  + "another copy of the same item was kept, so that item is not missing from the result, and none of these rows is an item the condition took out of it.";
+  + "another copy of the same item was kept, so that item is not missing from the result, and none of these rows is an item the condition took out of it. "
+  + "A row this condition alone left out that leftOutAlsoInResult does not list is not thereby missing or wrongly left out: this list says only which rows came back by another copy, "
+  + "and each other row is accounted for by this condition's own entry, by leftOutSettled and settled where it is listed there.";
 
 /** Core's sentence beside the rows another read stored (header, t691). */
 function storedAnyway(condition: string, by: readonly string[]): string {
@@ -69,15 +80,16 @@ export function automationStudioResultSummaryWithAlsoInResult(summary: Automatio
       const also: string[] = [];
       const elsewhere: string[] = [];
       const by = new Set<string>();
+      // A row Core settled is accounted for by the condition's own `settled` (header, live-lane-1 fix 4).
+      const settled = new Set((entry.leftOutSettled ?? []).map(automationStudioRequestRowLabel));
       for (const row of entry.leftOutOnlyByThis ?? []) {
         const label = automationStudioRequestRowLabel(row);
         if (label === WITHHELD_LABEL || !stored.has(label)) continue;
         const others = storedBy(read.nodeId, label);
-        if (!others) also.push(row);
-        else {
+        if (others) {
           elsewhere.push(row);
           for (const node of others) by.add(node);
-        }
+        } else if (!settled.has(label)) also.push(row);
       }
       if (!also.length && !elsewhere.length) return entry;
       marked = true;

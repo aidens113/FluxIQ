@@ -2,7 +2,13 @@
 // is held to Core's own record, and the reading is wholly refuted only when at
 // least one claim is refuted and nothing it says stands.
 import { describe, expect, it } from "vitest";
+import type { AutomationStudioLlmDiagnosisFields } from "../../../llm/index.ts";
+import { automationStudioResultVerificationAgreement } from "../../agreement/index.ts";
+import { automationStudioResultVerdict } from "../../verdict/index.ts";
 import { automationStudioResultNoRecord, automationStudioResultRefutedReading } from "../index.ts";
+import {
+  PLANTS_FIRST_NO, PLANTS_PROMOTED_ONLY, PLANTS_REQUEST_TEXT, PLANTS_SECOND_NO, PLANTS_STORED, plantsRunSummary, plantsWording
+} from "../../request-rows/tests/promoted-copies-fixture.ts";
 import {
   LAMP_CLAMP, LAMP_LOW_RATED, LAMP_PLAIN, LAMP_SHADE, LAMP_SPONSORED, LAMP_WITH_BULB, LAMPS_REQUEST_TEXT, SAME_LAMP_NO, lampsRunSummary, lampsWording
 } from "./lamps-fixture.ts";
@@ -70,5 +76,52 @@ describe("a no that names a real defect, or nothing Core can check", () => {
   it("stands on a count Core's record agrees with, and is refuted on one it does not", () => {
     expect(weigh("Only 3 rows were stored, but the request expects more.").wholly).toBe(false);
     expect(weigh("Only 2 rows were stored.")).toEqual({ wholly: true, findings: ["Core's record holds 3 stored rows, not 2."] });
+  });
+});
+
+// Live-lane-1 fix 4 (`run-mvd8ypsv-32cde667` steps 0056 and 0057): both nos over
+// an exact answer called one promoted-only row -- settled against the request's
+// own exclusion words -- wrongly dropped, beside a sentence granting that four
+// other left-out rows "are also in the result ..., so not missing". That
+// sentence stood on its "but", "not" and "missing", so neither no was refuted
+// and the run ended unverified. The run's shape on a plant nursery's catalogue.
+describe("a no whose only complaint is a row Core settled against the request's exclusion words", () => {
+  const plants = plantsRunSummary();
+  const wording = plantsWording(plants);
+  const plantsRecord = () => automationStudioResultNoRecord({ summary: plants, requestText: PLANTS_REQUEST_TEXT, wording });
+  const verdict = (diagnosis: AutomationStudioLlmDiagnosisFields) => automationStudioResultVerdict({ summary: plants, diagnosis, basis: "model", wording });
+
+  it.each([["step 0056", PLANTS_FIRST_NO], ["step 0057", PLANTS_SECOND_NO]])("%s is wholly refuted: the rows it grants came back are no reason of its own", (_step, no) => {
+    expect(automationStudioResultRefutedReading(verdict(no).repair?.judgement, plantsRecord())).toEqual({
+      wholly: true,
+      findings: [`Core's read saw "${PLANTS_PROMOTED_ONLY}", and only condition 1 (promoted is absent) left it out: that condition tests the request's own words "promoted", and Core read "Promoted" on that row, which fails it as written.`]
+    });
+  });
+
+  it("has both calls asked once more with Core's findings", () => {
+    const first = verdict(PLANTS_FIRST_NO);
+    const second = verdict(PLANTS_SECOND_NO);
+    expect([first.verdict, second.verdict]).toEqual(["does_not_answer", "does_not_answer"]);
+    const settled = automationStudioResultVerificationAgreement({ first, second, reads: plants.reads, recordSets: plants.recordSets, wording, summary: plants, requestText: PLANTS_REQUEST_TEXT });
+    expect(settled.refutedNo?.calls).toEqual([1, 2]);
+  });
+
+  // A sentence granting rows came back, beside the refuted one: only a grant and nothing else is set aside.
+  const beside = (sentence: string) => automationStudioResultRefutedReading({ observed: `${sentence} ${PLANTS_PROMOTED_ONLY} is left out only by condition 1 and is absent from the stored rows.` }, plantsRecord()).wholly;
+  const COPIES = "4 of them (Kentia Palm Classic 14 in Pot, Peace Lily 8 in Pot, Snake Plant Laurentii, 10 in Pot, Parlor Palm Bella, 6 in Pot)";
+
+  it("is refuted beside any wording of the grant alone", () => {
+    expect(beside(`Condition 1 left out 5 rows, but ${COPIES} are also in the result, so not missing.`)).toBe(true);
+    expect(beside("Kentia Palm Classic, 14 in Pot is also among the stored rows.")).toBe(true);
+  });
+
+  it("stands where the sentence granting rows came back also says something is wrong", () => {
+    expect(beside(`Condition 1 left out 5 rows, but ${COPIES} are also in the result, and the fifth is wrongly dropped.`)).toBe(false);
+    expect(beside("Kentia Palm Classic, 14 in Pot is also in the result but is not a houseplant.")).toBe(false);
+  });
+
+  it("stands where a row the grant names is one no condition left a copy of, or it says nothing of the rows being in the result", () => {
+    expect(beside(`Condition 1 left out 5 rows, but ${PLANTS_STORED[1]!.name as string} is also in the result.`)).toBe(false);
+    expect(beside(`Condition 1 left out 5 rows, but ${COPIES} look like houseplants.`)).toBe(false);
   });
 });

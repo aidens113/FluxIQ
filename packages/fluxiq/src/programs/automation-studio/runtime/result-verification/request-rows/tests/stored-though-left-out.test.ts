@@ -51,6 +51,11 @@ describe("the judge's copy of rows another read stored", () => {
   it("keeps a copy the same read stored as also in the result", () => {
     const summary = renewalsRunSummary();
     summary.recordSets[0]!.processing!.passes.push({ node: RENEWALS_ACT_READ, pass: 2, rows: 8, newRows: 0 });
+    // Unsettled: a settled copy is accounted for by its condition's own `settled`, and is not listed (live-lane-1 fix 4).
+    const settled = automationStudioResultSummaryWithAlsoInResult(structuredClone(summary)).reads![0]!.conditions![0]! as MarkedCondition;
+    expect(settled).not.toHaveProperty("leftOutAlsoInResult");
+    expect(settled).not.toHaveProperty("storedThoughLeftOut");
+    delete summary.reads![0]!.conditions![0]!.leftOutSettled;
     const condition = automationStudioResultSummaryWithAlsoInResult(summary).reads![0]!.conditions![0]! as MarkedCondition;
     expect(condition.leftOutAlsoInResult).toEqual(RENEWALS_LEFT_OUT_ROWS);
     expect(condition).not.toHaveProperty("storedThoughLeftOut");
