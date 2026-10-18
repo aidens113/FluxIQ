@@ -208,7 +208,7 @@ const MISSING = new RegExp([
   String.raw`\b(?:dropped|omitted|excluded|removed|left\s+out|filtered\s+out)\s+(?:\d+\s+)?(?:[\p{L}-]+\s+)?${ROWS}\s+(?:including|such\s+as|like)\b`
 ].join("|"), "iu");
 /** A condition, filter or pronoun said, in the active voice, to have left out what follows (t659). Generic, never any site's. */
-const LEFT_OUT_BY = /\b(?:condition\s+\d+|conditions?|filters?|tests?|checks?|it|this|which|that|they)\s+(?:also\s+|wrongly\s+|incorrectly\s+)?(?:has\s+|have\s+)?(?:left\s+out|leaves\s+out|dropped|drops|excluded|excludes|removed|removes|filtered\s+out|filters\s+out|omitted|omits|rejected|rejects|missed|misses)\b/iu;
+const LEFT_OUT_BY = /\b(?:condition\s+\d+|conditions?|filters?|tests?|checks?|it|this|which|that|they)\s+(?:also\s+|alone\s+|wrongly\s+|incorrectly\s+)?(?:has\s+|have\s+)?(?:left\s+out|leaves\s+out|dropped|drops|excluded|excludes|removed|removes|filtered\s+out|filters\s+out|omitted|omits|rejected|rejects|missed|misses)\b/iu;
 /** Words that say the result holds what follows. */
 const KEPT = /\b(?:includes?|included|including|contains?|contained|containing|kept|keeps|holds|retains?|retained)\b/iu;
 

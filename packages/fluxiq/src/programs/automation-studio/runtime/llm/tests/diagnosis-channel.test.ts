@@ -436,3 +436,42 @@ describe("the judges' prompt on keptEveryRow (t692)", () => {
     }
   });
 });
+
+it.each([false, true])("distinguishes retrieval text from literal title requirements in the actual judge prompt (buildTest=%s)", async (buildTest) => {
+  const projectId = "project.query", flowId = "flow.query";
+  const instruction: AutomationStudioFlowInstruction = {
+    schemaVersion: "0.1", instructionId: "instruction.query", title: "Collect matching subjects",
+    body: "Search using the stated query and return the subjects meeting the request.",
+    scope: { kind: "flow", projectId, flowId }, priority: 1, status: "active", requirement: "required", createdAt: 1, updatedAt: 1
+  };
+  const resultSummary: AutomationStudioRunResultSummary = {
+    schemaVersion: "automation-studio.run-result-summary.v1", totalRecordCount: 0, totalRefusedCount: 0, totalRowsMissingRequired: 0,
+    recordSetCount: 0, recordSets: [], flowShape: [], withheld: false,
+    ...(buildTest ? { buildTest: { kind: "build_test" as const, test: "ran" as const, steps: [] } } : {})
+  };
+  const prepared = await runAutomationStudioLlmHarness({ taskKind: "loop_verification", projectId, flowId, instructions: [instruction], resultSummary, deniedEvidenceKeys: [] });
+  let outbound = "";
+  const provider = createAutomationStudioDeepSeekProvider({
+    secretReference: { kind: "secret_reference", id: "secret:mock-query" },
+    resolveSecret: async (input) => {
+      outbound = input.outboundBody;
+      return "test-secret";
+    },
+    fetchImpl: (async () => new Response(JSON.stringify({
+      choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ kind: "diagnosis", summary: "The result is incomplete.", diagnosis: { answersRequest: "no" } }) } }],
+      usage: { prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 }
+    }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch
+  });
+  const answered = await provider.runTask(prepared.request) as { response: { diagnosis: AutomationStudioLlmDiagnosisFields } };
+  const body = JSON.parse(outbound) as { messages: Array<{ role: string; content: string }> };
+  const system = body.messages.find((message) => message.role === "system")!.content;
+  expect(system).toContain("A search query specifies how to retrieve candidates");
+  expect(system).toContain("Apply a literal title or name requirement only when the request explicitly states it");
+  expect(system).toContain("Judge each candidate's actual type and content");
+  expect(system).toContain("a query match alone does not establish that it qualifies");
+  expect(system.includes("When resultSummary.buildTest is present")).toBe(buildTest);
+  const user = JSON.parse(body.messages.find((message) => message.role === "user")!.content);
+  expect(user.context.instructions.instructions[0].body).toBe(instruction.body);
+  expect(user.outputSchema.properties.diagnosis.additionalProperties).toBe(false);
+  expect(answered.response.diagnosis.answersRequest).toBe("no");
+});
