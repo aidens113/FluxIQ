@@ -1,7 +1,7 @@
 # Breadth Round Core Integration
 
 Status: Active
-Status detail: Positive corpus enforced;10accepted tasks/7sites. Fixed-accounting Chrome exact4rows/12values/paidledger and separate0call replay independently accepted; Edge e3 released after exactowned Chrome stop. Explicit intermediate output passed176independent cases and final realistic browser, integration next. Reset firstunit published/browserproven, canonicalr5 failed; correct retry inverse now independently installedgateway proven; generic feedback mapping next.
+Status detail: Positive corpus enforced;10accepted tasks/7sites. Fixed-accounting Chrome exact4rows/12values/paidledger and separate0call replay independently accepted; Edge e3 released after exactowned Chrome stop. Explicit intermediate output integrated downstreame84dd318/Core16cbe951 after191postmerge cases/5types/browser; pairedpublication then socialr3 next. Reset firstunit published/browserproven, canonicalr5 failed; correct retry inverse now independently installedgateway proven; generic feedback mapping next.
 Created: 2026-10-17
 Last updated: 2026-10-18
 Owner: Codex senior supervisor
@@ -24,6 +24,18 @@ The user authorized continuing the downstream breadth handoff with live tests. T
 - **Next:** finish genuineEdge proof, then integrate accounting after lease release; complete intermediate-output currentdev narrow gates and pairedpublication then prepare socialpositive3row/15field paidrerun; finish reset retry diagnostic; cover remaining auction/classifieds/photo and owed positive tasks. No whole sweep remaining today, no user input needed.
 
 ## Worker Briefs
+
+### Supervisor brief: changed-source social positive r3 live acceptance
+- Worker: storage_comparison; existing paired t567, live slot4/bf-slot-4. Root integrated coherent intermediate feature merges downstreame84dd318/Core16cbe951 after independent176premerge cases, inspected191postmerge cases/5types/bothaudits, realSQLreopen and actual final1casecontent browser26helper/26full/finalonly26x2.
+- Own only codex-social-positive-rerun.md and NEW required r3debug after terminal; no source/shared/architecture docs/commits/merge/push. Existing r2debug/failedcandidate remain failed. Root refreshes taskbranches to publisheddev before dispatch; obtain exact own sourceHEADs and freeze throughout run.
+- Release ONE normal owning labrun ONLY after pairedpublication/rootdispatch. Allowed normal run-scoped production prelude targets prepare refreshed own3libs/currentWeb/host/extension/scenario/test-runner as genuinely required; no wholeworkspace build/check/test, forced cache rewrite, sharedCore writes, guardoverride or unrelatedpanel management.
+- Env process FLUXIQ_LAB_INSTANCE=bf-slot-4, FLUXIQ_BUILD_CACHE_DIR=off, FLUXIQ_TEST_TARGET=persistent-isolated. Fresh absent workspace codex-social-positive-t567-20261018-r3; existingowned slot4pidnull/credentialpresent/requiredpriorr2debug observed. Recheck normal balance/previousdebug/changedsource/positive-data/sourcecurrency gates, no overrides.
+- Command: pnpm.cmd lab run social-network-feed --live-llm --llm-profile lab-create-flow --llm-provider deepseek --llm-model deepseek-flash --authoring-mode project --llm-task create-flow --instruction-task social-network-feed-recent-group-posts --target persistent-isolated --workspace codex-social-positive-t567-20261018-r3 --model-reset-only --replays 1 --llm-max-cost-usd 0.25 --llm-max-calls 250 --llm-max-run-tokens 48000000
+- Use unchanged cataloginstruction/task/oracle/fixture, real extensionchat project build, positive exactordered3records/15fieldvalues plus required accountstate. No raw selectors/expectedanswer hints injected. Intermediate marker must arise through generic product guidance; no API-created Flow or manual dataset hiding.
+- Authenticate READONLY actual running Core candidateTrial.startReset=false before/around build; record persisted fixtureResetBetweenTrials when actually present. Flags/sourceintent alone are not actualruntime proof. Site restored through its own controls before everytrial/whole; never invoke fixture-reset workaround.
+- Acceptance requires real positive finaldataset/fullowningoracle/reportedwholejudge AND one separate explicit0call/0cost/noharness replay. Inspect finalized paidcall/cost/pending/unrecorded/accounting, rawdata privately only; closed counts/hashes/IDs/statuses in reports. Empty/unknown verdicts not accepted.
+- Report launcher/runID/readiness/elapsed/progress promptly and terminalnativeexit plus exact failurefirstdivergence/actual costs. Write requireddebug before any retry; no second paidrun unless supervisor reviews concrete changed-source cause. Preserve profiles/runartifacts, source/HEADs frozen; root independently validates receipts and maintains pairedplan/totals.
+
 
 ### Supervisor brief: explicit successful-effect feedback for refused reset claims
 - Worker: reset_review; paired t719. Root preserved accepted diagnostic as downstream1bfde958 then merged currentdev in both; only documentation changed since accepted runtime/browser. Scope is feedback, never wider undo authority. Read CurrentState/main brief plus own report/owner files only.
@@ -266,6 +278,11 @@ Earlier paired history: [nine retained entries](./breadth-forty-tasks-plan/archi
 - Validation: supervisor independently read actual changed-test browser log1passed1.8m, .last-run passed, and closed structural receipt. Original/restored hash81c29223177005d79daf; actual2/2->Add3/2->failedsave3/2->retry2/3->ownnewdelete1/3->correctinverse2/2. Wrong failedact2 claim candidate.undo_unproved sent0actions (clicks4->4), same statehash ec606790127e8b954f60; correct successfulact3 claim sentone (4->5), cleantrialyes, gatewayerrors0.
 - First experimental red was a test observer defect: find_on_page returns found string, not full.page; three observations now use existing registered read-only capture_snapshot, without navigation, changed targets or weakened assertions. Source product unchanged; no paid call.
 - Outcome: actual correct retry inverse works. Canonical r5 model named failedact10 instead of successfulact11; failed fullrun remains failed. Worker maps generic feedback/provenance improvement before any product edits or paidr6; never automatically authorize wrong-act inverse. New installed regression is coherent test unit pending report/commit/integration.
+
+### 2026-10-18 - Explicit intermediate output integrated as coherent paired unit
+- Changed: noff merges downstreame84dd318/Core16cbe951. Explicitvalidated purpose intermediate keeps nativecontrol records/read/action evidence while storing no answerbatch; default/unmarkedanswer behavior unchanged. Compiler/savedFlow/Webdraft/domainadapter preserve marker; invalid/partial/truncated intermediate refused; no matcher/SQLmigration/retroactive oldFlow hiding. Authored architecture updated in both.
+- Validation: root executed176narrow cases beforemerge and independently read real final browser1pass/26helper/26full/finalonly26x2; actual serviceSQL/current+reopen/samesavedFlow loop tests positive. Root inspected actual post-currentdev logs191cases/5types/bothaudits/native0 and actualownfluxiqcompiler107649ms; unchangedcontracts/ws stamps reused honestly. Latestmain merge added docs only; root independently verified code unchanged and reran both taskaudits0.
+- Outcome: complete source unit, active t567 branches/worktrees retained for liveacceptance, not abandoned/force-cleaned. Paired devpublication next then one changed-source socialr3 normalguarded model-reset-only whole/oracle/zero replay. Originalr2failed remains failed. Accounting unit still frozen separately for Edge; resetfeedback source work remains separate.
 
 ## Open Questions
 
