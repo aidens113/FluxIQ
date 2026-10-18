@@ -6,10 +6,18 @@ import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "../index.ts";
 // fix 4): a reset has no test to run.
 
 describe("site reset words for an undo aimed at another item", () => {
-  it("tells a candidate build, byte for byte as before, to test the same revision again or undo another act", () => {
-    expect(WORDS.wrongTarget()).toBe("That control is not shown to be on the item this act acted on, nor on anything it created, so it was not touched: an undo never acts on another item, or on one it cannot tell apart. "
-      + "This act stays as it is and is listed under cannotUndo: the next trial runs with it already done, and the judge is told. "
-      + "Do not try to undo it again. Test the same revision again now, or undo another listed act on its own item with \"undoes\".");
+  it("does not promise a modern trial on leftovers or mistake source disappearance for restoration", () => {
+    const words = WORDS.resetRequired(false);
+    expect(words).toContain("Their disappearance alone does not prove");
+    expect(words).toContain("remains listed and a later proved correction is still allowed");
+    expect(words).not.toContain("the trial runs with that act already done");
+  });
+  it("reports a wrong target without promising a trial on unresolved identified effects", () => {
+    expect(WORDS.wrongTarget()).toContain("any trial explicitly admitted");
+    expect(WORDS.wrongTarget()).toContain("Identified reversible effects still require proved restoration");
+    expect(WORDS.wrongTarget()).not.toContain("the next trial runs with it already done");
+    expect(WORDS.undoRefused()).not.toContain("the next trial runs with it already done");
+    expect(WORDS.alreadyUndone(true)).toContain("Positive original-state evidence");
   });
 
   it("tells a reset to undo another listed act or name the acts it cannot undo under cannotUndo, and never to test", () => {

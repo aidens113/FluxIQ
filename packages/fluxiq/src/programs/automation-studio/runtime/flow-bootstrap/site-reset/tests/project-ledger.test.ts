@@ -142,3 +142,17 @@ it("adopts immutable original inventories without replacing an owner's current o
   own.trialRan([{ step: 1, definitionId: "demo.add", consequences: ["create_new"], spot: { subject: "s:new" } }]);
   expect(own.target("act-1", { effect: "mutate", consequences: ["delete"], control: { scope: "p:list", subject: "s:new" } })).toMatchObject({ kind: "admit" });
 });
+
+it("rejects duplicate original scopes before project Map normalization without replacing valid authority", async () => {
+  for (const validFirst of [false, true]) {
+    const project = new AutomationStudioSiteResetProjectLedger();
+    const origin = { scope: "p:origin", group: "g:resource", subjects: ["s:document"], states: { "s:document": "v:original" } };
+    const sibling = { scope: "p:sibling", group: "g:resource", subjects: ["s:other"], states: { "s:other": "v:original" } };
+    if (validFirst) project.observed({ state: {}, differs: [], collections: [origin, sibling] });
+    project.observed({ state: {}, differs: [], collections: [origin, sibling, structuredClone(sibling)] });
+    const whole = project.forBrief("whole");
+    whole.trialRan([{ step: 1, definitionId: "demo.press", consequences: ["modify_existing"], spot: { scope: origin.scope, subject: "s:document" } }]);
+    whole.observed({ state: {}, differs: [], collections: [origin, sibling] }, false);
+    expect((await whole.beforeTrial(back)).kind).toBe(validFirst ? "admit" : "refuse");
+  }
+});

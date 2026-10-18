@@ -28,6 +28,7 @@
 //   a phase's start asks the brief's ledger whether it may still be there.
 
 import type { AutomationStudioSiteResetRead } from "./contracts.ts";
+import { automationStudioSiteResetInvalidCollectionGroups } from "./collection-groups.ts";
 import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetRecordedAct } from "./ledger.ts";
 
 /** The highest act number `undoes` can name (`^act-[1-9][0-9]{0,3}$`), as a single ledger keeps it. */
@@ -83,7 +84,10 @@ export class AutomationStudioSiteResetProjectLedger {
   /** Immutable original evidence only before the first known lasting effect anywhere in this project. */
   observed(read: AutomationStudioSiteResetRead): void {
     if (this.acts.some((act) => !act.possible)) return;
-    for (const collection of read.collections ?? []) {
+    const collections = read.collections ?? [];
+    const invalid = automationStudioSiteResetInvalidCollectionGroups(collections);
+    for (const collection of collections) {
+      if (invalid.has(collection.group)) continue;
       if (!this.originals.has(collection.scope)) this.originals.set(collection.scope, structuredClone(collection));
     }
   }
