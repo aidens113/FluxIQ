@@ -17,14 +17,19 @@
 // integration branch held elsewhere cannot be switched to from here. Either one
 // discovered halfway would leave the task branch carrying an integration merge
 // with nothing done about it.
+//
+// Validation is two steps. The contract tests (`contract/list.mjs`) run first
+// and always, because they are fast and pin model-facing text that a change in
+// one place breaks far away; `pnpm check` follows unless --skip-checks.
 
 import { runCheck } from "./check-command.mjs";
+import { contractGate, runContractTests } from "./contract/index.mjs";
 import { dirtyLines } from "./dirty-lines.mjs";
 import { runGit } from "./git-command.mjs";
 import { branchCheckedOutElsewhere, locateTask } from "./locate.mjs";
 import { noteTaskProgress } from "./progress-note.mjs";
 
-export async function finishTask({ repositoryRoot, id, integrationBranch = "dev", skipChecks = false, dryRun = false, title, note = noteTaskProgress, check = runCheck }) {
+export async function finishTask({ repositoryRoot, id, integrationBranch = "dev", skipChecks = false, dryRun = false, title, note = noteTaskProgress, check = runCheck, contractTests = runContractTests }) {
   const task = await locateTask(repositoryRoot, id);
   if (task.checkedOutIn) {
     throw new Error(`${task.branch} is checked out in ${task.checkedOutIn}, so this checkout cannot merge or delete it. Detach that worktree with "git -C ${task.checkedOutIn} checkout --detach", then finish from the checkout that holds ${integrationBranch}.`);
@@ -45,7 +50,8 @@ export async function finishTask({ repositoryRoot, id, integrationBranch = "dev"
 
   if (dryRun) {
     const planned = { ran: false, command: skipChecks ? null : "pnpm check", reason: skipChecks ? "--skip-checks" : "--dry-run" };
-    return { id, branch: task.branch, into: integrationBranch, head, merge: subject, validation: planned, applied: false };
+    const contracts = await contractGate({ repositoryRoot, branch: task.branch, dryRun: true });
+    return { id, branch: task.branch, into: integrationBranch, head, merge: subject, contracts, validation: planned, applied: false };
   }
 
   if (head !== task.branch) {
@@ -55,6 +61,8 @@ export async function finishTask({ repositoryRoot, id, integrationBranch = "dev"
 
   note({ step: "integrate", into: task.branch, from: integrationBranch });
   await runGit(repositoryRoot, ["merge", "--no-edit", integrationBranch]);
+
+  const contracts = await contractGate({ repositoryRoot, branch: task.branch, note, run: contractTests });
 
   const validation = skipChecks
     ? { ran: false, command: null, reason: "--skip-checks" }
@@ -69,7 +77,7 @@ export async function finishTask({ repositoryRoot, id, integrationBranch = "dev"
   note({ step: "delete", branch: task.branch });
   await runGit(repositoryRoot, ["branch", "-d", task.branch]);
 
-  return { id, branch: task.branch, into: integrationBranch, head, merge: subject, validation, applied: true };
+  return { id, branch: task.branch, into: integrationBranch, head, merge: subject, contracts, validation, applied: true };
 }
 
 async function validate({ repositoryRoot, branch, note, check }) {
