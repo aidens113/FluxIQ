@@ -8,3 +8,5 @@ export * from "./dispatcher.ts";
 export * from "./dependencies.ts";
 export * from "./call-order.ts";
 export * from "./host-lease.ts";
+// The reset brief's completion schema, which the build's reset ports send as its request's (F3).
+export * from "./reset-completion.ts";
