@@ -6,7 +6,11 @@
 // condition was read as an exclusion the request never states, the call was
 // asked again (0030), and its yes confirmed a wrong answer. Neither re-ask --
 // t515's for an unstated exclusion, nor t607's for a refuted no -- may follow
-// from it. No model is called; the provider is scripted.
+// from it. Since t563 (Core 5a652d4a) a condition said to have "alone left out"
+// rows that are stored by another copy is a missing claim Core refutes, so this
+// no is now asked again once by t607 -- for those stored copies only, never for
+// the conditions its advice keeps -- and t515 still never asks it again. No
+// model is called; the provider is scripted.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../../build-test/index.ts";
@@ -53,19 +57,37 @@ describe("an advice's exclusion the read already applies", () => {
     expect(automationStudioRequestUnstatedExclusions("Exclude entries narrated by Okafor.", wording())).toEqual(["Exclude entries narrated by Okafor"]);
   });
 
-  it("is a no Core's record does not wholly refute, so t607 does not ask it again either", () => {
+  it("is no finding of Core's: the no is refuted only by the stored copies it calls left out (t563)", () => {
     const record = automationStudioResultNoRecord({ summary: audiobooksRunSummary(), requestText: AUDIOBOOKS_REQUEST, wording: wording() });
-    expect(automationStudioResultRefutedReading(KEEP_NO, record).wholly).toBe(false);
+    expect(automationStudioResultRefutedReading(KEEP_NO, record)).toEqual({
+      wholly: true,
+      findings: [AUDIOBOOKS_PROMOTED.map((title) => `"${title}" is in the stored rows: another copy of it was kept.`).join(" ")]
+    });
   });
 });
 
+/** The recheck a request carries, where Core asked a call again. */
+function recheckOf(request: unknown): string | undefined {
+  if (!request || typeof request !== "object") return undefined;
+  const record = request as Record<string, unknown>;
+  if (typeof record.recheck === "string") return record.recheck;
+  for (const value of Object.values(record)) {
+    const found = recheckOf(value);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
 describe("a split whose no only keeps conditions the read applies", () => {
-  it("is not asked again: the trial stays unconfirmed, with no third call", async () => {
-    const { provider, seen } = answering(AUDIOBOOKS_YES, KEEP_NO, AUDIOBOOKS_YES);
+  it("is asked again once, for the stored copies it calls left out, never for the conditions it keeps", async () => {
+    const { provider, seen } = answering(AUDIOBOOKS_YES, KEEP_NO, KEEP_NO);
     const judge = automationStudioBuildTestJudge({ instructions: [AUDIOBOOKS_INSTRUCTION], deniedEvidenceKeys: [], projectId: "project-1", flowId: "flow-1", provider });
     const verdict = await judge({ summary: audiobooksRunSummary(), budget: { maxCostUsd: 0.2 } });
-    expect(seen).toHaveLength(2);
+    expect(seen).toHaveLength(3);
     expect(verdict.verdict).toBe("unknown");
     expect(JSON.stringify(seen)).not.toContain("never states as an exclusion");
+    const recheck = recheckOf(seen[2]);
+    for (const title of AUDIOBOOKS_PROMOTED) expect(recheck).toContain(`"${title}" is in the stored rows: another copy of it was kept.`);
+    expect(recheck).not.toMatch(/condition [34]|Sampler|rating atLeast/u);
   });
 });

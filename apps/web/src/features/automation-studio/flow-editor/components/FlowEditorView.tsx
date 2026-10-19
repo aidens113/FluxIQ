@@ -4,8 +4,7 @@ import { lazy, memo, Suspense, useEffect, useRef, useState } from "react";
 import { Plus, Sparkles } from "lucide-react";
 import type { FlowEditorProps, AutomationGraphSaveResult } from "../flow-editor-types";
 import { useFlowEditorController } from "../hooks";
-import { BlankFlowAuthoringPanel, blankFlowAuthoringRequest, blankFlowExplorationRequest, existingFlowImprovementRequest, ImproveFlowPanel, useFlowImprovementCommands } from "../../authoring";
-import { TaskInstructionsPanel } from "../../instructions/TaskInstructionsPanel";
+import { BlankFlowAuthoringPanel, blankFlowAuthoringRequest, blankFlowExplorationRequest, existingFlowImprovementRequest, ImproveFlowPanel, TaskInstructionsPanel, useFlowImprovementCommands } from "../../authoring";
 import { useRuntimeExecutionCommands } from "../../runtime";
 
 const FlowGraphCanvas = lazy(() => import("./FlowGraphCanvas").then((module) => ({

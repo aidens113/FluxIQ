@@ -81,7 +81,7 @@ describe("a run that failed at a step the ladder could not repair", () => {
   });
 
   it("re-authors once: a re-run that fails at a step again is handed back failed", async () => {
-    const context = wired(ladderEnded({ llmGate: { invoked: true, patchSkippedCode: "llm.runtime_patch_diagnosis_asked_for_none", diagnostics: [] } }), "failed");
+    const context = wired(ladderEnded({ llmGate: { invoked: true, costAccounting: { calls: 2, estimatedCostUsd: 0.01 }, patchSkippedCode: "llm.runtime_patch_diagnosis_asked_for_none", diagnostics: [] } }), "failed");
     const next = await verifyAutomationStudioRuntimeSessionResult({ ports: context.ports, projectId: "project-1", session: session({ status: "failed" }), flow });
     expect(context.generate).toHaveBeenCalledTimes(1);
     expect(context.reruns).toHaveLength(1);
@@ -96,6 +96,15 @@ describe("a run that failed at a step the ladder could not repair", () => {
     expect(context.reruns).toHaveLength(0);
     expect(context.saved).toHaveLength(0);
     expect(next).toBe(failed);
+  });
+
+  it("does not re-author after a ladder that reached the model and reported no cost: the purse cannot charge it (t563)", async () => {
+    const context = wired(ladderEnded({ llmGate: { invoked: true, patchSkippedCode: "llm.runtime_patch_diagnosis_asked_for_none", diagnostics: [] } }));
+    const next = await verifyAutomationStudioRuntimeSessionResult({ ports: context.ports, projectId: "project-1", session: session({ status: "failed" }), flow });
+    expect(context.generate).not.toHaveBeenCalled();
+    expect(context.reruns).toHaveLength(0);
+    expect(context.saved.at(-1)?.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]).toMatchObject({ code: "llm_budget.run_cost_limit", purse: { unreportedParts: 1, refusedParts: ["reauthor"] } });
+    expect(next.status).toBe("failed");
   });
 
   it("does not re-run a re-author that built nothing", async () => {

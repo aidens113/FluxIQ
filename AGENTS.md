@@ -254,6 +254,9 @@ The supervisor picks the tier when it writes the brief:
 - **A task branch** for any unit of work that has a brief. `pnpm task start
   <slug>` branches `task/t<NNN>-<slug>` off `dev`; `pnpm task finish <id>`
   integrates `dev`, merges back `--no-ff`, and deletes the branch.
+  Before merging, finish always runs the contract tests listed in
+  `scripts/task/contract/list.mjs` (the central prompt pins and budgets) and
+  refuses the merge if one fails, even with `--skip-checks`.
   `pnpm task abandon <id>` discards one; `pnpm task list` shows what is open.
 - **A task branch plus its own worktree** when another agent is running
   repository-wide validation concurrently, when the work is experimental and

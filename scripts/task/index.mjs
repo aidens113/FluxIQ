@@ -7,6 +7,7 @@ export { abandonTask } from "./abandon.mjs";
 export { parseTaskArguments } from "./arguments.mjs";
 export { parseTaskBranch, taskBranchName } from "./branch-name.mjs";
 export { runCheck } from "./check-command.mjs";
+export { CONTRACT_TESTS, contractGate, runContractTests } from "./contract/index.mjs";
 export { runTaskCommandLine } from "./command-line.mjs";
 export { dirtyLines } from "./dirty-lines.mjs";
 export { finishTask } from "./finish.mjs";

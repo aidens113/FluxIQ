@@ -12,7 +12,7 @@ export function generateFlowBootstrapAdaptation(api: ProgramCommandTransport, pa
   return api.post<{ adaptation?: { projectId?: string; flowId?: string; adaptationId?: string; status?: string } }>("generate-flow-bootstrap-adaptation", payload);
 }
 
-export { saveTaskInstruction as saveFlowGenerationInstruction } from "../instructions/save-task-instruction";
+export { saveTaskInstruction as saveFlowGenerationInstruction } from "./save-task-instruction";
 
 /**
  * Builds a blank Flow by exploring the website. How it is authored is Core's

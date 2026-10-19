@@ -79,8 +79,6 @@ export const PANEL_ENDPOINTS_WITHOUT_A_CAPABILITY: Readonly<Record<string, strin
   "finalize-recording": "Closes a recording the browser is still writing into.",
   "repair-recording-state-index": "A maintenance repair of a recording's index, reached from the recording it repairs.",
   "delete-project-artifact": "Removes a stored object the pipeline produced. It goes with the recording that produced it, through `recording.delete`.",
-  "create-recording-flow-proposals": "The first half of `generateRecordingDeterministicSubflow`, a recording-side workflow rather than something asked for on its own.",
-  "review-recording-flow-proposal": "The second half of that same recording-side workflow.",
   "put-project-hierarchy-node": "The project tree's own persistence. It writes a node record the widget built, batched under a replay id, rather than anything a sentence describes.",
   "delete-project-hierarchy-node": "The same tree persistence, removing a node the widget is holding.",
   "reorder-project-categories": "Dragging the project list into an order. There is nothing to say about it in words.",

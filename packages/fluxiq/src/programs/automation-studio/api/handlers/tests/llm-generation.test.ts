@@ -9,6 +9,7 @@ import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_sha
 import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, parseAutomationStudioFlowBootstrapGenerationReadiness } from "../../contracts.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS } from "../../../runtime/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../../runtime/loop-limits/index.ts";
+import { readAutomationStudioFlowBootstrapGenerationRequest } from "../../../runtime/service/flow-bootstrap-commands/index.ts";
 import { registerAutomationStudioApi } from "../index.ts";
 import { automationStudioConversationEffectiveCaller } from "../../../runtime/conversations/commands/index.ts";
 
@@ -131,6 +132,36 @@ describe("Automation Studio LLM execution API", () => {
       generate.mockClear();
       expect(await registry.call({ ...request, payload: { ...request.payload, authoringMode: "project" } })).toMatchObject({ ok: true });
       expect(generate).toHaveBeenCalledWith(expect.objectContaining({ authoringMode: "project" }));
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  // The panel's "Improve automation" sends `configured` with `extend`. A project build cannot extend yet, so in project
+  // mode it builds as a candidate, as the chat's improve does; an explicit `project` + `extend` is still refused.
+  it("resolves a configured extend to a mode that can extend, unless Core is in legacy mode", async () => {
+    const draft = { projectId: "project", flowId: "flow", status: "draft", candidateId: "candidate", revision: 1, digest: "a".repeat(64), baseDependencyDigest: "base", baseSettingsRevision: 1, sourceInstructionIds: ["instruction"], accounting: { requestId: "request", estimatedInputTokens: 10 }, verification: "not_performed", promotionAllowed: false };
+    const generate = vi.fn().mockResolvedValue(draft), registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, readyLlmApiService({ generateFlowBootstrapAdaptation: generate }) as any);
+    const actor: ProgramApiActor = { sessionId: "session", userId: "user", roleId: "admin", permissions: ["flows.write"] };
+    const request = { programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation, scope: {}, actor, payload: { projectId: "project", flowId: "flow", authSessionId: "session", authoringMode: "configured", evidenceGuided: true, mode: "extend" } };
+    const forwarded = () => generate.mock.calls.at(-1)![0] as Record<string, unknown>;
+    try {
+      for (const setting of [undefined, "project", "candidate"]) {
+        if (setting === undefined) vi.unstubAllEnvs(); else vi.stubEnv("FLUXIQ_AUTHORING_MODE", setting);
+        expect(await registry.call(request)).toMatchObject({ ok: true, payload: { candidate: { candidateId: "candidate" } } });
+        expect(forwarded()).toMatchObject({ authoringMode: "candidate", mode: "extend" });
+        expect(() => readAutomationStudioFlowBootstrapGenerationRequest(forwarded())).not.toThrow();
+      }
+      vi.stubEnv("FLUXIQ_AUTHORING_MODE", "legacy");
+      generate.mockResolvedValueOnce({ projectId: "project", flowId: "flow", adaptationId: "adaptation", status: "proposed", riskLevel: "low", sourceInstructionIds: ["instruction"], baseDependencyDigest: "base", baseSettingsRevision: 1, accounting: { requestId: "request", estimatedInputTokens: 10 } });
+      expect(await registry.call(request)).toMatchObject({ ok: true, payload: { adaptation: { status: "proposed" } } });
+      expect(forwarded()).not.toHaveProperty("authoringMode");
+      // Asked for by name, `project` is forwarded as asked, and Core's reader refuses to extend with it.
+      vi.unstubAllEnvs();
+      expect(await registry.call({ ...request, payload: { ...request.payload, authoringMode: "project" } })).toMatchObject({ ok: true });
+      expect(forwarded()).toMatchObject({ authoringMode: "project", mode: "extend" });
+      expect(() => readAutomationStudioFlowBootstrapGenerationRequest(forwarded())).toThrow(/Project authoring cannot extend a Flow yet/u);
     } finally {
       vi.unstubAllEnvs();
     }
