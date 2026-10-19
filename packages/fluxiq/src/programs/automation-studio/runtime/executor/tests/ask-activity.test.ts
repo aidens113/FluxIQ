@@ -18,9 +18,12 @@ import { resumeAutomationStudioGraph, runAutomationStudioGraph, type AutomationS
 const NOW = 1_000;
 
 let seen: ClientGatewayActivity[] = [];
+/** The ids of the asks the run opened, in order; each wait mints a fresh `person-needed.<uuid>`. */
+let opened: string[] = [];
 let unsubscribe: () => void = () => undefined;
 beforeEach(() => {
   seen = [];
+  opened = [];
   unsubscribe = automationStudioActivityHub.subscribe((event) => seen.push(event));
 });
 afterEach(() => unsubscribe());
@@ -61,6 +64,11 @@ const options: AutomationStudioGraphExecutionOptions = {
   nativeNodeExecutor: (request) => Promise.resolve({ result: request.node.id === "check" ? CHECK_RESULT : { status: "success", route: "success", outputs: {} } })
 };
 
+/** A port's `open`, which notes the ask id so the rows can be checked against it. */
+const open: AutomationStudioParkingPort["open"] = (ask) => {
+  opened.push(ask.askId);
+};
+
 function choice(askId: string, value: string): AutomationStudioAskAnswer {
   return { askId, answeredAt: NOW + 5, kind: "choice", value, actorId: null };
 }
@@ -68,7 +76,7 @@ function choice(askId: string, value: string): AutomationStudioAskAnswer {
 /** A port that holds the run open and answers the same way; `null` is nobody answering. */
 function inPlace(value: string | null, during?: () => void): AutomationStudioParkingPort {
   return {
-    open: () => undefined,
+    open,
     awaitAnswer: (ask) => {
       during?.();
       return Promise.resolve(value === null ? undefined : choice(ask.askId, value));
@@ -80,9 +88,14 @@ async function inRun<T>(fn: () => Promise<T>): Promise<T> {
   return await runWithAutomationStudioActivity({ kind: "run", id: "r1", projectId: "p1" }, fn);
 }
 
-/** The ask rows the run said, as [phase, ref, status, resolution, text]. */
+/**
+ * The ask rows the run said, as [phase, ref, status, resolution, text]. A ref
+ * that is the id of the nth ask opened reads `opened.<n>`; any other ref is
+ * left as it is, so a row keyed by something else fails visibly.
+ */
 function askRows(): unknown[][] {
-  return seen.filter((event) => event.detail?.kind === "ask").map((event) => [event.phase, event.detail!.ref, event.detail!.status, event.detail!.resolution, event.detail!.text]);
+  const ref = (id: string | undefined) => (id !== undefined && opened.includes(id) ? `opened.${opened.indexOf(id) + 1}` : id);
+  return seen.filter((event) => event.detail?.kind === "ask").map((event) => [event.phase, ref(event.detail!.ref), event.detail!.status, event.detail!.resolution, event.detail!.text]);
 }
 
 describe("a run's wait on the person, in the activity stream", () => {
@@ -93,9 +106,10 @@ describe("a run's wait on the person, in the activity stream", () => {
   ] as const)("opens with the ask id and settles on %s with one row for the same ask", async (_case, value, status, resolution, text) => {
     await inRun(() => runAutomationStudioGraph(flow, { ...options, parking: inPlace(value) }));
     expect(askRows()).toEqual([
-      ["waiting_permission", "check.attempt.2", "started", undefined, undefined],
-      ["running", "check.attempt.2", status, resolution, text]
+      ["waiting_permission", "opened.1", "started", undefined, undefined],
+      ["running", "opened.1", status, resolution, text]
     ]);
+    expect(opened).toEqual([expect.stringMatching(/^person-needed\./)]);
     const [waiting, resolved] = seen.filter((event) => event.detail?.kind === "ask");
     expect(resolved!.detail!.title).toBe(waiting!.detail!.title);
     expect(waiting!.detail!.title).toBe("Asked the person to complete a check");
@@ -106,38 +120,39 @@ describe("a run's wait on the person, in the activity stream", () => {
     const trace = await inRun(() => runAutomationStudioGraph(flow, { ...options, signal: cancel.signal, parking: inPlace(null, () => cancel.abort()) }));
     expect(trace.status).not.toBe("succeeded");
     expect(askRows()).toEqual([
-      ["waiting_permission", "check.attempt.2", "started", undefined, undefined],
-      ["running", "check.attempt.2", "failed", "cancelled", "The work stopped before this was answered."]
+      ["waiting_permission", "opened.1", "started", undefined, undefined],
+      ["running", "opened.1", "failed", "cancelled", "The work stopped before this was answered."]
     ]);
   });
 
   it("settles as cancelled when the thread could not be read, or the answer could not settle the ask", async () => {
-    const broken: AutomationStudioParkingPort = { open: () => undefined, awaitAnswer: () => Promise.reject(new Error("the thread is gone")) };
+    const broken: AutomationStudioParkingPort = { open, awaitAnswer: () => Promise.reject(new Error("the thread is gone")) };
     await inRun(() => runAutomationStudioGraph(flow, { ...options, parking: broken })).catch(() => undefined);
-    const mismatched: AutomationStudioParkingPort = { open: () => undefined, awaitAnswer: () => Promise.resolve(choice("another.ask", AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION)) };
+    const mismatched: AutomationStudioParkingPort = { open, awaitAnswer: () => Promise.resolve(choice("another.ask", AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION)) };
     const refused = await inRun(() => runAutomationStudioGraph(flow, { ...options, parking: mismatched }));
     expect(refused.status).toBe("failed");
     expect(askRows()).toEqual([
-      ["waiting_permission", "check.attempt.2", "started", undefined, undefined],
-      ["running", "check.attempt.2", "failed", "cancelled", "The work stopped before this was answered."],
-      ["waiting_permission", "check.attempt.2", "started", undefined, undefined],
-      ["running", "check.attempt.2", "failed", "cancelled", "The work stopped before this was answered."]
+      ["waiting_permission", "opened.1", "started", undefined, undefined],
+      ["running", "opened.1", "failed", "cancelled", "The work stopped before this was answered."],
+      ["waiting_permission", "opened.2", "started", undefined, undefined],
+      ["running", "opened.2", "failed", "cancelled", "The work stopped before this was answered."]
     ]);
   });
 
   it("settles a parked run's wait when it is resumed with the answer", async () => {
-    const parked = await inRun(() => runAutomationStudioGraph(flow, { ...options, parking: { open: () => undefined } }));
+    const parked = await inRun(() => runAutomationStudioGraph(flow, { ...options, parking: { open } }));
     expect(parked.status).toBe("waiting");
+    expect(opened).toEqual([parked.parked!.ask.askId]);
     const resumed = await inRun(() => resumeAutomationStudioGraph({ flow, trace: parked, resumption: { kind: "answer", answer: choice(parked.parked!.ask.askId, AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION) }, options }));
     expect((resumed as { trace: AutomationStudioGraphExecutionTrace }).trace.status).toBe("succeeded");
     expect(askRows()).toEqual([
-      ["waiting_permission", "check.attempt.2", "started", undefined, undefined],
-      ["running", "check.attempt.2", "succeeded", "answered", "You pressed Continue."]
+      ["waiting_permission", "opened.1", "started", undefined, undefined],
+      ["running", "opened.1", "succeeded", "answered", "You pressed Continue."]
     ]);
   });
 
   it("says nothing for a resume that was refused, since the wait is not over", async () => {
-    const parked = await inRun(() => runAutomationStudioGraph(flow, { ...options, parking: { open: () => undefined } }));
+    const parked = await inRun(() => runAutomationStudioGraph(flow, { ...options, parking: { open } }));
     seen = [];
     const refused = await inRun(() => resumeAutomationStudioGraph({ flow, trace: parked, resumption: { kind: "answer", answer: choice("another.ask", AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION) }, options }));
     expect(refused.outcome).toBe("refused");

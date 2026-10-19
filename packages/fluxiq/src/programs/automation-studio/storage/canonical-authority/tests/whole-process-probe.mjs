@@ -1,6 +1,10 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-const [root, mode, projectId, flowId, phase] = process.argv.slice(2);
+// The parent forks this before it builds its fixture and sends the arguments once
+// the fixture exists: loading the built package (about 2,200 modules, most of the
+// child's time) needs none of them, so the two overlap. Listened for before any
+// import, so the message cannot arrive unheard.
+const configured = new Promise(resolve => process.once("message", resolve));
 const dist = path.join(process.cwd(), "dist"), load = relative => import(pathToFileURL(path.join(dist, relative)).href);
 // Actual production framework-first ordering, not the helper-first unit graph.
 await load("framework/index.js");
@@ -11,6 +15,9 @@ const { AutomationStudioProjectPaths, AutomationStudioFlowPaths } = await load("
 const { AutomationStudioProjectStore } = await load("programs/automation-studio/runtime/service/projects/index.js");
 const { AutomationStudioServiceIndexes } = await load("programs/automation-studio/runtime/service/indexes/index.js");
 const { AutomationStudioFlowStore, AutomationStudioFlowWriter } = await load("programs/automation-studio/runtime/service/flows/index.js");
+const { args } = await configured;
+if (!Array.isArray(args) || args.length !== 5) process.exit(2);
+const [root, mode, projectId, flowId, phase] = args;
 const globalRoot = path.join(root, ".fluxiq"), databaseRoot = mode === "sql" ? path.join(globalRoot, "artifacts", "automation-studio") : path.join(root, "automation"), projectRoot = path.join(databaseRoot, "projects");
 const repositories = createCanonicalAutomationStudioSQLiteRepositories(globalRoot), authority = await CanonicalAuthorityWholeOperation.fromFactory(repositories, { projectRootDir: projectRoot, projectDatabaseRootDir: databaseRoot });
 const pool = new AutomationStudioProjectDatabasePool({ rootDir: databaseRoot }), paths = new AutomationStudioProjectPaths(projectRoot), flowPaths = new AutomationStudioFlowPaths(paths), projects = new AutomationStudioProjectStore(paths, undefined, authority), indexes = new AutomationStudioServiceIndexes(paths, projects, authority), flows = new AutomationStudioFlowStore(paths, flowPaths, projects, indexes, repositories, pool, authority);
