@@ -4,7 +4,9 @@
 // (0051-0054): a builder followed an unsure trial's no-reading back to a
 // revision already judged no instead of testing again. A8 wave 14 candidate
 // towels `run-mv9ul5dy-e9a1b1c1` (0083): a re-test called the better move
-// because one judge said yes spent the last trial on a wrong revision.
+// because one judge said yes spent the last trial on a wrong revision. Social
+// r4 `run-mvfq957o-40103539` (0083, t725): a split is said as a split, never
+// as a re-test "likely to be judged the same way".
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
@@ -39,7 +41,13 @@ describe("an unsure subflow trial", () => {
       expect(evidence.retestAdvised).toBe(false);
       const told = String(evidence.instruction);
       expect(told).toContain("Testing this same revision again, with the same revision and digest, stays allowed");
-      expect(told).toContain("Nothing in Core's record contradicts what kept this trial from a yes (retestAdvised is false)");
+      // A split is said as a split (t725): the two calls disagreed on the same evidence, never "likely to be judged the same way".
+      expect(told).toContain("The two judge calls read this same trial and disagreed");
+      expect(told).toContain("(answeredReading is what it compared)");
+      expect(told).toContain("nothing in Core's record settles which is right (retestAdvised is false)");
+      expect(told).toContain("Change the subflow only for a row this trial kept that its parts do not ask for, a row they ask for that this trial left out, or a wrong column or value, where the no names it");
+      expect(told).toContain("core.submit_subflow");
+      expect(told).not.toContain("likely to be judged the same way");
       expect(told).not.toContain("is the better move");
       expect(gate.completion(proposal)).toMatchObject({ ok: false, issueCodes: ["subflow.trial_unsure"], feedback: { instruction: told, retestAdvised: false } });
     }
@@ -50,6 +58,13 @@ describe("an unsure subflow trial", () => {
     expect(told).not.toContain("allowed");
     expect(last.evidence).not.toHaveProperty("retestAdvised");
     expect(gate.completion(proposal)).toMatchObject({ ok: false, issueCodes: ["subflow.trial_unsure"], feedback: { instruction: told } });
+  });
+
+  it("says nothing in Core's record contradicts a no that stood beside a call that gave no yes, as before (t641)", async () => {
+    const gate = new AutomationStudioSubflowTrialGate({ scope, latest: () => structuredClone(proposal), port: async (request) => unsure(request, { unconfirmedReading: SPLIT.unconfirmedReading! }) });
+    const told = String(((await gate.test(receipt)).evidence as JsonObject).instruction);
+    expect(told).toContain("Nothing in Core's record contradicts what kept this trial from a yes (retestAdvised is false)");
+    expect(told).not.toContain("disagreed");
   });
 
   it("calls a re-test the better move where Core's record wholly contradicts the no's reading, or the doubt", async () => {

@@ -84,6 +84,16 @@ describe("withAutomationStudioBuildActivity", () => {
     expect(JSON.stringify(seen)).not.toMatch(/proposed/u);
   });
 
+  // G2 (social `run-mvfq957o-40103539`, final screenshot): "Your Flow is ready" showed beside a chat saying no Flow was built.
+  it("never says a Flow is ready for a build that ended as a draft", async () => {
+    const draft = { status: "draft", candidateId: "candidate.1", trial: { verdict: "unsure", codes: ["candidate.trial_unconfirmed", "project.build_time_limit"] } };
+    expect(await withAutomationStudioBuildActivity({ projectId: "p1", flowId: "f1" }, async () => draft)).toBe(draft);
+    expect(seen.map((event) => [event.phase, event.final])).toEqual([["building", undefined], ["failed", true]]);
+    expect(seen[1]).toMatchObject({ label: "Build ended: no Flow was built", detail: { kind: "step", title: "Build ended: no Flow was built", status: "failed", text: "What it wrote is kept as a draft, and nothing was put into the Flow." } });
+    expect(JSON.stringify(seen)).not.toMatch(/ready|succeeded/u);
+    expect(seen[1]!.stopped).toBeUndefined();
+  });
+
   it("says failed and rethrows the same error", async () => {
     const error = new Error("refused");
     await expect(withAutomationStudioBuildActivity({ projectId: "p1" }, async () => { throw error; })).rejects.toBe(error);

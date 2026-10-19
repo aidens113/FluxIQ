@@ -192,6 +192,14 @@
 // trial judged unsure also hands the gate Core's record (`standingNo`), so the
 // conditions it keeps come from any judged trial, not only a no.
 //
+// **A split is said as a split (t725).** Social r4 `run-mvfq957o-40103539`
+// (0083): an exact revision's judges split, and the words said a re-test was
+// "likely to be judged the same way", though the same evidence had just drawn
+// both answers; the builder changed the right answer for the no. An unsure
+// whose feedback carries the yes's reading (`answeredReading`, only on a split)
+// now says the two calls disagreed, where each one's reading is, and to change
+// the Flow only for a row, column or value the no names that the trial shows.
+//
 // **And the conditions Core's record showed keep out only what the request
 // does not ask for (t641).** The same run dropped, one revision after another,
 // two conditions of an exact revision on judges' misread advice. A trial judged
@@ -261,6 +269,12 @@ const UNSURE_RETEST_ADVISED = "The judge could not confirm the trial did what th
 const UNSURE_RETESTABLE = "The judge could not confirm the trial did what the instruction asks, so this revision cannot complete yet. "
   + "Nothing in Core's record contradicts what kept this trial from a yes (retestAdvised is false), so another trial of this same revision is likely to be judged the same way, whatever one judge call said. "
   + "Change the Flow for the defect the no's reading or the doubt names where the trial's own reads, steps and stored rows show it, submit the whole candidate, then test the new revision. "
+  + "Testing this same revision again, with the same revision and digest, stays allowed (retestsLeft says how many times) where that evidence shows no such defect.";
+/** Said for an unsure whose two judge calls split (header, t725): never that a re-test is likely to be judged the same way. Generic words. */
+const UNSURE_SPLIT = "The judge could not confirm the trial did what the instruction asks, so this revision cannot complete yet. "
+  + "The two judge calls read this same trial and disagreed: one said it does what the instruction asks (answeredReading is what it compared), the other that it does not (unconfirmedReading is what it compared and advised, where it gave any). "
+  + "The same evidence drew both answers and nothing in Core's record settles which is right (retestAdvised is false), so neither answer is the verdict. "
+  + "Change the Flow only for a row this trial kept that the instruction does not ask for, a row it asks for that this trial left out, or a wrong column or value, where the no names it and the trial's own reads, steps and stored rows show it; a concern about rows this trial did not show is no such defect. Then submit the whole candidate and test the new revision. "
   + "Testing this same revision again, with the same revision and digest, stays allowed (retestsLeft says how many times) where that evidence shows no such defect.";
 /** Said where Core's record contradicts part of the no's reading (header, t652): never that nothing does. Generic words. */
 const UNSURE_PART_CONTRADICTED = "The judge could not confirm the trial did what the instruction asks, so this revision cannot complete yet. "
@@ -650,7 +664,9 @@ function standingInstruction(answer: AutomationStudioCandidateTrialResult, retes
   if (answer.verdict === "unsure" && retestable && typeof answer.feedback.contradictedByBuild === "string") return CONTRADICTED_RETESTABLE;
   if (answer.verdict === "unsure" && retestable) {
     if (automationStudioCandidateRetestAdvised(answer)) return UNSURE_RETEST_ADVISED;
-    return automationStudioCandidateRecordContradictsPart(answer) ? UNSURE_PART_CONTRADICTED : UNSURE_RETESTABLE;
+    if (automationStudioCandidateRecordContradictsPart(answer)) return UNSURE_PART_CONTRADICTED;
+    // The yes's reading rides only on a split (header, t725).
+    return isJsonObject(answer.feedback.answeredReading) ? UNSURE_SPLIT : UNSURE_RETESTABLE;
   }
   // What stopped it, after the verdict's own first sentence (header).
   if (answer.verdict === "execution_failed") return Stop.instruction(answer, { head: EXECUTION_FAILED_HEAD, retestable, resubmit: "submit the whole candidate" });

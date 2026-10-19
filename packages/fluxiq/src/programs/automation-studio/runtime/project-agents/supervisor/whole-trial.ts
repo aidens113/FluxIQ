@@ -76,6 +76,31 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
 // (`./state.ts`, `noteWholeTest`). A test refused `project.trial_reset_required`
 // never reached it, so the reset the model then sent was answered "end again
 // now", though it had chosen to test. Every test asked now clears it first.
+//
+// **A test the build's working time cannot cover is not started (G2).** Social
+// `run-mvfq957o-40103539` asked, with about 2.5 minutes of the build's working
+// time left, for a test of a revision whose last test had taken 337 s; the
+// work deadline cut it off after 150 s and the build ended a draft. Each test
+// that ran is timed on the run's clock (`time`, from `./supervisor-loop.ts`),
+// and a test is refused `project.trial_out_of_time` when the working time left
+// is less than the same Flow's (same digest's) latest finished test took -- or,
+// for a Flow never tested, the build's latest finished test -- with a margin.
+// The refusal says how much is left and to end honestly, the last tested
+// result kept. Nothing measured yet, or no clock, starts the test as before.
+// So that the ending says what was tested, each Flow's latest finished test
+// and a later test of it the deadline cut are remembered (`lastOfFlow`): a
+// Flow submitted again as a new revision has no verdict of its own, and was
+// told as "never tested from its start" although it had been tested whole.
+
+/** How much more than its measured time a test is given room for: a fifth, and at least ten seconds (header, G2). */
+const TIME_MARGIN = 0.2;
+const MIN_TIME_MARGIN_MS = 10_000;
+
+/** The run's clock as a whole test reads it (header, G2): the time now, and how much of the build's working time is left. */
+type WholeTrialTime = { now(): number; workLeftMs(): number };
+
+/** One Flow's (digest's) whole tests (header, G2): its latest finished one, and whether a test the deadline cut came after it. */
+type FlowTests = { finished?: { revision: number; ms: number }; cutAfter: boolean };
 
 /** A trial's start as the supervisor checks it: no look at the target, which it never acts on (header). */
 const UNLOOKED: AutomationStudioSiteResetChecks = { compare: async () => ({ moved: false }) };
@@ -85,9 +110,23 @@ export class AutomationStudioProjectSupervisorWholeTrial {
   readonly reset: AutomationStudioSiteResetTrialReset;
   /** How many reset briefs had come back when the last refusal was given; undefined once a trial was admitted. */
   private refusedAtResets: number | undefined;
+  /** Each Flow's whole tests, by its digest (header, G2). */
+  private readonly flows = new Map<string, FlowTests>();
+  /** How long the build's latest finished whole test took, of any Flow (header, G2). */
+  private latestMs: number | undefined;
 
-  constructor(private readonly input: { ports: Pick<AutomationStudioProjectSupervisorPorts, "projectLedger">; state: AutomationStudioProjectSupervisorState }) {
+  constructor(private readonly input: { ports: Pick<AutomationStudioProjectSupervisorPorts, "projectLedger">; state: AutomationStudioProjectSupervisorState; time?: WholeTrialTime | undefined }) {
     this.reset = this.ledgersReset(input.ports.projectLedger);
+  }
+
+  /**
+   * The latest finished whole test of the Flow with this digest -- its revision,
+   * undefined when none finished -- and whether a test of it the build's time
+   * limit cut came after it; undefined for a Flow never tested (header, G2).
+   */
+  lastOfFlow(digest: string): { revision: number | undefined; cutAfter: boolean } | undefined {
+    const flow = this.flows.get(digest);
+    return flow ? { revision: flow.finished?.revision, cutAfter: flow.cutAfter } : undefined;
   }
 
   async test(context: AutomationStudioProjectSupervisorContext, value: JsonObject, callSignal: AbortSignal | undefined): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
@@ -97,10 +136,23 @@ export class AutomationStudioProjectSupervisorWholeTrial {
     // The revision a single-subflow builder's test already judged yes is not tried again (header, t679).
     const judged = this.alreadyJudged(context, value);
     if (judged) return judged;
-    const ran = await gate.test(value, callSignal ?? context.signal);
+    // A test the working time left cannot cover is not started (header, G2).
+    const outOfTime = this.outOfTime(value.digest);
+    if (outOfTime) return outOfTime;
+    const signal = callSignal ?? context.signal;
+    const started = this.input.time?.now();
+    let ran: AutomationStudioLlmEvidenceToolExecutionResult;
+    try {
+      ran = await gate.test(value, signal);
+    } catch (error) {
+      // A test the deadline cut is remembered for the ending, after the Flow's latest finished one (header, G2).
+      if (signal?.aborted && typeof value.digest === "string") this.flowOf(value.digest).cutAfter = true;
+      throw error;
+    }
     const evidence = ran.evidence as JsonObject;
     if (evidence.code === "candidate.trial_reset_required") return this.resetRequired(evidence);
     if (typeof evidence.verdict !== "string" || typeof evidence.revision !== "number" || typeof evidence.digest !== "string") return ran;
+    this.finished(evidence.digest, evidence.revision, started);
     const verdict = evidence.verdict;
     const receiptId = typeof evidence.trialRunId === "string" && evidence.trialRunId ? evidence.trialRunId : `whole-trial-${evidence.revision}-${Date.now()}`;
     await ports.record.recordReceipt(ports.build, { receipt: { kind: "candidate_trial", receiptId, digest: evidence.digest } });
@@ -110,6 +162,40 @@ export class AutomationStudioProjectSupervisorWholeTrial {
     // The most recent pass, rescued or outright, is kept as the build's fallback until a later pass replaces it (`./state.ts`, t637).
     state.noteWholeTest(context.controller, gate);
     return ran;
+  }
+
+  /** A test of `digest` refused for the working time left, or undefined when it may start (header, G2). */
+  private outOfTime(digest: JsonValue | undefined): AutomationStudioLlmEvidenceToolExecutionResult | undefined {
+    const time = this.input.time;
+    if (!time) return undefined;
+    const same = typeof digest === "string" ? this.flows.get(digest)?.finished?.ms : undefined;
+    const measured = same ?? this.latestMs;
+    if (measured === undefined) return undefined;
+    const left = Math.max(0, time.workLeftMs());
+    if (left >= measured + Math.max(measured * TIME_MARGIN, MIN_TIME_MARGIN_MS)) return undefined;
+    const took = same !== undefined ? "the last whole test of this same Flow" : "the latest whole test of this build";
+    const said = `About ${spoken(left)} of this build's working time is left, and ${took} took about ${spoken(measured)}, so this test could not finish before the build's time limit and was not started.`;
+    return answer.refused("project.trial_out_of_time", `${said} ${GUIDANCE.refusals.outOfTime}`, {
+      said, workLeftSeconds: Math.round(left / 1_000), lastTestSeconds: Math.round(measured / 1_000), sameFlow: same !== undefined
+    });
+  }
+
+  /** Records a finished whole test of `digest` and how long it took (header, G2): the Flow's latest finished test, with no cut after it yet. */
+  private finished(digest: string, revision: number, started: number | undefined): void {
+    const flow = this.flowOf(digest);
+    const ms = started === undefined || !this.input.time ? undefined : Math.max(0, this.input.time.now() - started);
+    flow.finished = ms === undefined ? { revision, ms: flow.finished?.ms ?? 0 } : { revision, ms };
+    flow.cutAfter = false;
+    if (ms !== undefined) this.latestMs = ms;
+  }
+
+  /** This digest's whole tests, begun empty the first time it is tested (header, G2). */
+  private flowOf(digest: string): FlowTests {
+    const known = this.flows.get(digest);
+    if (known) return known;
+    const flow: FlowTests = { cutAfter: false };
+    this.flows.set(digest, flow);
+    return flow;
   }
 
   /** The standing yes of a single-subflow plan's latest revision, when `value` names it and it may be completed on (header, t679); undefined otherwise. */
@@ -160,6 +246,15 @@ export class AutomationStudioProjectSupervisorWholeTrial {
       trialRan: (_acts, trialRunId) => shared.trialRan([], trialRunId)
     };
   }
+}
+
+/** A span of time in words (header, G2): seconds under a minute and a half, else minutes to the nearest half. */
+function spoken(ms: number): string {
+  if (ms < 90_000) {
+    const seconds = Math.round(ms / 1_000);
+    return seconds === 1 ? "1 second" : `${seconds} seconds`;
+  }
+  return `${Math.round(ms / 30_000) / 2} minutes`;
 }
 
 function list(value: JsonValue | undefined): JsonValue[] {

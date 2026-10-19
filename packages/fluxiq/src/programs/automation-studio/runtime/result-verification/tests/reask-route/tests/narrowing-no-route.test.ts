@@ -70,11 +70,14 @@ describe("a no blaming a step that chose the request's own words, through the ve
   });
 
   it("is not asked again where the step's option is not the request's words", async () => {
-    const { provider, seen } = answering(blaming("Riverside"), CAMPSITE_YES, CAMPSITE_YES);
+    // Only the split's own re-ask (t725) asks it again, for a named defect, and it names the same no: the split stands.
+    const { provider, seen } = answering(blaming("Riverside"), CAMPSITE_YES, blaming("Riverside"));
     const verdict = await judge(provider, REQUEST)({ summary: summary("Riverside"), budget: { maxCostUsd: 0.2 } });
     expect(verdict).toMatchObject({ verdict: "unknown" });
-    expect(verdict.spent.calls).toBe(2);
-    expect(seen).toHaveLength(2);
+    expect(verdict.spent.calls).toBe(3);
+    expect(seen).toHaveLength(3);
+    expect(JSON.stringify(seen[2])).not.toContain("Core did not see the rows such a step removed");
+    expect(JSON.stringify(seen[2])).toContain("Answer no only for a defect you name in this result");
   });
 
   // t690 (t686 "Not verified"): the verification never passed Core's record to this re-ask, so a reason the record

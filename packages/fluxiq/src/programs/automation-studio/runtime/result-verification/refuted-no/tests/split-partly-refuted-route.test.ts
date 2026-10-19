@@ -54,9 +54,10 @@ function reading(verdict: AutomationStudioBuildTestVerdict) {
 
 describe("a split's no Core's record refutes in part (t652)", () => {
   it("is labelled, with recordContradicts part, when the yes came first", async () => {
-    const verdict = await judged(LIBRARY_YES, PART_NO);
+    // The split's no is asked once more to name its defect (t725), and says the same no again: it stands.
+    const verdict = await judged(LIBRARY_YES, PART_NO, PART_NO);
     expect(verdict).toMatchObject({ verdict: "unknown", oneCallSaidYes: true });
-    expect(verdict.spent.calls).toBe(2);
+    expect(verdict.spent.calls).toBe(3);
     const read = reading(verdict);
     expect(read?.recordContradicts).toBe("part");
     expect(String(read?.observed)).toMatch(/^Judge call 2 \(Core's record contradicts part of this reading: .+\): Missing qualifying items include /u);

@@ -155,9 +155,25 @@
 // (`../request-rows/unquoted-rows.ts`, `stored`); `said.ts` says so in Core's
 // words wherever a split or an unsure is explained.
 //
+// **A split's no is asked to name its defect (t725).** Social r4
+// `run-mvfq957o-40103539` (0084): over a revision that stored exactly the rows
+// asked for, one call said yes and the other no, while the no's own reading
+// called every kept row right and every row it named left out rightly out; its
+// only objection was rows the run never showed. Core's record could not refute
+// it, so the split stood unsure and the builder broke the right answer on its
+// advice. Where the readings split and no call was asked again, the no is now
+// asked once more, as the yes's exclusion recheck already is
+// (`reask-split-no.ts`, `split-no-words.ts`): to name a row wrongly kept or
+// left out, or a wrong column or value, quoting the request, and to answer yes
+// with its concern as advice where it can name none. Its answer takes its
+// place: a yes there is two yeses, carrying the first no's concern as the yes's
+// advice (`answeredReading.advice`), never a repair; a no naming a defect
+// stands. It is asked after the more pointed re-asks above, through the
+// verification's own `ask`, so its call is charged to the same purse.
+//
 // The agreement itself is `verification-agreement.ts` over `agree.ts`; the
-// re-asks are `reask-contradicted.ts`; whether a first verdict is asked again
-// is `ask-again.ts`; whether a no's reasons let it be asked again is
+// re-asks are `reask-contradicted.ts` and, last, `reask-split-no.ts`; whether
+// a first verdict is asked again is `ask-again.ts`; whether a no's reasons let it be asked again is
 // `no-reasons.ts`. The rest are the pieces they weigh with: the record a no
 // is weighed against (`no-record.ts`, `weighed-no.ts`), the readings the
 // record contradicts (`record-contradictions.ts`, `contradicted-unsure.ts`,
@@ -169,6 +185,8 @@
 export * from "./ask-again.ts";
 export * from "./no-reasons.ts";
 export * from "./reask-contradicted.ts";
+export * from "./reask-split-no.ts";
+export * from "./split-no-words.ts";
 // The advice a builder is shown of a judged trial, less a wholly refuted reading's (t687).
 export { automationStudioResultAdviceShown } from "./refuted-labelled.ts";
 export type { AutomationStudioResultVerificationAgreementInput } from "./types.ts";

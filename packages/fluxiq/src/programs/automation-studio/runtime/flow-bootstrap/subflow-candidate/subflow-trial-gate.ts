@@ -121,6 +121,15 @@
 // Core's record too (`standingNo`), so its kept conditions come from any judged
 // trial, not only a no.
 //
+// **A split is said as a split (t725).** Social r4 `run-mvfq957o-40103539`
+// (0083): an exact revision's judges split, the words said a re-test was
+// "likely to be judged the same way", and the builder changed the right answer
+// for the no. As the whole gate now says it (`../candidate/trial-gate.ts`): an
+// unsure whose feedback carries the yes's reading (`answeredReading`, only on a
+// split) says the two calls disagreed, where each one's reading is, and to
+// change the subflow only for a row, column or value the no names that the
+// trial shows.
+//
 // **A trial on a page this brief's exploration changed, and no step does, says
 // so (t647; A8 bigbox debug `run-mv9zn5ob-d929084d`, fix 6).** A builder
 // pressed a control while exploring that changed what the site offers, built
@@ -333,6 +342,12 @@ const UNSURE_RETEST_ADVISED = "The judge could not confirm this subflow did what
 const UNSURE_RETESTABLE = "The judge could not confirm this subflow did what its parts ask, so this revision cannot complete yet. "
   + "Nothing in Core's record contradicts what kept this trial from a yes (retestAdvised is false), so another trial of this same revision is likely to be judged the same way, whatever one judge call said. "
   + "Change the subflow for the defect the no's reading or the doubt names where the trial's own reads, steps and stored rows show it, submit it with core.submit_subflow, then test the new revision. "
+  + "Testing this same revision again, with the same revision and digest, stays allowed (retestsLeft says how many times) where that evidence shows no such defect.";
+/** Said for an unsure whose two judge calls split (header, t725): never that a re-test is likely to be judged the same way. Generic words. */
+const UNSURE_SPLIT = "The judge could not confirm this subflow did what its parts ask, so this revision cannot complete yet. "
+  + "The two judge calls read this same trial and disagreed: one said it does what its parts ask (answeredReading is what it compared), the other that it does not (unconfirmedReading is what it compared and advised, where it gave any). "
+  + "The same evidence drew both answers and nothing in Core's record settles which is right (retestAdvised is false), so neither answer is the verdict. "
+  + "Change the subflow only for a row this trial kept that its parts do not ask for, a row they ask for that this trial left out, or a wrong column or value, where the no names it and the trial's own reads, steps and stored rows show it; a concern about rows this trial did not show is no such defect. Then submit it with core.submit_subflow and test the new revision. "
   + "Testing this same revision again, with the same revision and digest, stays allowed (retestsLeft says how many times) where that evidence shows no such defect.";
 /** Said where Core's record contradicts part of the no's reading (header, t652): never that nothing does. Generic words. */
 const UNSURE_PART_CONTRADICTED = "The judge could not confirm this subflow did what its parts ask, so this revision cannot complete yet. "
@@ -672,7 +687,9 @@ function instructionFor(answer: AutomationStudioSubflowTrialResult, retestable: 
   if (answer.verdict === "unsure" && retestable) {
     if (automationStudioCandidateRetestAdvised(answer)) return UNSURE_RETEST_ADVISED;
     // Core's record contradicts part of the no's reading: never said to contradict nothing (header, t652).
-    return automationStudioCandidateRecordContradictsPart(answer) ? UNSURE_PART_CONTRADICTED : UNSURE_RETESTABLE;
+    if (automationStudioCandidateRecordContradictsPart(answer)) return UNSURE_PART_CONTRADICTED;
+    // The yes's reading rides only on a split (header, t725).
+    return isJsonObject(answer.feedback.answeredReading) ? UNSURE_SPLIT : UNSURE_RETESTABLE;
   }
   // What stopped it, after the verdict's own first sentence (header, lane 3).
   if (answer.verdict === "execution_failed") return Stop.instruction(answer, { head: EXECUTION_FAILED_HEAD, retestable, resubmit: RESUBMIT });

@@ -44,6 +44,8 @@ export function automationStudioConversationCandidateDraftSaid(candidate: Automa
     if (trial.codes.includes("FLOW_BOOTSTRAP_STALE")) return `Its test run from the start was judged to do what you asked, but the Flow or what it should do changed before the change could be made, ${kept}`;
     return `Its test run from the start was judged to do what you asked, but the draft I saved no longer matched the one that was tested, ${kept}`;
   }
+  // A later test the build's time limit cut is said as cut, after the last finished test (G2, `../../service/project-build/run.ts`).
+  if (trial.codes.includes(TRIAL_CUT_CODE)) return `${CUT_SAID[trial.verdict]} ${kept}`;
   const said: Record<Exclude<typeof trial.verdict, "yes">, string> = {
     no: "Its test run from the start was judged not to do what you asked,",
     unsure: "I could not confirm that its test run from the start did what you asked,",
@@ -53,6 +55,22 @@ export function automationStudioConversationCandidateDraftSaid(candidate: Automa
   };
   return `${said[trial.verdict]} ${kept}`;
 }
+
+/** The code a project build sets beside its time limit's when the limit cut a test of the draft's Flow (`../../service/project-build/run.ts`, G2). */
+const TRIAL_CUT_CODE = "project.build_trial_cut";
+
+/**
+ * A draft whose later test the time limit cut, by its last finished test's
+ * verdict (G2): social `run-mvfq957o-40103539` was said to have never been
+ * test-run from the start, though its Flow had been tested whole seven times.
+ */
+const CUT_SAID: Readonly<Record<Exclude<NonNullable<AutomationStudioCandidateAuthoringResult["trial"]>["verdict"], "yes">, string>> = Object.freeze({
+  no: "Its last finished test run from the start was judged not to do what you asked, and a later test run of it was cut short by the build's time limit,",
+  unsure: "I could not confirm that its last finished test run from the start did what you asked, and a later test run of it was cut short by the build's time limit,",
+  not_judged: "Its last finished test run from the start was not checked, and a later test run of it was cut short by the build's time limit,",
+  execution_failed: "Its last finished test run from the start did not get to the end, and a later test run of it was cut short by the build's time limit,",
+  not_tested: "Its test run from the start was cut short by the build's time limit before it finished,"
+});
 
 /** How a test run from the start came out, in words that finish "the last test run ...". */
 const LAST_TRIAL: Readonly<Record<AutomationStudioFlowBootstrapCandidateKept["trials"][number]["verdict"], string>> = Object.freeze({

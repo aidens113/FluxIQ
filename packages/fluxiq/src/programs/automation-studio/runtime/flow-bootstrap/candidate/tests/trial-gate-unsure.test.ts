@@ -5,6 +5,8 @@
 // `run-mv9gbsm5-2957581c` (0051-0054); A8 wave 14 candidate towels
 // `run-mv9ul5dy-e9a1b1c1` (0083), where a re-test called the better move
 // because one judge said yes spent the build's last trial on a wrong revision.
+// Social r4 `run-mvfq957o-40103539` (0083, t725): a split is said as a split,
+// never as a re-test "likely to be judged the same way".
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
@@ -33,9 +35,14 @@ describe("an unsure whole-candidate trial", () => {
       expect(ran.resultReason).toBe("retry_allowed");
       expect(evidence.retestAdvised).toBe(false);
       expect(told).toContain("Testing this same revision again, with the same revision and digest, stays allowed");
-      expect(told).toContain("Nothing in Core's record contradicts what kept this trial from a yes (retestAdvised is false)");
+      // A split is said as a split (t725): the two calls disagreed on the same evidence, never "likely to be judged the same way".
+      expect(told).toContain("The two judge calls read this same trial and disagreed");
+      expect(told).toContain("(answeredReading is what it compared)");
+      expect(told).toContain("(unconfirmedReading is what it compared and advised, where it gave any)");
+      expect(told).toContain("nothing in Core's record settles which is right (retestAdvised is false)");
+      expect(told).toContain("Change the Flow only for a row this trial kept that the instruction does not ask for, a row it asks for that this trial left out, or a wrong column or value, where the no names it");
+      expect(told).not.toContain("likely to be judged the same way");
       expect(told).not.toContain("is the better move");
-      expect(told).not.toContain("answeredReading");
       expect(gate.completion(candidate)).toMatchObject({ ok: false, issueCodes: ["candidate.trial_unsure"], feedback: { instruction: told, retestAdvised: false } });
     }
     const last = await gate.test(receipt);
@@ -46,6 +53,14 @@ describe("an unsure whole-candidate trial", () => {
     expect(last.evidence).not.toHaveProperty("retestAdvised");
     expect(told).not.toMatch(/\b(?:paper|towels?|holders?|pickup|packs?|retailer|valueridge|sponsored)\b/iu);
     expect(gate.completion(candidate)).toMatchObject({ ok: false, issueCodes: ["candidate.trial_unsure"], feedback: { instruction: told } });
+  });
+
+  it("says nothing in Core's record contradicts a no that stood beside a call that gave no yes, as before (t641)", async () => {
+    const ran = await gateAnswering({ unconfirmedReading: SPLIT.unconfirmedReading! }).test(receipt);
+    const told = String((ran.evidence as JsonObject).instruction);
+    expect(told).toContain("Nothing in Core's record contradicts what kept this trial from a yes (retestAdvised is false)");
+    expect(told).not.toContain("disagreed");
+    expect(told).not.toContain("answeredReading");
   });
 
   it("calls a re-test the better move where Core's record wholly contradicts the no's reading (the t632 case), or the unsure call's doubt", async () => {

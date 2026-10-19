@@ -367,9 +367,10 @@ describe("run murwcmx2: a build's yes is confirmed by a second call", () => {
   });
 
   it("yes, then no, is unknown carrying the no's reading, so the build repairs instead of finishing", async () => {
-    const { provider } = answering({ answersRequest: "yes" }, NO);
+    // The split's no is asked once more to name its defect (t725), and says the same no again: it stands, a third call paid for.
+    const { provider } = answering({ answersRequest: "yes" }, NO, NO);
     const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
-    expect(verdict).toMatchObject({ verdict: "unknown", unconfirmedReading: { expected: NO.expected, observed: NO.observed, advice: NO.changed }, spent: { calls: 2 } });
+    expect(verdict).toMatchObject({ verdict: "unknown", unconfirmedReading: { expected: NO.expected, observed: NO.observed, advice: NO.changed }, spent: { calls: 3 } });
   });
 
   // Live run run-musp4h2f-72e8ed99 (t193 round 1003): the last judgement was no, then yes. The build must know one
