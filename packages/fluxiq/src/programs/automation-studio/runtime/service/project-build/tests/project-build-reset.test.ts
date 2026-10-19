@@ -641,7 +641,9 @@ describe("a reset brief", () => {
   it("refuses an undo aimed at another item in a reset's words: undo another act or name it under cannotUndo, never test again", async () => {
     const run = await cartBuild((n) => n === 1
       ? { kind: "tool_call", callId: "undo.wrong", toolId: "core.run_node", input: { node: REMOVE, parameters: { line: "dish-soap" }, consequences: ["delete"], undoes: "act-2" } }
-      : { kind: "complete", result: { summary: "The act this build made cannot be undone here." } });
+      // act-1 is named honestly: no act is kept for having been asked for twice (F1 continuation), and act-2 is kept by
+      // its refused undo alone.
+      : { kind: "complete", result: { summary: "The act this build made cannot be undone here.", cannotUndo: ["act-1"] } });
     await run.build().catch(() => undefined);
 
     const refused = run.resetSaw.evidence.find((entry) => entry.callId === "undo.wrong")!.value as JsonObject;

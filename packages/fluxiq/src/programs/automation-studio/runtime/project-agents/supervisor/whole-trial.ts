@@ -32,12 +32,18 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
 //   landed, or once that brief's own look found it gone. Acts still to undo
 //   refuse the trial `project.trial_reset_required`, naming `project.dispatch`
 //   with a reset brief (`retry_allowed`, so the test after the reset reaches
-//   the gate again). An act the site offers no way to undo is kept, as the
-//   ledger keeps it, and the trial runs with it in place, the judge told under
-//   `startedWith`;
+//   the gate again). An act stays on the target only once it is kept: named
+//   under `cannotUndo` -- by a reset brief's completion or by this test's own
+//   input -- after a reset asked for it, or its undo was refused. The trial then
+//   runs with it in place, the judge told under `startedWith.cannotUndo`. An
+//   identified reversible effect stays refused until proved restored, kept or
+//   not (`candidate.trial_reset_unproved`);
+// - no trial runs on leftovers (F1 continuation; user, 2026-10-12): a reset
+//   that came back blocked without undoing or naming an act leaves it to undo,
+//   and every test is refused while it is. Nothing is kept for being asked for
+//   often or for a refusal that made no progress;
 // - a refusal is repeated, unasked of the ledgers, until a reset brief has come
-//   back: the ledgers' no-deadlock admission is for a reset that was tried and
-//   made no progress, never for a test sent again instead of one.
+//   back, so a test sent again instead of a reset changes nothing.
 //
 // A whole trial's own acts are recorded under the supervisor by its trial port
 // (`service/project-build/whole-trials.ts`), so the reset records none of its

@@ -25,7 +25,17 @@ import type { AutomationStudioProjectResetPorts } from "./types.ts";
 // under `cannotUndo`; `remainingActs` hands them to the ledger before it looks
 // again (`site-reset/ledger.ts`, `beforeTrial`), which keeps each one once the
 // reset has asked for it. A kept act is no longer to undo: trials run with it
-// in place and the judge is told, so the reset can come back `done`.
+// in place and the judge is told under `startedWith.cannotUndo`, so the reset
+// can come back `done`. An identified reversible effect still needs proved
+// restoration before an ordinary trial; naming it keeps it reported, never
+// restored.
+//
+// **Only an act named or refused is kept** (F1 continuation; user, 2026-10-12).
+// No act is kept for having been asked for several times, and no trial is
+// admitted on leftovers: an act the reset neither undid, settled against its
+// named destination, nor named under `cannotUndo` (and whose undo was not
+// refused) is still to undo, so the reset ends `blocked` with it listed and
+// every trial is refused until a later reset deals with it.
 
 /** The code a reset's completion is refused under while acts are still in place. */
 const RESET_INCOMPLETE = "project.reset_acts_in_place";

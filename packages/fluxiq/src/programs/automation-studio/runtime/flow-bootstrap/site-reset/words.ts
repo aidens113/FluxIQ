@@ -75,10 +75,11 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
       + "This act is reported under cannotUndo; any trial explicitly admitted with it in place reports that fact to its judge. Identified reversible effects still require proved restoration. "
       + `Do not try to undo it again. Test the same revision again now, or undo another listed act on its own item with "${UNDOES}".`;
   },
-  /** An undo the permission gate refused (t475). */
+  /** An undo the permission gate refused (t475): the ledger keeps the act, and the model is told so plainly. */
   undoRefused(): string {
-    return "That undo was not allowed, so nothing was done and this act remains unresolved. An identified reversible effect still requires proved restoration; any trial explicitly admitted with other unresolved acts reports them to its judge. "
-      + "Do not repeat a refused effect. Retarget only with positive ownership and inverse evidence, or report the unresolved reset honestly.";
+    return "That undo was not allowed, so nothing was done, and this act stays as it is: it is kept and not asked for again. Do not try to undo it again or repeat the refused effect. "
+      + "A trial run with it in place lists it under startedWith.cannotUndo, and its judge is told; an identified reversible effect still requires proved restoration before an ordinary trial. "
+      + "Undo another listed act, or report the unresolved reset honestly.";
   },
   /** An unproved claim stays refused, even when another owned effect is observed. */
   unprovedUndo(other: boolean): string {
