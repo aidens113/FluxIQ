@@ -39,7 +39,7 @@ export type AutomationStudioFlowDraftAmendment = {
    * `through`, which defaults to it.
    */
   while?: number;
-  /** `repeat` with `while` only: the most passes, 1 to 500; the Repeat node's default when absent. */
+  /** `repeat` with `while`: the most passes, 1 to 500, the Repeat node's default when absent; with a repeat over a listing: act on only its first N rows, 1 to 10,000. */
   most?: number;
   /**
    * `add` or `keep` only: the instructed act (`a1`, `a2` ...) this step does,

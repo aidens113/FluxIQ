@@ -704,8 +704,11 @@ describe("the do-while repeat the schema teaches", () => {
     expect(properties.while!.maximum).toBeUndefined();
     expect(properties.while!.description).toContain("never with over");
     expect(properties.while!.description).toContain("through defaults to it");
-    expect(properties.most).toMatchObject({ type: "integer", minimum: 1, maximum: 500 });
+    // F5: most also bounds a repeat over a listing to its first rows, up to For Each's 10,000; with while it is still 1 to 500.
+    expect(properties.most).toMatchObject({ type: "integer", minimum: 1, maximum: 10_000 });
     expect(properties.most!.description).toContain("default 50");
+    expect(properties.most!.description).toContain("with while, the most passes, 1 to 500");
+    expect(properties.most!.description).toContain("over a listing, only its first this many rows, in their order");
   });
 
   it("says the continuing list's form beside the list form, in generic words", () => {

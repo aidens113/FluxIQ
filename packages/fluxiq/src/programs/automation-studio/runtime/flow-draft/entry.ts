@@ -272,7 +272,7 @@ function routingLine(routing: AutomationStudioFlowDraftStepRouting, all: readonl
   if (routing.kind === "only_if") return `only if step ${at(routing.check)} succeeded`;
   if (routing.kind === "on_failed") return `on failure, step ${at(routing.to)} runs instead`;
   if (automationStudioFlowDraftRepeatIsWhile(routing)) return `repeats through step ${at(routing.through)} while it succeeds${routing.most === undefined ? "" : `, at most ${routing.most} passes`}`;
-  return `repeats through step ${at(routing.through)}, over step ${at(routing.over)}`;
+  return `repeats through step ${at(routing.through)}, over step ${at(routing.over)}${routing.most === undefined ? "" : `, on its first ${routing.most} ${routing.most === 1 ? "row" : "rows"}`}`;
 }
 
 /**
