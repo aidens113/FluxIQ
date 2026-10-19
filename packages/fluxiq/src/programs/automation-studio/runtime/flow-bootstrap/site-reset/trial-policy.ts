@@ -18,17 +18,24 @@
 //   which case the difference is presumed theirs and the trial runs.
 // - Kept acts never block a trial: it runs with them in place, and says so
 //   under `startedWith.cannotUndo`, which the model and the judge are shown.
-// - It never deadlocks. The candidate wrap-up leaves the model only submit and
-//   test, so a reset demanded there could never be made: a refusal identical to
-//   the last one (no progress), or one past `MAX_REFUSALS` in a phase, admits
-//   the trial instead, saying under `startedWith` what was still in place or
-//   different.
+// - An act still to undo refuses every trial, however often it is asked (F1
+//   continuation; user, 2026-10-12: before every trial and the judged whole run
+//   the build's own lasting acts are undone, and only an act the site truly
+//   cannot undo may stay). This once admitted a refusal identical to the last
+//   (no progress), or one past `MAX_REFUSALS` in a phase, on the leftovers: F3
+//   (`fix-f3-reset-brief-preflight.md`) saw a whole trial run on two acts a
+//   blocked reset never undid. An act stays only once it is kept -- the model
+//   named it under `cannotUndo`, or its undo was refused -- and the trial then
+//   runs with it, its judge told.
+// - A start that only differs never deadlocks: with no act to undo, a
+//   difference identical to the last refusal's, or past `MAX_REFUSALS`, admits
+//   the trial, saying under `startedWith` what differed.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioSiteResetComparison, AutomationStudioSiteResetNamedAct } from "./contracts.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "./words.ts";
 
-/** Refusals of one phase; the next one admits the trial instead. */
+/** Refusals of one phase over a start that only differs; the next one admits the trial instead. */
 const MAX_REFUSALS = 3;
 
 /** What the ledger keeps of the current phase for the policy. */
@@ -67,10 +74,9 @@ export async function automationStudioSiteResetTrialPolicy(input: {
   // Nothing to undo: a clean start runs, and so does a different one when kept acts may be what makes it differ.
   if (!acts.length && (!differs.length || kept.length)) return { kind: "admit", ...started(differs.length ? { differs: [...differs] } : {}), moved };
   const signature = JSON.stringify([acts.map((act) => [act.act, act.stillThere ?? []]), differs]);
+  // Acts still to undo are never admitted (header); only a difference with nothing to undo is.
   const stalled = input.phase.lastRefusal === signature || input.phase.refusals >= MAX_REFUSALS;
-  if (stalled || (!acts.length && input.phase.startDiffersSent)) {
-    return { kind: "admit", ...started({ ...(acts.length ? { acts } : {}), ...(differs.length ? { differs: [...differs] } : {}) }), moved };
-  }
+  if (!acts.length && (stalled || input.phase.startDiffersSent)) return { kind: "admit", ...started(differs.length ? { differs: [...differs] } : {}), moved };
   if (acts.length) {
     const code = "candidate.trial_reset_required";
     return { kind: "refuse", signature, startDiffers: false, moved, evidence: { ok: false, code, instruction: WORDS.resetRequired(differs.length > 0), actsToUndo: acts, ...(differs.length ? { differs: [...differs] } : {}), ...(kept.length ? { cannotUndo: kept } : {}) } };

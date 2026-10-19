@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioActionConsequence } from "../../../action-permissions/index.ts";
-import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetComparison, type AutomationStudioSiteResetExplored, type AutomationStudioSiteResetSpot } from "../index.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS, AutomationStudioSiteResetLedger, type AutomationStudioSiteResetComparison, type AutomationStudioSiteResetExplored, type AutomationStudioSiteResetSpot } from "../index.ts";
 
 // An undo tied to its act by what both are about (t719). An act whose effect
 // shows on another page or in another list -- an add from a detail page whose
@@ -607,5 +607,76 @@ describe("positive collection-transfer inverses", () => {
     ledger.explored(acted("remove", ["delete"], { undoes: "act-1", on: "subject" }, { scope, subject: "s:document" }));
     observed(ledger, [collection(scope, ["s:b", "s:a"])]);
     expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+  });
+});
+
+// F1, job save r1 (`run-mvectfld-c2f5d958`, cause 2): two presses from a side
+// pane and a detail page -- no list of their own -- that the site itself
+// failed. The list they land in was read complete before and after them and was
+// unchanged, but nothing could settle them, so the build had no way forward.
+// A control in no list counts only against a destination named for it with an
+// issued `resetDestination` ref -- on its own call, or later on a look that
+// names it under `undoes` -- never against every list ever read: its real
+// effect may land somewhere never read. With that destination read complete
+// after the act, exactly as first observed and still without the act's
+// subject, the act needs no proven undo; unnamed, it refuses as before.
+describe("a press with no list of its own whose named destination stays exactly as first observed (F1)", () => {
+  const SITE = "r:site";
+  const PANE: AutomationStudioSiteResetSpot = { subject: "s:document", page: "s:results", resource: SITE };
+  const list = (scope: string, subjects: string[]) => ({ scope, group: "g:mine", subjects, states: Object.fromEntries(subjects.map((subject) => [subject, `v:${subject}`])) });
+  const mine = () => [list("p:mine", ["s:held-a", "s:held-b"]), list("p:mine-archived", ["s:held-c"])];
+  const read = (ledger: AutomationStudioSiteResetLedger, collections: Array<ReturnType<typeof list>>) => ledger.observed({ state: {}, differs: [], resource: SITE, scope: "p:mine-page", collections });
+  /** Two failed presses; the destination named on each press, on a later look under `undoes`, or not at all. */
+  const pressed = (named: "on-act" | "on-look" | "none" | "invented", spot: AutomationStudioSiteResetSpot = PANE, before = mine()) => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    read(ledger, before);
+    const ref = named === "invented" ? "destination-9" : ledger.destinationReceipts()[0]!.ref;
+    const onAct = named === "on-act" || named === "invented" ? { resetDestination: ref } : {};
+    ledger.explored(acted("save.first", ["modify_existing"], onAct, spot));
+    ledger.explored(acted("save.second", ["modify_existing"], onAct, spot));
+    if (named === "on-look") for (const act of ["act-1", "act-2"]) {
+      expect(ledger.claim(act)).toMatchObject({ kind: "undo" });
+      ledger.explored({ callId: `look.${act}`, toolId: "core.run_node", landed: true, undoes: act, on: "moving", resetDestination: ref, declared: { permitted: true, effect: "observe", consequences: [], control: { name: null, kind: "page" }, verb: "read" } });
+    }
+    return ledger;
+  };
+
+  it.each(["on-act", "on-look"] as const)("runs the trial with both failed presses listed as left with no change seen, the destination named %s", async (named) => {
+    const ledger = pressed(named);
+    read(ledger, mine());
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1", call: "save.first" }, { act: "act-2", call: "save.second" }] } });
+    expect(ledger.inPlace()).toEqual([]);
+  });
+
+  it("refuses an unnamed destination however unchanged every list read is, and says how to name one", async () => {
+    const ledger = pressed("none");
+    read(ledger, mine());
+    const refused = await ledger.beforeTrial(back);
+    expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-1" }, { act: "act-2" }] } });
+    expect(String(refused.kind === "refuse" ? refused.evidence.instruction : "")).toContain("resetDestination");
+    const unproved = await ledger.beforeTrial(back, ["act-1", "act-2"]);
+    expect(unproved).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_unproved" } });
+    expect(String(unproved.kind === "refuse" ? unproved.evidence.instruction : "")).toContain("resetDestination");
+  });
+
+  it.each(["invented-ref", "no-read-after", "subject-now-present", "partial", "malformed", "own-list-unread", "subject-held-before"] as const)("still refuses a named destination with %s", async (defect) => {
+    const before = defect === "subject-held-before" ? [list("p:mine", ["s:document", "s:held-b"]), list("p:mine-archived", ["s:held-c"])] : mine();
+    const ledger = pressed(defect === "invented-ref" ? "invented" : "on-act", defect === "own-list-unread" ? { ...PANE, scope: "p:pane" } : PANE, before);
+    const after = defect === "subject-held-before" ? before : mine();
+    if (defect === "subject-now-present") after[0] = list("p:mine", ["s:held-a", "s:held-b", "s:document"]);
+    if (defect === "partial") after.splice(1, 1);
+    if (defect === "malformed") after[1] = list("p:mine-archived", ["s:held-c", "s:held-c"]);
+    if (defect !== "no-read-after") read(ledger, after);
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    expect(await ledger.beforeTrial(back, ["act-1", "act-2"])).toMatchObject({ kind: "refuse" });
+    expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1", "act-2"]);
+  });
+
+  it("answers a claim on a left act in words that owe no undo", async () => {
+    const ledger = pressed("on-act");
+    read(ledger, mine());
+    const claimed = ledger.claim("act-1");
+    expect(claimed).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_act_kept", instruction: WORDS.keptAct(true) } });
+    expect(WORDS.keptAct(true)).not.toContain("requires proved baseline restoration");
   });
 });
