@@ -1,9 +1,9 @@
-import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioSiteResetNamedAct } from "../../flow-bootstrap/site-reset/index.ts";
 import type { AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
 // From its own module, as the subflow builder imports it: through the `llm` barrel it arrived undefined under the test loader (a module cycle).
 import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopResult } from "../../llm/evidence-loop.ts";
 import type { AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_RESET_COMPLETION } from "./reset-completion.ts";
 import type { AutomationStudioProjectResetPorts } from "./types.ts";
 
 // A reset brief's run (automation-project-agents-plan, `reset` brief kind;
@@ -30,21 +30,6 @@ import type { AutomationStudioProjectResetPorts } from "./types.ts";
 /** The code a reset's completion is refused under while acts are still in place. */
 const RESET_INCOMPLETE = "project.reset_acts_in_place";
 
-/** The reset's completion: a summary, and the acts the site offers no control to reverse (header). */
-const RESET_COMPLETION: JsonObject = {
-  type: "object",
-  properties: {
-    summary: { type: "string" },
-    cannotUndo: {
-      type: "array",
-      uniqueItems: true,
-      items: { type: "string", pattern: "^act-[1-9][0-9]{0,3}$" },
-      description: "Only the listed acts the site offers no control to reverse, after you looked for one on the item each acted on: each is then kept, trials run with it already done, and the judge is told. Never an act you could undo."
-    }
-  },
-  additionalProperties: false
-};
-
 export async function runAutomationStudioProjectResetLoop(input: {
   brief: AutomationStudioProjectSubflowBrief;
   ports: AutomationStudioProjectResetPorts;
@@ -62,7 +47,8 @@ export async function runAutomationStudioProjectResetLoop(input: {
     signal: input.signal,
     purse: input.allowance,
     ...(input.callScope !== undefined ? { callScope: input.callScope } : {}),
-    completionSchema: RESET_COMPLETION,
+    // The one schema the reset ports also send as the request's (`./reset-completion.ts`, F3).
+    completionSchema: AUTOMATION_STUDIO_PROJECT_RESET_COMPLETION,
     checkCompletion: async (result) => {
       const left = await input.remainingActs(namedActs(result.cannotUndo));
       if (!left.length) return { ok: true };
