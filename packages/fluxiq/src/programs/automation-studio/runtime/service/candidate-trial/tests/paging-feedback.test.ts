@@ -100,7 +100,7 @@ describe("a trial's read of one part of a list that goes on", () => {
   it("says so on the read, names its step in a fix line, and drops the counts that were said to look right", () => {
     const feedback = judgedNoOn([continuing], [findingCodes.countsLookRight, findingCodes.summaryWithheld]);
     const [read] = feedback.reads as JsonObject[];
-    expect(read!.listContinues).toBe("Step read.recipes read one part of a list that goes on past it (the page marks it as a list that loads more as it is scrolled): it saw 5 items and kept 1, and no item after those was read.");
+    expect(read!.listContinues).toBe("Step read.recipes read one part of a list that goes on past it (the page marks it as a list that loads more as it is scrolled, and it was still growing when the read stopped revealing more of it): it saw 5 items and kept 1, and no item after those was read.");
     expect(feedback.findings).toEqual([findingCodes.readListContinues, findingCodes.summaryWithheld]);
     expect((feedback.fix as string[]).some((line) => line.startsWith("To read past what step read.recipes read,"))).toBe(true);
   });

@@ -23,12 +23,17 @@
 // out two such rows, all asked for the dedupe it already did. So such a read is
 // said to leave them out, with its count where it sent one.
 //
+// **A read of one part of a list that goes on past it says so** (`list-continues.ts`,
+// F8): briefly in the brief length, and in Core's whole sentence in the full one,
+// the sentence the judges' paging words and the builder's feedback carry too.
+//
 // **A read Core flagged as keeping every item it saw after an act repeated
 // over a narrower read of the same list says Core's sentence for it** in the
 // full length (`kept-every-row.ts`, t692).
 
 import type { AutomationStudioResultReadAccount } from "../contracts/index.ts";
 import { automationStudioResultConditionName, automationStudioResultReadPageBoundSentence, automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./index.ts";
+import { automationStudioResultReadListContinues } from "./list-continues.ts";
 
 /** Core's sentence for how one read went. */
 export function automationStudioResultReadSentence(read: AutomationStudioResultReadAccount, length: "brief" | "full"): string {
@@ -56,6 +61,7 @@ function briefTail(read: AutomationStudioResultReadAccount): string {
     parts.push(`its ${counts.length} ${counts.length === 1 ? "condition" : "conditions"} rejected ${counts.map((rows) => rows ?? "?").join(", ")} rows${byItself}`);
   }
   if (read.unfiltered) parts.push("every row failed them, so it answered unfiltered");
+  if (automationStudioResultReadListContinues(read)) parts.push("its list goes on past what it read");
   return parts.length ? `; ${parts.join(", ")}` : "";
 }
 
@@ -91,6 +97,9 @@ function fullTail(read: AutomationStudioResultReadAccount): string {
   if (read.unfiltered) lines.push("Every row failed its conditions, so it answered with the unfiltered rows.");
   // A read that kept every item it saw after an act repeated over a narrower read of the same list (`kept-every-row.ts`, t692).
   if (read.keptEveryRow) lines.push(read.keptEveryRow.said);
+  // A read of one part of a list that goes on past it (header, F8).
+  const continued = automationStudioResultReadListContinues(read);
+  if (continued) lines.push(continued.said);
   return lines.length ? ` ${lines.join(" ")}` : "";
 }
 

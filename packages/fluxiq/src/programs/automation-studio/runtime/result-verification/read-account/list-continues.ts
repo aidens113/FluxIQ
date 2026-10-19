@@ -9,7 +9,13 @@
 // on the page, how its list goes on (`listContinues` on the account, admitted
 // by `service/summaries/extraction-summary.ts`), and this is the one sentence
 // for it: the finding (`../repair-directive.ts`) and the trial's feedback
-// (`service/candidate-trial/feedback.ts`) both say it, so they cannot disagree.
+// (`service/candidate-trial/feedback.ts`) both say it, and so do the judges'
+// words for the read (`./judge-paging.ts`, `./sentence.ts`), so judge and
+// builder see one account.
+//
+// A feed the page declares, or a list with no way on, is said to go on only
+// where the read's own reveal ran out while it was still growing: one that
+// stopped growing showed its end, and the read sends nothing for it.
 //
 // A read that pages, or ran as the passes of a loop, is left to its paging
 // account (`./stop.ts`, `./judge-paging.ts`), which already says how its list
@@ -31,6 +37,8 @@ export function automationStudioResultReadListContinues(read: AutomationStudioRe
 /** What on the page said the list goes on, in plain words. */
 function shownBy(fact: { kind: string; evidence: string }): string {
   if (fact.evidence === "following_page_number") return "the page shows a numbered page after the current one";
+  if (fact.evidence === "declared_feed") return "the page marks it as a list that loads more as it is scrolled, and it was still growing when the read stopped revealing more of it";
+  if (fact.evidence === "still_growing") return "it was still growing when the read stopped revealing more of it";
   if (fact.kind === "next_page") return "the page shows a control to its next page";
   if (fact.kind === "load_more") return "the page shows a control that loads more of it";
   if (fact.kind === "infinite_scroll") return "the page marks it as a list that loads more as it is scrolled";

@@ -12,6 +12,7 @@ const admit = (extraction: unknown) => extractionSummaryFromOutputs({ result: { 
 describe("a read's word that its list goes on", () => {
   it("is admitted as sent, and nothing a producer put beside the two words travels", () => {
     expect(admit({ ...READ, listContinues: { kind: "load_more", evidence: "load_more_control" } })).toEqual({ ...READ, listContinues: { kind: "load_more", evidence: "load_more_control" } });
+    expect(admit({ ...READ, listContinues: { kind: "infinite_scroll", evidence: "still_growing" } })?.listContinues).toEqual({ kind: "infinite_scroll", evidence: "still_growing" });
     expect(admit({ ...READ, listContinues: { kind: "next_page", evidence: "next_control", label: "More recipes" } })?.listContinues).toEqual({ kind: "next_page", evidence: "next_control" });
   });
 

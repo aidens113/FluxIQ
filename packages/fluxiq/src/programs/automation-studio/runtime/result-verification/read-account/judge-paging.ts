@@ -6,8 +6,13 @@
 // bookkeeping for which rows `../request-rows/` may flag, and no judge
 // instruction describes it. So the flagged rows are found before this copy is
 // made (`../verify.ts`).
+//
+// A read of one part of a list that goes on past it has Core's sentence for
+// that after its paging words (`./list-continues.ts`, F8): the same sentence
+// the builder's trial feedback carries, so judge and builder see one account.
 import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultReadPageBoundSentence, automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./index.ts";
+import { automationStudioResultReadListContinues } from "./list-continues.ts";
 import { automationStudioResultSummaryWithoutTestedLabel } from "./without-tested-label.ts";
 
 /** Add paging words without turning uncertain stop evidence into completeness, and drop each condition's `testedLabel`. */
@@ -18,6 +23,12 @@ export function automationStudioResultSummaryWithPagingWords(summary: Automation
 }
 
 function forJudge(read: AutomationStudioResultReadAccount): AutomationStudioResultReadAccount & { paging: string } {
+  const worded = pagingWords(read);
+  const continued = automationStudioResultReadListContinues(read);
+  return continued ? { ...worded, paging: `${worded.paging} ${continued.said}` } : worded;
+}
+
+function pagingWords(read: AutomationStudioResultReadAccount): AutomationStudioResultReadAccount & { paging: string } {
   const meaning = automationStudioResultReadStop(read);
   // A looped read's bound counts its loop's passes, not its pages.
   const reach = read.keptPerPage?.length ?? read.pagesRead;
