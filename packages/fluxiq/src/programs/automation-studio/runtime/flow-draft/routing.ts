@@ -59,9 +59,12 @@ export type AutomationStudioFlowDraftStepRouting =
    * This step through `through` repeat: once for each row the step `over`
    * produced, or for as long as `over` keeps succeeding. Which of the two is
    * read off `over`'s own node definition, because a node that declares a list
-   * output is a list and one that does not is a check.
+   * output is a list and one that does not is a check. Over a list, `most`
+   * takes only its first rows, in order (For Each's `stopAfter`, as `repeat
+   * most:` beside `repeat over:` says in a script); a check has no rows to
+   * take the first of, so `most` over one is refused.
    */
-  | { kind: "repeat"; through: string; over: string; while?: never; most?: never }
+  | { kind: "repeat"; through: string; over: string; while?: never; most?: number }
   /**
    * This step through `through` run, then run again while the span's last
    * step -- `while`, always the same step as `through` -- succeeds, at most
