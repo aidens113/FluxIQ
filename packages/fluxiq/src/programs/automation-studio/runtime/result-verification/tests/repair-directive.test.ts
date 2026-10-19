@@ -301,3 +301,32 @@ describe("a result that kept nothing while its reads' conditions rejected rows",
     expect(quiet.map((finding) => finding.code)).not.toContain(codes.keptNoneRowsRejected);
   });
 });
+
+// A read of one part of a list that goes on is a finding of its own, in place
+// of `result.counts_look_right` (F8). Live run `run-mveaaqxn-d0be9888`: a read
+// saw 5 items of a longer list and kept 1, and the bare "the counts look right"
+// steered three repairs toward the read's conditions while the rest of the list
+// was never read. The lists are made up.
+const recipesRead = (fields: Partial<AutomationStudioResultReadAccount> = {}): AutomationStudioResultReadAccount =>
+  ({ nodeId: "read.recipes", definitionId: "web.output.dom-extract_list", pagesRead: 1, truncated: false, itemsSeen: 5, kept: 1, ...fields });
+const recipesResult = (read: AutomationStudioResultReadAccount): AutomationStudioRunResultSummary =>
+  result({ totalRecordCount: 1, recordSets: [recordSet({ datasetId: "recipes", recordCount: 1, columns: ["title"], rowsChecked: 1 })], flowShape: [{ nodeId: "read.recipes", definitionId: "web.output.dom-extract_list" }], reads: [read] });
+
+describe("a read of one part of a list that goes on", () => {
+  it("is found as such, naming its step, with a fix line, and the counts are no longer said to look right", () => {
+    const directive = automationStudioResultRepairDirective({ summary: recipesResult(recipesRead({ listContinues: { kind: "next_page", evidence: "next_control" } })) });
+    expect(directive.findings.map((finding) => finding.code)).toEqual([codes.readListContinues]);
+    expect(directive.findings[0]!.detail).toBe("Step read.recipes read one part of a list that goes on past it (the page shows a control to its next page): it saw 5 items and kept 1, and no item after those was read.");
+    expect(directive.fix).toHaveLength(1);
+    expect(directive.fix[0]).toContain("To read past what step read.recipes read, move that same list on to its next part (its next page)");
+  });
+
+  it("leaves a read whose list ended as it was: the counts look right", () => {
+    expect(codesOf(recipesResult(recipesRead()))).toEqual([codes.countsLookRight]);
+  });
+
+  it("finds nothing new for a read that pages, whose paging account says how its list ended", () => {
+    const paged = recipesRead({ pagesRead: 4, paginates: true, stop: "page_limit", listContinues: { kind: "next_page", evidence: "next_control" } });
+    expect(codesOf(recipesResult(paged))).toEqual([codes.countsLookRight]);
+  });
+});
