@@ -64,6 +64,14 @@
 // (`../../service/project-build/run.ts`), so the deadline is reached by the
 // test's signal and never by machine load.
 //
+// **A whole test the time left cannot cover is not started (G2).** The clock
+// also tells the time (`now`; the real time where a test's clock does not), and
+// the whole test reads from it how long each test took and how much working
+// time is left (`./whole-trial.ts`). The outcome says, for a latest revision
+// with no verdict of its own, the latest finished test of the same Flow
+// (`sameFlowTrial`) and whether a test of it the deadline cut came after
+// (`trialCut`), so the ending says what was tested rather than "never tested".
+//
 // **A pass the run rescued still stands (social debug, t603).** When the latest
 // whole test passed only on the run's own recovery from what the Flow does not
 // answer, and the build's money, time or turns ran out before its repair was
@@ -161,6 +169,10 @@ export type AutomationStudioProjectSupervisorOutcome = {
   reliesOnRecovery?: AutomationStudioProjectSupervisorReliesOnRecovery;
   /** `candidate` only: completed on a fallback that passed its whole test outright, whose Flow is then `candidate`; what the person was told (header, t637). */
   completedOnPass?: AutomationStudioProjectSupervisorCompletedOnPass;
+  /** The latest finished whole test of the same Flow (digest), never a yes, when the latest revision has no verdict of its own (header, G2). */
+  sameFlowTrial?: AutomationStudioCandidateTrialResult;
+  /** A test of the latest revision's Flow was cut by the time limit after its latest finished one, or with none finished (header, G2). */
+  trialCut?: true;
   promotionAllowed: false;
 };
 
@@ -171,12 +183,15 @@ export type AutomationStudioProjectSupervisorTimeLimit = { maxMs: number; ending
 export type AutomationStudioProjectSupervisorClock = {
   setTimeout(fire: () => void, ms: number): unknown;
   clearTimeout(handle: unknown): void;
+  /** The time now, in milliseconds, on the clock the timers run on (header, G2); the real time when absent. */
+  now?(): number;
 };
 
 /** The real clock, read at each call so a test's fake timers still apply. */
 export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_REAL_CLOCK: AutomationStudioProjectSupervisorClock = Object.freeze({
   setTimeout: (fire: () => void, ms: number): unknown => setTimeout(fire, ms),
-  clearTimeout: (handle: unknown): void => clearTimeout(handle as ReturnType<typeof setTimeout>)
+  clearTimeout: (handle: unknown): void => clearTimeout(handle as ReturnType<typeof setTimeout>),
+  now: (): number => Date.now()
 });
 
 const TIME_LIMIT: AutomationStudioProjectSupervisorTimeLimit = Object.freeze({ maxMs: AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS, endingMs: AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_MS });
@@ -201,15 +216,18 @@ export async function runAutomationStudioProjectSupervisorLoop(input: Supervisor
   }
 }
 
-/** The run's two time signals (header): `work` aborts `endingMs` before the bound, `whole` at it. */
-type Clock = { limit: AutomationStudioProjectSupervisorTimeLimit; work: AbortSignal; whole: AbortSignal; stop(): void };
+/** The run's two time signals (header): `work` aborts `endingMs` before the bound, `whole` at it; `time` reads how much working time is left (G2). */
+type Clock = { limit: AutomationStudioProjectSupervisorTimeLimit; work: AbortSignal; whole: AbortSignal; time: { now(): number; workLeftMs(): number }; stop(): void };
 
 function startClock(limit: AutomationStudioProjectSupervisorTimeLimit, timers: AutomationStudioProjectSupervisorClock): Clock {
   const work = new AbortController();
   const whole = new AbortController();
   const reached = () => new DOMException("The project build reached its time limit.", "TimeoutError");
-  const handles = [timers.setTimeout(() => work.abort(reached()), Math.max(0, limit.maxMs - limit.endingMs)), timers.setTimeout(() => whole.abort(reached()), limit.maxMs)];
-  return { limit, work: work.signal, whole: whole.signal, stop: () => handles.forEach((handle) => timers.clearTimeout(handle)) };
+  const workMs = Math.max(0, limit.maxMs - limit.endingMs);
+  const now = (): number => timers.now?.() ?? Date.now();
+  const workEndsAt = now() + workMs;
+  const handles = [timers.setTimeout(() => work.abort(reached()), workMs), timers.setTimeout(() => whole.abort(reached()), limit.maxMs)];
+  return { limit, work: work.signal, whole: whole.signal, time: { now, workLeftMs: () => (work.signal.aborted ? 0 : workEndsAt - now()) }, stop: () => handles.forEach((handle) => timers.clearTimeout(handle)) };
 }
 
 async function supervise(input: SupervisorInput, clock: Clock): Promise<AutomationStudioProjectSupervisorOutcome> {
@@ -234,9 +252,10 @@ async function supervise(input: SupervisorInput, clock: Clock): Promise<Automati
   }
   const controller = new AutomationStudioFlowCandidateSubmissionController(signal ? { ...ports.submission, signal } : ports.submission);
   // The whole trial's gate puts the target back as a candidate build's does: start hook first, then the build's ledgers (`./whole-trial.ts`).
-  const wholeTrial = new AutomationStudioProjectSupervisorWholeTrial({ ports, state });
+  const wholeTrial = new AutomationStudioProjectSupervisorWholeTrial({ ports, state, time: clock.time });
   const gate = new AutomationStudioFlowCandidateTrialGate({ latest: () => controller.latest(), trial: ports.trial, signal, reset: wholeTrial.reset });
-  const context: AutomationStudioProjectSupervisorContext = { ports, state, controller, gate, signal: working };
+  // One whole test for every path that tests the whole Flow, timed and remembered once (`./context.ts`, G2).
+  const context: AutomationStudioProjectSupervisorContext = { ports, state, controller, gate, signal: working, wholeTest: (value, callSignal) => wholeTrial.test(context, value, callSignal) };
   let ended: AutomationStudioProjectSupervisorEnded | undefined;
   const checkCompletion = automationStudioProjectSupervisorCompletion(context, (ending) => {
     ended = ending;
@@ -269,7 +288,7 @@ async function supervise(input: SupervisorInput, clock: Clock): Promise<Automati
         case IDS.amendPlan: return automationStudioProjectSupervisorPlanTool(context, call.value, "amend");
         case IDS.dispatch: return automationStudioProjectSupervisorDispatchTool(context, call.value);
         case IDS.assemble: return automationStudioProjectSupervisorAssembleTool(context, call.value);
-        case IDS.testCandidate: return wholeTrial.test(context, call.value, call.signal);
+        case IDS.testCandidate: return context.wholeTest!(call.value, call.signal);
         default: return input.loop.executeTool(call);
       }
     }
@@ -292,8 +311,13 @@ async function supervise(input: SupervisorInput, clock: Clock): Promise<Automati
   const done = (status: "candidate" | "ended", recorded?: AutomationStudioProjectBuildEnding): AutomationStudioProjectSupervisorOutcome => {
     // Completed on the build's fallback, the caller is handed its Flow and its yes, not the later assembly's (header, t637).
     const candidate = status === "candidate" && state.completedOn ? structuredClone(state.completedOn) : controller.latest();
+    const trial = gate.standing(candidate);
+    // What was tested of this Flow, when this revision has no verdict of its own (header, G2).
+    const ofFlow = candidate ? wholeTrial.lastOfFlow(candidate.digest) : undefined;
+    const earlier = !trial && candidate && ofFlow?.revision !== undefined ? gate.standing({ revision: ofFlow.revision, digest: candidate.digest }) : undefined;
     return {
-      loop, status, candidate, trial: gate.standing(candidate), ...(recorded ? { ending: recorded } : {}), ...(timedOut ? { timedOut: true as const } : {}),
+      loop, status, candidate, trial, ...(recorded ? { ending: recorded } : {}), ...(timedOut ? { timedOut: true as const } : {}),
+      ...(earlier && earlier.verdict !== "yes" ? { sameFlowTrial: earlier } : {}), ...(!trial && ofFlow?.cutAfter ? { trialCut: true as const } : {}),
       ...(status === "candidate" && state.reliesOnRecovery ? { reliesOnRecovery: structuredClone(state.reliesOnRecovery) } : {}),
       ...(status === "candidate" && state.completedOnPass ? { completedOnPass: structuredClone(state.completedOnPass) } : {}), promotionAllowed: false
     };

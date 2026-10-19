@@ -137,3 +137,124 @@ describe("a whole test refused for a reset", () => {
     }
   });
 });
+
+// A whole test the build's working time cannot cover is not started (G2,
+// social debug `run-mvfq957o-40103539`): with about 2.5 minutes of the
+// build's working time left, a revision whose last test had taken 337 s was
+// tested again, the work deadline cut it off after 150 s, and the build ended
+// a draft whose ending said it was "never tested from its start". The
+// supervisor's whole test measures every test it runs, refuses one the time
+// left cannot plausibly cover, and remembers each Flow's latest finished test
+// and a test of it the time limit cut, for the ending to say. Generic data
+// only: the gate is a stub, the clock the test's own.
+
+const FIRST = "a".repeat(64);
+const SECOND = "b".repeat(64);
+const MINUTE = 60_000;
+
+/**
+ * A whole test over a stub gate on the test's clock: each test the gate runs takes the next of `durations` and answers
+ * `verdict`; the build's work deadline is `workMs` after the clock's start.
+ */
+function harness(options: { workMs: number; durations: number[]; verdict?: string }) {
+  let now = 0;
+  const ran: JsonObject[] = [];
+  const ledger = new AutomationStudioSiteResetProjectLedger();
+  const state = new AutomationStudioProjectSupervisorState();
+  const trial = new AutomationStudioProjectSupervisorWholeTrial({ ports: { projectLedger: ledger }, state, time: { now: () => now, workLeftMs: () => options.workMs - now } });
+  const gate = {
+    test: async (value: JsonObject) => {
+      ran.push(value);
+      now += options.durations.shift() ?? 0;
+      return { kind: "llm_evidence_tool_execution", evidence: { ok: false, verdict: options.verdict ?? "unsure", revision: value.revision, digest: value.digest, trialRunId: `run-${ran.length}` } };
+    },
+    standing: () => undefined,
+    completion: () => ({ ok: false })
+  };
+  const ports = { projectLedger: ledger, build: { projectId: "p", flowId: "f", buildId: "b" }, record: { recordReceipt: async () => undefined } };
+  const context = { ports, state, gate, controller: { latest: () => undefined }, signal: undefined } as unknown as AutomationStudioProjectSupervisorContext;
+  return { trial, context, ran, gate, advance: (ms: number) => { now += ms; } };
+}
+
+describe("a whole test against the build's working time", () => {
+  it("is refused when the time left cannot cover the same Flow's measured test, saying how much is left and to end honestly", async () => {
+    const run = harness({ workMs: 25 * MINUTE, durations: [337_000] });
+    await run.trial.test(run.context, { revision: 5, digest: FIRST }, undefined);
+    // The build works on until about two and a half minutes are left, then asks the same Flow again.
+    run.advance(25 * MINUTE - 337_000 - 150_000);
+    const refused = await run.trial.test(run.context, { revision: 7, digest: FIRST }, undefined);
+
+    expect(run.ran).toHaveLength(1);
+    expect(refused.evidence).toMatchObject({ ok: false, code: "project.trial_out_of_time", workLeftSeconds: 150, lastTestSeconds: 337, sameFlow: true });
+    const instruction = String((refused.evidence as JsonObject).instruction);
+    expect(instruction).toMatch(/^About 2\.5 minutes of this build's working time is left, and the last whole test of this same Flow took about 5\.5 minutes/u);
+    expect(instruction).toContain("End honestly now with ended");
+    expect(refused.resultCode).toBe("project.trial_out_of_time");
+  });
+
+  it("estimates a Flow never tested from the build's latest finished test", async () => {
+    const run = harness({ workMs: 10 * MINUTE, durations: [240_000] });
+    await run.trial.test(run.context, { revision: 1, digest: FIRST }, undefined);
+    run.advance(3 * MINUTE);
+    const refused = await run.trial.test(run.context, { revision: 2, digest: SECOND }, undefined);
+
+    expect(run.ran).toHaveLength(1);
+    expect(refused.evidence).toMatchObject({ code: "project.trial_out_of_time", workLeftSeconds: 180, lastTestSeconds: 240, sameFlow: false });
+    expect(String((refused.evidence as JsonObject).instruction)).toContain("the latest whole test of this build took about 4 minutes");
+  });
+
+  it("starts a test the time left covers with its margin, and the first test of a build with nothing measured", async () => {
+    const run = harness({ workMs: 25 * MINUTE, durations: [300_000, 300_000] });
+    expect((await run.trial.test(run.context, { revision: 1, digest: FIRST }, undefined)).evidence).toMatchObject({ verdict: "unsure" });
+    // Ten minutes left against a five-minute test: started.
+    run.advance(25 * MINUTE - 300_000 - 10 * MINUTE);
+    expect((await run.trial.test(run.context, { revision: 1, digest: FIRST }, undefined)).evidence).toMatchObject({ verdict: "unsure" });
+    expect(run.ran).toHaveLength(2);
+  });
+
+  it("keeps a margin: a test that would only just fit is not started", async () => {
+    const run = harness({ workMs: 20 * MINUTE, durations: [200_000] });
+    await run.trial.test(run.context, { revision: 1, digest: FIRST }, undefined);
+    // 205 s left against a measured 200 s: inside the margin.
+    run.advance(20 * MINUTE - 200_000 - 205_000);
+    expect((await run.trial.test(run.context, { revision: 1, digest: FIRST }, undefined)).evidence).toMatchObject({ code: "project.trial_out_of_time" });
+  });
+
+  it("runs as before with no clock to measure on", async () => {
+    const ledger = new AutomationStudioSiteResetProjectLedger();
+    const state = new AutomationStudioProjectSupervisorState();
+    const trial = new AutomationStudioProjectSupervisorWholeTrial({ ports: { projectLedger: ledger }, state });
+    const run = harness({ workMs: 0, durations: [] });
+    const answered = await trial.test({ ...run.context, state } as AutomationStudioProjectSupervisorContext, { revision: 1, digest: FIRST }, undefined);
+    expect(answered.evidence).toMatchObject({ verdict: "unsure" });
+  });
+});
+
+describe("what a whole test remembers of each Flow for the build's ending", () => {
+  it("names the latest finished test of the same Flow, and a later test of it the time limit cut", async () => {
+    const run = harness({ workMs: 60 * MINUTE, durations: [120_000] });
+    await run.trial.test(run.context, { revision: 5, digest: FIRST }, undefined);
+    expect(run.trial.lastOfFlow(FIRST)).toEqual({ revision: 5, cutAfter: false });
+    expect(run.trial.lastOfFlow(SECOND)).toBeUndefined();
+
+    // The same Flow, submitted again as a later revision, is tested and the work deadline cuts that test off.
+    const stopped = new AbortController();
+    run.gate.test = async () => {
+      stopped.abort(new DOMException("The project build reached its time limit.", "TimeoutError"));
+      throw stopped.signal.reason;
+    };
+    await expect(run.trial.test(run.context, { revision: 7, digest: FIRST }, stopped.signal)).rejects.toThrow("time limit");
+    expect(run.trial.lastOfFlow(FIRST)).toEqual({ revision: 5, cutAfter: true });
+  });
+
+  it("says a cut test of a Flow never finished as a cut with no finished test", async () => {
+    const run = harness({ workMs: 60 * MINUTE, durations: [] });
+    const stopped = new AbortController();
+    run.gate.test = async () => {
+      stopped.abort(new DOMException("The project build reached its time limit.", "TimeoutError"));
+      throw stopped.signal.reason;
+    };
+    await expect(run.trial.test(run.context, { revision: 1, digest: SECOND }, stopped.signal)).rejects.toThrow("time limit");
+    expect(run.trial.lastOfFlow(SECOND)).toEqual({ revision: undefined, cutAfter: true });
+  });
+});

@@ -78,9 +78,10 @@ describe("a candidate trial through the actual service", () => {
   });
 
   it.each([["unknown"], ["silent"], ["no"]] as const)("a first yes followed by %s gives no adaptation", async (second) => {
-    const run = await candidateBuild({ judge: ["yes", second], maxCallsPerRun: 8 });
+    // A split's no is asked once more to name its defect (t725); here it says no again.
+    const run = await candidateBuild({ judge: second === "no" ? ["yes", "no", "no"] : ["yes", second], maxCallsPerRun: 8 });
     await expect(run.build()).rejects.toThrow();
-    expect(run.judgeRequests).toHaveLength(2);
+    expect(run.judgeRequests).toHaveLength(second === "no" ? 3 : 2);
     expect(run.proposed).not.toHaveBeenCalled();
     expect(await adaptations(run.service, run.projectId, run.flowId)).toEqual([]);
     expect(await run.service.getFlowRouter(run.projectId, run.flowId)).toBeNull();

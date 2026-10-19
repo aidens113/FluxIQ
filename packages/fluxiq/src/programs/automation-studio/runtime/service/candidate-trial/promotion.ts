@@ -30,7 +30,10 @@
 // the trial learned (`learnedPaces`) and what was raised (`raisedPaces`).
 //
 // A draft's codes start with its own: the trial's code, or why its yes did not
-// stand. A build that ended for a reason of its own -- a project build its time
+// stand. A standing trial of the same Flow (digest) at an earlier revision --
+// a project build's latest finished test of a Flow it went back to (G2,
+// `../project-build/run.ts`) -- keeps its own code when it is not a yes; a yes
+// for another revision is still stale and never promotes. A build that ended for a reason of its own -- a project build its time
 // limit stopped (`../project-build/run.ts`, t608) -- names it in the standing
 // trial's `feedback.endingCodes`, and those codes follow the draft's own, so
 // the code every debug and the Lab read stays first.
@@ -65,8 +68,10 @@ export async function promoteAutomationStudioCandidateTrial(input: {
   // The build's own ending codes go after the draft's own code, which stays first (header, t608).
   const draft = (codes: string[]): AutomationStudioCandidatePromotion => ({ status: "draft", trial: { verdict: standing?.verdict ?? "not_tested", ...(standing?.trialRunId ? { runId: standing.trialRunId } : {}), codes: [...codes, ...endingCodes(standing).filter((code) => !codes.includes(code))] } });
   if (!standing) return draft(["candidate.trial_not_run"]);
-  if (standing.revision !== candidate.revision || standing.digest !== candidate.digest) return draft(["candidate.trial_stale_revision"]);
+  if (standing.digest !== candidate.digest) return draft(["candidate.trial_stale_revision"]);
+  // The same Flow's test that is not a yes keeps its own code, whatever revision ran it (header, G2).
   if (standing.verdict !== "yes") return draft([typeof standing.feedback.code === "string" ? standing.feedback.code : `candidate.trial_${standing.verdict}`]);
+  if (standing.revision !== candidate.revision) return draft(["candidate.trial_stale_revision"]);
   const trial = [...input.trials].reverse().find((entry) => entry.verdict === "yes" && entry.revision === candidate.revision && entry.digest === candidate.digest && entry.trialRunId === standing.trialRunId);
   if (!trial?.trialRunId) return draft(["candidate.trial_record_missing"]);
   input.signal?.throwIfAborted();

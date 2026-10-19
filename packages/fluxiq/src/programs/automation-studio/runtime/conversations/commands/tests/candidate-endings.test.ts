@@ -13,7 +13,7 @@ import { AutomationStudioProjectDatabasePool } from "../../../../storage/index.t
 import { AutomationStudioConversations } from "../../conversations.ts";
 import type { AutomationStudioConversationCommandCallResult, AutomationStudioConversationCommandContext } from "../command.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_COMMANDS } from "../catalog.ts";
-import { automationStudioConversationCandidateKeptSaid } from "../build.ts";
+import { automationStudioConversationCandidateDraftSaid, automationStudioConversationCandidateKeptSaid } from "../build.ts";
 import { executeAutomationStudioConversationCommand } from "../execute.ts";
 import { automationStudioConversationCallCause } from "../progress.ts";
 import { automationStudioConversationCommandWork } from "../work.ts";
@@ -167,6 +167,35 @@ describe("what a failed candidate build kept", () => {
     for (const text of Object.values(sentences)) expectPlain(text ?? "");
     // A model that never wrote a version Core accepted kept nothing to speak of.
     expect(automationStudioConversationCandidateKeptSaid({ candidateId: "candidate.1", draft: "none", trialCount: 0, trials: [] })).toBeUndefined();
+  });
+});
+
+// G2 (social `run-mvfq957o-40103539`): a draft whose Flow had been tested whole several times, and whose last test the
+// time limit cut, was said to have never been test-run from the start.
+describe("what a candidate draft says of its tests", () => {
+  const draft = (verdict: string, codes: string[]) => ({
+    status: "draft", projectId: PROJECT, flowId: "flow.1", candidateId: "candidate.1", revision: 7, digest: DIGEST, sourceInstructionIds: [], baseDependencyDigest: DIGEST, baseSettingsRevision: 1,
+    verification: "not_performed", promotionAllowed: false, accounting: { requestId: "r", estimatedInputTokens: 1 }, trial: { verdict, codes }
+  }) as unknown as Parameters<typeof automationStudioConversationCandidateDraftSaid>[0];
+
+  it("says the last finished test of a tested Flow, and that a later test of it was cut short by the time limit", () => {
+    const said = automationStudioConversationCandidateDraftSaid(draft("unsure", ["candidate.trial_unconfirmed", "project.build_time_limit", "project.build_trial_cut"]));
+    expect(said).toBe("I could not confirm that its last finished test run from the start did what you asked, and a later test run of it was cut short by the build's time limit, so nothing was put into the Flow. I kept what I wrote as a draft.");
+    expect(said).not.toMatch(/never/u);
+    expectPlain(said);
+  });
+
+  it("says a tested-but-unpromoted draft's own verdict as before when nothing was cut", () => {
+    expect(automationStudioConversationCandidateDraftSaid(draft("unsure", ["candidate.trial_unconfirmed"])))
+      .toBe("I could not confirm that its test run from the start did what you asked, so nothing was put into the Flow. I kept what I wrote as a draft.");
+    expect(automationStudioConversationCandidateDraftSaid(draft("no", ["candidate.trial_judged_no", "project.build_time_limit", "project.build_trial_cut"])))
+      .toBe("Its last finished test run from the start was judged not to do what you asked, and a later test run of it was cut short by the build's time limit, so nothing was put into the Flow. I kept what I wrote as a draft.");
+  });
+
+  it("says a draft whose only test the time limit cut was cut short, never that it was never tested", () => {
+    const said = automationStudioConversationCandidateDraftSaid(draft("not_tested", ["candidate.trial_not_run", "project.build_time_limit", "project.build_trial_cut"]));
+    expect(said).toBe("Its test run from the start was cut short by the build's time limit before it finished, so nothing was put into the Flow. I kept what I wrote as a draft.");
+    expect(automationStudioConversationCandidateDraftSaid(draft("not_tested", ["candidate.trial_not_run"]))).toMatch(/^It was never test-run from the start,/u);
   });
 });
 

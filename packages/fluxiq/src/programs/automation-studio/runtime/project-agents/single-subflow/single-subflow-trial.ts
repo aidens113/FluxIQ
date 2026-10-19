@@ -96,6 +96,12 @@ import { automationStudioProjectSingleSubflowPlan } from "./single-subflow-plan.
 // (`rowCheck`) beside it, which the whole test's port answers the gate's
 // `checkRows` with (`./whole-test-port.ts`), so a flagged yes always has its check.
 //
+// **A test the build's working time cannot cover is not started (G2).** The
+// supervisor's whole test refuses it `project.trial_out_of_time`
+// (`../supervisor/whole-trial.ts`); the builder is told how much time is left,
+// as that refusal said it, and to end its brief partial, since another test
+// is refused the same way and its last finished test stands.
+//
 // Every other plan gets no such test: `undefined`.
 
 /** What the single-subflow test works with: the supervisor's plan, ports, controller and gate, and its whole test. */
@@ -122,11 +128,15 @@ const WORDS = Object.freeze({
     + "An act the site offers no control to undo goes under cannotUndo when you test again, and the test then runs with it already done; name only an act you tried to undo and could not.",
   unaffordable: "Core did not start this test: neither this brief's money nor the money kept for judging the build's whole run can pay its two judge calls, so nothing ran and no judge was asked (refusal has the figures). "
     + "Testing again is refused the same way, so do not test again or change your subflow for it: end the brief partial and say so.",
+  outOfTime: "Nothing ran and no judge was asked. Testing again is refused the same way, so do not test again or change your subflow for it: end the brief partial and say so. "
+    + "The last finished test stands, and the person is told what it answered.",
   notRun: "Core did not run the whole Flow joined from this revision, for the reason under refusal. Change your subflow for what it names, submit it with core.submit_subflow, then test the new revision."
 });
 
 /** The whole gate's code for a trial the build's money cannot judge (`flow-bootstrap/candidate/trial-gate.ts`). */
 const UNAFFORDABLE = "candidate.trial_unaffordable";
+/** The supervisor's code for a test the build's working time left cannot cover (`../supervisor/whole-trial.ts`, G2). */
+const OUT_OF_TIME = "project.trial_out_of_time";
 /** The supervisor's code for acts still on the site before a whole test (`../supervisor/whole-trial.ts`). */
 const RESET_REQUIRED = "project.trial_reset_required";
 /** The controller's code for a composed Flow the judge already refuted (`flow-bootstrap/candidate/unchanged-submission.ts`). */
@@ -253,6 +263,8 @@ function refusalOf(evidence: JsonObject): AutomationStudioProjectDispatchWholeTr
     return refused("candidate.trial_reset_required", WORDS.resetRequired, { actsToUndo: acts, ...(cannotUndo.length ? { cannotUndo: structuredClone(cannotUndo) } : {}) }, true);
   }
   const { instruction: _instruction, ok: _ok, ...said } = evidence;
+  // The time left, as the supervisor's refusal said it, then the builder's way on (header, G2).
+  if (code === OUT_OF_TIME) return refused(code, `${typeof said.said === "string" ? `${said.said} ` : ""}${WORDS.outOfTime}`, { refusal: structuredClone(said) });
   return refused(code, code === UNAFFORDABLE ? WORDS.unaffordable : WORDS.notRun, { refusal: structuredClone(said) });
 }
 

@@ -112,12 +112,13 @@ describe("verifyAutomationStudioRuntimeSessionResult", () => {
   it("leaves a run succeeded and unverified when the second check says the result answers", async () => {
     // Mutation: fail the run on the first no. The session then comes back
     // `failed` on an answer the model did not repeat.
-    const context = harness({ answers: [ANSWER.no, ANSWER.yes] });
+    // The split's no is asked once more to name its defect (t725), and says no again here: the split stands.
+    const context = harness({ answers: [ANSWER.no, ANSWER.yes, ANSWER.no] });
     const next = await verify(context);
     expect(next.status).toBe("succeeded");
     const recorded = next.metadata?.resultVerification as JsonObject;
-    expect(recorded).toMatchObject({ status: "unverified", verdict: "unsure", basis: "model_disagreed", code: "core.result.verdicts_disagree", verdicts: ["does_not_answer", "answers"], calls: 2 });
-    expect(context.requests).toHaveLength(2);
+    expect(recorded).toMatchObject({ status: "unverified", verdict: "unsure", basis: "model_disagreed", code: "core.result.verdicts_disagree", verdicts: ["does_not_answer", "answers", "does_not_answer"], calls: 3 });
+    expect(context.requests).toHaveLength(3);
     expect(context.saved.at(-1)?.summary.status).toBe("succeeded");
     expect(context.saved.at(-1)?.metadata?.resultVerificationFailure).toBeUndefined();
     expect((context.saved.at(-1)?.metadata?.resultVerification as JsonObject).status).toBe("unverified");
