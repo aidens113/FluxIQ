@@ -423,6 +423,31 @@ describe("a Flow's row loop read back as the repeat it was written from", () => 
     for (const flow of [settings, branching, strayRow, noRows]) expect(plain(flow)).toEqual({ each: true, repeats: false });
     expect(plain(drawn())).toEqual({ each: false, repeats: true });
   });
+
+  // F5 (`run-mvecxeci-1c2cc227`): a For Each that stops after its first rows is the repeat over a listing with most.
+  it("reads a For Each's stop after back as the repeat's most, and assembles it back the same", () => {
+    const stopping = drawn();
+    stopping.nodes = stopping.nodes.map((item) => item.id === "each" ? { ...item, parameterValues: { stopAfter: 2 } } : item);
+    const seed = automationStudioFlowDraftSeedFromFlow(stopping);
+    expect(seed.steps.map((step) => seed.nodeIdByStepId[step.id!])).toEqual(["list", "row", "summary"]);
+    expect(seed.steps[1]!.routing).toEqual({ kind: "repeat", through: "f2", over: "f1", most: 2 });
+    const first = assemble(seed.steps);
+    expect(first.issues.filter((item) => item.severity === "error")).toEqual([]);
+    expect(first.plan!.subflows[0]!.nodes.find((item) => item.definitionId === EACH)!.parameters?.stopAfter).toBe(2);
+    expect(automationStudioFlowDraftSeedFromFlow(saved(first.plan!)).steps[1]!.routing).toEqual({ kind: "repeat", through: "f2", over: "f1", most: 2 });
+  });
+
+  it("reads a For Each whose stop after is no whole number of rows it takes, or that carries another setting too, as a plain step", () => {
+    const plain = (parameterValues: NonNullable<AutomationStudioFlowNode["parameterValues"]>) => {
+      const flow = drawn();
+      flow.nodes = flow.nodes.map((item) => item.id === "each" ? { ...item, parameterValues } : item);
+      const seed = automationStudioFlowDraftSeedFromFlow(flow);
+      return { each: seed.steps.some((step) => step.actionId === EACH), repeats: seed.steps.some((step) => step.routing?.kind === "repeat") };
+    };
+    for (const parameterValues of [{ stopAfter: 0 }, { stopAfter: 2.5 }, { stopAfter: "2" }, { stopAfter: 10_001 }, { stopAfter: 2, maxIterations: 3 }]) {
+      expect(plain(parameterValues)).toEqual({ each: true, repeats: false });
+    }
+  });
 });
 
 // P5 (t270, t273): a saved Flow names an earlier node's output by the plan key

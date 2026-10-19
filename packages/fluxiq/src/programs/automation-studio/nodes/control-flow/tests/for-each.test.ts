@@ -27,6 +27,49 @@ describe("builtin.control.for-each", () => {
     expect(forEachNode.inputs.find((port) => port.id === "items")).toMatchObject({ valueType: "array", required: true });
     expect(forEachNode.parameters.find((parameter) => parameter.id === "maxIterations")).toMatchObject({ defaultValue: 100, constraints: { minimum: 1, maximum: 10_000, integer: true } });
     expect(forEachNode.parameters.find((parameter) => parameter.id === "maxStepsPerIteration")).toMatchObject({ defaultValue: 50, allowStateBinding: false });
+    // Stop after has no default: a saved Flow without it walks every row.
+    const stop = forEachNode.parameters.find((parameter) => parameter.id === "stopAfter");
+    expect(stop).toMatchObject({ valueType: "number", constraints: { minimum: 1, maximum: 10_000, integer: true } });
+    expect(stop).not.toHaveProperty("defaultValue");
+  });
+
+  it("stops after its first N items, in the list's order, and finishes on done", async () => {
+    const items: JsonValue[] = [{ name: "synthetic-a" }, { name: "synthetic-b" }, { name: "synthetic-c" }, { name: "synthetic-d" }];
+    const iteration = keptPlace();
+    const parameters = { stopAfter: 2 };
+
+    const first = await pass({ inputs: { items }, parameters, iteration });
+    expect(first).toEqual({ status: "success", route: "body", outputs: { item: items[0], index: 0, count: 2 } });
+    expect(first.outputs?.item).toBe(items[0]);
+    const second = await pass({ inputs: { items }, parameters, iteration });
+    expect(second.outputs?.item).toBe(items[1]);
+    expect(await pass({ inputs: { items }, parameters, iteration })).toEqual({ status: "success", route: "done", outputs: { count: 2 } });
+    expect(iteration.get()).toBeUndefined();
+  });
+
+  it("takes every item of a list shorter than its stop, and a stop written as text", async () => {
+    const iteration = keptPlace();
+    expect((await pass({ inputs: { items: ["synthetic-only"] }, parameters: { stopAfter: 3 }, iteration })).outputs).toEqual({ item: "synthetic-only", index: 0, count: 1 });
+    expect(await pass({ inputs: { items: ["synthetic-only"] }, parameters: { stopAfter: 3 }, iteration })).toMatchObject({ route: "done", outputs: { count: 1 } });
+    expect((await pass({ inputs: { items: [1, 2, 3] }, parameters: { stopAfter: "2" }, iteration: keptPlace() })).outputs).toMatchObject({ count: 2 });
+  });
+
+  it.each([
+    { case: "unset", parameters: {} },
+    { case: "null", parameters: { stopAfter: null } },
+    { case: "empty", parameters: { stopAfter: "" } }
+  ])("walks every item when stop after is $case, as a Flow saved before it did", async ({ parameters }) => {
+    const iteration = keptPlace();
+    expect((await pass({ inputs: { items: [1, 2, 3, 4] }, parameters, iteration })).outputs).toEqual({ item: 1, index: 0, count: 4 });
+  });
+
+  it("counts the safety limit on the items it will take: a long list cut short runs, a stop past the limit still fails", async () => {
+    const long = Array.from({ length: 150 }, (_, index) => index);
+    expect(await pass({ inputs: { items: long }, parameters: { stopAfter: 3 }, iteration: keptPlace() })).toMatchObject({ status: "success", route: "body", outputs: { count: 3 } });
+    const iteration = keptPlace();
+    const failed = await pass({ inputs: { items: long }, parameters: { stopAfter: 120 }, iteration });
+    expect(failed).toMatchObject({ status: "failed", route: "failed", message: "For Each was given 120 items, more than its limit of 100.", failure: { code: "for_each.max_iterations_exceeded" } });
+    expect(iteration.get()).toBeUndefined();
   });
 
   it("hands out each item in order, by reference, then routes done and forgets its place", async () => {

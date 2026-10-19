@@ -73,7 +73,12 @@
 // only frame it are left for the assembler to derive again. A do-while (S2,
 // t283) is read back the same way: its body, with `repeat through <last>
 // while <last>` (and `most` when the Repeat's is not the default) on the
-// first body step, and the Repeat and both Merges left as framing. The body keeps
+// first body step, and the Repeat and both Merges left as framing. A For Each
+// that stops after its first rows (`stopAfter`, F5) is read back as the repeat
+// over its listing with `most`, which assembles it again; the loop reader takes
+// only a For Each carrying its defaults, so it is shown the node with its stop
+// set aside. A stop that is no whole number of rows the node takes leaves the
+// For Each a plain step, as any other setting does. The body keeps
 // its parameters byte for byte: a `$state item.*` binding already names the
 // pass's row, and the fresh test resolves it against the row it reads.
 //
@@ -90,7 +95,7 @@
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../model/index.ts";
-import { automationNodeOutputReference, rewriteAutomationNodeStatePaths } from "../../../nodes/index.ts";
+import { automationNodeOutputReference, getAutomationNodeDefinition, rewriteAutomationNodeStatePaths } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowDraftStep, AutomationStudioFlowDraftStepRouting } from "../../flow-draft/index.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_STEP_OUTPUT_ROOT, automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftScheduleCandidate } from "../../flow-draft/scheduled-candidate/index.ts";
@@ -170,7 +175,8 @@ export function automationStudioFlowDraftSeedFromFlow(input: {
   declarationRequired?: ((definitionId: string, parameters: JsonObject) => boolean) | undefined;
 }): AutomationStudioFlowDraftFlowSeed {
   const authored = input.nodes.filter((node) => !DERIVED_CONTROL_NODES.has(node.definitionId));
-  const loops = automationStudioFlowDraftSeededLoops(authored, input.edges);
+  const stops = forEachStops(authored);
+  const loops = automationStudioFlowDraftSeededLoops(stops.size ? authored.map((node) => stops.has(node.id) ? withoutStop(node) : node) : authored, input.edges);
   const framing = new Set(loops.flatMap((loop) => loop.framing));
   const ordered = orderedNodes(authored, input.edges).filter((node) => !framing.has(node.id));
   const optional = optionalNodeIds(authored, input.edges);
@@ -181,7 +187,7 @@ export function automationStudioFlowDraftSeedFromFlow(input: {
     // A do-while repeats while its own last step succeeds (S2, t283).
     return [loop.body[0]!, loop.over === undefined
       ? { kind: "repeat", through, while: through, ...(loop.most === undefined ? {} : { most: loop.most }) }
-      : { kind: "repeat", through, over: stepIdOf.get(loop.over)! }];
+      : { kind: "repeat", through, over: stepIdOf.get(loop.over)!, ...firstRows(loop.framing.map((id) => stops.get(id)).find((stop) => stop !== undefined)) }];
   }));
   const steps: AutomationStudioFlowDraftStep[] = [];
   const nodeIdByStepId: Record<string, string> = {};
@@ -356,6 +362,32 @@ function optionalNodeIds(
     if (leadsInto(edge.sourceNodeId, "success", edge.targetNodeId)) optional.add(edge.sourceNodeId);
   }
   return optional;
+}
+
+/** The For Each node a list is walked with, and its stop after its first rows (`nodes/control-flow/for-each.ts`). */
+const FOR_EACH_NODE_ID = "builtin.control.for-each";
+const STOP_AFTER = "stopAfter";
+
+/** Each For Each's stop after its first rows, by node id, when it is a whole number of rows the node takes (header). */
+function forEachStops(nodes: readonly AutomationStudioFlowNode[]): ReadonlyMap<string, number> {
+  const bounds = getAutomationNodeDefinition(FOR_EACH_NODE_ID)?.parameters.find((parameter) => parameter.id === STOP_AFTER)?.constraints;
+  const stops = new Map<string, number>();
+  for (const node of nodes) {
+    const stop = node.definitionId === FOR_EACH_NODE_ID ? node.parameterValues?.[STOP_AFTER] : undefined;
+    if (typeof stop === "number" && Number.isInteger(stop) && stop >= (bounds?.minimum ?? 1) && stop <= (bounds?.maximum ?? Number.MAX_SAFE_INTEGER)) stops.set(node.id, stop);
+  }
+  return stops;
+}
+
+/** A For Each with its stop set aside, as the loop reader is shown it. */
+function withoutStop(node: AutomationStudioFlowNode): AutomationStudioFlowNode {
+  const { [STOP_AFTER]: _stop, ...rest } = node.parameterValues ?? {};
+  return { ...node, parameterValues: rest };
+}
+
+/** A repeat over a listing's `most`, from its For Each's stop, or nothing. */
+function firstRows(stop: number | undefined): { most?: number } {
+  return stop === undefined ? {} : { most: stop };
 }
 
 /**

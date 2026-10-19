@@ -385,13 +385,18 @@ export const AUTOMATION_STUDIO_FLOW_CONDITION_RULES = [
  * out of the answer and was refused three times: exclude means never stored,
  * and a stored field leaves the answer through `process.columns`. The format
  * now says both, and that a sort or dedupe key must be stored.
+ *
+ * **Only the first rows (F5).** A builder asked to act on a list's first few
+ * rows wrote `repeat most:` beside `repeat over:`, was refused, and dropped the
+ * bound (`run-mvecxeci-1c2cc227`). The pairing now means For Each's own stop
+ * (`nodes/control-flow/for-each.ts`, `stopAfter`), and one clause says so.
  */
 export const AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT = [
   "Repetitive work is a loop, never the same steps written again. A step starts a span that repeats with lines beside its node:",
   "`repeat over: <label>` runs the span once for each row the labelled listing step read. The listing is written before the span and runs once; it never repeats itself. A step inside the span that presses a row's control finds that row's own control on each pass.",
   "`repeat through: <label>` names the span's last step; without it the span is the step that says repeat, alone.",
   "`repeat while: <label>` runs the span from this step through the labelled step, then again while that step succeeds. The loop ends when that step answers ended -- a next-page step does when there is no further page -- or after `repeat most: <passes>`; a last step that cannot answer ended needs repeat most.",
-  "`repeat most:` goes beside `repeat while:`, on the span's first step, never under its last: `repeat while: next` then `repeat most: 20`. A span whose last step answers ended -- a next-page step -- needs none.",
+  "`repeat most:` goes beside `repeat while:`, on the span's first step, never under its last: `repeat while: next` then `repeat most: 20`. A span whose last step answers ended -- a next-page step -- needs none. Beside `repeat over:` it acts on only the listing's first rows, in their order, and then the Flow goes on: `repeat over: bookmarks` then `repeat most: 2` does the span for the first two bookmarks.",
   "A span holds no `on <port>:` line and no second repeat, and no branch goes into it.",
   "An `optional: yes` step may stand inside a span: it is done on the passes that need it and gone past on the others. A step written directly after an optional step with `only after: <its label>` runs only on the passes where that step was done, and so does each step after it with the same line; then the pass goes on where it was. Keep them in the same span, its `repeat through:` naming the last of them.",
   "`repeat pace: <time>` goes beside `repeat over:` or `repeat while:`, on the span's first step: each pass then starts at least that long after the one before. Write `6 s`, `1500 ms` or `1 min`; a bare number is seconds.",

@@ -100,6 +100,13 @@ describe("the Flow script loop format", () => {
     expect(text).toContain("A span whose last step answers ended -- a next-page step -- needs none.");
   });
 
+  // F5 (`run-mvecxeci-1c2cc227`): `repeat most:` beside `repeat over:` was refused and the builder dropped the bound.
+  it("says repeat most beside repeat over acts on only the listing's first rows, with an example of another kind of site", () => {
+    const clause = AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT.split("\n").find((line) => line.includes("Beside `repeat over:`"));
+    expect(clause).toContain("Beside `repeat over:` it acts on only the listing's first rows, in their order, and then the Flow goes on: `repeat over: bookmarks` then `repeat most: 2` does the span for the first two bookmarks.");
+    expect(clause).not.toMatch(/photo|\blike|\bpost|newest/i);
+  });
+
   // t378 W8, lane D (`run-mv0fuual-f9e6f089`): a trial that met the site's
   // request to slow down is answered in the Flow's own lines -- a guarded
   // dismissal and wait inside the span, and a pace between passes.

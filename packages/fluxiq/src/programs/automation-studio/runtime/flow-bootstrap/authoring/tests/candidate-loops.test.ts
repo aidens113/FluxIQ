@@ -213,6 +213,58 @@ describe("lane D: act on each row a listing kept, with the row bound", () => {
   });
 });
 
+// F5 (photo newest-likes r1, `run-mvecxeci-1c2cc227`): a builder wrote `repeat most: 3` beside `repeat over:`
+// to act on the newest three rows, was refused, dropped the bound and acted on every row.
+describe("lane D on the first rows only: repeat over with repeat most", () => {
+  const firstTwo = [...LANE_D.slice(0, 14), "  repeat most: 2", ...LANE_D.slice(14)];
+  const forEach = (script: string[]) => {
+    const accepted = written(script.join("\n"));
+    if (!accepted.ok) throw new Error(JSON.stringify(accepted.issues));
+    return { accepted, node: accepted.plan.subflows[0]!.nodes.find((node) => node.definitionId === "builtin.control.for-each")! };
+  };
+
+  it("assembles lane D's loop with For Each stopping after the bound, and validates", () => {
+    const { accepted, node } = forEach(firstTwo);
+    expect(errors(accepted.issues)).toEqual([]);
+    expect(node.parameters).toEqual({ ...forEach(LANE_D).node.parameters, stopAfter: 2 });
+    const bounded = shape(accepted.plan);
+    const unbounded = shape(forEach(LANE_D).accepted.plan);
+    // Only the bound differs: the same nodes, row binding and edges.
+    expect(bounded.edges).toEqual(unbounded.edges);
+    expect(bounded.nodes.map((each) => each.definitionId)).toEqual(unbounded.nodes.map((each) => each.definitionId));
+    expect(validateAutomationStudioFlowBootstrapPlan({ plan: accepted.plan, registry, resolution }).ok).toBe(true);
+    expect(errors(automationStudioFlowBootstrapWrittenPlanBindingIssues({ plan: accepted.plan, registry, resolution }))).toEqual([]);
+  });
+
+  it("leaves For Each with no stop when the span says no repeat most", () => {
+    expect(forEach(LANE_D).node.parameters ?? {}).not.toHaveProperty("stopAfter");
+  });
+
+  it("refuses a repeat most beside repeat over that is not a whole number of rows in For Each's range", () => {
+    for (const bound of ["lots", "0", "2.5", "10001"]) {
+      const accepted = written([...LANE_D.slice(0, 14), `  repeat most: ${bound}`, ...LANE_D.slice(14)].join("\n"));
+      expect(errors(accepted.issues).map((issue) => `${issue.code} @ ${issue.path}`)).toEqual(["flow_script.repeat_invalid @ flow.line.13"]);
+      expect(errors(accepted.issues)[0]!.message).toContain("repeat most is a whole number of passes from 1 to 10000");
+    }
+  });
+
+  it("is the loop a drafted repeat over with most builds, node for node and edge for edge", () => {
+    const legacy = drafted([step(1, "requests"), step(2, "list"), step(3, "confirm", { kind: "repeat", through: "d4", over: "d2", most: 2 }), step(4, "confirmed")]);
+    expect(errors(legacy.issues)).toEqual([]);
+    if (!legacy.plan) throw new Error("the draft must assemble");
+    expect(shape(legacy.plan)).toEqual(shape(forEach(firstTwo).accepted.plan));
+    expect(legacy.plan.subflows[0]!.nodes.find((node) => node.definitionId === "builtin.control.for-each")!.parameters?.stopAfter).toBe(2);
+  });
+
+  it("refuses a drafted repeat with most over a check, which has no rows to take the first of", () => {
+    const legacy = drafted([step(1, "requests"), step(2, "confirmed"), step(3, "confirm", { kind: "repeat", through: "d3", over: "d2", most: 2 })]);
+    // The check reads a row field too, which is refused on its own account; the bound is refused for itself.
+    // Under the code a drafted repeat's other source refusals use, which the candidate corpus already accounts for.
+    const refusal = errors(legacy.issues).find((issue) => issue.message.includes("which reads no rows to take the first of"));
+    expect(refusal?.code).toBe("flow_draft.repeat_not_after_its_source");
+  });
+});
+
 describe("a written loop the graph cannot honour is refused where it is said", () => {
   /**
    * The issues a script meets: its assembly's, and, once it assembles, the
