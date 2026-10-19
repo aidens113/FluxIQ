@@ -76,6 +76,30 @@ it("recovers through observed original authority and an issued ref, strips it, a
   expect(await own.beforeTrial(async () => ({ moved: false }))).toEqual({ kind: "admit" });
 });
 
+it("hands the ledger the destination a creation was admitted against, so an unchanged destination lets the trial run (F1)", async () => {
+  const own = new AutomationStudioSiteResetLedger();
+  const told: Array<string | undefined> = [];
+  const read = { state: {}, differs: [], resource: "r:one", scope: "p:destination", collections: [{ scope: "p:destination", group: "g:destination", subjects: ["s:original"], states: { "s:original": "v:original" } }] };
+  const permissions = automationStudioFlowBootstrapActionPermissions({
+    permittedConsequences: ["create_new"], instructionIds: [], requireCreateBaseline: true,
+    siteReset: { createBaseline: (declared, reference) => own.createBaseline(declared, reference), destinationReceipts: () => own.destinationReceipts(), claim: value => own.claim(value), target: (act, declared) => own.target(act, declared), explored: call => {
+      told.push(call.resetDestination);
+      own.explored(call);
+    } },
+    executeTool: async (call) => {
+      const verdict = await call.permission!({ consequences: ["create_new"], control: { name: "Open", subject: "s:document", resource: "r:one", scope: "p:source" }, verb: "press" });
+      return { kind: "llm_evidence_tool_execution", evidence: { ok: verdict.permitted }, effectApplied: verdict.permitted };
+    }
+  });
+  own.observed(read);
+  const ref = own.destinationReceipts()[0]!.ref;
+  expect(await permissions.executeTool({ callId: "open", toolId: "core.run_node", value: { node: "example.open", parameters: {}, consequences: ["create_new"], resetDestination: ref } })).toMatchObject({ evidence: { ok: true } });
+  expect(told).toEqual([ref]);
+  // The site showed nothing of it where it would land: no undo is owed, and the trial says it is left.
+  own.observed(read);
+  expect(await own.beforeTrial(async () => ({ moved: false }))).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1", call: "open" }] } });
+});
+
 it("fails closed if an opted-in project adapter omits preflight, while preserving other paths", async () => {
   for (const [optIn, consequences, expected] of [
     [true, ["create_new"], false], [false, ["create_new"], true],

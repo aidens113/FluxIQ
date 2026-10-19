@@ -21,6 +21,10 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
       + "If the site offers no control that reverses an act, report its id under cannotUndo honestly. This does not restore a reversible effect tied to an identified item or resource, or permit an ordinary trial on those leftovers; the effect remains listed and a later proved correction is still allowed. A trial explicitly admitted with other unresolved acts reports them to its judge. "
       + "Then test the same revision again.";
   },
+  /** Said after an act listed as left because a complete read of where it lands, taken after it, showed no change there (`./destination-unchanged.ts`). */
+  leftUnchanged(): string {
+    return "left on the site; a complete read of its destination taken after it showed that destination exactly as first observed";
+  },
   /** A trial refused because every act is undone but the start still differs. */
   startDiffers(): string {
     return "Every act this build recorded is undone, but the site still differs from how this build found it (differs lists how). "

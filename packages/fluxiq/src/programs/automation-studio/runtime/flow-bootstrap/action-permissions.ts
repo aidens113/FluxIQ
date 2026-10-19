@@ -386,6 +386,8 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
         ...(undo ? { undoes: undo.act } : {}),
         ...(declared ? { declared } : {}),
         ...(target?.kind === "admit" ? { on: target.on } : {}),
+        // Where a creation was admitted, for the ledger to keep (`./site-reset/ledger.ts`, F1).
+        ...(!undo && typeof call.value.resetDestination === "string" ? { resetDestination: call.value.resetDestination } : {}),
         landed: landed(execution)
       });
       if (target?.kind === "refused") {

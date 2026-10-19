@@ -609,3 +609,53 @@ describe("positive collection-transfer inverses", () => {
     expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
   });
 });
+
+// F1, job save r1 (`run-mvectfld-c2f5d958`, cause 2): two presses from a side
+// pane and a detail page -- no list of their own -- that the site itself
+// failed. The list they land in was read complete before and after them and was
+// unchanged, but only a press whose control sat in an observed list could be
+// settled, so the build had no way forward. With every list read before the
+// act read again, complete and exactly as first observed, and the act's subject
+// absent from where it lands, the act needs no proven undo: the trial runs with
+// it listed as left with no change seen.
+describe("a press with no list of its own whose destination stays exactly as first observed (F1)", () => {
+  const PANE: AutomationStudioSiteResetSpot = { subject: "s:document", page: "s:results" };
+  const list = (scope: string, subjects: string[], changed: Record<string, string> = {}) => ({ scope, group: "g:mine", subjects, states: Object.fromEntries(subjects.map((subject) => [subject, changed[subject] ?? `v:${subject}`])) });
+  const mine = () => [list("p:mine", ["s:held-a", "s:held-b"]), list("p:mine-archived", ["s:held-c"])];
+  const other = () => ({ scope: "p:elsewhere", group: "g:other", subjects: ["s:else"], states: { "s:else": "v:else" } });
+  const read = (ledger: AutomationStudioSiteResetLedger, collections: Array<ReturnType<typeof list>>) => ledger.observed({ state: {}, differs: [], collections });
+  const pressed = (spot: AutomationStudioSiteResetSpot = PANE, before = mine()) => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    read(ledger, before);
+    ledger.explored(acted("save.first", ["modify_existing"], {}, spot));
+    ledger.explored(acted("save.second", ["modify_existing"], {}, spot));
+    return ledger;
+  };
+
+  it("runs the trial with both failed presses listed as left with no change seen", async () => {
+    const ledger = pressed();
+    read(ledger, mine());
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1", call: "save.first" }, { act: "act-2", call: "save.second" }] } });
+    expect(ledger.inPlace()).toEqual([]);
+  });
+
+  it.each(["no-read-before", "no-read-after", "subject-now-present", "partial", "malformed", "second-group-unread", "own-list-unread", "subject-held-before"] as const)("still refuses with %s", async (defect) => {
+    const before = defect === "second-group-unread" ? [...mine(), other()] : defect === "subject-held-before" ? [list("p:mine", ["s:document", "s:held-b"]), list("p:mine-archived", ["s:held-c"])] : mine();
+    const ledger = defect === "own-list-unread" ? pressed({ ...PANE, scope: "p:pane" }, before) : pressed(PANE, before);
+    if (defect === "no-read-before") {
+      const late = new AutomationStudioSiteResetLedger();
+      late.explored(acted("save.first", ["modify_existing"], {}, PANE));
+      read(late, mine());
+      expect(await late.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+      return;
+    }
+    const after = defect === "subject-held-before" ? before : mine();
+    if (defect === "subject-now-present") after[0] = list("p:mine", ["s:held-a", "s:held-b", "s:document"]);
+    if (defect === "partial") after.splice(1, 1);
+    if (defect === "malformed") after[1] = list("p:mine-archived", ["s:held-c", "s:held-c"]);
+    if (defect !== "no-read-after") read(ledger, after);
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    expect(await ledger.beforeTrial(back, ["act-1", "act-2"])).toMatchObject({ kind: "refuse" });
+    expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1", "act-2"]);
+  });
+});

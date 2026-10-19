@@ -106,6 +106,25 @@ describe("build-only original creation receipts", () => {
     expect(baseline.check(create(), "destination-33")).toMatchObject(REFUSED);
   });
 
+  it("names the original destination a creation is admitted against, and none where it is refused (F1)", () => {
+    const baseline = new AutomationStudioSiteResetCreateBaselines();
+    expect(baseline.destination(create(), undefined)).toBeUndefined();
+    baseline.observed(original());
+    baseline.receipts();
+    expect(baseline.destination(create(), "destination-1")).toEqual({ scope: "p:destination", group: "g:destination" });
+    expect(baseline.destination(create(), "destination-2")).toEqual({ scope: "p:sibling", group: "g:destination" });
+    expect(baseline.destination(create({ scope: "p:destination" }), undefined)).toEqual({ scope: "p:destination", group: "g:destination" });
+    for (const [declared, ref] of [
+      [create(), undefined], [create(), "destination-999"], [create({ resource: "r:foreign" }), "destination-1"],
+      [create({ subject: "s:existing" }), "destination-1"], [{ ...create(), consequences: ["modify_existing" as const] }, "destination-1"]
+    ] as const) expect(baseline.destination(declared, ref)).toBeUndefined();
+    // A destination whose fresh read is malformed admits nothing, and names nothing.
+    const bad = original();
+    bad.collections![0]!.subjects.push("s:existing");
+    baseline.observed(bad);
+    expect(baseline.destination(create(), "destination-1")).toBeUndefined();
+  });
+
   it("preserves observation, unclassified, ordinary modifications and irreversible/mixed policy", () => {
     const baseline = new AutomationStudioSiteResetCreateBaselines();
     const unidentified = create();

@@ -93,6 +93,8 @@ export type AutomationStudioSiteResetExplored = {
   landed: boolean;
   /** For an undo, why its control was admitted (`AutomationStudioSiteResetTarget`). */
   on?: Extract<AutomationStudioSiteResetTarget, { kind: "admit" }>["on"];
+  /** The `resetDestination` ref the call named: the ledger keeps the original a creation was admitted against by it, as where its effect would show (F1). */
+  resetDestination?: string;
 };
 
 /** The ledger, as the build's permission wrapper sees it. */
