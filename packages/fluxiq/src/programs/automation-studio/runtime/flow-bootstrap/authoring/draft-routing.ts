@@ -218,7 +218,8 @@ const SCRIPT_DERIVED = ":";
  *
  * A step's `repeat over:` / `repeat through:` / `repeat while:` / `repeat
  * most:` lines (`./contracts.ts`) say what a drafted step's `repeat` routing
- * says, and are wired by the same code (`emitRepeatOver`, `emitRepeatWhile`),
+ * says -- beside `repeat over:`, `repeat most: N` acts on the first N rows only
+ * (For Each's `stopAfter`) -- and are wired by the same code (`emitRepeatOver`, `emitRepeatWhile`),
  * so a loop a model wrote and a loop a build drafted are one graph shape. Only
  * the reading differs: a script names steps by label and lines, a draft by
  * position and amendment, so each refusal is said in the script's words and
@@ -278,7 +279,7 @@ export function routeAutomationStudioFlowScriptRepeats(input: {
       const loop = nextDerived("loop");
       const exit = nextDerived("exit");
       emitRepeatOver({
-        emitted, source: span.source, head: span.head, rows: span.rows, loop, exit, first: step.label, nextDerived,
+        emitted, source: span.source, head: span.head, rows: span.rows, loop, exit, first: step.label, nextDerived, ...(span.most === undefined ? {} : { most: span.most }),
         body: body.map((member) => ({ step: member, takesRow: takesRow(member, input.registry, input.resolution) }))
       });
     } else {
@@ -295,7 +296,7 @@ export function routeAutomationStudioFlowScriptRepeats(input: {
 
 type ScriptSpanRefusal = { refusal: { code: string; message: string; path?: string } };
 type ScriptSpan =
-  | { kind: "over"; end: number; source: AutomationStudioFlowScriptStep; head: AutomationStudioFlowScriptStep; rows: string | undefined }
+  | { kind: "over"; end: number; source: AutomationStudioFlowScriptStep; head: AutomationStudioFlowScriptStep; rows: string | undefined; most?: string }
   | { kind: "while"; end: number; head: AutomationStudioFlowScriptStep; endings: string[]; most?: string };
 
 /**
@@ -323,7 +324,6 @@ function scriptSpan(input: {
   const HOW = "Write `repeat over: <the listing step's label>` to do the span once for each row that step read, or `repeat while: <the span's last step>` to do it again while that step succeeds.";
   if (repeat.over === undefined && repeat.while === undefined) return refuse("flow_script.repeat_invalid", `${at} says repeat, but not what repeats it. ${HOW}`);
   if (repeat.over !== undefined && repeat.while !== undefined) return refuse("flow_script.repeat_invalid", `${at} says both repeat over and repeat while; a span repeats one way. ${HOW}`);
-  if (repeat.over !== undefined && repeat.most !== undefined) return refuse("flow_script.repeat_invalid", `${at} says repeat most beside repeat over. A repeat over runs once for each row its listing read; repeat most bounds a repeat while.`);
   if (repeat.while !== undefined && repeat.through !== undefined && repeat.through !== repeat.while) {
     return refuse("flow_script.repeat_invalid", `${at} repeats through one step while another succeeds; the span ends at the step whose success repeats it. Write only \`repeat while: <the span's last step>\`.`);
   }
@@ -352,15 +352,8 @@ function scriptSpan(input: {
   if (repeat.while !== undefined) {
     const last = steps[end]!;
     const endings = repeatEndings(last, input.registry, input.resolution);
-    let most: string | undefined;
-    if (repeat.most !== undefined) {
-      const bounds = input.registry.get(REPEAT_NODE_ID, input.resolution)?.parameters.find((parameter) => parameter.id === "most")?.constraints;
-      const passes = Number(repeat.most.trim());
-      if (!repeat.most.trim() || !Number.isInteger(passes) || passes < (bounds?.minimum ?? 1) || (bounds?.maximum !== undefined && passes > bounds.maximum)) {
-        return refuse("flow_script.repeat_invalid", `${at} says repeat most: ${JSON.stringify(repeat.most.slice(0, 40))}, and repeat most is a whole number of passes from ${bounds?.minimum ?? 1}${bounds?.maximum === undefined ? "" : ` to ${bounds.maximum}`}.`);
-      }
-      most = String(passes);
-    }
+    const most = repeat.most === undefined ? undefined : writtenBound(at, repeat.most, REPEAT_NODE_ID, "most", input);
+    if (typeof most === "object") return most;
     if (!endings.length && most === undefined) {
       return refuse("flow_script.repeat_while_never_ends", `${at} repeats while the step at line ${last.line} succeeds, and that step has no way to say the loop is done, so it would end only by failing or ${repeatDefaultPasses(input.registry, input.resolution)}. Repeat while a step that answers ended when there is nothing more, or add \`repeat most: <passes>\` to bound it.`);
     }
@@ -375,7 +368,18 @@ function scriptSpan(input: {
   if (!source || !head) return refuse("flow_script.repeat_not_after_its_source", `${at} repeats over "${overLabel}", which is inside another repeat, so the Flow does not reach it on its own line. Name a listing the Flow runs once, before this span. ${NO_ROW_LOOP_IN_PAGE_LOOP}`);
   const rows = listPort(source, input.registry, input.resolution);
   if (!rows && source !== head) return refuse("flow_script.repeat_not_after_its_source", `${at} repeats over "${overLabel}", which reads no list, so it is a check asked again before every pass, and it has to be the step written just before the span.`);
-  return { kind: "over", end, source, head, rows };
+  // Beside repeat over, repeat most takes the first rows only: For Each's own stop, not a pass count of a check.
+  const most = repeat.most === undefined ? undefined : rows ? writtenBound(at, repeat.most, FOR_EACH_NODE_ID, "stopAfter", input) : refuse("flow_script.repeat_invalid", `${at} says repeat most beside repeat over "${overLabel}", which reads no rows to take the first of.`);
+  if (typeof most === "object") return most;
+  return { kind: "over", end, source, head, rows, ...(most === undefined ? {} : { most }) };
+}
+
+/** A written `repeat most:` as the whole number `node`'s `parameter` takes (Repeat's `most`, For Each's `stopAfter`), or its refusal. */
+function writtenBound(at: string, most: string, node: string, parameter: string, input: { registry: AutomationStudioNodeRegistry; resolution: AutomationStudioNodeRegistryResolution }): string | ScriptSpanRefusal {
+  const bounds = input.registry.get(node, input.resolution)?.parameters.find((each) => each.id === parameter)?.constraints;
+  const passes = Number(most.trim());
+  if (most.trim() && Number.isInteger(passes) && passes >= (bounds?.minimum ?? 1) && (bounds?.maximum === undefined || passes <= bounds.maximum)) return String(passes);
+  return { refusal: { code: "flow_script.repeat_invalid", message: `${at} says repeat most: ${JSON.stringify(most.slice(0, 40))}, and repeat most is a whole number of passes from ${bounds?.minimum ?? 1}${bounds?.maximum === undefined ? "" : ` to ${bounds.maximum}`}.` } };
 }
 
 /**
@@ -476,9 +480,10 @@ function repeat(input: {
   // A check is asked again on every pass, so it is lifted into the loop
   // (below); lifting it over steps written after it would run them before it.
   if (!rows && source !== head) return { code: "flow_draft.repeat_not_after_its_source", message: `Step ${entry.step.position} repeats while step ${over.step.position} succeeds, and that check is asked again on every pass, so it has to be the step immediately before the span. Move step ${over.step.position} there with an amend_draft reorder.` };
+  if (!rows && routing.most !== undefined) return { code: "flow_draft.repeat_not_after_its_source", message: `Step ${entry.step.position} repeats at most ${routing.most} times over step ${over.step.position}, which reads no rows to take the first of. Repeat over the listing, or take most off.` };
   for (const member of body) input.consumed.add(automationStudioFlowDraftStepId(member.step));
   emitRepeatOver({
-    emitted, source, head, rows, loop, exit, first, nextDerived: input.nextDerived,
+    emitted, source, head, rows, loop, exit, first, nextDerived: input.nextDerived, ...(routing.most === undefined ? {} : { most: String(routing.most) }),
     body: body.map((member) => ({ step: scriptStep(member, input.label(automationStudioFlowDraftStepId(member.step))), takesRow: takesRow(member.written, input.registry, input.resolution) }))
   });
   return undefined;
@@ -505,6 +510,8 @@ function emitRepeatOver(input: {
   /** The span's steps in order, each labelled, and whether its node takes the row. */
   body: readonly { step: AutomationStudioFlowScriptStep; takesRow: boolean }[];
   nextDerived: (kind: string) => string;
+  /** For Each's `stopAfter`, as written: walk only the first this many rows. Absent, every row. */
+  most?: string;
 }): void {
   const { emitted, source, head, rows, loop, exit, first } = input;
   if (rows) {
@@ -527,7 +534,8 @@ function emitRepeatOver(input: {
       .filter((member) => member.takesRow && member.step.label !== undefined)
       .map((member) => branch(ROW_PORT, member.step.label!, ROW_PORT));
     emitted.push(mergeStep(loop, "each pass of the loop starts here"));
-    emitted.push({ label: each, description: "run the span once for each row", node: FOR_EACH_NODE_ID, entries: [], branches: [branch("body", first), branch("done", exit), ...rowed], routed: true, line: 0 });
+    const entries = input.most === undefined ? [] : [{ key: "stopAfter", lines: [input.most], line: 0 }];
+    emitted.push({ label: each, description: "run the span once for each row", node: FOR_EACH_NODE_ID, entries, branches: [branch("body", first), branch("done", exit), ...rowed], routed: true, line: 0 });
   } else {
     // A check is re-run every pass, so it belongs inside the loop rather than
     // before it: it is lifted out of the line it was written in and put after

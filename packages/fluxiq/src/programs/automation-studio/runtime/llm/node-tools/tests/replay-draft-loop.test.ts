@@ -162,6 +162,33 @@ describe("a repeat over a list, in the build's test", () => {
   });
 });
 
+// F5 (`run-mvecxeci-1c2cc227`): a repeat over a list with most is For Each's stop after, so the test runs only the
+// list's first rows, as the Flow will, and a long list cut to a few rows is within the loop's bound.
+describe("a repeat over a list with most, in the build's test", () => {
+  const firstRows = (most: number) => loopDraft().map((each) => each.position === 2 ? { ...each, routing: { kind: "repeat" as const, over: "d1", through: "d3", most } } : each);
+
+  it("runs every member once for each of the list's first rows only, in order", async () => {
+    const executor = host({ rows: [...ROWS, { name: "Cy", mutual: 4 }] });
+    const replayed = await test(firstRows(2), executor);
+    expect(executor.calls.map((call) => call.callId)).toEqual([
+      "dryrun.1.reset", "dryrun.1.1",
+      "dryrun.1.2.pass.1", "dryrun.1.3.pass.1",
+      "dryrun.1.2.pass.2", "dryrun.1.3.pass.2",
+      "dryrun.1.4"
+    ]);
+    expect(executor.calls.find((call) => call.callId === "dryrun.1.2.pass.2")!.value.item).toEqual(ROWS[1]);
+    expect(replayed.verdict.ok).toBe(true);
+    expect(replayed.observations.filter((each) => each.step === 3).map((each) => [each.pass, each.of])).toEqual([[1, 2], [2, 2]]);
+  });
+
+  it("takes a list longer than the loop's bound when most cuts it within it", async () => {
+    const executor = host({ rows: Array.from({ length: 150 }, (_, index) => ({ name: `r${index}` })) });
+    const replayed = await test(firstRows(3), executor);
+    expect(executor.calls.filter((call) => call.callId.startsWith("dryrun.1.2.pass.")).length).toBe(3);
+    expect(replayed.verdict.ok).toBe(true);
+  });
+});
+
 describe("a repeat the test knows no rows for runs once, excused, as before t252", () => {
   const cases: [string, { rows?: JsonValue }, boolean][] = [
     ["the host sends no outputs", {}, true],

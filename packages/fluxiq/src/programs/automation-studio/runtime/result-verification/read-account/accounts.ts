@@ -84,6 +84,10 @@
 // where the caller gives the Flow's edges (`flowEdges`), which say what list a
 // loop walks: each row it stored must be checked against the request's words.
 //
+// **And how a read of one part of a list saw it go on (F8)**: the read's own
+// two closed words (`listContinues`), carried as sent, so Core can say that the
+// list went on past what was read (`list-continues.ts`).
+//
 // **Every read, every condition and every dedupe key** (user, 2026-09-30:
 // "Remove ANY AND ALL LIMITS ON THE NUMBER OF ELEMENTS PASSED TO MODEL. DO NOT
 // HIDE INFORMATION"). Until then a judge saw four reads, eight conditions each
@@ -248,6 +252,7 @@ function account(
   // said by the read's own count, or by its authored paging where the count did not reach the record.
   const earlierPageRepeats = count(extraction.earlierPageRepeats);
   const dropsEarlierPageRepeats = earlierPageRepeats !== undefined || movesPageByPage(paginate);
+  const listContinues = continues(extraction.listContinues);
   return {
     nodeId: attempt.nodeId,
     definitionId: attempt.definitionId,
@@ -264,8 +269,15 @@ function account(
     ...(conditions.length ? { conditions } : {}),
     ...(together ? { leftOutTogether: together } : {}),
     ...(filter?.unfiltered === true ? { unfiltered: true } : {}),
-    ...(attempts > 1 ? { attempts } : {})
+    ...(attempts > 1 ? { attempts } : {}),
+    ...(listContinues ? { listContinues } : {})
   };
+}
+
+/** The read's two closed words that its list goes on past it (header), or `undefined` for anything else. */
+function continues(value: JsonValue | undefined): { kind: string; evidence: string } | undefined {
+  if (!isRecord(value) || typeof value.kind !== "string" || typeof value.evidence !== "string") return undefined;
+  return STOP_WORD.test(value.kind) && STOP_WORD.test(value.evidence) ? { kind: value.kind, evidence: value.evidence } : undefined;
 }
 
 /**

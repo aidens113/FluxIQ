@@ -27,6 +27,20 @@ function steps(count = 4): AutomationStudioFlowDraftStep[] {
 }
 
 describe("saying when a step runs", () => {
+  // F5 (`run-mvecxeci-1c2cc227`): a repeat over a listing may take only its first rows, and the draft keeps and shows that.
+  it("keeps most on a repeat over a listing, and shows it on the step's line", () => {
+    const draft = steps(4);
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "repeat", over: 2, through: 4, most: 2 }])).toEqual({ applied: 1, refused: [] });
+    expect(draft[2]!.routing).toEqual({ kind: "repeat", through: "d4", over: "d2", most: 2 });
+    const runs = (automationStudioFlowDraftEntry({ steps: draft })!.value as { steps: Array<{ runs?: string }> }).steps[2]?.runs;
+    expect(runs).toBe("repeats through step 4, over step 2, on its first 2 rows");
+    // The same repeat without most is the line it always was.
+    const plain = steps(4);
+    applyAutomationStudioFlowDraftAmendments(plain, [{ step: 3, change: "repeat", over: 2, through: 4 }]);
+    expect(plain[2]!.routing).toEqual({ kind: "repeat", through: "d4", over: "d2" });
+    expect((automationStudioFlowDraftEntry({ steps: plain })!.value as { steps: Array<{ runs?: string }> }).steps[2]?.runs).toBe("repeats through step 4, over step 2");
+  });
+
   it("removes exactly the named repeat span and retains a separate deliberate loop", () => {
     const draft = steps(6);
     applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", over: 1, through: 3 }, { step: 5, change: "repeat", over: 4, through: 6 }]);

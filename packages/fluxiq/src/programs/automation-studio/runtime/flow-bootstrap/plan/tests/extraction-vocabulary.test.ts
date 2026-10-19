@@ -121,8 +121,13 @@ describe("the vocabulary a model writes an extraction filter from", () => {
     // vocabulary (dedupe, where, sort, limit, columns, minRows) whole in the
     // catalog, as automation-studio-native-nodes.md records. That added about
     // 1,270 bytes on purpose and took this entry from about 2,500 to 3,769;
-    // the bound sits just above the intended entry, not room for another addition.
-    expect(Buffer.byteLength(JSON.stringify(entry), "utf8")).toBeLessThanOrEqual(4_000);
+    // later refusal-remedy sentences took it to 3,982. The bound was 4,000
+    // until t567 (aa04a943, 2026-10-18) published recordOutput's `purpose` key
+    // (answer|intermediate) in the same contract text, as
+    // automation-studio-native-nodes.md ("Intermediate rows") records: 412
+    // bytes on purpose, to 4,394. The bound sits just above the intended
+    // entry, not room for another addition.
+    expect(Buffer.byteLength(JSON.stringify(entry), "utf8")).toBeLessThanOrEqual(4_400);
     expect(Buffer.byteLength(JSON.stringify(context.nodeCatalog), "utf8")).toBe(context.catalogSelection.usedBytes);
   });
 

@@ -72,7 +72,8 @@ import { automationStudioActivityHub } from "../../../activity/index.ts";
 import { parseAutomationStudioFlowBootstrapGenerationError } from "../../../flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS, AutomationStudioSiteResetLedger, AutomationStudioSiteResetProjectLedger } from "../../../flow-bootstrap/site-reset/index.ts";
 import type { AutomationStudioHostRuntimeBoundary, AutomationStudioHostStateSnapshotRef } from "../../../host-runtime.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
+import { createAutomationStudioDeepSeekProvider } from "../../../llm/deepseek/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
@@ -171,9 +172,10 @@ function supervisorDecision(step: number, evidence: readonly Entry[], ends = fal
 
 /**
  * `undeclaredFirst`: the builder first sends its subflow with the save's step declaring nothing lasting, as A8 launch 7's
- * dependent builders did (t594), and only then the declared one.
+ * dependent builders did (t594), and only then the declared one. `resetSentAs`: the reset agent's requests go through the
+ * real DeepSeek adapter (`throughDeepSeek`), changed by it first.
  */
-async function recipeBuild(options: { ends?: boolean; undeclaredFirst?: boolean } = {}) {
+async function recipeBuild(options: { ends?: boolean; undeclaredFirst?: boolean; resetSentAs?: (request: AutomationStudioLlmTaskRequest) => AutomationStudioLlmTaskRequest } = {}) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-project-build-reset-"));
   /** The person's recipe box: one recipe was there before the build. */
   const box = new Set(["recipe:lentil-soup"]);
@@ -183,7 +185,7 @@ async function recipeBuild(options: { ends?: boolean; undeclaredFirst?: boolean 
   /** The builder's evidence at its latest decision. */
   const builderSaw: Entry[] = [];
   let supervisorDecisions = 0;
-  const provider = mockProvider(async (request) => {
+  const scripted = mockProvider(async (request) => {
     const loop = request.context.evidenceLoop;
     if (request.taskKind === "loop_verification") {
       const scoped = JSON.stringify(request.context).includes("This trial ran only the subflow");
@@ -221,6 +223,7 @@ async function recipeBuild(options: { ends?: boolean; undeclaredFirst?: boolean 
     if (!lastOf(evidence, "press")) return decision({ kind: "tool_call", callId: "save", toolId: "press", input: { control: "Save", item: "recipe:herb-bread" } });
     return decision({ kind: "complete", result: { subflowKey, revision: submitted.revision as number, digest: submitted.digest as string } });
   });
+  const provider = options.resetSentAs ? throughDeepSeek(scripted, { only: isResetRequest, altered: options.resetSentAs }) : scripted;
   const serviceOptions: AutomationStudioServiceOptions = {
     dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 80, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: {
@@ -474,7 +477,43 @@ const UNDO_THE_ADD: ResetScript = (n) => n === 1
   // act-1 is the builder's own trial of its add, which names no cart line, so no control here takes it back (t597).
   : { kind: "complete", result: { summary: "The line this build added is out of the cart again.", cannotUndo: ["act-1"] } };
 
-async function cartBuild(resetScript: ResetScript = UNDO_THE_ADD, options: { startLocation?: string } = {}) {
+/** A reset agent's request: no supervisor's tools, and the reset's completion, a summary with no subflow key. */
+function isResetRequest(request: AutomationStudioLlmTaskRequest): boolean {
+  const loop = request.context.evidenceLoop;
+  const properties = (loop?.completionSchema.properties ?? {}) as JsonObject;
+  return !loop?.tools.some((tool) => tool.toolId === "project.write_plan") && properties.summary !== undefined && properties.subflowKey === undefined;
+}
+
+/**
+ * `scripted` with every model decision sent through the real DeepSeek adapter first, as a live build's is: its pre-send
+ * checks run on the request exactly as built, and only a request they pass reaches the wire, where the scripted reply
+ * answers it. The scripted provider alone never runs those checks, which is how a reset's refused first request
+ * (office r1 `run-mved5pro-91998cc2`, steps 0060-0061) passed every test here. `only` narrows which decisions are sent
+ * through it; `altered` changes a request before the adapter sees it, to make one it must refuse.
+ */
+function throughDeepSeek(scripted: AutomationStudioLlmProvider, options: { only?: (request: AutomationStudioLlmTaskRequest) => boolean; altered?: (request: AutomationStudioLlmTaskRequest) => AutomationStudioLlmTaskRequest } = {}): AutomationStudioLlmProvider {
+  return {
+    ...scripted,
+    runTask: async (built, execution) => {
+      if (built.taskKind !== "evidence_tool_decision" || options.only?.(built) === false) return await scripted.runTask(built, execution);
+      const request = options.altered ? options.altered(structuredClone(built)) : built;
+      const deepseek = createAutomationStudioDeepSeekProvider({
+        secretReference: { kind: "secret_reference", id: "secret:deepseek" },
+        resolveSecret: async () => "test-secret",
+        fetchImpl: (async () => {
+          const reply = await scripted.runTask(built, execution) as { response: JsonObject; usage?: { inputTokens: number; outputTokens: number; totalTokens: number } };
+          return new Response(JSON.stringify({
+            choices: [{ finish_reason: "stop", message: { content: JSON.stringify(reply.response) } }],
+            usage: { prompt_tokens: reply.usage?.inputTokens ?? 10, completion_tokens: reply.usage?.outputTokens ?? 5, total_tokens: reply.usage?.totalTokens ?? 15 }
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }) as typeof fetch
+      });
+      return await deepseek.runTask(request, execution);
+    }
+  };
+}
+
+async function cartBuild(resetScript: ResetScript = UNDO_THE_ADD, options: { startLocation?: string; preflight?: true } = {}) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-project-build-cart-"));
   /** The cart held dish soap before the build. */
   const cart = ["dish-soap"];
@@ -488,7 +527,9 @@ async function cartBuild(resetScript: ResetScript = UNDO_THE_ADD, options: { sta
   const resetSaw: { tools: Array<{ toolId: string; inputSchema: JsonObject }>; completion: JsonObject; evidence: Entry[] } = { tools: [], completion: {}, evidence: [] };
   /** The builder's run-node tool, as it was offered. */
   let builderRunNode: JsonObject | undefined;
-  const provider = mockProvider(async (request) => {
+  /** Every request the reset agent was sent, as built. */
+  const resetRequests: AutomationStudioLlmTaskRequest[] = [];
+  const scripted = mockProvider(async (request) => {
     if (request.metadata?.source === "instructionAuthority") return decision({ kind: "tool_call", callId: "read", toolId: "none", input: {} });
     if (request.taskKind === "loop_verification") {
       if (!JSON.stringify(request.context).includes("This trial ran only the subflow")) cartWhenWholeJudged.push([...cart]);
@@ -506,6 +547,7 @@ async function cartBuild(resetScript: ResetScript = UNDO_THE_ADD, options: { sta
     const ranNode = lastOf(evidence, "core.run_node");
     if (properties.summary !== undefined && properties.subflowKey === undefined) {
       resetFirst ??= JSON.stringify(request.context.instructions);
+      resetRequests.push(structuredClone(request));
       resetDecisions += 1;
       Object.assign(resetSaw, { tools: structuredClone(loop.tools), completion: structuredClone(loop.completionSchema), evidence: evidence.map((entry) => structuredClone(entry)) });
       return decision(resetScript(resetDecisions, evidence));
@@ -522,6 +564,7 @@ async function cartBuild(resetScript: ResetScript = UNDO_THE_ADD, options: { sta
     if (!ranNode) return decision({ kind: "tool_call", callId: "add", toolId: "core.run_node", input: { node: ADD, parameters: {}, consequences: ["create_new"] } });
     return decision({ kind: "complete", result: { subflowKey, revision: submitted.revision as number, digest: submitted.digest as string } });
   });
+  const provider = options.preflight ? throughDeepSeek(scripted) : scripted;
   const domain = shopDomain(cart);
   const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 80, maxEstimatedCostUsd: 0.1 }), llmEvidenceRuntime: domain.binding });
   service.bindNativeNodeRuntime(shopRuntime());
@@ -529,7 +572,7 @@ async function cartBuild(resetScript: ResetScript = UNDO_THE_ADD, options: { sta
   cleanups.push(builds.cleanup);
   const { project, flow } = await blankFixture(service, "active", "example");
   return {
-    cart, cartWhenWholeJudged, supervisorSaw, acted: domain.acted, inputs: domain.inputs, record: () => storedRecord(dataDir), resetFirstInstructions: () => resetFirst ?? "", resetSaw, builderRunNode: () => builderRunNode,
+    cart, cartWhenWholeJudged, supervisorSaw, acted: domain.acted, inputs: domain.inputs, record: () => storedRecord(dataDir), resetFirstInstructions: () => resetFirst ?? "", resetSaw, resetRequests, builderRunNode: () => builderRunNode,
     build: () => builds.track(project.id, flow.flowId, service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project", ...(options.startLocation ? { startLocation: options.startLocation } : {}) }))
   };
 }
@@ -598,7 +641,9 @@ describe("a reset brief", () => {
   it("refuses an undo aimed at another item in a reset's words: undo another act or name it under cannotUndo, never test again", async () => {
     const run = await cartBuild((n) => n === 1
       ? { kind: "tool_call", callId: "undo.wrong", toolId: "core.run_node", input: { node: REMOVE, parameters: { line: "dish-soap" }, consequences: ["delete"], undoes: "act-2" } }
-      : { kind: "complete", result: { summary: "The act this build made cannot be undone here." } });
+      // act-1 is named honestly: no act is kept for having been asked for twice (F1 continuation), and act-2 is kept by
+      // its refused undo alone.
+      : { kind: "complete", result: { summary: "The act this build made cannot be undone here.", cannotUndo: ["act-1"] } });
     await run.build().catch(() => undefined);
 
     const refused = run.resetSaw.evidence.find((entry) => entry.callId === "undo.wrong")!.value as JsonObject;
@@ -610,6 +655,57 @@ describe("a reset brief", () => {
     expect(run.acted).toEqual(["add herb-tea"]);
     expect(run.cart).toEqual(["dish-soap", "herb-tea"]);
     expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "done" }], lastingActsInPlace: 0 });
+  });
+});
+
+// F3, office r1 `run-mved5pro-91998cc2` 0060-0061: a reset dispatched after a builder's evidence loop was refused
+// `llm.provider_evidence_loop_context_invalid` at its first decision, before any provider call. The reset's decision
+// schema was built from the reset loop's completion schema, and its request carried the reset ports' copy of it, whose
+// `cannotUndo` description had been reworded alone; the pre-send check rebuilds the decision schema from the completion
+// schema the request carries, so the two never matched.
+describe("a reset brief's requests through DeepSeek's own pre-send checks", () => {
+  it("pass from its first decision, and one whose completion schema is not its decision schema's still refuses", async () => {
+    const run = await cartBuild(UNDO_THE_ADD, { preflight: true });
+    const result = await run.build();
+    if (result.status !== "proposed") throw new Error(`expected a proposal, got ${JSON.stringify(result)}`);
+    expect(run.resetRequests).toHaveLength(2);
+    expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "done" }], lastingActsInPlace: 0 });
+
+    // The reset's own first request, its completion schema's wording changed and nothing else: refused before the wire.
+    const first = structuredClone(run.resetRequests[0]!);
+    const loop = first.context.evidenceLoop!;
+    const cannotUndo = (loop.completionSchema.properties as JsonObject).cannotUndo as JsonObject;
+    cannotUndo.description = `${String(cannotUndo.description)} Reworded.`;
+    const wire = vi.fn(async () => new Response("{}", { status: 200 }));
+    const deepseek = createAutomationStudioDeepSeekProvider({ secretReference: { kind: "secret_reference", id: "secret:deepseek" }, resolveSecret: async () => "test-secret", fetchImpl: wire as unknown as typeof fetch });
+    await expect(deepseek.runTask(first)).rejects.toMatchObject({ code: "llm.provider_evidence_loop_context_invalid" });
+    expect(wire).not.toHaveBeenCalled();
+  });
+
+  // In office r1 the refused reset came back blocked and the supervisor then ended blocked; the build's
+  // `flow_bootstrap.post_provider_validation_failed` was that recorded ending (`project.build_blocked`), not the refusal
+  // thrown on. This holds that path for a reset whose request is genuinely invalid.
+  it("end through the supervisor's honest ending when a reset's first request is refused before any call, naming the refusal", async () => {
+    const run = await recipeBuild({
+      ends: true,
+      resetSentAs: (request) => {
+        const cannotUndo = (request.context.evidenceLoop!.completionSchema.properties as JsonObject).cannotUndo as JsonObject;
+        cannotUndo.description = `${String(cannotUndo.description)} Reworded.`;
+        return request;
+      }
+    });
+    const seen: ClientGatewayActivity[] = [];
+    const unsubscribe = automationStudioActivityHub.subscribe((event) => seen.push(event));
+    const failure = await run.build().then(() => undefined, (error: unknown) => error).finally(unsubscribe);
+
+    // The reset came back blocked under the refusal's code, and the supervisor went on to end.
+    const reset = lastOf(run.supervisorSaw[4]!, "project.dispatch")!;
+    expect(reset).toMatchObject({ ok: true, returns: [{ kind: "reset", outcome: "blocked" }] });
+    expect(String((reset.returns as JsonObject[])[0]!.reason)).toContain("flow_bootstrap.provider_evidence_loop_context_invalid");
+    // The build fails as every honest blocked ending does: the supervisor's recorded ending, told to the person.
+    expect(parseAutomationStudioFlowBootstrapGenerationError(failure)).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked"] });
+    expect(((await run.record()).ending as JsonObject).outcome).toBe("blocked");
+    expect(seen.some((event) => event.detail?.title === "FluxIQ could not finish the Flow.")).toBe(true);
   });
 });
 

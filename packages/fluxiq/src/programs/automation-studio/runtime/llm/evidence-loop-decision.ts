@@ -617,11 +617,13 @@ function readAmendment(item: unknown): AutomationStudioFlowDraftAmendment | "rer
   // a mistyped one leaves the amendment out rather than becoming step zero.
   if (!["to", "check", "through", "over", "while"].every((key) => isPosition(item[key]))) return undefined;
   // A repeat while its last step succeeds (`../flow-draft/routing.ts`) is a
-  // loop of its own, never one over an earlier step; its bound means nothing
-  // without it; and its while is its through. A shape saying two loops at once,
-  // or a bound with no loop, is left out rather than read as one of them.
+  // loop of its own, never one over an earlier step; and its while is its
+  // through. Its bound is 1 to 500 passes. Beside a repeat over a listing, the
+  // bound takes only the listing's first rows instead (For Each's `stopAfter`,
+  // up to 10,000; F5). A shape saying two loops at once, or a bound on a change
+  // that is no repeat, is left out rather than read as one of them.
   if (item.while !== undefined && (item.over !== undefined || (item.through !== undefined && item.through !== item.while))) return undefined;
-  if (item.most !== undefined && (item.while === undefined || !Number.isSafeInteger(item.most) || (item.most as number) < 1 || (item.most as number) > 500)) return undefined;
+  if (item.most !== undefined && (!Number.isSafeInteger(item.most) || (item.most as number) < 1 || (item.most as number) > (item.while === undefined ? 10_000 : 500) || (item.while === undefined && item.change !== "repeat"))) return undefined;
   // The three changes that need a value are dropped when it is missing,
   // rather than applied as something else: a `rerun` with no argument would
   // rerun the step with the argument that was already wrong, and an

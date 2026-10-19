@@ -576,10 +576,19 @@ describe("the routing words of an amendment", () => {
     expect(read({ step: 2, change: "repeat", while: 3, most: 500 })).toEqual({ kind: "amend_draft", amendments: [{ step: 2, change: "repeat", while: 3, most: 500 }] });
     expect(read({ step: 2, change: "repeat", while: 0 })).toBeUndefined();
     expect(read({ step: 2, change: "repeat", while: 3, over: 1 })).toBeUndefined();
-    expect(read({ step: 2, change: "repeat", most: 5 })).toBeUndefined();
-    expect(read({ step: 2, change: "repeat", over: 1, most: 5 })).toBeUndefined();
     for (const most of [0, 501, 2.5, "5", -1]) expect(read({ step: 2, change: "repeat", while: 3, most })).toBeUndefined();
     expect(read({ step: 2, change: "repeat", while: 3, through: 4 })).toBeUndefined();
+  });
+
+  // F5 (`run-mvecxeci-1c2cc227`): beside a repeat over a listing, most takes only its first rows (For Each's
+  // stopAfter, up to 10,000). It still means nothing on a change that is not a repeat.
+  it("reads most beside a repeat over a listing as its first rows, and leaves out a bound with no repeat", () => {
+    const read = (amendment: Record<string, unknown>) => automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [amendment] });
+    expect(read({ step: 2, change: "repeat", over: 1, most: 5 })).toEqual({ kind: "amend_draft", amendments: [{ step: 2, change: "repeat", over: 1, most: 5 }] });
+    expect(read({ step: 2, change: "repeat", most: 3 })).toEqual({ kind: "amend_draft", amendments: [{ step: 2, change: "repeat", most: 3 }] });
+    expect(read({ step: 2, change: "repeat", over: 1, most: 10_000 })).toEqual({ kind: "amend_draft", amendments: [{ step: 2, change: "repeat", over: 1, most: 10_000 }] });
+    for (const most of [0, 10_001, 2.5, "5", -1]) expect(read({ step: 2, change: "repeat", over: 1, most })).toBeUndefined();
+    expect(read({ step: 2, change: "optional", most: 3 })).toBeUndefined();
   });
 
   it("offers every one of them in the schema the model answers in", () => {

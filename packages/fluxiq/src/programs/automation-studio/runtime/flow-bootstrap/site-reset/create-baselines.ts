@@ -1,6 +1,9 @@
 import type { AutomationStudioSiteResetDeclared, AutomationStudioSiteResetRead } from "./contracts.ts";
 import { automationStudioSiteResetInvalidCollectionGroups } from "./collection-groups.ts";
 
+/** The classes the site's own controls can reverse: the acts that may name a destination (F1). */
+const REVERSIBLE: ReadonlySet<string> = new Set(["create_new", "modify_existing", "delete"]);
+
 /** Immutable, build-only original inventory receipts. A receipt never grants undo permission. */
 export class AutomationStudioSiteResetCreateBaselines {
   private readonly originals = new Map<string, { ref: string; resource: string; group: string; subjects: ReadonlySet<string> }>();
@@ -66,13 +69,33 @@ export class AutomationStudioSiteResetCreateBaselines {
   }
 
   check(declared: Pick<AutomationStudioSiteResetDeclared, "effect" | "consequences" | "control">, reference: unknown): { kind: "admit" } | { kind: "refused"; evidence: { ok: false; code: string; instruction: string } } {
-    const { control, consequences } = declared;
     // This necessary precondition is not a classifier for inventory semantics.
     // Irreversible/mixed and unidentified operations keep their existing policy.
-    const subjects = [...new Set([control.subject, ...(control.item === undefined ? [control.page] : [])].filter((subject): subject is string => subject !== undefined))];
-    if (declared.effect !== "mutate" || consequences.length !== 1 || consequences[0] !== "create_new" || subjects.length === 0) return { kind: "admit" };
-    const original = reference === undefined ? (control.scope === undefined ? undefined : this.originals.get(control.scope)) : typeof reference === "string" && this.issued.has(reference) ? [...this.originals.values()].find(entry => entry.ref === reference) : undefined;
-    if (control.resource !== undefined && original?.resource === control.resource && this.valid.get(original.group) === true && subjects.every(subject => !original.subjects.has(subject))) return { kind: "admit" };
+    if (!identifiedCreate(declared) || this.destination(declared, reference)) return { kind: "admit" };
     return { kind: "refused", evidence: { ok: false, code: "candidate.create_baseline_required", instruction: "This creation was not run. Before creating an identified reversible effect, observe its destination's complete original inventory through the site's own controls, then return and retry with the resetDestination reference that observation issued. The original inventory must belong to this resource and prove the subject absent. A first observation after a lasting build effect, another resource, a matching name, or an invented reference is insufficient. Looking and navigating remain available; no new permission is needed." } };
   }
+
+  /**
+   * Where a reversible act's effect would show, as an original of this resource
+   * (F1): an identified creation's by its issued ref or its own scope, with its
+   * subject absent there -- none where `check` would refuse it -- and any other
+   * reversible act's only by an issued ref the call named. The ledger keeps it
+   * on the act; it proves nothing until read again after the act.
+   */
+  destination(declared: Pick<AutomationStudioSiteResetDeclared, "effect" | "consequences" | "control">, reference: unknown): { scope: string; group: string } | undefined {
+    const { control, consequences } = declared;
+    if (declared.effect !== "mutate" || consequences.length === 0 || !consequences.every(consequence => REVERSIBLE.has(consequence))) return undefined;
+    const created = identifiedCreate(declared);
+    const scope = reference === undefined ? (created ? control.scope : undefined) : typeof reference === "string" && this.issued.has(reference) ? [...this.originals].find(([, entry]) => entry.ref === reference)?.[0] : undefined;
+    const original = scope === undefined ? undefined : this.originals.get(scope);
+    if (scope === undefined || !original || control.resource === undefined || original.resource !== control.resource || this.valid.get(original.group) !== true || (created ?? []).some(subject => original.subjects.has(subject))) return undefined;
+    return { scope, group: original.group };
+  }
+}
+
+/** What an identified reversible creation is about, or none where the creation precondition does not apply. */
+function identifiedCreate(declared: Pick<AutomationStudioSiteResetDeclared, "effect" | "consequences" | "control">): string[] | undefined {
+  const { control, consequences } = declared;
+  const subjects = [...new Set([control.subject, ...(control.item === undefined ? [control.page] : [])].filter((subject): subject is string => subject !== undefined))];
+  return declared.effect !== "mutate" || consequences.length !== 1 || consequences[0] !== "create_new" || subjects.length === 0 ? undefined : subjects;
 }

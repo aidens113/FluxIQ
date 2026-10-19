@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE, AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
 import { planInput, project, subflow, taskSpecInput } from "./supervisor-fixture.ts";
-import { FIND, HOLD, brief, call, dispatch, end, reset, supervise, test } from "./supervisor-script.ts";
+import { FIND, HOLD, assembled, brief, call, dispatch, end, reset, supervise, test } from "./supervisor-script.ts";
 
 const PLAN = planInput([
   subflow("find_titles", ["p1"], { inputs: ["author"], outputs: ["titles"] }),
@@ -51,13 +51,14 @@ describe("a reset sent again after one that came back not done", () => {
     ], project({ ledger: { undoes: false } }));
     expect(answersOf(before.shown, IDS.dispatch)[2]).toMatchObject({ code: "project.reset_repeated", instruction: GUIDANCE.refusals.resetRepeatedEnd });
 
-    // A whole test sent in between leaves acts of its own, so the next reset has something new to undo, and runs.
+    // A whole test sent in between -- admitted once the act the site cannot undo is named under cannotUndo --
+    // leaves acts of its own, so the next reset has something new to undo, and runs.
     const after = await supervise([
       call(IDS.writePlan, PLAN),
       dispatch(BUILDS),
       call(IDS.assemble),
       dispatch([reset()]),
-      test,
+      call(IDS.testCandidate, (evidence) => ({ ...assembled(evidence), cannotUndo: ["act-1"] })),
       dispatch([reset()]),
       end("blocked")
     ], project({ ledger: { undoes: false }, trialActs: true }));

@@ -338,6 +338,46 @@ describe("For Each in a graph run", () => {
     expect(trace.values["recall.value"]).toEqual(items);
   });
 
+  // F5 (`run-mvecxeci-1c2cc227`): `repeat most: N` beside `repeat over:` is For Each's `stopAfter`. A saved Flow
+  // that carries it replays only the first N rows, in order, and the run succeeds.
+  it("replays a saved For Each with stop after over only the first rows, then succeeds", async () => {
+    const items = ["synthetic-a", "synthetic-b", "synthetic-c", "synthetic-d", "synthetic-e"];
+    const authored: AutomationStudioFlowDocument = {
+      ...authoredFlow,
+      flowId: "flow.for-each-stop-after",
+      nodes: [
+        { id: "start", definitionId: "builtin.control.start" },
+        { id: "list", definitionId: "builtin.data.constant", parameterValues: { value: items } },
+        { id: "each", definitionId: "builtin.control.for-each", parameterValues: { stopAfter: 2 } },
+        { id: "remember", definitionId: "builtin.data.set-variable", parameterValues: { name: "seen", writeMode: "append-list" } },
+        { id: "recall", definitionId: "builtin.data.get-variable", parameterValues: { name: "seen" } },
+        { id: "end", definitionId: "builtin.control.end" }
+      ],
+      edges: [
+        edge("start", "success", "list"),
+        edge("list", "success", "each"),
+        edge("list", "value", "each", "items"),
+        edge("each", "body", "remember"),
+        edge("each", "item", "remember", "value"),
+        edge("remember", "success", "recall"),
+        edge("recall", "success", "each"),
+        edge("each", "done", "end")
+      ]
+    };
+    // Saved and read back, as a stored Flow is.
+    const saved = JSON.parse(JSON.stringify(authored)) as AutomationStudioFlowDocument;
+    expect(saved.nodes.find((node) => node.id === "each")?.parameterValues).toEqual({ stopAfter: 2 });
+
+    const trace = await runAutomationStudioGraph(saved);
+    const passes = trace.attempts.filter((attempt) => attempt.nodeId === "each");
+
+    expect(trace.status).toBe("succeeded");
+    expect(passes.map((attempt) => attempt.route)).toEqual(["body", "body", "done"]);
+    expect(passes[2]?.outputs).toEqual({ count: 2 });
+    expect(trace.values["recall.value"]).toEqual(["synthetic-a", "synthetic-b"]);
+    expect(trace.attempts.some((attempt) => attempt.nodeId === "end")).toBe(true);
+  });
+
   it("grants each Repeat pass into its body the same allowance, so 300 passes run past the default 250 steps", async () => {
     const flow: AutomationStudioFlowDocument = {
       ...authoredFlow,

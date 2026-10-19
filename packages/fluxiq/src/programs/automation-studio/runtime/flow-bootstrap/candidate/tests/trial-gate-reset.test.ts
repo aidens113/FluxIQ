@@ -126,12 +126,18 @@ describe("candidate trial gate: the site is put back first", () => {
     expect(ran.leftOnSite).toEqual([{ act: "act-2", did: "trial step 1 \"Inspect\"" }]);
   });
 
-  it("admits the trial without progress, saying under startedWith what was still in place", async () => {
+  // F1 continuation (user, 2026-10-12): a test sent again without progress, or past the policy's refusals, once ran on
+  // the leftovers. It is now refused every time while the act is still to undo; the trial runs only once the act is
+  // named under cannotUndo, and then says under startedWith what was still in place.
+  it("refuses a trial without progress however often it is asked, and runs it only once the act is named under cannotUndo, saying under startedWith what was still in place", async () => {
     const asked: AutomationStudioCandidateTrialRequest[] = [];
-    const { seen } = await run([act(), submit, test, test, submit], portOf(asked));
-    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)).toMatchObject({ code: "candidate.trial_reset_required" });
-    const ran = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[4]!)!;
-    expect(ran).toMatchObject({ verdict: "unsure", startedWith: { acts: [{ act: "act-1" }], differs: ["1 lines where the start had 0"] }, leftOnSite: [{ act: "act-1" }] });
+    const cannot: Step = (evidence) => ({ kind: "tool_call", toolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, callId: `test.${++calls}`, input: { ...receipt(evidence), cannotUndo: ["act-1"] } });
+    const { seen } = await run([act(), submit, test, test, test, test, cannot, submit], portOf(asked));
+    for (const index of [3, 4, 5, 6]) {
+      expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[index]!)).toMatchObject({ ok: false, code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-1" }], differs: ["1 lines where the start had 0"] });
+    }
+    const ran = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[7]!)!;
+    expect(ran).toMatchObject({ verdict: "unsure", startedWith: { cannotUndo: [{ act: "act-1" }], differs: ["1 lines where the start had 0"] }, leftOnSite: [{ act: "act-1" }] });
     expect(asked).toHaveLength(1);
   });
 
