@@ -4,7 +4,7 @@
 // only a lasting consequence of one of its actions is asked about
 // (`permittedConsequences`).
 
-import { resolveAutomationStudioAuthoringMode } from "../../model/authoring-mode/index.ts";
+import { resolveAutomationStudioBuildAuthoringMode } from "../../model/authoring-mode/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../runtime/loop-limits/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, type GenerateFlowBootstrapAdaptationRequest, type GenerateFlowBootstrapAdaptationResponse } from "../contracts.ts";
 // Values come from their owning modules, not the runtime barrel: through the barrel a load order
@@ -79,10 +79,12 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
       // `configured` is how a client that cannot read Core's configuration
       // (the web panel) asks for Core's own authoring mode
       // (`../../model/authoring-mode/`); it is resolved here, once, so the build
-      // and the answer below agree on it.
+      // and the answer below agree on it. An extend resolves to a mode that can
+      // extend, as the chat's improve does (`resolveAutomationStudioBuildAuthoringMode`);
+      // `project` asked for by name is forwarded as asked.
       let candidateAuthoring: "candidate" | "project" | undefined;
       try {
-        const mode = payload.authoringMode === "configured" ? resolveAutomationStudioAuthoringMode() : payload.authoringMode;
+        const mode = payload.authoringMode === "configured" ? resolveAutomationStudioBuildAuthoringMode(payload.mode === "extend" ? "extend" : "create") : payload.authoringMode;
         candidateAuthoring = mode === "candidate" || mode === "project" ? mode : undefined;
       }
       catch (error) { return { ok: false, error: error instanceof Error ? error.message : "Core's authoring mode is misconfigured." }; }

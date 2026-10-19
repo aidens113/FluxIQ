@@ -22,7 +22,7 @@
 // applies, and the command says plainly what the test came to
 // (`automationStudioConversationCandidateDraftSaid`).
 
-import { resolveAutomationStudioAuthoringMode } from "../../../model/authoring-mode/index.ts";
+import { resolveAutomationStudioAuthoringMode, resolveAutomationStudioBuildAuthoringMode } from "../../../model/authoring-mode/index.ts";
 import { parseAutomationStudioCandidateAuthoringResult, parseAutomationStudioCandidateProposalResult, type AutomationStudioCandidateAuthoringResult } from "../../flow-bootstrap/authoring-result/index.ts";
 import { parseAutomationStudioFlowBootstrapCandidateKept, type AutomationStudioFlowBootstrapCandidateKept } from "../../flow-bootstrap/generation-failure/index.ts";
 import type { AutomationStudioConversationCommandCallResult, AutomationStudioConversationCommandContext } from "./command.ts";
@@ -135,14 +135,16 @@ export async function buildAutomationStudioFlowFromConversation(
   context: AutomationStudioConversationCommandContext,
   input: { flowId: string; mode: "create" | "extend" }
 ): Promise<AutomationStudioConversationBuildResult> {
-  const candidateMode = automationStudioConversationAuthorsCandidates();
+  // Core's configured mode for this build (`project` builds through the project supervisor); an extend in project mode
+  // is a candidate build, by the same rule the API applies to a `configured` request (`resolveAutomationStudioBuildAuthoringMode`).
+  const authoringMode = resolveAutomationStudioBuildAuthoringMode(input.mode);
+  const candidateMode = authoringMode !== "legacy";
   const response = await context.port.call("generate-flow-bootstrap-adaptation", {
     projectId: context.projectId,
     flowId: input.flowId,
     authSessionId: context.sessionId,
     evidenceGuided: true,
-    // Core's configured mode, sent as it is set (`project` builds through the project supervisor). An extend is not yet a project build's (automation-project-agents-plan, A7), so in project mode it is a candidate build.
-    ...(candidateMode ? { authoringMode: input.mode === "extend" ? "candidate" : resolveAutomationStudioAuthoringMode() } : {}),
+    ...(candidateMode ? { authoringMode } : {}),
     // An extend amends the Flow's own steps from where the Flow already
     // starts; the page on screen is a creation's starting point.
     ...(input.mode === "extend" ? { mode: "extend" } : context.startLocation ? { startLocation: context.startLocation } : {}),

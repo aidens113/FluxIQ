@@ -210,6 +210,9 @@ async function seedContractData(): Promise<ContractSeed> {
     // button requires before it offers a build.
     const withModelKey = <T extends { metadata?: unknown }>(flow: T) => ({ ...flow, metadata: { ...((flow.metadata as Record<string, unknown> | undefined) ?? {}), llmProvider: "deepseek", llmModel: "deepseek-flash", llmSecretKeyId: LLM_KEY_ID } });
     await service.saveFlow({ projectId: project.id, flow: withModelKey(created) as never });
+    // Core runs, builds and adapts a Flow only once it has an active task
+    // instruction (t519): the one the panel's Instructions view writes.
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: created.flowId, instruction: "Check the product price and add it to the cart when it is in stock." });
     const flow = created;
     const primary = await service.createFlowSubflow({ projectId: project.id, flowId: flow.flowId, name: "Primary", role: "primary" });
     const subflow = await service.createFlowSubflow({ projectId: project.id, flowId: flow.flowId, name: "Checkout" });
@@ -222,7 +225,7 @@ async function seedContractData(): Promise<ContractSeed> {
     const routeId = route.rules.find((entry) => entry.name === "When it is in stock")?.ruleId;
     if (!routeId) throw new Error("The seeded route did not come back from Core.");
     const run = await service.startRuntimeSession({ projectId: project.id, flowId: flow.flowId });
-    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.contract", initialState: { timestamp: 1, namespaces: {} } });
+    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.contract", description: "Shows checking a product's price before adding it to the cart.", initialState: { timestamp: 1, namespaces: {} } });
     const adaptation = await service.saveFlowAdaptation({
       schemaVersion: "0.1",
       adaptationId: "adaptation.contract",

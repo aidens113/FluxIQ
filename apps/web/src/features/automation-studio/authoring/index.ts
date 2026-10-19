@@ -1,5 +1,6 @@
 export { BlankFlowAuthoringPanel, type BlankFlowAuthoringCommands } from "./BlankFlowAuthoringPanel";
 export { ImproveFlowPanel } from "./ImproveFlowPanel";
+export { TaskInstructionsPanel } from "./TaskInstructionsPanel";
 export { blankFlowAuthoringRequest, blankFlowAuthoringRequestPolicy, blankFlowExplorationRequest, WEBSITE_EXPLORATION_OVERALL_TIMEOUT_MS } from "./blank-flow-authoring-model";
 export { existingFlowImprovementRequest, improvementInstruction, IMPROVEMENT_INSTRUCTION_MAX_LENGTH } from "./existing-flow-improvement";
 export { flowModelBinding, flowModelFromDetail } from "./flow-model-binding";

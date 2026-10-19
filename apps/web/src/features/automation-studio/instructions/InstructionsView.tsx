@@ -5,7 +5,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, ArrowDown, ArrowUp, Plus, Search, Workflow } from "lucide-react";
 import { commitAutomationStudioMutation } from "../stores/mutation-transaction-store";
 
-import { TaskInstructionsPanel } from "./TaskInstructionsPanel";
+// From the module that defines it: the `authoring` barrel leads back here
+// through the view registry, which would close an import cycle.
+import { TaskInstructionsPanel } from "../authoring/TaskInstructionsPanel";
 
 const WORKBENCH_PAGE_SIZE = 25;
 
