@@ -8,7 +8,7 @@ import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AUTOMATION_STUDIO_SITE_RESET_UN
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, automationStudioSubflowEntryLeft, type AutomationStudioSubflowEntryLeftAct, type AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, AUTOMATION_STUDIO_NODE_WRITE_KEY, automationStudioFlowDraftReplayClearedCode, automationStudioHarnessOptionRegistry, automationStudioLlmNodeDescriptions, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceToolExecutionResult, type AutomationStudioLlmHarnessInput } from "../../llm/index.ts";
-import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectBriefPortFactory, AutomationStudioProjectBriefPortRequest } from "../../project-agents/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_RESET_COMPLETION, type AutomationStudioProjectBriefEnding, type AutomationStudioProjectBriefPortFactory, type AutomationStudioProjectBriefPortRequest } from "../../project-agents/index.ts";
 import { startAutomationStudioBuildRouting } from "../../route-state/index.ts";
 import { automationStudioCandidateStallCode, automationStudioCandidateSubmissionRefusals } from "../candidate-failure/index.ts";
 import { automationStudioFlowBootstrapUnusableDecisions, type generateAutomationStudioFlowCandidateDraft } from "../flow-bootstrap-commands/index.ts";
@@ -184,21 +184,6 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 
 type DraftInput = Parameters<typeof generateAutomationStudioFlowCandidateDraft>[0];
 
-/** The reset loop's completion schema (`project-agents/dispatch/reset-loop.ts`), which its decisions are asked under. */
-const RESET_COMPLETION: JsonObject = {
-  type: "object",
-  properties: {
-    summary: { type: "string" },
-    cannotUndo: {
-      type: "array",
-      uniqueItems: true,
-      items: { type: "string", pattern: "^act-[1-9][0-9]{0,3}$" },
-      description: "Only the listed acts the site offers no control to reverse, after you looked for one on the item each acted on: report these as unresolved. Reversible effects still require proved restoration before an ordinary trial. Never an act you could undo."
-    }
-  },
-  additionalProperties: false
-};
-
 export function automationStudioProjectBuildBriefPorts(input: {
   project: AutomationStudioProjectBuildPorts;
   draft: DraftInput;
@@ -306,7 +291,8 @@ export function automationStudioProjectBuildBriefPorts(input: {
       const placed = placing(built.loop, placedAt(calls, pages), check, { capture: false, signal: request.signal });
       // Its run-node calls offer `undoes` and no `write`; a lasting press of its own is told as outside it (header).
       const tools = built.loop.tools.map((tool) => withoutWrite(automationStudioSiteResetUndoesTool(tool, { createBaselines: true })));
-      const loop = observeAutomationStudioEvidenceLoop({ ...told({ ...placed, tools }, { start: started.told, entry: undefined, permittedActs: request.brief.permittedActs, arrived: false, role: "reset" }), decide: built.decide(RESET_COMPLETION) });
+      // Its decisions are sent the very schema its loop builds their decision schema from, or the provider refuses them (F3).
+      const loop = observeAutomationStudioEvidenceLoop({ ...told({ ...placed, tools }, { start: started.told, entry: undefined, permittedActs: request.brief.permittedActs, arrived: false, role: "reset" }), decide: built.decide(AUTOMATION_STUDIO_PROJECT_RESET_COMPLETION) });
       return { loop, remainingActs: (cannotUndo) => remainingActs(project.ledger, check, request.signal, cannotUndo), ended: built.ended };
     }
   };

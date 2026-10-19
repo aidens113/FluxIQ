@@ -10,7 +10,7 @@ import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
 import { BUILD, planInput, project, subflow, taskSpecInput } from "./supervisor-fixture.ts";
 import { singleBuild } from "../../single-subflow/tests/single-build.ts";
-import { FIND, HOLD, brief, call, complete, dispatch, end, lastOf, reset, supervise, test, type Step } from "./supervisor-script.ts";
+import { FIND, HOLD, assembled, brief, call, complete, dispatch, end, lastOf, reset, supervise, test, type Step } from "./supervisor-script.ts";
 import { AutomationStudioSiteResetProjectLedger } from "../../../flow-bootstrap/site-reset/index.ts";
 import type { AutomationStudioProjectSupervisorContext } from "../context.ts";
 import { AutomationStudioProjectSupervisorState } from "../state.ts";
@@ -45,10 +45,26 @@ describe("the supervisor's whole test", () => {
     expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build", "build"], ["build"], ["reset"]]);
   });
 
-  it("runs the test with an act the site cannot undo kept and the judge told, and an ending names it", async () => {
+  // F1 continuation (user, 2026-10-12): a reset that came back blocked no longer lets the whole test run on what it
+  // left. Only an act named under cannotUndo is kept; one nobody named is still to undo, and the test is refused.
+  it("refuses the test after a reset that undid nothing and named nothing under cannotUndo, and runs no trial on the leftovers", async () => {
     const run = await supervise([
       call(IDS.writePlan, TWO_PART), dispatch(BUILDS), call(IDS.assemble), test,
       dispatch([reset()], "Put the target back before the whole test."), test,
+      end("blocked", "The act could not be undone.")
+    ], project({ ledger: { undoes: false }, trial: () => "no" }));
+    const [first, again] = tests(run.shown);
+    expect(first).toMatchObject({ code: "project.trial_reset_required" });
+    expect(again).toMatchObject({ ok: false, code: "project.trial_reset_required", actsInPlace: [{ act: "act-1", brief: "brief-2" }] });
+    expect(run.trials).toHaveLength(0);
+    expect(run.ledger!.snapshot().acts).toEqual([expect.objectContaining({ act: "act-1", inPlace: true })]);
+  });
+
+  it("runs the test with an act the site cannot undo, named under cannotUndo, kept and the judge told, and an ending names it", async () => {
+    const cannotUndo: Step = call(IDS.testCandidate, (evidence) => ({ ...assembled(evidence), cannotUndo: ["act-1"] }));
+    const run = await supervise([
+      call(IDS.writePlan, TWO_PART), dispatch(BUILDS), call(IDS.assemble), test,
+      dispatch([reset()], "Put the target back before the whole test."), cannotUndo,
       end("blocked", "The whole test was judged no.")
     ], project({ ledger: { undoes: false }, trial: () => "no" }));
     const [first, ran] = tests(run.shown);

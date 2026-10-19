@@ -132,6 +132,17 @@ export type AutomationStudioResultReadAccount = {
    * it does not hold, or the caller gave no edges.
    */
   keptEveryRow?: AutomationStudioResultKeptEveryRow;
+  /**
+   * How the list this read read goes on past it, as the read itself saw it on
+   * the page (F8): `kind` (`next_page`, `load_more`, `infinite_scroll`, or
+   * `unknown` for a word this Core does not know) and `evidence`, the closed
+   * word for what said so. Sent only by a read that was not asked to page, of a
+   * list that showed an enabled way on. Live run `run-mveaaqxn-d0be9888`: a
+   * trial's read saw 5 items of a longer list, nothing said it went on, and
+   * three revisions repeated it. Absent where the list ended or the read did
+   * not say (`../read-account/list-continues.ts` says it).
+   */
+  listContinues?: { kind: string; evidence: string };
 };
 
 /**

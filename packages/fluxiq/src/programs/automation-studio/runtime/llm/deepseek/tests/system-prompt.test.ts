@@ -8,8 +8,10 @@
 // verification pins moved again in t653 by exactly one sentence, the order
 // that puts the diagnosis before the summary, inserted after the fields; and
 // again in t660 by exactly one sentence, what the `resultCount` beside a
-// narrowing step means, inserted after the `narrowedBefore` step's effects).
-// With
+// narrowing step means, inserted after the `narrowedBefore` step's effects;
+// and in t563 (5a652d4a) by three sentences, that a search query retrieves
+// candidates and is not a title requirement, inserted after the omitted-row
+// sentence). With
 // them, the domain's text sits after Core's format, injection and schema rules
 // and before Core's task prose, set off by blank lines -- and every word of
 // Core's message is still there.

@@ -147,6 +147,16 @@
 // the converse, each stored row against the request's words, and both said
 // yes), the fact the builder's gate reads for a read Core flagged as keeping
 // every item it saw (`../../flow-bootstrap/subflow-candidate/subflow-trial-gate.ts`).
+//
+// **A read of one part of a list that goes on says so (F8).** Live run
+// `run-mveaaqxn-d0be9888`: a judged-no trial's read saw 5 items of a longer list
+// and kept 1; the feedback said only `result.counts_look_right`, and three
+// revisions repeated the read. Where a read that was not asked to page saw its
+// list go on past it, its entry carries `listContinues`, Core's sentence naming
+// its step (`../../result-verification/read-account/list-continues.ts`), under
+// every verdict; and a no says `result.read_list_continues` in place of the
+// counts looking right, with the fix line naming the step. A read whose list
+// ended is said as it was.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../../../model/index.ts";
 import { automationStudioZeroPassLoopBodies } from "../../executor/graph-navigation/index.ts";
@@ -155,7 +165,7 @@ import type { AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap
 import { automationStudioAttemptSettled } from "../../flow-change/index.ts";
 import { automationStudioModelFacingControlWords, automationStudioModelFacingFailureText } from "../../llm/model-facing/index.ts";
 import { automationStudioResultAdviceShown } from "../../result-verification/agreement/index.ts";
-import { automationStudioResultSummaryWithPagingWords, type AutomationStudioBuildTestVerdict, type AutomationStudioResultReadAccount, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
+import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES, automationStudioResultReadListContinues, automationStudioResultSummaryWithPagingWords, type AutomationStudioBuildTestVerdict, type AutomationStudioResultReadAccount, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import { automationStudioTrialAbsorbedFeedback } from "./absorbed.ts";
 import { automationStudioTrialCheckStepFeedback } from "./check-step.ts";
 import { automationStudioTrialExecutedSteps } from "./executed-steps.ts";
@@ -222,7 +232,8 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
         : undefined;
     // What each list read saw, kept and rejected, as a judged trial says it (`./reads.ts`).
     // With how each read's paging ended, in the judges' words (header, t498).
-    const reads = withPaging(automationStudioTrialReadsFeedback(input.reads, input.graph), input.reads);
+    // And a read of one part of a list that goes on past it says so (header, F8).
+    const reads = withContinuation(withPaging(automationStudioTrialReadsFeedback(input.reads, input.graph), input.reads), input.reads);
     return { verdict: "execution_failed", feedback: { code: input.code, ...(input.trialRunId ? { trialRunId: input.trialRunId } : {}), start: input.start, ...(graphEnding ? { graphEnding } : {}), ...(reads.length ? { reads, ...pagingNote(reads) } : {}), ...steps(input.trace, input.graph, input.wayOuts) } };
   },
 
@@ -231,7 +242,8 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
     const judged = input.verdict;
     // What each list read saw, kept and rejected: a read that kept no rows is said as a valid outcome of its conditions (`./reads.ts`, t466).
     // With how each read's paging ended, in the judges' words, so a reading about pages can be held to it (header, t498).
-    const reads = withPaging(automationStudioTrialReadsFeedback(input.summary.reads, input.graph), input.summary.reads);
+    // And a read of one part of a list that goes on past it says so (header, F8).
+    const reads = withContinuation(withPaging(automationStudioTrialReadsFeedback(input.summary.reads, input.graph), input.summary.reads), input.summary.reads);
     const paged = reads.some((read) => read.paging !== undefined);
     // The rows the saved answer's processing alone left out, by label (`./processed-out.ts`, t493).
     const processedOut = automationStudioTrialProcessedOutFeedback(input.summary);
@@ -240,7 +252,9 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
     // Whether the yes was confirmed by the converse question (t691), the fact a gate's row check reads (t692).
     if (judged.verdict === "yes") return { verdict: "yes", feedback: { ...common, judge: "The trial was judged twice to do what the instruction asks.", ...(judged.firstAskConfirmed !== undefined ? { firstAskConfirmed: judged.firstAskConfirmed } : {}) } };
     if (judged.verdict === "no") {
-      return { verdict: "no", code: "candidate.trial_judged_no", feedback: { ...common, code: "candidate.trial_judged_no", judge: compact({ expected: judged.expected, observed: judged.observed, advice: automationStudioResultAdviceShown(judged.advice), stillAchievable: judged.stillAchievable }), ...(judged.findings.length ? { findings: [...judged.findings] } : {}), ...(judged.fix?.length ? { fix: [...judged.fix] } : {}), ...(judged.checked?.length ? { checked: [...judged.checked] } : {}) } };
+      // A read of one part of a list that goes on is said as that, never as counts that look right (header, F8).
+      const findings = continuedNo(judged.findings, judged.fix, input.summary.reads);
+      return { verdict: "no", code: "candidate.trial_judged_no", feedback: { ...common, code: "candidate.trial_judged_no", judge: compact({ expected: judged.expected, observed: judged.observed, advice: automationStudioResultAdviceShown(judged.advice), stillAchievable: judged.stillAchievable }), ...findings, ...(judged.checked?.length ? { checked: [...judged.checked] } : {}) } };
     }
     if (judged.verdict === "unknown") {
       const split = judged.answeredReading !== undefined;
@@ -273,6 +287,29 @@ function withPaging(told: JsonObject[], reads: readonly AutomationStudioResultRe
     if (!read || typeof paging !== "string" || !pages(read)) return entry;
     return { ...entry, pagesRead: read.pagesRead, ...(read.stop !== undefined ? { stop: read.stop } : {}), paging };
   });
+}
+
+/** Each read's feedback with Core's sentence for a read of one part of a list that goes on past it (header, F8); `told` is `reads` one for one. */
+function withContinuation(told: JsonObject[], reads: readonly AutomationStudioResultReadAccount[] | undefined): JsonObject[] {
+  return told.map((entry, index) => {
+    const read = reads?.[index];
+    const continued = read ? automationStudioResultReadListContinues(read) : undefined;
+    return continued ? { ...entry, listContinues: continued.said } : entry;
+  });
+}
+
+/**
+ * A no's findings and fix lines (header, F8): where a read of one part of a list
+ * saw it go on, `result.read_list_continues` stands in place of
+ * `result.counts_look_right`, once, and each such read's fix line, naming its
+ * step, follows the no's own. Otherwise as the no carried them.
+ */
+function continuedNo(findings: readonly string[], fix: readonly string[] | undefined, reads: readonly AutomationStudioResultReadAccount[] | undefined): { findings?: string[]; fix?: string[] } {
+  const codes = AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES;
+  const lines = (reads ?? []).flatMap((read) => automationStudioResultReadListContinues(read)?.fix ?? []);
+  const said = lines.length ? [...new Set([...(findings.includes(codes.countsLookRight) ? [] : [codes.readListContinues]), ...findings.map((code) => (code === codes.countsLookRight ? codes.readListContinues : code))])] : [...findings];
+  const fixes = [...(fix ?? []), ...lines.filter((line) => !(fix ?? []).includes(line))];
+  return { ...(said.length ? { findings: said } : {}), ...(fixes.length ? { fix: fixes } : {}) };
 }
 
 /** Whether a read paged, or was written to: more than one page, a stop word, a loop's passes, or paging authored. */

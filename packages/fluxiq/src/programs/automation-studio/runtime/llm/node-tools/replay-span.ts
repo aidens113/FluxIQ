@@ -20,8 +20,10 @@
 //             those), and with its state bindings resolved against
 //             `{item: row}` by the executor's own resolver
 //             (`resolveAutomationNodeParameterValues`), so an input takes its
-//             test value and a row field the pass's row. More rows than a For
-//             Each takes fail the span, as the For Each fails the Flow.
+//             test value and a row field the pass's row. A repeat with
+//             `most` takes only the first that many rows, as the For Each's
+//             `stopAfter` does (F5). More rows than a For Each takes fail the
+//             span, as the For Each fails the Flow.
 //   while  -- the check has just been asked, on its own line, and held. While
 //             it replays, the body runs once and the check is asked again.
 //             Past the same bound the span fails. A check whose own ask did
@@ -246,8 +248,11 @@ export function automationStudioFlowDraftReplaySpanPlan(input: {
   if (port === undefined) return input.run[input.index - 1] === over ? { kind: "while", members, over } : undefined;
   const rows = asked.answer.result.outputs?.[port];
   if (!Array.isArray(rows) || !rows.every(isRecord)) return undefined;
-  const labels = rowLabels(asked.answer.result.evidence);
-  return { kind: "list", members, over, rows, ...(labels ? { labels } : {}) };
+  const all = rowLabels(asked.answer.result.evidence);
+  // A repeat with most takes only the list's first rows, as For Each's stop after does in the Flow (F5).
+  const taken = routing.most === undefined ? rows : rows.slice(0, routing.most);
+  const labels = routing.most === undefined ? all : all?.slice(0, routing.most);
+  return { kind: "list", members, over, rows: taken, ...(labels ? { labels } : {}) };
 }
 
 /**

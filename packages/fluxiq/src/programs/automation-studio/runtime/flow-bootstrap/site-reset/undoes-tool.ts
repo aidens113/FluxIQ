@@ -17,7 +17,7 @@ const UNDOES: JsonObject = {
 
 const DESTINATION: JsonObject = {
   type: "string", pattern: "^destination-[1-9][0-9]{0,3}$",
-  description: "For an identified reversible create_new: the ref printed under resetDestinations.collections by an earlier observation of its complete original destination inventory. Observe the destination before creating anything there, then return and supply its ref. Never invent a ref or use another resource. An exact same-scope original inventory can satisfy this without a ref. This is a build reset precondition, not permission or proof of a future inverse."
+  description: "For an identified reversible create_new: the ref printed under resetDestinations.collections by an earlier observation of its complete original destination inventory. Observe the destination before creating anything there, then return and supply its ref. Never invent a ref or use another resource. An exact same-scope original inventory can satisfy this without a ref. Any other reversible act may name, by such a ref, the list where its effect would show, on its own call or on a later call that names it under undoes. This is a build reset precondition, not permission or proof of a future inverse."
 };
 
 /** `tool` with `undoes` among its input's properties when it is the library tool; any other tool unchanged. */

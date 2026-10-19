@@ -57,7 +57,8 @@ export function automationStudioFlowDraftAmendmentRoute(
     const over = named(amendment.over) ?? before();
     if (!over) return { ok: false, reason: amendment.over === undefined ? "no_step_before_it" : "no_such_step" };
     if (!automationStudioFlowDraftStepIsProposed(through) || !automationStudioFlowDraftStepIsProposed(over)) return { ok: false, reason: "not_a_kept_step" };
-    routing = { kind: "repeat", through: automationStudioFlowDraftStepId(through), over: automationStudioFlowDraftStepId(over) };
+    // Over a listing, `most` takes only its first rows (F5); over a check the assembler refuses it.
+    routing = { kind: "repeat", through: automationStudioFlowDraftStepId(through), over: automationStudioFlowDraftStepId(over), ...(amendment.most === undefined ? {} : { most: amendment.most }) };
   }
   if (same(step.routing, routing) && amendment.settings === undefined) {
     // The same repeat sent again where it cannot run is told why, not "already so".

@@ -1,3 +1,16 @@
+// A list loop's head: `repeat over` in a Flow script
+// (`runtime/flow-bootstrap/authoring/draft-routing.ts`) walks a listing's rows
+// through it, one pass per row, in the list's order.
+//
+// Two numbers bound it, and they mean different things. `maxIterations` is a
+// safety limit: a loop that would take more passes than it fails before the
+// first, because a list that long is a Flow doing something nobody meant.
+// `stopAfter` is part of what the Flow does -- act on the first N rows, as
+// `repeat most: N` beside `repeat over:` says -- so the loop takes at most that
+// many rows and then ends on `done`, successfully, as if the list held no
+// more. The safety limit counts the passes the loop will take, so a long list
+// cut to a few rows does not fail it. A saved Flow without `stopAfter` walks
+// every row, exactly as before it existed.
 import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { AutomationNodeExecutionContext, AutomationNodeExecutionResult } from "../contracts.ts";
 import { defineBuiltinNode, numberValue } from "../shared/definition.ts";
@@ -34,6 +47,13 @@ export const forEachNode = defineBuiltinNode({
       constraints: { minimum: 1, maximum: MAX_ITERATIONS_CEILING, integer: true }
     },
     {
+      id: "stopAfter",
+      label: "Stop after",
+      description: "Take only the first this many items, in the list's order, then finish successfully. Unset, every item is taken. At most 10,000.",
+      valueType: "number",
+      constraints: { minimum: 1, maximum: MAX_ITERATIONS_CEILING, integer: true }
+    },
+    {
       id: "maxStepsPerIteration",
       label: "Steps per item",
       description: "How many more steps the run may take for each item. A whole run stops at 100,000 steps.",
@@ -48,18 +68,21 @@ export const forEachNode = defineBuiltinNode({
   execute: (context) => forEachPass(context)
 });
 
-// One pass. The first pass reads the list and checks it against the limit;
-// every later pass reads the place the run kept, so a list that changes while
-// the body runs does not change this iteration. The item is handed on as the
-// list holds it, by reference, so a captured row is still found by identity
-// when the saved trace replaces it with a marker.
+// One pass. The first pass reads the list, keeps its first `stopAfter` items
+// and checks those against the limit; every later pass reads the place the run
+// kept, so a list that changes while the body runs does not change this
+// iteration. The item is handed on as the list holds it, by reference, so a
+// captured row is still found by identity when the saved trace replaces it
+// with a marker.
 function forEachPass(context: AutomationNodeExecutionContext): AutomationNodeExecutionResult {
   const { iteration } = context;
   if (!iteration) return failedPass("for_each.iteration_unavailable", "blocked_by_capability_or_policy", "For Each runs only inside a Flow run, which keeps its place in the list.");
   let state = iteration.get();
   if (!state) {
-    const items = context.inputs.items;
-    if (!Array.isArray(items)) return failedPass("for_each.items_invalid", "graph_validation_or_unknown_node", "For Each needs a list in Items.");
+    const listed = context.inputs.items;
+    if (!Array.isArray(listed)) return failedPass("for_each.items_invalid", "graph_validation_or_unknown_node", "For Each needs a list in Items.");
+    const first = stopAfter(context);
+    const items = first === undefined || listed.length <= first ? listed : listed.slice(0, first);
     const limit = maxIterations(context);
     if (items.length > limit) return failedPass("for_each.max_iterations_exceeded", "blocked_by_capability_or_policy", `For Each was given ${items.length} items, more than its limit of ${limit}.`);
     state = { items, index: 0 };
@@ -77,6 +100,14 @@ function forEachPass(context: AutomationNodeExecutionContext): AutomationNodeExe
 function maxIterations(context: AutomationNodeExecutionContext): number {
   const authored = Math.floor(numberValue(context.parameters.maxIterations, DEFAULT_MAX_ITERATIONS));
   return Math.min(MAX_ITERATIONS_CEILING, Math.max(1, authored));
+}
+
+/** The number of items to take, or `undefined` to take them all: a saved Flow without the option walks every row. */
+function stopAfter(context: AutomationNodeExecutionContext): number | undefined {
+  const authored = context.parameters.stopAfter;
+  if (authored === undefined || authored === null || authored === "") return undefined;
+  const first = Math.floor(numberValue(authored, Number.NaN));
+  return Number.isFinite(first) ? Math.min(MAX_ITERATIONS_CEILING, Math.max(1, first)) : undefined;
 }
 
 function failedPass(code: string, category: AutomationStudioFailureRecord["category"], message: string): AutomationNodeExecutionResult {
