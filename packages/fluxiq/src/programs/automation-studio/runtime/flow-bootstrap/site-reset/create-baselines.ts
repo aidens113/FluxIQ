@@ -1,6 +1,9 @@
 import type { AutomationStudioSiteResetDeclared, AutomationStudioSiteResetRead } from "./contracts.ts";
 import { automationStudioSiteResetInvalidCollectionGroups } from "./collection-groups.ts";
 
+/** The classes the site's own controls can reverse: the acts that may name a destination (F1). */
+const REVERSIBLE: ReadonlySet<string> = new Set(["create_new", "modify_existing", "delete"]);
+
 /** Immutable, build-only original inventory receipts. A receipt never grants undo permission. */
 export class AutomationStudioSiteResetCreateBaselines {
   private readonly originals = new Map<string, { ref: string; resource: string; group: string; subjects: ReadonlySet<string> }>();
@@ -73,17 +76,19 @@ export class AutomationStudioSiteResetCreateBaselines {
   }
 
   /**
-   * The original an identified creation is admitted against -- by its issued
-   * ref, or its own scope without one -- or none where `check` would refuse it.
-   * The ledger keeps it on the act, as the place its effect would show (F1).
+   * Where a reversible act's effect would show, as an original of this resource
+   * (F1): an identified creation's by its issued ref or its own scope, with its
+   * subject absent there -- none where `check` would refuse it -- and any other
+   * reversible act's only by an issued ref the call named. The ledger keeps it
+   * on the act; it proves nothing until read again after the act.
    */
   destination(declared: Pick<AutomationStudioSiteResetDeclared, "effect" | "consequences" | "control">, reference: unknown): { scope: string; group: string } | undefined {
-    const { control } = declared;
-    const subjects = identifiedCreate(declared);
-    if (!subjects) return undefined;
-    const scope = reference === undefined ? control.scope : typeof reference === "string" && this.issued.has(reference) ? [...this.originals].find(([, entry]) => entry.ref === reference)?.[0] : undefined;
+    const { control, consequences } = declared;
+    if (declared.effect !== "mutate" || consequences.length === 0 || !consequences.every(consequence => REVERSIBLE.has(consequence))) return undefined;
+    const created = identifiedCreate(declared);
+    const scope = reference === undefined ? (created ? control.scope : undefined) : typeof reference === "string" && this.issued.has(reference) ? [...this.originals].find(([, entry]) => entry.ref === reference)?.[0] : undefined;
     const original = scope === undefined ? undefined : this.originals.get(scope);
-    if (scope === undefined || !original || control.resource === undefined || original.resource !== control.resource || this.valid.get(original.group) !== true || subjects.some(subject => original.subjects.has(subject))) return undefined;
+    if (scope === undefined || !original || control.resource === undefined || original.resource !== control.resource || this.valid.get(original.group) !== true || (created ?? []).some(subject => original.subjects.has(subject))) return undefined;
     return { scope, group: original.group };
   }
 }

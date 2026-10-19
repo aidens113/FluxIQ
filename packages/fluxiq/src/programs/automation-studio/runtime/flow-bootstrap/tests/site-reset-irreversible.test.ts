@@ -111,11 +111,15 @@ async function run(steps: Step[]) {
   return { ...made, seen, asked };
 }
 
+/** A test naming `acts` under cannotUndo: the model's word that no control of the site undoes them. */
+const cannotUndo = (callId: string, acts: string[]): Step => (evidence) => ({ kind: "tool_call", toolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, callId, input: { ...receipt(evidence), cannotUndo: acts } });
+
 describe("a candidate build whose acts the site cannot undo", () => {
-  it("refuses while the confirms are still there on their own page though the start page is clean, and runs once there is no progress, telling the judge", async () => {
+  // F1 continuation: no progress no longer admits a trial on the leftovers; the model's cannotUndo does, and the judge is told.
+  it("refuses while the confirms are still there on their own page though the start page is clean, with no progress too, and runs once they are named under cannotUndo, telling the judge", async () => {
     const { seen, asked } = await run([
       go("call.go", REQUESTS), confirm("call.c1", 1), confirm("call.c2", 2), confirm("call.c3", 3), submit("call.submit"),
-      test("call.test.1"), clickWords("call.words", 1, "act-1"), test("call.test.2"), submit("call.again")
+      test("call.test.1"), clickWords("call.words", 1, "act-1"), test("call.test.2"), cannotUndo("call.test.3", ["act-1", "act-2", "act-3"]), submit("call.again")
     ]);
     const refused = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[6]!)!;
     expect(refused).toMatchObject({ ok: false, code: "candidate.trial_reset_required", actsToUndo: [
@@ -124,8 +128,9 @@ describe("a candidate build whose acts the site cannot undo", () => {
     ] });
     // The start page, compared after the acts were looked for, shows nothing of them.
     expect(refused.differs).toBeUndefined();
-    const ran = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[8]!)!;
-    expect(ran).toMatchObject({ verdict: "unsure", trialRunId: "trial.1", startedWith: { acts: [{ act: "act-1" }, { act: "act-2" }, { act: "act-3" }] } });
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[8]!)).toMatchObject({ ok: false, code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-1" }, { act: "act-2" }, { act: "act-3" }] });
+    const ran = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[9]!)!;
+    expect(ran).toMatchObject({ verdict: "unsure", trialRunId: "trial.1", startedWith: { cannotUndo: [{ act: "act-1" }, { act: "act-2" }, { act: "act-3" }] } });
     expect(String((ran.startedWith as JsonObject).instruction)).toContain("already done");
     expect(asked).toHaveLength(1);
     // One line per act, each by its id: the gate withholds a control name the model was never shown.
@@ -133,8 +138,7 @@ describe("a candidate build whose acts the site cannot undo", () => {
   });
 
   it("runs at once with the acts the model says no control undoes, once the reset has listed them", async () => {
-    const cannot: Step = (evidence) => ({ kind: "tool_call", toolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, callId: "call.test.2", input: { ...receipt(evidence), cannotUndo: ["act-1", "act-2"] } });
-    const { seen, asked } = await run([go("call.go", REQUESTS), confirm("call.c1", 1), confirm("call.c2", 2), submit("call.submit"), test("call.test.1"), cannot, submit("call.again")]);
+    const { seen, asked } = await run([go("call.go", REQUESTS), confirm("call.c1", 1), confirm("call.c2", 2), submit("call.submit"), test("call.test.1"), cannotUndo("call.test.2", ["act-1", "act-2"]), submit("call.again")]);
     expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)).toMatchObject({ code: "candidate.trial_reset_required" });
     expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[6]!)).toMatchObject({ verdict: "unsure", startedWith: { cannotUndo: [{ act: "act-1" }, { act: "act-2" }] } });
     expect(asked).toHaveLength(1);
@@ -143,10 +147,11 @@ describe("a candidate build whose acts the site cannot undo", () => {
   it("never counts the click on the words as an undo, and refuses naming a kept act", async () => {
     const { seen, ledger } = await run([
       go("call.go", REQUESTS), confirm("call.c1", 1), submit("call.submit"), test("call.test.1"), clickWords("call.words", 1, "act-1"), test("call.test.2"),
-      clickWords("call.words.again", 1, "act-1"), submit("call.again")
+      cannotUndo("call.test.3", ["act-1"]), clickWords("call.words.again", 1, "act-1"), submit("call.again")
     ]);
-    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[6]!)).toMatchObject({ verdict: "unsure", startedWith: { acts: [{ act: "act-1" }] } });
-    expect(latestOf("core.run_node", seen[7]!)).toMatchObject({ ok: false, code: "candidate.undo_act_kept", act: "act-1" });
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[6]!)).toMatchObject({ ok: false, code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-1" }] });
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[7]!)).toMatchObject({ verdict: "unsure", startedWith: { cannotUndo: [{ act: "act-1" }] } });
+    expect(latestOf("core.run_node", seen[8]!)).toMatchObject({ ok: false, code: "candidate.undo_act_kept", act: "act-1" });
     expect(ledger.inPlace()).toEqual([]);
   });
 });

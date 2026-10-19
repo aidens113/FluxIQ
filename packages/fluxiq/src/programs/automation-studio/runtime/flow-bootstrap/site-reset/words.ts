@@ -7,6 +7,9 @@
 
 import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY as UNDOES } from "./contracts.ts";
 
+/** How an act that may have changed nothing settles with no undo (F1). */
+const NAME_DESTINATION = "An act that may have had no effect settles without an undo only against a destination named for it: if its effect would show in a list you can read (for example a playlist), read that list completely and name it with its resetDestination ref, on the act's own call or on a look that names the act under undoes; when a complete read after the act shows that list exactly as first observed, the act is left as it is and the judge is told.";
+
 /** The instructions the ledger and its trial policy answer with. */
 export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
   /** A trial refused because acts this build made are still in place. */
@@ -19,7 +22,12 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
       + "Removing only what the act created needs no permission; anything else is asked. Do not change anything that was there before the build began. "
       + (differs ? "differs lists what is still not as the build found it. " : "")
       + "If the site offers no control that reverses an act, report its id under cannotUndo honestly. This does not restore a reversible effect tied to an identified item or resource, or permit an ordinary trial on those leftovers; the effect remains listed and a later proved correction is still allowed. A trial explicitly admitted with other unresolved acts reports them to its judge. "
+      + NAME_DESTINATION + " "
       + "Then test the same revision again.";
+  },
+  /** How an act that may have changed nothing settles with no undo (`./destination-unchanged.ts`, F1). */
+  nameDestination(): string {
+    return NAME_DESTINATION;
   },
   /** Said after an act listed as left because a complete read of where it lands, taken after it, showed no change there (`./destination-unchanged.ts`). */
   leftUnchanged(): string {
@@ -44,8 +52,9 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
       + `do not name the act again. To change it anyway, make the call without "${UNDOES}", and anything it would delete is asked about. `
       + (acts ? "Undo the acts still listed under actsToUndo, then test the same revision again." : "Test the same revision again.");
   },
-  /** A call whose `undoes` names an act kept because the site cannot undo it. */
-  keptAct(): string {
+  /** A call whose `undoes` names an act kept because the site cannot undo it, or one `left` because its destination showed no change (F1). */
+  keptAct(left = false): string {
+    if (left) return `That act is left on the site: a complete read of its destination after it showed no change, so no undo is owed and this call was not run. Do not try to undo it; trials run with it listed, and their judge is told. Make the call without "${UNDOES}" if it does something else.`;
     return "That act remains unresolved on this site. This call was not run. A reversible effect still requires proved baseline restoration before an ordinary trial. "
       + `Do not try to undo it again; make the call without "${UNDOES}" if it does something else, or report the unresolved reset honestly.`;
   },

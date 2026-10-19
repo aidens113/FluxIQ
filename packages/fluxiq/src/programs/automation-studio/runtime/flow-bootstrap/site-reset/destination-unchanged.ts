@@ -7,9 +7,12 @@
 // reads of where the act lands, taken after it, showed that destination exactly
 // as first observed, yet no rule used that evidence, and no trial could run.
 //
-// An act's destination is the group it was admitted against, or else the group
-// of the list its control sat in, or else, for a control in no list, every
-// group read complete before it. It shows no change when each of those groups
+// An act's destination is the original its call named, or a later call naming
+// it under `undoes` did, and the list its control sat in; the ledger
+// (`./ledger.ts`) chooses them, and an act with none never settles here. Never
+// every list ever read: an act's real effect may land somewhere never read (a
+// setting, another page), and a trial would then run on it. It shows no change
+// when each of its groups
 // was read before the act, was read again after it, and that fresh read holds
 // exactly its original scopes, each restored row for row and value for value;
 // and at least one of them held none of what the act was about, so it is a
@@ -21,8 +24,8 @@
 export function automationStudioSiteResetDestinationUnchanged(input: {
   /** The act's 1-based place among its ledger's acts: a read counts only once this many acts were recorded. */
   sequence: number;
-  /** The groups it was admitted against or sits in; absent, every group with an original read before it. */
-  groups?: readonly string[];
+  /** The groups its effect would show in: named for it, or the list it sits in. */
+  groups: readonly string[];
   /** What the act was about; at least one destination group must have held none of it. */
   subjects: readonly string[];
   /** Each scope's first complete read, and how many acts were recorded before it. */
@@ -35,7 +38,7 @@ export function automationStudioSiteResetDestinationUnchanged(input: {
   restored(scope: string): boolean;
 }): boolean {
   const before = [...input.originals].filter(([, entry]) => entry.beforeAct < input.sequence);
-  const groups = [...new Set(input.groups ?? before.map(([, entry]) => entry.group))];
+  const groups = [...new Set(input.groups)];
   let lacking = false;
   for (const group of groups) {
     const original = before.filter(([, entry]) => entry.group === group);

@@ -100,6 +100,33 @@ it("hands the ledger the destination a creation was admitted against, so an unch
   expect(await own.beforeTrial(async () => ({ moved: false }))).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1", call: "open" }] } });
 });
 
+it("hands the ledger a destination named later, on a look that names the act under undoes (F1 continuation)", async () => {
+  const own = new AutomationStudioSiteResetLedger();
+  const told: Array<string | undefined> = [];
+  const read = { state: {}, differs: [], resource: "r:one", scope: "p:saved-page", collections: [{ scope: "p:saved", group: "g:saved", subjects: ["s:original"], states: { "s:original": "v:original" } }] };
+  const permissions = automationStudioFlowBootstrapActionPermissions({
+    permittedConsequences: ["modify_existing"], instructionIds: [], requireCreateBaseline: true,
+    siteReset: { createBaseline: (declared, reference) => own.createBaseline(declared, reference), destinationReceipts: () => own.destinationReceipts(), claim: value => own.claim(value), target: (act, declared) => own.target(act, declared), explored: call => {
+      told.push(call.resetDestination);
+      own.explored(call);
+    } },
+    executeTool: async (call) => {
+      const look = call.callId === "look";
+      const verdict = await call.permission!(look ? { consequences: [], effect: "observe", control: { name: "Saved" }, verb: "read" } : { consequences: ["modify_existing"], control: { name: "Save", subject: "s:document", page: "s:results", resource: "r:one" }, verb: "press" });
+      return { kind: "llm_evidence_tool_execution", evidence: { ok: verdict.permitted }, effectApplied: verdict.permitted && !look };
+    }
+  });
+  own.observed(read);
+  const ref = own.destinationReceipts()[0]!.ref;
+  await permissions.executeTool({ callId: "save", toolId: "core.run_node", value: { node: "example.save", parameters: {}, consequences: ["modify_existing"] } });
+  own.observed(read);
+  expect(await own.beforeTrial(async () => ({ moved: false }))).toMatchObject({ kind: "refuse" });
+  await permissions.executeTool({ callId: "look", toolId: "core.run_node", value: { node: "example.read", parameters: {}, consequences: [], undoes: "act-1", resetDestination: ref } });
+  expect(told).toEqual([undefined, ref]);
+  own.observed(read);
+  expect(await own.beforeTrial(async () => ({ moved: false }))).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1", call: "save" }] } });
+});
+
 it("fails closed if an opted-in project adapter omits preflight, while preserving other paths", async () => {
   for (const [optIn, consequences, expected] of [
     [true, ["create_new"], false], [false, ["create_new"], true],

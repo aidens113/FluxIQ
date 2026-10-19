@@ -65,19 +65,23 @@ describe("site reset trial policy", () => {
     expect(second).toMatchObject({ kind: "admit", startedWith: { differs: ["b"] }, moved: true });
   });
 
-  it("never deadlocks: the same acts and differences as the last refusal admit the trial", async () => {
+  // F1 continuation, after F3's note: a whole trial ran on two acts a blocked reset never undid. Only an act named as
+  // one the site cannot undo (kept) may stay; an act still to undo refuses every trial, however often it is asked.
+  it("never admits a trial on an act still to undo: not for a refusal identical to the last, nor past three in a phase", async () => {
     const first = await policy(due, [act], { moved: true, differs: ["a"] });
     expect(first.kind).toBe("refuse");
     if (first.kind !== "refuse") return;
-    const again = await policy({ ...due, refusals: 1, lastRefusal: first.signature }, [act], { moved: false, differs: ["a"] });
-    expect(again).toMatchObject({ kind: "admit", startedWith: { acts: [act], differs: ["a"] }, moved: false });
+    expect(await policy({ ...due, refusals: 1, lastRefusal: first.signature }, [act], { moved: false, differs: ["a"] })).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [act] } });
+    expect(await policy({ ...due, refusals: 3, lastRefusal: "older" }, [act], { moved: true, differs: ["c"] })).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [act] } });
+    expect(await policy({ ...due, refusals: 9, lastRefusal: first.signature, startDiffersSent: true }, [act], { moved: false })).toMatchObject({ kind: "refuse" });
   });
 
-  it("never deadlocks: past three refusals in one phase the trial runs", async () => {
-    const progress = await policy({ ...due, refusals: 2, lastRefusal: "older" }, [act], { moved: true, differs: ["a"] });
-    expect(progress.kind).toBe("refuse");
-    const capped = await policy({ ...due, refusals: 3, lastRefusal: "older" }, [act], { moved: true, differs: ["c"] });
-    expect(capped).toMatchObject({ kind: "admit", startedWith: { acts: [act], differs: ["c"] }, moved: true });
+  it("still never deadlocks on a start that only differs: with no act to undo, a repeated difference admits saying what differed", async () => {
+    const first = await policy(due, [], { moved: true, differs: ["c"] });
+    expect(first.kind).toBe("refuse");
+    if (first.kind !== "refuse") return;
+    const capped = await policy({ ...due, refusals: 3, lastRefusal: "older" }, [], { moved: true, differs: ["c"] });
+    expect(capped).toMatchObject({ kind: "admit", startedWith: { differs: ["c"] }, moved: true });
     if (capped.kind === "admit") expect(String(capped.startedWith?.instruction)).toContain("already in place when it began");
   });
 

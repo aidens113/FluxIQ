@@ -114,9 +114,16 @@ describe("build-only original creation receipts", () => {
     expect(baseline.destination(create(), "destination-1")).toEqual({ scope: "p:destination", group: "g:destination" });
     expect(baseline.destination(create(), "destination-2")).toEqual({ scope: "p:sibling", group: "g:destination" });
     expect(baseline.destination(create({ scope: "p:destination" }), undefined)).toEqual({ scope: "p:destination", group: "g:destination" });
+    // Any reversible act may name where its effect would show, by an issued ref only (F1 continuation).
+    const modify = { ...create(), consequences: ["modify_existing" as const] };
+    expect(baseline.destination(modify, "destination-1")).toEqual({ scope: "p:destination", group: "g:destination" });
+    expect(baseline.destination({ ...create(), consequences: ["delete" as const] }, "destination-2")).toEqual({ scope: "p:sibling", group: "g:destination" });
     for (const [declared, ref] of [
       [create(), undefined], [create(), "destination-999"], [create({ resource: "r:foreign" }), "destination-1"],
-      [create({ subject: "s:existing" }), "destination-1"], [{ ...create(), consequences: ["modify_existing" as const] }, "destination-1"]
+      [create({ subject: "s:existing" }), "destination-1"], [modify, undefined], [{ ...modify, control: { ...modify.control, scope: "p:destination" } }, undefined],
+      [modify, "destination-999"], [{ ...modify, control: { ...modify.control, resource: "r:foreign" } }, "destination-1"],
+      [{ ...create(), consequences: ["send_or_publish" as const] }, "destination-1"], [{ ...create(), consequences: ["modify_existing" as const, "move_money" as const] }, "destination-1"],
+      [{ ...modify, effect: "observe" as const }, "destination-1"]
     ] as const) expect(baseline.destination(declared, ref)).toBeUndefined();
     // A destination whose fresh read is malformed admits nothing, and names nothing.
     const bad = original();
