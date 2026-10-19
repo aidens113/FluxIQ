@@ -48,7 +48,7 @@ import type {
   AutomationStudioResultRecordSetSummary,
   AutomationStudioRunResultSummary
 } from "./contracts/index.ts";
-import { automationStudioResultReadEmptiedColumns } from "./read-account/index.ts";
+import { automationStudioResultReadEmptiedColumns, automationStudioResultReadListContinues } from "./read-account/index.ts";
 import type { AutomationStudioRequestRowsKeptNumberLeftOut } from "./request-rows/index.ts";
 
 /** Core's stable codes for what it found wrong with a result. */
@@ -75,6 +75,13 @@ export const AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES = Object.freeze({
   recordsTruncated: "result.records_truncated",
   /** Part of the account the verdict was reached from was cut to fit. */
   summaryWithheld: "result.summary_withheld",
+  /**
+   * A read of one part of a list read no further while the list went on past it
+   * (F8, `read-account/list-continues.ts`): said in place of `countsLookRight`,
+   * which steered live run `run-mveaaqxn-d0be9888`'s repairs to the read's
+   * conditions while the rest of its list was never read.
+   */
+  readListContinues: "result.read_list_continues",
   /** Nothing in the counts is wrong, so what is wrong is which rows or values were kept. */
   countsLookRight: "result.counts_look_right",
   /** The Flow reads and stores nothing, so what is wrong is an act its steps did not do, or did differently. */
@@ -282,6 +289,11 @@ export function automationStudioResultRepairFindings(summary: AutomationStudioRu
     });
   }
   for (const set of summary.recordSets) findings.push(...recordSetFindings(set, summary));
+  // A read of one part of a list that goes on past it, in Core's one sentence for it.
+  for (const read of summary.reads ?? []) {
+    const continued = automationStudioResultReadListContinues(read);
+    if (continued) findings.push({ code: codes.readListContinues, detail: continued.said });
+  }
   if (summary.withheld) {
     findings.push(withheldFinding());
   }
@@ -476,6 +488,7 @@ function fixLine(finding: AutomationStudioResultRepairFinding, summary: Automati
   if (finding.code === codes.rowsIdentical) return "Give the extraction the row container the request describes: it is reading one item over and over instead of each row.";
   if (finding.code === codes.recordsTruncated) return "Raise what the record output keeps, or narrow what is stored, so the answer is the whole result rather than its first rows.";
   if (finding.code === codes.actsJudgedUndone) return "Compare each act the request asks for -- with the item, option, size, quantity and order it names -- against the step that does it, as the check's reading and advice describe: add the step for an act no step does, and correct the parameters of a step that did its act differently.";
+  if (finding.code === codes.readListContinues) return (summary.reads ?? []).map(automationStudioResultReadListContinues).find((words) => words?.said === finding.detail)?.fix;
   if (finding.code === codes.countsLookRight) return `Compare the request's own terms against the stored columns and the parameters of the steps that decided them${lastStep(summary)}, and change the step whose parameters decide which rows are kept.`;
   return undefined;
 }

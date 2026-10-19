@@ -150,6 +150,15 @@ const PAGINATION_STOPS = new Set([
 /** What a pagination stop word outside the set above is published as, on the rule `WAIT_STOP_UNKNOWN` states. */
 const PAGINATION_STOP_UNKNOWN = "unknown";
 
+/**
+ * How a read of one part of a list saw it go on (F8, `listContinues`): its kind
+ * and the evidence for it, each a closed word, and either published as
+ * `"unknown"` when this Core does not know it, on the rule `WAIT_STOP_UNKNOWN`
+ * states (`result-verification/read-account/list-continues.ts` says it).
+ */
+const CONTINUES_KINDS = new Set(["next_page", "load_more", "infinite_scroll"]);
+const CONTINUES_EVIDENCE = new Set(["next_control", "following_page_number", "load_more_control", "declared_feed", "still_growing"]);
+
 /** A value that is an address rather than text: a URL, or a path from an origin. */
 const ADDRESS = /^(?:[a-z][a-z\d+.-]*:\/\/|\/)/iu;
 
@@ -222,6 +231,9 @@ export function extractionSummaryFromOutputs(outputs: unknown): JsonObject | und
   // count is (`result-verification/read-account/accounts.ts` says it).
   const earlierPageRepeats = count(summary.earlierPageRepeats);
   if (summary.earlierPageRepeats !== undefined && earlierPageRepeats === undefined) return undefined;
+  // Whether the list goes on past a read of one part of it: two words, each renamed when unknown, and anything else drops the summary.
+  const listContinues = summary.listContinues === undefined ? undefined : continuesReport(summary.listContinues);
+  if (summary.listContinues !== undefined && listContinues === undefined) return undefined;
   return {
     recordCount,
     pagesRead,
@@ -234,8 +246,15 @@ export function extractionSummaryFromOutputs(outputs: unknown): JsonObject | und
     ...(listWait ? { listWait } : {}),
     ...(conditions ? { conditions } : {}),
     ...(paginationStop !== undefined ? { paginationStop } : {}),
-    ...(earlierPageRepeats !== undefined ? { earlierPageRepeats } : {})
+    ...(earlierPageRepeats !== undefined ? { earlierPageRepeats } : {}),
+    ...(listContinues ? { listContinues } : {})
   };
+}
+
+/** The read's two words that its list goes on, each a known word or `"unknown"`, or `undefined` for anything that is not two words. */
+function continuesReport(value: unknown): JsonObject | undefined {
+  if (!isJsonRecord(value) || typeof value.kind !== "string" || typeof value.evidence !== "string") return undefined;
+  return { kind: CONTINUES_KINDS.has(value.kind) ? value.kind : WAIT_STOP_UNKNOWN, evidence: CONTINUES_EVIDENCE.has(value.evidence) ? value.evidence : WAIT_STOP_UNKNOWN };
 }
 
 /**

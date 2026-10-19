@@ -14,7 +14,8 @@
 // the summary as a model is shown it, without Core's `testedLabel`
 // (`without-tested-label.ts`), and Core's flag on a read that kept every item
 // it saw after an act repeated over a narrower read of the same list
-// (`kept-every-row.ts`).
+// (`kept-every-row.ts`), and Core's words for a read of one part of a list
+// that goes on past it (`list-continues.ts`).
 export * from "./accounts.ts";
 export * from "./alone-rows.ts";
 export * from "./condition.ts";
@@ -22,6 +23,7 @@ export * from "./condition-name.ts";
 export * from "./dedupe.ts";
 export * from "./judge-paging.ts";
 export * from "./kept-every-row.ts";
+export * from "./list-continues.ts";
 export * from "./loop-passes.ts";
 export * from "./looped-account.ts";
 export * from "./page-bound-sentence.ts";
