@@ -1,7 +1,7 @@
 # Traces And Offline Trials
 
 Status: Active
-Status detail: Plan of record approved by the user on 2026-10-19; nothing implemented. P0 (prerequisites and baseline) is next.
+Status detail: Plan of record approved and implementation approved by the user on 2026-10-19; lane T (t729) created, not yet dispatched; P0 is next.
 Created: 2026-10-19
 Last updated: 2026-10-19
 Owner: Senior supervisor agent
@@ -21,9 +21,15 @@ the user then approved the plan. No code has been written.
 of its 25 working minutes in 7 whole trials (one took 337 s), and site-reset failures blocked every trial in three of
 four builds. Model spend was small ($0.23 for four builds); time and live-site effects are the bottleneck.
 
+**Implementation approved (user, 2026-10-19):** with subagents, together with the downstream boundary audit's
+move plan. Execution is run from the downstream `docs/working/trace-offline-trials-plan.md` (lane table). This plan
+is lane T, branch `task/t729-traces-offline-trials` in both repositories (worktrees under
+`C:/Users/osrs_/FluxStuff/fxwork/t729/`), created and not yet dispatched.
+
 **Next:** P0, all in parallel: downstream audit Phases 0 and 1 (provider-call guard; offline queue scoped to its
-session, project and recording); Core owns recording and capture policy; a baseline from the Lab's per-step files;
-an inventory of everything Core accepts from clients and reads later; and the page-snapshot spike (see P2).
+session, project and recording) in lanes H and G; Core owns recording and capture policy (lane S); a baseline from
+the Lab's per-step files; an inventory of everything Core accepts from clients and reads later; and the page-snapshot
+spike (see P2), in lane T. P1's evidence-loop and executor edits wait for the reset redesign (t724) to merge.
 
 **Blocked:** nothing needs the user.
 
@@ -124,6 +130,15 @@ The source plan's T01-T24 are kept. Added:
 - Validation: not validated; planning only, no code.
 - Outcome: Accepted (planning)
 - Follow-up: P0.
+
+### 2026-10-19 - Implementation approved; lane T created
+- Agent: supervisor
+- Changed: this document's Current State
+- Why: the user asked to implement this plan and the audit's move plan with subagents, after a handoff.
+- Validation: downstream `pnpm task start traces-offline-trials --worktree --core` ->
+  `"id":"t729","branch":"task/t729-traces-offline-trials"`; both worktrees `git status --short` -> 0 lines.
+- Outcome: Partial (nothing implemented yet)
+- Follow-up: dispatch lane T from the downstream lane table.
 
 ## Open Questions
 
