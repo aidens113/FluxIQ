@@ -6,5 +6,6 @@ export { coversPath } from "./covers-path.mjs";
 export { digestFiles } from "./digest-files.mjs";
 export { gitVisibleFiles } from "./git-visible-files.mjs";
 export { listRootFiles } from "./list-root-files.mjs";
+export { listStepInputs } from "./list-step-inputs.mjs";
 export { outputState } from "./output-state.mjs";
 export { openStatCache } from "./stat-cache.mjs";

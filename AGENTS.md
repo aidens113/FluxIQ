@@ -283,8 +283,11 @@ a local ref, `refs/fluxiq/task-ids/t<NNN>`, at the commit the task started
 from, and counts those refs, `Task: t<NNN>` trailers on any local branch, open
 task branches and merge subjects as spent. Abandon never deletes the ref, so an
 abandoned task's number stays spent. A Core-paired task started downstream
-writes the same ref here. The downstream allocator applies the same rule; keep
-`scripts/task/task-id.mjs` and `record-task-id.mjs` in step on both sides.
+writes the same ref here. Downstream repositories import these task rules
+(`scripts/task/`: id allocation, refs, branch naming, the git runner) and the
+build-cache engine (`scripts/build-cache/`) from Core rather than copying them,
+so change them here, keep their exports and the `pnpm task` command line
+stable, and expect downstream trees to rebuild once when the engine changes.
 
 Merge `dev` into the task branch and re-run the narrowest relevant checks
 before merging back. That is what catches two tasks that changed different

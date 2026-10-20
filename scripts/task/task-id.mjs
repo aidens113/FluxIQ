@@ -7,12 +7,21 @@
 // is itself a merge conflict between two tasks allocated at the same time, and
 // a counter in ignored space does not survive a fresh clone.
 //
-// `requested` is the cross-repository seam and the reason this file differs
-// from the downstream one. A task that spans FluxIQ Core and the web-extension
-// repository is ONE unit of work and must read as one in both histories, so the
-// id is allocated once -- downstream, where such a task always starts, because
-// the extension side owns the worktree layout -- and passed here with `--id`.
-// Allocating independently would give the same work two numbers, and
+// This is the one allocator both repositories use: the downstream
+// web-extension repository imports this module rather than keeping a copy, so
+// the rule cannot drift between the two (two copies once said "keep the two in
+// step" and nothing checked it).
+//
+// A task that spans FluxIQ Core and the web-extension repository is ONE unit of
+// work and must read as one in both histories, so the id is allocated once --
+// downstream, where such a task always starts, because the extension side owns
+// the worktree layout -- against both repositories at once: downstream passes
+// Core as one of `pairedRepositories`, every repository is scanned and the
+// highest number wins. An id free downstream but already spent in Core would
+// put two different tasks under one number in Core's own log (on 2026-09-24
+// downstream's next free id was t122 while Core had already merged its own t122
+// and t123). Core's own start is then handed that id with `--id` (`requested`);
+// allocating independently would give the same work two numbers, and
 // `git revert -m 1` on one side would then name a task the other side has never
 // heard of.
 //
@@ -24,12 +33,12 @@
 // and it never merged, so its number was handed out again (downstream, t574,
 // t598 and t616 each came to name two units of work). So every start records
 // its id as a local ref, `refs/fluxiq/task-ids/t<NNN>`, at the commit it
-// started from (`record-task-id.mjs`), and those refs count as used. A ref
-// cannot conflict between two tasks, survives branch deletion and abandon, and
-// costs nothing. `Task: t<NNN>` trailers on any local branch count as well,
-// which covers ids spent before the refs existed. A fresh clone has neither,
-// and still clears every merged id from history exactly as before. The
-// downstream allocator applies the same rule; keep the two in step.
+// started from, in each repository it was allocated against
+// (`record-task-id.mjs`), and those refs count as used. A ref cannot conflict
+// between two tasks, survives branch deletion, abandon and prune, and costs
+// nothing. `Task: t<NNN>` trailers on any local branch count as well, which
+// covers ids spent before the refs existed. A fresh clone has neither, and
+// still clears every merged id from history exactly as before.
 
 import { runGit } from "./git-command.mjs";
 import { TASK_ID_REF_PREFIX } from "./task-id-ref-prefix.mjs";
@@ -71,23 +80,36 @@ export function chooseTaskId({ used, requested }) {
 }
 
 /**
- * @param {{ repositoryRoot: string, integrationBranch?: string, requested?: string }} input
+ * @param {{
+ *   repositoryRoot: string,
+ *   integrationBranch?: string,
+ *   requested?: string,
+ *   pairedRepositories?: { repositoryRoot: string, integrationBranch?: string }[]
+ * }} input `pairedRepositories` are the other repositories one unit of work
+ *   spans; an id spent in any of them is used.
  * @returns {Promise<string>}
  */
-export async function allocateTaskId({ repositoryRoot, integrationBranch = "dev", requested }) {
-  const branches = await runGit(repositoryRoot, ["branch", "--list", "--format=%(refname:short)", "task/*"]);
-  const subjects = await runGit(repositoryRoot, ["log", "--first-parent", "--format=%s", integrationBranch]);
-  const recorded = await runGit(repositoryRoot, ["for-each-ref", "--format=%(refname)", TASK_ID_REF_PREFIX]);
-  const trailers = await runGit(repositoryRoot, ["log", "--branches", "--format=%(trailers:key=Task,valueonly)"]);
-
-  const used = [
-    ...lines(branches).map((line) => match(OPEN, line, (number) => ({ number, where: `the open branch ${line}` }))),
-    ...lines(subjects).map((line) => match(MERGED, line, (number) => ({ number, where: `the merge already in ${integrationBranch}: "${line}"` }))),
-    ...lines(recorded).map((line) => match(RECORDED, line, (number) => ({ number, where: `the earlier allocation recorded as ${line}` }))),
-    ...lines(trailers).map((line) => match(TRAILER, line, (number) => ({ number, where: `a "Task: ${line}" trailer on a local branch` })))
-  ].filter((entry) => entry !== null);
-
+export async function allocateTaskId({ repositoryRoot, integrationBranch = "dev", requested, pairedRepositories = [] }) {
+  const scans = [
+    usedIds(repositoryRoot, integrationBranch, ""),
+    ...pairedRepositories.map((paired) => usedIds(paired.repositoryRoot, paired.integrationBranch ?? "dev", ` in ${paired.repositoryRoot}`))
+  ];
+  const used = (await Promise.all(scans)).flat();
   return chooseTaskId({ used, requested });
+}
+
+async function usedIds(root, integrationBranch, suffix) {
+  const branches = await runGit(root, ["branch", "--list", "--format=%(refname:short)", "task/*"]);
+  const subjects = await runGit(root, ["log", "--first-parent", "--format=%s", integrationBranch]);
+  const recorded = await runGit(root, ["for-each-ref", "--format=%(refname)", TASK_ID_REF_PREFIX]);
+  const trailers = await runGit(root, ["log", "--branches", "--format=%(trailers:key=Task,valueonly)"]);
+
+  return [
+    ...lines(branches).map((line) => match(OPEN, line, (number) => ({ number, where: `the open branch ${line}${suffix}` }))),
+    ...lines(subjects).map((line) => match(MERGED, line, (number) => ({ number, where: `the merge already in ${integrationBranch}${suffix}: "${line}"` }))),
+    ...lines(recorded).map((line) => match(RECORDED, line, (number) => ({ number, where: `the earlier allocation recorded as ${line}${suffix}` }))),
+    ...lines(trailers).map((line) => match(TRAILER, line, (number) => ({ number, where: `a "Task: ${line}" trailer on a local branch${suffix}` })))
+  ].filter((entry) => entry !== null);
 }
 
 const lines = (stdout) => stdout.split("\n").map((line) => line.trim()).filter(Boolean);
