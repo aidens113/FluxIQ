@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Production order intentionally loads Framework before executor/controller collaborators.
 import { FluxIQ } from "../../../../../../framework/index.ts";
 import { mkdtemp, rm } from "node:fs/promises";

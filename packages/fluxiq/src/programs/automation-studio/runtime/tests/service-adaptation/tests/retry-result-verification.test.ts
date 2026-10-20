@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Which Flow a repaired run's result is judged against.
 //
 // A run that fails, is repaired and is re-run has its result verified -- that

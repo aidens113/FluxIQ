@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Covers the runtime session listing (t604): a project that has run many large
 // sessions lists them as bounded summaries, one filtered page at a time, with
 // a cursor; a summary row written before the candidate trial was carried is

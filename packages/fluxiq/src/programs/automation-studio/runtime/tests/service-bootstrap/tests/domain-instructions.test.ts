@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A runtime bound with its own system instructions: every provider request the
 // build makes carries them -- each evidence decision and the judge of the
 // Flow's test, each measured as well as sent -- and the DeepSeek adapter's

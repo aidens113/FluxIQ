@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A build that meets a check only a person can get past hands it to the person,
 // in the Flow's thread, and never shows the model the check.
 //

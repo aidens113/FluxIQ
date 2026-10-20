@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A person's turn read as an instruction and answered in a real thread, with a
 // scripted model. What is pinned: the person's turn is stored before anything
 // can fail, every message gets an answer in the thread, a delete waits on a

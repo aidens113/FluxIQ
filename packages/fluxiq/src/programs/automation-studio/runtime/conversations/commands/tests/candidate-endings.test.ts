@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // How a candidate build's ending reads in the chat (t362, lane A round 4,
 // `run-muyrpbnk-fef374e7`, C6): a build stopped for no progress said "the
 // model's answer could not be used", and that the Flow "has no steps yet" over

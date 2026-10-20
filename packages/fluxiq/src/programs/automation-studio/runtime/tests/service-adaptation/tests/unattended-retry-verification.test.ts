@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A repair's own product, judged with nobody watching.
 //
 // This is the fourth gate of the loop: a run fails, the model repairs it, the

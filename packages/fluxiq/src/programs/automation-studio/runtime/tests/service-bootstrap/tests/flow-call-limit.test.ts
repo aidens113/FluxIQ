@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A build stops at the call count its Flow configures. Live run
 // `run-munnq7vz-98c3481c` saved `llmExecutionSettings.maxCalls: 48`, the host's
 // resolver declared no count, and the build ran 64 decisions, the loop's own

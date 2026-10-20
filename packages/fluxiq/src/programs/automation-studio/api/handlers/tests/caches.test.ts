@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Covers handlers/caches.ts.
 
 import { describe, expect, it } from "vitest";

@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 import { expect, it } from "vitest";
 import { rm } from "node:fs/promises";
 import path from "node:path";

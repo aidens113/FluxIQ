@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // The service wiring of two runtime-session modules: the sweep that ends the
 // runs a dead process left `running` or `queued` (`service/runtime-session/orphaned-run-sweep.ts`),
 // and the recorder that puts a late action result on its run's detail

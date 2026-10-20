@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Conversation commands run against a real thread, with the registry faked at
 // the port. What is pinned: each command makes the calls the panel makes, in
 // order, with the session and the page it was given; long ones answer

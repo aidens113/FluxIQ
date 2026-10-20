@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A build is held to the run's cost ceiling ($0.10 since 2026-10-01; was
 // $0.25) by its purse: each call's worst case, as the provider prices it, is
 // held before the call is sent, and one the ceiling cannot pay for is never

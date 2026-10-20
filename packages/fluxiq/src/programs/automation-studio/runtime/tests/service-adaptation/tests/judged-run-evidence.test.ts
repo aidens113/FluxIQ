@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A target override on a Flow that declares no evidence is kept on the
 // judgement of the whole run that ran it (t267).
 //

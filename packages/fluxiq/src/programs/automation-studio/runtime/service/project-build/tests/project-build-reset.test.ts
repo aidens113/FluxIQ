@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A project build whose builder leaves a lasting act, through the actual
 // service (t551): a scripted model plays the supervisor, the builders and the
 // reset agent; a stub domain is a recipe site where "Save" puts a recipe in

@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // The identity access service: users, sessions, credentials, PIN authorization, and two-factor authentication.
 
 import { mkdtemp, rm } from "node:fs/promises";

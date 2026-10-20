@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A brief's surroundings through the actual service (t580, from the A8 bigbox
 // debug): a scripted model plays the supervisor and each builder over a stub
 // domain.

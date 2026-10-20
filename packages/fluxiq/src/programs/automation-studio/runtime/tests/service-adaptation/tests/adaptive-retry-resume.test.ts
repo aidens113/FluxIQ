@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // What the run does after a repair it applied mid-flight: where it carries on
 // from, and whether it carries on at all.
 //

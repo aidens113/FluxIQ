@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // One purse per Flow creation, through the real `generateFlowBootstrapAdaptation`
 // (t234). The person's limit is a Flow's: every build of it, until a Flow is
 // proposed or a build ends not doable, draws from one ceiling, and what each

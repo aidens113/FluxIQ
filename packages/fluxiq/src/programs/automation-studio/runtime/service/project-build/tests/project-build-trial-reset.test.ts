@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A builder's subflow trial puts the site back first, through the actual
 // service (t578; A8 bigbox debug, cause A and fix 2): a scripted model plays
 // the supervisor and two builders over a stub shop with no start hook. The

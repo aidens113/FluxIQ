@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 import { expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";

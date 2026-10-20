@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // The collaborator the service exposes, and the writer Core itself speaks
 // through. The point of the writer is that code with something to say does not
 // have to carry a conversation id: it names its subject once, and the thread

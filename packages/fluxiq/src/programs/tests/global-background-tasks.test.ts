@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // The background task service: scheduling, controls, and persisted countdown state.
 
 import { mkdtemp, rm } from "node:fs/promises";

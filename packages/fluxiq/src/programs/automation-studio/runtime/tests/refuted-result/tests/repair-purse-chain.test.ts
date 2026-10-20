@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A wrong answer's whole repair, through the real service, spends from one
 // purse, lowered by the Flow's own setting.
 //

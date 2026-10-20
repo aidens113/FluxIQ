@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Creating a Flow survives a bad reply, for a caller, through the real adapter.
 //
 // A runtime recovery already did: a malformed reply or a timeout spends one

@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A project build through the actual service (unit A5c): a scripted model
 // plays the supervisor -- plan, dispatch, assemble, test, complete -- and each
 // builder -- submit its subflow, test it, complete -- while the service's real

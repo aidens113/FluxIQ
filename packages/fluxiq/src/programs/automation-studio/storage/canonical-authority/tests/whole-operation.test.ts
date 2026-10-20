@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { disposeWholeFlowTemplate, wholeFlowFromTemplate, wholeFlowTemplate, wholeProjectFromTemplate, wholeProjectTemplate, type WholeFlowTemplate, type WholeProjectTemplate } from "./whole-fixture.ts";
 import { CanonicalAuthorityWholeOperation } from "../whole-operation.ts";

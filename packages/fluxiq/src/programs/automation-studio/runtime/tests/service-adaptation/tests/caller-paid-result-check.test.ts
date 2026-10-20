@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Which of a run's result checks its caller pays for (MVP item 23).
 //
 // A run a person asked the model into has always had its result judged with

@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // t434: a required command that provably never left -- nothing was claimed for
 // it, and the ledger claims before any send -- is withdrawn: it no longer holds
 // the run, it can never be claimed (so never sent) afterwards, and a stop said

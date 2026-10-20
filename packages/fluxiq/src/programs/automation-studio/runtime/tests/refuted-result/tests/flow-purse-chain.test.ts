@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A Lab-scoped run of a Flow, through the real service, draws on the Flow's
 // one purse (t438). The user's words (2026-10-01): "bring the ceiling down to
 // $0.1 per flow max": the build, its re-authors, its repairs and the judge all

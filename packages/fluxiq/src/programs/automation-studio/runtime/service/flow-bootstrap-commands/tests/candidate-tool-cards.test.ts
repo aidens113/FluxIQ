@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A candidate build's own two tools as cards in the chat (t373). The authoring
 // loop ran `core.submit_candidate` and `core.test_candidate` outside the
 // activity observer, so the chat showed no card for saving the Flow's steps or

@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Covers pause, takeover and resume in handlers/run-control.ts, called through
 // the registry the web route and the extension call.
 

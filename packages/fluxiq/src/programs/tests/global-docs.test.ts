@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // The docs service: snapshots, rendering, source roots, and the generated reference.
 
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";

@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Each decision of a build must be a byte prefix of the next, up to the end of
 // the last tool result the two share.
 //

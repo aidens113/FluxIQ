@@ -152,6 +152,40 @@ Configuration this requires:
 | `apps/web` | None. It is not a published package. |
 | All | Vitest's default include already matches `**/*.test.ts` at any depth. `vitest.quality.config.ts` files list explicit test paths and must be updated when those files move. |
 
+### Test groups
+
+`packages/fluxiq` runs its tests in two groups, one after the other. A test
+file that opens a real SQLite database has this line in its leading comment
+block:
+
+```ts
+// @fluxiq-test-group real-sql
+```
+
+Every such file runs in the `real-sql` group, after the rest, with two workers.
+Every other file runs in the `parallel` group at full concurrency. A real-SQLite
+test spends its time in hundreds of sequential driver round trips; beside
+fourteen hundred files collecting the framework at full concurrency it ran 8 to
+15 times slower than alone, and every daily sweep in October 2026 timed out a
+different handful of them at 15 s. Isolating them is the fix; never raise their
+timeout.
+
+- The marker in the file is the only membership rule; there is no list.
+  `packages/fluxiq/tests/test-groups.ts` finds the marked files and gives each
+  group its vitest options.
+- The setup file `packages/fluxiq/tests/real-sql-guard.ts` runs before every
+  test file and fails a file that opened a real database (any
+  `new sqlite3.Database(...)`, `:memory:` included) without the marker, naming
+  the line to add. It does not see databases opened in another process.
+- `pnpm test` runs the package script
+  `node ../../scripts/vitest-groups.mjs --groups=parallel,real-sql`, which runs
+  `vitest run` once per group with `FLUXIQ_TEST_GROUP` set, forwards any further
+  arguments (`pnpm test -- <path>`), always runs both groups, and fails if either
+  failed.
+- A plain `pnpm exec vitest run <path>` sets no group and runs whatever it
+  names, marked or not. Running the whole package that way puts both groups
+  side by side again and brings the starvation back; use `pnpm test`.
+
 ## Files
 
 - **One exported thing per file:** one class, one component, one hook, or one
