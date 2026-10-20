@@ -41,6 +41,17 @@
 // page (`items`), in the form a declaration's `control.item` takes. Every
 // token any read has seen is remembered (`seenItems`): an act created an item
 // only if no read of this build saw it before (`./act-places.ts`).
+//
+// **Every move is counted (t738).** Core's own looks move the tab: the ledger
+// looks at each stale witness's place itself before it refuses a trial
+// (`lookAt`), and a refusal's `moved` never said so. Office rerun round 2
+// (`run-mvgf04kw-310fc169`, 0126-0131 and 0159-0161): two tests were refused
+// `candidate.trial_reset_required` with no effect applied, yet the tab had
+// left the checkout page for a product page and then the basket, and the
+// model's next calls ran on a page it had not seen. `moves` counts every
+// arrival this check ran that applied an effect -- `compare`, `compareAt` and
+// `lookAt` alike -- so a caller that reads it before and after a reset check
+// knows whether the tab stands where the model last saw it.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioActionPermissionDenied } from "../../action-permissions/index.ts";
@@ -65,6 +76,8 @@ export class AutomationStudioSiteResetStartCheck {
   private readonly liveLines = new Set<string>();
   /** Every item token a read has seen. */
   private readonly seen = new Set<string>();
+  /** Arrivals this check ran that applied an effect (header, t738). */
+  private moved = 0;
 
   constructor(private readonly input: {
     binding: Pick<AutomationStudioLlmEvidenceRuntimeBinding, "startState" | "runsNodes"> | undefined;
@@ -81,6 +94,9 @@ export class AutomationStudioSiteResetStartCheck {
 
   /** Why the last read or comparison failed, if one did. */
   get failure(): unknown { return this.lastFailure; }
+
+  /** How many times this check has moved the target so far (header, t738): compare it before and after a check. */
+  get moves(): number { return this.moved; }
 
   /** The item tokens every read so far has seen. */
   seenItems(): ReadonlySet<string> {
@@ -156,7 +172,7 @@ export class AutomationStudioSiteResetStartCheck {
     try {
       // The arrival's own node, as `../../llm/node-tools/run-node.ts` writes the build's start into it: nothing lasting.
       const ran = await this.input.executeTool({ callId: `site-reset.place.${n}.arrival`, toolId: tool.toolId, value: { node: to.node, parameters: { [to.parameter]: place.location }, consequences: [] }, ...(signal ? { signal } : {}) });
-      moved = isExecution(ran) && ran.effectApplied === true;
+      moved = this.arrived(ran);
       if (!landed(ran)) return { moved };
       const read = await this.settled(place.state, signal);
       return "unread" in read ? { moved } : { moved, differs: read.differs, ...(read.lines ? { lines: read.lines } : {}) };
@@ -182,6 +198,7 @@ export class AutomationStudioSiteResetStartCheck {
     try {
       // The arrival's own node, as `compareAt` goes to an act's page: nothing lasting.
       const ran = await this.input.executeTool({ callId: `site-reset.look.${n}.arrival`, toolId: tool.toolId, value: { node: to.node, parameters: { [to.parameter]: location }, consequences: [] }, ...(signal ? { signal } : {}) });
+      this.arrived(ran);
       if (!landed(ran)) return { unread: "no_answer" };
       return await this.settled(undefined, signal);
     } catch (error) {
@@ -203,7 +220,7 @@ export class AutomationStudioSiteResetStartCheck {
     let moved = false;
     try {
       const ran = await this.input.executeTool({ callId: `site-reset.${n}.arrival`, toolId: tool.toolId, value: structuredClone(arrival), ...(signal ? { signal } : {}) });
-      moved = isExecution(ran) && ran.effectApplied === true;
+      moved = this.arrived(ran);
       if (!landed(ran)) return { moved };
       const ask = async (callId: string): Promise<string[] | undefined> => {
         const read = await startState.call(this.input.binding, { projectId: this.input.projectId, flowId: this.input.flowId, callId, start: structuredClone(start), permission: automationStudioActionPermissionDenied, ...(signal ? { signal } : {}) });
@@ -226,6 +243,13 @@ export class AutomationStudioSiteResetStartCheck {
       this.lastFailure = error;
       return { moved };
     }
+  }
+
+  /** Whether an arrival applied an effect, counted when it did (header, t738). */
+  private arrived(ran: unknown): boolean {
+    const moved = isExecution(ran) && ran.effectApplied === true;
+    if (moved) this.moved += 1;
+    return moved;
   }
 
   /** A read with what is known to be live left out of its differences and lines. */

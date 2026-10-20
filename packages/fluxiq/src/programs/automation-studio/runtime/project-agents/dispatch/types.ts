@@ -60,6 +60,8 @@ export type AutomationStudioProjectBuilderPorts = {
   trial?: AutomationStudioSubflowTrialPreparingPort | undefined;
   /** The site reset its trial gate asks before each trial: every lasting act of this build undone first (t578). */
   reset?: AutomationStudioSiteResetTrialReset | undefined;
+  /** How many times the reset's own checks have moved the target, read around each test so a refused one says where it left it (t738). */
+  moves?: (() => number) | undefined;
   observe?: BuilderInput["observe"];
   /** The brief's permission and person-needed ending; absent, only the build's cancellation stops its loop. */
   ended?: AutomationStudioProjectBriefEnding | undefined;

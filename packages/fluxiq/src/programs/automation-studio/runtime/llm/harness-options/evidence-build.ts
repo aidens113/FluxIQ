@@ -9,10 +9,19 @@
 // under it reads the same id: the supervisor's calls and every brief's calls
 // name one build, and a brief's own sub-scope tells concurrent briefs apart
 // (`./evidence-build-scope.ts`).
+//
+// Kept once per process under a registered symbol, as that frame is (t738): a
+// host that bundles Core beside a domain importing Core's `dist` loads this
+// module twice, and a build frame set in one copy must be the one a binding
+// made in the other reads.
 
 import { AsyncLocalStorage } from "node:async_hooks";
 
-const builds = new AsyncLocalStorage<string>();
+/** The registered key every copy of this module keeps the one store under (header). */
+const STORE = Symbol.for("fluxiq.automation-studio.evidence-build");
+
+const holder = globalThis as typeof globalThis & { [STORE]?: AsyncLocalStorage<string> };
+const builds: AsyncLocalStorage<string> = holder[STORE] ??= new AsyncLocalStorage<string>();
 
 /** Runs `fn` as the work of build `buildId`: every evidence call it makes, however deep, names that build. */
 export function runWithAutomationStudioEvidenceBuild<T>(buildId: string, fn: () => T): T {

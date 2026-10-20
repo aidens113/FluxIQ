@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../../model/index.ts";
-import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../../executor/index.ts";
+import { AUTOMATION_STUDIO_WITHHELD_VALUE, runAutomationStudioGraph, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../../../executor/index.ts";
 import { automationStudioCandidateTrialFeedback, automationStudioCandidateTrialLandedActs } from "../index.ts";
 
 // t462: the lasting acts a trial left on the site, numbered as the trial's feedback numbers its steps.
@@ -222,4 +222,48 @@ it("carries the step page's location with its controls, and drops a malformed on
     expect(act?.step).toBe(1);
     expect(act?.controls).toEqual(controls);
   }
+});
+
+// t738, rerun round 2 `run-mvgf801u-cc23575e`: a press on a page the trial reached by a row-bound address read its
+// location off the saved trace as the withholding marker, so no settle clause could name that page.
+it("takes a trial act's page address from the run as executed, where the saved trace withheld it, and nothing else", async () => {
+  const address = "https://reading-list.test/books/42";
+  const flow = {
+    schemaVersion: "0.1", flowId: "flow.want-to-read", ownerKind: "task", ownerId: "task.want-to-read", name: "Want to read", createdAt: 1, updatedAt: 1,
+    nodes: [
+      { id: "row", definitionId: "builtin.policy.action", parameterValues: { outputId: "web.dom.extract", parameters: { selector: "#book" } } },
+      { id: "open", definitionId: "builtin.policy.action", parameterValues: { outputId: "web.output.browser-navigate", parameters: { url: { $state: { path: "row.link" } } } } },
+      { id: "want", definitionId: "builtin.policy.action", label: "Want to read", parameterValues: { outputId: "web.output.dom-click", parameters: { selector: "#want" } }, metadata: { declaredConsequences: ["create_new"] } }
+    ],
+    edges: [
+      { id: "row.open", sourceNodeId: "row", sourcePortId: "success", targetNodeId: "open", targetPortId: "in" },
+      { id: "open.want", sourceNodeId: "open", sourcePortId: "success", targetNodeId: "want", targetPortId: "in" }
+    ]
+  } as unknown as AutomationStudioFlowArtifact;
+  let tab = "https://reading-list.test/", captured = 0;
+  const run = await runAutomationStudioGraph(flow as unknown as Parameters<typeof runAutomationStudioGraph>[0], {
+    effectDispatcher: (effect) => {
+      const payload = (effect.payload ?? {}) as Record<string, JsonValue>, parameters = (payload.parameters ?? {}) as Record<string, JsonValue>;
+      if (payload.outputId === "web.dom.extract") return { status: "success", route: "success", outputs: { link: address } };
+      if (payload.outputId === "web.output.browser-navigate") tab = String(parameters.url);
+      return { status: "success", route: "success", outputs: {} };
+    },
+    hostRuntime: {
+      capabilities: [],
+      captureStateSnapshot: ({ attemptId, point }) => ({ stateSnapshotId: `s.${++captured}`, stateRef: `s.${captured}@${attemptId}:${point}`, capturedAt: captured, summary: {} }),
+      inspectStateDiff: ({ node }) => (node.id === "want"
+        ? { added: ["pressed"], removed: [], documentChanged: false, spot: { place: "p:slot", state: "v:off" }, controls: { page: "p:book", location: tab, before: { "v:off": 1 }, after: { "v:on": 1 } } }
+        : { added: [], removed: [], documentChanged: node.id === "open" })
+    }
+  });
+  expect(run.status).toBe("succeeded");
+  // The saved trace still withholds the address everywhere, the press's own diff included.
+  expect(JSON.stringify(run)).not.toContain(address);
+  expect(run.attempts.find((attempt) => attempt.nodeId === "want")?.stateRefs?.stateDiff?.controls).toMatchObject({ location: AUTOMATION_STUDIO_WITHHELD_VALUE });
+  const acts = automationStudioCandidateTrialLandedActs(run, flow);
+  // A copy of the saved trace is read as it is: what every field of the act reads from the withheld trace alone.
+  const withheld = automationStudioCandidateTrialLandedActs(structuredClone(run), flow);
+  expect(withheld).toHaveLength(1);
+  expect(withheld[0]?.controls?.location).toBe(AUTOMATION_STUDIO_WITHHELD_VALUE);
+  expect(acts).toEqual([{ ...withheld[0], controls: { ...withheld[0]!.controls!, location: address } }]);
 });

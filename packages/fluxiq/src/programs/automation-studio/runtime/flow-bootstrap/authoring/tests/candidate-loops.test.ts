@@ -328,6 +328,33 @@ describe("a written loop the graph cannot honour is refused where it is said", (
     expect(refusal?.message).toContain("one of the site's own filters, set before that span");
   });
 
+  // t738 (social `run-mvgf7ij5-a9747575` 0145-0152): the refusal named the outer span's line, the step that was right.
+  it("refuses a row loop inside a page loop at the inner step's own repeat line, saying what does work", () => {
+    const shelf = [
+      "flow: Open each book on every page of the reading list", // 1
+      "step: open the reading list",                            // 2
+      "  node: web.browser.navigate",                           // 3
+      "  url: https://books.test/list",                         // 4
+      "step books: read this page of books",                    // 5
+      "  node: web.dom.extract_list",                           // 6
+      `  extractList: ${JSON.stringify({ item: ".book", fields: { title: ".title" } })}`, // 7
+      "  repeat while: next",                                   // 8
+      "step open: open the book",                               // 9
+      "  node: web.dom.click",                                  // 10
+      "  selector: .title",                                     // 11
+      "  consequences: none",                                   // 12
+      "  repeat over: books",                                   // 13
+      "step next: go to the next page",                         // 14
+      "  node: web.dom.next_page",                              // 15
+      `  nextPage: ${JSON.stringify({ item: ".book", pagination: { mode: "next", next: "a.next" } })}`, // 16
+      "  consequences: none"                                    // 17
+    ];
+    const refusal = errors(written(shelf.join("\n")).issues).find((issue) => issue.code === "flow_script.repeat_body_is_routed");
+    expect(refusal?.path).toBe("flow.line.13");
+    expect(refusal?.message).toContain("A repeat inside a repeat is not supported, so a Flow cannot act on each kept row of every page of a paged list.");
+    expect(refusal?.message).toContain("A list that grows in place is loaded whole by its own step before the listing read");
+  });
+
   it("refuses a malformed binding at its parameter", () => {
     expect(refusals(LANE_D.map((line) => line === "  text: $row.name" ? "  text: $input.who" : line))).toEqual(["flow_script.invalid_binding @ plan.subflows.0.nodes.5.parameters.text"]);
     expect(refusals(LANE_D.map((line) => line === "  text: $row.name" ? "  text: $step.nowhere.success" : line))).toEqual(["flow_script.invalid_binding @ plan.subflows.0.nodes.5.parameters.text"]);

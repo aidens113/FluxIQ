@@ -3,8 +3,18 @@
 // Split out of `./assemble.ts`, which reads a step's lines and a part's
 // outputs through it; nothing else does. What each form stores is said on
 // `automationStudioScriptBinding` below.
+//
+// **A binding inside a list or an object (t738).** Write Records takes its rows
+// as a list of objects whose values are earlier steps' outputs (office
+// `run-mvgf04kw-310fc169`: values read one by one, saved as one row). The line
+// is JSON, so the whole value does not start with `$` and was read as text
+// holding the binding's words. Each string inside it that is a binding is now
+// read exactly as a whole line would be, and refused the same way; the executor
+// resolves a binding at any depth (`nodes/parameter-bindings.ts`), and every
+// check of a plan's bindings reads them at any depth too (`./draft-bindings.ts`,
+// `./assemble-draft.ts`).
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import { AUTOMATION_NODE_OUTPUT_REFERENCE_ROOT, type AutomationNodeParameter } from "../../../nodes/index.ts";
+import { AUTOMATION_NODE_OUTPUT_REFERENCE_ROOT, isAutomationNodeParameterStateBinding, type AutomationNodeParameter } from "../../../nodes/index.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_INPUT_NAME, AUTOMATION_STUDIO_FLOW_DRAFT_ROW_FIELD } from "../../flow-draft/index.ts";
 import { authoringNestedValue, authoringParameterValue } from "./values.ts";
 
@@ -23,6 +33,12 @@ const INPUT_FORM = /^\$input\.([^\s=]*)\s*(?:=\s*([\s\S]*))?$/u;
 /** An earlier step's output: `$step.<label>.<output>[.<field>]`. */
 const STEP_FORM = /^\$step\.(.+)$/u;
 const OUTPUT_ID = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/u;
+/** How deep a written list or object is searched for a binding, as deep as the executor resolves one. */
+const MAXIMUM_DEPTH = 16;
+/** An object's key written bare, `{plan: ...}`, in a list or object that is otherwise JSON. */
+const BARE_KEY = /([{,]\s*)([A-Za-z_][A-Za-z0-9_-]*)\s*:/gu;
+/** A `$step` or `$row` binding written bare as a value, `[{plan: $step.plan.value}]`. */
+const BARE_BINDING = /([:[,]\s*)(\$(?:step|row)\.[A-Za-z0-9_.-]+)(?=\s*[,}\]])/gu;
 /** The name a pass's row goes by in run state, so no input may take it. */
 const ROW_NAME = "item";
 
@@ -46,7 +62,12 @@ const ROW_NAME = "item";
  */
 export function automationStudioScriptBinding(text: string, parameter: AutomationNodeParameter | undefined, scope: AuthoringScriptBindingScope): { value: JsonValue } | { refused: string } | undefined {
   const written = text.trim();
-  if (!written.startsWith("$")) return undefined;
+  if (!written.startsWith("$")) return parameter?.allowStateBinding === false ? undefined : nestedBindings(written, scope);
+  return wholeBinding(written, parameter, scope);
+}
+
+/** A value that is one binding and nothing else, read as `automationStudioScriptBinding` says. */
+function wholeBinding(written: string, parameter: AutomationNodeParameter | undefined, scope: AuthoringScriptBindingScope): { value: JsonValue } | { refused: string } | undefined {
   const row = ROW_FORM.exec(written);
   if (row) {
     const field = row[1] ?? "";
@@ -84,6 +105,57 @@ export function automationStudioScriptBinding(text: string, parameter: Automatio
     return { refused: `"$step.${rest.slice(0, 64)}" names no output: write \`$step.${label}.<output>\`, or \`$step.${label}.<output>.<field>\`, with an output that step's node declares.` };
   }
   return { value: automationStudioStateBinding([AUTOMATION_NODE_OUTPUT_REFERENCE_ROOT, scope.labelKeys.get(label)!, output, ...fields].join(".")) };
+}
+
+/**
+ * A written list or object with every binding inside it read as the state
+ * binding it names, the first binding's refusal, or nothing when it holds none
+ * -- which leaves it to the ordinary reader, exactly as before (see the header).
+ * A parameter that takes no binding is never searched: its value is left as
+ * written, for validation to answer.
+ *
+ * JSON is read first. Only where that fails, keys and `$step`/`$row` bindings
+ * written bare are quoted and the text read again; a `$input` binding carries
+ * its test value after a space, so it is read only when quoted.
+ */
+function nestedBindings(written: string, scope: AuthoringScriptBindingScope): { value: JsonValue } | { refused: string } | undefined {
+  if (!/^[[{]/u.test(written) || !written.includes("$")) return undefined;
+  const parsed = jsonValue(written) ?? jsonValue(written.replace(BARE_BINDING, "$1\"$2\"").replace(BARE_KEY, "$1\"$2\":"));
+  if (parsed === undefined) return undefined;
+  const state = { found: false, refused: undefined as string | undefined };
+  const value = withBindings(parsed, scope, state, 0);
+  if (state.refused !== undefined) return { refused: state.refused };
+  return state.found ? { value } : undefined;
+}
+
+function withBindings(value: JsonValue, scope: AuthoringScriptBindingScope, state: { found: boolean; refused: string | undefined }, depth: number): JsonValue {
+  if (state.refused !== undefined || depth > MAXIMUM_DEPTH) return value;
+  if (typeof value === "string") {
+    const bound = value.trim().startsWith("$") ? wholeBinding(value.trim(), undefined, scope) : undefined;
+    if (!bound) return value;
+    if ("refused" in bound) {
+      state.refused = bound.refused;
+      return value;
+    }
+    state.found = true;
+    return bound.value;
+  }
+  // A state binding written as one is already what the run reads, and its path
+  // is a run-state path -- a draft's own `$step.<step id>` among them -- never
+  // a script's label, so it is kept exactly as written.
+  if (!value || typeof value !== "object" || isAutomationNodeParameterStateBinding(value)) return value;
+  if (Array.isArray(value)) return value.map((item) => withBindings(item, scope, state, depth + 1));
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, withBindings(item, scope, state, depth + 1)]));
+}
+
+/** Text read as the JSON it spells, or nothing. */
+function jsonValue(text: string): JsonValue | undefined {
+  try {
+    return JSON.parse(text) as JsonValue;
+  } catch (failure) {
+    if (failure instanceof SyntaxError) return undefined;
+    throw failure;
+  }
 }
 
 /** A state binding as the executor reads one (`nodes/parameter-bindings.ts`). */

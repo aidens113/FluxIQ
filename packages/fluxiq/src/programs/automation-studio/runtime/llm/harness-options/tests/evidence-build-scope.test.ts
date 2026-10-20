@@ -2,10 +2,10 @@
 // audit finding 8): the domain reads it from Core's frame instead of parsing
 // Core's call ids.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import { automationStudioEvidenceBuildBound, runWithAutomationStudioEvidenceBuild } from "../evidence-build.ts";
-import { automationStudioEvidenceBuildScope, type AutomationStudioEvidenceBuildScope } from "../evidence-build-scope.ts";
+import { automationStudioEvidenceBuildBound, automationStudioEvidenceBuildId, runWithAutomationStudioEvidenceBuild } from "../evidence-build.ts";
+import { automationStudioEvidenceBuildScope, runWithAutomationStudioEvidenceBuildScope, type AutomationStudioEvidenceBuildScope } from "../evidence-build-scope.ts";
 import type { AutomationStudioHarnessOptionBundle } from "../option.ts";
 import { AutomationStudioHarnessOptionRegistry, type AutomationStudioHarnessOptionResolution } from "../registry.ts";
 
@@ -14,7 +14,9 @@ const DOMAIN_ID = "warehouse";
 const TOOL_ID = "warehouse.count_shelves";
 const RESOLUTION: AutomationStudioHarnessOptionResolution = { scope: { kind: "domain", domainId: DOMAIN_ID } };
 
-function registry(seen: Array<AutomationStudioEvidenceBuildScope | undefined>): AutomationStudioHarnessOptionRegistry {
+type Read = () => Readonly<AutomationStudioEvidenceBuildScope> | undefined;
+
+function registry(seen: Array<AutomationStudioEvidenceBuildScope | undefined>, read: Read = automationStudioEvidenceBuildScope): AutomationStudioHarnessOptionRegistry {
   const bundle: AutomationStudioHarnessOptionBundle = {
     schemaVersion: "0.1",
     domainId: DOMAIN_ID,
@@ -30,7 +32,7 @@ function registry(seen: Array<AutomationStudioEvidenceBuildScope | undefined>): 
       [TOOL_ID]: async () => {
         // Read after an await, as a domain reads it deep in its own work.
         await Promise.resolve();
-        seen.push(automationStudioEvidenceBuildScope());
+        seen.push(read());
         return { shelves: 3 };
       }
     }
@@ -39,6 +41,56 @@ function registry(seen: Array<AutomationStudioEvidenceBuildScope | undefined>): 
 }
 
 const call = (callId: string, value: JsonObject = {}) => ({ callId, toolId: TOOL_ID, value });
+
+/**
+ * A second copy of the frame's module, as a host that bundles Core loads beside
+ * the copy a domain imports natively (the web panel bundles Core; the web
+ * domain's host module imports Core's `dist`).
+ */
+async function anotherCopy(): Promise<{ read: Read; copy: typeof import("../evidence-build-scope.ts") }> {
+  vi.resetModules();
+  const copy = await import("../evidence-build-scope.ts");
+  return { read: copy.automationStudioEvidenceBuildScope, copy };
+}
+
+// Office run `run-mvgf04kw-310fc169` (t738): the web panel ran the build with
+// the copy of Core it bundles and the web domain read the frame from the copy
+// it imports, so the domain never saw a frame. Every dependent builder's
+// opening look, marked as its arrival, was refused as an unexpected key.
+describe("the evidence build scope across copies of Core in one process", () => {
+  it("is seen by another copy of its module", async () => {
+    const { read, copy } = await anotherCopy();
+    expect(copy.runWithAutomationStudioEvidenceBuildScope).not.toBe(runWithAutomationStudioEvidenceBuildScope);
+    const seen = await runWithAutomationStudioEvidenceBuildScope({ projectId: "p1", flowId: "f1", buildId: "build.one", opening: "fresh" }, async () => {
+      await Promise.resolve();
+      return read();
+    });
+    expect(seen).toEqual({ projectId: "p1", flowId: "f1", buildId: "build.one", opening: "fresh" });
+    // And the other way round: a frame the other copy set is this copy's too.
+    expect(copy.runWithAutomationStudioEvidenceBuildScope({ projectId: "p2", flowId: "f2", buildId: "build.two" }, () => automationStudioEvidenceBuildScope())).toEqual({ projectId: "p2", flowId: "f2", buildId: "build.two" });
+    expect(read()).toBeUndefined();
+  });
+
+  it("reads a build frame another copy set", async () => {
+    vi.resetModules();
+    const copy = await import("../evidence-build.ts");
+    expect(copy.runWithAutomationStudioEvidenceBuild).not.toBe(runWithAutomationStudioEvidenceBuild);
+    expect(copy.runWithAutomationStudioEvidenceBuild("build.copy", () => automationStudioEvidenceBuildId())).toBe("build.copy");
+    expect(runWithAutomationStudioEvidenceBuild("build.own", () => copy.automationStudioEvidenceBuildId())).toBe("build.own");
+  });
+
+  it("frames a registry binding's opening call for a domain reading another copy", async () => {
+    const { read } = await anotherCopy();
+    const seen: Array<AutomationStudioEvidenceBuildScope | undefined> = [];
+    const binding = registry(seen, read).evidenceLoopBinding({ projectId: "p1", flowId: "f1", buildId: "build.one" }, RESOLUTION);
+    await binding.executeTool(call(`initial.${TOOL_ID}`, { arrived: true }));
+    await binding.executeTool(call("call.1", { arrived: true }));
+    expect(seen).toEqual([
+      { projectId: "p1", flowId: "f1", buildId: "build.one", opening: "fresh" },
+      { projectId: "p1", flowId: "f1", buildId: "build.one" }
+    ]);
+  });
+});
 
 describe("the evidence build scope", () => {
   it("names the binding's build, and says fresh only on Core's opening call", async () => {

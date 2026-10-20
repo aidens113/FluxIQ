@@ -333,7 +333,8 @@ describe("every example in the Flow script format", () => {
       "Example:", "Example, narrowing with a control whose words are exactly the instruction's:", "Example, two situations the run can start in:",
       "Example, acting on one item:",
       "Example, reading every page of a list:", "Example, acting on each row a listing kept:", "Example, a loop the site asked to slow down:",
-      "Example, starting where the page already is:", "Example, an interruption that can come at any pass:", "Example, a second known way, checked the same:"
+      "Example, starting where the page already is:", "Example, an interruption that can come at any pass:", "Example, a second known way, checked the same:",
+      "Example, values read one by one, saved as one row:"
     ]);
   });
 
@@ -514,6 +515,33 @@ describe("every example in the Flow script format, saved as a Flow", () => {
     const recovery = savedFlowValidation(anywhere.plan, registry, EXAMPLE_RESOLUTION).topology!.subflows.find((saved) => saved.subflow.role === "recovery")!;
     expect(recovery.graphFlow.nodes.map((node) => node.definitionId)).toEqual(["builtin.control.handler", "web.output.dom-click", "builtin.control.handler-end"]);
     expect(recovery.graphFlow.metadata?.requires).toEqual(["flow.handlers@1", "web.facts@1"]);
+  });
+});
+
+// Office `run-mvgf04kw-310fc169` (t738): four values read one by one, every act right, and no row stored, because
+// Write Records took its rows only through a port no script line connects. The format now says how such values are
+// saved as one row, and its example -- an account's settings page, a kind of site no Lab lane has -- builds the row
+// from the reads' own outputs, with columns the row's keys.
+describe("the format's guidance on saving values read one by one as one row", () => {
+  const registry = exampleRegistry();
+  const script = new Map(exampleBlocks(AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT)).get("Example, values read one by one, saved as one row:")!;
+
+  it("names the node, the records line and a bound value, and stays out of the legacy format", () => {
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT).toContain("are saved as one row by a last step `node: builtin.data.write-records` whose `records:` is a list holding one object");
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT).toContain("`records: [{\"plan\": \"$step.plan.value\"}]`");
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).not.toContain("write-records");
+    expect(JSON.stringify(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA)).not.toContain("write-records");
+  });
+
+  it("builds as written: three reads, then one row of their values, its columns the row's keys", () => {
+    const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { flow: script }, registry, resolution: EXAMPLE_RESOLUTION });
+    if (!accepted.ok) throw new Error(JSON.stringify(accepted.issues));
+    const nodes = accepted.plan.subflows[0]!.nodes;
+    expect(nodes.map((node) => node.definitionId)).toEqual(["web.output.browser-navigate", "web.output.dom-extract", "web.output.dom-extract", "web.output.dom-extract", "builtin.data.write-records"]);
+    const save = nodes.at(-1)!.parameters!;
+    expect(save.records).toEqual([{ plan: { $state: { path: "$node.s2.value" } }, renews: { $state: { path: "$node.s3.value" } }, price: { $state: { path: "$node.s4.value" } } }]);
+    const fields = ((save.recordOutput as { schema: { fields: Array<{ id: string }> } }).schema.fields).map((field) => field.id);
+    expect(fields).toEqual(["plan", "renews", "price"]);
   });
 });
 

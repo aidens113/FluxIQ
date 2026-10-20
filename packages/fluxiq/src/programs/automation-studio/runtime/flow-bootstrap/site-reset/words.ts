@@ -13,7 +13,7 @@ import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY as UNDOES } from "./contracts.t
  */
 const SETTLE_MODEL = "An act counts as settled when fresh complete reads, taken after it and after the latest lasting action or trial, show everything it could change as the build found it: a list it sat in or was named for, row for row and value for value, and its own control's state where it flipped one. "
   + "Settled after a change was seen or an undo landed, it is restored; settled with no change ever seen, it is left as it is, and every later trial's judge is told. "
-  + "Core reads the lists and pages it can reach again itself before asking. Each open act says under settle what is still needed: read a named list completely again, undo what still differs there, press its own control back, or, where nothing read shows where its effect would be, read that list completely and name its ref as resetDestination on a look that names the act under undoes. "
+  + "Core reads the lists and pages it can reach again itself before asking. Each open act says under settle what is still needed: read a named list completely again, undo what still differs there, press its own control back, or, where nothing read shows where its effect would be, read that list completely and name its ref as resetDestination on a look that names the act under undoes, a ref only a resetDestinations receipt prints. Where nothing was read complete before the build's first lasting act, such an act cannot be settled in this build. "
   + "cannotUndo never settles a reversible act.";
 
 /** The instructions the ledger and its trial policy answer with. */
@@ -108,5 +108,16 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
   unknownAct(acts: boolean): string {
     return `"${UNDOES}" may name only an act of this build that core.test_candidate listed under actsToUndo, and only on the call that undoes it. `
       + (acts ? `Name one of the acts listed here, or make the call without "${UNDOES}".` : `No act of this build is waiting to be undone now: make the call without "${UNDOES}".`);
+  },
+  /** A reversible lasting press before the seal with no witness (`./reset-witness.ts`, rerun round 2): nothing could ever show it put back. */
+  witnessRequired(): string {
+    return "This press was not run. Before this build's first reversible lasting change, observe completely, through the site's own controls, the list where its effect would show, "
+      + "then retry this press naming the resetDestination ref that observation issues. A press on a control inside a list already read complete, or on a control whose own state the page shows, needs no ref. "
+      + "Without such a list nothing could ever show the change put back, and no trial could run for the rest of the build. Looking and navigating remain available; no new permission is needed.";
+  },
+  /** A `resetDestination` naming no ref this build was shown (rerun round 2): refused before the call runs. */
+  destinationUnissued(): string {
+    return "This call was not run: its resetDestination names no ref this build was shown. Refs come only from a resetDestinations receipt printed after a complete observation of a list; never invent one. "
+      + "Retry without resetDestination, or with a ref such a receipt printed. Looking and navigating remain available; no new permission is needed.";
   }
 });

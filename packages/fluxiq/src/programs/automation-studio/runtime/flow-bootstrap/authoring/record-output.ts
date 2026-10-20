@@ -63,8 +63,10 @@ export function normaliseAuthoringRecordOutput(input: {
   definition: AutomationStudioNodeDefinition;
   /**
    * The columns to declare when the model wrote no schema: names read from
-   * elsewhere on the node, or the instruction's own columns matched to them,
-   * each with the label it was given (`./instruction-record-columns.ts`).
+   * elsewhere on the node -- an extraction's fields, or the keys of the rows a
+   * node is given as written (t738) -- or the instruction's own columns matched
+   * to them, each with the label it was given (`./instruction-record-columns.ts`,
+   * `./assembled-record-output.ts`).
    */
   columns: readonly (string | { id: string; label: string })[];
   /** What the dataset is called when the model named it nothing usable. */

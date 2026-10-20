@@ -496,10 +496,18 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT = [
  * to hand on one value copied that `extraction.1` handle, which only the list
  * detector gives, and was refused for every guess (A8 frozen pair 3).
  *
+ * The last statement and example are values read one by one and saved as one
+ * row (t738). Office `run-mvgf04kw-310fc169` read four values with four
+ * single-value reads, every act right, and stored nothing: Write Records took
+ * its rows only through a port no script line connects. It now takes them in
+ * its `records` parameter, each value bound to a read
+ * (`nodes/data/write-records.ts`), and this says so, with the example a model
+ * copies.
+ *
  * No example is a Lab task (t378's rule): a city permit portal, a weather
- * network's station list and a meeting-room planner are sites and acts none of
- * the ten realistic scenarios has, and no example closes an email or
- * newsletter offer, which two of them show.
+ * network's station list, a meeting-room planner and an account's settings
+ * page are sites and acts none of the ten realistic scenarios has, and no
+ * example closes an email or newsletter offer, which two of them show.
  */
 export const AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT = [
   "A part is steps another step runs by name, written once: `part <label>: <what it does>`, its steps, then `end`. It has no `when:` line. A step runs it and waits for it with `call: <label>` in place of `node:`: `step pay: pay for the order` then `call: payment`.",
@@ -515,6 +523,7 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT = [
   "An interruption that can only come at one place is an `optional: yes` step there, with its `only after:` steps. One that can come at several places, or at any pass of a loop, is one handler instead -- `on before everywhere:` or `on retry for <steps>:` -- so one rule covers every place. A loop the site asked to slow down still takes `repeat pace:` as well.",
   "A second known way to do a step is a `fail` handler for it whose steps call another part and end `then: use <output> = $step.<label>.<output>`. Give both parts the same `done when:`, so either way is checked the same.",
   "Write a handler only for an interruption you met while gathering evidence or in a trial, or one the instruction names; never one you imagine. A trial lists what the run closed under a step's `interruptions`: one with a `wayOut` is dismissed through that handle and no other; one with none was closed by the run itself and needs no step.",
+  "Values read one by one, each by its own labelled step, are saved as one row by a last step `node: builtin.data.write-records` whose `records:` is a list holding one object, each value bound to a read: `records: [{\"plan\": \"$step.plan.value\"}]`. The row's keys are its columns unless `recordOutput.schema` names them. A listing saves its own rows and needs no such step.",
   "Example, starting where the page already is:",
   "flow: Renew the parking permit for the plate the person gave",
   "step: open the permit portal",
@@ -599,5 +608,25 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT = [
   "    target: t12",
   "    extract.mode: text",
   "  done when: text t11 contains \"Booked\"",
-  "end"
+  "end",
+  "Example, values read one by one, saved as one row:",
+  "flow: Save the account's plan name, renewal date and price as one row",
+  "step: open the account settings",
+  "  node: web.browser.navigate",
+  "  url: https://account.test/settings",
+  "step plan: read the plan name",
+  "  node: web.dom.extract",
+  "  target: t3",
+  "  extract.mode: text",
+  "step renews: read the renewal date",
+  "  node: web.dom.extract",
+  "  target: t4",
+  "  extract.mode: text",
+  "step price: read the price",
+  "  node: web.dom.extract",
+  "  target: t5",
+  "  extract.mode: text",
+  "step: save them as one row",
+  "  node: builtin.data.write-records",
+  "  records: [{\"plan\": \"$step.plan.value\", \"renews\": \"$step.renews.value\", \"price\": \"$step.price.value\"}]"
 ].join("\n");

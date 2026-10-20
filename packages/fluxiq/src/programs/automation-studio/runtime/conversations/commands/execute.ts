@@ -17,6 +17,7 @@
 
 import { runInAutomationStudioConversation } from "../context/index.ts";
 import { AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT } from "../instructions/index.ts";
+import type { AutomationStudioCandidateAuthoringResult } from "../../flow-bootstrap/authoring-result/index.ts";
 import type {
   AutomationStudioConversationCommand,
   AutomationStudioConversationCommandContext,
@@ -69,7 +70,8 @@ async function settle(command: AutomationStudioConversationCommand, context: Aut
   });
   if (outcome.status === "done" && outcome.candidate) {
     await context.host.appendAutomationTurn({ projectId: context.projectId, conversationId: context.conversationId,
-      text: "Saved candidate draft. Verification pending; the Flow's steps are unchanged.", ask: null,
+      // Pending only when no test of the whole Flow ran; otherwise what it came to (t738, `draftSavedLine`).
+      text: draftSavedLine(outcome.candidate), ask: null,
       attachment: { kind: "candidate-draft", ref: outcome.candidate.candidateId } });
   }
   if (outcome.status === "done" && !outcome.candidate && outcome.confirm) {
@@ -85,4 +87,29 @@ async function settle(command: AutomationStudioConversationCommand, context: Aut
     }
   }
   return outcome;
+}
+
+/** The card line for a draft no test of the whole Flow stands behind: no trial runner ran one. */
+const DRAFT_PENDING = "Saved candidate draft. Verification pending; the Flow's steps are unchanged.";
+
+/** What the whole Flow's test came to, in words that follow "Saved candidate draft. ". */
+const DRAFT_TESTED: Readonly<Record<NonNullable<AutomationStudioCandidateAuthoringResult["trial"]>["verdict"], string>> = Object.freeze({
+  yes: "Its test run from the start was judged to do what you asked, but the draft was not put into the Flow",
+  no: "Its test run from the start was judged not to do what you asked",
+  unsure: "Its test run from the start could not be confirmed to do what you asked",
+  not_judged: "Its test run from the start was not checked",
+  execution_failed: "Its test run from the start did not get to the end",
+  not_tested: "It was never test-run from the start"
+});
+
+/**
+ * The line beside a saved draft's card (t738). Everything-store
+ * `run-mvgf04kw-310fc169` ended "Saved candidate draft. Verification pending"
+ * straight after "Its test run from the start was judged not to do what you
+ * asked": one fixed sentence for every draft. It says pending only when no test
+ * of the whole Flow ran at all, and otherwise what that test came to, in the
+ * words the draft's own answer uses (`./build.ts`).
+ */
+function draftSavedLine(candidate: Pick<AutomationStudioCandidateAuthoringResult, "trial">): string {
+  return candidate.trial ? `Saved candidate draft. ${DRAFT_TESTED[candidate.trial.verdict]}; the Flow's steps are unchanged.` : DRAFT_PENDING;
 }
