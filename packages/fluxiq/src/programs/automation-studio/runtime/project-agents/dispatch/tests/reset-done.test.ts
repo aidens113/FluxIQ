@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioActionConsequence } from "../../../action-permissions/index.ts";
-import { AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetExplored } from "../../../flow-bootstrap/site-reset/index.ts";
+import { AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetExplored, type AutomationStudioSiteResetRead } from "../../../flow-bootstrap/site-reset/index.ts";
 import { automationStudioProjectDispatchResetDone } from "../reset-done.ts";
 
 // t684, t679 open question 3: a reset came back done saying "Every lasting act
 // this build made is undone" while its undo of one was refused and the act
-// stayed on the site.
+// stayed on the site. L1 reset settlement: why an act stayed is read off its
+// ledger's `standing`, an act settled unchanged said as such.
 
 function pressed(callId: string, name: string, consequences: AutomationStudioActionConsequence[], item?: string): AutomationStudioSiteResetExplored {
   return { callId, toolId: "core.run_node", landed: true, declared: { permitted: true, effect: "mutate", consequences, control: { name, kind: "button", ...(item ? { item } : {}) }, verb: "press" } };
@@ -33,6 +34,24 @@ describe("a reset's done", () => {
     const done = automationStudioProjectDispatchResetDone(ledger);
     expect(done).not.toContain("Every lasting act this build made is undone");
     expect(done).toBe("This reset undid every act of this build it could, but 2 lasting acts of this build stay on the site, so the site is not as the build found it: act-1 (press \"Save\" button; the site offers no way to undo it), act-2 (press \"Pay\" button; FluxIQ cannot undo it).");
+  });
+
+  it("says of an act settled unchanged that nothing it could change showed a change, never that the site offers no way to undo it (L1)", async () => {
+    const ledger = new AutomationStudioSiteResetProjectLedger();
+    const brief = ledger.forBrief("brief-1");
+    const list = (subjects: string[]) => ({ scope: "p:items", group: "g:items", subjects, states: Object.fromEntries(subjects.map((subject) => [subject, `v:${subject}`])) });
+    const read: AutomationStudioSiteResetRead = { state: {}, differs: [], resource: "r:site", scope: "p:list-page", location: "loc:list", collections: [list(["s:one", "s:two"])] };
+    ledger.observed(read);
+    brief.observed(read);
+    // The model is shown the list's ref, as the routing shows it beside a read.
+    expect(brief.destinationReceipts().map((receipt) => receipt.ref)).toEqual(["destination-1"]);
+    const control = { name: "Start a draft", kind: "button" as const, subject: "s:three", page: "s:three", resource: "r:site" };
+    expect(brief.createBaseline({ effect: "mutate", consequences: ["create_new"], control }, "destination-1")).toEqual({ kind: "admit" });
+    brief.explored({ callId: "draft", toolId: "core.run_node", landed: true, resetDestination: "destination-1", declared: { permitted: true, effect: "mutate", consequences: ["create_new"], control, verb: "press" } });
+    // Core's own look finds the list as the build found it.
+    expect(await brief.beforeTrial({ compare: async () => ({ moved: false, differs: [] }), lookAt: async () => brief.observed(read) })).toMatchObject({ kind: "admit" });
+    expect(brief.standing("act-1")).toBe("unchanged");
+    expect(automationStudioProjectDispatchResetDone(ledger)).toBe("This reset undid every act of this build it could, but 1 lasting act of this build stays on the site, so the site is not as the build found it: act-1 (press \"Start a draft\" button; nothing it could change showed a change).");
   });
 
   it("names ten acts that stayed and counts the rest", () => {

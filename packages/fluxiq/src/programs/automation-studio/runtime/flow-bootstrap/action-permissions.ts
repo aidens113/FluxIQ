@@ -489,7 +489,9 @@ function placeOf(read: AutomationStudioReadActionDeclaration): AutomationStudioS
     ...(read.controlSubject !== null ? { subject: read.controlSubject } : {}),
     ...(read.controlPage !== null ? { page: read.controlPage } : {}),
     ...(read.controlScope !== null ? { scope: read.controlScope } : {}),
-    ...(read.controlResource !== null ? { resource: read.controlResource } : {})
+    ...(read.controlResource !== null ? { resource: read.controlResource } : {}),
+    ...(read.controlPlace !== null ? { place: read.controlPlace } : {}),
+    ...(read.controlState !== null ? { state: read.controlState } : {})
   };
 }
 

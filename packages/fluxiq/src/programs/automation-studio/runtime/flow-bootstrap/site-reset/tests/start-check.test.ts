@@ -212,4 +212,55 @@ describe("site reset start check", () => {
     expect(await check.settled({ n: 0 })).toMatchObject({ differs: ["new: cart 1"], lines: { added: ["cart 1"] } });
     expect(await check.read({ n: 0 })).toMatchObject({ differs: ["new: cart 1"] });
   });
+
+  // L1 reset settlement: Core looks at an open act's watched place itself, and every read reports the page's stateful controls.
+  describe("looking at a place", () => {
+    const goes = { arrival: { node: "demo.go", parameter: "to" }, runnable: ["demo.go"] };
+    function looking(controls: unknown) {
+      const ran: Array<{ callId: string; toolId: string; value: JsonObject }> = [];
+      const asked: string[] = [];
+      const binding = {
+        startState: async (input: { callId: string }) => {
+          asked.push(input.callId);
+          return { state: { n: asked.length }, differs: [], location: "https://site.test/watched", controls: controls as Record<string, Record<string, number>> };
+        },
+        runsNodes: goes
+      };
+      const executeTool = async (call: { callId: string; toolId: string; value: JsonObject }) => {
+        ran.push(call);
+        return { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true };
+      };
+      const check = new AutomationStudioSiteResetStartCheck({ binding, projectId: "p", flowId: "f", tools: [runNode], executeTool, liveCheck: { settleMs: 0 } });
+      return { check, ran, asked };
+    }
+
+    it("runs the arrival with the location, then answers a settled read with the page's controls", async () => {
+      const controls = { "p:slot": { "v:on": 1 }, "p:other": { "v:off": 2, "v:on": 1 } };
+      const fake = looking(controls);
+      const read = await fake.check.lookAt("https://site.test/watched");
+      expect(fake.ran).toEqual([{ callId: "site-reset.look.1.arrival", toolId: "core.run_node", value: { node: "demo.go", parameters: { to: "https://site.test/watched" }, consequences: [] } }]);
+      // Settled: read twice, with nothing done between.
+      expect(fake.asked).toHaveLength(2);
+      expect(read).toMatchObject({ location: "https://site.test/watched", controls });
+    });
+
+    it("omits controls with any malformed place, state or count, and keeps the read", async () => {
+      for (const controls of [{ "a slot, in words": { "v:on": 1 } }, { "p:slot": { "v:on": 0 } }, { "p:slot": { "v:on": 1.5 } }, { "p:slot": { "not a token!": 1 } }, { "p:slot": ["v:on"] }, ["p:slot"]]) {
+        const read = await looking(controls).check.lookAt("https://site.test/watched");
+        if ("unread" in read) throw new Error("the read should have answered");
+        expect(read.controls).toBeUndefined();
+        expect(read.location).toBe("https://site.test/watched");
+      }
+    });
+
+    it("answers unread without a reader, and goes nowhere", async () => {
+      const ran: unknown[] = [];
+      const check = new AutomationStudioSiteResetStartCheck({ binding: { runsNodes: goes }, projectId: "p", flowId: "f", tools: [runNode], executeTool: async (call) => {
+        ran.push(call);
+        return {};
+      } });
+      expect(await check.lookAt("https://site.test/watched")).toEqual({ unread: "no_reader" });
+      expect(ran).toEqual([]);
+    });
+  });
 });

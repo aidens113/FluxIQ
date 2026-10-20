@@ -1,6 +1,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowBootstrapInterface, AutomationStudioFlowBootstrapSubflow, AutomationStudioFlowBootstrapSubflowMetadata } from "../plan/index.ts";
 import type { AutomationStudioCandidateTrialAct, AutomationStudioCandidateTrialVerdict } from "../candidate/index.ts";
+import type { AutomationStudioSiteResetTrialActPlace } from "../site-reset/index.ts";
 
 // What a subflow builder works within, what it submits and how its own subflow
 // is tried (automation-project-agents-plan.md, `Scoped submission`, `Subflow
@@ -117,8 +118,8 @@ export type AutomationStudioSubflowTrialResult = {
   trialRunId?: string;
   /** Whether every predecessor ran to its end, so the target started from its prepared entry. */
   entryPrepared: boolean;
-  /** Lasting acts that landed, predecessors' included, whatever the verdict. */
-  acts?: AutomationStudioCandidateTrialAct[];
+  /** Lasting acts that landed, predecessors' included, whatever the verdict, each with where its step sat and what it made (L1). */
+  acts?: Array<AutomationStudioCandidateTrialAct & AutomationStudioSiteResetTrialActPlace>;
 };
 
 /** Runs one partial trial; injected by the service that owns execution and judging. */

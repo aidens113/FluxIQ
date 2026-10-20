@@ -119,7 +119,10 @@ selectable with `FLUXIQ_AUTHORING_MODE=candidate`.
   whole trials' acts under the supervisor. The supervisor refuses a whole trial
   while any is in place and briefs a reset; a reset's undo of an act is put to
   the ledger that owns it, and the reset completes once every such ledger, having
-  looked again on each act's own page, holds none in place.
+  looked again on each act's own page, holds none in place. A reset brief settles
+  what Core's own looks can settle before its first decision, and a reset that
+  cannot settle an act ends `blocked` with it still listed, so no further trial
+  runs on it (see "How an act settles" below).
 - **Each builder act is placed (t551),** as a candidate build's is: a builder's
   call that makes a lasting act is read just before and just after it, in
   place, through the brief's own start check (`flow-bootstrap/site-reset/act-places.ts`),
@@ -204,7 +207,11 @@ build made and nothing that was there before it began
   share that line. An act with no such place (a trial's act, or one whose page
   could not be read) counts as undone once an undo of it landed and changed the
   page it ran on without leaving it; where the target cannot be read at all, a
-  landed undo counts as before.
+  landed undo counts as before. These source-page rules settle only legacy
+  unscoped acts (no subject, page or scope token on the declaration). An act
+  that carries any of those tokens is strict: it settles only by its witnesses
+  (see "How an act settles" below), and the source-page comparison stays
+  diagnostic `stillThere` evidence for it.
 - **Acts the site cannot undo.** An act the reset made no progress on, or asked
   for twice, or one the model names under `core.test_candidate`'s `cannotUndo`
   once the reset has listed it, is kept: never asked for again, refused if
@@ -215,9 +222,10 @@ build made and nothing that was there before it began
   `startedWith` lines (`candidate/started-with.ts`), and the judge reads them as
   `resultSummary.startedWith`: already done, neither the run's doing nor its
   failure.
-  Modern identified reversible acts instead require positive restoration of
-  their original collections; `cannotUndo` or keeping an unproved act cannot
-  admit an ordinary trial on leftovers.
+  Strict (identified, reversible) acts instead settle only by their witnesses;
+  `cannotUndo`, or keeping an open strict act, never admits an ordinary trial
+  on leftovers: the trial is refused `candidate.trial_reset_unproved`, listing
+  each such act under `actsToRestore` with its `settle` sentence.
 - **The start state.** As the build begins, right after the loop's opening
   arrival, Core asks the domain's optional `startState` binding for the state
   to keep. Before a trial that is due, the gate takes the target back to the
@@ -240,10 +248,139 @@ build made and nothing that was there before it began
 
   The refusal answers `retry_allowed` and reports whether the arrival moved
   the page, so the identical retest reaches the gate. That matters in the
-  wrap-up, which offers only submit and test. The gate never deadlocks: a
-  refusal identical to the last one, or a fourth in one phase, admits the
-  trial and says under `startedWith` what was still in place or different.
+  wrap-up, which offers only submit and test. The gate never deadlocks over
+  legacy acts: a refusal identical to the last one, or a fourth in one phase,
+  admits the trial and says under `startedWith` what was still in place or
+  different. That admission never covers an open strict act: the ledger
+  refuses `candidate.trial_reset_unproved` before the policy runs and again
+  after it admits.
   A trial's answer lists the acts now on the site under `leftOnSite`.
+- **A refused trial is retested after any call.** A refused action (an
+  action tool that applied nothing and answered `ok: false`) stays answered
+  from the loop's memory only until the next call runs, a look included
+  (`llm/refused-action-retest.ts`); with no call between, the identical
+  request is still answered `llm_evidence_loop.already_answered`. The repeat
+  guard treats `trial_reset_required`, `trial_reset_unproved` and
+  `trial_start_differs` (`candidate.` or `project.`) as a precondition
+  (`llm/repeat-guard/outcomes.ts`, `PRECONDITIONS`): any later call that ran and
+  was not refused lifts it on every page, so the retest after a settling look
+  reaches the ledger even when the look left the page digest unchanged; the
+  call that lifts it is still recorded as changing nothing when it did. This
+  holds whether or not the gate's `retry_allowed` reason also exempts the
+  refusal. Refuse, look, refuse stays bounded by
+  `llm_evidence_loop.repeat_without_progress`.
+
+### How an act settles
+
+The site-reset ledger settles every strict act by one rule over observed state
+(L1 reset settlement replaced three narrow proofs, 2026-10-19). Sources:
+`site-reset/ledger.ts` and its `settlement-*.ts` modules, `site-reset/words.ts`,
+`site-reset/contracts.ts`.
+
+- **Witnesses.** Each lasting act of the build, explored or trial, carries the
+  before-state of what it could change:
+  - **Group witnesses** (`settlement-act-groups.ts`,
+    `settlement-group-witness.ts`). The complete list groups its named scopes
+    fall in: its own list (the complete original its control sat in, read
+    before it), every destination named for it (`resetDestination` on its own
+    call, or on a later look that names it under `undoes`, resolved from an
+    issued ref without the act's resource; destinations accumulate and are
+    never removed), the destination its creation was admitted against, the
+    lists of a witnessed transfer or a proved subject undo, and the
+    destinations of the explored acts a trial act repeats. A witness's
+    relevant scopes are those named scopes plus every original scope of the
+    group that held one of the act's subjects before it. It holds when the
+    group's latest read is fresh, every relevant scope is in it and restored
+    row for row and value for value, and no other scope of that read holds an
+    act subject it did not originally hold with the same value. Lists on the
+    same page about nothing the act touched (recently viewed, menus) do not
+    block it. A relevant scope missing from the read, or a malformed group
+    (`collection-groups.ts`), is `incomplete`; a group with no relevant scope
+    read before the act is no witness.
+  - **Toggle witness** (`settlement-toggle-witness.ts`,
+    `settlement-control-tracker.ts`). Only for an act declaring exactly
+    `modify_existing` whose control has a `place` and `state`
+    (`control.place`/`control.state` on the declaration; `Spot.place`/`state`).
+    For an explored act it comes from the `controls` of the reads just before
+    and after the press; for a trial act from the step diff's
+    `controls: { page, before, after }` (`TrialActPlace.controls`). It exists
+    only when exactly one control at that place went from `state` to one other
+    state and nothing else there moved. It holds when the last press at that
+    place, landed no earlier than the act, left the place at the build's start
+    counts for both states, and the latest read of that page, after the latest
+    lasting call, still shows them. A control that reverts by itself never
+    holds: the return must follow a press. A press whose page has not been read
+    again keeps its act open.
+- **Fresh reads and the clock.** The ledger's clock advances on each landed,
+  permitted `mutate` that declares a lasting class or is recorded as possibly
+  lasting, on any landed `mutate` under `undoes`, and on each `trialRan`; an
+  unrecorded navigation does not move it. A read is fresh for an act only when
+  it was taken after the act and at the current clock. Partial reads (the
+  domain did not positively establish completeness), malformed groups and
+  stale reads never settle an act.
+- **Settled or open** (`settlement-decision.ts`). With every witness holding,
+  an act is **settled restored** when a change was seen at some point or an
+  undo of it landed, and **settled unchanged** when no read ever showed a
+  change. Both are sticky, decided as soon as a fresh read settles them. A
+  settled-unchanged act is never asked for, a claim on it is refused unrun
+  `candidate.undo_act_kept`, and every later trial lists it under
+  `startedWith.cannotUndo` as left with nothing it could change showing a
+  change, which the judge is told. Otherwise the act is **open**: no witness
+  at all (`name`), a stale or incompletely read witness (`look`), a group that
+  still differs (`undo`), or its control still showing the state it set
+  (`toggle`). `standing(actId)` answers `in_place`, `restored`, `unchanged`,
+  `kept`, `irreversible` or nothing, and a reset's `done` words say why an act
+  stayed from it (`project-agents/dispatch/reset-done.ts`).
+- **Core looks first.** Before deciding, `beforeTrial` goes once to each
+  location where an open act's witness is stale (`checks.lookAt`): the start
+  check takes the target there with the arrival's node, reads it settled, and
+  the caller feeds that read to every ledger (`start-check.ts`,
+  `project-reset.ts`; the candidate loop in `candidate/authoring-loop.ts`; in a
+  project build `service/project-build/brief-ports.ts`, where both the
+  builder's trial reset and a reset's `remainingActs` look, each location once
+  per ask). The model is asked only for what Core could not observe or what
+  still differs. Where a caller passes no `lookAt`, Core never looks.
+- **Per-act `settle` feedback** (`settlement-words.ts`). Each open act under
+  `actsToUndo`, `actsToRestore` and in a reset brief carries `settle`
+  (`AutomationStudioSiteResetNamedAct.settle`), one generic sentence built from
+  its open reasons: read a named list at a location completely again; that list
+  still differs, so undo the act there naming it under `undoes`; its control
+  still shows the state the act set, so press that same control back once; or
+  nothing read shows where its effect would be, so read that list completely
+  and name its ref as `resetDestination` on a look under `undoes`, listing the
+  refs read complete before the build acted with their counts and locations.
+  It names only this run's refs and locations, never a site noun. The refusal
+  words state the rule once (`WORDS.settleModel()`).
+- **Trial acts inherit destinations.** A trial step cannot carry a
+  `resetDestination`, so a strict trial act that repeats an explored act
+  (`settlement-trial-repeat.ts`: the same lasting classes, the same operation
+  where both say which, the subject or page token present and equal on both,
+  and no contradicting subject, page or resource) shares that act's
+  destinations, lazily: one named later for the explored act covers the trial
+  act too.
+- **Toggle back is admitted.** An undo whose control is at the toggle's
+  `place`, shows the act's after state, and declares `[]` or
+  `[modify_existing]` is admitted `own` with `modify_existing` unasked. A
+  control at that place in any other state, or declaring anything else, is
+  refused unrun `candidate.undo_unproved`.
+- **Invariants kept.** Pre-existing items are never touched: every other
+  admission rule (own item, created item, follow-up confirmation, subject
+  delete of a subject proved absent, witnessed transfer) is unchanged.
+  Partial or stale reads never settle. `cannotUndo` never settles a strict
+  act: it stays listed with its `settle` until fresh reads settle it. Legacy
+  unscoped acts keep their earlier paths (source-page `compareAt`, landed-undo
+  fallback, keeping).
+- **A reset brief's honest ending** (`project-agents/dispatch/reset-loop.ts`,
+  `service/project-build/brief-ports.ts`). The reset port runs `remainingActs`
+  once before its loop starts, so acts Core's looks settle never reach the
+  model. Its task lists each open act with `What settles it: <settle>`, and a
+  trial step's act reads `(made by step N of a trial run)`. A completion is
+  refused `project.reset_acts_in_place` with `actsToUndo` (each with
+  `settle`) while acts remain; a completion that names every act still listed
+  under `cannotUndo`, each one already listed by an earlier refusal with what
+  settles it, is accepted as the honest unresolved ending, and the reset comes
+  back `blocked` with those acts still to undo. The ledger keeps refusing
+  trials while they are open, so no trial runs on them.
 
 Legacy mode is unchanged. Its dry-run test verifies lasting steps rather than
 redoing them (`flow-draft/verify-only.ts`), so it needs exploration's effects
@@ -2811,10 +2948,12 @@ are refused until a deterministic inverse witness is available.
 
 Modern subject- or scope-bearing declared reversible acts cannot admit an
 ordinary trial on leftovers. cannotUndo remains an honest unresolved result;
-Core refuses the trial with candidate.trial_reset_unproved until positive
-baseline restoration is observed. Wrong-target modern undo attempts are
-recoverable and can retarget before anything is pressed. Declaring no lasting
-consequence on an undo's modern control press does not bypass ownership.
+Core refuses the trial with candidate.trial_reset_unproved until fresh complete
+reads settle the act (restored or unchanged; "How an act settles" above).
+Wrong-target modern undo attempts are recoverable and can retarget before
+anything is pressed. Declaring no lasting consequence on an undo's modern
+control press does not bypass ownership; the one exception is pressing an
+act's own toggle back at its place, which is admitted `own` either way.
 Undeclared possible effects, irreversible effects, and legacy domains with
 neither subject nor scope tokens retain their existing policy.
 
@@ -2822,12 +2961,14 @@ An identified reversible act stays listed and correctable after cannotUndo or
 repeated refused trials. A source notification disappearing, or an unchanged
 source-page read, never clears that act: a destination effect may persist.
 The source diff remains diagnostic evidence only. A truly failed declared
-press can settle without a needless inverse when a fresh complete read proves
-its original resource group unchanged. This requires an original complete
-scope containing the same subject, every original group inventory in original
-order with identical row fingerprints, no extra scopes, and a group read after
-the act was recorded. Pre-act, incomplete, late-baseline and other-resource
-observations cannot satisfy it.
+press settles `unchanged` without a needless inverse when its witnesses hold
+and no read ever showed a change: a fresh complete read, taken after the act
+and the latest lasting call, holds every relevant scope of its group (its own
+list read before it, its named destinations, and every original scope that
+held its subject) in original order with identical row fingerprints, and no
+other scope of that read holds its subject differently. Lists of the same
+page about nothing it touched do not block it. Pre-act, incomplete, stale,
+late-baseline and other-resource observations cannot satisfy it.
 
 Identified created-item tokens use the same positive complete-scope proof as
 cross-page subject deletion. Every original and current subject needs a defined
@@ -2843,8 +2984,8 @@ Project builders receive generic consequence-declaration guidance before their
 first decision. Recovery presses must truthfully declare the same lasting
 operation they perform; truly nonlasting actions retain an empty declaration.
 A declared retry gets its own immediate effect witness and inverse. Restoring
-the exact original whole resource group also settles an earlier failed intent
-on that original scope and subject. No permission or declared consequence is
+the relevant scopes of the original group also settles an earlier failed
+intent on that original scope and subject. No permission or declared consequence is
 inferred from an undeclared recovery press. Moving back a row with a changed
 quantity cannot settle the earlier quantity edit or the whole reset.
 
@@ -2866,9 +3007,11 @@ resource scopes cannot overwrite each other's current inventories. Builders
 are told to inspect a destination's complete item inventory before creating
 effects they will later need to remove there; missing prior observation fails
 closed. Restoration compares every baseline row's semantic state fingerprint
-and subject inventory. Newly moved owned subjects or changed baseline-owned
-subjects in sibling complete collections refute restoration. Those sibling
-inventories must be freshly observed on the same captured resource/page.
+and subject inventory in each relevant scope. A sibling complete collection in
+the same fresh read refutes restoration only when it holds one of the act's
+subjects that it did not hold originally with the same row value; a sibling
+about nothing the act touched does not block, and a relevant scope missing
+from the fresh read leaves the act open.
 
 
 A reversible transfer between complete collections also requires immediate
@@ -2884,8 +3027,9 @@ admission of the inverse. Deletion is never a transfer inverse.
 
 One modify inverse can act on the unchanged witnessed destination subject. It
 is spent once when it lands. Completion requires the exact original ordered
-subject sequences and baseline row-state fingerprints in origin, destination
-and captured sibling collections. A fake inverse, swapped baseline rows or
+subject sequences and baseline row-state fingerprints in origin and
+destination (and any other original scope that held the subject), with no
+other scope of the fresh read holding the subject differently. A fake inverse, swapped baseline rows or
 changed quantities remains unresolved and blocks an ordinary trial. A missing
 complete baseline, missing immediate trial/exploration witness or ambiguous
 same-subject destination fails closed. No collection selector, URL, browser

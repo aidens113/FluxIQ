@@ -34,6 +34,18 @@
 //
 // The loop's own duplicate check remains underneath both, so a look repeated
 // word for word with nothing having happened is still answered rather than run.
+//
+// **A refused action is answered from memory only until the next call runs.**
+// A refusal can name a precondition a look satisfies: a trial refused until a
+// list was read (live run office r2, `run-mvfq94ff-c8c21493`). A look moves
+// neither counter, so the identical retry after it carried the refused call's
+// signature and was answered `llm_evidence_loop.already_answered` seven times;
+// the precondition could never be re-checked. So an action that applied nothing
+// and answered `ok: false` keeps its signature answered only until another call
+// runs, a look included (`./refused-action-retest.ts`). With nothing between,
+// the identical retry is still answered from memory. The no-progress guard
+// (`automationStudioLlmEvidenceNothingHappened`, below) is what bounds a
+// refuse, look, refuse loop: each refusal is a step without progress.
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "./evidence-loop.ts";

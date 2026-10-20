@@ -29,4 +29,22 @@ describe("a declaration's place tokens", () => {
       expect(() => readAutomationStudioActionDeclaration({ ...PRESS, control: { ...PRESS.control, ...control } })).toThrow(AutomationStudioActionDeclarationError);
     }
   });
+
+  // L1 reset settlement: the control's own slot on its page and its state there before the action.
+  it("reads the control's place and state tokens, and none where the domain gave none", () => {
+    expect(readAutomationStudioActionDeclaration({ ...PRESS, control: { ...PRESS.control, place: "p:slot", state: "v:off" } })).toMatchObject({ controlPlace: "p:slot", controlState: "v:off" });
+    expect(readAutomationStudioActionDeclaration(PRESS)).toMatchObject({ controlPlace: null, controlState: null });
+  });
+
+  it("refuses a place or state that is not a short opaque token as control_place_invalid", () => {
+    for (const control of [{ place: "a slot, in words" }, { place: "" }, { state: "x".repeat(129) }, { state: 7 }, { place: null }]) {
+      let code: string | undefined;
+      try {
+        readAutomationStudioActionDeclaration({ ...PRESS, control: { ...PRESS.control, ...control } });
+      } catch (error) {
+        code = error instanceof AutomationStudioActionDeclarationError ? error.code : undefined;
+      }
+      expect(code).toBe("control_place_invalid");
+    }
+  });
 });
