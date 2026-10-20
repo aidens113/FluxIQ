@@ -115,3 +115,46 @@ describe("an ending the person reads", () => {
     expect(told).toEqual([left.told]);
   });
 });
+
+// t741 B5, photo-social `run-mvgobp8h-b99ede98`: an act whose undo was refused as aimed at another item was ended as
+// "(the site offers no way to undo it)", though later reads showed the control back. Office `run-mvgo5xft-25460ba2`:
+// the model's words gave way at the character that fitted, and the chat said "... The part that takes t."
+describe("an ending that says only what is known", () => {
+  function onItem(callId: string, name: string, consequences: AutomationStudioActionConsequence[], item: string): AutomationStudioSiteResetExplored {
+    return { callId, toolId: "core.run_node", landed: true, declared: { permitted: true, effect: "mutate", consequences, control: { name, kind: "button", item }, verb: "press" } };
+  }
+
+  it("says a kept reversible act could not be undone and may still be there, and a class no control takes back as FluxIQ cannot undo", () => {
+    const ledger = new AutomationStudioSiteResetProjectLedger();
+    const one = ledger.forBrief("brief-1");
+    one.explored(onItem("mark", "Mark", ["create_new"], "card:soup"));
+    expect(one.target("act-1", { effect: "mutate", consequences: ["modify_existing"], control: { item: "card:bread" } })).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_wrong_target" } });
+    ledger.forBrief("brief-2").explored(pressed("pay", "Pay", ["move_money"]));
+    const { left } = leftOn(ledger);
+
+    expect(left.note).toBe("Still on the target from this build: press \"Mark\" button (the build could not undo it; it may still be there); press \"Pay\" button (cannot be undone by FluxIQ).");
+    expect(left.told).toBe("These changes the build made are still on the site: clicked “Pay” (FluxIQ cannot undo this). The build clicked “Mark”, but could not undo it, so it may still be on the site; check it if you need the site exactly as it was.");
+    expect(`${left.note} ${left.told}`).not.toContain("site offers no way");
+  });
+
+  it("lets the model's words give way at a sentence's end, else a word's end, never mid-word", () => {
+    const ledger = new AutomationStudioSiteResetProjectLedger();
+    for (let press = 1; press <= 25; press += 1) ledger.forBrief("brief-1").explored(pressed(`save.${press}`, `Save the entry numbered ${press} in the catalogue`, ["create_new"]));
+    const { left } = leftOn(ledger);
+    const room = 2000 - left.note!.length - 1;
+    const said = `I could not finish this. The part that takes the loan request to the desk was built, ${"and the part that reads it back could not be made to work ".repeat(30)}so there is nothing to give you.`;
+    expect(room).toBeGreaterThan(30);
+    expect(room).toBeLessThan(said.length);
+    const reason = left.reason(said);
+    expect(reason.length).toBeLessThanOrEqual(2000);
+    expect(reason).toBe(`I could not finish this. ${left.note}`);
+    // No sentence end fits: cut at a word's end, with "…".
+    const long = `I ${"could not reach the desk ".repeat(200)}today.`;
+    const one = left.reason(long);
+    expect(one.endsWith(` ${left.note}`)).toBe(true);
+    const cut = one.slice(0, -left.note!.length - 1);
+    expect(cut.endsWith("…")).toBe(true);
+    // What is kept ends where a word of the model's ends.
+    expect(long.startsWith(`${cut.slice(0, -1)} `)).toBe(true);
+  });
+});

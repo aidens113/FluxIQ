@@ -11,6 +11,7 @@
 // instead.
 
 import type { JsonObject } from "../../../../../core/index.ts";
+import { automationStudioLlmEvidenceUntestableReceiptWords, type AutomationStudioLlmEvidenceCandidateReceipt } from "../candidate-receipt/index.ts";
 
 /** The evidence entry the loop's answer to a repeated request arrives under. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID = "core.request_check";
@@ -68,7 +69,8 @@ export function automationStudioLlmEvidenceAnsweredRequestNote(input: {
   stepsWithoutProgress: number;
   maxStepsWithoutProgress: number;
   discoveryOnly?: boolean;
-  candidate?: { revision: number; digest: string } | undefined;
+  /** The latest accepted receipt, with what stops it being tested as it stands (`../candidate-receipt/receipt.ts`, t741). */
+  candidate?: AutomationStudioLlmEvidenceCandidateReceipt | undefined;
   /** A discovery-only loop's own submit and test tools, which its words name; the candidate's when absent (t537). */
   finishing?: { submit: string; test: string } | undefined;
 } & AutomationStudioLlmEvidenceAnsweredRequestRepeat): JsonObject {
@@ -98,16 +100,20 @@ export function automationStudioLlmEvidenceAnsweredRequestNote(input: {
  * on it says which ask this is and that the answer will not change until an
  * action runs.
  */
-function instruction(input: { code: AutomationStudioLlmEvidenceAnsweredRequestCode; answeredAt?: number; lastActionBefore?: { iteration: number }; timesAsked?: number; pageUnchanged?: true; discoveryOnly?: boolean; candidate?: { revision: number; digest: string } | undefined; finishing?: { submit: string; test: string } | undefined }): string {
+function instruction(input: { code: AutomationStudioLlmEvidenceAnsweredRequestCode; answeredAt?: number; lastActionBefore?: { iteration: number }; timesAsked?: number; pageUnchanged?: true; discoveryOnly?: boolean; candidate?: AutomationStudioLlmEvidenceCandidateReceipt | undefined; finishing?: { submit: string; test: string } | undefined }): string {
   if (input.discoveryOnly) {
     const { submit, test } = input.finishing ?? { submit: "core.submit_candidate", test: "core.test_candidate" };
-    const next = input.candidate
-      ? `The latest accepted candidate has receipt ${JSON.stringify(input.candidate)}. Use ${test} with that exact revision and digest if its trial has not answered yes. Complete only after yes for that exact receipt; a changed submission needs its own trial.`
-      : "No accepted candidate receipt is available. Use the existing evidence and correct any submission issues, then submit the whole candidate and test its returned revision and digest. Do not complete an untested candidate.";
+    // A receipt whose trial failed on record, or that a refusal cleared, is never recommended for a test (t741).
+    const untestable = input.candidate ? automationStudioLlmEvidenceUntestableReceiptWords(input.candidate, { submit, test }) : undefined;
+    const next = untestable ?? (input.candidate
+      ? `The latest accepted candidate has receipt ${JSON.stringify({ revision: input.candidate.revision, digest: input.candidate.digest })}. Use ${test} with that exact revision and digest if its trial has not answered yes. Complete only after yes for that exact receipt; a changed submission needs its own trial.`
+      : "No accepted candidate receipt is available. Use the existing evidence and correct any submission issues, then submit the whole candidate and test its returned revision and digest. Do not complete an untested candidate.");
     const repeat = input.timesAsked === undefined ? "" : ` This request has been asked ${input.timesAsked} times; repeating it makes no progress.`;
-    // A candidate's wrap-up keeps every tool listed and runs only its finishing ones (`../loop-budget.ts`, t503).
+    // A candidate's wrap-up keeps every tool listed and runs only its finishing
+    // ones (`../loop-budget.ts`, t503), and a run that undoes one of the build's
+    // own acts, which a trial refused for a reset needs first (t741).
     const happened = input.code === "llm_evidence_loop.not_offered"
-      ? `The build is in its last decisions: only ${submit}, ${test} and completing run now. This tool is still listed, but this call was not run.`
+      ? `The build is in its last decisions: only ${submit}, ${test} and completing run now. This tool is still listed, but this call was not run. A call that names one of this build's own lasting acts under undoes, to undo it before a trial, still runs.`
       : input.code === "llm_evidence_loop.looked_again_unchanged"
         ? "Core looked again and the page was unchanged; the fresh answer is named by answeredByCallId."
         : "This request was already answered and was not run again; its existing answer is named by answeredByCallId.";

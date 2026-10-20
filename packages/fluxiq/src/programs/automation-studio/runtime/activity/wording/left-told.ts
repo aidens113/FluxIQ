@@ -28,6 +28,18 @@
 // counted (`./act-words.ts`: "3 presses it could not name"), and an act whose
 // caller knows no change of it was ever seen (`seen: false`) is said apart, as
 // one that may have changed nothing, to check, never as a change still on the site.
+//
+// **An act the build could not undo is never said to be beyond the site
+// (t741 B5).** Photo-social `run-mvgobp8h-b99ede98` ended "These changes the
+// build made are still on the site: used “Like” (the site offers no way to undo
+// it)", though three later reads showed the control back as it was. A kept act
+// (`stays: "kept"`) is one the ledger stopped asking a reset for: the model
+// named it under `cannotUndo`, or its undo was refused as aimed at another item.
+// It is of a reversible class, so all that is known is that the build could not
+// undo it; it is said apart, as one that may still be on the site, to check.
+// Only an act of a class no site control takes back (`stays: "irreversible"`,
+// the ledger's `undoable: false`) is said as still there because it cannot be
+// undone.
 
 import { automationStudioActivityActsSaid, type AutomationStudioActivityActSaid } from "./act-words.ts";
 
@@ -40,11 +52,8 @@ export type AutomationStudioActivityLeftAct = { did: string; stays?: "irreversib
 /** How many acts of each kind are said by name; the rest are counted. */
 const MAX_NAMED = 5;
 
-/** Why an act in place stays, said after it. */
-const STAYS: Readonly<Record<NonNullable<AutomationStudioActivityLeftAct["stays"]>, string>> = Object.freeze({
-  irreversible: "(FluxIQ cannot undo this)",
-  kept: "(the site offers no way to undo it)"
-});
+/** Why an act of a class no site control takes back stays, said after it; a kept act is said apart (header, t741 B5). */
+const IRREVERSIBLE = "(FluxIQ cannot undo this)";
 
 /** "a", "a and b", "a, b and c"; with `between` "; ", for items that hold commas of their own. */
 function joined(items: readonly string[], between = ", "): string {
@@ -76,21 +85,29 @@ type Plain = { verb: string; name: string };
 
 /** Acts in place as phrases for the person (header), each with why it stays. */
 function said(acts: readonly AutomationStudioActivityLeftAct[]): AutomationStudioActivityActSaid[] {
-  return automationStudioActivityActsSaid(acts.map((act) => ({ did: act.did, note: act.stays ? STAYS[act.stays] : undefined })));
+  return automationStudioActivityActsSaid(acts.map((act) => ({ did: act.did, note: act.stays === "irreversible" ? IRREVERSIBLE : undefined })));
 }
 
 /**
  * What a build left on the target, for the person (header): the acts it knows
- * are still there, or that none are; the acts no change of was ever seen, as
+ * are still there, or that none are; the acts it could not undo, as ones that
+ * may still be there, to check; the acts no change of was ever seen, as
  * ones that may have changed nothing, to check; then the presses that changed the
  * page and might have left something behind.
  */
 export function automationStudioActivityLeftTold(acts: readonly AutomationStudioActivityLeftAct[], possibly: readonly { did: string }[]): string {
-  const inPlace = said(acts.filter((act) => act.seen !== false));
-  const quiet = said(acts.filter((act) => act.seen === false));
-  const sentences = [inPlace.length
-    ? `These changes the build made are still on the site: ${listed(inPlace.map((act) => act.words))}.`
-    : "The build left no change on the site that it knows of."];
+  const inPlace = said(acts.filter((act) => act.stays !== "kept" && act.seen !== false));
+  const kept = said(acts.filter((act) => act.stays === "kept"));
+  const quiet = said(acts.filter((act) => act.stays !== "kept" && act.seen === false));
+  const sentences = inPlace.length
+    ? [`These changes the build made are still on the site: ${listed(inPlace.map((act) => act.words))}.`]
+    : kept.length ? [] : ["The build left no change on the site that it knows of."];
+  if (kept.length) {
+    // Known only to be not undone by the build: never "still there", never "the site offers no way" (header, t741 B5).
+    const words = listed(kept.map((act) => (act.counted ? `made ${act.words}` : act.words)));
+    const many = kept.length > 1 || kept.some((act) => act.counted && !/^1 /u.test(act.words));
+    sentences.push(`The build ${words}, but could not undo ${many ? "them" : "it"}, so ${many ? "they" : "it"} may still be on the site; check ${many ? "them" : "it"} if you need the site exactly as it was.`);
+  }
   if (quiet.length) {
     // A count is said as acts it made; a named act by its own verb (header).
     const words = listed(quiet.map((act) => (act.counted ? `made ${act.words}` : act.words)));

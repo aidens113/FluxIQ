@@ -87,8 +87,13 @@ function plain(text: string | undefined): string {
   return text?.replace(/\s+/gu, " ").trim() ?? "";
 }
 
-/** "The supervisor ended it" reads "the supervisor ended it" after a colon; a word with a capital inside ("FluxIQ") stays. */
+/**
+ * "The supervisor ended it" reads "the supervisor ended it" after a colon; a word with a capital inside ("FluxIQ")
+ * stays, and so does the pronoun "I" ("I'm", "I've"), as Core's `progress.ts` keeps it (t741 B5, job-board
+ * `run-mvgo9wzn-fad4e050` read "... finish the Flow: i could not finish").
+ */
 function lowerFirst(sentence: string): string {
   const word = /^\S+/u.exec(sentence)?.[0] ?? "";
+  if (/^I(?:['’][a-z]+)?[,;:.!?]?$/u.test(word)) return sentence;
   return /\p{Lu}/u.test(word.slice(1)) ? sentence : `${sentence.charAt(0).toLowerCase()}${sentence.slice(1)}`;
 }

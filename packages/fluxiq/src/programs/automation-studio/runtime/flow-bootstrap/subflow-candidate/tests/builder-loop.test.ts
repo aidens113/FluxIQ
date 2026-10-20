@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../../llm/index.ts";
-import { AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS, AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS, AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowTrialRequest } from "../index.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS, AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS, AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, AutomationStudioSubflowRepeatedAdvice, runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowTrialRequest, type AutomationStudioSubflowTrialResult } from "../index.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/evidence-loop/index.ts";
 import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS } from "../../../llm/evidence-loop.ts";
 import { OPEN, SIBLINGS, callPart, part, script, testScope, testSubmission } from "./subflow-fixture.ts";
@@ -230,5 +231,101 @@ describe("a subflow builder's loop", () => {
     expect(outcome.loop.ok, JSON.stringify(outcome.loop)).toBe(true);
     expect(JSON.stringify(seen)).toContain("subflow.trial_required");
     expect(JSON.stringify(seen)).toContain("subflow.latest_proposal_required");
+  });
+});
+
+// Social rerun round 3 (`run-mvgoawg4-ed85dd5a`, 0128, 0144, 0145, 0217, 0218):
+// after each no the judges advised the same change again, the builder made it
+// again, and the trial after it failed the same way. A judged no's advice that
+// repeats what this builder was already told after an earlier trial is now
+// left out of `advice`, and `adviceRepeated` says so, with what the trial that
+// followed the earlier advice answered (`../repeated-advice.ts`). The lists
+// here are a library's loans, on no particular site.
+const CALL_1 = "Add a due-date field to the read step.loans.s3 (the whole date, opening each row's details).";
+const CALL_2 = "Keep only loans of the reading room, not the ones held at the bindery.";
+const STOPPED = "Step 3 (\"read the loans\") failed and the run stopped there (web.validation.output_not_observed).";
+
+/** A test tool's answer for a trial of `revision` that answered `verdict`, its feedback as the gate passes it on. */
+function trialAnswer(revision: number, verdict: string, feedback: JsonObject = {}): AutomationStudioLlmEvidenceToolExecutionResult {
+  return { kind: "llm_evidence_tool_execution", evidence: { ok: verdict === "yes", partial: true, verdict, subflowKey: "find_listing", revision, digest: String(revision).repeat(64), entryPrepared: true, feedback, instruction: "Read the feedback." }, effectApplied: true, targetsUnchanged: false, resultCode: `subflow.trial_${verdict}` };
+}
+const judgedNo = (revision: number, advice: string) => trialAnswer(revision, "no", { code: "candidate.trial_judged_no", judge: { expected: "Every loan due this week.", observed: "Two loans were stored.", advice } });
+const failedRun = (revision: number) => trialAnswer(revision, "execution_failed", { code: "candidate.execution_incomplete", stoppedBy: { kind: "step", step: 3, said: STOPPED } });
+const judgeOf = (answered: AutomationStudioLlmEvidenceToolExecutionResult) => ((answered.evidence as JsonObject).feedback as JsonObject).judge as JsonObject;
+
+describe("a judge's advice repeated to the same builder", () => {
+  it("leaves out what an earlier trial's advice already said, keeps what is new, and says what the trial after that advice answered", () => {
+    const advice = new AutomationStudioSubflowRepeatedAdvice();
+    expect(advice.told(judgedNo(1, `Judge call 1: ${CALL_1} Judge call 2: ${CALL_2}`))).toEqual(judgedNo(1, `Judge call 1: ${CALL_1} Judge call 2: ${CALL_2}`));
+    expect(advice.told(failedRun(2))).toEqual(failedRun(2));
+    // The same words again, another step id and other case and punctuation, beside a sentence that is new.
+    const told = judgeOf(advice.told(judgedNo(3, "Judge call 1: add a due-date field to the read step.loans.s7 -- the whole date, opening each row's details. Judge call 2: Sort the loans by their due date.")));
+    expect(told.advice).toBe("Judge call 2: Sort the loans by their due date.");
+    expect(told.adviceRepeated).toBe(`The judge repeated a sentence of the advice it gave after the trial of revision 1, which is left out of advice. The trial that followed that advice, of revision 2, answered execution_failed: ${STOPPED} Weigh the repeated advice against what that trial answered before following it again.`);
+    expect(told).toMatchObject({ expected: "Every loan due this week.", observed: "Two loans were stored." });
+  });
+
+  it("says a wholly repeated advice in a note alone, naming this trial as the one that followed it when none came between", () => {
+    const advice = new AutomationStudioSubflowRepeatedAdvice();
+    advice.told(judgedNo(4, `${CALL_1} ${CALL_2}`));
+    const told = judgeOf(advice.told(judgedNo(5, `${CALL_2} ${CALL_1}`)));
+    expect("advice" in told).toBe(false);
+    expect(told.adviceRepeated).toBe("The judge repeated 2 sentences of the advice it gave after the trial of revision 4, which are left out of advice. This trial, of revision 5, is the next trial after that advice, and it was judged no again. Weigh the repeated advice against what that trial answered before following it again.");
+  });
+
+  it("keeps advice that differs in a number or in more than a word in five, the first advice, and every other verdict as they were", () => {
+    const advice = new AutomationStudioSubflowRepeatedAdvice();
+    advice.told(judgedNo(1, "Keep only loans due on or after 19 March."));
+    expect(advice.told(judgedNo(2, "Keep only loans due on or after 20 March."))).toEqual(judgedNo(2, "Keep only loans due on or after 20 March."));
+    expect(advice.told(judgedNo(3, "Keep only the loans of members who joined the reading room this year."))).toEqual(judgedNo(3, "Keep only the loans of members who joined the reading room this year."));
+    const unsure = trialAnswer(4, "unsure", { code: "candidate.trial_unconfirmed", unconfirmedReading: { advice: "Keep only loans due on or after 19 March." } });
+    expect(advice.told(unsure)).toEqual(unsure);
+    const refused: AutomationStudioLlmEvidenceToolExecutionResult = { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "subflow.trial_stale_revision", instruction: "Test the latest revision." }, effectApplied: false, targetsUnchanged: true };
+    expect(advice.told(refused)).toEqual(refused);
+  });
+
+  it("reaches the builder through its test tool, and counts advice an earlier brief was given when the caller shares its memory", async () => {
+    // An earlier brief of the build was judged no on revision 0 with other advice; the caller shares its memory.
+    const shared = new AutomationStudioSubflowRepeatedAdvice();
+    shared.told(judgedNo(0, CALL_2));
+    const answers: Array<Pick<AutomationStudioSubflowTrialResult, "verdict" | "feedback">> = [
+      { verdict: "no", feedback: { code: "candidate.trial_judged_no", judge: { advice: `${CALL_1} ${CALL_2}` } } },
+      { verdict: "execution_failed", feedback: { code: "candidate.execution_incomplete", stoppedBy: { kind: "step", step: 3, said: STOPPED } } },
+      { verdict: "no", feedback: { code: "candidate.trial_judged_no", judge: { advice: CALL_1 } } }
+    ];
+    const shown: JsonObject[] = [];
+    const seen = (evidence: readonly Entry[]) => {
+      shown.push(...evidence.filter((entry) => entry.toolId === AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID).slice(shown.length).map((entry) => entry.value as JsonObject));
+    };
+    const tested = (evidence: readonly Entry[]) => {
+      seen(evidence);
+      return test(evidence);
+    };
+    const submitting = (selector: string) => (_evidence: readonly Entry[]): JsonObject => ({ kind: "tool_call", toolId: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, callId: `submit${selector}`, input: script([...OPEN, ...callPart(), "part narrow: narrow the listing", "  step: press the filter", "    node: web.dom.click", `    selector: ${selector}`, "    consequences: none", "end"]) });
+    const last = (evidence: readonly Entry[]) => {
+      seen(evidence);
+      return { kind: "complete", result: { ended: "partial", reason: "The judge kept asking for a change that did not work." } };
+    };
+    let index = 0;
+    const steps: Array<(evidence: readonly Entry[]) => JsonObject> = [submitting(".filter"), tested, submitting(".other-filter"), tested, submitting(".third-filter"), tested, last];
+    const outcome = await runAutomationStudioSubflowBuilderLoop({
+      scope: testScope(), siblings: [...SIBLINGS], submission: testSubmission(), repeatedAdvice: shared,
+      trial: { port: async (request: AutomationStudioSubflowTrialRequest) => ({ partial: true as const, scope: "subflow" as const, identity: { ...request.proposal.scope }, revision: request.proposal.revision, digest: request.proposal.digest, entryPrepared: true, ...structuredClone(answers.shift()!) }) },
+      loop: {
+        tools: [look], maxIterations: steps.length, maxToolCalls: steps.length + 2,
+        unusableDecisions: { maxConsecutive: steps.length, maxInARow: steps.length, stalled: () => new Error("stalled") },
+        executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true }),
+        decide: async ({ evidence }) => steps[index++]!(evidence as readonly Entry[])
+      }
+    });
+    expect(outcome.loop.ok, JSON.stringify(outcome.loop)).toBe(true);
+    expect(shown.map((answer) => answer.verdict)).toEqual(["no", "execution_failed", "no"]);
+    // The first trial's own advice is new; the earlier brief's sentence is left out and said to be repeated.
+    expect(((shown[0]!.feedback as JsonObject).judge as JsonObject).advice).toBe(CALL_1);
+    expect(((shown[0]!.feedback as JsonObject).judge as JsonObject).adviceRepeated).toContain("The judge repeated a sentence of the advice it gave after the trial of revision 0");
+    const third = (shown[2]!.feedback as JsonObject).judge as JsonObject;
+    expect("advice" in third).toBe(false);
+    expect(third.adviceRepeated).toContain("The judge repeated a sentence of the advice it gave after the trial of revision 1");
+    expect(third.adviceRepeated).toContain(`The trial that followed that advice, of revision 2, answered execution_failed: ${STOPPED}`);
   });
 });

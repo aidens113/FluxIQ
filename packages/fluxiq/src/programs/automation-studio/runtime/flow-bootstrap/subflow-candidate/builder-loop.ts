@@ -138,6 +138,15 @@
 // it moved the target (`../site-reset/start-check.ts`) -- is read before and
 // after the test, so a refusal whose reset looked at a place itself, and said
 // nothing of it (office, `run-mvgf04kw-310fc169`, 0126 and 0159), shows the page too.
+//
+// **Advice it was already given is not handed over again (t741 D).** Social
+// rerun round 3 (`run-mvgoawg4-ed85dd5a`, 0144, 0145, 0217, 0218): after each
+// judged no the judges advised the same change, and the trial after the
+// builder made it failed as before. Each `core.test_subflow` answer now passes
+// through this loop's memory of its trials (`./repeated-advice.ts`): a judged
+// no's advice less what an earlier trial's advice already said, and a note,
+// `adviceRepeated`, saying so and what the trial that followed that advice
+// answered.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceCompletionCheck, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
@@ -148,6 +157,7 @@ import type { AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts
 import type { AutomationStudioSubflowDoneBefore, AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialResult } from "./contracts.ts";
 import { automationStudioSubflowBriefWords } from "./brief-words.ts";
 import { automationStudioSubflowDoneBefore, automationStudioSubflowEntryLeft } from "./done-before.ts";
+import { AutomationStudioSubflowRepeatedAdvice } from "./repeated-advice.ts";
 import { automationStudioSubflowBuilderTools } from "./role-tools.ts";
 import { AutomationStudioSubflowScopedSubmissionController } from "./scoped-submission.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID } from "./submit-tool.ts";
@@ -239,6 +249,11 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   revisionsAfter?: number | undefined;
   /** Whether the port's test is a single-subflow plan's judged whole run (header, t679). */
   trialIsWhole?: true | undefined;
+  /**
+   * The memory of trials and their advice this builder adds to (header, t741 D): a caller that passes one memory to each
+   * brief of a build makes advice given to an earlier brief count too. Absent, the builder keeps its own.
+   */
+  repeatedAdvice?: AutomationStudioSubflowRepeatedAdvice | undefined;
 }): Promise<AutomationStudioSubflowBuilderOutcome> {
   const signals = [input.loop.signal, input.submission.signal].filter((value): value is AbortSignal => value !== undefined);
   const signal = signals.length ? AbortSignal.any(signals) : undefined;
@@ -250,6 +265,8 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   const subflowKey = input.scope.subflowKey;
   let tried = false;
   let lastTrial: AutomationStudioSubflowTrialResult | undefined;
+  /** This builder's trials and the advice each was given (header, t741 D). */
+  const advice = input.repeatedAdvice ?? new AutomationStudioSubflowRepeatedAdvice();
   let ended: AutomationStudioSubflowBuilderOutcome["ended"];
   /** The acts the run that prepared this builder's entry landed, as its opening look listed them (header, t676). */
   let entryActs: string[] = [];
@@ -335,7 +352,9 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
         const before = moves?.();
         const tested = await gate.test(call.value, call.signal);
         const targetMoved = before !== undefined && moves!() > before;
-        const answered = await automationStudioCandidateTrialView({ answer: tested, targetMoved, tools: input.loop.tools, executeTool: (look) => input.loop.executeTool(look), callId: call.callId, signal: call.signal ?? signal });
+        const viewed = await automationStudioCandidateTrialView({ answer: tested, targetMoved, tools: input.loop.tools, executeTool: (look) => input.loop.executeTool(look), callId: call.callId, signal: call.signal ?? signal });
+        // A judged no's advice less what an earlier trial's advice already said (header, t741 D).
+        const answered = advice.told(viewed);
         const trial = answeredTrial(answered, gate);
         if (trial) {
           tried = true;

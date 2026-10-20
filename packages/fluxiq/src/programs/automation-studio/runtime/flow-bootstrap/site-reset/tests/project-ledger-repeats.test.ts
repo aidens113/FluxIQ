@@ -20,7 +20,9 @@ import {
 const SITE = "r:site";
 type List = { scope: string; group: string; subjects: string[]; states: Record<string, string> };
 const list = (scope: string, subjects: string[]): List => ({ scope, group: "g:box", subjects, states: Object.fromEntries(subjects.map((subject) => [subject, `v:${subject}`])) });
-const boxPage = (): AutomationStudioSiteResetRead => ({ state: {}, differs: [], resource: SITE, scope: "p:box-page", location: "loc:box", collections: [list("p:cards", ["s:soup", "s:stew"]), list("p:saved", ["s:pie"])] });
+const boxPage = (saved = ["s:pie"]): AutomationStudioSiteResetRead => ({ state: {}, differs: [], resource: SITE, scope: "p:box-page", location: "loc:box", collections: [list("p:cards", ["s:soup", "s:stew"]), list("p:saved", saved)] });
+/** The box with its second list changed by something no act here made: an adopted list that differs (office r3). */
+const elsewhere = (): AutomationStudioSiteResetRead => boxPage(["s:pie", "s:tart"]);
 const DRAFT: AutomationStudioSiteResetSpot = { subject: "s:bread", page: "s:bread", resource: SITE };
 const press = (callId: string, consequences: AutomationStudioActionConsequence[], extra: Partial<AutomationStudioSiteResetExplored> = {}): AutomationStudioSiteResetExplored => ({ callId, toolId: "core.run_node", landed: true, operation: "demo.press", declared: { permitted: true, effect: "mutate", consequences, control: { name: "Start a draft", kind: "button", ...DRAFT }, verb: "press" }, ...extra });
 const look = (callId: string, undoes: string, resetDestination: string): AutomationStudioSiteResetExplored => ({ callId, toolId: "core.run_node", landed: true, undoes, on: "moving", resetDestination, declared: { permitted: true, effect: "observe", consequences: [], control: { name: null, kind: "page" }, verb: "read" } });
@@ -37,11 +39,11 @@ const routing = (project: AutomationStudioSiteResetProjectLedger, own: Automatio
   }
 };
 /** Checks whose `lookAt` routes the read at that location to every ledger, and records each look. */
-const looking = (route: (read: AutomationStudioSiteResetRead) => void) => {
+const looking = (route: (read: AutomationStudioSiteResetRead) => void, read: () => AutomationStudioSiteResetRead = () => boxPage()) => {
   const looked: string[] = [];
   const checks: AutomationStudioSiteResetChecks = { compare, lookAt: async (location) => {
     looked.push(location);
-    if (location === "loc:box") route(boxPage());
+    if (location === "loc:box") route(read());
   } };
   return { looked, checks };
 };
@@ -81,19 +83,23 @@ describe("a trial act repeats an explored act of any brief of its build (L1 buil
     const briefB = project.forBrief("brief:b");
     const route = routing(project, briefB);
     briefB.trialRan([trialStep("demo.press")], "trial.b1");
-    // No list is named for the press yet: B's act is asked to name one.
-    const refused = await briefB.beforeTrial(looking(route).checks);
+    // No list is named for the press yet, and of the lists B's act adopts one differs: it is asked to name one.
+    const first = looking(route, elsewhere);
+    const refused = await briefB.beforeTrial(first.checks);
+    expect(first.looked).toEqual(["loc:box"]);
     expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-2" }] } });
     expect(settleOf(refused, "act-2")).toContain("name that list's ref");
     // A look under `undoes` names the list for A's press, after B's trial.
     briefA.explored(look("look.box", "act-1", "destination-1"));
-    const { looked, checks } = looking(route);
+    // The list named for A's press holds, though the other still differs.
+    const { looked, checks } = looking(route, elsewhere);
     expect(await briefB.beforeTrial(checks)).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-2", did: LEFT }] } });
-    expect(looked).toEqual(["loc:box"]);
+    // The read Core made before the refusal is still fresh: a look names a list but moves no clock.
+    expect(looked).toEqual([]);
     expect(briefB.standing("act-2")).toBe("unchanged");
   });
 
-  it("a trial act matching nothing across the build stays open, asking to name its list", async () => {
+  it("a trial act matching nothing across the build, while a list it adopted differs, stays open, asking to name its list and never to undo there", async () => {
     const project = new AutomationStudioSiteResetProjectLedger();
     const briefA = project.forBrief("brief:a");
     routing(project, briefA)(boxPage());
@@ -103,11 +109,13 @@ describe("a trial act repeats an explored act of any brief of its build (L1 buil
     const briefB = project.forBrief("brief:b");
     const route = routing(project, briefB);
     briefB.trialRan([trialStep("demo.other")], "trial.b1");
-    const { looked, checks } = looking(route);
+    const { looked, checks } = looking(route, elsewhere);
     const refused = await briefB.beforeTrial(checks);
     expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-2" }] } });
     expect(settleOf(refused, "act-2")).toContain("name that list's ref");
-    expect(looked).toEqual([]);
+    expect(settleOf(refused, "act-2")).not.toContain("undo this act there");
+    // Core read the lists it adopted itself before refusing.
+    expect(looked).toEqual(["loc:box"]);
     expect(briefB.standing("act-2")).toBe("in_place");
   });
 });

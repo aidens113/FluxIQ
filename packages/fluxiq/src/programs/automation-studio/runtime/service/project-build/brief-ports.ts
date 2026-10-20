@@ -4,7 +4,7 @@ import { AutomationStudioNodeRegistry } from "../../../nodes/index.ts";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { observeAutomationStudioEvidenceLoop } from "../../activity/index.ts";
 import { automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapPersonNeeded, flowBootstrapEvidenceUnusableDecisionFailure, type AutomationStudioBootstrapAccounting, type AutomationStudioFlowBootstrapActionPermissions, type AutomationStudioFlowBootstrapPersonNeeded } from "../../flow-bootstrap/index.ts";
-import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY, AUTOMATION_STUDIO_SITE_RESET_WORDS, AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetCalls, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetTarget, type AutomationStudioSiteResetTrialReset } from "../../flow-bootstrap/site-reset/index.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY, AUTOMATION_STUDIO_SITE_RESET_WORDS, AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetCalls, type AutomationStudioSiteResetIssuedRef, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetTarget, type AutomationStudioSiteResetTrialReset } from "../../flow-bootstrap/site-reset/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, automationStudioSubflowEntryLeft, type AutomationStudioSubflowEntryLeftAct, type AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, AUTOMATION_STUDIO_NODE_WRITE_KEY, automationStudioFlowDraftReplayClearedCode, automationStudioHarnessOptionRegistry, automationStudioLlmNodeDescriptions, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceToolExecutionResult, type AutomationStudioLlmHarnessInput } from "../../llm/index.ts";
@@ -154,6 +154,21 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // state still differs, which stays listed with what settles it, and a reset
 // that cannot settle it completes unresolved, naming it, with no further trial.
 //
+// **A call naming an act is told what it settled (rerun round 3, office
+// `run-mvgo5xft-25460ba2`, 0108-0119, 0133-0136).** A look that settled its act
+// used to answer with only its page and `resetDestinations`, so the model
+// repeated it; a look that named a ref with no act ran as an ordinary look and
+// settled nothing, silently. Each call's answer is composed here (`placing`),
+// once the reads around it reached every ledger: a call naming an act under
+// `undoes` that Core did not refuse carries `resetSettlement`, whether that act
+// settled (`settled`, or `open` with its `settle`) and every act still open
+// across the build, each with its `settle` (`./reset-calls.ts`, `openActs`); a
+// call naming `resetDestination` with no `undoes` that made no act, while acts
+// are open, carries `resetDestinationNote`: it settled nothing, the open acts,
+// and one example call built from a real open act and an issued ref. Every ref
+// a receipt printed is kept for the build (`issued`), and a reset brief's
+// completion refusal lists them (`project-agents/dispatch/reset-loop.ts`).
+//
 // **The brief's permitted acts narrow only what a person is asked about**
 // (t580). `permittedActs` filters the build's permitted consequences, so a
 // brief whose parts ask for no lasting act puts every press that declares
@@ -224,6 +239,8 @@ export function automationStudioProjectBuildBriefPorts(input: {
   });
   /** Where each act of the build was made, by act id: the page its read around it found (header). */
   const pages = new Map<string, string>();
+  /** Every destination ref a receipt printed in this build, by ref, with its list's count (header). */
+  const issued = new Map<string, AutomationStudioSiteResetIssuedRef>();
   const environment = async (request: AutomationStudioProjectBriefPortRequest, siteReset: AutomationStudioSiteResetCalls, task?: () => AutomationStudioFlowInstruction[]) => {
     const registry = draft.submission.registry ?? new AutomationStudioNodeRegistry();
     const nodeDescriptions = automationStudioLlmNodeDescriptions({ registry, resolution });
@@ -280,7 +297,7 @@ export function automationStudioProjectBuildBriefPorts(input: {
       const started = await phaseStart.explore({ phase: request.brief.kind === "repair" ? "repair" : "builder", scope: request.scope, own: request.ledger, signal: request.signal, openingArrives: opensArriving });
       const { entry } = started;
       startIsBuilds = !project.ledger.snapshot().acts.some((act) => act.inPlace);
-      const placed = placing(built.loop, placedAt(calls, pages), reader, { capture: true, signal: request.signal });
+      const placed = placing(built.loop, placedAt(calls, pages), reader, { capture: true, signal: request.signal, issued });
       const tools = placed.tools.map((tool) => automationStudioSiteResetUndoesTool(entry.kind === "prepared" ? lookingInPlace(tool) : tool, { createBaselines: true }));
       // Arrived only where there is a start to arrive at: the opening tool declares an arrival (header).
       const arrived = entry.kind === "prepared" && opensArriving;
@@ -298,12 +315,12 @@ export function automationStudioProjectBuildBriefPorts(input: {
       const owned = automationStudioProjectBuildResetCalls(project.ledger, request.ledger);
       const calls: typeof owned = { ...owned, target: (act, declared) => resetWorded(owned.target(act, declared)) };
       // Its task, in place of the person's instruction, with the acts as the ledger holds them at each decision (header).
-      const built = await environment(request, calls, () => [resetTask({ projectId, flowId }, project.ledger, pages)]);
+      const built = await environment(request, calls, () => [resetTask({ projectId, flowId }, calls, pages)]);
       // Before its first look, the build's one start (header): after the hook there is usually nothing left to undo.
       const started = await phaseStart.explore({ phase: "reset", scope: request.scope, own: request.ledger, signal: request.signal, openingArrives: built.loop.tools.some((tool) => tool.initialObservation?.arrival !== undefined) });
       const check = new AutomationStudioSiteResetStartCheck({ binding, projectId, flowId, tools: built.loop.tools, executeTool: (call) => built.loop.executeTool(call), liveCheck: { settleMs: AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS } });
       // Its start is not the build's: a reset never captures one, and decides on each act's own page.
-      const placed = placing(built.loop, placedAt(calls, pages), check, { capture: false, signal: request.signal });
+      const placed = placing(built.loop, placedAt(calls, pages), check, { capture: false, signal: request.signal, issued });
       // Its run-node calls offer `undoes` and no `write`; a lasting press of its own is told as outside it (header).
       const tools = built.loop.tools.map((tool) => withoutWrite(automationStudioSiteResetUndoesTool(tool, { createBaselines: true })));
       // Its decisions are sent the very schema its loop builds their decision schema from, or the provider refuses them (F3).
@@ -311,16 +328,23 @@ export function automationStudioProjectBuildBriefPorts(input: {
       const remaining = (cannotUndo?: readonly string[]) => remainingActs(project.ledger, { check, calls }, request.signal, cannotUndo);
       // Core settles what it can itself first, so the task lists only the acts still open (header, L1).
       await remaining();
-      return { loop, remainingActs: remaining, ended: built.ended };
+      // The refs printed so far, which its completion's refusal lists beside the open acts (header, `project-agents/dispatch/reset-loop.ts`).
+      const ports = { loop, remainingActs: remaining, ended: built.ended, issuedRefs: () => [...issued.values()] };
+      return ports;
     }
   };
 }
 
 type Execute = AutomationStudioLlmEvidenceLoopInput["executeTool"];
-type PlacedLedger = Parameters<typeof automationStudioSiteResetPlacedCall>[0]["ledger"] & { destinationReceipts?(): Array<{ ref: string; ordinal: number; count: number }> };
+type Routing = ReturnType<typeof automationStudioProjectBuildResetCalls>;
+type PlacedLedger = Parameters<typeof automationStudioSiteResetPlacedCall>[0]["ledger"] & Pick<Routing, "standing" | "openActs" | "actOf"> & { destinationReceipts?(): Array<{ ref: string; ordinal: number; count: number }> };
 
-/** `loop` with every call that makes or undoes an act read around in place, the start read around the opening call when `capture`. */
-function placing<L extends { executeTool: Execute }>(loop: L, ledger: PlacedLedger, reader: AutomationStudioSiteResetStartCheck, options: { capture: boolean; signal: AbortSignal }): L {
+/**
+ * `loop` with every call that makes or undoes an act read around in place, the start read around the opening call when
+ * `capture`, and each answer composed (header): the receipts it printed, kept in `issued`, and what a call naming an act
+ * or a ref settled.
+ */
+function placing<L extends { executeTool: Execute }>(loop: L, ledger: PlacedLedger, reader: AutomationStudioSiteResetStartCheck, options: { capture: boolean; signal: AbortSignal; issued: Map<string, AutomationStudioSiteResetIssuedRef> }): L {
   const inner = loop.executeTool;
   const executeTool: Execute = async (call) => {
     const opening = isOpeningCall(call.callId);
@@ -329,9 +353,38 @@ function placing<L extends { executeTool: Execute }>(loop: L, ledger: PlacedLedg
     const ran = opening ? await inner(call) : await automationStudioSiteResetPlacedCall({ call, ledger, reader, signal, run: () => inner(call) });
     if (options.capture && opening) await reader.capture(signal);
     const receipts = ledger.destinationReceipts?.() ?? [];
-    return receipts.length ? beside(ran, "resetDestinations", { collections: receipts }) : ran;
+    for (const receipt of receipts) if (!options.issued.has(receipt.ref)) options.issued.set(receipt.ref, { ref: receipt.ref, count: receipt.count });
+    const answered = opening ? ran : settlementAnswer(call, ran, ledger, options.issued);
+    return receipts.length ? beside(answered, "resetDestinations", { collections: receipts }) : answered;
   };
   return { ...loop, executeTool };
+}
+
+/**
+ * What a call naming an act under `undoes`, or a `resetDestination` with none, settled (header), beside its answer; any other
+ * answer unchanged, and so is a call Core itself refused (its own `candidate.*` code, which already lists the open acts).
+ */
+function settlementAnswer(call: Parameters<Execute>[0], ran: Ran, ledger: Pick<Routing, "standing" | "openActs" | "actOf">, issued: ReadonlyMap<string, AutomationStudioSiteResetIssuedRef>): Ran {
+  if (call.toolId !== AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID || !isExecution(ran) || (typeof ran.resultCode === "string" && ran.resultCode.startsWith("candidate."))) return ran;
+  const undoes = call.value[AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY];
+  const destination = call.value.resetDestination;
+  if (typeof undoes === "string") {
+    const standing = ledger.standing(undoes);
+    if (standing === undefined) return ran;
+    const open = ledger.openActs().map(({ ref: _ref, ...act }) => act);
+    const settled = standing === "restored" || standing === "unchanged";
+    const own = open.find((act) => act.act === undoes);
+    if (!settled && !own) return ran;
+    const head = settled ? { settled: undoes } : { open: undoes, ...(own?.settle ? { settle: own.settle } : {}) };
+    return beside(ran, "resetSettlement", { ...head, actsStillOpen: open as unknown as JsonObject[], instruction: AUTOMATION_STUDIO_SITE_RESET_WORDS.lookSettled(settled, open.length > 0) });
+  }
+  if (undoes !== undefined || typeof destination !== "string" || ledger.actOf(call.callId) !== undefined) return ran;
+  const open = ledger.openActs().map(({ ref: _ref, ...act }) => act);
+  if (!open.length) return ran;
+  // The example: an act whose settle asks for a named list, else the first; the ref the call named when a receipt printed it, else the first printed.
+  const act = open.find((entry) => entry.settle?.includes("resetDestination")) ?? open[0]!;
+  const ref = issued.has(destination) ? destination : issued.keys().next().value;
+  return beside(ran, "resetDestinationNote", { instruction: AUTOMATION_STUDIO_SITE_RESET_WORDS.destinationWithoutUndoes(ref !== undefined), actsStillOpen: open as unknown as JsonObject[], ...(ref !== undefined ? { example: { [AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY]: act.act, resetDestination: ref } } : {}) });
 }
 
 /** `ledger`, with the page each act was made on kept in `pages` as the read around it places the act (header). */
@@ -358,8 +411,8 @@ const RESET_TASK = [
 const TRIAL_STEP = /#step-([1-9][0-9]*)$/u;
 
 /** A reset brief's task as one Core instruction, listing every act of the build still in place now, each with what settles it (header). */
-function resetTask(flow: { projectId: string; flowId: string }, ledger: AutomationStudioSiteResetProjectLedger, pages: ReadonlyMap<string, string>): AutomationStudioFlowInstruction {
-  const acts = openActs(ledger).map((act) => {
+function resetTask(flow: { projectId: string; flowId: string }, calls: Pick<Routing, "openActs">, pages: ReadonlyMap<string, string>): AutomationStudioFlowInstruction {
+  const acts = calls.openActs().map((act) => {
     const page = pages.get(act.act);
     const step = act.call ? undefined : TRIAL_STEP.exec(act.ref)?.[1];
     const where = page ? `, made on the page ${page}` : step ? ` (made by step ${step} of a trial run)` : ", page not read";
@@ -474,11 +527,11 @@ async function remainingActs(ledger: AutomationStudioSiteResetProjectLedger, rea
     await look(location);
   };
   for (const owner of owners) await ledger.forBrief(owner).beforeTrial({ compare: () => check.compare(signal), compareAt: (place) => check.compareAt(place, signal), lookAt }, cannotUndo);
-  return openActs(ledger).map(({ ref: _ref, ...act }) => act);
+  return reads.calls.openActs().map(({ ref: _ref, ...act }) => act);
 }
 
-/** A routing that hands a read to every ledger (`./reset-calls.ts`). */
-type Observing = Pick<ReturnType<typeof automationStudioProjectBuildResetCalls>, "observed">;
+/** A routing that hands a read to every ledger and lists the build's open acts (`./reset-calls.ts`). */
+type Observing = Pick<Routing, "observed" | "openActs">;
 
 /** Core's own look at `location` (header, L1): read there, settled, and the read handed to every ledger through `calls`; an unread answer changes nothing. */
 function looking(reader: AutomationStudioSiteResetStartCheck, calls: Observing, signal: AbortSignal | undefined): (location: string) => Promise<void> {
@@ -486,14 +539,6 @@ function looking(reader: AutomationStudioSiteResetStartCheck, calls: Observing, 
     const read = await reader.lookAt(location, signal);
     if (!("unread" in read)) calls.observed(read);
   };
-}
-
-/** Every act of the build still to undo, in the order recorded, as its own ledger names it (with `settle` while open), and its ref. */
-function openActs(ledger: AutomationStudioSiteResetProjectLedger): Array<AutomationStudioSiteResetNamedAct & { ref: string }> {
-  const acts = ledger.snapshot().acts.filter((act) => act.inPlace);
-  const owners = [...new Set(acts.map((act) => act.owner))];
-  const named = new Map(owners.flatMap((owner) => ledger.forBrief(owner).inPlace()).map((act) => [act.act, act]));
-  return acts.map((act) => ({ ...(named.get(act.act) ?? { act: act.act, did: act.did, ...(act.call !== undefined ? { call: act.call } : {}) }), ref: act.ref }));
 }
 
 /** The brief's own ending: its gate's plan refusal or its person-needed stop, and why, in plain words. */

@@ -119,7 +119,11 @@
 // which the same run stored as 0 of 17. It is refused here, after the plan
 // validated, for every shape a Flow arrives in
 // (`flow-bootstrap/script-statements/record-replace-in-repeat.ts`), and its
-// sentence is put back like the routing codes' (`withCoreSentence`).
+// sentence is put back like the routing codes' (`withCoreSentence`). Since t741
+// a second: a repeat over a listing that makes a lasting act, where the listing
+// sorts or limits its rows only in `recordOutput.process`, which shapes the
+// saved answer and never the rows the repeat visits
+// (`flow-bootstrap/script-statements/listing-order-in-repeat.ts`).
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
@@ -159,7 +163,7 @@ import { AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY, AUTOMATION_STUDIO_PLAN_NODE_HAN
 import { automationStudioAmendedPlanParameters } from "./amended-plan-parameters.ts";
 import { automationStudioInheritedPlanNodeRefs } from "./inherited-plan-nodes.ts";
 import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, resolveAutomationStudioFlowBootstrapPlanParameters, type AutomationStudioFlowBootstrapPlanHandleView, type AutomationStudioFlowBootstrapPlanParameterResolution } from "./plan-parameter-resolution.ts";
-import { automationStudioFlowPlanRecordReplaceInRepeatIssues } from "../../flow-bootstrap/script-statements/index.ts";
+import { automationStudioFlowPlanListingOrderInRepeatIssues, automationStudioFlowPlanRecordReplaceInRepeatIssues } from "../../flow-bootstrap/script-statements/index.ts";
 
 // `evidence_completion_cannot_answer` is still produced, by the two act rules
 // that refuse (an undeclared consequence a person is asked about, and an act
@@ -457,7 +461,9 @@ async function checkPlan(
           capabilityPlan = buildPlan.plan;
           // A step a loop runs again that replaces the run's rows keeps only the last pass (header, t498).
           const replacing = automationStudioFlowPlanRecordReplaceInRepeatIssues({ plan: buildPlan.plan, registry: input.registry, resolution: input.resolution });
-          if (replacing.length) failures.push({ code: "flow_bootstrap.evidence_completion_plan_invalid", issues: replacing });
+          // A lasting repeat over a listing that sorts or limits only its saved answer acts in page order (header, t741).
+          const ordering = automationStudioFlowPlanListingOrderInRepeatIssues({ plan: buildPlan.plan, registry: input.registry, resolution: input.resolution });
+          if (replacing.length || ordering.length) failures.push({ code: "flow_bootstrap.evidence_completion_plan_invalid", issues: [...replacing, ...ordering] });
         }
       }
     }
@@ -751,12 +757,13 @@ const DRAFT_ROUTING_CODES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The refusal of a plan check made after registry validation (header, t498):
- * a step inside a loop whose record output replaces the run's rows. Its sentence
+ * The refusals of the plan checks made after registry validation (header): a
+ * step inside a loop whose record output replaces the run's rows (t498), and a
+ * lasting repeat over a listing ordered only in its saved answer (t741). Each sentence
  * is Core's own and quotes nothing the model or the page wrote, so it travels
  * with the code, as the routing codes' do.
  */
-const PLAN_CHECK_CODES: ReadonlySet<string> = new Set(["record_output.replace_in_repeat"]);
+const PLAN_CHECK_CODES: ReadonlySet<string> = new Set(["record_output.replace_in_repeat", "record_output.process_order_in_repeat"]);
 
 /** A routing or plan-check refusal's feedback entry with its sentence, where the feedback left it out. */
 function withCoreSentence(entry: JsonObject, source: AutomationStudioFlowBootstrapIssue | undefined): JsonObject {

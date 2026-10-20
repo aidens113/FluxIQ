@@ -65,6 +65,7 @@
 // is Core's, and quotes only the control words the draft entry already shows.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import { automationStudioLlmEvidenceUntestableReceiptWords, type AutomationStudioLlmEvidenceCandidateReceipt } from "../candidate-receipt/index.ts";
 import type { AutomationStudioLlmEvidenceLoopAnswerability } from "../evidence-loop/index.ts";
 import type { AutomationStudioLlmEvidencePlanningStep } from "./planning-tools.ts";
 
@@ -79,7 +80,8 @@ const ISSUE_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 export type AutomationStudioLlmEvidenceStallRedirectInput = {
   /** Candidate discovery owns a submitted receipt, never the legacy accumulated draft. */
   discoveryOnly?: boolean;
-  candidate?: { revision: number; digest: string } | undefined;
+  /** The latest accepted receipt, with what stops it being tested as it stands (`../candidate-receipt/receipt.ts`, t741). */
+  candidate?: AutomationStudioLlmEvidenceCandidateReceipt | undefined;
   /** A discovery-only loop's own submit and test tools, which its words name; the candidate's when absent (t537). */
   finishing?: { submit: string; test: string } | undefined;
   stepsWithoutProgress: number;
@@ -244,11 +246,15 @@ function planningInstruction(input: AutomationStudioLlmEvidenceStallRedirectInpu
 
 function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, stepsLeft: number, refused: boolean, stillMissing: "record_producer" | undefined): string {
   if (input.discoveryOnly) {
-    const next = input.candidate
-      ? `The latest accepted candidate has receipt ${JSON.stringify(input.candidate)}. Use ${input.finishing?.test ?? "core.test_candidate"} with that exact revision and digest if its trial has not answered yes. Complete only after yes for that exact receipt; change and resubmit only when its feedback names a cause in the Flow.`
+    // A receipt whose trial failed on record, or that a refusal cleared, is never recommended for a test (t741, social 0166).
+    const untestable = input.candidate
+      ? automationStudioLlmEvidenceUntestableReceiptWords(input.candidate, { submit: input.finishing?.submit ?? "core.submit_candidate", test: input.finishing?.test ?? "core.test_candidate" })
+      : undefined;
+    const next = untestable ?? (input.candidate
+      ? `The latest accepted candidate has receipt ${JSON.stringify({ revision: input.candidate.revision, digest: input.candidate.digest })}. Use ${input.finishing?.test ?? "core.test_candidate"} with that exact revision and digest if its trial has not answered yes. Complete only after yes for that exact receipt; change and resubmit only when its feedback names a cause in the Flow.`
       : candidateCovered(input, stillMissing)
         ? "No candidate has been accepted. Use the evidence already gathered, correct any named submission issues and submit the whole candidate, then test its returned revision and digest. Do not complete an untested candidate."
-        : untriedRoutes(actsMissing(input), stillMissing);
+        : untriedRoutes(actsMissing(input), stillMissing));
     const looking = input.looksWithdrawn ? " Looking is withdrawn until an action runs; candidate submission and testing remain the finishing path." : "";
     return `The last ${input.stepsWithoutProgress} steps added no new evidence. Repeating the same request returns the answer already held.${looking} ${next} ${stepsLeft} more step(s) without progress stop this build.`;
   }

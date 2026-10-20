@@ -25,6 +25,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan, AutomationStudioFlowBootstrapSubflow } from "../plan/index.ts";
+import { automationStudioFlowPlanLoopBody } from "./loop-body.ts";
 
 /** The nodes a written repeat becomes, whose cycles are loops (header). */
 const LOOP_NODE_IDS: ReadonlySet<string> = new Set(["builtin.control.repeat", "builtin.control.for-each"]);
@@ -59,34 +60,10 @@ export function automationStudioFlowPlanRecordReplaceInRepeatIssues(input: {
 /** The keys of the nodes on a cycle through one of the Subflow's loop nodes, the loop nodes aside. */
 function loopMembers(subflow: AutomationStudioFlowBootstrapSubflow): Set<string> {
   const members = new Set<string>();
-  const loops = subflow.nodes.filter((node) => LOOP_NODE_IDS.has(node.definitionId)).map((node) => node.key);
-  if (!loops.length) return members;
-  const forward = new Map<string, string[]>();
-  const backward = new Map<string, string[]>();
-  for (const edge of subflow.edges) {
-    forward.set(edge.source.nodeKey, [...(forward.get(edge.source.nodeKey) ?? []), edge.target.nodeKey]);
-    backward.set(edge.target.nodeKey, [...(backward.get(edge.target.nodeKey) ?? []), edge.source.nodeKey]);
-  }
-  for (const loop of loops) {
-    // On a cycle through the loop node: reached from it, and reaching it.
-    const reaches = reached(loop, backward);
-    for (const key of reached(loop, forward)) if (key !== loop && reaches.has(key)) members.add(key);
+  for (const loop of subflow.nodes.filter((node) => LOOP_NODE_IDS.has(node.definitionId))) {
+    for (const key of automationStudioFlowPlanLoopBody(subflow, loop.key)) members.add(key);
   }
   return members;
-}
-
-/** Every node reached from `start` along `next`. */
-function reached(start: string, next: ReadonlyMap<string, readonly string[]>): Set<string> {
-  const seen = new Set<string>();
-  const queue = [start];
-  while (queue.length) {
-    for (const key of next.get(queue.pop()!) ?? []) {
-      if (seen.has(key)) continue;
-      seen.add(key);
-      queue.push(key);
-    }
-  }
-  return seen;
 }
 
 /** Whether a record output says it replaces the run's rows. */

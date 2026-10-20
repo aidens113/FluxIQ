@@ -17,6 +17,13 @@
 // - `name`: it has no witness at all: nothing read shows where its effect
 //   would be, so read that list completely and name it.
 //
+// **Adopted witnesses (office rerun round 3).** A trial or entry-preparation
+// act with no witness of its own is judged instead on the build's issued
+// lists (`adopted`, `./ledger.ts`): settled when every one holds, `look` where
+// one is stale or incomplete, and where one differs open with `name` alone --
+// never `undo`, since another act may have changed that list. An adopted list
+// is no change seen of the act's own.
+//
 // Pure: inputs are already-judged witnesses.
 
 import type { AutomationStudioSiteResetGroupStanding } from "./settlement-group-witness.ts";
@@ -36,9 +43,11 @@ export function automationStudioSiteResetSettleDecision(input: {
   changeSeen: boolean;
   /** An undo of it landed. */
   undoLanded: boolean;
+  /** The build's issued lists, judged as witnesses only where it has none of its own (header). */
+  adopted?: ReadonlyArray<AutomationStudioSiteResetGroupStanding & { ref?: string | undefined; location?: string | undefined }> | undefined;
 }): AutomationStudioSiteResetSettlement {
   const groups = input.groups.filter((group) => group.status !== "none");
-  if (!groups.length && !input.toggle) return { kind: "open", reasons: [{ reason: "name" }] };
+  if (!groups.length && !input.toggle) return adoptedDecision(input.adopted ?? [], input.changeSeen || input.undoLanded);
   const reasons: AutomationStudioSiteResetOpenReason[] = [];
   for (const group of groups) {
     if (group.status === "holds") continue;
@@ -49,4 +58,17 @@ export function automationStudioSiteResetSettleDecision(input: {
   if (toggle && toggle.status !== "holds") reasons.push({ reason: toggle.status === "stale" ? "look" : "toggle", witness: "toggle", ...(toggle.location ? { location: toggle.location } : {}) });
   if (reasons.length) return { kind: "open", reasons };
   return { kind: "settled", how: input.changeSeen || input.undoLanded ? "restored" : "unchanged" };
+}
+
+/** An act with no witness of its own, judged on the build's issued lists (header); with none, it is to name one. */
+function adoptedDecision(adopted: ReadonlyArray<AutomationStudioSiteResetGroupStanding & { ref?: string | undefined; location?: string | undefined }>, restored: boolean): AutomationStudioSiteResetSettlement {
+  const groups = adopted.filter((group) => group.status !== "none");
+  if (!groups.length || groups.some((group) => group.status === "differs")) return { kind: "open", reasons: [{ reason: "name" }] };
+  const reasons: AutomationStudioSiteResetOpenReason[] = [];
+  for (const group of groups) {
+    if (group.status === "holds") continue;
+    reasons.push({ reason: "look", witness: "group", ...(group.ref ? { ref: group.ref } : {}), ...(group.location ? { location: group.location } : {}) });
+  }
+  if (reasons.length) return { kind: "open", reasons };
+  return { kind: "settled", how: restored ? "restored" : "unchanged" };
 }
