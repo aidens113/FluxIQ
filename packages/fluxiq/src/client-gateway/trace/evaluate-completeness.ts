@@ -4,13 +4,15 @@
 // `complete` claim alone. Every problem is tagged by the sequence range or the
 // artifact it affects, so a consumer can mark only that scope inconclusive.
 // Missing evidence never evaluates as complete: a trace that was never closed
-// is truncated unless the caller knows its recorder is still writing.
+// is truncated unless the caller knows its recorder is still writing, and an
+// artifact an event references by digest must have reached this trace first.
 //
 // Redactions are reported apart, as fidelity limitations: the evidence is
 // present but withheld, so the scope cannot pass exact parity, yet the capture
 // itself is whole.
 
 import type {
+  ClientGatewayTraceArtifactEntry,
   ClientGatewayTraceArtifactPresence,
   ClientGatewayTraceCompleteness,
   ClientGatewayTraceCompletenessInput,
@@ -39,6 +41,7 @@ export function evaluateClientGatewayTraceCompleteness(input: ClientGatewayTrace
   coverageIssues(manifest, events, input.recorderActive, issues);
   correlationIssues(manifest, events, issues);
   artifactIssues(manifest, events, input.availableArtifacts, issues);
+  referencedDigestIssues(manifest, events, issues);
   if (manifest.completeness.status === "incomplete" && issues.length === 0) {
     issues.push(issue("declared_incomplete", null, null, "the recorder declared this trace incomplete"));
   }
@@ -189,6 +192,33 @@ function artifactIssues(
       } else if (entry.sequence > event.sequence) {
         issues.push(issue("broken_correlation", at(event.sequence), artifactId, `event ${event.eventId} references an artifact delivered later`));
       }
+    }
+  }
+}
+
+/**
+ * Every digest an event references must name an artifact this trace captured
+ * at or before that event. One captured only in another trace, or never, is
+ * missing here; one captured only later cannot have been what the event saw.
+ * Whether the bytes are still held is the inventory's check above.
+ */
+function referencedDigestIssues(manifest: ClientGatewayTraceManifest, events: readonly ClientGatewayTraceEvent[], issues: Issues): void {
+  const bySha256 = new Map<string, ClientGatewayTraceArtifactEntry[]>();
+  for (const entry of manifest.artifacts) {
+    const held = bySha256.get(entry.sha256);
+    if (held === undefined) bySha256.set(entry.sha256, [entry]);
+    else held.push(entry);
+  }
+  for (const event of events) {
+    for (const digest of event.referencedDigests) {
+      const entries = bySha256.get(digest) ?? [];
+      if (entries.length === 0) {
+        issues.push(issue("missing_artifact", at(event.sequence), null, `event ${event.eventId} references artifact sha256 ${digest}, which this trace never captured`));
+        continue;
+      }
+      if (entries.some((entry) => entry.sequence <= event.sequence)) continue;
+      const laterId = entries[0]?.id ?? null;
+      issues.push(issue("broken_correlation", at(event.sequence), laterId, `event ${event.eventId} references artifact sha256 ${digest}, which this trace captured only later`));
     }
   }
 }

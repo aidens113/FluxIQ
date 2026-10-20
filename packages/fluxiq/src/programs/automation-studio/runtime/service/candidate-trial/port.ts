@@ -21,8 +21,17 @@
 // offline trials, U7).** `environmentKind` is `ports.environment`'s kind, live
 // when absent, for the trial gate to read; and the port offers `prepareStart`
 // only to a live trial, since an offline one runs no start hook (Decision 6).
+//
+// **Each trial it runs is a traced episode (traces and offline trials, P2,
+// D9).** With tracing installed the port mints the trial's run id -- the
+// ports' `newRunId`, else the environment's, as the runner would -- opens the
+// trial's episode under it, and runs the trial on a copy of the ports whose
+// `newRunId` answers that id (`../../gateway-trace/wiring/trial.ts`). The start hook
+// (`prepareStart`) and the site reset run before, in the build's trace. A
+// re-judgement runs nothing on the site and opens no episode.
 
 import type { AutomationStudioCandidateTrialPort, AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
+import { AUTOMATION_STUDIO_GATEWAY_TRACE_CONTEXT, withAutomationStudioGatewayTraceTrial } from "../../gateway-trace/wiring/index.ts";
 import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord, AutomationStudioCandidateTrialStart, AutomationStudioCandidateTrialUnjudged } from "./contracts.ts";
 import { automationStudioTrialJudgingShortfall, automationStudioTrialLargestJudgePrompt } from "./judging-fits.ts";
 import { automationStudioCandidateTrialStart, rejudgeAutomationStudioCandidateTrial, runAutomationStudioCandidateTrial } from "./run.ts";
@@ -50,7 +59,14 @@ export function automationStudioCandidateTrialPort(candidateId: string, ports: A
     ready = undefined;
     // The judge calls are held at the largest prompt an earlier trial's judge was sent (`./judging-fits.ts`, t661).
     const prompt = automationStudioTrialLargestJudgePrompt(records);
-    const trial = kept ? await rejudgeAutomationStudioCandidateTrial(request, kept, ports, prompt) : await runAutomationStudioCandidateTrial(request, ports, start, prompt);
+    const trial = kept ? await rejudgeAutomationStudioCandidateTrial(request, kept, ports, prompt) : await withAutomationStudioGatewayTraceTrial({
+      projectId: ports.projectId,
+      flowId: ports.flowId,
+      prefix: "trial",
+      newRunId: ports.newRunId,
+      environment: ports.environment,
+      context: (runId) => ({ schema: AUTOMATION_STUDIO_GATEWAY_TRACE_CONTEXT.candidateTrial, value: { kind: "candidate_trial", runId, candidateId, revision: request.revision, digest: request.digest, start: start?.status ?? null } })
+    }, (newRunId) => runAutomationStudioCandidateTrial(request, newRunId === undefined ? ports : { ...ports, newRunId }, start, prompt));
     if (trial.unjudged) unjudged.set(key, trial.unjudged);
     records.push(structuredClone(trial.record));
     return trial.result;

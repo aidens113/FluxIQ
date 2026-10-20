@@ -5,6 +5,8 @@ import type { FluxIQHostPaths } from "../../framework/index.ts";
 import { ClientGatewayRuntimeTransport, FileRuntimeStore, RuntimeService } from "../../runtime/index.ts";
 import { AutomationStudioClientGatewayBridge, automationStudioActivityHub, AutomationStudioHostLeaseScope, automationStudioActivityRunScope, automationStudioCandidateStartHookFromEnvironment, AutomationStudioService, automationStudioPanelCommandKeyFromSecretKeys, createAutomationStudioDeepSeekPanelCommandModel, createAutomationStudioResultCheckProvider, createAutomationStudioSessionKeyProviderResolver, registerAutomationStudioApi } from "../automation-studio/index.ts";
 import { AutomationStudioChannelScope } from "../automation-studio/runtime/environment/index.ts";
+import { automationStudioClientGatewayTraceEnabled } from "../automation-studio/runtime/gateway-trace/index.ts";
+import { AutomationStudioGatewayTraceServicePools, createAutomationStudioGatewayTraceHost } from "../automation-studio/runtime/gateway-trace/wiring/index.ts";
 import { BackgroundTasksService, registerBackgroundTasksApi } from "../background-tasks/index.ts";
 import { ComputeControlService, registerComputeControlApi } from "../compute-control/index.ts";
 import { DatabaseManagerService, registerDatabaseManagerApi, SQLiteRepository } from "../database-manager/index.ts";
@@ -67,7 +69,18 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: { m
   // at its own reset of that target (`FLUXIQ_CANDIDATE_START_URL`, with the
   // optional `FLUXIQ_CANDIDATE_START_TOKEN`); a half-set or malformed value
   // refuses here, as the host starts.
-  const prepareCandidateStart = automationStudioCandidateStartHookFromEnvironment(process.env);
+  //
+  // Client gateway traces (traces and offline trials, P2, D11): unset in every
+  // product deployment, so nothing is built and the gateway is handed no
+  // source. The Lab turns it on for every Core it starts. On, the episodes
+  // write through the service's own per-project pool, asked for only when an
+  // episode opens (the service is built below, after the start hook it is
+  // handed), and the start hook's answers are recorded into the build's trace.
+  const gatewayTrace = createAutomationStudioGatewayTraceHost({
+    enabled: automationStudioClientGatewayTraceEnabled(process.env),
+    pool: () => AutomationStudioGatewayTraceServicePools.of(automationStudio)
+  });
+  const prepareCandidateStart = gatewayTrace.startHook(automationStudioCandidateStartHookFromEnvironment(process.env));
   const automationStudio = new AutomationStudioService(paths && storageLayoutVersion === 2
       ? {
         storageRootDir: paths.recordings,
@@ -85,6 +98,8 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: { m
     hostLease: AutomationStudioHostLeaseScope.gatewaySource,
     // The channel scope a command is sent and a session list read from: an offline run's work sees and reaches only its own sessions, and live work never sees those (traces and offline trials, P1). No scope is entered yet, so every caller is live.
     channelScope: AutomationStudioChannelScope.gatewaySource,
+    // The trace the dispatching async context records into: what the gateway sends and receives for a build, trial or run goes into that episode's trace (traces and offline trials, P2, D8). Passed only when tracing is on.
+    ...(gatewayTrace.source ? { trace: gatewayTrace.source } : {}),
     enabled: process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED !== "false",
     ...(paths ? { trustedClientStore: createClientGatewayTrustedClientStore(paths.data) } : {}),
     ...(trustedClientTtlMs ? { trustedClientTtlMs } : {}),

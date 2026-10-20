@@ -261,6 +261,16 @@ describe("FluxIQClientGatewayConnection offline queue", () => {
     expect(h.connection.statusFields().queueSize).toBe(0);
   });
 
+  it("delivers a queued message with the id, timestamp and correlation id it was queued with, under the new socket's session (D16)", async () => {
+    const h = harness({ token: SYNTHETIC_TOKEN });
+    await h.outbox.setLineage("lineage.stored");
+    const queued = createClientGatewayMessage("client.state_update", { state: { step: 1 } }, { clientId: "client.1", sessionId: "wire.old", correlationId: "command.4", idFactory: () => "queued.1", now: () => 1_111 });
+    await h.outbox.enqueue(queued, { session: "lineage.stored", projectId: "project.1", recordingId: null });
+    const socket = await connectReady(h);
+    expect(socket.sentTypes()).toEqual(["client.hello", "client.state_update"]);
+    expect(socket.sent[1]).toMatchObject({ id: "queued.1", timestamp: 1_111, correlationId: "command.4", sessionId: "wire.1", clientId: "client.1" });
+  });
+
   it("drops everything queued under the old lineage when the socket had to pair", async () => {
     const h = harness();
     await h.outbox.setLineage("lineage.stored");

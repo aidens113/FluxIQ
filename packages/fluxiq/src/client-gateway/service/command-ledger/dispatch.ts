@@ -10,6 +10,7 @@ import { clientGatewayHostLeaseStamp, isClientGatewayHostLease, type ClientGatew
 import { ClientGatewayCommandContext } from "./context.ts";
 import { ClientGatewayCommandOutcome } from "./outcome.ts";
 import { ClientGatewayCommandLedgerController as Controller } from "./controller.ts";
+import type { ClientGatewayTraceTap } from "../trace-tap/index.ts";
 import type { ClientGatewayCommandClaim, ClientGatewayCommandLedgerLease, ClientGatewayCommandReceipt, ClientGatewayDurableActionOptions, ClientGatewayDurableActionResponse, ClientGatewayDurableDispatchResult, ClientGatewayCommandOutcomeObserver, ClientGatewayCommandCompletion } from "./contracts.ts";
 
 type Answer = { result: ClientGatewayActionResult; receipt: ClientGatewayCommandReceipt };
@@ -22,7 +23,7 @@ type Entry = {
   context: ClientGatewayCommandContext; observer?: ClientGatewayCommandOutcomeObserver; proof?: object;
   uncertainty?: Promise<void>;
 };
-type Ports = { config: ClientGatewayConfig; sessions: ClientGatewaySessionRegistry; transport: ClientGatewayTransport; events: ClientGatewayEventBus; resolve?: (context: ClientGatewayCommandContext) => Promise<ClientGatewayCommandLedgerLease>; reconcile?: (commandId: string) => Promise<ClientGatewayReconcileAnswer | undefined>; hostLease?: ClientGatewayHostLeaseSource | undefined };
+type Ports = { config: ClientGatewayConfig; sessions: ClientGatewaySessionRegistry; transport: ClientGatewayTransport; events: ClientGatewayEventBus; resolve?: (context: ClientGatewayCommandContext) => Promise<ClientGatewayCommandLedgerLease>; reconcile?: (commandId: string) => Promise<ClientGatewayReconcileAnswer | undefined>; hostLease?: ClientGatewayHostLeaseSource | undefined; trace: ClientGatewayTraceTap };
 /** Explicit trusted gateway dispatch only; existing Flow/domain callers remain on the legacy path. */
 export class ClientGatewayDurableDispatch {
   private static readonly proofs = new WeakMap<object, { entry: Entry; observer: ClientGatewayCommandOutcomeObserver; value: ClientGatewayCommandCompletion }>();
@@ -54,7 +55,8 @@ export class ClientGatewayDurableDispatch {
     if (this.pending.has(commandId)) throw new Error("durable_command.already_pending");
     const claim: ClientGatewayCommandClaim = { binding: { schemaVersion: "gateway_command.v1", ...owner, commandId, clientId: session.clientId, sessionId }, requestDigest };
     Controller.validateClaim(claim); this.freeze(claim);
-    const message = this.ports.transport.message("server.execute_action", { ...command, commandId }, session); this.freeze(message);
+    // Marked for capture under a traced episode after the digest, so tracing never changes what the ledger claims (`../trace-tap/`).
+    const message = this.ports.trace.stampAction(this.ports.transport.message("server.execute_action", { ...command, commandId }, session), owner); this.freeze(message);
     let resolve!: Entry["resolve"], reject!: Entry["reject"];
     const answer = new Promise<Answer>((yes, no) => { resolve = yes; reject = () => no(new Error("durable_command.outcome_unknown")); });
     void answer.catch(/* best-effort: preadmission cancellation is reported by public completion */ () => undefined);
@@ -80,16 +82,21 @@ export class ClientGatewayDurableDispatch {
   }
   /** Takes `input` as the answer of a command still waiting: committed as its receipt, or, for an outcome the client could not vouch for, unknown. */
   private async accept(entry: Entry, input: ClientGatewayActionResult): Promise<"settled" | "suppressed"> {
-    if (entry.phase !== "waiting") return "suppressed";
+    if (entry.phase !== "waiting") return this.suppressed(entry, "not_waiting");
     let result: ClientGatewayActionResult, resultDigest: string;
     try { resultDigest = Controller.digest(input); result = this.parseResult(input); this.freeze(result); }
-    catch { return "suppressed"; }
-    if (result.status === "unknown" || result.status === "timed_out" || result.status === "cancelled") { this.uncertain(entry); await entry.completion; return "suppressed"; }
+    catch { return this.suppressed(entry, "invalid_result"); }
+    if (result.status === "unknown" || result.status === "timed_out" || result.status === "cancelled") { this.uncertain(entry); await entry.completion; return this.suppressed(entry, "uncertain_status"); }
     entry.phase = "reserved"; if (!entry.observer) clearTimeout(entry.timer);
     const receipt: ClientGatewayCommandReceipt = { schemaVersion: "gateway_command_receipt.v1", commandId: entry.claim.binding.commandId, requestDigest: entry.claim.requestDigest, clientId: entry.clientId, sessionId: entry.sessionId, status: result.status, receivedAt: this.ports.config.now(), resultDigest, redaction: "receipt_only", ...(result.status === "failed" ? { failureClass: "action_failed" as const } : {}) };
     entry.resolve({ result, receipt });
     const completed = await entry.completion;
-    return completed.status === "completed" && completed.receipt.resultDigest === resultDigest ? "settled" : "suppressed";
+    return completed.status === "completed" && completed.receipt.resultDigest === resultDigest ? "settled" : this.suppressed(entry, "not_committed");
+  }
+  /** An answer not taken as the command's outcome, recorded as Core's own decision in the command's trace. */
+  private suppressed(entry: Entry, reason: string): "suppressed" {
+    this.ports.trace.synthesized(entry.claim.binding.commandId, "server.execute_action", { outcome: "suppressed", reason });
+    return "suppressed";
   }
   drain(): Promise<void> {
     this.closing ??= (async () => {
@@ -162,7 +169,9 @@ export class ClientGatewayDurableDispatch {
     const commandId = entry.claim.binding.commandId;
     const answer = await this.ports.reconcile(commandId);
     if (entry.phase !== "waiting") return;
-    await this.accept(entry, clientGatewayReconciledResult(commandId, answer, waitMs));
+    const result = clientGatewayReconciledResult(commandId, answer, waitMs);
+    this.ports.trace.synthesized(commandId, "server.execute_action", { outcome: "answer_never_came", reconcileState: answer?.state ?? null, result });
+    await this.accept(entry, result);
     if (entry.phase === "waiting") this.uncertain(entry);
   }
   /** A question that could not be asked at all leaves the command unknown, as before it could be asked. */
@@ -182,6 +191,7 @@ export class ClientGatewayDurableDispatch {
     if ((!entry.observer && entry.phase === "reserved") || entry.phase === "terminal") return;
     if (entry.proof) ClientGatewayDurableDispatch.proofs.delete(entry.proof);
     entry.phase = "terminal"; clearTimeout(entry.timer); entry.abort.abort(); entry.reject();
+    this.ports.trace.synthesized(entry.claim.binding.commandId, "server.execute_action", { outcome: "uncertain" });
   }
   private notifyUncertainty(entry: Entry, disposition: string): Promise<void> { entry.uncertainty ??= Promise.resolve().then(() => entry.observer!.uncertain(entry.context, disposition)); return entry.uncertainty; }
   /**
@@ -194,7 +204,10 @@ export class ClientGatewayDurableDispatch {
     if (!input || typeof input !== "object" || Array.isArray(input)) return input;
     if (Object.hasOwn(input, "lease") && !isClientGatewayHostLease(input.lease)) throw new Error("durable_command.invalid_command");
     const leased = clientGatewayHostLeaseStamp(input, this.ports.hostLease, sessionId);
-    if (leased.refused) throw new Error(`durable_command.${leased.refused}`);
+    if (leased.refused) {
+      this.ports.trace.synthesized(null, "server.execute_action", { outcome: "refused_unsent", code: leased.refused, sessionId, durable: true });
+      throw new Error(`durable_command.${leased.refused}`);
+    }
     return leased.command;
   }
   private validateCommand(command: ClientGatewayActionCommand): void {

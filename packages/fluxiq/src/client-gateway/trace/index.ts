@@ -4,6 +4,7 @@
 // records through, and the store port traces are read from. Exported from
 // `client-gateway/index.ts` only, never from the browser-bundle entry
 // `client-gateway/contracts.ts`: the digest reaches Node.
+export type * from "./capture-source.ts";
 export * from "./versions.ts";
 export * from "./vocabulary.ts";
 export * from "./completeness-vocabulary.ts";

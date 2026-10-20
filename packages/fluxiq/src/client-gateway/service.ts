@@ -27,6 +27,7 @@ import {
   ClientGatewayPairingFlow,
   ClientGatewayPairingRegistry,
   ClientGatewaySessionRegistry,
+  ClientGatewayTraceTap,
   ClientGatewayTransport,
   ClientGatewayTrustedClientRegistry,
   ClientGatewayViews,
@@ -42,10 +43,13 @@ export type {
   ClientGatewayServiceOptions,
   ClientGatewaySummaryItem,
   ClientGatewaySummaryPage,
+  ClientGatewayTraceArtifactIntake,
+  ClientGatewayTraceArtifactUpload,
   ClientGatewayTrustedClientStore
 } from "./service/index.ts";
+export { CLIENT_GATEWAY_TRACE_TAP_STREAMS } from "./service/index.ts";
 
-import type { ClientGatewayFacadePorts, ClientGatewayItemKind, ClientGatewayLateActionResultListener, ClientGatewayServiceOptions, ClientGatewaySummaryPage } from "./service/index.ts";
+import type { ClientGatewayFacadePorts, ClientGatewayItemKind, ClientGatewayLateActionResultListener, ClientGatewayServiceOptions, ClientGatewaySummaryPage, ClientGatewayTraceArtifactIntake, ClientGatewayTraceArtifactUpload } from "./service/index.ts";
 
 /**
  * The client gateway: pairing, durable client trust, session lifecycle, and the
@@ -70,6 +74,7 @@ export class ClientGatewayService {
   private readonly commands: ClientGatewayCommands;
   private readonly audit: ClientGatewayAuditLog;
   private readonly activity: ClientGatewayActivityPublisher;
+  private readonly trace: ClientGatewayTraceTap;
 
   constructor(options: ClientGatewayServiceOptions = {}) {
     const config = resolveClientGatewayConfig(options);
@@ -78,7 +83,9 @@ export class ClientGatewayService {
     const sessions = new ClientGatewaySessionRegistry(config.now);
     const pairings = new ClientGatewayPairingRegistry(config);
     const trustedClients = new ClientGatewayTrustedClientRegistry(config);
-    const transport = new ClientGatewayTransport(sessions, config.now);
+    // Routes what the gateway sends and receives into the traces of the episodes that claim it; inert without `options.trace`.
+    const trace = new ClientGatewayTraceTap({ source: options.trace, clientIdOf: (sessionId) => sessions.get(sessionId)?.clientId });
+    const transport = new ClientGatewayTransport(sessions, config.now, trace);
     // Collaborators call back into this service's public surface through this
     // object, never through the collaborator that owns the method, so an
     // override or a stub on a public method is still honoured.
@@ -86,9 +93,9 @@ export class ClientGatewayService {
       ready: () => this.ready(),
       disconnect: (sessionId, reason) => this.disconnect(sessionId, reason)
     };
-    const pairingFlow = new ClientGatewayPairingFlow({ config, pairings, sessions, trustedClients, transport, audit, events, facade });
-    const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, facade });
-    const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner, hostLease: options.hostLease, channelScope: options.channelScope });
+    const pairingFlow = new ClientGatewayPairingFlow({ config, pairings, sessions, trustedClients, transport, audit, events, trace, facade });
+    const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, trace, facade });
+    const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner, hostLease: options.hostLease, channelScope: options.channelScope, trace });
 
     this.trustedClients = trustedClients;
     this.audit = audit;
@@ -97,8 +104,9 @@ export class ClientGatewayService {
     this.pairingFlow = pairingFlow;
     this.lifecycle = lifecycle;
     this.commands = commands;
-    this.access = new ClientGatewayAccess({ sessions, trustedClients, transport, audit, lifecycle, facade });
-    this.inbound = new ClientGatewayInbound({ sessions, transport, events, lifecycle, pairingFlow, commands, audit, facade });
+    this.trace = trace;
+    this.access = new ClientGatewayAccess({ sessions, trustedClients, transport, audit, lifecycle, trace, facade });
+    this.inbound = new ClientGatewayInbound({ sessions, transport, events, lifecycle, pairingFlow, commands, audit, trace, facade });
     this.activity = new ClientGatewayActivityPublisher(sessions, transport);
     this.views = new ClientGatewayViews({ config, sessions, pairings, trustedClients, audit, channelScope: options.channelScope });
   }
@@ -195,6 +203,16 @@ export class ClientGatewayService {
 
   async receive(sessionId: string, message: ClientGatewayClientMessage): Promise<void> {
     await this.inbound.receive(sessionId, message);
+  }
+
+  /**
+   * A trace artifact a paired client uploaded for a traced command (D13):
+   * refused when its bytes do not hash to `sha256`, otherwise recorded into
+   * every open trace claiming the session. Answers how many traces took it;
+   * none is not a failure -- the trace that asked may have closed meanwhile.
+   */
+  receiveTraceArtifact(sessionId: string, upload: ClientGatewayTraceArtifactUpload): ClientGatewayTraceArtifactIntake {
+    return this.trace.artifact(sessionId, upload);
   }
 
   async startRecording(sessionId: string, input: { recordingId: string; projectId?: string | null; taskId?: string; domainId?: string }): Promise<void> {

@@ -94,7 +94,7 @@ import { adaptationConfidence, adaptationValidationCounts, annotateAutomationStu
 import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, assertAutomationStudioFlowBootstrapPlanHandlesResolved, automationStudioEvidenceBuildBound, automationStudioFlowBootstrapDraftStepIsWritable, automationStudioFlowBootstrapDraftActs, automationStudioFlowDraftDryRunGate, automationStudioFlowDraftReplayClearedCode, automationStudioHarnessInputWithDeniedEvidenceKeys, automationStudioHarnessOptionRegistry, automationStudioLlmNodeDescriptions, automationStudioLlmUnusableDecisionError, checkAutomationStudioFlowBootstrapCompletion, resolveAutomationStudioFlowBootstrapPlanParameters, runAutomationStudioLlmEvidenceLoop, type AutomationStudioFlowBootstrapCompletionVerdict, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
 import { AutomationStudioLlmRunPurse, automationStudioFlowDraftPlanNodeIds, automationStudioLlmEvidenceLoopRouteChecked, automationStudioLlmBuildTrace, automationStudioLlmEvidenceRuntimeBindingChecked, automationStudioLlmResolutionWithinFlowSettings, automationStudioLlmResolverWithDomainInstructions, automationStudioLlmStepLogTool, automationStudioRuntimeAdaptationContextForLlmRun, type AutomationStudioRuntimeSessionLlm, type AutomationStudioLlmBuildPurseCharged, automationStudioLlmRunCostCeilingUsd } from "./llm/index.ts";
 import { sayAutomationStudioResultCheck } from "./result-check-schedule/index.ts";
-import { automationStudioActivityDecisionReason, bindAutomationStudioActivityRun, emitAutomationStudioActivity, observeAutomationStudioEvidenceLoop, withAutomationStudioBuildActivity, withAutomationStudioRunActivity } from "./activity/index.ts";
+import { automationStudioActivityDecisionReason, emitAutomationStudioActivity, observeAutomationStudioEvidenceLoop } from "./activity/index.ts";
 import { automationStudioAppliedJudgedBuildTrial, automationStudioFlowGraphVersion, automationStudioMetadataWithFlowVersions, automationStudioRunFlowVersions, type AutomationStudioFlowGraphJudgement } from "./flow-version/index.ts";
 import { automationStudioResultJudgedBuildTrialOfSavedFlow, automationStudioResultVerificationProvider, readRecordSets, verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts, type AutomationStudioResultVerificationStatus } from "./result-verification/index.ts";
 import { automationStudioFlowDraftKeepSavedUntestedEdits, automationStudioFlowDraftReplayable } from "./flow-draft/index.ts";
@@ -109,10 +109,8 @@ import { packAutomationStudioReusableLlmContext, type AutomationStudioReusableLl
 import type { AutomationStudioHostRuntimeBoundary } from "./host-runtime.ts";
 import type { AutomationStudioNativeNodeRuntime } from "./native-node-runtime.ts";
 import { finalizeRecordingStateLinks } from "./state-linker.ts";
-import {
-  type RecordingFlowProposalArtifact,
-  type RecordingFlowProposalDestination
-} from "./recording-flow-proposal.ts";
+import { type RecordingFlowProposalArtifact, type RecordingFlowProposalDestination } from "./recording-flow-proposal.ts";
+import { AutomationStudioGatewayTraceServicePools, automationStudioGatewayTraceBuildId, bindAutomationStudioGatewayTraceRun, withAutomationStudioGatewayTraceBuildActivity, withAutomationStudioGatewayTraceRunActivity } from "./gateway-trace/wiring/index.ts";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../nodes/index.ts";
 import {
   addRecordingPipelineArtifactId,
@@ -437,7 +435,7 @@ export class AutomationStudioService {
         this.objectStore = new AutomationStudioObjectStore(automationDataDir);
         this.recordingStateIndexes = new RecordingStateIndexStore(automationDataDir);
       }
-      this.runtimeProjectDatabasePool = new AutomationStudioProjectDatabasePool({ rootDir: automationDataDir, idleCloseMs: AUTOMATION_STUDIO_PROJECT_DATABASE_IDLE_CLOSE_MS });
+      this.runtimeProjectDatabasePool = AutomationStudioGatewayTraceServicePools.adopt(this, new AutomationStudioProjectDatabasePool({ rootDir: automationDataDir, idleCloseMs: AUTOMATION_STUDIO_PROJECT_DATABASE_IDLE_CLOSE_MS }));
       this.projectDatabasePool = this.runtimeProjectDatabasePool;
       projectRootDir = path.join(automationDataDir, "projects");
       const nodeRootDir = options.customNodeRootDir ?? (options.storageRootDir ? undefined : path.join(automationDataDir, "nodes"));
@@ -1491,7 +1489,7 @@ export class AutomationStudioService {
     this.buildCancellation.checkpoint(); const signal = this.buildCancellation.signal(); const result = await runAutomationStudioLlmHarness(automationStudioHarnessInputWithDeniedEvidenceKeys({ ...input, ...(signal ? { signal: AbortSignal.any([signal, ...(input.signal ? [input.signal] : [])]) } : {}) }, this.llmEvidenceRuntime)); return result;
   }
 
-  async generateFlowBootstrapAdaptation<Input extends AutomationStudioGenerateFlowBootstrapAdaptationInput>(input: Input): Promise<AutomationStudioGenerateFlowBootstrapAdaptationResultFor<Input>> { return await withAutomationStudioBuildActivity(input, () => this.buildCancellation.run(input.projectId, input.flowId, () => withAutomationStudioProjectDatabaseHeld({ pool: this.runtimeProjectDatabasePool, projects: this.projects }, input.projectId, () => automationStudioLlmBuildTrace.timed("build", () => this.generateFlowBootstrapAdaptationInternal(input), (built) => `status=${built.status}`)))) as AutomationStudioGenerateFlowBootstrapAdaptationResultFor<Input>; }
+  async generateFlowBootstrapAdaptation<Input extends AutomationStudioGenerateFlowBootstrapAdaptationInput>(input: Input): Promise<AutomationStudioGenerateFlowBootstrapAdaptationResultFor<Input>> { return await withAutomationStudioGatewayTraceBuildActivity(input, { instructions: () => this.getFlowInstructionSet({ projectId: input.projectId, flowId: input.flowId }), conversations: this.conversations }, () => this.buildCancellation.run(input.projectId, input.flowId, () => withAutomationStudioProjectDatabaseHeld({ pool: this.runtimeProjectDatabasePool, projects: this.projects }, input.projectId, () => automationStudioLlmBuildTrace.timed("build", () => this.generateFlowBootstrapAdaptationInternal(input), (built) => `status=${built.status}`)))) as AutomationStudioGenerateFlowBootstrapAdaptationResultFor<Input>; }
   private readonly generateFlowBootstrapAdaptationInternal = async (input: AutomationStudioGenerateFlowBootstrapAdaptationInput, repairBrief?: AutomationStudioFlowInstruction, repairCostLeftUsd?: number, repairStartPages?: Readonly<Record<string, JsonObject>>, repairEnding?: AutomationStudioReauthorEndingWatch, repairCharged?: (receipt: AutomationStudioLlmBuildPurseCharged | undefined) => void): Promise<AutomationStudioGenerateFlowBootstrapAdaptationResult> => {
     const unsafeInput = input as unknown as Record<string, unknown>;
     let failureStage: AutomationStudioFlowBootstrapFailureStage = "pre_provider_validation";
@@ -1565,7 +1563,7 @@ export class AutomationStudioService {
         // Not for a build that continues a stopped one: its draft already reached the start, and it carries on live from the page as it stands rather than being sent back there (`flow-bootstrap/incomplete-draft/`, user 2026-09-30).
         const storedIncomplete = input.evidenceGuided && !authoringMode && !extend ? await this.incompleteDrafts.get(projectId, flowId) : undefined;
         const callStartLocation = automationStudioFlowBootstrapIncompleteDraftContinuation(storedIncomplete, { baseDependencyDigest: binding.executionDigest, sourceInstructionIds: resolvedInstructions.instructionIds }) ? undefined : startLocation;
-        const nodeDescriptions = automationStudioLlmNodeDescriptions({ registry, resolution }), buildId = `build.${randomUUID()}`, harnessOptions = automationStudioHarnessOptionRegistry({ binding: this.llmEvidenceRuntime, nodeIds: registry.list(resolution).map((definition) => definition.id), startLocation: callStartLocation, nodeDescriptions }).evidenceLoopBinding({ projectId, flowId, buildId }, { ...resolution, allowSideEffectsWithoutPolicy: true }); // The nodes this build has been shown whole, shared by every round of it (`llm/node-tools/node-descriptions.ts`).
+        const nodeDescriptions = automationStudioLlmNodeDescriptions({ registry, resolution }), buildId = automationStudioGatewayTraceBuildId(), harnessOptions = automationStudioHarnessOptionRegistry({ binding: this.llmEvidenceRuntime, nodeIds: registry.list(resolution).map((definition) => definition.id), startLocation: callStartLocation, nodeDescriptions }).evidenceLoopBinding({ projectId, flowId, buildId }, { ...resolution, allowSideEffectsWithoutPolicy: true }); // The nodes this build has been shown whole, shared by every round of it (`llm/node-tools/node-descriptions.ts`).
         const bootstrapLoopLimits = automationStudioFlowBootstrapEvidenceLoopLimits(unresolvedProvider, automationStudioLlmRunCostCeilingUsd(adaptationPolicyFromFlowMetadata(parent, flowSettings).maxEstimatedCostUsdPerRun, repairCostLeftUsd)); // A repair build spends only what its repair has left (`service/runtime-adaptation/refuted-result-port.ts`).
         // One purse per Flow creation, the only cost authority, under which the build's whole body runs; its record is kept or dropped however the build ends (`service/flow-bootstrap-commands/creation-purse.ts`).
         const testCalls = resolveAutomationStudioLlmBuildCallLimit();
@@ -2449,7 +2447,7 @@ export class AutomationStudioService {
     if (continued && (input.flowId && input.flowId !== continued.flowId || input.flow && input.flow.flowId !== continued.flowId)) throw new AutomationInstructionError("automation.instructions_required");
     await this.instructionAuthority.assert(input.projectId, continued?.flowId ?? input.flowId ?? input.flow?.flowId);
     const commands = new AutomationStudioRequiredCommandRun(input, Boolean(this.projectDatabasePool)), requiredCommands = commands.required;
-    return await programStateConnections.keepWhile(() => withAutomationStudioProjectDatabaseHeld({ pool: this.runtimeProjectDatabasePool, projects: this.projects }, input.projectId, () => withAutomationStudioRunActivity({ projectId: input.projectId, flowId: input.flowId ?? input.flow?.flowId }, async () => await automationStudioLabFlowPurse({ store: this.creationSpends, projectId: input.projectId, flowId: input.flowId ?? input.flow?.flowId, interpretationCostUsd: input.interpretationCostUsd, interpretationCalls: input.interpretationCalls } /* A Lab-scoped run draws on its Flow's one purse (t438, `service/runtime-adaptation/flow-spend.ts`). */, async () => {
+    return await programStateConnections.keepWhile(() => withAutomationStudioProjectDatabaseHeld({ pool: this.runtimeProjectDatabasePool, projects: this.projects }, input.projectId, () => withAutomationStudioGatewayTraceRunActivity({ projectId: input.projectId, flowId: input.flowId ?? input.flow?.flowId }, async () => await automationStudioLabFlowPurse({ store: this.creationSpends, projectId: input.projectId, flowId: input.flowId ?? input.flow?.flowId, interpretationCostUsd: input.interpretationCostUsd, interpretationCalls: input.interpretationCalls } /* A Lab-scoped run draws on its Flow's one purse (t438, `service/runtime-adaptation/flow-spend.ts`). */, async () => {
     // The run executes under the mode and the authorizations its caller asked
     // for. A lasting real-world consequence is gated one action at a time by
     // `permittedConsequences` and the action permission gate.
@@ -2477,7 +2475,7 @@ export class AutomationStudioService {
     const runInterventionMode = requiredCommands ? "no_llm_intervention" : normalizeAutomationStudioRuntimeInterventionMode(input.adaptiveMode);
     const adaptiveRunRequested = runInterventionMode !== "no_llm_intervention";
     if (adaptiveRunRequested) startInput.metadata = { ...(startInput.metadata ?? {}), adaptiveRuntime: true, adaptiveMode: runInterventionMode };
-    session = existing ?? await admitAutomationStudioRuntimeSession({ admissions: this.adaptiveRuntimeAdmissions, listRuntimeSessions: (projectId) => this.listRuntimeSessions(projectId), startRuntimeSession: () => this.startRuntimeSession(startInput) }, input.projectId, adaptiveRunRequested); bindAutomationStudioActivityRun(session.runId);
+    session = existing ?? await admitAutomationStudioRuntimeSession({ admissions: this.adaptiveRuntimeAdmissions, listRuntimeSessions: (projectId) => this.listRuntimeSessions(projectId), startRuntimeSession: () => this.startRuntimeSession(startInput) }, input.projectId, adaptiveRunRequested); await bindAutomationStudioGatewayTraceRun(session, { inputs: input.inputs, conversations: this.conversations });
     const startedAt = Date.now();
     const abortController = new AbortController();
     // What this run's result check came to: set once the adaptation context is resolved below, and read lazily by `resolveProvider` after the run finishes, which is when "is *this* run checked" can be answered at all.

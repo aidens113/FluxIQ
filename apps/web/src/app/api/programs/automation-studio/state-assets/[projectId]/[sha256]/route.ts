@@ -71,6 +71,8 @@ export async function PUT(request: Request, context: RouteParams) {
     const asset = await fluxiq.programs.automationStudio.writeProjectObjectAsset({
       projectId: decodedProjectId,
       ...(uploadAuth.recordingId ? { recordingId: uploadAuth.recordingId } : {}),
+      // A paired client's screenshot is also taken by the traces claiming its gateway session (D13).
+      ...(uploadAuth.clientSessionId ? { traceIntake: { sessionId: uploadAuth.clientSessionId, gateway: fluxiq.programs.clientGateway } } : {}),
       content,
       mediaType,
       expectedSha256: normalizedSha
@@ -92,7 +94,7 @@ async function authorizeStateAssetUpload(
   request: Request,
   fluxiq: ReturnType<typeof getFluxIQ>,
   projectId: string
-): Promise<{ ok: true; recordingId?: string } | { ok: false; status: number; error: string; errorCode?: string }> {
+): Promise<{ ok: true; recordingId?: string; clientSessionId?: string } | { ok: false; status: number; error: string; errorCode?: string }> {
   const bearerToken = readBearerToken(request.headers.get("authorization"));
   if (bearerToken) {
     const clientSession = await fluxiq.programs.clientGateway.authorizeToken(bearerToken);
@@ -105,7 +107,7 @@ async function authorizeStateAssetUpload(
     if (!scope) return { ok: false, status: 403, error: "A paired client may only reach its own domain." };
     const refusal = await pairedClientProjectDomainRefusal(fluxiq.programs.automationStudio, projectId, scope.domainId);
     if (refusal) return { ok: false, status: 403, error: refusal.error, errorCode: refusal.errorCode };
-    return { ok: true, ...(clientSession.activeRecordingId ? { recordingId: clientSession.activeRecordingId } : {}) };
+    return { ok: true, clientSessionId: clientSession.sessionId, ...(clientSession.activeRecordingId ? { recordingId: clientSession.activeRecordingId } : {}) };
   }
 
   const sessionId = await readSessionId();

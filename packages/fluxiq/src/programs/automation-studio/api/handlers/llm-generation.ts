@@ -14,6 +14,7 @@ import { parseAutomationStudioPermittedConsequences } from "../../runtime/action
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS, automationStudioFlowStartLocation } from "../../runtime/flow-bootstrap/index.ts";
 import { automationStudioFlowBootstrapFailedBuilds, parseAutomationStudioFlowBootstrapGenerationError } from "../../runtime/flow-bootstrap/generation-failure/index.ts";
 import type { AutomationStudioActionConsequence, AutomationStudioCandidateDraftTrial, AutomationStudioGeneratedCandidateTrial, AutomationStudioService } from "../../runtime/index.ts";
+import { AutomationStudioGatewayTraceInstallation } from "../../runtime/gateway-trace/index.ts";
 import { boundedWholeNumber } from "./bounded-whole-number.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
@@ -26,6 +27,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
     handler: (request) => {
       const payload = request.payload && typeof request.payload === "object" && !Array.isArray(request.payload) ? request.payload as Record<string, unknown> : {};
       const projectId = boundedIdentifier(payload.projectId, "Project"), flowId = boundedIdentifier(payload.flowId, "Flow");
+      recordCancelIntoBuildTrace(projectId, flowId);
       return { ok: true, payload: { projectId, flowId, cancellationRequested: service.buildCancellation.cancel(projectId, flowId) } };
     }
   });
@@ -297,4 +299,18 @@ function boundedAccountingInteger(value: unknown, label: string): number {
 function boundedAccountingCost(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 10) throw new Error("Flow bootstrap generation cost accounting is invalid.");
   return value;
+}
+
+/**
+ * Cancelling a build arrives over HTTP, outside the build's own async context,
+ * keyed as build cancellation is: by project and Flow. It is recorded as a
+ * control event into the outermost open episode of that Flow (the build, not a
+ * trial it is running), before the build is told to stop. Nothing happens with
+ * tracing off, or when the Flow has no open episode.
+ */
+function recordCancelIntoBuildTrace(projectId: string, flowId: string): void {
+  const episodes = AutomationStudioGatewayTraceInstallation.current();
+  const outermost = episodes?.registry.byFlow(projectId, flowId)[0];
+  if (episodes === undefined || outermost === undefined) return;
+  episodes.recordControl({ type: "run_control", payload: { action: "cancel_build", projectId, flowId } }, outermost);
 }

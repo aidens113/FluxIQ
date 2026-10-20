@@ -22,6 +22,7 @@ import { ClientGatewayCommandReconciler, clientGatewayReconciledResult } from ".
 import { clientGatewayHostLeaseRefusal, clientGatewayHostLeaseStamp, type ClientGatewayHostLeaseRefusalCode } from "./host-lease/index.ts";
 import { clientGatewayChannelScopeAdmission, clientGatewayChannelScopeRefusal, ClientGatewayChannelScopeRefusedError, type ClientGatewayChannelScopeRefusalCode } from "./channel-scope/index.ts";
 import type { InternalSession } from "./types.ts";
+import type { ClientGatewayTraceTap } from "./trace-tap/index.ts";
 
 /** What became of a client's action result. `late`: it answered a command Core no longer awaited, and went to the run's evidence. */
 export type ClientGatewayResultDisposition = "settled" | "unknown_command" | "wrong_session" | "suppressed" | "late";
@@ -36,6 +37,7 @@ type CommandCollaborators = {
   commandOwner?: ClientGatewayServiceOptions["commandOwner"];
   hostLease?: ClientGatewayServiceOptions["hostLease"];
   channelScope?: ClientGatewayServiceOptions["channelScope"];
+  trace: ClientGatewayTraceTap;
 };
 
 /**
@@ -55,12 +57,14 @@ export class ClientGatewayCommands {
   private readonly sessions: ClientGatewaySessionRegistry;
   private readonly transport: ClientGatewayTransport;
   private readonly audit: ClientGatewayAuditLog;
+  private readonly trace: ClientGatewayTraceTap;
 
   constructor(collaborators: CommandCollaborators) {
     this.config = collaborators.config;
     this.sessions = collaborators.sessions;
     this.transport = collaborators.transport;
     this.audit = collaborators.audit;
+    this.trace = collaborators.trace;
     this.durable = new ClientGatewayDurableDispatch({ ...collaborators, ...(collaborators.resolveCommandLedger ? { resolve: collaborators.resolveCommandLedger } : {}), reconcile: (commandId) => this.reconcileDurable(commandId) });
     this.history = new ClientGatewayCommandHistory(collaborators.config.now);
     this.reconciler = new ClientGatewayCommandReconciler({ sessions: this.sessions, transport: this.transport, audit: this.audit, answerMs: collaborators.config.reconcileAnswerMs });
@@ -89,6 +93,7 @@ export class ClientGatewayCommands {
     const crossing = this.channelCrossing(session);
     if (crossing) {
       this.auditChannelRefusal({ sessionId, kind: "capture_snapshot", code: crossing });
+      this.trace.synthesized(null, "server.capture_snapshot", { outcome: "refused_unsent", code: crossing, sessionId });
       throw new ClientGatewayChannelScopeRefusedError(crossing);
     }
     await this.transport.send(sessionId, this.transport.message("server.capture_snapshot", {
@@ -111,8 +116,10 @@ export class ClientGatewayCommands {
     const leased = clientGatewayHostLeaseStamp(input, this.hostLease, sessionId);
     if (leased.refused) return this.refuseForLease({ sessionId, session, commandId, command: input, code: leased.refused });
     const command = leased.command;
-    this.history.opened({ commandId, sessionId, clientId: session.clientId, actionType: command.actionType, durable: false, owner: this.readOwner() });
-    const message = this.transport.message("server.execute_action", { ...command, commandId }, session);
+    const owner = this.readOwner();
+    this.history.opened({ commandId, sessionId, clientId: session.clientId, actionType: command.actionType, durable: false, owner });
+    // Under a traced episode the command is marked for capture before it is recorded and sent (`./trace-tap/`).
+    const message = this.trace.stampAction(this.transport.message("server.execute_action", { ...command, commandId }, session), owner);
     // The client is sent the command's own timeout, unchanged, and reports its
     // own timeout when that runs out; waiting only as long would discard that
     // answer, so a sent timeout is waited on for the answer margin longer.
@@ -172,7 +179,9 @@ export class ClientGatewayCommands {
     for (const [commandId, pending] of this.pending) {
       clearTimeout(pending.timeout);
       this.history.closed(commandId, "closed");
-      pending.resolve({ commandId, status: "unknown", message: "Client gateway closed before an answer." });
+      const result: ClientGatewayActionResult = { commandId, status: "unknown", message: "Client gateway closed before an answer." };
+      this.trace.synthesized(commandId, "server.execute_action", { outcome: "gateway_closed", result });
+      pending.resolve(result);
     }
     this.pending.clear();
     await this.durable.drain();
@@ -195,6 +204,7 @@ export class ClientGatewayCommands {
     const result = clientGatewayReconciledResult(commandId, answer, waitMs);
     this.history.closed(commandId, result.status === "timed_out" ? "timed_out" : "settled");
     if (answer) this.audit.record("command.reconciled", "A command whose answer never came was settled from what its client said became of it.", { sessionId: pending.sessionId, commandId, state: answer.state, status: result.status });
+    this.trace.synthesized(commandId, "server.execute_action", { outcome: "answer_never_came", reconcileState: answer?.state ?? null, result });
     pending.resolve(result);
   }
 
@@ -211,6 +221,7 @@ export class ClientGatewayCommands {
     const crossing = target ? this.channelCrossing(target) : undefined;
     if (crossing) {
       this.auditChannelRefusal({ sessionId, kind: "durable_action", actionType: command?.actionType, code: crossing });
+      this.trace.synthesized(null, "server.execute_action", { outcome: "refused_unsent", code: crossing, sessionId, durable: true });
       throw new ClientGatewayChannelScopeRefusedError(crossing, `durable_command.${crossing}`);
     }
     const response = this.durable.execute(sessionId, command, options);
@@ -230,7 +241,9 @@ export class ClientGatewayCommands {
   private refuseForLease(input: { sessionId: string; session: ClientGatewaySession; commandId: string; command: ClientGatewayActionCommand; code: ClientGatewayHostLeaseRefusalCode }): ClientGatewayActionResponse {
     const message = this.transport.message("server.execute_action", { ...input.command, commandId: input.commandId }, input.session);
     this.audit.record("command.host_lease_refused", "An action command was refused before it was sent: its host lease was not current.", { sessionId: input.sessionId, commandId: input.commandId, actionType: input.command.actionType, code: input.code });
-    return { commandId: input.commandId, message, result: Promise.resolve(clientGatewayHostLeaseRefusal(input.commandId, input.code)) };
+    const result = clientGatewayHostLeaseRefusal(input.commandId, input.code);
+    this.trace.synthesized(input.commandId, "server.execute_action", { outcome: "refused_unsent", code: input.code, message, result });
+    return { commandId: input.commandId, message, result: Promise.resolve(result) };
   }
 
   /** Why `session` may not be sent to from the dispatching channel scope, or nothing when it may. */
@@ -242,7 +255,9 @@ export class ClientGatewayCommands {
   private refuseForChannel(input: { sessionId: string; session: ClientGatewaySession; commandId: string; command: ClientGatewayActionCommand; code: ClientGatewayChannelScopeRefusalCode }): ClientGatewayActionResponse {
     const message = this.transport.message("server.execute_action", { ...input.command, commandId: input.commandId }, input.session);
     this.auditChannelRefusal({ sessionId: input.sessionId, kind: "action", commandId: input.commandId, actionType: input.command.actionType, code: input.code });
-    return { commandId: input.commandId, message, result: Promise.resolve(clientGatewayChannelScopeRefusal(input.commandId, input.code)) };
+    const result = clientGatewayChannelScopeRefusal(input.commandId, input.code);
+    this.trace.synthesized(input.commandId, "server.execute_action", { outcome: "refused_unsent", code: input.code, message, result });
+    return { commandId: input.commandId, message, result: Promise.resolve(result) };
   }
 
   private auditChannelRefusal(input: { sessionId: string; kind: string; code: ClientGatewayChannelScopeRefusalCode; commandId?: string; actionType?: string | undefined }): void {

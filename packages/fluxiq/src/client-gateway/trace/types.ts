@@ -194,6 +194,13 @@ export type ClientGatewayTraceEvent = {
   readonly payloadSchema: ClientGatewayTraceSchemaRef | null;
   readonly payload: ClientGatewayTracePayload;
   readonly artifactIds: readonly string[];
+  /**
+   * Artifacts the message names by digest (lower-case hex SHA-256) rather than
+   * by id: what a client said it uploaded for a traced command. Each must have
+   * been delivered into this trace at or before this event, or the trace is
+   * missing evidence.
+   */
+  readonly referencedDigests: readonly string[];
   readonly provenance: ClientGatewayTraceProvenance;
   readonly redactions: readonly ClientGatewayTraceRedaction[];
 };
@@ -229,6 +236,8 @@ export type ClientGatewayTraceEventInput = {
   payloadSchema: ClientGatewayTraceSchemaRef | null;
   payload: ClientGatewayTracePayloadInput;
   artifactIds: readonly string[];
+  /** Artifact digests (lower-case hex SHA-256) the message references; none when absent. */
+  referencedDigests?: readonly string[];
   redactions: readonly ClientGatewayTraceRedaction[];
 };
 

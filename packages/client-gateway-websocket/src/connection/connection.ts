@@ -24,7 +24,7 @@ const DEFAULT_RECONNECT_BASE_DELAY_MS = 1_000;
 const DEFAULT_RECONNECT_MAX_DELAY_MS = 30_000;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 20_000;
 
-type LooseSend = (type: ClientGatewayClientMessage["type"], payload: unknown) => Promise<unknown>;
+type LooseSend = (type: ClientGatewayClientMessage["type"], payload: unknown, options?: { id?: string; timestamp?: number; correlationId?: string }) => Promise<unknown>;
 type LooseCreate = (type: ClientGatewayClientMessage["type"], payload: unknown, options: { clientId?: string }) => ClientGatewayClientMessage;
 
 // One socket's client and what the lineage rule needs to know about it.
@@ -207,7 +207,13 @@ export class FluxIQClientGatewayConnection {
     const current: ClientGatewayOutboxBinding = { session: await this.lineage(), projectId: context.projectId, recordingId: context.recordingId };
     let outcome: Awaited<ReturnType<ClientGatewayOutbox["flush"]>>;
     try {
-      outcome = await this.options.outbox.flush(current, (message) => (client.send as LooseSend)(message.type, message.payload));
+      // A queued message reaches the gateway as it was queued: its id,
+      // timestamp and correlation id survive (D16); the session id is this socket's.
+      outcome = await this.options.outbox.flush(current, (message) => (client.send as LooseSend)(message.type, message.payload, {
+        id: message.id,
+        timestamp: message.timestamp,
+        ...(message.correlationId !== undefined ? { correlationId: message.correlationId } : {})
+      }));
     } finally {
       await this.refreshQueueSize();
     }
