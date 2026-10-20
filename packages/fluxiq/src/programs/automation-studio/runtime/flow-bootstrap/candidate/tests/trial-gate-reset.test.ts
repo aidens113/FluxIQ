@@ -1,8 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../../../llm/index.ts";
-import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetRead, type AutomationStudioSiteResetTrialAct } from "../../site-reset/index.ts";
+import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetDecision, type AutomationStudioSiteResetRead, type AutomationStudioSiteResetTrialAct, type AutomationStudioSiteResetTrialReset } from "../../site-reset/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, AutomationStudioFlowCandidateTrialGate, runAutomationStudioFlowCandidateAuthoringLoop, type AutomationStudioFlowCandidate, type AutomationStudioCandidateTrialRequest, type AutomationStudioCandidateTrialResult } from "../index.ts";
 
 // The site reset before each trial (t462), in the real authoring loop. A fake
@@ -387,5 +390,66 @@ describe("candidate trial reset settlement (L1)", () => {
       { step: 4, definitionId: "domain.demo.toggle", consequences: ["modify_existing"], controls: unplaced },
       { step: 5, definitionId: "domain.demo.toggle", consequences: ["modify_existing"], controls: unplaced }
     ]]);
+  });
+});
+
+// The reset as its own step (t737): the site check before a core.test_candidate trial is written as an
+// `NNNN-reset` step around exactly that check, so the Lab's build-time measure can take it out of the trial.
+describe("the trial gate's reset step", () => {
+  let directory: string;
+  beforeEach(() => {
+    directory = mkdtempSync(path.join(tmpdir(), "fluxiq-gate-reset-step-"));
+    vi.stubEnv("FLUXIQ_LLM_STEP_LOG_DIR", directory);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const candidate = { revision: 1, digest: "d1", baseDependencyDigest: "b", status: "draft", summary: "s", buildPlan: { plan: { subflows: [] } }, changedPaths: [] } as unknown as AutomationStudioFlowCandidate;
+  const resetSteps = () => readdirSync(directory).filter((name) => /^\d{4,}-reset$/u.test(name)).map((name) => JSON.parse(readFileSync(path.join(directory, name, "meta.json"), "utf8")) as Record<string, unknown>);
+
+  function gateOf(decision: AutomationStudioSiteResetDecision, options: { offline?: true; noReset?: true } = {}) {
+    const at = { checked: 0, ran: 0 };
+    const run = async (request: AutomationStudioCandidateTrialRequest): Promise<AutomationStudioCandidateTrialResult> => {
+      at.ran = Date.now();
+      return { revision: request.revision, digest: request.digest, verdict: "yes", feedback: {}, acts: [] };
+    };
+    const port = Object.assign(run, { environmentKind: options.offline ? "trace" as const : "live" as const });
+    const reset: AutomationStudioSiteResetTrialReset = {
+      beforeTrial: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        at.checked = Date.now();
+        return decision;
+      },
+      trialRan: () => []
+    };
+    return { gate: new AutomationStudioFlowCandidateTrialGate({ latest: () => candidate, trial: { candidateId: "c", port }, ...(options.noReset ? {} : { reset }) }), at };
+  }
+
+  it("writes one reset step around the site check, before the trial runs", async () => {
+    const { gate, at } = gateOf({ kind: "admit" });
+    await gate.test({ revision: 1, digest: "d1" });
+    const steps = resetSteps();
+    expect(steps).toHaveLength(1);
+    expect(steps[0]).toMatchObject({ kind: "reset", stage: "site_check", trialToolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, outcome: "admit", status: "ok" });
+    expect(Date.parse(String(steps[0]!.startedAt))).toBeLessThanOrEqual(at.checked);
+    expect(Date.parse(String(steps[0]!.finishedAt))).toBeGreaterThanOrEqual(at.checked);
+    expect(Date.parse(String(steps[0]!.finishedAt))).toBeLessThanOrEqual(at.ran);
+  });
+
+  it("writes a refused check as its outcome, and no trial runs", async () => {
+    const { gate, at } = gateOf({ kind: "refuse", evidence: { code: "candidate.trial_reset_required" }, moved: false });
+    await gate.test({ revision: 1, digest: "d1" });
+    expect(resetSteps()).toMatchObject([{ stage: "site_check", outcome: "refuse" }]);
+    expect(at.ran).toBe(0);
+  });
+
+  it("writes none when no reset happens: an offline trial, or a gate with no site reset", async () => {
+    for (const options of [{ offline: true as const }, { noReset: true as const }]) {
+      const { gate, at } = gateOf({ kind: "admit" }, options);
+      await gate.test({ revision: 1, digest: "d1" });
+      expect(at.ran).toBeGreaterThan(0);
+      expect(resetSteps()).toEqual([]);
+    }
   });
 });

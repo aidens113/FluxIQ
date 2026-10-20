@@ -84,7 +84,10 @@
 // **A start hook runs before the reset check (t475).** When the trial port has
 // one (`prepareStart`), it runs first, and the reset is told the site was just
 // put back (`startReset`), so every act of this build counts undone and the
-// model is asked to undo nothing the hook already undid (t479).
+// model is asked to undo nothing the hook already undid (t479). The check is
+// written to the step log as an `NNNN-reset` step (t737), as the hook is in
+// `service/candidate-trial/run.ts`: no tool call marks either, so the Lab's
+// build-time measure counted both as the trial's replay.
 //
 // **What a start hook took back is said, never erased (t504).** Lane D round 17
 // (`run-mv6lgt3s-c3aa6fac`) pressed one row's control while exploring; the
@@ -237,6 +240,7 @@
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
+import { automationStudioLlmStepLogReset } from "../../llm/step-log/index.ts";
 import { automationStudioCandidateTrialActs } from "./trial-acts.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS } from "../plan/index.ts";
 import { automationStudioCandidateStartedWithSaid } from "./started-with.ts";
@@ -427,7 +431,10 @@ export class AutomationStudioFlowCandidateTrialGate {
     // The deployment's start hook first, so the check after it finds the site put back (header).
     const prepared = !offline && this.input.reset && trial.port.prepareStart ? await trial.port.prepareStart({ revision: latest.revision, digest: latest.digest, signal }) : "none";
     signal.throwIfAborted();
-    const reset = offline ? undefined : await this.input.reset?.beforeTrial(signal, Array.isArray(cannotUndo) ? cannotUndo as string[] : undefined, prepared === "reset" ? { startReset: true } : undefined);
+    // The check is timed as its own reset step, so a trial's window no longer hides it (header, t737).
+    const siteReset = offline ? undefined : this.input.reset;
+    const reset = siteReset && await automationStudioLlmStepLogReset({ stage: "site_check", trialToolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID },
+      () => siteReset.beforeTrial(signal, Array.isArray(cannotUndo) ? cannotUndo as string[] : undefined, prepared === "reset" ? { startReset: true } : undefined), (decision) => decision.kind);
     signal.throwIfAborted();
     // Not a trial: the model is told what to put back, and the identical test after it reaches this gate again (header).
     if (reset?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: reset.evidence, effectApplied: reset.moved, targetsUnchanged: !reset.moved, resultCode: reset.evidence.code, resultReason: RETEST_REASON };
