@@ -56,9 +56,22 @@ export type AutomationStudioProjectBuilderReturn = {
    * (`earlierAttempt`, `./subflow-brief.ts`; `../supervisor/dispatch-tool.ts`). Absent from every other return.
    */
   stoppedRepeating?: true;
+  /**
+   * Set on a return that is not done when nothing a changed brief could say would let it go on (t743), from a closed
+   * list read structurally where the return is made (`../dispatch/ending.ts`), never from the reason's words:
+   * `allowance_spent`, the brief's allowance refused its next call; `stopped`, the build was stopped; `person_ended`,
+   * the brief's permission or person-needed ending stopped it (a lasting act the person did not permit, or a check only
+   * a person can pass); `gate_unsatisfiable`, the trial gate's start can never be met (wired from the reset ledger).
+   * The supervisor's repair-first rule (`../supervisor/completion.ts`) does not hold an ending for such a return.
+   * Absent from every other return.
+   */
+  terminalReason?: (typeof TERMINAL_REASONS)[number];
   spentUsd: number;
   calls: number;
 };
+
+/** The closed terminal reasons a return may carry (`terminalReason`, t743). */
+const TERMINAL_REASONS = Object.freeze(["allowance_spent", "stopped", "person_ended", "gate_unsatisfiable"] as const);
 
 const LIMITS = { reason: 2000, trials: 100, findings: 50, finding: 2000 } as const;
 
@@ -78,6 +91,8 @@ export const automationStudioProjectBuilderReturn = Object.freeze({
     if (returned.doneBefore !== undefined && (returned.outcome !== "blocked" || !brief.parts.includes(returned.doneBefore.part))) issues.push({ code: "project.return_done_before", path: "return.doneBefore" });
     // A builder stopped for repeating itself never ends its brief done (lane-1 fix 1).
     if (returned.stoppedRepeating !== undefined && returned.outcome === "done") issues.push({ code: "project.return_stopped_repeating", path: "return.stoppedRepeating" });
+    // A closed terminal reason ends a brief that is not done (t743).
+    if (returned.terminalReason !== undefined && returned.outcome === "done") issues.push({ code: "project.return_terminal_reason", path: "return.terminalReason" });
     if (returned.unmadeOutput !== undefined && (returned.outcome === "done" || !(brief.interface?.outputs ?? []).some((port) => port.id === returned.unmadeOutput))) issues.push({ code: "project.return_unmade_output", path: "return.unmadeOutput" });
     // A reset is done when nothing of the build is left to undo; it proposes no subflow.
     if (brief.kind === "reset" && returned.proposal) issues.push({ code: "project.return_reset_proposal", path: "return.proposal" });
@@ -128,7 +143,7 @@ function trialAbove(left: AutomationStudioProjectTrialRef, right: AutomationStud
 }
 
 function read(value: unknown): AutomationStudioProjectBuilderReturn {
-  const fields = shape.object(value, "return", ["briefId", "outcome", "reason", "trials", "spentUsd", "calls"], ["proposal", "interfaceRequest", "findings", "unmadeOutput", "doneBefore", "stoppedRepeating"]);
+  const fields = shape.object(value, "return", ["briefId", "outcome", "reason", "trials", "spentUsd", "calls"], ["proposal", "interfaceRequest", "findings", "unmadeOutput", "doneBefore", "stoppedRepeating", "terminalReason"]);
   const returned: AutomationStudioProjectBuilderReturn = {
     briefId: shape.storageId(fields.briefId, "return.briefId"),
     outcome: shape.oneOf(fields.outcome, "return.outcome", AUTOMATION_STUDIO_PROJECT_RETURN_OUTCOMES),
@@ -151,6 +166,7 @@ function read(value: unknown): AutomationStudioProjectBuilderReturn {
     returned.doneBefore = { part: shape.id(doneBefore.part, "return.doneBefore.part"), ...(doneBefore.act !== undefined ? { act: shape.id(doneBefore.act, "return.doneBefore.act") } : {}) };
   }
   if (fields.stoppedRepeating !== undefined) returned.stoppedRepeating = fields.stoppedRepeating === true ? true : shape.refuse("project.not_true", "return.stoppedRepeating");
+  if (fields.terminalReason !== undefined) returned.terminalReason = shape.oneOf(fields.terminalReason, "return.terminalReason", TERMINAL_REASONS);
   if (fields.findings !== undefined) returned.findings = shape.array(fields.findings, "return.findings", LIMITS.findings).map((finding, index) => shape.text(finding, `return.findings.${index}`, LIMITS.finding));
   return returned;
 }

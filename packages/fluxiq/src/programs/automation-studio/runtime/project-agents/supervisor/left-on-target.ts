@@ -54,13 +54,25 @@
 // office `run-mvgo5xft-25460ba2` recorded "... The part that takes t" and the
 // chat said it. They now give way at the last sentence that fits, else at a
 // word's end with "…"; a note too long for the record ends on a whole entry.
+//
+// **An act no call can settle is named as left, and never undoable (t743,
+// S2).** Such an act (its brief's ledger's `unsatisfiable()`: its only witness
+// a list Core cannot read again, or nothing left to name for it) leaves
+// `inPlace`, since no reset is asked to undo it, and so left the ending as if
+// gone. Each is named as still on the target, as one that can no longer be
+// checked or put back (`unsettleable`), never `undoable`: the reset rule never
+// holds an ending for it (`./completion.ts`). The person is told it as an act
+// the build could not undo, which may still be there; or, where no read ever
+// showed it change anything, as one that may have changed nothing.
 import { automationStudioActivityLeftTold, type AutomationStudioActivityLeftAct } from "../../activity/index.ts";
 import type { AutomationStudioProjectSupervisorPorts } from "./ports.ts";
 
 /** Each act still on the target, as the ledger names it, and a line for the person when anything is left. */
 export type AutomationStudioProjectSupervisorLeftOnTarget = {
-  /** `undoable`: a reset brief may still undo it. */
-  acts: Array<{ act: string; did: string; brief: string; undoable: boolean }>;
+  /** `undoable`: a reset brief may still undo it. `unsettleable`: no call can check or put it back (header, t743). */
+  acts: Array<{ act: string; did: string; brief: string; undoable: boolean; unsettleable?: true }>;
+  /** Whether any act left is one no call can settle, so no trial can run while it is there (header, t743). */
+  unsettleable: boolean;
   /** Presses that declared no lasting act but changed their page, and may still be on the target (header). */
   possibly: Array<{ act: string; did: string; brief: string }>;
   /** Whether a reset brief could undo any of it. */
@@ -86,11 +98,16 @@ export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<Automa
     return claim.kind === "refused" && claim.evidence.code === "candidate.undo_act_kept";
   };
   const acts: Array<AutomationStudioProjectSupervisorLeftOnTarget["acts"][number] & { line: string; stays?: AutomationStudioActivityLeftAct["stays"]; seen?: boolean }> = [];
-  for (const act of ledger.snapshot().acts) {
+  const snapshot = ledger.snapshot().acts;
+  // Each brief's acts no call can settle, never in place (header, t743).
+  const unsettleable = new Set([...new Set(snapshot.map((act) => act.owner))].flatMap((owner) => ledger.forBrief(owner).unsatisfiable().map((act) => act.act)));
+  for (const act of snapshot) {
     const named = { act: act.act, did: act.did, brief: act.owner };
     if (!act.undoable) acts.push({ ...named, undoable: false, line: `${act.did} (cannot be undone by FluxIQ)`, stays: "irreversible" });
     // `seen`: whether any read ever showed it change something, so one nothing showed is not told as a change left (t738).
     else if (act.inPlace) acts.push({ ...named, undoable: true, line: act.did, seen: ledger.forBrief(act.owner).changeSeen(act.act) !== false });
+    // Left, and no reset can undo it; told as not undone, or as possibly nothing where no read showed a change (header, t743).
+    else if (unsettleable.has(act.act)) acts.push({ ...named, undoable: false, unsettleable: true, line: `${act.did} (it can no longer be checked or put back; it may still be there)`, ...(ledger.forBrief(act.owner).changeSeen(act.act) === false ? { seen: false } : { stays: "kept" as const }) });
     else if (kept(act.act, act.owner)) acts.push({ ...named, undoable: false, line: `${act.did} (the build could not undo it; it may still be there)`, stays: "kept" });
   }
   const lines = acts.map((act) => act.line);
@@ -109,7 +126,7 @@ export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<Automa
     ports.leftAtEnding?.({ note, told });
     return fitted ? `${saidWithin(said, MAX_REASON - fitted.length - 1)} ${fitted}`.trim() : saidWithin(said, MAX_REASON);
   };
-  return { acts: acts.map(({ line: _line, stays: _stays, seen: _seen, ...act }) => act), possibly, undoable: acts.some((act) => act.undoable), note, told, reason };
+  return { acts: acts.map(({ line: _line, stays: _stays, seen: _seen, ...act }) => act), unsettleable: acts.some((act) => act.unsettleable === true), possibly, undoable: acts.some((act) => act.undoable), note, told, reason };
 }
 
 /** `said` within `max`: whole, else up to the last sentence end that fits, else cut at a word's end with "…" (header, t741 B5). */

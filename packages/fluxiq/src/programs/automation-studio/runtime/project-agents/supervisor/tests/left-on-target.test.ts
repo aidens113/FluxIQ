@@ -158,3 +158,18 @@ describe("an ending that says only what is known", () => {
     expect(long.startsWith(`${cut.slice(0, -1)} `)).toBe(true);
   });
 });
+
+// t743 (S2): an act no call can settle -- a press on a control in no list any read showed, so nothing can be named for
+// it -- is never among the acts in place, since no reset is asked to undo it, yet it is still on the target.
+describe("an ending with an act no call can settle on the target", () => {
+  it("names it as still there, never undoable", () => {
+    const ledger = new AutomationStudioSiteResetProjectLedger();
+    ledger.forBrief("brief.earlier").explored({ ...pressed("mark", "Mark", ["modify_existing"]), declared: { permitted: true, effect: "mutate", consequences: ["modify_existing"], control: { name: "Mark", kind: "button", subject: "s:mark" }, verb: "press" } });
+    expect(ledger.unsatisfiable().map((act) => act.act)).toEqual(["act-1"]);
+    const { left } = leftOn(ledger);
+    expect(left.acts).toEqual([{ act: "act-1", did: "press \"Mark\" button", brief: "brief.earlier", undoable: false, unsettleable: true }]);
+    expect(left).toMatchObject({ undoable: false, unsettleable: true, note: "Still on the target from this build: press \"Mark\" button (it can no longer be checked or put back; it may still be there)." });
+    // No read ever showed it change anything: the person is told it may have changed nothing, to check (t738).
+    expect(left.told).toContain("It clicked “Mark”, but no read ever showed a change from it, so it may have changed nothing; check it");
+  });
+});

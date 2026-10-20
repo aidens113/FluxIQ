@@ -51,9 +51,20 @@ describe("what stopped an execution-failed trial", () => {
     expect(said).not.toMatch(LAB_TASK_WORDS);
   });
 
-  it("says when the step that stopped the run is past the steps listed", () => {
-    const steps = Array.from({ length: 40 }, (_, index) => ({ ...read, step: index + 1 }));
-    expect(Stop.of({ code: "candidate.execution_incomplete", steps, stepsLeftOut: 46 })).toMatchObject({ kind: "steps_left_out", listed: 40, leftOut: 46, said: "The run took 86 steps and steps lists only the first 40, so the step that stopped it is not listed (candidate.execution_incomplete)." });
+  // S5 (`run-mvgw3ve5-294881b5`, 0089): an 86-step repeat stopped past the 40 steps listed, and the stop was never named.
+  it("names the step a long run stopped at, listed last by its real number past the steps left out, without claiming a run count", () => {
+    const steps = [...Array.from({ length: 39 }, (_, index) => ({ ...read, step: index + 1 })), { ...read, step: 86, status: "failed", failureCode: "web.extract.output_not_observed", actual: "The read found no rows." }];
+    const stop = Stop.of({ code: "candidate.execution_incomplete", steps, stepsLeftOut: 46 });
+    expect(stop).toMatchObject({ kind: "step", step: 86, failureCode: "web.extract.output_not_observed", leftOut: 46 });
+    expect(stop.ranBefore).toBeUndefined();
+    expect(String(stop.said)).toBe("Step 86 (\"read the rows on the list\") failed and the run stopped there (web.extract.output_not_observed). What it saw: The read found no rows. The listing under steps shows the first 39 and then this one, the last the run took; the 46 between them are left out.");
+    expect(Stop.signature(failed({ code: "candidate.execution_incomplete", steps, stepsLeftOut: 46 }))).toContain("\"step\":86");
+    expect(tell({ code: "candidate.execution_incomplete", steps, stepsLeftOut: 46 })).not.toMatch(LAB_TASK_WORDS);
+  });
+
+  it("names a long run that stopped between steps after its last step, by that step's real number", () => {
+    const steps = [...Array.from({ length: 39 }, (_, index) => ({ ...read, step: index + 1 })), { ...onward, step: 86 }];
+    expect(Stop.of({ code: "candidate.execution_incomplete", steps, stepsLeftOut: 46 })).toMatchObject({ kind: "run", said: "No step of the Flow failed: the run stopped between steps, after step 86 (candidate.execution_incomplete)." });
   });
 
   it("names a graph ending, a failed start, an answer Core could not read, and a stop between steps", () => {

@@ -1,5 +1,5 @@
 // Every complete list group one act could change, each judged against the
-// latest reads (L1 reset settlement, `./ledger.ts`).
+// latest reads (L1 reset settlement, `../site-reset/ledger.ts`).
 //
 // An act's named scopes are its destinations -- named on its own call, on a
 // look under `undoes`, admitted against, or lent by the explored acts a trial
@@ -7,17 +7,18 @@
 // undo was proved on, and its own list: the complete original its control sat
 // in, read before it. What it was about is its `subject`, and its `page` where
 // it sat in no item. Each group they fall in is one witness
-// (`./settlement-group-witness.ts`), told by the ref and location of the list
-// it names, for the words an open act is answered with. Pure.
+// (`./group-witness.ts`), told by the ref and location of the list
+// it names, for the words an open act is answered with, and by its opaque
+// group, for Core alone (`./reach.ts`). Pure.
 
-import type { AutomationStudioSiteResetSpot } from "./contracts.ts";
-import { automationStudioSiteResetGroupWitness as groupWitness, type AutomationStudioSiteResetGroupStanding } from "./settlement-group-witness.ts";
-import type { AutomationStudioSiteResetObservations } from "./settlement-observations.ts";
+import { automationStudioSiteResetGroupWitness as groupWitness, type AutomationStudioSiteResetGroupStanding } from "./group-witness.ts";
+import type { AutomationStudioSiteResetObservations } from "./observations.ts";
+import type { AutomationStudioSiteResetSettlementSpot } from "./spot.ts";
 
 type Scope = { scope: string; group: string };
 
 export function automationStudioSiteResetActGroups(input: {
-  act: { spot?: AutomationStudioSiteResetSpot | undefined; destinations: readonly Scope[]; transfer?: { origin: string; scope: string; group: string } | undefined; subjectUndo?: Scope | undefined };
+  act: { spot?: AutomationStudioSiteResetSettlementSpot | undefined; destinations: readonly Scope[]; transfer?: { origin: string; scope: string; group: string } | undefined; subjectUndo?: Scope | undefined };
   /** The act's 1-based place among its ledger's acts, the ledger clock it landed at, and the ledger clock now. */
   sequence: number;
   since: number;
@@ -25,7 +26,7 @@ export function automationStudioSiteResetActGroups(input: {
   observations: AutomationStudioSiteResetObservations;
   /** A list scope's issued ref and where it was read, if it is an original. */
   described(scope: string): { ref: string; location?: string } | undefined;
-}): Array<AutomationStudioSiteResetGroupStanding & { ref?: string; location?: string }> {
+}): Array<AutomationStudioSiteResetGroupStanding & { group: string; ref?: string; location?: string }> {
   const { act, observations } = input;
   const spot = act.spot ?? {};
   const named: Scope[] = [...act.destinations];
@@ -39,6 +40,6 @@ export function automationStudioSiteResetActGroups(input: {
     const standing = groupWitness({ observations, group, scopes, subjects, sequence: input.sequence, since: input.since, clock: input.clock });
     const described = [...scopes, ...standing.scopes].map((scope) => input.described(scope)).find((entry) => entry !== undefined);
     const location = observations.groupLocation.get(group) ?? described?.location;
-    return { ...standing, ...(described ? { ref: described.ref } : {}), ...(location ? { location } : {}) };
+    return { ...standing, group, ...(described ? { ref: described.ref } : {}), ...(location ? { location } : {}) };
   });
 }

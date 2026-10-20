@@ -159,9 +159,11 @@ describe("the project supervisor", () => {
       call(IDS.writePlan, ONE_PART),
       end("blocked"),
       dispatch([brief("main", ["p1"])]),
+      end("blocked"),
       end("blocked")
-    ], project({ builder: () => "blocked" }));
-    expect(run.feedback.map((entry) => entry.code)).toContain("project.completion_ended_too_soon");
+    ], project({ builder: () => "blocked" }), { spareTurns: 3 });
+    // Too soon before any return; then held once for a changed brief of the failed subflow (t743), and let through.
+    expect(run.feedback.map((entry) => entry.code)).toEqual(["project.completion_ended_too_soon", "project.completion_repair_first"]);
     expect(run.outcome.status).toBe("ended");
     expect(run.outcome.ending).toMatchObject({ outcome: "blocked", reason: "The hold control is not on the page." });
     expect(run.view?.record.ending?.outcome).toBe("blocked");
@@ -201,6 +203,8 @@ describe("the project supervisor", () => {
       call(IDS.writePlan, THREE_PART),
       dispatch(briefs),
       end("blocked", "The shelf is not shown."),
+      // Held once for a changed brief of the failed subflow first (t743).
+      end("blocked", "The shelf is not shown."),
       dispatch([reset()], "Put the target back before ending."),
       end("blocked", "The shelf is not shown.")
     ], project({ builder }));
@@ -214,8 +218,8 @@ describe("the project supervisor", () => {
   it("lets an ending with acts still in place through after two holds, and names exactly what is left in its reason", async () => {
     const builder: BuilderPlan = (sent) => (sent.subflowKey === "note_shelf" ? "blocked" : "done");
     const briefs = [brief("find_titles", ["p1"]), brief("place_hold", ["p2"], ["find_titles"], { permittedActs: ["create_new"] }), brief("note_shelf", ["p3"], ["place_hold"])];
-    const run = await supervise([call(IDS.writePlan, THREE_PART), dispatch(briefs), end("blocked", "The shelf is not shown."), end("blocked", "The shelf is not shown."), end("blocked", "The shelf is not shown.")], project({ builder }));
-    expect(run.feedback.map((entry) => entry.code)).toEqual(["project.completion_reset_first", "project.completion_reset_first"]);
+    const run = await supervise([call(IDS.writePlan, THREE_PART), dispatch(briefs), ...Array.from({ length: 4 }, () => end("blocked", "The shelf is not shown."))], project({ builder }), { spareTurns: 3 });
+    expect(run.feedback.map((entry) => entry.code)).toEqual(["project.completion_repair_first", "project.completion_reset_first", "project.completion_reset_first"]);
     expect(run.ledger.snapshot().acts.filter((act) => act.inPlace)).toHaveLength(1);
     expect(run.outcome.ending).toMatchObject({ outcome: "blocked", reason: "The shelf is not shown. Still on the target from this build: trial step 1 \"press hold for place_hold\"." });
     expect(run.view?.record.ending?.reason).toContain("press hold for place_hold");

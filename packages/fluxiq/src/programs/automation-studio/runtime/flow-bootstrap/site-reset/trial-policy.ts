@@ -30,9 +30,15 @@
 // - A start that only differs never deadlocks: with no act to undo, a
 //   difference identical to the last refusal's, or past `MAX_REFUSALS`, admits
 //   the trial, saying under `startedWith` what differed.
+// - An act no call can settle (`gate_unsatisfiable`, t743) refuses every trial
+//   too, listed apart under `actsUnsettleable`; with nothing else to undo the
+//   refusal says no call can meet it (`acts_unsettleable`, `no_call`) and
+//   offers the honest exit: end the brief blocked, naming those acts. The
+//   reset rule is not weakened for it.
 
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioSiteResetComparison, AutomationStudioSiteResetNamedAct } from "./contracts.ts";
+import { automationStudioSiteResetRefusal as refusal } from "../reset-answers/index.ts";
+import type { AutomationStudioSiteResetComparison, AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetUnsettleableAct } from "./contracts.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "./words.ts";
 
 /** Refusals of one phase over a start that only differs; the next one admits the trial instead. */
@@ -59,14 +65,20 @@ export async function automationStudioSiteResetTrialPolicy(input: {
   inPlace: readonly AutomationStudioSiteResetNamedAct[];
   /** This build's acts the site cannot undo, which the trial runs with. */
   kept?: readonly AutomationStudioSiteResetNamedAct[];
+  /** This build's acts no call can settle (header, t743): never admitted, never asked to undo. */
+  unsettleable?: readonly AutomationStudioSiteResetUnsettleableAct[];
   compare: () => Promise<AutomationStudioSiteResetComparison>;
 }): Promise<AutomationStudioSiteResetPolicyAnswer & { moved: boolean }> {
   const kept = (input.kept ?? []).map(named);
+  const unsettleable = (input.unsettleable ?? []).map(unsettled);
+  const apart = unsettleable.length ? { actsUnsettleable: unsettleable } : {};
   const started = (extra: JsonObject = {}): { startedWith?: JsonObject } => {
     const startedWith: JsonObject = { ...extra, ...(kept.length ? { cannotUndo: kept } : {}) };
     return Object.keys(startedWith).length ? { startedWith: { ...startedWith, instruction: WORDS.startedWith(kept.length > 0) } } : {};
   };
-  if (input.phase.recorded === 0 && input.inPlace.length === 0) return { kind: "admit", ...started(), moved: false };
+  if (input.phase.recorded === 0 && input.inPlace.length === 0 && !unsettleable.length) return { kind: "admit", ...started(), moved: false };
+  // Nothing to undo, but acts no call can settle: refused as they stand, with the honest exit (header, t743).
+  if (input.inPlace.length === 0 && unsettleable.length) return { kind: "refuse", signature: JSON.stringify([unsettleable.map((act) => act.act)]), startDiffers: false, moved: false, evidence: refusal("candidate.trial_reset_required", { failed: "acts_unsettleable", canMeet: "no_call", instruction: WORDS.unsettleable(false), actsToUndo: [], ...apart, ...(kept.length ? { cannotUndo: kept } : {}) }) };
   const comparison = await input.compare();
   const moved = comparison.moved;
   const differs = comparison.differs ?? [];
@@ -77,12 +89,14 @@ export async function automationStudioSiteResetTrialPolicy(input: {
   // Acts still to undo are never admitted (header); only a difference with nothing to undo is.
   const stalled = input.phase.lastRefusal === signature || input.phase.refusals >= MAX_REFUSALS;
   if (!acts.length && (stalled || input.phase.startDiffersSent)) return { kind: "admit", ...started(differs.length ? { differs: [...differs] } : {}), moved };
-  if (acts.length) {
-    const code = "candidate.trial_reset_required";
-    return { kind: "refuse", signature, startDiffers: false, moved, evidence: { ok: false, code, instruction: WORDS.resetRequired(differs.length > 0), actsToUndo: acts, ...(differs.length ? { differs: [...differs] } : {}), ...(kept.length ? { cannotUndo: kept } : {}) } };
-  }
-  const code = "candidate.trial_start_differs";
-  return { kind: "refuse", signature, startDiffers: true, moved, evidence: { ok: false, code, instruction: WORDS.startDiffers(), differs: [...differs] } };
+  // Each refusal names its failed condition through `../reset-answers/` (t743); the acts' own settle says where a call can meet it.
+  if (acts.length) return { kind: "refuse", signature, startDiffers: false, moved, evidence: refusal("candidate.trial_reset_required", { failed: "acts_in_place", canMeet: "another_page", instruction: WORDS.resetRequired(differs.length > 0) + (unsettleable.length ? ` ${WORDS.unsettleable(true)}` : ""), actsToUndo: acts, ...apart, ...(differs.length ? { differs: [...differs] } : {}), ...(kept.length ? { cannotUndo: kept } : {}) }) };
+  return { kind: "refuse", signature, startDiffers: true, moved, evidence: refusal("candidate.trial_start_differs", { failed: "start_differs", canMeet: "another_page", instruction: WORDS.startDiffers(), differs: [...differs] }) };
+}
+
+/** An act no call can settle as the model is shown it (header, t743), with no key it does not have. */
+function unsettled(act: AutomationStudioSiteResetUnsettleableAct): AutomationStudioSiteResetUnsettleableAct & JsonObject {
+  return { act: act.act, did: act.did, ...(act.call ? { call: act.call } : {}), reason: act.reason, failed: act.failed };
 }
 
 /** An act as the model is shown it, with no key it does not have; an open act keeps what settles it (`settle`, L1). */

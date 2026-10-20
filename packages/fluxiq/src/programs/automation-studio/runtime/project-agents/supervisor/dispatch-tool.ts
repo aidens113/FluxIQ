@@ -276,7 +276,9 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
     ok: true,
     returns: order.ordered.map((brief, index) => compact(brief, returns[index]!, unchanged.get(brief.briefId), RETURN.closestTrial(state.answeredFor(brief.subflowKey).map(({ returned }) => returned)))),
     lastingActsInPlace: ports.projectLedger.snapshot().acts.filter((act) => act.inPlace).length,
-    ...(short ? { wholeTestStands: { complete: { revision: short.revision, digest: short.digest } } } : {}),
+    // Left on the target too, though no reset can undo them: no call can check or put them back (`./left-on-target.ts`, t743).
+    ...unsettleableCount(automationStudioProjectSupervisorLeftOnTarget(ports)),
+    ...(short ?{ wholeTestStands: { complete: { revision: short.revision, digest: short.digest } } } : {}),
     ...(singleYes ? { complete: singleYes } : {}),
     ...(toEnd?.by === "completion" ? { completeAgain: { ...toEnd.complete } } : {}),
     // The briefs held back as repeats of blocked ones, beside the returns of the others (header, t638).
@@ -577,6 +579,12 @@ function repeatedReset(context: AutomationStudioProjectSupervisorContext): Autom
   }, { retry: true });
 }
 
+/** How many acts left on the target no call can settle, under `lastingActsUnsettleable`, when any is (t743); nothing otherwise. */
+function unsettleableCount(left: AutomationStudioProjectSupervisorLeftOnTarget): JsonObject {
+  const count = left.acts.filter((act) => act.unsettleable === true).length;
+  return count ? { lastingActsUnsettleable: count } : {};
+}
+
 /** What is left on the target, as one comparable key. */
 function leftKey(left: AutomationStudioProjectSupervisorLeftOnTarget): string {
   return JSON.stringify({ acts: left.acts.map((act) => [act.act, act.undoable]).sort() });
@@ -629,6 +637,8 @@ function compact(brief: AutomationStudioProjectSubflowBrief, returned: Automatio
     calls: returned.calls,
     // Its builder was stopped for repeating itself, so its brief may be sent once more (header, lane-1 fix 1).
     ...(returned.stoppedRepeating ? { stoppedRepeating: true } : {}),
+    // Nothing a changed brief could say would let it go on, as Core read it (`../dispatch/ending.ts`, t743): guidance step 7 skips it.
+    ...(returned.terminalReason !== undefined ? { terminalReason: returned.terminalReason } : {}),
     ...(returned.interfaceRequest ? { interfaceRequest: { change: returned.interfaceRequest.change, why: returned.interfaceRequest.why } } : {}),
     ...(returned.findings ? { findings: [...returned.findings] } : {}),
     // The output its latest submission was refused on, which the next step names with the subflows taking it (t645).

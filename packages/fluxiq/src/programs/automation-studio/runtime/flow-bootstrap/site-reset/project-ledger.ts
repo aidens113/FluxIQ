@@ -30,10 +30,16 @@
 //   each brief's ledger is handed every brief's explored acts, asked whenever
 //   it matches or judges a trial act, so a whole run the supervisor's ledger
 //   records inherits a builder's named destination, named before or after.
+// - **A list Core cannot read again is lost for the whole build** (t743):
+//   every brief's ledger shares one store of them
+//   (`../reset-settlement/reach.ts`), so a later brief never looks for it
+//   again. The build's acts no call can settle (`unsatisfiable`) and the
+//   destination refs it was shown, with where each was read (`issuedRefs`),
+//   are read here build-wide, for Core's own wiring.
 
 import { AutomationStudioSiteResetCreateBaselines } from "./create-baselines.ts";
-import type { AutomationStudioSiteResetRead } from "./contracts.ts";
-import { automationStudioSiteResetInvalidCollectionGroups } from "./collection-groups.ts";
+import type { AutomationStudioSiteResetRead, AutomationStudioSiteResetUnsettleableAct } from "./contracts.ts";
+import { AutomationStudioSiteResetReach, automationStudioSiteResetInvalidCollectionGroups, type AutomationStudioSiteResetIssuedRef } from "../reset-settlement/index.ts";
 import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetRecordedAct } from "./ledger.ts";
 
 /** The highest act number `undoes` can name (`^act-[1-9][0-9]{0,3}$`), as a single ledger keeps it. */
@@ -56,6 +62,8 @@ export type AutomationStudioSiteResetProjectLedgerOptions = {
 
 export class AutomationStudioSiteResetProjectLedger {
   private readonly createBaselines = new AutomationStudioSiteResetCreateBaselines();
+  /** The lists Core cannot read again, for every brief of the build (header). */
+  private readonly reach = new AutomationStudioSiteResetReach();
   private readonly briefs = new Map<string, AutomationStudioSiteResetLedger>();
   private readonly acts: AutomationStudioSiteResetProjectAct[] = [];
   private readonly originals = new Map<string, NonNullable<AutomationStudioSiteResetRead["collections"]>[number]>();
@@ -79,6 +87,7 @@ export class AutomationStudioSiteResetProjectLedger {
     const ledger = new AutomationStudioSiteResetLedger({
       owner: briefId,
       createBaselines: this.createBaselines,
+      reach: this.reach,
       nextActId: () => this.nextActId(),
       sink: (recorded) => this.recorded(briefId, recorded),
       possible: true,
@@ -106,6 +115,16 @@ export class AutomationStudioSiteResetProjectLedger {
   snapshot(): AutomationStudioSiteResetProjectSnapshot {
     const inPlace = new Set([...this.briefs.values()].flatMap((ledger) => ledger.inPlace().map((act) => act.act)));
     return { acts: this.acts.map((act) => ({ ...structuredClone(act), inPlace: inPlace.has(act.act) })), nextAct: this.next };
+  }
+
+  /** Every act of the build no call can settle, each with its closed condition, in brief order (header, t743). */
+  unsatisfiable(): Array<AutomationStudioSiteResetUnsettleableAct & { owner: string }> {
+    return [...this.briefs].flatMap(([owner, ledger]) => ledger.unsatisfiable().map((act) => ({ ...act, owner })));
+  }
+
+  /** Every destination ref the build was shown, with how many items its list held and where it was read (header, t743). */
+  issuedRefs(): AutomationStudioSiteResetIssuedRef[] {
+    return this.createBaselines.issuedRefs();
   }
 
   /** Waits for every write asked so far; throws the first that failed. */

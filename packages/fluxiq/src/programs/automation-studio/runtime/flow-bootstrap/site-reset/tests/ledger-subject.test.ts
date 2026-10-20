@@ -19,6 +19,11 @@ function acted(callId: string, consequences: AutomationStudioActionConsequence[]
 }
 const aim = (consequences: AutomationStudioActionConsequence[], control: AutomationStudioSiteResetSpot = {}) => ({ effect: "mutate" as const, consequences, control });
 const back = async (): Promise<AutomationStudioSiteResetComparison> => ({ moved: true, differs: [] });
+/**
+ * Every act still on the site: those to undo, and those no call can settle (t743). These fixtures' reads vouch no list
+ * complete, so no ref can ever be issued and an act with no other witness is listed apart, as `gate_unsatisfiable`.
+ */
+const onSite = (ledger: AutomationStudioSiteResetLedger): string[] => [...ledger.inPlace(), ...ledger.unsatisfiable()].map((act) => act.act).sort();
 
 /** An add on a detail page: the control sits in no item, its own part titled by a seller link, the page by the product. */
 const DETAIL_ADD: AutomationStudioSiteResetSpot = { subject: "s:seller", page: "s:kettle" };
@@ -49,7 +54,7 @@ describe("observed destination witnesses for cross-page reset", () => {
     ledger.placed("act-1", { state: {}, location: "source", changed: ["created notice"], lines: { gone: [], added: ["created notice"] } });
     const checks = { compare: back, compareAt: async () => ({ moved: false, differs: [], lines: { gone: [], added: [] } }) };
     expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "refuse" });
-    expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1"]);
+    expect(onSite(ledger)).toEqual(["act-1"]);
   });
 
   it("does not infer no lasting effect from an unchanged modern source page", async () => {
@@ -63,7 +68,7 @@ describe("observed destination witnesses for cross-page reset", () => {
     const ledger = witnessed();
     await ledger.beforeTrial(back);
     expect(await ledger.beforeTrial(back, ["act-1"])).toMatchObject({ kind: "refuse" });
-    expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1"]);
+    expect(onSite(ledger)).toEqual(["act-1"]);
     expect(ledger.claim("act-1")).toMatchObject({ kind: "undo" });
     expect(ledger.target("act-1", aim(["delete"], destination))).toMatchObject({ kind: "admit" });
     ledger.explored(acted("remove", ["delete"], { undoes: "act-1", on: "subject" }, destination));
@@ -112,14 +117,14 @@ describe("observed destination witnesses for cross-page reset", () => {
     observe(ledger, ["s:document"]);
     ledger.target("act-1", aim(["delete"], destination));
     expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
-    expect(await ledger.beforeTrial(back, ["act-1"])).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_unproved", actsToRestore: [{ act: "act-1" }] } });
+    expect(await ledger.beforeTrial(back, ["act-1"])).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", failed: "acts_unsettleable", actsUnsettleable: [{ act: "act-1", failed: "nothing_to_name" }] } });
   });
 
   it("requires exact restoration for modern scope-only controls with no usable title", async () => {
     const ledger = new AutomationStudioSiteResetLedger();
     ledger.explored(acted("add", ["create_new"], {}, { scope: "p:source" }));
     expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
-    expect(await ledger.beforeTrial(back, ["act-1"])).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_unproved" } });
+    expect(await ledger.beforeTrial(back, ["act-1"])).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", failed: "acts_unsettleable", actsUnsettleable: [{ act: "act-1" }] } });
   });
 
   it("recovers from a wrong destination by allowing retargeting before anything was pressed", () => {
@@ -162,7 +167,7 @@ describe("observed destination witnesses for cross-page reset", () => {
     ledger.explored(acted("undo", ["delete"], { undoes: "act-1", on: "subject" }, destination));
     observe(ledger, ["s:baseline"]);
     expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
-    expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-2"]);
+    expect(onSite(ledger)).toEqual(["act-2"]);
   });
 
   it("ordinary page DOM absence without a complete collection never grants deletion", () => {
@@ -297,7 +302,7 @@ describe("reset preserves effects which predate the build", () => {
     ledger.explored(acted("undo.partial", ["modify_existing"], { undoes: "act-1", on: "subject" }, { subject: "s:document" }));
     ledger.undoSeen("act-1", true);
     expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
-    expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1"]);
+    expect(onSite(ledger)).toEqual(["act-1"]);
   });
 });
 

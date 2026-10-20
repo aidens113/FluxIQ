@@ -1,5 +1,5 @@
 // Whether one press flipped exactly one control at its place (L1 reset
-// settlement, `./settlement-control-tracker.ts`).
+// settlement, `./control-tracker.ts`).
 //
 // A press on a stateful control -- a like, a follow, a save, a star -- leaves
 // no item and often no list behind it: what it changed is the control's own

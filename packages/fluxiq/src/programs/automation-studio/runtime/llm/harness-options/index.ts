@@ -29,6 +29,8 @@ export {
   runWithAutomationStudioEvidenceBuildScope,
   type AutomationStudioEvidenceBuildScope
 } from "./evidence-build-scope.ts";
+// A move Core makes itself, framed `move: "core"` so a domain holds it to none of the model's rules (t743).
+export { automationStudioCoreMoveRunning, runAsAutomationStudioCoreMove } from "./core-move.ts";
 export { automationStudioEvidenceBuildBound, automationStudioEvidenceBuildId, runWithAutomationStudioEvidenceBuild } from "./evidence-build.ts";
 export {
   automationStudioHarnessInputWithDeniedEvidenceKeys,

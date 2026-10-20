@@ -97,6 +97,17 @@ selectable with `FLUXIQ_AUTHORING_MODE=candidate`.
   reason (the missing classes, the control and the request; or the check's
   code), naming any proposal it had. A reset whose ending fired but that left
   nothing of the build in place comes back `done`. A build stop is still a stop.
+- **A return says when nothing more can be done (t743).** A builder return
+  that is not `done` may carry `terminalReason`, one of a closed set
+  (`project-agents/contracts/builder-return.ts`): `allowance_spent`, `stopped`,
+  `person_ended` or `gate_unsatisfiable`; a `done` return carrying one is
+  refused `project.return_terminal_reason`. Core sets it from its own signals,
+  never from the words of the reason (`project-agents/dispatch/ending.ts`): the
+  allowance's refusal, the brief's or build's stop, the person-refusal and
+  person-only-check ending above (`ending.personEnded`), and, once per return in
+  `dispatch/run-brief.ts`, an act no call can settle still on the site
+  (`ending.gateUnsatisfiable`). A reason already set is kept. The supervisor sees
+  it on the dispatch answer (`supervisor/dispatch-tool.ts`).
 - **Permissions at promotion (t551).** Every brief's gate is registered with the
   build (`service/project-build/permissions.ts`), and the proposal's permission
   outcome reads the build's gate with every brief gate's answers in it: every
@@ -122,7 +133,18 @@ selectable with `FLUXIQ_AUTHORING_MODE=candidate`.
   looked again on each act's own page, holds none in place. A reset brief settles
   what Core's own looks can settle before its first decision, and a reset that
   cannot settle an act ends `blocked` with it still listed, so no further trial
-  runs on it (see "How an act settles" below).
+  runs on it (see "How an act settles" below). An act no call can settle any
+  more (`gate_unsatisfiable`, below) is never in the reset's list of acts to
+  undo, but everything that says what is on the site names it as left and not
+  undoable: the reset's words (`project-agents/dispatch/reset-done.ts`), the
+  person's left-on-target note (`supervisor/left-on-target.ts`, with
+  `unsettleable: true`), a phase start's `actsUnsettleable`
+  (`service/project-build/phase-start.ts`), a build-wide reset refusal
+  (`service/project-build/reset-calls.ts`), a repeated whole-trial refusal, and
+  the supervisor's `lastingActsUnsettleable` count. A reset whose only remaining
+  acts are of that kind is not asked to undo them: it comes back `blocked`, never
+  `done`, since a `done` reset would send the supervisor to a test the gate
+  refuses.
 - **Each builder act is placed (t551),** as a candidate build's is: a builder's
   call that makes a lasting act is read just before and just after it, in
   place, through the brief's own start check (`flow-bootstrap/site-reset/act-places.ts`),
@@ -140,6 +162,29 @@ selectable with `FLUXIQ_AUTHORING_MODE=candidate`.
   act of the build after a restart. The build waits for those writes before it
   saves its draft; a write that fails for a reason other than the record's own
   refusal fails the build.
+- **Repair before ending (t743).** While money is left, the supervisor's
+  `ended` completion is refused `project.completion_repair_first`
+  (`project-agents/supervisor/completion.ts`), with `unrepaired:
+  [{subflowKey, failingBrief}]`, while a subflow of the plan in force has a
+  latest build or repair return that is blocked or partial, carries no
+  `terminalReason`, and has had no changed brief after it
+  (`supervisor/state.ts` `unrepaired()`). A changed brief is a repair, or a
+  brief sent under another plan digest (after `project.amend_plan`); a brief
+  whose `sentAs` key equals the one before it is a resend and does not count.
+  The rule is checked after `ended_too_soon` and before the reset rule, and only
+  when no rescued pass or fallback stands. It holds nothing when the purse
+  cannot pay for one repair brief (`canPayForBrief`, the same
+  `automationStudioProjectSupervisorBriefSizing` check the dispatch makes; no
+  purse means it can pay), when fewer than `REPAIR_TURNS = 3` of the
+  supervisor's turns are left (`turnsLeft`, threaded from the loop through
+  `llm/evidence-loop/completion-attempt.ts` and
+  `llm/decision-handlers/completion.ts`), or while an act no call can settle is
+  on the site, since no changed brief could be tested. Each subflow is named in
+  at most one such refusal, so the rule can never hold a build to its ceiling.
+  The guidance's step 7 (`supervisor/guidance.ts`) says the same in generic
+  words: each subflow that came back blocked or partial gets one changed brief
+  first, a resend does not count, and a subflow whose return says nothing more
+  can be done is skipped.
 - **How it ends.** On a yes for the latest assembled revision the assembled
   candidate is saved as the Flow's candidate draft and promoted by the
   candidate's own promotion, after which the build record ends `promoted`. A
@@ -156,7 +201,11 @@ or an earlier trial left behind measures nothing (user, 2026-10-12, t462).
 Before every trial the model returns the site to the state the build started
 from, through the site's own controls, undoing exactly the lasting acts this
 build made and nothing that was there before it began
-(`runtime/flow-bootstrap/site-reset/`):
+(`runtime/flow-bootstrap/site-reset/`, with its siblings
+`flow-bootstrap/reset-settlement/`, which judges whether an act is settled, and
+`flow-bootstrap/reset-answers/`, which builds every refusal; the dependency runs
+one way, from site-reset to each sibling, and site-reset's barrel re-exports
+reset-settlement's):
 
 - **The ledger.** The build's permission wrapper tells
   `AutomationStudioSiteResetLedger` every exploration call it ran. One that was
@@ -188,7 +237,9 @@ build made and nothing that was there before it began
   without asking (`AutomationStudioActionPermissionAction.undoes`), once per
   act: the allowance is spent only by a landed undo of that act that declared
   `delete`, never by a navigation or a look under the claim (t471, lane B round
-  9). Naming an act whose allowance is spent is refused unrun as
+  9). A landed `modify_existing` undo admitted on the act's subject spends it
+  too (`site-reset/ledger.ts` `explored()`). Naming an act whose allowance is
+  spent is refused unrun as
   `candidate.undo_already_done`, naming the call that spent it. Any other undo
   is gated as any call is, so an act on something that pre-existed still asks.
   The record carries `undoes`, and the cross-check against the instruction
@@ -246,6 +297,20 @@ build made and nothing that was there before it began
   - `candidate.trial_start_differs`, once per phase, when nothing is left to
     undo, none is kept, but the start still differs.
 
+  Acts no call can settle (`gate_unsatisfiable`, see "How an act settles")
+  never admit a trial and never sit under `actsToUndo`. With nothing else in
+  place the policy refuses `candidate.trial_reset_required` with `failed:
+  "acts_unsettleable"`, `canMeet: "no_call"`, an empty `actsToUndo` and
+  `actsUnsettleable`, and its instruction is the honest exit: end the brief
+  `blocked`, naming those acts and `gate_unsatisfiable`
+  (`WORDS.unsettleable(false)`). With acts also to undo, the `acts_in_place`
+  refusal carries `actsUnsettleable` beside them and adds the same sentence.
+  The code stays `trial_reset_required`, so the whole-trial and repeat-guard
+  consumers route it unchanged; the supervisor's whole trial answers a gate
+  refusal listing only such acts `project.trial_unsettleable`, with no
+  `retry_allowed`, and tells the supervisor to end honestly
+  (`supervisor/whole-trial.ts`).
+
   The refusal answers `retry_allowed` and reports whether the arrival moved
   the page, so the identical retest reaches the gate. That matters in the
   wrap-up, which offers only submit and test. The gate never deadlocks over
@@ -269,18 +334,54 @@ build made and nothing that was there before it began
   holds whether or not the gate's `retry_allowed` reason also exempts the
   refusal. Refuse, look, refuse stays bounded by
   `llm_evidence_loop.repeat_without_progress`.
+- **Every refusal says what can meet it (t743).** Every site-reset refusal is
+  built by one constructor, `automationStudioSiteResetRefusal(code, answer)`
+  (`flow-bootstrap/reset-answers/refusal.ts`). It takes a `candidate.*` code and
+  requires a `failed` condition from a closed set (`reset-answers/failed.ts`:
+  `undo_spent`, `subject_differs`, `destination_not_read_now`,
+  `subject_there_before`, `acts_in_place`, `start_differs`,
+  `witness_unreachable`, `nothing_to_name`, `acts_unsettleable` and the rest),
+  `canMeet` (`this_page`, `another_page` or `no_call`;
+  `reset-answers/can-meet.ts`) and a non-empty `instruction`, and it throws on
+  anything outside those sets. The answer carries `condition`, one generic
+  sentence for the condition plus one for `canMeet`
+  (`reset-answers/condition-words.ts`, which `site-reset/words.ts` `condition`
+  delegates to); `no_call` says not to make that call, or a variation of it,
+  again. So the words survive where a caller later rewrites `instruction`
+  (`service/project-build/brief-ports.ts`, `service/project-build/reset-calls.ts`).
+  Each admission path names the first condition it fails, in order; for
+  example an undo on a different item than the act's is `subject_differs`, an
+  original row on a list the act named is `subject_there_before` with `no_call`.
+  An undo pressed on the act's own toggle that already shows the state the
+  build found is answered `candidate.undo_already_back` (`already_back`,
+  `no_call`), carrying the act's remaining `settle`, not `undo_unproved`. A
+  source scan (`site-reset/tests/refusal-sites.test.ts`, over site-reset and
+  reset-settlement) fails the build on a refusal built by hand: a `code:
+  "candidate.` literal, an `ok: false` value, or any other `candidate.*`
+  literal that is neither the constructor's first argument nor a comparison.
+  The builders' guidance before a reversible press is qualified the same way
+  (`WORDS.actionDeclarations()`, sent from `brief-ports.ts`): observe completely
+  the list where the effect would show only for a press with no other witness;
+  a control that shows its own state, or one inside a list already read
+  complete, needs none; and name a list read on a page that loads at its own
+  URL, so the reset can read it there again (`WORDS.ownUrl()`).
 
 ### How an act settles
 
 The site-reset ledger settles every strict act by one rule over observed state
 (L1 reset settlement replaced three narrow proofs, 2026-10-19). Sources:
-`site-reset/ledger.ts` and its `settlement-*.ts` modules, `site-reset/words.ts`,
-`site-reset/contracts.ts`.
+`site-reset/ledger.ts` (with the undo side in `site-reset/undo-claims.ts` and
+the act record in `site-reset/ledger-act.ts`), the settlement modules in
+`flow-bootstrap/reset-settlement/` (the judgement in `judge.ts`,
+`AutomationStudioSiteResetSettlementJudge`), `site-reset/words.ts`,
+`site-reset/contracts.ts`. The settlement modules import nothing from
+site-reset; they read structural local types (`reset-settlement/spot.ts`,
+the collection type in `reset-settlement/collection-groups.ts`).
 
 - **Witnesses.** Each lasting act of the build, explored or trial, carries the
   before-state of what it could change:
-  - **Group witnesses** (`settlement-act-groups.ts`,
-    `settlement-group-witness.ts`). The complete list groups its named scopes
+  - **Group witnesses** (`reset-settlement/act-groups.ts`,
+    `reset-settlement/group-witness.ts`). The complete list groups its named scopes
     fall in: its own list (the complete original its control sat in, read
     before it), every destination named for it (`resetDestination` on its own
     call, or on a later look that names it under `undoes`, resolved from an
@@ -297,13 +398,29 @@ The site-reset ledger settles every strict act by one rule over observed state
     block it. A relevant scope missing from the read, or a malformed group
     (`collection-groups.ts`), is `incomplete`; a group with no relevant scope
     read before the act is no witness.
-  - **Toggle witness** (`settlement-toggle-witness.ts`,
-    `settlement-control-tracker.ts`). Only for an act declaring exactly
+  - **Lists a witnessless act adopts** (`reset-settlement/judge.ts`). A trial
+    or entry act with no witness of its own adopts only lists it could have
+    changed: issued lists that some act of this ledger, or an explored act of
+    the build, named as its destination; and issued lists read on the act's own
+    page (`Act.pageLocation`, from the trial step's `controls.location` or the
+    tracker's location of its page). A list the model merely read elsewhere is
+    never adopted, and a list Core's look cannot read again (below) is dropped
+    from the adoption. With nothing adoptable the act is to `name` a list; once
+    refs are closed (no further ref can be issued, which includes a build that
+    never read a list complete), `name` is unmet for a trial act always, and for
+    an explored act only when no ref was ever issued.
+  - **Toggle witness** (`reset-settlement/toggle-witness.ts`,
+    `reset-settlement/control-tracker.ts`). Only for an act declaring exactly
     `modify_existing` whose control has a `place` and `state`
     (`control.place`/`control.state` on the declaration; `Spot.place`/`state`).
     For an explored act it comes from the `controls` of the reads just before
     and after the press; for a trial act from the step diff's
-    `controls: { page, before, after }` (`TrialActPlace.controls`). It exists
+    `controls: { page, before, after }` (`TrialActPlace.controls`). A looped
+    step's diff is scoped to its own pass: `executor/host-state.ts` passes the
+    attempt's `inputs` to the host's `inspectStateDiff` (an optional `inputs`
+    field in `host-runtime.ts`, the same inputs the captures receive), so a
+    domain can place each pass's control in the row that pass ran on, and each
+    pass's act carries its own row's spot rather than the recorded row's. It exists
     only when exactly one control at that place went from `state` to one other
     state and nothing else there moved. It holds when the last press at that
     place, landed no earlier than the act, left the place at the build's start
@@ -318,7 +435,35 @@ The site-reset ledger settles every strict act by one rule over observed state
   it was taken after the act and at the current clock. Partial reads (the
   domain did not positively establish completeness), malformed groups and
   stale reads never settle an act.
-- **Settled or open** (`settlement-decision.ts`). With every witness holding,
+- **Lists Core cannot read again** (`reset-settlement/reach.ts`). One store of
+  lost groups is shared by every brief's ledger of a build (the project
+  ledger's `reach` option). While each `lookAt` runs, the judge counts the
+  reads that reach its ledger: when the look landed and a group witness at
+  that location is still stale or incomplete, the group is lost at once; when
+  the look answered unread, it is lost after two separate pre-trial checks. A
+  lost group that is stale or incomplete is never a `look` again; one read
+  fresh later is judged as usual. With another witness holding, the act
+  settles (`restored` when a change was seen or an undo landed, otherwise
+  `unchanged`) and carries `unread: [refs]`, so later trials list it under
+  `startedWith.cannotUndo` with words saying it was put back as far as fresh
+  complete reads can show and naming the list that could not be read again
+  (`WORDS.settledAs`), which the judge is told. When lost groups are its only
+  witnesses, the act stays open with the reason `unreachable`, which no call
+  can meet.
+- **Acts no call can settle (`gate_unsatisfiable`).** An open act whose every
+  reason is unmet (`unreachable`, or `name` once refs are closed, above)
+  leaves `inPlace` and `actsToUndo`. Every claim and target refusal that
+  carries `actsToUndo`, `trial_reset_unproved` and the trial policy list it
+  under `actsUnsettleable: [{act, did, call?, reason: "gate_unsatisfiable",
+  failed}]`; `project-reset.ts` merges them across ledgers, puts a meetable
+  refusal first and appends the exit words when the first lacks them. Trials
+  stay refused while such an act is on the site: the reset rule is not
+  weakened, and the way out is the honest exit (the brief ends `blocked`
+  naming the acts, and its return carries `terminalReason:
+  "gate_unsatisfiable"`). The ledger reads `unsatisfiable()` and
+  `issuedRefs()` (issued refs with count and location); the project ledger
+  reads them build-wide, `unsatisfiable()` with each act's `owner`.
+- **Settled or open** (`reset-settlement/decision.ts`). With every witness holding,
   an act is **settled restored** when a change was seen at some point or an
   undo of it landed, and **settled unchanged** when no read ever showed a
   change. Both are sticky, decided as soon as a fresh read settles them. A
@@ -339,8 +484,14 @@ The site-reset ledger settles every strict act by one rule over observed state
   project build `service/project-build/brief-ports.ts`, where both the
   builder's trial reset and a reset's `remainingActs` look, each location once
   per ask). The model is asked only for what Core could not observe or what
-  still differs. Where a caller passes no `lookAt`, Core never looks.
-- **Per-act `settle` feedback** (`settlement-words.ts`). Each open act under
+  still differs. Where a caller passes no `lookAt`, Core never looks. Core's
+  own moves are not the model's calls: the start check's `compare`,
+  `compareAt` and `lookAt` arrivals run inside an async-context marker
+  (`runAsAutomationStudioCoreMove`, `llm/harness-options/core-move.ts`), and
+  the registry frames such a call `move: "core"` ("A domain tool call's build
+  scope and durable state" below), so a domain can exempt them from rules meant
+  for the model.
+- **Per-act `settle` feedback** (`reset-settlement/words.ts`). Each open act under
   `actsToUndo`, `actsToRestore` and in a reset brief carries `settle`
   (`AutomationStudioSiteResetNamedAct.settle`), one generic sentence built from
   its open reasons: read a named list at a location completely again; that list
@@ -353,7 +504,7 @@ The site-reset ledger settles every strict act by one rule over observed state
   words state the rule once (`WORDS.settleModel()`).
 - **Trial acts inherit destinations.** A trial step cannot carry a
   `resetDestination`, so a strict trial act that repeats an explored act
-  (`settlement-trial-repeat.ts`: the same lasting classes, the same operation
+  (`reset-settlement/trial-repeat.ts`: the same lasting classes, the same operation
   where both say which, the subject or page token present and equal on both,
   and no contradicting subject, page or resource) shares that act's
   destinations, lazily: one named later for the explored act covers the trial
@@ -362,10 +513,31 @@ The site-reset ledger settles every strict act by one rule over observed state
   `place`, shows the act's after state, and declares `[]` or
   `[modify_existing]` is admitted `own` with `modify_existing` unasked. A
   control at that place in any other state, or declaring anything else, is
-  refused unrun `candidate.undo_unproved`.
+  refused unrun `candidate.undo_unproved`; one already showing the state the
+  build found is answered `candidate.undo_already_back`.
+- **Removing a subject newly present on a named destination (t743).** A strict
+  act's undo on a control whose `scope` is one of the act's destinations, or a
+  destination lent from the explored act it repeats (`Act.lent`, gathered by
+  the judge's `lent(act)` before admission), is admitted once, on `subject`,
+  without asking (`site-reset/undo-admission.ts`, `destinationRemoval`, after
+  every earlier admission path). It needs, in order: a subject token
+  (`no_item_identity`); the allowance unspent (`undo_spent`); an original read
+  of that list before the act (`no_destination_read_before`); the list read
+  completely now, its latest read after the act (`destination_not_read_now`);
+  the subject absent from the original (`subject_there_before`) and present now
+  (`subject_not_present_now`); an act that declared `create_new` or
+  `modify_existing` (`no_exact_inverse`); and an undo declaring only `delete`
+  or `modify_existing` (`consequence_not_inverse`). The admission records the
+  subject inverse, so the destination's group witness settles the act as
+  usual, and a landed removal spends it. An undo on a named destination that is
+  not about the act is refused with the removal's own failed condition (an
+  original row is `subject_there_before`, `no_call`); a list the act never
+  named keeps its earlier condition.
 - **Invariants kept.** Pre-existing items are never touched: every other
   admission rule (own item, created item, follow-up confirmation, subject
-  delete of a subject proved absent, witnessed transfer) is unchanged.
+  delete of a subject proved absent, witnessed transfer) is unchanged, and the
+  removal on a named destination touches only a subject proved absent from
+  that list's original.
   Partial or stale reads never settle. `cannotUndo` never settles a strict
   act: it stays listed with its `settle` until fresh reads settle it. Legacy
   unscoped acts keep their earlier paths (source-page `compareAt`, landed-undo
@@ -380,7 +552,10 @@ The site-reset ledger settles every strict act by one rule over observed state
   under `cannotUndo`, each one already listed by an earlier refusal with what
   settles it, is accepted as the honest unresolved ending, and the reset comes
   back `blocked` with those acts still to undo. The ledger keeps refusing
-  trials while they are open, so no trial runs on them.
+  trials while they are open, so no trial runs on them. Acts no call can
+  settle are never in `remainingActs`; a reset left with only those completes
+  at once and comes back `blocked` with `terminalReason: "gate_unsatisfiable"`,
+  its words naming them as left (`dispatch/ending.ts` `gateUnsatisfiable`).
 
 Legacy mode is unchanged. Its dry-run test verifies lasting steps rather than
 redoing them (`flow-draft/verify-only.ts`), so it needs exploration's effects
@@ -632,6 +807,44 @@ never read. Promotion keeps a learned pace: the deciding trial's learned pace
 raises the matching plan node's `paceMs` (never lowers an authored one, held
 to the plan's bound), and the `candidateTrial` audit detail names
 `learnedPaces` and `raisedPaces` (`service/candidate-trial/promotion.ts`).
+
+**The feedback always names the step a run stopped at (t743).** A run of more
+than `MAX_STEPS` (40) steps lists the first 39 and then the last step the run
+attempted, under its real step number and with its full entry
+(`service/candidate-trial/feedback.ts`); `stepsLeftOut` counts the steps
+between them. When that last step failed, the stop
+(`flow-bootstrap/candidate/trial-stop.ts`) is about it, with `leftOut`, and its
+sentence says the listing shows the first N and then that step, with the M
+between them left out; with steps left out it does not claim how often that
+step ran before. A long run whose last step did not fail ends on the graph,
+start or run sentence, and the run sentence counts the listed steps plus those
+left out. The step log names what a tool threw by the error's name
+(`llm/step-log/summary.ts`), and its `loopVerdict` is
+`llm_evidence_loop.cancelled` for an `AbortError` or `TimeoutError`,
+otherwise `llm_evidence_loop.tool_failed` (`llm/step-log/tool-step.ts`).
+
+**Judge advice after a refused undisclosed read (t743).** The judge's advice
+reaches the builder through the subflow's repeated-advice memory
+(`flow-bootstrap/subflow-candidate/repeated-advice.ts`), which the dispatcher
+shares across a build's briefs. That memory holds an
+`AutomationStudioSubflowDisclosureAdvice`
+(`subflow-candidate/disclosure-advice.ts`): once a tool answer of the build was
+refused with `detail.reason === "incomplete_text"` (seen by `builder-loop.ts`
+on every call that is not a submit or a test), or a trial step's `actual`
+begins with that marker, a sentence of a judged no's `judge.advice`, or of
+`unconfirmedReading.advice` or `answeredReading.advice`, that asks to add or
+include a field or column is replaced by Core's disclosure-order sentence: read
+the row-context columns without the field; repeat over that read, pressing each
+kept row's own disclosure control; then, after the repeat, read the same
+listing again with the field, giving both reads the same conditions. It is
+said once per advice; a later judge call asking the same is told to follow the
+order above. The rewrite runs after the repeat filter, and the judge prompts
+are unchanged. The detection is a sentence pattern, and it does not check that
+the refused read was the same listing. **Cross-repository contract:** Core
+reads the downstream closed refusal word `incomplete_text` (its
+`detail.reason`, `detail.missing` and the `actual` prefix), owned by the web
+domain's `domain/src/runtime/llm-evidence/action-failure/refusal.ts`; renaming
+it there silently turns this rewrite off.
 
 ## Context boundary
 
@@ -2981,8 +3194,8 @@ built-in options and the domain's alike, inside
 `runWithAutomationStudioEvidenceBuildScope`; `core.recall_result` sits outside
 it. Anywhere inside its `executeTool`, after awaits included, the domain reads
 `automationStudioEvidenceBuildScope()` (from `fluxiq/automation-studio`), a
-frozen `{ projectId, flowId, buildId, callScope?, opening? }`, or `undefined`
-outside a registry call.
+frozen `{ projectId, flowId, buildId, callScope?, opening?, move? }`, or
+`undefined` outside a registry call.
 
 - **`opening`** is decided from Core's own call-id format, so nothing a model
   writes can produce it (model ids live under `model.`). `"fresh"`: an opening
@@ -2993,6 +3206,26 @@ outside a registry call.
   already holds the Flow, and of a stopped build continued later. Absent on
   every other call. The domain still reads `arrived` and `repairs` from `value`
   for their own meaning.
+- **`places`** (t743) rides every brief's opening call's `value` -- a build,
+  repair or reset brief's, beside `repairs` when there are any -- as a list of
+  the locations of the build's issued destination refs, in the order they were
+  issued, read when the opening is made, so earlier briefs' refs are included
+  (`project-agents/dispatch/run-brief.ts`, from the ports' `issuedRefs()`, which
+  `service/project-build/brief-ports.ts` fills from the project ledger with
+  each ref's location). Duplicates, the withheld value and empty entries are
+  left out, and the key is absent when none remain. It is the same kind of key
+  as `repairs`: meant to be read on an opening only, so every location Core's
+  words name is one the domain can admit even after its in-process memory was
+  lost.
+- **`move: "core"`** (t743) marks a call that is a move Core makes itself: the
+  site reset's `compare`, `compareAt` and `lookAt` arrivals
+  (`flow-bootstrap/site-reset/start-check.ts`, which runs them inside
+  `runAsAutomationStudioCoreMove`). The registry writes it when
+  `automationStudioCoreMoveRunning()` is true as it frames the call
+  (`llm/harness-options/core-move.ts`, one store per process under a registered
+  symbol, so a second copy of Core in the process reads the same marker). It
+  never comes from the call id: a model call whose id has the same shape as
+  Core's carries no `move`. It is absent on every call the model wrote.
 - **`callScope`** is the scope of the binding's latest opening
   (`initial.<toolId>.<scope>`, read by `automationStudioLlmEvidenceOpeningCallScope`
   beside the call-id writer), carried to every later call of the round and
@@ -3152,9 +3385,10 @@ Original-state proof still gates the next ordinary trial.
 Project resets route current inventories to the ledger owning an act without
 seeding another builder's baseline from an independent resource. Distinct
 resource scopes cannot overwrite each other's current inventories. Builders
-are told to inspect a destination's complete item inventory before creating
-effects they will later need to remove there; missing prior observation fails
-closed. Restoration compares every baseline row's semantic state fingerprint
+are told to inspect a destination's complete item inventory before a
+reversible press that has no other witness (a control showing its own state,
+or one inside a list already read complete, needs none); missing prior
+observation fails closed. Restoration compares every baseline row's semantic state fingerprint
 and subject inventory in each relevant scope. A sibling complete collection in
 the same fresh read refutes restoration only when it holds one of the act's
 subjects that it did not hold originally with the same row value; a sibling

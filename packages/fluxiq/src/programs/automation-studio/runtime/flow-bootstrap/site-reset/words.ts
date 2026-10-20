@@ -6,11 +6,17 @@
 // teaches to the test").
 
 import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../executor/index.ts";
-import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY as UNDOES } from "./contracts.ts";
-import type { AutomationStudioSiteResetIssuedRef } from "./settlement-words.ts";
+import { automationStudioSiteResetConditionWords, type AutomationStudioSiteResetCanMeet, type AutomationStudioSiteResetFailed } from "../reset-answers/index.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY as UNDOES, type AutomationStudioSiteResetIssuedRef } from "../reset-settlement/index.ts";
 
 /**
- * How a reversible act of this build settles (L1, `./settlement-decision.ts`):
+ * Where a destination should be read (t743, photo debug fix 2): a list shown over another page may not read the same when
+ * its URL is loaded again, and then nothing could ever show the act put back. Said wherever a destination is asked for.
+ */
+const OWN_URL = "Name a list read on a page that loads at its own URL, so the reset can read it there again.";
+
+/**
+ * How a reversible act of this build settles (L1, `../reset-settlement/decision.ts`):
  * the one rule, said once, beside each open act's own `settle`.
  */
 const SETTLE_MODEL = "An act counts as settled when fresh complete reads, taken after it and after the latest lasting action or trial, show everything it could change as the build found it: a list it sat in or was named for, row for row and value for value, and its own control's state where it flipped one. "
@@ -18,8 +24,15 @@ const SETTLE_MODEL = "An act counts as settled when fresh complete reads, taken 
   + "Core reads the lists and pages it can reach again itself before asking. Each open act says under settle what is still needed: read a named list completely again, undo what still differs there, press its own control back, or, where nothing read shows where its effect would be, read that list completely and name its ref as resetDestination on a look that names the act under undoes, a ref only a resetDestinations receipt prints. Where nothing was read complete before the build's first lasting act, such an act cannot be settled in this build. "
   + "cannotUndo never settles a reversible act.";
 
+/** How an act settled with no change seen is said (L1). */
+const LEFT_UNCHANGED = "left on the site; nothing it could change showed a change in fresh complete reads taken after it";
+
 /** The instructions the ledger and its trial policy answer with. */
 export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
+  /** The condition a refusal names as failed, and whether any call can meet it (`../reset-answers/condition-words.ts`, t743). */
+  condition(failed: AutomationStudioSiteResetFailed, canMeet: AutomationStudioSiteResetCanMeet): string {
+    return automationStudioSiteResetConditionWords(failed, canMeet);
+  },
   /** A trial refused because acts this build made are still in place. */
   resetRequired(differs: boolean): string {
     return "Before this trial, put the site back the way this build found it, so the trial measures only what the Flow does. "
@@ -33,13 +46,32 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
       + SETTLE_MODEL + " "
       + "Then test the same revision again.";
   },
-  /** How a reversible act settles (L1, `./settlement-decision.ts`): said with each refusal that lists open acts. */
+  /** How a reversible act settles (L1, `../reset-settlement/decision.ts`): said with each refusal that lists open acts. */
   settleModel(): string {
     return SETTLE_MODEL;
   },
   /** Said after an act settled with no change seen (L1): fresh complete reads of everything it could change showed it as the build found it. */
   leftUnchanged(): string {
-    return "left on the site; nothing it could change showed a change in fresh complete reads taken after it";
+    return LEFT_UNCHANGED;
+  },
+  /**
+   * How a settled act is said to every later trial's judge under `startedWith.cannotUndo` (L1, t743): left unchanged, or put
+   * back, with the refs of lists named for it that Core could not read again (`unread`) where there were any.
+   */
+  settledAs(how: "restored" | "unchanged", unread?: readonly string[]): string {
+    const lists = unread === undefined ? "" : unread.length ? `${unread.length === 1 ? "the list" : "the lists"} named for it (${unread.join(", ")})` : "a list named for it";
+    const notRead = lists ? `${lists} could not be read again, so whether ${unread !== undefined && unread.length > 1 ? "they are" : "it is"} as the build found it is not known` : "";
+    if (how === "unchanged") return notRead ? `${LEFT_UNCHANGED}; ${notRead}` : LEFT_UNCHANGED;
+    return notRead ? `put back as far as fresh complete reads can show; ${notRead}` : "put back: fresh complete reads show everything it could change as the build found it";
+  },
+  /**
+   * Acts no call can settle (t743, `gate_unsatisfiable`): said with each refusal that lists them under actsUnsettleable.
+   * `toUndo`: other acts are still listed under actsToUndo, and are undone first.
+   */
+  unsettleable(toUndo: boolean): string {
+    return "Each act under actsUnsettleable is still on the site, and no call can settle it: its failed condition says why, and nothing that can still be read would show it put back. "
+      + "Do not try to undo it, look for it again, or name it under cannotUndo: none of that settles it, and no trial can run while it is in place. "
+      + (toUndo ? "Undo the acts under actsToUndo first; then, if acts under actsUnsettleable remain, end this brief as blocked, naming each of them and gate_unsatisfiable as the reason." : "End this brief now as blocked, naming each act under actsUnsettleable and gate_unsatisfiable as the reason.");
   },
   /** A trial refused because a kept reversible act of this build is not settled (L1): cannotUndo does not settle it. */
   unprovedReset(): string {
@@ -56,7 +88,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
   /** A trial that ran with acts of this build still in place (`startedWith`). */
   startedWith(kept: boolean): string {
     return "This trial ran on a site that was not wholly as the build found it: what is listed here was already in place when it began, and the judge was told so. "
-      + (kept ? "Each act under cannotUndo is left in place, and its words say why: the site offers no control that undoes it, or nothing it could change showed a change. It stays in place before every later trial too. " : "")
+      + (kept ? "Each act under cannotUndo is left in place, or could not be fully checked, and its words say why: the site offers no control that undoes it, nothing it could change showed a change, or a list named for it could not be read again. It is listed before every later trial too. " : "")
       + "A step that would do one of these acts again may find it already done; write the Flow so it passes over an item that is already done rather than failing on it.";
   },
   /** A call whose `undoes` names an act whose one unasked removal is spent. */
@@ -100,11 +132,24 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
       + "A trial run with it in place lists it under startedWith.cannotUndo, and its judge is told; an identified reversible effect still requires proved restoration before an ordinary trial. "
       + "Undo another listed act, or report the unresolved reset honestly.";
   },
-  /** An unproved claim stays refused, even when another owned effect is observed. */
+  /**
+   * An unproved claim stays refused, even when another owned effect is observed. Its refusal names the failed condition
+   * under condition (t743, rerun round 4 job `run-mvgw1854-5d10955b`: "inspect" words with no condition sent the builder
+   * through every variation of one refused call).
+   */
   unprovedUndo(other: boolean): string {
-    return "That call has no proved exact inverse on its target and was not run. Inspect what this build created or changed and the original observations needed to restore it; declare the inverse honestly. "
+    return "That call is not a proved exact inverse of the act, for the reason under condition, and was not run. "
+      + "Heed what condition says about whether another call can meet it; where it says no call can, do not send this call or a variation of it again. "
       + (other ? `Another recorded act on this item has its own observed effect. Inspect its receipt and explicitly name its id in "${UNDOES}" if that is the effect you are reversing. This information does not reassign or execute the refused claim. ` : "")
       + "Looking or navigating is safe; an undeclared control press or a matching name alone proves no restoration. Remaining effects still require fresh complete original-state evidence before an ordinary trial.";
+  },
+  /**
+   * An undo pressed on its own toggle's place while that control already shows the state the build found (t743, photo
+   * `run-mvgw7320-de416190` 0151): pressing it would make the act's change again. The act's remaining settle is beside it.
+   */
+  alreadyBack(): string {
+    return "That call was not run: the act's own control already shows the state this build found it in, so there is nothing to press, and pressing it would make the act's change again. "
+      + `Do not press it under "${UNDOES}". settle, where present, says what else this act still needs; a fresh complete read of that control's page shows it as found.`;
   },
   /** A call whose `undoes` names no act of this build that may be undone now. */
   unknownAct(acts: boolean): string {
@@ -118,7 +163,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
   witnessRequired(issued: readonly AutomationStudioSiteResetIssuedRef[] = []): string {
     const known = issued.map((entry) => `${entry.ref} (${entry.count} ${entry.count === 1 ? "item" : "items"}${placed(entry.location)})`);
     return "This press was not run. Before this build's first reversible lasting change, observe completely, through the site's own controls, the list where its effect would show, "
-      + "then retry this press naming the resetDestination ref that observation issues. "
+      + `then retry this press naming the resetDestination ref that observation issues. ${OWN_URL} `
       + (known.length ? `Refs already issued for lists read complete: ${known.join(", ")}; if the list where this press's effect would show is one of them, retry naming its ref as resetDestination without reading it again. ` : "")
       + "A press on a control inside a list already read complete, or on a control whose own state the page shows, needs no ref. "
       + "Without such a list nothing could ever show the change put back, and no trial could run for the rest of the build. Looking and navigating remain available; no new permission is needed.";
@@ -142,6 +187,32 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
       + "Each act under actsStillOpen says under settle what is still needed."
       + (example ? " To name a list for one, make the look again with both keys, as in example." : "");
   },
+  /**
+   * An identified reversible creation with no original of its destination (`./create-baselines.ts`): moved here from its
+   * refusal whole (t743), with the clause naming a list read on a page that loads at its own URL (photo debug fix 2).
+   */
+  createBaselineRequired(): string {
+    return "This creation was not run. Before creating an identified reversible effect, observe its destination's complete original inventory through the site's own controls, then return and retry with the resetDestination reference that observation issued. "
+      + "The original inventory must belong to this resource and prove the subject absent. A first observation after a lasting build effect, another resource, a matching name, or an invented reference is insufficient. "
+      + `${OWN_URL} Looking and navigating remain available; no new permission is needed.`;
+  },
+  /**
+   * The build's standing guidance on declaring lasting acts and observing their destinations, aligned with
+   * `resetDestination` in `./undoes-tool.ts` (t743, photo debug fix 2: an unconditional "observe its destination's
+   * complete original inventory" sent a builder whose press already had a toggle witness after a list it could never read
+   * again). Only a press with no other witness needs a destination; a control that shows its own state needs none.
+   */
+  actionDeclarations(): string {
+    return "Before a reversible lasting press that has no other witness, observe completely the list where its effect would show; a control that shows its own state, or one inside a list already read complete, needs none. "
+      + `${OWN_URL} `
+      + "Identified reversible create_new exploration requires its issued resetDestinations.collections ref under resetDestination, unless exact same-scope original evidence already proves absence; a missing baseline refusal changes nothing, so observe safely and retry. "
+      + "Declare the lasting consequences of every recovery press as honestly as the original operation, even when its control offers recovery from an error. Truly nonlasting actions keep an empty declaration. "
+      + "A successful control press or a vanished source message does not prove destination restoration. Return every identified original collection to its original ordered rows and values before another trial; report unproved restoration honestly.";
+  },
+  /** Where a destination should be read (t743, photo debug fix 2): said beside `resetDestination` in `./undoes-tool.ts` and wherever a destination is asked for. */
+  ownUrl(): string {
+    return OWN_URL;
+  },
   /** A `resetDestination` naming no ref this build was shown (rerun round 2): refused before the call runs. */
   destinationUnissued(): string {
     return "This call was not run: its resetDestination names no ref this build was shown. Refs come only from a resetDestinations receipt printed after a complete observation of a list; never invent one. "
@@ -149,7 +220,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
   }
 });
 
-/** ` at <location>`, or nothing where the location is absent or withheld (`./settlement-words.ts` says places the same way). */
+/** ` at <location>`, or nothing where the location is absent or withheld (`../reset-settlement/words.ts` says places the same way). */
 function placed(location: string | undefined): string {
   return location && !location.includes(AUTOMATION_STUDIO_WITHHELD_VALUE) ? ` at ${location}` : "";
 }

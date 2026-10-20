@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioSiteResetProjectLedger } from "../../../flow-bootstrap/site-reset/index.ts";
+import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE, AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
 import { STOPPED_REASON, planInput, project, subflow, taskSpecInput, type BuilderPlan } from "./supervisor-fixture.ts";
 import { FIND, HOLD, assembled, brief, call, dispatch, end, supervise, test, type Entry } from "./supervisor-script.ts";
@@ -284,5 +285,89 @@ describe("a brief sent again after its builder was stopped for repeating itself"
       expect(words).toContain("once more unchanged");
       expect(words).toContain("earlier attempt");
     }
+  });
+});
+
+// Rerun round 4 (t743): the supervisor ended right after one brief came back
+// blocked, with most of the build's money left. While the build can still pay
+// for a brief, an ending is held once for each failed subflow until it has had
+// one changed brief: a repair, or a brief under an amended plan. The same brief
+// sent again does not count, and a return that says nothing more can be done
+// (a closed terminal reason) holds nothing.
+describe("an ending while a failed subflow has had no changed brief", () => {
+  const money = () => new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.5 });
+  /** A not-done return lists the trial its builder ran, so a repair can name it. */
+  const listed = (sent: { briefId: string }) => [{ kind: "subflow_trial" as const, receiptId: `trial-${sent.briefId}`, digest: "c".repeat(64), verdict: "no" as const }];
+  const repairNaming = (briefId: string) => dispatch([brief("main", ["p1"], [], { kind: "repair", failingReceipt: { kind: "subflow_trial", receiptId: `trial-${briefId}`, digest: "c".repeat(64) } })], "Repair what the trial said failed.");
+
+  it("is refused once after one blocked return with money left, naming the subflow and its failing brief, then let through", async () => {
+    const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([brief("main", ["p1"])]), end("blocked"), end("blocked")], project({ builder: () => "blocked", purse: money() }), { spareTurns: 3 });
+    expect(run.feedback).toEqual([expect.objectContaining({ code: "project.completion_repair_first", instruction: GUIDANCE.completion.repairFirst, unrepaired: [{ subflowKey: "main", failingBrief: "brief-1" }] })]);
+    expect(run.outcome).toMatchObject({ status: "ended", ending: { outcome: "blocked" } });
+  });
+
+  // t743: turns pay for a brief as money does. With too few decisions left to dispatch the repair, send a reset and end
+  // again, a held ending would only run the turns out and end the build on a guard instead of the supervisor's words.
+  it("is not held when the loop has too few decisions left to send the repair and end again", async () => {
+    const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([brief("main", ["p1"])]), end("blocked"), end("blocked")], project({ builder: () => "blocked", purse: money() }), { spareTurns: 1 });
+    expect(run.feedback).toEqual([]);
+    expect(run.outcome).toMatchObject({ status: "ended", ending: { outcome: "blocked" } });
+  });
+
+  it("is admitted once a repair of that subflow came back short too", async () => {
+    const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([brief("main", ["p1"])]), repairNaming("brief-1"), end("blocked")], project({ builder: () => "blocked", notDoneTrials: listed, purse: money() }));
+    expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build"], ["repair"]]);
+    expect(run.feedback).toEqual([]);
+    expect(run.outcome).toMatchObject({ status: "ended", ending: { outcome: "blocked" } });
+  });
+
+  it("is admitted when the failing return carries a closed terminal reason", async () => {
+    const built = project({ builder: () => "blocked", purse: money() });
+    const inner = built.ports.dispatch;
+    built.ports.dispatch = async (request) => ({ returns: (await inner(request)).returns.map((returned) => ({ ...returned, terminalReason: "person_ended" as const })) });
+    const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([brief("main", ["p1"])]), end("blocked")], built);
+    expect(run.feedback).toEqual([]);
+    expect(run.outcome).toMatchObject({ status: "ended", ending: { outcome: "blocked" } });
+  });
+
+  it("is admitted when the build cannot pay for another brief", async () => {
+    const purse = money();
+    // Whatever the builders could still be given is spent once the brief started.
+    const onBrief = () => {
+      const drained = purse.hold({ projectedCostUsd: purse.allocatableUsd(), estimatedInputTokens: 10, maxOutputTokens: 10 });
+      if (drained.ok) drained.hold.settle();
+    };
+    const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([brief("main", ["p1"])]), end("blocked")], project({ builder: () => "blocked", purse, onBrief }));
+    expect(run.feedback).toEqual([]);
+    expect(run.outcome).toMatchObject({ status: "ended", ending: { outcome: "blocked" } });
+  });
+
+  it("is refused after the same brief was only sent again, naming the latest return", async () => {
+    const run = await supervise([
+      call(IDS.writePlan, ONE_PART),
+      dispatch([brief("main", ["p1"])]),
+      dispatch([brief("main", ["p1"])], "Try the same brief again."),
+      end("partial"),
+      end("partial")
+    ], project({ builder: () => "partial", purse: money() }), { spareTurns: 3 });
+    expect(run.dispatched).toHaveLength(2);
+    expect(run.feedback.map((entry) => entry.code)).toEqual(["project.completion_repair_first"]);
+    expect(run.feedback[0]!.unrepaired).toEqual([{ subflowKey: "main", failingBrief: "brief-2" }]);
+  });
+
+  // t743 (S2): while an act no call can settle is on the target, no trial can run anywhere in the build, so no changed
+  // brief could be tested, and no reset undoes it. The act is a press on a control in no list any read showed.
+  it("is admitted, by neither rule held, while an act no call can settle is on the target, and its reason names it as left", async () => {
+    const seeded = (ledger: AutomationStudioSiteResetProjectLedger) => {
+      if (ledger.snapshot().acts.length) return;
+      ledger.forBrief("brief.earlier").explored({ callId: "mark", toolId: "core.run_node", landed: true, declared: { permitted: true, effect: "mutate", consequences: ["modify_existing"], control: { name: "Mark", kind: "button", subject: "s:mark" }, verb: "press" } });
+      expect(ledger.unsatisfiable().map((act) => act.act)).toEqual(["act-1"]);
+    };
+    const built = project({ builder: () => "blocked", purse: money(), onBrief: () => seeded(built.ledger) });
+    const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([brief("main", ["p1"])]), end("blocked", "The list could not be read.")], built);
+    expect(run.feedback).toEqual([]);
+    expect(run.outcome).toMatchObject({ status: "ended", ending: { outcome: "blocked", reason: "The list could not be read. Still on the target from this build: press \"Mark\" button (it can no longer be checked or put back; it may still be there)." } });
+    // The dispatch's answer counts it apart from the acts a reset could undo.
+    expect(answersOf(run.shown, IDS.dispatch)[0]).toMatchObject({ lastingActsInPlace: 0, lastingActsUnsettleable: 1 });
   });
 });

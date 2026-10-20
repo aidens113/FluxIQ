@@ -118,6 +118,8 @@ const HOW_TO_WORK = [
   "6. Test that exact Flow with core.test_candidate. If this build left lasting acts on the target, first dispatch a reset brief, which puts the target back the way the build found it. "
     + "With one subflow there is no such test or reset to send: its builder put the target back before its own test.",
   "7. Complete with the complete object project.assemble returned, and only after its test answered yes. If the task cannot be finished, complete with ended (blocked or partial) and your reason, once a brief has come back blocked or partial or a whole test has not passed. "
+    + "While this build can still pay for a brief, first give each subflow that came back blocked or partial one changed brief: a repair naming the trial that failed, or a changed plan with project.amend_plan and a brief under it. "
+    + "Sending the same brief again does not count. Skip a subflow whose return says nothing more can be done: its allowance was spent, the build was stopped, only the person could let it go on, or something the build did can no longer be checked or put back, so no test can run. "
     + "Before you end, if this build left lasting acts on the target, dispatch a reset brief first; Core adds whatever is still left to your reason, so the person knows. "
     + "The person who asked for the Flow reads your reason as it is: write it for them in plain words, saying what could not be done and why, as they would see it on the target. Never put codes, tool or subflow names, or this build's own terms (brief, builder, proposal, assembly, port, lasting act) in it."
 ].join("\n");
@@ -271,6 +273,11 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     assembleRefused: "The Flow could not be assembled: every listed issue names the subflow and why. Send the briefs it needs, or change the plan, then assemble again.",
     composedRefused: "The assembled Flow was refused, as listed. Change the subflow an issue names with a new brief, or change the plan, then assemble again.",
     resetRequired: "Lasting acts this build made are still on the target, so the whole test would not start where the build started. Dispatch a reset brief (kind reset, no parts, no permitted acts) with project.dispatch, then test again.",
+    /** Said after `resetRequired` when the refusal also lists acts no call can settle (`./whole-trial.ts`, t743). */
+    resetRequiredUnsettleable: "Each act under actsUnsettleable can no longer be checked or put back, so no reset undoes it, and no test can run while it is on the target: once the reset is back, end honestly with ended and your reason; Core names what is left.",
+    /** A whole test refused only for acts no call can settle (`./whole-trial.ts`, t743): no reset or test can help. */
+    trialUnsettleable: "Something this build did, listed under actsUnsettleable, can no longer be checked or put back, so no reset undoes it and no test can run while it is on the target. "
+      + "Do not test again or send a reset for it. End honestly now with ended and your reason; Core names what is left after your words.",
     /** After the figures of a whole test the build's working time left cannot cover (`./whole-trial.ts`, G2): no test ran. */
     outOfTime: "Testing again is refused the same way, so do not test again, and do not change the Flow to make it quicker now. End honestly now with ended and your reason: "
       + "the latest assembled Flow is kept as a draft, and the person is told what its last finished whole test answered. If the latest assembled Flow's whole test answered yes, complete with its complete object instead.",
@@ -353,6 +360,10 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     /** Said when the same refused completion comes again (`./completion.ts`, t622): the supervisor has no draft to change. */
     sentAgain: "The check reads the complete object named, or the ending, against what the build holds, not the result's words, so the same result gets the same answer. "
       + "Do what the refusal asks: complete with the complete object it names, or send the brief, assembly or test it asks for first, or end honestly with ended and reason alone.",
+    /** Each failed subflow gets one changed brief while money is left (`./completion.ts`, t743). */
+    repairFirst: "This build can still pay for a brief, and each subflow listed under unrepaired came back blocked or partial (its return's brief is failingBrief) with no changed brief since. "
+      + "Before ending, send each one changed brief with project.dispatch: a repair whose failingReceipt is a trial that return listed, saying what failed and what to do instead, or, where its return listed no trial or the plan is at fault, change the plan with project.amend_plan and send a brief under it. "
+      + "Sending the same brief again does not count. If that changed brief also comes back blocked or partial, end again: this holds each subflow's ending once.",
     endedTooSoon: "No brief has come back blocked or partial and no whole test has failed, so nothing stops this build yet. Keep going: send briefs, assemble and test.",
     resetFirst: "This build's lasting acts are still on the target, as listed. Before ending, dispatch a reset brief (kind reset, no parts) with project.dispatch to undo them, then end again. If the reset cannot undo them, end anyway: Core names what is left in your reason.",
     /** A whole test that passed only on the run's own recovery, before its repair was tried (`./completion.ts`, t603). */
