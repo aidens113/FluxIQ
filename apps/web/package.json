@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/build-client-gateway-server.mjs && next dev --turbopack --hostname 127.0.0.1",
-    "build": "node ../../scripts/build-cache/cli.mjs web:build -- \"node scripts/build-client-gateway-server.mjs && next build --turbopack\"",
+    "build": "node ../../scripts/build-cache/cli.mjs web:build -- \"node scripts/build-client-gateway-server.mjs && next build --turbopack && node ../../scripts/web-build/identity/check-web-build.mjs\"",
     "start": "next start --hostname 127.0.0.1",
     "check": "node ../../scripts/build-cache/cli.mjs web:check -- \"tsc --noEmit\"",
     "test": "vitest run --passWithNoTests",
