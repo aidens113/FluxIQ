@@ -1,12 +1,19 @@
 export * from "./automation-studio.ts";
+export * from "./connection/index.ts";
+export * from "./host-lease/index.ts";
 export * from "./messages.ts";
 export * from "./open-error.ts";
+export * from "./outbox/index.ts";
+export * from "./reconcile/index.ts";
+export * from "./session-pick/index.ts";
+export * from "./storage-area/index.ts";
 export * from "./transport.ts";
 export * from "./types.ts";
 
 export {
   CLIENT_GATEWAY_ACTIVITY_CAPABILITY_ID,
   CLIENT_GATEWAY_ACTIVITY_RESOLUTIONS,
+  CLIENT_GATEWAY_HOST_LEASE_REFUSAL_CODES,
   CLIENT_GATEWAY_PROTOCOL_VERSION,
   type ClientGatewayActionCommand,
   type ClientGatewayActionResult,
@@ -21,7 +28,9 @@ export {
   type ClientGatewayClientMessage,
   type ClientGatewayClientType,
   type ClientGatewayEnvelope,
+  type ClientGatewayHostLease,
   type ClientGatewayPairingChallenge,
+  type ClientGatewayReconcileAnswer,
   type ClientGatewayRecordingEvent,
   type ClientGatewayServerMessage,
   type ClientGatewaySession,
