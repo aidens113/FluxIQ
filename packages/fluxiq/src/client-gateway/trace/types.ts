@@ -203,6 +203,12 @@ export type ClientGatewayTraceEvent = {
   readonly referencedDigests: readonly string[];
   readonly provenance: ClientGatewayTraceProvenance;
   readonly redactions: readonly ClientGatewayTraceRedaction[];
+  /**
+   * The client session the event belongs to, as an opaque reference this trace
+   * gave it (`session-1`, `session-2`, ... in the order the trace met them;
+   * never a token). Absent when the event belongs to no one session.
+   */
+  readonly session?: string;
 };
 
 /** Correlation as the gateway supplies it; `owner` is cloned on record. */
@@ -239,12 +245,16 @@ export type ClientGatewayTraceEventInput = {
   /** Artifact digests (lower-case hex SHA-256) the message references; none when absent. */
   referencedDigests?: readonly string[];
   redactions: readonly ClientGatewayTraceRedaction[];
+  /** The trace's opaque reference to the client session the event belongs to; none when absent. */
+  session?: string;
 };
 
 /** Captured content arriving. The sink copies the bytes and computes their digest. */
 export type ClientGatewayTraceArtifactInput = {
   stream: string;
   messageType: string | null;
+  /** The trace's opaque reference to the client session that uploaded it; none when absent. */
+  session?: string;
   mediaType: string;
   bytes: Uint8Array;
   resourceKey: string | null;

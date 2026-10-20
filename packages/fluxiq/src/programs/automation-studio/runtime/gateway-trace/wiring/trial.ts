@@ -1,13 +1,14 @@
 // A trial as one traced episode (D9): activity `test`, its episode id the
-// trial's own run id. Opened by the trial ports (`../service/candidate-trial/
-// port.ts`, `../service/subflow-trial/port.ts`) around the trial they run, not
-// inside the trial runner: the port mints the run id the runner would have
-// minted -- the ports' `newRunId`, else the environment's -- opens the episode
-// under it, and hands the runner a copy of its ports whose `newRunId` answers
-// that id. Inside a build the trial replaces the build's frame for its own
-// work, and the build's trace keeps markers naming the trial's trace. The
-// start hook and the site reset run before the port is called, so they stay
-// in the build's trace.
+// trial's own run id. Opened by the trial runners (`../../service/
+// candidate-trial/run.ts`, `../../service/subflow-trial/run.ts`) after the
+// trial's start and around its own run (P3, D1): the runner hands in the run
+// id minting it would have used -- the ports' `newRunId`, else the
+// environment's -- this mints the id once, opens the episode under it, and
+// hands the runner a minter answering that id. Inside a build the trial
+// replaces the build's frame for its own work, and the build's trace keeps
+// markers naming the trial's trace. The start hook, prepared by the gate or
+// called by the runner, and the site reset run before the episode opens, so
+// they stay in the build's trace.
 //
 // Nothing installed: the work runs with the ports unchanged, and no id is
 // minted ahead of the runner.

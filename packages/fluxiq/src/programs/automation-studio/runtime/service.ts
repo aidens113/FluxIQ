@@ -435,7 +435,7 @@ export class AutomationStudioService {
         this.objectStore = new AutomationStudioObjectStore(automationDataDir);
         this.recordingStateIndexes = new RecordingStateIndexStore(automationDataDir);
       }
-      this.runtimeProjectDatabasePool = AutomationStudioGatewayTraceServicePools.adopt(this, new AutomationStudioProjectDatabasePool({ rootDir: automationDataDir, idleCloseMs: AUTOMATION_STUDIO_PROJECT_DATABASE_IDLE_CLOSE_MS }));
+      this.runtimeProjectDatabasePool = AutomationStudioGatewayTraceServicePools.adopt(this, new AutomationStudioProjectDatabasePool({ rootDir: automationDataDir, idleCloseMs: AUTOMATION_STUDIO_PROJECT_DATABASE_IDLE_CLOSE_MS }), () => this.reusableLlmContextContentProtection);
       this.projectDatabasePool = this.runtimeProjectDatabasePool;
       projectRootDir = path.join(automationDataDir, "projects");
       const nodeRootDir = options.customNodeRootDir ?? (options.storageRootDir ? undefined : path.join(automationDataDir, "nodes"));
@@ -3774,7 +3774,7 @@ export class AutomationStudioService {
           if (!state.projects.some((project) => project.id === projectId)) throw new Error(`Unknown Automation Studio project: ${projectId}`);
           await transaction.write(this.projects.indexStore!.filePath, { ...state, projects: state.projects.filter((project) => project.id !== projectId) });
           await transaction.deletePath(this.projectPaths.projectDirectory(projectId));
-        });
+        }).then(() => removeAutomationStudioProjectFiles({ objectStore: this.objectStore, pool: this.runtimeProjectDatabasePool, projectId, projectDirectory: this.projectPaths.projectDirectory(projectId) }));
         await this.uiCache.purgeProject(projectId).catch(() => undefined);
         return { deletedProjectId: projectId };
       }

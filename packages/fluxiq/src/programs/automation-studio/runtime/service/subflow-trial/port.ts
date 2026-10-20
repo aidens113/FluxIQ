@@ -29,14 +29,13 @@
 // candidate's port does (`../candidate-trial/port.ts`): `environmentKind`, live
 // when `ports.environment` is absent, and `prepareStart` only when live.
 //
-// **Each partial trial it runs is a traced episode (traces and offline
-// trials, P2, D9)**, as a whole candidate's is (`../candidate-trial/port.ts`):
-// with tracing installed the port mints the trial's run id, opens its episode
-// under it and runs the trial on a copy of the ports whose `newRunId` answers
-// that id. The start hook and the site reset stay in the build's trace.
+// **Each partial trial it runs is a traced episode, opened by the runner
+// (traces and offline trials, P2 D9, P3 D1)**, as a whole candidate's is
+// (`../candidate-trial/port.ts`): the runner opens it after the trial's start,
+// around its own run (`./run.ts`), so the start hook -- prepared here or run
+// by the runner -- and the site reset stay in the build's trace.
 
 import type { AutomationStudioSubflowTrialPreparingPort, AutomationStudioSubflowTrialResult, AutomationStudioSubflowTrialRowCheck } from "../../flow-bootstrap/subflow-candidate/index.ts";
-import { AUTOMATION_STUDIO_GATEWAY_TRACE_CONTEXT, withAutomationStudioGatewayTraceTrial } from "../../gateway-trace/wiring/index.ts";
 import { automationStudioTrialJudgingShortfall, automationStudioTrialLargestJudgePrompt, type AutomationStudioCandidateTrialStart } from "../candidate-trial/index.ts";
 import { runAutomationStudioSubflowTrial } from "./run.ts";
 import { automationStudioSubflowTrialStart } from "./start.ts";
@@ -72,14 +71,7 @@ export function automationStudioSubflowTrialPort(buildId: string, ports: Automat
     ready.delete(key);
     // The judge calls are held at the largest prompt an earlier partial trial's judge was sent (`../candidate-trial/judging-fits.ts`, t661).
     const prompt = automationStudioTrialLargestJudgePrompt(records);
-    const trial = await withAutomationStudioGatewayTraceTrial({
-      projectId: ports.projectId,
-      flowId: ports.flowId,
-      prefix: "subflow-trial",
-      newRunId: ports.newRunId,
-      environment: ports.environment,
-      context: (runId) => ({ schema: AUTOMATION_STUDIO_GATEWAY_TRACE_CONTEXT.subflowTrial, value: { kind: "subflow_trial", runId, buildId, briefId: request.scope.briefId, subflowKey: request.scope.subflowKey, revision: request.proposal.revision, digest: request.proposal.digest, start: start?.status ?? null } })
-    }, (newRunId) => runAutomationStudioSubflowTrial(request, newRunId === undefined ? ports : { ...ports, newRunId }, start, prompt));
+    const trial = await runAutomationStudioSubflowTrial(request, ports, start, prompt);
     records.push(structuredClone(trial.record));
     if (trial.rowCheck && trial.result.trialRunId) converse.set(trial.result.trialRunId, { ...trial.rowCheck });
     return trial.result;

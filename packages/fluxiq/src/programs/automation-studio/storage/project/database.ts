@@ -242,9 +242,13 @@ export class AutomationStudioProjectDatabase implements AutomationStudioSqlExecu
     const handle = await openDatabase(input.filePath, input.busyTimeoutMs);
     const database = new AutomationStudioProjectDatabase(handle, input);
     try {
-      // One script, in the same order: every open pays one round trip here, not five.
+      // One script, in the same order: every open pays one round trip here, not six.
+      // secure_delete (t745): a deleted or rewritten row's old bytes are zeroed,
+      // not left in free pages, so a trace deleted, a chunk sealed in place or an
+      // unkeyed digest replaced cannot be read back out of the file.
       await database.execute((sql) => sql.exec!([
         "pragma foreign_keys = ON",
+        "pragma secure_delete = ON",
         "pragma journal_mode = WAL",
         "pragma synchronous = NORMAL",
         "pragma temp_store = MEMORY",

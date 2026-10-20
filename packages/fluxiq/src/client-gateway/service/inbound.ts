@@ -1,4 +1,4 @@
-import type { ClientGatewayClientMessage } from "@fluxiq/contracts/client-gateway";
+import type { ClientGatewayClientMessage, ClientGatewayEvent } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayAuditLog } from "./audit-log.ts";
 import type { ClientGatewayCommands } from "./commands.ts";
 import type { ClientGatewayEventBus } from "./event-bus.ts";
@@ -9,7 +9,7 @@ import { clientGatewayProtocolVersionVerdict } from "./protocol-version.ts";
 import { readClientGatewayActionResult } from "./action-result-reading.ts";
 import type { ClientGatewaySessionRegistry } from "./sessions.ts";
 import type { ClientGatewayTransport } from "./transport.ts";
-import { withoutClientGatewayTraceMetadata, type ClientGatewayTraceInboundCapture, type ClientGatewayTraceTap } from "./trace-tap/index.ts";
+import { ClientGatewayTraceDeliveryCollector, withoutClientGatewayTraceMetadata, type ClientGatewayTraceInboundCapture, type ClientGatewayTraceTap } from "./trace-tap/index.ts";
 
 type InboundCollaborators = {
   sessions: ClientGatewaySessionRegistry;
@@ -79,19 +79,24 @@ export class ClientGatewayInbound {
       await this.handle(sessionId, message);
       return;
     }
+    // What Core delivers for a traced message is digested where it is delivered (P3).
+    const delivery = new ClientGatewayTraceDeliveryCollector();
     let disposition: string;
     try {
-      disposition = await this.handle(sessionId, message);
+      disposition = await this.handle(sessionId, message, delivery);
     } catch (error) {
       // The socket host answers this failure with `gateway.receive_failed` carrying the same message.
-      this.trace.disposition(capture, { disposition: "receive_failed", error: error instanceof Error ? error.message : String(error) });
+      this.trace.disposition(capture, { disposition: "receive_failed", error: error instanceof Error ? error.message : String(error), delivered: delivery.read() });
       throw error;
     }
-    this.trace.disposition(capture, { disposition, error: null });
+    this.trace.disposition(capture, { disposition, error: null, delivered: delivery.read() });
   }
 
-  /** Handles one client message and says what became of it: the disposition a trace records. */
-  private async handle(sessionId: string, received: ClientGatewayClientMessage): Promise<string> {
+  /**
+   * Handles one client message and says what became of it: the disposition a
+   * trace records. `delivery`, under a trace, hears what Core delivered.
+   */
+  private async handle(sessionId: string, received: ClientGatewayClientMessage, delivery?: ClientGatewayTraceDeliveryCollector): Promise<string> {
     // A client's trace references never reach a settle, an event or anything past them (D14).
     const message = withoutClientGatewayTraceMetadata(received);
     const session = this.sessions.require(sessionId);
@@ -115,29 +120,29 @@ export class ClientGatewayInbound {
     }
     if (message.type === "client.state_update") {
       session.stateUpdate = message.payload;
-      await this.events.emit({ type: "client.state_update", session: this.sessions.toPublic(session), message });
+      await this.emit(delivery, { type: "client.state_update", session: this.sessions.toPublic(session), message });
       return "accepted";
     }
     if (message.type === "client.start_recording") {
-      await this.events.emit({ type: "client.start_recording", session: this.sessions.toPublic(session), message });
+      await this.emit(delivery, { type: "client.start_recording", session: this.sessions.toPublic(session), message });
       return "accepted";
     }
     if (message.type === "client.stop_recording") {
-      await this.events.emit({ type: "client.stop_recording", session: this.sessions.toPublic(session), message });
+      await this.emit(delivery, { type: "client.stop_recording", session: this.sessions.toPublic(session), message });
       // Only the recording this Stop stopped: a start acknowledged while it was handled keeps its id.
       if (session.activeRecordingId === message.payload.recordingId) session.activeRecordingId = null;
       return "accepted";
     }
     if (message.type === "client.recording_entry") {
-      await this.events.emit({ type: "client.recording_entry", session: this.sessions.toPublic(session), message });
+      await this.emit(delivery, { type: "client.recording_entry", session: this.sessions.toPublic(session), message });
       return "accepted";
     }
     if (message.type === "client.recording_event") {
-      await this.events.emit({ type: "client.recording_event", session: this.sessions.toPublic(session), message });
+      await this.emit(delivery, { type: "client.recording_event", session: this.sessions.toPublic(session), message });
       return "accepted";
     }
     if (message.type === "client.snapshot") {
-      await this.events.emit({ type: "client.snapshot", session: this.sessions.toPublic(session), message });
+      await this.emit(delivery, { type: "client.snapshot", session: this.sessions.toPublic(session), message });
       return "accepted";
     }
     if (message.type === "client.action_result") {
@@ -146,10 +151,10 @@ export class ClientGatewayInbound {
       const reading = readClientGatewayActionResult(this.commands.isDurableCommand(message.payload?.commandId) ? structuredClone(message.payload) : message.payload);
       const eventMessage = { ...message, payload: reading.result };
       const eventSession = this.sessions.toPublic(session);
-      const disposition = await this.commands.settle(sessionId, reading);
+      const disposition = await this.commands.settle(sessionId, reading, delivery === undefined ? undefined : (result) => delivery.heardResult(result));
       if (disposition === "wrong_session" || disposition === "suppressed") return disposition;
       // Still published as a diagnostic, late or unknown alike: no listener of this event applies an outcome.
-      await this.events.emit({ type: "client.action_result", session: eventSession, message: eventMessage });
+      await this.emit(delivery, { type: "client.action_result", session: eventSession, message: eventMessage });
       return disposition;
     }
     if (message.type === "client.reconcile_result") {
@@ -160,8 +165,14 @@ export class ClientGatewayInbound {
       return "reconcile_unasked";
     }
     if (message.type !== "client.error") return "ignored";
-    await this.events.emit({ type: "client.error", session: this.sessions.toPublic(session), message });
+    await this.emit(delivery, { type: "client.error", session: this.sessions.toPublic(session), message });
     return "accepted";
+  }
+
+  /** Emits `event` to the gateway's listeners; under a trace, its digest is taken first. */
+  private async emit(delivery: ClientGatewayTraceDeliveryCollector | undefined, event: Extract<ClientGatewayEvent, { message: unknown }>): Promise<void> {
+    delivery?.heardEvent(event.type, event.message);
+    await this.events.emit(event);
   }
 
   /**

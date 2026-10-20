@@ -1,5 +1,6 @@
 // @fluxiq-test-group real-sql
-import { mkdtemp, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -11,6 +12,7 @@ import {
   AutomationStudioProjectReusableLlmContextStore,
   type AutomationStudioReusableLlmContextWrite
 } from "../reusable-llm-context-store.ts";
+import { rotateAutomationStudioContentAddressKey } from "../content-address/index.ts";
 
 // Its own directory per case: a fixed path under the working directory was
 // shared by every run of this file in the checkout, so two runs at once
@@ -134,6 +136,230 @@ describe("AutomationStudioProjectReusableLlmContextStore", () => {
     // 120 encrypted writes, each audited: slower than the file's other cases.
   }, 60_000);
 });
+
+describe("AutomationStudioProjectReusableLlmContextStore keyed content digests (t745)", () => {
+  beforeEach(async () => {
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-reusable-llm-context-digest-test-"));
+  });
+  afterEach(async () => rm(rootDir, { recursive: true, force: true }));
+
+  it("stores a fresh put's digest keyed under the current key and reads it back", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const store = await AutomationStudioProjectReusableLlmContextStore.open({ pool, projectId: "project.keyed", enabled: true, contentProtection: sharedHostProtection });
+    const saved = await store.put(write({ promptProjection: { facts: ["keyed"] } }));
+    expect(saved.contentDigest).toMatch(/^[a-f0-9]{64}$/u);
+    expect(saved.contentDigest).not.toBe(plainDigest(saved.promptProjection));
+    const row = await digestRow(pool, "project.keyed", "context.1");
+    expect(row).toEqual({ digest: saved.contentDigest, keyId: await currentKeyId(pool, "project.keyed") });
+    const read = await store.get("context.1", { now: 1_500 });
+    expect(read?.promptProjection).toEqual({ facts: ["keyed"] });
+    expect(read?.contentDigest).toBe(saved.contentDigest);
+    await store.close();
+    await pool.closeAll();
+  });
+
+  it("gives equal projections one digest within a project and different digests across projects under one host key", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const one = await AutomationStudioProjectReusableLlmContextStore.open({ pool, projectId: "project.one", enabled: true, contentProtection: sharedHostProtection });
+    const two = await AutomationStudioProjectReusableLlmContextStore.open({ pool, projectId: "project.two", enabled: true, contentProtection: sharedHostProtection });
+    const first = await one.put(write({ recordId: "context.a" }));
+    const second = await one.put(write({ recordId: "context.b" }));
+    const other = await two.put(write({ recordId: "context.a" }));
+    expect(second.contentDigest).toBe(first.contentDigest);
+    expect(other.contentDigest).not.toBe(first.contentDigest);
+    await one.close();
+    await two.close();
+    await pool.closeAll();
+  });
+
+  it("leaves the plain SHA-256 of a projection nowhere in the database or object files", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const store = await AutomationStudioProjectReusableLlmContextStore.open({ pool, projectId: "project.probe", enabled: true, contentProtection: sharedHostProtection });
+    const saved = await store.put(write({ promptProjection: { facts: ["a guessable projection"], step: 7 } }));
+    await store.close();
+    await pool.closeAll();
+    const plain = createHash("sha256").update(JSON.stringify(saved.promptProjection), "utf8").digest();
+    const files = await filesUnder(path.join(rootDir, "projects", "project.probe"));
+    expect(files.some((file) => file.endsWith("project.sqlite"))).toBe(true);
+    for (const file of files) {
+      const bytes = await readFile(file);
+      expect(bytes.includes(Buffer.from(plain.toString("hex"), "utf8")), file).toBe(false);
+      expect(bytes.includes(plain), file).toBe(false);
+    }
+  });
+
+  it("rekeys rows written with a plain digest on the next protected open, and reads verify", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const projectId = "project.migrated";
+    await putRecords(pool, projectId, 3);
+    await rewriteAsOlderCode(pool, projectId);
+    const reopened = await AutomationStudioProjectReusableLlmContextStore.open({ pool, projectId, enabled: true, contentProtection: sharedHostProtection });
+    expect(reopened.digestRekey).toEqual({ rekeyed: 3, skipped: 0, batches: 1, complete: true });
+    const keyId = await currentKeyId(pool, projectId);
+    for (const recordId of ["context.0", "context.1", "context.2"]) {
+      const row = await digestRow(pool, projectId, recordId);
+      expect(row?.keyId).toBe(keyId);
+      const record = await reopened.get(recordId, { now: 1_500 });
+      expect(record?.contentDigest).toBe(row?.digest);
+      expect(record?.contentDigest).not.toBe(plainDigest(record?.promptProjection));
+    }
+    await reopened.close();
+    await pool.closeAll();
+  });
+
+  it("scrubs after rekeying a migrated store, leaving no plain SHA-256 of a projection in any file (t745 u5)", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const projectId = "project.migrated-probe";
+    await putRecords(pool, projectId, 3);
+    await rewriteAsOlderCode(pool, projectId);
+    const plain = [0, 1, 2].map((index) => createHash("sha256").update(JSON.stringify({ facts: [index] }), "utf8").digest());
+    const projectFiles = path.join(rootDir, "projects", projectId);
+    const leaks = async (): Promise<string[]> => {
+      const hits: string[] = [];
+      for (const file of await filesUnder(projectFiles)) {
+        const bytes = await readFile(file);
+        for (const digest of plain) {
+          if (bytes.includes(Buffer.from(digest.toString("hex"), "utf8")) || bytes.includes(digest)) hits.push(path.basename(file));
+        }
+      }
+      return hits;
+    };
+    expect((await leaks()).length).toBeGreaterThan(0);
+
+    const reopened = await AutomationStudioProjectReusableLlmContextStore.open({ pool, projectId, enabled: true, contentProtection: sharedHostProtection });
+    expect(reopened.digestRekey).toEqual({ rekeyed: 3, skipped: 0, batches: 1, complete: true });
+    expect(reopened.scrub).toMatchObject({ status: "done", checkpoint: { busy: 0 } });
+    expect(await leaks()).toEqual([]);
+    await reopened.close();
+    await pool.closeAll();
+    expect(await leaks()).toEqual([]);
+
+    const later = new AutomationStudioProjectDatabasePool({ rootDir });
+    const again = await AutomationStudioProjectReusableLlmContextStore.open({ pool: later, projectId, enabled: true, contentProtection: sharedHostProtection });
+    expect(again.scrub).toEqual({ status: "not-requested" });
+    await again.close();
+    await later.closeAll();
+  });
+
+  it("resumes an interrupted rekey on the next open, reading mixed forms in between", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const projectId = "project.interrupted";
+    await putRecords(pool, projectId, 5);
+    await rewriteAsOlderCode(pool, projectId);
+    const partial = await AutomationStudioProjectReusableLlmContextStore.open({ pool, projectId, enabled: true, contentProtection: sharedHostProtection, digestRekey: { batchSize: 2, maxBatches: 1 } });
+    expect(partial.digestRekey).toEqual({ rekeyed: 2, skipped: 0, batches: 1, complete: false });
+    expect(await plainRowCount(pool, projectId)).toBe(3);
+    expect(await partial.listEvery({ now: 1_500 })).toHaveLength(5);
+    await partial.close();
+    const resumed = await AutomationStudioProjectReusableLlmContextStore.open({ pool, projectId, enabled: true, contentProtection: sharedHostProtection });
+    expect(resumed.digestRekey).toEqual({ rekeyed: 3, skipped: 0, batches: 1, complete: true });
+    expect(await plainRowCount(pool, projectId)).toBe(0);
+    expect(await resumed.listEvery({ now: 1_500 })).toHaveLength(5);
+    await resumed.close();
+    await pool.closeAll();
+  });
+
+  it("fails the read of a tampered digest in either form, and the rekey skips a plain row that does not verify", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const projectId = "project.tampered";
+    await putRecords(pool, projectId, 2);
+    await setDigest(pool, projectId, "context.0", "a".repeat(64), "keep");
+    const store = await AutomationStudioProjectReusableLlmContextStore.open({ pool, projectId, enabled: true, contentProtection: sharedHostProtection });
+    await expect(store.get("context.0", { now: 1_500 })).rejects.toThrow("Reusable LLM context content metadata mismatch.");
+    await expect(store.get("context.1", { now: 1_500 })).resolves.toMatchObject({ recordId: "context.1" });
+    await store.close();
+    await setDigest(pool, projectId, "context.1", "b".repeat(64), null);
+    const reopened = await AutomationStudioProjectReusableLlmContextStore.open({ pool, projectId, enabled: true, contentProtection: sharedHostProtection });
+    expect(reopened.digestRekey).toEqual({ rekeyed: 0, skipped: 1, batches: 1, complete: true });
+    expect(await digestRow(pool, projectId, "context.1")).toEqual({ digest: "b".repeat(64), keyId: null });
+    await expect(reopened.get("context.1", { now: 1_500 })).rejects.toThrow("Reusable LLM context content metadata mismatch.");
+    await reopened.close();
+    await pool.closeAll();
+  });
+
+  it("rekeys under the new key after a key rotation", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const projectId = "project.rotated";
+    await putRecords(pool, projectId, 2);
+    const before = await digestRow(pool, projectId, "context.0");
+    const lease = await pool.acquire(projectId);
+    const rotated = await rotateAutomationStudioContentAddressKey({ database: lease.database, projectId, protection: sharedHostProtection });
+    await lease.release();
+    const reopened = await AutomationStudioProjectReusableLlmContextStore.open({ pool, projectId, enabled: true, contentProtection: sharedHostProtection });
+    expect(reopened.digestRekey).toEqual({ rekeyed: 2, skipped: 0, batches: 1, complete: true });
+    const after = await digestRow(pool, projectId, "context.0");
+    expect(after?.keyId).toBe(rotated.keyId);
+    expect(after?.keyId).not.toBe(before?.keyId);
+    expect(after?.digest).not.toBe(before?.digest);
+    await expect(reopened.get("context.0", { now: 1_500 })).resolves.toMatchObject({ contentDigest: after?.digest });
+    await reopened.close();
+    await pool.closeAll();
+  });
+});
+
+/** One host key for every project, as a host that shares one key would bind. */
+const sharedHostProtection = new AutomationStudioAesGcmProjectContentProtection(() => ({ keyId: "host.shared", key: Buffer.alloc(32, 7) }));
+
+type DigestRow = { digest: string; keyId: string | null };
+
+function plainDigest(projection: unknown): string {
+  return createHash("sha256").update(JSON.stringify(projection), "utf8").digest("hex");
+}
+
+async function putRecords(pool: AutomationStudioProjectDatabasePool, projectId: string, count: number): Promise<void> {
+  const store = await AutomationStudioProjectReusableLlmContextStore.open({ pool, projectId, enabled: true, contentProtection: sharedHostProtection });
+  for (let index = 0; index < count; index += 1) {
+    await store.put(write({ recordId: `context.${index}`, promptProjection: { facts: [index] } }));
+  }
+  await store.close();
+}
+
+/** What code before 0035 wrote: the plain SHA-256 of the projection and no key id. */
+async function rewriteAsOlderCode(pool: AutomationStudioProjectDatabasePool, projectId: string): Promise<void> {
+  const lease = await pool.acquire(projectId);
+  const rows = await lease.database.all<{ recordId: string }>("select record_id as recordId from reusable_llm_contexts");
+  for (const row of rows) {
+    const index = Number(row.recordId.slice("context.".length));
+    await lease.database.run("update reusable_llm_contexts set content_digest = ?, content_digest_key_id = null where record_id = ?", [plainDigest({ facts: [index] }), row.recordId]);
+  }
+  await lease.release();
+}
+
+async function setDigest(pool: AutomationStudioProjectDatabasePool, projectId: string, recordId: string, digest: string, keyId: string | null | "keep"): Promise<void> {
+  const lease = await pool.acquire(projectId);
+  if (keyId === "keep") {
+    await lease.database.run("update reusable_llm_contexts set content_digest = ? where record_id = ?", [digest, recordId]);
+  } else {
+    await lease.database.run("update reusable_llm_contexts set content_digest = ?, content_digest_key_id = ? where record_id = ?", [digest, keyId, recordId]);
+  }
+  await lease.release();
+}
+
+async function digestRow(pool: AutomationStudioProjectDatabasePool, projectId: string, recordId: string): Promise<DigestRow | undefined> {
+  const lease = await pool.acquire(projectId);
+  const row = await lease.database.get<DigestRow>("select content_digest as digest, content_digest_key_id as keyId from reusable_llm_contexts where record_id = ?", [recordId]);
+  await lease.release();
+  return row;
+}
+
+async function plainRowCount(pool: AutomationStudioProjectDatabasePool, projectId: string): Promise<number> {
+  const lease = await pool.acquire(projectId);
+  const row = await lease.database.get<{ count: number }>("select count(*) as count from reusable_llm_contexts where content_digest_key_id is null");
+  await lease.release();
+  return row?.count ?? 0;
+}
+
+async function currentKeyId(pool: AutomationStudioProjectDatabasePool, projectId: string): Promise<string | undefined> {
+  const lease = await pool.acquire(projectId);
+  const row = await lease.database.get<{ keyId: string }>("select key_id as keyId from content_address_keys where retired_at_ms is null");
+  await lease.release();
+  return row?.keyId;
+}
+
+async function filesUnder(directory: string): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true, recursive: true });
+  return entries.filter((entry) => entry.isFile()).map((entry) => path.join(entry.parentPath, entry.name));
+}
 
 function write(overrides: Partial<AutomationStudioReusableLlmContextWrite> = {}): AutomationStudioReusableLlmContextWrite {
   return {

@@ -9,6 +9,9 @@
 // The pool is asked for when an episode opens, not now: the service that owns
 // it is constructed after the start hook it is handed. A service without
 // project storage (in-process hosts and tests) keeps its traces in memory.
+// Persisted traces are sealed with the protection of the service that adopted
+// the pool, read from where that service keeps it (`./service-pools.ts`), so
+// the trace store and the service's content stores never disagree.
 
 import {
   CLIENT_GATEWAY_PROTOCOL_VERSION,
@@ -22,6 +25,7 @@ import type { AutomationStudioProjectDatabasePool } from "../../../storage/index
 import { AutomationStudioGatewayTraceEpisodes } from "../episodes.ts";
 import { AutomationStudioGatewayTraceInstallation } from "../installation.ts";
 import { AutomationStudioGatewayTraceProjectStore } from "./project-store.ts";
+import { AutomationStudioGatewayTraceServicePools } from "./service-pools.ts";
 import { automationStudioGatewayTraceStartHook } from "./start-hook.ts";
 import type { AutomationStudioGatewayTraceEpisodesOptions } from "../types.ts";
 import type { AutomationStudioGatewayTraceHost } from "./types.ts";
@@ -46,7 +50,7 @@ export function createAutomationStudioGatewayTraceHost(input: {
   const memory = new Map<string, ClientGatewayTraceMemoryStore>();
   const storeFor = (projectId: string): ClientGatewayTraceStore => {
     const pool = input.pool();
-    if (pool !== undefined) return new AutomationStudioGatewayTraceProjectStore({ pool, projectId });
+    if (pool !== undefined) return new AutomationStudioGatewayTraceProjectStore({ pool, projectId, protection: AutomationStudioGatewayTraceServicePools.protectionOf(pool) });
     const kept = memory.get(projectId) ?? new ClientGatewayTraceMemoryStore();
     memory.set(projectId, kept);
     return kept;

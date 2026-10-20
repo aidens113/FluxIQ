@@ -290,7 +290,55 @@ LLM context remains feature-off by default, and its write endpoint is enabled
 only when the feature and a host-supplied content-protection provider are both
 configured. Otherwise status reports
 `reusable_context.content_protection_unavailable` and writes fail closed. Core
-does not automatically re-encrypt old objects or provide host key custody.
+does not provide host key custody.
+
+**Keyed content addresses (2026-10-20, t745).** A plain SHA-256 of sealed
+content stored beside it lets anyone holding `project.sqlite` tell equal content
+apart and confirm a guess about it. In a project opened with a content
+protection, every address of protected content is therefore an HMAC-SHA256
+under a per-project **address key**:
+
+- *Key custody.* On the first protected open Core generates a random 256-bit
+  address key, seals it with the host's protection (media type
+  `application/vnd.fluxiq.content-address-key`, so the seal binds the project)
+  and stores only the sealed form in `content_address_keys`. The host's
+  resolver stays the only root secret; Core never derives from or sees host key
+  bytes. The address input is length-prefixed and carries a closed domain, the
+  project ID and a context, so addresses never cross projects or kinds of
+  content. A current key that does not open fails the store's open.
+  `rotateAutomationStudioContentAddressKey` adds a new current key and keeps the
+  retired ones (a retired key that no longer opens is reported unavailable and
+  only rows under it fail). A host key rotation leaves the address key as it is.
+- *What is keyed.* Sealed content-store objects keep their ID (the SHA-256 of
+  random-IV ciphertext, which leaks nothing) and gain a keyed
+  `content_address` over media type and plaintext, used to deduplicate equal
+  sealed content within the project and verified after every open. Client
+  gateway trace chunks are addressed by the keyed HMAC and cut with a gear table
+  derived from the key, so neither digests nor chunk lengths confirm a guessed
+  body; trace artifact rows hold a keyed digest; trace manifests, which carry
+  the artifacts' wire SHA-256, are sealed. Reusable LLM context
+  `content_digest` is keyed (same 64-hex shape, equal only within a project).
+  Wire digests the client computes (trace-artifact and state-asset uploads,
+  `metadata.trace.artifacts`) stay plain SHA-256, and a project without a
+  protection keeps SHA-256 addresses, since its content sits in the clear beside
+  them.
+- *Migration.* Schema changes (0033-0035) are additive and nullable; every row
+  records its form, and reads accept both. Each protected open rekeys rows still
+  unkeyed or under a retired key in guarded batch transactions: object
+  addresses are backfilled; old trace event bodies (old-form chunks, inline
+  JSON, 0030 objects) are re-cut into keyed sealed chunks; old chunks are
+  deleted only once no old-form event names them; unsealed trace artifacts are
+  stored sealed; manifests are sealed; reusable digests are rekeyed. A row that
+  fails its old-form check stays as it is, counted, and still fails when read.
+  A crash resumes at the next open.
+- *Removal.* Project connections run `pragma secure_delete = ON`. A batch that
+  replaces or deletes an old form records a scrub request in its own
+  transaction, and every protected open honours it (VACUUM, then a truncate
+  checkpoint), clearing it only on success. A released object is deleted with a
+  pending-removal row in one transaction, and every content-store open removes
+  pending files. Code from before t745 fails closed on keyed rows rather than
+  returning wrong data; restoring full readability for it means restoring the
+  pre-upgrade database.
 
 Reusable-context selection exact-filters scope, evidence/sanitizer versions,
 and opaque compatibility tags in storage before pagination. There is no

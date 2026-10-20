@@ -112,7 +112,7 @@ async function tracedHost() {
   const { pool, dispose } = await temporaryPool();
   cleanups.push(dispose);
   const service = {};
-  AutomationStudioGatewayTraceServicePools.adopt(service, pool);
+  AutomationStudioGatewayTraceServicePools.adopt(service, pool, () => undefined);
   let traces = 0;
   const host = createAutomationStudioGatewayTraceHost({ enabled: true, pool: () => AutomationStudioGatewayTraceServicePools.of(service), options: { newTraceId: () => `trace.${++traces}` } });
   cleanups.push(host.uninstall);

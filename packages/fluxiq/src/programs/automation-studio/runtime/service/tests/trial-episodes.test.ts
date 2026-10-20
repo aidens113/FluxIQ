@@ -1,9 +1,10 @@
 // Each trial a trial port runs is its own traced episode (traces and offline
 // trials, P2, D9): activity `test`, the episode id the trial's run id, opened
-// in the port (`../candidate-trial/port.ts`, `../subflow-trial/port.ts`) and
-// handed to the runner through a copy of its ports. Inside a build the
-// build's trace keeps markers naming the trial's trace; the start hook the
-// port prepares ahead of the trial records into the build's trace.
+// by the runner (`../candidate-trial/run.ts`, `../subflow-trial/run.ts`) after
+// the trial's start, around the trial's own run. Inside a build the build's
+// trace keeps markers naming the trial's trace; the start hook records into
+// the build's trace whether the gate prepared it ahead of the trial or the
+// runner called it (P3, D1).
 import { afterEach, describe, expect, it } from "vitest";
 import { ClientGatewayTraceMemoryStore, type ClientGatewayTraceEvent } from "../../../../../client-gateway/index.ts";
 import { AutomationStudioGatewayTraceEpisodes, AutomationStudioGatewayTraceInstallation } from "../../gateway-trace/index.ts";
@@ -66,6 +67,49 @@ describe("a candidate trial as its own traced episode", () => {
     expect((await events(store, "trace-2")).some((event) => event.messageType === "control.start_hook_answer")).toBe(false);
   });
 
+  it("runs a start hook the gate did not prepare in the build's context: its answer is in the build's trace, the trial's run in the trial's", async () => {
+    const { episodes, store } = installEpisodes();
+    const fixture = trialFixture();
+    fixture.ports.prepareStart = automationStudioGatewayTraceStartHook(async () => ({ put: "back" }), episodes);
+    fixture.ports.graphOptions = ({ signal }) => ({ signal, now: () => 100, nativeNodeExecutor: async () => ({ result: { status: "success", route: "success", outputs: {} } }) } as ReturnType<typeof fixture.ports.graphOptions>);
+    const openedIn: (string | undefined)[] = [], judgedIn: (string | undefined)[] = [];
+    const { openSession, judge } = fixture.ports;
+    fixture.ports.openSession = async (input) => {
+      openedIn.push(episodes.current()?.episodeId);
+      return await openSession(input);
+    };
+    fixture.ports.judge = async (input) => {
+      judgedIn.push(episodes.current()?.episodeId);
+      return await judge(input);
+    };
+    const trials = automationStudioCandidateTrialPort("candidate.1", fixture.ports);
+    await withAutomationStudioGatewayTraceBuildActivity({ projectId: "project", flowId: "parent" }, { instructions: async () => [] }, async () => {
+      await trials.port(fixture.request());
+    });
+    expect(new Set(fixture.sessions.map((session) => session.runId))).toEqual(new Set(["trial.1"]));
+    const build = await events(store, "trace-1");
+    expect(build.map((event) => event.messageType)).toEqual(["control.start_hook_answer", "control.child_episode_opened", "control.child_episode_closed"]);
+    expect((await events(store, "trace-2")).some((event) => event.messageType === "control.start_hook_answer")).toBe(false);
+    const trial = await store.readManifest("trace-2");
+    expect(trial).toMatchObject({ episodeId: "trial.1", activity: "test" });
+    expect(trial?.context.value).toMatchObject({ kind: "candidate_trial", runId: "trial.1", start: "reset" });
+    // The trial's own run and its judge ran in the trial's episode.
+    expect(openedIn).toEqual(["trial.1"]);
+    expect(judgedIn).toEqual(["trial.1"]);
+  });
+
+  it("opens no trial episode when the unprepared start hook fails, and its failure is in the build's trace", async () => {
+    const { episodes, store } = installEpisodes();
+    const fixture = trialFixture();
+    fixture.ports.prepareStart = automationStudioGatewayTraceStartHook(async () => { throw new RangeError("reset refused"); }, episodes);
+    const trials = automationStudioCandidateTrialPort("candidate.1", fixture.ports);
+    const result = await withAutomationStudioGatewayTraceBuildActivity({ projectId: "project", flowId: "parent" }, { instructions: async () => [] }, async () => await trials.port(fixture.request()));
+    expect(result.verdict).toBe("execution_failed");
+    expect(fixture.sessions).toEqual([]);
+    expect((await events(store, "trace-1")).map((event) => event.messageType)).toEqual(["control.start_hook_answer"]);
+    expect(await store.readManifest("trace-2")).toBeUndefined();
+  });
+
   it("opens no episode for a re-judgement, which runs nothing", async () => {
     const { store } = installEpisodes();
     const fixture = trialFixture();
@@ -102,6 +146,47 @@ describe("a partial trial as its own traced episode", () => {
     const build = await store.readEventRange("trace-1", 1, Number.MAX_SAFE_INTEGER);
     expect(build.filter((event) => event.messageType === "control.child_episode_opened")).toHaveLength(2);
     expect(build.filter((event) => event.messageType === "control.child_episode_closed")).toHaveLength(2);
+  });
+
+  it("runs a start hook the gate did not prepare in the build's context: its answer is in the build's trace, the trial's run in the trial's", async () => {
+    const { episodes, store } = installEpisodes();
+    const f = subflowTrialFixture();
+    f.ports.prepareStart = automationStudioGatewayTraceStartHook(async () => ({ put: "back" }), episodes);
+    const openedIn: (string | undefined)[] = [];
+    const { openSession } = f.ports;
+    f.ports.openSession = async (input) => {
+      openedIn.push(episodes.current()?.episodeId);
+      return await openSession(input);
+    };
+    const { port } = automationStudioSubflowTrialPort("build.1", f.ports);
+    const result = await withAutomationStudioGatewayTraceBuildActivity({ projectId: "project", flowId: "parent" }, { instructions: async () => [] }, async () => await port(f.request()));
+    expect(result.trialRunId).toBe("subflow-trial.1");
+    const build = await store.readEventRange("trace-1", 1, Number.MAX_SAFE_INTEGER);
+    expect(build.map((event) => event.messageType)).toEqual(["control.start_hook_answer", "control.child_episode_opened", "control.child_episode_closed"]);
+    expect((await store.readEventRange("trace-2", 1, Number.MAX_SAFE_INTEGER)).some((event) => event.messageType === "control.start_hook_answer")).toBe(false);
+    const trial = await store.readManifest("trace-2");
+    expect(trial).toMatchObject({ episodeId: "subflow-trial.1", activity: "test" });
+    expect(trial?.context.value).toMatchObject({ kind: "subflow_trial", runId: "subflow-trial.1", start: "reset" });
+    expect(openedIn).toEqual(["subflow-trial.1"]);
+  });
+
+  it("with a start prepared by the gate, the hook's answer is in the build's trace and the trial runs on that start", async () => {
+    const { episodes, store } = installEpisodes();
+    const f = subflowTrialFixture();
+    let calls = 0;
+    f.ports.prepareStart = automationStudioGatewayTraceStartHook(async () => {
+      calls += 1;
+      return { put: "back" };
+    }, episodes);
+    const { port } = automationStudioSubflowTrialPort("build.1", f.ports);
+    const request = f.request();
+    await withAutomationStudioGatewayTraceBuildActivity({ projectId: "project", flowId: "parent" }, { instructions: async () => [] }, async () => {
+      expect(await port.prepareStart!({ scope: request.scope, revision: request.proposal.revision, digest: request.proposal.digest, signal: request.signal })).toBe("reset");
+      await port(request);
+    });
+    expect(calls).toBe(1);
+    expect((await store.readEventRange("trace-1", 1, Number.MAX_SAFE_INTEGER)).map((event) => event.messageType)).toEqual(["control.start_hook_answer", "control.child_episode_opened", "control.child_episode_closed"]);
+    expect((await store.readManifest("trace-2"))?.context.value).toMatchObject({ kind: "subflow_trial", start: "reset" });
   });
 
   it("with nothing installed leaves the ports alone", async () => {

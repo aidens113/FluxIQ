@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { ClientGatewayClientHello, ClientGatewaySession, ClientGatewaySocket } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayAuditLog } from "./audit-log.ts";
 import type { ClientGatewayConfig } from "./config.ts";
@@ -76,7 +75,7 @@ export class ClientGatewayLifecycle {
    */
   attachScoped(input: { scopeId: string; socket: ClientGatewaySocket; hello: ClientGatewayClientHello }): ClientGatewaySession {
     if (typeof input.scopeId !== "string" || !input.scopeId) throw new Error("client_gateway.channel_scope_required");
-    const hello: ClientGatewayClientHello = { clientId: `client.scoped.${randomUUID()}`, clientType: input.hello.clientType };
+    const hello: ClientGatewayClientHello = { clientId: `client.scoped.${this.config.createId("client")}`, clientType: input.hello.clientType };
     if (input.hello.name !== undefined) hello.name = input.hello.name;
     if (input.hello.version !== undefined) hello.version = input.hello.version;
     if (input.hello.capabilities !== undefined) hello.capabilities = input.hello.capabilities;

@@ -1,6 +1,7 @@
 import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { ClientGatewayActionCommand, ClientGatewayActionResult, ClientGatewayReconcileAnswer } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayConfig } from "../config.ts";
+import type { ClientGatewayTimer } from "../types.ts";
 import type { ClientGatewaySessionRegistry } from "../sessions.ts";
 import type { ClientGatewayTransport } from "../transport.ts";
 import type { ClientGatewayEventBus } from "../event-bus.ts";
@@ -17,7 +18,7 @@ type Answer = { result: ClientGatewayActionResult; receipt: ClientGatewayCommand
 type Entry = {
   sessionId: string; clientId: string; claim: ClientGatewayCommandClaim;
   phase: "preparing" | "waiting" | "reserved" | "terminal";
-  abort: AbortController; timer?: ReturnType<typeof setTimeout>; detach(): void;
+  abort: AbortController; timer?: ClientGatewayTimer; detach(): void;
   resolve(answer: Answer): void; reject(): void;
   answer: Promise<Answer>; completion: Promise<ClientGatewayDurableDispatchResult<ClientGatewayActionResult>>;
   context: ClientGatewayCommandContext; observer?: ClientGatewayCommandOutcomeObserver; proof?: object;
@@ -66,32 +67,35 @@ export class ClientGatewayDurableDispatch {
     options.signal?.addEventListener("abort", abort, { once: true }); entry.detach = () => options.signal?.removeEventListener("abort", abort);
     if (options.signal?.aborted) this.uncertain(entry);
     this.pending.set(commandId, entry);
-    if (observer) entry.timer = setTimeout(() => this.answerNeverCameOrUnknown(entry, this.answerWaitMs(command)), this.answerWaitMs(command));
+    if (observer) entry.timer = this.ports.config.startTimer({ kind: "answer", commandId }, this.answerWaitMs(command), () => this.answerNeverCameOrUnknown(entry, this.answerWaitMs(command)));
     const pipeline = this.run(entry, options.context, command, message);
     entry.completion = pipeline; this.pipelines.add(pipeline);
     void pipeline.finally(() => this.pipelines.delete(pipeline)).catch(/* best-effort: derived observer mirrors the public failure */ () => undefined);
     return { commandId, message, result: pipeline };
   }
   has(commandId: string): boolean { return this.pending.has(commandId); }
-  async settle(sessionId: string, input: ClientGatewayActionResult): Promise<"settled" | "wrong_session" | "suppressed" | "unknown_command"> {
+  /** `delivered` hears the result handed to the waiting caller, once it is committed as the command's outcome. */
+  async settle(sessionId: string, input: ClientGatewayActionResult, delivered?: (result: ClientGatewayActionResult) => void): Promise<"settled" | "wrong_session" | "suppressed" | "unknown_command"> {
     const entry = this.pending.get(input?.commandId);
     if (!entry) return "unknown_command";
     const sender = this.ports.sessions.require(sessionId);
     if (sessionId !== entry.sessionId || sender.clientId !== entry.clientId) return "wrong_session";
-    return await this.accept(entry, input);
+    return await this.accept(entry, input, delivered);
   }
   /** Takes `input` as the answer of a command still waiting: committed as its receipt, or, for an outcome the client could not vouch for, unknown. */
-  private async accept(entry: Entry, input: ClientGatewayActionResult): Promise<"settled" | "suppressed"> {
+  private async accept(entry: Entry, input: ClientGatewayActionResult, delivered?: (result: ClientGatewayActionResult) => void): Promise<"settled" | "suppressed"> {
     if (entry.phase !== "waiting") return this.suppressed(entry, "not_waiting");
     let result: ClientGatewayActionResult, resultDigest: string;
     try { resultDigest = Controller.digest(input); result = this.parseResult(input); this.freeze(result); }
     catch { return this.suppressed(entry, "invalid_result"); }
     if (result.status === "unknown" || result.status === "timed_out" || result.status === "cancelled") { this.uncertain(entry); await entry.completion; return this.suppressed(entry, "uncertain_status"); }
-    entry.phase = "reserved"; if (!entry.observer) clearTimeout(entry.timer);
+    entry.phase = "reserved"; if (!entry.observer) entry.timer?.cancel();
     const receipt: ClientGatewayCommandReceipt = { schemaVersion: "gateway_command_receipt.v1", commandId: entry.claim.binding.commandId, requestDigest: entry.claim.requestDigest, clientId: entry.clientId, sessionId: entry.sessionId, status: result.status, receivedAt: this.ports.config.now(), resultDigest, redaction: "receipt_only", ...(result.status === "failed" ? { failureClass: "action_failed" as const } : {}) };
     entry.resolve({ result, receipt });
     const completed = await entry.completion;
-    return completed.status === "completed" && completed.receipt.resultDigest === resultDigest ? "settled" : this.suppressed(entry, "not_committed");
+    if (completed.status !== "completed" || completed.receipt.resultDigest !== resultDigest) return this.suppressed(entry, "not_committed");
+    delivered?.(result);
+    return "settled";
   }
   /** An answer not taken as the command's outcome, recorded as Core's own decision in the command's trace. */
   private suppressed(entry: Entry, reason: string): "suppressed" {
@@ -119,7 +123,7 @@ export class ClientGatewayDurableDispatch {
         if (entry.abort.signal.aborted || this.closed || current.clientId !== entry.clientId || current.projectId && current.projectId !== entry.claim.binding.projectId) throw new Error("durable_command.admission_refused");
         entry.phase = "waiting";
         const waitMs = this.answerWaitMs(command);
-        if (!entry.observer) entry.timer = setTimeout(() => this.answerNeverCameOrUnknown(entry, waitMs), waitMs);
+        if (!entry.observer) entry.timer = this.ports.config.startTimer({ kind: "answer", commandId: entry.claim.binding.commandId }, waitMs, () => this.answerNeverCameOrUnknown(entry, waitMs));
         // Account for send rejection without awaiting a transport's possibly stalled flush before the answer deadline.
         void this.ports.transport.sendChecked(entry.sessionId, entry.clientId, message).catch(() => { /* best-effort: send rejection becomes durable unknown through the answer pipeline */ this.uncertain(entry); });
         return await entry.answer;
@@ -139,7 +143,7 @@ export class ClientGatewayDurableDispatch {
       if (!entry.observer) throw error;
       this.uncertain(entry); await this.notifyUncertainty(entry, "observer_or_dispatch_failed"); return { status: "outcome_unknown" };
     } finally {
-      clearTimeout(entry.timer); entry.detach(); entry.phase = "terminal";
+      entry.timer?.cancel(); entry.detach(); entry.phase = "terminal";
       this.pending.delete(entry.claim.binding.commandId);
       if (entry.proof) ClientGatewayDurableDispatch.proofs.delete(entry.proof);
       if (lease) {
@@ -170,7 +174,7 @@ export class ClientGatewayDurableDispatch {
     const answer = await this.ports.reconcile(commandId);
     if (entry.phase !== "waiting") return;
     const result = clientGatewayReconciledResult(commandId, answer, waitMs);
-    this.ports.trace.synthesized(commandId, "server.execute_action", { outcome: "answer_never_came", reconcileState: answer?.state ?? null, result });
+    this.ports.trace.synthesized(commandId, "server.execute_action", { outcome: "answer_never_came", reconcileState: answer?.state ?? null, waitMs, result });
     await this.accept(entry, result);
     if (entry.phase === "waiting") this.uncertain(entry);
   }
@@ -190,7 +194,7 @@ export class ClientGatewayDurableDispatch {
   private uncertain(entry: Entry): void {
     if ((!entry.observer && entry.phase === "reserved") || entry.phase === "terminal") return;
     if (entry.proof) ClientGatewayDurableDispatch.proofs.delete(entry.proof);
-    entry.phase = "terminal"; clearTimeout(entry.timer); entry.abort.abort(); entry.reject();
+    entry.phase = "terminal"; entry.timer?.cancel(); entry.abort.abort(); entry.reject();
     this.ports.trace.synthesized(entry.claim.binding.commandId, "server.execute_action", { outcome: "uncertain" });
   }
   private notifyUncertainty(entry: Entry, disposition: string): Promise<void> { entry.uncertainty ??= Promise.resolve().then(() => entry.observer!.uncertain(entry.context, disposition)); return entry.uncertainty; }

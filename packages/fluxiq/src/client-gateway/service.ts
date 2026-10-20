@@ -84,8 +84,8 @@ export class ClientGatewayService {
     const pairings = new ClientGatewayPairingRegistry(config);
     const trustedClients = new ClientGatewayTrustedClientRegistry(config);
     // Routes what the gateway sends and receives into the traces of the episodes that claim it; inert without `options.trace`.
-    const trace = new ClientGatewayTraceTap({ source: options.trace, clientIdOf: (sessionId) => sessions.get(sessionId)?.clientId });
-    const transport = new ClientGatewayTransport(sessions, config.now, trace);
+    const trace = new ClientGatewayTraceTap({ source: options.trace, clientIdOf: (sessionId) => sessions.get(sessionId)?.clientId, sessionViewOf: (sessionId) => sessions.get(sessionId) });
+    const transport = new ClientGatewayTransport(sessions, config.now, trace, config.createId);
     // Collaborators call back into this service's public surface through this
     // object, never through the collaborator that owns the method, so an
     // override or a stub on a public method is still honoured.

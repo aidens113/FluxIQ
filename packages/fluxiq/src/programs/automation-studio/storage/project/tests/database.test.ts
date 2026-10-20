@@ -1,5 +1,5 @@
 // @fluxiq-test-group real-sql
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -31,6 +31,24 @@ describe("AutomationStudioProjectDatabasePool", () => {
     await second.release();
     await expect(second.database.get("select 1")).rejects.toThrow(/closed/);
     await pool.closeAll();
+  });
+
+  it("zeroes deleted rows, so their bytes are gone from the file once the WAL is checkpointed", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const lease = await pool.acquire("project.secure-delete");
+    await expect(lease.database.get("pragma secure_delete")).resolves.toEqual({ secure_delete: 1 });
+    const marker = "secure-delete-marker-7f3a9c";
+    await lease.database.run("create table items (id text primary key, value text not null)");
+    await lease.database.run("insert into items (id, value) values (?, ?)", ["kept", "x".repeat(64)]);
+    await lease.database.run("insert into items (id, value) values (?, ?)", ["gone", marker.repeat(32)]);
+    await lease.database.checkpoint("truncate");
+    await lease.database.run("delete from items where id = ?", ["gone"]);
+    await lease.database.checkpoint("truncate");
+    const filePath = lease.database.filePath;
+    await lease.release();
+    await pool.closeAll();
+    const bytes = await readFile(filePath);
+    expect(bytes.includes(Buffer.from(marker, "utf8"))).toBe(false);
   });
 
   it("serializes operations and keeps transactions contiguous", async () => {
