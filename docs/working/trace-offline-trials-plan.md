@@ -26,6 +26,8 @@ move plan. Execution is run from the downstream `docs/working/trace-offline-tria
 is lane T, branch `task/t729-traces-offline-trials` in both repositories (worktrees under
 `C:/Users/osrs_/FluxStuff/fxwork/t729/`), created and not yet dispatched.
 
+**Dispatched 2026-10-19:** lane T is running P0 and P1 (brief in the downstream execution hub); the boundary moves are tracked in [extension-boundary-moves.md](./extension-boundary-moves.md).
+
 **Next:** P0, all in parallel: downstream audit Phases 0 and 1 (provider-call guard; offline queue scoped to its
 session, project and recording) in lanes H and G; Core owns recording and capture policy (lane S); a baseline from
 the Lab's per-step files; an inventory of everything Core accepts from clients and reads later; and the page-snapshot
