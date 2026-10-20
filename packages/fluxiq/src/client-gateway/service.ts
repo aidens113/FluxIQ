@@ -88,7 +88,7 @@ export class ClientGatewayService {
     };
     const pairingFlow = new ClientGatewayPairingFlow({ config, pairings, sessions, trustedClients, transport, audit, events, facade });
     const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, facade });
-    const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner, hostLease: options.hostLease });
+    const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner, hostLease: options.hostLease, channelScope: options.channelScope });
 
     this.trustedClients = trustedClients;
     this.audit = audit;
@@ -100,7 +100,7 @@ export class ClientGatewayService {
     this.access = new ClientGatewayAccess({ sessions, trustedClients, transport, audit, lifecycle, facade });
     this.inbound = new ClientGatewayInbound({ sessions, transport, events, lifecycle, pairingFlow, commands, audit, facade });
     this.activity = new ClientGatewayActivityPublisher(sessions, transport);
-    this.views = new ClientGatewayViews({ config, sessions, pairings, trustedClients, audit });
+    this.views = new ClientGatewayViews({ config, sessions, pairings, trustedClients, audit, channelScope: options.channelScope });
   }
 
   /** Trusted local transport binds before IO; legacy callers remain unattested. */
@@ -156,6 +156,23 @@ export class ClientGatewayService {
 
   disconnect(sessionId: string, reason = "disconnected"): ClientGatewaySession | null {
     return this.lifecycle.disconnect(sessionId, reason);
+  }
+
+  /**
+   * Attaches a session under a channel scope (`service/channel-scope/`): an
+   * offline trial's recorded client or a unit test's scripted one, answering
+   * through `receive` like any client. It is ready without pairing, never
+   * stored as a trusted client, and given a client id of its own; it is seen
+   * and reached only from inside `scopeId`, and nothing outside it can send to
+   * it. Disconnect it with `disconnect` when the scope ends.
+   */
+  attachScopedSession(input: { scopeId: string; socket: ClientGatewaySocket; hello: ClientGatewayClientHello }): ClientGatewaySession {
+    return this.lifecycle.attachScoped(input);
+  }
+
+  /** Whether `sessionId` was attached under a channel scope, so what it sends is never taken in as a live observation. */
+  isScopedSession(sessionId: string): boolean {
+    return this.lifecycle.isScoped(sessionId);
   }
 
   onEvent(handler: ClientGatewayEventHandler): () => void {
