@@ -173,7 +173,7 @@ export class AutomationStudioGatewayTraceEpisodes {
         traceId,
         episodeId: episode.episodeId,
         activity: episode.activity,
-        origin: { kind: "live" },
+        origin: episode.origin ?? { kind: "live" },
         contractVersions: this.options.contractVersions,
         capabilities: null,
         context: { schema: episode.context.schema, value: screenedContext(episode.context.value) },

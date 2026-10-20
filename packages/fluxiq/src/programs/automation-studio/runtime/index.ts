@@ -42,4 +42,5 @@ export * from "./reusable-llm-context.ts";
 export * from "./region-compiler.ts";
 export * from "./router-runtime.ts";
 export * from "./service.ts";
+export * from "./service/offline-trial/index.ts";
 export * from "./training-modes.ts";

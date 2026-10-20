@@ -1,7 +1,8 @@
 import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { ClientGatewayActionCommand, ClientGatewayActionResult, ClientGatewayReconcileAnswer } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayConfig } from "../config.ts";
-import type { ClientGatewayTimer } from "../types.ts";
+import type { ClientGatewayTimer, ClientGatewayTimerSource } from "../types.ts";
+import type { ClientGatewayChannelScopeSource } from "../channel-scope/index.ts";
 import type { ClientGatewaySessionRegistry } from "../sessions.ts";
 import type { ClientGatewayTransport } from "../transport.ts";
 import type { ClientGatewayEventBus } from "../event-bus.ts";
@@ -23,8 +24,10 @@ type Entry = {
   answer: Promise<Answer>; completion: Promise<ClientGatewayDurableDispatchResult<ClientGatewayActionResult>>;
   context: ClientGatewayCommandContext; observer?: ClientGatewayCommandOutcomeObserver; proof?: object;
   uncertainty?: Promise<void>;
+  /** The timer source of the channel scope the command was dispatched in, read once at dispatch; undefined: the gateway's own (`../channel-scope/source.ts`). */
+  timers: ClientGatewayTimerSource | undefined;
 };
-type Ports = { config: ClientGatewayConfig; sessions: ClientGatewaySessionRegistry; transport: ClientGatewayTransport; events: ClientGatewayEventBus; resolve?: (context: ClientGatewayCommandContext) => Promise<ClientGatewayCommandLedgerLease>; reconcile?: (commandId: string) => Promise<ClientGatewayReconcileAnswer | undefined>; hostLease?: ClientGatewayHostLeaseSource | undefined; trace: ClientGatewayTraceTap };
+type Ports = { config: ClientGatewayConfig; sessions: ClientGatewaySessionRegistry; transport: ClientGatewayTransport; events: ClientGatewayEventBus; resolve?: (context: ClientGatewayCommandContext) => Promise<ClientGatewayCommandLedgerLease>; reconcile?: (commandId: string, timers: ClientGatewayTimerSource | undefined) => Promise<ClientGatewayReconcileAnswer | undefined>; hostLease?: ClientGatewayHostLeaseSource | undefined; channelScope?: ClientGatewayChannelScopeSource | undefined; trace: ClientGatewayTraceTap };
 /** Explicit trusted gateway dispatch only; existing Flow/domain callers remain on the legacy path. */
 export class ClientGatewayDurableDispatch {
   private static readonly proofs = new WeakMap<object, { entry: Entry; observer: ClientGatewayCommandOutcomeObserver; value: ClientGatewayCommandCompletion }>();
@@ -62,12 +65,12 @@ export class ClientGatewayDurableDispatch {
     const answer = new Promise<Answer>((yes, no) => { resolve = yes; reject = () => no(new Error("durable_command.outcome_unknown")); });
     void answer.catch(/* best-effort: preadmission cancellation is reported by public completion */ () => undefined);
     const observer = ClientGatewayCommandOutcome.observer(options.context);
-    const entry: Entry = { sessionId, clientId: session.clientId, claim, context: options.context, ...(observer ? { observer } : {}), phase: "preparing", abort: new AbortController(), detach: () => undefined, resolve, reject, answer, completion: Promise.resolve({ status: "outcome_unknown" }) };
+    const entry: Entry = { sessionId, clientId: session.clientId, claim, context: options.context, ...(observer ? { observer } : {}), phase: "preparing", abort: new AbortController(), detach: () => undefined, resolve, reject, answer, completion: Promise.resolve({ status: "outcome_unknown" }), timers: this.ports.channelScope?.timers?.() };
     const abort = () => this.uncertain(entry);
     options.signal?.addEventListener("abort", abort, { once: true }); entry.detach = () => options.signal?.removeEventListener("abort", abort);
     if (options.signal?.aborted) this.uncertain(entry);
     this.pending.set(commandId, entry);
-    if (observer) entry.timer = this.ports.config.startTimer({ kind: "answer", commandId }, this.answerWaitMs(command), () => this.answerNeverCameOrUnknown(entry, this.answerWaitMs(command)));
+    if (observer) entry.timer = this.startTimer(entry)({ kind: "answer", commandId }, this.answerWaitMs(command), () => this.answerNeverCameOrUnknown(entry, this.answerWaitMs(command)));
     const pipeline = this.run(entry, options.context, command, message);
     entry.completion = pipeline; this.pipelines.add(pipeline);
     void pipeline.finally(() => this.pipelines.delete(pipeline)).catch(/* best-effort: derived observer mirrors the public failure */ () => undefined);
@@ -123,7 +126,7 @@ export class ClientGatewayDurableDispatch {
         if (entry.abort.signal.aborted || this.closed || current.clientId !== entry.clientId || current.projectId && current.projectId !== entry.claim.binding.projectId) throw new Error("durable_command.admission_refused");
         entry.phase = "waiting";
         const waitMs = this.answerWaitMs(command);
-        if (!entry.observer) entry.timer = this.ports.config.startTimer({ kind: "answer", commandId: entry.claim.binding.commandId }, waitMs, () => this.answerNeverCameOrUnknown(entry, waitMs));
+        if (!entry.observer) entry.timer = this.startTimer(entry)({ kind: "answer", commandId: entry.claim.binding.commandId }, waitMs, () => this.answerNeverCameOrUnknown(entry, waitMs));
         // Account for send rejection without awaiting a transport's possibly stalled flush before the answer deadline.
         void this.ports.transport.sendChecked(entry.sessionId, entry.clientId, message).catch(() => { /* best-effort: send rejection becomes durable unknown through the answer pipeline */ this.uncertain(entry); });
         return await entry.answer;
@@ -152,6 +155,10 @@ export class ClientGatewayDurableDispatch {
       }
     }
   }
+  /** Where `entry`'s answer wait runs: its dispatching scope's timers when it has them, else the gateway's own. */
+  private startTimer(entry: Entry): ClientGatewayTimerSource {
+    return entry.timers ?? this.ports.config.startTimer;
+  }
   private answerWaitMs(command: ClientGatewayActionCommand): number {
     return command.timeoutMs === undefined ? this.ports.config.commandTimeoutMs : command.timeoutMs + COMMAND_ANSWER_MARGIN_MS;
   }
@@ -171,7 +178,7 @@ export class ClientGatewayDurableDispatch {
       return;
     }
     const commandId = entry.claim.binding.commandId;
-    const answer = await this.ports.reconcile(commandId);
+    const answer = await this.ports.reconcile(commandId, entry.timers);
     if (entry.phase !== "waiting") return;
     const result = clientGatewayReconciledResult(commandId, answer, waitMs);
     this.ports.trace.synthesized(commandId, "server.execute_action", { outcome: "answer_never_came", reconcileState: answer?.state ?? null, waitMs, result });

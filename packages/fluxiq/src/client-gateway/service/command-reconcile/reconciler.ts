@@ -2,7 +2,7 @@ import type { ClientGatewayReconcileAnswer } from "@fluxiq/contracts/client-gate
 import type { ClientGatewayAuditLog } from "../audit-log.ts";
 import type { ClientGatewaySessionRegistry } from "../sessions.ts";
 import type { ClientGatewayTransport } from "../transport.ts";
-import type { InternalSession } from "../types.ts";
+import type { ClientGatewayTimer, ClientGatewayTimerSource, InternalSession } from "../types.ts";
 import { readClientGatewayReconcileAnswer } from "./answer-reading.ts";
 import { clientGatewaySessionAnswersReconcile } from "./session-answers.ts";
 
@@ -18,6 +18,12 @@ import { clientGatewaySessionAnswersReconcile } from "./session-answers.ts";
 // says nothing within the answer window is `unknown`. A command still
 // `running` is waited on once, for the same window, and asked again; a second
 // `running` stands, and the caller treats it as `unknown`.
+//
+// The answer window and the pause run on the real clock, unless the caller
+// hands the timer source of the scope its command was dispatched in (traces
+// and offline trials, P4, "Virtual clock"): then both run out in that scope's
+// time, so an offline run asks and gives up at its logical time with no
+// wall-clock wait. A live command is never handed one.
 
 /** Where a command was sent: its session, and the client behind it. */
 export type ClientGatewayReconcileRoute = { sessionId: string; clientId: string };
@@ -25,7 +31,7 @@ export type ClientGatewayReconcileRoute = { sessionId: string; clientId: string 
 type Waiter = {
   clientId: string;
   resolve(answer: ClientGatewayReconcileAnswer): void;
-  timer: ReturnType<typeof setTimeout>;
+  timer: ClientGatewayTimer;
 };
 
 type ReconcilerDeps = {
@@ -46,21 +52,22 @@ export class ClientGatewayCommandReconciler {
   /**
    * What became of `commandId`: one answer, or, for `running`, a second after
    * one bounded wait. `undefined` when no session of its client could be asked
-   * at all, so the caller keeps the outcome it had.
+   * at all, so the caller keeps the outcome it had. `timers`: the timer
+   * source of the scope the command was dispatched in, when it has one.
    */
-  async reconcile(route: ClientGatewayReconcileRoute, commandId: string): Promise<ClientGatewayReconcileAnswer | undefined> {
-    const first = await this.ask(route, commandId);
+  async reconcile(route: ClientGatewayReconcileRoute, commandId: string, timers?: ClientGatewayTimerSource): Promise<ClientGatewayReconcileAnswer | undefined> {
+    const first = await this.ask(route, commandId, timers);
     if (first?.state !== "running") return first;
-    await this.pause();
-    const second = await this.ask(route, commandId);
+    await this.pause(commandId, timers);
+    const second = await this.ask(route, commandId, timers);
     return second ?? { commandId, state: "unknown" };
   }
 
   /** Asks once. A second caller asking for the same command meanwhile shares the one request. */
-  ask(route: ClientGatewayReconcileRoute, commandId: string): Promise<ClientGatewayReconcileAnswer | undefined> {
+  ask(route: ClientGatewayReconcileRoute, commandId: string, timers?: ClientGatewayTimerSource): Promise<ClientGatewayReconcileAnswer | undefined> {
     const current = this.asking.get(commandId);
     if (current) return current;
-    const asked = this.send(route, commandId).finally(() => this.asking.delete(commandId));
+    const asked = this.send(route, commandId, timers).finally(() => this.asking.delete(commandId));
     this.asking.set(commandId, asked);
     return asked;
   }
@@ -87,12 +94,12 @@ export class ClientGatewayCommandReconciler {
     for (const commandId of [...this.waiting.keys()]) this.finish(commandId, { commandId, state: "unknown" });
   }
 
-  private async send(route: ClientGatewayReconcileRoute, commandId: string): Promise<ClientGatewayReconcileAnswer | undefined> {
+  private async send(route: ClientGatewayReconcileRoute, commandId: string, timers: ClientGatewayTimerSource | undefined): Promise<ClientGatewayReconcileAnswer | undefined> {
     if (this.closed) return undefined;
     const session = this.sessionFor(route);
     if (!session) return undefined;
     const answer = new Promise<ClientGatewayReconcileAnswer>((resolve) => {
-      const timer = setTimeout(() => this.finish(commandId, { commandId, state: "unknown" }), this.deps.answerMs);
+      const timer = this.startWait(commandId, timers, () => this.finish(commandId, { commandId, state: "unknown" }));
       this.waiting.set(commandId, { clientId: session.clientId, resolve, timer });
     });
     this.deps.audit.record("command.reconcile_asked", "Asked the client what became of a command whose answer never came.", { sessionId: session.sessionId, commandId });
@@ -108,7 +115,7 @@ export class ClientGatewayCommandReconciler {
   private finish(commandId: string, answer: ClientGatewayReconcileAnswer): void {
     const waiter = this.waiting.get(commandId);
     if (!waiter) return;
-    clearTimeout(waiter.timer);
+    waiter.timer.cancel();
     this.waiting.delete(commandId);
     waiter.resolve(answer);
   }
@@ -120,10 +127,25 @@ export class ClientGatewayCommandReconciler {
     return candidates.find((session) => session.status === "ready" && session.clientId === route.clientId && clientGatewaySessionAnswersReconcile(session));
   }
 
-  private async pause(): Promise<void> {
+  private async pause(commandId: string, timers: ClientGatewayTimerSource | undefined): Promise<void> {
     await new Promise<void>((resolve) => {
+      if (timers) {
+        timers({ kind: "answer", commandId }, this.deps.answerMs, resolve);
+        return;
+      }
       const timer = setTimeout(resolve, this.deps.answerMs);
       timer.unref?.();
     });
+  }
+
+  /**
+   * One answer window for `commandId`: on the scope's timer source when it
+   * has one (the gateway names only answer waits, and this is the wait for
+   * the client's answer about that command), else on the real clock.
+   */
+  private startWait(commandId: string, timers: ClientGatewayTimerSource | undefined, fire: () => void): ClientGatewayTimer {
+    if (timers) return timers({ kind: "answer", commandId }, this.deps.answerMs, fire);
+    const handle = setTimeout(fire, this.deps.answerMs);
+    return { cancel: () => clearTimeout(handle) };
   }
 }

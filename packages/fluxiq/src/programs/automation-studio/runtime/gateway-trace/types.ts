@@ -5,6 +5,7 @@
 
 import type {
   ClientGatewayTraceActivity,
+  ClientGatewayTraceOrigin,
   ClientGatewayTraceSchemaRef,
   ClientGatewayTraceStore,
   ClientGatewayTraceTerminationReason
@@ -20,6 +21,12 @@ export type AutomationStudioGatewayTraceEpisode = {
   context: { schema: ClientGatewayTraceSchemaRef; value: unknown };
   /** The Flow the episode builds, tests or runs, when it has one: run control for a build arrives keyed `[projectId, flowId]`. */
   flowId?: string;
+  /**
+   * Where the episode's trace comes from (source test T24). Absent: `live`, a
+   * live episode. An episode run on recorded evidence -- an offline trial --
+   * is `derived` (`./wiring/trial.ts`), and nothing makes it live again.
+   */
+  origin?: ClientGatewayTraceOrigin;
 };
 
 /** When buffered events are written: every `everyEvents` recorded events, and every `intervalMs` while any are buffered. */
