@@ -67,9 +67,14 @@ export async function interpretAutomationStudioConversationTurn(input: Automatio
   let correction: string | null = null;
   let problem = "the model did not answer";
   let attempts = 0;
-  // What the attempts were priced at, summed; undefined until one is.
+  // What the attempts were priced at, summed, and how many were priced; undefined until one is.
   let costUsd: number | undefined;
-  const paid = (usd: number) => { if (Number.isFinite(usd) && usd >= 0) costUsd = (costUsd ?? 0) + usd; };
+  let pricedCalls = 0;
+  const paid = (usd: number) => {
+    if (!Number.isFinite(usd) || usd < 0) return;
+    costUsd = (costUsd ?? 0) + usd;
+    pricedCalls += 1;
+  };
   while (attempts < limits.attempts) {
     const remaining = limits.deadlineMs - (clock.now() - started);
     if (remaining <= 0) {
@@ -84,7 +89,7 @@ export async function interpretAutomationStudioConversationTurn(input: Automatio
         { signal, caller: input.caller ?? null, paid }
       ));
       const decision = parseAutomationStudioConversationDecision(raw, input.context);
-      if (decision) return { decision, source: "model", modelProblem: null, attempts, ...priced(costUsd) };
+      if (decision) return { decision, source: "model", modelProblem: null, attempts, ...priced(costUsd, pricedCalls) };
       correction = UNREADABLE;
       problem = "the model's answer could not be read";
     } catch (error) {
@@ -93,7 +98,7 @@ export async function interpretAutomationStudioConversationTurn(input: Automatio
       await clock.wait(Math.min(limits.backoffMs * 2 ** (attempts - 1), Math.max(0, limits.deadlineMs - (clock.now() - started))));
     }
   }
-  return { ...fallback(input, problem, attempts), ...priced(costUsd) };
+  return { ...fallback(input, problem, attempts), ...priced(costUsd, pricedCalls) };
 }
 
 /**
@@ -122,9 +127,9 @@ async function attemptWithin<T>(ms: number, attempt: (signal: AbortSignal) => Pr
   }
 }
 
-/** The interpretation's `costUsd`, present only when an attempt was priced. */
-function priced(costUsd: number | undefined): { costUsd?: number } {
-  return costUsd === undefined ? {} : { costUsd };
+/** The interpretation's `costUsd` and `pricedCalls`, present only when an attempt was priced. */
+function priced(costUsd: number | undefined, pricedCalls: number): { costUsd?: number; pricedCalls?: number } {
+  return costUsd === undefined ? {} : { costUsd, pricedCalls };
 }
 
 /** Why a model call failed, in words a person reads in the thread. Never the provider's own message, which is not written for them. */
@@ -133,6 +138,7 @@ export function automationStudioConversationModelProblem(error: unknown): string
   const name = error instanceof Error ? error.name : "";
   if (/timeout|aborted/u.test(code) || name === "TimeoutError" || name === "AbortError") return "the model did not answer in time";
   if (/rate_limited/u.test(code)) return "the model was too busy to answer";
+  if (/balance_exhausted/u.test(code)) return "the model account's balance has run out, so add credit with the model provider and try again";
   if (/secret_unavailable/u.test(code)) return "your model key is locked for this session, so sign out of FluxIQ and sign in again to unlock your keys and let the model read your messages";
   if (/auth|secret/u.test(code)) return "the model's credentials were not accepted";
   if (/network|http|redirect/u.test(code)) return "the model could not be reached";

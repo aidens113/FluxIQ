@@ -55,7 +55,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW: AutomationStudioConversati
     if (!flowId) return progress.failed("I could not tell which Flow to run");
     progress.carry({ flowId });
     // What reading the message cost travels with the run: the Flow's spend in a Lab-scoped run (t438).
-    const reading = context.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: context.interpretationCostUsd };
+    const reading = { ...(context.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: context.interpretationCostUsd }), ...(context.interpretationCalls === undefined ? {} : { interpretationCalls: context.interpretationCalls }) };
     const response = await context.port.call("run-runtime-session", { projectId: context.projectId, flowId, runIntent: "explore_and_adapt", resultCheckCallerPays: "repair_checks", ...reading });
     const answer = (response.payload ?? {}) as RunAnswer;
     const runId = typeof answer.runtimeSession?.runId === "string" ? answer.runtimeSession.runId : undefined;

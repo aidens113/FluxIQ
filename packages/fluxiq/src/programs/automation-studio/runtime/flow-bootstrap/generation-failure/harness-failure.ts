@@ -204,6 +204,7 @@ function resolvedProviderHarnessFailure(code: unknown): ProjectedHarnessFailure 
   }
   switch (code) {
     case "llm.provider_auth_failed": return providerRequest("flow_bootstrap.provider_auth_failed");
+    case "llm.provider_balance_exhausted": return providerRequest("flow_bootstrap.provider_balance_exhausted");
     case "llm.provider_rate_limited": return providerRequest("flow_bootstrap.provider_rate_limited");
     case "llm.provider_timeout": return providerRequest("flow_bootstrap.provider_timeout");
     case "llm.provider_aborted": return providerRequest("flow_bootstrap.provider_aborted");

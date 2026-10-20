@@ -53,6 +53,7 @@ const ALLOWLISTED = [
   "generate-recording-proposal",
   "review-recording-flow-proposal",
   "remove-recording-entry",
+  "get-recording-capture-policy",
 ];
 
 const CLASSIFICATIONS: Record<string, string> = {
@@ -77,6 +78,7 @@ const CLASSIFICATIONS: Record<string, string> = {
   "generate-recording-proposal": "authoring",
   "review-recording-flow-proposal": "authoring",
   "remove-recording-entry": "authoring",
+  "get-recording-capture-policy": "read",
 };
 
 /** A run by token with no mode is pinned to no LLM intervention; every other body passes as sent. */

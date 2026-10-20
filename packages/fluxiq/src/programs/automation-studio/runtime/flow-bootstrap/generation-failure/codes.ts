@@ -73,6 +73,9 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
   provider_request: [
     "flow_bootstrap.provider_request_failed",
     "flow_bootstrap.provider_auth_failed",
+    // The account paying for the build had no balance left (`llm.provider_balance_exhausted`):
+    // a person adds credit, and no retry as it stands can succeed.
+    "flow_bootstrap.provider_balance_exhausted",
     "flow_bootstrap.provider_rate_limited",
     "flow_bootstrap.provider_timeout",
     "flow_bootstrap.provider_aborted",

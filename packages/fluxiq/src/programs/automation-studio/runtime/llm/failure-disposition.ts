@@ -72,6 +72,10 @@ export const AUTOMATION_STUDIO_LLM_PROVIDER_FAILURE_DISPOSITIONS = Object.freeze
   "llm.provider_secret_unavailable": END_MODEL_CALLS,
   "llm.provider_auth_failed": END_MODEL_CALLS,
   "llm.provider_redirect_rejected": END_MODEL_CALLS,
+  // The account paying for the call has no balance left. Every next call is
+  // refused the same way until a person adds credit, so the model is asked
+  // nothing more rather than spending the run on refusals.
+  "llm.provider_balance_exhausted": END_MODEL_CALLS,
   // Cancelled from outside. A cancellation is final.
   "llm.provider_aborted": END_MODEL_CALLS,
   // The provider billed past the call's ceiling, so every estimate made from

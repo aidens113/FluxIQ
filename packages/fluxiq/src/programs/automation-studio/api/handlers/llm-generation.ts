@@ -102,6 +102,8 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
       // creation purse. Only a finite, non-negative amount passes.
       const interpretationCostUsd = payload.interpretationCostUsd;
       if (interpretationCostUsd !== undefined && (typeof interpretationCostUsd !== "number" || !Number.isFinite(interpretationCostUsd) || interpretationCostUsd < 0)) return { ok: false, error: "Flow bootstrap generation request contains an invalid interpretation cost." };
+      const interpretationCalls = payload.interpretationCalls;
+      if (interpretationCalls !== undefined && (!Number.isSafeInteger(interpretationCalls) || (interpretationCalls as number) < 0)) return { ok: false, error: "Flow bootstrap generation request contains an invalid interpretation call count." };
       const readiness = flowBootstrapGenerationReadiness(service);
       if (!readiness.supported) return flowBootstrapRuntimeUnavailable(readiness);
       // What the person allowed the build's actions to do. Absent is nothing;
@@ -132,6 +134,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
           // than built from nowhere.
           ...(startLocation === undefined ? {} : { startLocation }),
           ...(interpretationCostUsd === undefined ? {} : { interpretationCostUsd }),
+          ...(interpretationCalls === undefined ? {} : { interpretationCalls: interpretationCalls as number }),
           // Somebody has just pressed build, so a question this build raises is
           // worth holding it open for: answered, the build carries on with
           // permission instead of coming back needing another one.
@@ -188,7 +191,8 @@ const FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS = new Set([
   "useReusableContext",
   "startLocation",
   "mode",
-  "interpretationCostUsd"
+  "interpretationCostUsd",
+  "interpretationCalls"
 ]);
 
 function flowBootstrapGenerationReadiness(service: AutomationStudioService) {

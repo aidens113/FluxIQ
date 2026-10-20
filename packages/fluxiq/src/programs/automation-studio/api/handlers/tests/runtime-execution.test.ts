@@ -108,6 +108,12 @@ describe("the run endpoint and a run's model intent", () => {
       expect(refused.response, String(value)).toEqual({ ok: false, error: "The run's interpretation cost is invalid." });
       expect(refused.runRuntimeSession).not.toHaveBeenCalled();
     }
+    // How many priced calls that reading was travels beside it (t728): a whole number, or the run is refused.
+    const counted = await pairedRun("session.unlocked", { runIntent: "explore_and_adapt", interpretationCostUsd: 0.0003, interpretationCalls: 2 });
+    expect((counted.runRuntimeSession.mock.calls[0] as unknown[])[0]).toMatchObject({ interpretationCostUsd: 0.0003, interpretationCalls: 2 });
+    for (const value of [-1, 1.5, "2"]) {
+      expect((await pairedRun("session.unlocked", { runIntent: "explore_and_adapt", interpretationCalls: value })).response, String(value)).toEqual({ ok: false, error: "The run's interpretation call count is invalid." });
+    }
   });
 
   it("asks nothing of the result checks of a run the model takes no part in", async () => {

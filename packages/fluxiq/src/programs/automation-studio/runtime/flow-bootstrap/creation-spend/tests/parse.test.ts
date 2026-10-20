@@ -30,4 +30,27 @@ describe("a Flow creation's spend read back", () => {
   ])("refuses %s record", (_label, value) => {
     expect(parseAutomationStudioFlowBootstrapCreationSpend(value, OWNER)).toBeNull();
   });
+
+  // Itemised by a Lab-scoped Flow purse (t728): `calls` and `byPhase` together, every phase present.
+  const ITEM = { calls: 1, usd: 0.01 };
+  const ITEMISED: AutomationStudioFlowBootstrapCreationSpend = {
+    ...RECORD,
+    calls: 6,
+    byPhase: { build: ITEM, read: ITEM, judge: ITEM, runtime: ITEM, reauthor: ITEM, chat: ITEM }
+  };
+
+  it("reads an itemised record", () => {
+    expect(parseAutomationStudioFlowBootstrapCreationSpend(structuredClone(ITEMISED), OWNER)).toEqual(ITEMISED);
+  });
+
+  it.each([
+    ["calls without phases", { ...RECORD, calls: 6 }],
+    ["phases without calls", { ...ITEMISED, calls: undefined }],
+    ["a missing phase", { ...ITEMISED, byPhase: { ...ITEMISED.byPhase, chat: undefined } }],
+    ["a fractional call count", { ...ITEMISED, byPhase: { ...ITEMISED.byPhase, judge: { calls: 0.5, usd: 0 } } }],
+    ["a negative phase spend", { ...ITEMISED, byPhase: { ...ITEMISED.byPhase, read: { calls: 0, usd: -1 } } }],
+    ["a negative total call count", { ...ITEMISED, calls: -1 }]
+  ])("refuses an itemised record with %s", (_label, value) => {
+    expect(parseAutomationStudioFlowBootstrapCreationSpend(value, OWNER)).toBeNull();
+  });
 });

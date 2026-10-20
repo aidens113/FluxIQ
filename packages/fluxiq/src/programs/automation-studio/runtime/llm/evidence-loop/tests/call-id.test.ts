@@ -8,7 +8,7 @@
 // from there.
 
 import { describe, expect, it } from "vitest";
-import { automationStudioLlmEvidenceIsOpeningCallId, automationStudioLlmEvidenceOpeningCallId, automationStudioLlmEvidenceUnusedCallId } from "../call-id.ts";
+import { automationStudioLlmEvidenceIsOpeningCallId, automationStudioLlmEvidenceOpeningCallId, automationStudioLlmEvidenceOpeningCallScope, automationStudioLlmEvidenceUnusedCallId } from "../call-id.ts";
 
 describe("the id an evidence entry is filed under", () => {
   it("is the one asked for when nothing has taken it", () => {
@@ -59,5 +59,16 @@ describe("the opening call's id (t537)", () => {
     expect(automationStudioLlmEvidenceIsOpeningCallId(automationStudioLlmEvidenceOpeningCallId("core.run_node", "brief-1"))).toBe(true);
     expect(automationStudioLlmEvidenceIsOpeningCallId("submit.1")).toBe(false);
     expect(automationStudioLlmEvidenceIsOpeningCallId("dryrun.1.reset")).toBe(false);
+  });
+
+  it("gives back the scope an opening id was written with, read against its own tool (t728)", () => {
+    expect(automationStudioLlmEvidenceOpeningCallScope(automationStudioLlmEvidenceOpeningCallId("core.run_node", "brief-1"), "core.run_node")).toBe("brief-1");
+    expect(automationStudioLlmEvidenceOpeningCallScope(automationStudioLlmEvidenceOpeningCallId("core.run_node"), "core.run_node")).toBeUndefined();
+    // A tool id with dots of its own is stripped whole, so its last segment is never read as a scope.
+    expect(automationStudioLlmEvidenceOpeningCallScope("initial.core.run_node", "core.run_node")).toBeUndefined();
+    expect(automationStudioLlmEvidenceOpeningCallScope("initial.core.run_node.brief-1", "core.run")).toBeUndefined();
+    expect(automationStudioLlmEvidenceOpeningCallScope("initial.core.run_node.a.b", "core.run_node")).toBeUndefined();
+    expect(automationStudioLlmEvidenceOpeningCallScope("model.initial.core.run_node.brief-1", "core.run_node")).toBeUndefined();
+    expect(automationStudioLlmEvidenceOpeningCallScope("submit.1", "core.run_node")).toBeUndefined();
   });
 });

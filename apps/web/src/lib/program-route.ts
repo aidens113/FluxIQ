@@ -120,6 +120,9 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
     "review-recording-flow-proposal",
     // Undoing one captured step while the recording is still open, `authoring`; a finalized recording refuses it.
     "remove-recording-entry",
+    // What a recording may capture and whether a Flow may send direct requests, `read` (t728). Not projected: Core's
+    // policy is switches and nothing secret, and the extension reads it before capturing rather than deciding alone.
+    "get-recording-capture-policy",
   ]),
   "secret-keys": Object.freeze([
     // Whether an LLM key is configured, `read`. Projected: kind, provider and enabled only, nothing that names or identifies a key.

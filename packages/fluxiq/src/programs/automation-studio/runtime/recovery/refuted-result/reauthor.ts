@@ -267,6 +267,8 @@ export function automationStudioRefutedResultReauthored(input: {
     ...(input.accounting ?? failure?.accounting ? { accounting: (input.accounting ?? failure?.accounting)! } : {}),
     ...(failure?.evidenceLoop ? { evidenceLoop: failure.evidenceLoop } : {}),
     ...(failure?.ending ? { ending: failure.ending } : {}),
+    ...(failure?.calls === undefined ? {} : { calls: failure.calls }),
+    ...(failure?.instructedConsequences?.length ? { instructedConsequences: [...failure.instructedConsequences] } : {}),
     ...(input.brief ? { brief: input.brief } : {})
   };
   return {
@@ -339,6 +341,14 @@ export type AutomationStudioRefutedResultFailure = {
    * so nothing said why each of its rounds stopped.
    */
   ending?: JsonObject | undefined;
+  /**
+   * How many provider calls the failed build made: its diagnostic's
+   * `totalProviderCallCount`, else what its purse receipt settled
+   * (`service/runtime-adaptation/reauthor-build.ts`). Absent when neither said.
+   */
+  calls?: number | undefined;
+  /** The lasting consequence classes the build's permission gate read the instruction to ask for, when it read it. Classes only. */
+  instructedConsequences?: readonly string[] | undefined;
 };
 
 /**

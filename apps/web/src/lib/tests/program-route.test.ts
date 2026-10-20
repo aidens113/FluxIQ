@@ -68,6 +68,7 @@ describe("a paired client on the program route", () => {
         "generate-recording-proposal",
         "review-recording-flow-proposal",
         "remove-recording-entry",
+        "get-recording-capture-policy",
       ],
       "secret-keys": ["snapshot"],
     });
@@ -81,6 +82,8 @@ describe("a paired client on the program route", () => {
     expect(isPairedClientEndpoint("automation-studio", "pause-runtime-session")).toBe(true);
     expect(isPairedClientEndpoint("automation-studio", "resume-runtime-session")).toBe(true);
     expect(isPairedClientEndpoint("automation-studio", "get-runtime-run-control")).toBe(true);
+    // What a recording may capture and whether direct requests are allowed: Core's policy, read before capture (t728).
+    expect(isPairedClientEndpoint("automation-studio", "get-recording-capture-policy")).toBe(true);
     expect(isPairedClientEndpoint("automation-studio", "delete-run-datasets")).toBe(false);
     expect(isPairedClientEndpoint("automation-studio", "delete-recording")).toBe(false);
     expect(isPairedClientEndpoint("automation-studio", "review-flow-adaptation")).toBe(false);

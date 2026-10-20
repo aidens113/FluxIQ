@@ -26,6 +26,7 @@ import { AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS } from "./models.ts";
 import { estimateAutomationStudioDeepSeekCostUsd } from "./pricing.ts";
 import { automationStudioDeepSeekRequestShape } from "./request-shape.ts";
 import { automationStudioDeepSeekRefusalText, readAutomationStudioDeepSeekRefusal } from "./refusal.ts";
+import { automationStudioDeepSeekBalanceExhausted } from "./balance-exhausted.ts";
 import { validateAutomationStudioDeepSeekRequest } from "./preflight.ts";
 import { automationStudioDeepSeekMalformedReply, parseAutomationStudioDeepSeekEnvelope } from "./response-envelope.ts";
 import { automationStudioLlmStepLogModelStep, type AutomationStudioLlmStepLogModelStep } from "../step-log/index.ts";
@@ -274,6 +275,10 @@ async function deepSeekRefusalFailure(
     signal
   });
   const said = automationStudioDeepSeekRefusalText(refusal);
+  // Before the status checks: an empty account is its own code under any status (`./balance-exhausted.ts`).
+  if (automationStudioDeepSeekBalanceExhausted(response.status, refusal.error)) {
+    return new AutomationStudioLlmProviderError("llm.provider_balance_exhausted", "DeepSeek refused the request: the account's balance is exhausted.", false, response.status, undefined, said);
+  }
   if (response.status === 401 || response.status === 403) {
     return new AutomationStudioLlmProviderError("llm.provider_auth_failed", "DeepSeek rejected the configured credential.", false, response.status, undefined, said);
   }

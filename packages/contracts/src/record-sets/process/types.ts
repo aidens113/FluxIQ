@@ -31,6 +31,17 @@ export type AutomationStudioRecordCondition = {
   not?: boolean;
 };
 
+/**
+ * What `automationStudioRecordConditionHolds` reads of a condition: its
+ * comparisons, with the field optional and any key allowed to be `undefined`.
+ * A caller that already holds the one value a condition tests (a browser
+ * reading a card) asks with a condition naming no field; a stored condition is
+ * one of these as it stands. The field is never read.
+ */
+export type AutomationStudioRecordConditionTest = {
+  [Key in keyof AutomationStudioRecordCondition]?: AutomationStudioRecordCondition[Key] | undefined;
+};
+
 export type AutomationStudioRecordSortOrder = (typeof AUTOMATION_STUDIO_RECORD_SORT_ORDERS)[number];
 
 export type AutomationStudioRecordSortType = (typeof AUTOMATION_STUDIO_RECORD_SORT_TYPES)[number];

@@ -53,6 +53,20 @@ describe("screening evidence before it may reach a provider", () => {
     }
   });
 
+  // t728 (extension-core boundary audit, finding 9): a card number is secret
+  // shaped in Core too, by the web domain's strict rules -- written as a card
+  // is, an issuer's first digit, and the Luhn check -- so an order number or a
+  // timestamp stays ordinary text.
+  it("finds a card number in a value or a key, and leaves digit runs that are not one", () => {
+    for (const card of ["4111111111111111", "4111 1111 1111 1111", "5555-5555-5555-4444", "378282246310005", "2223000048400011"]) {
+      expect(screenAutomationStudioLlmEvidence({ page: { text: `Card ${card} on file` } }, []), card).toEqual({ deniedKey: false, secretShaped: true });
+      expect(screenAutomationStudioLlmEvidence({ [card]: true }, []), card).toEqual({ deniedKey: false, secretShaped: true });
+    }
+    for (const text of ["4111111111111112", "1727712000006", "412-5550123-4567884", "Order 112-5550123-4567890", "SKU 4006381333931 in stock", "Call 555-123-4567"]) {
+      expect(screenAutomationStudioLlmEvidence({ page: { text } }, []), text).toEqual({ deniedKey: false, secretShaped: false });
+    }
+  });
+
   it("reports both findings when both are present, and ends on a value that refers to itself", () => {
     expect(screenAutomationStudioLlmEvidence({ cookies: "sk-4f9c2e7b1a6d3058e2c4b7a9d1f6e3c0" }, WEB_DENIED_EVIDENCE_KEYS)).toEqual({ deniedKey: true, secretShaped: true });
     const cyclic: Record<string, unknown> = { name: "loop" };

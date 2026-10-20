@@ -166,6 +166,8 @@ export type GenerateFlowBootstrapAdaptationRequest = FlowIdProjectRequest & {
    * carried. Anything else refuses the request.
    */
   interpretationCostUsd?: number;
+  /** How many priced model calls `interpretationCostUsd` sums: a whole number, recorded as the Flow spend's "chat" calls. Anything else refuses the request. */
+  interpretationCalls?: number;
 };
 
 export type GenerateFlowBootstrapAdaptationFailureDiagnostic = {

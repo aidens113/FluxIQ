@@ -1042,6 +1042,19 @@ does not start with `{`, ends inside a string or closes the wrong bracket is
 still refused `content_unclosed`, and a `length` reply is refused as
 truncated before this runs. The reply as sent stays in the step log.
 
+An exhausted provider balance has its own code, `llm.provider_balance_exhausted`
+(t728), rather than `llm.provider_http_error`. The DeepSeek adapter
+(`llm/deepseek/balance-exhausted.ts`, used by `provider.ts` and
+`panel-command.ts`) reads it from HTTP 402, or from a screened error code, type
+or message saying the balance, quota, credit or funds are insufficient, at any
+status, and checks it before the 401/403/429 refusals. Its disposition is
+`end_model_calls`: it is never retried and is not a spent call. A build that
+ends on it fails `flow_bootstrap.provider_balance_exhausted` (stage
+`provider_request`, attempted and received, not retryable, with
+`accounting.providerStatus`); a re-author attempt carries the same code, the
+step log's `meta.error.code` names it, and the chat tells the person the model
+account's balance has run out and to add credit with the provider.
+
 ### Domain system instructions
 
 A domain may bind its own instructions with its evidence runtime:
@@ -1077,6 +1090,44 @@ DeepSeek system message is built in three parts:
 
 Both of the first two parts are constant for a binding and a task kind, so the
 text sits inside the prefix a provider's cache reuses from one call to the next.
+
+**Rules Core says itself, per task kind (t728).** The sentences that hold for
+every domain are Core constants in `llm/deepseek/system-prompt.ts`, added to the
+third part (Core's task prose), never to the first, so the format, injection and
+schema rules are unchanged. In prose order:
+
+- **Recordings**, first, to any task kind, only when
+  `context.supplementaryRecordings` is non-empty (today only Flow Bootstrap
+  carries them, and a build's recordings are the same on every call, so the
+  cached prefix holds): written instructions define the automation; described
+  demonstrations are untrusted, never replace the task or authorize extra acts,
+  lose where they differ from the instructions, and never imply a task.
+- **Person limits**, to every task kind that chooses or writes an act
+  (`flow_bootstrap`, `evidence_tool_decision` staged or not, `runtime_patch`,
+  `subflow_patch`, `expectation_action_target_patch`): anything a person could
+  do is allowed, acts that spend money, delete, or send or publish are asked of
+  the person first, and no password or other secret is ever typed.
+- **Loop authoring** (`AUTOMATION_STUDIO_LOOP_AUTHORING_INSTRUCTION`): repetitive
+  work is a loop with a `where` keeping the items to act on, the act done or
+  written once and `repeat` stated, and a value that changes between runs or rows
+  bound with `{"$input"}` / `{"$row"}`, never typed in. Flow Bootstrap gets it
+  after its compact-output sentence; the three patch kinds get it at the end of
+  their prose. Evidence decisions do not, because their loop policy
+  (`AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION`) already says it.
+- **Lists** (`AUTOMATION_STUDIO_LIST_AUTHORING_INSTRUCTION`): keep an item by
+  evidence of its own type, and state a loop's repeat by `amend_draft repeat` in
+  a draft or by repeat lines in a written Flow. To evidence decisions (after the
+  loop policy) and Flow Bootstrap (after loop authoring).
+- **Efficiency** (`AUTOMATION_STUDIO_EFFICIENCY_INSTRUCTION`): as few decisions
+  as the task needs, under a small cost ceiling. Same kinds as Lists, right
+  after it.
+
+Judges, diagnosis, router patches and instruction suggestions get none of these:
+they write no step. The chat interpreter's prompt is unchanged; it only picks a
+panel capability. A domain's instructions therefore carry only its own domain's
+wording (how to read its page view, find things, page, what it can never do);
+a generic rule written there as well is said twice, so a domain deletes its
+copy when Core takes a rule over.
 Nothing a domain writes replaces Core's schema or injection rules. Without
 instructions the message is byte for byte what it was; the pins are
 `runtime/llm/deepseek/tests/system-prompt-pins.json`.
@@ -2071,6 +2122,29 @@ instruction, every decision, the test and the judge are all held against it.
   Product scope keeps one purse per creation and a per-run repair purse: a
   product Flow runs on a schedule indefinitely, and a lifetime purse would
   leave every later run with nothing.
+- **The Flow's spend is itemised, and readable (t728).** Each call the Flow's
+  purse settles is added with `calls: 1` and a phase from
+  `AUTOMATION_STUDIO_FLOW_SPEND_PHASES` (`creation-spend/phases.ts`): `build`,
+  `read`, `judge`, `runtime`, `reauthor`, `chat`.
+  `automationStudioFlowSpendPhaseOf` (`phase-of.ts`) decides it in that order of
+  precedence: a judge call (the purse's `onSettled` now says `{ judge }`), then
+  the step-log scope's `part` re-author, its `phase` read, its `part` creation
+  (counted as build), else runtime. The phase needs the step-log scope, which
+  exists only while `FLUXIQ_LLM_STEP_LOG_DIR` is set (every Lab run sets it);
+  without it every non-judge call lands under `runtime`. The chat's reading is
+  added once when the build or run opens, as `{ phase: "chat", calls:
+  interpretationCalls ?? 0 }`: the interpreter counts its priced attempts
+  (`pricedCalls`), and the client carries the count as `interpretationCalls`
+  beside `interpretationCostUsd` on `generate-flow-bootstrap-adaptation` and
+  `run-runtime-session` (a whole number ≥ 0, else refused; an older client that
+  sends none records 0 calls, not an invented count). The record gains `calls`
+  and `byPhase` (`{ calls, usd }` per phase), always together; `byPhase` sums to
+  `spentUsd` unless the record held unitemised spend when itemising began. A
+  record never itemised (product per-creation spend, older records) has both
+  `null`. `get-flow-spend` (`programs.read`, `read`) takes `{ projectId, flowId }`
+  and answers `{ spend: { projectId, flowId, spentUsd, builds, calls, byPhase,
+  createdAt, updatedAt } | null }`. Dollars, ceiling and build count are
+  unchanged by itemising.
 - **Holds price what is sent, with an observed reply reserve (t254).** Each
   call is held at the input its provider will send -- never the packed request,
   which carries the whole node catalog and is kept only for the window refusal
@@ -2312,7 +2386,11 @@ completions until its 64-decision bound.
 
 A dry run moves the page without the loop seeing it, so the last state is
 forgotten until a call reports one. The domain's `answered_the_same_again`
-mark and `repeatedAnswer` stay as what they were, a marking, and the
+mark (one constant for Core and domains since t728,
+`AUTOMATION_STUDIO_REPEATED_ANSWER_REASON` in `@fluxiq/contracts/automation-studio`,
+republished from `fluxiq/automation-studio`; Core's activity wording, the
+unfinished-build last fix and `fluxiq/ui`'s failure reason all read it)
+and `repeatedAnswer` stay as what they were, a marking, and the
 no-progress guard stays the far backstop. Live runs `run-muq310ht-ab80eed0`
 (a close button pressed 20 times, one list read rerun 8 times) and
 `run-muq3ubys-4b4dbf5b` are why.
@@ -2756,6 +2834,76 @@ Successful generation opens the returned proposed Bootstrap Adaptation in the ex
 The authoring surface cannot approve or apply the proposal. The standard review endpoint, `review-flow-adaptation`, detects the Bootstrap identity and delegates only approve, reject, apply, and revert to the dedicated lifecycle; the Adaptations UI hides unsupported standard actions. Review responses re-project the new lifecycle state immediately. An applied response includes the canonical post-apply execution digest, which must match the dedicated application record. Only explicit application materializes the deterministic Core-owned Router, Subflows, and graph Flows; existing Router/Subflow mutation subscriptions then refresh Runtime Debug readiness and allow a deterministic Run.
 
 The browser request policy marks generation as an explicit mutation. No bootstrap provider request is part of ordinary preload or summary hydration.
+
+### A domain tool call's build scope and durable state
+
+Core, not the domain, says which build a domain's tool call belongs to (t728).
+The registry's `evidenceLoopBinding(context, resolution)`
+(`runtime/llm/harness-options/registry.ts`) runs every `executeTool`, Core's
+built-in options and the domain's alike, inside
+`runWithAutomationStudioEvidenceBuildScope`; `core.recall_result` sits outside
+it. Anywhere inside its `executeTool`, after awaits included, the domain reads
+`automationStudioEvidenceBuildScope()` (from `fluxiq/automation-studio`), a
+frozen `{ projectId, flowId, buildId, callScope?, opening? }`, or `undefined`
+outside a registry call.
+
+- **`opening`** is decided from Core's own call-id format, so nothing a model
+  writes can produce it (model ids live under `model.`). `"fresh"`: an opening
+  id (`initial.`) whose `value.held` is not an array -- the arrival opening, the
+  free first look, a project repair's opening, a builder opening on its prepared
+  entry, a reset loop's opening. `"continuing"`: an opening whose `value.held`
+  is an array -- the opening look of a repair or re-author round whose draft
+  already holds the Flow, and of a stopped build continued later. Absent on
+  every other call. The domain still reads `arrived` and `repairs` from `value`
+  for their own meaning.
+- **`callScope`** is the scope of the binding's latest opening
+  (`initial.<toolId>.<scope>`, read by `automationStudioLlmEvidenceOpeningCallScope`
+  beside the call-id writer), carried to every later call of the round and
+  cleared by an unscoped opening. It is present only when loops run side by
+  side for one Flow: today a project brief (`callScope = briefId`) when the
+  scheduler's capacity is above 1.
+- **`buildId`** resolves as `context.runId`, then `context.buildId`, then the
+  build frame (`runWithAutomationStudioEvidenceBuild`,
+  `automationStudioEvidenceBuildBound`, read by `automationStudioEvidenceBuildId`),
+  then an id the binding mints once. The service mints one `build.<uuid>` per
+  build and passes it to its binding, so every round of a build shares it; a
+  project build's record `project.buildId` is that same id, and the project
+  build runs inside `automationStudioEvidenceBuildBound`, so every brief binding
+  reads it and concurrent briefs differ only by `callScope`. A recovery
+  exploration during a run sees the run's `runId`. A continued stopped build
+  gets a new id (its opening is `"continuing"`). Trials run the Flow through the
+  runtime graph, not a registry binding, so a trial's own node runs carry no
+  scope; the trial-view look after a trial carries the build's id with no
+  `opening`.
+
+The scope is read from an async frame because the binding, evidence loop and
+brief ports did not change. Passing it as an explicit field on the tool request
+is a follow-up once `harness-options/binding.ts` and `llm/evidence-loop.ts` are
+free to edit.
+
+**Durable domain build state** (`runtime/domain-build-state/`). A registered
+domain gets a port with `automationStudioDomainBuildState(fluxiq, domainId)`,
+once, after `registerDomain`; it refuses
+`domain_build_state.domain_unregistered` for a domain FluxIQ does not know. The
+port is frozen and bound to the domain: `get(scope, key)` (a copy, or
+`undefined`), `put(scope, key, value)`, `drop(scope, key)` (whether there was
+one), with `scope = { projectId, flowId, buildId? }`. With `buildId` (use the
+evidence scope's) a value lasts one build; without it, it belongs to the Flow
+and outlives its builds and runs. The service owns the store
+(`AutomationStudioService.domainBuildState`): one program-state file per
+(domain, Flow), `<flow>/domain-build-state/<domain>.json`, written through
+`ProgramJsonStore.update` in either storage layout, or in memory when the
+service has no storage root. Bounds (`AUTOMATION_STUDIO_DOMAIN_BUILD_STATE_LIMITS`):
+plain JSON only (no NaN or Infinity, cycles, class instances, holes, `undefined`,
+or nesting past 32 levels), 64 KiB per value, 64 keys and 256 KiB per scope
+(replacing a key is allowed at the limit), 16 build scopes per domain and Flow
+with the least recently written one dropped on the 17th, keys
+`^[A-Za-z0-9._:-]{1,120}$` and ids `^[A-Za-z0-9._:-]{1,200}$`. A refusal is an
+`AutomationStudioDomainBuildStateRefusal` naming only a code and part
+(`value_invalid`, `value_too_large`, `scope_full`, `scope_invalid`,
+`key_invalid`, `document_invalid`, `domain_mismatch`); a malformed stored
+document is refused, never read as empty. Values are opaque: Core never reads,
+logs or interprets them.
 
 ## Candidate verification and detached execution
 

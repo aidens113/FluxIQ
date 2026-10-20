@@ -1,12 +1,26 @@
 // The recording pipeline end to end: capture and entry append, finalization,
 // proposals, normalization, and the evidence and policy work mined from it.
 
-import { AUTOMATION_STUDIO_ENDPOINTS, type AppendRecordingEntryRequest, type AppendRecordingMarkerRequest, type AppendRecordingNoteRequest, type ApprovePolicyProposalRequest, type CreateRecordingRequest, type DeleteRecordingRequest, type DeleteRecordingsRequest, type FinalizeRecordingRequest, type GetProposalRequest, type GetRecordingEntryStateRequest, type GetStateSnapshotRequest, type LearnTaskModelRequest, type MineRecordingEvidenceRequest, type NormalizeRecordingRequest, type NormalizedTimelineProjectRequest, type ProcessFinalizedRecordingRequest, type ProposePolicyFromModelRequest, type RecordingIdProjectRequest, type RecordingProjectRequest, type RemoveRecordingEntryRequest, type RemoveRecordingEntryResponse, type RepairRecordingStateIndexRequest, type ReplayPolicyAgainstRecordingRequest, type UpdateRecordingRequest } from "../contracts.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type AppendRecordingEntryRequest, type AppendRecordingMarkerRequest, type AppendRecordingNoteRequest, type ApprovePolicyProposalRequest, type CreateRecordingRequest, type DeleteRecordingRequest, type DeleteRecordingsRequest, type FinalizeRecordingRequest, type GetProposalRequest, type GetRecordingCapturePolicyRequest, type GetRecordingCapturePolicyResponse, type GetRecordingEntryStateRequest, type GetStateSnapshotRequest, type LearnTaskModelRequest, type MineRecordingEvidenceRequest, type NormalizeRecordingRequest, type NormalizedTimelineProjectRequest, type ProcessFinalizedRecordingRequest, type ProposePolicyFromModelRequest, type RecordingIdProjectRequest, type RecordingProjectRequest, type RemoveRecordingEntryRequest, type RemoveRecordingEntryResponse, type RepairRecordingStateIndexRequest, type ReplayPolicyAgainstRecordingRequest, type UpdateRecordingRequest } from "../contracts.ts";
+import { AUTOMATION_STUDIO_DEFAULT_RECORDING_CAPTURE_POLICY } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioService } from "../../runtime/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
 export function registerRecordingEndpoints(dependencies: AutomationStudioApiDependencies): void {
   const { registry, service } = dependencies;
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRecordingCapturePolicy,
+    permission: "programs.read",
+    classification: "read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as GetRecordingCapturePolicyRequest : {};
+      const projectId = typeof payload.projectId === "string" && payload.projectId.trim() ? payload.projectId.trim() : null;
+      const policy = dependencies.recordingCapturePolicy ? await dependencies.recordingCapturePolicy(projectId) : AUTOMATION_STUDIO_DEFAULT_RECORDING_CAPTURE_POLICY;
+      const answer: GetRecordingCapturePolicyResponse = { policy };
+      return { ok: true, payload: answer };
+    }
+  });
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRecording,

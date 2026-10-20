@@ -7,6 +7,7 @@ import { GlobalProgramApiRegistry } from "../../../../_shared/api.ts";
 
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../../contracts.ts";
 import type { AutomationStudioService } from "../../../runtime/index.ts";
+import { AutomationStudioFlowBootstrapCreationSpendStore, AutomationStudioFlowPaths, AutomationStudioProjectPaths, type AutomationStudioProjectStore } from "../../../runtime/service/index.ts";
 import { cacheActor } from "./test-actor.ts";
 import { createCacheApiTestService } from "./test-service.ts";
 import { registerAutomationStudioApi } from "../index.ts";
@@ -148,5 +149,55 @@ describe("list-flow-runs durableBehaviorChanged", () => {
     ];
     expect(response).toEqual({ ok: true, payload: { runs: expected, page: { runs: expected, total: 3, limit: 25, offset: 0 } } });
     expect(listFlowRunSummaries).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", limit: undefined, offset: undefined });
+  });
+});
+
+// t728: a Flow's spend, as its Lab-scoped Flow purse recorded it, read-only.
+describe("get-flow-spend", () => {
+  function memoryStore(): AutomationStudioFlowBootstrapCreationSpendStore {
+    const projectPaths = new AutomationStudioProjectPaths(undefined);
+    return new AutomationStudioFlowBootstrapCreationSpendStore(projectPaths, new AutomationStudioFlowPaths(projectPaths), { ensureProjectStructure: async () => undefined } as unknown as AutomationStudioProjectStore);
+  }
+  function readerOf(creationSpends: AutomationStudioFlowBootstrapCreationSpendStore) {
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, { creationSpends } as unknown as AutomationStudioService);
+    return (flowId: string) => registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowSpend, scope: {}, actor: cacheActor("user.reader"), payload: { projectId: "project.one", flowId } });
+  }
+
+  it("answers null for a Flow with no record, and the itemised record for one with", async () => {
+    const creationSpends = memoryStore();
+    const read = readerOf(creationSpends);
+    expect(await read("flow.one")).toEqual({ ok: true, payload: { spend: null } });
+    await creationSpends.add("project.one", "flow.one", 0.002, { phase: "chat", calls: 1 });
+    await creationSpends.add("project.one", "flow.one", 0.01, { phase: "judge", calls: 1 });
+    const answered = await read("flow.one");
+    expect(answered).toMatchObject({
+      ok: true,
+      payload: {
+        spend: {
+          projectId: "project.one",
+          flowId: "flow.one",
+          spentUsd: 0.012,
+          builds: 1,
+          calls: 2,
+          byPhase: {
+            build: { calls: 0, usd: 0 },
+            read: { calls: 0, usd: 0 },
+            judge: { calls: 1, usd: 0.01 },
+            runtime: { calls: 0, usd: 0 },
+            reauthor: { calls: 0, usd: 0 },
+            chat: { calls: 1, usd: 0.002 }
+          }
+        }
+      }
+    });
+    expect(Object.keys((answered as { payload: { spend: object } }).payload.spend).sort()).toEqual(["builds", "byPhase", "calls", "createdAt", "flowId", "projectId", "spentUsd", "updatedAt"]);
+    expect(await read("flow.other")).toEqual({ ok: true, payload: { spend: null } });
+  });
+
+  it("answers an unitemised record with null calls and phases", async () => {
+    const creationSpends = memoryStore();
+    await creationSpends.save({ kind: "flow_creation_spend", projectId: "project.one", flowId: "flow.one", spentUsd: 0.05, builds: 2, createdAt: 1, updatedAt: 2 });
+    expect(await readerOf(creationSpends)("flow.one")).toEqual({ ok: true, payload: { spend: { projectId: "project.one", flowId: "flow.one", spentUsd: 0.05, builds: 2, calls: null, byPhase: null, createdAt: 1, updatedAt: 2 } } });
   });
 });

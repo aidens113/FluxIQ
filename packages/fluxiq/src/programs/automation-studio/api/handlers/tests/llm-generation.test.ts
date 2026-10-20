@@ -782,5 +782,12 @@ describe("Automation Studio LLM execution API", () => {
       await expect(call(bad)).resolves.toEqual({ ok: false, error: "Flow bootstrap generation request contains an invalid interpretation cost." });
     }
     expect(generateFlowBootstrapAdaptation).not.toHaveBeenCalled();
+
+    // The priced calls that reading was travel beside it (t728): a whole number, or the request is refused.
+    const counted = (interpretationCalls: unknown) => registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation, scope: {}, actor, payload: { projectId: "project.one", flowId: "flow.blank", authSessionId: "session.one", evidenceGuided: true, interpretationCostUsd: 0.0003, interpretationCalls } });
+    await expect(counted(2)).resolves.toMatchObject({ ok: true });
+    expect(generateFlowBootstrapAdaptation).toHaveBeenLastCalledWith(expect.objectContaining({ interpretationCostUsd: 0.0003, interpretationCalls: 2 }));
+    for (const bad of [-1, 1.5, "2", null]) await expect(counted(bad)).resolves.toEqual({ ok: false, error: "Flow bootstrap generation request contains an invalid interpretation call count." });
+    expect(generateFlowBootstrapAdaptation).toHaveBeenCalledTimes(1);
   });
 });

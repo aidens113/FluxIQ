@@ -9,7 +9,7 @@
 // program's central bounds (`runtime/llm/refusal-record.ts`). That one field is
 // the difference between a stored failure saying "the provider answered 400" and
 // one that can say which field it objected to.
-import type { AutomationStudioActionPermissionRequest } from "../../action-permissions/index.ts";
+import type { AutomationStudioActionConsequence, AutomationStudioActionPermissionRequest } from "../../action-permissions/index.ts";
 import type { AutomationStudioLlmProviderRefusal } from "../../provider-refusal/index.ts";
 import type { AutomationStudioLlmEvidenceLoopExhaustion, AutomationStudioLlmProviderThrow } from "../../llm/index.ts";
 import type { AutomationStudioFlowBootstrapEvidenceStep } from "../evidence-loop-steps.ts";
@@ -192,6 +192,16 @@ export type AutomationStudioFlowBootstrapFailureDiagnostic = {
    * never why (A8 frozen pair 3, `run-mv9zn5ob-d929084d`, screenshot 00048).
    */
   endedBecause?: string;
+  /**
+   * The lasting consequences the person's instruction was read to ask for, by
+   * the build's permission gate, when the build had read it before it failed:
+   * consequence classes only, deduplicated, in Core's order -- never the quote
+   * or the instruction behind them, which stay with the gate. Absent when the
+   * build failed before it needed to know, or the instruction asked for none.
+   * A failed build used to leave this unsaid, so a reader could not tell a
+   * build that ended on a lasting act it was asked for from one it was not.
+   */
+  instructedConsequences?: AutomationStudioActionConsequence[];
 };
 
 /** The most characters a supervisor's screened reason for ending a build carries (`endedBecause`). */

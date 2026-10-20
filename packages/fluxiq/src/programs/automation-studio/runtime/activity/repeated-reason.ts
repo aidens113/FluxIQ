@@ -10,8 +10,7 @@
 // 0046). The observer of one loop keeps each call's last cause and puts it
 // back on the repeats, so the card says why.
 
-/** The reason a repeat carries in place of its cause. */
-const SAME_AGAIN = "answered_the_same_again";
+import { AUTOMATION_STUDIO_REPEATED_ANSWER_REASON } from "@fluxiq/contracts/automation-studio";
 
 /** What one call is, for its cause: its tool, the node it runs, and the code it came to. */
 function keyOf(call: { toolId: string; value?: unknown }, code: string): string {
@@ -32,7 +31,7 @@ export function automationStudioActivityRepeatedReason(): { of(call: { toolId: s
     of(call, { code, reason }) {
       if (code === undefined || reason === undefined) return reason;
       const key = keyOf(call, code);
-      if (reason === SAME_AGAIN) return causes.get(key) ?? reason;
+      if (reason === AUTOMATION_STUDIO_REPEATED_ANSWER_REASON) return causes.get(key) ?? reason;
       causes.set(key, reason);
       return reason;
     }

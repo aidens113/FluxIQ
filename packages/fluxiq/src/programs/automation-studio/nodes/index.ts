@@ -6,4 +6,6 @@ export * from "./layout.ts";
 export * from "./name-match/index.ts";
 export * from "./parameter-bindings.ts";
 export * from "./record-output.ts";
+export * from "./record-process.ts";
+export * from "./recording-capture.ts";
 export * from "./registry.ts";

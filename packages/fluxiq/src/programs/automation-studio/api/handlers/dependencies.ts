@@ -8,6 +8,7 @@ import type { AutomationStudioService } from "../../runtime/index.ts";
 import type { IdentityAccessService } from "../../../identity-access/index.ts";
 import type { AutomationStudioClientGatewayBridge } from "../../client-gateway/index.ts";
 import type { ClientGatewayService } from "../../../../client-gateway/index.ts";
+import type { AutomationStudioRecordingCapturePolicy } from "@fluxiq/contracts/automation-studio";
 
 export type AutomationStudioApiDependencies = {
   readonly registry: GlobalProgramApiRegistry;
@@ -22,4 +23,11 @@ export type AutomationStudioApiDependencies = {
   readonly identityAccess: IdentityAccessService | undefined;
   readonly clientGatewayBridge: AutomationStudioClientGatewayBridge | undefined;
   readonly clientGateway: ClientGatewayService | undefined;
+  /**
+   * Where `get-recording-capture-policy` reads a project's policy (null: no
+   * project named). Left out, the endpoint answers Core's default,
+   * `AUTOMATION_STUDIO_DEFAULT_RECORDING_CAPTURE_POLICY`, for every project; a
+   * per-project policy store is supplied here.
+   */
+  readonly recordingCapturePolicy?: (projectId: string | null) => Promise<AutomationStudioRecordingCapturePolicy>;
 };

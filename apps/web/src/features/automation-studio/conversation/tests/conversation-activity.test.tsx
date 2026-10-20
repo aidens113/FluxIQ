@@ -231,7 +231,7 @@ describe("the activity reader stays on the backoff poller", () => {
     for (const path of [
       "../activity/useConversationActivity.ts",
       "../activity/usePacedConversationActivity.ts",
-      "../activity/pacer.ts",
+      "../activity/paced-status.ts",
       "../components/ConversationStepMessage.tsx",
       "../components/ConversationLiveLine.tsx",
       "../components/ConversationViewContent.tsx",

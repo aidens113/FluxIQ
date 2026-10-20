@@ -64,6 +64,8 @@ export type AutomationStudioGenerateFlowBootstrapAdaptationInput = {
    * A repair ignores it. Absent, nothing is carried.
    */
   interpretationCostUsd?: number;
+  /** How many priced model calls `interpretationCostUsd` sums, recorded as the Flow spend's "chat" calls. */
+  interpretationCalls?: number;
 };
 
 export type AutomationStudioGenerateFlowBootstrapAdaptationProposal = {

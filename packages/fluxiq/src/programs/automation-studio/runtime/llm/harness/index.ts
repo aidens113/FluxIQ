@@ -74,7 +74,9 @@ export { automationStudioLlmRequestEvidenceRefusal } from "./request-evidence-ch
 // it before a slot exists: the result verification bounds a run's stored rows
 // into a summary, and a row that fails the screen must be dropped there rather
 // than refused at the provider, where the only answer left is to send nothing.
-export { automationStudioExecutableTargetKey, screenAutomationStudioLlmEvidence, type AutomationStudioLlmEvidenceScreenResult } from "./evidence-screen.ts";
+// And its in-place card screen, for a domain that withholds a card run from a
+// string and keeps the words around it (t728).
+export { automationStudioExecutableTargetKey, automationStudioWithoutCardNumbers, screenAutomationStudioLlmEvidence, type AutomationStudioLlmEvidenceScreenResult } from "./evidence-screen.ts";
 export { AUTOMATION_STUDIO_WITHHELD_LOCATOR, automationStudioLocatorShapedText, automationStudioWithoutLocators } from "./locator-text.ts";
 export {
   AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH,

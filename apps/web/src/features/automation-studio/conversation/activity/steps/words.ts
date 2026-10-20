@@ -1,5 +1,7 @@
-// What one activity event says to a person, in words: never a tool id, a node
-// id or a result code.
+// The words a step message and its card are said in: never a tool id, a node
+// id or a result code. The live status's words are the shared ones
+// (`activityWording` in `fluxiq/ui`, read by `../paced-status.ts`); these are
+// the chat's own, for the titles and sentences its step messages carry.
 //
 // Core's own sentence (`label`) comes first, because Core now words each call
 // from the call's own input ("Clicking “Get a free quote”"). An older Core, or
@@ -9,7 +11,7 @@
 // ("done", "didn't work") are the outcome, which the row draws as a mark, so
 // they are left off the step itself.
 
-import type { ConversationActivity, ConversationActivityDetailKind } from "./contracts";
+import type { ConversationActivity, ConversationActivityDetailKind } from "../contracts";
 
 /** A dotted identifier (`core.run_node`, `web.action.succeeded`) or a snake_case code (`target_unobserved`). */
 const IDENTIFIER = /\b[a-z][\w-]*(?:\.[\w-]+)+\b|\b[a-z]+_[a-z_]+\b/iu;

@@ -16,15 +16,11 @@ export { CONVERSATION_ACTIVITY_HISTORY_LIMITS, holdConversationActivity, type Co
 export { conversationActivityPollOutcome, conversationActivityStepText } from "./model";
 export { getConversationActivity, type ConversationActivityQuery, type ConversationActivityReadResult } from "./queries";
 export { useConversationActivity, type ConversationActivityState } from "./useConversationActivity";
-export { conversationActivityHeadline, conversationActivityOutcome, type ConversationActivityOutcome } from "./headline";
-export {
-  CONVERSATION_ACTIVITY_DETAIL_INTERVAL_MS,
-  ConversationActivityPacer,
-  type ConversationActivityClock,
-  type ConversationActivityDisplay
-} from "./pacer";
+export { ConversationPacedStatus, type ConversationActivityDisplay, type ConversationActivityOutcome } from "./paced-status";
 export {
   conversationActivityIsInternal,
+  conversationActivitySentence,
+  conversationActivityTextIsHuman,
   conversationStepMessages,
   conversationStepOutcomeWords,
   type ConversationStepAction,
@@ -34,4 +30,3 @@ export {
 } from "./steps";
 export { conversationStream, type ConversationStreamEntry } from "./stream";
 export { usePacedConversationActivity } from "./usePacedConversationActivity";
-export { conversationActivitySentence, conversationActivityTextIsHuman } from "./wording";

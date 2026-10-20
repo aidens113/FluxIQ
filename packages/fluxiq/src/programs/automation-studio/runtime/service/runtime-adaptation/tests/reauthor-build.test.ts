@@ -207,3 +207,33 @@ describe("local automatic reauthor retry", () => {
     expect(result.purse.spentUsd).toBe(0.02);
   });
 });
+
+// t728: a failed re-author says how many calls it made and what its gate read
+// the instruction to ask for, so the Lab need not rebuild either from the step log.
+describe("a failed re-author's accounting", () => {
+  function failureWith(extra: Partial<AutomationStudioFlowBootstrapFailureDiagnostic>): AutomationStudioFlowBootstrapGenerationError {
+    return new AutomationStudioFlowBootstrapGenerationError({ ...failure("flow_bootstrap.evidence_unusable_decision", "provider_output_validation").diagnostic, ...extra });
+  }
+
+  it("records the build's own call count and instructed classes on the attempt", async () => {
+    const result = await run(vi.fn<AutomationStudioReauthorBuildDependencies["generate"]>().mockRejectedValue(failureWith({ totalProviderCallCount: 7, instructedConsequences: ["modify_existing"] })));
+    expect(result.built.failure).toMatchObject({ calls: 7, instructedConsequences: ["modify_existing"] });
+    const attempts = (result.detail.metadata?.resultReauthor as { attempts: Array<Record<string, unknown>> }).attempts;
+    expect(attempts.at(-1)).toMatchObject({ code: "flow_bootstrap.evidence_unusable_decision", calls: 7, instructedConsequences: ["modify_existing"] });
+  });
+
+  it("counts the calls from the build's purse receipt when the diagnostic gave none", async () => {
+    const generate = vi.fn<AutomationStudioReauthorBuildDependencies["generate"]>(async (_request, _brief, _left, _pages, _ending, onCharged) => {
+      onCharged?.({ calls: 4, chargedCostUsd: 0.012, pendingCalls: 0, pendingCostUsd: 0, unreportedZeroChargeCalls: 0 });
+      throw failureWith({});
+    });
+    const result = await run(generate);
+    expect(result.built.failure?.calls).toBe(4);
+    expect((result.detail.metadata?.resultReauthor as { attempts: Array<Record<string, unknown>> }).attempts.at(-1)).toMatchObject({ calls: 4 });
+  });
+
+  it("says a build the purse never started made no call", async () => {
+    const result = await run(vi.fn(), { limit: 0 });
+    expect(result.built.failure).toMatchObject({ calls: 0 });
+  });
+});
