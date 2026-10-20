@@ -1,5 +1,5 @@
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
-import type { AutomationStudioCandidateTrialPort } from "../../flow-bootstrap/candidate/index.ts";
+import { automationStudioCandidateTrialOffline, type AutomationStudioCandidateTrialPort } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioSiteResetProjectLedger } from "../../flow-bootstrap/site-reset/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider } from "../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../../result-verification/index.ts";
@@ -37,6 +37,13 @@ import { automationStudioProjectBuildTrialReads } from "./trial-reads.ts";
 // bigbox `run-mv8c7unr-42a8456d` the whole trial was told only `start: reset`
 // while it ran on the page the last subflow trial left. A candidate build's
 // feedback is as it was.
+//
+// **The wrapped port keeps the inner port's environment kind (traces and
+// offline trials, U7).** The port returned here carries the inner port's
+// `environmentKind`, so the trial gate still sees an offline trial as offline
+// (no start hook, no site reset, its yes evidence only). An offline trial's
+// acts never happened on the site, so they are written to neither ledger
+// (Decision 6).
 
 /** What every trial is run with, from the service: the run, its session and its reads, without the judge. */
 export type AutomationStudioProjectBuildTrialEnvironment = Omit<AutomationStudioCandidateTrialPorts, "judge" | "execute" | "readEndView" | "clearedControlHandles" | "deniedEvidenceKeys">;
@@ -63,9 +70,11 @@ export function automationStudioProjectBuildWholeTrials(input: {
   const ledger = input.ledger;
   if (!ledger) return trials;
   const arrival = AutomationStudioProjectBuildPhaseStart.arrival(binding.runsNodes?.arrival, environment);
+  // An offline trial's acts never happened on the site (header, Decision 6).
+  const offline = automationStudioCandidateTrialOffline(trials.port);
   const run: AutomationStudioCandidateTrialPort = async (request) => {
     const result = await trials.port(request);
-    if (result.acts?.length) {
+    if (!offline && result.acts?.length) {
       // Refresh original pre-effect scope authority without overwriting current evidence.
       ledger.forBrief(AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER).trialRan(result.acts, result.trialRunId);
       AutomationStudioProjectBuildActsRecord.of(ledger).trialRan(result.acts, result.trialRunId);
@@ -75,6 +84,9 @@ export function automationStudioProjectBuildWholeTrials(input: {
     return { ...result, feedback: { ...result.feedback, phaseStart } };
   };
   // The start hook stays on the port, so the supervisor's trial gate runs it before each whole trial as a candidate build's does.
-  const port: AutomationStudioCandidateTrialPort = trials.port.prepareStart ? Object.assign(run, { prepareStart: trials.port.prepareStart }) : run;
+  // The inner port's environment kind stays on it too, for the trial gate to read (header, U7).
+  const environmentKind = trials.port.environmentKind;
+  const prepareStart = trials.port.prepareStart;
+  const port: AutomationStudioCandidateTrialPort = prepareStart ? Object.assign(run, { environmentKind, prepareStart }) : Object.assign(run, { environmentKind });
   return { ...trials, port };
 }

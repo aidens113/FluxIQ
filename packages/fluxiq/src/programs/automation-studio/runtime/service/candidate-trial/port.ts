@@ -16,6 +16,11 @@
 // runs on the start the hook made, without running it again. Lane D round 10
 // (`run-mv5tusge-1400ddf7`) spent eight model calls undoing what the hook then
 // put back anyway. A re-judgement runs nothing, so it prepares nothing.
+//
+// **The port says the kind of environment its trials run in (traces and
+// offline trials, U7).** `environmentKind` is `ports.environment`'s kind, live
+// when absent, for the trial gate to read; and the port offers `prepareStart`
+// only to a live trial, since an offline one runs no start hook (Decision 6).
 
 import type { AutomationStudioCandidateTrialPort, AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord, AutomationStudioCandidateTrialStart, AutomationStudioCandidateTrialUnjudged } from "./contracts.ts";
@@ -33,7 +38,7 @@ export function automationStudioCandidateTrialPort(candidateId: string, ports: A
   const unjudged = new Map<string, AutomationStudioCandidateTrialUnjudged>();
   /** The start the hook made ahead of the reset check, for the next trial of that revision and digest only (header). */
   let ready: { key: string; start: AutomationStudioCandidateTrialStart } | undefined;
-  const port: AutomationStudioCandidateTrialPort = async (request) => {
+  const run = async (request: Parameters<AutomationStudioCandidateTrialPort>[0]): Promise<AutomationStudioCandidateTrialResult> => {
     // A request for another candidate, or whose frozen bytes are not the revision and digest it names, runs nothing.
     if (request.candidateId !== candidateId || request.candidate.revision !== request.revision || request.candidate.digest !== request.digest) {
       const refused: AutomationStudioCandidateTrialResult = { revision: request.revision, digest: request.digest, verdict: "execution_failed", feedback: { code: "candidate.trial_identity_mismatch" } };
@@ -50,7 +55,10 @@ export function automationStudioCandidateTrialPort(candidateId: string, ports: A
     records.push(structuredClone(trial.record));
     return trial.result;
   };
-  if (ports.prepareStart) {
+  const environmentKind = ports.environment?.kind ?? "live";
+  const port: AutomationStudioCandidateTrialPort = Object.assign(run, { environmentKind });
+  // An offline trial runs no start hook, so only a live port offers one (header, Decision 6).
+  if (ports.prepareStart && environmentKind === "live") {
     port.prepareStart = async ({ revision, digest, signal }) => {
       const key = `${revision}:${digest}`;
       ready = undefined;

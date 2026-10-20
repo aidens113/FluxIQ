@@ -226,6 +226,14 @@
 // records it (`../site-reset/explored-on-absorbed.ts`). Any exploration of the
 // build counts, a project build's every brief's under the supervisor's whole
 // trial: the whole Flow is what must do it.
+//
+// **An offline trial is evidence, never the judged pass (traces and offline
+// trials, Decisions 3 and 6).** A port whose `environmentKind` is set and not
+// `live` runs its trials against what Core recorded, not the site: the gate
+// runs no start hook and no site reset for it and records nothing it did as
+// left on the site. Its yes is answered as evidence, but never kept as the
+// verdict `standing` and `completion` read, so it never lets the build
+// complete; the answer says a live trial's yes is still needed.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
@@ -299,6 +307,10 @@ const UNAFFORDABLE_CODE = "candidate.trial_unaffordable";
 /** What the model is told when a trial did not start because the purse cannot pay its judge calls (header, t661). Generic words. */
 const UNAFFORDABLE_INSTRUCTION = "Core did not start this trial: the money this build has left cannot pay the two judge calls that judge a trial, so nothing ran and no judge was asked (notRun has the figures). "
   + "Testing again is refused the same way while that stands, so do not test again, and do not spend calls changing the Flow for a trial that cannot run.";
+
+/** What an offline trial's yes says (header, Decision 3); the subflow trial gate says the same. Generic words. */
+export const AUTOMATION_STUDIO_CANDIDATE_OFFLINE_YES_INSTRUCTION = "The trial passed, but it ran offline, on what Core recorded of the site rather than on the live site, so it does not let this revision complete: completing needs a yes from a trial run on the live site from its start. "
+  + "Test this same revision again, with the same revision and digest (retestsLeft says how many times), and do not change it for this.";
 
 /** The first sentence of every execution-failed instruction (header): what stopped the trial follows it. */
 const EXECUTION_FAILED_HEAD = "The candidate did not run to its end, so this revision cannot complete.";
@@ -410,10 +422,12 @@ export class AutomationStudioFlowCandidateTrialGate {
     }
     const signal = callSignal ?? this.input.signal ?? this.fallbackSignal;
     signal.throwIfAborted();
+    // An offline trial has no live effects: no start hook, no reset, nothing left on the site (header, Decision 6).
+    const offline = automationStudioCandidateTrialOffline(trial.port);
     // The deployment's start hook first, so the check after it finds the site put back (header).
-    const prepared = this.input.reset && trial.port.prepareStart ? await trial.port.prepareStart({ revision: latest.revision, digest: latest.digest, signal }) : "none";
+    const prepared = !offline && this.input.reset && trial.port.prepareStart ? await trial.port.prepareStart({ revision: latest.revision, digest: latest.digest, signal }) : "none";
     signal.throwIfAborted();
-    const reset = await this.input.reset?.beforeTrial(signal, Array.isArray(cannotUndo) ? cannotUndo as string[] : undefined, prepared === "reset" ? { startReset: true } : undefined);
+    const reset = offline ? undefined : await this.input.reset?.beforeTrial(signal, Array.isArray(cannotUndo) ? cannotUndo as string[] : undefined, prepared === "reset" ? { startReset: true } : undefined);
     signal.throwIfAborted();
     // Not a trial: the model is told what to put back, and the identical test after it reaches this gate again (header).
     if (reset?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: reset.evidence, effectApplied: reset.moved, targetsUnchanged: !reset.moved, resultCode: reset.evidence.code, resultReason: RETEST_REASON };
@@ -441,24 +455,27 @@ export class AutomationStudioFlowCandidateTrialGate {
     // What Core's record of this trial shows its conditions kept out, as the revision that ran wrote them (header, t641).
     this.keptConditions.remember({ revision: answer.revision, standingNo: asked.standingNo, plan: latest.buildPlan?.plan });
     const keptConditions = this.keptConditions.conditions();
-    const leftOnSite = this.input.reset?.trialRan(answer.acts ?? [], answer.trialRunId);
-    this.verdicts.set(key(answer), {
+    const leftOnSite = offline ? undefined : this.input.reset?.trialRan(answer.acts ?? [], answer.trialRunId);
+    // An offline yes is never the verdict kept for completion, and a stale one of this revision goes (header, Decision 3).
+    const offlineYes = offline && answer.verdict === "yes";
+    if (offlineYes && this.verdicts.get(key(answer))?.verdict !== "yes") this.verdicts.delete(key(answer));
+    if (!offlineYes) this.verdicts.set(key(answer), {
       ...answer,
       ...(this.absorbed.length > 0 ? { absorbedByStartReset: this.absorbed.map(namedAct) } : {}),
       ...(keptConditions.length ? { keptConditions } : {})
     });
     if (answer.verdict === "no") this.closedDigests.set(answer.digest, answer.feedback);
     const repeatedStep = this.recordStop(answer);
-    const slowDown = answer.verdict === "yes" ? unhandledSlowDowns(answer.feedback, latest) : [];
+    const slowDown = answer.verdict === "yes" && !offlineYes ? unhandledSlowDowns(answer.feedback, latest) : [];
     if (slowDown.length) this.slowDowns.set(key(answer), slowDown);
-    const retestsLeft = TRANSIENT.has(answer.verdict) && !repeatedStep ? AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION - (tried + 1) : 0;
+    const retestsLeft = (TRANSIENT.has(answer.verdict) || offlineYes) && !repeatedStep ? AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION - (tried + 1) : 0;
     const evidence: JsonObject = {
-      ok: answer.verdict === "yes", verdict: answer.verdict, revision: answer.revision, digest: answer.digest,
+      ok: answer.verdict === "yes" && !offlineYes, verdict: answer.verdict, revision: answer.revision, digest: answer.digest,
       ...(answer.trialRunId ? { trialRunId: answer.trialRunId } : {}), feedback: answer.feedback,
-      instruction: repeatedStep ? repeatedInstruction(answer) : slowDown.length ? slowDownInstruction(slowDown) : standingInstruction(answer, retestsLeft > 0),
+      instruction: offlineYes ? AUTOMATION_STUDIO_CANDIDATE_OFFLINE_YES_INSTRUCTION : repeatedStep ? repeatedInstruction(answer) : slowDown.length ? slowDownInstruction(slowDown) : standingInstruction(answer, retestsLeft > 0),
       ...(repeatedStep ? { failedStep: repeatedStep } : {}),
       ...(slowDown.length ? { slowDown } : {}),
-      ...(TRANSIENT.has(answer.verdict) ? { retestsLeft } : {}),
+      ...(TRANSIENT.has(answer.verdict) || offlineYes ? { retestsLeft } : {}),
       // Whether Core's record contradicts what kept an unsure from a yes: the fact its instruction rests on (header, t641).
       ...(answer.verdict === "unsure" && retestsLeft > 0 && typeof answer.feedback.contradictedByBuild !== "string" ? { retestAdvised: automationStudioCandidateRetestAdvised(answer) } : {}),
       ...(reset?.kind === "admit" && reset.startedWith ? { startedWith: reset.startedWith } : {}),
@@ -467,7 +484,8 @@ export class AutomationStudioFlowCandidateTrialGate {
     };
     // The trial ran on the target, so whatever it touched may have moved. A transient verdict with a re-test left says
     // so in its reason, so the identical request to test again is never refused as a repeat (header).
-    return { kind: "llm_evidence_tool_execution", evidence, effectApplied: true, targetsUnchanged: false, resultCode: `candidate.trial_${answer.verdict}`, ...(retestsLeft > 0 ? { resultReason: RETEST_REASON } : {}) };
+    const resultCode = offlineYes ? "candidate.trial_offline_yes" : `candidate.trial_${answer.verdict}`;
+    return { kind: "llm_evidence_tool_execution", evidence, effectApplied: true, targetsUnchanged: false, resultCode, ...(retestsLeft > 0 ? { resultReason: RETEST_REASON } : {}) };
   }
 
   /** The completion rule, asked only once the receipt names the latest valid submission. */
@@ -558,6 +576,15 @@ export class AutomationStudioFlowCandidateTrialGate {
     const standingNo = (result as { standingNo?: unknown }).standingNo;
     return { answer, ...(standingNo !== undefined ? { standingNo } : {}) };
   }
+}
+
+/**
+ * Whether a trial port's trials run offline (header, Decisions 3 and 6): its
+ * environment's kind is set and is not live. Exported for the subflow trial
+ * gate, which holds the same rule.
+ */
+export function automationStudioCandidateTrialOffline(port: Pick<AutomationStudioCandidateTrialPort, "environmentKind">): boolean {
+  return port.environmentKind !== undefined && port.environmentKind !== "live";
 }
 
 /** One act of the build as a trial's answer names it: its id, what it did, and the exploration call that made it; never what the reset last saw of it. */

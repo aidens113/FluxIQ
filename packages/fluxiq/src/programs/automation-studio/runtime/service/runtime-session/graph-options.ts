@@ -15,9 +15,16 @@
 // candidate submission is accepted) and when it is approved, never per action
 // at execution. A trial therefore gates them exactly as a run does: by running
 // with these same options (`../candidate-trial/tests/consequences.test.ts`).
+//
+// Its clock, waits and randomness come from the run's environment (traces and
+// offline trials, P1, U7): absent, the live one, whose clock and wait are the
+// executor's own fallbacks. The live `random` is left unset, a rule kept in
+// `../../environment/executor-options.ts`: the Wait node reads a missing one as
+// no jitter at all, so setting it would change every live run's pauses.
 
 import type { IoRegistry } from "../../../../../io/index.ts";
 import type { RuntimeService } from "../../../../../runtime/index.ts";
+import { automationStudioEnvironmentExecutorOptions, automationStudioLiveRunEnvironment, type AutomationStudioRunEnvironment } from "../../environment/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../executor/index.ts";
 import { createIoPolicyEffectDispatcher, createRuntimePolicyEffectDispatcher } from "../../io-policy.ts";
 import type { AutomationStudioNativeNodeRuntime } from "../../native-node-runtime.ts";
@@ -35,6 +42,8 @@ export function automationStudioRunGraphOptions(input: {
   maxSteps?: number | undefined;
   onRecordBatch?: AutomationStudioGraphExecutionOptions["onRecordBatch"];
   parking?: AutomationStudioGraphExecutionOptions["parking"];
+  /** Where the run's clock, waits and randomness come from; absent, the live environment. */
+  environment?: AutomationStudioRunEnvironment | undefined;
 }): AutomationStudioGraphExecutionOptions {
   const options: AutomationStudioGraphExecutionOptions = { inputs: input.inputs ?? {}, signal: input.signal };
   const bound = input.io;
@@ -54,5 +63,5 @@ export function automationStudioRunGraphOptions(input: {
   if (input.maxSteps !== undefined) options.maxSteps = input.maxSteps;
   if (input.onRecordBatch) options.onRecordBatch = input.onRecordBatch;
   if (input.parking) options.parking = input.parking;
-  return options;
+  return automationStudioEnvironmentExecutorOptions(options, input.environment ?? automationStudioLiveRunEnvironment);
 }

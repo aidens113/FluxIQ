@@ -50,12 +50,24 @@
 // different verdict (`../../result-verification/first-ask/`); the record keeps
 // that (`firstAskConfirmed`) for promotion to carry to the saved Flow, where the
 // playback hold reads it in place of the record's call count.
+//
+// **A trial runs in its environment (traces and offline trials, U7).** Its
+// clock, its run id (`trial.<unique>`, as before) and the client channel its
+// work goes out on come from `ports.environment`, the live one when absent:
+// the start, the run, the end view and attempt reads and the cleared-control
+// handles all run inside `environment.within`, so an offline trial reaches only
+// its own environment's sessions. Its executor options take the environment's
+// clock, waits and randomness only when the ports name one, the live `random`
+// left unset as a normal run leaves it (`../runtime-session/graph-options.ts`).
+// An offline trial runs no start hook (Decision 6): it has no live effects to
+// put back.
 
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import type { AutomationStudioCandidateTrialAct, AutomationStudioCandidateTrialRequest, AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
 import { runAutomationStudioDetachedCandidate, type AutomationStudioCandidateStartReceipt, type AutomationStudioCandidateVerificationIdentity } from "../../flow-bootstrap/verification/index.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
+import { automationStudioEnvironmentExecutorOptions, automationStudioLiveRunEnvironment, type AutomationStudioRunEnvironment } from "../../environment/index.ts";
+import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import { AutomationStudioHostLeaseScope } from "../../project-agents/host-resources/index.ts";
 import { automationStudioResultReadAccounts, type AutomationStudioBuildTestVerdict, type AutomationStudioResultStandingNoCarrier, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord, AutomationStudioCandidateTrialStart, AutomationStudioCandidateTrialUnjudged } from "./contracts.ts";
@@ -87,9 +99,16 @@ export type AutomationStudioCandidateTrialOutcome = {
  * (`./judging-fits.ts`).
  */
 export async function runAutomationStudioCandidateTrial(request: AutomationStudioCandidateTrialRequest, ports: AutomationStudioCandidateTrialPorts, preparedStart?: AutomationStudioCandidateTrialStart, judgeInputTokens?: number): Promise<AutomationStudioCandidateTrialOutcome> {
+  const environment = ports.environment ?? automationStudioLiveRunEnvironment;
+  // The trial's client work runs on its environment's channel; live, exactly as before (header, U7).
+  return await environment.within(() => trialIn(environment, request, ports, preparedStart, judgeInputTokens));
+}
+
+/** One trial, run inside its environment (header, U7). */
+async function trialIn(environment: AutomationStudioRunEnvironment, request: AutomationStudioCandidateTrialRequest, ports: AutomationStudioCandidateTrialPorts, preparedStart?: AutomationStudioCandidateTrialStart, judgeInputTokens?: number): Promise<AutomationStudioCandidateTrialOutcome> {
   const { signal, candidate } = request;
   signal.throwIfAborted();
-  const now = ports.now ?? Date.now;
+  const now = ports.now ?? environment.now;
   const answer = answerFor(request);
   // Not started when the purse cannot pay both judge calls: nothing acts on the site and no judge is asked (header, t661).
   const unaffordable = automationStudioTrialJudgingShortfall({ code: UNAFFORDABLE, judgeInputTokens });
@@ -97,7 +116,7 @@ export async function runAutomationStudioCandidateTrial(request: AutomationStudi
   const start = preparedStart ?? await automationStudioCandidateTrialStart(request, ports);
   if (start.status === "failed") return answer("execution_failed", { code: start.code, start: start.status }, { start, execution: "not_run", code: start.code, judge: { ...NO_SPEND } });
 
-  const runId = ports.newRunId?.() ?? `trial.${randomUUID()}`;
+  const runId = ports.newRunId?.() ?? environment.newRunId("trial");
   const opened = await ports.openSession({ runId, metadata: { candidateTrial: { candidateId: request.candidateId, revision: request.revision, digest: request.digest, start: start.status } } });
   const startedAt = now();
   await ports.writeSession({ ...opened, status: "running", startedAt });
@@ -114,7 +133,7 @@ export async function runAutomationStudioCandidateTrial(request: AutomationStudi
       ...(ports.registry ? { registry: ports.registry } : {}), resolution: ports.resolution, snapshots: await ports.snapshots(), deprecatedPublicationIds: await ports.deprecatedPublicationIds(),
       sourceInstructionIds: [...ports.sourceInstructionIds], runId, start: receipt,
       // The signal rides on the options alone: the runner refuses two different signals.
-      options: ports.graphOptions({ runId, signal })
+      options: automationStudioTrialExecutorOptions(ports.graphOptions({ runId, signal }), ports.environment)
     });
   } catch (error) {
     // Not left running: a session that threw is ended failed, and the throw goes on to the trial gate.
@@ -199,6 +218,17 @@ function answerFor(request: AutomationStudioCandidateTrialRequest) {
 }
 
 /**
+ * A trial's executor options under the environment its ports name (header,
+ * U7): unchanged when they name none, so a live trial runs as it always has;
+ * otherwise the environment's clock, waits and randomness, the live `random`
+ * left unset as a normal run leaves it (`../../environment/executor-options.ts`).
+ * Exported for the subflow trial, which runs under the same rule.
+ */
+export function automationStudioTrialExecutorOptions(options: AutomationStudioGraphExecutionOptions, environment: AutomationStudioRunEnvironment | undefined): AutomationStudioGraphExecutionOptions {
+  return environment ? automationStudioEnvironmentExecutorOptions(options, environment) : options;
+}
+
+/**
  * The handles the domain names the trial's pressed ways out by. Asked only when
  * the run pressed one and the domain can name it; a way out it leaves out is
  * said without a handle, and the format then asks for no step closing it.
@@ -222,6 +252,8 @@ async function wayOutHandles(attempts: readonly AutomationStudioNodeAttemptTrace
 export async function automationStudioCandidateTrialStart(request: Pick<AutomationStudioCandidateTrialRequest, "candidateId" | "revision" | "digest" | "signal">, ports: AutomationStudioCandidateTrialPorts): Promise<AutomationStudioCandidateTrialStart> {
   const hook = ports.prepareStart;
   if (!hook) return { status: "not_reset" };
+  // An offline trial has no live effects to put back, so it runs no start hook (header, Decision 6).
+  if (ports.environment && ports.environment.kind !== "live") return { status: "not_reset" };
   const lease = AutomationStudioHostLeaseScope.current();
   if (lease && !AutomationStudioHostLeaseScope.gatewaySource.isCurrent(lease)) {
     return { status: "failed", code: "candidate.trial_start_lease_stale", failure: "the host resource lease this trial ran under is no longer held" };

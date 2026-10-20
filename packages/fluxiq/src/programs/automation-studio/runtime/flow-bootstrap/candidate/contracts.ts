@@ -4,6 +4,7 @@ import type { AutomationStudioFlowBuildPlan } from "../plan/index.ts";
 import type { AutomationStudioSiteResetTrialActPlace } from "../site-reset/index.ts";
 import type { AutomationStudioFlowBootstrapCompletionVerdict, AutomationStudioFlowBootstrapPlanHandleView } from "../../llm/harness-options/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
+import type { AutomationStudioRunEnvironmentKind } from "../../environment/index.ts";
 
 /** Historical owner-enumerated bytes, never pinned-read or execution authority. */
 export type AutomationStudioCandidateOriginalSources = {
@@ -140,7 +141,14 @@ export type AutomationStudioCandidateTrialPrepared = "reset" | "failed" | "none"
  * back, and the reset asks the model for nothing (t479). The
  * trial of the same revision and digest that follows uses that start and does
  * not run the hook again.
+ *
+ * `environmentKind` is the kind of environment the port's trials run in
+ * (traces and offline trials, U7). Set and not `live`, a trial is offline: the
+ * trial gate runs no start hook and no site reset for it (Decision 6), and its
+ * yes is evidence only, never the judged pass that lets the build complete
+ * (Decision 3). Absent, the trials are live.
  */
 export type AutomationStudioCandidateTrialPort = ((request: AutomationStudioCandidateTrialRequest) => Promise<AutomationStudioCandidateTrialResult>) & {
   prepareStart?: ((input: { revision: number; digest: string; signal: AbortSignal }) => Promise<AutomationStudioCandidateTrialPrepared>) | undefined;
+  readonly environmentKind?: AutomationStudioRunEnvironmentKind | undefined;
 };
