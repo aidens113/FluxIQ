@@ -1,10 +1,11 @@
 import type { ClientGatewaySnapshotView } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayAuditLog } from "./audit-log.ts";
+import { clientGatewayChannelScopeVisible, type ClientGatewayChannelScopeSource } from "./channel-scope/index.ts";
 import type { ClientGatewayConfig } from "./config.ts";
 import type { ClientGatewayPairingRegistry } from "./pairings.ts";
 import type { ClientGatewaySessionRegistry } from "./sessions.ts";
 import type { ClientGatewayTrustedClientRegistry } from "./trusted-clients.ts";
-import type { ClientGatewayItemKind, ClientGatewaySummaryItem, ClientGatewaySummaryPage } from "./types.ts";
+import type { ClientGatewayItemKind, ClientGatewaySummaryItem, ClientGatewaySummaryPage, InternalSession } from "./types.ts";
 
 const AUDIT_LOG_SNAPSHOT_ENTRIES = 100;
 const MAX_SUMMARY_PAGE_SIZE = 200;
@@ -16,11 +17,15 @@ type ViewCollaborators = {
   pairings: ClientGatewayPairingRegistry;
   trustedClients: ClientGatewayTrustedClientRegistry;
   audit: ClientGatewayAuditLog;
+  channelScope?: ClientGatewayChannelScopeSource | undefined;
 };
 
 /**
  * Read-only projections of gateway state. Every one prunes expired pairings
- * first so a caller never sees a challenge that has already lapsed.
+ * first so a caller never sees a challenge that has already lapsed, and lists
+ * only the sessions visible from the caller's channel scope
+ * (`./channel-scope/visibility.ts`): a live caller never sees a scoped session,
+ * and a scoped caller sees only its own.
  */
 export class ClientGatewayViews {
   private readonly config: ClientGatewayConfig;
@@ -28,6 +33,7 @@ export class ClientGatewayViews {
   private readonly pairings: ClientGatewayPairingRegistry;
   private readonly trustedClients: ClientGatewayTrustedClientRegistry;
   private readonly audit: ClientGatewayAuditLog;
+  private readonly channelScope: ClientGatewayChannelScopeSource | undefined;
 
   constructor(collaborators: ViewCollaborators) {
     this.config = collaborators.config;
@@ -35,6 +41,7 @@ export class ClientGatewayViews {
     this.pairings = collaborators.pairings;
     this.trustedClients = collaborators.trustedClients;
     this.audit = collaborators.audit;
+    this.channelScope = collaborators.channelScope;
   }
 
   snapshot(): ClientGatewaySnapshotView {
@@ -42,7 +49,7 @@ export class ClientGatewayViews {
     return {
       enabled: this.config.enabled,
       ...(this.config.publicUrl ? { publicUrl: this.config.publicUrl } : {}),
-      sessions: this.sessions.list().map((session) => this.sessions.toPublic(session)),
+      sessions: this.visibleSessions().map((session) => this.sessions.toPublic(session)),
       pairings: this.pairings.list(),
       trustedClients: this.trustedClients.list().map((client) => this.trustedClients.toView(client)),
       auditLog: this.audit.recent(AUDIT_LOG_SNAPSHOT_ENTRIES)
@@ -54,7 +61,7 @@ export class ClientGatewayViews {
     return {
       enabled: this.config.enabled,
       ...(this.config.publicUrl ? { publicUrl: this.config.publicUrl } : {}),
-      counts: { sessions: this.sessions.size(), pairings: this.pairings.size(), trustedClients: this.trustedClients.size() }
+      counts: { sessions: this.visibleSessions().length, pairings: this.pairings.size(), trustedClients: this.trustedClients.size() }
     };
   }
 
@@ -78,8 +85,13 @@ export class ClientGatewayViews {
   }
 
   private sourceFor(kind: ClientGatewayItemKind): ClientGatewaySummaryItem[] {
-    if (kind === "sessions") return this.sessions.list().map((session) => this.sessions.toPublic(session));
+    if (kind === "sessions") return this.visibleSessions().map((session) => this.sessions.toPublic(session));
     if (kind === "pairings") return this.pairings.list().map((pairing) => ({ ...pairing }));
     return this.trustedClients.list().map((client) => this.trustedClients.toView(client));
+  }
+
+  private visibleSessions(): InternalSession[] {
+    const current = this.channelScope?.current();
+    return this.sessions.list().filter((session) => clientGatewayChannelScopeVisible(session.channelScope, current));
   }
 }

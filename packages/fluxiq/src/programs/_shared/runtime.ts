@@ -4,6 +4,7 @@ import type { JsonObject } from "../../core/index.ts";
 import type { FluxIQHostPaths } from "../../framework/index.ts";
 import { ClientGatewayRuntimeTransport, FileRuntimeStore, RuntimeService } from "../../runtime/index.ts";
 import { AutomationStudioClientGatewayBridge, automationStudioActivityHub, AutomationStudioHostLeaseScope, automationStudioActivityRunScope, automationStudioCandidateStartHookFromEnvironment, AutomationStudioService, automationStudioPanelCommandKeyFromSecretKeys, createAutomationStudioDeepSeekPanelCommandModel, createAutomationStudioResultCheckProvider, createAutomationStudioSessionKeyProviderResolver, registerAutomationStudioApi } from "../automation-studio/index.ts";
+import { AutomationStudioChannelScope } from "../automation-studio/runtime/environment/index.ts";
 import { BackgroundTasksService, registerBackgroundTasksApi } from "../background-tasks/index.ts";
 import { ComputeControlService, registerComputeControlApi } from "../compute-control/index.ts";
 import { DatabaseManagerService, registerDatabaseManagerApi, SQLiteRepository } from "../database-manager/index.ts";
@@ -82,6 +83,8 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: { m
     commandOwner: automationStudioActivityRunScope,
     // The host lease a command is sent under, stamped on it; a stale or foreign one is refused unsent (automation-project-agents-plan).
     hostLease: AutomationStudioHostLeaseScope.gatewaySource,
+    // The channel scope a command is sent and a session list read from: an offline run's work sees and reaches only its own sessions, and live work never sees those (traces and offline trials, P1). No scope is entered yet, so every caller is live.
+    channelScope: AutomationStudioChannelScope.gatewaySource,
     enabled: process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED !== "false",
     ...(paths ? { trustedClientStore: createClientGatewayTrustedClientStore(paths.data) } : {}),
     ...(trustedClientTtlMs ? { trustedClientTtlMs } : {}),

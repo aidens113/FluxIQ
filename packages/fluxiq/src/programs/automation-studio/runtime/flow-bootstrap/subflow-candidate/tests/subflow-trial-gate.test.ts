@@ -190,3 +190,37 @@ describe("the subflow trial gate", () => {
     expect(toldUnsure).not.toContain("The judges answered yes");
   });
 });
+
+// L1 reset settlement: a builder's trial act reaches its ledger whole, every
+// spot token, the step's controls and its collections, as the port read them.
+describe("the subflow trial gate's acts (L1)", () => {
+  it("tells the reset's trialRan each act with every spot token, its controls and its collections intact", async () => {
+    const act = {
+      step: 3,
+      definitionId: "domain.demo.move",
+      consequences: ["modify_existing" as const],
+      spot: { item: "i:row", subject: "s:a", page: "s:page", scope: "c:from", resource: "r:one", place: "p:slot", state: "v:off" },
+      controls: { page: "p:page", before: { "v:off": 1 }, after: { "v:on": 1 } },
+      collections: {
+        before: [{ scope: "c:from", group: "g:list", subjects: ["s:a"], states: { "s:a": "v:in" } }],
+        after: [{ scope: "c:to", group: "g:list", subjects: ["s:a"], states: { "s:a": "v:in" } }]
+      },
+      created: ["i:made"]
+    };
+    const told: unknown[] = [];
+    const gate = new AutomationStudioSubflowTrialGate({
+      scope,
+      latest: () => structuredClone(proposal),
+      port: async (request) => answer(request, { verdict: "unsure", acts: [structuredClone(act)], trialRunId: "trial.1" }),
+      reset: {
+        beforeTrial: async () => ({ kind: "admit" }),
+        trialRan: (acts) => {
+          told.push(structuredClone(acts));
+          return [];
+        }
+      }
+    });
+    await gate.test(receipt);
+    expect(told).toEqual([[act]]);
+  });
+});

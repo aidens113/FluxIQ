@@ -2,7 +2,9 @@
 // worktree path with forward slashes and whatever case the directory was
 // created with, while node builds one with backslashes from `path.join`, so two
 // spellings of one directory must compare equal before a task command can tell
-// "this checkout" from "some other worktree of the same repository".
+// "this checkout" from "some other worktree of the same repository". The
+// downstream web-extension repository imports this module for its worktree
+// tooling, and `path-inside.mjs` builds on it.
 
 import path from "node:path";
 

@@ -92,7 +92,8 @@
 // a look, a detect, a find, anything not refused and not answering exactly as
 // before. Until then it is refused like any failure, and the note says the
 // handle was never shown and which call shows it (`./feedback.ts`). Any other
-// failure stays refused while the page is unchanged, looks or not.
+// failure stays refused while the page is unchanged, looks or not, but for a
+// refusal that names a precondition (below).
 //
 // **A submission refused on a handle not yet shown is lifted the same way
 // (t594).** A submission's refusal names its handles inside its issues, not in
@@ -120,6 +121,27 @@
 // it changed the build's state. For the start location the call that meets it
 // is any act that ran: the domain refuses every act but the move there until
 // the build has arrived, so an act that ran is the arrival or came after it.
+//
+// **A trial refused until the site is put back is lifted by any later call
+// that ran (office r2).** Live run `run-mvfq94ff-c8c21493` (rows 0096-0110 and
+// 0151-0161): a trial was refused unrun, `candidate.trial_reset_required` or
+// `candidate.trial_reset_unproved`, until the build had settled its acts; the
+// read that settles one is a look on the same page, so the digest the refusal
+// was keyed on did not move. Whether a trial may run is the reset ledger's
+// state, which no page digest holds. A refusal whose code or reason names
+// `trial_reset_required`, `trial_reset_unproved` or `trial_start_differs`
+// (`candidate.` or `project.`) is lifted, on every page, by any later call that
+// ran and was not refused -- a look included -- so the identical trial reaches
+// the ledger again, which answers it afresh. A refused call meets nothing, and
+// with no call between, the identical trial is still refused. Meeting it
+// changes nothing the page could show, so the call that met it is recorded as
+// any call is. Every trial gate today also answers these refusals with the
+// reason `retry_allowed` (`../../flow-bootstrap/candidate/trial-gate.ts`,
+// `../../flow-bootstrap/subflow-candidate/subflow-trial-gate.ts`,
+// `../../project-agents/supervisor/tool-answer.ts`), which `./retry-later.ts`
+// already exempts from this guard; the precondition holds without that reason,
+// so the rule does not rest on the wording of one. The loop's own memory of a
+// refused action is the other layer (`../refused-action-retest.ts`).
 //
 // **A rerun that changed nothing is keyed on the decision and the draft, not
 // the page.** Live run `run-muwaobm2-882cadd9` (lane A, iterations 17-24) sent
@@ -253,6 +275,8 @@ type AutomationStudioLlmEvidencePrecondition = {
   names: RegExp;
   /** Whether a call that ran meets it. */
   met(call: AutomationStudioLlmEvidenceCallOutcome): boolean;
+  /** Whether the call that meets it changed the build's state, so it is not recorded as one that changed nothing. */
+  changesState: boolean;
 };
 
 /** Refusals about the build's state rather than the page, lifted by the call that meets them (header). */
@@ -260,7 +284,14 @@ const PRECONDITIONS: readonly AutomationStudioLlmEvidencePrecondition[] = [
   {
     // `not_at_start_location` / `start_location_not_reached`: every act but the move there is refused until the build arrives.
     names: /^(?:not[_-]?at[_-]?start[_-]?location|start[_-]?location[_-]?not[_-]?reached)$/iu,
-    met: (call) => call.effect === "mutate" && !call.refused && call.effectApplied
+    met: (call) => call.effect === "mutate" && !call.refused && call.effectApplied,
+    changesState: true
+  },
+  {
+    // `trial_reset_required` / `trial_reset_unproved` / `trial_start_differs`: the trial waits on what this build has done since, a look included (header, office r2).
+    names: /^(?:trial[_-]?reset[_-]?required|trial[_-]?reset[_-]?unproved|trial[_-]?start[_-]?differs)$/iu,
+    met: (call) => !call.refused,
+    changesState: false
   }
 ];
 
@@ -369,16 +400,17 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
   const unshown = new Map<string, string>();
   // Failures that named a precondition, by key, with what they named: lifted on every page once a call meets it (header, t587).
   const awaiting = new Map<string, AutomationStudioLlmEvidencePrecondition[]>();
-  // Lifts every failure a call that ran meets; answers whether it lifted any.
+  // Lifts every failure a call that ran meets; answers whether it lifted one whose meeting changed the build's state.
   const met = (call: AutomationStudioLlmEvidenceCallOutcome): boolean => {
-    let lifted = false;
+    let changedState = false;
     for (const [at, named] of awaiting) {
-      if (!named.some((precondition) => precondition.met(call))) continue;
+      const meeting = named.filter((precondition) => precondition.met(call));
+      if (!meeting.length) continue;
       awaiting.delete(at);
       if (outcomes.get(at)?.outcome === "failed") outcomes.delete(at);
-      lifted = true;
+      if (meeting.some((precondition) => precondition.changesState)) changedState = true;
     }
-    return lifted;
+    return changedState;
   };
   const showed = (state: string): void => {
     for (const [at, on] of unshown) {

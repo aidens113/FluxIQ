@@ -1,6 +1,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { AutomationStudioFlowBuildPlan } from "../plan/index.ts";
+import type { AutomationStudioSiteResetTrialActPlace } from "../site-reset/index.ts";
 import type { AutomationStudioFlowBootstrapCompletionVerdict, AutomationStudioFlowBootstrapPlanHandleView } from "../../llm/harness-options/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 
@@ -113,8 +114,8 @@ export type AutomationStudioCandidateTrialResult = {
   /** Bounded JSON for the model: what the trial did and why the verdict, never exploration evidence. */
   feedback: JsonObject;
   trialRunId?: string;
-  /** The trial's lasting acts that landed, whatever its verdict (t462). Absent when it made none or ran nothing. */
-  acts?: AutomationStudioCandidateTrialAct[];
+  /** The trial's lasting acts that landed, whatever its verdict (t462), each with where its step sat and what it made (L1). Absent when it made none or ran nothing. */
+  acts?: Array<AutomationStudioCandidateTrialAct & AutomationStudioSiteResetTrialActPlace>;
   /**
    * Every act of the build a deployment's start hook took back before this
    * trial or an earlier one (t504): its id, what it did, and the exploration

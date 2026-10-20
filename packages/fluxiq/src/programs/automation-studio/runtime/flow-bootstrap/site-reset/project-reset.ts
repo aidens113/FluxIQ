@@ -25,7 +25,8 @@
 // - admitted, what each ledger said the trial starts with is said together.
 //
 // The start comparison is read once per ask and shared, so the target is taken
-// back to the start once, not once per ledger. A trial's own acts go into the
+// back to the start once, not once per ledger; so is each place Core looks at
+// for an act's stale witness (`lookAt`, L1). A trial's own acts go into the
 // own brief's ledger; every other ledger asked starts a new phase too, and the
 // acts still on the site afterwards are answered from all of them. Without an
 // own brief (the supervisor, which never acts on the site), every ledger that
@@ -59,7 +60,15 @@ export function automationStudioSiteResetProjectReset(input: {
     async beforeTrial(signal, cannotUndo, options) {
       const base = input.checks(signal);
       let start: Promise<AutomationStudioSiteResetComparison> | undefined;
-      const checks: AutomationStudioSiteResetChecks = { compare: () => (start ??= base.compare()), ...(base.compareAt ? { compareAt: base.compareAt } : {}) };
+      // Core's own looks (L1): each place once per ask, its read reaching every ledger through the caller, whichever ledger asked first.
+      const looked = new Set<string>();
+      const lookAt = base.lookAt;
+      const look = lookAt ? { lookAt: async (location: string) => {
+        if (looked.has(location)) return;
+        looked.add(location);
+        await lookAt(location);
+      } } : {};
+      const checks: AutomationStudioSiteResetChecks = { compare: () => (start ??= base.compare()), ...(base.compareAt ? { compareAt: base.compareAt } : {}), ...look };
       const decisions: AutomationStudioSiteResetDecision[] = [];
       for (const ledger of ledgers()) {
         signal?.throwIfAborted();

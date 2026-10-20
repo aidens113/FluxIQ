@@ -27,7 +27,8 @@
 // printed in the stamp and the entry, and a reuse hands it back as `replay`.
 // A store that cannot be read or written costs the reuse, never the build:
 // its failure is reported in the reason. A checkout git cannot list runs the
-// command uncached.
+// command uncached. The store part used is the repository's
+// (`options.repository`, Core by default; `store/store-directory.mjs`).
 
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -36,31 +37,36 @@ import { decideStep } from "./decide-step.mjs";
 import { fingerprintStep } from "./fingerprint-step.mjs";
 import { openStatCache, outputState } from "./fingerprint/index.mjs";
 import { acquireStepLock } from "./lock/index.mjs";
+import { CORE_REPOSITORY, resolveFor } from "./repository/index.mjs";
 import { runCommand } from "./run-command.mjs";
 import { removeStamp, STAMP_VERSION, writeStamp } from "./stamp/index.mjs";
 import { restoreEntry, saveEntry, storeDirectory } from "./store/index.mjs";
 import { touchStaleOutputs } from "./touch-stale-outputs.mjs";
-import { resolveStep } from "./workspace/index.mjs";
 
 /**
  * @typedef {{ result: "reuse" | "build", step: string, reason: string, ms: number, exitCode: number, source: "stamp" | "store" | "command", fingerprint: string | null, replay: string | null, output: string | null }} StepOutcome
  *   `replay` is the stored output a reused replaying step hands back; `output` is what a run printed, when it was captured
- * @typedef {(context: { resolved: ReturnType<typeof resolveStep>, env: NodeJS.ProcessEnv, stdio?: import("node:child_process").StdioOptions, capture?: "tee" | "buffer" }) => Promise<{ exitCode: number, output: string | null }>} StepRunner
+ * @typedef {(context: { resolved: ReturnType<typeof import("./workspace/index.mjs").resolveStep>, env: NodeJS.ProcessEnv, stdio?: import("node:child_process").StdioOptions, capture?: "tee" | "buffer" }) => Promise<{ exitCode: number, output: string | null } | number>} StepRunner
+ *   a runner may resolve to the exit code alone, as the downstream repository's runners did before it used this engine
  */
 
 /**
- * @param {string | ReturnType<typeof resolveStep>} step a registry name, or a step already resolved
- * @param {{ repoRoot?: string, env?: NodeJS.ProcessEnv, steps?: object, stdio?: import("node:child_process").StdioOptions, capture?: "tee" | "buffer", run?: StepRunner, lock?: Parameters<typeof acquireStepLock>[1] }} [options]
+ * @param {string | ReturnType<typeof import("./workspace/index.mjs").resolveStep>} step a registry name, or a step already resolved
+ * @param {{ repository?: typeof CORE_REPOSITORY, repoRoot?: string, env?: NodeJS.ProcessEnv, steps?: object, stdio?: import("node:child_process").StdioOptions, capture?: "tee" | "buffer", run?: StepRunner, lock?: Parameters<typeof acquireStepLock>[1] }} [options]
  *   `run` replaces running the step's command in its package directory
  * @returns {Promise<StepOutcome>}
  */
 export async function runStep(step, options = {}) {
   const started = performance.now();
   const env = options.env ?? process.env;
-  const resolved = typeof step === "string" ? resolveStep(step, options) : step;
+  const resolved = resolveFor(step, options);
   const capture = options.capture ?? (resolved.replayOutput ? "tee" : undefined);
-  const run =
+  const runner =
     options.run ?? (({ env: runEnv, stdio, capture: mode }) => runCommand(resolved.command, { cwd: resolved.packageDir, repoRoot: resolved.repoRoot, env: runEnv, stdio, capture: mode }));
+  const run = async (context) => {
+    const ran = await runner(context);
+    return typeof ran === "number" ? { exitCode: ran, output: null } : ran;
+  };
   const finish = (result, reason, exitCode, source, extra = {}) => ({
     result,
     step: resolved.name,
@@ -110,7 +116,7 @@ async function runLocked(resolved, first, lock, options) {
     }
   }
 
-  const storeDir = storeDirectory(env);
+  const storeDir = storeDirectory(env, (options.repository ?? CORE_REPOSITORY).storeNamespace);
   const forced = env.FLUXIQ_BUILD_FORCE === "1";
   let storeNote = "";
   if (storeDir !== null && !forced) {

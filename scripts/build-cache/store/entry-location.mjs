@@ -1,4 +1,4 @@
-// The store's layout, in one place (all under Core's namespace, see
+// The store's layout, in one place (all under one repository's namespace, see
 // `store-directory.mjs`):
 //
 //   <store>/v1/<key>/entry.json   what the entry is (see save-entry.mjs); its

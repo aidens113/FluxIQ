@@ -107,7 +107,9 @@ describe("site reset trial policy", () => {
     expect(asked).toBe(false);
     if (answer.kind === "admit") {
       const said = String(answer.startedWith?.instruction);
-      expect(said).toContain("could not be undone on this site");
+      // L1: a kept act is either one the site offers no control for, or one settled with no change seen; the words say both.
+      expect(said).toContain("the site offers no control that undoes it");
+      expect(said).toContain("nothing it could change showed a change");
       expect(said).toContain("passes over an item that is already done");
       expect(said).not.toMatch(/(cart|friend|request|confirm|store|shop)/iu);
     }

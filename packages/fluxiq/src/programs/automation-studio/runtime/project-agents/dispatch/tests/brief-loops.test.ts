@@ -13,6 +13,8 @@ import type { AutomationStudioProjectBuilderPorts, AutomationStudioProjectResetP
 import { gardenBrief, gardenBuild, gardenPlan, REF, type BuilderScript } from "./dispatch-fixture.ts";
 
 type Entry = { callId: string; toolId: string; value: unknown };
+/** What settles an open act, as a ledger words it (generic). */
+const SETTLE = "Read destination-1 at loc:list completely again.";
 const submitted = (evidence: readonly Entry[]) => {
   const value = [...evidence].reverse().find((entry) => entry.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!.value as JsonObject;
   return { revision: value.revision as number, digest: value.digest as string };
@@ -128,7 +130,8 @@ describe("a dispatched brief's loop", () => {
     expect(returns[0]).toMatchObject({ briefId: "b-reset", outcome: "done" });
   });
 
-  it("tells a reset whose completion is refused when to name an act under cannotUndo (t591)", async () => {
+  // L1 reset settlement: the refusal lists each open act with what settles it, and says what cannotUndo truly does.
+  it("tells a reset whose completion is refused what settles each act and when to name one under cannotUndo (t591, L1)", async () => {
     const seen: unknown[] = [];
     const reset = (): AutomationStudioProjectResetPorts => ({
       loop: {
@@ -140,14 +143,42 @@ describe("a dispatched brief's loop", () => {
           return { kind: "complete", result: { summary: "done" } };
         }
       },
-      remainingActs: async () => [{ act: "act-1", did: "press \"Confirm\" button" }]
+      remainingActs: async () => [{ act: "act-1", did: "press \"Confirm\" button", settle: SETTLE }]
     });
     const brief = gardenBrief("b-reset", "list_seeds", [], (value) => Object.assign(value, { kind: "reset", parts: [], maxIterations: 3 }));
     const build = await gardenBuild({ capacity: 1, briefs: [brief], ports: { reset } });
     await build.run();
-    const refusal = JSON.stringify(seen);
-    expect(refusal).toContain("project.reset_acts_in_place");
-    expect(refusal).toContain("complete and name that act under cannotUndo");
+    const refusal = seen.find((value): value is JsonObject => typeof value === "object" && value !== null && (value as JsonObject).code === "project.reset_acts_in_place")!;
+    expect(refusal.actsToUndo).toEqual([{ act: "act-1", did: "press \"Confirm\" button", settle: SETTLE }]);
+    const instruction = String(refusal.instruction);
+    expect(instruction).toContain("Each listed act says under settle what settles it");
+    expect(instruction).toContain("it never settles a reversible act whose watched state still differs: such an act stays listed with what settles it");
+    expect(instruction).toContain("complete with an honest unresolved summary naming every such act under cannotUndo");
+    expect(instruction).not.toContain("kept as done");
+  });
+
+  it("ends a reset unresolved, blocked with the act still to undo, once it names under cannotUndo an act a refusal listed with what settles it (L1)", async () => {
+    let step = 0;
+    const reset = (): AutomationStudioProjectResetPorts => ({
+      loop: {
+        tools: [{ toolId: "site.undo", description: "Undo one act", effect: "mutate", inputSchema: { type: "object" } }],
+        unusableDecisions: { maxConsecutive: 3, maxInARow: 3, stalled: () => new Error("the reset stalled") },
+        executeTool: async () => ({ ok: true }),
+        decide: async () => {
+          step += 1;
+          return { kind: "complete", result: { summary: "the site offers no control that takes it back", cannotUndo: ["act-1"] } };
+        }
+      },
+      // A reversible act whose watched state still differs: naming it never settles it.
+      remainingActs: async () => [{ act: "act-1", did: "press \"Confirm\" button", settle: SETTLE }]
+    });
+    const brief = gardenBrief("b-reset", "list_seeds", [], (value) => Object.assign(value, { kind: "reset", parts: [], maxIterations: 4 }));
+    const build = await gardenBuild({ capacity: 1, briefs: [brief], ports: { reset } });
+    const { returns } = await build.run();
+    // Its first naming is refused with what settles it; its second, after that refusal, is the honest unresolved ending.
+    expect(step).toBe(2);
+    expect(returns[0]).toMatchObject({ briefId: "b-reset", outcome: "blocked" });
+    expect(returns[0]!.reason).toContain("The reset completed. 1 act is still to undo: act-1 (press \"Confirm\" button).");
   });
 
   // A8 frozen pair 3 `run-mv9zn5ob-d929084d` (t645): a builder bound an output no step of its subflow made, one way after

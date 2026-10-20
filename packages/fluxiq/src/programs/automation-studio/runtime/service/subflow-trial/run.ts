@@ -85,6 +85,7 @@ import {
   automationStudioCandidateTrialSummary,
   automationStudioTrialExecutedSteps,
   automationStudioTrialJudgingShortfall,
+  type AutomationStudioCandidateTrialLandedAct,
   type AutomationStudioCandidateTrialStart
 } from "../candidate-trial/index.ts";
 import { automationStudioSubflowTrialPredecessorGap } from "./predecessor-gap.ts";
@@ -284,7 +285,7 @@ function answerFor(request: AutomationStudioSubflowTrialRequest) {
     verdict: AutomationStudioSubflowTrialResult["verdict"],
     feedback: JsonObject,
     record: Omit<AutomationStudioSubflowTrialRecord, "identity" | "revision" | "digest" | "verdict"> & { start: AutomationStudioCandidateTrialStart | { status: "not_run" } },
-    acts: AutomationStudioCandidateTrialAct[] = [],
+    acts: AutomationStudioCandidateTrialLandedAct[] = [],
     standingNo?: AutomationStudioResultStandingNoCarrier["standingNo"]
   ): AutomationStudioSubflowTrialOutcome => ({
     result: {

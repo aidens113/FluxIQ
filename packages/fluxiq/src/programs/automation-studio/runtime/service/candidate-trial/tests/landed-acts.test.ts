@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { JsonObject } from "../../../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../../model/index.ts";
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../../executor/index.ts";
 import { automationStudioCandidateTrialFeedback, automationStudioCandidateTrialLandedActs } from "../index.ts";
@@ -185,4 +185,41 @@ it("carries bounded opaque immediate collection witnesses into a trial act and r
   expect(run(collections)?.collections).toEqual(collections);
   expect(run({ before: [{ ...collection, subjects: ["s:document", "s:document"] }], after: [collection] })?.collections).toBeUndefined();
   expect(run({ before: [collection], after: [{ ...collection, states: {} }] })?.collections).toBeUndefined();
+});
+
+// L1 reset settlement: the acted control's own place and state, and the state counts its page showed there around the step.
+it("carries the spot's resource, place and state and the step's controls, and drops malformed controls while keeping the act", () => {
+  const controls = { page: "p:page", before: { "v:off": 1 }, after: { "v:on": 1 } };
+  const run = (extra: JsonObject) => automationStudioCandidateTrialLandedActs(trace([attempt("add", "succeeded", { stateRefs: { stateDiff: { added: ["pressed"], removed: [], documentChanged: false, ...extra } } })]), graph)[0];
+  const carried = run({ spot: { item: "i:row", resource: "r:one", place: "p:slot", state: "v:off" }, controls });
+  expect(carried?.spot).toEqual({ item: "i:row", resource: "r:one", place: "p:slot", state: "v:off" });
+  expect(carried?.controls).toEqual(controls);
+  expect(run({ spot: { place: "a slot, in words", state: 7 } })?.spot).toBeUndefined();
+  const tooMany = Object.fromEntries(Array.from({ length: 2_001 }, (_, index) => [`v:${index}`, 1]));
+  for (const malformed of [
+    { ...controls, page: "a page, in words" },
+    { ...controls, before: { "v:off": 0 } },
+    { ...controls, after: { "v:on": 1.5 } },
+    { ...controls, after: { "not a token!": 1 } },
+    { ...controls, before: tooMany },
+    { page: "p:page", before: { "v:off": 1 } },
+    { ...controls, before: ["v:off"] }
+  ]) {
+    const act = run({ controls: malformed as JsonObject });
+    expect(act?.step).toBe(1);
+    expect(act?.controls).toBeUndefined();
+  }
+});
+
+// L1 d7: the step page's location rides with its controls, as a read carries `location` beside `scope`, so a ledger that has
+// read no page of it knows where to look; a malformed location is dropped and the counts kept.
+it("carries the step page's location with its controls, and drops a malformed one while keeping the counts", () => {
+  const controls = { page: "p:page", before: { "v:off": 1 }, after: { "v:on": 1 } };
+  const run = (location: JsonValue) => automationStudioCandidateTrialLandedActs(trace([attempt("add", "succeeded", { stateRefs: { stateDiff: { added: ["pressed"], removed: [], documentChanged: false, spot: { place: "p:slot", state: "v:off" }, controls: { ...controls, location } } } })]), graph)[0];
+  expect(run("https://site.test/items/7?view=full")?.controls).toEqual({ ...controls, location: "https://site.test/items/7?view=full" });
+  for (const malformed of ["", "loc:page\nmore", "loc:\u0000page", "x".repeat(2_049), 7, null, ["loc:page"], { href: "loc:page" }] as JsonValue[]) {
+    const act = run(malformed);
+    expect(act?.step).toBe(1);
+    expect(act?.controls).toEqual(controls);
+  }
 });

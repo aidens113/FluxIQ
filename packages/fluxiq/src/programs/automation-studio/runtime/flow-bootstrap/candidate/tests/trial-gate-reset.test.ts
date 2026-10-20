@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../../../llm/index.ts";
-import { AutomationStudioSiteResetLedger } from "../../site-reset/index.ts";
+import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetRead, type AutomationStudioSiteResetTrialAct } from "../../site-reset/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, AutomationStudioFlowCandidateTrialGate, runAutomationStudioFlowCandidateAuthoringLoop, type AutomationStudioFlowCandidate, type AutomationStudioCandidateTrialRequest, type AutomationStudioCandidateTrialResult } from "../index.ts";
 
 // The site reset before each trial (t462), in the real authoring loop. A fake
@@ -284,5 +284,108 @@ describe("candidate trial gate: the site is put back first", () => {
       expect((await gate.test({ revision: 1, digest: "d1", cannotUndo } as JsonObject)).evidence).toMatchObject({ ok: false, code: "candidate.trial_input_invalid" });
     }
     expect((gate.tool.inputSchema.properties as JsonObject).cannotUndo).toMatchObject({ type: "array", items: { pattern: "^act-[1-9][0-9]{0,3}$" } });
+  });
+});
+
+// L1 reset settlement, on the candidate side: the reset before a trial may
+// look at an open act's watched place itself (`lookAt`), and what it reads
+// there reaches the ledger as any read does; a trial's act keeps every spot
+// token, the step's `controls` and its `collections` on its way to the ledger.
+const WATCHED = "https://site.test/watched";
+const CONTROLS = { "p:slot": { "v:off": 1 } };
+const drafted = { revision: 1, digest: "d1", baseDependencyDigest: "b", status: "draft", summary: "s", buildPlan: {}, changedPaths: [] } as unknown as AutomationStudioFlowCandidate;
+
+describe("candidate trial reset settlement (L1)", () => {
+  it("gives a beforeTrial check lookAt, which goes to the location, and its settled read reaches the ledger", async () => {
+    let at = "";
+    const went: string[] = [];
+    const binding = {
+      startState: async () => ({ state: { at }, differs: [], location: at, ...(at === WATCHED ? { controls: CONTROLS } : {}) }),
+      runsNodes: { arrival: { node: "demo.go", parameter: "to" }, runnable: ["demo.go"] }
+    };
+    const executeTool = async (call: { callId: string; value: JsonObject }) => {
+      const to = (call.value.parameters as JsonObject | undefined)?.to;
+      if (call.value.node === "demo.go" && typeof to === "string") {
+        at = to;
+        went.push(`${call.callId} ${to}`);
+      }
+      return { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true };
+    };
+    const ledger = new AutomationStudioSiteResetLedger();
+    const observed: AutomationStudioSiteResetRead[] = [];
+    const observe = ledger.observed.bind(ledger);
+    ledger.observed = (...args: Parameters<AutomationStudioSiteResetLedger["observed"]>) => {
+      observed.push(args[0]);
+      return observe(...args);
+    };
+    const offered: boolean[] = [];
+    const beforeTrial = ledger.beforeTrial.bind(ledger);
+    ledger.beforeTrial = async (...args: Parameters<AutomationStudioSiteResetLedger["beforeTrial"]>) => {
+      const checks = args[0];
+      offered.push(typeof checks !== "function" && typeof checks.lookAt === "function");
+      if (typeof checks !== "function") await checks.lookAt?.(WATCHED);
+      return beforeTrial(...args);
+    };
+    let receipt: JsonObject = {};
+    let trials = 0;
+    await runAutomationStudioFlowCandidateAuthoringLoop({
+      submission: { projectId: "project.test", flowId: "flow.test", registry, resolution, baseDependencyDigest: "accepted.base", binding },
+      trial: { candidateId: "candidate.look", port: async (request) => {
+        trials += 1;
+        return { revision: request.revision, digest: request.digest, verdict: "yes", feedback: {} };
+      } },
+      siteReset: ledger, siteResetSettleMs: 0,
+      loop: {
+        tools: [runNode], maxIterations: 3, maxToolCalls: 4,
+        executeTool,
+        decide: async ({ iteration, evidence }) => {
+          if (iteration === 1) return { kind: "tool_call", toolId: "core.submit_candidate", callId: "submit", input: plan } as unknown as Decision;
+          receipt = [...evidence].reverse().find((entry) => entry.toolId === "core.submit_candidate")!.value as JsonObject;
+          if (iteration === 2) return { kind: "tool_call", toolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, callId: "test", input: { revision: receipt.revision, digest: receipt.digest } } as unknown as Decision;
+          return { kind: "complete", result: { revision: receipt.revision, digest: receipt.digest } } as unknown as Decision;
+        }
+      }
+    });
+    expect(offered).toEqual([true]);
+    expect(trials).toBe(1);
+    expect(went).toContain(`site-reset.look.1.arrival ${WATCHED}`);
+    expect(observed.filter((read) => read.location === WATCHED)).toEqual([expect.objectContaining({ location: WATCHED, controls: CONTROLS })]);
+  });
+
+  it("carries every spot token, the step's controls and its collections to the ledger's trialRan, and drops malformed ones but keeps the act", async () => {
+    // With the step page's location, as a read carries it beside its scope (L1 d7).
+    const controls = { page: "p:page", location: "loc:page", before: { "v:off": 1 }, after: { "v:on": 1 } };
+    const { location: _location, ...unplaced } = controls;
+    const collections = {
+      before: [{ scope: "c:from", group: "g:list", subjects: ["s:a", "s:b"], states: { "s:a": "v:in", "s:b": "v:in" } }],
+      after: [{ scope: "c:from", group: "g:list", subjects: ["s:b"], states: { "s:b": "v:in" } }, { scope: "c:to", group: "g:list", subjects: ["s:a"], states: { "s:a": "v:in" } }]
+    };
+    // A side missing one subject's state is no complete inventory, so the act keeps no collections.
+    const partial = { before: collections.before, after: [{ scope: "c:to", group: "g:list", subjects: ["s:a", "s:b"], states: { "s:a": "v:in" } }] };
+    const acts = [
+      { step: 1, definitionId: "domain.demo.toggle", consequences: ["modify_existing"], spot: { item: "i:row", subject: "s:thing", page: "s:page", scope: "c:scope", resource: "r:one", place: "p:slot", state: "v:off", extra: "x:dropped" }, controls, collections },
+      { step: 2, definitionId: "domain.demo.toggle", consequences: ["modify_existing"], spot: { place: "a slot, in words" }, controls: { ...controls, before: { "v:off": 0 } }, collections: partial },
+      // A location that is no single bounded line is dropped, and the counts kept.
+      { step: 3, definitionId: "domain.demo.toggle", consequences: ["modify_existing"], controls: { ...controls, location: "loc:page\nmore" } },
+      { step: 4, definitionId: "domain.demo.toggle", consequences: ["modify_existing"], controls: { ...controls, location: "x".repeat(2_049) } },
+      { step: 5, definitionId: "domain.demo.toggle", consequences: ["modify_existing"], controls: { ...controls, location: 7 } }
+    ];
+    const told: AutomationStudioSiteResetTrialAct[][] = [];
+    const gate = new AutomationStudioFlowCandidateTrialGate({ latest: () => drafted, trial: { candidateId: "c", port: async (request) => ({ revision: request.revision, digest: request.digest, verdict: "unsure", feedback: {}, trialRunId: "trial.1", acts: acts as unknown as NonNullable<AutomationStudioCandidateTrialResult["acts"]> }) },
+      reset: {
+        beforeTrial: async () => ({ kind: "admit" }),
+        trialRan: (ran) => {
+          told.push([...ran]);
+          return [];
+        }
+      } });
+    await gate.test({ revision: 1, digest: "d1" });
+    expect(told).toEqual([[
+      { step: 1, definitionId: "domain.demo.toggle", consequences: ["modify_existing"], spot: { item: "i:row", subject: "s:thing", page: "s:page", scope: "c:scope", resource: "r:one", place: "p:slot", state: "v:off" }, controls, collections },
+      { step: 2, definitionId: "domain.demo.toggle", consequences: ["modify_existing"] },
+      { step: 3, definitionId: "domain.demo.toggle", consequences: ["modify_existing"], controls: unplaced },
+      { step: 4, definitionId: "domain.demo.toggle", consequences: ["modify_existing"], controls: unplaced },
+      { step: 5, definitionId: "domain.demo.toggle", consequences: ["modify_existing"], controls: unplaced }
+    ]]);
   });
 });

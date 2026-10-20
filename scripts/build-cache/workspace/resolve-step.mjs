@@ -34,6 +34,17 @@
 // The downstream web-extension repository stamps its own layer over Core's
 // library builds in `node_modules/.cache/fluxiq-build`; a shared directory would
 // have each layer delete and rewrite the other's stamp on every run.
+//
+// The object returned is the contract every other part of the engine reads,
+// and a downstream repository's resolver (`repository/core-repository.mjs`)
+// returns the same shape: name, kind, command, repoRoot, packageDir,
+// packageName and dependencies (workspace package names, for parallel
+// scheduling), roots (`fingerprint/list-root-files.mjs`; a walk root may carry
+// `labelBase`), outputs ({ label, path, exclude, match }), required,
+// tsconfigs, traces, replayOutput, stampPath, statCachePath, relocationRoots
+// and meta (whatever else the fingerprint must cover). `installRoots`, when
+// present, names the roots whose node_modules `prove-inputs` counts as
+// installed; it defaults to repoRoot.
 
 import path from "node:path";
 import { REPOSITORY_ROOT } from "../repository-root.mjs";

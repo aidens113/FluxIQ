@@ -85,7 +85,7 @@ export async function automationStudioSiteResetTrialPolicy(input: {
   return { kind: "refuse", signature, startDiffers: true, moved, evidence: { ok: false, code, instruction: WORDS.startDiffers(), differs: [...differs] } };
 }
 
-/** An act as the model is shown it, with no key it does not have. */
+/** An act as the model is shown it, with no key it does not have; an open act keeps what settles it (`settle`, L1). */
 function named(act: AutomationStudioSiteResetNamedAct): AutomationStudioSiteResetNamedAct & JsonObject {
-  return { act: act.act, did: act.did, ...(act.call ? { call: act.call } : {}), ...(act.stillThere?.length ? { stillThere: [...act.stillThere] } : {}) };
+  return { act: act.act, did: act.did, ...(act.call ? { call: act.call } : {}), ...(act.stillThere?.length ? { stillThere: [...act.stillThere] } : {}), ...(act.settle ? { settle: act.settle } : {}) };
 }

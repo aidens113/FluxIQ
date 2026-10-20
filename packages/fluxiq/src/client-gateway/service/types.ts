@@ -48,6 +48,14 @@ export type ClientGatewayServiceOptions = {
    * refused for one.
    */
   hostLease?: import("./host-lease/index.ts").ClientGatewayHostLeaseSource;
+  /**
+   * The channel scope the dispatching async context runs in (traces and
+   * offline trials, P1), read as `hostLease` is (`./channel-scope/`). Inside a
+   * scope the session view shows, and commands reach, only the sessions
+   * attached under it; outside every scope, only live sessions. Unset, every
+   * caller is live, so a scoped session is never seen or reached.
+   */
+  channelScope?: import("./channel-scope/index.ts").ClientGatewayChannelScopeSource;
 };
 
 /**
@@ -59,6 +67,8 @@ export type InternalSession = ClientGatewaySession & {
   socket?: ClientGatewaySocket;
   outbound: ClientGatewayServerMessage[];
   pendingPairingCode?: string;
+  /** The channel scope this session was attached under (`./channel-scope/`); absent for a live session. */
+  channelScope?: string;
 };
 
 /** An action command dispatched to a client and still awaiting its result. */
