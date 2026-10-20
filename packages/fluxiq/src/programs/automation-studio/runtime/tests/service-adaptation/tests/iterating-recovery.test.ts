@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A runtime recovery that asks to look before it answers.
 //
 // Twice against the real provider, a run a person asked for got as far as a

@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A run stops on a question, a person answers it in the thread, and the run
 // goes on from the answer.
 //

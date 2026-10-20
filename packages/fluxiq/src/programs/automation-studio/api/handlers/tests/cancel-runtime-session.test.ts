@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Covers the stop endpoint in handlers/runtime-execution.ts.
 //
 // `cancel-runtime-session` was declared in the endpoint list and implemented on

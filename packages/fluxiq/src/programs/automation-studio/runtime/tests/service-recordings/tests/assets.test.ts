@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";

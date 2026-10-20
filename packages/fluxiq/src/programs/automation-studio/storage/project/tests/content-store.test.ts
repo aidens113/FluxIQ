@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";

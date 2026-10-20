@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A candidate build's exploration cards name the control each call is about
 // (t378): the service gave the legacy round the bound domain's `describeCall`
 // and the candidate loop none, so the candidate build's cards named no control.

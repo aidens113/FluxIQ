@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // One service operation holds its project's database open for its own
 // duration, and no longer: every lease taken inside it reuses the open
 // database, and the pool closes it again when the operation ends.

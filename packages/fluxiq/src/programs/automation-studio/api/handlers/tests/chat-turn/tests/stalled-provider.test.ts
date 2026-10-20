@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A chat turn ends inside its own deadline, with its person-facing words, when
 // the model provider stalls (t613).
 //

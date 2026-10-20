@@ -109,7 +109,8 @@ export type AutomationStudioSiteResetCalls = {
   /** A builder-only recoverable precondition, independent of lasting-act permission. */
   createBaseline?(declared: Pick<AutomationStudioSiteResetDeclared, "effect" | "consequences" | "control">, reference: unknown): { kind: "admit" } | { kind: "refused"; evidence: JsonObject & { code: string } };
   destinationReceipts?(): Array<{ ref: string; ordinal: number; count: number }>;
-  claim(undoes: unknown): AutomationStudioSiteResetClaim;
+  /** `resetDestination`: the ref the same call names, refused before it runs when no receipt printed it (rerun round 2); callers forward it. */
+  claim(undoes: unknown, resetDestination?: unknown): AutomationStudioSiteResetClaim;
   /** Asked, for an undo, of each action the domain puts to the gate, before it acts (t475). */
   target(act: string, declared: { effect: AutomationStudioActionEffect; consequences: readonly AutomationStudioActionConsequence[]; control: AutomationStudioSiteResetSpot }): AutomationStudioSiteResetTarget;
   explored(call: AutomationStudioSiteResetExplored): void;

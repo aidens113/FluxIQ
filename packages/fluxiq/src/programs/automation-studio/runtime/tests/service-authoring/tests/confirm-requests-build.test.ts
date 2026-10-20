@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // "Confirm every friend request with 5 or more mutual friends", built end to
 // end through the service, with no model (t252, phase P3 proof).
 //

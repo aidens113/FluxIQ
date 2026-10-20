@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // The candidate trial through the actual service (t340): a scripted model
 // submits, tests and completes; the service's trial runner runs the candidate
 // in a session of its own and the real build-test judge is asked over the

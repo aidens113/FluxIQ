@@ -15,8 +15,14 @@
 // (`./instruction-record-columns.ts`). A node that keeps no rows, or reads no
 // named field, gains nothing, and a record output the model wrote is read as
 // the contract's (`./record-output.ts`).
+//
+// A node given its rows as written -- Write Records' `records` parameter, rows
+// of values read one by one (t738) -- is given one too when it declares none,
+// and its columns, where no schema is written, are the rows' own keys. That
+// parameter is told apart by standing in for an input port of the same id: the
+// rows the node is otherwise handed on that port.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import type { AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
+import { isAutomationNodeParameterStateBinding, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import { automationStudioFlowBootstrapDeclaredRecordsPath, type AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import { authoringInstructionRecordColumns } from "./instruction-record-columns.ts";
 import { authoringWarning } from "./issue.ts";
@@ -49,10 +55,11 @@ export function automationStudioFlowBootstrapAssembledRecordOutput(input: {
   const written = input.parameters[input.parameterId];
   const undeclared = written === undefined || written === null;
   const extraction = fieldKeys.length > 0 && automationStudioFlowBootstrapDeclaredRecordsPath(input.definition) !== undefined;
+  const rowKeys = writtenRowKeys(input.definition, input.parameters);
   const read = normaliseAuthoringRecordOutput({
-    value: undeclared && (asked?.columns.length || extraction) ? {} : written,
+    value: undeclared && (asked?.columns.length || extraction || rowKeys.length) ? {} : written,
     definition: input.definition,
-    columns: asked?.columns.length ? asked.columns : fieldKeys,
+    columns: asked?.columns.length ? asked.columns : fieldKeys.length ? fieldKeys : rowKeys,
     fallbackName: input.fallbackName,
     stepId: input.stepId,
     labelFromFallback: undeclared,
@@ -95,4 +102,20 @@ function columnNames(parameters: Readonly<JsonObject>): string[] {
     if (Array.isArray(fields)) return fields.filter((item): item is string => typeof item === "string");
   }
   return [];
+}
+
+/**
+ * The keys of the rows a node is given as written, in the order first written,
+ * or none: a parameter standing in for an input port of the same id, holding a
+ * list of objects (see the header). A binding in place of a row names no key.
+ */
+function writtenRowKeys(definition: AutomationStudioNodeDefinition, parameters: Readonly<JsonObject>): string[] {
+  const ports = new Set(definition.inputs.map((port) => port.id));
+  const keys = new Set<string>();
+  for (const parameter of definition.parameters) {
+    const rows = parameters[parameter.id];
+    if (!ports.has(parameter.id) || !Array.isArray(rows)) continue;
+    for (const row of rows) if (isJsonObject(row) && !isAutomationNodeParameterStateBinding(row)) for (const key of Object.keys(row)) keys.add(key);
+  }
+  return [...keys];
 }

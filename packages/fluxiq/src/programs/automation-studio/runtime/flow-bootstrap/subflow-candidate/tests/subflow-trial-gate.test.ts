@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AutomationStudioFlowCandidateTrialGate, type AutomationStudioFlowCandidate } from "../../candidate/index.ts";
+import type { AutomationStudioSiteResetDecision, AutomationStudioSiteResetTrialReset } from "../../site-reset/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, AutomationStudioSubflowTrialGate, type AutomationStudioSubflowProposal, type AutomationStudioSubflowTrialPreparingPort, type AutomationStudioSubflowTrialRequest, type AutomationStudioSubflowTrialResult } from "../index.ts";
 import { testScope } from "./subflow-fixture.ts";
 
@@ -222,5 +226,65 @@ describe("the subflow trial gate's acts (L1)", () => {
     });
     await gate.test(receipt);
     expect(told).toEqual([[act]]);
+  });
+});
+
+// The reset as its own step (t737), as at the whole gate: the site check before a core.test_subflow trial is
+// written as an `NNNN-reset` step around exactly that check.
+describe("the subflow trial gate's reset step", () => {
+  let directory: string;
+  beforeEach(() => {
+    directory = mkdtempSync(path.join(tmpdir(), "fluxiq-subflow-reset-step-"));
+    vi.stubEnv("FLUXIQ_LLM_STEP_LOG_DIR", directory);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const resetSteps = () => readdirSync(directory).filter((name) => /^\d{4,}-reset$/u.test(name)).map((name) => JSON.parse(readFileSync(path.join(directory, name, "meta.json"), "utf8")) as Record<string, unknown>);
+
+  function gateOf(decision: AutomationStudioSiteResetDecision, options: { offline?: true; noReset?: true } = {}) {
+    const at = { checked: 0, ran: 0 };
+    const run = async (request: AutomationStudioSubflowTrialRequest) => {
+      at.ran = Date.now();
+      return answer(request);
+    };
+    const port: AutomationStudioSubflowTrialPreparingPort = Object.assign(run, { environmentKind: options.offline ? "trace" as const : "live" as const });
+    const reset: AutomationStudioSiteResetTrialReset = {
+      beforeTrial: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        at.checked = Date.now();
+        return decision;
+      },
+      trialRan: () => []
+    };
+    return { gate: new AutomationStudioSubflowTrialGate({ scope, latest: () => structuredClone(proposal), port, ...(options.noReset ? {} : { reset }) }), at };
+  }
+
+  it("writes one reset step around the site check, before the trial runs", async () => {
+    const { gate, at } = gateOf({ kind: "admit" });
+    await gate.test(receipt);
+    const steps = resetSteps();
+    expect(steps).toHaveLength(1);
+    expect(steps[0]).toMatchObject({ kind: "reset", stage: "site_check", trialToolId: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, outcome: "admit", status: "ok" });
+    expect(Date.parse(String(steps[0]!.startedAt))).toBeLessThanOrEqual(at.checked);
+    expect(Date.parse(String(steps[0]!.finishedAt))).toBeGreaterThanOrEqual(at.checked);
+    expect(Date.parse(String(steps[0]!.finishedAt))).toBeLessThanOrEqual(at.ran);
+  });
+
+  it("writes a refused check as its outcome, and no trial runs", async () => {
+    const { gate, at } = gateOf({ kind: "refuse", evidence: { code: "candidate.trial_reset_required" }, moved: false });
+    await gate.test(receipt);
+    expect(resetSteps()).toMatchObject([{ stage: "site_check", outcome: "refuse" }]);
+    expect(at.ran).toBe(0);
+  });
+
+  it("writes none when no reset happens: an offline trial, or a gate with no site reset", async () => {
+    for (const options of [{ offline: true as const }, { noReset: true as const }]) {
+      const { gate, at } = gateOf({ kind: "admit" }, options);
+      await gate.test(receipt);
+      expect(at.ran).toBeGreaterThan(0);
+      expect(resetSteps()).toEqual([]);
+    }
   });
 });

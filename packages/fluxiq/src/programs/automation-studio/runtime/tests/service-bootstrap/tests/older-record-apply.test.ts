@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A Flow Bootstrap approved before node provenance existed still applies.
 //
 // Apply compares the stored topology with a fresh normalization of the plan.

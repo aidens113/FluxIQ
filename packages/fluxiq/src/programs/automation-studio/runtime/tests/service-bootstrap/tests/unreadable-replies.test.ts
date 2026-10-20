@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A build whose model replies arrive unreadable (t211), through the real
 // `generateFlowBootstrapAdaptation`: one unreadable reply is asked again and the
 // build carries on to a proposed Flow; replies that stay unreadable end the

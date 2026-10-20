@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Conversation commands run against a real thread, with the registry faked at
 // the port. What is pinned: each command makes the calls the panel makes, in
 // order, with the session and the page it was given; long ones answer
@@ -692,6 +693,8 @@ describe("conversation commands", () => {
         expect(turns.filter((turn) => turn.ask)).toEqual([]);
         expect(text).toContain(said); expect(text).toContain("nothing was put into the Flow");
         expect(text).not.toContain("is ready");
+        // A test of the whole Flow answered, so the draft's card line never says verification is pending (t738).
+        expect(text).not.toContain("Verification pending");
       }
     });
 

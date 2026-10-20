@@ -352,3 +352,97 @@ describe("a structured parameter that does not fit its node's published schema",
     expect(codes(planWith(extractNode({ items: { item: ".row", limit: 3 } })), registry(undefined, published))).toEqual([]);
   });
 });
+
+// What a plan's nodes are not given on their inputs (t738, `inputIssues` in `../validation.ts`):
+// each issue at the node's index, so the locator can place it, never its key;
+// an unconnected required input told how a script feeds a port; and a node
+// whose input a same-id parameter stands in for, given neither, refused here
+// rather than only once it runs.
+const inputResolution = { scope: { kind: "domain" as const, domainId: "demo" }, runtimeCapabilities: [] as string[], permissions: [] as string[] };
+const WRITE_RECORDS = "builtin.data.write-records";
+
+/** A Core built-in that tallies the rows it is handed on a required input, and takes no parameter for them. */
+function tallyDefinition(registry: AutomationStudioNodeRegistry): AutomationStudioNodeDefinition {
+  const base = registry.get(WRITE_RECORDS, inputResolution)!;
+  return {
+    ...base,
+    id: "builtin.data.tally-rows",
+    label: "Tally Rows",
+    inputs: [...base.inputs.filter((port) => port.role === "control"), { id: "rows", label: "Rows", valueType: "array", required: true }],
+    parameters: base.parameters.filter((parameter) => parameter.id !== "records")
+  };
+}
+
+function inputRegistry(): AutomationStudioNodeRegistry {
+  const value = new AutomationStudioNodeRegistry();
+  value.register(tallyDefinition(value));
+  return value;
+}
+
+/** A reading list's saved shelf: a start, a wait, and the node under test last. */
+function shelfPlanWith(last: AutomationStudioFlowBootstrapNode, value: AutomationStudioNodeRegistry): AutomationStudioFlowBootstrapPlan {
+  const version = (id: string) => value.get(id, inputResolution)!.version;
+  const nodes: AutomationStudioFlowBootstrapNode[] = [
+    { key: "begin", definitionId: "builtin.control.merge", definitionVersion: version("builtin.control.merge") },
+    { key: "pause", definitionId: "builtin.control.merge", definitionVersion: version("builtin.control.merge") },
+    { ...last, definitionVersion: version(last.definitionId) }
+  ];
+  return {
+    schemaVersion: "0.1",
+    router: { name: "Shelf", rules: [], fallback: { kind: "subflow", targetSubflowKey: "primary" } },
+    subflows: [{
+      key: "primary", name: "Primary", role: "primary", nodes,
+      edges: [
+        { key: "e1", source: { nodeKey: "begin", portId: "success" }, target: { nodeKey: "pause", portId: "branches" } },
+        { key: "e2", source: { nodeKey: "pause", portId: "success" }, target: { nodeKey: last.key, portId: "in" } }
+      ]
+    }]
+  };
+}
+
+const SHELF_RECORD_OUTPUT: JsonObject = {
+  datasetId: "shelf",
+  label: "Shelf",
+  writeMode: "append",
+  schema: { schemaVersion: "0.1", fields: [{ id: "title", label: "Title", valueType: "string" }] }
+};
+
+function inputErrors(plan: AutomationStudioFlowBootstrapPlan, value: AutomationStudioNodeRegistry) {
+  return validateAutomationStudioFlowBootstrapPlan({ plan, registry: value, resolution: inputResolution }).issues.filter((issue) => issue.severity === "error");
+}
+
+describe("a required input nothing connects", () => {
+  it("is refused at the node's index, never its key, and says how a script feeds a port", () => {
+    const value = inputRegistry();
+    const found = inputErrors(shelfPlanWith({ key: "s13", definitionId: "builtin.data.tally-rows", definitionVersion: "" }, value), value);
+
+    expect(found.map((issue) => `${issue.code} @ ${issue.path}`)).toEqual(["bootstrap.required_input_unconnected @ plan.subflows.0.nodes.2.inputs.rows"]);
+    expect(found[0]?.instead).toContain("No script line connects a step's input by name");
+    expect(found[0]?.instead).toContain("`repeat over: <the listing step's label>`");
+  });
+});
+
+describe("an input a same-id parameter stands in for", () => {
+  it("is refused at the parameter when Write Records is given no rows and nothing is connected", () => {
+    const value = inputRegistry();
+    const found = inputErrors(shelfPlanWith({ key: "s9", definitionId: WRITE_RECORDS, definitionVersion: "", parameters: { recordOutput: SHELF_RECORD_OUTPUT } }, value), value);
+
+    expect(found.map((issue) => `${issue.code} @ ${issue.path}`)).toEqual(["bootstrap.missing_parameter @ plan.subflows.0.nodes.2.parameters.records"]);
+    expect(found[0]?.instead).toContain("Write `records:` on this step");
+  });
+
+  it("passes when the rows are written", () => {
+    const value = inputRegistry();
+    const plan = shelfPlanWith({ key: "s9", definitionId: WRITE_RECORDS, definitionVersion: "", parameters: { recordOutput: SHELF_RECORD_OUTPUT, records: [{ title: "A quiet shelf" }] } }, value);
+
+    expect(inputErrors(plan, value)).toEqual([]);
+  });
+
+  it("passes when the input is connected instead", () => {
+    const value = inputRegistry();
+    const plan = shelfPlanWith({ key: "s9", definitionId: WRITE_RECORDS, definitionVersion: "", parameters: { recordOutput: SHELF_RECORD_OUTPUT } }, value);
+    plan.subflows[0]!.edges.push({ key: "e3", source: { nodeKey: "pause", portId: "success" }, target: { nodeKey: "s9", portId: "records" } });
+
+    expect(inputErrors(plan, value).map((issue) => issue.code)).not.toContain("bootstrap.missing_parameter");
+  });
+});

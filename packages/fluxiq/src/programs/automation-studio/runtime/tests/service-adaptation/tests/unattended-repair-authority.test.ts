@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A run that fails with nobody watching, and repairs itself.
 //
 // This is the gate *before* the one `unattended-retry-verification.test.ts`

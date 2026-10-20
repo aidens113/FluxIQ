@@ -345,7 +345,7 @@ async function run(input: {
     scope: mapped.scope,
     siblings: mapped.siblings,
     submission: { ...ports.submission, signal: stop },
-    ...(gatePort ? { trial: { port: gatePort, ...(ports.reset ? { reset: ports.reset } : {}) } } : {}),
+    ...(gatePort ? { trial: { port: gatePort, ...(ports.reset ? { reset: ports.reset } : {}), ...(ports.moves ? { moves: ports.moves } : {}) } } : {}),
     ...(callScope !== undefined ? { callScope } : {}),
     ...(revisionsAfter !== undefined ? { revisionsAfter } : {}),
     // Its test is the judged whole run, and its words and budget say so (header, t679).

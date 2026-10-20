@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // The durable state a domain keeps per build or per Flow, on disk under the
 // Flow and in memory without a root (t728).
 

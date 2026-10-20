@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A runtime patch reaches the stored Flow only after a whole run that ran it
 // was judged to answer (user, 2026-10-02; t249).
 //

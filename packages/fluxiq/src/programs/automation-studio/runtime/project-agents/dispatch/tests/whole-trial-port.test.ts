@@ -24,7 +24,8 @@ const lastOf = (evidence: readonly Entry[], toolId: string) => [...evidence].rev
 type Seen = { scoped: number; hooks: number; resets: number; weighedScoped: number; tested: JsonObject[]; testTool?: string | undefined };
 
 /** A builder whose model submits, tests, then completes on a yes or ends blocked; its subflow trial port answers yes, its start hook and reset are counted. */
-function builder(seen: Seen) {
+function builder(seen: Seen, options: { moving?: boolean } = {}) {
+  let moved = 0;
   return (): AutomationStudioProjectBuilderPorts => {
     const steps = [
       () => ({ kind: "tool_call", toolId: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, callId: "submit", input: script([...OPEN, ...callPart(), ...part()]) }),
@@ -56,6 +57,8 @@ function builder(seen: Seen) {
     const reset: AutomationStudioSiteResetTrialReset = {
       beforeTrial: async () => {
         seen.resets += 1;
+        // A reset whose own look moved the target, as `site-reset/start-check.ts` counts it (t738).
+        if (options.moving) moved += 1;
         return { kind: "admit" };
       },
       trialRan: () => []
@@ -73,7 +76,8 @@ function builder(seen: Seen) {
       submission: testSubmission(),
       deniedEvidenceKeys: [],
       trial: scoped,
-      reset
+      reset,
+      ...(options.moving ? { moves: () => moved } : {})
     };
   };
 }
@@ -139,6 +143,27 @@ describe("a single-subflow plan's whole test in the dispatcher", () => {
     expect(seen.scoped).toBe(0);
     // No trial ran, so the build's proposals are told nothing.
     expect(told).toEqual([]);
+  });
+
+  // t738, office `run-mvgf04kw-310fc169` 0126-0131: the reset's own looks moved the target before a refused test, and the
+  // answer said nothing of it, so the model's next calls ran on a page it had not seen. The ports' count of moves reaches
+  // the builder's gate, and the refusal carries the page where the target now stands.
+  it("hands a refused test the page the reset's own looks left it on, through the ports' count of moves", async () => {
+    const seen: Seen = { scoped: 0, hooks: 0, resets: 0, weighedScoped: 0, tested: [] };
+    const build = await gardenBuild({ capacity: 1, briefs: [gardenBrief("b-read", "list_seeds")], ports: { builder: builder(seen, { moving: true }) } });
+    build.dispatcherInput.runBuilder = runAutomationStudioSubflowBuilderLoop;
+    await dispatchWith(build, whole("refused", []));
+    expect(seen.resets).toBe(1);
+    expect(seen.tested[0]).toMatchObject({ ok: false, code: "candidate.trial_reset_required" });
+    expect(seen.tested[0]).toHaveProperty("pageAfterTrial");
+  });
+
+  it("adds no page to a refused test when the reset moved nothing", async () => {
+    const seen: Seen = { scoped: 0, hooks: 0, resets: 0, weighedScoped: 0, tested: [] };
+    const build = await gardenBuild({ capacity: 1, briefs: [gardenBrief("b-read", "list_seeds")], ports: { builder: builder(seen) } });
+    build.dispatcherInput.runBuilder = runAutomationStudioSubflowBuilderLoop;
+    await dispatchWith(build, whole("refused", []));
+    expect(seen.tested[0]).not.toHaveProperty("pageAfterTrial");
   });
 
   it("never asks it for a reset brief", async () => {

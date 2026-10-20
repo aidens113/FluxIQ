@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A created Flow runs with parameters its domain resolved, and a refused plan
 // is a correction the model gets to make.
 //

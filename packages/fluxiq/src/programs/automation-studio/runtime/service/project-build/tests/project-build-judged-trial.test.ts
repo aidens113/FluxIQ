@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A project build's whole-Flow trial, remembered by the Flow it saved (t662),
 // through the actual service: the supervisor plans one part, its builder
 // builds and tries the subflow, the assembled Flow's whole trial is judged yes

@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A build whose exploration stops before the Flow is ready (t208; audit A3,
 // cause 1), through the real `generateFlowBootstrapAdaptation`: the Flow so
 // far is tested and judged and a repair follows; a repair that gets no further

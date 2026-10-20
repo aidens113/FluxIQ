@@ -155,7 +155,13 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
       const opening = isOpeningCall(call.callId);
       if (startCheck && !opening) await startCheck.capture(call.signal ?? signal);
       // A trial leaves the target where the model has not looked: its answer carries the page it left (`./trial-view.ts`, t477).
-      if (call.toolId === testId) return automationStudioCandidateTrialView({ answer: await gate.test(call.value, call.signal), tools: input.loop.tools, executeTool: (look) => input.loop.executeTool(look), callId: call.callId, signal: call.signal ?? signal });
+      // One the reset's own looks moved, though no trial ran, carries that page too (`../site-reset/start-check.ts` `moves`, t738).
+      if (call.toolId === testId) {
+        const before = startCheck?.moves;
+        const answer = await gate.test(call.value, call.signal);
+        const targetMoved = before !== undefined && startCheck!.moves > before;
+        return automationStudioCandidateTrialView({ answer, targetMoved, tools: input.loop.tools, executeTool: (look) => input.loop.executeTool(look), callId: call.callId, signal: call.signal ?? signal });
+      }
       if (call.toolId !== submitId) {
         // A call that makes or undoes an act is read around, so the reset can look for it on its own page (`../site-reset/act-places.ts`).
         const ran = ledger && startCheck && !opening

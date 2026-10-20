@@ -195,7 +195,11 @@ describe("shape F: lists the domain cannot vouch complete issue no ref (job r2)"
     ledger.explored(press("save", ["modify_existing"], SAVE));
     ledger.observed(plain());
     const refused = await ledger.beforeTrial(compare);
-    expect(settleOf(refused, "actsToUndo", "act-1")).toContain("(no list was read complete before the build acted)");
+    // Sealed with no ref issued (rerun round 2): told it cannot settle in this build, never to name a ref none can issue.
+    // The permission wrapper now refuses such a press before the seal (`reset-witness.test.ts`); an act after the seal still lands here.
+    const settle = settleOf(refused, "actsToUndo", "act-1");
+    expect(settle).toContain("cannot be settled in this build: nothing was read complete before the build's first lasting act");
+    expect(settle).not.toContain("resetDestination");
     expect(await ledger.beforeTrial(compare, ["act-1"])).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_unproved" } });
   });
 

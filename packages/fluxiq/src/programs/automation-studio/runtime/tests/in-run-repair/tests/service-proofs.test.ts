@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // End-to-end proofs of in-run repair (state-aware recovery plan, C6 step 8 and
 // "What counts as a true failure") through the real `AutomationStudioService`:
 // the executor's hold in place, the run session's `repairIncident`, the

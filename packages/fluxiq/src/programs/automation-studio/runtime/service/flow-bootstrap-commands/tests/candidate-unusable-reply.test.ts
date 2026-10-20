@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A candidate build that meets an unusable model reply (t354, lane A round 3,
 // `run-muyqgopm-1bfa7054`): after sixteen clean decisions the model wrapped a
 // complete `core.submit_candidate` call as `"kind": "callId"`, and that one

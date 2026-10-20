@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 import { cpSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";

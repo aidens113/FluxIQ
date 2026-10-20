@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // The Flow size setting, honoured end to end: saved through the settings
 // endpoint, read by the build that proposes a Flow, by the approval that applies
 // it, and by the schema the evidence-guided build shows the model.

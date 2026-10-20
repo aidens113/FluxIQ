@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // An applied Flow Bootstrap stays revertable after someone looks at it.
 //
 // Applying a bootstrap saved each Subflow's graph as a document only, and

@@ -203,6 +203,21 @@ describe("every candidate refusal the model sees", () => {
   });
 });
 
+// t738 (social `run-mvgf7ij5-a9747575` 0145-0152): a row loop inside a page loop was refused at the outer
+// span's line, so the model was told to correct the step that was right, and sent one script four times.
+describe("a repeat inside a repeat", () => {
+  it("is placed at the inner step's own repeat line, and tells a row loop what does work", () => {
+    const corpusCase = CORPUS.find((each) => each.name === "a repeat inside a repeat")!;
+    const issue = outcomes.find((outcome) => outcome.name === corpusCase.name)!.issues.find((each) => each.code === "flow_script.repeat_body_is_routed");
+    const innerLine = corpusCase.lines.indexOf("  repeat over: rows") + 1;
+
+    expect(issue?.line).toBe(innerLine);
+    expect(issue?.step).toBe("press buy");
+    expect(issue?.message).toContain("A repeat inside a repeat is not supported, so a Flow cannot act on each kept row of every page of a paged list.");
+    expect(issue?.message).toContain("A list that grows in place is loaded whole by its own step before the listing read, and the row loop runs once over that read.");
+  });
+});
+
 describe("the refusal codes the authoring source raises", () => {
   // Every source file that lowers a written script: `authoring/`, and since t378
   // the statements beside it (`script-statements/`: optional, only after,

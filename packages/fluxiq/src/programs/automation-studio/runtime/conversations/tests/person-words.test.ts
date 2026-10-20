@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A build's instruction is the person's own words (t349).
 //
 // Lane A round 2 (`run-muylu4pp-f9cb2121`) saved the chat model's paraphrase

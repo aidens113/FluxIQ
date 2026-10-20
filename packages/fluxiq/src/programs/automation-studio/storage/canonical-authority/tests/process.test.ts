@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 import { fork, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";

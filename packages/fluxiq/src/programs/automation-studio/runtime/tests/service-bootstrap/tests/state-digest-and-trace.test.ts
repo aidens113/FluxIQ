@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Two things a finished build should carry and used not to: the state either
 // side of each step it ran, and what each step actually did.
 //

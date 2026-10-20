@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // The chat's model is shown the questions waiting in the thread, with their
 // ids, so a typed answer can name the one it settles (A10b). Since A10 an
 // answer that names none of several waiting asks is refused; without the ids

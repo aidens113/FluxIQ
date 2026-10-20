@@ -141,7 +141,8 @@ describe("build-only original creation receipts", () => {
       { ...create(), effect: "observe" as const },
       unidentified,
       { ...create(), consequences: [] },
-      { ...create(), consequences: ["modify_existing" as const] },
+      // A modification on a stated toggle has a witness before the seal (`../reset-witness.ts`); one with none is refused (reset-witness.test.ts).
+      { ...create({ place: "pl:star", state: "st:off" }), consequences: ["modify_existing" as const] },
       { ...create(), consequences: ["send_or_publish" as const] },
       { ...create(), consequences: ["move_money" as const] },
       { ...create(), consequences: ["create_new" as const, "send_or_publish" as const] }

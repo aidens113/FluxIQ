@@ -65,7 +65,7 @@ export class AutomationStudioProjectBuildActsRecord {
     return {
       ...(calls.createBaseline ? { createBaseline: (declared, reference) => calls.createBaseline!(declared, reference) } satisfies Pick<AutomationStudioSiteResetCalls, "createBaseline"> : {}),
       ...(calls.destinationReceipts ? { destinationReceipts: () => calls.destinationReceipts!() } : {}),
-      claim: (undoes) => calls.claim(undoes),
+      claim: (undoes, reference) => calls.claim(undoes, reference),
       target: (act, declared) => calls.target(act, declared),
       explored: (call) => {
         if (call.declared) this.declared.set(call.callId, [...call.declared.consequences]);

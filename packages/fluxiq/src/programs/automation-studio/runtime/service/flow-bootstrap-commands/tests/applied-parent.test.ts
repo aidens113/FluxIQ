@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // What applying a Flow Bootstrap writes on the parent Flow, `requires` above
 // all (contract C10): a Flow whose script holds a handler or calls a part says
 // so on the parent itself, and one holding neither says nothing.

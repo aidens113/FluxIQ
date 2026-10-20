@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Building onto a Flow that already exists, through the service, end to end.
 //
 // Every other part of this is unit-tested in the directory that owns it. What

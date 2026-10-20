@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Covers handlers/conversations.ts. The collaborator is stubbed: these cases
 // pin the handler contract -- which permission and classification each
 // endpoint carries, that the project's domain access is asserted before

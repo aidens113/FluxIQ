@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // The question a build raises reaches a person, and their answer is what
 // releases it.
 //

@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Covers handlers/projects.ts: its hierarchy pages, change feed, and the
 // dedicated Problems paging contract.
 

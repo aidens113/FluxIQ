@@ -178,6 +178,11 @@ The binding rules:
   source; never in a separate mirrored tree. Test support that ships —
   exported publicly or imported by non-test code — is source and stays in
   `src/<area>/testing/`.
+- **A test that opens a real SQLite database is marked.** Its leading comment
+  block holds the line `// @fluxiq-test-group real-sql`, so `pnpm test` runs it
+  in `packages/fluxiq`'s low-concurrency real-SQL group after every other file;
+  a setup file fails an unmarked file that opens one. Never raise a timeout
+  instead. See [Test groups](docs/architecture/code-structure.md#test-groups).
 - **Never extract-and-drop.** Code pulled out of a large file goes where the
   placement procedure puts it, not beside the file it came from.
 

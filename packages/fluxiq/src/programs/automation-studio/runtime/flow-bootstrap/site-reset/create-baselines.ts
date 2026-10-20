@@ -1,5 +1,7 @@
 import type { AutomationStudioSiteResetDeclared, AutomationStudioSiteResetRead } from "./contracts.ts";
 import { automationStudioSiteResetInvalidCollectionGroups } from "./collection-groups.ts";
+import { automationStudioSiteResetWitnessMissing as witnessMissing } from "./reset-witness.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "./words.ts";
 
 /** The classes the site's own controls can reverse: the acts that may name a destination (F1). */
 const REVERSIBLE: ReadonlySet<string> = new Set(["create_new", "modify_existing", "delete"]);
@@ -93,11 +95,48 @@ export class AutomationStudioSiteResetCreateBaselines {
     return [...this.originals.values()].filter((entry) => this.issued.has(entry.ref)).map((entry) => ({ ref: entry.ref, count: entry.subjects.size, ...(entry.location ? { location: entry.location } : {}) }));
   }
 
+  /**
+   * The refusal for a `resetDestination` naming a ref no receipt printed
+   * (present, and never issued), or none (rerun round 2, job steps 0105/0107:
+   * an invented ref was silently ignored). Refused before the call runs, on a
+   * press here (`check`) and on a call under `undoes` (`./ledger.ts`, `claim`).
+   */
+  unissued(reference: unknown): { ok: false; code: string; instruction: string } | undefined {
+    if (reference === undefined || (typeof reference === "string" && this.issued.has(reference))) return undefined;
+    return { ok: false, code: "candidate.reset_destination_unissued", instruction: WORDS.destinationUnissued() };
+  }
+
+  /** Whether no further ref can ever be issued: sealed, with every original already shown (rerun round 2, `./settlement-words.ts`). */
+  refsClosed(): boolean {
+    return this.sealed && [...this.originals.values()].every((entry) => this.issued.has(entry.ref));
+  }
+
+  /**
+   * The builder's reset preconditions on one action, before it runs. An
+   * identified creation needs its destination's original, as before. Any
+   * other call naming a ref no receipt printed is refused (rerun round 2,
+   * job steps 0105/0107). Before the seal, a reversible lasting press with no
+   * witness is refused (`./reset-witness.ts`); after it, nothing more is
+   * asked. A refusal records nothing and seals nothing.
+   */
   check(declared: Pick<AutomationStudioSiteResetDeclared, "effect" | "consequences" | "control">, reference: unknown): { kind: "admit" } | { kind: "refused"; evidence: { ok: false; code: string; instruction: string } } {
     // This necessary precondition is not a classifier for inventory semantics.
     // Irreversible/mixed and unidentified operations keep their existing policy.
-    if (!identifiedCreate(declared) || this.destination(declared, reference)) return { kind: "admit" };
+    if (!identifiedCreate(declared)) {
+      const unissued = this.unissued(reference);
+      if (unissued) return { kind: "refused", evidence: unissued };
+      const known = { original: (scope: string, resource: string) => this.original(scope, resource), destination: () => this.destination(declared, reference) !== undefined };
+      if (this.sealed || !witnessMissing(declared, known)) return { kind: "admit" };
+      return { kind: "refused", evidence: { ok: false, code: "candidate.reset_witness_required", instruction: WORDS.witnessRequired() } };
+    }
+    if (this.destination(declared, reference)) return { kind: "admit" };
     return { kind: "refused", evidence: { ok: false, code: "candidate.create_baseline_required", instruction: "This creation was not run. Before creating an identified reversible effect, observe its destination's complete original inventory through the site's own controls, then return and retry with the resetDestination reference that observation issued. The original inventory must belong to this resource and prove the subject absent. A first observation after a lasting build effect, another resource, a matching name, or an invented reference is insufficient. Looking and navigating remain available; no new permission is needed." } };
+  }
+
+  /** Whether `scope` is a recorded original of `resource` in a group still valid: a control there sits in a list read complete (`./reset-witness.ts`). */
+  private original(scope: string, resource: string): boolean {
+    const original = this.originals.get(scope);
+    return original !== undefined && original.resource === resource && this.valid.get(original.group) === true;
   }
 
   /**

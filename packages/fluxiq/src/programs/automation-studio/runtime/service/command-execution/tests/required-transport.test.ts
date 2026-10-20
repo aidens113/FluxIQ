@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // t434: a required run on Core's own `ClientGatewayRuntimeTransport` -- no domain
 // runtime adapter, a paired client that names its actions as action types --
 // sends its commands and settles. Before, the runtime took that client for no

@@ -17,32 +17,55 @@
 // of everything it could change showed no change -- stayed with nothing seen
 // of it; a legacy act `kept` stayed because the site offers no way to undo it;
 // an `irreversible` one because no control of the site takes its class back.
+//
+// **An act is named in words, and one nothing showed is not called left (t738).**
+// Everything-store `run-mvgf04kw-310fc169` said "13 lasting acts of this build
+// stay on the site, so the site is not as the build found it: act-9, act-11,
+// act-12 ...", ids no person reads, and every act it listed had settled
+// `unchanged`: no read ever showed it change anything. Each act is now said by
+// its verb and control name, those no name says counted
+// (`activity/wording/act-words.ts`), and an act settled `unchanged` is said
+// apart, as one that may not have changed anything: it never makes the site
+// "not as the build found it".
 
+import { automationStudioActivityActsSaid } from "../../activity/wording/index.ts";
 import type { AutomationStudioSiteResetProjectLedger } from "../../flow-bootstrap/site-reset/index.ts";
 
 /** A reset's `done` when nothing of the build stayed on the site. */
 const ALL_UNDONE = "Every lasting act this build made is undone; the site is as the build found it.";
-/** How many acts that stayed are named; the rest are counted, so the reason stays within the return's length. */
+/** How many acts of each kind are named; the rest are counted, so the reason stays within the return's length. */
 const MAX_NAMED = 10;
 
 /** Why an act stayed on the site, by where it stands (header); a standing absent here did not stay. */
 const STAYED: Partial<Record<string, string>> = {
-  unchanged: "nothing it could change showed a change",
-  kept: "the site offers no way to undo it",
-  irreversible: "FluxIQ cannot undo it"
+  kept: "(the site offers no way to undo it)",
+  irreversible: "(FluxIQ cannot undo it)"
 };
 
-/** The words of a reset that came back `done`, naming each act of the build that stayed in place (header). */
+/** `items`, the first `MAX_NAMED` by name and the rest counted. */
+function listed(items: readonly string[]): string {
+  const named = items.slice(0, MAX_NAMED);
+  const more = items.length - named.length;
+  return `${named.join(", ")}${more ? `, and ${more} more` : ""}`;
+}
+
+/** The words of a reset that came back `done`, naming each act of the build that stayed in place, or that nothing showed changing (header). */
 export function automationStudioProjectDispatchResetDone(ledger: Pick<AutomationStudioSiteResetProjectLedger, "snapshot" | "forBrief">): string {
-  const stayed: string[] = [];
+  const stayed: Array<{ did: string; note: string }> = [];
+  const quiet: Array<{ did: string }> = [];
   for (const act of ledger.snapshot().acts) {
     if (act.possible === true || act.inPlace) continue;
-    const why = STAYED[ledger.forBrief(act.owner).standing(act.act) ?? ""];
-    if (why) stayed.push(`${act.act} (${act.did}; ${why})`);
+    const standing = ledger.forBrief(act.owner).standing(act.act) ?? "";
+    const why = STAYED[standing];
+    if (why) stayed.push({ did: act.did, note: why });
+    else if (standing === "unchanged") quiet.push({ did: act.did });
   }
-  if (!stayed.length) return ALL_UNDONE;
-  const named = stayed.slice(0, MAX_NAMED);
-  const more = stayed.length - named.length;
+  if (!stayed.length && !quiet.length) return ALL_UNDONE;
+  const unchanged = quiet.length
+    ? `${quiet.length === 1 ? "1 act" : `${quiet.length} acts`} of this build showed no change on the site, so ${quiet.length === 1 ? "it" : "they"} may not have changed anything: ${listed(automationStudioActivityActsSaid(quiet).map((act) => act.words))}.`
+    : "";
+  if (!stayed.length) return `Every act of this build that showed a change is undone. ${unchanged}`;
   const count = `${stayed.length} lasting act${stayed.length === 1 ? "" : "s"} of this build ${stayed.length === 1 ? "stays" : "stay"} on the site`;
-  return `This reset undid every act of this build it could, but ${count}, so the site is not as the build found it: ${named.join(", ")}${more ? `, and ${more} more` : ""}.`;
+  const left = `This reset undid every act of this build it could, but ${count}, so the site is not as the build found it: ${listed(automationStudioActivityActsSaid(stayed).map((act) => act.words))}.`;
+  return unchanged ? `${left} ${unchanged}` : left;
 }

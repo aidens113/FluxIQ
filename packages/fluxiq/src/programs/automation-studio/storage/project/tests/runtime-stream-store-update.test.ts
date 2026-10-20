@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A run-detail save reads the run's event stream once. The writer reads the
 // stored detail with `readRunForUpdate` and hands the stream it read to
 // `putRunDetail`, which used to read the whole stream again. These hold that

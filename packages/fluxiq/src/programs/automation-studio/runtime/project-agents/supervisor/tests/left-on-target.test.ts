@@ -61,6 +61,22 @@ describe("an ending with possibly lasting presses on the target", () => {
     expect(told).toEqual([undefined]);
   });
 
+  // t738, job-board `run-mvgf4pk5-55343613`: three presses on nameless controls, none of which any read showed changing
+  // anything, ended "still on the site: one more change". They are counted, and told as ones that may have changed nothing.
+  it("counts acts in place no name says, and tells acts no change of was seen as ones that may have changed nothing, to check", () => {
+    const ledger = new AutomationStudioSiteResetProjectLedger();
+    const brief = ledger.forBrief("brief-1");
+    for (const call of ["save-1", "save-2", "save-3"]) {
+      brief.explored({ callId: call, toolId: "core.run_node", landed: true, declared: { permitted: true, effect: "mutate", consequences: ["modify_existing"], control: { name: null, kind: "span", subject: `s:${call}` }, verb: "click" } });
+    }
+    const { left } = leftOn(ledger);
+
+    expect(left.acts.map((act) => act.act)).toEqual(["act-1", "act-2", "act-3"]);
+    expect(left.told).toContain("3 presses it could not name");
+    expect(left.told).toContain("may have changed nothing; check them");
+    expect(left.told).not.toContain("These changes the build made are still on the site");
+  });
+
   it("names the latest ten by name and counts the rest, as a phase start does", () => {
     const ledger = new AutomationStudioSiteResetProjectLedger();
     const brief = ledger.forBrief("brief-1");

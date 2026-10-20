@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // The database manager service and the credential recheck that gates it.
 
 import { mkdtemp, rm } from "node:fs/promises";

@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A build whose completion cannot answer the instruction is judged, not
 // refused, through the real adapter on the stub harness (`harness.ts`): the
 // measured run `run-mulryg6h-ff241a12` replayed, once ending on its spent calls
