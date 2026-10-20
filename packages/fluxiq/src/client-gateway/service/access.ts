@@ -5,6 +5,7 @@ import type { ClientGatewayLifecycle } from "./lifecycle.ts";
 import type { ClientGatewaySessionRegistry } from "./sessions.ts";
 import type { ClientGatewayTransport } from "./transport.ts";
 import type { ClientGatewayTrustedClientRegistry } from "./trusted-clients.ts";
+import type { ClientGatewayTraceTap } from "./trace-tap/index.ts";
 
 import type { ClientGatewayFacadePorts } from "./facade-ports.ts";
 
@@ -14,6 +15,7 @@ type AccessCollaborators = {
   transport: ClientGatewayTransport;
   audit: ClientGatewayAuditLog;
   lifecycle: ClientGatewayLifecycle;
+  trace: ClientGatewayTraceTap;
   // Calls into the service's public surface go through this port, never
   // through the collaborator that owns the method. See ./facade-ports.ts.
   facade: ClientGatewayFacadePorts;
@@ -31,6 +33,7 @@ export class ClientGatewayAccess {
   private readonly audit: ClientGatewayAuditLog;
   private readonly lifecycle: ClientGatewayLifecycle;
   private readonly facade: ClientGatewayFacadePorts;
+  private readonly trace: ClientGatewayTraceTap;
 
   constructor(collaborators: AccessCollaborators) {
     this.sessions = collaborators.sessions;
@@ -39,6 +42,7 @@ export class ClientGatewayAccess {
     this.audit = collaborators.audit;
     this.lifecycle = collaborators.lifecycle;
     this.facade = collaborators.facade;
+    this.trace = collaborators.trace;
   }
 
   /**
@@ -65,6 +69,7 @@ export class ClientGatewayAccess {
     if (!trustedClient || trustedClient.revokedAt) return false;
     await this.trustedClients.revoke(trustedClient, reason);
     for (const session of this.sessions.listReadyByTrustedClient(trustedClientId)) {
+      this.trace.lifecycle({ sessionId: session.sessionId, clientId: session.clientId }, "trust.revoked", { trustedClientId, reason });
       await this.transport.send(session.sessionId, this.transport.message("server.disconnect", { reason: "Client trust was revoked." }, session));
       this.facade.disconnect(session.sessionId, "client trust revoked");
     }

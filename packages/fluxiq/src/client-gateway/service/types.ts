@@ -56,6 +56,14 @@ export type ClientGatewayServiceOptions = {
    * caller is live, so a scoped session is never seen or reached.
    */
   channelScope?: import("./channel-scope/index.ts").ClientGatewayChannelScopeSource;
+  /**
+   * The trace the dispatching async context records into (traces and offline
+   * trials, P2), read as `hostLease` is (`./trace-tap/`). What the gateway
+   * sends under a trace is recorded into it, stamped for capture when it is an
+   * action, and claims its session, so what that session sends back is
+   * recorded too. Unset, or answering nothing, nothing is captured or stamped.
+   */
+  trace?: import("../trace/index.ts").ClientGatewayTraceCaptureSource;
 };
 
 /**

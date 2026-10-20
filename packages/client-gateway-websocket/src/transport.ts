@@ -27,6 +27,14 @@ import type {
  */
 export const CLIENT_GATEWAY_OPEN_TIMEOUT_MS = 10_000;
 
+/**
+ * How `send` builds the envelope. A message delivered from the offline queue
+ * keeps the `id` and `timestamp` it was queued with, and its `correlationId`
+ * (decision D16); its `sessionId` is always the current socket's, because the
+ * gateway mints one per socket. A fresh send passes none and gets new ones.
+ */
+type FluxIQClientGatewaySendOptions = { id?: string; timestamp?: number; correlationId?: string };
+
 export class FluxIQClientGatewayWebSocketClient {
   private readonly options: FluxIQClientGatewayWebSocketOptions;
   private readonly handlers = new Map<FluxIQClientGatewayWebSocketEventType, Set<FluxIQClientGatewayWebSocketHandler>>();
@@ -92,13 +100,13 @@ export class FluxIQClientGatewayWebSocketClient {
   async send<TType extends ClientGatewayClientMessage["type"]>(
     type: TType,
     payload: Extract<ClientGatewayClientMessage, { type: TType }>["payload"],
-    options: { correlationId?: string } = {}
+    options: FluxIQClientGatewaySendOptions = {}
   ): Promise<Extract<ClientGatewayClientMessage, { type: TType }>> {
     const message = {
-      id: this.options.idFactory?.() ?? `client-message.${Math.random().toString(36).slice(2)}`,
+      id: options.id ?? this.options.idFactory?.() ?? `client-message.${Math.random().toString(36).slice(2)}`,
       type,
       protocolVersion: CLIENT_GATEWAY_PROTOCOL_VERSION,
-      timestamp: this.options.now?.() ?? Date.now(),
+      timestamp: options.timestamp ?? this.options.now?.() ?? Date.now(),
       ...(this.sessionId !== undefined ? { sessionId: this.sessionId } : {}),
       ...(this.options.client.clientId !== undefined ? { clientId: this.options.client.clientId } : {}),
       ...(options.correlationId !== undefined ? { correlationId: options.correlationId } : {}),

@@ -2,15 +2,19 @@ import { randomUUID } from "node:crypto";
 import { CLIENT_GATEWAY_PROTOCOL_VERSION } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayServerMessage, ClientGatewaySession, ClientGatewaySocket } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewaySessionRegistry } from "./sessions.ts";
+import { ClientGatewayTraceTap } from "./trace-tap/index.ts";
 
 /** Builds server messages and delivers them to a session's socket and queue. */
 export class ClientGatewayTransport {
   private readonly sessions: ClientGatewaySessionRegistry;
   private readonly now: () => number;
+  private readonly trace: ClientGatewayTraceTap;
 
-  constructor(sessions: ClientGatewaySessionRegistry, now: () => number) {
+  /** `trace` records every message sent (`./trace-tap/`); omitted, nothing is recorded. */
+  constructor(sessions: ClientGatewaySessionRegistry, now: () => number, trace?: ClientGatewayTraceTap) {
     this.sessions = sessions;
     this.now = now;
+    this.trace = trace ?? new ClientGatewayTraceTap({ source: undefined, clientIdOf: () => undefined });
   }
 
   message<TType extends ClientGatewayServerMessage["type"]>(
@@ -30,6 +34,7 @@ export class ClientGatewayTransport {
 
   async send(sessionId: string, message: ClientGatewayServerMessage): Promise<void> {
     const session = this.sessions.require(sessionId);
+    this.trace.outboundMessage(sessionId, message);
     session.outbound.push(message);
     await session.socket?.send(JSON.stringify(message));
   }
@@ -37,6 +42,7 @@ export class ClientGatewayTransport {
   async sendChecked(sessionId: string, clientId: string, message: ClientGatewayServerMessage): Promise<void> {
     const session = this.sessions.requireReady(sessionId);
     if (session.clientId !== clientId || !session.socket) throw new Error("durable_command.socket_unavailable");
+    this.trace.outboundMessage(sessionId, message);
     session.outbound.push(message);
     await session.socket.send(JSON.stringify(message));
   }
@@ -50,6 +56,7 @@ export class ClientGatewayTransport {
   sendUnqueued(session: ClientGatewaySession & { socket?: ClientGatewaySocket }, message: ClientGatewayServerMessage): boolean {
     const socket = session.socket;
     if (!socket) return false;
+    this.trace.outboundMessage(session.sessionId, message);
     try {
       const sent = socket.send(JSON.stringify(message));
       if (sent instanceof Promise) sent.catch(() => { /* best-effort: an unqueued message to a socket that closed mid-send is disposable */ });

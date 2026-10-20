@@ -65,6 +65,19 @@ describe("ClientGatewayTraceRecorder", () => {
     expect((await evaluateStored(store, manifest)).status).toBe("complete");
   });
 
+  it("copies an event's referenced digests immutably, and records none when the input names none", async () => {
+    const { recorder, store } = newRecorder();
+    const referenced = ["a".repeat(64)];
+    recorder.record(textEvent("{}", { referencedDigests: referenced }));
+    recorder.record(textEvent("{}"));
+    referenced.push("b".repeat(64));
+    await recorder.flush();
+    const [first, second] = await store.readEventRange(TRACE_ID, 1, 2);
+    expect(first?.referencedDigests).toEqual(["a".repeat(64)]);
+    expect(Object.isFrozen(first?.referencedDigests)).toBe(true);
+    expect(second?.referencedDigests).toEqual([]);
+  });
+
   it("repeated events: identical inputs are separate deliveries with distinct ids and sequences", async () => {
     const { recorder, store } = newRecorder();
     const first = recorder.record(textEvent('{"type":"client.snapshot"}'));
