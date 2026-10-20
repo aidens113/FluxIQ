@@ -8,7 +8,8 @@
 //   traced episode, a message to a claimed session goes to its claimants.
 // - Inbound: an action result or reconcile answer goes to the traces its
 //   command id was sent from; anything else to every trace claiming the
-//   session. The raw text is what is recorded; the disposition follows it.
+//   session. The raw text is what is recorded; the disposition follows it. The
+//   artifact digests a result references ride on its event.
 // - Lifecycle goes to the claimants, Core-synthesized outcomes to the traces of
 //   their command id. Credentials are redacted here (D7).
 //
@@ -32,6 +33,7 @@ import {
 import { clientGatewayTraceStampedAction } from "./action-stamp.ts";
 import { CLIENT_GATEWAY_TRACE_CREDENTIAL_FIELDS } from "./credential-fields.ts";
 import { redactClientGatewayTraceCredentials } from "./credential-redaction.ts";
+import { clientGatewayTraceReferencedDigests } from "./referenced-digests.ts";
 import { CLIENT_GATEWAY_TRACE_TAP_SCHEMAS } from "./schemas.ts";
 import { CLIENT_GATEWAY_TRACE_TAP_STREAMS } from "./streams.ts";
 import type {
@@ -55,6 +57,8 @@ type Fields = {
   readonly recordingId: string | null;
   /** The client id a hello claims to speak for. */
   readonly helloClientId: string | null;
+  /** The artifact digests a result references in its `metadata.trace`. */
+  readonly referencedDigests: readonly string[];
 };
 type Recorded = ClientGatewayTraceRecordResult | { readonly status: "sink_threw"; readonly error: unknown };
 type Envelope = { payload: ClientGatewayTracePayloadInput; redactions: readonly ClientGatewayTraceRedaction[] };
@@ -78,14 +82,24 @@ export class ClientGatewayTraceTap {
 
   /**
    * An action command about to be sent: under a traced episode, a copy marked
-   * `metadata.trace = { artifacts: true }`, its command id remembered as that
-   * trace's with `owner`. Outside one, the message itself.
+   * `metadata.trace = { artifacts: true, scope: <that trace's id> }`, its
+   * command id remembered as that trace's with `owner`. Outside one, the
+   * message itself. A sink that cannot say which trace it is gets no stamp:
+   * an unscoped request would let a client skip an upload this trace never
+   * received, so the client is asked for nothing instead.
    */
   stampAction(message: ActionMessage, owner: unknown): ActionMessage {
     const sink = this.source?.current();
     if (sink === undefined) return message;
     this.routes.set(message.payload.commandId, { sinks: [sink], owner: owner ?? null });
-    return clientGatewayTraceStampedAction(message);
+    let scope: string;
+    try {
+      scope = sink.status().traceId;
+    } catch {
+      /* best-effort: the sink's failure is its own to report; the command goes out unstamped */
+      return message;
+    }
+    return clientGatewayTraceStampedAction(message, scope);
   }
 
   /** A message Core is sending to `sessionId`, recorded as built, before it leaves. */
@@ -286,6 +300,7 @@ export class ClientGatewayTraceTap {
       payloadSchema: CLIENT_GATEWAY_TRACE_TAP_SCHEMAS.envelope,
       payload: envelope.payload,
       artifactIds: [],
+      referencedDigests: fields.referencedDigests,
       redactions: envelope.redactions
     };
   }
@@ -363,7 +378,8 @@ function readFields(message: unknown): Fields {
     timestamp: timestampOf(envelope?.timestamp),
     commandId: stringField(payload, "commandId"),
     recordingId: stringField(payload, "recordingId"),
-    helloClientId: type === "client.hello" ? stringField(payload, "clientId") : null
+    helloClientId: type === "client.hello" ? stringField(payload, "clientId") : null,
+    referencedDigests: clientGatewayTraceReferencedDigests(message)
   };
 }
 

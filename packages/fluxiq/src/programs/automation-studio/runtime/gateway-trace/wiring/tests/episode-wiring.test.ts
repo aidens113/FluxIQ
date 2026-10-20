@@ -167,14 +167,15 @@ describe("the host wiring", () => {
     expect(pools).toBe(0);
   });
 
-  it("installs one episodes object with the tap's streams and the contract versions when on, and a second host traces nothing", async () => {
+  it("installs one episodes object with the tap's streams and the contract versions when on; a host built later replaces it (./host.test.ts)", async () => {
     const host = createAutomationStudioGatewayTraceHost({ enabled: true, pool: () => undefined, options: { newTraceId: () => "trace-host" } });
     uninstall = host.uninstall;
     expect(AutomationStudioGatewayTraceInstallation.current()).toBe(host.episodes);
     expect(host.source).toBe(host.episodes?.gatewaySource);
     const second = createAutomationStudioGatewayTraceHost({ enabled: true, pool: () => undefined });
-    expect(second.source).toBeUndefined();
-    expect(AutomationStudioGatewayTraceInstallation.current()).toBe(host.episodes);
+    expect(second.source).toBe(second.episodes?.gatewaySource);
+    expect(AutomationStudioGatewayTraceInstallation.current()).toBe(second.episodes);
+    second.uninstall();
     await host.episodes?.run({ projectId: "project-1", episodeId: "run-1", activity: "execution", context: { schema: { name: "x", version: "1" }, value: null } }, async () => undefined);
   });
 });

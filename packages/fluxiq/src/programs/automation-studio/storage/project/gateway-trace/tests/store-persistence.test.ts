@@ -60,6 +60,18 @@ describe("AutomationStudioProjectGatewayTraceStore persistence", () => {
     expect(large?.payload).toEqual({ encoding: "text", text: LARGE_TEXT });
   });
 
+  it("round-trips the artifact digests an event references, inline or in the content store, across a reopen", async () => {
+    const { recorder } = newRecorder({ store: fixture.store });
+    const referenced = ["a".repeat(64), "b".repeat(64)];
+    recorder.record(textEvent('{"type":"client.action_result"}', { referencedDigests: referenced }));
+    recorder.record(textEvent(LARGE_TEXT, { referencedDigests: referenced }));
+    recorder.record(textEvent("{}"));
+    await recorder.close({ terminationReason: "completed", terminationDetail: null });
+    const reopened = await fixture.reopen();
+    const events = await reopened.readEventRange(TRACE_ID, 1, 3);
+    expect(events.map((event) => event.referencedDigests)).toEqual([referenced, referenced, []]);
+  });
+
   it("lists manifests, optionally by episode, and never mixes episodes", async () => {
     await recordTrace(fixture.store, "trace-a", "run-1");
     await recordTrace(fixture.store, "trace-b", "run-2");

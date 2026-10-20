@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { ClientGatewayTraceMemoryStore, ClientGatewayTraceRecorder } from "../../../../../client-gateway/index.ts";
+import { ClientGatewayService, ClientGatewayTraceMemoryStore, ClientGatewayTraceRecorder } from "../../../../../client-gateway/index.ts";
+import { pairClient } from "../../../../../client-gateway/tests/trace-tap-support.ts";
+import { AutomationStudioGatewayTraceFlushingSink } from "../flushing-sink.ts";
 import { AutomationStudioGatewayTraceScreeningSink, screenAutomationStudioGatewayTracePayload } from "../index.ts";
 import { gatewayEvent } from "./episode-builders.ts";
 
 const API_KEY = "sk-abcdefghij0123456789xyz";
 const CARD = "4111 1111 1111 1111";
 
-function screenedSink() {
+function screenedSink(): { sink: AutomationStudioGatewayTraceScreeningSink; store: ClientGatewayTraceMemoryStore; recorder: ClientGatewayTraceRecorder } {
   const store = new ClientGatewayTraceMemoryStore();
   let clock = 1_000;
   const recorder = new ClientGatewayTraceRecorder(
@@ -30,7 +32,7 @@ function screenedSink() {
       maxBufferedArtifactBytes: 1024
     }
   );
-  return { sink: new AutomationStudioGatewayTraceScreeningSink(recorder), store };
+  return { sink: new AutomationStudioGatewayTraceScreeningSink(recorder), store, recorder };
 }
 
 describe("AutomationStudioGatewayTraceScreeningSink", () => {
@@ -73,6 +75,30 @@ describe("AutomationStudioGatewayTraceScreeningSink", () => {
       { path: "/payload/token", reason: "credential" },
       { path: "/payload/page", reason: "secret" }
     ]);
+  });
+
+  it("keeps the artifact digests an event references, whether or not it screens the payload", async () => {
+    const { sink, store } = screenedSink();
+    const referenced = ["a".repeat(64)];
+    sink.record({ ...gatewayEvent({ encoding: "text", text: JSON.stringify({ note: `token ${API_KEY}` }) }, "client.action_result"), referencedDigests: referenced });
+    sink.record({ ...gatewayEvent({ encoding: "text", text: "{}" }, "client.action_result"), referencedDigests: referenced });
+    await sink.flush();
+    const events = await store.readEventRange("trace-1", 1, 2);
+    expect(events[0]?.redactions).toEqual([{ path: "/note", reason: "secret" }]);
+    expect(events.map((event) => event.referencedDigests)).toEqual([referenced, referenced]);
+  });
+
+  it("reports its trace's id through the flushing sink, so the gateway's action stamp names that trace as its scope", async () => {
+    const { recorder } = screenedSink();
+    const sink = new AutomationStudioGatewayTraceScreeningSink(new AutomationStudioGatewayTraceFlushingSink(recorder, { everyEvents: 100, intervalMs: 60_000 }, () => undefined));
+    expect(sink.status().traceId).toBe("trace-1");
+    const gateway = new ClientGatewayService({ commandTimeoutMs: 1_000, trace: { current: () => sink } });
+    const client = await pairClient(gateway, "client.scope");
+    const response = gateway.executeAction(client.sessionId, { actionType: "example.press" });
+    const metadata = response.message.type === "server.execute_action" ? response.message.payload.metadata : undefined;
+    expect(metadata).toEqual({ trace: { artifacts: true, scope: "trace-1" } });
+    await sink.close({ terminationReason: "completed", terminationDetail: null });
+    await gateway.close();
   });
 
   it("passes artifacts through unscreened", async () => {

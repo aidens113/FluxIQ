@@ -32,10 +32,10 @@ const HOST_FLUSH = Object.freeze({ everyEvents: 256, intervalMs: 1_000 });
 const OFF: AutomationStudioGatewayTraceHost = Object.freeze({ episodes: undefined, source: undefined, startHook: (hook) => hook, uninstall: () => undefined });
 
 /**
- * Builds and installs the host's trace episodes when `enabled`. A process
- * that already has episodes installed (a second runtime in one process) keeps
- * those, and this runtime traces nothing: its episodes would write through
- * another service's pool.
+ * Builds and installs the host's trace episodes when `enabled`, in place of
+ * any a runtime built earlier in this process installed: the newest runtime is
+ * the serving one (`../installation.ts`), and its gateway records through these
+ * episodes, which write through its own service's pool.
  */
 export function createAutomationStudioGatewayTraceHost(input: {
   enabled: boolean;
@@ -43,10 +43,6 @@ export function createAutomationStudioGatewayTraceHost(input: {
   options?: Partial<Pick<AutomationStudioGatewayTraceEpisodesOptions, "now" | "flush" | "newTraceId" | "reportFailure">>;
 }): AutomationStudioGatewayTraceHost {
   if (!input.enabled) return OFF;
-  if (AutomationStudioGatewayTraceInstallation.current() !== undefined) {
-    console.error("Client gateway tracing is already installed in this process; this runtime records no traces.");
-    return OFF;
-  }
   const memory = new Map<string, ClientGatewayTraceMemoryStore>();
   const storeFor = (projectId: string): ClientGatewayTraceStore => {
     const pool = input.pool();

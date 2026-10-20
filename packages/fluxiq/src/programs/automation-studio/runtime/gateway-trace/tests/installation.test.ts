@@ -14,14 +14,14 @@ describe("AutomationStudioGatewayTraceInstallation", () => {
     expect(AutomationStudioGatewayTraceInstallation.current()).toBeUndefined();
   });
 
-  it("refuses a second installation, and an old uninstall never removes a newer one", () => {
+  it("lets the newest runtime's installation replace an earlier one, which an old uninstall never removes", () => {
     const uninstallFirst = AutomationStudioGatewayTraceInstallation.install(episodes("first"));
-    expect(() => AutomationStudioGatewayTraceInstallation.install(episodes("second"))).toThrow("gateway_trace.already_installed");
-    uninstallFirst();
     const second = episodes("second");
     const uninstallSecond = AutomationStudioGatewayTraceInstallation.install(second);
+    expect(AutomationStudioGatewayTraceInstallation.current()).toBe(second);
     uninstallFirst();
     expect(AutomationStudioGatewayTraceInstallation.current()).toBe(second);
     uninstallSecond();
+    expect(AutomationStudioGatewayTraceInstallation.current()).toBeUndefined();
   });
 });

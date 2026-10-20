@@ -48,6 +48,7 @@ export class AutomationStudioGatewayTraceScreeningSink implements ClientGatewayT
       payloadSchema: input.payloadSchema,
       payload: screened.payload,
       artifactIds: input.artifactIds,
+      referencedDigests: input.referencedDigests ?? [],
       redactions: [...input.redactions, ...screened.redactions]
     });
   }

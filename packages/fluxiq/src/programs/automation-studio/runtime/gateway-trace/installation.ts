@@ -12,9 +12,16 @@ let installed: AutomationStudioGatewayTraceEpisodes | undefined;
  * did not install one -- every reader does nothing.
  */
 export const AutomationStudioGatewayTraceInstallation = Object.freeze({
-  /** Installs `episodes` and answers the function that uninstalls exactly it. Refuses a second installation. */
+  /**
+   * Installs `episodes` in place of any earlier installation and answers the
+   * function that uninstalls exactly it. The newest runtime in a process is the
+   * one serving: the web host abandons the domain-less instance it builds first
+   * when one domain is registered (`apps/web/src/lib/fluxiq.ts`), and a reload
+   * closes the old runtime before building the new. Refusing the second, as
+   * this once did, left the serving runtime's gateway capturing nothing while
+   * its episodes wrote empty traces through the abandoned one (lane T, P2 M).
+   */
   install(episodes: AutomationStudioGatewayTraceEpisodes): () => void {
-    if (installed !== undefined) throw new Error("gateway_trace.already_installed");
     installed = episodes;
     return () => {
       if (installed === episodes) installed = undefined;

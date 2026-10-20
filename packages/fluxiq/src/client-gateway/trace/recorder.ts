@@ -86,11 +86,14 @@ type Identity = {
 type PendingArtifact = { readonly id: string; readonly bytes: Uint8Array };
 type Batch = { events: ClientGatewayTraceEvent[]; artifacts: PendingArtifact[]; artifactBytes: number };
 type Ending = { closedAt: string; reason: ClientGatewayTraceTerminationReason; detail: string | null };
+/** What an event names elsewhere: captured artifacts by id, client-uploaded ones by digest. */
+type References = { readonly artifactIds: readonly string[]; readonly referencedDigests: readonly string[] };
 type EventFields = { stream: string; messageType: string | null; source: ClientGatewayTraceSourceInput; correlation: ClientGatewayTraceCorrelationInput };
 
 const REFUSED_CLOSED: ClientGatewayTraceRecordResult = Object.freeze({ status: "refused", reason: "closed" });
 const NO_PAYLOAD: ClientGatewayTracePayload = Object.freeze({ encoding: "none" });
 const NO_REDACTIONS: readonly ClientGatewayTraceRedaction[] = Object.freeze([]);
+const NO_DIGESTS: readonly string[] = Object.freeze([]);
 
 export class ClientGatewayTraceRecorder implements ClientGatewayTraceSink {
   private readonly store: ClientGatewayTraceStoreWriter;
@@ -144,7 +147,8 @@ export class ClientGatewayTraceRecorder implements ClientGatewayTraceSink {
     const sequence = this.nextSequence();
     const eventId = `${this.identity.traceId}#${sequence}`;
     try {
-      const event = this.buildEvent(sequence, eventId, input.kind, input, copyPayload(input.payload), input.artifactIds, input.redactions, input.payloadSchema);
+      const references: References = { artifactIds: input.artifactIds, referencedDigests: input.referencedDigests ?? NO_DIGESTS };
+      const event = this.buildEvent(sequence, eventId, input.kind, input, copyPayload(input.payload), references, input.redactions, input.payloadSchema);
       return this.buffer(event, null);
     } catch (error) {
       return this.lose(sequence, eventId, "recorder_failure", `event could not be copied: ${messageOf(error)}`);
@@ -166,7 +170,7 @@ export class ClientGatewayTraceRecorder implements ClientGatewayTraceSink {
         sequence,
         resourceKey: input.resourceKey
       });
-      const event = this.buildEvent(sequence, eventId, "artifact", input, NO_PAYLOAD, [artifactId], NO_REDACTIONS, null);
+      const event = this.buildEvent(sequence, eventId, "artifact", input, NO_PAYLOAD, { artifactIds: [artifactId], referencedDigests: NO_DIGESTS }, NO_REDACTIONS, null);
       const result = this.buffer(event, { id: artifactId, bytes });
       if (result.status === "recorded") this.artifacts.push(entry);
       return result;
@@ -230,7 +234,7 @@ export class ClientGatewayTraceRecorder implements ClientGatewayTraceSink {
     kind: ClientGatewayTraceEventKind,
     fields: EventFields,
     payload: ClientGatewayTracePayload,
-    artifactIds: readonly string[],
+    references: References,
     redactions: readonly ClientGatewayTraceRedaction[],
     payloadSchema: ClientGatewayTraceSchemaRef | null
   ): ClientGatewayTraceEvent {
@@ -256,7 +260,8 @@ export class ClientGatewayTraceRecorder implements ClientGatewayTraceSink {
       }),
       payloadSchema: payloadSchema === null ? null : freezeSchema(payloadSchema),
       payload,
-      artifactIds: Object.freeze([...artifactIds]),
+      artifactIds: Object.freeze([...references.artifactIds]),
+      referencedDigests: Object.freeze([...references.referencedDigests]),
       provenance: this.identity.provenance,
       redactions: Object.freeze(redactions.map((redaction) => Object.freeze({ path: redaction.path, reason: redaction.reason })))
     });

@@ -4,6 +4,7 @@
 export * from "./action-stamp.ts";
 export * from "./credential-fields.ts";
 export * from "./credential-redaction.ts";
+export * from "./referenced-digests.ts";
 export * from "./result-metadata-strip.ts";
 export * from "./schemas.ts";
 export * from "./streams.ts";

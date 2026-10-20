@@ -181,8 +181,13 @@ export type ClientGatewayActionResult = {
  */
 export const CLIENT_GATEWAY_TRACE_METADATA_KEY = "trace";
 
-/** On a traced action command's `metadata.trace`. */
-export type ClientGatewayTraceRequest = { artifacts: true };
+/**
+ * On a traced action command's `metadata.trace`. `scope` names the trace the
+ * command is recorded into: a client that skips re-uploading what it already
+ * sent keeps one such record per scope, so every trace holds each artifact its
+ * results reference.
+ */
+export type ClientGatewayTraceRequest = { artifacts: true; scope?: string };
 
 /** `primary`: the observation itself; `resource`: something the primary artifact refers to, stored once per digest. */
 export const CLIENT_GATEWAY_TRACE_ARTIFACT_ROLES = Object.freeze(["primary", "resource"] as const);

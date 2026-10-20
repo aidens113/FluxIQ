@@ -55,7 +55,7 @@ describe("the gateway trace tap, under a traced episode", () => {
     gateway.onEvent((event) => { seen.push(event); });
     const response = scope.within(trace.recorder, () => gateway.executeAction(client.sessionId, { actionType: "example.press", metadata: { reason: "kept" } }));
 
-    expect(actionPayload(response.message).metadata).toEqual({ reason: "kept", trace: { artifacts: true } });
+    expect(actionPayload(response.message).metadata).toEqual({ reason: "kept", trace: { artifacts: true, scope: "trace.stamp" } });
     expect(client.sent.at(-1)).toEqual(response.message);
     const references = { artifacts: [{ sha256: "a".repeat(64), mediaType: "text/html", byteLength: 6, role: "primary" }], unavailable: 0 };
     const raw = JSON.stringify(clientMessage("client.action_result", { commandId: response.commandId, status: "succeeded", metadata: { reason: "kept", trace: references } }));
@@ -84,7 +84,7 @@ describe("the gateway trace tap, under a traced episode", () => {
     const gateway = new ClientGatewayService({ commandTimeoutMs: 1_000, trace: scope.source });
     const client = await pairClient(gateway, "client.only");
     const response = scope.within(trace.recorder, () => gateway.executeAction(client.sessionId, { actionType: "example.press" }));
-    expect(actionPayload(response.message).metadata).toEqual({ trace: { artifacts: true } });
+    expect(actionPayload(response.message).metadata).toEqual({ trace: { artifacts: true, scope: "trace.only" } });
     await gateway.receive(client.sessionId, clientMessage("client.action_result", { commandId: response.commandId, status: "succeeded", metadata: { trace: { artifacts: [], unavailable: 1 } } }));
     const result: ClientGatewayActionResult = await response.result;
     expect(result).not.toHaveProperty("metadata");
@@ -104,7 +104,7 @@ describe("the gateway trace tap, under a traced episode", () => {
     const response = scope.within(trace.recorder, () => gateway.executeAction(client.sessionId, { actionType: "example.press" }, { context }));
     await waitFor(() => client.sent.some((item) => item.type === "server.execute_action"));
     const sent = client.sent.find((item) => item.type === "server.execute_action");
-    expect(sent?.type === "server.execute_action" ? sent.payload.metadata : undefined).toEqual({ trace: { artifacts: true } });
+    expect(sent?.type === "server.execute_action" ? sent.payload.metadata : undefined).toEqual({ trace: { artifacts: true, scope: "trace.durable" } });
     expect(ledger.saved()?.claim.requestDigest).toBe(ClientGatewayCommandLedgerController.digest({ actionType: "example.press" }));
 
     await gateway.receive(client.sessionId, clientMessage("client.action_result", { commandId: response.commandId, status: "succeeded", metadata: { trace: { artifacts: [], unavailable: 0 } } }));

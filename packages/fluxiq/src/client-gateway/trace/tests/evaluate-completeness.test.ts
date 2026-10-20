@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateClientGatewayTraceCompleteness } from "../index.ts";
+import { clientGatewayTraceArtifactDigest, evaluateClientGatewayTraceCompleteness } from "../index.ts";
 import type { ClientGatewayTraceCompatibility, ClientGatewayTraceCompletenessInput, ClientGatewayTraceEvent, ClientGatewayTraceManifest } from "../index.ts";
 import { TRACE_ID, artifactInput, correlation, eventInput, newRecorder, textEvent } from "./trace-builders.ts";
 
@@ -136,5 +136,53 @@ describe("evaluateClientGatewayTraceCompleteness", () => {
     const manifest = await recorder.close({ terminationReason: "completed", terminationDetail: null });
     const result = evaluateClientGatewayTraceCompleteness({ manifest, events: await store.readEventRange(TRACE_ID, 1, 1), availableArtifacts: [], compatibility: COMPATIBLE, recorderActive: false });
     expect(result).toEqual({ status: "complete", issues: [], limitations: [{ code: "redaction_limited", range: { from: 1, to: 1 }, path: "/token", reason: "credential" }] });
+  });
+
+  describe("an artifact referenced by digest", () => {
+    const BYTES = new Uint8Array([7, 8, 9]);
+    const HELD = clientGatewayTraceArtifactDigest(BYTES);
+
+    /** A closed trace of a result referencing `digest` and an artifact upload of BYTES, in the given order. */
+    async function referencing(digest: string, order: "artifact_first" | "result_first"): Promise<ClientGatewayTraceCompletenessInput> {
+      const { recorder, store } = newRecorder();
+      if (order === "artifact_first") recorder.recordArtifact(artifactInput(BYTES));
+      recorder.record(textEvent('{"type":"client.action_result"}', { referencedDigests: [digest] }));
+      if (order === "result_first") recorder.recordArtifact(artifactInput(BYTES));
+      const manifest = await recorder.close({ terminationReason: "completed", terminationDetail: null });
+      return {
+        manifest,
+        events: await store.readEventRange(TRACE_ID, 1, 2),
+        availableArtifacts: await store.listArtifacts(TRACE_ID),
+        compatibility: COMPATIBLE,
+        recorderActive: false
+      };
+    }
+
+    it("delivered into the trace before the reference is complete", async () => {
+      const input = await referencing(HELD, "artifact_first");
+      expect(evaluateClientGatewayTraceCompleteness(input)).toEqual({ status: "complete", issues: [], limitations: [] });
+    });
+
+    it("never delivered into the trace is missing evidence at the referencing event", async () => {
+      const absent = "b".repeat(64);
+      const input = await referencing(absent, "artifact_first");
+      const result = evaluateClientGatewayTraceCompleteness(input);
+      expect(result.status).toBe("incomplete");
+      expect(result.issues).toEqual([expect.objectContaining({ code: "missing_artifact", range: { from: 2, to: 2 }, artifactId: null })]);
+      expect(result.issues[0]?.detail).toContain(absent);
+    });
+
+    it("delivered only after the reference is a broken correlation at the referencing event", async () => {
+      const input = await referencing(HELD, "result_first");
+      const artifactId = input.manifest.artifacts[0]!.id;
+      expect(evaluateClientGatewayTraceCompleteness(input).issues).toEqual([expect.objectContaining({ code: "broken_correlation", range: { from: 1, to: 1 }, artifactId })]);
+    });
+
+    it("whose bytes the store no longer holds is still missing evidence", async () => {
+      const input = await referencing(HELD, "artifact_first");
+      const result = evaluateClientGatewayTraceCompleteness({ ...input, availableArtifacts: [] });
+      expect(result.status).toBe("incomplete");
+      expect(result.issues.map((issue) => issue.code)).toContain("missing_artifact");
+    });
   });
 });
