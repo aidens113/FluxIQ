@@ -23,6 +23,7 @@ import type { AutomationStudioLlmBuildPurse } from "./build-purse/index.ts";
 import type { AutomationStudioFlowDraftClaimRefused, AutomationStudioFlowDraftRoute, AutomationStudioFlowDraftStep } from "../flow-draft/index.ts";
 import { automationStudioFlowDraftCopyScheduledCandidate } from "../flow-draft/scheduled-candidate/index.ts";
 import type { AutomationStudioFlowDraftDryRunGateInput, AutomationStudioFlowDraftTestReport } from "./node-tools/index.ts";
+import type { AutomationStudioRunEnvironment } from "../environment/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "./evidence-loop/index.ts";
 import { automationStudioLlmEvidenceLoopConfigurationIssue as issue, type AutomationStudioLlmEvidenceLoopConfigurationIssue } from "./configuration-issue/index.ts";
 import type { AutomationStudioLlmEvidencePlanningTools } from "./evidence-progress/index.ts";
@@ -107,6 +108,15 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * only cost authority, and a decision it refuses is the only cost ending.
    */
   budget?: AutomationStudioLlmEvidenceLoopBudget;
+  /**
+   * The run's environment (traces and offline trials, P1, U7). The loop's clock
+   * comes from it -- what `budget`'s time bound counts down on and what the
+   * accounting's elapsed time reads -- unless `budget.now` names one, which
+   * still wins. Nothing else is read from it: its channel scope is entered by
+   * whoever runs the loop, around the whole loop, as ambient as the host lease
+   * is, so the loop itself never calls `within`. Absent, the wall clock.
+   */
+  environment?: AutomationStudioRunEnvironment | undefined;
   /**
    * The build's purse (`./build-purse/purse.ts`), the one cost authority for a
    * Flow's creation. Given, every decision is held against it and the loop

@@ -2,6 +2,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowBootstrapInterface, AutomationStudioFlowBootstrapSubflow, AutomationStudioFlowBootstrapSubflowMetadata } from "../plan/index.ts";
 import type { AutomationStudioCandidateTrialAct, AutomationStudioCandidateTrialVerdict } from "../candidate/index.ts";
 import type { AutomationStudioSiteResetTrialActPlace } from "../site-reset/index.ts";
+import type { AutomationStudioRunEnvironmentKind } from "../../environment/index.ts";
 
 // What a subflow builder works within, what it submits and how its own subflow
 // is tried (automation-project-agents-plan.md, `Scoped submission`, `Subflow
@@ -122,5 +123,13 @@ export type AutomationStudioSubflowTrialResult = {
   acts?: Array<AutomationStudioCandidateTrialAct & AutomationStudioSiteResetTrialActPlace>;
 };
 
-/** Runs one partial trial; injected by the service that owns execution and judging. */
-export type AutomationStudioSubflowTrialPort = (request: AutomationStudioSubflowTrialRequest) => Promise<AutomationStudioSubflowTrialResult>;
+/**
+ * Runs one partial trial; injected by the service that owns execution and
+ * judging. `environmentKind`, as on a whole candidate's port
+ * (`AutomationStudioCandidateTrialPort`): set and not `live`, the trial is
+ * offline, and the subflow trial gate runs no start hook or site reset for it
+ * and never keeps its yes as the verdict that completes the brief.
+ */
+export type AutomationStudioSubflowTrialPort = ((request: AutomationStudioSubflowTrialRequest) => Promise<AutomationStudioSubflowTrialResult>) & {
+  readonly environmentKind?: AutomationStudioRunEnvironmentKind | undefined;
+};

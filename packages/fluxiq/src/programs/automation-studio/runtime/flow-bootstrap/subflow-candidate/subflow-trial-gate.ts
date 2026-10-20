@@ -214,15 +214,22 @@
 // subflow before this one that did -- and two trials of one revision that
 // stopped the same way close it, as the whole gate's t368 rule does: the answer
 // carries no re-test and a later test is refused `subflow.trial_same_failure`.
+//
+// **An offline trial is evidence, never the yes that completes (traces and
+// offline trials, Decisions 3 and 6)**, as in the whole gate: a port whose
+// `environmentKind` is set and not `live` gets no start hook, no site reset and
+// nothing recorded as left on the site, and its yes is answered but never kept.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import {
   AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION,
+  AUTOMATION_STUDIO_CANDIDATE_OFFLINE_YES_INSTRUCTION,
   AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS,
   automationStudioCandidateNotShownInstruction,
   automationStudioCandidateRecordContradictsPart,
   automationStudioCandidateRetestAdvised,
   automationStudioCandidateStartedWithSaid,
+  automationStudioCandidateTrialOffline,
   automationStudioCandidateTrialStop as Stop,
   type AutomationStudioCandidateTrialPrepared,
   type AutomationStudioCandidateTrialVerdict
@@ -468,10 +475,12 @@ export class AutomationStudioSubflowTrialGate {
     }
     const signal = callSignal ?? this.input.signal ?? this.fallbackSignal;
     signal.throwIfAborted();
+    // An offline trial has no live effects: no start hook, no reset, nothing left on the site (header, Decision 6).
+    const offline = automationStudioCandidateTrialOffline(port);
     // The deployment's start hook first, so the check after it finds the site put back (header).
-    const prepared = this.input.reset && port.prepareStart ? await port.prepareStart({ scope: structuredClone(this.input.scope), revision: latest.revision, digest: latest.digest, signal }) : "none";
+    const prepared = !offline && this.input.reset && port.prepareStart ? await port.prepareStart({ scope: structuredClone(this.input.scope), revision: latest.revision, digest: latest.digest, signal }) : "none";
     signal.throwIfAborted();
-    const reset = await this.input.reset?.beforeTrial(signal, Array.isArray(cannotUndo) ? cannotUndo as string[] : undefined, prepared === "reset" ? { startReset: true } : undefined);
+    const reset = offline ? undefined : await this.input.reset?.beforeTrial(signal, Array.isArray(cannotUndo) ? cannotUndo as string[] : undefined, prepared === "reset" ? { startReset: true } : undefined);
     signal.throwIfAborted();
     // Not a trial: the model is told what to put back, and the identical test after it reaches this gate again (header).
     if (reset?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: reset.evidence, effectApplied: reset.moved, targetsUnchanged: !reset.moved, resultCode: reset.evidence.code, resultReason: RETEST_REASON };
@@ -509,30 +518,33 @@ export class AutomationStudioSubflowTrialGate {
     const stood = answer.verdict === "no" && answer.entryPrepared && asked.standingNo !== undefined;
     port.weighed?.({ answer: structuredClone(answer), ...(stood ? { standingNo: structuredClone(asked.standingNo) } : {}) });
     signal.throwIfAborted();
-    const leftOnSite = this.input.reset?.trialRan(answer.acts ?? [], answer.trialRunId);
+    const leftOnSite = offline ? undefined : this.input.reset?.trialRan(answer.acts ?? [], answer.trialRunId);
     // What Core's record of this trial shows its conditions kept out, as the proposal that ran wrote them (header, t641).
     if (answer.entryPrepared) this.keptConditions.remember({ revision: answer.revision, standingNo: asked.standingNo, plan: latest.subflows ? { subflows: latest.subflows } : undefined });
     // What another gate found, carried by the port, replaces what it carried before (header, t689).
     if (answer.entryPrepared && asked.keptConditions) this.carriedKept = asked.keptConditions;
     const keptConditions = withCarried(this.keptConditions.conditions(), this.carriedKept);
-    this.verdicts.set(key(answer), keptConditions.length ? { ...answer, keptConditions } : answer);
+    // An offline yes is never the verdict kept for completion, and a stale one of this revision goes (header, Decision 3).
+    const offlineYes = offline && answer.verdict === "yes";
+    if (offlineYes && this.verdicts.get(key(answer))?.verdict !== "yes") this.verdicts.delete(key(answer));
+    if (!offlineYes) this.verdicts.set(key(answer), keptConditions.length ? { ...answer, keptConditions } : answer);
     if (answer.verdict === "no" && answer.entryPrepared) this.closedDigests.set(answer.digest, answer.feedback);
     const repeatedStep = this.recordStop(answer);
-    const retestsLeft = !repeatedStep && (TRANSIENT.has(answer.verdict) || !answer.entryPrepared) ? AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION - (tried + 1) : 0;
+    const retestsLeft = !repeatedStep && (TRANSIENT.has(answer.verdict) || !answer.entryPrepared || offlineYes) ? AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION - (tried + 1) : 0;
     const evidence: JsonObject = {
-      ok: answer.verdict === "yes", partial: true, verdict: answer.verdict, subflowKey: answer.identity.subflowKey, revision: answer.revision, digest: answer.digest,
+      ok: answer.verdict === "yes" && !offlineYes, partial: true, verdict: answer.verdict, subflowKey: answer.identity.subflowKey, revision: answer.revision, digest: answer.digest,
       entryPrepared: answer.entryPrepared, feedback: answer.feedback, promotionCredit: false,
-      instruction: repeatedStep ? repeatedInstruction(repeatedStep) : instructionFor(answer, retestsLeft > 0, this.input.whole === true),
+      instruction: offlineYes ? AUTOMATION_STUDIO_CANDIDATE_OFFLINE_YES_INSTRUCTION : repeatedStep ? repeatedInstruction(repeatedStep) : instructionFor(answer, retestsLeft > 0, this.input.whole === true),
       ...(repeatedStep ? { failedStep: repeatedStep } : {}),
       ...(reset?.kind === "admit" && reset.startedWith ? { startedWith: reset.startedWith } : {}),
       ...(absorbed.length ? { absorbedByStartReset: absorbed } : {}),
       ...(leftOnSite?.length ? { leftOnSite: leftOnSite.map(namedAct) } : {})
     };
     if (answer.trialRunId) evidence.trialRunId = answer.trialRunId;
-    if (TRANSIENT.has(answer.verdict) || !answer.entryPrepared || repeatedStep) evidence.retestsLeft = retestsLeft;
+    if (TRANSIENT.has(answer.verdict) || !answer.entryPrepared || repeatedStep || offlineYes) evidence.retestsLeft = retestsLeft;
     // Whether Core's record contradicts what kept an unsure from a yes: the fact its instruction rests on (header, t641).
     if (answer.verdict === "unsure" && answer.entryPrepared && retestsLeft > 0 && typeof answer.feedback.contradictedByBuild !== "string") evidence.retestAdvised = automationStudioCandidateRetestAdvised(answer);
-    const answered: AutomationStudioLlmEvidenceToolExecutionResult = { kind: "llm_evidence_tool_execution", evidence, effectApplied: true, targetsUnchanged: false, resultCode: `subflow.trial_${answer.verdict}` };
+    const answered: AutomationStudioLlmEvidenceToolExecutionResult = { kind: "llm_evidence_tool_execution", evidence, effectApplied: true, targetsUnchanged: false, resultCode: offlineYes ? "subflow.trial_offline_yes" : `subflow.trial_${answer.verdict}` };
     if (retestsLeft > 0) answered.resultReason = RETEST_REASON;
     return answered;
   }

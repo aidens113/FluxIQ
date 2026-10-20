@@ -70,10 +70,17 @@
 // call asking the converse question (`firstAskConfirmed`, t691), which the
 // port's `checkRows` answers the builder's gate with (`./port.ts`). Both are
 // set on every judged trial, so a flagged yes is never left without its check.
+//
+// **A partial trial runs in its environment (traces and offline trials, U7)**,
+// as a whole candidate's trial does (`../candidate-trial/run.ts`): its clock,
+// its run id (`subflow-trial.<unique>`, as before) and its client channel come
+// from `ports.environment`, the live one when absent, and its client work runs
+// inside `environment.within`. An offline trial runs no start hook
+// (`./start.ts`, through the whole candidate's start; Decision 6).
 
-import { randomUUID } from "node:crypto";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
+import { automationStudioLiveRunEnvironment, type AutomationStudioRunEnvironment } from "../../environment/index.ts";
 import type { AutomationStudioCandidateTrialAct } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialKeptEveryRowRead, AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult, AutomationStudioSubflowTrialRowCheck } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { runAutomationStudioDetachedSubflow, type AutomationStudioCandidateStartReceipt, type AutomationStudioDetachedSubflowIdentity, type AutomationStudioDetachedSubflowProposal } from "../../flow-bootstrap/verification/index.ts";
@@ -84,6 +91,7 @@ import {
   automationStudioCandidateTrialLandedActs,
   automationStudioCandidateTrialSummary,
   automationStudioTrialExecutedSteps,
+  automationStudioTrialExecutorOptions,
   automationStudioTrialJudgingShortfall,
   type AutomationStudioCandidateTrialLandedAct,
   type AutomationStudioCandidateTrialStart
@@ -114,9 +122,16 @@ export type AutomationStudioSubflowTrialOutcome = {
  * judge calls held before it starts (header, t661).
  */
 export async function runAutomationStudioSubflowTrial(request: AutomationStudioSubflowTrialRequest, ports: AutomationStudioSubflowTrialPorts, preparedStart?: AutomationStudioCandidateTrialStart, judgeInputTokens?: number): Promise<AutomationStudioSubflowTrialOutcome> {
+  const environment = ports.environment ?? automationStudioLiveRunEnvironment;
+  // The trial's client work runs on its environment's channel; live, exactly as before (header, U7).
+  return await environment.within(() => trialIn(environment, request, ports, preparedStart, judgeInputTokens));
+}
+
+/** One partial trial, run inside its environment (header, U7). */
+async function trialIn(environment: AutomationStudioRunEnvironment, request: AutomationStudioSubflowTrialRequest, ports: AutomationStudioSubflowTrialPorts, preparedStart?: AutomationStudioCandidateTrialStart, judgeInputTokens?: number): Promise<AutomationStudioSubflowTrialOutcome> {
   const { signal, scope, proposal } = request;
   signal.throwIfAborted();
-  const now = ports.now ?? Date.now;
+  const now = ports.now ?? environment.now;
   const answer = answerFor(request);
   // A start the hook already made is recorded even when nothing then runs: the site was put back all the same.
   const notRun = { start: preparedStart ?? { status: "not_run" as const }, execution: "not_run" as const, entryPrepared: false, judge: { ...NO_SPEND } };
@@ -137,7 +152,7 @@ export async function runAutomationStudioSubflowTrial(request: AutomationStudioS
   const start = preparedStart ?? await automationStudioSubflowTrialStart({ scope, revision: proposal.revision, digest: proposal.digest, signal }, ports);
   if (start.status === "failed") return answer("execution_failed", { code: start.code, start: start.status, partial: true, entryPrepared: false }, { ...notRun, start, code: start.code });
 
-  const runId = ports.newRunId?.() ?? `subflow-trial.${randomUUID()}`;
+  const runId = ports.newRunId?.() ?? environment.newRunId("subflow-trial");
   const marker = { buildId: scope.buildId, briefId: scope.briefId, subflowKey: scope.subflowKey, revision: proposal.revision, digest: proposal.digest };
   const opened = await ports.openSession({ runId, metadata: { subflowTrial: { ...marker } } });
   const startedAt = now();
@@ -161,7 +176,7 @@ export async function runAutomationStudioSubflowTrial(request: AutomationStudioS
       // The start page loaded first, after the hook (header, t578).
       ...(ports.arrival && ports.startLocation ? { arrival: { ...ports.arrival, location: ports.startLocation } } : {}),
       // The signal rides on the options alone: the runner refuses two different signals.
-      options: ports.graphOptions({ runId, signal })
+      options: automationStudioTrialExecutorOptions(ports.graphOptions({ runId, signal }), ports.environment)
     });
   } catch (error) {
     // Not left running: a session that threw is ended failed, and the throw goes on to the builder's gate.

@@ -1,5 +1,5 @@
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
-import type { AutomationStudioSubflowScope, AutomationStudioSubflowTrialPreparingPort, AutomationStudioSubflowTrialRequest } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import type { AutomationStudioSubflowScope, AutomationStudioSubflowTrialPreparingPort, AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider } from "../../llm/index.ts";
 import { AutomationStudioHostLeaseScope, type AutomationStudioHostResourceScheduler, type AutomationStudioProjectBuildRecordStore, type AutomationStudioProjectBuildRef } from "../../project-agents/index.ts";
 import { automationStudioBuildTestJudge } from "../../result-verification/index.ts";
@@ -53,6 +53,9 @@ import type { AutomationStudioProjectBuildTrialEnvironment } from "./whole-trial
 //   answered no to the predecessor's presses as out of scope). The judge's
 //   checklist names them (`entry`, `./task-checklist.ts`), and the
 //   instruction no longer says the trial ran only this subflow.
+// - **The environment kind (traces and offline trials, U7).** The port carries
+//   the inner port's `environmentKind`, so the subflow trial gate still sees an
+//   offline trial as offline.
 
 export function automationStudioProjectBuildSubflowTrials(input: {
   ref: AutomationStudioProjectBuildRef;
@@ -95,7 +98,7 @@ export function automationStudioProjectBuildSubflowTrials(input: {
   });
   // Each trial this port answered, until its gate tells the verdict it kept (header, t634).
   const answered = new Map<string, Pick<AutomationStudioSubflowTrialRequest, "scope" | "proposal">>();
-  const port: AutomationStudioSubflowTrialPreparingPort = async (request) => {
+  const run = async (request: AutomationStudioSubflowTrialRequest): Promise<AutomationStudioSubflowTrialResult> => {
     const result = await trials.port(request);
     const at = trialKey(request.scope.briefId, request.proposal.revision, request.proposal.digest);
     answered.delete(at);
@@ -106,6 +109,9 @@ export function automationStudioProjectBuildSubflowTrials(input: {
     const phaseStart = AutomationStudioProjectBuildPhaseStart.trialStart({ phase: "subflow_trial", feedback: result.feedback, arrival, startLocation: environment.startLocation, predecessors });
     return { ...result, feedback: { ...result.feedback, phaseStart } };
   };
+  // The inner port's environment kind, written as the port is made, for the gate to read (header, U7).
+  const environmentKind = trials.port.environmentKind;
+  const port: AutomationStudioSubflowTrialPreparingPort = Object.assign(run, { environmentKind });
   // The start hook, ahead of the gate's reset check, is the inner port's (`../subflow-trial/port.ts`).
   if (trials.port.prepareStart) port.prepareStart = trials.port.prepareStart;
   // The gate's verdict of a trial this port answered is the one the proposals keep (header, t634).

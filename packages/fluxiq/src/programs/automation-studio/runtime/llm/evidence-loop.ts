@@ -254,8 +254,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
   const observeToolFailures = (input.toolFailures ?? (input.unusableDecisions ? "observe" : "end")) === "observe";
   // The latest unusable decision's issues, beside the count of them in a row.
   let lastIssueCodes: readonly string[] = [];
-  // The budget's clock and the decisions whose usage it could count.
-  const clock = input.budget?.now ?? Date.now;
+  // The budget's clock, else the environment's, and the decisions whose usage it could count.
+  const clock = input.budget?.now ?? input.environment?.now ?? Date.now;
   const startedAtMs = clock();
   let reportedDecisions = 0;
   let finalDecision = false;

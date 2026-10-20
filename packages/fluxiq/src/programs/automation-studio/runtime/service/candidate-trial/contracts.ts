@@ -1,6 +1,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowRunActionAttemptRecord, AutomationStudioPublishedFlowSnapshot, AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
+import type { AutomationStudioRunEnvironment } from "../../environment/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import type { AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
 import type { runAutomationStudioDetachedCandidate } from "../../flow-bootstrap/verification/index.ts";
@@ -131,6 +132,13 @@ export type AutomationStudioCandidateTrialPorts = {
   judge(input: AutomationStudioBuildTestJudgeInput): Promise<AutomationStudioBuildTestVerdict>;
   /** The detached runner; replaced only by tests. */
   execute?: typeof runAutomationStudioDetachedCandidate | undefined;
+  /**
+   * Where the trial's world comes from (traces and offline trials, U7): its
+   * clock, run ids and the client channel its work runs on. Absent, the live
+   * environment, which is today's fallbacks. `now` and `newRunId` below, when
+   * given, still win over it.
+   */
+  environment?: AutomationStudioRunEnvironment | undefined;
   now?: (() => number) | undefined;
   newRunId?: (() => string) | undefined;
 };

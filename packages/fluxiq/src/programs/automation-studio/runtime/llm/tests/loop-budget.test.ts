@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_CANDIDATE_FINISHING_TOOLS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, automationStudioLlmEvidenceBudgetEntry, automationStudioLlmEvidenceLoopRemaining, automationStudioLlmEvidenceLoopWrapUp } from "../loop-budget.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID, runAutomationStudioLlmEvidenceLoop } from "../evidence-loop.ts";
 import { runAutomationStudioLlmHarness, type AutomationStudioLlmProvider } from "../harness.ts";
+import { AutomationStudioVirtualClock, createAutomationStudioScopedRunEnvironment } from "../../environment/index.ts";
 
 const tools = [{ toolId: "inspect", description: "Collect bounded evidence.", inputSchema: { type: "object" } }];
 const look = (number: number, totalTokens: number) => ({ kind: "tool_call", callId: `call.${number}`, toolId: "inspect", input: { page: number }, usage: { totalTokens, estimatedCostUsd: 0.005 } });
@@ -435,5 +436,40 @@ describe("a budget that counts calls (t570)", () => {
     expect(remaining.callsLeft).toBeUndefined();
     expect(remaining.limitedBy).not.toBe("calls");
     expect(remaining).toEqual(automationStudioLlmEvidenceLoopRemaining({}, { ...spent, purse: { ceilingUsd: 1, spentUsd: 0.002, pendingUsd: 0 } }, 20));
+  });
+});
+
+// Traces and offline trials (P1, U7): a loop's clock comes from the run's
+// environment, so an offline loop's deadline counts down on its virtual clock;
+// an explicit budget clock still wins.
+describe("an evidence loop's clock and its environment", () => {
+  const run = (environment: ReturnType<typeof createAutomationStudioScopedRunEnvironment>, budget: { maxDurationMs: number; now?: () => number }, onDecision: () => Promise<void>) => {
+    const decide = vi.fn(async ({ tools: offered }: { tools: unknown[]; evidence: readonly unknown[] }) => {
+      await onDecision();
+      return offered.length ? look(1 + decide.mock.calls.length, 1_000) : { kind: "complete", result: {} };
+    });
+    return { decide, result: runAutomationStudioLlmEvidenceLoop({ tools, decide, environment, maxIterations: 20, maxToolCalls: 20, budget, executeTool: async ({ value }) => ({ page: value.page ?? null }) }) };
+  };
+
+  it("counts down to its deadline on the environment's virtual clock when the budget names no clock", async () => {
+    const clock = new AutomationStudioVirtualClock(1_000_000);
+    const { decide, result } = run(createAutomationStudioScopedRunEnvironment({ kind: "fixture", clock }), { maxDurationMs: 10_000 }, () => clock.delay(4_000));
+
+    expect(await result).toMatchObject({ ok: true, accounting: { iterations: 2 } });
+    expect(budgetOf(decide.mock.calls[1]![0].evidence as Shown[])).toMatchObject({ decisionsLeft: 1, secondsLeft: 6 });
+  });
+
+  it("keeps an explicit budget clock over the environment's", async () => {
+    let now = 0;
+    const clock = new AutomationStudioVirtualClock();
+    // The environment's clock races far past the deadline; the budget's own clock is what counts.
+    const onDecision = async () => {
+      now += 4_000;
+      await clock.delay(1_000_000);
+    };
+    const { decide, result } = run(createAutomationStudioScopedRunEnvironment({ kind: "fixture", clock }), { maxDurationMs: 10_000, now: () => now }, onDecision);
+
+    expect(await result).toMatchObject({ ok: true, accounting: { iterations: 2 } });
+    expect(budgetOf(decide.mock.calls[1]![0].evidence as Shown[])).toMatchObject({ decisionsLeft: 1, secondsLeft: 6 });
   });
 });

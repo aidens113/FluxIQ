@@ -24,8 +24,12 @@
 // (`./run.ts`); the port keeps that by the trial's run id and answers the
 // gate's `checkRows` with it, for this build's trials only. A trial it does
 // not know is answered nothing, so its yes is not taken.
+//
+// **The port says the kind of environment its trials run in (U7)**, as a whole
+// candidate's port does (`../candidate-trial/port.ts`): `environmentKind`, live
+// when `ports.environment` is absent, and `prepareStart` only when live.
 
-import type { AutomationStudioSubflowTrialPreparingPort, AutomationStudioSubflowTrialRowCheck } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import type { AutomationStudioSubflowTrialPreparingPort, AutomationStudioSubflowTrialResult, AutomationStudioSubflowTrialRowCheck } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioTrialJudgingShortfall, automationStudioTrialLargestJudgePrompt, type AutomationStudioCandidateTrialStart } from "../candidate-trial/index.ts";
 import { runAutomationStudioSubflowTrial } from "./run.ts";
 import { automationStudioSubflowTrialStart } from "./start.ts";
@@ -42,7 +46,7 @@ export function automationStudioSubflowTrialPort(buildId: string, ports: Automat
   const ready = new Map<string, AutomationStudioCandidateTrialStart>();
   /** Whether each judged trial's yes was confirmed by the converse question, by its run id (header, t692). */
   const converse = new Map<string, AutomationStudioSubflowTrialRowCheck>();
-  const port: AutomationStudioSubflowTrialPreparingPort = async (request) => {
+  const run = async (request: Parameters<AutomationStudioSubflowTrialPreparingPort>[0]): Promise<AutomationStudioSubflowTrialResult> => {
     // A request of another build runs nothing; the run refuses a proposal of another scope itself.
     if (request.scope.buildId !== buildId) {
       return {
@@ -65,9 +69,12 @@ export function automationStudioSubflowTrialPort(buildId: string, ports: Automat
     if (trial.rowCheck && trial.result.trialRunId) converse.set(trial.result.trialRunId, { ...trial.rowCheck });
     return trial.result;
   };
+  const environmentKind = ports.environment?.kind ?? "live";
+  const port: AutomationStudioSubflowTrialPreparingPort = Object.assign(run, { environmentKind });
   // The gate's row check, answered from the converse of this build's own trials (header, t692).
   port.checkRows = async ({ scope, trialRunId }) => (scope.buildId === buildId && trialRunId ? converse.get(trialRunId) : undefined);
-  if (ports.prepareStart) {
+  // An offline trial runs no start hook, so only a live port offers one (header, Decision 6).
+  if (ports.prepareStart && environmentKind === "live") {
     port.prepareStart = async ({ scope, revision, digest, signal }) => {
       // Another build's trial is refused unrun, so nothing is put back for it.
       if (scope.buildId !== buildId) return "none";
