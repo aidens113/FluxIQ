@@ -5,6 +5,9 @@
 // stored bytes are sealed as they are, with their encoding kept: nothing is
 // decoded here, so a damaged chunk stays damaged and still fails when read.
 // The partial index on unsealed rows keeps the check cheap once none are left.
+// A protected store runs it as the rekey's last pass, before the scrub (t745):
+// a batch that sealed rows in place requests one in its own transaction.
+import { requestContentAddressScrub } from "../content-address/index.ts";
 import type { AutomationStudioProjectDatabase } from "../database.ts";
 import { sealGatewayTraceChunk } from "./seal-chunk.ts";
 import type { GatewayTraceChunkSealing } from "./types.ts";
@@ -38,6 +41,8 @@ export async function protectGatewayTraceChunks(database: AutomationStudioProjec
         );
         count += result.changes;
       }
+      // The rows' plaintext may survive in rebuilt pages' free gaps: ask for a scrub with the change (t745).
+      if (count > 0) await requestContentAddressScrub(sql, Date.now());
       return count;
     });
     if (changed === 0) throw new Error("gateway trace chunks could not be sealed: no unsealed row changed");
