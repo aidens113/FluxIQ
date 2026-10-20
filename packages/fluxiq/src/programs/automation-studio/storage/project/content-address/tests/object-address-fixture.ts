@@ -1,6 +1,7 @@
 // Test support for keyed content-store object addresses: a protected content
-// store on its own pool, direct SQL on its project database, and a walk of
-// every file under a project directory for leak probes.
+// store on its own pool (optionally with the t747 race seams), direct SQL on
+// its project database, and a walk of every file under a project directory for
+// leak probes.
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { AutomationStudioProjectContentStore } from "../../content-store.ts";
@@ -17,7 +18,10 @@ export type OpenedStore = {
   close(): Promise<void>;
 };
 
-export async function openStore(input: { rootDir: string; projectId: string; protection?: AutomationStudioProjectContentProtection; backfill?: AutomationStudioContentObjectAddressBackfillOptions }): Promise<OpenedStore> {
+/** The race seams a content store takes at open (t747), as its own open input names them. */
+export type StoreSeams = NonNullable<Parameters<typeof AutomationStudioProjectContentStore.open>[0]["seams"]>;
+
+export async function openStore(input: { rootDir: string; projectId: string; protection?: AutomationStudioProjectContentProtection; backfill?: AutomationStudioContentObjectAddressBackfillOptions; seams?: StoreSeams }): Promise<OpenedStore> {
   const pool = new AutomationStudioProjectDatabasePool({ rootDir: input.rootDir });
   let store: AutomationStudioProjectContentStore;
   try {
@@ -25,7 +29,8 @@ export async function openStore(input: { rootDir: string; projectId: string; pro
       pool,
       projectId: input.projectId,
       ...(input.protection ? { protection: input.protection } : {}),
-      ...(input.backfill ? { contentAddressBackfill: input.backfill } : {})
+      ...(input.backfill ? { contentAddressBackfill: input.backfill } : {}),
+      ...(input.seams ? { seams: input.seams } : {})
     });
   } catch (error) {
     // A refused open still leaves the pool's connection open; close it so the temp root can be removed.

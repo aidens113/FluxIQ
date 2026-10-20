@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4049
+- Public declarations: 4061
 - Class: 139
 - Interface: 10
-- Object: 536
-- Type: 2148
+- Object: 538
+- Type: 2157
 - Type Alias: 1
-- Value: 1215
+- Value: 1216
 
 ## Public Declarations
 
@@ -165,11 +165,11 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_CHANGE_CONFIDENCE_DEFAULT_REPLAYS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-change/confidence.ts` | Succeeded replays a low- or medium-risk change needs before it is `established`. |
 | `AUTOMATION_STUDIO_CHANGE_VERDICT_EVIDENCE_KINDS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-change/contracts.ts` | The evidence kinds, in the order a verdict's `basis` lists them. Declared with the kinds themselves so the verdict and the resume decision read one list rather than each keeping its own idea of what counts as evidence. |
 | `AUTOMATION_STUDIO_CHANGE_VERDICT_SCHEMA_VERSION` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-change/verdict.ts` | - |
-| `AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_MIGRATION` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace/chunk-migration.ts` | - |
-| `AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_PROTECTION_MIGRATION` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace/chunk-protection-migration.ts` | - |
+| `AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_MIGRATION` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace-schema/chunk-migration.ts` | - |
+| `AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_PROTECTION_MIGRATION` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace-schema/chunk-protection-migration.ts` | - |
 | `AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_ENV` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/gateway-trace/environment.ts` | The variable the Core process reads to switch client gateway tracing on. |
-| `AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_KEYED_ADDRESS_MIGRATION` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace/keyed-address-migration.ts` | - |
-| `AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace/migration.ts` | - |
+| `AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_KEYED_ADDRESS_MIGRATION` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace-schema/keyed-address-migration.ts` | - |
+| `AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace-schema/migration.ts` | - |
 | `AUTOMATION_STUDIO_COMMAND_LEDGER_MIGRATION` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/command-ledger/migration.ts` | - |
 | `AUTOMATION_STUDIO_COMMAND_SCAN_LIMIT` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/command-ledger/contracts.ts` | - |
 | `AUTOMATION_STUDIO_COMMAND_SCAN_PAGE` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/command-ledger/contracts.ts` | - |
@@ -407,6 +407,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_PANEL_CAPABILITY_ATTACHMENT` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/instructions/respond.ts` | The attachment kind that carries an invocation waiting on the person's confirmation. |
 | `AUTOMATION_STUDIO_PANEL_CAPABILITY_MAX` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/panel-capabilities/parse.ts` | The longest vocabulary Core will carry. Well past the panel's 38; a backstop, not a budget. |
 | `AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/instructions/request.ts` | The attachment kind the panel records what it did under. Read back as the panel speaking, not the person: the panel writes it on the person's behalf through the person's own endpoint, and a model that took "Started the run" as something the person said would misread the thread. |
+| `AUTOMATION_STUDIO_PENDING_REMOVAL_PATH_MIGRATION` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/content-address/pending-removal-path-migration.ts` | - |
 | `AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/parking/permission-ask.ts` | How long any caller waits for an answer, at most. Short on purpose. A waiting caller holds its run, its budget and its own request open, so this is the cost of nobody being there, paid once. A person watching the thread answers in seconds; one who is not never had a build or a repair to rescue. A caller with nobody in front of it passes no timeout and does not wait -- the question is still asked, and the answer releases whatever it comes back to. |
 | `AUTOMATION_STUDIO_PERSON_NEEDED_ASK_TIMEOUT_MS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/parking/person-needed-ask.ts` | How long the work waits for a person, at most. Longer than a permission question's two minutes: a permission is read and answered, a check has to be found in the browser and completed first. |
 | `AUTOMATION_STUDIO_PERSON_NEEDED_ASKS_PER_RUN` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/executor/person-needed.ts` | How many times one run asks a person before it stops asking and ends. |
@@ -2113,9 +2114,15 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioProjectCommandLedgerStore` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/command-ledger/store.ts` | Receipt-only project storage; closed run admission is not wired to Flow execution. |
 | `AutomationStudioProjectCompiledPlanStore` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/compiled-plan-store.ts` | - |
 | `AutomationStudioProjectContentAsset` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/content-store.ts` | - |
-| `AutomationStudioProjectContentProtection` | Interface | `packages/fluxiq/src/programs/automation-studio/storage/project/content-protection.ts` | Generic project-content protection boundary. Implementations must authenticate project and media-type context. |
+| `AutomationStudioProjectContentProtection` | Interface | `packages/fluxiq/src/programs/automation-studio/storage/project/content-protection.ts` | Generic project-content protection boundary. Implementations must authenticate project and media-type context. Retiring a host key (t747). Everything a project seals (content-store objects, gateway trace chunks and manifests, the wrapped content-address keys) stays under the key it was sealed with until it is re-sealed, so a host retires a key in this order: 1. make the new key current, while the old key id still resolves; 2. run `resealAutomationStudioProjectContent` with the old id in `retiringKeyIds` for every project until it reports `complete`; it is safe to interrupt, and a rerun picks up exactly what is still under the old key; 3. only then stop resolving the old key id. Content still sealed under a key the host stops resolving is lost. |
 | `AutomationStudioProjectContentProtectionKey` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/content-protection.ts` | - |
 | `AutomationStudioProjectContentProtectionKeyResolver` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/content-protection.ts` | - |
+| `AutomationStudioProjectContentResealCounts` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/content-reseal/reseal.ts` | Items re-sealed, per kind, over every pass. |
+| `AutomationStudioProjectContentResealItem` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/content-reseal/context.ts` | One item by kind and id: never content, a key, a file path or a plain digest. |
+| `AutomationStudioProjectContentResealKind` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/content-reseal/context.ts` | The four kinds of sealed item a project holds. |
+| `AutomationStudioProjectContentResealOptions` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/content-reseal/reseal.ts` | - |
+| `AutomationStudioProjectContentResealResult` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/content-reseal/reseal.ts` | - |
+| `AutomationStudioProjectContentResealSeams` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/content-reseal/context.ts` | Test seams; production passes none. `afterBatch` runs after each committed batch (a test throws from it to stop a run part way), `afterMainPass` once the first pass over every kind is done, before the verification passes, and `beforeObjectCommit` after a batch's re-sealed object files are written and before the transaction that moves the rows to them. |
 | `AutomationStudioProjectContentStore` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/content-store.ts` | - |
 | `AutomationStudioProjectContentWrite` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/content-store.ts` | - |
 | `AutomationStudioProjectConversationStore` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/store.ts` | - |
@@ -2141,10 +2148,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioProjectMigrationCutoverStore` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/migration-cutover.ts` | - |
 | `AutomationStudioProjectMutationContext` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/unit-of-work.ts` | - |
 | `AutomationStudioProjectObjectContentAddress` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/object-repository.ts` | A content address and the key it was made under, both null for an unaddressed object. |
-| `AutomationStudioProjectObjectPendingRemoval` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/object-repository.ts` | An object whose row was released and whose file may still be on disk (t745 u5). |
+| `AutomationStudioProjectObjectPendingRemoval` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/object-repository.ts` | A file released and possibly still on disk (t745 u5), keyed by its path (t747): `objectId` names the object it was released from, for reporting. |
 | `AutomationStudioProjectObjectRecord` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/object-repository.ts` | - |
 | `AutomationStudioProjectObjectReferenceRecord` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/object-repository.ts` | - |
 | `AutomationStudioProjectObjectRepository` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/object-repository.ts` | - |
+| `AutomationStudioProjectObjectResealBatch` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/content-store.ts` | One re-seal batch's objects: those moved to a re-sealed file, those that did not open (left as they are), how many changed under the batch (left for the next pass), and how many released files the drain could not remove. |
+| `AutomationStudioProjectObjectResealer` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/content-store.ts` | How the re-seal job (t747 b) has the content store seal an object again: whether an envelope names a retiring key, and a seal under the host's current key that throws when it still names a retiring one. |
+| `AutomationStudioProjectObjectResealMove` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/object-repository.ts` | One sealed object moving to its re-sealed file (t747 b): the stored form it must still hold, and the one it takes. |
 | `AutomationStudioProjectPendingRemovalDrain` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/content-store.ts` | What one drain of pending removals did (t745 u5): the objects whose file and pending row are gone, those stored again since their release (row dropped, file kept), and those whose file could not be removed (row kept, so a later drain retries). A failure is named by the error's code, never its message, which would name the file. |
 | `AutomationStudioProjectPlanCardInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/activity/project/plan-card.ts` | What the supervisor's plan card is made from. |
 | `AutomationStudioProjectReceiptCardInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/activity/project/receipt-card.ts` | What a trial receipt's card is made from. |
@@ -3433,6 +3443,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `FluxIQUncommittedV2AdoptionResult` | Type | `packages/fluxiq/src/framework/uncommitted-v2-adoption.ts` | - |
 | `FrameworkResult` | Type | `packages/fluxiq/src/core/index.ts` | - |
 | `GATEWAY_TRACE_MANIFEST_MEDIA_TYPE` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace/manifest-row.ts` | - |
+| `GATEWAY_TRACE_SEALED_MANIFEST_PREFIX` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace/manifest-row.ts` | What a sealed manifest's `manifest_json` starts with: not JSON, so a reader that does not know the form fails to parse it. |
 | `GeneratedDocumentationPage` | Type | `packages/fluxiq/src/programs/docs/types.ts` | - |
 | `GeneratedMetadata` | Type | `packages/fluxiq/src/programs/automation-studio/model/evidence.ts` | - |
 | `GenerateFlowBootstrapAdaptationFailureDiagnostic` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/adaptation.ts` | - |
@@ -3785,6 +3796,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `RepositoryListPageOptions` | Type | `packages/fluxiq/src/programs/database-manager/types.ts` | - |
 | `RepositoryScope` | Type | `packages/fluxiq/src/programs/database-manager/types.ts` | - |
 | `requestContentAddressScrub` | Value | `packages/fluxiq/src/programs/automation-studio/storage/project/content-address/scrub-request.ts` | - |
+| `resealAutomationStudioProjectContent` | Value | `packages/fluxiq/src/programs/automation-studio/storage/project/content-reseal/reseal.ts` | - |
 | `resolveActionVisualTarget` | Value | `packages/fluxiq/src/programs/automation-studio/model/action-visual-target.ts` | - |
 | `ResolveActionVisualTargetInput` | Type | `packages/fluxiq/src/programs/automation-studio/model/action-visual-target.ts` | - |
 | `resolveAutomationNodeParameterValues` | Value | `packages/fluxiq/src/programs/automation-studio/nodes/parameter-bindings.ts` | - |
@@ -3982,7 +3994,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `SupervisorEnding` | Class | `packages/fluxiq/src/ui/activity-status/supervisor-ending.ts` | - |
 | `SupervisorEndingWords` | Type | `packages/fluxiq/src/ui/activity-status/supervisor-ending.ts` | What the row ending a supervisor-ended build is said with: Core's whole sentence in place of its cut title, or why, after it. |
 | `SurfaceTone` | Type | `packages/fluxiq/src/ui/index.ts` | - |
-| `sweepUnusedGatewayTraceChunks` | Value | `packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace/sweep-unused-chunks.ts` | - |
+| `sweepUnusedGatewayTraceChunks` | Value | `packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace-chunk-rows/sweep-unused-chunks.ts` | - |
 | `systemActivityClock` | Object | `packages/fluxiq/src/ui/activity-status/clock.ts` | The service worker's own clock. |
 | `systemClock` | Object | `packages/fluxiq/src/core/index.ts` | - |
 | `tallyAutomationStudioLiveEpisodes` | Value | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/live-episode-tally.ts` | - |

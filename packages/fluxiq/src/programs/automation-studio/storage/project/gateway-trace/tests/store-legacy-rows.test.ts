@@ -14,7 +14,8 @@ import { AutomationStudioSchemaMigrationRunner } from "../../../schema-migration
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../administration.ts";
 import { AutomationStudioProjectContentStore } from "../../content-store.ts";
 import { AutomationStudioProjectDatabasePool } from "../../database.ts";
-import { AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION, AutomationStudioProjectGatewayTraceStore } from "../index.ts";
+import { AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION } from "../../gateway-trace-schema/index.ts";
+import { AutomationStudioProjectGatewayTraceStore } from "../index.ts";
 
 const PROJECT = "project.gateway-trace-legacy";
 const TRACE = "trace-legacy";

@@ -276,7 +276,9 @@ Project content storage exposes a generic `AutomationStudioProjectContentProtect
 boundary. Its built-in AES-256-GCM adapter accepts a host-owned key resolver;
 Core does not create, persist, derive, or log those keys. The resolver selects a
 current key for writes and resolves the exact recorded key ID for reads, so a
-host can rotate keys while retaining old keys and can retire a key explicitly.
+host can rotate keys while retaining old keys. Retiring a key is a host-run
+re-seal followed by dropping the key (see "Host key retirement" below); a key
+dropped before that loses whatever is still sealed under it.
 Authenticated additional data binds every object to the provider, project ID,
 media type, and key ID. Ciphertext integrity, object digest, and byte count are
 verified before decryption. Missing providers, unavailable or malformed keys,
@@ -339,6 +341,46 @@ under a per-project **address key**:
   pending files. Code from before t745 fails closed on keyed rows rather than
   returning wrong data; restoring full readability for it means restoring the
   pre-upgrade database.
+
+**Host key retirement (2026-10-20, t747).** Everything a protected project
+seals stays under the host key it was sealed with: content-store objects (trace
+artifacts, reusable contexts), client gateway trace chunks and manifests, and
+the wrapped address keys in `content_address_keys`, current and retired. A host
+key rotation alone moves nothing, so a host retires a key in this order, which
+the `AutomationStudioProjectContentProtection` JSDoc states too:
+
+1. make the new key current while the old key ID still resolves;
+2. run `resealAutomationStudioProjectContent({ pool, projectId, protection,
+   retiringKeyIds })` for every project until it reports `complete`; it is safe
+   to interrupt, and a rerun picks up exactly what is still under a retiring
+   key;
+3. only then stop resolving the old key ID.
+
+The job selects by envelope, not by cursor: the protection's optional
+`sealedKeyId(encryption)` names the key a sealed form was made under (the
+AES-GCM adapter reads its authenticated envelope), and a provider without it is
+refused. Before anything is written it also refuses a host whose fresh seal
+still names a retiring key, and every later seal is checked the same way. Each
+batch is one transaction guarded by compare-and-swap on the sealed form it read,
+so a concurrent writer or rekey is never overwritten and a crash rolls back only
+the open batch. Chunks, manifests and address keys are re-sealed in their rows;
+digests, key IDs and indexed columns stay. An object is re-sealed in place: a
+new file at the new sealed form's SHA-256 (recorded as pending removal before it
+is written, so a stop leaves nothing the next drain keeps), then one transaction
+moves the row to it (object ID, references and content address unchanged) and
+releases the old file, which the drain removes. Readers that raced the move read
+the row again once on a missing file, and a writer reusing the object by its
+address commits its reference to the moved row. After the first pass the job
+keeps passing over every kind until a whole pass finds no readable item under a
+retiring key, so an item a stale process sealed under the old key just before
+the switch is caught. Items that no longer open are reported by kind and ID as
+`unreadable` and never rewritten; they were already lost. Each re-sealing batch
+requests a scrub and the job honours it at the end, after draining old object
+files, so no old sealed form survives in a free page, the WAL or an object file.
+The result reports re-sealed counts per kind, `unreadable`, `filesNotRemoved`,
+the scrub status and `complete` (no readable item left under a retiring key and
+every old object file removed). Trace tables a project never created are
+skipped, not migrated. No migration is involved.
 
 Reusable-context selection exact-filters scope, evidence/sanitizer versions,
 and opaque compatibility tags in storage before pagination. There is no

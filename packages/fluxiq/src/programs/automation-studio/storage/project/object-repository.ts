@@ -1,6 +1,6 @@
 import type { AutomationStudioProjectDatabase, AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "./database.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administration.ts";
-import { AUTOMATION_STUDIO_CONTENT_ADDRESS_MIGRATION, requestContentAddressScrub } from "./content-address/index.ts";
+import { AUTOMATION_STUDIO_CONTENT_ADDRESS_MIGRATION, AUTOMATION_STUDIO_PENDING_REMOVAL_PATH_MIGRATION, requestContentAddressScrub } from "./content-address/index.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
 
 export type AutomationStudioProjectObjectRecord = {
@@ -31,8 +31,27 @@ export type AutomationStudioProjectObjectReferenceRecord = {
   createdAt: number;
 };
 
-/** An object whose row was released and whose file may still be on disk (t745 u5). */
-export type AutomationStudioProjectObjectPendingRemoval = { objectId: string; relativePath: string; releasedAt: number };
+/**
+ * A file released and possibly still on disk (t745 u5), keyed by its path
+ * (t747): `objectId` names the object it was released from, for reporting.
+ */
+export type AutomationStudioProjectObjectPendingRemoval = { relativePath: string; objectId: string; releasedAt: number };
+
+/** One sealed object moving to its re-sealed file (t747 b): the stored form it must still hold, and the one it takes. */
+export type AutomationStudioProjectObjectResealMove = {
+  objectId: string;
+  expected: { sha256: string; relativePath: string; encryption: string };
+  next: { sha256: string; byteCount: number; relativePath: string; encryption: string };
+};
+
+type ObjectInput = Omit<AutomationStudioProjectObjectRecord, "createdAt" | "verifiedAt" | "contentAddress" | "contentAddressKeyId"> & { createdAt?: number; verifiedAt?: number | null } & Partial<AutomationStudioProjectObjectContentAddress>;
+type ReferenceInput = Omit<AutomationStudioProjectObjectReferenceRecord, "createdAt"> & { createdAt?: number };
+
+/** What the drain's removal of one pending file did; `gone` when another drain settled it first. */
+type PendingFileRemoval =
+  | { outcome: "removed" | "reheld"; objectId: string }
+  | { outcome: "failed"; objectId: string; reason: string }
+  | { outcome: "gone" };
 
 export type AutomationStudioObjectCursorPage<T> = { items: T[]; nextCursor: string | null; hasMore: boolean };
 
@@ -44,7 +63,7 @@ export class AutomationStudioProjectObjectRepository {
     try {
       await new AutomationStudioSchemaMigrationRunner({
         database: lease.database,
-        migrations: [...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AUTOMATION_STUDIO_CONTENT_ADDRESS_MIGRATION],
+        migrations: [...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AUTOMATION_STUDIO_CONTENT_ADDRESS_MIGRATION, AUTOMATION_STUDIO_PENDING_REMOVAL_PATH_MIGRATION],
         ...(input.backup ? { backup: (context) => input.backup!(context.databasePath, context.pendingMigrationIds) } : {})
       }).migrate();
       return new AutomationStudioProjectObjectRepository(lease);
@@ -72,27 +91,24 @@ export class AutomationStudioProjectObjectRepository {
    * Inserts an object, or returns the one already stored under its sha256
    * unchanged (its content address included).
    */
-  async upsertObject(input: Omit<AutomationStudioProjectObjectRecord, "createdAt" | "verifiedAt" | "contentAddress" | "contentAddressKeyId"> & { createdAt?: number; verifiedAt?: number | null } & Partial<AutomationStudioProjectObjectContentAddress>): Promise<AutomationStudioProjectObjectRecord> {
-    const sha256 = requiredSha256(input.sha256);
-    const existing = await this.getBySha256(sha256);
-    if (existing) return existing;
-    const now = input.createdAt ?? Date.now();
-    const address = contentAddressPair({ contentAddress: input.contentAddress ?? null, contentAddressKeyId: input.contentAddressKeyId ?? null });
-    try {
-      await this.lease.database.run(
-        `insert into objects (object_id, sha256, media_type, byte_count, relative_path, compression, encryption, created_at_ms, verified_at_ms, content_address, content_address_key_id)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [requiredId(input.objectId, "object"), sha256, safeMediaType(input.mediaType), nonNegativeInteger(input.byteCount, "byte count"), requiredPath(input.relativePath), optionalText(input.compression), optionalText(input.encryption), now, input.verifiedAt ?? null, address.contentAddress, address.contentAddressKeyId]
-      );
-    } catch (error) {
-      if (!String(error).includes("SQLITE_CONSTRAINT")) throw error;
-      const raced = await this.getBySha256(sha256);
-      if (raced) return raced;
-      throw error;
-    }
-    const saved = await this.getBySha256(sha256);
-    if (!saved) throw new Error(`Object ${sha256} was not persisted.`);
-    return saved;
+  async upsertObject(input: ObjectInput): Promise<AutomationStudioProjectObjectRecord> {
+    return insertOrGetObject(this.lease.database, input);
+  }
+
+  /**
+   * A writer's commit (t747): inserts the object or gets the one stored under
+   * its sha256, and records `reference` to it, in one transaction. A release
+   * (itself one transaction that checks references) lands wholly before, and
+   * the object is inserted again, or wholly after, and sees the reference; a
+   * reference never names a released row. The caller checks the object's
+   * file after this commits.
+   */
+  async holdObject(input: { object: ObjectInput; reference?: Omit<ReferenceInput, "objectId"> }): Promise<{ object: AutomationStudioProjectObjectRecord; reference: AutomationStudioProjectObjectReferenceRecord | null }> {
+    return this.lease.database.transaction(async (sql) => {
+      const object = await insertOrGetObject(sql, input.object);
+      const reference = input.reference ? await upsertReference(sql, { ...input.reference, objectId: object.objectId }) : null;
+      return { object, reference };
+    });
   }
 
   async getById(objectId: string): Promise<AutomationStudioProjectObjectRecord | null> {
@@ -176,16 +192,8 @@ export class AutomationStudioProjectObjectRepository {
     return { items: pageRows.map(objectFromRow), hasMore: rows.length > limit, nextCursor: rows.length > limit && last ? encodeCursor({ createdAt: last.created_at_ms, objectId: last.object_id }) : null };
   }
 
-  async addReference(input: Omit<AutomationStudioProjectObjectReferenceRecord, "createdAt"> & { createdAt?: number }): Promise<AutomationStudioProjectObjectReferenceRecord> {
-    await this.lease.database.run(
-      `insert into object_references (reference_id, object_id, owner_kind, owner_id, purpose, created_at_ms)
-       values (?, ?, ?, ?, ?, ?)
-       on conflict(object_id, owner_kind, owner_id, purpose) do update set reference_id = excluded.reference_id, created_at_ms = excluded.created_at_ms`,
-      [requiredId(input.referenceId, "object reference"), requiredId(input.objectId, "object"), requiredKind(input.ownerKind, "owner kind"), requiredId(input.ownerId, "owner"), requiredKind(input.purpose, "reference purpose"), input.createdAt ?? Date.now()]
-    );
-    const saved = await this.getReference(input.referenceId);
-    if (!saved) throw new Error(`Object reference ${input.referenceId} was not persisted.`);
-    return saved;
+  async addReference(input: ReferenceInput): Promise<AutomationStudioProjectObjectReferenceRecord> {
+    return upsertReference(this.lease.database, input);
   }
 
   async getReference(referenceId: string): Promise<AutomationStudioProjectObjectReferenceRecord | null> {
@@ -206,12 +214,6 @@ export class AutomationStudioProjectObjectRepository {
     return (await this.lease.database.run("delete from object_references where reference_id = ?", [requiredId(referenceId, "object reference")])).changes > 0;
   }
 
-  async deleteObject(objectId: string): Promise<boolean> {
-    const references = await this.lease.database.get<{ count: number }>("select count(*) as count from object_references where object_id = ?", [requiredId(objectId, "object")]);
-    if ((references?.count ?? 0) > 0) throw new Error(`Automation Studio object ${objectId} still has references.`);
-    return (await this.lease.database.run("delete from objects where object_id = ?", [requiredId(objectId, "object")])).changes > 0;
-  }
-
   /**
    * Releases an object inside the caller's transaction (t745 u5): when no
    * object_references row names it, its row is deleted and a pending-removal
@@ -228,12 +230,22 @@ export class AutomationStudioProjectObjectRepository {
     const row = await sql.get<ObjectRow>("select * from objects where object_id = ?", [id]);
     if (!row) return null;
     await sql.run("delete from objects where object_id = ?", [id]);
-    await sql.run(
-      `insert into object_pending_removals (object_id, relative_path, released_at_ms) values (?, ?, ?)
-       on conflict(object_id) do update set relative_path = excluded.relative_path, released_at_ms = excluded.released_at_ms`,
-      [id, row.relative_path, Math.trunc(now)]
-    );
+    await AutomationStudioProjectObjectRepository.releaseObjectFile(sql, { objectId: id, relativePath: row.relative_path }, now);
     return objectFromRow(row);
+  }
+
+  /**
+   * Records, inside the caller's transaction, that a file may be removed: a
+   * released object's file, or the old file of an object whose row now names
+   * another (t747). The drain removes it only while no objects row names its
+   * path.
+   */
+  static async releaseObjectFile(sql: AutomationStudioSqlExecutor, file: { objectId: string; relativePath: string }, now: number): Promise<void> {
+    await sql.run(
+      `insert into object_pending_removals (relative_path, object_id, released_at_ms) values (?, ?, ?)
+       on conflict(relative_path) do update set object_id = excluded.object_id, released_at_ms = excluded.released_at_ms`,
+      [requiredPath(file.relativePath), requiredId(file.objectId, "object"), Math.trunc(now)]
+    );
   }
 
   /**
@@ -245,37 +257,85 @@ export class AutomationStudioProjectObjectRepository {
     return this.lease.database.transaction((sql) => AutomationStudioProjectObjectRepository.releaseObjectIfUnreferenced(sql, objectId, now));
   }
 
-  /** Pending removals after `afterObjectId`, in object-id order. */
-  async listPendingRemovals(input: { afterObjectId: string | null; limit: number }): Promise<AutomationStudioProjectObjectPendingRemoval[]> {
-    const rows = await this.lease.database.all<{ object_id: string; relative_path: string; released_at_ms: number }>(
-      "select object_id, relative_path, released_at_ms from object_pending_removals where object_id > ? order by object_id limit ?",
-      [input.afterObjectId ?? "", clampLimit(input.limit)]
-    );
-    return rows.map((row) => ({ objectId: row.object_id, relativePath: row.relative_path, releasedAt: row.released_at_ms }));
+  /**
+   * Records each file as pending removal in one transaction (t747 b): the
+   * re-seal job names a batch's new files before it writes them, so a run
+   * stopped before its rows move to them leaves files the next drain removes.
+   * A file a row names by then keeps its file and loses only the pending row.
+   */
+  async releaseObjectFiles(files: readonly { objectId: string; relativePath: string }[], now: number): Promise<void> {
+    if (!files.length) return;
+    await this.lease.database.transaction(async (sql) => {
+      for (const file of files) await AutomationStudioProjectObjectRepository.releaseObjectFile(sql, file, now);
+    });
   }
 
   /**
-   * Drops a pending removal whose object was stored again since it was
-   * released (an objects row holds its id once more), so its file, which now
-   * belongs to that row, is kept. Returns whether it did.
+   * Moves sealed objects to their re-sealed files in one transaction (t747 b):
+   * each row's sha256, byte count, path and envelope change while the row
+   * still holds the `expected` sealed form (compare-and-swap) and `fileHeld`
+   * confirms the new file is on disk at its size; the object id, references
+   * and content address stay. The old file is released in the same
+   * transaction, and a scrub is requested when any row moved. `fileHeld` runs
+   * while this transaction holds the write lock, so no drain removes the file
+   * between the check and the commit. Returns the ids moved; a row another
+   * writer changed, or one whose new file is gone, is left as it is.
    */
-  async dropPendingRemovalIfHeld(objectId: string): Promise<boolean> {
-    const id = requiredId(objectId, "object");
-    const result = await this.lease.database.run(
-      "delete from object_pending_removals where object_id = ? and exists (select 1 from objects where object_id = ?)",
-      [id, id]
-    );
-    return result.changes > 0;
+  async moveObjectsToResealedFiles(moves: readonly AutomationStudioProjectObjectResealMove[], fileHeld: (relativePath: string, byteCount: number) => Promise<boolean>, now: number): Promise<string[]> {
+    if (!moves.length) return [];
+    return this.lease.database.transaction(async (sql) => {
+      const moved: string[] = [];
+      for (const move of moves) {
+        const objectId = requiredId(move.objectId, "object");
+        const next = { sha256: requiredSha256(move.next.sha256), byteCount: nonNegativeInteger(move.next.byteCount, "byte count"), relativePath: requiredPath(move.next.relativePath), encryption: requiredEncryption(move.next.encryption) };
+        if (!(await fileHeld(next.relativePath, next.byteCount))) continue;
+        const result = await sql.run(
+          `update objects set sha256 = ?, byte_count = ?, relative_path = ?, encryption = ?, verified_at_ms = ?
+           where object_id = ? and sha256 = ? and relative_path = ? and encryption = ?`,
+          [next.sha256, next.byteCount, next.relativePath, next.encryption, Math.trunc(now), objectId, move.expected.sha256, move.expected.relativePath, move.expected.encryption]
+        );
+        if (result.changes !== 1) continue;
+        await AutomationStudioProjectObjectRepository.releaseObjectFile(sql, { objectId, relativePath: move.expected.relativePath }, now);
+        moved.push(objectId);
+      }
+      if (moved.length > 0) await requestContentAddressScrub(sql, now);
+      return moved;
+    });
   }
 
-  /** Deletes a pending-removal row once its file is gone; only the row released at `releasedAt`, not a later release. */
-  async finishPendingRemoval(removal: AutomationStudioProjectObjectPendingRemoval): Promise<boolean> {
-    const id = requiredId(removal.objectId, "object");
-    return this.lease.database.transaction(async (sql) => {
-      const result = await sql.run("delete from object_pending_removals where object_id = ? and released_at_ms = ?", [id, removal.releasedAt]);
-      // The row's path names an unsealed object by its plain SHA-256: ask for a scrub with its deletion (t745).
-      if (result.changes > 0) await requestContentAddressScrub(sql, Date.now());
-      return result.changes > 0;
+  /** Pending removals after `afterRelativePath`, in path order. */
+  async listPendingRemovals(input: { afterRelativePath: string | null; limit: number }): Promise<AutomationStudioProjectObjectPendingRemoval[]> {
+    const rows = await this.lease.database.all<PendingRemovalRow>(
+      "select relative_path, object_id, released_at_ms from object_pending_removals where relative_path > ? order by relative_path limit ?",
+      [input.afterRelativePath ?? "", clampLimit(input.limit)]
+    );
+    return rows.map(pendingRemovalFromRow);
+  }
+
+  /**
+   * Settles one pending file in one transaction (t747). While an objects row
+   * names its path the file belongs to that row: the pending row goes and the
+   * file stays (`reheld`). Otherwise `remove` deletes the file while this
+   * transaction still holds the database's write lock, and then the pending
+   * row goes with a scrub request (its path names an unsealed object by its
+   * plain SHA-256). No writer in any process can commit a row naming the path
+   * between the check and the removal, and a writer that commits after it
+   * finds the file gone and rewrites it. A `remove` that fails returns the
+   * error's code and keeps the pending row for a later drain.
+   */
+  async removePendingFileIfUnheld(relativePath: string, remove: () => Promise<string | undefined>): Promise<PendingFileRemoval> {
+    return this.lease.database.transaction(async (sql): Promise<PendingFileRemoval> => {
+      const row = await sql.get<PendingRemovalRow>("select relative_path, object_id, released_at_ms from object_pending_removals where relative_path = ?", [relativePath]);
+      if (!row) return { outcome: "gone" };
+      const held = await sql.get<{ found: number }>("select 1 as found from objects where relative_path = ? limit 1", [relativePath]);
+      if (!held) {
+        const reason = await remove();
+        if (reason !== undefined) return { outcome: "failed", objectId: row.object_id, reason };
+      }
+      await sql.run("delete from object_pending_removals where relative_path = ?", [relativePath]);
+      if (held) return { outcome: "reheld", objectId: row.object_id };
+      await requestContentAddressScrub(sql, Date.now());
+      return { outcome: "removed", objectId: row.object_id };
     });
   }
 
@@ -289,10 +349,45 @@ export class AutomationStudioProjectObjectRepository {
   }
 }
 
+/**
+ * Inserts `input`, or leaves the row already stored under its sha256 as it is;
+ * returns the stored row. A row under `input`'s object id that a re-seal moved
+ * to another sha256 in the meantime (t747 b) is that object, and is returned.
+ */
+async function insertOrGetObject(sql: AutomationStudioSqlExecutor, input: ObjectInput): Promise<AutomationStudioProjectObjectRecord> {
+  const sha256 = requiredSha256(input.sha256);
+  const address = contentAddressPair({ contentAddress: input.contentAddress ?? null, contentAddressKeyId: input.contentAddressKeyId ?? null });
+  // `do nothing` covers only uniqueness conflicts (the sha256, the object id); a failed check still throws.
+  await sql.run(
+    `insert into objects (object_id, sha256, media_type, byte_count, relative_path, compression, encryption, created_at_ms, verified_at_ms, content_address, content_address_key_id)
+     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) on conflict do nothing`,
+    [requiredId(input.objectId, "object"), sha256, safeMediaType(input.mediaType), nonNegativeInteger(input.byteCount, "byte count"), requiredPath(input.relativePath), optionalText(input.compression), optionalText(input.encryption), input.createdAt ?? Date.now(), input.verifiedAt ?? null, address.contentAddress, address.contentAddressKeyId]
+  );
+  const saved = await sql.get<ObjectRow>("select * from objects where sha256 = ?", [sha256])
+    ?? await sql.get<ObjectRow>("select * from objects where object_id = ? and encryption is not null", [requiredId(input.objectId, "object")]);
+  if (!saved) throw new Error(`Automation Studio object ${input.objectId} was not persisted.`);
+  return objectFromRow(saved);
+}
+
+async function upsertReference(sql: AutomationStudioSqlExecutor, input: ReferenceInput): Promise<AutomationStudioProjectObjectReferenceRecord> {
+  const referenceId = requiredId(input.referenceId, "object reference");
+  await sql.run(
+    `insert into object_references (reference_id, object_id, owner_kind, owner_id, purpose, created_at_ms)
+     values (?, ?, ?, ?, ?, ?)
+     on conflict(object_id, owner_kind, owner_id, purpose) do update set reference_id = excluded.reference_id, created_at_ms = excluded.created_at_ms`,
+    [referenceId, requiredId(input.objectId, "object"), requiredKind(input.ownerKind, "owner kind"), requiredId(input.ownerId, "owner"), requiredKind(input.purpose, "reference purpose"), input.createdAt ?? Date.now()]
+  );
+  const saved = await sql.get<ObjectReferenceRow>("select * from object_references where reference_id = ?", [referenceId]);
+  if (!saved) throw new Error(`Object reference ${referenceId} was not persisted.`);
+  return referenceFromRow(saved);
+}
+
+type PendingRemovalRow = { relative_path: string; object_id: string; released_at_ms: number };
 type ObjectRow = { object_id: string; sha256: string; media_type: string; byte_count: number; relative_path: string; compression: string | null; encryption: string | null; created_at_ms: number; verified_at_ms: number | null; content_address: string | null; content_address_key_id: string | null };
 type ObjectReferenceRow = { reference_id: string; object_id: string; owner_kind: string; owner_id: string; purpose: string; created_at_ms: number };
 
 function objectFromRow(row: ObjectRow): AutomationStudioProjectObjectRecord { return { objectId: row.object_id, sha256: row.sha256, mediaType: row.media_type, byteCount: row.byte_count, relativePath: row.relative_path, compression: row.compression, encryption: row.encryption, createdAt: row.created_at_ms, verifiedAt: row.verified_at_ms, contentAddress: row.content_address ?? null, contentAddressKeyId: row.content_address_key_id ?? null }; }
+function pendingRemovalFromRow(row: PendingRemovalRow): AutomationStudioProjectObjectPendingRemoval { return { relativePath: row.relative_path, objectId: row.object_id, releasedAt: row.released_at_ms }; }
 function referenceFromRow(row: ObjectReferenceRow): AutomationStudioProjectObjectReferenceRecord { return { referenceId: row.reference_id, objectId: row.object_id, ownerKind: row.owner_kind, ownerId: row.owner_id, purpose: row.purpose, createdAt: row.created_at_ms }; }
 function requiredId(value: string, kind: string): string { const id = value.trim(); if (!id || id.length > 200 || !/^[A-Za-z0-9._:-]+$/.test(id)) throw new Error(`Invalid ${kind} ID.`); return id; }
 function requiredKind(value: string, kind: string): string { const normalized = value.trim(); if (!normalized || normalized.length > 100 || !/^[A-Za-z0-9._:-]+$/.test(normalized)) throw new Error(`Invalid ${kind}.`); return normalized; }
@@ -312,6 +407,10 @@ function contentAddressPair(value: AutomationStudioProjectObjectContentAddress):
   return { contentAddress: requiredContentAddress(value.contentAddress), contentAddressKeyId: requiredKeyId(value.contentAddressKeyId) };
 }
 function safeMediaType(value: string): string { const trimmed = value.trim().toLowerCase(); return /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(trimmed) ? trimmed : "application/octet-stream"; }
+function requiredEncryption(value: string): string {
+  if (typeof value !== "string" || !value.trim()) throw new Error("Automation Studio sealed object envelope is missing.");
+  return value;
+}
 function optionalText(value: string | null | undefined): string | null { const normalized = value?.trim(); return normalized ? normalized : null; }
 function nonNegativeInteger(value: number, label: string): number { const normalized = Math.trunc(value); if (!Number.isFinite(normalized) || normalized < 0) throw new Error(`${label} must be a non-negative integer.`); return normalized; }
 function clampLimit(value?: number): number { return Math.max(1, Math.min(500, Math.trunc(value ?? 100))); }

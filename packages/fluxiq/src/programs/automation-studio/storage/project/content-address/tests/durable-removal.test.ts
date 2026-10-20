@@ -6,6 +6,9 @@
 // (row deleted, pending removal recorded) by a process that stops before its
 // file goes is finished by the next content store open; one stored again since
 // keeps its file; a file that cannot be removed keeps its row and is reported.
+// Pending removals are keyed by file path (t747, 0036): the rows 0033 held are
+// carried over, an object row that lives on at a new path does not hold its
+// old path, and one object may have two paths pending at once.
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -14,7 +17,7 @@ import type { AutomationStudioProjectDatabase } from "../../database.ts";
 import { AutomationStudioProjectObjectRepository } from "../../object-repository.ts";
 import { requestContentAddressScrub, scrubProjectDatabaseIfRequested } from "../index.ts";
 import type { ContentAddressScrubDatabase } from "../index.ts";
-import { makeTempRoot } from "./keyring-fixture.ts";
+import { makeTempRoot, openTestProject } from "./keyring-fixture.ts";
 import { openStore, withDatabase } from "./object-address-fixture.ts";
 
 let root: Awaited<ReturnType<typeof makeTempRoot>>;
@@ -151,6 +154,55 @@ describe("pending object removals", () => {
       expect(await second.store.drainPendingRemovals()).toMatchObject({ removed: [], failed: [{ objectId: "object:blocked" }] });
     } finally {
       await second.close();
+    }
+  });
+});
+
+describe("pending removals keyed by file path", () => {
+  it("are carried over from 0033 by the 0036 migration, which keys them by path", async () => {
+    const legacy = await openTestProject(root.rootDir, PROJECT);
+    const blocked = path.join("projects", PROJECT, "objects", "blocked");
+    const loose = path.join("projects", PROJECT, "objects", "loose.bin");
+    await mkdir(path.join(root.rootDir, blocked), { recursive: true });
+    await writeFile(path.join(root.rootDir, blocked, "inside.txt"), "x");
+    await writeFile(path.join(root.rootDir, loose), "loose");
+    await legacy.database.run("insert into object_pending_removals (object_id, relative_path, released_at_ms) values (?, ?, ?), (?, ?, ?)", ["object:carried", blocked.replaceAll(path.sep, "/"), 10, "object:gone", loose.replaceAll(path.sep, "/"), 11]);
+    await legacy.close();
+
+    const opened = await openStore({ rootDir: root.rootDir, projectId: PROJECT });
+    try {
+      expect(opened.store.drainedAtOpen).toMatchObject({ removed: ["object:gone"], reheld: [], failed: [{ objectId: "object:carried" }] });
+      expect(await exists(path.join(root.rootDir, loose))).toBe(false);
+      await withDatabase(opened.pool, PROJECT, async (database) => {
+        expect(await database.all("select relative_path as relativePath, object_id as objectId, released_at_ms as releasedAt from object_pending_removals"))
+          .toEqual([{ relativePath: blocked.replaceAll(path.sep, "/"), objectId: "object:carried", releasedAt: 10 }]);
+        expect(await database.get("select migration_id as id from automation_schema_migrations where migration_id like '0036_%'")).toEqual({ id: "0036_object_pending_removal_paths" });
+        // Keyed by path: the same object may be pending at a second path, but a path is pending once.
+        await database.run("insert into object_pending_removals (relative_path, object_id, released_at_ms) values (?, ?, ?)", ["projects/other.bin", "object:carried", 12]);
+        await expect(database.run("insert into object_pending_removals (relative_path, object_id, released_at_ms) values (?, ?, ?)", ["projects/other.bin", "object:else", 13])).rejects.toThrow("SQLITE_CONSTRAINT");
+      });
+    } finally {
+      await opened.close();
+    }
+  });
+
+  it("remove an old path an object row no longer names, though the object lives on at a new path", async () => {
+    const opened = await openStore({ rootDir: root.rootDir, projectId: PROJECT });
+    try {
+      const content = Buffer.from("lives on at a new path");
+      const live = await opened.store.putBytes({ content, mediaType: "text/plain", owner: { ownerKind: "test_owner", ownerId: "a", purpose: "payload" }, createdAt: 1 });
+      // What a re-seal leaves: the row moved to a new file, its old file released under the same object id.
+      const oldPath = path.join("projects", PROJECT, "objects", "resealed-old.bin");
+      await writeFile(path.join(root.rootDir, oldPath), "old sealed form");
+      await withDatabase(opened.pool, PROJECT, (database) => database.run("insert into object_pending_removals (object_id, relative_path, released_at_ms) values (?, ?, ?)", [live.object.objectId, oldPath.replaceAll(path.sep, "/"), 10]));
+
+      expect(await opened.store.drainPendingRemovals()).toEqual({ removed: [live.object.objectId], reheld: [], failed: [] });
+      expect(await exists(path.join(root.rootDir, oldPath))).toBe(false);
+      expect(await exists(live.contentPath)).toBe(true);
+      await expect(opened.store.readBytesByObjectId(live.object.objectId)).resolves.toMatchObject({ content });
+      expect(await pendingRows(opened.pool)).toEqual([]);
+    } finally {
+      await opened.close();
     }
   });
 });

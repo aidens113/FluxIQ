@@ -7,11 +7,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { TRACE_ID, artifactInput, correlation, newRecorder, textEvent } from "../../../../../../client-gateway/trace/tests/trace-builders.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../administration.ts";
-import {
-  AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_MIGRATION,
-  AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION,
-  AutomationStudioProjectGatewayTraceStore
-} from "../index.ts";
+import { AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_MIGRATION, AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION } from "../../gateway-trace-schema/index.ts";
+import { AutomationStudioProjectGatewayTraceStore } from "../index.ts";
 import { SqliteTraceFixture } from "./sqlite-trace-fixture.ts";
 
 let fixture: SqliteTraceFixture;

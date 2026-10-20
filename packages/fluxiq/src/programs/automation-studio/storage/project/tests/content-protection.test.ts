@@ -41,6 +41,18 @@ describe("AutomationStudioAesGcmProjectContentProtection", () => {
     await expect(protection.open({ projectId: "project.one", mediaType: "application/json", ...old })).rejects.toThrow("key is unavailable");
   });
 
+  it("names the host key a sealed form's envelope was made under, for the re-seal job", async () => {
+    let current = "key.1";
+    const protection = new AutomationStudioAesGcmProjectContentProtection(({ keyId }) => ({ keyId: keyId ?? current, key: Buffer.alloc(32, 3) }));
+    const old = await protection.seal({ projectId: "project.one", mediaType: "text/plain", content: Buffer.from("old") });
+    current = "key.2";
+    const fresh = await protection.seal({ projectId: "project.one", mediaType: "text/plain", content: Buffer.from("fresh") });
+    expect(protection.sealedKeyId(old.encryption)).toBe("key.1");
+    expect(protection.sealedKeyId(fresh.encryption)).toBe("key.2");
+    expect(() => protection.sealedKeyId('{"version":1}')).toThrow("metadata is invalid");
+    expect(() => protection.sealedKeyId("not json")).toThrow("metadata is invalid");
+  });
+
   it("rejects unavailable and incorrectly sized keys", async () => {
     const missing = new AutomationStudioAesGcmProjectContentProtection(() => undefined);
     await expect(missing.seal({ projectId: "project.one", mediaType: "text/plain", content: Buffer.from("x") })).rejects.toThrow("key is unavailable");
