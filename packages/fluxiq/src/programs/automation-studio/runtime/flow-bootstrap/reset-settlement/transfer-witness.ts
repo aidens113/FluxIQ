@@ -1,26 +1,28 @@
 // A move of one item from one complete list to another, witnessed around the
-// act itself (t719 review; moved out of `./ledger.ts` with L1's settlement).
+// act itself (t719 review; moved out of `../site-reset/ledger.ts` with L1's settlement).
 //
 // A `modify_existing` press on an item of a complete original list that moved
 // exactly that item into another original list of the same group, read just
 // before and just after the act, with every other row, its order and its
 // values surviving on both lists and their captured siblings, is a transfer:
 // the one quantity-free inverse the ledger admits by subject (`target`), and
-// both lists are witnesses of the act (`./settlement-group-witness.ts`). Only
+// both lists are witnesses of the act (`./group-witness.ts`). Only
 // the immediate before/after evidence counts; no later read can make one.
 // Pure.
 
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
-import type { AutomationStudioSiteResetPlace, AutomationStudioSiteResetSpot } from "./contracts.ts";
-import type { AutomationStudioSiteResetOriginal } from "./settlement-observations.ts";
+import type { AutomationStudioSiteResetCollection } from "./collection-groups.ts";
+import type { AutomationStudioSiteResetOriginal } from "./observations.ts";
+import type { AutomationStudioSiteResetSettlementSpot } from "./spot.ts";
 
 /** The transfer an act made: from `origin` to `scope` in `group`, its `subject` arriving with row value `state`. */
 export type AutomationStudioSiteResetTransfer = { origin: string; scope: string; group: string; subject: string; state: string };
 
 export function automationStudioSiteResetTransferWitness(input: {
   consequences: readonly AutomationStudioActionConsequence[];
-  spot: AutomationStudioSiteResetSpot | undefined;
-  witness: AutomationStudioSiteResetPlace["collections"];
+  spot: AutomationStudioSiteResetSettlementSpot | undefined;
+  /** The complete lists read just before and just after the act (site-reset's `AutomationStudioSiteResetPlace["collections"]`). */
+  witness: { before: readonly AutomationStudioSiteResetCollection[]; after: readonly AutomationStudioSiteResetCollection[] } | undefined;
   originals: ReadonlyMap<string, AutomationStudioSiteResetOriginal>;
   /** The act's 1-based place among its ledger's acts. */
   sequence: number;

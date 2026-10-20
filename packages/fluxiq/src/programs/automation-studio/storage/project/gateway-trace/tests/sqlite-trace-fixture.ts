@@ -40,9 +40,10 @@ export class SqliteTraceFixture {
     return this.pool;
   }
 
-  /** Reopens with no protection unless one is given. */
+  /** Reopens with no protection unless one is given. An open that is refused leaves the fixture closed, so it can be reopened or disposed. */
   async reopen(input: { protection?: AutomationStudioProjectContentProtection } = {}): Promise<AutomationStudioProjectGatewayTraceStore> {
     if (!this.closed) await this.current.close();
+    this.closed = true;
     await this.pool.closeAll();
     this.pool = new AutomationStudioProjectDatabasePool({ rootDir: this.rootDir });
     this.current = await AutomationStudioProjectGatewayTraceStore.open({ pool: this.pool, projectId: SQLITE_TRACE_PROJECT_ID, ...protectionField(input.protection) });

@@ -52,10 +52,19 @@
 // arrival this check ran that applied an effect -- `compare`, `compareAt` and
 // `lookAt` alike -- so a caller that reads it before and after a reset check
 // knows whether the tab stands where the model last saw it.
+//
+// **Each arrival is Core's own move (t743).** Office rerun round 4
+// (`run-mvgvyaip-d856e135`, 0090-0127): Core's look at a stale list's place went
+// through the web domain's rule for the model's calls -- an address the brief
+// was never shown is refused -- and was refused unrun, so the list stayed unread
+// and its act open. `compare`, `compareAt` and `lookAt` run their arrival inside
+// `runAsAutomationStudioCoreMove`, and the registry frames it `move: "core"`
+// (`../../llm/harness-options/core-move.ts`), so a domain holds it to none of the
+// model's rules. Only the arrival: the reads around it never go through a call.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioActionPermissionDenied } from "../../action-permissions/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool } from "../../llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, runAsAutomationStudioCoreMove, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool } from "../../llm/index.ts";
 import type { AutomationStudioSiteResetComparison, AutomationStudioSiteResetLines, AutomationStudioSiteResetPlace, AutomationStudioSiteResetRead, AutomationStudioSiteResetReadAnswer } from "./contracts.ts";
 
 type Execute = (call: { callId: string; toolId: string; value: JsonObject; signal?: AbortSignal }) => Promise<unknown>;
@@ -171,7 +180,7 @@ export class AutomationStudioSiteResetStartCheck {
     let moved = false;
     try {
       // The arrival's own node, as `../../llm/node-tools/run-node.ts` writes the build's start into it: nothing lasting.
-      const ran = await this.input.executeTool({ callId: `site-reset.place.${n}.arrival`, toolId: tool.toolId, value: { node: to.node, parameters: { [to.parameter]: place.location }, consequences: [] }, ...(signal ? { signal } : {}) });
+      const ran = await this.arrive({ callId: `site-reset.place.${n}.arrival`, toolId: tool.toolId, value: { node: to.node, parameters: { [to.parameter]: place.location }, consequences: [] }, ...(signal ? { signal } : {}) });
       moved = this.arrived(ran);
       if (!landed(ran)) return { moved };
       const read = await this.settled(place.state, signal);
@@ -197,7 +206,7 @@ export class AutomationStudioSiteResetStartCheck {
     const n = this.places;
     try {
       // The arrival's own node, as `compareAt` goes to an act's page: nothing lasting.
-      const ran = await this.input.executeTool({ callId: `site-reset.look.${n}.arrival`, toolId: tool.toolId, value: { node: to.node, parameters: { [to.parameter]: location }, consequences: [] }, ...(signal ? { signal } : {}) });
+      const ran = await this.arrive({ callId: `site-reset.look.${n}.arrival`, toolId: tool.toolId, value: { node: to.node, parameters: { [to.parameter]: location }, consequences: [] }, ...(signal ? { signal } : {}) });
       this.arrived(ran);
       if (!landed(ran)) return { unread: "no_answer" };
       return await this.settled(undefined, signal);
@@ -219,7 +228,7 @@ export class AutomationStudioSiteResetStartCheck {
     const n = this.checks;
     let moved = false;
     try {
-      const ran = await this.input.executeTool({ callId: `site-reset.${n}.arrival`, toolId: tool.toolId, value: structuredClone(arrival), ...(signal ? { signal } : {}) });
+      const ran = await this.arrive({ callId: `site-reset.${n}.arrival`, toolId: tool.toolId, value: structuredClone(arrival), ...(signal ? { signal } : {}) });
       moved = this.arrived(ran);
       if (!landed(ran)) return { moved };
       const ask = async (callId: string): Promise<string[] | undefined> => {
@@ -243,6 +252,11 @@ export class AutomationStudioSiteResetStartCheck {
       this.lastFailure = error;
       return { moved };
     }
+  }
+
+  /** Runs one of Core's own arrivals as Core's move (header, t743). */
+  private arrive(call: Parameters<Execute>[0]): Promise<unknown> {
+    return runAsAutomationStudioCoreMove(() => this.input.executeTool(call));
   }
 
   /** Whether an arrival applied an effect, counted when it did (header, t738). */

@@ -2,6 +2,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";
+import { automationStudioProjectSupervisorLeftOnTarget } from "./left-on-target.ts";
 import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-answer.ts";
 
 /**
@@ -10,19 +11,23 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
  * build record's summary -- what a supervisor started again on this build, or
  * a later one for the same Flow, reads first, as an agent here reads `Current
  * State` -- the money it can still give builders beside what it keeps back for
- * the judged whole run, the lasting acts still on the target, and how to work.
+ * the judged whole run, the lasting acts still on the target (those no call
+ * can check or put back counted apart, t743), and how to work.
  */
 export async function automationStudioProjectSupervisorReadTask(context: AutomationStudioProjectSupervisorContext): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
   const { ports } = context;
   const summary = await ports.record.summary(ports.build);
   const purse = ports.purse;
   const inPlace = ports.projectLedger.snapshot().acts.filter((act) => act.inPlace).length;
+  // Left on the target, though no reset can undo them (`./left-on-target.ts`, t743).
+  const unsettleable = automationStudioProjectSupervisorLeftOnTarget(ports).acts.filter((act) => act.unsettleable === true).length;
   const evidence: JsonObject = {
     ok: true,
     instructions: ports.sources.map((source) => ({ sourceId: source.sourceId, text: source.text })),
     buildRecord: summary ? (JSON.parse(JSON.stringify(summary)) as JsonObject) : null,
     money: purse ? { canGiveUsd: usd(purse.allocatableUsd()), keptBackUsd: usd(purse.keptBackUsd()), leftUsd: usd(purse.leftUsd()), ...calls(purse.allocatableCalls()) } : null,
     lastingActsInPlace: inPlace,
+    ...(unsettleable ? { lastingActsUnsettleable: unsettleable } : {}),
     howToWork: GUIDANCE.howToWork,
     example: GUIDANCE.example
   };

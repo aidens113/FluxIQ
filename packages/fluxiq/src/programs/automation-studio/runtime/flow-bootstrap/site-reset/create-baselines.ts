@@ -1,5 +1,6 @@
+import { automationStudioSiteResetRefusal as refusal } from "../reset-answers/index.ts";
 import type { AutomationStudioSiteResetDeclared, AutomationStudioSiteResetRead } from "./contracts.ts";
-import { automationStudioSiteResetInvalidCollectionGroups } from "./collection-groups.ts";
+import { automationStudioSiteResetInvalidCollectionGroups } from "../reset-settlement/index.ts";
 import { automationStudioSiteResetWitnessMissing as witnessMissing } from "./reset-witness.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "./words.ts";
 
@@ -103,7 +104,7 @@ export class AutomationStudioSiteResetCreateBaselines {
    */
   unissued(reference: unknown): { ok: false; code: string; instruction: string } | undefined {
     if (reference === undefined || (typeof reference === "string" && this.issued.has(reference))) return undefined;
-    return { ok: false, code: "candidate.reset_destination_unissued", instruction: WORDS.destinationUnissued() };
+    return refusal("candidate.reset_destination_unissued", { failed: "destination_unissued", canMeet: "this_page", instruction: WORDS.destinationUnissued() });
   }
 
   /** Whether no further ref can ever be issued: sealed, with every original already shown (rerun round 2, `./settlement-words.ts`). */
@@ -127,10 +128,11 @@ export class AutomationStudioSiteResetCreateBaselines {
       if (unissued) return { kind: "refused", evidence: unissued };
       const known = { original: (scope: string, resource: string) => this.original(scope, resource), destination: () => this.destination(declared, reference) !== undefined };
       if (this.sealed || !witnessMissing(declared, known)) return { kind: "admit" };
-      return { kind: "refused", evidence: { ok: false, code: "candidate.reset_witness_required", instruction: WORDS.witnessRequired(this.issuedRefs()) } };
+      return { kind: "refused", evidence: refusal("candidate.reset_witness_required", { failed: "no_witness", canMeet: "another_page", instruction: WORDS.witnessRequired(this.issuedRefs()) }) };
     }
     if (this.destination(declared, reference)) return { kind: "admit" };
-    return { kind: "refused", evidence: { ok: false, code: "candidate.create_baseline_required", instruction: "This creation was not run. Before creating an identified reversible effect, observe its destination's complete original inventory through the site's own controls, then return and retry with the resetDestination reference that observation issued. The original inventory must belong to this resource and prove the subject absent. A first observation after a lasting build effect, another resource, a matching name, or an invented reference is insufficient. Looking and navigating remain available; no new permission is needed." } };
+    // Sealed with no original at all, no read can ever issue one (t743): no call meets it. Otherwise a complete read where it would show can.
+    return { kind: "refused", evidence: refusal("candidate.create_baseline_required", { failed: "no_destination_original", canMeet: this.sealed && this.originals.size === 0 ? "no_call" : "another_page", instruction: WORDS.createBaselineRequired() }) };
   }
 
   /** Whether `scope` is a recorded original of `resource` in a group still valid: a control there sits in a list read complete (`./reset-witness.ts`). */

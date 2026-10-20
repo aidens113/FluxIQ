@@ -114,6 +114,9 @@ type Adopted = { taskSpec: AutomationStudioProjectTaskSpec; structure: Automatio
 /** The brief kinds whose done return carries a proposal. */
 const PROPOSING: ReadonlySet<AutomationStudioProjectSubflowBrief["kind"]> = new Set(["build", "repair"]);
 
+/** Whether an answered brief came back short: blocked or partial. */
+const short = (answered: { returned: AutomationStudioProjectBuilderReturn }): boolean => answered.returned.outcome === "blocked" || answered.returned.outcome === "partial";
+
 /**
  * What one supervisor run knows of its build: the plan in force, every brief
  * sent and every return read. The build record is the durable copy
@@ -409,6 +412,34 @@ export class AutomationStudioProjectSupervisorState {
       const outcome = this.returns.get(brief.briefId)?.outcome;
       return outcome === "partial" || outcome === "blocked";
     });
+  }
+
+  /**
+   * Each subflow of the plan in force that has not had one changed brief since it came back short (`./completion.ts`, t743):
+   * its key and its latest failing return's brief id. A subflow counts when its latest build or repair return, under any
+   * plan, is blocked or partial without a closed terminal reason, and no brief in its trailing run of such returns was a
+   * changed one after the one before it: a repair, or a brief sent under another plan (after a `project.amend_plan`),
+   * that is not the same brief sent again (`sentAs`). A brief read from the record has no `sentAs`, so its kind and plan
+   * alone say whether it changed.
+   */
+  unrepaired(): Array<{ subflowKey: string; briefId: string }> {
+    return (this.structure?.plan.subflows ?? []).flatMap(({ key }) => {
+      const answered = this.answeredFor(key).filter((entry) => PROPOSING.has(entry.brief.kind));
+      const latest = answered.at(-1);
+      if (!latest || !short(latest) || latest.returned.terminalReason !== undefined) return [];
+      let start = answered.length - 1;
+      while (start > 0 && short(answered[start - 1]!)) start -= 1;
+      const streak = answered.slice(start);
+      const changed = streak.some((entry, index) => index > 0 && this.changedAfter(streak[index - 1]!.brief, entry.brief));
+      return changed ? [] : [{ subflowKey: key, briefId: latest.brief.briefId }];
+    });
+  }
+
+  /** Whether `next` is a changed brief after `previous` (`unrepaired`): a repair or a brief under another plan, and not the same brief sent again. */
+  private changedAfter(previous: AutomationStudioProjectSubflowBrief, next: AutomationStudioProjectSubflowBrief): boolean {
+    if (next.kind !== "repair" && next.planDigest === previous.planDigest) return false;
+    const was = this.sentAs.get(previous.briefId);
+    return was === undefined || was !== this.sentAs.get(next.briefId);
   }
 
   /**

@@ -24,6 +24,7 @@ import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolEx
 import { automationStudioLlmEvidenceIsOpeningCallId, automationStudioLlmEvidenceOpeningCallScope } from "../evidence-loop/call-id.ts";
 import { automationStudioLlmEvidenceRecallBinding } from "../evidence-recall/index.ts";
 import { builtinAutomationStudioHarnessOptions } from "./builtin.ts";
+import { automationStudioCoreMoveRunning } from "./core-move.ts";
 import { automationStudioEvidenceBuildId } from "./evidence-build.ts";
 import { runWithAutomationStudioEvidenceBuildScope, type AutomationStudioEvidenceBuildScope } from "./evidence-build-scope.ts";
 import type { AutomationStudioHarnessOptionHost } from "./host.ts";
@@ -223,7 +224,8 @@ export class AutomationStudioHarnessOptionRegistry {
    * Every call runs inside the evidence build scope (`./evidence-build-scope.ts`,
    * t728): which build it belongs to and how it stands to it, said by Core so
    * the domain never parses Core's call ids. `buildId` is the build record's id
-   * the caller has in scope, when it has one.
+   * the caller has in scope, when it has one. A call made inside
+   * `runAsAutomationStudioCoreMove` is framed `move: "core"` (`./core-move.ts`).
    */
   evidenceLoopBinding(
     context: { projectId: string; flowId: string; runId?: string; buildId?: string },
@@ -275,6 +277,8 @@ function evidenceBuildScopes(context: { projectId: string; flowId: string; runId
     const scope: { -readonly [K in keyof AutomationStudioEvidenceBuildScope]: AutomationStudioEvidenceBuildScope[K] } = { projectId: context.projectId, flowId: context.flowId, buildId };
     if (callScope !== undefined) scope.callScope = callScope;
     if (opening !== undefined) scope.opening = opening;
+    // A move Core makes itself, said by the marker its move code runs inside, never by the call's id (`./core-move.ts`, t743).
+    if (automationStudioCoreMoveRunning()) scope.move = "core";
     return scope;
   };
 }

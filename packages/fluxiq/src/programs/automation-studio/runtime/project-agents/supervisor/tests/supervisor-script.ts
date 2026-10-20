@@ -37,6 +37,8 @@ export async function supervise(steps: Step[], built = project(), options: {
   timeLimit?: { maxMs: number; endingMs: number };
   /** The clock that time limit is kept on, when a test holds its own (`./supervisor-time-limit.test.ts`, t644). */
   clock?: AutomationStudioProjectSupervisorClock;
+  /** Decisions the loop may make beyond the script, so a rule that holds an ending only with turns to spare can hold it (`../completion.ts`, t743). */
+  spareTurns?: number;
 } = {}) {
   let index = 0;
   const seen: Entry[] = [];
@@ -50,7 +52,7 @@ export async function supervise(steps: Step[], built = project(), options: {
     ...(options.clock ? { clock: options.clock } : {}),
     loop: {
       tools: options.tools ?? HOST_TOOLS,
-      maxIterations: steps.length,
+      maxIterations: steps.length + (options.spareTurns ?? 0),
       maxToolCalls: steps.length + 2,
       unusableDecisions: { maxConsecutive: guard, maxInARow: steps.length, stalled: () => new Error("stalled") },
       ...(options.propagateDecisionErrors ? { propagateDecisionErrors: true } : {}),

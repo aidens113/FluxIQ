@@ -10,7 +10,9 @@
 // (the builder's, the other brief's and the reset's own), the removed item's
 // act settled with no model decision, and so did the trial's act, which sits
 // in no list and adopted the issued list the same look showed holding (office
-// rerun round 3). Where a second issued list has changed by then, the trial's
+// rerun round 3), read on the page its step ran on (t743: a witnessless act
+// adopts only lists some act named or lists read on its own page). Where a
+// second issued list on that page has changed by then, the trial's
 // act stays open, and the task lists only the two acts still open: the press
 // "page not read", the trial's act by its step, each with what settles it
 // where its ledger says. A builder's trial reset looks the same way.
@@ -31,7 +33,9 @@ import {
   type AutomationStudioSiteResetSpot
 } from "../../../flow-bootstrap/site-reset/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmHarnessInput } from "../../../llm/index.ts";
+import { runAutomationStudioSubflowBuilderLoop } from "../../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioProjectBriefPortRequest } from "../../../project-agents/index.ts";
+import { gardenBrief, gardenBuild } from "../../../project-agents/dispatch/tests/dispatch-fixture.ts";
 import { automationStudioProjectBuildBriefPorts } from "../brief-ports.ts";
 
 const site = vi.hoisted(() => ({
@@ -42,7 +46,9 @@ const site = vi.hoisted(() => ({
   looked: [] as string[],
   tools: [] as unknown[],
   /** A second, independent list on the same page, when a test reads one. */
-  shelf: undefined as string[] | undefined
+  shelf: undefined as string[] | undefined,
+  /** Every call the stub site was sent, by its call id. */
+  sent: [] as Array<{ callId: string; value: Record<string, unknown> }>
 }));
 
 // Both reads of a settled read back to back (`settle-ms.ts`).
@@ -55,7 +61,8 @@ vi.mock("../../../llm/index.ts", async (original) => ({
     evidenceLoopBinding: () => ({
       tools: site.tools,
       observedStateKeys: [],
-      executeTool: async (call: { value: JsonObject }) => {
+      executeTool: async (call: { callId: string; value: JsonObject }) => {
+        site.sent.push({ callId: call.callId, value: structuredClone(call.value) });
         if (call.value.node === GO) {
           site.at = String((call.value.parameters as JsonObject).to);
           site.looked.push(site.at);
@@ -99,7 +106,7 @@ afterEach(() => vi.restoreAllMocks());
  * With `shelfMoved`, the page also holds a second list, read before the build acted, that has changed by the reset.
  */
 function built(options: { shelfMoved?: boolean } = {}) {
-  Object.assign(site, { at: "loc:start", rows: [...ORIGINAL], looked: [], tools: [RUN_NODE], shelf: options.shelfMoved ? ["s:shelf-one"] : undefined });
+  Object.assign(site, { at: "loc:start", rows: [...ORIGINAL], looked: [], tools: [RUN_NODE], shelf: options.shelfMoved ? ["s:shelf-one"] : undefined, sent: [] });
   const project = new AutomationStudioSiteResetProjectLedger();
   const keep = project.forBrief("brief.keep");
   const other = project.forBrief("brief.other");
@@ -116,7 +123,8 @@ function built(options: { shelfMoved?: boolean } = {}) {
   keep.explored(press("remove", ["delete"], { name: "Remove", ...row }, { undoes: "act-1", on: "subject" }));
   site.rows.splice(site.rows.indexOf("s:new"), 1);
   other.explored(press("coupon", ["modify_existing"], { name: "Apply code" }));
-  keep.trialRan([{ step: 2, definitionId: "demo.add", consequences: ["create_new"], spot: { subject: "s:extra" } }], "trial-run-1");
+  // Its step ran on the list's page, so the lists read there are the ones it adopts (t743, A1 narrowed).
+  keep.trialRan([{ step: 2, definitionId: "demo.add", consequences: ["create_new"], spot: { subject: "s:extra" }, controls: { page: "p:list-page", location: "loc:list", before: {}, after: {} } }], "trial-run-1");
   if (site.shelf) site.shelf.push("s:shelf-moved");
   /** Every request the model was sent, and the decision function the ports built. */
   const sent: AutomationStudioLlmHarnessInput[] = [];
@@ -208,6 +216,30 @@ describe("a builder's trial reset", () => {
     const reached = reachedBy(observed, "loc:list");
     for (const ledger of [run.keep, run.other]) expect(reached.has(ledger)).toBe(true);
     expect(run.keep.standing("act-1")).toBe("restored");
+  });
+});
+
+// t743 (office rerun round 4 `run-mvgvyaip-d856e135`): no location reached the
+// dispatcher, so production put no places on a brief's opening call. A build's
+// and a reset's ports now give the project ledger's issued refs, each with where
+// its list was read, and the dispatcher puts those locations on the opening call.
+describe("a brief's ports give the build's places", () => {
+  it("each issued ref with where it was read, for a builder and a reset alike", async () => {
+    const run = built();
+    const builder = (await run.ports.builder(run.request("brief.keep", "build"))) as { issuedRefs?: () => unknown };
+    const reset = (await run.ports.reset(run.request("brief.reset", "reset"))) as { issuedRefs?: () => unknown };
+    expect(builder.issuedRefs?.()).toEqual([{ ref: "destination-1", count: 2, location: "loc:list" }]);
+    expect(reset.issuedRefs?.()).toEqual([{ ref: "destination-1", count: 2, location: "loc:list" }]);
+  });
+
+  it("so a build brief's opening call carries them under places", async () => {
+    const run = built();
+    const build = await gardenBuild({ capacity: 1, briefs: [gardenBrief("b-build", "list_seeds")], ports: { builder: run.ports.builder } });
+    build.dispatcherInput.runBuilder = runAutomationStudioSubflowBuilderLoop;
+    await build.run();
+    const opening = site.sent.find((entry) => entry.callId.startsWith("initial."));
+    expect(opening?.value.places).toEqual(["loc:list"]);
+    for (const entry of site.sent.filter((sent) => !sent.callId.startsWith("initial."))) expect(entry.value).not.toHaveProperty("places");
   });
 });
 

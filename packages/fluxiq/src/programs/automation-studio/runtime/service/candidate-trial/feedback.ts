@@ -157,6 +157,13 @@
 // every verdict; and a no says `result.read_list_continues` in place of the
 // counts looking right, with the fix line naming the step. A read whose list
 // ended is said as it was.
+//
+// **A run longer than the listing still names the step it stopped at (S5).**
+// Social rerun round 4 (`run-mvgw3ve5-294881b5`, 0089): a repeat over 17 rows
+// took 86 steps, the feedback listed the first 40, and the step that stopped the
+// run was never shown. A run of more than `MAX_STEPS` steps now lists its first
+// `MAX_STEPS - 1` and then the last step it ran, with its real step number and
+// what it said; `stepsLeftOut` counts the steps between them.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../../../model/index.ts";
 import { automationStudioZeroPassLoopBodies } from "../../executor/graph-navigation/index.ts";
@@ -217,7 +224,7 @@ const CHANGE_ADVISED = Object.freeze({
     + "answeredReading is what that call compared, and its advice the change it named. Weigh that advice against this trial's own reads, steps and stored rows: make the change where that evidence supports it; otherwise test this same revision again."
 });
 
-/** The most steps a feedback lists; a longer Flow says how many it left out. */
+/** The most steps a feedback lists; a longer run lists its first ones and the last it ran, and says how many it left out between (header, S5). */
 const MAX_STEPS = 40;
 
 /** A trial's verdict for the model, from the judge's verdict on the trial run. */
@@ -354,7 +361,10 @@ function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: Au
   const ran = automationStudioTrialExecutedSteps(trace?.attempts ?? []);
   if (!ran.length) return { steps: [] };
   const nodes = new Map((graph?.nodes ?? []).map((node) => [node.id, node]));
-  const listed = ran.slice(0, MAX_STEPS).map(({ attempt, attempts, absorbed, pass }, index) => {
+  // A run longer than the listing keeps its first steps and always the step it stopped at, by its real number (header, S5).
+  const shown = ran.length > MAX_STEPS ? [...ran.slice(0, MAX_STEPS - 1).map((_, index) => index), ran.length - 1] : ran.map((_, index) => index);
+  const listed = shown.map((index) => {
+    const { attempt, attempts, absorbed, pass } = ran[index]!;
     const node = nodes.get(attempt.nodeId);
     const failure = attempt.failure;
     const control = automationStudioModelFacingControlWords(node?.parameterValues);
@@ -379,7 +389,7 @@ function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: Au
     return failure && !attempt.stateHeld ? { ...told, retryable: failure.retryable === true, ...automationStudioTrialCheckStepFeedback(node, attempt), ...onPage } : told;
   });
   const paces = learnedPaces(trace, nodes);
-  return { steps: listed, ...(ran.length > MAX_STEPS ? { stepsLeftOut: ran.length - MAX_STEPS } : {}), ...(paces.length ? { paces } : {}) };
+  return { steps: listed, ...(ran.length > shown.length ? { stepsLeftOut: ran.length - shown.length } : {}), ...(paces.length ? { paces } : {}) };
 }
 
 /** The number of the nearest step listed before `index` that acted: it succeeded, and was neither skipped nor done by state. */

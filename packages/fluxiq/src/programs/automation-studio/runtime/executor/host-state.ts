@@ -46,7 +46,8 @@ export async function captureHostState(
 
 // The host is told about the node that ran, parameters resolved, after the
 // action as before it, so a capture or diff keyed on which action ran sees the
-// same node on both sides.
+// same node on both sides. The diff is given the attempt's inputs as the
+// captures are, so a loop pass's spot is its own row's, not the recorded one's.
 export async function enrichAttemptWithHostState(
   node: AutomationStudioFlowNode,
   attempt: AutomationStudioNodeAttemptTrace,
@@ -65,7 +66,8 @@ export async function enrichAttemptWithHostState(
         ...(beforeAction ? { before: beforeAction } : {}),
         ...(afterAction ? { after: afterAction } : {}),
         node,
-        attemptId: attempt.attemptId
+        attemptId: attempt.attemptId,
+        inputs: attempt.inputs
       }));
     } catch {
       stateDiff = undefined;

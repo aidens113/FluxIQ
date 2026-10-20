@@ -3,6 +3,7 @@ import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../../model/index.ts";
 import type { AutomationStudioGraphExecutionTrace } from "../../../executor/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../../result-verification/index.ts";
+import { automationStudioCandidateTrialStop } from "../../../flow-bootstrap/candidate/index.ts";
 import { automationStudioCandidateTrialFeedback } from "../index.ts";
 
 // Lane A round 4 (`run-muyrpbnk-fef374e7`, 0032 and 0048): the model was told only "step 2, dom-click, failed,
@@ -102,6 +103,28 @@ describe("trial feedback counts steps, not attempts", () => {
     const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph,
       trace: { status: "failed", startedAt: 1, values: {}, effects: [], attempts: [{ ...open }, coupon("a2"), coupon("a3")] } });
     expect((feedback.steps as Array<{ step: number; attempts?: number }>).map((step) => [step.step, step.attempts])).toEqual([[1, undefined], [2, undefined], [3, undefined]]);
+  });
+
+  // S5 (`run-mvgw3ve5-294881b5`, 0089): a repeat took 86 steps, the first 40 were listed, and the step that stopped the run never was.
+  it("lists the first 39 steps of a longer run and then the step it stopped at, by its real number, counting the steps between", () => {
+    const stopped: Failure = { category: "action_failed", code: "web.action.failed", retryable: false, expected: "the page accepts the press", actual: "the page did not change" };
+    const presses = Array.from({ length: 84 }, (_, index) => coupon(`p${index}`));
+    const ran = { status: "failed" as const, startedAt: 1, values: {}, effects: [], attempts: [{ ...open }, ...presses, coupon("last", stopped)] };
+    const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph, trace: ran });
+    const listed = feedback.steps as Array<{ step: number; status: string; failureCode?: string; actual?: string }>;
+    expect(listed).toHaveLength(40);
+    expect(listed.slice(0, 39).map((step) => step.step)).toEqual(Array.from({ length: 39 }, (_, index) => index + 1));
+    expect(listed[39]).toMatchObject({ step: 86, status: "failed", failureCode: "web.action.failed", actual: "the page did not change", retryable: false });
+    expect(feedback.stepsLeftOut).toBe(46);
+    expect(automationStudioCandidateTrialStop.of(feedback)).toMatchObject({ kind: "step", step: 86, failureCode: "web.action.failed", leftOut: 46 });
+  });
+
+  it("lists every step of a run no longer than the listing, with nothing left out", () => {
+    const presses = Array.from({ length: 39 }, (_, index) => coupon(`p${index}`));
+    const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph,
+      trace: { status: "failed", startedAt: 1, values: {}, effects: [], attempts: [{ ...open }, ...presses] } });
+    expect((feedback.steps as unknown[]).length).toBe(40);
+    expect(feedback.stepsLeftOut).toBeUndefined();
   });
 });
 

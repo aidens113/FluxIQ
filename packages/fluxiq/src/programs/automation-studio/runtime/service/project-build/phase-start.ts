@@ -58,6 +58,17 @@ import type { AutomationStudioProjectBuildTrialEnvironment } from "./whole-trial
 //   same project reset; (c) is the assembled Flow's first step
 //   (`project-agents/supervisor/assembly.ts`); (e) as for a subflow trial
 //   (`./whole-trials.ts`).
+//
+// **An act no call can settle is told as on the site, and not to undo (t743,
+// S2).** The project ledger's `unsatisfiable()` acts leave its acts in place,
+// since no reset is asked to undo them, so a phase was told nothing of them
+// though they are still on the site. A phase that explores is now told them
+// apart, under `actsUnsettleable` beside `phaseStart`'s words: still on the
+// site, nothing can check or put them back, so no call should try, and no trial
+// can run while they are there.
+
+/** What a phase is told of the acts no call can settle (header, t743): generic, naming no site. */
+const UNSETTLEABLE_SAID = "These acts of this build are still on the site, and nothing can check or put them back, so do not try to undo them; no trial can run while they are there:";
 
 /** A phase's start as the phase that explores in it takes it (`explore`). */
 export type AutomationStudioProjectBuildPhaseStarted = {
@@ -128,14 +139,18 @@ export class AutomationStudioProjectBuildPhaseStart {
     return automationStudioSiteResetProjectReset({ project: this.input.ledger, ...(own ? { own } : {}), checks });
   }
 
-  /** (b) What of this build is on the site now: the acts still to undo, and the possibly lasting presses that may be there. */
-  onSite(): { still: AutomationStudioSiteResetNamedAct[]; possibly: AutomationStudioSiteResetNamedAct[] } {
+  /**
+   * (b) What of this build is on the site now: the acts still to undo, the acts no call can settle (header, t743), and the
+   * possibly lasting presses that may be there.
+   */
+  onSite(): { still: AutomationStudioSiteResetNamedAct[]; unsettleable: AutomationStudioSiteResetNamedAct[]; possibly: AutomationStudioSiteResetNamedAct[] } {
     const { ledger } = this.input;
     const acts = ledger.snapshot().acts;
     const still = acts.filter((act) => act.inPlace).map(({ act, did }) => ({ act, did }));
+    const unsettleable = ledger.unsatisfiable().map(({ act, did }) => ({ act, did }));
     const owners = [...new Set(acts.map((act) => act.owner))];
     const possibly = owners.flatMap((owner) => ledger.forBrief(owner).possiblyInPlace()).map(({ act, did }) => ({ act, did }));
-    return { still, possibly };
+    return { still, unsettleable, possibly };
   }
 
   /**
@@ -179,8 +194,8 @@ export class AutomationStudioProjectBuildPhaseStart {
       ...(entry.kind !== "start" ? { predecessors: { keys: [...entry.predecessors], prepared: entry.kind === "prepared", ...(entry.kind === "unprepared" ? { code: entry.code } : {}) } } : {}),
       ...(environment.startLocation ? { startLocation: environment.startLocation } : {})
     };
-    // (e)
-    return { record, entry, told: automationStudioProjectBuildPhaseStartTold(record) };
+    // (e), with the acts no call can settle told apart (header, t743).
+    return { record, entry, told: withUnsettleable(automationStudioProjectBuildPhaseStartTold(record), onSite.unsettleable) };
   }
 
   /** (b) after the hook: every ledger counts this build's acts undone, and what it took back is answered (header). */
@@ -188,6 +203,13 @@ export class AutomationStudioProjectBuildPhaseStart {
     const decision = await this.reset(own, () => UNLOOKED).beforeTrial(signal, undefined, { startReset: true });
     return decision.kind === "admit" ? (decision.absorbedByStartReset ?? []).map(({ act, did }) => ({ act, did })) : [];
   }
+}
+
+/** `told` with the acts no call can settle under `actsUnsettleable` and said after its note (header, t743); as it is when there are none. */
+function withUnsettleable(told: JsonObject, acts: readonly AutomationStudioSiteResetNamedAct[]): JsonObject {
+  if (!acts.length) return told;
+  const said = `${UNSETTLEABLE_SAID} ${acts.map((act) => act.act).join(", ")}.`;
+  return { ...told, actsUnsettleable: acts.map((act) => ({ act: act.act, did: act.did })), note: typeof told.note === "string" && told.note ? `${told.note} ${said}` : said };
 }
 
 function isObject(value: JsonValue | undefined): value is JsonObject {

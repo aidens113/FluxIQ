@@ -14,9 +14,11 @@
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence, AutomationStudioActionEffect } from "../../action-permissions/index.ts";
+import type { AutomationStudioSiteResetCollection, AutomationStudioSiteResetUnmet } from "../reset-settlement/index.ts";
 
-/** The `core.run_node` input key under which a call names the act of this build it undoes. */
-export const AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY = "undoes";
+// The `undoes` key moved to `../reset-settlement/undoes-key.ts` (t743), which the settle words say it from; it stays
+// exported here for the callers that import this file directly (`../action-permissions.ts`).
+export { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY } from "../reset-settlement/index.ts";
 
 /** One undo, as the permission gate is told it: the act it reverses, and the gated classes reversing that act may do without asking. */
 export type AutomationStudioSiteResetUndo = { act: string; allowed: readonly AutomationStudioActionConsequence[] };
@@ -41,7 +43,7 @@ export type AutomationStudioSiteResetUndo = { act: string; allowed: readonly Aut
  * (`AutomationStudioSiteResetRead.controls`), and `state`, a digest of its own
  * state there (name, pressed, checked, selected) just before the act. A press
  * that turned that state into another one at the same place is a toggle the
- * ledger can see come back (`./settlement/`). Absent where the domain gave none.
+ * ledger can see come back (`../reset-settlement/`). Absent where the domain gave none.
  */
 export type AutomationStudioSiteResetSpot = { item?: string; dialog?: string; subject?: string; page?: string; scope?: string; resource?: string; place?: string; state?: string };
 
@@ -130,6 +132,14 @@ export type AutomationStudioSiteResetCalls = {
 export type AutomationStudioSiteResetNamedAct = { act: string; did: string; call?: string; stillThere?: string[]; possible?: true; settle?: string };
 
 /**
+ * One act of this build no call can settle (t743, `gate_unsatisfiable`): its only witnesses are lists Core cannot read
+ * again (`witness_unreachable`), or nothing can be named for it any more (`nothing_to_name`). It is never among the acts to
+ * undo; it is listed apart under `actsUnsettleable` wherever those are answered, and trials stay refused while it is in
+ * place (`./ledger.ts`, `unsatisfiable`).
+ */
+export type AutomationStudioSiteResetUnsettleableAct = { act: string; did: string; call?: string; reason: "gate_unsatisfiable"; failed: AutomationStudioSiteResetUnmet };
+
+/**
  * One act a start hook took back (`absorbedByStartReset`), with what the act
  * log knows of how it was made (t647), for Core's own reading and never shown
  * to a model (each trial gate names an act by `act`, `did` and `call` alone):
@@ -151,7 +161,7 @@ export type AutomationStudioSiteResetRead = {
   /** All subjects on this observed scope, including singleton and hidden records. */
   subjects?: string[];
   /** Positively complete, resource-bound collection inventories; only these can witness absence. */
-  collections?: Array<{ scope: string; group: string; subjects: string[]; states: Record<string, string> }>;
+  collections?: AutomationStudioSiteResetCollection[];
   scope?: string;
   /** Trusted opaque resource identity shared across locations; never a page-supplied id. */
   resource?: string;

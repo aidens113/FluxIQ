@@ -166,8 +166,13 @@ export type AutomationStudioHostRuntimeBoundary = {
    *
    * Both are page evidence: a persisted trace withholds the whole diff
    * (`executor/trace-withholding.ts`, `stateDiff`).
+   *
+   * `inputs` are the attempt's own, as its captures were given them, so a host
+   * places a loop pass's control in the pass's row (`item`) rather than in the
+   * row the step was recorded on (job rerun round 4: every pass's `spot` was
+   * the template row's). Optional so a caller that has none still diffs.
    */
-  inspectStateDiff?(input: { before?: AutomationStudioHostStateSnapshotRef; after?: AutomationStudioHostStateSnapshotRef; node: AutomationStudioFlowNode; attemptId: string }): JsonObject | Promise<JsonObject>;
+  inspectStateDiff?(input: { before?: AutomationStudioHostStateSnapshotRef; after?: AutomationStudioHostStateSnapshotRef; node: AutomationStudioFlowNode; attemptId: string; inputs?: Readonly<Record<string, JsonValue>> }): JsonObject | Promise<JsonObject>;
   rollbackHint?(input: AutomationStudioHostRuntimeActionContext): JsonObject | Promise<JsonObject>;
   /**
    * Decides whether an expected state holds. Bound with the rest of the host

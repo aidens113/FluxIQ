@@ -754,7 +754,9 @@ it("whole-trial collection authority comes from original builder routing, never 
       // remains in its destination. Actual project routing must retain it.
       project.forBrief("supervisor").placed(acts[0]!.act, { state: {}, location: "source", changed: ["created notice"], lines: { gone: [], added: ["created notice"] } });
       expect(await project.forBrief("supervisor").beforeTrial({ compare: async () => ({ moved: false, differs: [] }), compareAt: async () => ({ moved: false, differs: [], lines: { gone: [], added: [] } }) })).toMatchObject({ kind: "refuse" });
-      expect(project.forBrief("supervisor").inPlace().map((act) => act.act)).toContain(acts[0]!.act);
+      // Still on the site, and still refusing trials: to undo, or, with no ref a read could issue here, one no call can settle (t743).
+      const supervisor = project.forBrief("supervisor");
+      expect([...supervisor.inPlace(), ...supervisor.unsatisfiable()].map((act) => act.act)).toContain(acts[0]!.act);
       const addControl = { scope: moved[0]!.scope, subject: "s:new" };
       const moveControl = { scope: moved[1]!.scope, subject: "s:existing" };
       const deletion = reset.target(acts[0]!.act, { effect: "mutate", consequences: ["delete"], control: addControl });

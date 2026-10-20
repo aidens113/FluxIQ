@@ -37,6 +37,14 @@
 // read its control back as before. It is now said as an act this build could
 // not undo, which may still be on the site. Only an `irreversible` act, of a
 // class no site control takes back, makes the site not as the build found it.
+//
+// **An act no call can settle is said as left (t743, S2).** Such an act
+// (`unsatisfiable()`, `flow-bootstrap/site-reset/ledger.ts`: its only witness a
+// list Core cannot read again, or nothing left to name for it) is never among
+// the acts in place, since no reset is asked to undo it, and was said as if
+// undone. It is now said apart, as one that can no longer be checked or put
+// back and so may still be on the site; its reset then comes back blocked
+// (`./ending.ts`, `gateUnsatisfiable`).
 
 import { automationStudioActivityActsSaid } from "../../activity/wording/index.ts";
 import type { AutomationStudioSiteResetProjectLedger } from "../../flow-bootstrap/site-reset/index.ts";
@@ -57,22 +65,33 @@ function listed(items: readonly string[]): string {
 }
 
 /** The words of a reset that came back `done`, naming each act of the build that stayed in place, or that nothing showed changing (header). */
-export function automationStudioProjectDispatchResetDone(ledger: Pick<AutomationStudioSiteResetProjectLedger, "snapshot" | "forBrief">): string {
+export function automationStudioProjectDispatchResetDone(ledger: Pick<AutomationStudioSiteResetProjectLedger, "snapshot" | "forBrief" | "unsatisfiable">): string {
   const stayed: Array<{ did: string; note: string }> = [];
   const kept: Array<{ did: string }> = [];
   const quiet: Array<{ did: string }> = [];
+  // Never in place, yet still on the site: said apart (header, t743).
+  const unsettleable = new Set(ledger.unsatisfiable().map((act) => act.act));
+  const unchecked: Array<{ did: string }> = [];
   for (const act of ledger.snapshot().acts) {
     if (act.possible === true || act.inPlace) continue;
+    if (unsettleable.has(act.act)) {
+      unchecked.push({ did: act.did });
+      continue;
+    }
     const standing = ledger.forBrief(act.owner).standing(act.act) ?? "";
     if (standing === "irreversible") stayed.push({ did: act.did, note: IRREVERSIBLE });
     else if (standing === "kept") kept.push({ did: act.did });
     else if (standing === "unchanged") quiet.push({ did: act.did });
   }
-  if (!stayed.length && !kept.length && !quiet.length) return ALL_UNDONE;
+  if (!stayed.length && !kept.length && !quiet.length && !unchecked.length) return ALL_UNDONE;
   const unchanged = quiet.length
     ? `${quiet.length === 1 ? "1 act" : `${quiet.length} acts`} of this build showed no change on the site, so ${quiet.length === 1 ? "it" : "they"} may not have changed anything: ${listed(automationStudioActivityActsSaid(quiet).map((act) => act.words))}.`
     : "";
-  if (!stayed.length && !kept.length) return `Every act of this build that showed a change is undone. ${unchanged}`;
+  // Left on the site as far as anyone can tell: no call can check or put it back (header, t743).
+  const leftUnchecked = unchecked.length
+    ? `${unchecked.length === 1 ? "1 act" : `${unchecked.length} acts`} of this build can no longer be checked or put back, so ${unchecked.length === 1 ? "it" : "they"} may still be on the site: ${listed(automationStudioActivityActsSaid(unchecked).map((act) => act.words))}.`
+    : "";
+  if (!stayed.length && !kept.length) return unchecked.length ? ["This reset undid every act of this build it could.", leftUnchecked, unchanged].filter((sentence) => sentence).join(" ") : `Every act of this build that showed a change is undone. ${unchanged}`;
   const count = `${stayed.length} lasting act${stayed.length === 1 ? "" : "s"} of this build ${stayed.length === 1 ? "stays" : "stay"} on the site`;
   // Known only to be not undone: it may still be there, and the site may be as the build found it (header, t741 B5).
   const notUndone = kept.length
@@ -81,5 +100,5 @@ export function automationStudioProjectDispatchResetDone(ledger: Pick<Automation
   const left = stayed.length
     ? `This reset undid every act of this build it could, but ${count}, so the site is not as the build found it: ${listed(automationStudioActivityActsSaid(stayed).map((act) => act.words))}.`
     : "This reset undid every act of this build it could.";
-  return [left, notUndone, unchanged].filter((sentence) => sentence).join(" ");
+  return [left, notUndone, leftUnchecked, unchanged].filter((sentence) => sentence).join(" ");
 }
