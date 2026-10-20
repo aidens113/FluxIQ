@@ -143,6 +143,16 @@ export const CONFIG = {
   // not this repository's to resolve.
   docsLinkDirs: ["docs"],
 
+  // References -- module specifiers, string text, property names -- that may
+  // appear only in the files an entry allows, for the restricted-references
+  // rule. Each entry is { name, imports, strings, names, allow, reason, remedy }.
+  //
+  // Empty here, which makes the rule inert: Core owns every model provider
+  // call, so a provider host, SDK or key name is ordinary in this repository.
+  // The downstream web-extension repository lists them, so that a provider
+  // call written there fails the build instead of only a Lab network policy.
+  restrictedReferences: [],
+
   workingDocsDir: "docs/working",
   workingDocsIndexKind: "core"
 };

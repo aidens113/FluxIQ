@@ -103,3 +103,35 @@ test("recording an id twice is refused, so two racing starts cannot share one", 
   await recordTaskId(root, "t005", "dev");
   await assert.rejects(recordTaskId(root, "t005", "dev"), /claimed .* by another start at the same moment/u);
 });
+
+// A downstream paired start allocates against both repositories and records
+// the id on both sides (through these same modules), and a paired abandon
+// deletes both branches. Neither deletion may free the number.
+test("a paired id recorded on both sides stays spent after both branches are deleted", async (t) => {
+  const here = await repository();
+  const core = await repository();
+  t.after(() => Promise.all([rm(here, { recursive: true, force: true }), rm(core, { recursive: true, force: true })]));
+  const paired = { repositoryRoot: here, pairedRepositories: [{ repositoryRoot: core }] };
+
+  const id = await allocateTaskId(paired);
+  await recordTaskId(here, id, "dev");
+  await recordTaskId(core, id, "dev");
+  for (const root of [here, core]) {
+    await git(root, "branch", `task/${id}-paired`, "dev");
+    await git(root, "branch", "-D", `task/${id}-paired`);
+  }
+
+  assert.equal(id, "t001");
+  assert.equal(await allocateTaskId(paired), "t002");
+  assert.equal(await git(core, "rev-parse", `refs/fluxiq/task-ids/${id}`), await git(core, "rev-parse", "dev"));
+});
+
+test("a ref recorded only in the paired repository still blocks a paired allocation", async (t) => {
+  const here = await repository();
+  const core = await repository();
+  t.after(() => Promise.all([rm(here, { recursive: true, force: true }), rm(core, { recursive: true, force: true })]));
+
+  await recordTaskId(core, "t007", "dev");
+
+  assert.equal(await allocateTaskId({ repositoryRoot: here, pairedRepositories: [{ repositoryRoot: core }] }), "t008");
+});

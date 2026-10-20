@@ -8,14 +8,22 @@
 //
 // `runStep` is what package scripts (through `cli.mjs`) call; `scheduleSteps`
 // runs several, as the root `build` and `check` do; `decideStep` answers
-// without building. The rest is what they are made of, exported for tests and
-// the coverage proof (`prove-inputs.mjs`). Tests are never cached.
+// without building; `buildOrder` lists a package's build steps dependencies
+// first. Each works for Core unless `options.repository` names another: the
+// engine is Core's, and a downstream repository binds it to its own
+// configuration with `buildCacheFor` (`repository/`). The rest is what they
+// are made of, exported for tests, the coverage proof (`prove-inputs.mjs`)
+// and downstream repositories. Tests are never cached.
 
+export { buildCacheFor } from "./build-cache-for.mjs";
+export { buildOrder } from "./build-order.mjs";
 export { decideStep } from "./decide-step.mjs";
+export { proveInputs, runCli } from "./entry/index.mjs";
 export { fingerprintStep } from "./fingerprint-step.mjs";
 export { forEachLimited } from "./for-each-limited.mjs";
-export { coversPath, digestFiles, gitVisibleFiles, listRootFiles, openStatCache, outputState } from "./fingerprint/index.mjs";
+export { coversPath, digestFiles, gitVisibleFiles, listRootFiles, listStepInputs, openStatCache, outputState } from "./fingerprint/index.mjs";
 export { acquireStepLock, isProcessAlive } from "./lock/index.mjs";
+export { CORE_REPOSITORY, resolveFor } from "./repository/index.mjs";
 export { REPOSITORY_ROOT } from "./repository-root.mjs";
 export { runCommand } from "./run-command.mjs";
 export { runStep } from "./run-step.mjs";

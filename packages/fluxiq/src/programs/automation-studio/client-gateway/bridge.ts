@@ -120,6 +120,8 @@ export class AutomationStudioClientGatewayBridge {
 
   async startRecording(input: StartClientRecordingInput) {
     requiredRecordingDescription(input.description);
+    // A recording is a person's demonstration; a channel-scoped session replays or scripts a client, so nothing it does is one.
+    if (this.gateway.isScopedSession(input.sessionId)) throw new Error("recording.scoped_session_refused");
     const session = this.session(input.sessionId);
     // Taken before the first await: what the client sent before this start never lands in its recording.
     const received = this.writeOrder.settled(this.recordingOwnerKey(session));
@@ -205,17 +207,20 @@ export class AutomationStudioClientGatewayBridge {
     if (arguments.length >= 3) {
       const response = this.gateway.executeAction(sessionId, command, options!);
       const outcome = await response.result;
-      if (outcome.status !== "completed") return outcome;
+      if (outcome.status !== "completed" || this.gateway.isScopedSession(sessionId)) return outcome;
       try { await this.appendActionResult(sessionId, command, outcome.result); } catch (error) { await ClientGatewayCommandOutcome.stop(options!.context, "bridge.capture_failed"); throw error; }
       return outcome;
     }
     const response = this.gateway.executeAction(sessionId, command);
     const result = await response.result;
-    await this.appendActionResult(sessionId, command, result);
+    // A channel-scoped session's answer is replayed or scripted: it is never taken in as a live observation.
+    if (!this.gateway.isScopedSession(sessionId)) await this.appendActionResult(sessionId, command, result);
     return result;
   }
 
   private async handleGatewayEvent(event: ClientGatewayEvent): Promise<void> {
+    // Replayed or scripted data from a channel-scoped session never becomes a recording or a recording entry.
+    if (this.gateway.isScopedSession(event.session.sessionId)) return;
     if (event.type === "client.start_recording") {
       await this.startRecordingFromClient(event.session, event.message.payload);
       return;

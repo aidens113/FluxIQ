@@ -299,6 +299,19 @@ The detailed procedure for each, with the current offenders, is in the
   `pnpm check` fails when its bundle enters Core through a module missing
   from those entries, so the list follows the real bundle.
 
+- **Naming a capability outside the files allowed to hold it.** Some
+  references are a capability, not a style: a model provider's host, its SDK,
+  the environment variable holding its key. Written anywhere, they type-check
+  and build clean, and only a live run finds them. The `restricted-references`
+  rule reads every module specifier, string and template piece, and property
+  name read (`process.env.KEY`, `env["KEY"]`, a destructured key) in every
+  script file, tests included, plus every dependency key of every
+  package.json, and fails any that matches an entry under
+  `restrictedReferences` outside that entry's `allow` list. It is never
+  baselined. The list is empty in Core, which owns provider calls; the web
+  extension lists provider hosts, SDKs and key names and allows only its Lab's
+  key-handling files.
+
 ## Worked Example — `automation-studio/storage/`
 
 Before: 72 files flat (37 source, 35 tests).

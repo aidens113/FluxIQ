@@ -8,7 +8,7 @@ TypeScript runtime loader.
 | --- | --- | --- | --- |
 | `@fluxiq/contracts` | JSON primitives, program API schemas, client-gateway protocol, and external Automation Studio recording contracts | Browser and Node.js | `zod` |
 | `fluxiq` | Domain-neutral framework runtime, global programs, storage, migrations, and host integration | Node.js 22 or newer | contracts, QR generation, and native SQLite |
-| `@fluxiq/client-gateway-websocket` | WebSocket transport and browser-facing client helpers | Browser and Node.js 22 or newer | contracts only |
+| `@fluxiq/client-gateway-websocket` | The client half of the client gateway: WebSocket transport, reconnecting connection, offline outbox, in-flight command reconciliation, host-lease fencing, storage-area port, and the session-picking rule | Browser and Node.js 22 or newer | contracts only |
 
 The contracts package is the dependency seam between browser clients and the
 framework. It must not import the runtime. The WebSocket client must not pull

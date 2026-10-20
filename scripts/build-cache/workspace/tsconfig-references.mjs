@@ -9,6 +9,10 @@
 // An `extends` naming a package rather than a relative path throws: it would
 // read a file under node_modules this parser does not resolve, and a silent
 // skip would pass a project whose base config was never checked.
+//
+// TypeScript's own config parser is loaded from the repository the config
+// belongs to (`repoRoot`, by default this one), so a downstream repository's
+// projects are read by its pinned compiler.
 
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -19,10 +23,11 @@ const GLOB = /[*?{}[\]]/u;
 
 /**
  * @param {string} configPath absolute path of a tsconfig
+ * @param {{ repoRoot?: string }} [options] the repository whose TypeScript parses it
  * @returns {{ config: string, field: string, value: string, path: string }[]}
  */
-export function tsconfigReferences(configPath) {
-  const ts = createRequire(path.join(REPOSITORY_ROOT, "package.json"))("typescript");
+export function tsconfigReferences(configPath, options = {}) {
+  const ts = createRequire(path.join(options.repoRoot ?? REPOSITORY_ROOT, "package.json"))("typescript");
   const found = [];
   const seen = new Set();
   const pending = [path.resolve(configPath)];

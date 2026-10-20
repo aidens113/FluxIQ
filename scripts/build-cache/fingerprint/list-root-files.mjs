@@ -11,7 +11,11 @@
 //          inputs a step names (a dependency's `dist/`, the installed
 //          lockfile, `.env*`) and a step's outputs. `match` keeps only file
 //          names it matches; `shallow` lists one directory level; `exclude`
-//          paths are skipped wherever they fall.
+//          paths are skipped wherever they fall. `labelBase`, when given,
+//          labels the files by it instead of by their path in the repository:
+//          a root in another checkout (a downstream repository's linked Core)
+//          is labelled by where it sits in its own tree, so the same files
+//          label the same wherever the two checkouts are.
 // A root with no file is listed once with `path: null`, so a directory or file
 // appearing or disappearing changes the digest instead of hashing the same.
 // A symbolic link is followed; a linked directory already walked is not
@@ -21,7 +25,7 @@ import { readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
 /**
- * @param {{ kind: "git" | "walk", label: string, path: string, exclude?: string[], match?: RegExp | null, shallow?: boolean }} root
+ * @param {{ kind: "git" | "walk", label: string, path: string, exclude?: string[], match?: RegExp | null, shallow?: boolean, labelBase?: string }} root
  * @param {{ repoRoot: string, gitFiles: () => Promise<string[]> }} context `gitFiles` lists the checkout, once per fingerprint
  * @returns {Promise<{ label: string, path: string | null }[]>}
  */
@@ -51,7 +55,8 @@ async function listWalk(root, repoRoot) {
     if (error?.code === "ENOENT") return [];
     throw error;
   }
-  if (stats.isFile()) return [{ label: relative(repoRoot, root.path), path: root.path }];
+  const labelOf = (file) => (root.labelBase === undefined ? relative(repoRoot, file) : under(root.labelBase, relative(root.path, file)));
+  if (stats.isFile()) return [{ label: labelOf(root.path), path: root.path }];
   const files = [];
   const options = {
     excluded: new Set((root.exclude ?? []).map(key)),
@@ -60,7 +65,7 @@ async function listWalk(root, repoRoot) {
     shallow: root.shallow === true
   };
   await walk(root.path, options, files);
-  return files.map((file) => ({ label: relative(repoRoot, file), path: file }));
+  return files.map((file) => ({ label: labelOf(file), path: file }));
 }
 
 async function walk(directory, options, files) {
@@ -91,6 +96,10 @@ async function walk(directory, options, files) {
 function relative(base, target) {
   const shown = path.relative(base, target);
   return (shown === "" ? "." : shown).split(path.sep).join("/");
+}
+
+function under(base, shown) {
+  return shown === "." ? base : `${base}/${shown}`;
 }
 
 function fold(text) {

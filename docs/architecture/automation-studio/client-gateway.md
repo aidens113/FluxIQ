@@ -19,16 +19,18 @@ The reusable gateway lives under `packages/fluxiq/src/client-gateway/`:
   identities. It owns approval references, hashed rotating credentials,
   expiry/revocation, outbound messages, command/result correlation, timeouts,
   heartbeat messages, and gateway events.
-- `@fluxiq/client-gateway-websocket` is a small typed client package for
-  WebSocket-capable recorders. It re-exports the same protocol types as
-  `fluxiq/client-gateway` and the same Automation Studio recording request
-  types as `fluxiq/automation-studio`. Its Automation Studio facade mirrors
-  direct-import method params such as `createRecording`,
+- `@fluxiq/client-gateway-websocket` is the client half of the gateway for
+  WebSocket-capable recorders and executors. It re-exports the same protocol
+  types as `fluxiq/client-gateway` and the same Automation Studio recording
+  request types as `fluxiq/automation-studio`. Its Automation Studio facade
+  mirrors direct-import method params such as `createRecording`,
   `appendRecordingEvent`, `appendRecordingDomainEvent`, and
-  `finalizeRecording`, but implements them by sending websocket messages. The
-  package is split into transport, message helpers, Automation Studio facade,
-  and shared types so the public `index.ts` stays an export doorway rather than
-  the implementation.
+  `finalizeRecording`, but implements them by sending websocket messages.
+  Beside the transport, message helpers and facade, it owns the reconnecting
+  connection, the offline outbox, in-flight command reconciliation, host-lease
+  fencing, a storage-area port and the session-picking rule (see
+  [Client half](#client-half)). The public `index.ts` stays an export doorway
+  rather than the implementation.
 
 Automation Studio consumes the gateway through
 `packages/fluxiq/src/programs/automation-studio/client-gateway/bridge.ts`.
@@ -890,11 +892,111 @@ pnpm --filter @fluxiq/web mock:client
 The mock client will print the reference code it receives and then wait for
 approval from the web panel.
 
+## Client half
+
+`@fluxiq/client-gateway-websocket` holds everything a client needs to keep its
+side of the protocol, so each client does not rebuild it. Its parts are
+domain-neutral. What one kind of client says in its hello, how it carries out a
+command, where it keeps its token and queue, which acts commit, and how its
+process stays alive are the host's, passed in as options and ports. The FluxIQ
+web extension is one host. Usage for each part is in the
+[package README](../../../packages/client-gateway-websocket/README.md).
+No wire message is specific to this half: everything below is decided on the
+client.
+
+**Reconnecting connection** (`src/connection/`). `FluxIQClientGatewayConnection`
+opens one `FluxIQClientGatewayWebSocketClient` per attempt and reports a
+`ClientGatewayConnectionState` (`connecting`, `pairing`, `connected`,
+`reconnecting`, `error`, `disconnected`). A drop or failed open retries with
+doubling backoff (`clientGatewayReconnectDelay`, 1 s to 30 s by default). A
+heartbeat tick calls the host's `onHeartbeat` while connected and `keepAlive`
+while the socket is open but pairing or connecting; `keepAlive` sends nothing,
+because an unpaired session may not send client data. For the same reason
+`send` writes to the socket only once its `server.session_ready` has arrived and
+its lineage is decided; until then, while the socket pairs or the gateway
+checks its token, a message waits in the outbox like one sent with no socket.
+Subscriptions made with
+`on` follow the connection across sockets. A socket that never opened is
+reported by name (`clientGatewayOpenFailureMessage`: `open_timeout`,
+`closed_before_open`, `open_failed`).
+
+**Trust lineage.** Core mints a new `sessionId` for every socket, and a
+reconnect resumes the trusted client by its token, which Core rotates on each
+resume. Core keys a client's active recording by that trusted client
+(`recordingOwnerKey` in the bridge), so a recording survives a reconnect. The
+client's queue is therefore bound not to the wire `sessionId`, which would drop
+every entry on every reconnect, but to a trust lineage: one id kept while each
+new socket resumes by token, and replaced whenever a socket had to pair or said
+hello without a token (`clientGatewayLineageAfterReady`). This is the same unit
+Core files recordings under. The connection decides it at each
+`server.session_ready` and stores it in the outbox before the host hears the
+session is ready. A lineage that cannot be read fails closed: a new one is
+minted and the failure reported.
+
+**Offline outbox** (`src/outbox/`). `ClientGatewayOutbox` queues what could
+not be sent while the socket was down, each entry under a binding of lineage,
+project and recording (`clientGatewayOutboxBinding`). After
+`server.session_ready` a flush delivers, in queue order, the entries whose
+lineage and project are the current ones and whose recording is none, the
+current one, or one whose own `client.stop_recording` is queued under the same
+lineage and project. Every other entry is dropped, because sending it would
+file it under the wrong owner (`clientGatewayOutboxDeliverable`). A send that
+fails mid-flush keeps only the undelivered matching tail. The queue is bounded
+by a count (1,000 by default) and an optional byte budget
+(`clientGatewayOutboxKeep`, newest kept). Every drop, including the entries a
+refused store write costs, is counted by reason (`count_limit`, `byte_budget`,
+`write_failed`) in a loss record rather than lost silently. The next flush
+sends the gateway one `client.error` with code `client.outbox.entries_lost`
+(`clientGatewayOutboxLossMarker`) before the surviving entries, carrying only
+the counts. A refused write never makes `enqueue` throw: it halves what it
+keeps until a write fits, and holds the loss until one does. The host supplies
+the store (`ClientGatewayOutboxStore`) and so the queue's lifetime; a browser
+keeps it for the browser session only.
+
+**In-flight command reconciliation** (`src/reconcile/`).
+`ClientGatewayCommandReconciliation` is the client's half of the interrupted
+and reconciled results described under
+[Interrupted and late action results](#interrupted-and-late-action-results). It
+records each command before carrying it out (`ClientGatewayInFlightRecordStore`)
+and the ids it has received (`ClientGatewaySeenCommandStore`). After the next
+`session_ready` it reports a record no running command owns as interrupted
+(`reportLeftovers`). It answers a repeated command id from what it already
+holds instead of acting again (`answerRepeat`), and answers
+`server.reconcile_command` as `running`, `landed`, `unknown` or `not_seen`
+without acting (`reconcile`). An id answered `not_seen` is refused from then
+on, so a late copy cannot act after Core made the act again.
+
+**Host-lease fencing** (`src/host-lease/`). Core serializes a resource by host
+lease and refuses a command from a holder that lost it before sending. The
+client checks again, so a command already on its way when the lease moved
+still cannot act. `ClientGatewayHostLeaseLedger` keeps the highest lease seen
+per resource key and judges each command's lease against it
+(`clientGatewayHostLeaseJudgement`: adopt, current, stale, holder mismatch).
+A stale, mismatched or unreadable lease earns a failed, non-retryable,
+`unacted` result (`clientGatewayHostLeaseRefusal`) under the refusal codes in
+`CLIENT_GATEWAY_HOST_LEASE_REFUSAL_CODES`. A command with no lease runs as
+before.
+
+**Storage area** (`src/storage-area/`). `ClientGatewayStorageArea` is the
+key-value port the reconciliation stores and the lease ledger keep their
+entries in, one key per entry under each one's prefix. In a browser it is
+session storage, which outlives the background worker and is forgotten when
+the browser closes. `clientGatewayMemoryArea` is the stand-in for a client
+without one.
+
+**Session pick** (`src/session-pick/`). `clientGatewaySessionEligible` is the
+one rule for which client session a host may drive: `ready`, connected, of the
+host's client type, not recording, and serving the host's capability.
+Core refuses commands to a session that is not `ready` (`requireReady`), so a
+looser rule would only pick sessions that then fail. `pickClientGatewaySession`
+takes the requested session when eligible, else the only eligible one, and
+never guesses between two.
+
 ## Executing web server transport provenance
 
 `ClientGatewayService` owns an additive, domain-neutral transport identity lease, separate from Automation Studio's native runtime module identities. Binding screens and freezes a generic descriptor before transport IO, retaining an immutable original anchor. Only the current lease may activate on listening or release on close/error; superseded leases cannot attest or clear a replacement. Missing, inactive, released, and legacy uninstrumented transports report null. A legacy rebind clears active provenance without allowing changed code to reuse the original anchor. This adds two gateway facade methods and does not change pairing, session, or socket wire contracts.
 
-The web app's actual server adapter lives in `apps/web/src/server/client-gateway-websocket.ts`; the `client-gateway-websocket` package is a client transport. Web startup preloads a native ESM artifact generated into `apps/web/.server-runtime/client-gateway-server.mjs`, then invokes its factory with the actual retained gateway object. This preserves ownership when Next bundles Core separately. Enabled gateway startup requires preload; the `dev` and cached `build` commands generate the artifact first. Direct Next CLI users must run `pnpm --filter @fluxiq/web gateway:build` before starting. No default production panel is started by this contract.
+The web app's actual server adapter lives in `apps/web/src/server/client-gateway-websocket.ts`; the `client-gateway-websocket` package is the client half (see [Client half](#client-half)) and holds no server code. Web startup preloads a native ESM artifact generated into `apps/web/.server-runtime/client-gateway-server.mjs`, then invokes its factory with the actual retained gateway object. This preserves ownership when Next bundles Core separately. Enabled gateway startup requires preload; the `dev` and cached `build` commands generate the artifact first. Direct Next CLI users must run `pnpm --filter @fluxiq/web gateway:build` before starting. No default production panel is started by this contract.
 
 The generator owns the companion receipt and complete server/startup/generator/cache inventory. It hashes the executing artifact while normalizing only one self-containing payload literal, including the reader's surrounding execution semantics. This is a normalized artifact digest, not a raw full-file digest. Regenerate through the driver; never edit the artifact or receipt. The existing authenticated, `programs.read` diagnostic returns the actual gateway's listening `serverTransportIdentity` separately from native `loadedModules`; it does not infer executing identity from disk or a newly loaded route. The supported registration seam does not attest arbitrary out-of-band listeners or individual socket provenance.
 
