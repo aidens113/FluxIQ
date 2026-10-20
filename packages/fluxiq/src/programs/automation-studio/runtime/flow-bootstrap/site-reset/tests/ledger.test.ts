@@ -472,12 +472,19 @@ describe("a press with an effect but no lasting class (t593)", () => {
 
   it("may still be undone under `undoes`, judged as any undo is, and a start hook takes it back without naming it", async () => {
     const ledger = new AutomationStudioSiteResetLedger({ possible: true });
-    ledger.explored(coupon());
+    ledger.explored(acted("press.coupon", [], {}, { item: "card:coupon" }));
     ledger.explored(acted("press.other", [], {}, {}));
     // The model undoes the first: the claim and its control are admitted as any act's, and a landed undo that changed the page counts.
     expect(ledger.claim("act-1")).toEqual({ kind: "undo", undo: { act: "act-1", allowed: [] } });
+    // A press with nothing lasting and no item is admitted `moving`: a look (L1 build repeats), never an undo, however its page changed.
     expect(ledger.target("act-1", aim([]))).toEqual({ kind: "admit", on: "moving", allowed: [] });
-    ledger.explored(acted("undo.coupon", [], { undoes: "act-1", on: "moving" }));
+    ledger.explored(acted("look.coupon", [], { undoes: "act-1", on: "moving" }));
+    ledger.undoSeen("act-1", true);
+    expect(await ledger.beforeTrial({ compare: unknown })).toEqual({ kind: "admit" });
+    expect(ledger.possiblyInPlace().map((act) => act.act)).toEqual(["act-1", "act-2"]);
+    // Its own item's control undoes it.
+    expect(ledger.target("act-1", aim([], { item: "card:coupon" }))).toEqual({ kind: "admit", on: "own", allowed: [] });
+    ledger.explored(acted("undo.coupon", [], { undoes: "act-1", on: "own" }, { item: "card:coupon" }));
     ledger.undoSeen("act-1", true);
     expect(await ledger.beforeTrial({ compare: unknown })).toEqual({ kind: "admit" });
     expect(ledger.possiblyInPlace().map((act) => act.act)).toEqual(["act-2"]);
@@ -567,17 +574,27 @@ describe("a creation whose admitted destination a complete fresh read shows unch
     expect(ledger.claim("act-1")).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_act_kept" } });
   });
 
-  it.each(["changed", "sibling", "partial", "stale", "malformed", "unbaselined"] as const)("still refuses the trial when the destination read is %s", async (defect) => {
+  // L1: `partial` drops the admitted destination itself; a list of the same page it was never admitted against is no
+  // witness (below).
+  it.each(["changed", "partial", "stale", "malformed", "unbaselined"] as const)("still refuses the trial when the destination read is %s", async (defect) => {
     const ledger = opened(defect !== "unbaselined");
     if (defect === "changed") ledger.observed(read(["s:first", "s:second", "s:document"]));
-    if (defect === "sibling") ledger.observed(read(undefined, "v:kept-changed"));
-    if (defect === "partial") ledger.observed({ ...read(), collections: read().collections!.slice(0, 1) });
+    if (defect === "partial") ledger.observed({ ...read(), collections: read().collections!.slice(1) });
     if (defect === "malformed") ledger.observed(read(["s:first", "s:second", "s:second"]));
     if (defect === "unbaselined") ledger.observed(read());
     expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
     expect(await ledger.beforeTrial(back, ["act-1"])).toMatchObject({ kind: "refuse" });
     expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1"]);
     // A line that was there before the build is never an undo's.
+    expect(ledger.target("act-1", aim(["delete"], { scope: "p:lines", subject: "s:first", resource: SITE }))).toMatchObject({ kind: "refused" });
+  });
+
+  // L1, by design: F1 required the whole group read, so a list on the same page holding nothing the act was about kept it
+  // open; it is no witness now, changed or missing.
+  it.each(["sibling", "sibling-missing"] as const)("runs the trial when only an unrelated list of the page is %s", async (defect) => {
+    const ledger = opened();
+    ledger.observed(defect === "sibling" ? read(undefined, "v:kept-changed") : { ...read(), collections: read().collections!.slice(0, 1) });
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1", call: "open" }] } });
     expect(ledger.target("act-1", aim(["delete"], { scope: "p:lines", subject: "s:first", resource: SITE }))).toMatchObject({ kind: "refused" });
   });
 });

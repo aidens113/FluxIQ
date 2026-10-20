@@ -147,3 +147,154 @@ describe("looking again after being refused", () => {
     expect(result.accounting.toolCalls).toBe(5);
   });
 });
+
+// A refused action asked again after a look runs again (`../refused-action-retest.ts`).
+//
+// An action refused until something was looked at must be able to run once the
+// look has been made: a look moves neither epoch, so before this the identical
+// retry kept the refused call's signature and was answered from memory for good
+// (live run office r2, `run-mvfq94ff-c8c21493`). With nothing between, the
+// identical request is still answered from memory (above), and a refuse, look,
+// refuse loop is still bounded by the no-progress guard.
+const gatedTools = [
+  { toolId: "inspect", description: "Look at the page.", inputSchema: { type: "object" }, effect: "observe" as const },
+  { toolId: "press", description: "Press a control.", inputSchema: { type: "object" }, effect: "mutate" as const }
+];
+
+const readList = (index: number) => ({ kind: "tool_call", callId: `call.look.${index}`, toolId: "inspect", input: { part: "list" } });
+const pressOne = (index: number) => ({ kind: "tool_call", callId: `call.press.${index}`, toolId: "press", input: { target: "target.1" } });
+const done = { kind: "complete", result: { ready: true } };
+
+/** A press refused, applying nothing, until a look has run once; `looked` says whether it has. */
+function gatedPress(opensAfterLook: boolean) {
+  const calls: string[] = [];
+  let looked = false;
+  const executeTool = async ({ toolId }: { toolId: string }) => {
+    calls.push(toolId);
+    if (toolId === "inspect") {
+      looked = true;
+      return { page: "the list, read" };
+    }
+    if (opensAfterLook && looked) return { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, pressed: "target.1" }, effectApplied: true };
+    return { kind: "llm_evidence_tool_execution" as const, evidence: { ok: false, code: "list_unread" }, effectApplied: false, resultCode: "domain.action.rejected.list_unread" };
+  };
+  return { calls, executeTool };
+}
+
+describe("an action refused until a look ran", () => {
+  it("runs the identical request again after the look, and its success is used", async () => {
+    const gate = gatedPress(true);
+    const decide = vi.fn()
+      .mockResolvedValueOnce(pressOne(1))
+      .mockResolvedValueOnce(readList(1))
+      .mockResolvedValueOnce(pressOne(2))
+      .mockResolvedValueOnce(done);
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools: gatedTools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: gate.executeTool
+    });
+
+    expect(result).toMatchObject({ ok: true, accounting: { toolCalls: 3 } });
+    expect(gate.calls).toEqual(["press", "inspect", "press"]);
+    expect(result.trace.some((entry) => entry.resultCode === "llm_evidence_loop.already_answered")).toBe(false);
+    const pressRows = result.trace.filter((entry) => entry.toolId === "press");
+    expect(pressRows.map((entry) => entry.effectApplied)).toEqual([false, true]);
+    // The model's next decision is shown the retry's success, not the refusal.
+    const shown = JSON.stringify(decide.mock.calls[3]?.[0]);
+    expect(shown).toContain("\"pressed\":\"target.1\"");
+  });
+
+  it("answers the identical request from memory when nothing ran between", async () => {
+    const gate = gatedPress(true);
+    const decide = vi.fn()
+      .mockResolvedValueOnce(pressOne(1))
+      .mockResolvedValueOnce(pressOne(2))
+      .mockResolvedValueOnce(done);
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools: gatedTools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: gate.executeTool
+    });
+
+    expect(result).toMatchObject({ ok: true, accounting: { toolCalls: 1 } });
+    expect(gate.calls).toEqual(["press"]);
+    expect(result.trace[1]).toMatchObject({ toolId: "press", resultCode: "llm_evidence_loop.already_answered" });
+  });
+
+  it("still ends a refuse, look, refuse loop as a run without progress", async () => {
+    const gate = gatedPress(false);
+    let index = 0;
+    const decide = vi.fn().mockImplementation(async () => {
+      index += 1;
+      return index % 2 === 1 ? pressOne(index) : readList(index);
+    });
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools: gatedTools, decide, maxIterations: 40, maxToolCalls: 40, maxStepsWithoutProgress: 3, unusableDecisions: { stalled }, executeTool: gate.executeTool
+    });
+
+    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
+    expect(result.accounting.toolCalls).toBeLessThan(10);
+    // The retries after each look reached the tool rather than memory.
+    expect(gate.calls.filter((toolId) => toolId === "press").length).toBeGreaterThan(1);
+  });
+});
+
+// A trial refused until the site is put back runs again after a look on the same page (`../repeat-guard/outcomes.ts`,
+// office r2, `run-mvfq94ff-c8c21493`, rows 0096-0110 and 0151-0161). Every call here reports the same page digest, so the
+// repeat guard keys the refused trial and the look that settles it on one page. The gates' own `retry_allowed` reason is
+// left out of the refusal, as a gate that dropped it would answer: the guard's precondition, not that reason, must lift it.
+const trialTools = [
+  { toolId: "inspect", description: "Read a list.", inputSchema: { type: "object" }, effect: "observe" as const },
+  { toolId: "core.test_subflow", description: "Test the subflow.", inputSchema: { type: "object" }, effect: "mutate" as const }
+];
+const sameCart = { before: "cart", after: "cart" };
+const readCart = (index: number) => ({ kind: "tool_call", callId: `call.read.${index}`, toolId: "inspect", input: { part: "cart", undoes: "act-12" } });
+const testRevision = (index: number) => ({ kind: "tool_call", callId: `call.trial.${index}`, toolId: "core.test_subflow", input: { revision: 2, digest: "sha256:rev2" } });
+
+/** A trial refused `candidate.trial_reset_required` until a read has run, when `settles`; refused for good otherwise. */
+function resetGatedTrial(settles: boolean) {
+  const calls: string[] = [];
+  let read = false;
+  const executeTool = async ({ toolId }: { toolId: string }) => {
+    calls.push(toolId);
+    if (toolId === "inspect") {
+      read = true;
+      return { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, rows: 2 }, effectApplied: false, stateDigests: sameCart };
+    }
+    if (settles && read) return { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, verdict: "yes" }, effectApplied: true, stateDigests: sameCart, resultCode: "subflow.trial_yes" };
+    return { kind: "llm_evidence_tool_execution" as const, evidence: { ok: false, code: "candidate.trial_reset_required", actsToRestore: [{ act: "act-12" }] }, effectApplied: false, targetsUnchanged: true, stateDigests: sameCart, resultCode: "candidate.trial_reset_required" };
+  };
+  return { calls, executeTool };
+}
+
+describe("a trial refused until the site is put back", () => {
+  it("reaches the trial again after a look on the same page", async () => {
+    const gate = resetGatedTrial(true);
+    const decide = vi.fn()
+      .mockResolvedValueOnce(testRevision(1))
+      .mockResolvedValueOnce(readCart(1))
+      .mockResolvedValueOnce(testRevision(2))
+      .mockResolvedValueOnce(done);
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools: trialTools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: gate.executeTool
+    });
+
+    expect(result).toMatchObject({ ok: true, accounting: { toolCalls: 3 } });
+    expect(gate.calls).toEqual(["core.test_subflow", "inspect", "core.test_subflow"]);
+    expect(result.trace.some((entry) => entry.resultCode === "llm_evidence_loop.already_answered" || entry.resultCode === "llm_evidence_loop.repeat_refused")).toBe(false);
+    expect(result.trace.filter((entry) => entry.toolId === "core.test_subflow").map((entry) => entry.resultCode)).toEqual(["candidate.trial_reset_required", "subflow.trial_yes"]);
+  });
+
+  it("still ends refuse, look, refuse forever as a run without progress", async () => {
+    const gate = resetGatedTrial(false);
+    let index = 0;
+    const decide = vi.fn().mockImplementation(async () => {
+      index += 1;
+      return index % 2 === 1 ? testRevision(index) : readCart(index);
+    });
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools: trialTools, decide, maxIterations: 40, maxToolCalls: 40, maxStepsWithoutProgress: 3, unusableDecisions: { stalled }, executeTool: gate.executeTool
+    });
+
+    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
+    expect(result.accounting.toolCalls).toBeLessThan(10);
+    expect(gate.calls.filter((toolId) => toolId === "core.test_subflow").length).toBeGreaterThan(1);
+  });
+});

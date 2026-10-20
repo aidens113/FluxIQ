@@ -26,6 +26,10 @@
 //   a press with an effect that declared no lasting class. The snapshot marks
 //   each `possible`; it is never in place to undo, so it refuses nothing, and
 //   a phase's start asks the brief's ledger whether it may still be there.
+// - **A trial act repeats an explored act of any brief** (L1 build repeats):
+//   each brief's ledger is handed every brief's explored acts, asked whenever
+//   it matches or judges a trial act, so a whole run the supervisor's ledger
+//   records inherits a builder's named destination, named before or after.
 
 import { AutomationStudioSiteResetCreateBaselines } from "./create-baselines.ts";
 import type { AutomationStudioSiteResetRead } from "./contracts.ts";
@@ -77,7 +81,9 @@ export class AutomationStudioSiteResetProjectLedger {
       createBaselines: this.createBaselines,
       nextActId: () => this.nextActId(),
       sink: (recorded) => this.recorded(briefId, recorded),
-      possible: true
+      possible: true,
+      // A trial act of any brief repeats an explored act of any brief, its destinations resolved when asked (header).
+      buildExplored: () => [...this.briefs.values()].flatMap((brief) => brief.exploredActs())
     });
     ledger.adoptOriginalCollections([...this.originals.values()]);
     this.briefs.set(briefId, ledger);

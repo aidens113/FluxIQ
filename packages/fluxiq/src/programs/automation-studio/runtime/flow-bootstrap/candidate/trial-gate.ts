@@ -106,6 +106,8 @@
 // `cannotUndo`. Both are now copied as a project build's trial path passes
 // them, every token held to the declaration's opaque form; a malformed place
 // is dropped from its act and the act kept, as it is recorded without one.
+// Every spot token, the step's `controls` and its `collections` are copied the
+// same way (L1), by `./trial-acts.ts`.
 //
 // **A yes the site asked to slow down completes only once the Flow answers it
 // (t485; user, 2026-10).** Lane D round 12 (`run-mv62icw0-070f88ad`, D2): a
@@ -219,7 +221,7 @@
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
-import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
+import { automationStudioCandidateTrialActs } from "./trial-acts.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS } from "../plan/index.ts";
 import { automationStudioCandidateStartedWithSaid } from "./started-with.ts";
 import { automationStudioCandidateTrialStop as Stop } from "./trial-stop.ts";
@@ -230,8 +232,8 @@ import {
   type AutomationStudioResultKeptConditionsCarrier,
   type AutomationStudioResultStandingNoContradiction
 } from "../../result-verification/standing-no/index.ts";
-import { automationStudioSiteResetExploredOnAbsorbed, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetSpot, type AutomationStudioSiteResetTrialActPlace, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
-import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialAct, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialResult, type AutomationStudioCandidateTrialVerdict, type AutomationStudioFlowCandidate } from "./contracts.ts";
+import { automationStudioSiteResetExploredOnAbsorbed, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
+import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialResult, type AutomationStudioCandidateTrialVerdict, type AutomationStudioFlowCandidate } from "./contracts.ts";
 
 export const AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID = "core.test_candidate";
 
@@ -537,47 +539,11 @@ export class AutomationStudioFlowCandidateTrialGate {
       || !isJsonObject(result.feedback) || (result.trialRunId !== undefined && typeof result.trialRunId !== "string")) return failed("candidate.trial_result_invalid");
     // A verdict about another revision or digest is no verdict about this one.
     if (result.revision !== latest.revision || result.digest !== latest.digest) return failed("candidate.trial_result_mismatch");
-    const acts = trialActs(result.acts);
+    const acts = automationStudioCandidateTrialActs(result.acts);
     const answer: AutomationStudioCandidateTrialResult = { revision: latest.revision, digest: latest.digest, verdict: result.verdict!, feedback: structuredClone(result.feedback) as JsonObject, ...(result.trialRunId ? { trialRunId: result.trialRunId } : {}), ...(acts.length ? { acts } : {}) };
     const standingNo = (result as { standingNo?: unknown }).standingNo;
     return { answer, ...(standingNo !== undefined ? { standingNo } : {}) };
   }
-}
-
-/** A trial's lasting acts, copied with where each sat and what it made (header, t609); a malformed entry is dropped rather than refusing the verdict it rides on. */
-function trialActs(value: unknown): Array<AutomationStudioCandidateTrialAct & AutomationStudioSiteResetTrialActPlace> {
-  if (!Array.isArray(value)) return [];
-  const known = new Set<unknown>(AUTOMATION_STUDIO_ACTION_CONSEQUENCES);
-  return value.flatMap((entry): Array<AutomationStudioCandidateTrialAct & AutomationStudioSiteResetTrialActPlace> => {
-    if (!isJsonObject(entry) || typeof entry.step !== "number" || !Number.isSafeInteger(entry.step) || typeof entry.definitionId !== "string" || !entry.definitionId) return [];
-    if (!Array.isArray(entry.consequences) || !entry.consequences.length || !entry.consequences.every((consequence) => known.has(consequence))) return [];
-    if ((entry.label !== undefined && typeof entry.label !== "string") || (entry.control !== undefined && typeof entry.control !== "string")) return [];
-    const spot = spotOf(entry.spot), created = createdOf(entry.created);
-    return [{ step: entry.step, definitionId: entry.definitionId, ...(entry.label ? { label: entry.label } : {}), ...(entry.control ? { control: entry.control } : {}), consequences: [...new Set(entry.consequences as AutomationStudioCandidateTrialAct["consequences"])], ...(spot ? { spot } : {}), ...(created ? { created } : {}) }];
-  });
-}
-
-/** An opaque place token, in the form a declaration's `control.item` takes (`../../action-permissions/declaration.ts`). */
-const PLACE_TOKEN = /^[A-Za-z0-9:_-]{1,128}$/u;
-/** More items than any page lists is no list of what a step made. */
-const MAX_CREATED = 2_000;
-
-function placeToken(value: unknown): string | undefined {
-  return typeof value === "string" && PLACE_TOKEN.test(value) ? value : undefined;
-}
-
-/** A trial act's `spot`, where it names an item or a dialog by token (header). */
-function spotOf(value: unknown): AutomationStudioSiteResetSpot | undefined {
-  if (!isJsonObject(value)) return undefined;
-  const item = placeToken(value.item), dialog = placeToken(value.dialog);
-  return item || dialog ? { ...(item ? { item } : {}), ...(dialog ? { dialog } : {}) } : undefined;
-}
-
-/** A trial act's `created`: every entry a token, or none of it (header). */
-function createdOf(value: unknown): string[] | undefined {
-  if (!Array.isArray(value) || !value.length || value.length > MAX_CREATED) return undefined;
-  const read = value.map(placeToken);
-  return read.every((token): token is string => token !== undefined) ? [...new Set(read)] : undefined;
 }
 
 /** One act of the build as a trial's answer names it: its id, what it did, and the exploration call that made it; never what the reset last saw of it. */

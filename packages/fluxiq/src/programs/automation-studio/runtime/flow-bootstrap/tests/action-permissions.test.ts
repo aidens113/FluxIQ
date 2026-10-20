@@ -168,6 +168,29 @@ it("does not treat an item's page as its subject when the project adapter omits 
   expect(executed).toBe(1);
 });
 
+// L1 reset settlement: a toggle the build pressed is tied to its press back by the control's own place and state.
+it("tells the ledger the control's place and state on declared.control, and none where the domain gave none", async () => {
+  const own = new AutomationStudioSiteResetLedger();
+  const told: Array<Record<string, unknown> | undefined> = [];
+  const permissions = automationStudioFlowBootstrapActionPermissions({
+    permittedConsequences: ["create_new"], instructionIds: [],
+    siteReset: { claim: value => own.claim(value), target: (act, declared) => own.target(act, declared), explored: call => {
+      told.push(call.declared?.control);
+      own.explored(call);
+    } },
+    executeTool: async call => {
+      const verdict = await call.permission!(call.value.declaration as unknown as AutomationStudioActionDeclaration);
+      return { kind: "llm_evidence_tool_execution", evidence: { ok: verdict.permitted }, effectApplied: verdict.permitted };
+    }
+  });
+  const press = (callId: string, control: JsonObject) => permissions.executeTool({ callId, toolId: "core.run_node", value: { node: "example.toggle", parameters: {}, consequences: ["create_new"], declaration: { consequences: ["create_new"], control: { name: "Toggle", kind: "button", ...control }, verb: "press" } } });
+  await press("with", { place: "p:slot", state: "v:off" });
+  await press("without", {});
+  expect(told[0]).toMatchObject({ kind: "button", place: "p:slot", state: "v:off" });
+  expect(told[1]).not.toHaveProperty("place");
+  expect(told[1]).not.toHaveProperty("state");
+});
+
 type Answer = "grant" | "deny" | undefined;
 
 /** A thread that answers each question it is asked with the next scripted answer, and remembers what it was asked. */

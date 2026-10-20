@@ -7,8 +7,14 @@
 
 import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY as UNDOES } from "./contracts.ts";
 
-/** How an act that may have changed nothing settles with no undo (F1). */
-const NAME_DESTINATION = "An act that may have had no effect settles without an undo only against a destination named for it: if its effect would show in a list you can read (for example a playlist), read that list completely and name it with its resetDestination ref, on the act's own call or on a look that names the act under undoes; when a complete read after the act shows that list exactly as first observed, the act is left as it is and the judge is told.";
+/**
+ * How a reversible act of this build settles (L1, `./settlement-decision.ts`):
+ * the one rule, said once, beside each open act's own `settle`.
+ */
+const SETTLE_MODEL = "An act counts as settled when fresh complete reads, taken after it and after the latest lasting action or trial, show everything it could change as the build found it: a list it sat in or was named for, row for row and value for value, and its own control's state where it flipped one. "
+  + "Settled after a change was seen or an undo landed, it is restored; settled with no change ever seen, it is left as it is, and every later trial's judge is told. "
+  + "Core reads the lists and pages it can reach again itself before asking. Each open act says under settle what is still needed: read a named list completely again, undo what still differs there, press its own control back, or, where nothing read shows where its effect would be, read that list completely and name its ref as resetDestination on a look that names the act under undoes. "
+  + "cannotUndo never settles a reversible act.";
 
 /** The instructions the ledger and its trial policy answer with. */
 export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
@@ -22,16 +28,22 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
       + "Removing only what the act created needs no permission; anything else is asked. Do not change anything that was there before the build began. "
       + (differs ? "differs lists what is still not as the build found it. " : "")
       + "If the site offers no control that reverses an act, report its id under cannotUndo honestly. This does not restore a reversible effect tied to an identified item or resource, or permit an ordinary trial on those leftovers; the effect remains listed and a later proved correction is still allowed. A trial explicitly admitted with other unresolved acts reports them to its judge. "
-      + NAME_DESTINATION + " "
+      + SETTLE_MODEL + " "
       + "Then test the same revision again.";
   },
-  /** How an act that may have changed nothing settles with no undo (`./destination-unchanged.ts`, F1). */
-  nameDestination(): string {
-    return NAME_DESTINATION;
+  /** How a reversible act settles (L1, `./settlement-decision.ts`): said with each refusal that lists open acts. */
+  settleModel(): string {
+    return SETTLE_MODEL;
   },
-  /** Said after an act listed as left because a complete read of where it lands, taken after it, showed no change there (`./destination-unchanged.ts`). */
+  /** Said after an act settled with no change seen (L1): fresh complete reads of everything it could change showed it as the build found it. */
   leftUnchanged(): string {
-    return "left on the site; a complete read of its destination taken after it showed that destination exactly as first observed";
+    return "left on the site; nothing it could change showed a change in fresh complete reads taken after it";
+  },
+  /** A trial refused because a kept reversible act of this build is not settled (L1): cannotUndo does not settle it. */
+  unprovedReset(): string {
+    return "These reversible effects of the build are not settled, so an ordinary trial on them would not measure a fresh run. "
+      + "Naming an act under cannotUndo does not settle it, and neither does a matching name or a partial change: each act under actsToRestore says under settle what is still needed. "
+      + SETTLE_MODEL;
   },
   /** A trial refused because every act is undone but the start still differs. */
   startDiffers(): string {
@@ -42,7 +54,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
   /** A trial that ran with acts of this build still in place (`startedWith`). */
   startedWith(kept: boolean): string {
     return "This trial ran on a site that was not wholly as the build found it: what is listed here was already in place when it began, and the judge was told so. "
-      + (kept ? "The acts under cannotUndo could not be undone on this site, so they will be in place before every later trial too. " : "")
+      + (kept ? "Each act under cannotUndo is left in place, and its words say why: the site offers no control that undoes it, or nothing it could change showed a change. It stays in place before every later trial too. " : "")
       + "A step that would do one of these acts again may find it already done; write the Flow so it passes over an item that is already done rather than failing on it.";
   },
   /** A call whose `undoes` names an act whose one unasked removal is spent. */
@@ -52,11 +64,16 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
       + `do not name the act again. To change it anyway, make the call without "${UNDOES}", and anything it would delete is asked about. `
       + (acts ? "Undo the acts still listed under actsToUndo, then test the same revision again." : "Test the same revision again.");
   },
-  /** A call whose `undoes` names an act kept because the site cannot undo it, or one `left` because its destination showed no change (F1). */
+  /**
+   * A call whose `undoes` names an act that is no longer the model's to undo:
+   * `left`, settled because nothing it could change showed a change (L1), or
+   * kept because the site offers no control that undoes it (an act with no
+   * identified item or resource; an identified one is never kept this way).
+   */
   keptAct(left = false): string {
-    if (left) return `That act is left on the site: a complete read of its destination after it showed no change, so no undo is owed and this call was not run. Do not try to undo it; trials run with it listed, and their judge is told. Make the call without "${UNDOES}" if it does something else.`;
-    return "That act remains unresolved on this site. This call was not run. A reversible effect still requires proved baseline restoration before an ordinary trial. "
-      + `Do not try to undo it again; make the call without "${UNDOES}" if it does something else, or report the unresolved reset honestly.`;
+    if (left) return `That act is left on the site: fresh complete reads of everything it could change showed no change, so no undo is owed and this call was not run. Do not try to undo it; trials run with it listed, and their judge is told. Make the call without "${UNDOES}" if it does something else.`;
+    return "That act is kept on this site: the site offered no control that undoes it, so this call was not run. Trials run with it listed under startedWith.cannotUndo, and their judge is told. "
+      + `Do not try to undo it again; make the call without "${UNDOES}" if it does something else.`;
   },
   /**
    * An undo whose control is not on the act's own item, nor on what it created

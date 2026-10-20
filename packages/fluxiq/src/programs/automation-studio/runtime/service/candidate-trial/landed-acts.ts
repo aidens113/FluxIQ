@@ -49,6 +49,18 @@
 // - `items`: `{ before, after }`, the opaque tokens of the items -- rows, cards,
 //   list lines -- each of those two pages listed.
 //
+// **The acted control's place and state (L1 reset settlement).** The spot also
+// carries `resource`, `place` and `state`, and the diff `controls`: `{ page,
+// location?, before, after }`, the state counts the page showed at the
+// control's place just before and just after the step, so the ledger can see a
+// toggle come back. Every token is opaque, every count a positive safe integer,
+// at most 2,000 states a side; anything else drops `controls` and keeps the
+// act. `location` is the page's own address, as a read carries it beside its
+// `scope`: in a single-subflow plan the trial's act lands in a ledger that has
+// read no page yet, which then knows where to look for that toggle (L1 d7). A
+// location that is not a bounded single-line string is dropped, and the counts
+// kept.
+//
 // The rule is exploration's, positive evidence only (t479): an item is one the
 // step created only when the step stayed on its document, the page before it
 // listed its items, that list lacked the item, and no earlier step of the same
@@ -109,7 +121,8 @@ export function automationStudioCandidateTrialLandedActs(trace: AutomationStudio
     const control = automationStudioModelFacingControlWords(node.parameterValues);
     const spot = spotOf(attempt);
     const collections = collectionsOf(attempt);
-    acts.push({ step: index + 1, definitionId: attempt.definitionId, ...(node.label ? { label: node.label } : {}), ...(control ? { control } : {}), consequences, ...(possible ? { possible: true as const } : {}), ...(spot ? { spot } : {}), ...(collections ? { collections } : {}), ...(created.length ? { created } : {}) });
+    const controls = controlsOf(attempt);
+    acts.push({ step: index + 1, definitionId: attempt.definitionId, ...(node.label ? { label: node.label } : {}), ...(control ? { control } : {}), consequences, ...(possible ? { possible: true as const } : {}), ...(spot ? { spot } : {}), ...(collections ? { collections } : {}), ...(controls ? { controls } : {}), ...(created.length ? { created } : {}) });
   });
   return acts;
 }
@@ -130,13 +143,20 @@ const PLACE_TOKEN = /^[A-Za-z0-9:_-]{1,128}$/u;
 /** More items than any page lists is no list of a page's items. */
 const MAX_ITEMS = 2_000;
 
-/** The diff's `spot`, where it gave a token for the item or the dialog the step's control sat in, or for what it and its page are about (header, t719). */
+/** The diff's `spot`, where it gave a token for the item or the dialog the step's control sat in, for what it and its page are about (t719), or for the control's own place and state (L1, header). */
 function spotOf(attempt: AutomationStudioNodeAttemptTrace): AutomationStudioSiteResetSpot | undefined {
   const spot = attempt.stateRefs?.stateDiff?.spot;
   if (!isObject(spot)) return undefined;
-  const item = token(spot.item), dialog = token(spot.dialog), subject = token(spot.subject), page = token(spot.page), scope = token(spot.scope);
-  return item || dialog || subject || page || scope ? { ...(item ? { item } : {}), ...(dialog ? { dialog } : {}), ...(subject ? { subject } : {}), ...(page ? { page } : {}), ...(scope ? { scope } : {}) } : undefined;
+  const read: AutomationStudioSiteResetSpot = {};
+  for (const key of SPOT_KEYS) {
+    const value = token(spot[key]);
+    if (value) read[key] = value;
+  }
+  return Object.keys(read).length ? read : undefined;
 }
+
+/** Every token a step diff's `spot` may carry, in the form a declaration's `control` takes them. */
+const SPOT_KEYS = ["item", "dialog", "subject", "page", "scope", "resource", "place", "state"] as const satisfies ReadonlyArray<keyof AutomationStudioSiteResetSpot>;
 
 /** The diff's `items`: the tokens the page before the step and the page after it listed; a side not listed is absent (header). */
 function itemsOf(attempt: AutomationStudioNodeAttemptTrace): { before?: string[]; after?: string[] } | undefined {
@@ -211,4 +231,35 @@ function collectionsOf(attempt: AutomationStudioNodeAttemptTrace): AutomationStu
   };
   const before = read(witness.before), after = read(witness.after);
   return before && after ? { before, after } : undefined;
+}
+
+/** The diff's `controls` at the step control's place, when its page token and both sides are well formed (header, L1); otherwise none. */
+function controlsOf(attempt: AutomationStudioNodeAttemptTrace): AutomationStudioSiteResetTrialActPlace["controls"] {
+  const witness = attempt.stateRefs?.stateDiff?.controls;
+  if (!isObject(witness)) return undefined;
+  const page = token(witness.page), before = countsOf(witness.before), after = countsOf(witness.after);
+  if (!page || !before || !after) return undefined;
+  const location = locationOf(witness.location);
+  return { page, ...(location ? { location } : {}), before, after };
+}
+
+/** The longest location a read or a trial step carries (`../../flow-bootstrap/start-location.ts`). */
+const MAX_LOCATION = 2_048;
+
+/** A page's address: a non-empty single-line string no longer than a start location, or none (header). */
+function locationOf(value: JsonValue | undefined): string | undefined {
+  return typeof value === "string" && value.length > 0 && value.length <= MAX_LOCATION && !/[\u0000-\u001f\u007f]/u.test(value) ? value : undefined;
+}
+
+/** State tokens and their counts, every token opaque and every count a positive safe integer, or none. */
+function countsOf(value: JsonValue | undefined): Record<string, number> | undefined {
+  if (!isObject(value)) return undefined;
+  const entries = Object.entries(value);
+  if (entries.length > MAX_ITEMS) return undefined;
+  const counts: Record<string, number> = {};
+  for (const [state, count] of entries) {
+    if (!token(state) || typeof count !== "number" || !Number.isSafeInteger(count) || count < 1) return undefined;
+    counts[state] = count;
+  }
+  return counts;
 }

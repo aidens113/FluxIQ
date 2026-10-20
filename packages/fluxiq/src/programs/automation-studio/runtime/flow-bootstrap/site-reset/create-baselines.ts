@@ -6,7 +6,7 @@ const REVERSIBLE: ReadonlySet<string> = new Set(["create_new", "modify_existing"
 
 /** Immutable, build-only original inventory receipts. A receipt never grants undo permission. */
 export class AutomationStudioSiteResetCreateBaselines {
-  private readonly originals = new Map<string, { ref: string; resource: string; group: string; subjects: ReadonlySet<string> }>();
+  private readonly originals = new Map<string, { ref: string; resource: string; group: string; subjects: ReadonlySet<string>; location?: string }>();
   private readonly groups = new Map<string, ReadonlySet<string>>();
   private readonly groupResources = new Map<string, string>();
   private readonly pages = new Map<string, Set<string>>();
@@ -46,7 +46,7 @@ export class AutomationStudioSiteResetCreateBaselines {
       if (!this.valid.get(collection.group) || (this.groupResources.has(collection.group) && this.groupResources.get(collection.group) !== resource)) continue;
       let before = this.originals.get(collection.scope);
       if (!before && original && !this.sealed && this.originals.size < 256) {
-        before = { ref: `destination-${this.originals.size + 1}`, resource, group: collection.group, subjects: new Set(collection.subjects) };
+        before = { ref: `destination-${this.originals.size + 1}`, resource, group: collection.group, subjects: new Set(collection.subjects), ...(read.location ? { location: read.location } : {}) };
         this.originals.set(collection.scope, before);
         if (!this.groups.has(collection.group)) {
           this.groups.set(collection.group, new Set(grouped.get(collection.group)));
@@ -66,6 +66,31 @@ export class AutomationStudioSiteResetCreateBaselines {
   receipts(): Array<{ ref: string; ordinal: number; count: number }> {
     for (const receipt of this.current) this.issued.add(receipt.ref);
     return this.current.map(receipt => ({ ...receipt }));
+  }
+
+  /**
+   * The original an issued ref names, for a look that names an act under
+   * `undoes` (L1): resolved without the act's resource, since a trial's act
+   * carries none (office checkout r2, `run-mvfq94ff-c8c21493`, 0151). Only a
+   * ref the model was shown, of a group still valid; it proves nothing until
+   * that list is read again after the act.
+   */
+  named(reference: unknown): { scope: string; group: string } | undefined {
+    if (typeof reference !== "string" || !this.issued.has(reference)) return undefined;
+    const found = [...this.originals].find(([, entry]) => entry.ref === reference);
+    if (!found || this.valid.get(found[1].group) !== true) return undefined;
+    return { scope: found[0], group: found[1].group };
+  }
+
+  /** A list scope's original as the model may be told it: its ref, how many items it held, and where it was read. */
+  described(scope: string): { ref: string; count: number; location?: string } | undefined {
+    const original = this.originals.get(scope);
+    return original ? { ref: original.ref, count: original.subjects.size, ...(original.location ? { location: original.location } : {}) } : undefined;
+  }
+
+  /** Every ref the model was shown, in order, with its count and where it was read (L1: what an act with no witness can name). */
+  issuedRefs(): Array<{ ref: string; count: number; location?: string }> {
+    return [...this.originals.values()].filter((entry) => this.issued.has(entry.ref)).map((entry) => ({ ref: entry.ref, count: entry.subjects.size, ...(entry.location ? { location: entry.location } : {}) }));
   }
 
   check(declared: Pick<AutomationStudioSiteResetDeclared, "effect" | "consequences" | "control">, reference: unknown): { kind: "admit" } | { kind: "refused"; evidence: { ok: false; code: string; instruction: string } } {

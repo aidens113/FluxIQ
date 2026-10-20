@@ -76,6 +76,7 @@ import {
   buildAutomationStudioLlmEvidenceLoopDecisionSchema
 } from "./evidence-loop-decision.ts";
 import { automationStudioLlmEvidenceLookNeedsAttempt, automationStudioLlmEvidenceLookWasRefused, automationStudioLlmEvidenceNothingHappened, automationStudioLlmEvidenceRequestSignature } from "./repeat-policy.ts";
+import { automationStudioLlmEvidenceRefusedActionRetest } from "./refused-action-retest.ts";
 // What a loop may be configured with, and how those numbers resolve
 // (`loop-configuration.ts`). Re-exported below, so the loop's public
 // surface is unchanged.
@@ -236,9 +237,9 @@ export async function runAutomationStudioLlmEvidenceLoop(
   if ("issue" in limits || !toolSet) return failure(draftSteps, "llm_evidence_loop.invalid_configuration", trace, accounting, undefined, undefined, undefined, "issue" in limits ? limits.issue : automationStudioLlmEvidenceLoopToolSetIssue(input.tools)); // Named: the limits' check or the tool set's (`./configuration-issue/`, t584).
   const { runFlow, tools, toolIds, toolsById, mutableTools } = toolSet;
   const callIds = new Set<string>();
-  // Each request that ran, by what it asked in which epoch, and the call that
-  // answered it (`repeat-policy.ts` says which epoch).
+  // Each request that ran, by what it asked in which epoch (`repeat-policy.ts`), and the call that answered it; a refused action only until the next call runs (`./refused-action-retest.ts`).
   const answeredRequests = new Map<string, string>();
+  const retest = automationStudioLlmEvidenceRefusedActionRetest(answeredRequests);
   const observationEpochs = new Map<string, number>();
   // The call that made each protected tool's latest observation.
   const latestObservations = new Map<string, string>();
@@ -393,16 +394,16 @@ export async function runAutomationStudioLlmEvidenceLoop(
     history, draftRevision: () => rows.draftRevision, lastAction: undefined, dryRunSeen: { ran: false }, reaskedRequests: new Set(), callStates: new Map(), repeats: automationStudioLlmEvidenceRepeatGuard({ draftOf }), looks,
     recordRow, draftRecord, accountEvidence, unusable, dryRun, authored, refusalRun: automationStudioLlmEvidenceRefusalRun()
   };
-  // One call run and recorded, whoever decided it: the model's tool call, or the
-  // arrival the loop makes for it before its first decision (below), recorded
-  // exactly as that call added at iteration 0 would be. Nothing returned means
-  // the loop goes on; a result is how it ends.
+  // One call run and recorded, whoever decided it: the model's tool call, or the arrival the loop makes for it before its
+  // first decision (below), recorded exactly as that call added at iteration 0 would be. Nothing returned means the loop
+  // goes on; a result is how it ends.
   type ToolCall = Extract<AutomationStudioLlmEvidenceLoopDecision, { kind: "tool_call" }>;
   const runCall = async (iteration: number, callId: string, decision: ToolCall, tool: AutomationStudioLlmEvidenceTool, toolRequestSignature: string, rerun: {
     replaces?: AutomationStudioFlowDraftStep | undefined; held?: AutomationStudioLlmEvidenceRerunHeld | undefined; verifying?: Extract<AutomationStudioLlmEvidenceAnswerCheckOutcome, { kind: "verify" }> | undefined
   } = {}): Promise<AutomationStudioLlmEvidenceLoopResult | undefined> => {
     const { replaces: rerunReplaces, held: rerunHeld, verifying } = rerun;
     callIds.add(callId);
+    retest.callRan();
     answeredRequests.set(toolRequestSignature, callId);
     let execution: ReturnType<typeof automationStudioLlmEvidenceParseToolExecutionResult> | "threw";
     // Kept so a result that is not one can be refused by name (`./tool-failure.ts`).
@@ -437,12 +438,11 @@ export async function runAutomationStudioLlmEvidenceLoop(
     accounting.toolCalls += 1;
     accounting.evidenceBytes += evidenceBytes;
     const record = callRecord(tool, decision.input, execution);
-    // A look the domain refused looked at nothing, so it did not answer the request it was registered against and the identical
-    // retry is not answered from it (`repeat-policy.ts` says why this is the look and never the action); the repeat guard refuses
-    // it on an unchanged page instead (`repeat-guard/outcomes.ts`). Both doors have to open: the request's own signature, and the
-    // tool's latest observation for this epoch -- leaving either shut answers the retry from a refusal carrying nothing.
+    // A refused look looked at nothing, so its identical retry is not answered from it (`repeat-policy.ts`); the repeat guard refuses it on an unchanged page instead
+    // (`repeat-guard/outcomes.ts`). Both doors open: the signature and the tool's latest observation. A refused action is held until the next call (`./refused-action-retest.ts`).
     const lookRefused = automationStudioLlmEvidenceLookWasRefused({ evidence: value, effect: record.effect, effectApplied });
     if (lookRefused) answeredRequests.delete(toolRequestSignature);
+    retest.settled(toolRequestSignature, tool, { evidence: value, effectApplied });
     if (stateAfter !== undefined) handling.callStates.set(callId, stateAfter);
     // An action this build saw only look and propose nothing: what withdrawal withholds.
     if (record.effect === "observe" && record.proposes === false) looks.sawLook(tool.toolId, record.actionId);

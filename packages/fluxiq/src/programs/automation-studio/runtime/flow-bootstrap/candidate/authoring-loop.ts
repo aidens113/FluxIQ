@@ -108,7 +108,15 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
   const startCheck = ledger ? new AutomationStudioSiteResetStartCheck({ binding: input.submission.binding, projectId: input.submission.projectId, flowId: input.submission.flowId, tools: input.loop.tools, executeTool: (call) => input.loop.executeTool(call), liveCheck: { settleMs: input.siteResetSettleMs ?? AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS } }) : undefined;
   const reset: AutomationStudioSiteResetTrialReset | undefined = ledger && startCheck ? {
     // Each act still to undo is looked for on its own page, then the start is compared (`../site-reset/ledger.ts`, t471); after a start hook, every act (t475).
-    beforeTrial: (resetSignal, cannotUndo, options) => ledger.beforeTrial({ compare: () => startCheck.compare(resetSignal), compareAt: (place) => startCheck.compareAt(place, resetSignal) }, cannotUndo, options),
+    // Core looks at an open act's watched place itself, and the settled read reaches the ledger like any other (L1).
+    beforeTrial: (resetSignal, cannotUndo, options) => ledger.beforeTrial({
+      compare: () => startCheck.compare(resetSignal),
+      compareAt: (place) => startCheck.compareAt(place, resetSignal),
+      lookAt: async (location) => {
+        const read = await startCheck.lookAt(location, resetSignal);
+        if (!("unread" in read)) ledger.observed(read);
+      }
+    }, cannotUndo, options),
     trialRan: (acts, trialRunId) => ledger.trialRan(acts, trialRunId)
   } : undefined;
   const gate = new AutomationStudioFlowCandidateTrialGate({ latest: () => controller.latest(), trial: input.trial, signal, ...(reset ? { reset } : {}) });
