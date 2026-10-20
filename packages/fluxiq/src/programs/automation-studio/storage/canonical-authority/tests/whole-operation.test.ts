@@ -1,7 +1,24 @@
-import { expect, it, vi } from "vitest";
-import { wholeFixture } from "./whole-fixture.ts";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { disposeWholeFlowTemplate, wholeFlowFromTemplate, wholeFlowTemplate, wholeProjectFromTemplate, wholeProjectTemplate, type WholeFlowTemplate, type WholeProjectTemplate } from "./whole-fixture.ts";
 import { CanonicalAuthorityWholeOperation } from "../whole-operation.ts";
 import { AutomationStudioProjectAuthorityGuardStore } from "../../project/authority-guard/index.ts";
+
+// Each case's subject is the Flow operation after the project exists, so the
+// project is created once per mode and copied into every case (t731): created
+// afresh in each case, it ran these cases past the 15 s limit in a loaded
+// package run. One hook per mode, so each hook carries one project creation.
+// The cases whose subject is a save after the Flow exists copy a Flow created
+// once per mode in a copy of that project, again one hook per template.
+const projects = new Map<"sql" | "file", WholeProjectTemplate>();
+const flows = new Map<"sql" | "file", WholeFlowTemplate>();
+for (const mode of ["sql", "file"] as const) beforeAll(async () => { projects.set(mode, await wholeProjectTemplate(mode)); });
+for (const mode of ["sql", "file"] as const) beforeAll(async () => { flows.set(mode, await wholeFlowTemplate(mode, projects.get(mode))); });
+afterAll(async () => {
+  for (const template of [...flows.values(), ...projects.values()]) await disposeWholeFlowTemplate(template);
+  flows.clear();
+  projects.clear();
+});
+const wholeFixture = (mode: "sql" | "file", run: Parameters<typeof wholeProjectFromTemplate>[1]) => wholeProjectFromTemplate(projects.get(mode)!, run);
 
 for (const mode of ["sql", "file"] as const) {
   it(`holds actual ${mode} partial writer effects across a fresh authority reopen`, async () => {
@@ -16,8 +33,8 @@ for (const mode of ["sql", "file"] as const) {
     });
   });
   it(`has one ${mode} writer admission while the actual first effect is pending`, async () => {
-    await wholeFixture(mode, async f => {
-      const flow = await f.creation.createFlow({ projectId: f.project.id, name: "Original" });
+    await wholeFlowFromTemplate(flows.get(mode)!, async f => {
+      const flow = f.flow;
       let entered!: () => void, resume!: () => void; const ready = new Promise<void>(resolve => { entered = resolve; }), held = new Promise<void>(resolve => { resume = resolve; });
       const original = f.flows.writeProjectFlow.bind(f.flows);
       vi.spyOn(f.flows, "writeProjectFlow").mockImplementationOnce(async (...args) => { await original(...args); entered(); await held; });
@@ -29,8 +46,8 @@ for (const mode of ["sql", "file"] as const) {
   });
 }
 it("refuses unsupported graph input before admission or any canonical effect", async () => {
-  await wholeFixture("sql", async f => {
-    const flow = await f.creation.createFlow({ projectId: f.project.id, name: "Original" });
+  await wholeFlowFromTemplate(flows.get("sql")!, async f => {
+    const flow = f.flow;
     const before = await f.database.transaction({}, sql => sql.get("select count(*) as count from canonical_authority_operations"));
     await expect(f.writer.saveFlowInternal({ projectId: f.project.id, flow: { ...flow, nodes: [{ nodeId: "unsupported" }] } as never }, false)).rejects.toThrow("unsupported");
     expect(await f.database.transaction({}, sql => sql.get("select count(*) as count from canonical_authority_operations"))).toEqual(before);

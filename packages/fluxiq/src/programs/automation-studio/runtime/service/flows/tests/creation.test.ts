@@ -44,49 +44,87 @@ async function openSidecars(dir: string): Promise<string[]> {
 // Each mode's project is created once and copied into every test that uses it.
 // Creating it is setup, not the subject (about 400 ms and 250 SQL statements
 // alone); the tests below exercise the Flow create and save after it.
-const created = new Map<Mode, { root: string; project: Project }>(), templateRoots: string[] = [];
-beforeAll(async () => {
-  for (const mode of ["sql", "file"] as const) {
-    const root = await mkdtemp(path.join(os.tmpdir(), "whole-flow-")), { globalRoot, projectRoot } = layout(root, mode);
-    templateRoots.push(root);
-    await mkdir(globalRoot);
-    if (mode === "sql") await writeFile(path.join(globalRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }));
-    await new ProgramJsonStore(path.join(projectRoot, "index.json"), () => ({})).write({ projects: [], categories: [] });
-    const { projects, paths, authority, pool } = await wire(root, mode);
-    try { created.set(mode, { root, project: await new AutomationStudioProjectCreation(projects, paths, undefined, authority).createProject({ name: "Original" }) }); }
-    finally { await pool.closeAll(); }
-    // An open WAL would make the copy a torn snapshot; the last close checkpoints and removes it.
-    const open = await openSidecars(root);
-    if (open.length) throw new Error(`Template still has open SQLite sidecars: ${open.join(", ")}`);
+// A Flow created once in a copy of that project is the start of the save case.
+// One hook per template, so each hook carries one canonical operation: both
+// projects in one hook, and the create and save in one case, ran past the 15 s
+// limits on a loaded machine (t731, 2026-10-19).
+type CreatedFlow = Awaited<ReturnType<AutomationStudioFlowCreation["createFlow"]>>;
+type Template = { root: string; project: Project; flow?: CreatedFlow };
+const created = new Map<Mode, Template>(), withFlow = new Map<Mode, Template>(), templateRoots: string[] = [];
+/** Leaves a template at rest: an open WAL would make the copy a torn snapshot; the last close checkpoints and removes it. */
+async function atRest(root: string, pool: AutomationStudioProjectDatabasePool) {
+  await pool.closeAll();
+  const open = await openSidecars(root);
+  if (open.length) throw new Error(`Template still has open SQLite sidecars: ${open.join(", ")}`);
+}
+for (const mode of ["sql", "file"] as const) beforeAll(async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "whole-flow-")), { globalRoot, projectRoot } = layout(root, mode);
+  templateRoots.push(root);
+  await mkdir(globalRoot);
+  if (mode === "sql") await writeFile(path.join(globalRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }));
+  await new ProgramJsonStore(path.join(projectRoot, "index.json"), () => ({})).write({ projects: [], categories: [] });
+  const { projects, paths, authority, pool } = await wire(root, mode);
+  try {
+    created.set(mode, { root, project: await new AutomationStudioProjectCreation(projects, paths, undefined, authority).createProject({ name: "Original" }) });
+  } finally {
+    await atRest(root, pool);
+  }
+});
+for (const mode of ["sql", "file"] as const) beforeAll(async () => {
+  const template = created.get(mode)!, root = await mkdtemp(path.join(os.tmpdir(), "whole-flow-"));
+  templateRoots.push(root);
+  await cp(template.root, root, { recursive: true });
+  const { creation, pool } = await wire(root, mode);
+  try {
+    withFlow.set(mode, { root, project: template.project, flow: await creation.createFlow({ projectId: template.project.id, name: "Original Flow" }) });
+  } finally {
+    await atRest(root, pool);
   }
 });
 afterAll(async () => {
   for (const root of templateRoots.splice(0)) await removeRoot(root);
   created.clear();
+  withFlow.clear();
 });
-async function fixture(mode: Mode) {
-  const template = created.get(mode)!, root = await mkdtemp(path.join(os.tmpdir(), "whole-flow-"));
+async function fixture(mode: Mode, from: Map<Mode, Template> = created) {
+  const template = from.get(mode)!, root = await mkdtemp(path.join(os.tmpdir(), "whole-flow-"));
   let pool: AutomationStudioProjectDatabasePool | undefined;
   cleanups.push(async () => { await pool?.closeAll(); await removeRoot(root); });
   await cp(template.root, root, { recursive: true });
   const wired = await wire(root, mode);
   pool = wired.pool;
-  return { ...wired, project: structuredClone(template.project) };
+  return { ...wired, project: structuredClone(template.project), flow: structuredClone(template.flow) };
+}
+/** The Flow's name in all three places a save writes it, and the receipts and change-feed entries its operations left. */
+async function written(fixtureState: Awaited<ReturnType<typeof fixture>>, flowId: string) {
+  const { repositories, flowPaths, project, pool } = fixtureState;
+  const lease = await pool.acquire(project.id);
+  try {
+    return {
+      canonical: (await repositories.flows.get(flowId))?.name,
+      document: (await new ProgramJsonStore(flowPaths.flowFile(project.id, flowId), () => ({})).read() as { name: string }).name,
+      sql: (await lease.database.get<{ name: string }>("select name from flows where flow_id=?", [flowId]))?.name,
+      receipts: (await lease.database.get<{ count: number }>("select count(*) as count from canonical_whole_effect_receipts"))?.count,
+      feed: (await lease.database.get<{ count: number }>("select count(*) as count from change_feed where entity_id=?", [flowId]))?.count
+    };
+  } finally {
+    await lease.release();
+  }
 }
 describe("real generated orchestration Flow writer ingress", () => {
-  for (const mode of ["sql", "file"] as const) it(`creates and saves through all actual ${mode} effects under one parent`, async () => {
-    const { creation, writer, project, repositories, paths, flowPaths, pool } = await fixture(mode);
-    const flow = await creation.createFlow({ projectId: project.id, name: "Original Flow" }); expect(flow.flowId).toMatch(/^flow\.[0-9a-f-]{36}$/);
-    const changed = await writer.saveFlowInternal({ projectId: project.id, flow: { ...flow, name: "Changed" } }, false);
-    expect((await repositories.flows.get(flow.flowId))?.name).toBe("Changed");
-    expect((await new ProgramJsonStore(flowPaths.flowFile(project.id, flow.flowId), () => ({})).read() as { name: string }).name).toBe("Changed");
-    const lease = await pool.acquire(project.id);
-    try {
-      expect(await lease.database.get<{ name: string }>("select name from flows where flow_id=?", [flow.flowId])).toMatchObject({ name: "Changed" });
-      expect(await lease.database.get<{ count: number }>("select count(*) as count from canonical_whole_effect_receipts")).toMatchObject({ count: 4 });
-      expect(await lease.database.get<{ count: number }>("select count(*) as count from change_feed where entity_id=?", [flow.flowId])).toMatchObject({ count: 2 });
-    } finally { await lease.release(); }
-    expect(changed.projectId).toBe(project.id); expect(paths.root).toBeDefined();
+  for (const mode of ["sql", "file"] as const) it(`creates through all actual ${mode} effects under one parent`, async () => {
+    const state = await fixture(mode);
+    const flow = await state.creation.createFlow({ projectId: state.project.id, name: "Original Flow" });
+    expect(flow.flowId).toMatch(/^flow\.[0-9a-f-]{36}$/);
+    expect(await written(state, flow.flowId)).toEqual({ canonical: "Original Flow", document: "Original Flow", sql: "Original Flow", receipts: 2, feed: 1 });
+  });
+  for (const mode of ["sql", "file"] as const) it(`saves through all actual ${mode} effects under one parent`, async () => {
+    const state = await fixture(mode, withFlow);
+    const flow = state.flow!;
+    const changed = await state.writer.saveFlowInternal({ projectId: state.project.id, flow: { ...flow, name: "Changed" } }, false);
+    expect(await written(state, flow.flowId)).toEqual({ canonical: "Changed", document: "Changed", sql: "Changed", receipts: 4, feed: 2 });
+    expect(changed.projectId).toBe(state.project.id);
+    expect(state.paths.root).toBeDefined();
   });
   it("rejects caller identity and shaped/custom factory ports before first Flow effect", async () => {
     const { creation, project, repositories, authority } = await fixture("sql");
