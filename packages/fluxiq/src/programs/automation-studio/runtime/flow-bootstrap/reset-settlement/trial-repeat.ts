@@ -4,9 +4,9 @@
 // A Flow step cannot carry a `resetDestination` ref, so a trial's act had no
 // destination, and the trial's own press of the very control an exploration
 // call had named a destination for could never settle. A trial act that
-// repeats an explored act of its build -- any brief's (`./project-ledger.ts`) --
+// repeats an explored act of its build -- any brief's (`../site-reset/project-ledger.ts`) --
 // shares that act's destinations, lazily: one named for the explored act later
-// covers the trial act too (`./ledger.ts`).
+// covers the trial act too (`../site-reset/ledger.ts`).
 //
 // A repeat is positive only: the same lasting classes; the same registered
 // operation where both say which (the explored call's landed operation, the
@@ -15,9 +15,9 @@
 // Pure.
 
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
-import type { AutomationStudioSiteResetSpot } from "./contracts.ts";
+import type { AutomationStudioSiteResetSettlementSpot } from "./spot.ts";
 
-type Side = { consequences: readonly AutomationStudioActionConsequence[]; spot?: AutomationStudioSiteResetSpot | undefined };
+type Side = { consequences: readonly AutomationStudioActionConsequence[]; spot?: AutomationStudioSiteResetSettlementSpot | undefined };
 
 /** Whether `trial` repeats `explored` (header). */
 export function automationStudioSiteResetTrialRepeats(trial: Side & { definitionId?: string | undefined }, explored: Side & { operation?: string | undefined }): boolean {

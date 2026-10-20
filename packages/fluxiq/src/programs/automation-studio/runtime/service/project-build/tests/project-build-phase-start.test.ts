@@ -232,6 +232,24 @@ describe("what a phase is told of possibly lasting presses", () => {
   });
 });
 
+// t743 (S2): an act no call can settle -- a press on a control in no list any
+// read showed, so nothing can be named for it -- is never among the acts in
+// place, yet it is still on the site. A phase is told it apart, as one not to
+// undo, with no trial able to run while it is there.
+describe("what a phase is told of an act no call can settle", () => {
+  it("names it under actsUnsettleable and in its note, never among the acts this reset undoes", async () => {
+    const ledger = new AutomationStudioSiteResetProjectLedger();
+    ledger.forBrief("brief.earlier").explored({ callId: "mark", toolId: "core.run_node", landed: true, declared: { permitted: true, effect: "mutate", consequences: ["modify_existing"], control: { name: "Mark", kind: "button", subject: "s:mark" }, verb: "press" } });
+    expect(ledger.unsatisfiable().map((act) => act.act)).toEqual(["act-1"]);
+    const start = new AutomationStudioProjectBuildPhaseStart({ environment: {} as AutomationStudioProjectBuildTrialEnvironment, arrival: undefined, ledger, proposals: new AutomationStudioProjectBuildProposals() });
+    expect(start.onSite()).toMatchObject({ still: [], unsettleable: [{ act: "act-1", did: "press \"Mark\" button" }] });
+    const started = await start.explore({ phase: "reset", scope: scopeOf("reset", "brief.reset", []), own: ledger.forBrief("brief.reset"), signal: new AbortController().signal, openingArrives: false });
+    expect(started.told).toMatchObject({ actsUnsettleable: [{ act: "act-1", did: "press \"Mark\" button" }] });
+    expect(started.told).not.toHaveProperty("stillOnSite");
+    expect(String(started.told.note)).toContain("These acts of this build are still on the site, and nothing can check or put them back, so do not try to undo them; no trial can run while they are there: act-1.");
+  });
+});
+
 /** The Flow a project build assembles from the two subflows' proposals: the router-run subflow's arrival, then a call to each (`project-agents/supervisor/assembly.ts`). */
 function assembled(registry: AutomationStudioNodeRegistry, resolution: Parameters<typeof validateAutomationStudioFlowBootstrapPlan>[0]["resolution"]): AutomationStudioFlowCandidate {
   const spec = { parts: [{ id: "p1", quote: { sourceId: "s", text: "x" }, goalFacts: [], lastingActs: [] }], notAsked: [] };

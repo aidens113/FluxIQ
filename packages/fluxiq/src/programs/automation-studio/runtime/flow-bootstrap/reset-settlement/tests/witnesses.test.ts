@@ -50,7 +50,7 @@ describe("a group witness", () => {
   const collection = (scope: string, subjects: string[], changed: Record<string, string> = {}) => ({ scope, group: "g:box", subjects, states: Object.fromEntries(subjects.map((subject) => [subject, changed[subject] ?? `v:${subject}`])) });
   const seen = () => {
     const observations = new AutomationStudioSiteResetObservations();
-    observations.observe({ state: {}, differs: [], location: "loc:box", collections: [collection("p:cards", ["s:soup"]), collection("p:saved", ["s:pie"]), collection("p:recent", ["s:stew"])] }, true, 0, 0);
+    observations.observe({ location: "loc:box", collections: [collection("p:cards", ["s:soup"]), collection("p:saved", ["s:pie"]), collection("p:recent", ["s:stew"])] }, true, 0, 0);
     return observations;
   };
   const judge = (observations: AutomationStudioSiteResetObservations, clock = 1) => groupWitness({ observations, group: "g:box", scopes: ["p:cards"], subjects: ["s:pie"], sequence: 1, since: 1, clock });
@@ -58,7 +58,7 @@ describe("a group witness", () => {
   it("covers the named scopes and every original that held the act's subject, and holds only on a fresh exact read", () => {
     const observations = seen();
     expect(judge(observations)).toEqual({ status: "stale", scopes: ["p:cards", "p:saved"], changed: false });
-    observations.observe({ state: {}, differs: [], collections: [collection("p:cards", ["s:soup"]), collection("p:saved", ["s:pie"]), collection("p:recent", ["s:stew", "s:soup"])] }, true, 1, 1);
+    observations.observe({ collections: [collection("p:cards", ["s:soup"]), collection("p:saved", ["s:pie"]), collection("p:recent", ["s:stew", "s:soup"])] }, true, 1, 1);
     // An unrelated list changing does not block.
     expect(judge(observations)).toMatchObject({ status: "holds" });
     // A later lasting call makes that read stale.
@@ -71,7 +71,7 @@ describe("a group witness", () => {
     if (defect === "moved") lists.splice(0, 3, collection("p:cards", ["s:soup", "s:pie"]), collection("p:saved", []), collection("p:recent", ["s:stew"]));
     if (defect === "missing") lists.splice(1, 1);
     if (defect === "malformed") lists[0] = collection("p:cards", ["s:soup", "s:soup"]);
-    observations.observe({ state: {}, differs: [], collections: lists }, true, 1, 1);
+    observations.observe({ collections: lists }, true, 1, 1);
     expect(judge(observations)).toMatchObject({ status: defect === "missing" || defect === "malformed" ? "incomplete" : "differs" });
   });
 

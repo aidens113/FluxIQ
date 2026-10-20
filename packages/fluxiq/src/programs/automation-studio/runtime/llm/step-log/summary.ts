@@ -25,7 +25,9 @@ export const automationStudioLlmStepLogSummary = {
     return "ok";
   },
   tool(evidence: unknown, resultCode: unknown, error: unknown, unread?: string | undefined): string {
-    if (error !== undefined) return oneLine(`threw ${codeOf(error) ?? (error instanceof Error ? error.name : "non_error")}`);
+    // `error` is the plain `{name, code}` record the tool step made (`./tool-step.ts`), or the error itself:
+    // its name is read off it, so a codeless DOMException TimeoutError is "threw TimeoutError", never `non_error` (S5).
+    if (error !== undefined) return oneLine(`threw ${codeOf(error) ?? nameOf(error) ?? "non_error"}`);
     const said = typeof resultCode === "string" && resultCode ? resultCode : asRecord(evidence)?.ok === false ? "refused" : "ok";
     return oneLine(unread ? `${said}, unread: ${unread.replace(/^llm_evidence_loop\.tool_result_invalid\.?/u, "") || "invalid"}` : said);
   }
@@ -34,6 +36,12 @@ export const automationStudioLlmStepLogSummary = {
 function codeOf(error: unknown): string | undefined {
   const code = asRecord(error)?.code;
   return typeof code === "string" ? code : undefined;
+}
+
+/** A throw's name, when it carries one that reads as an identifier. */
+function nameOf(error: unknown): string | undefined {
+  const name = asRecord(error)?.name ?? (error instanceof Error ? error.name : undefined);
+  return typeof name === "string" && /^[A-Za-z][A-Za-z0-9_]{0,63}$/u.test(name) ? name : undefined;
 }
 
 function oneLine(text: string): string {

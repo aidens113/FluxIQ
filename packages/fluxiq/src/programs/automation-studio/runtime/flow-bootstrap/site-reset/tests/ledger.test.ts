@@ -584,7 +584,8 @@ describe("a creation whose admitted destination a complete fresh read shows unch
     if (defect === "unbaselined") ledger.observed(read());
     expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
     expect(await ledger.beforeTrial(back, ["act-1"])).toMatchObject({ kind: "refuse" });
-    expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1"]);
+    // Still on the site: to undo, or -- unbaselined, with no ref that could ever be issued -- one no call can settle (t743).
+    expect([...ledger.inPlace(), ...ledger.unsatisfiable()].map((act) => act.act)).toEqual(["act-1"]);
     // A line that was there before the build is never an undo's.
     expect(ledger.target("act-1", aim(["delete"], { scope: "p:lines", subject: "s:first", resource: SITE }))).toMatchObject({ kind: "refused" });
   });

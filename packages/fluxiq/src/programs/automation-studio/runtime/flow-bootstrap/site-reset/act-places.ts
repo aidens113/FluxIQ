@@ -30,7 +30,8 @@
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../../llm/index.ts";
-import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY, type AutomationStudioSiteResetPlace, type AutomationStudioSiteResetRead, type AutomationStudioSiteResetReadAnswer } from "./contracts.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY } from "../reset-settlement/index.ts";
+import type { AutomationStudioSiteResetPlace, AutomationStudioSiteResetRead, AutomationStudioSiteResetReadAnswer } from "./contracts.ts";
 
 /** The classes whose act the reset may have to look for. */
 const LOOKED_FOR: ReadonlySet<string> = new Set(["create_new", "modify_existing", "delete"]);

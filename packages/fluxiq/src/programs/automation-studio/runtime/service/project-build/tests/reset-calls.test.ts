@@ -125,4 +125,16 @@ describe("a refused claim lists the whole build's open acts", () => {
     const listed = targeted.kind === "refused" ? targeted.evidence.actsToUndo as Array<{ act: string }> : [];
     expect(listed.map((act) => act.act)).toEqual(["act-1", "act-2"]);
   });
+
+  // t743 (S2): an act no call can settle -- here a press in a build that never read a list, so nothing can be named for
+  // it -- is never one to undo, but it is still on the site: a refusal listing the build's acts lists it apart.
+  it("lists the whole build's acts no call can settle apart, never among those to undo", () => {
+    const project = new AutomationStudioSiteResetProjectLedger();
+    project.forBrief("brief.first").explored(rate("rate-pie", "s:pie"));
+    expect(project.unsatisfiable().map((act) => act.act)).toEqual(["act-1"]);
+    const reset = automationStudioProjectBuildResetCalls(project, project.forBrief("brief.reset"));
+    const unknown = reset.claim("act-9");
+    expect(unknown).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_unknown_act", actsToUndo: [], actsUnsettleable: [{ act: "act-1", reason: "gate_unsatisfiable" }] } });
+    expect(reset.openActs()).toEqual([]);
+  });
 });

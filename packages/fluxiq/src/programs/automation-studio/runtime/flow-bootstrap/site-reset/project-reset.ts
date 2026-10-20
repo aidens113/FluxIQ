@@ -21,7 +21,9 @@
 //   acts undone, and what each took back is answered together;
 // - otherwise each ledger looks for its own acts on their own pages and applies
 //   the trial policy; any refusal refuses, naming every act still to undo across
-//   them, the first `candidate.trial_reset_required` leading;
+//   them, the first `candidate.trial_reset_required` leading -- one with acts to
+//   undo before one refused only on acts no call can settle (t743) -- and every
+//   act no call can settle listed together under `actsUnsettleable`;
 // - admitted, what each ledger said the trial starts with is said together.
 //
 // The start comparison is read once per ask and shared, so the target is taken
@@ -45,6 +47,7 @@ import type {
 } from "./contracts.ts";
 import type { AutomationStudioSiteResetLedger } from "./ledger.ts";
 import type { AutomationStudioSiteResetProjectLedger } from "./project-ledger.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "./words.ts";
 
 export function automationStudioSiteResetProjectReset(input: {
   project: Pick<AutomationStudioSiteResetProjectLedger, "snapshot" | "forBrief">;
@@ -88,10 +91,16 @@ export function automationStudioSiteResetProjectReset(input: {
 function joined(decisions: readonly AutomationStudioSiteResetDecision[]): AutomationStudioSiteResetDecision {
   const refusals = decisions.filter((decision): decision is Extract<AutomationStudioSiteResetDecision, { kind: "refuse" }> => decision.kind === "refuse");
   if (refusals.length) {
-    const lead = refusals.find((refusal) => refusal.evidence.code === "candidate.trial_reset_required") ?? refusals[0]!;
+    const required = refusals.filter((refusal) => refusal.evidence.code === "candidate.trial_reset_required");
+    // A refusal some call can meet leads one refused only on acts no call can settle (t743).
+    const meetable = (refusal: Extract<AutomationStudioSiteResetDecision, { kind: "refuse" }>): boolean => refusal.evidence.failed !== "acts_unsettleable";
+    const lead = required.find((refusal) => list(refusal.evidence.actsToUndo).length > 0) ?? required.find(meetable) ?? refusals.find(meetable) ?? refusals[0]!;
     const actsToUndo = refusals.flatMap((refusal) => list(refusal.evidence.actsToUndo));
     const cannotUndo = refusals.flatMap((refusal) => list(refusal.evidence.cannotUndo));
-    const evidence = { ...lead.evidence, ...(actsToUndo.length ? { actsToUndo } : {}), ...(cannotUndo.length ? { cannotUndo } : {}) };
+    const actsUnsettleable = refusals.flatMap((refusal) => list(refusal.evidence.actsUnsettleable));
+    // Another ledger's acts no call can settle are said by the lead's instruction too, with the honest exit (t743).
+    const exit = actsUnsettleable.length > 0 && !list(lead.evidence.actsUnsettleable).length && typeof lead.evidence.instruction === "string" ? { instruction: `${lead.evidence.instruction} ${WORDS.unsettleable(actsToUndo.length > 0)}` } : {};
+    const evidence = { ...lead.evidence, ...exit, ...(actsToUndo.length ? { actsToUndo } : {}), ...(cannotUndo.length ? { cannotUndo } : {}), ...(actsUnsettleable.length ? { actsUnsettleable } : {}) };
     return { kind: "refuse", evidence, moved: refusals.some((refusal) => refusal.moved) };
   }
   const admitted = decisions as ReadonlyArray<Extract<AutomationStudioSiteResetDecision, { kind: "admit" }>>;

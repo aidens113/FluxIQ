@@ -27,8 +27,16 @@
 // findings with it and is passed on whole. Advice is only ever left out where
 // it was said before: nothing here decides that advice is wrong.
 //
+// **Advice to add a field a read was refused for is said as the order that can
+// pass (S5).** The same memory keeps whether a read in this build was refused
+// for a cut-short text field, and what remains of an advice that asks to add a
+// field or column is then said as Core's disclosure order
+// (`./disclosure-advice.ts`). The builder loop hands it each other tool call's
+// answer (`saw`), so a memory shared across a build's briefs carries it too.
+//
 // Generic words only: no site's, task's or list's terms.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import { AutomationStudioSubflowDisclosureAdvice } from "./disclosure-advice.ts";
 
 /** Where each judge call's part of an advice starts, as the agreement writes it. */
 const CALL_PART = /Judge call [12](?: \(|: )/gu;
@@ -56,9 +64,21 @@ type Trial = { revision: number; verdict: string; stopped?: string | undefined; 
 /** One builder's memory of the advice its trials were given, and the answer its test tool passes on (header). */
 export class AutomationStudioSubflowRepeatedAdvice {
   private readonly trials: Trial[] = [];
+  /** Whether a read in this build was refused for a cut-short text field, and the advice said as the order that can pass (header, S5). */
+  private readonly disclosure = new AutomationStudioSubflowDisclosureAdvice();
 
-  /** The test tool's answer as the builder is shown it: a judged no's advice less what an earlier trial's advice already said, with a note in its place. Remembers every trial. */
+  /** Records an answer of a tool call that is not a test: a read refused for a cut-short text field (header, S5). */
+  saw(ran: unknown): void {
+    this.disclosure.saw(ran);
+  }
+
+  /** The test tool's answer as the builder is shown it: a judged no's advice less what an earlier trial's advice already said, with a note in its place, and advice to add a field a read was refused for said as the disclosure order (S5). Remembers every trial. */
   told<T extends { evidence: JsonValue }>(answered: T): T {
+    return this.disclosure.told(this.withoutRepeats(answered));
+  }
+
+  /** A judged no's advice less what an earlier trial's advice already said, with a note in its place (header). Remembers every trial. */
+  private withoutRepeats<T extends { evidence: JsonValue }>(answered: T): T {
     const evidence = answered.evidence;
     if (!isObject(evidence) || evidence.partial !== true || typeof evidence.revision !== "number" || typeof evidence.verdict !== "string") return answered;
     const feedback = isObject(evidence.feedback) ? evidence.feedback : {};

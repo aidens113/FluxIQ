@@ -33,11 +33,13 @@ describe("the answer to a reset", () => {
     const run = await supervise([
       call(IDS.writePlan, THREE_PART),
       dispatch(briefs),
+      // Held once for a changed brief of the failed subflow, then for the reset (t743).
+      end("blocked", "The shelf is not shown."),
       end("blocked", "The shelf is not shown."),
       dispatch([reset()], "Put the target back before ending."),
       end("blocked", "The shelf is not shown.")
-    ], project({ builder }));
-    expect(run.feedback.map((entry) => entry.code)).toEqual(["project.completion_reset_first"]);
+    ], project({ builder }), { spareTurns: 3 });
+    expect(run.feedback.map((entry) => entry.code)).toEqual(["project.completion_repair_first", "project.completion_reset_first"]);
     // The ending was held for this reset, so its answer says to end again now (`./reset-to-end.test.ts`, t683).
     expect(nexts(run.shown).at(-1)).toEqual(expect.stringContaining("end again now"));
     expect(nexts(run.shown).at(-1)).toEqual(expect.stringContaining("project.completion_reset_first"));
@@ -109,6 +111,7 @@ describe("the answer to a reset sent because an ending was held for it", () => {
       call(IDS.writePlan, THREE_PART),
       dispatch(THREE_BRIEFS),
       end("blocked", REASON),
+      end("blocked", REASON),
       dispatch([reset()], "Put the target back: my ending was held."),
       dispatch([reset()], "Try the undo again."),
       end("blocked", REASON)
@@ -140,11 +143,12 @@ describe("the answer to a reset sent because an ending was held for it", () => {
       call(IDS.writePlan, THREE_PART),
       dispatch(THREE_BRIEFS),
       end("blocked", REASON),
+      end("blocked", REASON),
       dispatch([brief("find_titles", ["p1"])], "Build the first subflow again before ending."),
       dispatch([reset()], "Put the target back."),
       end("blocked", REASON)
     ], project({ builder: blockedThird }));
-    expect(run.feedback.map((entry) => entry.code)).toEqual(["project.completion_reset_first"]);
+    expect(run.feedback.map((entry) => entry.code)).toEqual(["project.completion_repair_first", "project.completion_reset_first"]);
     expect(answersOf(run.shown)[2]!.next).toBe(GUIDANCE.next.afterResetNothingAssembled);
   });
 });

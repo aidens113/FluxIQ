@@ -2,10 +2,14 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import { emitAutomationStudioActivity } from "../../activity/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY } from "../../llm/decision-handlers/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck } from "../../llm/evidence-loop.ts";
+import { automationStudioProjectSupervisorBriefSizing } from "./brief-sizing.ts";
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";
 import { automationStudioProjectSupervisorLeftOnTarget } from "./left-on-target.ts";
 import type { AutomationStudioProjectSupervisorCompletedOnPass, AutomationStudioProjectSupervisorRecoveryShortfall, AutomationStudioProjectSupervisorReliesOnRecovery, AutomationStudioProjectSupervisorResetToEnd, AutomationStudioProjectSupervisorStandingRescue } from "./state.ts";
+
+/** The supervisor decisions a held ending needs left (header, t743): the repair's dispatch, a reset the reset rule may ask for, and the ending again. */
+const REPAIR_TURNS = 3;
 
 /** How many times an ending is held back for a reset before it is let through with what is left named (header). */
 const MAX_HELD_FOR_RESET = 2;
@@ -96,6 +100,31 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_COMPLETION_SCHEMA: JsonObject 
  * latest; one naming any other revision that is not the latest is refused
  * `project.completion_not_latest` as before.
  *
+ * **A failed subflow gets one changed brief before the build ends (rerun
+ * round 4, t743).** Photo, social, job and office runs ended right after one
+ * brief came back blocked, with most of their money left. While the build can
+ * still pay for a brief -- the dispatch's own sizing check
+ * (`./brief-sizing.ts`), here for one repair -- an ending is refused
+ * `project.completion_repair_first`, naming each subflow whose latest build or
+ * repair return is blocked or partial and that has had no changed brief since
+ * (`unrepaired`, `./state.ts`): a repair of it, or a brief of it under an
+ * amended plan; the same brief sent again does not count. A return with a
+ * closed terminal reason (`terminalReason`, `../dispatch/ending.ts`) holds
+ * nothing. Each subflow holds an ending at most once (`heldForRepair`), so the
+ * rule can never keep the build going to its ceiling; and it holds nothing
+ * when the loop has too few decisions left to send the repair and end again
+ * (`REPAIR_TURNS`): a held ending would only run the turns out. It comes before the reset
+ * rule, so a reset is sent only once the build is really ending; and it does
+ * not touch an ending that completes on a pass that stands.
+ *
+ * **An act no call can settle holds no ending (t743, S2).** While the build
+ * has an act on the target that no call can check or put back
+ * (`unsettleable`, `./left-on-target.ts`, from each brief's ledger's
+ * `unsatisfiable()`), no trial can run anywhere in the build, so neither rule
+ * holds an ending for it: a changed brief could not be tested, and such an
+ * act is never `undoable`, so no reset is asked for it. The ending's reason
+ * names it after the person's words as left on the target.
+ *
  * **A refusal for the reset keeps why (t683).** Each
  * `project.completion_reset_first` refusal sets the state's `resetToEnd`: an
  * ending held, or a completion on the fallback held with its complete object.
@@ -103,8 +132,20 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_COMPLETION_SCHEMA: JsonObject 
  * (`./dispatch-tool.ts`), rather than asking the model to remember why it sent
  * the reset and offering a test it does not need.
  */
-export function automationStudioProjectSupervisorCompletion(context: AutomationStudioProjectSupervisorContext, ended: (ending: AutomationStudioProjectSupervisorEnded) => void): (result: JsonObject) => AutomationStudioLlmEvidenceCompletionCheck {
+export function automationStudioProjectSupervisorCompletion(context: AutomationStudioProjectSupervisorContext, ended: (ending: AutomationStudioProjectSupervisorEnded) => void): (result: JsonObject, loop?: { turnsLeft?: number | undefined }) => AutomationStudioLlmEvidenceCompletionCheck {
   let heldForReset = 0;
+  /** Each subflow a repair-first refusal has named: it never holds an ending again (header, t743). */
+  const heldForRepair = new Set<string>();
+  /** The repair-first rule before an ending (header, t743): a refusal naming each failed subflow not yet given a changed brief, while a brief can be paid for. */
+  const repairFirst = (turnsLeft: number | undefined): AutomationStudioLlmEvidenceCompletionCheck | undefined => {
+    const due = context.state.unrepaired().filter((entry) => !heldForRepair.has(entry.subflowKey));
+    // Turns too are what a brief is paid with: the repair's dispatch, a reset the reset rule may ask for, and the ending again.
+    if (!due.length || (turnsLeft !== undefined && turnsLeft < REPAIR_TURNS) || !canPayForBrief(context, due[0]!.subflowKey)) return undefined;
+    // No changed brief could be tested while an act no call can settle is on the target (header, t743).
+    if (automationStudioProjectSupervisorLeftOnTarget(context.ports).unsettleable) return undefined;
+    for (const entry of due) heldForRepair.add(entry.subflowKey);
+    return refused("project.completion_repair_first", GUIDANCE.completion.repairFirst, { unrepaired: due.map((entry) => ({ subflowKey: entry.subflowKey, failingBrief: entry.briefId })) });
+  };
   /**
    * The reset rule before an ending, or a completion on the fallback (header): a refusal while a reset could still undo this build's acts, else what is left.
    * A refusal keeps why the reset is asked for (`for`, t683), so the answer after it says to end or complete again, never to test.
@@ -116,7 +157,7 @@ export function automationStudioProjectSupervisorCompletion(context: AutomationS
     context.state.resetToEnd = held;
     return { refusal: refused("project.completion_reset_first", GUIDANCE.completion.resetFirst, { actsInPlace: left.acts.filter((act) => act.undoable).map((act) => ({ act: act.act, did: act.did, brief: act.brief })) }), left };
   };
-  return (result) => {
+  return (result, loop) => {
     const keys = Object.keys(result);
     // A result naming a revision and a digest is judged as a completion on it, whatever else it carries (header).
     const names = typeof result.revision === "number" && typeof result.digest === "string";
@@ -132,6 +173,9 @@ export function automationStudioProjectSupervisorCompletion(context: AutomationS
         return { ok: true };
       }
       if (!rescue && !context.state.anyNotDone() && !context.state.wholeTrialFailed) return refused("project.completion_ended_too_soon", GUIDANCE.completion.endedTooSoon);
+      // Each failed subflow gets one changed brief while money is left, before the reset rule (header, t743).
+      const repair = rescue ? undefined : repairFirst(loop?.turnsLeft);
+      if (repair) return repair;
       const { refusal, left } = resetFirst({ by: "ending" });
       if (refusal) return refusal;
       // The build's fallback stands: once the reset rule held, the ending completes on it (header, t637).
@@ -196,6 +240,21 @@ const FALLBACK_TITLE = "The build completes on the last revision that passed";
 
 /** The chat row's title when the Flow completes relying on the run's own recovery. */
 const RELIES_TITLE = "The Flow relies on the run's own recovery";
+
+/**
+ * Whether the build can still pay for one repair brief of `subflowKey` (header, t743): the check `project.dispatch`
+ * sizes its briefs by (`./brief-sizing.ts`, `./dispatch-tool.ts`), with no new money rule. A build without a purse
+ * sizes nothing, so nothing stops a brief for money.
+ */
+function canPayForBrief(context: AutomationStudioProjectSupervisorContext, subflowKey: string): boolean {
+  const { purse, finishing } = context.ports;
+  const structure = context.state.structure;
+  if (!purse || !structure) return true;
+  return automationStudioProjectSupervisorBriefSizing({
+    sent: [{ kind: "repair", subflowKey }], purse, structure, done: new Set(context.state.latestDone().keys()), supervisorCalls: finishing?.supervisorCalls ?? 0,
+    ...(finishing ? { finishingCalls: finishing.supervisorCalls + finishing.resetCalls } : {})
+  }).ok;
+}
 
 /** What a shape refusal names (header): the latest assembly's complete object, when there is one, and the keys to drop. */
 function shapeDetail(context: AutomationStudioProjectSupervisorContext, extra: readonly string[]): JsonObject {

@@ -10,13 +10,16 @@ import {
   type AutomationStudioSiteResetSpot
 } from "../index.ts";
 
-// A trial act with no witness of its own adopts the build's issued lists
-// (office rerun round 3, `run-mvgo5xft-25460ba2`: act-12, act-15 and act-18,
-// one per trial or entry preparation, each in no list, each needing a model
-// look under `undoes` that any list settled). Core's own pre-trial look settles
-// it `unchanged` when every adopted list holds; a differing adopted list never
-// asks to undo it there. Explored acts and builds with no issued ref are as
-// before. Made-up fixtures: a recipe box, opaque tokens only.
+// A trial act with no witness of its own adopts the issued lists it could have
+// changed (office rerun round 3, `run-mvgo5xft-25460ba2`: act-12, act-15 and
+// act-18, one per trial or entry preparation, each in no list, each needing a
+// model look under `undoes` that any list settled; narrowed by t743 to lists
+// named for an act of the build and lists read on the act's own page,
+// `project-ledger-adoption.test.ts`). Here the step ran on the box's own page.
+// Core's own pre-trial look settles it `unchanged` when every adopted list
+// holds; a differing adopted list never asks to undo it there. Explored acts
+// are as before; with no ref that could ever be issued, no call can settle it.
+// Made-up fixtures: a recipe box, opaque tokens only.
 
 const SITE = "r:site";
 type List = { scope: string; group: string; subjects: string[]; states: Record<string, string> };
@@ -26,8 +29,8 @@ const box = () => [list("p:cards", ["s:soup", "s:stew"]), list("p:saved", ["s:pi
 const boxPage = (collections = box()) => page("p:box-page", "loc:box", collections);
 const press = (callId: string, consequences: AutomationStudioActionConsequence[], spot: AutomationStudioSiteResetSpot, resetDestination?: string): AutomationStudioSiteResetExplored => ({ callId, toolId: "core.run_node", landed: true, operation: "demo.press", ...(resetDestination ? { resetDestination } : {}), declared: { permitted: true, effect: "mutate", consequences, control: { name: "Press", kind: "button", ...spot }, verb: "press" } });
 const compare = async (): Promise<AutomationStudioSiteResetComparison> => ({ moved: false, differs: [] });
-/** A step confirming a choice on a review page that sits in no list (the office shape, in other words). */
-const confirmStep = () => ({ step: 4, definitionId: "demo.confirm", label: "confirm the choice", control: "Use this choice", consequences: ["modify_existing" as const], spot: { page: "s:review" } });
+/** A step confirming a choice that sits in no list, on the box's own page (its step's page location, t743). */
+const confirmStep = () => ({ step: 4, definitionId: "demo.confirm", label: "confirm the choice", control: "Use this choice", consequences: ["modify_existing" as const], spot: { page: "s:review" }, controls: { page: "p:box-page", location: "loc:box", before: {}, after: {} } });
 const LEFT = `trial step 4 "confirm the choice" on "Use this choice" (${WORDS.leftUnchanged()})`;
 const looking = (ledger: AutomationStudioSiteResetLedger, reads: () => Record<string, AutomationStudioSiteResetRead>) => {
   const looked: string[] = [];
@@ -99,13 +102,14 @@ describe("a trial act with no witness adopts the build's issued lists", () => {
   });
 
   it("with no issued ref keeps today's words, and Core looks at nothing for it", async () => {
-    // Sealed with nothing ever read complete: it cannot be settled in this build.
+    // Sealed with nothing ever read complete: no call can settle it in this build (t743), listed apart, never asked to name a ref.
     const closed = new AutomationStudioSiteResetLedger();
     closed.observed(page("p:plain", "loc:plain"));
     closed.trialRan([confirmStep()], "trial.1");
     const closedLooks = looking(closed, () => ({}));
     const sealed = await closed.beforeTrial(closedLooks.checks);
-    expect(settleOf(sealed, "act-1")).toContain("cannot be settled in this build");
+    expect(sealed).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", failed: "acts_unsettleable", actsToUndo: [], actsUnsettleable: [{ act: "act-1", failed: "nothing_to_name" }] } });
+    expect(settleOf(sealed, "act-1")).toBe("");
     expect(closedLooks.looked).toEqual([]);
     // A list read complete whose ref was never shown issues nothing to adopt.
     const unshown = new AutomationStudioSiteResetLedger();

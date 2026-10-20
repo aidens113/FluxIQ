@@ -1,5 +1,5 @@
 import { parseAutomationStudioFlowBootstrapGenerationError } from "../../flow-bootstrap/generation-failure/index.ts";
-import type { AutomationStudioSiteResetNamedAct } from "../../flow-bootstrap/site-reset/index.ts";
+import type { AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetUnsettleableAct } from "../../flow-bootstrap/site-reset/index.ts";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioSubflowBuilderOutcome, AutomationStudioSubflowDoneBefore, AutomationStudioSubflowProposal, AutomationStudioSubflowTrialResult } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
@@ -119,6 +119,31 @@ import { automationStudioProjectDispatchAllowanceSaid, type AutomationStudioProj
 // `stoppedRepeating`, read from those codes and never from the reason, so the
 // supervisor may send that brief once more with the attempt shown
 // (`../supervisor/dispatch-tool.ts`).
+//
+// **A return says when nothing more can be done (t743).** Rerun round 4 ended
+// builds after one failed brief with most of their money left, so the
+// supervisor is now held to one changed brief of each failed subflow before it
+// ends (`../supervisor/completion.ts`) -- except where the return already knows
+// no brief could go on. That is a closed `terminalReason`, set here from Core's
+// own signals and never from the reason's words: `allowance_spent` where the
+// brief's allowance refused its next call, `stopped` where the build was stopped
+// (a thrown brief told so, or a loop that returned `llm_evidence_loop.cancelled`,
+// which only the build's stop leaves to this ending: the brief's own ending is
+// caught before it), and `person_ended` where the brief's permission or
+// person-needed ending stopped it (`personEnded`). A done return never carries one.
+//
+// **An act no call can settle ends every brief (t743, S2).** While the build's
+// ledger holds an act no call can settle (`unsatisfiable()`,
+// `flow-bootstrap/site-reset/ledger.ts`: its only witness is a list Core cannot
+// read again, or nothing can be named for it any more), every trial anywhere in
+// the build is refused, so no changed brief could go on. A return that is not
+// done then carries `gate_unsatisfiable`, read off the ledger and never from the
+// reason's words, unless it already carries another closed reason
+// (`gateUnsatisfiable`, applied where `./run-brief.ts` makes every return). A
+// reset that undid all it could while one is still there does not come back
+// `done` -- the site is not where a trial can start -- but `blocked` with that
+// reason, and its reason names each such act as left on the site, which no
+// reset can undo.
 
 /** What a return's reason may hold (`contracts/builder-return.ts`). */
 const MAX_REASON = 2000;
@@ -136,6 +161,8 @@ const MAX_LAST_CALLS = 8;
 /** The no-progress guard's stop, as a loop returns it and as Core's build failure publishes it (header, lane-1 fix 1). */
 const LOOP_REPEATED = "llm_evidence_loop.repeat_without_progress";
 const BUILD_REPEATED = "flow_bootstrap.evidence_repeat_without_progress";
+/** A loop stopped by its signal (header, t743): the build's stop, as a brief's own ending is caught before `built`. */
+const LOOP_CANCELLED = "llm_evidence_loop.cancelled";
 /** A code or id that may be said: no whitespace, so never a sentence the model wrote. */
 const SAYABLE = /^[a-z0-9_.:-]{1,120}$/iu;
 
@@ -189,6 +216,8 @@ export const automationStudioProjectDispatchEnding = Object.freeze({
     const value = returned(brief, proposal ? "partial" : "blocked", `${ended}${lastTrial}`, spend, proposal);
     // The guard's own code, never the reason's words (header, lane-1 fix 1); an allowance refusal is not this stop.
     if (!outcome.loop.ok && outcome.loop.code === LOOP_REPEATED && !spend.allowance?.refusal) value.stoppedRepeating = true;
+    // The allowance's refusal, or the build's stop, read structurally (header, t743).
+    if (!outcome.loop.ok) withTerminal(value, spend.allowance?.refusal ? "allowance_spent" : outcome.loop.code === LOOP_CANCELLED ? "stopped" : undefined);
     return value;
   },
 
@@ -206,7 +235,19 @@ export const automationStudioProjectDispatchEnding = Object.freeze({
     const value = returned(brief, spend.accepted ? "partial" : "blocked", why, spend, spend.accepted);
     // Core's build failure for the guard's stop, read structurally (header, lane-1 fix 1).
     if (!stopped && !refusal && parseAutomationStudioFlowBootstrapGenerationError(error)?.code === BUILD_REPEATED) value.stoppedRepeating = true;
-    return value;
+    // A stop or the allowance's refusal leaves nothing a changed brief could change (header, t743).
+    return withTerminal(value, stopped ? "stopped" : refusal ? "allowance_spent" : undefined);
+  },
+
+  /**
+   * A brief its own permission or person-needed ending stopped (`./run-brief.ts`, `untilEnded`): `outcome` with that
+   * ending's reason, any proposal it had still named, and -- blocked -- `person_ended` (header, t743), as only a
+   * person's answer could let it go on. A reset that left nothing in place is `done` with no reason of that kind.
+   */
+  personEnded(brief: AutomationStudioProjectSubflowBrief, outcome: "done" | "blocked", reason: string, spend: AutomationStudioProjectDispatchSpend): AutomationStudioProjectBuilderReturn {
+    const { terminalReason: _terminal, stoppedRepeating: _repeating, ...value } = automationStudioProjectDispatchEnding.thrown(brief, undefined, false, spend);
+    const ended: AutomationStudioProjectBuilderReturn = { ...value, outcome, reason: clip(reason) };
+    return outcome === "done" ? ended : withTerminal(ended, "person_ended");
   },
 
   /** Why Core stopped a brief whose builder was refused one output under two different bindings (header, t645): the output by its interface name, the codes, and the plan's advice. */
@@ -220,9 +261,30 @@ export const automationStudioProjectDispatchEnding = Object.freeze({
     if (loop.ok && !left.length) return returned(brief, "done", done, spend, undefined);
     const still = left.length ? ` ${left.length} act${left.length === 1 ? " is" : "s are"} still to undo: ${left.map((act) => `${act.act} (${act.did})`).join(", ")}.` : "";
     const ended = loop.ok ? "The reset completed." : stopReason(brief, loop, spend.allowance);
-    return returned(brief, "blocked", `${ended}${still}`, spend, undefined);
+    const value = returned(brief, "blocked", `${ended}${still}`, spend, undefined);
+    return loop.ok ? value : withTerminal(value, spend.allowance?.refusal ? "allowance_spent" : loop.code === LOOP_CANCELLED ? "stopped" : undefined);
+  },
+
+  /**
+   * `value` as the build's acts no call can settle leave it (header, t743): unchanged while there are none, and a build
+   * brief's `done` unchanged; a reset's `done` becomes `blocked`; a reset's reason names each such act as left on the site
+   * where its words do not already; and a return that is not done carries `gate_unsatisfiable` unless it already carries a
+   * closed terminal reason.
+   */
+  gateUnsatisfiable(brief: AutomationStudioProjectSubflowBrief, value: AutomationStudioProjectBuilderReturn, unsettleable: readonly Pick<AutomationStudioSiteResetUnsettleableAct, "act" | "did">[]): AutomationStudioProjectBuilderReturn {
+    if (!unsettleable.length || (value.outcome === "done" && brief.kind !== "reset")) return value;
+    // A reset's `done` words already name them (`./reset-done.ts`); any other reset's reason is told them here.
+    const left = brief.kind === "reset" && value.outcome !== "done" ? ` ${unsettleableSaid(unsettleable)}` : "";
+    const ended: AutomationStudioProjectBuilderReturn = { ...value, outcome: value.outcome === "done" ? "blocked" : value.outcome, reason: clip(`${value.reason}${left}`) };
+    return ended.terminalReason !== undefined ? ended : withTerminal(ended, "gate_unsatisfiable");
   }
 });
+
+/** The acts no call can settle, said as left on the site (header, t743): by id and what each did. */
+function unsettleableSaid(acts: readonly Pick<AutomationStudioSiteResetUnsettleableAct, "act" | "did">[]): string {
+  const many = acts.length !== 1;
+  return `${acts.length} act${many ? "s" : ""} of this build ${many ? "are" : "is"} left on the site, as nothing can check or put ${many ? "them" : "it"} back: ${acts.map((act) => `${act.act} (${act.did})`).join(", ")}.`;
+}
 
 function returned(
   brief: AutomationStudioProjectSubflowBrief,
@@ -241,6 +303,12 @@ function returned(
     calls: spend.allowance?.spentCalls() ?? 0
   };
   if (proposal) value.proposal = { subflowKey: proposal.scope.subflowKey, revision: proposal.revision, digest: proposal.digest };
+  return value;
+}
+
+/** `value` with `reason` as its closed terminal reason (header, t743), on a return that is not done; as it is otherwise. */
+function withTerminal(value: AutomationStudioProjectBuilderReturn, reason: AutomationStudioProjectBuilderReturn["terminalReason"]): AutomationStudioProjectBuilderReturn {
+  if (reason !== undefined && value.outcome !== "done") value.terminalReason = reason;
   return value;
 }
 

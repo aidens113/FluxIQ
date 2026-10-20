@@ -83,29 +83,44 @@ describe("a trial act repeats an explored act of any brief of its build (L1 buil
     const briefB = project.forBrief("brief:b");
     const route = routing(project, briefB);
     briefB.trialRan([trialStep("demo.press")], "trial.b1");
-    // No list is named for the press yet, and of the lists B's act adopts one differs: it is asked to name one.
+    // No list is named for the press yet and its step's page is not known: nothing to adopt, and with every ref shown none can
+    // be issued any more, so no call can settle it as it stands (t743). Core looks at nothing for it.
     const first = looking(route, elsewhere);
     const refused = await briefB.beforeTrial(first.checks);
-    expect(first.looked).toEqual(["loc:box"]);
-    expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-2" }] } });
-    expect(settleOf(refused, "act-2")).toContain("name that list's ref");
-    // A look under `undoes` names the list for A's press, after B's trial.
+    expect(first.looked).toEqual([]);
+    expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", failed: "acts_unsettleable", actsToUndo: [], actsUnsettleable: [{ act: "act-2", reason: "gate_unsatisfiable", failed: "nothing_to_name" }] } });
+    // A look under `undoes` names the list for A's press, after B's trial: B's act repeats it and shares that list.
     briefA.explored(look("look.box", "act-1", "destination-1"));
+    expect(briefB.unsatisfiable()).toEqual([]);
     // The list named for A's press holds, though the other still differs.
     const { looked, checks } = looking(route, elsewhere);
     expect(await briefB.beforeTrial(checks)).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-2", did: LEFT }] } });
-    // The read Core made before the refusal is still fresh: a look names a list but moves no clock.
-    expect(looked).toEqual([]);
+    expect(looked).toEqual(["loc:box"]);
     expect(briefB.standing("act-2")).toBe("unchanged");
   });
 
-  it("a trial act matching nothing across the build, while a list it adopted differs, stays open, asking to name its list and never to undo there", async () => {
+  it("a trial act matching nothing across the build adopts only the list a press named: a differing list nobody named does not hold it open", async () => {
+    const project = new AutomationStudioSiteResetProjectLedger();
+    const briefA = project.forBrief("brief:a");
+    routing(project, briefA)(boxPage());
+    expect(briefA.destinationReceipts().map((receipt) => receipt.ref)).toEqual(["destination-1", "destination-2"]);
+    briefA.explored(press("start-draft", ["create_new"], { resetDestination: "destination-1" }));
+    const briefB = project.forBrief("brief:b");
+    briefB.trialRan([trialStep("demo.other")], "trial.b1");
+    // `elsewhere` changes destination-2, which no act named: B's act adopts destination-1 alone, which holds (t743).
+    const { looked, checks } = looking(routing(project, briefB), elsewhere);
+    expect(await briefB.beforeTrial(checks)).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-2", did: LEFT }] } });
+    expect(looked).toEqual(["loc:box"]);
+    expect(briefB.standing("act-2")).toBe("unchanged");
+  });
+
+  it("a trial act matching nothing across the build, while the list a press named differs, stays open, asking to name its list and never to undo there", async () => {
     const project = new AutomationStudioSiteResetProjectLedger();
     const briefA = project.forBrief("brief:a");
     routing(project, briefA)(boxPage());
     // The model is shown the box's refs.
     expect(briefA.destinationReceipts().map((receipt) => receipt.ref)).toEqual(["destination-1", "destination-2"]);
-    briefA.explored(press("start-draft", ["create_new"], { resetDestination: "destination-1" }));
+    briefA.explored(press("start-draft", ["create_new"], { resetDestination: "destination-2" }));
     const briefB = project.forBrief("brief:b");
     const route = routing(project, briefB);
     briefB.trialRan([trialStep("demo.other")], "trial.b1");

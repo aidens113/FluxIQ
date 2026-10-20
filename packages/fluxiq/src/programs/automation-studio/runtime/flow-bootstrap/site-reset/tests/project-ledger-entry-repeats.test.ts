@@ -22,7 +22,8 @@ type List = { scope: string; group: string; subjects: string[]; states: Record<s
 const list = (scope: string, subjects: string[]): List => ({ scope, group: "g:box", subjects, states: Object.fromEntries(subjects.map((subject) => [subject, `v:${subject}`])) });
 const boxPage = (): AutomationStudioSiteResetRead => ({ state: {}, differs: [], resource: SITE, scope: "p:box-page", location: "loc:box", collections: [list("p:cards", ["s:soup", "s:stew"]), list("p:saved", ["s:pie"])] });
 const compare = async (): Promise<AutomationStudioSiteResetComparison> => ({ moved: false, differs: [] });
-const confirmStep = () => ({ step: 2, definitionId: "demo.confirm", label: "confirm the choice", control: "Use this choice", consequences: ["modify_existing" as const], spot: { page: "s:review" } });
+/** The confirming step, run on the box's own page: a witnessless act adopts the lists read there (t743). */
+const confirmStep = () => ({ step: 2, definitionId: "demo.confirm", label: "confirm the choice", control: "Use this choice", consequences: ["modify_existing" as const], spot: { page: "s:review" }, controls: { page: "p:box-page", location: "loc:box", before: {}, after: {} } });
 const LEFT = `trial step 2 "confirm the choice" on "Use this choice" (${WORDS.leftUnchanged()})`;
 
 /** A read routed as a running brief's permission gate routes it: the project, the brief's own ledger, and every other owner's without a baseline. */

@@ -28,6 +28,12 @@ import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS, type AutomationStudioSiteR
 // same union the trial gate and a reset's task list), keeping the owner's own
 // choice of which of its acts to name, and its words follow whether any is
 // listed.
+//
+// **The acts no call can settle are the build's too (t743, S2).** Such an act
+// (`unsatisfiable()`) is never among the acts to undo, so `openActs` leaves it
+// out; the owner's ledger lists its own apart under `actsUnsettleable`. A
+// refusal that lists the build's open acts lists the whole build's such acts
+// there too, so the model is told everything of the build still on the site.
 
 /** The refusals whose evidence lists the acts still to undo (header). */
 const LISTING: ReadonlySet<string> = new Set(["candidate.undo_act_kept", "candidate.undo_unknown_act", "candidate.undo_already_done"]);
@@ -58,7 +64,9 @@ export function automationStudioProjectBuildResetCalls(project: AutomationStudio
     const owners = new Map(project.snapshot().acts.map((entry) => [entry.act, entry.owner]));
     const acts = openActs().filter((entry) => entry.act !== act && (project.forBrief(owners.get(entry.act)!) !== ledger || named.has(entry.act))).map(({ ref: _ref, ...entry }) => entry);
     const instruction = evidence.code === "candidate.undo_unknown_act" ? WORDS.unknownAct(acts.length > 0) : evidence.code === "candidate.undo_already_done" ? WORDS.alreadyUndone(acts.length > 0) : evidence.instruction;
-    return { ...evidence, ...(instruction !== undefined ? { instruction } : {}), actsToUndo: acts as unknown as JsonValue };
+    // The whole build's acts no call can settle, apart from those to undo (header, t743).
+    const unsettleable = project.unsatisfiable().map(({ owner: _owner, ...entry }) => entry);
+    return { ...evidence, ...(instruction !== undefined ? { instruction } : {}), actsToUndo: acts as unknown as JsonValue, ...(unsettleable.length ? { actsUnsettleable: unsettleable as unknown as JsonValue } : {}) };
   };
   return {
     observed: (read) => {

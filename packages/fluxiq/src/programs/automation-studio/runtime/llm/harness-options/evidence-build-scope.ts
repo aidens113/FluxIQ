@@ -25,6 +25,11 @@
 //   a builder that opens on its prepared entry); `"continuing"` on the opening
 //   look of a round whose draft already holds the Flow (Core sets `held`), which
 //   keeps the memory; absent on every later call of the round.
+// - `move`: `"core"` on a call that is a move Core makes itself -- the site
+//   reset's own arrivals at the start, an act's page or a stale list's place
+//   (t743, `./core-move.ts`) -- so a domain applies to it none of the rules it
+//   holds the model's calls to; absent on every call the model wrote. Set from
+//   the async-context marker Core's move code runs inside, never from a call id.
 //
 // The frame is Core's alone: a domain reads it, and nothing a model writes can
 // set it, since a model-written id never starts like an opening one.
@@ -50,6 +55,8 @@ export type AutomationStudioEvidenceBuildScope = {
   readonly buildId: string;
   readonly callScope?: string;
   readonly opening?: "fresh" | "continuing";
+  /** `"core"`: a move Core makes itself, not a call the model wrote (header, t743). */
+  readonly move?: "core";
 };
 
 /** The registered key every copy of this module keeps the one store under (header). */
@@ -65,6 +72,7 @@ export function runWithAutomationStudioEvidenceBuildScope<T>(scope: AutomationSt
   const frame: { -readonly [K in keyof AutomationStudioEvidenceBuildScope]: AutomationStudioEvidenceBuildScope[K] } = { projectId: scope.projectId, flowId: scope.flowId, buildId: scope.buildId };
   if (scope.callScope !== undefined) frame.callScope = scope.callScope;
   if (scope.opening !== undefined) frame.opening = scope.opening;
+  if (scope.move === "core") frame.move = "core";
   return calls.run(Object.freeze(frame), fn);
 }
 

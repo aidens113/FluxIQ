@@ -168,9 +168,10 @@ describe("shape E: the trial's own act, and the retest after a settling look (of
   it("a trial act repeating nothing, while a list it adopted differs, is asked to name its list, settles on a look naming the ref without a resource, and cannotUndo never settles it", async () => {
     const ledger = boxed();
     explored(ledger);
-    ledger.trialRan([trialStep("demo.other")], "trial.1");
-    // With no witness of its own it adopts the build's issued lists (office r3, `settlement-adopted.test.ts`); one differs, by
-    // whatever cause, so it is never asked to undo there: it is asked to name its list.
+    // Its step ran on the box's own page (t743: a witnessless act adopts the lists named for an act and those of its own page).
+    ledger.trialRan([{ ...trialStep("demo.other"), controls: { page: "p:box-page", location: "loc:box", before: {}, after: {} } }], "trial.1");
+    // With no witness of its own it adopts the lists it could have changed (office r3, `settlement-adopted.test.ts`); one differs,
+    // by whatever cause, so it is never asked to undo there: it is asked to name its list.
     const elsewhere = () => boxPage([list("p:cards", ["s:soup", "s:stew"]), list("p:saved", ["s:pie", "s:tart"])]);
     ledger.observed(elsewhere());
     const refused = await ledger.beforeTrial(compare);
@@ -193,19 +194,20 @@ describe("shape F: lists the domain cannot vouch complete issue no ref (job r2)"
   const complete = () => page("p:mine-page", "loc:mine", [list("p:mine", ["s:held-a", "s:held-b"], "g:mine")]);
   const SAVE: AutomationStudioSiteResetSpot = { subject: "s:atlas", page: "s:atlas", resource: SITE };
 
-  it("with no complete list read before the act it stays open, says so, and cannotUndo does not settle it", async () => {
+  it("with no complete list read before the act no call can settle it: listed apart, never asked to name a ref, and cannotUndo does not settle it", async () => {
     const ledger = new AutomationStudioSiteResetLedger();
     ledger.observed(plain());
     expect(ledger.destinationReceipts()).toEqual([]);
     ledger.explored(press("save", ["modify_existing"], SAVE));
     ledger.observed(plain());
     const refused = await ledger.beforeTrial(compare);
-    // Sealed with no ref issued (rerun round 2): told it cannot settle in this build, never to name a ref none can issue.
+    // Sealed with no ref issued (rerun round 2): no read can issue one, so it is `gate_unsatisfiable` (t743), out of actsToUndo.
     // The permission wrapper now refuses such a press before the seal (`reset-witness.test.ts`); an act after the seal still lands here.
-    const settle = settleOf(refused, "actsToUndo", "act-1");
-    expect(settle).toContain("cannot be settled in this build: nothing was read complete before the build's first lasting act");
-    expect(settle).not.toContain("resetDestination");
-    expect(await ledger.beforeTrial(compare, ["act-1"])).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_unproved" } });
+    const unsettleable = { kind: "refuse", evidence: { code: "candidate.trial_reset_required", failed: "acts_unsettleable", canMeet: "no_call", actsToUndo: [], actsUnsettleable: [{ act: "act-1", reason: "gate_unsatisfiable", failed: "nothing_to_name" }] } };
+    expect(refused).toMatchObject(unsettleable);
+    expect(settleOf(refused, "actsToUndo", "act-1")).toBe("");
+    expect(await ledger.beforeTrial(compare, ["act-1"])).toMatchObject(unsettleable);
+    expect(ledger.standing("act-1")).toBe("in_place");
   });
 
   it("once the list is reported complete it issues a ref, and the act named against it settles", async () => {
@@ -243,10 +245,15 @@ describe("shape G: a toggle pressed in a dialog, pressed back on the item's own 
     expect(ledger.standing("act-1")).toBe("restored");
   });
 
-  it.each(["another-place", "already-back", "another-class"] as const)("refuses unrun a control at %s", (defect) => {
+  // t743: each refusal names its failed condition; one already showing the state the build found is its own code (photo r4 0151).
+  it.each([
+    ["another-place", "candidate.undo_unproved", "control_elsewhere", "another_page"],
+    ["already-back", "candidate.undo_already_back", "already_back", "no_call"],
+    ["another-class", "candidate.undo_unproved", "consequence_not_inverse", "this_page"]
+  ] as const)("refuses unrun a control at %s", (defect, code, failed, canMeet) => {
     const ledger = toggled();
     const control = defect === "another-place" ? { ...OWN_PAGE, place: "pl:follow", state: "st:follow" } : { ...OWN_PAGE, state: defect === "already-back" ? "st:off" : "st:on" };
-    expect(ledger.target("act-1", aim(defect === "another-class" ? ["delete"] : [], control))).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_unproved" } });
+    expect(ledger.target("act-1", aim(defect === "another-class" ? ["delete"] : [], control))).toMatchObject({ kind: "refused", evidence: { code, failed, canMeet, condition: WORDS.condition(failed, canMeet) } });
     expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1"]);
   });
 
@@ -309,6 +316,8 @@ describe("invariants no shape may weaken", () => {
 
   it("cannotUndo never settles a strict act: every trial stays refused, saying what would settle it", async () => {
     const ledger = new AutomationStudioSiteResetLedger();
+    // A list read complete whose ref was never shown: a ref can still be issued, so the act is to name one (t743).
+    ledger.observed(page("p:other-page", "loc:other", [list("p:other", ["s:held-a"], "g:other")]));
     ledger.explored(press("pin", ["modify_existing"], { subject: "s:atlas", page: "s:atlas", resource: SITE }));
     expect(await ledger.beforeTrial(compare)).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required" } });
     for (let ask = 0; ask < 3; ask += 1) {

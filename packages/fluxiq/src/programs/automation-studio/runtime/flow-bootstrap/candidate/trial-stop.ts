@@ -19,8 +19,10 @@
 //   label and failure code, and how many times it had run before in the trial
 //   (a step inside a repeat runs once a pass), with what the step said happened
 //   where it said something a model may read (`actual`);
-// - `steps_left_out`: the run took more steps than the feedback lists, so the
-//   step that stopped it is not listed: how many are listed and how many not;
+//   a run longer than the feedback's listing lists its first steps and then the
+//   step it stopped at, by its real number (S5, `run-mvgw3ve5-294881b5` 0089,
+//   where an 86-step repeat's stop was past the 40 listed and never named), so
+//   that step is named here too, with how many steps the listing leaves out;
 // - `graph`: the Flow's graph ended the run (a route with no edge, a step never
 //   reached), in the trial's own words;
 // - `start`: the trial's start failed before any step ran;
@@ -72,16 +74,25 @@ function ranBefore(feedback: JsonObject, last: JsonObject): number {
   return steps.filter((step) => isObject(step) && step.definitionId === last.definitionId && step.label === last.label && JSON.stringify(step.control) === JSON.stringify(last.control)).length;
 }
 
+/** How many steps the listing leaves out between its first steps and the last (`stepsLeftOut`). */
+function leftOutOf(feedback: JsonObject): number {
+  return typeof feedback.stepsLeftOut === "number" && Number.isSafeInteger(feedback.stepsLeftOut) && feedback.stepsLeftOut > 0 ? feedback.stepsLeftOut : 0;
+}
+
 function stepStop(feedback: JsonObject, last: JsonObject): JsonObject {
   const named = `Step ${last.step as number}${label(last.label) ? ` (${JSON.stringify(label(last.label))})` : ""}`;
-  const before = ranBefore(feedback, last);
+  const leftOut = leftOutOf(feedback);
+  // With steps left out of the listing, the listed runs of the same step are not all of them: no count is claimed.
+  const before = leftOut ? 0 : ranBefore(feedback, last);
   const failureCode = typeof last.failureCode === "string" ? last.failureCode : undefined;
   const actual = typeof last.actual === "string" && last.actual.trim() ? last.actual.trim() : undefined;
   const runs = before ? `, on its run ${before + 1} in this trial (it ran ${before} ${before === 1 ? "time" : "times"} before, once a pass of the repeat it is in),` : "";
-  const said = failureCode === NO_PROGRESS
+  const stopped = failureCode === NO_PROGRESS
     ? `${named} ended its repeat: ${actual ?? "its last passes stored no new rows and left the page as it was."}`
     : `${named} failed${runs} and the run stopped there${failureCode ? ` (${failureCode})` : ""}.${actual ? ` What it saw: ${actual}` : ""}`;
-  return { kind: "step", step: last.step as number, ...(label(last.label) ? { label: label(last.label)! } : {}), definitionId: last.definitionId as string, ...(failureCode ? { failureCode } : {}), ...(before ? { ranBefore: before } : {}), said };
+  const first = Array.isArray(feedback.steps) ? feedback.steps.length - 1 : 0;
+  const gap = leftOut ? ` The listing under steps shows the first ${first} and then this one, the last the run took; the ${leftOut} between them ${leftOut === 1 ? "is" : "are"} left out.` : "";
+  return { kind: "step", step: last.step as number, ...(label(last.label) ? { label: label(last.label)! } : {}), definitionId: last.definitionId as string, ...(failureCode ? { failureCode } : {}), ...(before ? { ranBefore: before } : {}), ...(leftOut ? { leftOut } : {}), said: `${stopped}${gap}` };
 }
 
 /** What stopped an `execution_failed` trial, read off its feedback (header). */
@@ -90,11 +101,8 @@ function of(feedback: JsonObject): JsonObject {
   const code = typeof feedback.code === "string" ? feedback.code : "candidate.execution_incomplete";
   const last = failedLast(feedback);
   if (last) return stepStop(feedback, last);
-  const listed = Array.isArray(feedback.steps) ? feedback.steps.length : 0;
-  const leftOut = typeof feedback.stepsLeftOut === "number" && feedback.stepsLeftOut > 0 ? feedback.stepsLeftOut : 0;
-  if (leftOut) {
-    return { kind: "steps_left_out", code, listed, leftOut, said: `The run took ${listed + leftOut} steps and steps lists only the first ${listed}, so the step that stopped it is not listed (${code}).` };
-  }
+  // The listing ends with the last step the run took, so the steps it shows and those it leaves out are all the run took (header, S5).
+  const listed = (Array.isArray(feedback.steps) ? feedback.steps.length : 0) + leftOutOf(feedback);
   const ending = isObject(feedback.graphEnding) ? feedback.graphEnding : undefined;
   if (ending && typeof ending.happened === "string") return { kind: "graph", code: typeof ending.code === "string" ? ending.code : code, said: ending.happened };
   if (feedback.start === "failed") return { kind: "start", code, said: `The trial's start failed before any step ran (${code}), so nothing in the Flow was tried.` };
