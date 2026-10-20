@@ -32,7 +32,10 @@
 // back is answered as `absorbedByStartReset`, and the acts on the site after
 // the trial as `leftOnSite`. The hook then runs before the predecessor check,
 // so even a trial whose entry cannot be prepared leaves the site put back.
-// Without a reset a trial runs on the site as it stands, as before.
+// Without a reset a trial runs on the site as it stands, as before. The check
+// is written to the step log as an `NNNN-reset` step (t737), as the hook is in
+// `../../service/candidate-trial/run.ts`, so the Lab can take both out of the
+// trial's window.
 //
 // With no port the tool says `subflow.trial_unavailable` and completion needs
 // only the latest valid proposal, which then stands untried.
@@ -221,6 +224,7 @@
 // nothing recorded as left on the site, and its yes is answered but never kept.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
+import { automationStudioLlmStepLogReset } from "../../llm/step-log/index.ts";
 import {
   AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION,
   AUTOMATION_STUDIO_CANDIDATE_OFFLINE_YES_INSTRUCTION,
@@ -480,7 +484,10 @@ export class AutomationStudioSubflowTrialGate {
     // The deployment's start hook first, so the check after it finds the site put back (header).
     const prepared = !offline && this.input.reset && port.prepareStart ? await port.prepareStart({ scope: structuredClone(this.input.scope), revision: latest.revision, digest: latest.digest, signal }) : "none";
     signal.throwIfAborted();
-    const reset = offline ? undefined : await this.input.reset?.beforeTrial(signal, Array.isArray(cannotUndo) ? cannotUndo as string[] : undefined, prepared === "reset" ? { startReset: true } : undefined);
+    // The check is timed as its own reset step, so a trial's window no longer hides it (header, t737).
+    const siteReset = offline ? undefined : this.input.reset;
+    const reset = siteReset && await automationStudioLlmStepLogReset({ stage: "site_check", trialToolId: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID },
+      () => siteReset.beforeTrial(signal, Array.isArray(cannotUndo) ? cannotUndo as string[] : undefined, prepared === "reset" ? { startReset: true } : undefined), (decision) => decision.kind);
     signal.throwIfAborted();
     // Not a trial: the model is told what to put back, and the identical test after it reaches this gate again (header).
     if (reset?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: reset.evidence, effectApplied: reset.moved, targetsUnchanged: !reset.moved, resultCode: reset.evidence.code, resultReason: RETEST_REASON };

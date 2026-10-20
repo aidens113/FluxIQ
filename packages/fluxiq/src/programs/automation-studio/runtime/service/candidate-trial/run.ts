@@ -69,6 +69,7 @@ import { runAutomationStudioDetachedCandidate, type AutomationStudioCandidateSta
 import { automationStudioEnvironmentExecutorOptions, automationStudioLiveRunEnvironment, type AutomationStudioRunEnvironment } from "../../environment/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import { AutomationStudioHostLeaseScope } from "../../project-agents/host-resources/index.ts";
+import { automationStudioLlmStepLogReset } from "../../llm/step-log/index.ts";
 import { automationStudioResultReadAccounts, type AutomationStudioBuildTestVerdict, type AutomationStudioResultStandingNoCarrier, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord, AutomationStudioCandidateTrialStart, AutomationStudioCandidateTrialUnjudged } from "./contracts.ts";
 import { automationStudioCandidateTrialFeedback as Feedback } from "./feedback.ts";
@@ -248,6 +249,11 @@ async function wayOutHandles(attempts: readonly AutomationStudioNodeAttemptTrace
  * released or reissued is someone else's resource by now, so the hook is not
  * called and the start fails. Outside any lease scope the hook is called
  * exactly as before, with no lease.
+ *
+ * Every start, the gate's `prepareStart` and the run's own alike, comes
+ * through here, so the hook is timed here as one `start_hook` reset step
+ * (t737): no tool call marks it, and the Lab's build-time measure counted it
+ * as the trial's replay. Only a hook actually called is a step.
  */
 export async function automationStudioCandidateTrialStart(request: Pick<AutomationStudioCandidateTrialRequest, "candidateId" | "revision" | "digest" | "signal">, ports: AutomationStudioCandidateTrialPorts): Promise<AutomationStudioCandidateTrialStart> {
   const hook = ports.prepareStart;
@@ -258,12 +264,14 @@ export async function automationStudioCandidateTrialStart(request: Pick<Automati
   if (lease && !AutomationStudioHostLeaseScope.gatewaySource.isCurrent(lease)) {
     return { status: "failed", code: "candidate.trial_start_lease_stale", failure: "the host resource lease this trial ran under is no longer held" };
   }
-  try {
-    const result = await hook({ projectId: ports.projectId, flowId: ports.flowId, candidateId: request.candidateId, revision: request.revision, digest: request.digest, ...(ports.startLocation ? { startLocation: ports.startLocation } : {}), ...(lease ? { lease: structuredClone(lease) } : {}), signal: request.signal });
-    return { status: "reset", result: structuredClone(result) };
-  } catch (error) {
-    if (request.signal.aborted) throw error;
-    // The hook's own error text can carry deployment detail, so only its kind is kept.
-    return { status: "failed", code: "candidate.trial_start_failed", failure: error instanceof Error && error.name ? error.name : "unknown error" };
-  }
+  return await automationStudioLlmStepLogReset({ stage: "start_hook" }, async (): Promise<AutomationStudioCandidateTrialStart> => {
+    try {
+      const result = await hook({ projectId: ports.projectId, flowId: ports.flowId, candidateId: request.candidateId, revision: request.revision, digest: request.digest, ...(ports.startLocation ? { startLocation: ports.startLocation } : {}), ...(lease ? { lease: structuredClone(lease) } : {}), signal: request.signal });
+      return { status: "reset", result: structuredClone(result) };
+    } catch (error) {
+      if (request.signal.aborted) throw error;
+      // The hook's own error text can carry deployment detail, so only its kind is kept.
+      return { status: "failed", code: "candidate.trial_start_failed", failure: error instanceof Error && error.name ? error.name : "unknown error" };
+    }
+  }, (start) => start.status);
 }

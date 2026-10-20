@@ -3,7 +3,11 @@
 // domain above capacity 1 resets only the resource it names; two holders at
 // once each hand their own; a lease released before the start never reaches
 // the hook; and outside any scope the hook is called exactly as before.
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { automationStudioLiveRunEnvironment } from "../../../environment/index.ts";
 import { AutomationStudioHostLeaseScope, AutomationStudioHostResourceScheduler, type AutomationStudioHostResourceLease } from "../../../project-agents/host-resources/index.ts";
 import { StubHost } from "../../../project-agents/host-resources/tests/stub-host.ts";
 import { automationStudioCandidateTrialPort, automationStudioCandidateTrialStart, type AutomationStudioPrepareCandidateStart } from "../index.ts";
@@ -103,5 +107,48 @@ describe("a trial's start hook under a host lease", () => {
     const fixture = trialFixture();
     const start = await leases.run({ role: "subflow_builder", briefId: "brief.a" }, async () => await automationStudioCandidateTrialStart(fixture.request(), fixture.ports));
     expect(start).toEqual({ status: "not_reset" });
+  });
+});
+
+// The start hook as its own step (t737): every trial's start, whether the gate's prepareStart or the runner asks
+// for it, is written as an `NNNN-reset` step around exactly the hook, and none when no hook runs.
+describe("a trial's start hook as a reset step", () => {
+  let directory: string;
+  beforeEach(() => {
+    directory = mkdtempSync(path.join(tmpdir(), "fluxiq-start-reset-step-"));
+    vi.stubEnv("FLUXIQ_LLM_STEP_LOG_DIR", directory);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const resetSteps = () => readdirSync(directory).filter((name) => /^\d{4,}-reset$/u.test(name)).map((name) => JSON.parse(readFileSync(path.join(directory, name, "meta.json"), "utf8")) as Record<string, unknown>);
+
+  it("writes one start_hook step around the hook, and a failed hook as failed", async () => {
+    const fixture = trialFixture();
+    let called = 0;
+    fixture.ports.prepareStart = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      called = Date.now();
+      return {};
+    };
+    await automationStudioCandidateTrialStart(fixture.request(), fixture.ports);
+    const [step] = resetSteps();
+    expect(step).toMatchObject({ kind: "reset", stage: "start_hook", trialToolId: null, outcome: "reset", status: "ok" });
+    expect(Date.parse(String(step!.startedAt))).toBeLessThanOrEqual(called);
+    expect(Date.parse(String(step!.finishedAt))).toBeGreaterThanOrEqual(called);
+
+    fixture.ports.prepareStart = async () => { throw new TypeError("fixture said 42.99"); };
+    expect(await automationStudioCandidateTrialStart(fixture.request(), fixture.ports)).toMatchObject({ status: "failed" });
+    expect(resetSteps().map((written) => written.outcome)).toEqual(["reset", "failed"]);
+  });
+
+  it("writes none when no hook runs: no hook, or an offline trial", async () => {
+    const fixture = trialFixture();
+    expect(await automationStudioCandidateTrialStart(fixture.request(), fixture.ports)).toEqual({ status: "not_reset" });
+    fixture.ports.prepareStart = async () => ({});
+    fixture.ports.environment = { ...automationStudioLiveRunEnvironment, kind: "trace" };
+    expect(await automationStudioCandidateTrialStart(fixture.request(), fixture.ports)).toEqual({ status: "not_reset" });
+    expect(resetSteps()).toEqual([]);
   });
 });
