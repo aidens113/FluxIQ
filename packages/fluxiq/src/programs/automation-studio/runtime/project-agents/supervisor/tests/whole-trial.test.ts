@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
+import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE, AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
 import { BUILD, planInput, project, subflow, taskSpecInput } from "./supervisor-fixture.ts";
 import { singleBuild } from "../../single-subflow/tests/single-build.ts";
 import { FIND, HOLD, assembled, brief, call, complete, dispatch, end, lastOf, reset, supervise, test, type Step } from "./supervisor-script.ts";
@@ -256,5 +256,41 @@ describe("what a whole test remembers of each Flow for the build's ending", () =
     };
     await expect(run.trial.test(run.context, { revision: 1, digest: SECOND }, stopped.signal)).rejects.toThrow("time limit");
     expect(run.trial.lastOfFlow(SECOND)).toEqual({ revision: undefined, cutAfter: true });
+  });
+});
+
+// t743 (S2): an act no call can settle -- a press on a control in no list any read showed, so nothing can be named for
+// it -- is never one to undo, yet every trial is refused while it is on the target. A whole test refused only for such
+// acts says to end, not to reset or test again; one refused for acts to undo as well still asks for a reset.
+describe("a whole test refused for acts no call can settle", () => {
+  function refusedWith(evidence: (trial: AutomationStudioProjectSupervisorWholeTrial) => Promise<JsonObject>) {
+    const ledger = new AutomationStudioSiteResetProjectLedger();
+    const state = new AutomationStudioProjectSupervisorState();
+    const trial = new AutomationStudioProjectSupervisorWholeTrial({ ports: { projectLedger: ledger }, state });
+    const gate = { test: async () => ({ kind: "llm_evidence_tool_execution", evidence: await evidence(trial) }) };
+    const context = { ports: { projectLedger: ledger }, state, gate, controller: { latest: () => undefined }, signal: undefined } as unknown as AutomationStudioProjectSupervisorContext;
+    return { ledger, test: () => trial.test(context, { revision: 2, digest: "d".repeat(64) }, undefined) };
+  }
+
+  it("says to end honestly, not to reset or test again, when they are all the gate listed", async () => {
+    const run = refusedWith(async (trial) => {
+      const decision = await trial.reset.beforeTrial(new AbortController().signal);
+      expect(decision.kind).toBe("refuse");
+      return (decision as { evidence: JsonObject }).evidence;
+    });
+    run.ledger.forBrief("brief.earlier").explored({ callId: "mark", toolId: "core.run_node", landed: true, declared: { permitted: true, effect: "mutate", consequences: ["modify_existing"], control: { name: "Mark", kind: "button", subject: "s:mark" }, verb: "press" } });
+    expect(run.ledger.unsatisfiable().map((act) => act.act)).toEqual(["act-1"]);
+    const answered = await run.test();
+    expect(answered.evidence).toMatchObject({ ok: false, code: "project.trial_unsettleable", instruction: GUIDANCE.refusals.trialUnsettleable, actsUnsettleable: [{ act: "act-1", did: "press \"Mark\" button", brief: "brief.earlier" }] });
+    expect(answered.evidence).not.toHaveProperty("actsInPlace");
+    expect(answered.resultReason).toBeUndefined();
+  });
+
+  it("still asks for a reset for the acts to undo, naming the others apart", async () => {
+    const run = refusedWith(async () => ({ ok: false, code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-2", did: "press \"Save\" button" }], actsUnsettleable: [{ act: "act-1", did: "press \"Mark\" button", reason: "gate_unsatisfiable", failed: "nothing_to_name" }] }));
+    const answered = await run.test();
+    expect(answered.evidence).toMatchObject({ code: "project.trial_reset_required", actsInPlace: [{ act: "act-2" }], actsUnsettleable: [{ act: "act-1" }] });
+    expect(String((answered.evidence as JsonObject).instruction)).toBe(`${GUIDANCE.refusals.resetRequired} ${GUIDANCE.refusals.resetRequiredUnsettleable}`);
+    expect(answered.resultReason).toBe("retry_allowed");
   });
 });

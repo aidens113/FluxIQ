@@ -1,6 +1,6 @@
 // What the build has seen of the site's stateful controls (L1 reset
 // settlement): the evidence a toggle's witness is judged on
-// (`./settlement-toggle-witness.ts`, `./ledger.ts`).
+// (`./toggle-witness.ts`, `../site-reset/ledger.ts`).
 //
 // - **Per page.** Every read that names its page (`scope`) and reports its
 //   controls replaces what is known of that page: a place a later read of it
@@ -25,7 +25,7 @@
 //   page, taken after the latest lasting call, still shows them. A control
 //   that reverts by itself never holds: the return must follow a press.
 
-import type { AutomationStudioSiteResetToggle } from "./settlement-toggle-witness.ts";
+import type { AutomationStudioSiteResetToggle } from "./toggle-witness.ts";
 
 type Counts = Readonly<Record<string, number>>;
 

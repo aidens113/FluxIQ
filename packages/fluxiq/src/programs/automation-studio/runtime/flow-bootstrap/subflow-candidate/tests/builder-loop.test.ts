@@ -329,3 +329,99 @@ describe("a judge's advice repeated to the same builder", () => {
     expect(third.adviceRepeated).toContain(`The trial that followed that advice, of revision 2, answered execution_failed: ${STOPPED}`);
   });
 });
+
+// S5 (`run-mvgw3ve5-294881b5`, 0114, 0115, 0151): the judges advised adding a field to the same read
+// that the build had been refused `incomplete_text` for, the builder did, and the next trial was refused
+// the same way. Once a read was refused so, that advice is said as the disclosure order instead.
+// (`../disclosure-advice.ts`, through the builder loop and `../repeated-advice.ts`.)
+describe("advice to add a field a read was refused incomplete_text for (S5, t743)", () => {
+  /** Model guidance never mirrors a realistic Lab scenario (AGENTS.md). */
+  const LAB_TASK_WORDS = /friend|earbud|kettle|basket|cart\b|towel|napkin|watchlist|auction|coupon|invitation|classified|giveaway|group|post\b|posts\b|feed\b|circleway|brightaisle|farbazaar|voltbay|tidewell|see more/iu;
+  const ADD_FIELD = "Add a due-note field to the read step.loans.s3, opening each row's details.";
+  const KEEP = "Keep only loans of the reading room, not the ones held at the bindery.";
+
+  function trialAnswer(revision: number, verdict: string, feedback: JsonObject = {}): AutomationStudioLlmEvidenceToolExecutionResult {
+    return { kind: "llm_evidence_tool_execution", evidence: { ok: verdict === "yes", partial: true, verdict, subflowKey: "find_listing", revision, digest: String(revision).repeat(64), entryPrepared: true, feedback, instruction: "Read the feedback." }, effectApplied: true, targetsUnchanged: false, resultCode: `subflow.trial_${verdict}` };
+  }
+  const judgedNo = (revision: number, advice: string) => trialAnswer(revision, "no", { code: "candidate.trial_judged_no", judge: { expected: "Every loan with its whole note.", observed: "No note column.", advice } });
+  const feedbackOf = (answered: AutomationStudioLlmEvidenceToolExecutionResult) => (answered.evidence as JsonObject).feedback as JsonObject;
+  const judgeOf = (answered: AutomationStudioLlmEvidenceToolExecutionResult) => feedbackOf(answered).judge as JsonObject;
+  /** A read the downstream domain refused because a field's text was cut short, naming the field. */
+  const refusedRead = (key = "due_note"): AutomationStudioLlmEvidenceToolExecutionResult => ({ kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "output_not_observed", detail: { reason: "incomplete_text", missing: [key] } }, effectApplied: false, targetsUnchanged: true });
+
+  describe("a judge's advice to add a field a read in this build was refused for", () => {
+    it("is passed on as it came before any read was refused so", () => {
+      const advice = new AutomationStudioSubflowRepeatedAdvice();
+      advice.saw({ kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "target_not_found", detail: { reason: "handle_not_in_packet" } }, effectApplied: false, targetsUnchanged: true });
+      expect(advice.told(judgedNo(1, `Judge call 1: ${ADD_FIELD} Judge call 2: ${KEEP}`))).toEqual(judgedNo(1, `Judge call 1: ${ADD_FIELD} Judge call 2: ${KEEP}`));
+    });
+
+    it("is said as the disclosure order, naming the refused field, once a read was refused for its cut-short text, keeping every other sentence", () => {
+      const advice = new AutomationStudioSubflowRepeatedAdvice();
+      advice.saw(refusedRead());
+      const told = judgeOf(advice.told(judgedNo(1, `Judge call 1: ${ADD_FIELD} Judge call 2: ${KEEP}`)));
+      const said = String(told.advice);
+      expect(said.startsWith("Judge call 1: Core: a read in this build was already refused because the field `due_note` was cut short on the page (incomplete_text), so adding it to the same read would be refused again.")).toBe(true);
+      expect(said).toContain("read the listing's row-context columns without the field `due_note`; then repeat over that read, pressing each kept row's own disclosure control;");
+      expect(said).toContain("then, after that repeat, not inside it, read the same listing again with the field `due_note`. Give both reads the same conditions, so every row the final read keeps was disclosed by the repeat.");
+      expect(said.endsWith(`Judge call 2: ${KEEP}`)).toBe(true);
+      expect(said).not.toContain("Add a due-note field");
+      expect(told).toMatchObject({ expected: "Every loan with its whole note.", observed: "No note column." });
+      expect(said.replace(KEEP, "")).not.toMatch(LAB_TASK_WORDS);
+    });
+
+    it("says the order once when both calls asked for the field, and counts a trial step refused for cut-short text", () => {
+      const advice = new AutomationStudioSubflowRepeatedAdvice();
+      const failed = trialAnswer(1, "execution_failed", { code: "candidate.execution_incomplete", steps: [{ step: 4, definitionId: "web.output.dom-extract_list", status: "failed", failureCode: "web.validation.output_not_observed", actual: "incomplete_text: field note" }] });
+      expect(advice.told(failed)).toEqual(failed);
+      const said = String(judgeOf(advice.told(judgedNo(2, `Judge call 1: ${ADD_FIELD} Judge call 2: Also include the note column in that read.`))).advice);
+      expect(said.match(/Do this in order instead/gu)).toHaveLength(1);
+      expect(said).toContain("the text field");
+      expect(said.endsWith("Judge call 2: Core: this call also asked to add the field to the same read; follow the order above instead.")).toBe(true);
+    });
+
+    it("rewrites an unsure's readings too, and leaves advice that adds no field as it was", () => {
+      const advice = new AutomationStudioSubflowRepeatedAdvice();
+      advice.saw(refusedRead());
+      const unsure = advice.told(trialAnswer(1, "unsure", { code: "candidate.trial_unconfirmed", unconfirmedReading: { advice: ADD_FIELD }, answeredReading: { advice: KEEP } }));
+      expect(String((feedbackOf(unsure).unconfirmedReading as JsonObject).advice)).toContain("Do this in order instead");
+      expect((feedbackOf(unsure).answeredReading as JsonObject).advice).toBe(KEEP);
+      expect(advice.told(judgedNo(2, KEEP))).toEqual(judgedNo(2, KEEP));
+    });
+
+    it("reaches the builder through its test tool after a read made through the builder's own tools was refused", async () => {
+      const look: AutomationStudioLlmEvidenceTool = { toolId: "core.run_node", description: "Run a node", inputSchema: { type: "object" }, effect: "mutate", perCallEffect: true, initialObservation: { input: { node: "web.inspect" } } };
+      type Entry = { callId: string; toolId: string; value: unknown };
+      const receiptOf = (evidence: readonly Entry[]) => {
+        const value = [...evidence].reverse().find((entry) => entry.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!.value as JsonObject;
+        return { revision: value.revision as number, digest: value.digest as string };
+      };
+      const shown: JsonObject[] = [];
+      const steps: Array<(evidence: readonly Entry[]) => JsonObject> = [
+        () => ({ kind: "tool_call", toolId: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, callId: "submit1", input: script([...OPEN, ...callPart(), "part narrow: narrow the listing", "  step: press the filter", "    node: web.dom.click", "    selector: .filter", "    consequences: none", "end"]) }),
+        (evidence) => ({ kind: "tool_call", toolId: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, callId: "test", input: receiptOf(evidence) }),
+        (evidence) => {
+          shown.push(...evidence.filter((entry) => entry.toolId === AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID).map((entry) => entry.value as JsonObject));
+          return { kind: "complete", result: { ended: "partial", reason: "The judged run lacked a column." } };
+        }
+      ];
+      const answer: Pick<AutomationStudioSubflowTrialResult, "verdict" | "feedback"> = { verdict: "no", feedback: { code: "candidate.trial_judged_no", judge: { advice: ADD_FIELD } } };
+      let index = 0;
+      const outcome = await runAutomationStudioSubflowBuilderLoop({
+        scope: testScope(), siblings: [...SIBLINGS], submission: testSubmission(),
+        trial: { port: async (request: AutomationStudioSubflowTrialRequest) => ({ partial: true as const, scope: "subflow" as const, identity: { ...request.proposal.scope }, revision: request.proposal.revision, digest: request.proposal.digest, entryPrepared: true, ...structuredClone(answer) }) },
+        loop: {
+          tools: [look], maxIterations: steps.length, maxToolCalls: steps.length + 2,
+          unusableDecisions: { maxConsecutive: steps.length, maxInARow: steps.length, stalled: () => new Error("stalled") },
+          executeTool: async (call) => (call.toolId === "core.run_node" && call.callId.startsWith("initial.") ? refusedRead() : { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true }),
+          decide: async ({ evidence }) => steps[index++]!(evidence as readonly Entry[])
+        }
+      });
+      expect(outcome.loop.ok, JSON.stringify(outcome.loop)).toBe(true);
+      expect(shown).toHaveLength(1);
+      const said = String(((shown[0]!.feedback as JsonObject).judge as JsonObject).advice);
+      expect(said).toContain("Do this in order instead");
+      expect(said).not.toContain("Add a due-note field");
+    });
+  });
+});

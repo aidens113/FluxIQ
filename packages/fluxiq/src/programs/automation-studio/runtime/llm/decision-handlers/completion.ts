@@ -61,7 +61,8 @@ export async function automationStudioLlmEvidenceHandleCompletion(
   context.dryRunSeen = { ran: false, reused: false };
   // The caller's check and the draft's dry run, both asked and answered
   // together (`../evidence-loop/completion-attempt.ts` says why both).
-  const attempt = await automationStudioLlmEvidenceCompletionAttempt({ result: decision.result, steps: draftSteps, checkCompletion: input.checkCompletion, dryRun: context.dryRun, signal: input.signal });
+  // The check is told how many decisions remain after this one (t743), so a rule asking for more work holds only where there is room.
+  const attempt = await automationStudioLlmEvidenceCompletionAttempt({ result: decision.result, steps: draftSteps, checkCompletion: input.checkCompletion, dryRun: context.dryRun, signal: input.signal, turnsLeft: Math.max(0, limits.maxIterations - iteration - 1) });
   if (attempt.kind === "threw") {
     if (input.propagateDecisionErrors) throw attempt.error;
     return end("llm_evidence_loop.invalid_decision");

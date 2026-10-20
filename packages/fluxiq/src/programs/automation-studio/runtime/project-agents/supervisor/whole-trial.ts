@@ -91,6 +91,16 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
 // and a later test of it the deadline cut are remembered (`lastOfFlow`): a
 // Flow submitted again as a new revision has no verdict of its own, and was
 // told as "never tested from its start" although it had been tested whole.
+//
+// **An act no call can settle is named apart, never as one to reset (t743,
+// S2).** Such an act (a brief's ledger's `unsatisfiable()`) is never among the
+// acts to undo, yet every trial is refused while it is on the target, and the
+// gate lists it under `actsUnsettleable`. A refusal listing only such acts is
+// answered `project.trial_unsettleable`: no reset undoes them and no test can
+// run, so the supervisor is told to end honestly, and not to test again
+// (no `retry_allowed`). One listing acts to undo as well is still
+// `project.trial_reset_required`, with the others named and said apart. The
+// repeated refusal names them too.
 
 /** How much more than its measured time a test is given room for: a fifth, and at least ten seconds (header, G2). */
 const TIME_MARGIN = 0.2;
@@ -220,7 +230,14 @@ export class AutomationStudioProjectSupervisorWholeTrial {
       return typeof act?.act === "string" ? [{ act: act.act, did: typeof act.did === "string" ? act.did : "an act", brief: owners.get(act.act) ?? "unknown" }] : [];
     });
     const cannotUndo = list(evidence.cannotUndo);
-    return answer.refused("project.trial_reset_required", GUIDANCE.refusals.resetRequired, { actsInPlace: acts, ...(cannotUndo.length ? { cannotUndo } : {}) }, { retry: true });
+    // Acts no call can settle, said apart: no reset undoes them, and no test runs while they are there (header, t743).
+    const unsettleable = list(evidence.actsUnsettleable).flatMap((entry) => {
+      const act = entry && typeof entry === "object" && !Array.isArray(entry) ? entry : undefined;
+      return typeof act?.act === "string" ? [{ act: act.act, did: typeof act.did === "string" ? act.did : "an act", brief: owners.get(act.act) ?? "unknown" }] : [];
+    });
+    if (unsettleable.length && !acts.length) return answer.refused("project.trial_unsettleable", GUIDANCE.refusals.trialUnsettleable, { actsUnsettleable: unsettleable });
+    const instruction = unsettleable.length ? `${GUIDANCE.refusals.resetRequired} ${GUIDANCE.refusals.resetRequiredUnsettleable}` : GUIDANCE.refusals.resetRequired;
+    return answer.refused("project.trial_reset_required", instruction, { actsInPlace: acts, ...(cannotUndo.length ? { cannotUndo } : {}), ...(unsettleable.length ? { actsUnsettleable: unsettleable } : {}) }, { retry: true });
   }
 
   /** How many reset briefs have come back under the plan in force, done or not. */
@@ -234,10 +251,13 @@ export class AutomationStudioProjectSupervisorWholeTrial {
     const shared = automationStudioSiteResetProjectReset({ project: ledger, checks: () => UNLOOKED });
     return {
       beforeTrial: async (signal, cannotUndo, options) => {
-        const inPlace = ledger.snapshot().acts.filter((act) => act.inPlace);
+        const acts = ledger.snapshot().acts;
+        const inPlace = acts.filter((act) => act.inPlace);
         // The same refusal until a reset brief has come back (header); a start hook's reset needs none.
         if (options?.startReset !== true && inPlace.length && this.refusedAtResets !== undefined && this.refusedAtResets === this.resetsBack()) {
-          return { kind: "refuse", moved: false, evidence: { ok: false, code: "candidate.trial_reset_required", actsToUndo: inPlace.map((act) => ({ act: act.act, did: act.did })) } };
+          // The acts no call can settle are named apart, as the gate names them (header, t743).
+          const unsettleable = [...new Set(acts.map((act) => act.owner))].flatMap((owner) => ledger.forBrief(owner).unsatisfiable()).map((act) => ({ act: act.act, did: act.did }));
+          return { kind: "refuse", moved: false, evidence: { ok: false, code: "candidate.trial_reset_required", actsToUndo: inPlace.map((act) => ({ act: act.act, did: act.did })), ...(unsettleable.length ? { actsUnsettleable: unsettleable } : {}) } };
         }
         const decision = await shared.beforeTrial(signal, cannotUndo, options);
         this.refusedAtResets = decision.kind === "refuse" ? this.resetsBack() : undefined;

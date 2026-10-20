@@ -101,7 +101,9 @@ describe("a reversible press with no witness before the seal", () => {
     const ledger = new AutomationStudioSiteResetLedger();
     expect(attempt(ledger, "star", STAR)).toEqual({ kind: "admit" });
     expect(attempt(ledger, "add", ADD)).toEqual({ kind: "admit" });
-    expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1", "act-2"]);
+    // Both recorded; with nothing read complete, no ref can ever be issued, so neither is the model's to undo: no call can settle them (t743).
+    expect(ledger.inPlace()).toEqual([]);
+    expect(ledger.unsatisfiable().map((act) => [act.act, act.failed])).toEqual([["act-1", "nothing_to_name"], ["act-2", "nothing_to_name"]]);
     const baselines = new AutomationStudioSiteResetCreateBaselines();
     const unscoped = { name: null, kind: null };
     for (const other of [
@@ -153,11 +155,19 @@ describe("settle words once no ref can be issued", () => {
     // After the seal a press with no witness is admitted as before, and can never settle.
     attempt(ledger, "add", ADD);
     ledger.observed(bookPage());
-    const said = settles(await ledger.beforeTrial(compare)).join(" ");
-    expect(said).toContain("cannot be settled in this build");
-    expect(said).toContain("trials stay refused while it is in place");
-    expect(said).not.toContain("resetDestination");
-    expect(said).not.toMatch(/\b(cart|basket|checkout|job|post|friend|order|product|book|reading)\b/iu);
+    const refused = await ledger.beforeTrial(compare);
+    // No call can settle either (t743; the star's page reports no controls, so it has no toggle): never asked to name a ref,
+    // listed apart, and the trial stays refused with the honest exit.
+    expect(settles(refused)).toEqual([]);
+    expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsUnsettleable: ["act-1", "act-2"].map((act) => ({ act, reason: "gate_unsatisfiable", failed: "nothing_to_name" })) } });
+    const instruction = refused.kind === "refuse" ? String(refused.evidence.instruction) : "";
+    expect(instruction).toContain("no call can settle it");
+    expect(instruction).toContain("as blocked");
+    expect(instruction).not.toMatch(/\b(cart|basket|checkout|job|post|friend|order|product|book|reading)\b/iu);
+    // Its settle words, were it asked for, still say it cannot be settled and never to name a ref.
+    const words = settleWords([{ reason: "name" }], [], { closed: true });
+    expect(words).toContain("cannot be settled in this build");
+    expect(words).not.toContain("resetDestination");
   });
 
   it("still name the issued refs where some were shown before the seal", () => {

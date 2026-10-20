@@ -9,13 +9,15 @@
 //   project's original evidence is adopted explicitly (`adopt`).
 // - **Latest reads.** Per scope its subjects in order and their row values;
 //   per group the scopes its latest read held, how many acts were recorded
-//   then, the ledger clock then (`./ledger.ts`: a read is fresh only when no
+//   then, the ledger clock then (`../site-reset/ledger.ts`: a read is fresh only when no
 //   lasting call or trial landed after it), and where it was read. A malformed
 //   group (`./collection-groups.ts`) is read as holding nothing, so no earlier
 //   witness survives it.
 
-import type { AutomationStudioSiteResetRead } from "./contracts.ts";
-import { automationStudioSiteResetInvalidCollectionGroups as invalidCollectionGroups } from "./collection-groups.ts";
+import { automationStudioSiteResetInvalidCollectionGroups as invalidCollectionGroups, type AutomationStudioSiteResetCollection } from "./collection-groups.ts";
+
+/** What a read carries that the observations keep: where it was read and its complete lists (site-reset's `AutomationStudioSiteResetRead`). */
+type Read = { location?: string | undefined; collections?: readonly AutomationStudioSiteResetCollection[] | undefined };
 
 /** A list scope's first complete read: how many acts preceded it, its group, subjects in order and their row values. */
 export type AutomationStudioSiteResetOriginal = { beforeAct: number; subjects: ReadonlySet<string>; group: string; states: ReadonlyMap<string, string> };
@@ -33,7 +35,7 @@ export class AutomationStudioSiteResetObservations {
   readonly latestGroupScopes = new Map<string, ReadonlySet<string>>();
 
   /** Original project evidence predates every lasting act; adoption never changes current observations. */
-  adopt(collections: NonNullable<AutomationStudioSiteResetRead["collections"]>): void {
+  adopt(collections: readonly AutomationStudioSiteResetCollection[]): void {
     const invalid = invalidCollectionGroups(collections);
     for (const collection of collections) {
       if (invalid.has(collection.group)) continue;
@@ -42,7 +44,7 @@ export class AutomationStudioSiteResetObservations {
   }
 
   /** A passive whole-scope read after `acts` recorded acts, at ledger `clock`; answers the groups it read. */
-  observe(read: AutomationStudioSiteResetRead, baseline: boolean, acts: number, clock: number): ReadonlySet<string> {
+  observe(read: Read, baseline: boolean, acts: number, clock: number): ReadonlySet<string> {
     const observed = new Map<string, Set<string>>();
     const collections = read.collections ?? [];
     const invalid = invalidCollectionGroups(collections);

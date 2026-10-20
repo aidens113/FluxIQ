@@ -1,5 +1,5 @@
 // What an open act's `settle` says (L1 reset settlement): one sentence, built
-// from its open reasons (`./settlement-decision.ts`), naming only this run's
+// from its open reasons (`./decision.ts`), naming only this run's
 // own destination refs and locations. Generic by rule: no site, page,
 // product or task is named (AGENTS.md, "Model guidance never teaches to the
 // test").
@@ -17,8 +17,8 @@
 //   no address.
 
 import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../executor/index.ts";
-import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY as UNDOES } from "./contracts.ts";
-import type { AutomationStudioSiteResetOpenReason } from "./settlement-decision.ts";
+import type { AutomationStudioSiteResetOpenReason } from "./decision.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY as UNDOES } from "./undoes-key.ts";
 
 /** A destination ref the model was shown: how many items its list held when first read complete, and where. */
 export type AutomationStudioSiteResetIssuedRef = { ref: string; count: number; location?: string };
@@ -37,6 +37,8 @@ function clause(reason: AutomationStudioSiteResetOpenReason, issued: readonly Au
   if (reason.reason === "look") return `read ${list}${at} completely again`;
   if (reason.reason === "undo") return `${list}${at} still differs from how the build found it: undo this act there, naming it under ${UNDOES}`;
   if (reason.reason === "toggle") return `its control${at} still shows the state this act set: press that same control back once, naming this act under ${UNDOES}`;
+  // A list Core's own look could not read again (`./reach.ts`, t743): no call can meet it.
+  if (reason.reason === "unreachable") return `${list}${at} could not be read again, and nothing else shows this act put back: no call can settle it in this build`;
   if (closed && issued.length === 0) {
     return "nothing read shows where its effect would be, and this act cannot be settled in this build: nothing was read complete before the build's first lasting act, so no list can be named for it any more, and trials stay refused while it is in place";
   }

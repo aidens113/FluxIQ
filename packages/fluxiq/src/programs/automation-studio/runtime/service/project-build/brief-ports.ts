@@ -8,7 +8,7 @@ import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AUTOMATION_STUDIO_SITE_RESET_UN
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, automationStudioSubflowEntryLeft, type AutomationStudioSubflowEntryLeftAct, type AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, AUTOMATION_STUDIO_NODE_WRITE_KEY, automationStudioFlowDraftReplayClearedCode, automationStudioHarnessOptionRegistry, automationStudioLlmNodeDescriptions, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceToolExecutionResult, type AutomationStudioLlmHarnessInput } from "../../llm/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_RESET_COMPLETION, type AutomationStudioProjectBriefEnding, type AutomationStudioProjectBriefPortFactory, type AutomationStudioProjectBriefPortRequest } from "../../project-agents/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_RESET_COMPLETION, type AutomationStudioProjectBriefEnding, type AutomationStudioProjectBriefPortFactory, type AutomationStudioProjectBriefPortRequest, type AutomationStudioProjectBuilderPorts } from "../../project-agents/index.ts";
 import { startAutomationStudioBuildRouting } from "../../route-state/index.ts";
 import { automationStudioCandidateStallCode, automationStudioCandidateSubmissionRefusals } from "../candidate-failure/index.ts";
 import { automationStudioFlowBootstrapUnusableDecisions, type generateAutomationStudioFlowCandidateDraft } from "../flow-bootstrap-commands/index.ts";
@@ -166,8 +166,24 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // call naming `resetDestination` with no `undoes` that made no act, while acts
 // are open, carries `resetDestinationNote`: it settled nothing, the open acts,
 // and one example call built from a real open act and an issued ref. Every ref
-// a receipt printed is kept for the build (`issued`), and a reset brief's
-// completion refusal lists them (`project-agents/dispatch/reset-loop.ts`).
+// a receipt printed is kept for the build (`issued`), for that example.
+//
+// **Every brief is given the build's places (t743, office rerun round 4).**
+// Both a builder's ports and a reset's give `issuedRefs`: every ref the build
+// issued, with where its list was read, as the project ledger holds them
+// (`issuedRefs()`). The dispatcher puts their locations on each brief's opening
+// call as `places` (`project-agents/dispatch/run-brief.ts`), so the domain
+// admits every address Core's words name; a reset brief's completion refusal
+// lists them (`project-agents/dispatch/reset-loop.ts`). Before, no location
+// reached the dispatcher, so production sent no places.
+//
+// **An act no call can settle is on the site, and is no reset's (t743, S2).**
+// The project ledger's `unsatisfiable()` acts are never among those in place:
+// no reset is asked to undo them, so a reset's task and `remainingActs` leave
+// them out, and a reset whose only acts left are such acts completes at once.
+// What tells a model what is on the site counts them: a builder's start is not
+// the build's while one is there, and a prepared entry names one its
+// predecessors' run landed under `predecessorsLeftOnSite`.
 //
 // **The brief's permitted acts narrow only what a person is asked about**
 // (t580). `permittedActs` filters the build's permitted consequences, so a
@@ -255,7 +271,7 @@ export function automationStudioProjectBuildBriefPorts(input: {
     const now = Date.now();
     const declarations: AutomationStudioFlowInstruction = {
       schemaVersion: "0.1", instructionId: "core.project_action_declarations", title: "Declare lasting actions and observe their original destinations",
-      body: "Before making a reversible lasting effect, observe its destination's complete original inventory. Identified reversible create_new exploration requires its issued resetDestinations.collections ref under resetDestination, unless exact same-scope original evidence already proves absence; a missing baseline refusal changes nothing, so observe safely and retry. Declare the lasting consequences of every recovery press as honestly as the original operation, even when its control offers recovery from an error. Truly nonlasting actions keep an empty declaration. A successful control press or a vanished source message does not prove destination restoration. Return every identified original collection to its original ordered rows and values before another trial; report unproved restoration honestly.",
+      body: AUTOMATION_STUDIO_SITE_RESET_WORDS.actionDeclarations(),
       scope: { kind: "flow", projectId, flowId }, priority: Number.MIN_SAFE_INTEGER, status: "active", requirement: "required", tags: ["generation"], createdAt: now, updatedAt: now, metadata: { source: "core.project_action_declarations" }
     };
     const runHarness = async (call: AutomationStudioLlmHarnessInput) => {
@@ -296,7 +312,8 @@ export function automationStudioProjectBuildBriefPorts(input: {
       const opensArriving = built.loop.tools.some((tool) => tool.initialObservation?.arrival !== undefined);
       const started = await phaseStart.explore({ phase: request.brief.kind === "repair" ? "repair" : "builder", scope: request.scope, own: request.ledger, signal: request.signal, openingArrives: opensArriving });
       const { entry } = started;
-      startIsBuilds = !project.ledger.snapshot().acts.some((act) => act.inPlace);
+      // An act no call can settle is still on the site, so the start is not the build's while one is (header, t743).
+      startIsBuilds = !project.ledger.snapshot().acts.some((act) => act.inPlace) && !project.ledger.unsatisfiable().length;
       const placed = placing(built.loop, placedAt(calls, pages), reader, { capture: true, signal: request.signal, issued });
       const tools = placed.tools.map((tool) => automationStudioSiteResetUndoesTool(entry.kind === "prepared" ? lookingInPlace(tool) : tool, { createBaselines: true }));
       // Arrived only where there is a start to arrive at: the opening tool declares an arrival (header).
@@ -304,11 +321,15 @@ export function automationStudioProjectBuildBriefPorts(input: {
       const absorbedActs = started.record.putBack?.map((act) => act.act);
       // What the preparation run landed, as the project ledger holds it (header, t638).
       // A possible act is listed too, marked `possibly` (t676): a press that declared nothing yet changed its page may be a part's act.
-      const landed: AutomationStudioSubflowEntryLeftAct[] = entry.kind === "prepared" ? project.ledger.snapshot().acts.filter((act) => act.inPlace && act.ref.startsWith(`${entry.runId}#`)).map(({ act, did, possible }) => ({ act, did, ...(possible ? { possibly: true as const } : {}) })) : [];
+      // An act no call can settle is still on the site, so it is named too (header, t743).
+      const unsettleable = new Set(project.ledger.unsatisfiable().map((act) => act.act));
+      const landed: AutomationStudioSubflowEntryLeftAct[] = entry.kind === "prepared" ? project.ledger.snapshot().acts.filter((act) => (act.inPlace || unsettleable.has(act.act)) && act.ref.startsWith(`${entry.runId}#`)).map(({ act, did, possible }) => ({ act, did, ...(possible ? { possibly: true as const } : {}) })) : [];
       const loop = told({ ...placed, tools }, { start: started.told, entry: automationStudioProjectBuildEntryNote(request.scope, entry, absorbedActs, landed), permittedActs: request.brief.permittedActs, arrived });
       // The domain's denied keys, which the dispatcher withholds from a repair's `yourSubflow` (`project-agents/dispatch/run-brief.ts`, t625).
       // `moves`: the reader's count of the times its looks moved the target, so a test refused after one says where it stands (t738).
-      return { loop, submission: { ...submission, permissionFor: built.permissions.planStep }, trial, reset, moves: () => reader.moves, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...built.submissions.observe(observed), decide: built.decide(observed.completionSchema) }), ended: built.ended, deniedEvidenceKeys: binding.deniedEvidenceKeys };
+      // `issuedRefs`: every ref the build issued, with where it was read, which the dispatcher puts on the opening call as `places` (header, t743).
+      const ports: AutomationStudioProjectBuilderPorts & { issuedRefs: () => AutomationStudioSiteResetIssuedRef[] } = { loop, submission: { ...submission, permissionFor: built.permissions.planStep }, trial, reset, moves: () => reader.moves, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...built.submissions.observe(observed), decide: built.decide(observed.completionSchema) }), ended: built.ended, deniedEvidenceKeys: binding.deniedEvidenceKeys, issuedRefs: () => project.ledger.issuedRefs() };
+      return ports;
     },
     reset: async (request) => {
       // An undo aimed at another item is refused in a reset's words (header).
@@ -329,7 +350,8 @@ export function automationStudioProjectBuildBriefPorts(input: {
       // Core settles what it can itself first, so the task lists only the acts still open (header, L1).
       await remaining();
       // The refs printed so far, which its completion's refusal lists beside the open acts (header, `project-agents/dispatch/reset-loop.ts`).
-      const ports = { loop, remainingActs: remaining, ended: built.ended, issuedRefs: () => [...issued.values()] };
+      // Each with where it was read, which the dispatcher also puts on its opening call as `places` (header, t743).
+      const ports = { loop, remainingActs: remaining, ended: built.ended, issuedRefs: () => project.ledger.issuedRefs() };
       return ports;
     }
   };

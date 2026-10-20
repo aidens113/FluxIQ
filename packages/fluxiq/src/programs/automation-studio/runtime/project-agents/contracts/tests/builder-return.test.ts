@@ -61,6 +61,18 @@ describe("builder return", () => {
     expect(issues(partial, brief()).map((issue) => issue.code)).toEqual(["project.return_done_before"]);
   });
 
+  // t743: a return that is not done may carry a closed terminal reason, read from Core's own signals where it is made.
+  it("reads each closed terminal reason on a return that is not done, refuses any other, and refuses one on a done return", () => {
+    const blocked = (terminalReason: unknown) => builderReturn((value) => Object.assign(value, { outcome: "blocked", proposal: undefined, terminalReason }));
+    for (const reason of ["allowance_spent", "stopped", "person_ended", "gate_unsatisfiable"]) {
+      expect(parse(blocked(reason))).toEqual({ status: "valid", value: blocked(reason) });
+      expect(issues(blocked(reason), brief())).toEqual([]);
+    }
+    expect(parse(blocked("tired"))).toMatchObject({ status: "invalid", code: "project.invalid_choice" });
+    const done = builderReturn((value) => Object.assign(value, { terminalReason: "stopped" }));
+    expect(issues(done, brief()).map((issue) => issue.code)).toEqual(["project.return_terminal_reason"]);
+  });
+
   it("accepts a done reset without a proposal and refuses one that proposes a subflow", () => {
     const reset = brief((value) => Object.assign(value, { kind: "reset", parts: [], permittedActs: [] }));
     expect(issues(builderReturn((value) => delete value.proposal), reset)).toEqual([]);

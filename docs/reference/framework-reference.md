@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4049
+- Public declarations: 4051
 - Class: 139
 - Interface: 10
 - Object: 536
 - Type: 2148
 - Type Alias: 1
-- Value: 1215
+- Value: 1217
 
 ## Public Declarations
 
@@ -1005,6 +1005,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioConversationWriterHost` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/writer.ts` | What a writer needs from whatever holds the store. The conversations collaborator satisfies it. |
 | `AutomationStudioConversationWriterRequest` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/conversations.ts` | - |
 | `automationStudioCoreLoopStageInstructionId` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/stages/instructions.ts` | - |
+| `automationStudioCoreMoveRunning` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness-options/core-move.ts` | - |
 | `automationStudioCouldNotRun` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/state-routing/could-not-run.ts` | - |
 | `AutomationStudioCrashInjectionEvidence` | Type | `packages/fluxiq/src/programs/automation-studio/testing/scale-certification.ts` | - |
 | `automationStudioCreditedHintMs` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/defensive/credited-hint.ts` | - |
@@ -3826,6 +3827,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `rollbackFluxIQStorageMigration` | Value | `packages/fluxiq/src/framework/storage-migration.ts` | - |
 | `rotateAutomationStudioContentAddressKey` | Value | `packages/fluxiq/src/programs/automation-studio/storage/project/content-address/rotate-key.ts` | - |
 | `RotateSecretKeyRequest` | Type | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts` | - |
+| `runAsAutomationStudioCoreMove` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness-options/core-move.ts` | - |
 | `runAutomationStudioCompiledPlan` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/compiled-plan.ts` | - |
 | `runAutomationStudioDetachedCandidate` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/detached-execution.ts` | - |
 | `runAutomationStudioDetachedSubflow` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/detached-subflow.ts` | - |

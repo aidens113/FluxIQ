@@ -71,6 +71,25 @@ describe("a tool step", () => {
     expect(readFileSync(path.join(directory, "0002-tool-web.look", "result.json"), "utf8")).not.toContain("Kettle");
   });
 
+  // S5 (`run-mvgw3ve5-294881b5`, 0196): the build's work deadline, a DOMException TimeoutError with no string code,
+  // was logged `threw non_error` and `tool_failed`, though the loop ended cancelled.
+  it("names a codeless throw by its name, and writes an abort or a deadline as the loop cancelled", async () => {
+    const throwing = (error: unknown) => automationStudioLlmStepLogTool(async (_request: { callId: string; toolId: string }): Promise<unknown> => {
+      throw error;
+    }, env());
+    await expect(throwing(new DOMException("The work reached its time limit.", "TimeoutError"))({ callId: "c1", toolId: "core.run_node" })).rejects.toThrow("time limit");
+    await expect(throwing(new DOMException("stopped", "AbortError"))({ callId: "c2", toolId: "core.run_node" })).rejects.toThrow("stopped");
+    await expect(throwing(new TypeError("broken"))({ callId: "c3", toolId: "core.run_node" })).rejects.toThrow("broken");
+    await expect(throwing("a thrown string")({ callId: "c4", toolId: "core.run_node" })).rejects.toBe("a thrown string");
+
+    expect(json(path.join(directory, "0001-tool-core.run_node", "result.json"))).toEqual({ error: { name: "TimeoutError", code: null } });
+    expect(json(path.join(directory, "0001-tool-core.run_node", "meta.json"))).toMatchObject({ status: "threw", summary: "threw TimeoutError", loopVerdict: "llm_evidence_loop.cancelled" });
+    expect(json(path.join(directory, "0002-tool-core.run_node", "meta.json"))).toMatchObject({ summary: "threw AbortError", loopVerdict: "llm_evidence_loop.cancelled" });
+    expect(json(path.join(directory, "0003-tool-core.run_node", "meta.json"))).toMatchObject({ summary: "threw TypeError", loopVerdict: "llm_evidence_loop.tool_failed" });
+    expect(json(path.join(directory, "0004-tool-core.run_node", "meta.json"))).toMatchObject({ summary: "threw non_error", loopVerdict: "llm_evidence_loop.tool_failed" });
+    expect(readFileSync(path.join(directory, "index.md"), "utf8")).toContain("| 0001 | tool | core.run_node | threw TimeoutError | - |");
+  });
+
   it("is the same function, writing nothing, when the directory is unset or relative", async () => {
     const tool = async (_request: { callId: string; toolId: string }) => execution({ ok: true });
     expect(automationStudioLlmStepLogTool(tool, {})).toBe(tool);

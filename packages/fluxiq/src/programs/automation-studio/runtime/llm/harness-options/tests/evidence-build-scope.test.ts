@@ -4,6 +4,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
+import { automationStudioCoreMoveRunning, runAsAutomationStudioCoreMove } from "../core-move.ts";
 import { automationStudioEvidenceBuildBound, automationStudioEvidenceBuildId, runWithAutomationStudioEvidenceBuild } from "../evidence-build.ts";
 import { automationStudioEvidenceBuildScope, runWithAutomationStudioEvidenceBuildScope, type AutomationStudioEvidenceBuildScope } from "../evidence-build-scope.ts";
 import type { AutomationStudioHarnessOptionBundle } from "../option.ts";
@@ -166,5 +167,44 @@ describe("the evidence build scope", () => {
     const two = made.evidenceLoopBinding({ projectId: "p1", flowId: "f2", buildId: "build.b" }, RESOLUTION);
     await Promise.all([one.executeTool(call(`initial.${TOOL_ID}.x`)), two.executeTool(call("call.1"))]);
     expect(seen.map((scope) => `${scope?.flowId}/${scope?.buildId}/${scope?.callScope ?? "-"}`).sort()).toEqual(["f1/build.a/x", "f2/build.b/-"]);
+  });
+});
+
+// Office rerun round 4 (`run-mvgvyaip-d856e135`, t743): Core's own look went
+// through the domain's rule for the model's calls and was refused unrun. A call
+// Core's move code makes is framed `move: "core"`; nothing else is.
+describe("a move Core makes itself", () => {
+  it("is framed as Core's on every registry call it makes, however deep, and never by a call id", async () => {
+    const seen: Array<AutomationStudioEvidenceBuildScope | undefined> = [];
+    const binding = registry(seen).evidenceLoopBinding({ projectId: "p1", flowId: "f1", buildId: "build.one" }, RESOLUTION);
+    await runAsAutomationStudioCoreMove(async () => {
+      await Promise.resolve();
+      await binding.executeTool(call("site-reset.look.1.arrival"));
+      await binding.executeTool(call(`initial.${TOOL_ID}`));
+    });
+    // The same ids from outside the marker, as a model could write the first.
+    await binding.executeTool(call("site-reset.look.1.arrival"));
+    expect(seen).toEqual([
+      { projectId: "p1", flowId: "f1", buildId: "build.one", move: "core" },
+      { projectId: "p1", flowId: "f1", buildId: "build.one", opening: "fresh", move: "core" },
+      { projectId: "p1", flowId: "f1", buildId: "build.one" }
+    ]);
+    expect(automationStudioCoreMoveRunning()).toBe(false);
+  });
+
+  it("is a frame field only Core's own frame setter writes, and a scope without it carries none", () => {
+    expect(runWithAutomationStudioEvidenceBuildScope({ projectId: "p", flowId: "f", buildId: "b", move: "core" }, () => automationStudioEvidenceBuildScope())).toEqual({ projectId: "p", flowId: "f", buildId: "b", move: "core" });
+    expect(runWithAutomationStudioEvidenceBuildScope({ projectId: "p", flowId: "f", buildId: "b" }, () => automationStudioEvidenceBuildScope())).not.toHaveProperty("move");
+  });
+
+  it("is seen by the registry of another copy of Core in the process", async () => {
+    vi.resetModules();
+    const copy = await import("../core-move.ts");
+    expect(copy.runAsAutomationStudioCoreMove).not.toBe(runAsAutomationStudioCoreMove);
+    const seen: Array<AutomationStudioEvidenceBuildScope | undefined> = [];
+    const binding = registry(seen).evidenceLoopBinding({ projectId: "p1", flowId: "f1", buildId: "build.one" }, RESOLUTION);
+    await copy.runAsAutomationStudioCoreMove(() => binding.executeTool(call("call.1")));
+    expect(runAsAutomationStudioCoreMove(() => copy.automationStudioCoreMoveRunning())).toBe(true);
+    expect(seen.map((scope) => scope?.move)).toEqual(["core"]);
   });
 });

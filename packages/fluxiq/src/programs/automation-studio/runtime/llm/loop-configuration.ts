@@ -238,8 +238,11 @@ export type AutomationStudioLlmEvidenceLoopInput = {
   checkCompletion?(
     result: JsonObject,
     /** The draft as it stands, so a caller that builds its result from what
-     * the loop did rather than from what the model wrote has it to build from. */
-    context: { steps: readonly AutomationStudioFlowDraftStep[] }
+     * the loop did rather than from what the model wrote has it to build from;
+     * and the decisions the loop may still make after this one (`turnsLeft`,
+     * t743), so a check that would ask for more work knows whether there is
+     * room for it. */
+    context: { steps: readonly AutomationStudioFlowDraftStep[]; turnsLeft?: number | undefined }
   ): AutomationStudioLlmEvidenceCompletionCheck | Promise<AutomationStudioLlmEvidenceCompletionCheck>;
   /**
    * What a tool call that throws, or returns what is not a result, does.
@@ -467,7 +470,7 @@ export function automationStudioLlmEvidenceLoopRouteChecked(input: AutomationStu
   const routeCheck = input.draft === false ? undefined : input.draft?.routeCheck;
   if (!routeCheck) return input;
   const check = input.checkCompletion;
-  const checked = async (result: JsonObject, context: { steps: readonly AutomationStudioFlowDraftStep[] }): Promise<AutomationStudioLlmEvidenceCompletionCheck> =>
+  const checked = async (result: JsonObject, context: { steps: readonly AutomationStudioFlowDraftStep[]; turnsLeft?: number | undefined }): Promise<AutomationStudioLlmEvidenceCompletionCheck> =>
     await routeCheck(context.steps) ?? (check ? check.call(input, result, context) : { ok: true });
   const testRefused = (refusal: unknown): void => {
     const inner = (check as { testRefused?: unknown } | undefined)?.testRefused;

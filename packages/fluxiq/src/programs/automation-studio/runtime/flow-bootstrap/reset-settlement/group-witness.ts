@@ -15,7 +15,7 @@
 // never settled. A group with no baselined relevant scope is no witness.
 // Pure: it reads the ledger's observations and decides nothing else.
 
-import type { AutomationStudioSiteResetObservations } from "./settlement-observations.ts";
+import type { AutomationStudioSiteResetObservations } from "./observations.ts";
 
 /**
  * One group witness as last read: `none` (no baselined relevant scope),

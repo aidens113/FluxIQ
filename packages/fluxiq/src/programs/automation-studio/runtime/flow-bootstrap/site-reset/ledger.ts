@@ -13,44 +13,11 @@
 //   ("mutate") and declared a lasting class: `create_new`, `modify_existing` or
 //   `delete`. One declaring `move_money` or `send_or_publish` cannot be undone
 //   through the site, so it is recorded as such and never asked for.
-// - **An undo acts only on its own act's item (t475).** Each action an undo
-//   call puts to the gate is read first (`target`), before the domain acts:
-//   it is admitted on the item -- row, card, list item -- and dialog the act
-//   itself acted on (the domain's opaque tokens on the declaration: t463 row
-//   identity, t469 dialog identity), on an item the act itself created, in a
-//   dialog the site opened to confirm that undo, or for a move with nothing
-//   lasting and no item. Anything else is refused unrun
-//   (`candidate.undo_wrong_target`) and never pressed. Lane D round 10
-//   (`run-mv5tusge-1400ddf7`, `run-mv5upw4g-2482be12`) aimed Delete and
-//   Confirm on other requests' rows under `undoes`; only an over-declared
-//   `delete` stopped a Confirm on a row the build never touched.
-// - **Only a positive identity match is the act's own item (t479).** The act's
-//   item token and the control's must both be present and equal; a token
-//   missing on either side is never a match, whatever else agrees. Lane B
-//   round 11 (`run-mv5yaapd-ad19eaae`) undid an Add to cart that sat in no
-//   row by pressing Remove on the cart's only line -- the dish soap the cart
-//   held before the build -- because a one-line list names no row, and two
-//   missing items compared equal. A dialog alone is no identity either: a
-//   drawer can hold several lines no token tells apart. Where no reverse is
-//   positively identified, legacy unscoped acts are kept. Modern scoped acts
-//   remain unresolved and refuse an ordinary trial until restored.
-// - **One lasting press per confirmation (t479).** A dialog control with no
-//   item follows an undo that landed on the act's own or created item only
-//   once with a lasting class: the site's one confirmation. After it, the
-//   chain is spent, and a further lasting press in a dialog is refused.
-// - **Removing without asking is allowed only on what the act created
-//   (t475).** An item counts as created only when the act's own page showed
-//   it just after the act and no read of this build had seen it before
-//   (`./act-places.ts`). Lane B round 10 (`run-mv5tusj4-b7ee0630`) removed the
-//   dish soap the cart held before the build began, twice, unasked, under
-//   `undoes` of two adds: the old allowance followed the act, not the item.
-//   Once per act: an unasked removal that landed spends it, and a later claim
-//   on that act is refused before anything runs (`candidate.undo_already_done`).
-//   Any other removal is gated exactly as any call is, and asked.
-// - **Legacy unscoped refusals keep an act (t475).** These retain the older
-//   startedWith.cannotUndo policy. Modern scoped wrong-target attempts are
-//   recoverable: nothing runs, and the build can correct its target. An unproved
-//   modern inverse never admits an ordinary trial on leftovers.
+// - **What an undo may name and act on** -- its own act's item, a positive
+//   identity match, one lasting press per confirmation, unasked removal only
+//   of what the act created, legacy refusals keeping an act -- and what an
+//   undo or a look under `undoes` that ran did to its act are judged by
+//   `./undo-claims.ts` (t743: moved there with their header paragraphs).
 // - **An unchanged source proves no destination absence.** Legacy unscoped
 //   acts retain the noEffect policy (t475); strict acts settle only by their
 //   witnesses (below).
@@ -137,76 +104,56 @@
 // The ledger retains the first such read and the local act sequence. A
 // subject-only deletion is admitted only for create_new when that scope was
 // read before the act, the subject was absent then and is present now. It is
-// unasked once, and the act settles as any act does (below). Unproved
+// unasked once, and the act settles as any act does (below). So is removing,
+// on a destination the act named (its own or lent by the acts it repeats), a
+// subject that list's original read before the act did not hold and its
+// fresh read holds now, for an act that created or changed something, even
+// where the domain names the item differently there than on the act's own
+// page (t743, job): `target` hands the admission the lent destinations, and
+// any unasked subject undo that lands is spent, whatever it declared. Unproved
 // quantity inverses stay refused; a changed page alone never marks a subject
 // inverse complete. A project reset updates the act owner's current
 // observation without manufacturing a baseline for a different brief's
 // independent resource.
 //
-// **One settlement model for every strict act (L1, 2026-10-19).** Three narrow
-// proofs -- whole-group restoration, subject restoration, F1's unchanged named
-// destination -- each needed one exact look, over evidence only some sites
-// give, and seven failures recurred around them (canonical r5/r6, office r1/r2,
-// job r1/r2, photo r2). An act now carries witnesses of what it could change:
-// complete list groups (its own list read before it, every destination named
-// for it on its own call or on a look under `undoes`, the one its creation was
-// admitted against, the destination its subject undo or transfer was proved
-// on, and the destinations of the explored acts a trial act repeats,
-// `./settlement-trial-repeat.ts`), and its own control's toggle
-// (`./settlement-toggle-witness.ts`, `./settlement-control-tracker.ts`). It is
-// settled when fresh complete reads -- after it and after the latest lasting
-// call or trial, by this ledger's clock -- show every witness as the build
-// found it (`./settlement-group-witness.ts`, `./settlement-decision.ts`):
-// `restored` when a change was seen or an undo landed, otherwise `unchanged`,
-// which is sticky, never asked for, and listed in every later trial's
-// `startedWith.cannotUndo` as left with nothing it could change showing a
-// change. Open otherwise, and every open act says under `settle` what to read
-// or undo (`./settlement-words.ts`); before refusing, `beforeTrial` looks at
-// each stale witness's place itself (`checks.lookAt`). `cannotUndo` never
-// settles a strict act. A toggle is undone by pressing its own control back at
-// its place, admitted `own` with `modify_existing` unasked; a control at
-// another place, or already back, is refused unrun.
+// **One settlement model for every strict act (L1, 2026-10-19).** An act is
+// settled by fresh complete reads of everything it could change -- its list
+// groups and its own control's toggle -- `restored` when a change was seen or
+// an undo landed, otherwise `unchanged`, sticky and told to every later
+// trial's judge. The judgement -- the witnesses, the destinations a trial act
+// repeats and the lists a witnessless trial act adopts (narrowed by t743),
+// Core's own look at each stale witness's place before a trial, lists that
+// look cannot read again, and the words an open act says under `settle` --
+// lives in `../reset-settlement/judge.ts`, with its header; this ledger hands
+// it its acts, reads and receipts.
 //
-// **A look under `undoes` is no undo (L1 build repeats).** The domain
-// declares a navigation `mutate` with no consequences, so one under `undoes`
-// was admitted `moving` and counted as a landed undo: on job (installed proof
-// `l1-d3-browser-proof`) a press the site itself failed then settled
-// `restored`, and no later trial's judge heard it was left. A call admitted
-// `moving` -- nothing lasting, no item -- is now a look: it may name a
-// destination, and counts no attempt, sets no `undoneBy`, moves no clock and
-// presses no place. A call declaring a lasting class or an item is never a
-// look, whatever it was admitted as. The fresh read settles the act,
-// `unchanged` when it shows the baseline.
-//
-// **A trial act repeats any explored act of its build.** In a single-subflow
-// plan the builder's test is the judged whole run, whose acts the supervisor's
-// ledger records; it holds none of the builder's explored acts, so on office
-// the trial's press never inherited the explored press's named destination. A
-// ledger is handed the build's explored acts (`buildExplored`, from
-// `./project-ledger.ts`), asked at each match and each judgement, so a
-// destination named later still counts; a standalone ledger has its own.
-//
-// **A trial act with no witness adopts the build's issued lists (office r3).**
-// Every trial and every entry preparation that re-runs a predecessor makes a
-// new act; one in no list had no witness, and each needed its own model look
-// naming a list under `undoes`, which any issued list settled (office rerun
-// round 3, `run-mvgo5xft-25460ba2`: act-12, act-15, act-18, one per brief, and
-// the build stalled one look short). That look added nothing Core cannot do.
-// So an act made by no exploration call (`call` absent: a trial step's or an
-// entry preparation's) with no witness of its own -- no group, no toggle,
-// after its repeats' lent destinations -- is judged on every list whose ref
-// the model was shown, and Core's own pre-trial look (`lookFirst`) reads them.
-// Every one holding settles it `unchanged`, sticky and told to every later
-// trial's judge, exactly as above. One differing never asks to undo it there
-// (another act may have changed that list): it stays open with its `name`
-// words. An adopted list is never a change seen of its own. With no issued
-// ref nothing is adopted, and its words are as before. Explored acts are
-// untouched: the witness rule before the seal covers them (`./reset-witness.ts`).
+// **No call can settle it: `gate_unsatisfiable` (t743, rerun round 4).** An
+// open act whose every reason no call can meet -- its only witnesses lists
+// Core cannot read again (photo `run-mvgw7320-de416190`), or nothing to name
+// once refs are closed (office `run-mvgvyaip-d856e135`) -- leaves the acts to
+// undo (`inPlace`) and is listed apart under `actsUnsettleable`, with the
+// closed condition it failed, wherever `actsToUndo` is answered
+// (`unsatisfiable`). Trials stay refused while one is in place: the reset rule
+// is not weakened, and the refusal offers the honest exit, to end the brief
+// blocked naming those acts (`./trial-policy.ts`). An act that settles with a
+// list Core could not read again is told to every later trial's judge as such
+// (`unread`), under `startedWith.cannotUndo` as an unchanged act is.
 //
 // A phase runs from the build's start, or from one trial to the next. The
 // policy before a trial (`./trial-policy.ts`) reads it.
 
+
 import { AutomationStudioSiteResetCreateBaselines } from "./create-baselines.ts";
+import { automationStudioSiteResetRefusal as refusal } from "../reset-answers/index.ts";
+import {
+  AutomationStudioSiteResetControlTracker,
+  AutomationStudioSiteResetObservations,
+  AutomationStudioSiteResetReach,
+  AutomationStudioSiteResetSettlementJudge,
+  automationStudioSiteResetTransferWitness as transferWitness,
+  automationStudioSiteResetTrialRepeats as repeats,
+  type AutomationStudioSiteResetIssuedRef
+} from "../reset-settlement/index.ts";
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type {
   AutomationStudioSiteResetAbsorbedAct,
@@ -223,18 +170,13 @@ import type {
   AutomationStudioSiteResetRead,
   AutomationStudioSiteResetSpot,
   AutomationStudioSiteResetTarget,
-  AutomationStudioSiteResetTrialAct
+  AutomationStudioSiteResetTrialAct,
+  AutomationStudioSiteResetUnsettleableAct
 } from "./contracts.ts";
 import { automationStudioSiteResetTrialPolicy, type AutomationStudioSiteResetPhase } from "./trial-policy.ts";
-import { AutomationStudioSiteResetControlTracker, type AutomationStudioSiteResetPress } from "./settlement-control-tracker.ts";
-import { automationStudioSiteResetSettleDecision as settleDecision, type AutomationStudioSiteResetSettlement } from "./settlement-decision.ts";
-import { automationStudioSiteResetActGroups as actGroups } from "./settlement-act-groups.ts";
-import { AutomationStudioSiteResetObservations } from "./settlement-observations.ts";
-import { automationStudioSiteResetToggleWitness as toggleWitness } from "./settlement-toggle-witness.ts";
-import { automationStudioSiteResetTransferWitness as transferWitness } from "./settlement-transfer-witness.ts";
-import { automationStudioSiteResetTrialRepeats as repeats } from "./settlement-trial-repeat.ts";
-import { automationStudioSiteResetSettleWords as settleWords } from "./settlement-words.ts";
-import { automationStudioSiteResetUndoAdmission as undoAdmission, type AutomationStudioSiteResetUndoDeclared } from "./undo-admission.ts";
+import type { AutomationStudioSiteResetLedgerAct } from "./ledger-act.ts";
+import type { AutomationStudioSiteResetUndoDeclared } from "./undo-admission.ts";
+import { AutomationStudioSiteResetUndoClaims } from "./undo-claims.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "./words.ts";
 
 /** The classes an act may leave that the site's own controls can reverse. */
@@ -248,65 +190,8 @@ const ASKED_BEFORE_KEPT = 2;
 /** What a possibly lasting act's words end with (header, t593). */
 const POSSIBLY_LASTING = "declared no lasting act, but had an effect: possibly lasting";
 
-type Act = {
-  id: string;
-  did: string;
-  /** The exploration call, or the trial step, that made it. */
-  ref: string;
-  /** The exploration call's id, as the model gave it; absent for a trial's act. */
-  call?: string;
-  /** The name of the control the exploration call acted on, as the gate carried it; absent when withheld or for a trial's act (t647). */
-  control?: string;
-  operation?: string;
-  /** The lasting classes it declared: what an undo tied to it by subject may reverse (header, t719). */
-  consequences: readonly AutomationStudioActionConsequence[];
-  undoable: boolean;
-  /** Subject-bearing effects require positive baseline restoration, never an ordinary trial on leftovers. */
-  strictReset: boolean;
-  undone: boolean;
-  /** The call that last tried to undo it, as the model gave its id. */
-  undoneBy?: string;
-  /** Undo calls of it that landed. */
-  attempts: number;
-  /** Whether a landed undo changed the page it ran on and stayed there: unknown when no read was made. */
-  undoChanged?: boolean;
-  /** An unasked removal of what it created landed: spent. */
-  spent: boolean;
-  /** Destination whose witnessed-new subject a removal must make absent. */
-  subjectUndo?: { scope: string; subject: string; group: string; origin?: string };
-  /** A pure transition witnessed immediately around this effect; later reset reads cannot manufacture it. */
-  transfer?: { origin: string; scope: string; group: string; subject: string; state: string };
-  /** Every list named as where its effect would show (F1, L1): on its own call, on a look under `undoes`, or admitted against. Accumulated, never removed. */
-  destinations: Array<{ scope: string; group: string }>;
-  /** The explored acts a trial act repeats: their destinations, named whenever, cover it too (header, L1). */
-  repeats: string[];
-  /** The ledger clock it landed at: a read counts for it only from then on. */
-  clock: number;
-  /** Its own press, until the read after it says whether it was a toggle (L1). */
-  press?: AutomationStudioSiteResetPress;
-  /** One control at its place flipped from `from` to `to` (L1); only for an act that declared exactly `modify_existing`. */
-  toggle?: { page: string; place: string; from: string; to: string };
-  /** A read after it showed one of its witnesses changed. */
-  changeSeen: boolean;
-  /** Settled, for good (header, L1): `restored` also marks it undone. */
-  settled?: "restored" | "unchanged";
-  /** Its own page before it, and what it changed there. */
-  place?: AutomationStudioSiteResetPlace;
-  /** Where the control it acted on sat; absent when that is not known (a trial's act whose step's diff gave none, t598). */
-  spot?: AutomationStudioSiteResetSpot;
-  /** The items it created, as its own page showed them (t475), a trial step's read off its own diff (t598). */
-  createdItems: string[];
-  /** In this phase an undo of it landed on its own item (`own`, or one about the same thing, t719) or on one it created (`created`): a dialog that follows may confirm it. */
-  chain?: "own" | "created" | undefined;
-  /** What it changed that was still there when the reset last looked. */
-  stillThere?: string[];
-  /** Reset refusals that named it. */
-  askedFor: number;
-  /** The site cannot undo it: every trial runs with it in place. */
-  kept: boolean;
-  /** It declared no lasting class, but had an effect: possibly lasting, never asked for (header, t593). */
-  possible: boolean;
-};
+/** One act of this build as the ledger keeps it (`./ledger-act.ts`). */
+type Act = AutomationStudioSiteResetLedgerAct;
 
 /**
  * Who a ledger records for, where its `act-N` ids come from (undefined: none
@@ -324,6 +209,8 @@ export type AutomationStudioSiteResetLedgerOptions = {
   createBaselines?: AutomationStudioSiteResetCreateBaselines;
   /** Every explored act of the build this ledger belongs to, asked whenever a trial act is matched or judged (header, L1); absent, this ledger's own. */
   buildExplored?: () => readonly AutomationStudioSiteResetExploredAct[];
+  /** The lists Core cannot read again, shared by every ledger of one build (`../reset-settlement/reach.ts`, t743); absent, this ledger's own. */
+  reach?: AutomationStudioSiteResetReach;
 };
 
 /** One explored act as a trial act of the same build is matched against and lent destinations by (header, L1). */
@@ -336,23 +223,58 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
   private readonly acts: Act[] = [];
   private readonly createBaselines: AutomationStudioSiteResetCreateBaselines;
   private next = 1;
-  /** The complete lists this ledger has seen: originals and latest reads (`./settlement-observations.ts`). */
+  /** The complete lists this ledger has seen: originals and latest reads (`../reset-settlement/observations.ts`). */
   private readonly seen = new AutomationStudioSiteResetObservations();
-  /** The stateful controls it has seen, and the presses on them (`./settlement-control-tracker.ts`). */
+  /** The stateful controls it has seen, and the presses on them (`../reset-settlement/control-tracker.ts`). */
   private readonly tracker = new AutomationStudioSiteResetControlTracker();
   /** Moves on every landed lasting call, undo and trial: a read is fresh only at the current value (header, L1). */
   private clock = 0;
   private phase: AutomationStudioSiteResetPhase = { recorded: 0, refusals: 0, startDiffersSent: false };
   private readonly options: AutomationStudioSiteResetLedgerOptions;
+  /** Whether each act is settled, and what an open one still needs (`../reset-settlement/judge.ts`). */
+  private readonly judge: AutomationStudioSiteResetSettlementJudge;
+  /** What a call under `undoes` may name and act on, and what one that ran did (`./undo-claims.ts`). */
+  private readonly undos: AutomationStudioSiteResetUndoClaims;
 
   constructor(options: AutomationStudioSiteResetLedgerOptions = {}) {
     this.options = { ...options };
     this.createBaselines = options.createBaselines ?? new AutomationStudioSiteResetCreateBaselines();
+    this.judge = new AutomationStudioSiteResetSettlementJudge({
+      seen: this.seen,
+      tracker: this.tracker,
+      reach: options.reach ?? new AutomationStudioSiteResetReach(),
+      receipts: this.createBaselines,
+      acts: () => this.acts,
+      clock: () => this.clock,
+      explored: () => this.buildExplored()
+    });
+    this.undos = new AutomationStudioSiteResetUndoClaims({
+      acts: this.acts,
+      seen: this.seen,
+      receipts: this.createBaselines,
+      claimable: (act) => this.claimable(act),
+      settledNow: (act) => this.settledNow(act),
+      toUndo: (act) => this.toUndo(act),
+      inPlace: () => this.inPlace(),
+      unsatisfiable: () => this.unsatisfiable(),
+      named: (act) => this.named(act),
+      plain: namedAct,
+      toggle: (act) => this.judge.toggleOf(act),
+      pressed: (place) => {
+        this.clock += 1;
+        if (place !== undefined) this.tracker.press(place, this.clock);
+      }
+    });
   }
 
   createBaseline(declared: Pick<AutomationStudioSiteResetDeclared, "effect" | "consequences" | "control">, reference: unknown) { return this.createBaselines.check(declared, reference); }
 
   destinationReceipts() { return this.createBaselines.receipts(); }
+
+  /** Every destination ref the model was shown, with how many items its list held and where it was read (t743: for Core's own wiring). */
+  issuedRefs(): AutomationStudioSiteResetIssuedRef[] {
+    return this.createBaselines.issuedRefs();
+  }
 
   /** Original project evidence predates every lasting act; adoption never changes current observations. */
   adoptOriginalCollections(collections: NonNullable<AutomationStudioSiteResetRead["collections"]>): void {
@@ -363,84 +285,39 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
   observed(read: AutomationStudioSiteResetRead, baseline = true): void {
     // A read after an act showing one of its witnesses changed is a change seen (`restored`, not `unchanged`): judged on the
     // latest read before this one too, so a witness named since that read counts what it showed.
-    for (const act of this.acts) if (this.open(act)) this.evaluate(act);
+    for (const act of this.acts) if (this.open(act)) this.judge.evaluate(act);
     this.createBaselines.observed(read, baseline);
     this.seen.observe(read, baseline, this.acts.length, this.clock);
     this.tracker.read(read, this.clock);
+    // A read reached this ledger: a look of Core's that ran meanwhile landed (`../reset-settlement/judge.ts`, t743).
+    this.judge.read();
     // Settled by this read, for good: a later trial makes the read stale, not the act open again (header, L1).
     for (const act of this.acts) this.settledNow(act);
   }
 
+  /** How a call's `undoes` value reads (`./undo-claims.ts`). */
   claim(undoes: unknown, resetDestination?: unknown): AutomationStudioSiteResetClaim {
-    if (undoes === undefined) return { kind: "none" };
-    // A ref no receipt printed is refused before the call runs, never ignored (`./create-baselines.ts`, rerun round 2).
-    const unissued = this.createBaselines.unissued(resetDestination);
-    if (unissued) return { kind: "refused", evidence: unissued };
-    const act = typeof undoes === "string" ? this.acts.find((entry) => entry.id === undoes) : undefined;
-    const left = act !== undefined && this.settledNow(act) === "unchanged";
-    if (act && !act.undone && act.undoable && ((act.kept && !act.strictReset) || left)) return { kind: "refused", evidence: { ok: false, code: "candidate.undo_act_kept", act: act.id, instruction: WORDS.keptAct(left), actsToUndo: this.inPlace() } };
-    if (!act || !this.claimable(act)) {
-      const actsToUndo = this.inPlace();
-      return { kind: "refused", evidence: { ok: false, code: "candidate.undo_unknown_act", instruction: WORDS.unknownAct(actsToUndo.length > 0), actsToUndo } };
-    }
-    if (act.spent) {
-      // Acts an undo already landed on are checked before the trial; the model is pointed only at those nobody has tried.
-      const actsToUndo = this.acts.filter((entry) => this.toUndo(entry) && entry !== act && !(entry.attempts > 0 && entry.undoChanged !== false)).map((entry) => this.named(entry));
-      return { kind: "refused", evidence: { ok: false, code: "candidate.undo_already_done", act: act.id, ...(act.undoneBy ? { undoneBy: act.undoneBy } : {}), instruction: WORDS.alreadyUndone(actsToUndo.length > 0), actsToUndo } };
-    }
-    // What the undo may do unasked is decided per control, before it is acted on (`target`).
-    return { kind: "undo", undo: { act: act.id, allowed: [] } };
+    return this.undos.claim(undoes, resetDestination);
   }
 
-  /**
-   * Whether an undo of `actId` may act on the control the domain declared,
-   * read before it acts (`./undo-admission.ts`). Modern refusals leave the act
-   * correctable; no refused control runs, and unresolved strict effects still
-   * block ordinary trials.
-   */
+  /** Whether an undo of `actId` may act on the control the domain declared, read before it acts (`./undo-claims.ts`). */
   target(actId: string, declared: AutomationStudioSiteResetUndoDeclared): AutomationStudioSiteResetTarget {
     const act = this.acts.find((entry) => entry.id === actId);
-    if (!act || !this.claimable(act)) {
-      const actsToUndo = this.inPlace();
-      return { kind: "refused", evidence: { ok: false, code: "candidate.undo_unknown_act", instruction: WORDS.unknownAct(actsToUndo.length > 0), actsToUndo } };
-    }
-    return undoAdmission({ acts: this.acts, seen: this.seen, claimable: (entry) => this.claimable(entry), inPlace: () => this.inPlace(), toggle: (entry) => this.toggleOf(entry), named: (entry) => this.named(entry), plain: namedAct }, act, declared);
+    // The destinations its repeats lend it, as the settlement gathers them, for a removal on a destination it named (`./undo-admission.ts`, t743).
+    if (act) act.lent = this.judge.lent(act);
+    return this.undos.target(actId, declared);
   }
 
   explored(call: AutomationStudioSiteResetExplored): void {
     const declared = call.declared;
     const pressed = call.landed && declared?.permitted === true && declared.effect === "mutate";
+    // A call naming an act under `undoes`: an undo or a look, never an act of its own (`./undo-claims.ts`).
     if (call.undoes !== undefined) {
-      // A call admitted `moving` (nothing lasting, no item: a navigation, opening a view) is a look, never an undo attempt (header, L1).
-      // Only as declared: a lasting class or an item is never a look, whatever it was admitted as.
-      const look = call.on === "moving" && (declared === undefined || (declared.consequences.length === 0 && declared.control.item === undefined));
-      // A landed press under `undoes` changed the site whatever it names: earlier reads are stale, and its place gets a press (header, L1).
-      if (pressed && !look) this.clock += 1;
-      if (pressed && !look && declared.control.place !== undefined) this.tracker.press(declared.control.place, this.clock);
-      const act = this.acts.find((entry) => entry.id === call.undoes);
-      if (!act || !this.claimable(act)) return;
-      // Where its effect would show, named after it: an issued ref, resolved without the act's resource (header, F1, L1); accumulated.
-      const named = call.resetDestination === undefined ? undefined : this.createBaselines.named(call.resetDestination);
-      if (named && !act.destinations.some((entry) => entry.scope === named.scope)) act.destinations.push(named);
-      // A look leaves the act as it was: the fresh read settles it (header, L1).
-      if (look) return;
-      // An undo the gate refused is not tried again: the act stays, and the trial runs with it (t475).
-      if (declared && declared.effect === "mutate" && !declared.permitted) {
-        act.kept = true;
-        return;
-      }
-      // Only a call that acted on the site is an attempt: a look leaves the act as it was.
-      if (!pressed || act.spent) return;
-      if (call.on === "subject" && act.subjectUndo === undefined) return;
-      act.attempts += 1;
-      act.undoneBy = call.callId;
-      const unasked = call.on === "created" || (call.on === "subject" && act.subjectUndo !== undefined) || (call.on === "follow_up" && act.chain === "created");
-      if (unasked && (declared.consequences.includes("delete") || act.subjectUndo?.origin !== undefined)) act.spent = true;
-      if (call.on === "own" || call.on === "created") act.chain = call.on;
-      // An undo on a control about the act's own thing may be confirmed once, as one on its own item (header, t719).
-      else if (call.on === "subject") act.chain = "own";
-      // The site's one confirmation of that undo is given: no further lasting dialog press follows from it (header, t479).
-      else if (call.on === "follow_up" && declared.consequences.some((consequence) => UNDOABLE.has(consequence) || IRREVERSIBLE.has(consequence))) act.chain = undefined;
+      const undone = this.acts.find((entry) => entry.id === call.undoes);
+      const attempts = undone?.attempts ?? 0;
+      this.undos.ran({ ...call, undoes: call.undoes });
+      // An unasked subject undo that landed is spent whatever class it declared: one on a destination the act named may declare `modify_existing` (`./undo-admission.ts`, t743).
+      if (undone && call.on === "subject" && undone.attempts > attempts) undone.spent = true;
       return;
     }
     if (!pressed) return;
@@ -468,16 +345,11 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     return this.acts.filter((act) => act.call !== undefined).map((act) => ({ id: act.id, consequences: act.consequences, ...(act.operation ? { operation: act.operation } : {}), ...(act.spot ? { spot: act.spot } : {}), destinations: [...act.destinations] }));
   }
 
-  /** The build's explored acts, every brief's in a project build (header, L1). */
-  private buildExplored(): readonly AutomationStudioSiteResetExploredAct[] {
-    return this.options.buildExplored ? this.options.buildExplored() : this.exploredActs();
-  }
-
   /** Where `act` was made: its page before it, what it changed there, and the items it created. Nothing changed there, nothing to look for. */
   placed(act: string, place: AutomationStudioSiteResetPlace): void {
     const entry = this.acts.find((candidate) => candidate.id === act);
     if (!entry) return;
-    this.witnessTransfer(entry, place.collections);
+    witnessTransfer(entry, place.collections, this.seen, this.acts.indexOf(entry) + 1);
     if (place.created?.length) entry.createdItems = [...new Set([...entry.createdItems, ...place.created])];
     if (place.changed.length > 0) {
       entry.place = { state: structuredClone(place.state), location: place.location, changed: [...place.changed], ...(place.lines ? { lines: { gone: [...place.lines.gone], added: [...place.lines.added] } } : {}) };
@@ -523,6 +395,8 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       // Each act it took back is answered, never erased in silence (t504).
       const absorbed: AutomationStudioSiteResetAbsorbedAct[] = [];
       for (const act of this.acts) {
+        // The hook took back whatever a list Core could not read again would have shown: nothing more for a judge (header, t743).
+        delete act.unread;
         if (!act.undoable || act.undone) continue;
         act.undone = true;
         delete act.stillThere;
@@ -534,7 +408,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       return { kind: "admit", ...(absorbed.length > 0 ? { absorbedByStartReset: absorbed } : {}) };
     }
     // Core looks at every stale witness's place itself before it asks the model for anything (header, L1).
-    await this.lookFirst(asked);
+    if (asked.lookAt) await this.judge.lookFirst(this.acts.filter((act) => this.open(act)), asked.lookAt);
     let moved = false;
     // A possibly lasting act an undo was tried on is judged as any act is, though it is never asked for (header).
     for (const act of this.acts.filter((entry) => this.claimable(entry) || (entry.strictReset && entry.undoable && !entry.undone && entry.kept))) {
@@ -547,56 +421,34 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       const looked = act.place && asked.compareAt ? await asked.compareAt(act.place) : undefined;
       moved = moved || looked?.moved === true;
       if (looked?.differs && act.place) {
-        act.stillThere = this.stillThere(act, act.place, looked);
+        act.stillThere = stillThere(this.acts, act, act.place, looked);
         if (!act.strictReset && !act.stillThere.length) act.undone = true;
       } else if (!act.strictReset && act.attempts > 0 && act.undoChanged !== false) {
         act.undone = true;
       }
     }
-    const unproved = this.unprovedReset();
+    const unsettled = this.unsatisfiable();
+    const unproved = this.unprovedReset(unsettled);
     if (unproved) return unproved;
-    // Kept: a legacy act the site cannot undo, or a strict act settled with no change seen (header, L1). An open strict act was refused above.
-    const kept = this.acts.filter((act) => act.undoable && !act.undone && ((act.kept && !act.strictReset) || act.settled === "unchanged")).map((act) => (act.settled === "unchanged" ? { ...namedAct(act), did: `${act.did} (${WORDS.leftUnchanged()})` } : namedAct(act)));
-    const answer = await automationStudioSiteResetTrialPolicy({ phase: { ...this.phase }, inPlace: this.inPlace(), kept, compare });
+    // Kept: a legacy act the site cannot undo, a strict act settled with no change seen, or one settled with a list Core could not read again (header, L1, t743).
+    const kept = this.acts.filter((act) => act.undoable && (act.unread !== undefined || (!act.undone && ((act.kept && !act.strictReset) || act.settled === "unchanged")))).map((act) => (act.settled ? { ...namedAct(act), did: `${act.did} (${WORDS.settledAs(act.settled, act.unread)})` } : namedAct(act)));
+    const answer = await automationStudioSiteResetTrialPolicy({ phase: { ...this.phase }, inPlace: this.inPlace(), kept, unsettleable: unsettled, compare });
     if (answer.kind === "refuse") {
       this.phase = { ...this.phase, refusals: this.phase.refusals + 1, lastRefusal: answer.signature, startDiffersSent: this.phase.startDiffersSent || answer.startDiffers };
       for (const act of this.acts) if (this.toUndo(act)) act.askedFor += 1;
       return { kind: "refuse", evidence: answer.evidence, moved: moved || answer.moved };
     }
-    const unresolved = this.unprovedReset();
+    const unresolved = this.unprovedReset(this.unsatisfiable());
     if (unresolved) return unresolved;
     return { kind: "admit", ...(answer.startedWith ? { startedWith: answer.startedWith } : {}) };
   }
 
-  /** Core looks once at each place where an open strict act's witness is stale (header, L1); each read reaches the ledgers through the caller. */
-  private async lookFirst(asked: AutomationStudioSiteResetChecks): Promise<void> {
-    const lookAt = asked.lookAt;
-    if (!lookAt) return;
-    const looked = new Set<string>();
-    for (const act of this.acts) {
-      if (!this.open(act)) continue;
-      const decision = this.evaluate(act);
-      if (decision.kind !== "open") continue;
-      for (const reason of decision.reasons) {
-        if (reason.reason !== "look" || !reason.location || looked.has(reason.location)) continue;
-        looked.add(reason.location);
-        await lookAt(reason.location);
-      }
-    }
-  }
-
-  /** Freeze only a pure, unambiguous immediate transition (`./settlement-transfer-witness.ts`); no later current observation establishes ownership. */
-  private witnessTransfer(act: Act, witness: AutomationStudioSiteResetPlace["collections"]): void {
-    if (act.transfer) return;
-    const transfer = transferWitness({ consequences: act.consequences, spot: act.spot, witness, originals: this.seen.originals, sequence: this.acts.indexOf(act) + 1 });
-    if (transfer) act.transfer = transfer;
-  }
-
-  /** Reversible modern effects cannot be waved through as cannotUndo leftovers: a kept strict act still refuses until it is settled (header, L1). */
-  private unprovedReset(): AutomationStudioSiteResetDecision | undefined {
-    const acts = this.acts.filter((act) => act.strictReset && act.undoable && !act.undone && act.kept && !this.settledNow(act)).map((act) => this.named(act));
+  /** Reversible modern effects cannot be waved through as cannotUndo leftovers: a kept strict act still refuses until it is settled (header, L1); one no call can settle is listed apart (t743). */
+  private unprovedReset(unsettled: readonly AutomationStudioSiteResetUnsettleableAct[]): AutomationStudioSiteResetDecision | undefined {
+    const apart = new Set(unsettled.map((entry) => entry.act));
+    const acts = this.acts.filter((act) => act.strictReset && act.undoable && !act.undone && act.kept && !this.settledNow(act) && !apart.has(act.id)).map((act) => this.named(act));
     if (!acts.length) return undefined;
-    return { kind: "refuse", moved: false, evidence: { ok: false, code: "candidate.trial_reset_unproved", actsToRestore: acts, instruction: WORDS.unprovedReset() } };
+    return { kind: "refuse", moved: false, evidence: refusal("candidate.trial_reset_unproved", { failed: "acts_not_settled", canMeet: "another_page", actsToRestore: acts, instruction: WORDS.unprovedReset(), ...(unsettled.length ? { actsUnsettleable: [...unsettled] } : {}) }) };
   }
 
   /** A trial ran: a new phase starts with what was still in place and the trial's own acts, which are answered as left on the site. */
@@ -615,7 +467,10 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       // Its step's press at its control's place, read on both sides by the step's own diff, with where its page is (L1, d7).
       const press = place !== undefined && act.controls ? this.tracker.landed(act.controls.page, place, act.controls.before, act.controls.after, this.clock, act.controls.location) : undefined;
       if (!recorded) continue;
-      this.witnessTransfer(recorded, act.collections);
+      // Where its own page is: lists read there may be adopted while it has no witness (`../reset-settlement/judge.ts`, t743).
+      const pageLocation = act.controls ? act.controls.location ?? this.tracker.location(act.controls.page) : undefined;
+      if (pageLocation) recorded.pageLocation = pageLocation;
+      witnessTransfer(recorded, act.collections, this.seen, this.acts.indexOf(recorded) + 1);
       if (press && onlyModifies(act.consequences)) recorded.press = press;
       // The explored acts it repeats lend it their destinations, named whenever (header, L1).
       if (recorded.strictReset) recorded.repeats = explored.filter((other) => repeats({ consequences: act.consequences, definitionId: act.definitionId, spot: act.spot }, { consequences: other.consequences, operation: other.operation, spot: other.spot })).map((other) => other.id);
@@ -624,23 +479,17 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     return this.acts.filter((act) => act.undoable && !act.undone && !act.possible).map((act) => this.named(act));
   }
 
-  /**
-   * What `act` changed on its page that is still there now. With the domain's
-   * lines: each line it added still present, and each line it removed still
-   * gone -- unless another act of this build added that line, as when two acts
-   * each change one total: the later act's "removal" of the total the earlier
-   * one wrote is that earlier act's to undo, not its own. Without them, each of
-   * its worded changes that is still a difference.
-   */
-  private stillThere(act: Act, place: AutomationStudioSiteResetPlace, looked: AutomationStudioSiteResetComparison): string[] {
-    const addedByOthers = new Set(this.acts.filter((other) => other !== act).flatMap((other) => other.place?.lines?.added ?? []));
-    if (place.lines && looked.lines) return [...place.lines.added.filter((line) => looked.lines!.added.includes(line)), ...place.lines.gone.filter((line) => looked.lines!.gone.includes(line) && !addedByOthers.has(line))];
-    return place.changed.filter((change) => (looked.differs ?? []).includes(change));
-  }
-
   /** This build's acts still to undo, as the model is shown them; an open strict act says under `settle` what settles it (header, L1). */
   inPlace(): AutomationStudioSiteResetNamedAct[] {
     return this.acts.filter((act) => this.toUndo(act)).map((act) => this.named(act));
+  }
+
+  /** This build's acts no call can settle (`gate_unsatisfiable`, header, t743), each with the closed condition it failed; never among `inPlace`. */
+  unsatisfiable(): AutomationStudioSiteResetUnsettleableAct[] {
+    return this.acts.flatMap((act) => {
+      const failed = this.unmet(act);
+      return failed ? [{ act: act.id, did: act.did, ...(act.call ? { call: act.call } : {}), reason: "gate_unsatisfiable" as const, failed }] : [];
+    });
   }
 
   /** This build's possibly lasting acts that may still be on the site (header, t593): never asked for, each marked `possible`. */
@@ -667,9 +516,19 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     return this.acts.find((entry) => entry.id === actId)?.changeSeen;
   }
 
-  /** Still on the site, and still the model's to undo. */
+  /** The build's explored acts, every brief's in a project build (header, L1). */
+  private buildExplored(): readonly AutomationStudioSiteResetExploredAct[] {
+    return this.options.buildExplored ? this.options.buildExplored() : this.exploredActs();
+  }
+
+  /** Still on the site, and still the model's to undo: never one no call can settle (header, t743). */
   private toUndo(act: Act): boolean {
-    return !this.settledNow(act) && this.claimable(act) && !act.possible;
+    return !this.settledNow(act) && this.claimable(act) && !act.possible && this.unmet(act) === undefined;
+  }
+
+  /** The closed condition an open strict act fails where no call can settle it (header, t743); none otherwise. */
+  private unmet(act: Act): ReturnType<AutomationStudioSiteResetSettlementJudge["unmet"]> {
+    return this.open(act) && this.claimable(act) ? this.judge.unmet(act) : undefined;
   }
 
   /** A strict act that may still settle (header, L1). */
@@ -677,60 +536,22 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     return act.strictReset && act.undoable && !act.undone && !act.possible && act.settled === undefined;
   }
 
-  /** Settled for good, judged now where it is still open (header, L1); `restored` marks it undone. */
+  /** Settled for good, judged now where it is still open (header, L1); `restored` marks it undone, and lists Core could not read again are kept for the judge (t743). */
   private settledNow(act: Act): "restored" | "unchanged" | undefined {
     if (act.settled || !this.open(act)) return act.settled;
-    const decision = this.evaluate(act);
+    const decision = this.judge.evaluate(act);
     if (decision.kind !== "settled") return undefined;
     act.settled = decision.how;
+    if (decision.unread) act.unread = [...decision.unread];
     if (decision.how === "restored") act.undone = true;
     return decision.how;
-  }
-
-  /** Every witness of `act`, judged against the latest reads (`./settlement-decision.ts`); a witness seen changed is remembered. */
-  private evaluate(act: Act): AutomationStudioSiteResetSettlement {
-    // A trial act's destinations include those of the explored acts it repeats, named whenever (header, L1).
-    const lent = act.repeats.length ? this.buildExplored() : [];
-    const destinations = [...act.destinations, ...act.repeats.flatMap((id) => lent.find((other) => other.id === id)?.destinations ?? [])];
-    const groups = this.groupsOf(act, destinations);
-    if (groups.some((group) => group.changed)) act.changeSeen = true;
-    const toggle = this.toggleOf(act);
-    const control = toggle ? this.tracker.standing(toggle.place, toggle, act.clock, this.clock) : act.press ? this.tracker.unread(act.press) : undefined;
-    // A trial act with no witness of its own adopts the build's issued lists; never their changes (header, office r3).
-    const witnessless = act.call === undefined && !control && groups.every((group) => group.status === "none");
-    const adopted = witnessless ? this.groupsOf(act, this.issuedDestinations()) : undefined;
-    return settleDecision({ groups, toggle: control, changeSeen: act.changeSeen, undoLanded: act.attempts > 0, adopted });
-  }
-
-  /** Every complete list group `act` could change, with `destinations` as its named ones (`./settlement-act-groups.ts`). */
-  private groupsOf(act: Act, destinations: ReadonlyArray<{ scope: string; group: string }>): ReturnType<typeof actGroups> {
-    return actGroups({ act: { ...act, destinations }, sequence: this.acts.indexOf(act) + 1, since: act.clock, clock: this.clock, observations: this.seen, described: (scope) => this.createBaselines.described(scope) });
-  }
-
-  /** Every list whose ref the model was shown, as a destination (header, office r3); none where no ref was issued. */
-  private issuedDestinations(): Array<{ scope: string; group: string }> {
-    const issued = this.createBaselines.issuedRefs().map((entry) => this.createBaselines.named(entry.ref));
-    return issued.filter((entry): entry is { scope: string; group: string } => entry !== undefined);
-  }
-
-  /** The toggle its own press made, once the read after it is in (header, L1). */
-  private toggleOf(act: Act): Act["toggle"] {
-    const press = act.press;
-    if (act.toggle || !press?.after) return act.toggle;
-    delete act.press;
-    const toggle = toggleWitness({ state: act.spot?.state, before: press.before, after: press.after });
-    if (!toggle) return undefined;
-    act.toggle = { page: press.page, place: press.place, ...toggle };
-    act.changeSeen = true;
-    return act.toggle;
   }
 
   /** An act as the model is shown it: an open strict act with what settles it (header, L1). */
   private named(act: Act): AutomationStudioSiteResetNamedAct {
     const said = namedAct(act);
-    if (!this.open(act)) return said;
-    const decision = this.evaluate(act);
-    return decision.kind === "open" ? { ...said, settle: settleWords(decision.reasons, this.createBaselines.issuedRefs(), { closed: this.createBaselines.refsClosed() }) } : said;
+    const settle = this.open(act) ? this.judge.settle(act) : undefined;
+    return settle ? { ...said, settle } : said;
   }
 
   /** Still on the site, and an undo may name it: a possibly lasting act too, though it is never asked for (header). An act settled unchanged is left. */
@@ -755,6 +576,27 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     this.options.sink?.({ ...namedAct(act), ...(this.options.owner !== undefined ? { owner: this.options.owner } : {}), ref, undoable });
     return act;
   }
+}
+
+/** Freeze only a pure, unambiguous immediate transition (`../reset-settlement/transfer-witness.ts`); no later current observation establishes ownership. `sequence`: the act's 1-based place among its ledger's acts. */
+function witnessTransfer(act: Act, witness: AutomationStudioSiteResetPlace["collections"], seen: AutomationStudioSiteResetObservations, sequence: number): void {
+  if (act.transfer) return;
+  const transfer = transferWitness({ consequences: act.consequences, spot: act.spot, witness, originals: seen.originals, sequence });
+  if (transfer) act.transfer = transfer;
+}
+
+/**
+ * What `act` changed on its page that is still there now. With the domain's
+ * lines: each line it added still present, and each line it removed still
+ * gone -- unless another act of this build added that line, as when two acts
+ * each change one total: the later act's "removal" of the total the earlier
+ * one wrote is that earlier act's to undo, not its own. Without them, each of
+ * its worded changes that is still a difference.
+ */
+function stillThere(acts: readonly Act[], act: Act, place: AutomationStudioSiteResetPlace, looked: AutomationStudioSiteResetComparison): string[] {
+  const addedByOthers = new Set(acts.filter((other) => other !== act).flatMap((other) => other.place?.lines?.added ?? []));
+  if (place.lines && looked.lines) return [...place.lines.added.filter((line) => looked.lines!.added.includes(line)), ...place.lines.gone.filter((line) => looked.lines!.gone.includes(line) && !addedByOthers.has(line))];
+  return place.changed.filter((change) => (looked.differs ?? []).includes(change));
 }
 
 /** A spot's tokens, copied, or none when it named none of them. */

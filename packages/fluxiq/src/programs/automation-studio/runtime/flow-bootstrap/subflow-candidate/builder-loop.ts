@@ -364,6 +364,8 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
       }
       if (call.toolId !== AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID) {
         const ran = await input.loop.executeTool(call);
+        // A read refused for a cut-short text field, so later advice to add that field is said as the order that can pass (S5).
+        advice.saw(ran);
         // What the preparation run landed, as the opening look's entry note lists it (header, t676).
         if (isOpeningCall(call.callId)) entryActs = automationStudioSubflowEntryLeft.acts(executionEvidence(ran));
         return ran;

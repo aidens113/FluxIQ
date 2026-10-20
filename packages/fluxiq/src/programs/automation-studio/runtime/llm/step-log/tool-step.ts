@@ -88,8 +88,9 @@ function toolStep(directory: string, request: ToolRequest): ((result: unknown, e
         resultCode: typeof execution?.resultCode === "string" ? execution.resultCode : null,
         resultReason: typeof execution?.resultReason === "string" ? execution.resultReason : null,
         effectApplied: typeof execution?.effectApplied === "boolean" ? execution.effectApplied : null,
-        // `read`, the code the loop records for a value it refused, or the one for a call that threw.
-        loopVerdict: error !== undefined ? "llm_evidence_loop.tool_failed" : unread ?? "read",
+        // `read`, the code the loop records for a value it refused, or the one for a call that threw:
+        // a throw that is an abort or a deadline is the loop being cancelled, not the tool failing (S5).
+        loopVerdict: error !== undefined ? threwVerdict(error) : unread ?? "read",
         summary,
         // A replayed read's rows, as each output port's field names only.
         ...(outputs ? { outputs } : {}),
@@ -114,6 +115,19 @@ function executionOf(result: unknown): { evidence: unknown; resultCode?: unknown
   return typeof result === "object" && result !== null && !Array.isArray(result) && (result as { kind?: unknown }).kind === "llm_evidence_tool_execution"
     ? result as { evidence: unknown }
     : undefined;
+}
+
+/** Names of a throw that cancels the work rather than failing the tool: an abort, or a deadline reached. */
+const CANCELLED_NAMES: ReadonlySet<string> = new Set(["AbortError", "TimeoutError"]);
+
+/**
+ * The loop's verdict for a call that threw: `llm_evidence_loop.cancelled` for an
+ * abort or a deadline (social rerun round 4, `run-mvgw3ve5-294881b5` 0196: the
+ * build's work deadline fired during a node run and the loop ended cancelled,
+ * while the step said `tool_failed`), `llm_evidence_loop.tool_failed` otherwise.
+ */
+function threwVerdict(error: unknown): string {
+  return CANCELLED_NAMES.has(thrown(error).name) ? "llm_evidence_loop.cancelled" : "llm_evidence_loop.tool_failed";
 }
 
 /** A throw as its name and code: never its message, which may quote the page. */
