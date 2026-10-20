@@ -12,19 +12,19 @@
 // so two compilers' diagnostics never interleave. After a failure no further
 // step starts; the ones already running finish.
 
+import { resolveFor } from "./repository/index.mjs";
 import { runStep } from "./run-step.mjs";
-import { resolveStep } from "./workspace/index.mjs";
 
 const CONCURRENCY = 4;
 
 /**
  * @param {string[]} names registered step names
- * @param {{ parallel?: boolean, concurrency?: number, onOutcome?: (outcome: import("./run-step.mjs").StepOutcome) => void, repoRoot?: string, env?: NodeJS.ProcessEnv, steps?: object, stdio?: import("node:child_process").StdioOptions }} [options]
+ * @param {{ parallel?: boolean, concurrency?: number, onOutcome?: (outcome: import("./run-step.mjs").StepOutcome) => void, repository?: import("./repository/index.mjs").CORE_REPOSITORY, repoRoot?: string, env?: NodeJS.ProcessEnv, steps?: object, stdio?: import("node:child_process").StdioOptions }} [options]
  * @returns {Promise<{ exitCode: number, outcomes: import("./run-step.mjs").StepOutcome[] }>} the first failing step's exit code, or 0
  */
 export async function scheduleSteps(names, options = {}) {
   const onOutcome = options.onOutcome ?? (() => {});
-  const resolved = names.map((name) => resolveStep(name, options));
+  const resolved = names.map((name) => resolveFor(name, options));
   const outcomes = [];
   if (options.parallel !== true) {
     for (const step of resolved) {

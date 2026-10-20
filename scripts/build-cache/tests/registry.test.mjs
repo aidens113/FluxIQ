@@ -153,3 +153,32 @@ test("Fluxiq cleanup is an owning fingerprinted command while contracts retain t
   assert.ok(coversPath(path.join(REPOSITORY_ROOT, "scripts/clean-library-output.mjs"), step));
   assert.ok(!STEPS["contracts:build"].command.includes("clean-library-output"));
 });
+
+test("the production web build resolves Core's packages from their stamped dist, not from source", () => {
+  // tsconfig.base.json sends fluxiq to packages/fluxiq/src through `paths`, and
+  // Turbopack honours them, so a production build compiled that way embedded
+  // the source's runtime identity placeholder. Turbopack also merges `paths`
+  // through `extends` (an override of `"paths": {}` left the base's aliases in
+  // force, measured 2026-10-19), so the build project extends nothing: it is
+  // the web project with the base merged in, minus `baseUrl` and `paths`.
+  const read = (file) => JSON.parse(readFileSync(path.join(REPOSITORY_ROOT, file), "utf8"));
+  const base = read("tsconfig.base.json");
+  const web = read("apps/web/tsconfig.json");
+  const build = read("apps/web/tsconfig.build.json");
+  const { baseUrl: _baseUrl, paths: _paths, ...shared } = base.compilerOptions;
+  assert.equal(web.extends, "../../tsconfig.base.json", "the web project still extends the base, for next dev and tsc");
+  assert.equal(build.extends, undefined, "the build project extends nothing");
+  assert.deepEqual(build.compilerOptions, { ...shared, ...web.compilerOptions }, "the build project is the web project's options, minus the source aliases");
+  assert.deepEqual([build.include, build.exclude], [web.include, web.exclude]);
+  assert.deepEqual(STEPS["web:build"].tsconfigs, ["tsconfig.build.json"]);
+  const config = readFileSync(path.join(REPOSITORY_ROOT, "apps/web/next.config.ts"), "utf8");
+  assert.match(config, /phase === PHASE_PRODUCTION_BUILD \? \{ typescript: \{ tsconfigPath: "tsconfig\.build\.json" \} \}/u, "only the production build uses it; next dev keeps the source aliases");
+});
+
+test("web:build ends with the runtime identity check, whose modules are inside its fingerprint", () => {
+  const step = resolveStep("web:build", { env: {} });
+  assert.match(STEPS["web:build"].command, / && next build --turbopack && node \.\.\/\.\.\/scripts\/web-build\/identity\/check-web-build\.mjs$/u);
+  for (const file of ["check-web-build.mjs", "assert-stamped-identity.mjs", "index.mjs"]) {
+    assert.ok(coversPath(path.join(REPOSITORY_ROOT, "scripts", "web-build", "identity", file), step), `${file} is not fingerprinted`);
+  }
+});

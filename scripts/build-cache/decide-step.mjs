@@ -10,19 +10,19 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fingerprintStep } from "./fingerprint-step.mjs";
 import { openStatCache, outputState } from "./fingerprint/index.mjs";
+import { resolveFor } from "./repository/index.mjs";
 import { readStamp, STAMP_VERSION } from "./stamp/index.mjs";
-import { resolveStep } from "./workspace/index.mjs";
 
 const SHOWN_ROOTS = 3;
 
 /**
- * @param {string | ReturnType<typeof resolveStep>} step a registry name, or a step already resolved
- * @param {{ repoRoot?: string, env?: NodeJS.ProcessEnv, steps?: object, statCache?: Awaited<ReturnType<typeof openStatCache>> }} [options]
- * @returns {Promise<{ decision: "reuse" | "build", reason: string, step: string, resolved: ReturnType<typeof resolveStep>, fingerprint: string, roots: Record<string, string>, newestInput: { ms: number, path: string | null }, newestOutput: { ms: number, path: string | null } | null, stamp: object | null }>}
+ * @param {string | ReturnType<typeof import("./workspace/index.mjs").resolveStep>} step a registry name, or a step already resolved
+ * @param {{ repository?: import("./repository/index.mjs").CORE_REPOSITORY, repoRoot?: string, env?: NodeJS.ProcessEnv, steps?: object, statCache?: Awaited<ReturnType<typeof openStatCache>> }} [options]
+ * @returns {Promise<{ decision: "reuse" | "build", reason: string, step: string, resolved: ReturnType<typeof import("./workspace/index.mjs").resolveStep>, fingerprint: string, roots: Record<string, string>, newestInput: { ms: number, path: string | null }, newestOutput: { ms: number, path: string | null } | null, stamp: object | null }>}
  */
 export async function decideStep(step, options = {}) {
   const env = options.env ?? process.env;
-  const resolved = typeof step === "string" ? resolveStep(step, options) : step;
+  const resolved = resolveFor(step, options);
   const statCache = options.statCache ?? (await openStatCache(resolved.statCachePath));
   try {
     const { fingerprint, roots, newestInput } = await fingerprintStep(resolved, { statCache });

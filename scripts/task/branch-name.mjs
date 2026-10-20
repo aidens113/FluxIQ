@@ -3,15 +3,18 @@
 // the task's own namespace, `..` is not a legal ref component at all, a space
 // needs quoting in every command that carries the name afterwards, and mixed
 // case collides with itself on a file system that stores refs as files without
-// regard to case. Refusing here is cheaper than discovering any of it halfway
-// through a checkout.
+// regard to case. Downstream the slug also names a worktree directory, where
+// `..` would escape the worktree base. Refusing here is cheaper than
+// discovering any of it halfway through a checkout. The downstream
+// web-extension repository imports this module, so a task's branch is spelled
+// one way in both histories.
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const BRANCH = /^task\/(t\d+)-(.+)$/u;
 
 export function taskBranchName(id, slug) {
   if (!SLUG.test(slug)) {
-    throw new Error(`"${slug}" is not a usable task slug: use lower-case words joined by single hyphens, for example "automation-studio-cleanup". It becomes a git ref.`);
+    throw new Error(`"${slug}" is not a usable task slug: use lower-case words joined by single hyphens, for example "automation-studio-cleanup". It becomes a git ref, and downstream a directory name as well.`);
   }
   return `task/${id}-${slug}`;
 }

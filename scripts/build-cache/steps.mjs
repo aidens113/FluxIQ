@@ -87,17 +87,25 @@ export const STEPS = Object.freeze({
   "web:build": {
     package: "apps/web",
     kind: "build",
-    command: "node scripts/build-client-gateway-server.mjs && next build --turbopack",
+    // The last command fails the step when the server output still embeds
+    // Core's unstamped runtime identity, i.e. compiled Core from source.
+    command: "node scripts/build-client-gateway-server.mjs && next build --turbopack && node ../../scripts/web-build/identity/check-web-build.mjs",
     // `.next/cache` is Next's own compile and fetch cache, not the build: it
     // survives a build, is never restored and never digested.
     outputs: [{ path: ".next", exclude: ["cache"] }, { path: ".server-runtime" }],
     required: [".next/BUILD_ID", ".server-runtime/client-gateway-server.mjs", ".server-runtime/client-gateway-server.mjs.identity.json"],
-    // next build type-checks the app with this project.
-    tsconfigs: ["tsconfig.json"],
+    // A production build type-checks and resolves with this project
+    // (`next.config.ts` names it): tsconfig.json without the source `paths`,
+    // so the panel resolves Core's packages from their stamped `dist`.
+    tsconfigs: ["tsconfig.build.json"],
     // Next loads apps/web/.env* into the build; all but .env.example are
     // ignored. `next.config.ts` reads no variable today; the registry test
-    // fails when it starts to read one this entry does not fingerprint.
-    ignoredInputs: [{ path: ".", match: /^\.env/u, shallow: true, name: ".env*" }],
+    // fails when it starts to read one this entry does not fingerprint. The
+    // identity check's module beside its entry script is read too.
+    ignoredInputs: [
+      { path: ".", match: /^\.env/u, shallow: true, name: ".env*" },
+      { path: "../../scripts/web-build/identity", match: /\.mjs$/u, shallow: true }
+    ],
     env: ["NODE_ENV"],
     envPrefixes: ["NEXT_", "__NEXT_"],
     traces: true

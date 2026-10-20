@@ -11,15 +11,15 @@
 
 import { createHash } from "node:crypto";
 import { digestFiles, gitVisibleFiles, listRootFiles } from "./fingerprint/index.mjs";
-import { resolveStep } from "./workspace/index.mjs";
+import { resolveFor } from "./repository/index.mjs";
 
 /**
- * @param {string | ReturnType<typeof resolveStep>} step a registry name, or a step already resolved
- * @param {{ statCache: { hash(file: string): Promise<string>, mtimeMs(file: string): number | undefined }, repoRoot?: string, env?: NodeJS.ProcessEnv, steps?: object }} options
+ * @param {string | ReturnType<typeof import("./workspace/index.mjs").resolveStep>} step a registry name, or a step already resolved
+ * @param {{ statCache: { hash(file: string): Promise<string>, mtimeMs(file: string): number | undefined }, repository?: import("./repository/index.mjs").CORE_REPOSITORY, repoRoot?: string, env?: NodeJS.ProcessEnv, steps?: object }} options
  * @returns {Promise<{ fingerprint: string, roots: Record<string, string>, newestInput: { ms: number, path: string | null } }>}
  */
 export async function fingerprintStep(step, options) {
-  const resolved = typeof step === "string" ? resolveStep(step, options) : step;
+  const resolved = resolveFor(step, options);
   let listing = null;
   const context = { repoRoot: resolved.repoRoot, gitFiles: () => (listing ??= gitVisibleFiles(resolved.repoRoot)) };
   const newestInput = { ms: 0, path: null };
