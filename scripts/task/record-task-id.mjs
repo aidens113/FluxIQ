@@ -4,10 +4,11 @@
 // `refs/fluxiq/task-ids/` (`task-id.mjs` says why a ref and not a counter).
 // It is created only if it does not exist yet, so two starts racing for one
 // number cannot both record it: the second is refused here, before it has
-// made a branch. Nothing in the task lifecycle deletes it -- abandon removes
-// the branch, never this ref -- which is the whole point: an abandoned id
-// stays spent. The downstream repository's `scripts/task/record-task-id.mjs`
-// is the same rule; keep the two in step.
+// made a branch or a worktree. Nothing in the task lifecycle deletes it --
+// abandon and prune remove branches and directories, never this ref -- which
+// is the whole point: an abandoned id stays spent. The downstream
+// web-extension repository imports this module, and a Core-paired start there
+// records the id in both repositories.
 
 import { runGit } from "./git-command.mjs";
 import { TASK_ID_REF_PREFIX } from "./task-id-ref-prefix.mjs";

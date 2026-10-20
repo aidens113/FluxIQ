@@ -1,6 +1,9 @@
 // Running git against one checkout. Output is returned with only its trailing
 // newline removed: a porcelain status line can begin with a space, and trimming
-// it would turn a modified file into an unreadable one.
+// it would turn a modified file into an unreadable one. A failure keeps the
+// `execFile` error as its `cause`, so `git-answered-no.mjs` can tell git saying
+// "no" from git not running. The downstream web-extension repository imports
+// this module for all of its task and worktree tooling.
 
 import { execFile } from "node:child_process";
 
