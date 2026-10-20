@@ -223,9 +223,15 @@ function supervisorEndingWords(diagnostic: Diagnostic | undefined): string | und
   return why ? `${SUPERVISOR_ENDING_WORDS[code]}: ${lowerFirst(why)}` : SUPERVISOR_ENDING_WORDS[code];
 }
 
-/** "The item can't be added" reads "the item can't be added" after a colon; a word with a capital inside ("FluxIQ") stays. */
+/**
+ * "The item can't be added" reads "the item can't be added" after a colon; a
+ * word with a capital inside ("FluxIQ", "URL") stays, and so does the pronoun
+ * "I" ("I'm", "I've"): job-board `run-mvgo9wzn-fad4e050` read "... finish the
+ * Flow: i could not finish" (t741 B5).
+ */
 function lowerFirst(sentence: string): string {
   const word = /^\S+/u.exec(sentence)?.[0] ?? "";
+  if (/^I(?:['’][a-z]+)?[,;:.!?]?$/u.test(word)) return sentence;
   return /\p{Lu}/u.test(word.slice(1)) ? sentence : `${sentence.charAt(0).toLowerCase()}${sentence.slice(1)}`;
 }
 

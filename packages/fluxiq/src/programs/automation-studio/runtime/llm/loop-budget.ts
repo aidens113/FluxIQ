@@ -81,6 +81,16 @@
 // still offers no tools: its schema then holds completion and amendments
 // only, which is what makes it finish.
 //
+// **A candidate's wrap-up runs the undos its trial demands (t741).** A trial
+// refused `trial_reset_required` will not run until the build undoes its own
+// acts, and an undo is a `core.run_node` naming the act under `undoes`. The
+// wrap-up judged only the tool id, so it withheld every `core.run_node`, the
+// undo with it: photo `run-mvgobp8h-b99ede98` (0150-0158) had its undos
+// answered `not_offered`, its trial refused again, and never tried its last
+// revision. So `withholds` judges the call: a `core.run_node` whose input names
+// an act id under `undoes` runs; one without it explores and is withheld. A
+// draft loop's wrap-up still withholds every call.
+//
 // **A loop may count calls too (t570).** A subflow builder spends a share of
 // the build's calls carved for its brief (`./build-purse/allowance-book.ts`),
 // and each trial it makes spends its judge's calls from that same share. With
@@ -127,6 +137,19 @@ export type AutomationStudioLlmEvidenceFinishingTools = { submit: string; test: 
  */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_CANDIDATE_FINISHING_TOOLS: Readonly<AutomationStudioLlmEvidenceFinishingTools> = Object.freeze({ submit: "core.submit_candidate", test: "core.test_candidate" });
 export const CANDIDATE_FINISHING_TOOL_IDS: ReadonlySet<string> = automationStudioLlmEvidenceFinishingToolIds();
+
+/** The run tool and the key its undo names an act under, as plain strings so this module reaches into neither `./node-tools/` nor `../flow-bootstrap/site-reset/`. */
+const RUN_NODE_TOOL_ID = "core.run_node";
+const UNDOES_KEY = "undoes";
+/** The act ids `../flow-bootstrap/site-reset/undoes-tool.ts` accepts under `undoes`. */
+const ACT_ID = /^act-[1-9][0-9]{0,3}$/u;
+
+/** Whether a call undoes one of the build's own acts: a run naming an act id under `undoes` (header, t741). */
+function undoesAnAct(toolId: string, input: unknown): boolean {
+  if (toolId !== RUN_NODE_TOOL_ID || typeof input !== "object" || input === null || Array.isArray(input)) return false;
+  const undoes = (input as Record<string, unknown>)[UNDOES_KEY];
+  return typeof undoes === "string" && ACT_ID.test(undoes);
+}
 
 /** The ids of a loop's finishing tools, the candidate's when it names none. */
 export function automationStudioLlmEvidenceFinishingToolIds(tools: AutomationStudioLlmEvidenceFinishingTools = AUTOMATION_STUDIO_LLM_EVIDENCE_CANDIDATE_FINISHING_TOOLS): ReadonlySet<string> {
@@ -218,7 +241,7 @@ function candidateFinalInstruction(tools: AutomationStudioLlmEvidenceFinishingTo
   return `The budget counts one decision left; submitting, testing and completing are still offered while the budget permits. If the latest submission is untested, test its exact revision and digest now with ${tools.test}. Complete only after that exact revision's trial answers yes, or no trial runner is available. Never complete an untested revision when a trial runner is available.`;
 }
 function candidateWrapUpInstruction(tools: AutomationStudioLlmEvidenceFinishingTools): string {
-  return `Only a few decisions are left, so only ${tools.submit}, ${tools.test} and completing run now: every other tool is still listed, but a call to one is answered without running and spends a decision. If your latest Flow is not submitted, submit the whole candidate now with ${tools.submit}; test that exact revision with ${tools.test}; complete with its revision and digest once the trial answers yes. If a submission or a trial is refused, correct what it names, submit again and test the new revision.`;
+  return `Only a few decisions are left, so only ${tools.submit}, ${tools.test} and completing run now: every other tool is still listed, but a call to one is answered without running and spends a decision. A call that names one of this build's own lasting acts under undoes, to undo it before a trial, still runs. If your latest Flow is not submitted, submit the whole candidate now with ${tools.submit}; test that exact revision with ${tools.test}; complete with its revision and digest once the trial answers yes. If a submission or a trial is refused, correct what it names, submit again and test the new revision.`;
 }
 
 /** Decisions left from which the loop wraps up: a candidate's wrap-up starts earlier, since it has a submission and a trial to make before it completes. */
@@ -232,7 +255,9 @@ function wrapUpDecisions(candidate: boolean): number {
  * eligible tool is offered. In it, a draft loop offers none; a candidate loop
  * (`candidate`, the loop's `discoveryOnly`) still offers every eligible tool,
  * so the head of its request is unchanged (header, t503), and withholds all
- * but its submission and its trial through its last counted decision. The
+ * but its submission, its trial and a run that undoes one of its acts
+ * (header, t741) through its last counted decision. `withholds` judges the
+ * call: its tool and, where given, its input. The
  * purse and hard bounds still decide whether another decision can run; the
  * trial gate still owns success.
  */
@@ -243,12 +268,12 @@ export function automationStudioLlmEvidenceLoopWrapUp<Tool extends { toolId: str
   tools: readonly Tool[];
   /** The candidate loop's finishing tools, which its wrap-up keeps running; the candidate's own when absent. */
   finishing?: AutomationStudioLlmEvidenceFinishingTools | undefined;
-}): { wrappingUp: boolean; offered: Tool[]; withholds: (toolId: string) => boolean } {
+}): { wrappingUp: boolean; offered: Tool[]; withholds: (toolId: string, input?: unknown) => boolean } {
   const left = input.remaining ? input.remaining.decisionsLeft : undefined;
   const wrappingUp = left !== undefined && left <= wrapUpDecisions(input.candidate) && input.canComplete;
   const offered = !wrappingUp || input.candidate ? [...input.tools] : [];
   const runs: ReadonlySet<string> = input.candidate ? automationStudioLlmEvidenceFinishingToolIds(input.finishing) : new Set();
-  return { wrappingUp, offered, withholds: (toolId) => wrappingUp && !runs.has(toolId) };
+  return { wrappingUp, offered, withholds: (toolId, call) => wrappingUp && !runs.has(toolId) && !(input.candidate && undoesAnAct(toolId, call)) };
 }
 
 /** How many decisions each bound still allows, and the smallest of them with `decisionsLeft` from the iteration backstop. */

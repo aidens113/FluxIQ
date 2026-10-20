@@ -156,4 +156,34 @@ describe("the answered-request note of a discovery-only loop", () => {
     expect(said).toContain("only core.submit_candidate, core.test_candidate and completing run now");
     expect(said).toContain("Use core.test_candidate with that exact revision");
   });
+  // a5-wrapup (t741, photo 0150-0158) lets a candidate's wrap-up run an undo of
+  // the build's own act; the refusal of any other call now says so too.
+  it("says an undo of the build's own act still runs in a candidate's wrap-up", () => {
+    expect(note()).toContain("This tool is still listed, but this call was not run. A call that names one of this build's own lasting acts under undoes, to undo it before a trial, still runs.");
+    expect(note({ submit: "core.submit_subflow", test: "core.test_subflow" })).toContain("under undoes, to undo it before a trial, still runs");
+  });
+
+  it("leaves a draft wrap-up's words as they were", () => {
+    const said = String(automationStudioLlmEvidenceAnsweredRequestNote({ code: "llm_evidence_loop.not_offered", toolId: "inspect", answeredByCallId: "call.1", stepsWithoutProgress: 1, maxStepsWithoutProgress: 8 }).instruction);
+    expect(said).toBe("The build is in its last decisions, so only the tools offered now can run and this call was not run. Finish with those: submit and test your Flow if they are offered, then complete; otherwise complete from your draft, or amend it and complete.");
+    expect(said).not.toContain("undoes");
+  });
+
+  // Social `run-mvgoawg4-ed85dd5a` 0167: `already_answered` told the builder to
+  // test revision 5, whose trial had answered execution_failed and which a
+  // refusal had cleared; the gate refused the test as stale (0169).
+  it("never recommends testing a receipt whose trial failed or that a refusal cleared", () => {
+    const tools = { submit: "core.submit_subflow", test: "core.test_subflow" };
+    const answered = automationStudioLlmEvidenceAnsweredRequestNote({
+      code: "llm_evidence_loop.already_answered", toolId: "core.submit_subflow", answeredByCallId: "submit-subflow-8", stepsWithoutProgress: 6, maxStepsWithoutProgress: 8, timesAsked: 2,
+      discoveryOnly: true, candidate: { revision: 5, digest: "d".repeat(64), lastTrial: "execution_failed", stale: true }, finishing: tools
+    });
+    const said = String(answered.instruction);
+    expect(said).not.toContain("Use core.test_subflow with that exact revision");
+    expect(said).toContain("Its trial already answered execution_failed.");
+    expect(said).toContain("core.test_subflow would refuse it as stale");
+    expect(said).toContain("a changed submission is needed");
+    expect(answered).toMatchObject({ candidate: { revision: 5, lastTrial: "execution_failed", stale: true } });
+    expect(note({ submit: "core.submit_subflow", test: "core.test_subflow" })).toContain("Use core.test_subflow with that exact revision");
+  });
 });

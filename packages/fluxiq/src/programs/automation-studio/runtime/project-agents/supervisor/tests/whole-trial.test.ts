@@ -72,7 +72,7 @@ describe("the supervisor's whole test", () => {
     expect(ran).toMatchObject({ verdict: "no", startedWith: { cannotUndo: [{ act: "act-1" }] } });
     expect(run.trials).toHaveLength(1);
     expect(run.outcome.status).toBe("ended");
-    expect(run.outcome.ending?.reason).toContain("Still on the target from this build: trial step 1 \"press hold for place_hold\" (the site offers no way to undo it).");
+    expect(run.outcome.ending?.reason).toContain("Still on the target from this build: trial step 1 \"press hold for place_hold\" (the build could not undo it; it may still be there).");
   });
 });
 

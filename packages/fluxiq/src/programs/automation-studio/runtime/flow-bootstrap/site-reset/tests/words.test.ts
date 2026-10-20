@@ -36,3 +36,27 @@ describe("site reset words for an undo aimed at another item", () => {
     expect(said).not.toMatch(/test|revision/iu);
   });
 });
+
+// Rerun round 3 (office `run-mvgo5xft-25460ba2`): what a look under undoes
+// settled, and a resetDestination named with no act, are said in generic words.
+describe("site reset words for what a look settled", () => {
+  it("says whether the named act settled, and points at the acts still open", () => {
+    const settled = WORDS.lookSettled(true, true);
+    expect(settled).toContain("settled the act it named under undoes");
+    expect(settled).toContain("do not name it again");
+    expect(settled).toContain("actsStillOpen");
+    expect(WORDS.lookSettled(true, false)).toContain("No act of this build is still open");
+    const open = WORDS.lookSettled(false, true);
+    expect(open).toContain("has not settled the act it named under undoes");
+    expect(open).toContain("settle");
+  });
+
+  it("says a resetDestination with no undoes settled nothing, and how to name both", () => {
+    const words = WORDS.destinationWithoutUndoes(true);
+    expect(words).toContain("settled nothing");
+    expect(words).toContain("\"undoes\"");
+    expect(words).toContain("example");
+    expect(WORDS.destinationWithoutUndoes(false)).not.toContain("example");
+    for (const said of [words, WORDS.lookSettled(true, true), WORDS.lookSettled(false, true)]) expect(said).not.toMatch(/\b(cart|basket|checkout|job|post|friend|order|product|address|save|heart|photo|like|feed)\b/iu);
+  });
+});

@@ -127,7 +127,7 @@ export class AutomationStudioSiteResetCreateBaselines {
       if (unissued) return { kind: "refused", evidence: unissued };
       const known = { original: (scope: string, resource: string) => this.original(scope, resource), destination: () => this.destination(declared, reference) !== undefined };
       if (this.sealed || !witnessMissing(declared, known)) return { kind: "admit" };
-      return { kind: "refused", evidence: { ok: false, code: "candidate.reset_witness_required", instruction: WORDS.witnessRequired() } };
+      return { kind: "refused", evidence: { ok: false, code: "candidate.reset_witness_required", instruction: WORDS.witnessRequired(this.issuedRefs()) } };
     }
     if (this.destination(declared, reference)) return { kind: "admit" };
     return { kind: "refused", evidence: { ok: false, code: "candidate.create_baseline_required", instruction: "This creation was not run. Before creating an identified reversible effect, observe its destination's complete original inventory through the site's own controls, then return and retry with the resetDestination reference that observation issued. The original inventory must belong to this resource and prove the subject absent. A first observation after a lasting build effect, another resource, a matching name, or an invented reference is insufficient. Looking and navigating remain available; no new permission is needed." } };

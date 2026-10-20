@@ -5,6 +5,8 @@
 // in a row; here every refusal names the planning format's own path.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
+import { automationStudioFlowScriptCalledParts } from "../../../flow-bootstrap/script-statements/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "../guidance.ts";
 import { automationStudioProjectSupervisorPlanInput } from "../plan-input.ts";
 import { SOURCES, planInput, subflow, taskSpecInput } from "./supervisor-fixture.ts";
 import { FIND, HOLD, NOTE } from "./supervisor-script.ts";
@@ -182,5 +184,35 @@ describe("the supervisor's planning format", () => {
     // Any other subflow with no parts is still refused, and so is the router key alone.
     expect(read(planInput([{ key: "extra", name: "Extra", parts: [] }, ...written], THREE))).toEqual({ ok: false, issues: [{ code: "project.plan_subflow_no_parts", path: "subflows.0.parts" }] });
     expect(read(planInput([{ key: "main", name: "Main", parts: [] }], ONE))).toEqual({ ok: false, issues: [{ code: "project.plan_subflow_no_parts", path: "subflows.0.parts" }] });
+  });
+});
+
+// Office `run-mvgo5xft-25460ba2` (steps 0057-0067, t741 B1): the plan took a port
+// named `item`, the script refused it as a part's name (a loop's row takes it),
+// and the subflow's scope demanded the plan's names, so two briefs were lost.
+// One rule now answers both.
+describe("a plan's port names, held to the script's rule for a part", () => {
+  /** Whether the script reads a part with this name as its input and as its output, refusing neither. */
+  const partTakes = (name: string) => automationStudioFlowScriptCalledParts([
+    { name: "Main", line: 1, steps: [{ label: "go", description: "go", line: 2, calls: { label: "part", line: 2 }, entries: [], branches: [] }] },
+    { label: "part", name: "part", line: 3, inputs: [{ label: name, line: 4 }], outputs: [{ name: `${name}Out`.slice(0, 32), binding: "$step.read.text", line: 5 }], steps: [{ label: "read", description: "read", line: 6, entries: [], branches: [] }] }
+  ]).issues.length === 0 && automationStudioFlowScriptCalledParts([
+    { name: "Main", line: 1, steps: [{ label: "go", description: "go", line: 2, calls: { label: "part", line: 2 }, entries: [], branches: [] }] },
+    { label: "part", name: "part", line: 3, outputs: [{ name, binding: "$step.read.text", line: 5 }], steps: [{ label: "read", description: "read", line: 6, entries: [], branches: [] }] }
+  ]).issues.length === 0;
+
+  it("refuses item as an output and as an input, at the port's path", () => {
+    expect(read(planInput([subflow("find_titles", ["p1"], { outputs: ["item"] })], ONE))).toEqual({ ok: false, issues: [{ code: "project.plan_port_name", path: "subflows.0.outputs.0" }] });
+    expect(read(planInput([subflow("find_titles", ["p1"], { inputs: ["titles", "item"] })], ONE))).toEqual({ ok: false, issues: [{ code: "project.plan_port_name", path: "subflows.0.inputs.1" }] });
+  });
+
+  it.each(["item", "items", "itemName", "row", "total"])("accepts %s exactly when a script's part may name it", (name) => {
+    const plan = read(planInput([subflow("find_titles", ["p1"], { outputs: [name] })], ONE)).ok;
+    expect(plan).toBe(partTakes(name));
+    expect(plan).toBe(name !== "item");
+  });
+
+  it("tells the model a port is never item", () => {
+    expect(GUIDANCE.planIssues["project.plan_port_name"]).toContain("and never `item`, the name a loop's row takes");
   });
 });

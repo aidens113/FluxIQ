@@ -134,6 +134,31 @@ describe("candidate stall guidance", () => {
     expect(note.instruction).not.toMatch(/Your draft|amend_draft|or complete/u);
     expect(note).not.toHaveProperty("candidate");
   });
+
+  // Social `run-mvgoawg4-ed85dd5a` 0166: `core.no_progress` told the builder to
+  // test revision 5, whose trial had answered execution_failed and which
+  // refused submissions had cleared; the gate called it stale (0169).
+  it("never recommends testing a receipt whose trial failed on record or that a refusal cleared", () => {
+    const finishing = { submit: "core.submit_subflow", test: "core.test_subflow" };
+    const stalled = (candidate: { revision: number; digest: string; lastTrial?: "no" | "execution_failed"; stale?: true }) => automationStudioLlmEvidenceStallRedirect({
+      stepsWithoutProgress: 6, maxStepsWithoutProgress: 8, repeatingToolIds: ["core.submit_subflow"],
+      proposableSteps: 0, completionAttempts: 0, lastIssueCodes: [], canComplete: true,
+      ...{ discoveryOnly: true, candidate, finishing }
+    });
+    const digest = "b".repeat(64);
+    const failed = stalled({ revision: 5, digest, lastTrial: "execution_failed", stale: true });
+    expect(failed.instruction).not.toContain("Use core.test_subflow with that exact revision");
+    expect(failed.instruction).toContain("Its trial already answered execution_failed.");
+    expect(failed.instruction).toContain("a changed submission is needed");
+    expect(failed.instruction).toContain("2 more step(s) without progress stop this build.");
+    const judgedNo = stalled({ revision: 5, digest, lastTrial: "no" });
+    expect(judgedNo.instruction).toContain("Its trial already answered no.");
+    expect(judgedNo.instruction).not.toContain("stale");
+    const cleared = stalled({ revision: 5, digest, stale: true });
+    expect(cleared.instruction).toContain("core.test_subflow would refuse it as stale");
+    expect(cleared.instruction).toContain("submit the whole candidate again with core.submit_subflow");
+    expect(stalled({ revision: 5, digest }).instruction).toContain("Use core.test_subflow with that exact revision");
+  });
 });
 
 // Live run `run-mv6bg7ac-d24d91ce`: with no candidate accepted and one act's

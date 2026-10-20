@@ -107,6 +107,51 @@ describe("the Flow script loop format", () => {
     expect(clause).not.toMatch(/photo|\blike|\bpost|newest/i);
   });
 
+  // t741, rerun round 3 (`run-mvgobp8h-b99ede98`, 0249-0284): the builder sorted the rows only in
+  // `recordOutput.process`, and `repeat most:` acted on the listing's first rows in page order. The
+  // order a repeat visits goes on the listing, `extractList.sort`, in the shape the web domain reads.
+  it("names the listing's own order, extractList.sort, and that a repeat over visits it, with an example of another kind of site", () => {
+    const sentence = AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT.split("\n").find((line) => line.includes("`extractList.sort:"));
+    expect(sentence).toBeDefined();
+    expect(sentence).toContain("A `repeat over` visits its listing's rows in the listing's own order, so `repeat most: N` acts on the first N of that order.");
+    expect(sentence).toContain("`extractList.sort: [{\"field\": \"due\", \"order\": \"asc\", \"as\": \"date\"}]`");
+    expect(sentence).toContain("`order` is asc or desc and `as` is number, date or text");
+    expect(sentence).toContain("to pay the two oldest unpaid invoices");
+    expect(sentence).toContain("A sort or limit in `recordOutput.process` orders only the saved answer, never the rows a repeat visits.");
+    expect(sentence).not.toMatch(/shop|store|cart|basket|feed|social|post|photo|\blike|heart|saved item|job|address|newest|friend|request/iu);
+  });
+
+  it("carries extractList.sort into the listing step's request, as it carries extractList.where", () => {
+    const script = [
+      "flow: Mark the two oldest unpaid invoices as reviewed",
+      "step: open the invoices",
+      "  node: web.browser.navigate",
+      "  url: https://billing.test/invoices",
+      "step invoices: list the unpaid invoices",
+      "  node: web.dom.extract_list",
+      "  extractList: extraction.2",
+      "  extractList.where: [{\"field\": \"status\", \"contains\": \"unpaid\"}]",
+      "  extractList.sort: [{\"field\": \"due\", \"order\": \"asc\", \"as\": \"date\"}]",
+      "  extractList.minItems: 0",
+      "step: mark the invoice as reviewed",
+      "  node: web.dom.click",
+      "  target: t21",
+      "  consequences: modify_existing",
+      "  repeat over: invoices",
+      "  repeat most: 2"
+    ].join("\n");
+    const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { flow: script }, registry, resolution });
+    expect(accepted.ok ? accepted.issues.filter((issue) => issue.severity === "error") : accepted.issues).toEqual([]);
+    if (!accepted.ok) return;
+    const listing = accepted.plan.subflows[0]!.nodes.find((node) => node.definitionId === "web.output.dom-extract_list")!;
+    expect(listing.parameters?.extractList).toEqual({
+      handle: "extraction.2",
+      where: [{ field: "status", contains: "unpaid" }],
+      sort: [{ field: "due", order: "asc", as: "date" }],
+      minItems: 0
+    });
+  });
+
   // t378 W8, lane D (`run-mv0fuual-f9e6f089`): a trial that met the site's
   // request to slow down is answered in the Flow's own lines -- a guarded
   // dismissal and wait inside the span, and a pace between passes.

@@ -391,7 +391,7 @@ describe("a discovery-only loop's own finishing tools (t537)", () => {
       const said = automationStudioLlmEvidenceBudgetEntry(2, left(decisionsLeft), undefined, true);
       expect(automationStudioLlmEvidenceBudgetEntry(2, left(decisionsLeft), undefined, true, AUTOMATION_STUDIO_LLM_EVIDENCE_CANDIDATE_FINISHING_TOOLS)).toEqual(said);
     }
-    expect(String(automationStudioLlmEvidenceBudgetEntry(2, left(4), undefined, true).value.instruction)).toBe("Only a few decisions are left, so only core.submit_candidate, core.test_candidate and completing run now: every other tool is still listed, but a call to one is answered without running and spends a decision. If your latest Flow is not submitted, submit the whole candidate now with core.submit_candidate; test that exact revision with core.test_candidate; complete with its revision and digest once the trial answers yes. If a submission or a trial is refused, correct what it names, submit again and test the new revision.");
+    expect(String(automationStudioLlmEvidenceBudgetEntry(2, left(4), undefined, true).value.instruction)).toBe("Only a few decisions are left, so only core.submit_candidate, core.test_candidate and completing run now: every other tool is still listed, but a call to one is answered without running and spends a decision. A call that names one of this build's own lasting acts under undoes, to undo it before a trial, still runs. If your latest Flow is not submitted, submit the whole candidate now with core.submit_candidate; test that exact revision with core.test_candidate; complete with its revision and digest once the trial answers yes. If a submission or a trial is refused, correct what it names, submit again and test the new revision.");
   });
 
   it("names the loop's own tools in its budget words", () => {
@@ -417,6 +417,69 @@ describe("a discovery-only loop's own finishing tools (t537)", () => {
     expect(executeTool.mock.calls.map(([call]) => call.toolId)).toEqual(["inspect", "core.submit_subflow"]);
     expect(result.trace.find((row) => row.iteration === 3)).toMatchObject({ decision: "tool_call", resultCode: "llm_evidence_loop.not_offered" });
     expect(budgetOf(decide.mock.calls[1]![0].evidence as Shown[])).toMatchObject({ instruction: expect.stringContaining("core.submit_subflow") });
+  });
+});
+
+// A trial refused `trial_reset_required` names the build's own acts to undo,
+// and the undo is a core.run_node call naming the act under `undoes`. The
+// wrap-up withheld every core.run_node, so the undo was answered `not_offered`
+// and the trial refused again until the build ran out (photo
+// `run-mvgobp8h-b99ede98`, 0150-0158). The wrap-up judges the call, not only
+// its tool: an undo runs; an exploring call is still withheld (t741 A5).
+describe("an undo in a candidate's wrap-up (t741)", () => {
+  const builder = { submit: "core.submit_subflow", test: "core.test_subflow" };
+  const builderTools = [
+    { toolId: "core.run_node", description: "Run a node.", inputSchema: { type: "object" } },
+    { toolId: "core.submit_subflow", description: "Submit the subflow.", inputSchema: { type: "object" } },
+    { toolId: "core.test_subflow", description: "Test a submitted revision.", inputSchema: { type: "object" } }
+  ];
+  const left = (decisionsLeft: number) => ({ decisionsLeft, limitedBy: "cost" as const });
+
+  it("runs a core.run_node naming an act under undoes, and withholds one that explores", () => {
+    const wrapUp = automationStudioLlmEvidenceLoopWrapUp({ remaining: left(3), canComplete: true, candidate: true, tools: builderTools, finishing: builder });
+    expect(wrapUp.withholds("core.run_node", { node: "a", undoes: "act-18" })).toBe(false);
+    expect(wrapUp.withholds("core.run_node", { node: "a" })).toBe(true);
+    expect(wrapUp.withholds("core.run_node")).toBe(true);
+    // Only an act id names an act; anything else under undoes explores.
+    for (const undoes of ["", "act-0", "act-x", "destination-1", 18, ["act-1"], null]) expect(wrapUp.withholds("core.run_node", { node: "a", undoes })).toBe(true);
+    // Another tool is not let through by an undoes of its own.
+    expect(wrapUp.withholds("inspect", { undoes: "act-1" })).toBe(true);
+    // Outside the wrap-up nothing is withheld.
+    expect(automationStudioLlmEvidenceLoopWrapUp({ remaining: left(6), canComplete: true, candidate: true, tools: builderTools, finishing: builder }).withholds("core.run_node", { node: "a" })).toBe(false);
+  });
+
+  it("leaves a draft loop's wrap-up withholding every call, an undo included", () => {
+    const wrapUp = automationStudioLlmEvidenceLoopWrapUp({ remaining: left(3), canComplete: true, candidate: false, tools: builderTools });
+    expect(wrapUp.offered).toEqual([]);
+    expect(wrapUp.withholds("core.run_node", { node: "a", undoes: "act-1" })).toBe(true);
+    expect(wrapUp.withholds("core.run_node", { node: "a" })).toBe(true);
+  });
+
+  it("tells the candidate that an undo naming its act still runs", () => {
+    const said = String(automationStudioLlmEvidenceBudgetEntry(2, left(4), undefined, true, builder).value.instruction);
+    expect(said).toContain("only core.submit_subflow, core.test_subflow and completing run now");
+    expect(said).toContain("A call that names one of this build's own lasting acts under undoes, to undo it before a trial, still runs.");
+    expect(String(automationStudioLlmEvidenceBudgetEntry(2, left(3), undefined, false).value.instruction)).not.toContain("undoes");
+  });
+
+  it("runs the undo a trial asked for in the wrap-up, and still answers an exploring call unrun", async () => {
+    const executeTool = vi.fn(async ({ toolId }: { toolId: string }) => ({ ran: toolId }));
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "core.run_node", input: { node: "open-list" } })
+      // Five decisions left: the wrap-up. The undo runs.
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.2", toolId: "core.run_node", input: { node: "remove-entry", undoes: "act-3" } })
+      // An exploring run is withheld: answered, never run.
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.3", toolId: "core.run_node", input: { node: "open-next-page" } })
+      .mockResolvedValueOnce({ kind: "complete", result: { revision: 1, digest: "d" } });
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools: builderTools, decide, executeTool, draft: false, discoveryOnly: true, finishingTools: builder, maxIterations: 6, maxToolCalls: 6,
+      completionSchema: { type: "object" }, budget: { maxTotalTokens: 10_000_000 }
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(executeTool.mock.calls.map(([call]) => (call as unknown as { value: Record<string, unknown> }).value.node)).toEqual(["open-list", "remove-entry"]);
+    expect(result.trace.find((row) => row.iteration === 2)?.resultCode).not.toBe("llm_evidence_loop.not_offered");
+    expect(result.trace.find((row) => row.iteration === 3)).toMatchObject({ decision: "tool_call", resultCode: "llm_evidence_loop.not_offered" });
   });
 });
 

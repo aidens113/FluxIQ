@@ -9,4 +9,5 @@ export * from "./subflow-trial-gate.ts";
 export * from "./submit-tool.ts";
 export * from "./role-tools.ts";
 export * from "./done-before.ts";
+export * from "./repeated-advice.ts";
 export * from "./builder-loop.ts";

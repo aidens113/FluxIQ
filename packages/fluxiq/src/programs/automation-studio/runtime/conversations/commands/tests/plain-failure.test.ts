@@ -136,4 +136,17 @@ describe("a supervisor's reason for ending a build", () => {
     expect(ended(["project.build_blocked"])).toBe("the build failed: FluxIQ could not finish the Flow");
     expect(ended(["project.build_time_limit", "project.build_blocked"], "The item can't be collected.")).toBe("the build failed: it reached its time limit before a whole test of the Flow passed");
   });
+
+  // t741 B5, job-board `run-mvgo9wzn-fad4e050`: "... could not finish the Flow: i could not finish ...".
+  it("never lower-cases the pronoun I or a word in capitals", () => {
+    const ended = (endedBecause: string) => automationStudioConversationCallCause("the build", {
+      ok: false,
+      error: "Flow Bootstrap generation failed (flow_bootstrap.post_provider_validation_failed).",
+      payload: { diagnostic: { code: "flow_bootstrap.post_provider_validation_failed", stage: "post_provider_validation", issueCodes: ["project.build_blocked"], endedBecause } }
+    });
+    expect(ended("I could not finish this.")).toBe("the build failed: FluxIQ could not finish the Flow: I could not finish this");
+    expect(ended("I've found no way to the last page.")).toBe("the build failed: FluxIQ could not finish the Flow: I've found no way to the last page");
+    expect(ended("URL changes broke the second page.")).toBe("the build failed: FluxIQ could not finish the Flow: URL changes broke the second page");
+    expect(ended("It stopped on the second page.")).toBe("the build failed: FluxIQ could not finish the Flow: it stopped on the second page");
+  });
 });

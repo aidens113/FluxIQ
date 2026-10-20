@@ -69,3 +69,60 @@ it("does not create original project authority from first observations after a l
   reset.observed(read(["s:document"]));
   expect(reset.target("act-2", deletion)).toMatchObject({ kind: "refused" });
 });
+
+// Rerun round 3 (office `run-mvgo5xft-25460ba2`, 0110): a refused claim routed
+// to the act's owner listed only that owner's open acts (`actsToUndo: []`
+// while another brief's acts were open). The routing answers with the whole
+// build's open acts. A generic recipe site: two briefs each pressed a control
+// that sits in no list read complete, so each act is open until a list is
+// named for it.
+describe("a refused claim lists the whole build's open acts", () => {
+  const recipes = (subjects: string[]) => ({ ...read(subjects), resource: "r:recipes", location: "loc:recipes", collections: [{ ...read(subjects).collections[0]!, scope: "p:recipes", group: "g:recipes" }], scope: "p:recipes-page" });
+  const rate = (callId: string, subject: string) => ({ callId, toolId: "core.run_node", landed: true, declared: { permitted: true, effect: "mutate" as const, consequences: ["modify_existing" as const], control: { name: "Rate", kind: "button", subject, page: subject, resource: "r:recipes" }, verb: "press" } });
+  const twoBriefs = () => {
+    const project = new AutomationStudioSiteResetProjectLedger();
+    const first = project.forBrief("brief.first");
+    const second = project.forBrief("brief.second");
+    const routing = automationStudioProjectBuildResetCalls(project, first);
+    routing.observed(recipes(["s:soup", "s:stew"]));
+    expect(routing.destinationReceipts!().map((receipt) => receipt.ref)).toEqual(["destination-1"]);
+    first.explored(rate("rate-soup", "s:pie"));
+    second.explored(rate("rate-stew", "s:tart"));
+    const reset = automationStudioProjectBuildResetCalls(project, project.forBrief("brief.reset"));
+    return { project, first, second, reset };
+  };
+
+  it("lists every brief's open act, each with its settle, as the trial gate does", () => {
+    const { reset } = twoBriefs();
+    const open = reset.openActs();
+    expect(open.map((act) => act.act)).toEqual(["act-1", "act-2"]);
+    for (const act of open) expect(act.settle).toContain("resetDestination");
+  });
+
+  it("answers a repeat of a settled act's undo with the other brief's open act, not an empty list", () => {
+    const { first, reset } = twoBriefs();
+    // A look naming act-1 under undoes with the list's ref, then that list read complete and unchanged: act-1 is left.
+    expect(reset.claim("act-1", "destination-1")).toMatchObject({ kind: "undo" });
+    reset.explored({ callId: "look", toolId: "core.run_node", undoes: "act-1", resetDestination: "destination-1", landed: true });
+    reset.observed(recipes(["s:soup", "s:stew"]));
+    expect(reset.standing("act-1")).toBe("unchanged");
+    expect(first.inPlace()).toEqual([]);
+    const repeat = reset.claim("act-1", "destination-1");
+    expect(repeat).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_act_kept" } });
+    const acts = repeat.kind === "refused" ? repeat.evidence.actsToUndo as Array<{ act: string; settle?: string }> : [];
+    expect(acts.map((act) => act.act)).toEqual(["act-2"]);
+    expect(acts[0]!.settle).toContain("resetDestination");
+  });
+
+  it("answers an unknown act, claimed or targeted, with every open act and words that say some are listed", () => {
+    const { reset } = twoBriefs();
+    const unknown = reset.claim("act-9");
+    expect(unknown).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_unknown_act" } });
+    const evidence = unknown.kind === "refused" ? unknown.evidence : {};
+    expect((evidence.actsToUndo as Array<{ act: string }>).map((act) => act.act)).toEqual(["act-1", "act-2"]);
+    expect(String(evidence.instruction)).toContain("Name one of the acts listed here");
+    const targeted = reset.target("act-9", { effect: "mutate", consequences: ["modify_existing"], control: { subject: "s:pie" } });
+    const listed = targeted.kind === "refused" ? targeted.evidence.actsToUndo as Array<{ act: string }> : [];
+    expect(listed.map((act) => act.act)).toEqual(["act-1", "act-2"]);
+  });
+});

@@ -165,10 +165,14 @@ describe("shape E: the trial's own act, and the retest after a settling look (of
     expect(looked).toEqual(["loc:box"]);
   });
 
-  it("a trial act repeating nothing is asked to name its list, settles on a look naming the ref without a resource, and cannotUndo never settles it", async () => {
+  it("a trial act repeating nothing, while a list it adopted differs, is asked to name its list, settles on a look naming the ref without a resource, and cannotUndo never settles it", async () => {
     const ledger = boxed();
     explored(ledger);
     ledger.trialRan([trialStep("demo.other")], "trial.1");
+    // With no witness of its own it adopts the build's issued lists (office r3, `settlement-adopted.test.ts`); one differs, by
+    // whatever cause, so it is never asked to undo there: it is asked to name its list.
+    const elsewhere = () => boxPage([list("p:cards", ["s:soup", "s:stew"]), list("p:saved", ["s:pie", "s:tart"])]);
+    ledger.observed(elsewhere());
     const refused = await ledger.beforeTrial(compare);
     expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-2" }] } });
     expect(settleOf(refused, "actsToUndo", "act-2")).toContain("name that list's ref as resetDestination on a look that names this act under undoes (lists read complete before the build acted: destination-1 (2 items at loc:box), destination-2 (1 item at loc:box))");
@@ -177,7 +181,8 @@ describe("shape E: the trial's own act, and the retest after a settling look (of
     expect(settleOf(kept, "actsToRestore", "act-2")).toContain("resetDestination");
     expect(ledger.claim("act-2")).toMatchObject({ kind: "undo" });
     ledger.explored(look("look.box", "act-2", "destination-1"));
-    ledger.observed(boxPage());
+    // The list it names holds, though another of the page still differs.
+    ledger.observed(elsewhere());
     expect(await ledger.beforeTrial(compare)).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1" }, { act: "act-2" }] } });
     expect(ledger.standing("act-2")).toBe("unchanged");
   });

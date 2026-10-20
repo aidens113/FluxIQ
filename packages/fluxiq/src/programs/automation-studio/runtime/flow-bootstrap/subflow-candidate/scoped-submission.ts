@@ -110,6 +110,19 @@
 // What a trial or a judge said (`lastTrial`, `judged`) is never renumbered: it
 // already speaks of this brief's revisions.
 //
+// **One receipt per plan, in every answer (t741).** The candidate controller
+// compares a submission with its last accepted revision only, so a plan it
+// accepted before another, sent again, is a new revision there; this brief
+// answers it with the proposal it first was, its own revision and digest. Its
+// later refusals named the controller's revision ("revision 14", photo rerun
+// `run-mvgobp8h-b99ede98` 0381; "revision 7", social `run-mvgoawg4-ed85dd5a`
+// 0171) and the probe candidate's digest, neither a receipt this brief issued,
+// and the trial gate refused what they named as stale. Each revision the
+// controller accepts is now remembered as the proposal it is, and a refusal's
+// revisions and digests, in its fields and its words, read through that map
+// (`./submission-numbering.ts`): every pair it names is one `matches()`
+// accepts, or the receipt of a proposal this brief answered earlier.
+//
 // **An input another subflow hands on may go unread (t672).** A callable
 // subflow's inputs that an earlier subflow of the plan hands on are the
 // scope's `handedOn`. One no line reads is no refusal (`./callable-target.ts`):
@@ -179,6 +192,13 @@ export class AutomationStudioSubflowScopedSubmissionController {
   private readonly lasting: string[] = [];
   /** How far this brief's revisions are numbered past the candidate controller's (header, t658). */
   private readonly offset: number;
+  /** The proposal each revision the candidate controller accepted is: a plan it accepted again after another is a new revision there, and still its first proposal here (header, t741). */
+  private readonly byInnerRevision = new Map<number, AutomationStudioSubflowProposal>();
+  /** How a refusal's revisions and digests read on this brief's numbering (`./submission-numbering.ts`, t741). */
+  private readonly numbering = {
+    revision: (inner: number): number => this.byInnerRevision.get(inner)?.revision ?? inner + this.offset,
+    digest: (inner: string): string => this.proposals.get(inner)?.digest ?? inner
+  };
 
   constructor(private readonly input: {
     scope: AutomationStudioSubflowScope;
@@ -220,7 +240,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
       // A refusal invalidates the standing proposal, as a refused whole candidate does.
       this.current = undefined;
       const last = this.inner.lastAccepted();
-      return { ok: false, revision: last ? last.revision + this.offset : 0, check: scopeRefusal(read.issues) };
+      return { ok: false, revision: last ? this.numbering.revision(last.revision) : 0, check: scopeRefusal(read.issues) };
     }
     const submitted = await this.inner.submit(read.probe, this.candidateHistory(history));
     this.input.submission.signal?.throwIfAborted();
@@ -228,7 +248,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
     if (submitted.ok && read.unneeded) this.unneeded.set(submitted.candidate.digest, read.unneeded);
     const latest = this.inner.latest();
     this.current = latest ? this.proposalOf(latest) : undefined;
-    if (!submitted.ok) return automationStudioSubflowRenumberedRefusal(read.probe === result ? submitted : asSent(submitted, read.probe, result), this.offset);
+    if (!submitted.ok) return automationStudioSubflowRenumberedRefusal(read.probe === result ? submitted : asSent(submitted, read.probe, result), this.numbering);
     const proposal = this.proposalOf(submitted.candidate);
     for (const consequence of lastingOf(proposal.subflows)) if (!this.lasting.includes(consequence)) this.lasting.push(consequence);
     return { ok: true, proposal: structuredClone(proposal) };
@@ -318,10 +338,16 @@ export class AutomationStudioSubflowScopedSubmissionController {
    * success check -- the scope's, or with none the one the builder proposed -- then its helper parts re-keyed under it (`./part-keys.ts`).
    * The target's step and derived dataset ids follow the scope's key too
    * where the probe wrote it under another (a router-run entry as `main`).
+   * A plan the candidate controller accepts again after another is the
+   * proposal it first was, its revision and digest unchanged, and the
+   * controller's new revision is remembered as that proposal (header, t741).
    */
   private proposalOf(candidate: AutomationStudioFlowCandidate): AutomationStudioSubflowProposal {
     const known = this.proposals.get(candidate.digest);
-    if (known) return known;
+    if (known) {
+      this.byInnerRevision.set(candidate.revision, known);
+      return known;
+    }
     const plan = candidate.buildPlan.plan;
     const contract = this.scope.interface;
     const entry = entryOf(plan);
@@ -339,6 +365,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
     const unneeded = this.unneeded.get(candidate.digest);
     if (unneeded) proposal.unneededInputs = [...unneeded];
     this.proposals.set(candidate.digest, proposal);
+    this.byInnerRevision.set(candidate.revision, proposal);
     return proposal;
   }
 

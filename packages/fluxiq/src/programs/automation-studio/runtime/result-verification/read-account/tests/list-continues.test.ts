@@ -27,6 +27,9 @@ function attempt(listContinues?: unknown): AutomationStudioFlowRunActionAttemptR
   } as AutomationStudioFlowRunActionAttemptRecord;
 }
 
+/** Core's words that a list going on past its own end, or past the range asked for, is not rows missing from that range. */
+const RANGE = "Where it goes on past an end the page itself marks, or past the range the request asks for, what follows is not rows missing from that range: judge what was read against the request's own range.";
+
 const read = (fields: Partial<AutomationStudioResultReadAccount> = {}): AutomationStudioResultReadAccount =>
   ({ nodeId: "read.recipes", definitionId: "web.output.dom-extract_list", pagesRead: 1, truncated: false, itemsSeen: 5, kept: 1, ...fields });
 
@@ -45,9 +48,9 @@ describe("a read whose list goes on past what it read", () => {
 
   it("is said in plain words naming the read's step, what it saw and kept, and how to read further", () => {
     const words = automationStudioResultReadListContinues(read({ listContinues: { kind: "infinite_scroll", evidence: "declared_feed" } }))!;
-    expect(words.said).toBe("Step read.recipes read one part of a list that goes on past it (the page marks it as a list that loads more as it is scrolled, and it was still growing when the read stopped revealing more of it): it saw 5 items and kept 1, and no item after those was read.");
+    expect(words.said).toBe(`Step read.recipes read one part of a list that goes on past it (the page marks it as a list that loads more as it is scrolled, and it was still growing when the read stopped revealing more of it): it saw 5 items and kept 1, and no item after those was read. ${RANGE}`);
     expect(words.fix).toContain("To read past what step read.recipes read, move that same list on to its next part (a scroll down it)");
-    expect(words.fix).toContain("Where the request asks only for what its first part shows, leave the read as it is.");
+    expect(words.fix).toContain("Where the request asks only for what its first part shows, or what was read already reaches an end the page itself marks or the end of the range the request asks for, leave the read as it is.");
     expect(automationStudioResultReadListContinues(read({ listContinues: { kind: "next_page", evidence: "following_page_number" } }))!.said).toContain("(the page shows a numbered page after the current one)");
     expect(automationStudioResultReadListContinues(read({ listContinues: { kind: "load_more", evidence: "load_more_control" } }))!.fix).toContain("(its load-more control)");
     expect(automationStudioResultReadListContinues(read({ listContinues: { kind: "infinite_scroll", evidence: "still_growing" } }))!.said).toContain("(it was still growing when the read stopped revealing more of it)");
@@ -59,6 +62,31 @@ describe("a read whose list goes on past what it read", () => {
     expect(automationStudioResultReadListContinues(read({ listContinues: fact, paginates: true }))).toBeUndefined();
     expect(automationStudioResultReadListContinues(read({ listContinues: fact, pagesRead: 3 }))).toBeUndefined();
     expect(automationStudioResultReadListContinues(read({ listContinues: fact, keptPerPage: [1] }))).toBeUndefined();
+  });
+});
+
+// Social rerun round 3 (`run-mvgoawg4-ed85dd5a`, 0141-0145, 0214-0218): a
+// feed's read was told it "was still growing when the read stopped revealing
+// more of it" -- true, since the list went on past its own end marker into
+// units of another kind -- and judges read that as rows missing from the task's
+// range, asking to page further. A list that grows as it is revealed now says
+// that going on past an end the page marks, or past the request's range, is not
+// rows missing from that range. A numbered or controlled next part says what it
+// said: the page itself names that part, and the judges' prose says the same
+// for every list (`../../../llm/diagnosis-instructions.ts`).
+describe("a read whose list grows as it is revealed", () => {
+  it("says that going on past an end the page marks, or past the request's range, is not rows missing from that range", () => {
+    for (const fact of [{ kind: "infinite_scroll", evidence: "declared_feed" }, { kind: "infinite_scroll", evidence: "still_growing" }, { kind: "load_more", evidence: "still_growing" }, { kind: "infinite_scroll", evidence: "unknown" }]) {
+      const said = automationStudioResultReadListContinues(read({ listContinues: fact }))!.said;
+      expect(said.split(RANGE)).toHaveLength(2);
+      expect(said.endsWith(`no item after those was read. ${RANGE}`)).toBe(true);
+    }
+  });
+
+  it("says nothing more of a list whose next part the page names by a number or a control", () => {
+    for (const fact of [{ kind: "next_page", evidence: "following_page_number" }, { kind: "next_page", evidence: "next_control" }, { kind: "load_more", evidence: "load_more_control" }]) {
+      expect(automationStudioResultReadListContinues(read({ listContinues: fact }))!.said).not.toContain(RANGE);
+    }
   });
 });
 

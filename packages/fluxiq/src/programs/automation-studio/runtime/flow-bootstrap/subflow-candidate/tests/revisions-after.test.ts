@@ -6,6 +6,15 @@
 // 3 makes revision 4 first; a test of revision 3 is refused as stale, naming
 // this brief's own latest and saying 3 was the earlier brief's; and every
 // revision a refusal names is on this brief's numbering.
+//
+// One numbering and one digest for a brief's refusals (t741; rerun round 3
+// photo `run-mvgobp8h-b99ede98` 0371-0385, social `run-mvgoawg4-ed85dd5a` 0155,
+// 0171). The candidate controller a brief wraps numbers every submission it
+// reads, so a plan it accepts again after another is a new revision there; the
+// brief answered it with that plan's own revision, but its later refusals named
+// the controller's number ("revision 14", never issued) and the probe
+// candidate's digest, and the trial gate refused both as stale. Every
+// revision/digest pair a refusal names is now a receipt the gate accepts.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_KEPT_CONDITION_DROPPED_CODE, automationStudioCandidateSubmissionRefusal } from "../../candidate/index.ts";
@@ -26,6 +35,79 @@ async function proposed(submitted: Promise<Awaited<ReturnType<AutomationStudioSu
   if (!result.ok) throw new Error("refused");
   return result.proposal;
 }
+
+const PLAN_A = [...OPEN, ...callPart(), ...part()];
+const PLAN_B = [...OPEN, ...callPart("refine"), ...part("refine")];
+
+function trial(proposal: AutomationStudioSubflowProposal, verdict: AutomationStudioSubflowTrialResult["verdict"]): AutomationStudioSubflowTrialResult {
+  return { partial: true, scope: "subflow", identity: { ...proposal.scope }, revision: proposal.revision, digest: proposal.digest, verdict, feedback: { code: `candidate.trial_${verdict}` }, entryPrepared: true };
+}
+
+async function refused(submitted: Promise<Awaited<ReturnType<AutomationStudioSubflowScopedSubmissionController["submit"]>>>) {
+  const result = await submitted;
+  if (result.ok) throw new Error(`expected a refusal, got revision ${result.proposal.revision}`);
+  return result;
+}
+
+/** Every revision number and every digest a refusal names, in its fields and its words, outside what a trial or judge said. */
+function named(refusal: { revision: number; check: { feedback?: JsonObject | undefined } }): { revisions: number[]; digests: string[] } {
+  const { lastTrial: _trial, judged: _judged, ...feedback } = refusal.check.feedback ?? {};
+  const text = JSON.stringify(feedback);
+  return {
+    revisions: [refusal.revision, ...[...text.matchAll(/"revision":(\d+)/gu)].map((found) => Number(found[1])), ...[...text.matchAll(/\b[Rr]evision (\d+)\b/gu)].map((found) => Number(found[1]))],
+    digests: text.match(/\b[0-9a-f]{64}\b/gu) ?? []
+  };
+}
+
+describe("a brief's refusals name receipts the trial gate accepts (t741)", () => {
+  it("answers A, B, A, A: the re-sent A keeps its revision, and the unchanged refusal names that revision and the proposal's digest", async () => {
+    const controller = new AutomationStudioSubflowScopedSubmissionController({ scope, siblings: [...SIBLINGS], submission: testSubmission(), revisionsAfter: 3 });
+    const gate = new AutomationStudioSubflowTrialGate({ scope, latest: () => controller.latest(), port: async (request) => yes(request), revisionsAfter: 3 });
+    const a = await proposed(controller.submit(script(PLAN_A)));
+    const b = await proposed(controller.submit(script(PLAN_B)));
+    expect([a.revision, b.revision]).toEqual([4, 5]);
+
+    // An earlier plan sent again answers its own revision, never one the brief never issued.
+    const resent = await proposed(controller.submit(script(PLAN_A)));
+    expect(resent).toMatchObject({ revision: a.revision, digest: a.digest });
+    expect(controller.matches(a)).toBe(true);
+
+    const unchanged = await refused(controller.submit(script(PLAN_A)));
+    expect(unchanged.check.issueCodes).toEqual(["candidate.unchanged_submission"]);
+    expect(unchanged.revision).toBe(a.revision);
+    expect(unchanged.check.feedback).toMatchObject({ revision: a.revision, digest: a.digest });
+    const { revisions, digests } = named(unchanged);
+    expect(new Set(revisions)).toEqual(new Set([a.revision]));
+    expect(new Set(digests)).toEqual(new Set([a.digest]));
+    expect(controller.matches({ revision: unchanged.check.feedback!.revision as number, digest: unchanged.check.feedback!.digest as string })).toBe(true);
+    // The model obeys "test it using exactly that revision and digest", and the gate takes it.
+    expect((await gate.test({ revision: unchanged.check.feedback!.revision as number, digest: unchanged.check.feedback!.digest as string })).resultCode).toBe("subflow.trial_yes");
+
+    // A scope refusal names the last accepted revision on the brief's numbering too.
+    const scoped = await refused(controller.submit(script([...OPEN, "subflow late: a notice stands in front", "  when: state.page.dialog exists", "  step: close it", "    node: web.dom.click", "    selector: .close", "    consequences: none", "end"])));
+    expect(scoped.revision).toBe(a.revision);
+  });
+
+  it("names the standing re-sent revision beside a refuted Flow by its own revision and digest", async () => {
+    const controller = new AutomationStudioSubflowScopedSubmissionController({ scope, siblings: [...SIBLINGS], submission: testSubmission() });
+    const a = await proposed(controller.submit(script(PLAN_A)));
+    const b = await proposed(controller.submit(script(PLAN_B)));
+    const history = {
+      refuted: (digest: string) => (digest === b.digest ? { said: "judged no" } : undefined),
+      trialOf: (proposal: Pick<AutomationStudioSubflowProposal, "revision" | "digest">) => (proposal.digest === a.digest ? trial(a, "unsure") : proposal.digest === b.digest ? trial(b, "no") : undefined)
+    };
+    expect(await proposed(controller.submit(script(PLAN_A), history))).toMatchObject({ revision: a.revision, digest: a.digest });
+
+    const again = await refused(controller.submit(script(PLAN_B), history));
+    expect(again.check.issueCodes).toEqual(["candidate.unchanged_after_no"]);
+    expect(again.check.feedback).toMatchObject({ standingRevision: { revision: a.revision, digest: a.digest } });
+    expect(String(again.check.feedback!.instruction)).toContain(`using exactly revision ${a.revision} and digest ${a.digest}`);
+    const { revisions, digests } = named(again);
+    expect(new Set(revisions)).toEqual(new Set([a.revision]));
+    expect(new Set(digests)).toEqual(new Set([a.digest]));
+    expect(controller.matches(a)).toBe(true);
+  });
+});
 
 describe("a brief that starts from an earlier brief's revision 3", () => {
   it("numbers its first accepted revision 4, and a test of revision 3 is refused naming its own latest", async () => {

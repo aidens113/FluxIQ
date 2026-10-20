@@ -38,7 +38,18 @@ describe("what a build left on the site, in a person's words", () => {
       { did: "press \"Send\" button", stays: "irreversible" },
       { did: "trial step 3 \"add it to the list\" on \"Add\"", stays: "kept" }
     ], [possibly("select \"Size\" combobox")]);
-    expect(told).toBe("These changes the build made are still on the site: clicked “Save”, clicked “Send” (FluxIQ cannot undo this) and used “Add” (the site offers no way to undo it). It also chose “Size”, which changed the page and might have left something behind, so check it if you need the site exactly as it was.");
+    expect(told).toBe("These changes the build made are still on the site: clicked “Save” and clicked “Send” (FluxIQ cannot undo this). The build used “Add”, but could not undo it, so it may still be on the site; check it if you need the site exactly as it was. It also chose “Size”, which changed the page and might have left something behind, so check it if you need the site exactly as it was.");
+  });
+
+  // t741 B5, photo-social `run-mvgobp8h-b99ede98`: a trial act whose undo was refused (`undo_wrong_target`) was kept and
+  // said "(the site offers no way to undo it)" as still on the site, though later reads showed the control back.
+  it("says a reversible act the build could not undo may still be there, never that the site offers no way to undo it", () => {
+    const told = automationStudioActivityLeftTold([{ did: "trial step 4 \"mark it\" on \"Mark\"", stays: "kept" }], []);
+    expect(told).toBe("The build used “Mark”, but could not undo it, so it may still be on the site; check it if you need the site exactly as it was.");
+    for (const claim of ["site offers no way", "still on the site:", "no change on the site"]) expect(told).not.toContain(claim);
+    // A class no control takes back is still said as there, with why.
+    const both = automationStudioActivityLeftTold([{ did: "press \"Pay\" button", stays: "irreversible" }, { did: "click span", stays: "kept" }, { did: "click span", stays: "kept" }], []);
+    expect(both).toBe("These changes the build made are still on the site: clicked “Pay” (FluxIQ cannot undo this). The build made 2 presses it could not name, but could not undo them, so they may still be on the site; check them if you need the site exactly as it was.");
   });
 
   it("names the latest few presses and counts the rest", () => {

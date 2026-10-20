@@ -90,6 +90,7 @@
 // and every issue is answered, not only the first.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowBootstrapInterfacePort, AutomationStudioFlowBootstrapPlan, AutomationStudioFlowBootstrapSubflow } from "../../flow-bootstrap/plan/index.ts";
+import { automationStudioFlowScriptPartPortName } from "../../flow-bootstrap/script-statements/index.ts";
 import {
   automationStudioProjectJsonShape as shape,
   automationStudioProjectStructurePlan,
@@ -113,8 +114,6 @@ type Written = { at: number; key: string; name: string; purpose?: string; parts:
 const SUBFLOW_KEY = /^[a-z][a-z0-9_-]{0,63}$/u;
 /** The keys Core gives the router-run subflow it adds (`routerKey`). */
 const ROUTER_KEY = /^main(?:_[0-9]+)?$/u;
-/** An interface port's name, as the bootstrap plan's reader takes one (`../../flow-bootstrap/plan/parsing.ts`, `PORT_NAME`). */
-const PORT_NAME = /^[a-z][A-Za-z0-9]{0,31}$/u;
 /** The structure plan holds 40 subflows; Core may add one. */
 const MAX_SUBFLOWS = 39;
 const MAX_PORTS = 40;
@@ -259,10 +258,14 @@ function coresRouter(value: unknown): value is JsonObject {
   return Array.isArray(value.parts) && !value.parts.length && empty(value.inputs) && empty(value.outputs);
 }
 
-/** The names of an interface side, each a port name, none twice. */
+/**
+ * The names of an interface side, each a port name, none twice. A port name is the one a script's part may give the
+ * same value (`../../flow-bootstrap/script-statements/part-port-name.ts`), never only the bootstrap plan reader's
+ * pattern: a subflow's scope demands the plan's names, so a name the script refuses would make it unbuildable (t741).
+ */
 function ports(value: unknown, path: string): string[] {
   if (value === undefined) return [];
-  const names = shape.array(value, path, MAX_PORTS).map((name, index) => (typeof name === "string" && PORT_NAME.test(name) ? name : shape.refuse("project.plan_port_name", `${path}.${index}`)));
+  const names = shape.array(value, path, MAX_PORTS).map((name, index) => (typeof name === "string" && automationStudioFlowScriptPartPortName(name) ? name : shape.refuse("project.plan_port_name", `${path}.${index}`)));
   if (new Set(names).size !== names.length) return shape.refuse("project.duplicate", path);
   return names;
 }

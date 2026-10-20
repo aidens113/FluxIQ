@@ -23,6 +23,7 @@
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS } from "../plan/index.ts";
 import type { AutomationStudioFlowScriptBlock, AutomationStudioFlowScriptOutput, AutomationStudioFlowScriptStep } from "../authoring/index.ts";
+import { automationStudioFlowScriptPartPortName } from "./part-port-name.ts";
 import { scriptStatementRefusal } from "./statement-refusal.ts";
 
 /** One part: the block a step calls, by index, and its interface as written. */
@@ -32,10 +33,6 @@ export type AutomationStudioFlowScriptPart = {
   inputs: readonly string[];
   outputs: readonly AutomationStudioFlowScriptOutput[];
 };
-
-/** A part input's or output's name: a Flow input's rule (`flow-draft`), and never the row's name. */
-const PORT_NAME = /^[a-z][A-Za-z0-9]{0,31}$/u;
-const ROW_NAME = "item";
 
 /**
  * Which blocks are parts, with each step that runs a part made a call to it and
@@ -142,8 +139,8 @@ function asCall(step: AutomationStudioFlowScriptStep): AutomationStudioFlowScrip
 function partOf(block: AutomationStudioFlowScriptBlock, blockIndex: number, issues: AutomationStudioFlowBootstrapIssue[]): AutomationStudioFlowScriptPart {
   const seen = new Set<string>();
   const accept = (name: string, line: number, what: string): boolean => {
-    if (!PORT_NAME.test(name) || name === ROW_NAME) {
-      issues.push(scriptStatementRefusal("flow_script.part_interface_invalid", `The ${what} "${name.slice(0, 40)}" at line ${line} is not a name a part's ${what} may have: it starts with a lower-case letter, holds only letters and digits, at most 32, and is never "${ROW_NAME}".`, line));
+    if (!automationStudioFlowScriptPartPortName(name)) {
+      issues.push(scriptStatementRefusal("flow_script.part_interface_invalid", `The ${what} "${name.slice(0, 40)}" at line ${line} is not a name a part's ${what} may have: it starts with a lower-case letter, holds only letters and digits, at most 32, and is never "item", the name a loop's row takes.`, line));
       return false;
     }
     if (seen.has(name)) {
