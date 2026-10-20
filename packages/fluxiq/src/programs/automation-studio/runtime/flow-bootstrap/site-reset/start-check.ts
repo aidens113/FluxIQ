@@ -117,7 +117,7 @@ export class AutomationStudioSiteResetStartCheck {
       const items = stringsOf(read.items);
       const subjects = stringsOf(read.subjects);
       for (const item of items ?? []) this.seen.add(item);
-      return this.steady({ state: structuredClone(read.state), differs: [...read.differs], ...(typeof read.location === "string" && read.location ? { location: read.location } : {}), ...(lines ? { lines } : {}), ...(items ? { items: [...new Set(items)] } : {}), ...(subjects ? { subjects: [...new Set(subjects)] } : {}), ...(typeof read.scope === "string" ? { scope: read.scope } : {}), ...(typeof read.resource === "string" && /^[A-Za-z0-9:_-]{1,128}$/u.test(read.resource) ? { resource: read.resource } : {}), ...(collectionsOf(read.collections) ? { collections: collectionsOf(read.collections)! } : {}) });
+      return this.steady({ state: structuredClone(read.state), differs: [...read.differs], ...(typeof read.location === "string" && read.location ? { location: read.location } : {}), ...(lines ? { lines } : {}), ...(items ? { items: [...new Set(items)] } : {}), ...(subjects ? { subjects: [...new Set(subjects)] } : {}), ...(typeof read.scope === "string" ? { scope: read.scope } : {}), ...(typeof read.resource === "string" && /^[A-Za-z0-9:_-]{1,128}$/u.test(read.resource) ? { resource: read.resource } : {}), ...(collectionsOf(read.collections) ? { collections: collectionsOf(read.collections)! } : {}), ...(controlsOf(read.controls) ? { controls: controlsOf(read.controls)! } : {}) });
     } catch (error) {
       if (signal?.aborted) throw error;
       this.lastFailure = error;
@@ -164,6 +164,30 @@ export class AutomationStudioSiteResetStartCheck {
       if (signal?.aborted) throw error;
       this.lastFailure = error;
       return { moved };
+    }
+  }
+
+  /**
+   * Takes the target to `location` and reads it there, settled (L1): Core
+   * looks at an open act's watched place itself before asking the model. The
+   * caller hands the read to the ledgers; an unread answer says why not.
+   */
+  async lookAt(location: string, signal?: AbortSignal): Promise<AutomationStudioSiteResetReadAnswer> {
+    const tool = this.input.tools.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID);
+    const to = this.input.binding?.runsNodes?.arrival;
+    if (!this.input.binding?.startState) return { unread: "no_reader" };
+    if (!tool || !to || !to.parameter || !location) return { unread: "no_answer" };
+    this.places += 1;
+    const n = this.places;
+    try {
+      // The arrival's own node, as `compareAt` goes to an act's page: nothing lasting.
+      const ran = await this.input.executeTool({ callId: `site-reset.look.${n}.arrival`, toolId: tool.toolId, value: { node: to.node, parameters: { [to.parameter]: location }, consequences: [] }, ...(signal ? { signal } : {}) });
+      if (!landed(ran)) return { unread: "no_answer" };
+      return await this.settled(undefined, signal);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      this.lastFailure = error;
+      return { unread: "failed" };
     }
   }
 
@@ -278,6 +302,25 @@ function stateAnswer(value: unknown): value is { state: JsonObject; differs: str
 
 function isObject(value: unknown): value is Record<string, unknown> & JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The domain's control places and state counts, when every token and count is well formed (L1); otherwise none. */
+function controlsOf(value: unknown): Record<string, Record<string, number>> | undefined {
+  if (!isObject(value)) return undefined;
+  const token = (entry: string): boolean => /^[A-Za-z0-9:_-]{1,128}$/u.test(entry);
+  const places = Object.entries(value);
+  if (places.length > 2_000) return undefined;
+  const controls: Record<string, Record<string, number>> = {};
+  for (const [place, states] of places) {
+    if (!token(place) || !isObject(states)) return undefined;
+    const counts: Record<string, number> = {};
+    for (const [state, count] of Object.entries(states)) {
+      if (!token(state) || typeof count !== "number" || !Number.isSafeInteger(count) || count < 1) return undefined;
+      counts[state] = count;
+    }
+    controls[place] = counts;
+  }
+  return controls;
 }
 
 /** Only a fully shaped opaque inventory can witness a collection's absence. */

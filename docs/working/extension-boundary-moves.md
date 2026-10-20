@@ -32,7 +32,14 @@ lane H keeps `pnpm task` flags, ids, branch names and JSON output unchanged.
 **Merge order:** each lane finishes downstream first, then here under Core's own gates. Lane H's tooling change lands
 last. The reset redesign (t724) touches neither lane's files.
 
-**Next:** integrate each lane as its units land; record the Core-side checks in the ledger below.
+**Merged (2026-10-19):** lane G (t726: the client half of the gateway protocol in `client-gateway-websocket`; the
+connection queues until `session_ready`) and lane H (t727: build-cache engine, task rules and the web-build seam
+exported for downstream import; a `restricted-references` structure rule kind). Lane S (t728) is committed on its
+branch, merged with `dev`, and finishing follow-ups before it merges. A later downstream fix (t735) restores four
+small git and path helpers as local copies so `sync-core` can update a Core that predates the imported tooling; a
+drift test fails the downstream build if they ever differ from Core's.
+
+**Next:** merge lane S; record the Core-side checks in the ledger below.
 
 **Blocked:** nothing needs the user.
 

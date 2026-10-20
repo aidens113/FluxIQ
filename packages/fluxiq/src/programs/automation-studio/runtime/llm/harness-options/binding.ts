@@ -76,7 +76,7 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
     start?: JsonObject;
     permission: AutomationStudioActionPermissionCheck;
     signal?: AbortSignal;
-  }): Promise<{ state: JsonObject; differs: string[]; location?: string; lines?: { gone: string[]; added: string[] }; items?: string[]; subjects?: string[]; scope?: string; resource?: string; collections?: Array<{ scope: string; group: string; subjects: string[]; states: Record<string, string> }> } | undefined>;
+  }): Promise<{ state: JsonObject; differs: string[]; location?: string; lines?: { gone: string[]; added: string[] }; items?: string[]; subjects?: string[]; scope?: string; resource?: string; collections?: Array<{ scope: string; group: string; subjects: string[]; states: Record<string, string> }>; controls?: Record<string, Record<string, number>> } | undefined>;
   observeResult?(input: {
     projectId: string;
     flowId: string;

@@ -6,6 +6,7 @@ export * from "./submission-refusal.ts";
 export * from "./unchanged-submission.ts";
 export * from "./digest.ts";
 export * from "./started-with.ts";
+export * from "./trial-acts.ts";
 export * from "./trial-gate.ts";
 export * from "./trial-stop.ts";
 export * from "./stall-retest.ts";

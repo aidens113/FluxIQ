@@ -140,6 +140,20 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // deleting and sending are gated -- but it is told beside its result that it
 // was outside the reset, as a builder is told of a press outside its brief.
 //
+// **Core settles what it can before it asks (L1 reset settlement).** Every
+// reset check a brief makes -- a builder's before its trial, a reset's
+// `remainingActs` -- can look at a place itself (`lookAt`): the start check
+// reads it there, settled, and the read goes through the brief's routing
+// (`./reset-calls.ts`) to every ledger, as a read around a call does. A reset
+// brief runs `remainingActs` once before its loop starts, so an act that fresh
+// reads settle is gone from its task before the model's first decision. Each
+// act still open is listed with its own `settle`, the sentence its ledger
+// gives for what to read or undo, and an act a trial's step made says so
+// rather than "page not read". `cannotUndo` reports to the judge an act the
+// site truly cannot undo; it never settles a reversible act whose watched
+// state still differs, which stays listed with what settles it, and a reset
+// that cannot settle it completes unresolved, naming it, with no further trial.
+//
 // **The brief's permitted acts narrow only what a person is asked about**
 // (t580). `permittedActs` filters the build's permitted consequences, so a
 // brief whose parts ask for no lasting act puts every press that declares
@@ -252,7 +266,7 @@ export function automationStudioProjectBuildBriefPorts(input: {
       const reader = new AutomationStudioSiteResetStartCheck({ binding, projectId, flowId, tools: built.loop.tools, executeTool: (call) => built.loop.executeTool(call), liveCheck: { settleMs: AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS } });
       // Whether the start this builder's reader captures at its opening is the build's: nothing of the build on the site by then (header).
       let startIsBuilds = false;
-      const buildReset = phaseStart.reset(request.ledger, (signal) => ({ compare: startIsBuilds ? () => reader.compare(signal) : async () => ({ moved: false }), compareAt: (place) => reader.compareAt(place, signal) }));
+      const buildReset = phaseStart.reset(request.ledger, (signal) => ({ compare: startIsBuilds ? () => reader.compare(signal) : async () => ({ moved: false }), compareAt: (place) => reader.compareAt(place, signal), lookAt: looking(reader, calls, signal) }));
       const reset: AutomationStudioSiteResetTrialReset = {
         beforeTrial: (signal, cannotUndo, options) => buildReset.beforeTrial(signal, cannotUndo, options),
         trialRan: (acts, trialRunId) => {
@@ -293,7 +307,10 @@ export function automationStudioProjectBuildBriefPorts(input: {
       const tools = built.loop.tools.map((tool) => withoutWrite(automationStudioSiteResetUndoesTool(tool, { createBaselines: true })));
       // Its decisions are sent the very schema its loop builds their decision schema from, or the provider refuses them (F3).
       const loop = observeAutomationStudioEvidenceLoop({ ...told({ ...placed, tools }, { start: started.told, entry: undefined, permittedActs: request.brief.permittedActs, arrived: false, role: "reset" }), decide: built.decide(AUTOMATION_STUDIO_PROJECT_RESET_COMPLETION) });
-      return { loop, remainingActs: (cannotUndo) => remainingActs(project.ledger, check, request.signal, cannotUndo), ended: built.ended };
+      const remaining = (cannotUndo?: readonly string[]) => remainingActs(project.ledger, { check, calls }, request.signal, cannotUndo);
+      // Core settles what it can itself first, so the task lists only the acts still open (header, L1).
+      await remaining();
+      return { loop, remainingActs: remaining, ended: built.ended };
     }
   };
 }
@@ -328,18 +345,24 @@ function placedAt<L extends PlacedLedger>(ledger: L, pages: Map<string, string>)
 const RESET_TASK = [
   "This brief is a reset, not a build: write no Flow and no subflow, and carry out no part of the person's task.",
   "Your only task is to undo the lasting acts this build made, listed below, each through the site's own controls on the item it acted on, naming the act under `undoes` on the call that undoes it.",
-  "Each act says how it was done and, where it was read, the page it was made on: go there to find it.",
+  "Each act says how it was done; where it was read, the page it was made on (go there to find it), or else the step of a trial run that made it; and, while it is open, what settles it.",
   "Before creating an effect that must later be removed from another page or list, inspect that destination's complete item inventory first so the reset has evidence of what already exists. Remove only a subject proved absent there before this build's act. A matching name alone never proves ownership of an existing item or its quantity; an unproved inverse stays unresolved.",
   "Leave everything that was on the site before the build began, and do nothing else on the site.",
   "Complete with a one-sentence summary once none of the listed acts is left.",
-  "If the site offers no control on an act's own item that reverses it, do not keep trying and never act on another item instead: complete with an honest unresolved summary and name that act under `cannotUndo`; an ordinary trial still requires proved restoration of reversible effects."
+  "If the site offers no control on an act's own item that reverses it, do not keep trying and never act on another item instead: name that act under `cannotUndo`, which reports it to the judge as an act the site cannot undo.",
+  "`cannotUndo` never settles a reversible act whose watched state still differs: such an act stays listed with what settles it, and if the site truly cannot reverse it, complete with an honest unresolved summary naming it, and the build ends without a further trial."
 ].join(" ");
 
-/** A reset brief's task as one Core instruction, listing every act of the build still in place now (header). */
+/** The step of a trial run that made an act, read off its ref (`<run>#step-N`). */
+const TRIAL_STEP = /#step-([1-9][0-9]*)$/u;
+
+/** A reset brief's task as one Core instruction, listing every act of the build still in place now, each with what settles it (header). */
 function resetTask(flow: { projectId: string; flowId: string }, ledger: AutomationStudioSiteResetProjectLedger, pages: ReadonlyMap<string, string>): AutomationStudioFlowInstruction {
-  const acts = ledger.snapshot().acts.filter((act) => act.inPlace).map((act) => {
+  const acts = openActs(ledger).map((act) => {
     const page = pages.get(act.act);
-    return `- ${act.act}: ${act.did}${act.call ? ` (by the build's call ${JSON.stringify(act.call)})` : ""}${page ? `, made on the page ${page}` : ", page not read"}`;
+    const step = act.call ? undefined : TRIAL_STEP.exec(act.ref)?.[1];
+    const where = page ? `, made on the page ${page}` : step ? ` (made by step ${step} of a trial run)` : ", page not read";
+    return `- ${act.act}: ${act.did}${act.call ? ` (by the build's call ${JSON.stringify(act.call)})` : ""}${where}${act.settle ? `. What settles it: ${act.settle}` : ""}`;
   });
   const now = Date.now();
   return {
@@ -433,13 +456,43 @@ function isObject(value: unknown): value is JsonObject {
 
 /**
  * The acts still in place once every ledger holding one has kept the acts the
- * reset named under `cannotUndo` (each only once it was asked for) and looked
- * again on each other act's own page.
+ * reset named under `cannotUndo` (each only once it was asked for; never a
+ * strict act, which only fresh reads settle), looked itself at each place an
+ * open act's witness is stale, and looked again on each other act's own page.
+ * Each comes back as its own ledger names it, with what settles it (header, L1).
  */
-async function remainingActs(ledger: AutomationStudioSiteResetProjectLedger, check: AutomationStudioSiteResetStartCheck, signal: AbortSignal, cannotUndo?: readonly string[]): Promise<AutomationStudioSiteResetNamedAct[]> {
+async function remainingActs(ledger: AutomationStudioSiteResetProjectLedger, reads: { check: AutomationStudioSiteResetStartCheck; calls: Observing }, signal: AbortSignal, cannotUndo?: readonly string[]): Promise<AutomationStudioSiteResetNamedAct[]> {
+  const { check } = reads;
   const owners = [...new Set(ledger.snapshot().acts.filter((act) => act.inPlace).map((act) => act.owner))];
-  for (const owner of owners) await ledger.forBrief(owner).beforeTrial({ compare: () => check.compare(signal), compareAt: (place) => check.compareAt(place, signal) }, cannotUndo);
-  return ledger.snapshot().acts.filter((act) => act.inPlace).map((act) => ({ act: act.act, did: act.did }));
+  // Each place once per ask: its read reaches every ledger, so a later ledger finds it fresh.
+  const looked = new Set<string>();
+  const look = looking(check, reads.calls, signal);
+  const lookAt = async (location: string) => {
+    if (looked.has(location)) return;
+    looked.add(location);
+    await look(location);
+  };
+  for (const owner of owners) await ledger.forBrief(owner).beforeTrial({ compare: () => check.compare(signal), compareAt: (place) => check.compareAt(place, signal), lookAt }, cannotUndo);
+  return openActs(ledger).map(({ ref: _ref, ...act }) => act);
+}
+
+/** A routing that hands a read to every ledger (`./reset-calls.ts`). */
+type Observing = Pick<ReturnType<typeof automationStudioProjectBuildResetCalls>, "observed">;
+
+/** Core's own look at `location` (header, L1): read there, settled, and the read handed to every ledger through `calls`; an unread answer changes nothing. */
+function looking(reader: AutomationStudioSiteResetStartCheck, calls: Observing, signal: AbortSignal | undefined): (location: string) => Promise<void> {
+  return async (location) => {
+    const read = await reader.lookAt(location, signal);
+    if (!("unread" in read)) calls.observed(read);
+  };
+}
+
+/** Every act of the build still to undo, in the order recorded, as its own ledger names it (with `settle` while open), and its ref. */
+function openActs(ledger: AutomationStudioSiteResetProjectLedger): Array<AutomationStudioSiteResetNamedAct & { ref: string }> {
+  const acts = ledger.snapshot().acts.filter((act) => act.inPlace);
+  const owners = [...new Set(acts.map((act) => act.owner))];
+  const named = new Map(owners.flatMap((owner) => ledger.forBrief(owner).inPlace()).map((act) => [act.act, act]));
+  return acts.map((act) => ({ ...(named.get(act.act) ?? { act: act.act, did: act.did, ...(act.call !== undefined ? { call: act.call } : {}) }), ref: act.ref }));
 }
 
 /** The brief's own ending: its gate's plan refusal or its person-needed stop, and why, in plain words. */

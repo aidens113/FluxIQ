@@ -55,8 +55,10 @@ export async function wholeFixture(mode: Mode, run: (fixture: WholeFixture) => P
   finally { await fixture.pool.closeAll(); await removeRoot(fixture.root); }
 }
 
-/** One created Flow at rest: every connection closed, so the directory alone holds the state and can be copied. */
-export type WholeFlowTemplate = { mode: Mode; root: string; project: WholeFixture["project"]; flow: CreatedFlow };
+/** A created project at rest: every connection closed, so the directory alone holds the state and can be copied. */
+export type WholeProjectTemplate = { mode: Mode; root: string; project: WholeFixture["project"] };
+/** One created Flow at rest, in its project. */
+export type WholeFlowTemplate = WholeProjectTemplate & { flow: CreatedFlow };
 async function sidecars(dir: string): Promise<string[]> {
   const found: string[] = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -66,40 +68,76 @@ async function sidecars(dir: string): Promise<string[]> {
   }
   return found;
 }
-/**
- * Builds the project and its Flow once per test file. Creating them costs
- * about 850 ms of a 1 s corruption test alone, and about 1,000 sequential
- * SQLite round trips, each of which a loaded machine stretches; a test that
- * only probes the next save copies this instead (a few files, no SQL).
- */
-export async function wholeFlowTemplate(mode: Mode): Promise<WholeFlowTemplate> {
-  const fixture = await setup(mode);
+/** A fresh fixture, or a private copy of `from` with fresh owners over it. */
+async function start(mode: Mode, from?: WholeProjectTemplate): Promise<WholeFixture> {
+  if (!from) return setup(mode);
+  const root = await mkdtemp(path.join(os.tmpdir(), PREFIX));
   try {
-    const flow = await fixture.creation.createFlow({ projectId: fixture.project.id, name: "Original" });
+    await cp(from.root, root, { recursive: true });
+    return { ...await wire(root, from.mode), project: structuredClone(from.project) };
+  } catch (error) {
+    await removeRoot(root);
+    throw error;
+  }
+}
+/** Builds a fixture (from `from` when given), lets `extend` add to it, and leaves it at rest as a template. */
+async function template<T extends object>(mode: Mode, extend: (fixture: WholeFixture) => Promise<T>, from?: WholeProjectTemplate): Promise<WholeProjectTemplate & T> {
+  const fixture = await start(mode, from);
+  try {
+    const extra = await extend(fixture);
     await fixture.pool.closeAll();
     // An open WAL would make the copy a torn snapshot; the last close checkpoints and removes it.
     const open = await sidecars(fixture.root);
     if (open.length) throw new Error(`Template still has open SQLite sidecars: ${open.join(", ")}`);
-    return { mode, root: fixture.root, project: structuredClone(fixture.project), flow: structuredClone(flow) };
+    return { mode, root: fixture.root, project: structuredClone(fixture.project), ...structuredClone(extra) };
   } catch (error) {
     await fixture.pool.closeAll();
     await removeRoot(fixture.root);
     throw error;
   }
 }
-export async function disposeWholeFlowTemplate(template: WholeFlowTemplate | undefined): Promise<void> {
+/**
+ * Builds the project once per test file. Creating it is a whole canonical
+ * operation, about 900 ms and hundreds of sequential SQLite round trips alone,
+ * which a loaded package run stretched past the 15 s test limit (sweep
+ * 2026-10-19b, t731); a test whose subject is the next operation copies this
+ * instead (a few files, no SQL).
+ */
+export async function wholeProjectTemplate(mode: Mode): Promise<WholeProjectTemplate> {
+  return template(mode, async () => ({}));
+}
+/**
+ * Builds the project and its Flow once per test file. Creating them costs
+ * about 850 ms of a 1 s corruption test alone, and about 1,000 sequential
+ * SQLite round trips, each of which a loaded machine stretches; a test that
+ * only probes the next save copies this instead (a few files, no SQL). Given a
+ * project template, it creates only the Flow, in a copy of that project.
+ */
+export async function wholeFlowTemplate(mode: Mode, project?: WholeProjectTemplate): Promise<WholeFlowTemplate> {
+  return template(mode, async fixture => ({ flow: await fixture.creation.createFlow({ projectId: fixture.project.id, name: "Original" }) }), project);
+}
+export async function disposeWholeFlowTemplate(template: WholeProjectTemplate | undefined): Promise<void> {
   if (template) await removeRoot(template.root);
 }
 /** A private copy of the template with fresh owners over it, as a restarted process would open it. */
-export async function wholeFlowFromTemplate(template: WholeFlowTemplate, run: (fixture: WholeFixture & { flow: CreatedFlow }) => Promise<void>) {
+async function fromTemplate<T extends WholeProjectTemplate>(template: T, run: (fixture: WholeFixture & Omit<T, "mode" | "root">) => Promise<void>) {
   const root = await mkdtemp(path.join(os.tmpdir(), PREFIX));
-  let fixture: (WholeFixture & { flow: CreatedFlow }) | undefined;
+  let fixture: (WholeFixture & Omit<T, "mode" | "root">) | undefined;
   try {
     await cp(template.root, root, { recursive: true });
-    fixture = { ...await wire(root, template.mode), project: structuredClone(template.project), flow: structuredClone(template.flow) };
+    const { mode, root: _templateRoot, ...state } = template;
+    fixture = { ...await wire(root, mode), ...structuredClone(state) } as WholeFixture & Omit<T, "mode" | "root">;
     await run(fixture);
   } finally {
     await fixture?.pool.closeAll();
     await removeRoot(root);
   }
+}
+/** A private copy of a project template, its project created and nothing else. */
+export async function wholeProjectFromTemplate(template: WholeProjectTemplate, run: (fixture: WholeFixture) => Promise<void>) {
+  await fromTemplate(template, run);
+}
+/** A private copy of a Flow template, its project and Flow created. */
+export async function wholeFlowFromTemplate(template: WholeFlowTemplate, run: (fixture: WholeFixture & { flow: CreatedFlow }) => Promise<void>) {
+  await fromTemplate(template, run);
 }

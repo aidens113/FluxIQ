@@ -367,7 +367,9 @@ describe("positive collection-transfer inverses", () => {
     }
   });
 
-  it("requires exact ordered baseline restoration including sibling values, never a fake inverse", async () => {
+  // L1: the lists the act moved between must be restored exactly; a list on the same page that holds nothing it touched
+  // (`p:sibling`) no longer blocks, where F1 required the whole group.
+  it("requires exact ordered restoration of the lists it moved between, never a fake inverse; an unrelated list does not block", async () => {
     for (const defect of ["fake", "order", "quantity", "sibling"] as const) {
       const ledger = move(true);
       inverse(ledger);
@@ -376,7 +378,7 @@ describe("positive collection-transfer inverses", () => {
       if (defect === "quantity") restored[0]!.states["s:document"] = "v:changed-quantity";
       if (defect === "sibling") restored[2]!.states["s:spare"] = "v:changed-sibling";
       observed(ledger, restored);
-      expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+      expect((await ledger.beforeTrial(back)).kind).toBe(defect === "sibling" ? "admit" : "refuse");
     }
   });
 
@@ -394,8 +396,10 @@ describe("positive collection-transfer inverses", () => {
     expect(await ledger.beforeTrial(back)).toEqual({ kind: "admit" });
   });
 
-  it("a declared retry inverse also restores its failed original intent only with fresh exact whole-group evidence", async () => {
-    for (const defect of ["none", "quantity", "order", "sibling", "partial", "resource"] as const) {
+  // L1: fresh exact evidence of every list either act could change; an unrelated list changed or missing (`sibling`,
+  // `partial`) no longer blocks, a missing list the acts touched (`own-missing`) still does.
+  it("a declared retry inverse also restores its failed original intent only with fresh exact evidence of the lists it could change", async () => {
+    for (const defect of ["none", "quantity", "order", "sibling", "partial", "own-missing", "resource"] as const) {
       const ledger = new AutomationStudioSiteResetLedger();
       observed(ledger);
       ledger.explored(acted("first-attempt", ["modify_existing"], {}, origin));
@@ -414,13 +418,15 @@ describe("positive collection-transfer inverses", () => {
       if (defect === "order") restored[0]!.subjects.reverse();
       if (defect === "sibling") restored[2]!.states["s:spare"] = "v:changed";
       if (defect === "partial") restored.splice(2, 1);
+      if (defect === "own-missing") restored.splice(0, 1);
       if (defect === "resource") for (const entry of restored) {
         entry.group = "g:other";
         entry.scope = `other:${entry.scope}`;
       }
       observed(ledger, restored);
-      expect((await ledger.beforeTrial(back)).kind).toBe(defect === "none" ? "admit" : "refuse");
-      if (defect !== "none") expect(ledger.inPlace().map((act) => act.act)).toContain("act-1");
+      const settles = defect === "none" || defect === "sibling" || defect === "partial";
+      expect((await ledger.beforeTrial(back)).kind).toBe(settles ? "admit" : "refuse");
+      if (!settles) expect(ledger.inPlace().map((act) => act.act)).toContain("act-1");
     }
   });
 
@@ -520,19 +526,21 @@ describe("positive collection-transfer inverses", () => {
     expect(ledger.target("act-2", aim(["modify_existing"], destination))).toMatchObject({ kind: "refused" });
   });
 
+  // L1: `partial` drops the press's own list and refuses; a list it never touched missing (`unrelated-partial`) does not.
   it("settles a truly failed declared press from fresh complete original evidence without a needless inverse", async () => {
-    for (const defect of ["none", "stale", "no-baseline", "partial", "resource"] as const) {
+    for (const defect of ["none", "stale", "no-baseline", "partial", "unrelated-partial", "resource"] as const) {
       const ledger = new AutomationStudioSiteResetLedger();
       if (defect !== "no-baseline") observed(ledger);
       ledger.explored(acted("failed-press", ["modify_existing"], {}, origin));
       const restored = before();
-      if (defect === "partial") restored.splice(1, 1);
+      if (defect === "partial") restored.splice(0, 1);
+      if (defect === "unrelated-partial") restored.splice(1, 1);
       if (defect === "resource") for (const entry of restored) {
         entry.group = "g:other";
         entry.scope = `other:${entry.scope}`;
       }
       if (defect !== "stale") observed(ledger, restored);
-      expect((await ledger.beforeTrial(back)).kind).toBe(defect === "none" ? "admit" : "refuse");
+      expect((await ledger.beforeTrial(back)).kind).toBe(defect === "none" || defect === "unrelated-partial" ? "admit" : "refuse");
     }
   });
 
@@ -659,17 +667,35 @@ describe("a press with no list of its own whose named destination stays exactly 
     expect(String(unproved.kind === "refuse" ? unproved.evidence.instruction : "")).toContain("resetDestination");
   });
 
-  it.each(["invented-ref", "no-read-after", "subject-now-present", "partial", "malformed", "own-list-unread", "subject-held-before"] as const)("still refuses a named destination with %s", async (defect) => {
-    const before = defect === "subject-held-before" ? [list("p:mine", ["s:document", "s:held-b"]), list("p:mine-archived", ["s:held-c"])] : mine();
-    const ledger = pressed(defect === "invented-ref" ? "invented" : "on-act", defect === "own-list-unread" ? { ...PANE, scope: "p:pane" } : PANE, before);
-    const after = defect === "subject-held-before" ? before : mine();
+  // L1: `partial` drops the named list itself; `held-subject-changed` changes the row value of the subject the named list
+  // already held before the presses.
+  it.each(["invented-ref", "no-read-after", "subject-now-present", "partial", "malformed", "held-subject-changed"] as const)("still refuses a named destination with %s", async (defect) => {
+    const held = () => [list("p:mine", ["s:document", "s:held-b"]), list("p:mine-archived", ["s:held-c"])];
+    const before = defect === "held-subject-changed" ? held() : mine();
+    const ledger = pressed(defect === "invented-ref" ? "invented" : "on-act", PANE, before);
+    const after = defect === "held-subject-changed" ? held() : mine();
+    if (defect === "held-subject-changed") after[0]!.states["s:document"] = "v:changed";
     if (defect === "subject-now-present") after[0] = list("p:mine", ["s:held-a", "s:held-b", "s:document"]);
-    if (defect === "partial") after.splice(1, 1);
+    if (defect === "partial") after.splice(0, 1);
     if (defect === "malformed") after[1] = list("p:mine-archived", ["s:held-c", "s:held-c"]);
     if (defect !== "no-read-after") read(ledger, after);
     expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
     expect(await ledger.beforeTrial(back, ["act-1", "act-2"])).toMatchObject({ kind: "refuse" });
     expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1", "act-2"]);
+  });
+
+  // L1, by design: the named list alone is the witness of a press whose own list was never read before it
+  // (`own-list-unread`, F1 refused it); a subject the named list already held settles by its unchanged row value
+  // (`subject-held-before`, F1 refused it); and a list never named for it missing from the read (`unrelated-partial`) does
+  // not block.
+  it.each(["own-list-unread", "subject-held-before", "unrelated-partial"] as const)("settles on its named destination alone with %s", async (defect) => {
+    const before = defect === "subject-held-before" ? [list("p:mine", ["s:document", "s:held-b"]), list("p:mine-archived", ["s:held-c"])] : mine();
+    const ledger = pressed("on-act", defect === "own-list-unread" ? { ...PANE, scope: "p:pane" } : PANE, before);
+    const after = structuredClone(before);
+    if (defect === "unrelated-partial") after.splice(1, 1);
+    read(ledger, after);
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1" }, { act: "act-2" }] } });
+    expect(ledger.inPlace()).toEqual([]);
   });
 
   it("answers a claim on a left act in words that owe no undo", async () => {

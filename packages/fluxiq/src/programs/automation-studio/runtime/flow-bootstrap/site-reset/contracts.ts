@@ -35,8 +35,15 @@ export type AutomationStudioSiteResetUndo = { act: string; allowed: readonly Aut
  * appears in the basket, a line moved to a saved list -- has no item an undo
  * there can match, and is tied to that undo by these instead (`./ledger.ts`,
  * `target`). Absent where the domain found none.
+ *
+ * And the control itself (L1 reset settlement): `place`, the opaque slot it
+ * occupies on its page, which every read of that page reports its controls by
+ * (`AutomationStudioSiteResetRead.controls`), and `state`, a digest of its own
+ * state there (name, pressed, checked, selected) just before the act. A press
+ * that turned that state into another one at the same place is a toggle the
+ * ledger can see come back (`./settlement/`). Absent where the domain gave none.
  */
-export type AutomationStudioSiteResetSpot = { item?: string; dialog?: string; subject?: string; page?: string; scope?: string; resource?: string };
+export type AutomationStudioSiteResetSpot = { item?: string; dialog?: string; subject?: string; page?: string; scope?: string; resource?: string; place?: string; state?: string };
 
 /**
  * What an undo call may do to the control the domain is about to act on
@@ -116,8 +123,10 @@ export type AutomationStudioSiteResetCalls = {
  * in the domain's words, when the reset went back and looked (t471).
  * `possible`: it declared no lasting class but had an effect, so it is
  * possibly lasting and never asked for (`./ledger.ts`, t593).
+ * `settle`: for an act still open, what to observe or undo so that it counts as
+ * settled, in generic words naming only this run's refs and locations (L1).
  */
-export type AutomationStudioSiteResetNamedAct = { act: string; did: string; call?: string; stillThere?: string[]; possible?: true };
+export type AutomationStudioSiteResetNamedAct = { act: string; did: string; call?: string; stillThere?: string[]; possible?: true; settle?: string };
 
 /**
  * One act a start hook took back (`absorbedByStartReset`), with what the act
@@ -145,6 +154,12 @@ export type AutomationStudioSiteResetRead = {
   scope?: string;
   /** Trusted opaque resource identity shared across locations; never a page-supplied id. */
   resource?: string;
+  /**
+   * The page's stateful controls (L1): for each control place on this page,
+   * how many visible controls there show each state token. A place absent here
+   * has no such control on this page now. Opaque tokens and counts only.
+   */
+  controls?: Record<string, Record<string, number>>;
 };
 
 /** A read, or why there is none: the domain has no `startState`, it answered nothing usable, or reading failed (kept on the start check as `failure`). */
@@ -179,6 +194,12 @@ export type AutomationStudioSiteResetChecks = {
   compare(): Promise<AutomationStudioSiteResetComparison>;
   /** Takes the target to `place` and says what differs from its state before the act; `differs` absent when that cannot be said. */
   compareAt?(place: AutomationStudioSiteResetPlace): Promise<AutomationStudioSiteResetComparison>;
+  /**
+   * Takes the target to `location` and reads it there; the read reaches every
+   * ledger the way any read around a call does (L1: Core looks at an open act's
+   * watched places itself before asking the model). Absent: Core never looks.
+   */
+  lookAt?(location: string): Promise<void>;
 };
 
 /**
@@ -244,6 +265,11 @@ export type AutomationStudioSiteResetTrialActPlace = {
   created?: string[];
   /** Domain-neutral opaque complete inventories captured immediately around this effect. */
   collections?: { before: NonNullable<AutomationStudioSiteResetRead["collections"]>; after: NonNullable<AutomationStudioSiteResetRead["collections"]> };
+  /**
+   * The step control's place (`spot.place`) as the page showed it just before and just after the step, and that page's scope (L1);
+   * with the page's `location`, as a read carries it beside its `scope`, so a ledger that has read no page of it knows where to look.
+   */
+  controls?: { page: string; location?: string; before: Record<string, number>; after: Record<string, number> };
 };
 
 /**
