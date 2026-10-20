@@ -292,9 +292,9 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
 /** The whole test a single-subflow plan's brief tests through (header, t679); undefined for any other plan. */
 function singleWholeTrial(context: AutomationStudioProjectSupervisorContext) {
   const { ports, state, controller, gate } = context;
-  // The supervisor's own whole test: its `test` reads only this context (header).
-  const whole = new AutomationStudioProjectSupervisorWholeTrial({ ports, state });
-  return automationStudioProjectSingleSubflowTrial({ structure: state.structure, ports, controller, gate, kept: state.keptFromEarlierPlans(), test: (value, signal) => whole.test(context, value, signal) });
+  // The supervisor's own whole test, the run's one where it has it, so this test is timed and remembered with every other (G2, `./context.ts`).
+  const test = context.wholeTest ?? ((value: JsonObject, signal: AbortSignal | undefined) => new AutomationStudioProjectSupervisorWholeTrial({ ports, state }).test(context, value, signal));
+  return automationStudioProjectSingleSubflowTrial({ structure: state.structure, ports, controller, gate, kept: state.keptFromEarlierPlans(), test: (value, signal) => test(value, signal) });
 }
 
 /**

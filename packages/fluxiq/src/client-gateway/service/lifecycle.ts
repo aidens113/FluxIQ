@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { ClientGatewayClientHello, ClientGatewaySession, ClientGatewaySocket } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayAuditLog } from "./audit-log.ts";
 import type { ClientGatewayConfig } from "./config.ts";
@@ -55,6 +56,35 @@ export class ClientGatewayLifecycle {
     this.audit.record("session.connected", "Client connected.", { sessionId: session.sessionId, clientId: session.clientId });
     if (input.hello) void this.handleHello(session.sessionId, input.hello);
     return this.sessions.toPublic(session);
+  }
+
+  /**
+   * A session attached under a channel scope (`./channel-scope/`): ready at
+   * once, because no person pairs a recorded or scripted client, and never
+   * written to the trusted-client store, because nothing about it is trusted
+   * beyond the scope. Its client id is always minted here, whatever the hello
+   * claims, so it can never share a live client's id: a live client's
+   * reconnect, a reconcile question or a durable answer addressed by client id
+   * can never reach it, nor it them. Its token is ignored. No `session.ready`
+   * is emitted, so no listener outside the scope learns it exists.
+   */
+  attachScoped(input: { scopeId: string; socket: ClientGatewaySocket; hello: ClientGatewayClientHello }): ClientGatewaySession {
+    if (typeof input.scopeId !== "string" || !input.scopeId) throw new Error("client_gateway.channel_scope_required");
+    const hello: ClientGatewayClientHello = { clientId: `client.scoped.${randomUUID()}`, clientType: input.hello.clientType };
+    if (input.hello.name !== undefined) hello.name = input.hello.name;
+    if (input.hello.version !== undefined) hello.version = input.hello.version;
+    if (input.hello.capabilities !== undefined) hello.capabilities = input.hello.capabilities;
+    if (input.hello.metadata !== undefined) hello.metadata = input.hello.metadata;
+    const session = this.sessions.create({ socket: input.socket, hello });
+    session.status = "ready";
+    session.channelScope = input.scopeId;
+    this.audit.record("session.scoped_attached", "A session was attached under a channel scope; it is reachable only from inside that scope.", { sessionId: session.sessionId, clientId: session.clientId, channelScope: input.scopeId });
+    return this.sessions.toPublic(session);
+  }
+
+  /** Whether `sessionId` was attached under a channel scope; false for a live or unknown session. */
+  isScoped(sessionId: string): boolean {
+    return this.sessions.get(sessionId)?.channelScope !== undefined;
   }
 
   disconnect(sessionId: string, reason = "disconnected"): ClientGatewaySession | null {

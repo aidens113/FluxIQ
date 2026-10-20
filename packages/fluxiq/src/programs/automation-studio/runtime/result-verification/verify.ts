@@ -78,6 +78,13 @@
 // answer takes its place under the same rule (`agreement.ts`). The call's
 // intervention says so (`verificationReask`).
 //
+// **A split's no is asked once to name its defect (t725).** Social r4
+// `run-mvfq957o-40103539` (0084): a no beside a yes named no row wrongly kept
+// or left out, and the builder broke a right answer on it. After every other
+// re-ask, where still none was asked, that no is asked once more
+// (`./agreement/reask-split-no.ts`) with this verification's own `ask`, so its
+// call is charged to the same purse and marked `verificationReask`.
+//
 // **Core's own counts are asked first and cost nothing.** A run whose every row
 // was refused, or whose rows lack a value their own schema requires, is settled
 // before a provider is even resolved.
@@ -120,7 +127,7 @@ import {
   type AutomationStudioLlmTokenLimits
 } from "../llm/index.ts";
 import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "./contracts/index.ts";
-import { automationStudioResultVerificationAgreement, automationStudioResultVerificationAskAgain, automationStudioResultVerificationConfirmingAsk, automationStudioResultVerificationNoRecord, automationStudioResultVerificationReaskContradicted } from "./agreement/index.ts";
+import { automationStudioResultVerificationAgreement, automationStudioResultVerificationAskAgain, automationStudioResultVerificationConfirmingAsk, automationStudioResultVerificationNoRecord, automationStudioResultVerificationReaskContradicted, automationStudioResultVerificationReaskSplitNo } from "./agreement/index.ts";
 import { automationStudioResultCheckActivity } from "./check-activity.ts";
 import { automationStudioResultCoreObservation } from "./core-observation.ts";
 import { automationStudioResultSummaryWithPagingWords, automationStudioResultSummaryWithUnreadColumns } from "./read-account/index.ts";
@@ -248,10 +255,12 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
   const reasked = await automationStudioResultVerificationReaskContradicted({ ...input, settled, ask });
   // Where nothing was asked again, a no blaming only steps that chose the request's own words is asked once more (t666, `./unsure-doubts/narrowing-no-reask.ts`);
   // Core's record settles its other reasons as it does every re-ask's (t686), so a reason the record refutes leaves it askable (t690).
-  const outcome = await automationStudioResultReaskNarrowingNo({
-    settled: reasked, first, second, reads: request.summary.reads, requestText, says: wording?.says, ask, record: automationStudioResultVerificationNoRecord(input),
-    agree: (one, two) => automationStudioResultVerificationAgreement({ ...input, first: one, second: two })
+  const agree = (one: typeof first, two: typeof first) => automationStudioResultVerificationAgreement({ ...input, first: one, second: two });
+  const narrowed = await automationStudioResultReaskNarrowingNo({
+    settled: reasked, first, second, reads: request.summary.reads, requestText, says: wording?.says, ask, record: automationStudioResultVerificationNoRecord(input), agree
   });
+  // Last, where still nothing was asked again, a split's no is asked once to name its defect, quoting the request (t725, `./agreement/reask-split-no.ts`).
+  const outcome = await automationStudioResultVerificationReaskSplitNo({ settled: narrowed, first, second, ask, agree });
   const confirmed = automationStudioResultFirstAskConfirmed({ confirmAnswer, outcome, first, second, verdictChanged: trail.verdictChanged, reasks: trail.reasks, secondAsked: converse ? "converse" : "same" });
   return said({ outcome: { ...outcome, performed: true, ...(confirmed ? { firstAskConfirmed: true as const } : {}) }, interventions });
 }

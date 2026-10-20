@@ -174,7 +174,8 @@ describe("one candidate trial", () => {
     ["a yes confirmed by a second yes", ["yes", "yes"], "yes", 2],
     ["a yes then unknown", ["yes", "unknown"], "unsure", 2],
     ["a yes then a silent reply", ["yes", "silent"], "unsure", 2],
-    ["a yes then no", ["yes", "no"], "unsure", 2],
+    // The split's no is asked once more to name its defect (t725), and says no again.
+    ["a yes then no", ["yes", "no", "no"], "unsure", 3],
     ["two noes", ["no", "no"], "no", 2]
   ] as const)("the real build-test judge: %s gives %s", async (_name, replies, expected, calls) => {
     const fixture = trialFixture(); pressing(fixture);

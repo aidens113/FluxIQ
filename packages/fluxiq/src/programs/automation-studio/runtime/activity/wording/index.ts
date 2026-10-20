@@ -18,4 +18,5 @@ export { automationStudioActivityRefusalTally } from "./refusal-tally.ts";
 export { automationStudioActivityRefusedStepIssues } from "./refused-step-issues.ts";
 export { automationStudioActivityRunEnding, automationStudioActivityRunObjection } from "./run-ending.ts";
 export { automationStudioActivityRunUncertainEnding } from "./run-uncertain.ts";
+export { automationStudioActivityTimeLimitTold, type AutomationStudioActivityTimeLimitTried } from "./time-limit-told.ts";
 export { automationStudioActivityToolCall } from "./tool-call.ts";

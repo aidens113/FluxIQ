@@ -51,7 +51,9 @@ export {
   automationStudioActivityPersonWords,
   automationStudioActivityReasonText,
   automationStudioActivityRecoveryChoice,
+  automationStudioActivityTimeLimitTold,
   automationStudioActivityToolCall,
   type AutomationStudioActivityLeftAct,
+  type AutomationStudioActivityTimeLimitTried,
   type AutomationStudioRecoveryNext
 } from "./wording/index.ts";

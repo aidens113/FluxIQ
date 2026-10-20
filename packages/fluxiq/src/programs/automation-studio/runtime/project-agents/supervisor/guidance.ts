@@ -271,6 +271,9 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     assembleRefused: "The Flow could not be assembled: every listed issue names the subflow and why. Send the briefs it needs, or change the plan, then assemble again.",
     composedRefused: "The assembled Flow was refused, as listed. Change the subflow an issue names with a new brief, or change the plan, then assemble again.",
     resetRequired: "Lasting acts this build made are still on the target, so the whole test would not start where the build started. Dispatch a reset brief (kind reset, no parts, no permitted acts) with project.dispatch, then test again.",
+    /** After the figures of a whole test the build's working time left cannot cover (`./whole-trial.ts`, G2): no test ran. */
+    outOfTime: "Testing again is refused the same way, so do not test again, and do not change the Flow to make it quicker now. End honestly now with ended and your reason: "
+      + "the latest assembled Flow is kept as a draft, and the person is told what its last finished whole test answered. If the latest assembled Flow's whole test answered yes, complete with its complete object instead.",
     resetRepeatedTest: "The last brief was a reset that came back without undoing everything, and the target still holds exactly what it left, as listed: another reset would only do the same, so none was run. "
       + "What a reset tried and could not undo is kept and no longer holds the whole test back: test the latest assembled Flow with core.test_candidate, which runs with it in place and tells its judge. Or end honestly with ended and your reason; Core names what is left.",
     resetRepeatedEnd: "The last brief was a reset that came back without undoing everything, and the target still holds exactly what it left, as listed: another reset would only do the same, so none was run. "

@@ -19,6 +19,11 @@ export async function withAutomationStudioBuildActivity<T>(target: { projectId?:
     emitAutomationStudioActivity({ phase: "building", label: "Building the Flow", detail: { kind: "step", title: "Build started", status: "started", ...(flowId ? { ref: flowId } : {}) } });
     try {
       const built = await fn();
+      // A build that kept only a draft built no Flow, so it never says one is ready (G2): it ends failed, as the chat says it.
+      if (endedAsDraft(built)) {
+        emitAutomationStudioActivity({ phase: "failed", label: DRAFT_TITLE, detail: { kind: "step", title: DRAFT_TITLE, status: "failed", text: DRAFT_TEXT }, final: true });
+        return built;
+      }
       // "Build finished: a Flow is proposed" said nothing to the person, and the
       // Flow ran a second later (t174-w108 D9, `run-musp8nz1-dbd3905a`).
       emitAutomationStudioActivity({ phase: "done", label: "Your Flow is ready", detail: { kind: "step", title: "Build finished", status: "succeeded" }, final: true });
@@ -36,6 +41,21 @@ export async function withAutomationStudioBuildActivity<T>(target: { projectId?:
     }
   });
 }
+
+/**
+ * Whether a build's answer is a draft: a candidate kept unverified, which puts
+ * nothing into the Flow (`../service/flow-bootstrap-commands/contracts.ts`,
+ * `status: "draft"`). Read by shape: this module sits under the build. Social
+ * `run-mvfq957o-40103539` (G2) showed "Your Flow is ready" beside a chat that
+ * said no Flow was built.
+ */
+function endedAsDraft(built: unknown): boolean {
+  return Boolean(built) && typeof built === "object" && (built as { status?: unknown }).status === "draft";
+}
+
+/** What the activity says of a build that kept only a draft (G2). */
+const DRAFT_TITLE = "Build ended: no Flow was built";
+const DRAFT_TEXT = "What it wrote is kept as a draft, and nothing was put into the Flow.";
 
 /** The most of the person's words one build's request carries. */
 export const AUTOMATION_STUDIO_BUILD_REQUEST_MAX_CHARS = 4_000;

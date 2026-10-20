@@ -176,6 +176,51 @@ describe("a single-subflow plan's builder test", () => {
     expect(judged.allowanceRefusals).toEqual([undefined, undefined, undefined]);
   });
 
+  // G2 (social `run-mvfq957o-40103539`): a retest the build's working time could not cover was started and cut off.
+  it("answers a test the build's working time cannot cover as a refusal in a builder's terms, and runs nothing", async () => {
+    let now = 0;
+    // Each whole test takes 400 s on the run's clock; the build's work stops 700 s after it starts.
+    const built = singleBuild({
+      testsPerScript: 2,
+      trial: () => {
+        now += 400_000;
+        return "unsure";
+      }
+    });
+    const clock = { setTimeout: () => ({}), clearTimeout: () => undefined, now: () => now };
+    const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([BUILD_ONE]), end("partial", "The time left could not cover another test.")], built, { timeLimit: { maxMs: 1_000_000, endingMs: 300_000 }, clock });
+    expect(built.answers.map((answer) => ("trial" in answer ? answer.trial.verdict : answer.refused.code))).toEqual(["unsure", "project.trial_out_of_time"]);
+    expect(run.trials).toHaveLength(1);
+    const refused = refusalOf(built.answers[1])!;
+    expect(refused.instruction).toMatch(/^About 5 minutes of this build's working time is left, and the last whole test of this same Flow took about 6\.5 minutes/u);
+    expect(refused.instruction).toContain("end the brief partial");
+    expect(refused.detail).toMatchObject({ refusal: { code: "project.trial_out_of_time", workLeftSeconds: 300, lastTestSeconds: 400, sameFlow: true } });
+    expect(refused.retry).toBe(false);
+  });
+
+  // G2: the social run's builder went back to a Flow it had tested, as a new revision, and the ending said it was never tested.
+  it("hands the build the latest finished test of the same Flow when the latest revision went back to it untested", async () => {
+    let now = 0;
+    const verdicts = ["unsure", "no"] as const;
+    const changed = ["flow: find newest", "step: open the new titles", "  node: web.browser.navigate", "  url: https://library.test/new"];
+    const built = singleBuild({
+      scripts: () => [script("find_newest"), changed, script("find_newest")],
+      trial: (attempt) => {
+        now += 400_000;
+        return verdicts[attempt - 1]!;
+      }
+    });
+    const clock = { setTimeout: () => ({}), clearTimeout: () => undefined, now: () => now };
+    const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([BUILD_ONE]), end("partial", "The time left could not cover another test.")], built, { timeLimit: { maxMs: 1_300_000, endingMs: 300_000 }, clock });
+    expect(built.answers.map((answer) => ("trial" in answer ? answer.trial.verdict : answer.refused.code))).toEqual(["unsure", "no", "project.trial_out_of_time"]);
+    // The latest revision is the first Flow again, never tested itself; its own verdict is none, and the first test of that Flow stands beside it.
+    expect(run.outcome.candidate?.revision).toBe(3);
+    expect(run.outcome.candidate?.digest).toBe(run.trials[0]!.digest);
+    expect(run.outcome.trial).toBeUndefined();
+    expect(run.outcome.sameFlowTrial).toMatchObject({ revision: 1, digest: run.trials[0]!.digest, verdict: "unsure" });
+    expect(run.outcome.trialCut).toBeUndefined();
+  });
+
   // The composed submission's unchanged rule (`flow-bootstrap/candidate/unchanged-submission.ts`) never refuses a retest.
   it("tests the same proposal again on the revision it already made, and a changed proposal on a new one", async () => {
     const changed = ["flow: find newest", "step: open the new titles", "  node: web.browser.navigate", "  url: https://library.test/new"];
