@@ -3,6 +3,7 @@ import { AutomationStudioProjectAdministration } from "./administration.ts";
 import { AutomationStudioProjectContentStore } from "./content-store.ts";
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "./database.ts";
 import type { AutomationStudioEventStreamKind } from "./event-chunk-store.ts";
+import { sweepUnusedGatewayTraceChunks } from "./gateway-trace/index.ts";
 
 export type AutomationStudioArchivedChunk = { chunkId: string; objectId: string; lastSequence: number; archivedAt: number; jobId: string };
 
@@ -53,8 +54,15 @@ export class AutomationStudioProjectRetentionStore {
     return archived;
   }
 
-  sweepUnreferencedObjects(input: { limit?: number } = {}): Promise<{ deleted: string[] }> {
-    return this.content.sweepUnreferencedObjects(input);
+  /**
+   * Frees the content objects nothing references and the gateway trace chunks
+   * no trace uses (each up to `limit`, default 100). `deleted` names the freed
+   * object ids, then the freed chunks as `gateway-trace-chunk:<sha256 hex>`.
+   */
+  async sweepUnreferencedObjects(input: { limit?: number } = {}): Promise<{ deleted: string[] }> {
+    const objects = await this.content.sweepUnreferencedObjects(input);
+    const chunks = await sweepUnusedGatewayTraceChunks(this.lease.database, { limit: input.limit ?? 100 });
+    return { deleted: [...objects.deleted, ...chunks] };
   }
 
   private get jobs(): AutomationStudioBackgroundJobRepository {

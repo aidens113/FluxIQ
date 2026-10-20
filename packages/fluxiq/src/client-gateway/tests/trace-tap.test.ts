@@ -16,6 +16,7 @@ import { ClientGatewayCommandContext, ClientGatewayCommandLedgerController, Clie
 import { clientMessage, ofKind, openTrace, pairClient, traceScope, waitFor } from "./trace-tap-support.ts";
 
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+const SHA256_HEX = /^[0-9a-f]{64}$/u;
 
 describe("the gateway trace tap, unset", () => {
   it("adds nothing: no stamp, no strip of other metadata, artifacts taken by no trace", async () => {
@@ -74,7 +75,7 @@ describe("the gateway trace tap, under a traced episode", () => {
     expect(inbound[0]?.payload).toEqual({ encoding: "text", text: raw });
     const disposition = ofKind(events, "disposition", "client.action_result");
     expect(disposition[0]?.correlation.causationEventId).toBe(inbound[0]?.eventId);
-    expect(disposition[0]?.payload).toEqual({ encoding: "json", value: { disposition: "settled", error: null } });
+    expect(disposition[0]?.payload).toEqual({ encoding: "json", value: { disposition: "settled", error: null, delivered: { result: expect.stringMatching(SHA256_HEX), event: expect.stringMatching(SHA256_HEX) } } });
     await gateway.close();
   });
 
@@ -113,7 +114,7 @@ describe("the gateway trace tap, under a traced episode", () => {
     expect(JSON.stringify(outcome)).not.toContain("\"trace\"");
     const events = await trace.events();
     expect(ofKind(events, "outbound", "server.execute_action")[0]?.correlation).toMatchObject({ commandId: response.commandId, owner });
-    expect(ofKind(events, "disposition", "client.action_result")[0]?.payload).toEqual({ encoding: "json", value: { disposition: "settled", error: null } });
+    expect(ofKind(events, "disposition", "client.action_result")[0]?.payload).toEqual({ encoding: "json", value: { disposition: "settled", error: null, delivered: { result: expect.stringMatching(SHA256_HEX), event: expect.stringMatching(SHA256_HEX) } } });
     await gateway.close();
   });
 
@@ -196,7 +197,7 @@ describe("routing between two traces", () => {
     const afterRefusal = calls;
     await gateway.receive(client.sessionId, clientMessage("client.state_update", { state: { n: 2 } }));
     await gateway.sendPing(client.sessionId);
-    expect(afterRefusal).toBe(2);
+    expect(afterRefusal).toBe(3);
     expect(calls).toBe(afterRefusal);
     await gateway.close();
   });
@@ -226,7 +227,7 @@ describe("routing between two traces", () => {
       [pending.commandId, expect.objectContaining({ outcome: "gateway_closed" })]
     ]);
     expect(ofKind(events, "outbound").map((event) => event.correlation.commandId)).not.toContain(refused.commandId);
-    expect(ofKind(events, "lifecycle").map((event) => event.messageType)).toEqual(["session.disconnected"]);
+    expect(ofKind(events, "lifecycle").map((event) => event.messageType)).toEqual(["session.claimed", "session.disconnected"]);
   });
 
   it("takes a trace artifact into every trace claiming the session, and refuses one whose digest does not match", async () => {

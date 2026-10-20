@@ -77,10 +77,19 @@
 // from `ports.environment`, the live one when absent, and its client work runs
 // inside `environment.within`. An offline trial runs no start hook
 // (`./start.ts`, through the whole candidate's start; Decision 6).
+//
+// **The trial's own run is its traced episode; its start is the build's
+// (traces and offline trials, P2 D9, P3 D1)**, as a whole candidate's
+// (`../candidate-trial/run.ts`): with tracing installed the episode is opened
+// here after the affordability check and the start, around the run, its end
+// and its judgement, so the start hook's answer -- whether the gate's
+// `prepareStart` or this runner called it -- lands in the build's trace. A
+// trial refused before it runs opens no episode.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import { automationStudioLiveRunEnvironment, type AutomationStudioRunEnvironment } from "../../environment/index.ts";
+import { AUTOMATION_STUDIO_GATEWAY_TRACE_CONTEXT, withAutomationStudioGatewayTraceTrial } from "../../gateway-trace/wiring/index.ts";
 import type { AutomationStudioCandidateTrialAct } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialKeptEveryRowRead, AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult, AutomationStudioSubflowTrialRowCheck } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { runAutomationStudioDetachedSubflow, type AutomationStudioCandidateStartReceipt, type AutomationStudioDetachedSubflowIdentity, type AutomationStudioDetachedSubflowProposal } from "../../flow-bootstrap/verification/index.ts";
@@ -131,7 +140,6 @@ export async function runAutomationStudioSubflowTrial(request: AutomationStudioS
 async function trialIn(environment: AutomationStudioRunEnvironment, request: AutomationStudioSubflowTrialRequest, ports: AutomationStudioSubflowTrialPorts, preparedStart?: AutomationStudioCandidateTrialStart, judgeInputTokens?: number): Promise<AutomationStudioSubflowTrialOutcome> {
   const { signal, scope, proposal } = request;
   signal.throwIfAborted();
-  const now = ports.now ?? environment.now;
   const answer = answerFor(request);
   // A start the hook already made is recorded even when nothing then runs: the site was put back all the same.
   const notRun = { start: preparedStart ?? { status: "not_run" as const }, execution: "not_run" as const, entryPrepared: false, judge: { ...NO_SPEND } };
@@ -151,8 +159,18 @@ async function trialIn(environment: AutomationStudioRunEnvironment, request: Aut
 
   const start = preparedStart ?? await automationStudioSubflowTrialStart({ scope, revision: proposal.revision, digest: proposal.digest, signal }, ports);
   if (start.status === "failed") return answer("execution_failed", { code: start.code, start: start.status, partial: true, entryPrepared: false }, { ...notRun, start, code: start.code });
+  // The trial's episode opens only now, around its own run: the start above stays in the build's trace (header, P3).
+  const context = (runId: string) => ({ schema: AUTOMATION_STUDIO_GATEWAY_TRACE_CONTEXT.subflowTrial, value: { kind: "subflow_trial", runId, buildId: scope.buildId, briefId: scope.briefId, subflowKey: scope.subflowKey, revision: proposal.revision, digest: proposal.digest, start: start.status } });
+  return await withAutomationStudioGatewayTraceTrial({ projectId: ports.projectId, flowId: ports.flowId, prefix: "subflow-trial", newRunId: ports.newRunId, environment, context },
+    async (traced) => await runIn(environment, request, ports, { start, predecessors, identity }, traced?.() ?? ports.newRunId?.() ?? environment.newRunId("subflow-trial")));
+}
 
-  const runId = ports.newRunId?.() ?? environment.newRunId("subflow-trial");
+/** The partial trial's own run from its start, under `runId`: its session, the detached run, its end and its judgement (header). */
+async function runIn(environment: AutomationStudioRunEnvironment, request: AutomationStudioSubflowTrialRequest, ports: AutomationStudioSubflowTrialPorts, prepared: { start: AutomationStudioCandidateTrialStart; predecessors: readonly AutomationStudioSubflowProposal[]; identity: AutomationStudioDetachedSubflowIdentity }, runId: string): Promise<AutomationStudioSubflowTrialOutcome> {
+  const { signal, scope, proposal } = request;
+  const { start, predecessors, identity } = prepared;
+  const now = ports.now ?? environment.now;
+  const answer = answerFor(request);
   const marker = { buildId: scope.buildId, briefId: scope.briefId, subflowKey: scope.subflowKey, revision: proposal.revision, digest: proposal.digest };
   const opened = await ports.openSession({ runId, metadata: { subflowTrial: { ...marker } } });
   const startedAt = now();

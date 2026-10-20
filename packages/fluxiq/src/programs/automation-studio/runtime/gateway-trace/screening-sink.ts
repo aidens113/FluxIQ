@@ -39,18 +39,10 @@ export class AutomationStudioGatewayTraceScreeningSink implements ClientGatewayT
       screened = { payload: UNSCREENED, redactions: [{ path: "", reason: "secret" }] };
     }
     if (screened.redactions.length === 0) return this.inner.record(input);
-    return this.inner.record({
-      stream: input.stream,
-      kind: input.kind,
-      messageType: input.messageType,
-      source: input.source,
-      correlation: input.correlation,
-      payloadSchema: input.payloadSchema,
-      payload: screened.payload,
-      artifactIds: input.artifactIds,
-      referencedDigests: input.referencedDigests ?? [],
-      redactions: [...input.redactions, ...screened.redactions]
-    });
+    // A copy of the event with only its payload and redactions replaced, so the
+    // session reference, the digests and any field added to the event later all
+    // survive a redaction (D21).
+    return this.inner.record({ ...input, payload: screened.payload, redactions: [...input.redactions, ...screened.redactions] });
   }
 
   recordArtifact(input: ClientGatewayTraceArtifactInput): ClientGatewayTraceRecordResult {

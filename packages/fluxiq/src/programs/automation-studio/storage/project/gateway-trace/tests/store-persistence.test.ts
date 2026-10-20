@@ -1,13 +1,17 @@
 // @fluxiq-test-group real-sql
 // What only the persisted store has to prove: traces survive the pool being
-// closed and reopened, large events go to the project content store and come
+// closed and reopened, large events are kept as chunks the trace uses and come
 // back identical, manifests list by episode, a deleted trace takes its rows and
-// its content references with it, and the migration sorts after the
-// administration ledger it is appended to.
+// its content references with it, and the migrations sort after the
+// administration ledger they are appended to.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { TRACE_ID, artifactInput, correlation, newRecorder, textEvent } from "../../../../../../client-gateway/trace/tests/trace-builders.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../administration.ts";
-import { AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION, AutomationStudioProjectGatewayTraceStore } from "../index.ts";
+import {
+  AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_MIGRATION,
+  AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION,
+  AutomationStudioProjectGatewayTraceStore
+} from "../index.ts";
 import { SqliteTraceFixture } from "./sqlite-trace-fixture.ts";
 
 let fixture: SqliteTraceFixture;
@@ -43,20 +47,17 @@ describe("AutomationStudioProjectGatewayTraceStore persistence", () => {
     expect(await reopened.listArtifacts(TRACE_ID)).toEqual([{ id: entry.id, sha256: entry.sha256, byteLength: 3 }]);
   });
 
-  it("keeps an event above 256 KiB in the content store, pinned to its trace, and reads it back identical", async () => {
+  it("keeps a large event as chunks its trace uses, no content object, and reads it back identical", async () => {
     await recordTrace(fixture.store);
-    const rows = await fixture.rows<{ sequence: number; inline: number; event_object_id: string | null }>(
-      "select sequence, event_json is not null as inline, event_object_id from client_gateway_trace_events where trace_id = ? order by sequence",
+    const rows = await fixture.rows<{ sequence: number; inline: number; chunked: number; event_object_id: string | null }>(
+      "select sequence, event_json is not null as inline, event_chunk_digests is not null as chunked, event_object_id from client_gateway_trace_events where trace_id = ? order by sequence",
       [TRACE_ID]
     );
-    expect(rows.map((row) => row.inline)).toEqual([1, 0, 1]);
-    const objectId = rows[1]?.event_object_id;
-    expect(objectId).toMatch(/^object:/);
-    const references = await fixture.rows<{ owner_kind: string; owner_id: string; purpose: string }>(
-      "select owner_kind, owner_id, purpose from object_references where object_id = ?",
-      [objectId]
-    );
-    expect(references).toEqual([{ owner_kind: "client_gateway_trace", owner_id: TRACE_ID, purpose: "event" }]);
+    expect(rows.map((row) => [row.inline, row.chunked, row.event_object_id])).toEqual([[1, 0, null], [0, 1, null], [1, 0, null]]);
+    const uses = await fixture.rows<{ trace_id: string }>("select distinct trace_id from client_gateway_trace_chunk_uses");
+    expect(uses).toEqual([{ trace_id: TRACE_ID }]);
+    const references = await fixture.rows<{ purpose: string }>("select purpose from object_references where owner_kind = 'client_gateway_trace'");
+    expect(references).toEqual([{ purpose: "artifact" }]);
     const [large] = await (await fixture.reopen()).readEventRange(TRACE_ID, 2, 2);
     expect(large?.payload).toEqual({ encoding: "text", text: LARGE_TEXT });
   });
@@ -105,10 +106,12 @@ describe("AutomationStudioProjectGatewayTraceStore persistence", () => {
     expect((await fixture.store.readEventRange(TRACE_ID, 2, Number.POSITIVE_INFINITY)).map((event) => event.sequence)).toEqual([2, 3]);
   });
 
-  it("sorts its migration after every administration migration it is appended to", () => {
+  it("sorts its migrations after every administration migration they are appended to, chunks after traces", () => {
     const ids = AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.map((migration) => migration.id);
     const last = [...ids].sort().at(-1) ?? "";
     expect(ids).not.toContain(AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION.id);
+    expect(ids).not.toContain(AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_MIGRATION.id);
     expect(AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION.id > last).toBe(true);
+    expect(AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_MIGRATION.id > AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION.id).toBe(true);
   });
 });

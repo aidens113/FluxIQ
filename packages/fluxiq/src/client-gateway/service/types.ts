@@ -64,7 +64,34 @@ export type ClientGatewayServiceOptions = {
    * recorded too. Unset, or answering nothing, nothing is captured or stamped.
    */
   trace?: import("../trace/index.ts").ClientGatewayTraceCaptureSource;
+  /**
+   * Mints the ids the gateway itself gives out: server message ids, action
+   * command ids (a durable command's id comes from its run binding instead),
+   * ping nonces and a scoped session's client id. A replay hands back the ids
+   * its recording holds, so what it sends compares byte for byte. Unset:
+   * `randomUUID()`.
+   */
+  createId?: (kind: ClientGatewayIdKind) => string;
+  /**
+   * Starts each wait the gateway runs out on its own: a command's answer wait
+   * (`./commands.ts`, `./command-ledger/dispatch.ts`). A replay runs out
+   * exactly the waits its recording shows ran out, when it shows. Unset:
+   * `setTimeout`.
+   */
+  startTimer?: ClientGatewayTimerSource;
 };
+
+/** What the gateway is minting an id for (`ClientGatewayServiceOptions.createId`). */
+export type ClientGatewayIdKind = "message" | "command" | "nonce" | "client";
+
+/** A wait the gateway timed: `answer` is the wait for the answer to command `commandId`. */
+export type ClientGatewayTimedWait = { readonly kind: "answer"; readonly commandId: string };
+
+/** A running wait; cancelled once what it waited for came. */
+export type ClientGatewayTimer = { cancel(): void };
+
+/** Starts `wait`, calling `fire` once `delayMs` ran out without it being cancelled. */
+export type ClientGatewayTimerSource = (wait: ClientGatewayTimedWait, delayMs: number, fire: () => void) => ClientGatewayTimer;
 
 /**
  * A session as the gateway holds it: the public session plus the transport
@@ -83,7 +110,7 @@ export type InternalSession = ClientGatewaySession & {
 export type PendingCommand = {
   sessionId: string;
   resolve(result: ClientGatewayActionResult): void;
-  timeout: ReturnType<typeof setTimeout>;
+  timeout: ClientGatewayTimer;
 };
 
 export type ClientGatewayItemKind = "sessions" | "pairings" | "trustedClients";

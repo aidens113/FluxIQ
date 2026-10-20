@@ -4,11 +4,18 @@
 
 import type { ClientGatewayTraceCaptureSource } from "../../../../../client-gateway/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
+import type { AutomationStudioProjectContentProtection } from "../../../storage/index.ts";
 import type { AutomationStudioConversations } from "../../conversations/index.ts";
 import type { AutomationStudioRunEnvironment } from "../../environment/index.ts";
 import type { AutomationStudioPrepareCandidateStart } from "../../service/candidate-trial/index.ts";
 import type { AutomationStudioGatewayTraceEpisodes } from "../episodes.ts";
 import type { AutomationStudioGatewayTraceEpisode } from "../types.ts";
+
+/**
+ * Reads the protection the service's content stores use now (the host's
+ * project content protection); nothing while none is configured.
+ */
+export type AutomationStudioGatewayTraceProtectionSource = () => AutomationStudioProjectContentProtection | undefined;
 
 /** The conversation reads an episode's context takes: the service's `conversations`. */
 export type AutomationStudioGatewayTraceConversationReader = Pick<AutomationStudioConversations, "available" | "getConversation">;

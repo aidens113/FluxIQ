@@ -5,6 +5,10 @@
 // opens the store, does its one operation and closes it again. The pool keeps
 // the connection warm between them (its idle grace), and no lease outlives an
 // operation, so a trace never holds a project open or blocks its removal.
+//
+// Each open reads the service's project content protection again and seals
+// with it when one is configured (lane T P3-E2), exactly as the service's own
+// protected content stores do; with none, traces are stored as before.
 
 import type {
   ClientGatewayTraceArtifactPresence,
@@ -16,14 +20,17 @@ import type {
 import type { AutomationStudioProjectDatabasePool } from "../../../storage/index.ts";
 // From the store's own directory, not the storage barrel, whose stores import the executor, which leads back here.
 import { AutomationStudioProjectGatewayTraceStore } from "../../../storage/project/gateway-trace/index.ts";
+import type { AutomationStudioGatewayTraceProtectionSource } from "./types.ts";
 
 export class AutomationStudioGatewayTraceProjectStore implements ClientGatewayTraceStore {
   private readonly pool: AutomationStudioProjectDatabasePool;
   private readonly projectId: string;
+  private readonly protection: AutomationStudioGatewayTraceProtectionSource;
 
-  constructor(input: { pool: AutomationStudioProjectDatabasePool; projectId: string }) {
+  constructor(input: { pool: AutomationStudioProjectDatabasePool; projectId: string; protection: AutomationStudioGatewayTraceProtectionSource }) {
     this.pool = input.pool;
     this.projectId = input.projectId;
+    this.protection = input.protection;
   }
 
   writeArtifact(traceId: string, artifactId: string, bytes: Uint8Array): Promise<void> {
@@ -58,9 +65,10 @@ export class AutomationStudioGatewayTraceProjectStore implements ClientGatewayTr
     return this.with((store) => store.listArtifacts(traceId));
   }
 
-  /** Opens the store, runs one operation, and closes it however the operation ended. */
+  /** Opens the store with the protection configured now, runs one operation, and closes it however the operation ended. */
   private async with<T>(operation: (store: AutomationStudioProjectGatewayTraceStore) => Promise<T>): Promise<T> {
-    const store = await AutomationStudioProjectGatewayTraceStore.open({ pool: this.pool, projectId: this.projectId });
+    const protection = this.protection();
+    const store = await AutomationStudioProjectGatewayTraceStore.open({ pool: this.pool, projectId: this.projectId, ...(protection === undefined ? {} : { protection }) });
     try {
       return await operation(store);
     } finally {

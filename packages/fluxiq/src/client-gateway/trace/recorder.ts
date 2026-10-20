@@ -88,7 +88,7 @@ type Batch = { events: ClientGatewayTraceEvent[]; artifacts: PendingArtifact[]; 
 type Ending = { closedAt: string; reason: ClientGatewayTraceTerminationReason; detail: string | null };
 /** What an event names elsewhere: captured artifacts by id, client-uploaded ones by digest. */
 type References = { readonly artifactIds: readonly string[]; readonly referencedDigests: readonly string[] };
-type EventFields = { stream: string; messageType: string | null; source: ClientGatewayTraceSourceInput; correlation: ClientGatewayTraceCorrelationInput };
+type EventFields = { stream: string; messageType: string | null; source: ClientGatewayTraceSourceInput; correlation: ClientGatewayTraceCorrelationInput; session?: string };
 
 const REFUSED_CLOSED: ClientGatewayTraceRecordResult = Object.freeze({ status: "refused", reason: "closed" });
 const NO_PAYLOAD: ClientGatewayTracePayload = Object.freeze({ encoding: "none" });
@@ -263,7 +263,8 @@ export class ClientGatewayTraceRecorder implements ClientGatewayTraceSink {
       artifactIds: Object.freeze([...references.artifactIds]),
       referencedDigests: Object.freeze([...references.referencedDigests]),
       provenance: this.identity.provenance,
-      redactions: Object.freeze(redactions.map((redaction) => Object.freeze({ path: redaction.path, reason: redaction.reason })))
+      redactions: Object.freeze(redactions.map((redaction) => Object.freeze({ path: redaction.path, reason: redaction.reason }))),
+      ...(typeof fields.session === "string" ? { session: fields.session } : {})
     });
   }
 

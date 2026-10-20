@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ClientGatewayTraceEventInput, ClientGatewayTraceRecordResult, ClientGatewayTraceSink } from "../../../../../client-gateway/index.ts";
 import { ClientGatewayService, ClientGatewayTraceMemoryStore, ClientGatewayTraceRecorder } from "../../../../../client-gateway/index.ts";
 import { pairClient } from "../../../../../client-gateway/tests/trace-tap-support.ts";
 import { AutomationStudioGatewayTraceFlushingSink } from "../flushing-sink.ts";
@@ -7,6 +8,23 @@ import { gatewayEvent } from "./episode-builders.ts";
 
 const API_KEY = "sk-abcdefghij0123456789xyz";
 const CARD = "4111 1111 1111 1111";
+/** A lower-case hex SHA-256 whose one long digit run (`4111111111111111`) passes Luhn: a card to the card screen alone. */
+const LUHN_DIGEST = `${"ab".repeat(24)}4111111111111111`;
+
+/** An inner sink that keeps each event input it is handed, then records it. */
+function capturing(inner: ClientGatewayTraceSink, seen: ClientGatewayTraceEventInput[]): ClientGatewayTraceSink {
+  return {
+    record: (input: ClientGatewayTraceEventInput): ClientGatewayTraceRecordResult => {
+      seen.push(input);
+      return inner.record(input);
+    },
+    recordArtifact: (input) => inner.recordArtifact(input),
+    markCheckpoint: (input) => inner.markCheckpoint(input),
+    flush: () => inner.flush(),
+    close: (input) => inner.close(input),
+    status: () => inner.status()
+  };
+}
 
 function screenedSink(): { sink: AutomationStudioGatewayTraceScreeningSink; store: ClientGatewayTraceMemoryStore; recorder: ClientGatewayTraceRecorder } {
   const store = new ClientGatewayTraceMemoryStore();
@@ -88,6 +106,40 @@ describe("AutomationStudioGatewayTraceScreeningSink", () => {
     expect(events.map((event) => event.referencedDigests)).toEqual([referenced, referenced]);
   });
 
+  it("keeps every field of a redacted event, the session and any field added later included", async () => {
+    const { recorder, store } = screenedSink();
+    const seen: ClientGatewayTraceEventInput[] = [];
+    const sink = new AutomationStudioGatewayTraceScreeningSink(capturing(recorder, seen));
+    const base = gatewayEvent({ encoding: "text", text: JSON.stringify({ note: `token ${API_KEY}` }) }, "client.action_result");
+    const input: ClientGatewayTraceEventInput & { laterField: string } = {
+      ...base,
+      kind: "outbound",
+      source: { id: "msg-9", sequence: 4, timestamp: "2026-10-20T10:00:00.000Z" },
+      correlation: { commandId: "cmd-1", recordingId: "rec-1", causationEventId: "evt-1", owner: "owner-1", observationRevision: "rev-3", baseRevision: "rev-2" },
+      payloadSchema: { name: "client.action_result", version: "1" },
+      artifactIds: ["artifact-1"],
+      referencedDigests: ["c".repeat(64)],
+      redactions: [{ path: "/token", reason: "credential" }],
+      session: "session-2",
+      laterField: "kept"
+    };
+    sink.record(input);
+    expect(seen).toHaveLength(1);
+    const [forwarded] = seen;
+    expect(forwarded?.redactions).toEqual([
+      { path: "/token", reason: "credential" },
+      { path: "/note", reason: "secret" }
+    ]);
+    expect(forwarded?.payload).toEqual({ encoding: "json", value: { note: "[withheld: secret]" } });
+    const { payload: _payload, redactions: _redactions, ...kept } = input;
+    const { payload: _forwardedPayload, redactions: _forwardedRedactions, ...forwardedKept } = forwarded ?? input;
+    expect(forwardedKept).toEqual(kept);
+    await sink.flush();
+    const [stored] = await store.readEventRange("trace-1", 1, 1);
+    expect(stored?.session).toBe("session-2");
+    expect(stored?.referencedDigests).toEqual(["c".repeat(64)]);
+  });
+
   it("reports its trace's id through the flushing sink, so the gateway's action stamp names that trace as its scope", async () => {
     const { recorder } = screenedSink();
     const sink = new AutomationStudioGatewayTraceScreeningSink(new AutomationStudioGatewayTraceFlushingSink(recorder, { everyEvents: 100, intervalMs: 60_000 }, () => undefined));
@@ -144,6 +196,28 @@ describe("screenAutomationStudioGatewayTracePayload", () => {
     });
     const clean = { encoding: "text" as const, text: "not json {" };
     expect(screenAutomationStudioGatewayTracePayload(clean).payload).toBe(clean);
+  });
+
+  it("keeps a leaf that is exactly a lower-case hex SHA-256 even when its digits pass the card screen", () => {
+    expect(screenAutomationStudioGatewayTracePayload({ encoding: "json", value: [LUHN_DIGEST] }).redactions).toEqual([]);
+    const text = { encoding: "text" as const, text: JSON.stringify({ digest: LUHN_DIGEST, digests: [LUHN_DIGEST] }) };
+    expect(screenAutomationStudioGatewayTracePayload(text).payload).toBe(text);
+  });
+
+  it("still withholds a card number in text, and screens a hex string that is not exactly a lower-case SHA-256", () => {
+    expect(screenAutomationStudioGatewayTracePayload({ encoding: "json", value: { note: `card ${CARD} on file` } }).payload).toEqual({
+      encoding: "json",
+      value: { note: "card [withheld: secret] on file" }
+    });
+    const upper = `${LUHN_DIGEST.slice(0, 47)}B${LUHN_DIGEST.slice(48)}`;
+    const shorter = LUHN_DIGEST.slice(1);
+    const longer = `a${LUHN_DIGEST}`;
+    const inText = `digest ${LUHN_DIGEST}`;
+    for (const leaf of [upper, shorter, longer, inText]) {
+      const screened = screenAutomationStudioGatewayTracePayload({ encoding: "json", value: [leaf] });
+      expect(screened.redactions).toEqual([{ path: "/0", reason: "secret" }]);
+      expect(JSON.stringify(screened.payload)).not.toContain("4111111111111111");
+    }
   });
 
   it("withholds a whole leaf when a card number sits beside another secret", () => {

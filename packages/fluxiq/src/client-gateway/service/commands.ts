@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type {
   ClientGatewayActionCommand,
   ClientGatewayActionResponse,
@@ -108,7 +107,7 @@ export class ClientGatewayCommands {
     if (this.closed) throw new Error("client_gateway.closed");
     if (arguments.length > 2) return this.executeDurable(sessionId, input, options!);
     const session = this.sessions.requireReady(sessionId);
-    const commandId = randomUUID();
+    const commandId = this.config.createId("command");
     // A target across the dispatching channel scope (`./channel-scope/`) is refused here, unsent, before any lease is read.
     const crossing = this.channelCrossing(session);
     if (crossing) return this.refuseForChannel({ sessionId, session, commandId, command: input, code: crossing });
@@ -125,7 +124,7 @@ export class ClientGatewayCommands {
     // answer, so a sent timeout is waited on for the answer margin longer.
     const waitMs = command.timeoutMs === undefined ? this.config.commandTimeoutMs : command.timeoutMs + COMMAND_ANSWER_MARGIN_MS;
     const result = new Promise<ClientGatewayActionResult>((resolve) => {
-      const timeout = setTimeout(() => void this.answerNeverCame(commandId, waitMs), waitMs);
+      const timeout = this.config.startTimer({ kind: "answer", commandId }, waitMs, () => void this.answerNeverCame(commandId, waitMs));
       this.pending.set(commandId, { sessionId, resolve, timeout });
     });
     void this.transport.send(sessionId, message);
@@ -137,16 +136,19 @@ export class ClientGatewayCommands {
    * Bind a pending answer to its dispatched session before changing any state.
    * A result for a command this gateway sent but no longer awaits is late: it
    * resolves nothing, and goes to the late-result listeners instead.
+   * `delivered` hears the result handed to the waiting caller, when one is
+   * (a trace keeps its digest: `./trace-tap/`).
    */
-  async settle(senderSessionId: string, reading: ClientGatewayActionResultReading): Promise<ClientGatewayResultDisposition> {
+  async settle(senderSessionId: string, reading: ClientGatewayActionResultReading, delivered?: (result: ClientGatewayActionResult) => void): Promise<ClientGatewayResultDisposition> {
     const result = reading.result;
-    if (this.durable.has(result?.commandId)) return await this.durable.settle(senderSessionId, result);
+    if (this.durable.has(result?.commandId)) return await this.durable.settle(senderSessionId, result, delivered);
     const pending = this.pending.get(result.commandId);
     if (!pending) return await this.settleLate(senderSessionId, reading);
     if (pending.sessionId !== senderSessionId) return "wrong_session";
-    clearTimeout(pending.timeout);
+    pending.timeout.cancel();
     this.pending.delete(result.commandId);
     this.history.closed(result.commandId, "settled");
+    delivered?.(result);
     pending.resolve(result);
     return "settled";
   }
@@ -177,7 +179,7 @@ export class ClientGatewayCommands {
     this.closed = true;
     this.reconciler.abandonAll();
     for (const [commandId, pending] of this.pending) {
-      clearTimeout(pending.timeout);
+      pending.timeout.cancel();
       this.history.closed(commandId, "closed");
       const result: ClientGatewayActionResult = { commandId, status: "unknown", message: "Client gateway closed before an answer." };
       this.trace.synthesized(commandId, "server.execute_action", { outcome: "gateway_closed", result });
@@ -204,7 +206,7 @@ export class ClientGatewayCommands {
     const result = clientGatewayReconciledResult(commandId, answer, waitMs);
     this.history.closed(commandId, result.status === "timed_out" ? "timed_out" : "settled");
     if (answer) this.audit.record("command.reconciled", "A command whose answer never came was settled from what its client said became of it.", { sessionId: pending.sessionId, commandId, state: answer.state, status: result.status });
-    this.trace.synthesized(commandId, "server.execute_action", { outcome: "answer_never_came", reconcileState: answer?.state ?? null, result });
+    this.trace.synthesized(commandId, "server.execute_action", { outcome: "answer_never_came", reconcileState: answer?.state ?? null, waitMs, result });
     pending.resolve(result);
   }
 
@@ -286,7 +288,7 @@ export class ClientGatewayCommands {
 
   async sendPing(sessionId: string): Promise<void> {
     const session = this.sessions.require(sessionId);
-    await this.transport.send(sessionId, this.transport.message("server.ping", { nonce: randomUUID() }, session));
+    await this.transport.send(sessionId, this.transport.message("server.ping", { nonce: this.config.createId("nonce") }, session));
   }
 
   async sendError(sessionId: string, input: { message: string; code?: string; metadata?: JsonObject }): Promise<void> {
