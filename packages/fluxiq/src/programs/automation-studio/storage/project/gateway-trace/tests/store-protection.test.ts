@@ -3,9 +3,10 @@
 // protection seals what it keeps of page content, as protected content-store
 // objects are sealed. No event text or artifact byte reaches the database file
 // or the object files as plaintext; reads give back exactly what was written;
-// a sealed chunk read without the key, or with the wrong one, throws; chunks
-// written unsealed before still read and are sealed when a protected store
-// opens or reuses them.
+// a sealed chunk read without the key throws, and a store opened with the wrong
+// host key is refused as it opens (its content-address key does not open, t745);
+// chunks written unsealed before still read and are sealed when a protected
+// store opens.
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { inflateRawSync } from "node:zlib";
@@ -155,7 +156,7 @@ describe("gateway trace chunks under the project's content protection", () => {
     expect(filesHolding(files, ARTIFACT_MARKER)).toHaveLength(1);
   });
 
-  it("refuses to read sealed chunks and artifacts without the key, with the wrong key, or after the key is retired", async () => {
+  it("refuses to read sealed chunks and artifacts without the key, and refuses to open with the wrong key or after the key is retired", async () => {
     fixture = await SqliteTraceFixture.create({ protection: protection(7) });
     await writeTrace(fixture.store, "trace-locked");
 
@@ -163,18 +164,18 @@ describe("gateway trace chunks under the project's content protection", () => {
     await expect(bare.readEventRange("trace-locked", 1, 99)).rejects.toThrow(/is protected and cannot be opened without the project's content protection/);
     await expect(bare.readArtifact("trace-locked", "artifact-1")).rejects.toThrow(/cannot be opened without its protection provider/);
 
-    const wrong = await fixture.reopen({ protection: protection(8) });
-    await expect(wrong.readEventRange("trace-locked", 1, 1)).rejects.toThrow(/could not be opened: Protected project content authentication failed/);
-    await expect(wrong.readArtifact("trace-locked", "artifact-1")).rejects.toThrow(/authentication failed/);
+    // t745: a protected open loads the project's content-address key, sealed under the host key, and a key
+    // that does not open fails the open; the error names only the address key id.
+    const refused = /^Content address key cak\.[0-9a-f]{16} could not be opened\.$/;
+    await expect(fixture.reopen({ protection: protection(8) })).rejects.toThrow(refused);
+    await expect(fixture.reopen({ protection: new AutomationStudioAesGcmProjectContentProtection(() => undefined) })).rejects.toThrow(refused);
+    await expect(fixture.reopen({ protection: protection(7, "key.2") })).rejects.toThrow(refused);
 
-    const retired = await fixture.reopen({ protection: new AutomationStudioAesGcmProjectContentProtection(() => undefined) });
-    await expect(retired.readEventRange("trace-locked", 2, 2)).rejects.toThrow(/could not be opened: Protected project content key is unavailable/);
-
-    const rotated = await fixture.reopen({ protection: protection(7, "key.2") });
-    await expect(rotated.readEventRange("trace-locked", 1, 1)).rejects.toThrow(/key is unavailable/);
+    const again = await fixture.reopen({ protection: protection(7) });
+    expect((await again.readEventRange("trace-locked", 1, 99)).map((event) => event.sequence)).toEqual([1, 2]);
   });
 
-  it("reads chunks written unsealed, marked as such, and seals them when a protected store opens", async () => {
+  it("reads chunks written unsealed, marked as such, and re-cuts them keyed and sealed when a protected store opens", async () => {
     fixture = await SqliteTraceFixture.create();
     const written = await recordTexts(fixture.store, "trace-legacy", [records(5_000, "legacy")]);
     const before = await chunkRows(fixture);
@@ -186,16 +187,22 @@ describe("gateway trace chunks under the project's content protection", () => {
     const key = protection(9);
     const sealed = await fixture.reopen({ protection: key });
     expect(await unsealedCount(fixture)).toBe(0);
+    // t745: the old SHA-256 chunks are not sealed in place but re-cut under the project's address key (gateway-trace-rekey).
     const after = await chunkRows(fixture);
-    expect(after.map((row) => row.digest.toString("hex"))).toEqual(before.map((row) => row.digest.toString("hex")));
-    expect(after.map((row) => row.encoding)).toEqual(before.map((row) => row.encoding));
-    for (const [index, row] of after.entries()) expect(row.stored.equals(before[index]!.stored)).toBe(false);
+    const beforeDigests = new Set(before.map((row) => row.digest.toString("hex")));
+    expect(after.length).toBeGreaterThan(0);
+    expect(after.some((row) => beforeDigests.has(row.digest.toString("hex")))).toBe(false);
+    const keyIds = await fixture.rows<{ keyId: string | null }>("select address_key_id as keyId from client_gateway_trace_chunks");
+    expect(keyIds.every((row) => row.keyId !== null)).toBe(true);
     const sealedRead = await sealed.readEventRange("trace-legacy", 1, 9);
     expect(sealedRead.map((event) => JSON.stringify(event))).toEqual(written.map((event) => JSON.stringify(event)));
     await expect((await fixture.reopen()).readEventRange("trace-legacy", 1, 9)).rejects.toThrow(/is protected/);
   });
 
-  it("seals an unsealed chunk a protected write reuses", async () => {
+  // t745: a protected write cuts and addresses its chunks under the project's address key, so it no longer
+  // reuses an old-form (SHA-256) chunk an unprotected store wrote; it shares none and every chunk it uses is
+  // sealed. The old-form chunks stay as they are until the open-time pass seals them, and still read.
+  it("keys its own sealed chunks beside unsealed old-form ones a plain store wrote", async () => {
     fixture = await SqliteTraceFixture.create({ protection: protection(5) });
     const plain = await AutomationStudioProjectGatewayTraceStore.open({ pool: fixture.databasePool, projectId: SqliteTraceFixture.projectId });
     try {
@@ -208,7 +215,7 @@ describe("gateway trace chunks under the project's content protection", () => {
          join client_gateway_trace_chunk_uses b on a.digest = b.digest
          where a.trace_id = 'trace-plain' and b.trace_id = 'trace-protected'`
       );
-      expect(shared?.count).toBeGreaterThan(10);
+      expect(shared?.count).toBe(0);
       const [open] = await fixture.rows<{ count: number }>(
         `select count(*) as count from client_gateway_trace_chunk_uses u
          join client_gateway_trace_chunks c on c.digest = u.digest

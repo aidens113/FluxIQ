@@ -1,10 +1,15 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { JsonValue } from "../../../../core/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administration.ts";
 import { AutomationStudioProjectContentStore } from "./content-store.ts";
 import type { AutomationStudioProjectContentProtection } from "./content-protection.ts";
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "./database.ts";
 import { AutomationStudioProjectObjectRepository } from "./object-repository.ts";
+import { AUTOMATION_STUDIO_CONTENT_ADDRESS_MIGRATION, openAutomationStudioContentAddressKeyring, scrubProjectDatabaseIfRequested } from "./content-address/index.ts";
+import type { AutomationStudioContentAddressKeyring, ContentAddressScrubStatus } from "./content-address/index.ts";
+import { keyedReusableLlmContextDigest, rekeyReusableLlmContextDigests, reusableLlmContextDigestMatches } from "./reusable-llm-context-digest/index.ts";
+import type { ReusableLlmContextDigestRekeyOptions, ReusableLlmContextDigestRekeyResult } from "./reusable-llm-context-digest/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_REUSABLE_LLM_CONTEXT_KEYED_DIGEST_MIGRATION } from "./schema/index.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
 
 export const AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_VERSION = "automation-studio.reusable-llm-context.v1" as const;
@@ -87,8 +92,16 @@ type ContextRow = {
   validation_state: AutomationStudioReusableLlmContextValidationState;
   source_run_ids_json: string; source_adaptation_ids_json: string; prompt_object_id: string; prompt_reference_id: string;
   byte_count: number; content_digest: string; created_at_ms: number; last_used_at_ms: number; expires_at_ms: number;
+  content_digest_key_id: string | null;
 };
 type AuditRow = { event_id: string; event_type: AutomationStudioReusableLlmContextAuditEvent["eventType"]; record_id: string | null; flow_id: string | null; subflow_id: string | null; domain_id: string | null; actor_id: string | null; detail_json: string; created_at_ms: number };
+
+/** What the store migrates on open: administration, then the keyring's 0033, then 0035 (ascending ids). */
+const STORE_MIGRATIONS = [
+  ...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS,
+  AUTOMATION_STUDIO_CONTENT_ADDRESS_MIGRATION,
+  AUTOMATION_STUDIO_PROJECT_REUSABLE_LLM_CONTEXT_KEYED_DIGEST_MIGRATION
+];
 
 /** Project-isolated durable storage for domain-sanitized, prompt-safe reusable LLM context. Disabled unless explicitly enabled. */
 export class AutomationStudioProjectReusableLlmContextStore {
@@ -97,16 +110,48 @@ export class AutomationStudioProjectReusableLlmContextStore {
     private readonly content: AutomationStudioProjectContentStore,
     private readonly objects: AutomationStudioProjectObjectRepository,
     readonly enabled: boolean,
-    private readonly contentProtectionConfigured: boolean
+    private readonly contentProtectionConfigured: boolean,
+    private readonly keyring: AutomationStudioContentAddressKeyring | undefined,
+    /** What the rekey pass at this open did; absent when the store has no content protection. */
+    readonly digestRekey: ReusableLlmContextDigestRekeyResult | undefined,
+    /** What honouring a scrub request at the end of this open did; absent when the store has no content protection. */
+    readonly scrub: ContentAddressScrubStatus | undefined
   ) {}
 
-  static async open(input: { pool: AutomationStudioProjectDatabasePool; projectId: string; enabled?: boolean; contentProtection?: AutomationStudioProjectContentProtection }): Promise<AutomationStudioProjectReusableLlmContextStore> {
+  /**
+   * With a content protection the store opens the project's content-address
+   * keyring and rekeys every digest that is plain or under a retired key before
+   * it is used; `digestRekey` bounds that pass (a test stops it part way). Every
+   * protected open then honours a scrub request (t745 u5), left by this rekey or
+   * by any earlier conversion an open did not finish scrubbing.
+   */
+  static async open(input: {
+    pool: AutomationStudioProjectDatabasePool;
+    projectId: string;
+    enabled?: boolean;
+    contentProtection?: AutomationStudioProjectContentProtection;
+    digestRekey?: ReusableLlmContextDigestRekeyOptions;
+  }): Promise<AutomationStudioProjectReusableLlmContextStore> {
     const lease = await input.pool.acquire(input.projectId);
     try {
-      await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS }).migrate();
+      await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: STORE_MIGRATIONS }).migrate();
       const content = await AutomationStudioProjectContentStore.open({ pool: input.pool, projectId: input.projectId, ...(input.contentProtection ? { protection: input.contentProtection } : {}) });
       const objects = await AutomationStudioProjectObjectRepository.open({ pool: input.pool, projectId: input.projectId });
-      return new AutomationStudioProjectReusableLlmContextStore(lease, content, objects, input.enabled === true, Boolean(input.contentProtection));
+      let keyring: AutomationStudioContentAddressKeyring | undefined;
+      let digestRekey: ReusableLlmContextDigestRekeyResult | undefined;
+      let scrub: ContentAddressScrubStatus | undefined;
+      try {
+        if (input.contentProtection) {
+          keyring = await openAutomationStudioContentAddressKeyring({ database: lease.database, projectId: input.projectId, protection: input.contentProtection });
+          digestRekey = await rekeyReusableLlmContextDigests({ database: lease.database, content, keyring, ...(input.digestRekey ? { options: input.digestRekey } : {}) });
+          scrub = await scrubProjectDatabaseIfRequested(lease.database);
+        }
+      } catch (error) {
+        await objects.close();
+        await content.close();
+        throw error;
+      }
+      return new AutomationStudioProjectReusableLlmContextStore(lease, content, objects, input.enabled === true, Boolean(input.contentProtection), keyring, digestRekey, scrub);
     } catch (error) {
       await lease.release();
       throw error;
@@ -128,7 +173,8 @@ export class AutomationStudioProjectReusableLlmContextStore {
     if (await this.row(recordId)) throw new Error(`Reusable LLM context ${recordId} already exists.`);
     const promptProjection = canonicalJson(input.promptProjection);
     const encoded = Buffer.from(JSON.stringify(promptProjection), "utf8");
-    const contentDigest = createHash("sha256").update(encoded).digest("hex");
+    if (!this.keyring) throw new Error("Reusable LLM context writes require project content protection.");
+    const contentDigest = keyedReusableLlmContextDigest(this.keyring, encoded);
     const compatibilityTags = tags(input.compatibilityTags ?? []);
     const sourceRunIds = ids(input.sourceRunIds ?? [], "source run");
     const sourceAdaptationIds = ids(input.sourceAdaptationIds ?? [], "source adaptation");
@@ -144,13 +190,13 @@ export class AutomationStudioProjectReusableLlmContextStore {
       await this.lease.database.run(`insert into reusable_llm_contexts
         (record_id, flow_id, subflow_id, domain_id, evidence_kind, contract_version, evidence_schema_version, sanitizer_version,
          compatibility_tags_json, outcome, reviewer_state, validation_state, source_run_ids_json, source_adaptation_ids_json, prompt_object_id,
-         prompt_reference_id, byte_count, content_digest, created_at_ms, last_used_at_ms, expires_at_ms)
-        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+         prompt_reference_id, byte_count, content_digest, content_digest_key_id, created_at_ms, last_used_at_ms, expires_at_ms)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
         recordId, id(input.flowId, "flow"), input.subflowId === undefined ? null : id(input.subflowId, "subflow"),
         id(input.domainId, "domain"), kind(input.evidenceKind, "evidence kind"), AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_VERSION,
         version(input.evidenceSchemaVersion, "evidence schema"), version(input.sanitizerVersion, "sanitizer"), JSON.stringify(compatibilityTags),
         outcome(input.outcome ?? "unknown"), reviewerState(input.reviewerState ?? "unreviewed"), validationState(input.validationState ?? "unknown"), JSON.stringify(sourceRunIds),
-        JSON.stringify(sourceAdaptationIds), write.object.objectId, write.reference!.referenceId, encoded.byteLength, contentDigest,
+        JSON.stringify(sourceAdaptationIds), write.object.objectId, write.reference!.referenceId, encoded.byteLength, contentDigest.digest, contentDigest.keyId,
         createdAt, createdAt, createdAt + ttlMs
       ]);
     } catch (error) {
@@ -282,8 +328,15 @@ export class AutomationStudioProjectReusableLlmContextStore {
   private async record(row: ContextRow): Promise<AutomationStudioReusableLlmContextRecord> {
     if (row.contract_version !== AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_VERSION) throw new Error("Unsupported reusable LLM context contract version.");
     const asset = await this.content.readBytesByObjectId(row.prompt_object_id);
-    const digest = createHash("sha256").update(asset.content).digest("hex");
-    if (asset.content.byteLength !== row.byte_count || digest !== row.content_digest) throw new Error("Reusable LLM context content metadata mismatch.");
+    const digestMatches = reusableLlmContextDigestMatches({
+      keyring: this.keyring,
+      content: asset.content,
+      digest: row.content_digest,
+      keyId: row.content_digest_key_id
+    });
+    if (asset.content.byteLength !== row.byte_count || !digestMatches) {
+      throw new Error("Reusable LLM context content metadata mismatch.");
+    }
     const promptProjection = canonicalJson(JSON.parse(asset.content.toString("utf8")) as JsonValue);
     return {
       contractVersion: AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_VERSION,

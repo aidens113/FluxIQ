@@ -4,7 +4,9 @@
 // batch counts on cannot be freed between the two. Only chunks the project
 // does not hold yet are compressed and sealed (`seal-chunk.ts`), and a held
 // chunk that is not sealed is sealed now when the store has a protection: a
-// write never leaves page content it reuses unprotected.
+// write never leaves page content it reuses unprotected. Each row records the
+// address key its digest was made under (t745); a held row in another form than
+// the chunk being written throws, since the event would not read back.
 import type { AutomationStudioSqlExecutor } from "../database.ts";
 import { packGatewayTraceChunk } from "./pack-chunk.ts";
 import { sealGatewayTraceChunk } from "./seal-chunk.ts";
@@ -24,7 +26,11 @@ export async function writeGatewayTraceChunks(
   const all = [...distinct.values()];
   const held = await heldSealing(sql, all);
   for (const chunk of all) {
-    const sealed = held.get(chunk.digest.toString("hex"));
+    const known = held.get(chunk.digest.toString("hex"));
+    if (known !== undefined && known.addressKeyId !== chunk.addressKeyId) {
+      throw new Error(`gateway trace chunk ${chunk.digest.toString("hex")} is held under ${known.addressKeyId ?? "no key"}, not ${chunk.addressKeyId ?? "no key"}`);
+    }
+    const sealed = known?.sealed;
     if (sealed === true) continue;
     if (sealed === false && sealing.protection === undefined) continue;
     const packed = packGatewayTraceChunk(chunk.bytes);
@@ -37,9 +43,9 @@ export async function writeGatewayTraceChunks(
       continue;
     }
     await sql.run(
-      `insert into client_gateway_trace_chunks (digest, encoding, byte_length, stored, encryption) values (?, ?, ?, ?, ?)
+      `insert into client_gateway_trace_chunks (digest, encoding, byte_length, stored, encryption, address_key_id) values (?, ?, ?, ?, ?, ?)
        on conflict (digest) do nothing`,
-      [chunk.digest, packed.encoding, chunk.bytes.byteLength, stored.stored, stored.encryption]
+      [chunk.digest, packed.encoding, chunk.bytes.byteLength, stored.stored, stored.encryption, chunk.addressKeyId]
     );
   }
   for (let offset = 0; offset < all.length; offset += ROWS_PER_STATEMENT) {
@@ -50,17 +56,17 @@ export async function writeGatewayTraceChunks(
   }
 }
 
-/** For each chunk the project already holds, whether its row is sealed. */
-async function heldSealing(sql: AutomationStudioSqlExecutor, chunks: readonly GatewayTraceChunk[]): Promise<Map<string, boolean>> {
-  const held = new Map<string, boolean>();
+/** For each chunk the project already holds, whether its row is sealed and the key its digest names. */
+async function heldSealing(sql: AutomationStudioSqlExecutor, chunks: readonly GatewayTraceChunk[]): Promise<Map<string, { sealed: boolean; addressKeyId: string | null }>> {
+  const held = new Map<string, { sealed: boolean; addressKeyId: string | null }>();
   for (let offset = 0; offset < chunks.length; offset += ROWS_PER_STATEMENT) {
     const slice = chunks.slice(offset, offset + ROWS_PER_STATEMENT);
     const marks = slice.map(() => "?").join(", ");
-    const rows = await sql.all<{ digest: Buffer; sealed: number }>(
-      `select digest, encryption is not null as sealed from client_gateway_trace_chunks where digest in (${marks})`,
+    const rows = await sql.all<{ digest: Buffer; sealed: number; addressKeyId: string | null }>(
+      `select digest, encryption is not null as sealed, address_key_id as addressKeyId from client_gateway_trace_chunks where digest in (${marks})`,
       slice.map((chunk) => chunk.digest)
     );
-    for (const row of rows) held.set(row.digest.toString("hex"), row.sealed === 1);
+    for (const row of rows) held.set(row.digest.toString("hex"), { sealed: row.sealed === 1, addressKeyId: row.addressKeyId });
   }
   return held;
 }
