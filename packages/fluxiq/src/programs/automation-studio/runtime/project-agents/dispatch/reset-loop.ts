@@ -1,4 +1,4 @@
-import type { AutomationStudioSiteResetNamedAct } from "../../flow-bootstrap/site-reset/index.ts";
+import type { AutomationStudioSiteResetIssuedRef, AutomationStudioSiteResetNamedAct } from "../../flow-bootstrap/site-reset/index.ts";
 import type { AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
 // From its own module, as the subflow builder imports it: through the `llm` barrel it arrived undefined under the test loader (a module cycle).
 import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopResult } from "../../llm/evidence-loop.ts";
@@ -42,6 +42,14 @@ import type { AutomationStudioProjectResetPorts } from "./types.ts";
 // named destination, nor named under `cannotUndo` (and whose undo was not
 // refused) is still to undo, so the reset ends `blocked` with it listed and
 // every trial is refused until a later reset deals with it.
+//
+// **A refusal names the refs already issued (rerun round 3, office
+// `run-mvgo5xft-25460ba2`, 0133-0139).** An act on no list settles only on a
+// look that names it under `undoes` with a list's ref, and the reset read a list
+// with a ref and no act, then gave up. Where the ports give the refs a receipt
+// printed in this build (`issuedRefs`, `service/project-build/brief-ports.ts`),
+// the refusal lists them under `issuedRefs` beside each open act's `settle`,
+// with the shape of a call that names both.
 
 /** The code a reset's completion is refused under while acts are still in place. */
 const RESET_INCOMPLETE = "project.reset_acts_in_place";
@@ -53,10 +61,17 @@ const RESET_INCOMPLETE_WORDS = [
   "cannotUndo reports to the judge an act the site truly cannot undo, but it never settles a reversible act whose watched state still differs: such an act stays listed with what settles it.",
   "If the site offers no control on an act's own item that reverses it, do not keep trying: complete with an honest unresolved summary naming every such act under cannotUndo; the reset then ends unresolved and the build ends without a further trial."
 ].join(" ");
+/**
+ * Said beside the refusal's words when refs were issued (header); generic, naming no site. `undoes` is
+ * written out as the words above write it: a value import of the key would reach the `llm` barrel
+ * (the module cycle noted at the evidence-loop import).
+ */
+const ISSUED_WORDS = "issuedRefs lists the refs of lists already read complete in this build. Where an act's settle asks for a named list, name one of them on a look that names that act, as in {\"undoes\": \"<act>\", \"resetDestination\": \"<ref>\"}; a look naming a ref with no undoes settles nothing.";
 
 export async function runAutomationStudioProjectResetLoop(input: {
   brief: AutomationStudioProjectSubflowBrief;
-  ports: AutomationStudioProjectResetPorts;
+  /** `issuedRefs`: the destination refs a receipt printed in this build, which a refusal lists (header); absent, none is listed. */
+  ports: AutomationStudioProjectResetPorts & { issuedRefs?: (() => readonly AutomationStudioSiteResetIssuedRef[]) | undefined };
   /** What is still to undo once the acts named under `cannotUndo` are kept where the ledger allows it (header). */
   remainingActs: (cannotUndo?: readonly string[]) => Promise<readonly AutomationStudioSiteResetNamedAct[]>;
   allowance: AutomationStudioLlmBuildPurse;
@@ -82,13 +97,15 @@ export async function runAutomationStudioProjectResetLoop(input: {
       // The honest unresolved ending (header): every act still listed named under cannotUndo, each after a refusal listed it.
       if (named && left.every((act) => named.includes(act.act) && refused.has(act.act))) return { ok: true };
       for (const act of left) refused.add(act.act);
+      const issued = input.ports.issuedRefs?.() ?? [];
       return {
         ok: false,
         issueCodes: [RESET_INCOMPLETE],
         feedback: {
           code: RESET_INCOMPLETE,
           actsToUndo: left.map((act) => ({ act: act.act, did: act.did, ...(act.stillThere?.length ? { stillThere: [...act.stillThere] } : {}), ...(act.settle ? { settle: act.settle } : {}) })),
-          instruction: RESET_INCOMPLETE_WORDS
+          ...(issued.length ? { issuedRefs: issued.map((entry) => ({ ref: entry.ref, count: entry.count, ...(entry.location !== undefined ? { location: entry.location } : {}) })) } : {}),
+          instruction: issued.length ? `${RESET_INCOMPLETE_WORDS} ${ISSUED_WORDS}` : RESET_INCOMPLETE_WORDS
         }
       };
     }

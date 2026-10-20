@@ -20,6 +20,20 @@
 // A read that pages, or ran as the passes of a loop, is left to its paging
 // account (`./stop.ts`, `./judge-paging.ts`), which already says how its list
 // ended. Generic words only: no site's, task's or list's terms.
+//
+// **Going on is not rows missing from the range asked for (t741 D).** Social
+// rerun round 3 (`run-mvgoawg4-ed85dd5a`, 0141-0145, 0214-0218): a feed's read
+// was told it "was still growing when the read stopped revealing more of it",
+// which was true -- the list went on past the page's own end marker into units
+// of another kind -- and the judges read that as rows missing from the task's
+// range and asked to page further, while one of them said the end marker was
+// reached. A list that grows as it is revealed (a feed the page declares, one
+// seen still growing, one that loads as it is scrolled) now says that going on
+// past an end the page marks, or past the range the request asks for, is not
+// rows missing from that range, and the fix line says to leave such a read as
+// it is. A list whose next part the page names by a number or a control says
+// what it said; the judges' prose says the same for every list
+// (`../../llm/diagnosis-instructions.ts`).
 
 import type { AutomationStudioResultReadAccount } from "../contracts/index.ts";
 
@@ -29,9 +43,17 @@ export function automationStudioResultReadListContinues(read: AutomationStudioRe
   if (!fact || read.paginates === true || read.keptPerPage !== undefined || read.pagesRead > 1 || read.stop !== undefined) return undefined;
   const seen = read.itemsSeen !== undefined ? `saw ${read.itemsSeen} ${read.itemsSeen === 1 ? "item" : "items"} and kept ${read.kept}` : `kept ${read.kept}`;
   return {
-    said: `Step ${read.nodeId} read one part of a list that goes on past it (${shownBy(fact)}): it ${seen}, and no item after those was read.`,
-    fix: `To read past what step ${read.nodeId} read, move that same list on to its next part (${wayOn(fact.kind)}) and repeat the read after each move, in a loop, until the list ends or holds what the request asks for. Where the request asks only for what its first part shows, leave the read as it is.`
+    said: `Step ${read.nodeId} read one part of a list that goes on past it (${shownBy(fact)}): it ${seen}, and no item after those was read.${grows(fact) ? ` ${PAST_THE_RANGE}` : ""}`,
+    fix: `To read past what step ${read.nodeId} read, move that same list on to its next part (${wayOn(fact.kind)}) and repeat the read after each move, in a loop, until the list ends or holds what the request asks for. Where the request asks only for what its first part shows, or what was read already reaches an end the page itself marks or the end of the range the request asks for, leave the read as it is.`
   };
+}
+
+/** That a list going on past its own end, or past the range asked for, is not rows missing from that range (header, t741 D). */
+const PAST_THE_RANGE = "Where it goes on past an end the page itself marks, or past the range the request asks for, what follows is not rows missing from that range: judge what was read against the request's own range.";
+
+/** Whether the list grows as it is revealed, rather than naming its next part by a number or a control (header, t741 D). */
+function grows(fact: { kind: string; evidence: string }): boolean {
+  return fact.evidence === "declared_feed" || fact.evidence === "still_growing" || fact.kind === "infinite_scroll";
 }
 
 /** What on the page said the list goes on, in plain words. */

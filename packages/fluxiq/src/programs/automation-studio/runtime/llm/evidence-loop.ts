@@ -753,8 +753,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const toolRequestSignature = automationStudioLlmEvidenceRequestSignature({ tool, mutationEpoch: counters.mutationEpoch, attemptEpoch: counters.attemptEpoch, input: draftKey ? { ...decision.input, draftKey } : decision.input });
     const answeredBy = answeredRequests.get(toolRequestSignature);
     // Not offered this iteration: an observation nothing has happened since (its latest call is always recorded with its epoch),
-    // or, in the wrap-up, any tool it withholds -- all of them, or all but a candidate's submission and trial -- answered, never run (`withheld`).
-    const reobservation = !eligibleToolIds.has(decision.toolId); const withheld = wrapUp.withholds(decision.toolId);
+    // or, in the wrap-up, any call it withholds -- all of them, or all but a candidate's submission, its trial and a run undoing one of its acts (t741) -- answered, never run (`withheld`).
+    const reobservation = !eligibleToolIds.has(decision.toolId); const withheld = wrapUp.withholds(decision.toolId, decision.input);
     // The same call that already failed or changed nothing on this same page -- a part run, on this same draft -- is refused unrun,
     // before the repeat policy runs it again, so every action repeat is refused in one place and stalls the round at the third in a
     // row; a look that answered the same twice here is too, unless the policy answers it from memory (`repeat-guard/outcomes.ts`).

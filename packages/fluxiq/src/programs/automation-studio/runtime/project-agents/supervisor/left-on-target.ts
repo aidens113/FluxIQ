@@ -38,6 +38,22 @@
 // but had an effect: possibly lasting" after each. What the person is told
 // (`told`) says each act that may have changed something lasting once, by verb
 // and name, and says plainly when nothing did (`activity/wording/left-told.ts`).
+//
+// **A kept act is not said to be beyond the site (t741 B5).** An act the
+// ledger kept is of a reversible class: the model named it under `cannotUndo`,
+// or its undo was refused as aimed at another item. Photo-social
+// `run-mvgobp8h-b99ede98` ended on such an act said as "(the site offers no
+// way to undo it)" while later reads showed the control back. All that is known
+// is that the build could not undo it, so that is what the note says; only an
+// act whose class no site control takes back (`undoable: false`) is said as
+// one FluxIQ cannot undo.
+//
+// **The model's words give way at a sentence's end (t741 B5).** An ending's
+// reason is the model's words, then the note, within the record's 2000
+// characters. The model's words were cut at the character that fitted, so
+// office `run-mvgo5xft-25460ba2` recorded "... The part that takes t" and the
+// chat said it. They now give way at the last sentence that fits, else at a
+// word's end with "…"; a note too long for the record ends on a whole entry.
 import { automationStudioActivityLeftTold, type AutomationStudioActivityLeftAct } from "../../activity/index.ts";
 import type { AutomationStudioProjectSupervisorPorts } from "./ports.ts";
 
@@ -75,7 +91,7 @@ export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<Automa
     if (!act.undoable) acts.push({ ...named, undoable: false, line: `${act.did} (cannot be undone by FluxIQ)`, stays: "irreversible" });
     // `seen`: whether any read ever showed it change something, so one nothing showed is not told as a change left (t738).
     else if (act.inPlace) acts.push({ ...named, undoable: true, line: act.did, seen: ledger.forBrief(act.owner).changeSeen(act.act) !== false });
-    else if (kept(act.act, act.owner)) acts.push({ ...named, undoable: false, line: `${act.did} (the site offers no way to undo it)`, stays: "kept" });
+    else if (kept(act.act, act.owner)) acts.push({ ...named, undoable: false, line: `${act.did} (the build could not undo it; it may still be there)`, stays: "kept" });
   }
   const lines = acts.map((act) => act.line);
   const possibly = possiblyLeft(ledger);
@@ -87,13 +103,34 @@ export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<Automa
   ].filter((sentence) => sentence);
   const note = sentences.length ? sentences.join(" ") : undefined;
   const told = automationStudioActivityLeftTold(acts.map((act) => ({ did: act.did, ...(act.stays ? { stays: act.stays } : {}), ...(act.seen === false ? { seen: false } : {}) })), possibly);
-  const fitted = note ? note.slice(0, MAX_REASON - 2) : undefined;
+  const fitted = note ? noteWithin(note, MAX_REASON - 2) : undefined;
   const reason = (said: string) => {
     // The ending is being named: the build hears what is left in Core's words (header).
     ports.leftAtEnding?.({ note, told });
-    return fitted ? `${said.slice(0, MAX_REASON - fitted.length - 1).trimEnd()} ${fitted}`.trim() : said.slice(0, MAX_REASON);
+    return fitted ? `${saidWithin(said, MAX_REASON - fitted.length - 1)} ${fitted}`.trim() : saidWithin(said, MAX_REASON);
   };
   return { acts: acts.map(({ line: _line, stays: _stays, seen: _seen, ...act }) => act), possibly, undoable: acts.some((act) => act.undoable), note, told, reason };
+}
+
+/** `said` within `max`: whole, else up to the last sentence end that fits, else cut at a word's end with "…" (header, t741 B5). */
+function saidWithin(said: string, max: number): string {
+  const text = said.trim();
+  if (text.length <= max) return text;
+  if (max <= 1) return "";
+  // A sentence's end is read off the whole text, so a cut inside "3.5" or "e.g" is no end.
+  const sentence = Math.max(0, ...[...text.matchAll(/[.!?…](?=\s)/gu)].map((found) => found.index + 1).filter((end) => end <= max));
+  if (sentence > 0) return text.slice(0, sentence);
+  const word = text.slice(0, max - 1);
+  const space = text.charAt(max - 1) === " " ? max - 1 : word.lastIndexOf(" ");
+  return space > 0 ? `${word.slice(0, space).trimEnd().replace(/[,;:]+$/u, "")}…` : "";
+}
+
+/** Core's note within `max`, ending on a whole entry ("; and more.") where it must give way (header). */
+function noteWithin(note: string, max: number): string {
+  if (note.length <= max) return note;
+  const cut = note.slice(0, max - "; and more.".length);
+  const end = cut.lastIndexOf("; ");
+  return `${end > 0 ? cut.slice(0, end) : cut.slice(0, cut.lastIndexOf(" ")).trimEnd()}; and more.`;
 }
 
 /** Every brief's possibly lasting presses that may still be on the target, in the order the build made them (header). */

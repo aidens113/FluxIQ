@@ -20,7 +20,11 @@
 // task loses guidance the domain's text gave it, the evidence decision's loop
 // and binding rule as one sentence pair at the end of the prose of every other
 // task that writes steps (Flow Bootstrap and the patches), followed for a Flow
-// Bootstrap by the list and efficiency sentences. With
+// Bootstrap by the list and efficiency sentences; and in t741 (D, social rerun
+// round 3 `run-mvgoawg4-ed85dd5a`) both verification pins by exactly one
+// sentence, that a list going on past an end the page marks, or past the range
+// the request asks for, is not rows missing from that range, inserted after the
+// reads sentence that ends "is the one to change." With
 // them, the domain's text sits after Core's format, injection and schema rules
 // and before Core's task prose, set off by blank lines -- and every word of
 // Core's message is still there.
@@ -92,6 +96,24 @@ describe("a verification's system message, on a narrowing step's result count", 
     }
     for (const name of Object.keys(CASES).filter((key) => !key.startsWith("loop_verification"))) {
       expect(automationStudioDeepSeekSystemPrompt(CASES[name]!)).not.toContain("resultCount");
+    }
+  });
+});
+
+// t741 (D): social rerun round 3 (`run-mvgoawg4-ed85dd5a`, 0141-0145,
+// 0214-0218): judges read a feed's read that went on past its own end marker
+// as rows missing from the task's range and asked to page further.
+describe("a verification's system message, on a list that goes on past what was read", () => {
+  const SAID = "A read whose paging words say its list goes on past what it read has not by that alone left rows out: where the list goes on past an end the page itself marks, or past the range the request asks for, what follows is not rows missing from that range, so judge coverage against the request's own range, and ask for more of the list only where that range goes on past what was read.";
+
+  it("says it once, right after the reads sentence, to both verifications and no other task", () => {
+    for (const name of ["loop_verification", "loop_verification_build_test"]) {
+      const prompt = automationStudioDeepSeekSystemPrompt(CASES[name]!);
+      expect(prompt.split(SAID)).toHaveLength(2);
+      expect(prompt).toContain(`if the request asks for any of them, that condition is wrong and is the one to change. ${SAID} Read each row's tested value`);
+    }
+    for (const name of Object.keys(CASES).filter((key) => !key.startsWith("loop_verification"))) {
+      expect(automationStudioDeepSeekSystemPrompt(CASES[name]!)).not.toContain("an end the page itself marks");
     }
   });
 });

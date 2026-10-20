@@ -328,7 +328,9 @@ describe("a project build whose builder leaves a lasting act", () => {
     const text = (told?.detail as { text: string }).text;
     // Core's record of its tests goes between the reason and what is left (t738, `../../project-build-ending/record-told.ts`).
     // No read showed the save's change, so it is told as acts to check, never as no act at all (t738, `left-on-target.ts` `seen`).
-    expect(text).toBe(`${ENDED_REASON} Both parts tested on their own passed their own test. No whole Flow was assembled, so it was never tested as one. The build left no change on the site that it knows of. It used “save the recipe” and made 1 press it could not name, but no read ever showed a change from them, so they may have changed nothing; check them if you need the site exactly as it was.`);
+    // Why is the chat's ending's to say (`endedBecause`), so the row says it no second time (t741 B5).
+    expect(diagnostic!.endedBecause).toBe(ENDED_REASON);
+    expect(text).toBe(`Both parts tested on their own passed their own test. No whole Flow was assembled, so it was never tested as one. The build left no change on the site that it knows of. It used “save the recipe” and made 1 press it could not name, but no read ever showed a change from them, so they may have changed nothing; check them if you need the site exactly as it was.`);
     expect(text).not.toContain("on the target");
     // Its trial's recipe and its explored one, both still there.
     expect([...run.box]).toEqual(["recipe:lentil-soup", TRIAL_RECIPE, "recipe:herb-bread"]);
@@ -346,7 +348,9 @@ describe("a project build whose builder leaves a lasting act", () => {
     const said = ((lastOf(run.supervisorSaw[6]!, "project.dispatch")!.returns as JsonObject[])[0]!.reason as string);
     expect(said).not.toContain("Every lasting act this build made is undone");
     // Named in a person's words, never by its ledger id (t738, `../../../project-agents/dispatch/reset-done.ts`).
-    expect(said).toContain("1 lasting act of this build stays on the site, so the site is not as the build found it: used “add it to the cart” (the site offers no way to undo it).");
+    // Kept, it is of a reversible class: said as not undone, never as beyond the site (t741 B5) -- the line was in fact removed.
+    expect(said).toContain("1 act of this build could not be undone, so it may still be on the site: used “add it to the cart”.");
+    expect(said).not.toContain("site offers no way");
     // The add, then the removal of the very line it created; the domain never saw `undoes`.
     expect(run.acted).toEqual(["add herb-tea", "remove herb-tea"]);
     expect(run.inputs.every((value) => !Object.prototype.hasOwnProperty.call(value, "undoes"))).toBe(true);

@@ -33,7 +33,21 @@ describe("a reset's done", () => {
     ledger.forBrief("brief-2").explored(pressed("pay", "Pay", ["move_money"]));
     const done = automationStudioProjectDispatchResetDone(ledger);
     expect(done).not.toContain("Every lasting act this build made is undone");
-    expect(done).toBe("This reset undid every act of this build it could, but 2 lasting acts of this build stay on the site, so the site is not as the build found it: clicked “Save” (the site offers no way to undo it), clicked “Pay” (FluxIQ cannot undo it).");
+    // t741 B5: the refused undo's act is of a reversible class, so it is said as not undone, never as beyond the site.
+    expect(done).toBe("This reset undid every act of this build it could, but 1 lasting act of this build stays on the site, so the site is not as the build found it: clicked “Pay” (FluxIQ cannot undo it). 1 act of this build could not be undone, so it may still be on the site: clicked “Save”.");
+    expect(done).not.toContain("site offers no way");
+  });
+
+  // t741 B5, photo-social `run-mvgobp8h-b99ede98`: a kept reversible act made the site "not as the build found it".
+  it("says a kept reversible act alone may still be there, never that the site is not as the build found it", () => {
+    const ledger = new AutomationStudioSiteResetProjectLedger();
+    const one = ledger.forBrief("brief-1");
+    one.explored(pressed("save", "Save", ["create_new"], "card:soup"));
+    expect(one.target("act-1", { effect: "mutate", consequences: ["modify_existing"], control: { item: "card:bread" } })).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_wrong_target" } });
+    expect(one.standing("act-1")).toBe("kept");
+    const done = automationStudioProjectDispatchResetDone(ledger);
+    expect(done).toBe("This reset undid every act of this build it could. 1 act of this build could not be undone, so it may still be on the site: clicked “Save”.");
+    expect(done).not.toContain("not as the build found it");
   });
 
   // t738, everything-store `run-mvgf04kw-310fc169`: acts settled unchanged were listed by id as leaving the site "not as the build found it".

@@ -5,7 +5,9 @@
 // domain and never teach to a scenario (AGENTS.md, "Model guidance never
 // teaches to the test").
 
+import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../executor/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY as UNDOES } from "./contracts.ts";
+import type { AutomationStudioSiteResetIssuedRef } from "./settlement-words.ts";
 
 /**
  * How a reversible act of this build settles (L1, `./settlement-decision.ts`):
@@ -109,11 +111,36 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
     return `"${UNDOES}" may name only an act of this build that core.test_candidate listed under actsToUndo, and only on the call that undoes it. `
       + (acts ? `Name one of the acts listed here, or make the call without "${UNDOES}".` : `No act of this build is waiting to be undone now: make the call without "${UNDOES}".`);
   },
-  /** A reversible lasting press before the seal with no witness (`./reset-witness.ts`, rerun round 2): nothing could ever show it put back. */
-  witnessRequired(): string {
+  /**
+   * A reversible lasting press before the seal with no witness (`./reset-witness.ts`, rerun round 2): nothing could ever show it
+   * put back. `issued`: the refs already shown (rerun round 3, job `run-mvgo9wzn-fad4e050`), each named, never at a withheld place.
+   */
+  witnessRequired(issued: readonly AutomationStudioSiteResetIssuedRef[] = []): string {
+    const known = issued.map((entry) => `${entry.ref} (${entry.count} ${entry.count === 1 ? "item" : "items"}${placed(entry.location)})`);
     return "This press was not run. Before this build's first reversible lasting change, observe completely, through the site's own controls, the list where its effect would show, "
-      + "then retry this press naming the resetDestination ref that observation issues. A press on a control inside a list already read complete, or on a control whose own state the page shows, needs no ref. "
+      + "then retry this press naming the resetDestination ref that observation issues. "
+      + (known.length ? `Refs already issued for lists read complete: ${known.join(", ")}; if the list where this press's effect would show is one of them, retry naming its ref as resetDestination without reading it again. ` : "")
+      + "A press on a control inside a list already read complete, or on a control whose own state the page shows, needs no ref. "
       + "Without such a list nothing could ever show the change put back, and no trial could run for the rest of the build. Looking and navigating remain available; no new permission is needed.";
+  },
+  /**
+   * What a call naming an act under `undoes` settled (rerun round 3, office `run-mvgo5xft-25460ba2`): a settling look used to
+   * answer with only its page, so the model repeated it. `settled`: the act is settled; `open`: acts of the build are still open.
+   */
+  lookSettled(settled: boolean, open: boolean): string {
+    const head = settled
+      ? `This call settled the act it named under ${UNDOES}: fresh complete reads show everything it could change as the build found it, so nothing more is owed for it; do not name it again. `
+      : `This call has not settled the act it named under ${UNDOES} yet: its settle says what is still needed. `;
+    return head + (open ? "Each act under actsStillOpen, across the whole build, says under settle what is still needed." : "No act of this build is still open.");
+  },
+  /**
+   * A call naming `resetDestination` with no `undoes` while acts are open (rerun round 3, office 0133-0136): it ran as an
+   * ordinary look and settled nothing. `example`: an example call is given beside it.
+   */
+  destinationWithoutUndoes(example: boolean): string {
+    return `This call named resetDestination but no act under "${UNDOES}", so it settled nothing: a ref names the list for an act only on a call that also names that act under "${UNDOES}". `
+      + "Each act under actsStillOpen says under settle what is still needed."
+      + (example ? " To name a list for one, make the look again with both keys, as in example." : "");
   },
   /** A `resetDestination` naming no ref this build was shown (rerun round 2): refused before the call runs. */
   destinationUnissued(): string {
@@ -121,3 +148,8 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
       + "Retry without resetDestination, or with a ref such a receipt printed. Looking and navigating remain available; no new permission is needed.";
   }
 });
+
+/** ` at <location>`, or nothing where the location is absent or withheld (`./settlement-words.ts` says places the same way). */
+function placed(location: string | undefined): string {
+  return location && !location.includes(AUTOMATION_STUDIO_WITHHELD_VALUE) ? ` at ${location}` : "";
+}

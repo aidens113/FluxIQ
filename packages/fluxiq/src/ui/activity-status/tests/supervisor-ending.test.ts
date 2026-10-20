@@ -104,6 +104,16 @@ test("a newer Core's last row says why itself: its whole sentence is said, and n
   expect(pacer.display()?.detail, "a title that is whole is said as it is").toBe(`${ENDED}: the item can't be had`);
 });
 
+// t741 B5 (job-board `run-mvgo9wzn-fad4e050`): the pronoun "I" that opens Core's whole sentence is
+// never lower-cased after the colon, where an ordinary first word is.
+test("Core's whole sentence keeps an opening \"I\" after the colon", () => {
+  const title = "Build failed: FluxIQ could not finish the Flow";
+  const row = (text: string) => event({ phase: "failed", label: title, detail: { kind: "step", title, status: "failed", text }, final: true });
+  const said = (text: string) => new SupervisorEnding().observe(row(text), () => title);
+  expect(said("I could not finish this: FluxIQ could not finish the Flow because the list never loaded.")).toStrictEqual({ sentence: "Build failed: I could not finish this: FluxIQ could not finish the Flow because the list never loaded" });
+  expect(said("It could not finish this: FluxIQ could not finish the Flow because the list never loaded.")).toStrictEqual({ sentence: "Build failed: it could not finish this: FluxIQ could not finish the Flow because the list never loaded" });
+});
+
 // t567 lane 4: a newer Core says the ending in a person's words, never "the supervisor": its row
 // "FluxIQ could not finish the Flow." and its last "Build failed: FluxIQ could not finish the Flow".
 // The ending is still known for what it is, and a time limit's words still are not.

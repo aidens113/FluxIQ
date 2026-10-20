@@ -186,6 +186,23 @@
 // `./project-ledger.ts`), asked at each match and each judgement, so a
 // destination named later still counts; a standalone ledger has its own.
 //
+// **A trial act with no witness adopts the build's issued lists (office r3).**
+// Every trial and every entry preparation that re-runs a predecessor makes a
+// new act; one in no list had no witness, and each needed its own model look
+// naming a list under `undoes`, which any issued list settled (office rerun
+// round 3, `run-mvgo5xft-25460ba2`: act-12, act-15, act-18, one per brief, and
+// the build stalled one look short). That look added nothing Core cannot do.
+// So an act made by no exploration call (`call` absent: a trial step's or an
+// entry preparation's) with no witness of its own -- no group, no toggle,
+// after its repeats' lent destinations -- is judged on every list whose ref
+// the model was shown, and Core's own pre-trial look (`lookFirst`) reads them.
+// Every one holding settles it `unchanged`, sticky and told to every later
+// trial's judge, exactly as above. One differing never asks to undo it there
+// (another act may have changed that list): it stays open with its `name`
+// words. An adopted list is never a change seen of its own. With no issued
+// ref nothing is adopted, and its words are as before. Explored acts are
+// untouched: the witness rule before the seal covers them (`./reset-witness.ts`).
+//
 // A phase runs from the build's start, or from one trial to the next. The
 // policy before a trial (`./trial-policy.ts`) reads it.
 
@@ -675,11 +692,25 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     // A trial act's destinations include those of the explored acts it repeats, named whenever (header, L1).
     const lent = act.repeats.length ? this.buildExplored() : [];
     const destinations = [...act.destinations, ...act.repeats.flatMap((id) => lent.find((other) => other.id === id)?.destinations ?? [])];
-    const groups = actGroups({ act: { ...act, destinations }, sequence: this.acts.indexOf(act) + 1, since: act.clock, clock: this.clock, observations: this.seen, described: (scope) => this.createBaselines.described(scope) });
+    const groups = this.groupsOf(act, destinations);
     if (groups.some((group) => group.changed)) act.changeSeen = true;
     const toggle = this.toggleOf(act);
     const control = toggle ? this.tracker.standing(toggle.place, toggle, act.clock, this.clock) : act.press ? this.tracker.unread(act.press) : undefined;
-    return settleDecision({ groups, toggle: control, changeSeen: act.changeSeen, undoLanded: act.attempts > 0 });
+    // A trial act with no witness of its own adopts the build's issued lists; never their changes (header, office r3).
+    const witnessless = act.call === undefined && !control && groups.every((group) => group.status === "none");
+    const adopted = witnessless ? this.groupsOf(act, this.issuedDestinations()) : undefined;
+    return settleDecision({ groups, toggle: control, changeSeen: act.changeSeen, undoLanded: act.attempts > 0, adopted });
+  }
+
+  /** Every complete list group `act` could change, with `destinations` as its named ones (`./settlement-act-groups.ts`). */
+  private groupsOf(act: Act, destinations: ReadonlyArray<{ scope: string; group: string }>): ReturnType<typeof actGroups> {
+    return actGroups({ act: { ...act, destinations }, sequence: this.acts.indexOf(act) + 1, since: act.clock, clock: this.clock, observations: this.seen, described: (scope) => this.createBaselines.described(scope) });
+  }
+
+  /** Every list whose ref the model was shown, as a destination (header, office r3); none where no ref was issued. */
+  private issuedDestinations(): Array<{ scope: string; group: string }> {
+    const issued = this.createBaselines.issuedRefs().map((entry) => this.createBaselines.named(entry.ref));
+    return issued.filter((entry): entry is { scope: string; group: string } => entry !== undefined);
   }
 
   /** The toggle its own press made, once the read after it is in (header, L1). */

@@ -316,7 +316,7 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
   planIssues: Object.freeze({
     "project.plan_subflow_no_parts": "Every subflow you write carries at least one part. If this is the subflow the router runs, leave it out: Core adds it and writes its calls.",
     "project.plan_subflow_key": "A subflow key is lower case letters, digits, _ or -, starting with a letter, at most 64 characters.",
-    "project.plan_port_name": "An input or output name is letters and digits, starting with a lower case letter, at most 32 characters.",
+    "project.plan_port_name": "An input or output name is letters and digits, starting with a lower case letter, at most 32 characters, and never `item`, the name a loop's row takes.",
     "project.plan_after_unknown": "after names a subflow this plan does not write, or the subflow itself. Name only other subflows you write.",
     "project.plan_after_cycle": "The subflows' after lists make a circle, so none of them could run first. Give each only subflows that come before it.",
     "project.duplicate_subflow": "Two subflows have this key. Give each subflow a key of its own.",

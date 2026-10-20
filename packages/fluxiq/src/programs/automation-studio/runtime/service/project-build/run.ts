@@ -82,6 +82,12 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // the limit, which is its why. A question put to the person (a permission, an
 // intervention) is said as it is.
 //
+// **Why is said once (t741 B5).** Since t649 the failure carries why
+// (`endedBecause`) and the chat's ending says it after the ending's kind; the
+// row before it said it too, so job-board `run-mvgo9wzn-fad4e050` read the
+// supervisor's sentence twice. Where the failure carries why, the row says
+// Core's record of its tests and what is left without it.
+//
 // **What an amendment kept runs in a dependent's entry (t590).** The
 // supervisor tells the build, each time a plan comes into force, which earlier
 // plans' done proposals it keeps (`ports.kept`); the build's proposals answer
@@ -377,11 +383,13 @@ function toldEnding(failure: Error, recorded: AutomationStudioProjectBuildEnding
   // Why the supervisor ended it, in its screened words, then Core's record of its tests, before what is left (header, t649, t738).
   const said = timedOut ? undefined : endedSaid(recorded, left, record);
   const why = said?.why;
-  const text = said?.text ?? `${timedOut?.tested ?? ""} ${note ?? NOTHING_LEFT}`.trim();
-  emitAutomationStudioActivity({ phase: "building", label: title, detail: { kind: "note", title, text, status: "failed" } });
   // The failure carries why too, beside the supervisor's ending it explains, so the build's last row and the chat's ending say it (header, t649).
-  const ended = why === undefined ? undefined : why.slice(0, MAX_DIAGNOSTIC_ENDED_BECAUSE).trim();
-  if (!ended || !diagnostic.issueCodes?.some((code) => DIAGNOSTIC_SUPERVISOR_ENDING_CODES.has(code))) return failure;
+  const ended = why === undefined ? undefined : why.length <= MAX_DIAGNOSTIC_ENDED_BECAUSE ? why.trim() : automationStudioActivityEndedReason(why, MAX_DIAGNOSTIC_ENDED_BECAUSE);
+  const carried = Boolean(ended) && diagnostic.issueCodes?.some((code) => DIAGNOSTIC_SUPERVISOR_ENDING_CODES.has(code)) === true;
+  // Said once (header, t741 B5): where the chat's ending says why, this row says the record and what is left without it.
+  const text = (carried ? said?.rest : said?.text) ?? `${timedOut?.tested ?? ""} ${note ?? NOTHING_LEFT}`.trim();
+  emitAutomationStudioActivity({ phase: "building", label: title, detail: { kind: "note", title, text, status: "failed" } });
+  if (!carried || !ended) return failure;
   return new AutomationStudioFlowBootstrapGenerationError({ ...diagnostic, endedBecause: ended });
 }
 
@@ -393,13 +401,13 @@ function toldEnding(failure: Error, recorded: AutomationStudioProjectBuildEnding
  * after the model's words (`project-agents/record/store.ts`), so it is cut from
  * the reason and said last.
  */
-function endedSaid(recorded: AutomationStudioProjectBuildEnding, left: { note: string | undefined; told?: string } | undefined, record: string | undefined): { why: string | undefined; text: string } {
+function endedSaid(recorded: AutomationStudioProjectBuildEnding, left: { note: string | undefined; told?: string } | undefined, record: string | undefined): { why: string | undefined; text: string; rest: string } {
   const own = left?.note && recorded.reason.endsWith(left.note) ? recorded.reason.slice(0, -left.note.length) : recorded.reason;
   // Only what of the supervisor's reason is plain is said (header, t567 lane 4), and none of its part-level test claims beside the record (t738).
   const why = automationStudioActivityEndedReason(record ? automationStudioProjectBuildReasonChecked(own) : own, MAX_ENDED_REASON);
   const note = left?.note !== undefined ? left.told ?? left.note : undefined;
-  const sentences = [why ? (/[.!?…]$/u.test(why) ? why : `${why}.`) : "", record ?? "", note ?? NOTHING_LEFT];
-  return { why, text: sentences.filter((sentence) => sentence).join(" ") };
+  const rest = [record ?? "", note ?? NOTHING_LEFT].filter((sentence) => sentence).join(" ");
+  return { why, text: why ? `${/[.!?…]$/u.test(why) ? why : `${why}.`} ${rest}` : rest, rest };
 }
 
 /**

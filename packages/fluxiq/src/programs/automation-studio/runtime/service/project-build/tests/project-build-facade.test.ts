@@ -385,7 +385,8 @@ describe("a project build through the actual service", () => {
     expect(diagnostic).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked"] });
     expect(diagnostic!.ending).toBeUndefined();
     const told = seen.find((event) => event.detail?.title === "FluxIQ could not finish the Flow.");
-    expect(told?.detail).toMatchObject({ kind: "note", status: "failed", text: "The control the task names is not on the start page. No other way to it was found. The build left no change on the site that it knows of." });
+    // Why is said once (t741 B5): the chat's ending says it from the failure, so this row says what is left without it.
+    expect(told?.detail).toMatchObject({ kind: "note", status: "failed", text: "The build left no change on the site that it knows of." });
     // The failure carries why beside the supervisor's ending, so the chat's ending and the build's last row say it (t649).
     expect(diagnostic!.endedBecause).toBe("The control the task names is not on the start page. No other way to it was found.");
   });

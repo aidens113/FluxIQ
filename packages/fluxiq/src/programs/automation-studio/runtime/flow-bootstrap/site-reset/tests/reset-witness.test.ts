@@ -200,3 +200,31 @@ describe("settle words never print a withheld place", () => {
 function rowOutside(): AutomationStudioSiteResetSpot {
   return { subject: "s:dune", item: "i:dune", scope: "p:unread-list", resource: SITE };
 }
+
+// Rerun round 3 (job `run-mvgo9wzn-fad4e050`): by the time a press was refused
+// for want of a witness a ref had already been issued, but the refusal said
+// only "observe the list". It names the refs already issued, never a withheld place.
+describe("a witness refusal once refs are issued", () => {
+  it("names each ref already issued with its count and place, and still says to observe a list that has none", () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.observed(readingList());
+    expect(ledger.destinationReceipts().map((receipt) => receipt.ref)).toEqual(["destination-1"]);
+    ledger.observed(bookPage());
+    const verdict = attempt(ledger, "add", ADD);
+    expect(verdict).toMatchObject(WITNESS);
+    const instruction = verdict.kind === "refused" ? String(verdict.evidence.instruction) : "";
+    expect(instruction).toContain("destination-1 (2 items at loc:reading-list)");
+    expect(instruction).toContain("observe completely");
+    expect(instruction).toContain("no new permission is needed");
+  });
+
+  it("never prints a withheld place", () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.observed(readingList(`loc:${WITHHELD}`));
+    ledger.destinationReceipts();
+    const verdict = attempt(ledger, "add", ADD);
+    const instruction = verdict.kind === "refused" ? String(verdict.evidence.instruction) : "";
+    expect(instruction).toContain("destination-1 (2 items)");
+    expect(instruction).not.toContain(WITHHELD);
+  });
+});

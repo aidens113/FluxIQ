@@ -18,3 +18,15 @@ it("offers creation receipts only with the explicit project-builder option, reta
   const other = { ...tool, toolId: "other.observe" };
   expect(automationStudioSiteResetUndoesTool(other, { createBaselines: true })).toBe(other);
 });
+
+// Rerun round 3 (job `run-mvgo9wzn-fad4e050`): since t738 any reversible press
+// made before the seal with no other witness needs a ref, not only create_new.
+it("describes resetDestination for any reversible press before the first lasting change with no other witness", () => {
+  const tool: AutomationStudioLlmEvidenceTool = { toolId: "core.run_node", description: "Run a registered operation.", effect: "mutate", perCallEffect: true, inputSchema: { type: "object", properties: { node: { type: "string" } } } };
+  const described = String(((automationStudioSiteResetUndoesTool(tool, { createBaselines: true }).inputSchema.properties as JsonObject).resetDestination as JsonObject).description);
+  expect(described).not.toMatch(/^For an identified reversible create_new/u);
+  expect(described).toContain("any reversible lasting press (create_new, modify_existing or delete) made before the build's first lasting change");
+  expect(described).toContain("no other witness");
+  expect(described).toContain("on a later look that names it under undoes");
+  expect(described).toContain("Never invent a ref");
+});
