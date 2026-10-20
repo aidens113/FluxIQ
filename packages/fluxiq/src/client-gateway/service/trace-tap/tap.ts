@@ -8,10 +8,16 @@
 //   traced episode, a message to a claimed session goes to its claimants.
 // - Inbound: an action result or reconcile answer goes to the traces its
 //   command id was sent from; anything else to every trace claiming the
-//   session. The raw text is what is recorded; the disposition follows it. The
-//   artifact digests a result references ride on its event.
+//   session. The raw text is what is recorded; the disposition follows it,
+//   with the digests of what Core delivered for it (P3). The artifact digests
+//   a result references ride on its event.
 // - Lifecycle goes to the claimants, Core-synthesized outcomes to the traces of
 //   their command id. Credentials are redacted here (D7).
+// - Every event that belongs to a session names it by the opaque reference its
+//   trace gave it (`session-1`, ...), never by session id or token (P3).
+// - When a trace first claims a session, it records the session's public view
+//   (`session.claimed`, `./session-view.ts`), so a replay attaches the session
+//   as it was (P3 D23).
 //
 // With no source the tap does nothing at all. It never throws into the
 // gateway: a sink's own failures stay the sink's, and a sink that answers
@@ -34,11 +40,14 @@ import { clientGatewayTraceStampedAction } from "./action-stamp.ts";
 import { CLIENT_GATEWAY_TRACE_CREDENTIAL_FIELDS } from "./credential-fields.ts";
 import { redactClientGatewayTraceCredentials } from "./credential-redaction.ts";
 import { clientGatewayTraceReferencedDigests } from "./referenced-digests.ts";
+import { CLIENT_GATEWAY_TRACE_LIFECYCLE_EVENTS } from "./lifecycle-events.ts";
 import { CLIENT_GATEWAY_TRACE_TAP_SCHEMAS } from "./schemas.ts";
+import { clientGatewayTraceSessionView } from "./session-view.ts";
 import { CLIENT_GATEWAY_TRACE_TAP_STREAMS } from "./streams.ts";
 import type {
   ClientGatewayTraceArtifactIntake,
   ClientGatewayTraceArtifactUpload,
+  ClientGatewayTraceDelivery,
   ClientGatewayTraceDisposition,
   ClientGatewayTraceInboundCapture,
   ClientGatewayTraceInboundTarget,
@@ -68,16 +77,21 @@ const ROUTED_BY_COMMAND: ReadonlySet<string> = new Set(["client.action_result", 
 /** Display-only, and nothing answers it (D1): never recorded. */
 const UNTRACED_OUTBOUND: ReadonlySet<string> = new Set(["server.activity"]);
 const NO_REDACTIONS: readonly ClientGatewayTraceRedaction[] = Object.freeze([]);
+const NO_DELIVERY: ClientGatewayTraceDelivery = Object.freeze({ result: null, event: null });
 
 export class ClientGatewayTraceTap {
   private readonly source: ClientGatewayTraceCaptureSource | undefined;
   private readonly clientIdOf: (sessionId: string) => string | undefined;
+  private readonly sessionViewOf: ClientGatewayTraceTapOptions["sessionViewOf"];
   private readonly claims = new Map<ClientGatewayTraceSink, Claim>();
   private readonly routes = new Map<string, Route>();
+  /** Per trace, the opaque reference it gave each session it met (`session-1`, ...), so an event says whose it is without a session id or token. */
+  private readonly sessionRefs = new Map<ClientGatewayTraceSink, Map<string, string>>();
 
   constructor(options: ClientGatewayTraceTapOptions) {
     this.source = options.source;
     this.clientIdOf = options.clientIdOf;
+    this.sessionViewOf = options.sessionViewOf;
   }
 
   /**
@@ -110,7 +124,7 @@ export class ClientGatewayTraceTap {
     if (sinks.length === 0) return;
     const envelope = structuredEnvelope(fields.type, message);
     const input = this.envelopeInput("outbound", fields, envelope);
-    for (const sink of sinks) this.recordInto(sink, input);
+    for (const sink of sinks) this.recordInto(sink, input, sessionId);
     if (fields.commandId !== null && !this.routes.has(fields.commandId)) this.routes.set(fields.commandId, { sinks: [...sinks], owner: null });
   }
 
@@ -122,7 +136,7 @@ export class ClientGatewayTraceTap {
     if (sinks.length === 0) return undefined;
     const credentialed = fields.type !== null && Object.hasOwn(CLIENT_GATEWAY_TRACE_CREDENTIAL_FIELDS, fields.type);
     const envelope: Envelope = credentialed ? structuredEnvelope(fields.type, parsed) : { payload: { encoding: "text", text }, redactions: NO_REDACTIONS };
-    return this.capture(sinks, fields, envelope);
+    return this.capture(sessionId, sinks, fields, envelope);
   }
 
   /** A message handed to `receive` in process, recorded as its JSON text at entry. */
@@ -133,7 +147,7 @@ export class ClientGatewayTraceTap {
     if (sinks.length === 0) return undefined;
     const credentialed = fields.type !== null && Object.hasOwn(CLIENT_GATEWAY_TRACE_CREDENTIAL_FIELDS, fields.type);
     const envelope = credentialed ? structuredEnvelope(fields.type, message) : textEnvelope(message);
-    return this.capture(sinks, fields, envelope);
+    return this.capture(sessionId, sinks, fields, envelope);
   }
 
   /**
@@ -151,12 +165,16 @@ export class ClientGatewayTraceTap {
     if (sinks.length === 0) return;
     const bytes = new TextEncoder().encode(text);
     const unparsed = { unparsed: { byteLength: bytes.byteLength, sha256: clientGatewayTraceArtifactDigest(bytes) } };
-    const capture = this.capture(sinks, fields, { payload: { encoding: "json", value: unparsed }, redactions: [{ path: "", reason: "secret" }] });
+    const capture = this.capture(sessionId, sinks, fields, { payload: { encoding: "json", value: unparsed }, redactions: [{ path: "", reason: "secret" }] });
     this.disposition(capture, { disposition: "parse_failed", error: errorKind(error) });
   }
 
-  /** What Core did with a captured inbound message, caused by it in each trace that took it. */
+  /**
+   * What Core did with a captured inbound message, caused by it in each trace
+   * that took it, with the digests of what Core delivered for it (P3).
+   */
   disposition(capture: ClientGatewayTraceInboundCapture, disposition: ClientGatewayTraceDisposition): void {
+    const delivered = disposition.delivered ?? NO_DELIVERY;
     for (const target of capture.targets) {
       this.recordInto(target.sink, {
         stream: CLIENT_GATEWAY_TRACE_TAP_STREAMS.gateway,
@@ -165,10 +183,10 @@ export class ClientGatewayTraceTap {
         source: { id: null, sequence: null, timestamp: null },
         correlation: { commandId: capture.commandId, recordingId: capture.recordingId, causationEventId: target.eventId, owner: this.ownerOf(capture.commandId), observationRevision: null, baseRevision: null },
         payloadSchema: CLIENT_GATEWAY_TRACE_TAP_SCHEMAS.disposition,
-        payload: { encoding: "json", value: { disposition: disposition.disposition, error: disposition.error } },
+        payload: { encoding: "json", value: { disposition: disposition.disposition, error: disposition.error, delivered: { result: delivered.result, event: delivered.event } } },
         artifactIds: [],
         redactions: NO_REDACTIONS
-      });
+      }, capture.sessionId);
     }
   }
 
@@ -183,7 +201,7 @@ export class ClientGatewayTraceTap {
     if (sinks.length === 0) return;
     const redacted = redactClientGatewayTraceCredentials({ event, sessionId: target.sessionId, clientId: target.clientId, ...detail }, credentialPaths);
     const input = this.tapInput("lifecycle", event, null, CLIENT_GATEWAY_TRACE_TAP_SCHEMAS.lifecycle, redacted.value, redacted.redactions);
-    for (const sink of sinks) this.recordInto(sink, input);
+    for (const sink of sinks) this.recordInto(sink, input, target.sessionId);
   }
 
   /**
@@ -216,7 +234,7 @@ export class ClientGatewayTraceTap {
     };
     let traces = 0;
     for (const sink of this.claimants(sessionId, null)) {
-      const recorded = this.settle(sink, () => sink.recordArtifact(input));
+      const recorded = this.settle(sink, () => sink.recordArtifact({ ...input, session: this.sessionRef(sink, sessionId) }));
       if (recorded.status === "recorded") traces += 1;
     }
     return { status: "accepted", traces };
@@ -256,9 +274,20 @@ export class ClientGatewayTraceTap {
       claim = { sessionIds: new Set(), clientIds: new Set() };
       this.claims.set(sink, claim);
     }
+    const first = !claim.sessionIds.has(sessionId);
     claim.sessionIds.add(sessionId);
     const clientId = this.clientIdOf(sessionId);
     if (clientId !== undefined) claim.clientIds.add(clientId);
+    if (first) this.recordClaimedView(sink, sessionId);
+  }
+
+  /** The session's public view, into the trace that just claimed it; nothing when the session record cannot be read. */
+  private recordClaimedView(sink: ClientGatewayTraceSink, sessionId: string): void {
+    const session = this.sessionViewOf?.(sessionId);
+    if (session === undefined) return;
+    const event = CLIENT_GATEWAY_TRACE_LIFECYCLE_EVENTS.sessionClaimed;
+    const value = { event, sessionId, clientId: session.clientId, view: clientGatewayTraceSessionView(session) };
+    this.recordInto(sink, this.tapInput("lifecycle", event, null, CLIENT_GATEWAY_TRACE_TAP_SCHEMAS.lifecycle, value, NO_REDACTIONS), sessionId);
   }
 
   /** A new trace is claiming: drop every claim whose trace has closed since. */
@@ -270,6 +299,7 @@ export class ClientGatewayTraceTap {
 
   private drop(sink: ClientGatewayTraceSink): void {
     this.claims.delete(sink);
+    this.sessionRefs.delete(sink);
     for (const [commandId, route] of this.routes) {
       route.sinks = route.sinks.filter((held) => held !== sink);
       if (route.sinks.length === 0) this.routes.delete(commandId);
@@ -280,14 +310,14 @@ export class ClientGatewayTraceTap {
     return commandId === null ? null : this.routes.get(commandId)?.owner ?? null;
   }
 
-  private capture(sinks: readonly ClientGatewayTraceSink[], fields: Fields, envelope: Envelope): ClientGatewayTraceInboundCapture {
+  private capture(sessionId: string, sinks: readonly ClientGatewayTraceSink[], fields: Fields, envelope: Envelope): ClientGatewayTraceInboundCapture {
     const input = this.envelopeInput("inbound", fields, envelope);
     const targets: ClientGatewayTraceInboundTarget[] = [];
     for (const sink of sinks) {
-      const recorded = this.recordInto(sink, input);
+      const recorded = this.recordInto(sink, input, sessionId);
       if (recorded.status === "recorded" || recorded.status === "lost") targets.push({ sink, eventId: recorded.eventId });
     }
-    return { messageType: fields.type, commandId: fields.commandId, recordingId: fields.recordingId, targets };
+    return { sessionId, messageType: fields.type, commandId: fields.commandId, recordingId: fields.recordingId, targets };
   }
 
   private envelopeInput(kind: "inbound" | "outbound", fields: Fields, envelope: Envelope): ClientGatewayTraceEventInput {
@@ -326,8 +356,25 @@ export class ClientGatewayTraceTap {
     };
   }
 
-  private recordInto(sink: ClientGatewayTraceSink, input: ClientGatewayTraceEventInput): Recorded {
-    return this.settle(sink, () => sink.record(input));
+  /** Records `input` into `sink`, marked with that trace's reference to `sessionId` when the event belongs to a session. */
+  private recordInto(sink: ClientGatewayTraceSink, input: ClientGatewayTraceEventInput, sessionId: string | null = null): Recorded {
+    const marked = sessionId === null ? input : { ...input, session: this.sessionRef(sink, sessionId) };
+    return this.settle(sink, () => sink.record(marked));
+  }
+
+  /** The opaque reference `sink`'s trace gives `sessionId`: the next `session-<n>` the first time it meets it. */
+  private sessionRef(sink: ClientGatewayTraceSink, sessionId: string): string {
+    let refs = this.sessionRefs.get(sink);
+    if (refs === undefined) {
+      refs = new Map();
+      this.sessionRefs.set(sink, refs);
+    }
+    let ref = refs.get(sessionId);
+    if (ref === undefined) {
+      ref = `session-${refs.size + 1}`;
+      refs.set(sessionId, ref);
+    }
+    return ref;
   }
 
   /** Runs one sink call; a sink that answers `closed` loses its claims, and one that throws keeps its failure to itself. */

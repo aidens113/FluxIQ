@@ -5,12 +5,22 @@
 // different bytes, and reading a trace nothing was written for throws rather
 // than answering empty. A missing manifest is `undefined`, as the contract says.
 //
-// Events are kept as JSON inline below the object threshold, otherwise in the
-// project content store; artifact bytes always go to the content store. Every
-// content object a trace uses carries an owner reference
+// An event's JSON is kept inline below `GATEWAY_TRACE_CHUNK_BOUNDS.inlineBelowBytes`,
+// otherwise cut into content-defined chunks stored once per project
+// (`chunk-bounds.ts`, lane T P3): a view repeated from command to command is kept
+// once, not once per event. Rows 0030 wrote with the JSON in one content object
+// still read. Artifact bytes always go to the content store, and every content
+// object a trace uses carries an owner reference
 // `{ ownerKind: "client_gateway_trace", ownerId: traceId }`, which pins it
-// against the content sweep; deleting the trace deletes its rows and those
-// references in one transaction, and the next sweep frees the bytes.
+// against the content sweep. Deleting the trace deletes its rows, its chunk
+// uses (freeing chunks no other trace uses) and its references in one
+// transaction, and the next sweep frees the content bytes.
+//
+// A chunked event whose chunk is gone or damaged throws when read ("not held"),
+// as an event whose content object is gone does: never a shortened payload.
+//
+// Opened with a content protection (lane T P3-E), no event JSON stays inline and
+// every chunk and artifact is sealed with it (`seal-chunk.ts`, `protect-chunks.ts`).
 //
 // An artifact counts as held only while its content object is there: a listed
 // artifact's digest is computed from the bytes the store reads back, so a
@@ -24,12 +34,23 @@ import type {
   ClientGatewayTraceManifest,
   ClientGatewayTraceStore
 } from "../../../../../client-gateway/trace/index.ts";
-import { AUTOMATION_STUDIO_OBJECT_THRESHOLD_BYTES } from "../../object-store.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../administration.ts";
+import type { AutomationStudioProjectContentProtection } from "../content-protection.ts";
 import { AutomationStudioProjectContentStore } from "../content-store.ts";
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../database.ts";
+import { AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_MIGRATION } from "./chunk-migration.ts";
+import { AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_PROTECTION_MIGRATION } from "./chunk-protection-migration.ts";
+import type { AutomationStudioGatewayTraceChunkSetMeasure } from "./chunk-set-measure.ts";
+import { deleteGatewayTraceChunkUses } from "./delete-chunk-uses.ts";
+import type { AutomationStudioGatewayTraceMeasure } from "./measure.ts";
+import { measureGatewayTraceChunkSetRows, measureGatewayTraceRows } from "./measure-rows.ts";
 import { AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION } from "./migration.ts";
+import { prepareGatewayTraceEventBody } from "./prepare-body.ts";
+import { protectGatewayTraceChunks } from "./protect-chunks.ts";
+import { readGatewayTraceChunkedBodies } from "./read-bodies.ts";
+import type { GatewayTraceChunkSealing, GatewayTraceChunkedBodyRef, GatewayTraceEventBody } from "./types.ts";
+import { writeGatewayTraceChunks } from "./write-chunks.ts";
 
 const OWNER_KIND = "client_gateway_trace";
 
@@ -41,26 +62,40 @@ const CORRELATION_COLUMNS: Readonly<Record<ClientGatewayTraceCorrelationKey, str
 });
 
 type ManifestRow = { manifest_json: string };
-type EventRow = { trace_id: string; sequence: number; event_json: string | null; event_object_id: string | null };
+type EventRow = {
+  trace_id: string;
+  sequence: number;
+  event_json: string | null;
+  event_object_id: string | null;
+  event_chunk_digests: Buffer | null;
+  event_byte_length: number | null;
+};
 type ArtifactRow = { artifact_id: string; object_id: string; sha256: string; byte_length: number };
 
-/** One event ready to insert: its JSON inline, or the content object that holds it. */
-type EncodedEvent = { event: ClientGatewayTraceEvent; json: string | null; objectId: string | null };
+/** One event ready to insert: its JSON inline, or the ordered chunks that hold it. */
+type EncodedEvent = { event: ClientGatewayTraceEvent; body: GatewayTraceEventBody };
+
+const EVENT_ROW_COLUMNS = "trace_id, sequence, event_json, event_object_id, event_chunk_digests, event_byte_length";
 
 export class AutomationStudioProjectGatewayTraceStore implements ClientGatewayTraceStore {
   private constructor(
     private readonly lease: AutomationStudioProjectDatabaseLease,
-    private readonly content: AutomationStudioProjectContentStore
+    private readonly content: AutomationStudioProjectContentStore,
+    private readonly sealing: GatewayTraceChunkSealing
   ) {}
 
-  static async open(input: { pool: AutomationStudioProjectDatabasePool; projectId: string }): Promise<AutomationStudioProjectGatewayTraceStore> {
+  /** With `protection` (the host's project content protection), chunks and artifacts are sealed. */
+  static async open(input: { pool: AutomationStudioProjectDatabasePool; projectId: string; protection?: AutomationStudioProjectContentProtection }): Promise<AutomationStudioProjectGatewayTraceStore> {
     const lease = await input.pool.acquire(input.projectId);
     let content: AutomationStudioProjectContentStore | undefined;
     try {
-      const migrations = [...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION];
+      const traceMigrations = [AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_MIGRATION, AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_PROTECTION_MIGRATION];
+      const migrations = [...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION, ...traceMigrations];
       await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations }).migrate();
-      content = await AutomationStudioProjectContentStore.open({ pool: input.pool, projectId: input.projectId });
-      return new AutomationStudioProjectGatewayTraceStore(lease, content);
+      const sealing: GatewayTraceChunkSealing = { projectId: input.projectId, protection: input.protection };
+      await protectGatewayTraceChunks(lease.database, sealing);
+      content = await AutomationStudioProjectContentStore.open({ pool: input.pool, projectId: input.projectId, ...(input.protection === undefined ? {} : { protection: input.protection }) });
+      return new AutomationStudioProjectGatewayTraceStore(lease, content, sealing);
     } catch (error) {
       await content?.close();
       await lease.release();
@@ -87,7 +122,8 @@ export class AutomationStudioProjectGatewayTraceStore implements ClientGatewayTr
       content: copy,
       mediaType: "application/octet-stream",
       extension: "bin",
-      owner: { ownerKind: OWNER_KIND, ownerId: owner, purpose: "artifact" }
+      owner: { ownerKind: OWNER_KIND, ownerId: owner, purpose: "artifact" },
+      protect: this.sealing.protection !== undefined
     });
     await this.lease.database.run(
       `insert into client_gateway_trace_artifacts (trace_id, artifact_id, object_id, sha256, byte_length)
@@ -101,13 +137,15 @@ export class AutomationStudioProjectGatewayTraceStore implements ClientGatewayTr
 
   /** Appends in strictly increasing sequence order; all or nothing. */
   async appendEvents(traceId: string, events: readonly ClientGatewayTraceEvent[]): Promise<void> {
-    const owner = ownerId(traceId);
+    ownerId(traceId);
     const copies = events.map((event) => frozenEvent(event));
     refuseOutOfOrder(traceId, copies, await lastSequence(this.lease.database, traceId));
-    const encoded: EncodedEvent[] = [];
-    for (const event of copies) encoded.push(await this.encode(owner, event));
+    const inlineAllowed = this.sealing.protection === undefined;
+    const encoded: EncodedEvent[] = copies.map((event) => ({ event, body: prepareGatewayTraceEventBody({ json: JSON.stringify(event), inlineAllowed }) }));
+    const chunks = encoded.flatMap((row) => (row.body.kind === "chunked" ? row.body.chunks : []));
     await this.lease.database.transaction(async (sql) => {
       refuseOutOfOrder(traceId, copies, await lastSequence(sql, traceId));
+      await writeGatewayTraceChunks(sql, this.sealing, traceId, chunks);
       for (const row of encoded) await insertEvent(sql, traceId, row);
     });
   }
@@ -148,7 +186,7 @@ export class AutomationStudioProjectGatewayTraceStore implements ClientGatewayTr
     if (Number.isNaN(from) || Number.isNaN(to)) throw new Error(`event range ${from}..${to} of trace ${traceId} is not a number range`);
     await this.requireTrace(traceId);
     const bounded = Number.isFinite(to);
-    const sql = `select trace_id, sequence, event_json, event_object_id from client_gateway_trace_events
+    const sql = `select ${EVENT_ROW_COLUMNS} from client_gateway_trace_events
       where trace_id = ? and sequence >= ?${bounded ? " and sequence <= ?" : ""} order by sequence`;
     const lower = Number.isFinite(from) ? from : 0;
     const rows = await this.lease.database.all<EventRow>(sql, bounded ? [traceId, lower, to] : [traceId, lower]);
@@ -159,7 +197,7 @@ export class AutomationStudioProjectGatewayTraceStore implements ClientGatewayTr
     await this.requireTrace(traceId);
     const column = CORRELATION_COLUMNS[key];
     const rows = await this.lease.database.all<EventRow>(
-      `select trace_id, sequence, event_json, event_object_id from client_gateway_trace_events
+      `select ${EVENT_ROW_COLUMNS} from client_gateway_trace_events
        where trace_id = ? and ${column} = ? order by sequence`,
       [traceId, value]
     );
@@ -188,37 +226,50 @@ export class AutomationStudioProjectGatewayTraceStore implements ClientGatewayTr
     return Object.freeze(held);
   }
 
-  /** Removes the trace's rows and its content references together; the content sweep frees the bytes. */
+  /** What the store keeps for one trace, by name: events, how they are held, the chunks it uses and shares, its held artifacts. */
+  async measureTrace(traceId: string): Promise<AutomationStudioGatewayTraceMeasure> {
+    await this.requireTrace(traceId);
+    const rows = await measureGatewayTraceRows(this.lease.database, traceId);
+    const artifacts = await this.listArtifacts(traceId);
+    return Object.freeze({
+      traceId,
+      ...rows,
+      logicalEventBytes: rows.inlineBytes + rows.chunkedLogicalBytes + rows.objectBytes,
+      artifacts: artifacts.length,
+      artifactBytes: artifacts.reduce((sum, artifact) => sum + artifact.byteLength, 0)
+    });
+  }
+
+  /** The distinct chunks a set of traces uses, each counted once. Every trace named must be held. */
+  async measureTraceChunks(traceIds: readonly string[]): Promise<AutomationStudioGatewayTraceChunkSetMeasure> {
+    for (const traceId of traceIds) await this.requireTrace(traceId);
+    return measureGatewayTraceChunkSetRows(this.lease.database, traceIds);
+  }
+
+  /** Removes the trace's rows, chunk uses and content references together; the content sweep frees the bytes. */
   async deleteTrace(traceId: string): Promise<void> {
     await this.requireTrace(traceId);
     await this.lease.database.transaction(async (sql) => {
       await sql.run("delete from client_gateway_trace_events where trace_id = ?", [traceId]);
+      await deleteGatewayTraceChunkUses(sql, traceId);
       await sql.run("delete from client_gateway_trace_artifacts where trace_id = ?", [traceId]);
       await sql.run("delete from client_gateway_traces where trace_id = ?", [traceId]);
       await sql.run("delete from object_references where owner_kind = ? and owner_id = ?", [OWNER_KIND, traceId]);
     });
   }
 
-  private async encode(owner: string, event: ClientGatewayTraceEvent): Promise<EncodedEvent> {
-    const json = JSON.stringify(event);
-    if (Buffer.byteLength(json, "utf8") < AUTOMATION_STUDIO_OBJECT_THRESHOLD_BYTES) return { event, json, objectId: null };
-    const written = await this.content.putBytes({
-      content: Buffer.from(json, "utf8"),
-      mediaType: "application/json",
-      extension: "json",
-      owner: { ownerKind: OWNER_KIND, ownerId: owner, purpose: "event" }
-    });
-    return { event, json: null, objectId: written.object.objectId };
-  }
-
+  /** The rows' events in order; the chunked ones are reassembled together, so a chunk they share is read once. */
   private async decodeAll(rows: readonly EventRow[]): Promise<readonly ClientGatewayTraceEvent[]> {
+    const chunked = rows.flatMap((row) => chunkedBodyRef(row));
+    const texts = await readGatewayTraceChunkedBodies(this.lease.database, this.sealing, chunked);
+    const chunkedText = new Map(chunked.map((ref, index) => [ref.where, texts[index]!]));
     const events: ClientGatewayTraceEvent[] = [];
-    for (const row of rows) events.push(await this.decode(row));
+    for (const row of rows) events.push(await this.decode(row, chunkedText.get(eventWhere(row)) ?? row.event_json));
     return Object.freeze(events);
   }
 
-  private async decode(row: EventRow): Promise<ClientGatewayTraceEvent> {
-    const json = row.event_json ?? (await this.eventObjectText(row));
+  private async decode(row: EventRow, text: string | null): Promise<ClientGatewayTraceEvent> {
+    const json = text ?? (await this.eventObjectText(row));
     const event = cloneClientGatewayTraceJson(JSON.parse(json)) as unknown as ClientGatewayTraceEvent;
     if (event.traceId !== row.trace_id || event.sequence !== row.sequence) {
       throw new Error(`event row ${row.trace_id}#${row.sequence} holds event ${event.traceId}#${event.sequence}`);
@@ -226,7 +277,7 @@ export class AutomationStudioProjectGatewayTraceStore implements ClientGatewayTr
     return event;
   }
 
-  /** A large event's JSON. Its object being gone is a failure, never a skipped event. */
+  /** A 0030 large event's JSON, kept in one content object. Its object being gone is a failure, never a skipped event. */
   private async eventObjectText(row: EventRow): Promise<string> {
     if (row.event_object_id === null) throw new Error(`event row ${row.trace_id}#${row.sequence} holds no event`);
     const asset = await this.content.readBytesByObjectId(row.event_object_id);
@@ -294,11 +345,12 @@ async function lastSequence(sql: AutomationStudioSqlExecutor, traceId: string): 
 }
 
 async function insertEvent(sql: AutomationStudioSqlExecutor, traceId: string, row: EncodedEvent): Promise<void> {
-  const { event } = row;
+  const { event, body } = row;
   await sql.run(
     `insert into client_gateway_trace_events
-       (trace_id, sequence, event_id, stream, kind, message_type, command_id, recording_id, causation_event_id, event_json, event_object_id)
-     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (trace_id, sequence, event_id, stream, kind, message_type, command_id, recording_id, causation_event_id,
+        event_json, event_object_id, event_chunk_digests, event_byte_length)
+     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?, ?)`,
     [
       traceId,
       event.sequence,
@@ -309,10 +361,22 @@ async function insertEvent(sql: AutomationStudioSqlExecutor, traceId: string, ro
       event.correlation.commandId,
       event.correlation.recordingId,
       event.correlation.causationEventId,
-      row.json,
-      row.objectId
+      body.kind === "inline" ? body.json : null,
+      body.kind === "chunked" ? body.digests : null,
+      body.kind === "chunked" ? body.byteLength : null
     ]
   );
+}
+
+/** A row's chunked body to reassemble; none for an inline or object row. */
+function chunkedBodyRef(row: EventRow): GatewayTraceChunkedBodyRef[] {
+  if (row.event_chunk_digests === null) return [];
+  if (row.event_byte_length === null) throw new Error(`event row ${eventWhere(row)} has chunks but no byte length`);
+  return [{ where: eventWhere(row), digests: row.event_chunk_digests, byteLength: row.event_byte_length }];
+}
+
+function eventWhere(row: EventRow): string {
+  return `${row.trace_id}#${row.sequence}`;
 }
 
 function isMissingFile(error: unknown): boolean {

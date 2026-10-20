@@ -1,5 +1,5 @@
-import { randomBytes } from "node:crypto";
-import type { ClientGatewayServiceOptions, ClientGatewayTrustedClientStore } from "./types.ts";
+import { randomBytes, randomUUID } from "node:crypto";
+import type { ClientGatewayIdKind, ClientGatewayServiceOptions, ClientGatewayTimer, ClientGatewayTimedWait, ClientGatewayTimerSource, ClientGatewayTrustedClientStore } from "./types.ts";
 
 /** `ClientGatewayServiceOptions` with every default already applied. */
 export type ClientGatewayConfig = {
@@ -12,6 +12,8 @@ export type ClientGatewayConfig = {
   readonly trustedClientStore: ClientGatewayTrustedClientStore | undefined;
   readonly createToken: () => string;
   readonly now: () => number;
+  readonly createId: (kind: ClientGatewayIdKind) => string;
+  readonly startTimer: ClientGatewayTimerSource;
 };
 
 export function resolveClientGatewayConfig(options: ClientGatewayServiceOptions = {}): ClientGatewayConfig {
@@ -24,6 +26,14 @@ export function resolveClientGatewayConfig(options: ClientGatewayServiceOptions 
     trustedClientTtlMs: options.trustedClientTtlMs ?? 30 * 24 * 60 * 60_000,
     trustedClientStore: options.trustedClientStore,
     createToken: options.createToken ?? (() => randomBytes(32).toString("base64url")),
-    now: options.now ?? Date.now
+    now: options.now ?? Date.now,
+    createId: options.createId ?? (() => randomUUID()),
+    startTimer: options.startTimer ?? startRealTimer
   };
+}
+
+/** A wait on the real clock. */
+function startRealTimer(_wait: ClientGatewayTimedWait, delayMs: number, fire: () => void): ClientGatewayTimer {
+  const handle = setTimeout(fire, delayMs);
+  return { cancel: () => clearTimeout(handle) };
 }

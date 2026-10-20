@@ -61,11 +61,22 @@
 // left unset as a normal run leaves it (`../runtime-session/graph-options.ts`).
 // An offline trial runs no start hook (Decision 6): it has no live effects to
 // put back.
+//
+// **The trial's own run is its traced episode; its start is the build's
+// (traces and offline trials, P2 D9, P3 D1).** With tracing installed the
+// episode -- activity `test`, its id the trial's run id -- is opened here,
+// after the affordability check and the start, around the run, its end and
+// its judgement (`../../gateway-trace/wiring/trial.ts`). The start hook, the
+// gate's `prepareStart` and this runner's own call alike, therefore runs in
+// the build's context and its answer lands in the build's trace, correlated by
+// candidate, revision and digest; a trial refused before it runs opens no
+// episode. With nothing installed the run id is minted exactly as before.
 
 import { createHash } from "node:crypto";
 import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import type { AutomationStudioCandidateTrialAct, AutomationStudioCandidateTrialRequest, AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
 import { runAutomationStudioDetachedCandidate, type AutomationStudioCandidateStartReceipt, type AutomationStudioCandidateVerificationIdentity } from "../../flow-bootstrap/verification/index.ts";
+import { AUTOMATION_STUDIO_GATEWAY_TRACE_CONTEXT, withAutomationStudioGatewayTraceTrial } from "../../gateway-trace/wiring/index.ts";
 import { automationStudioEnvironmentExecutorOptions, automationStudioLiveRunEnvironment, type AutomationStudioRunEnvironment } from "../../environment/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import { AutomationStudioHostLeaseScope } from "../../project-agents/host-resources/index.ts";
@@ -107,17 +118,24 @@ export async function runAutomationStudioCandidateTrial(request: AutomationStudi
 
 /** One trial, run inside its environment (header, U7). */
 async function trialIn(environment: AutomationStudioRunEnvironment, request: AutomationStudioCandidateTrialRequest, ports: AutomationStudioCandidateTrialPorts, preparedStart?: AutomationStudioCandidateTrialStart, judgeInputTokens?: number): Promise<AutomationStudioCandidateTrialOutcome> {
-  const { signal, candidate } = request;
-  signal.throwIfAborted();
-  const now = ports.now ?? environment.now;
+  request.signal.throwIfAborted();
   const answer = answerFor(request);
   // Not started when the purse cannot pay both judge calls: nothing acts on the site and no judge is asked (header, t661).
   const unaffordable = automationStudioTrialJudgingShortfall({ code: UNAFFORDABLE, judgeInputTokens });
   if (unaffordable) return answer("not_judged", unaffordable, { start: preparedStart ?? { status: "not_reset" }, execution: "not_run", code: UNAFFORDABLE, judge: { ...NO_SPEND } });
   const start = preparedStart ?? await automationStudioCandidateTrialStart(request, ports);
   if (start.status === "failed") return answer("execution_failed", { code: start.code, start: start.status }, { start, execution: "not_run", code: start.code, judge: { ...NO_SPEND } });
+  // The trial's episode opens only now, around its own run: the start above stays in the build's trace (header, P3).
+  const context = (runId: string) => ({ schema: AUTOMATION_STUDIO_GATEWAY_TRACE_CONTEXT.candidateTrial, value: { kind: "candidate_trial", runId, candidateId: request.candidateId, revision: request.revision, digest: request.digest, start: start.status } });
+  return await withAutomationStudioGatewayTraceTrial({ projectId: ports.projectId, flowId: ports.flowId, prefix: "trial", newRunId: ports.newRunId, environment, context },
+    async (traced) => await runIn(environment, request, ports, start, traced?.() ?? ports.newRunId?.() ?? environment.newRunId("trial")));
+}
 
-  const runId = ports.newRunId?.() ?? environment.newRunId("trial");
+/** The trial's own run from its start, under `runId`: its session, the detached run, its end and its judgement (header). */
+async function runIn(environment: AutomationStudioRunEnvironment, request: AutomationStudioCandidateTrialRequest, ports: AutomationStudioCandidateTrialPorts, start: AutomationStudioCandidateTrialStart, runId: string): Promise<AutomationStudioCandidateTrialOutcome> {
+  const { signal, candidate } = request;
+  const now = ports.now ?? environment.now;
+  const answer = answerFor(request);
   const opened = await ports.openSession({ runId, metadata: { candidateTrial: { candidateId: request.candidateId, revision: request.revision, digest: request.digest, start: start.status } } });
   const startedAt = now();
   await ports.writeSession({ ...opened, status: "running", startedAt });

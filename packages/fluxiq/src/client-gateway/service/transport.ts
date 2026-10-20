@@ -3,18 +3,24 @@ import { CLIENT_GATEWAY_PROTOCOL_VERSION } from "@fluxiq/contracts/client-gatewa
 import type { ClientGatewayServerMessage, ClientGatewaySession, ClientGatewaySocket } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewaySessionRegistry } from "./sessions.ts";
 import { ClientGatewayTraceTap } from "./trace-tap/index.ts";
+import type { ClientGatewayIdKind } from "./types.ts";
 
 /** Builds server messages and delivers them to a session's socket and queue. */
 export class ClientGatewayTransport {
   private readonly sessions: ClientGatewaySessionRegistry;
   private readonly now: () => number;
   private readonly trace: ClientGatewayTraceTap;
+  private readonly createId: (kind: ClientGatewayIdKind) => string;
 
-  /** `trace` records every message sent (`./trace-tap/`); omitted, nothing is recorded. */
-  constructor(sessions: ClientGatewaySessionRegistry, now: () => number, trace?: ClientGatewayTraceTap) {
+  /**
+   * `trace` records every message sent (`./trace-tap/`); omitted, nothing is
+   * recorded. `createId` mints message ids; omitted, `randomUUID()`.
+   */
+  constructor(sessions: ClientGatewaySessionRegistry, now: () => number, trace?: ClientGatewayTraceTap, createId?: (kind: ClientGatewayIdKind) => string) {
     this.sessions = sessions;
     this.now = now;
     this.trace = trace ?? new ClientGatewayTraceTap({ source: undefined, clientIdOf: () => undefined });
+    this.createId = createId ?? (() => randomUUID());
   }
 
   message<TType extends ClientGatewayServerMessage["type"]>(
@@ -22,8 +28,9 @@ export class ClientGatewayTransport {
     payload: Extract<ClientGatewayServerMessage, { type: TType }>["payload"],
     session?: ClientGatewaySession
   ): Extract<ClientGatewayServerMessage, { type: TType }> {
+    // The id is minted before the clock is read, so a replay can hand back a recorded message's id and then its time.
     return {
-      id: randomUUID(),
+      id: this.createId("message"),
       type,
       protocolVersion: CLIENT_GATEWAY_PROTOCOL_VERSION,
       timestamp: this.now(),

@@ -8,6 +8,11 @@
 // any other hit withholds the whole leaf. A secret-shaped key is renamed, so
 // the redaction's path never repeats it.
 //
+// One exemption (D21): a leaf that is exactly a lower-case hex SHA-256, an
+// artifact digest, is not screened for card numbers, since one random digest
+// in about 450 holds a digit run that passes Luhn. It still goes through every
+// credential shape. The LLM evidence screen keeps no such exemption.
+//
 // Nothing found: the payload is returned as it came, so a text payload stays
 // the exact text received. Anything found: the payload becomes JSON with each
 // offending leaf replaced by a marker, and each replacement is declared as a
@@ -18,6 +23,14 @@ import type { ClientGatewayTracePayloadInput, ClientGatewayTraceRedaction } from
 import { automationStudioWithoutCardNumbers, screenAutomationStudioLlmEvidence } from "../llm/index.ts";
 
 const SECRET_MARKER = "[withheld: secret]";
+/** A lower-case hex SHA-256 and nothing else. */
+const SHA256_DIGEST = /^[0-9a-f]{64}$/u;
+/**
+ * What stands in for a card-shaped digit run when a digest is screened: one
+ * digit, so a credential shape that needs a digit still sees one, and never a
+ * card itself. A digest's digit runs border only letters, so it joins no run.
+ */
+const DIGEST_CARD_STAND_IN = "0";
 
 type Screened = { payload: ClientGatewayTracePayloadInput; redactions: readonly ClientGatewayTraceRedaction[] };
 type Parsed = { ok: true; value: unknown } | { ok: false };
@@ -87,10 +100,19 @@ function screenRecord(value: object, path: string, redactions: ClientGatewayTrac
 }
 
 function screenLeaf(text: string, path: string, redactions: ClientGatewayTraceRedaction[]): string {
+  if (SHA256_DIGEST.test(text)) return screenDigest(text, path, redactions);
   if (!secretShaped(text)) return text;
   redactions.push({ path, reason: "secret" });
   const withoutCards = automationStudioWithoutCardNumbers(text, SECRET_MARKER);
   return withoutCards !== text && !secretShaped(withoutCards) ? withoutCards : SECRET_MARKER;
+}
+
+/** A digest leaf: screened by every credential shape, never by the card-number screen. */
+function screenDigest(text: string, path: string, redactions: ClientGatewayTraceRedaction[]): string {
+  const withoutCards = automationStudioWithoutCardNumbers(text, DIGEST_CARD_STAND_IN);
+  if (!secretShaped(withoutCards)) return text;
+  redactions.push({ path, reason: "secret" });
+  return SECRET_MARKER;
 }
 
 function secretShaped(text: string): boolean {
