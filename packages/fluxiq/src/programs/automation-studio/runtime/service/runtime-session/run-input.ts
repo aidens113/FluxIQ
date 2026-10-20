@@ -27,4 +27,6 @@ export type AutomationStudioRuntimeSessionRunInput = {
     useReusableContext?: true; /** Which of this run's result checks `llmExecution`'s caller pays for; absent is every one (`resolveAutomationStudioResultCheckProvider`). */ resultCheckCallerPays?: AutomationStudioResultCheckCallerPays;
     /** What the chat's reading of the message that started this run cost, when a chat turn started it: the Flow's spend in a Lab-scoped run (t438). */
     interpretationCostUsd?: number;
+    /** How many priced model calls `interpretationCostUsd` sums: the Flow spend's "chat" calls. */
+    interpretationCalls?: number;
 };

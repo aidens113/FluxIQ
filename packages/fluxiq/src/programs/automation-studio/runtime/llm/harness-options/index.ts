@@ -22,6 +22,14 @@ export {
   type AutomationStudioHarnessOptionLoopBinding,
   type AutomationStudioHarnessOptionResolution
 } from "./registry.ts";
+// Which build a domain's evidence call belongs to, said by Core so the domain
+// never parses Core's call ids (t728), and the build frame a build runs in.
+export {
+  automationStudioEvidenceBuildScope,
+  runWithAutomationStudioEvidenceBuildScope,
+  type AutomationStudioEvidenceBuildScope
+} from "./evidence-build-scope.ts";
+export { automationStudioEvidenceBuildBound, automationStudioEvidenceBuildId, runWithAutomationStudioEvidenceBuild } from "./evidence-build.ts";
 export {
   automationStudioHarnessInputWithDeniedEvidenceKeys,
   automationStudioHarnessOptionBundleFromBinding,

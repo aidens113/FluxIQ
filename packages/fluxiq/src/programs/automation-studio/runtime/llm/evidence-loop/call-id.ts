@@ -56,3 +56,16 @@ export function automationStudioLlmEvidenceOpeningCallId(toolId: string, scope?:
 export function automationStudioLlmEvidenceIsOpeningCallId(callId: string): boolean {
   return callId.startsWith(OPENING_PREFIX);
 }
+
+/**
+ * The scope an opening id of `toolId` was written with, or nothing when it is
+ * unscoped or not that tool's opening at all (t728). Core reads its own id
+ * format here so a domain never has to: what a call belongs to reaches the
+ * domain as the evidence build scope (`../harness-options/evidence-build-scope.ts`).
+ */
+export function automationStudioLlmEvidenceOpeningCallScope(callId: string, toolId: string): string | undefined {
+  const own = `${OPENING_PREFIX}${toolId}.`;
+  if (!callId.startsWith(own)) return undefined;
+  const scope = callId.slice(own.length);
+  return CALL_SCOPE.test(scope) ? scope : undefined;
+}

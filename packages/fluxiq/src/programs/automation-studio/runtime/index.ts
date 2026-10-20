@@ -6,6 +6,7 @@ export * from "./candidate-start-hook/index.ts";
 export * from "./adaptive-orchestrator.ts";
 export * from "./contracts.ts";
 export * from "./conversations/index.ts";
+export * from "./domain-build-state/index.ts";
 export * from "./durable-behavior/index.ts";
 export * from "./composite-executor.ts";
 export * from "./compiled-plan.ts";

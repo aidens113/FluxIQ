@@ -62,7 +62,9 @@ export type AutomationStudioConversationResponseWritten = {
 
 export async function respondToAutomationStudioConversationTurn(input: AutomationStudioConversationResponseWrite): Promise<AutomationStudioConversationResponseWritten> {
   const decision = withoutAskIds(input.interpretation.decision, input.waitingAsks ?? []);
-  const base = { projectId: input.projectId, conversationId: input.conversationId, attachment: null };
+  // Every answer records the decision it came from, which is what tells a later
+  // reading whether this answer closed what the person asked (`../person-words.ts`).
+  const base = { projectId: input.projectId, conversationId: input.conversationId, attachment: null, decision: decision.kind };
   if (decision.kind !== "invoke") {
     const words = decision.kind === "reply" ? decision.text : decision.question;
     const turn = await input.host.appendAutomationTurn({ ...base, text: withProblem(words, input.interpretation), ask: null });

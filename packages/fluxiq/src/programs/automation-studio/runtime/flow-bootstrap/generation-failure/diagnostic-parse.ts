@@ -6,7 +6,7 @@
 // are checked against `automationStudioFlowBootstrapFailureState` -- the same
 // function the producers write them from, so a diagnostic Core produced always
 // reads back and one claiming a state its code does not have never does.
-import { parseAutomationStudioActionPermissionRequest } from "../../action-permissions/index.ts";
+import { automationStudioConsequencesInOrder, isAutomationStudioActionConsequence, parseAutomationStudioActionPermissionRequest, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 // Refusal records are owned by a neutral runtime seam: Flow Bootstrap persists
 // them and the LLM adapter produces them, so neither feature barrel may own the
 // value without closing an initialization cycle through the other.
@@ -25,7 +25,7 @@ import { automationStudioFlowBootstrapFailureState, automationStudioFlowBootstra
 export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   value: unknown
 ): AutomationStudioFlowBootstrapFailureDiagnostic | null {
-  if (!isRecord(value) || !hasExactFields(value, ["code", "stage", "retryable", "providerInvocation", "providerResponse", "accounting", "evidenceLoop", "issueCodes", "permissionRequest", "providerThrow", "ending", "candidate", "refusedSteps", "totalProviderCallCount", "endedBecause"])) return null;
+  if (!isRecord(value) || !hasExactFields(value, ["code", "stage", "retryable", "providerInvocation", "providerResponse", "accounting", "evidenceLoop", "issueCodes", "permissionRequest", "providerThrow", "ending", "candidate", "refusedSteps", "totalProviderCallCount", "endedBecause", "instructedConsequences"])) return null;
   if (typeof value.code !== "string") return null;
   if (value.totalProviderCallCount !== undefined && (!Number.isSafeInteger(value.totalProviderCallCount) || (value.totalProviderCallCount as number) < 0)) return null;
   // The stage a code belongs to, which is also the only stage it may claim. A
@@ -68,6 +68,8 @@ export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   // A supervisor's reason for ending stands only beside the supervisor's ending it explains (t649): words on one line, bounded.
   if (value.endedBecause !== undefined && (typeof value.endedBecause !== "string" || !value.endedBecause.trim() || value.endedBecause.length > MAX_DIAGNOSTIC_ENDED_BECAUSE
     || /[\r\n]/u.test(value.endedBecause) || !(value.issueCodes as string[] | undefined)?.some((code) => DIAGNOSTIC_SUPERVISOR_ENDING_CODES.has(code)))) return null;
+  const instructedConsequences = parseInstructedConsequences(value.instructedConsequences);
+  if (instructedConsequences === null) return null;
   return {
     ...(value.totalProviderCallCount === undefined ? {} : { totalProviderCallCount: value.totalProviderCallCount as number }),
     code: value.code,
@@ -83,8 +85,21 @@ export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
     ...(ending ? { ending } : {}),
     ...(candidate ? { candidate } : {}),
     ...(refusedSteps ? { refusedSteps } : {}),
-    ...(value.endedBecause !== undefined ? { endedBecause: value.endedBecause as string } : {})
+    ...(value.endedBecause !== undefined ? { endedBecause: value.endedBecause as string } : {}),
+    ...(instructedConsequences ? { instructedConsequences } : {})
   };
+}
+
+/**
+ * The instructed consequence classes, read back: `undefined` when there are
+ * none, `null` when what is there is not what Core writes -- a non-empty list
+ * of known classes, each once, in Core's order.
+ */
+function parseInstructedConsequences(value: unknown): AutomationStudioActionConsequence[] | null | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || !value.length || !value.every(isAutomationStudioActionConsequence)) return null;
+  const ordered = automationStudioConsequencesInOrder(value);
+  return ordered.length === value.length && ordered.every((consequence, index) => consequence === value[index]) ? ordered : null;
 }
 
 /** The code stored refused steps may stand beside. */

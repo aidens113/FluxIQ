@@ -9,3 +9,4 @@ export {
   type ConversationStepMessageKind
 } from "./messages";
 export { conversationStepOutcomeWords, type ConversationStepOutcomeWords } from "./outcome";
+export { conversationActivitySentence, conversationActivityTextIsHuman } from "./words";

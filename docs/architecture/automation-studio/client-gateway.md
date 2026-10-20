@@ -368,7 +368,30 @@ stop a run, and use its automation and recording controls:
   `get-flow-run-detail`, `list-flow-adaptations`, `export-run-dataset`,
   `run-runtime-session`, `generate-recording-proposal`,
   `review-recording-flow-proposal`, `remove-recording-entry`
+- Automation Studio, recording controls: `get-recording-capture-policy`
+  (`programs.read`, `read`; not narrowed or projected, below)
 - Secret Keys: `snapshot`, projected (below)
+
+**The recording-capture policy is Core's (t728).** What a recording may capture
+is defined once in `@fluxiq/contracts/automation-studio`
+(`packages/contracts/src/recording-capture/`), re-exported for browser code by
+name from `fluxiq/automation-studio/nodes`, never the Node barrel. A policy is
+`{ captureInputValues, captureSnapshots, captureMutations: { allowed, default },
+directRequests: { allowed } }`. `AUTOMATION_STUDIO_DEFAULT_RECORDING_CAPTURE_POLICY`
+(deep-frozen) allows all three capture switches, on by default, and does not
+allow direct requests. `clampAutomationStudioRecordingCaptureSettings(requested,
+policy)` returns the effective `{ captureInputValues, captureSnapshots,
+captureMutations, directRequests }`: a switch the policy forbids is `false`; an
+allowed one takes the requested boolean, or the policy's default when the
+request has none (or a non-boolean); `directRequests` is true only when the
+policy allows it and the request asks for exactly `true`. A client clamps what
+the person chose against the policy it read, so no setting reaches past it.
+`get-recording-capture-policy` takes `{ projectId?: string | null }` (a trimmed
+non-empty string, else `null`) and answers `{ policy }`. Today it answers the
+default for every project: the per-project seam is the optional
+`recordingCapturePolicy(projectId)` on `AutomationStudioApiDependencies`, which
+`registerAutomationStudioApi` does not yet set. A paired client reaches it under
+the project-domain gate like every allowlisted endpoint.
 
 **What a pairing approves.** A person approves a browser for their own
 account in one domain, not for one project. The approval carries only the
@@ -615,6 +638,50 @@ repair and other; the extension draws shared lucide paths and the Core panel
 uses lucide-react with the same kind/icon mapping. Internal bookkeeping reads
 stay out of the chat. The extension has Chat and Automations tabs, Settings and
 Open FluxIQ; the old Simple/Advanced split is removed.
+
+The live status line has one source too (t728): `fluxiq/ui`'s activity status
+(`packages/fluxiq/src/ui/activity-status/`), pure modules with no browser or
+Node API, used by the extension's background and by `apps/web` alike.
+
+- **Headline**: `activityHeadline(kind, outcome, { stopped, repairing, testing,
+  waitingOn })` names the unit of work and changes only when the work changes,
+  settles or needs the person ("Testing your Flow" during candidate trials; "Waiting
+  for you: answer in the FluxIQ panel"; "Waiting for you: finish the check on
+  the page"; "Build failed" for a build that fails while repairing, where a
+  run's failed repair is "Couldn't fix your Flow").
+- **Pacer**: `ActivityPacer` turns Core's raw activity events, each taken once,
+  into an `ActivityDisplay`. The detail changes at most once per
+  `ACTIVITY_DETAIL_INTERVAL_MS` (1,600 ms), showing only the newest at the end
+  of the period, and nothing is dropped for good; a headline change shows at
+  once. It holds the last meaningful line through "Deciding
+  the next step", never shows a model thought, gives a paused run no detail,
+  does not echo the person's answer, cuts the detail at a word within 160
+  characters (`cutAtWord`), does not reopen a settled unit for late rows, and
+  applies the supervisor-ending detail.
+- **Wording**: `activityWording` gives the detail's words (a step that finished
+  well drops "— done"), with `isInternalStep`, `isModelThought`,
+  `isHeadlineEcho`, `stepRecovery`, `stepSkip`, `notTriedOutcome`,
+  `declinedSubmission` and `endingKindOf` reading the event.
+- **Units**: `UnitSituation`, `RunRetry`, `CandidateTrial` and
+  `SupervisorEnding` track one unit of work; `FanOutGate` limits sends to one per
+  `ACTIVITY_FAN_OUT_INTERVAL_MS` (250 ms); `activityAgent` and `projectCard`
+  read a project build's authors and cards.
+- **History**: `UnitHistory` with `ACTIVITY_HISTORY_LIMITS` keeps the last 10
+  units and 500 events of each for the chat's step messages; a build in progress
+  is held to 5,000 events instead and is never the unit dropped.
+- **Clock**: `systemActivityClock` (`ActivityClock`, `ActivityTimer`); tests
+  pass a fake.
+
+`fluxiq/ui` re-exports `ClientGatewayActivity` and `ClientGatewayActivityPhase`,
+so neither consumer needs a contracts dependency for them. The extension keeps
+only its transport: the relay, overlay, send-start/send-answer and its message
+constants. `apps/web`'s live line (`conversation/activity/paced-status.ts`,
+`ConversationPacedStatus`) is a thin adapter over the shared pacer that ignores
+an event no newer than the last it took (each poll hands the current event
+again) and maps `ActivityDisplay` to its own display, keeping `paused` as an
+outcome; its own headline, pacer and wording modules are gone. Its chat step
+titles (`conversation/steps/words.ts`) are still its own, as the extension's
+are.
 
 A decision Core declined before doing it is a card under that decision, never
 prose appended to the model's sentence (t193 round 1003). `activityActionRefusal`

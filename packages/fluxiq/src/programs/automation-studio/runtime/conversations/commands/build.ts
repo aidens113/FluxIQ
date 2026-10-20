@@ -166,7 +166,8 @@ export async function buildAutomationStudioFlowFromConversation(
     // An extend amends the Flow's own steps from where the Flow already
     // starts; the page on screen is a creation's starting point.
     ...(input.mode === "extend" ? { mode: "extend" } : context.startLocation ? { startLocation: context.startLocation } : {}),
-    ...(context.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: context.interpretationCostUsd })
+    ...(context.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: context.interpretationCostUsd }),
+    ...(context.interpretationCalls === undefined ? {} : { interpretationCalls: context.interpretationCalls })
   });
   if (!response.ok) {
     const cancelled = (response.payload as { cancelled?: boolean } | undefined)?.cancelled === true;

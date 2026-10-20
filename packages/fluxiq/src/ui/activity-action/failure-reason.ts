@@ -1,3 +1,4 @@
+import { AUTOMATION_STUDIO_REPEATED_ANSWER_REASON } from "@fluxiq/contracts/automation-studio";
 import { activityActionReplayFailing } from "./replay-failing.ts";
 import type { ActivityActionKind } from "./types.ts";
 
@@ -113,12 +114,13 @@ const REFUSAL_REASONS: readonly Reason[] = [
     read: "FluxIQ didn't read it, as the step didn't name its list the way FluxIQ needs"
   },
   // The same refusal given again, which a domain may say in place of its cause
-  // (`answered_the_same_again`): the cause was said on the first of them, and
+  // (`AUTOMATION_STUDIO_REPEATED_ANSWER_REASON`, `answered_the_same_again`):
+  // the cause was said on the first of them, and
   // the chat's observer carries it onto the repeats where it saw it
   // (`programs/automation-studio/runtime/activity/repeated-reason.ts`). Never a
   // page miss: the repeats of a list read refused for its list read "it wasn't
   // on the page" (R2-U-6, `run-muwansvz-a2b4a987`, steps 0039 and 0046).
-  { words: /_(answered_the_same_again|same_answer_again)_/u, why: "FluxIQ didn't send it, for the same reason as the time before", read: "FluxIQ didn't read it, for the same reason as the time before" },
+  { words: new RegExp(`_(${AUTOMATION_STUDIO_REPEATED_ANSWER_REASON}|same_answer_again)_`, "u"), why: "FluxIQ didn't send it, for the same reason as the time before", read: "FluxIQ didn't read it, for the same reason as the time before" },
   // A lasting act whose failure left its effect unknown, which the run did not
   // make again (`outcome_uncertain`, t359/t361): read from its code alone it
   // said "the page changed before it could" or nothing at all, when the step

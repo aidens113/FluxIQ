@@ -488,6 +488,22 @@ receives the conversation and per-step record counts, and result data is every
 record set, column and stored row the run kept, screened for the domain's
 denied keys and credential-shaped values but not sampled or cut to a size.
 
+A payment card number counts as credential-shaped (t728,
+`runtime/llm/harness/evidence-screen.ts`): a run of 13 to 19 digits, plain or in
+the usual groupings (Diners' 4-6-4 included), whose first digit is 2 to 6 and
+which passes the Luhn check. `screenAutomationStudioLlmEvidence` reports
+`secretShaped: true` for one in a value or a key, so every screen that acts on
+`secretShaped` -- a request's failure evidence, explored packets, result
+summary, recovery context and loop evidence refused whole with that slot's
+preflight code, situation state, repair contracts, result rows and summaries,
+replay cells and thrown text dropped or withheld -- now treats a card number as
+a secret; a failed Luhn check, a timestamp, an order number, a SKU or a phone
+number is not one. `automationStudioWithoutCardNumbers(text, marker)` (from
+`fluxiq/automation-studio`) replaces each card run with `marker` and keeps every
+other character. A domain that would rather keep the rest of a string runs it
+in place before the screen, as the web domain does with its withheld marker;
+left to the screen, a card costs the whole value.
+
 A web step's starting capture reuses the page the previous step ended on when no
 other step started in between and that page arrived within 250 ms (t480); the
 host may decline the offer and read the page again. Every step still carries its

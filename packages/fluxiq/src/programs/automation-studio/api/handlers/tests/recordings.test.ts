@@ -1,13 +1,18 @@
 // Covers `remove-recording-entry` in handlers/recordings.ts: the endpoint the
 // browser extension's Simple Mode calls to undo one captured step while the
-// recording is still open.
+// recording is still open; and `get-recording-capture-policy`, Core's answer to
+// what a recording may capture and whether direct requests are allowed.
 
 import { describe, expect, it, vi } from "vitest";
 
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_shared/api.ts";
 
+import { AUTOMATION_STUDIO_DEFAULT_RECORDING_CAPTURE_POLICY, type AutomationStudioRecordingCapturePolicy } from "@fluxiq/contracts/automation-studio";
+
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../../contracts.ts";
 import { registerAutomationStudioApi } from "../index.ts";
+import { registerRecordingEndpoints } from "../recordings.ts";
+import type { AutomationStudioApiDependencies } from "../dependencies.ts";
 
 const actor: ProgramApiActor = { sessionId: "session.undo", userId: "user.undo", roleId: "admin", permissions: ["programs.read", "runtime.control"] };
 
@@ -89,5 +94,53 @@ describe("removing a recorded step", () => {
 
     expect(response).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
     expect(service.removeRecordingEntries).not.toHaveBeenCalled();
+  });
+});
+
+describe("reading the recording-capture policy", () => {
+  const reader: ProgramApiActor = { ...actor, permissions: ["programs.read"] };
+
+  function readPolicy(registry: GlobalProgramApiRegistry, payload: unknown, as: ProgramApiActor = reader) {
+    return registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRecordingCapturePolicy, scope: {}, actor: as, payload });
+  }
+
+  it("is registered as a read under programs.read", () => {
+    expect(AUTOMATION_STUDIO_ENDPOINTS.getRecordingCapturePolicy).toBe("get-recording-capture-policy");
+    expect(registryWith({}).endpoints()).toContainEqual({
+      programId: "automation-studio",
+      endpoint: "get-recording-capture-policy",
+      permission: "programs.read",
+      classification: "read"
+    });
+  });
+
+  it("answers Core's default policy, with or without a project, touching no service", async () => {
+    const registry = registryWith({});
+    const expected = { ok: true, payload: { policy: AUTOMATION_STUDIO_DEFAULT_RECORDING_CAPTURE_POLICY } };
+
+    expect(await readPolicy(registry, { projectId: "project.one" })).toEqual(expected);
+    expect(await readPolicy(registry, {})).toEqual(expected);
+    expect(await readPolicy(registry, undefined)).toEqual(expected);
+    expect((await readPolicy(registry, {})).payload).toMatchObject({ policy: { directRequests: { allowed: false } } });
+  });
+
+  it("asks a policy source, when one is supplied, for the named project", async () => {
+    const strict: AutomationStudioRecordingCapturePolicy = {
+      ...AUTOMATION_STUDIO_DEFAULT_RECORDING_CAPTURE_POLICY,
+      captureInputValues: { allowed: false, default: false }
+    };
+    const recordingCapturePolicy = vi.fn(async () => strict);
+    const registry = new GlobalProgramApiRegistry();
+    registerRecordingEndpoints({ registry, service: {} as AutomationStudioApiDependencies["service"], identityAccess: undefined, clientGatewayBridge: undefined, clientGateway: undefined, recordingCapturePolicy });
+
+    expect(await readPolicy(registry, { projectId: " project.one " })).toEqual({ ok: true, payload: { policy: strict } });
+    expect(recordingCapturePolicy).toHaveBeenCalledWith("project.one");
+    await readPolicy(registry, { projectId: 7 });
+    expect(recordingCapturePolicy).toHaveBeenLastCalledWith(null);
+  });
+
+  it("refuses a caller without programs.read", async () => {
+    const response = await readPolicy(registryWith({}), {}, { ...actor, permissions: [] });
+    expect(response).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
   });
 });

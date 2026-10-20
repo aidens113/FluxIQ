@@ -10,7 +10,7 @@
 // in `tests/domain-scope.test.ts` — it decides which side a new endpoint
 // belongs on.
 
-import { AUTOMATION_STUDIO_ENDPOINTS, type FlowAdaptationRequest, type FlowExpansionSummaryRequest, type FlowRunActionPageRequest, type FlowRunDetailRequest, type FlowRunEventPageRequest, type ReviewFlowAdaptationRequest } from "../contracts.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type FlowAdaptationRequest, type FlowExpansionSummaryRequest, type FlowRunActionPageRequest, type FlowRunDetailRequest, type FlowRunEventPageRequest, type FlowSpendRequest, type FlowSpendResponse, type ReviewFlowAdaptationRequest } from "../contracts.ts";
 import { automationStudioWithWholeAttemptInputs, type AutomationStudioService } from "../../runtime/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
@@ -46,6 +46,37 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
       const runDetail = await service.getFlowRunDetail(String(payload.projectId ?? ""), String(payload.runId ?? ""), { includeCollections: payload.compact !== true });
       // A repair's `completedTrace` is a saved trace; a client reads its attempts' whole inputs (t377).
       return { ok: true, payload: { runDetail: automationStudioWithWholeAttemptInputs(runDetail) } };
+    }
+  });
+  // A Flow's spend, read-only (t728): what its Lab-scoped Flow purse recorded
+  // (`runtime/service/creation-spend.ts`) -- dollars, builds and calls, by
+  // phase and agent role, and the largest call input -- which the Lab used to
+  // rebuild from the step log. Numbers only, so
+  // like a run record it asserts no domain scope. `{ spend: null }` for a Flow
+  // with no record.
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowSpend,
+    permission: "programs.read",
+    classification: "read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowSpendRequest : {} as FlowSpendRequest;
+      const record = await service.creationSpends.get(String(payload.projectId ?? ""), String(payload.flowId ?? ""));
+      const answer: FlowSpendResponse = {
+        spend: record ? {
+          projectId: record.projectId,
+          flowId: record.flowId,
+          spentUsd: record.spentUsd,
+          builds: record.builds,
+          calls: record.calls ?? null,
+          byPhase: record.byPhase ? structuredClone(record.byPhase) : null,
+          largestInputTokens: record.largestInputTokens ?? null,
+          byRole: record.byRole ? structuredClone(record.byRole) : null,
+          createdAt: record.createdAt,
+          updatedAt: record.updatedAt
+        } : null
+      };
+      return { ok: true, payload: answer };
     }
   });
   // Runtime Debug's Export Audit button reads `payload.audit`; an unknown run

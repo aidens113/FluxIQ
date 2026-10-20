@@ -75,10 +75,12 @@ export type AutomationStudioConversationInterpretation = {
    * carries it into the purse of a Flow it builds (`../commands/build.ts`).
    */
   costUsd?: number;
+  /** How many model calls `costUsd` sums: the attempts the model priced. Present exactly beside `costUsd`. */
+  pricedCalls?: number;
 };
 
 /** What the endpoint answers with after a person's turn, beside the turn itself. */
-export type AutomationStudioConversationResponse = Omit<AutomationStudioConversationInterpretation, "costUsd"> & {
+export type AutomationStudioConversationResponse = Omit<AutomationStudioConversationInterpretation, "costUsd" | "pricedCalls"> & {
   /** The turn Core wrote in answer: the reply, the question, what it is doing, or the confirmation it asks for. */
   turnId: string;
   /** Set when the invocation waits for the person's confirmation; the ask's id. */

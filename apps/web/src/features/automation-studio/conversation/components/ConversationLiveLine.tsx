@@ -2,7 +2,7 @@
 
 // What FluxIQ is doing right now, as the last line of the chat while Core
 // works: the unit of work ("Building your Flow") and, under it, the latest
-// thing it is doing in words, paced by `activity/pacer.ts` so neither
+// thing it is doing in words, paced by `activity/paced-status.ts` so neither
 // flickers. It changes in place and is always drawn after the last message.
 
 import type { ConversationActivityDisplay } from "../activity";

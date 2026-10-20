@@ -264,6 +264,8 @@ describe("reading a person's message as an instruction", () => {
     const priced = await interpret(pricing, "run my kettle flow");
     expect(priced).toMatchObject({ source: "model", attempts: 2 });
     expect(priced.costUsd).toBeCloseTo(0.0004, 12);
+    // How many calls that sums travels beside it: the Flow spend's "chat" calls (t728).
+    expect(priced.pricedCalls).toBe(2);
 
     // Every attempt failed: Core read the words itself, and what the attempts cost is still counted.
     const failing: AutomationStudioConversationModel = {
@@ -276,9 +278,19 @@ describe("reading a person's message as an instruction", () => {
     const fellBack = await interpret(failing, "run my kettle flow");
     expect(fellBack).toMatchObject({ source: "closest_match", attempts: 3 });
     expect(fellBack.costUsd).toBeCloseTo(0.0003, 12);
+    expect(fellBack.pricedCalls).toBe(3);
 
     expect(await interpret(scripted('{"do": "run.execute", "with": {"flowId": "kettle"}}'), "run my kettle flow")).not.toHaveProperty("costUsd");
     expect(await interpret(null, "run my kettle flow")).not.toHaveProperty("costUsd");
+    expect(await interpret(null, "run my kettle flow")).not.toHaveProperty("pricedCalls");
+  });
+
+  it("tells the person an empty model account in words, not a code", async () => {
+    const broke: AutomationStudioConversationModel = { name: "broke", decide: async () => { throw providerError("llm.provider_balance_exhausted", false); } };
+    const answer = await interpret(broke, "run my kettle flow");
+    expect(answer).toMatchObject({ attempts: 1 });
+    expect(answer.modelProblem).toContain("balance has run out");
+    expect(answer.modelProblem).not.toContain("llm.");
   });
 });
 

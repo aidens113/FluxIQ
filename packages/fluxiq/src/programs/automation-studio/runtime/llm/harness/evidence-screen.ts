@@ -18,6 +18,17 @@
 // distinctive prefix or structure, and the open-ended ones need a long run
 // with a digit in it, so `task-list`, `Bearer YOUR_API_TOKEN_HERE` and a
 // product code are ordinary text.
+//
+// A card number is the one shape here that is not a credential, and the one
+// with no prefix (t728, extension-core boundary audit, finding 9; the web
+// domain's `withheld.ts` screened it alone until then). It is a run of 13 to
+// 19 digits that passes the Luhn check, is written as a card is (unbroken, in
+// fours, or Amex's and Diners' 4-6-5 and 4-6-4) and starts with a digit a
+// payment card's issuer number starts with (2 to 6). The grouping and issuer
+// rules are what keep an order number (`112-5550123-4567890`) or a millisecond
+// timestamp (`1727712000000`), one in ten of which passes Luhn by chance, from
+// being caught. `automationStudioWithoutCardNumbers` withholds the run alone,
+// so a domain can keep the words around it rather than lose the whole string.
 
 import { automationStudioEvidenceKey } from "./failure-evidence.ts";
 
@@ -75,7 +86,45 @@ export function screenAutomationStudioLlmEvidence(value: unknown, deniedKeys: re
 }
 
 function credentialShaped(text: string): boolean {
-  return CREDENTIAL_SHAPES.some((shape) => shape.test(text));
+  return CREDENTIAL_SHAPES.some((shape) => shape.test(text)) || cardNumberIn(text);
+}
+
+/**
+ * A run of digits that may be a card number: 13 to 19 digits, a single space
+ * or dash allowed between them, with no digit run continuing on either side.
+ */
+const DIGIT_RUN = /(?<!\d)(?<!\d[ -])\d(?:[ -]?\d){12,18}(?![ -]?\d)/gu;
+/** Unbroken, or in groups of four with a shorter last group, or Amex's 4-6-5 and Diners' 4-6-4. */
+const CARD_GROUPING = /^(?:\d{13,19}|\d{4}(?:[ -]\d{4}){2,3}(?:[ -]\d{1,4})?|\d{4}[ -]\d{6}[ -]\d{4,5})$/u;
+
+/** `text` with each card number in it replaced by `marker`, and every other character as it was. */
+export function automationStudioWithoutCardNumbers(text: string, marker: string): string {
+  return text.replace(DIGIT_RUN, (run) => (cardNumber(run) ? marker : run));
+}
+
+function cardNumberIn(text: string): boolean {
+  for (const [run] of text.matchAll(DIGIT_RUN)) if (cardNumber(run)) return true;
+  return false;
+}
+
+function cardNumber(run: string): boolean {
+  if (!CARD_GROUPING.test(run)) return false;
+  const digits = run.replace(/[ -]/gu, "");
+  return digits.length >= 13 && digits.length <= 19 && /^[2-6]/u.test(digits) && luhn(digits);
+}
+
+/** The Luhn check every payment card number passes. */
+function luhn(digits: string): boolean {
+  let sum = 0;
+  for (let index = 0; index < digits.length; index += 1) {
+    let digit = Number(digits[digits.length - 1 - index]);
+    if (index % 2 === 1) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+  }
+  return sum % 10 === 0;
 }
 
 /**

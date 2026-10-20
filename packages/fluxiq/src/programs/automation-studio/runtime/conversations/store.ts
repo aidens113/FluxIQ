@@ -44,6 +44,7 @@ import {
   automationStudioConversationIdOrRefuse,
   automationStudioConversationShortTextOrRefuse,
   automationStudioConversationTextOrRefuse,
+  automationStudioConversationTurnDecisionOrRefuse,
   type AutomationStudioConversationAnswerInput,
   type AutomationStudioConversationListInput,
   type AutomationStudioConversationOpenInput,
@@ -127,21 +128,23 @@ export class AutomationStudioProjectConversationStore {
     const actorId = input.actorId === null || input.actorId === undefined ? null : automationStudioConversationIdOrRefuse(input.actorId, "actor");
     const attachment = automationStudioConversationAttachmentOrRefuse(input.attachment ?? null);
     const ask = automationStudioConversationAskOrRefuse(input.ask ?? null);
+    const decision = automationStudioConversationTurnDecisionOrRefuse(input.decision, input.author);
     const result = await this.unit.runIdempotent(
       {
         mutationId: automationStudioConversationIdOrRefuse(input.mutationId, "mutation"),
         operationKind: "conversation.turn.append",
         ownerKind: "conversation",
         ownerId: conversationId,
-        request: { conversationId, turnId, author: input.author, text, actorId, attachment, ask },
+        // Only a recorded decision joins the request, so a replay of a turn written before decisions were recorded still matches.
+        request: { conversationId, turnId, author: input.author, text, actorId, attachment, ask, ...(decision === null ? {} : { decision }) },
         ...automationStudioConversationChangedAt(input.changedAt)
       },
       async (context) => {
         const conversation = requireConversation(await readConversation(context.sql, conversationId), conversationId);
         const ordinal = conversation.turn_count + 1;
         await context.sql.run(
-          "insert into conversation_turns (conversation_id, turn_id, ordinal, author, body, attachment_kind, attachment_ref, actor_id, created_at_ms) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          [conversationId, turnId, ordinal, input.author, text, attachment === null ? null : attachment.kind, attachment === null ? null : attachment.ref, actorId, context.changedAt]
+          "insert into conversation_turns (conversation_id, turn_id, ordinal, author, body, attachment_kind, attachment_ref, actor_id, created_at_ms, decision_kind) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          [conversationId, turnId, ordinal, input.author, text, attachment === null ? null : attachment.kind, attachment === null ? null : attachment.ref, actorId, context.changedAt, decision]
         );
         if (ask) await insertAsk(context.sql, { ask, conversationId, turnId, createdAt: context.changedAt });
         // The turn's own change goes on the feed first, then the thread's: a
@@ -264,8 +267,12 @@ export class AutomationStudioProjectConversationStore {
    * reader already holding the thread asks for. An unknown `sinceTurnId` is
    * refused rather than read as "from the start": answering it with the whole
    * thread would look exactly like a thread that had been rewritten.
+   *
+   * `decisions` adds the decision Core recorded on each turn it wrote, for
+   * Core's own reading of the thread (`person-words.ts`). A read made for a
+   * client never asks for it.
    */
-  async getConversation(input: AutomationStudioConversationReadInput): Promise<AutomationStudioConversationThread | null> {
+  async getConversation(input: AutomationStudioConversationReadInput, read: { decisions?: boolean } = {}): Promise<AutomationStudioConversationThread | null> {
     const conversationId = automationStudioConversationIdOrRefuse(input.conversationId, "conversation");
     const row = await readConversation(this.lease.database, conversationId);
     if (!row) return null;
@@ -285,7 +292,7 @@ export class AutomationStudioProjectConversationStore {
     const asks = await this.readAsksFor(conversationId, page);
     return {
       conversation: automationStudioConversationFromRow(this.lease.projectId, row),
-      turns: page.map((turn) => automationStudioConversationTurnFromRow(turn, asks.get(turn.turn_id) ?? null)),
+      turns: page.map((turn) => automationStudioConversationTurnFromRow(turn, asks.get(turn.turn_id) ?? null, read)),
       hasMore: turnRows.length > limit
     };
   }

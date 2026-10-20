@@ -18,7 +18,7 @@ import type { AutomationStudioLlmModelCaller } from "../../llm/index.ts";
 import { assertExactObjectFields, requiredBootstrapCommandId } from "./field-readings.ts";
 
 /** The fields a generation request may carry, and the fields its caller may carry. */
-const REQUEST_FIELDS = ["projectId", "flowId", "caller", "permittedConsequences", "evidenceGuided", "authoringMode", "useReusableContext", "startLocation", "permissionAskTimeoutMs", "mode", "interpretationCostUsd"] as const;
+const REQUEST_FIELDS = ["projectId", "flowId", "caller", "permittedConsequences", "evidenceGuided", "authoringMode", "useReusableContext", "startLocation", "permissionAskTimeoutMs", "mode", "interpretationCostUsd", "interpretationCalls"] as const;
 const CALLER_FIELDS = ["actorUserId", "actorSessionId"] as const;
 
 /** A generation request, read. `startLocation` is absent when the caller named none. */
@@ -34,6 +34,8 @@ export type AutomationStudioFlowBootstrapGenerationRequest = {
   startLocation?: string;
   /** What the chat's reading of the message cost, carried into the creation purse. Absent when none was sent. */
   interpretationCostUsd?: number;
+  /** How many priced model calls `interpretationCostUsd` sums. Absent when none was sent. */
+  interpretationCalls?: number;
 };
 
 /**
@@ -65,6 +67,10 @@ export function readAutomationStudioFlowBootstrapGenerationRequest(unsafeInput: 
   if (interpretationCostUsd !== undefined && (typeof interpretationCostUsd !== "number" || !Number.isFinite(interpretationCostUsd) || interpretationCostUsd < 0)) {
     throw new Error("Flow Bootstrap generation interpretation cost must be a finite, non-negative amount.");
   }
+  const interpretationCalls = unsafeInput.interpretationCalls;
+  if (interpretationCalls !== undefined && (!Number.isSafeInteger(interpretationCalls) || (interpretationCalls as number) < 0)) {
+    throw new Error("Flow Bootstrap generation interpretation call count must be a whole, non-negative number.");
+  }
   return {
     projectId: requiredBootstrapCommandId(unsafeInput.projectId, "project"),
     flowId: requiredBootstrapCommandId(unsafeInput.flowId, "Flow"),
@@ -72,6 +78,7 @@ export function readAutomationStudioFlowBootstrapGenerationRequest(unsafeInput: 
     ...(unsafeInput.authoringMode === "candidate" || unsafeInput.authoringMode === "project" ? { authoringMode: unsafeInput.authoringMode } : {}),
     ...(startLocation === undefined ? {} : { startLocation }),
     ...(interpretationCostUsd === undefined ? {} : { interpretationCostUsd }),
+    ...(interpretationCalls === undefined ? {} : { interpretationCalls: interpretationCalls as number }),
     caller: {
       actorUserId: requiredBootstrapCommandId(caller.actorUserId, "actor user"),
       actorSessionId: requiredBootstrapCommandId(caller.actorSessionId, "actor session")

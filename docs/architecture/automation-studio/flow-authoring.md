@@ -683,6 +683,23 @@ Call-refused judging preserves actual usage and reports its settled question
 delta, including zero when nothing was sent. Whole-test, current-signature,
 lasting-effect and permission gates remain authoritative.
 
+A failed build's diagnostic may also carry `instructedConsequences` (t728,
+`generation-failure/diagnostic.ts`): the consequence classes the permission
+gate read the instruction as asking for (`move_money`, `delete`,
+`send_or_publish`, `modify_existing`, `create_new`), deduplicated, in Core's
+order, present only when the gate read the instruction and it asked for at
+least one. Only classes are kept, never the gate's quote, instruction id or
+digest, so no person's words reach a diagnostic. The parser refuses an empty
+list, an unknown class, a repeat or another order.
+
+Each re-author attempt (`metadata.resultReauthor.attempts[]`, and the latest
+fields on the marker) carries the same `instructedConsequences` and `calls`:
+the build's `totalProviderCallCount`, or, when that is absent, the build
+purse receipt's `charged.calls` where the receipt was observed and consistent;
+a cost-bound re-author that never started has `calls: 0`. A re-author that
+ended on an empty provider balance has
+`code: "flow_bootstrap.provider_balance_exhausted"`.
+
 ### Paging Evidence Sent To The Result Judge
 
 This describes the read account as the code has it today, in which a read's

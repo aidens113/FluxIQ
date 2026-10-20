@@ -79,7 +79,8 @@ const COST_BOUND_FAILURE: AutomationStudioRefutedResultFailure = Object.freeze({
   code: AUTOMATION_STUDIO_RESULT_REPAIR_COST_BOUND_CODE,
   retryable: false,
   providerInvocation: "not_attempted",
-  providerResponse: "not_received"
+  providerResponse: "not_received",
+  calls: 0
 });
 
 /**
@@ -114,7 +115,7 @@ export async function automationStudioReauthorBuild(input: {
     const costLeftUsd = automationStudioResultRepairPurseLeftUsd(purse);
     let charged: AutomationStudioLlmBuildPurseCharged | undefined;
     let observed = false, inconsistent = false;
-    const built = await automationStudioReauthorRefutedResult({
+    const reauthored = await automationStudioReauthorRefutedResult({
       now,
       generate: async () => {
         // Repairing is the automation's own work, so the build needs nothing
@@ -152,6 +153,8 @@ export async function automationStudioReauthorBuild(input: {
       hold: true,
       failureCode: (error) => automationStudioRefutedResultFailureOf(automationStudioFlowBootstrapFailureDiagnosticOf(error, "pre_provider_validation"))
     });
+    // A failed build whose diagnostic did not count its calls is counted by its purse's receipt.
+    const built = withReceiptCalls(reauthored, observed && !inconsistent ? charged : undefined);
     // A build that made an edit called the model; a failed one says whether
     // its request went out, and its loop how many decisions it made. Either
     // is charged what it reported.
@@ -180,6 +183,12 @@ export async function automationStudioReauthorBuild(input: {
     detail = input.record(detail, built);
   }
   return { detail, built, purse };
+}
+
+/** A failed build's call count from its purse's receipt, where its diagnostic gave none and the receipt is a whole number. */
+function withReceiptCalls(built: AutomationStudioReauthorBuilt, receipt: AutomationStudioLlmBuildPurseCharged | undefined): AutomationStudioReauthorBuilt {
+  if (!built.failure || built.failure.calls !== undefined || !receipt || !Number.isSafeInteger(receipt.calls) || receipt.calls < 0) return built;
+  return { ...built, failure: { ...built.failure, calls: receipt.calls } };
 }
 
 /** Only this invocation's completed owning receipt can replace the older reported-cost reader. */
@@ -254,7 +263,10 @@ function automationStudioRefutedResultFailureOf(diagnostic: AutomationStudioFlow
     // own sentence, which a run record never holds.
     ...(accounting ? { accounting: numericAccounting(accounting) } : {}),
     ...(diagnostic.evidenceLoop ? { evidenceLoop: JSON.parse(JSON.stringify(diagnostic.evidenceLoop)) as JsonObject } : {}),
-    ...(diagnostic.ending ? { ending: closedEnding(diagnostic.ending) } : {})
+    ...(diagnostic.ending ? { ending: closedEnding(diagnostic.ending) } : {}),
+    // How many calls the build made, which the purse charged it for (`totalProviderCallCount`), and what its gate read the instruction to ask for.
+    ...(diagnostic.totalProviderCallCount === undefined ? {} : { calls: diagnostic.totalProviderCallCount }),
+    ...(diagnostic.instructedConsequences?.length ? { instructedConsequences: [...diagnostic.instructedConsequences] } : {})
   };
 }
 

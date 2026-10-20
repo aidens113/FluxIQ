@@ -50,11 +50,11 @@
 // (`apps/extension/src/panel/chat/stream/step/messages.ts` in the
 // web-automation repository).
 
-import { activityActionKey, activityActionOf, type ActivityAction } from "fluxiq/ui";
+import { activityActionKey, activityActionOf, activityHeadline, type ActivityAction } from "fluxiq/ui";
 import type { ConversationActivity, ConversationActivityDetail } from "../contracts";
-import { conversationActivityHeadline, conversationActivityOutcome } from "../headline";
-import { conversationActivitySentence, conversationActivityTextIsHuman } from "../wording";
+import { CONVERSATION_ACTIVITY_HOST_WORDS } from "../host-words";
 import { conversationActivityIsInternal } from "./internal";
+import { conversationActivitySentence, conversationActivityTextIsHuman } from "./words";
 
 export type ConversationStepMessageKind = "decision" | "repair" | "check" | "step" | "action" | "ended";
 
@@ -192,8 +192,11 @@ export function conversationStepMessages(events: readonly ConversationActivity[]
     // writes how it ended, and how far it got, into the thread, so saying it
     // here as well showed the same ending twice (U-B2).
     const answeredInThread = event.subject.kind === "build" && event.conversationId !== undefined;
-    if (drafts.length === before && conversationActivityOutcome(event) === "failed" && !answeredInThread) {
-      const title = conversationActivityHeadline(event.subject.kind, "failed", unit.repairing, event.stopped === true);
+    if (drafts.length === before && event.phase === "failed" && !answeredInThread) {
+      // The shared headline (`activityHeadline` in `fluxiq/ui`), as the live
+      // line and the extension say it: a run whose repair failed "Couldn't fix
+      // your Flow", a build that failed "Build failed" even mid-repair.
+      const title = activityHeadline(event.subject.kind, "failed", CONVERSATION_ACTIVITY_HOST_WORDS, { repairing: unit.repairing, stopped: event.stopped === true });
       add(event, "ended", title, humanText(event.label.split(" — ")[0]));
     }
   }

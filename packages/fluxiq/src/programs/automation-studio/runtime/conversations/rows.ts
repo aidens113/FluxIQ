@@ -21,7 +21,7 @@ import {
   type AutomationStudioConversationAskTimeoutAction
 } from "./ask.ts";
 import type { AutomationStudioConversation, AutomationStudioConversationStatus, AutomationStudioConversationSubjectKind } from "./thread.ts";
-import type { AutomationStudioConversationAuthor, AutomationStudioConversationTurn } from "./turn.ts";
+import type { AutomationStudioConversationAuthor, AutomationStudioConversationTurn, AutomationStudioConversationTurnDecision } from "./turn.ts";
 
 export type AutomationStudioConversationRow = {
   conversation_id: string;
@@ -46,6 +46,7 @@ export type AutomationStudioConversationTurnRow = {
   attachment_ref: string | null;
   actor_id: string | null;
   created_at_ms: number;
+  decision_kind: AutomationStudioConversationTurnDecision | null;
 };
 
 export type AutomationStudioConversationAskRow = {
@@ -71,7 +72,7 @@ export type AutomationStudioConversationAskRow = {
 };
 
 export const AUTOMATION_STUDIO_CONVERSATION_COLUMNS = "conversation_id, subject_kind, subject_id, status, title, revision, turn_count, pending_ask_count, created_at_ms, updated_at_ms";
-export const AUTOMATION_STUDIO_CONVERSATION_TURN_COLUMNS = "conversation_id, turn_id, ordinal, author, body, attachment_kind, attachment_ref, actor_id, created_at_ms";
+export const AUTOMATION_STUDIO_CONVERSATION_TURN_COLUMNS = "conversation_id, turn_id, ordinal, author, body, attachment_kind, attachment_ref, actor_id, created_at_ms, decision_kind";
 export const AUTOMATION_STUDIO_CONVERSATION_ASK_COLUMNS =
   "ask_id, conversation_id, turn_id, kind, status, parks, timeout_ms, on_timeout, options_json, routes_json, consequences_json, missing_json, control_json, request_json, created_at_ms, answered_at_ms, answer_kind, answer_value, answer_actor_id";
 
@@ -90,7 +91,12 @@ export function automationStudioConversationFromRow(projectId: string, row: Auto
   };
 }
 
-export function automationStudioConversationTurnFromRow(row: AutomationStudioConversationTurnRow, ask: AutomationStudioConversationAsk | null): AutomationStudioConversationTurn {
+/**
+ * A turn as read from its row. `decisions` adds the decision Core recorded on
+ * it (`AutomationStudioConversationTurn.decision`), for Core's own reading of
+ * the thread; without it the turn is exactly what a client is given.
+ */
+export function automationStudioConversationTurnFromRow(row: AutomationStudioConversationTurnRow, ask: AutomationStudioConversationAsk | null, read: { decisions?: boolean } = {}): AutomationStudioConversationTurn {
   return {
     turnId: row.turn_id,
     conversationId: row.conversation_id,
@@ -100,7 +106,8 @@ export function automationStudioConversationTurnFromRow(row: AutomationStudioCon
     text: row.body,
     actorId: row.actor_id,
     ask,
-    attachment: row.attachment_kind === null || row.attachment_ref === null ? null : { kind: row.attachment_kind, ref: row.attachment_ref }
+    attachment: row.attachment_kind === null || row.attachment_ref === null ? null : { kind: row.attachment_kind, ref: row.attachment_ref },
+    ...(read.decisions ? { decision: row.decision_kind ?? null } : {})
   };
 }
 

@@ -85,6 +85,8 @@ export type AutomationStudioConversationCommandContext = {
    * what the Flow cost (`build.ts`). Absent, nothing is carried.
    */
   interpretationCostUsd?: number;
+  /** How many priced model calls `interpretationCostUsd` sums, carried beside it into the Flow's spend as its "chat" calls. */
+  interpretationCalls?: number;
   /**
    * The turn Core wrote in answer to the person's message that started this
    * command (`start.ts`). The person's own words are read from the turns before

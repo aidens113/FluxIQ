@@ -35,6 +35,8 @@ export async function automationStudioLabFlowPurse<T>(
     flowId?: string | null | undefined;
     /** What the chat's reading of the message that started this run cost, when a chat turn started it. */
     interpretationCostUsd?: number | undefined;
+    /** How many priced calls that reading was: the Flow spend's `chat` calls. */
+    interpretationCalls?: number | undefined;
     labScoped?: boolean | undefined;
   },
   run: () => Promise<T>
@@ -43,6 +45,6 @@ export async function automationStudioLabFlowPurse<T>(
   const labScoped = input.labScoped ?? resolveAutomationStudioLlmTestRunCostCeilingUsd() !== undefined;
   if (!labScoped || !projectId || !flowId) return await run();
   const reading = input.interpretationCostUsd;
-  if (typeof reading === "number" && Number.isFinite(reading) && reading > 0) await store.add(projectId, flowId, reading);
+  if (typeof reading === "number" && Number.isFinite(reading) && reading > 0) await store.add(projectId, flowId, reading, { phase: "chat", calls: input.interpretationCalls ?? 0 });
   return await store.withFlowPurse(projectId, flowId, automationStudioLlmRunCostCeilingUsd(), run);
 }
