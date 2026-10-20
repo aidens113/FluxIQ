@@ -9,6 +9,7 @@ export * from "./explored-on-absorbed.ts";
 export * from "./ledger.ts";
 export * from "./project-ledger.ts";
 export * from "./project-reset.ts";
+export * from "./reset-witness.ts";
 export * from "./settle-ms.ts";
 export * from "./settlement-act-groups.ts";
 export * from "./settlement-control-tracker.ts";

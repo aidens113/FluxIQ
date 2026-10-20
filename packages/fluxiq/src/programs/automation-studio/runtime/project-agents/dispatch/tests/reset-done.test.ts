@@ -33,10 +33,11 @@ describe("a reset's done", () => {
     ledger.forBrief("brief-2").explored(pressed("pay", "Pay", ["move_money"]));
     const done = automationStudioProjectDispatchResetDone(ledger);
     expect(done).not.toContain("Every lasting act this build made is undone");
-    expect(done).toBe("This reset undid every act of this build it could, but 2 lasting acts of this build stay on the site, so the site is not as the build found it: act-1 (press \"Save\" button; the site offers no way to undo it), act-2 (press \"Pay\" button; FluxIQ cannot undo it).");
+    expect(done).toBe("This reset undid every act of this build it could, but 2 lasting acts of this build stay on the site, so the site is not as the build found it: clicked “Save” (the site offers no way to undo it), clicked “Pay” (FluxIQ cannot undo it).");
   });
 
-  it("says of an act settled unchanged that nothing it could change showed a change, never that the site offers no way to undo it (L1)", async () => {
+  // t738, everything-store `run-mvgf04kw-310fc169`: acts settled unchanged were listed by id as leaving the site "not as the build found it".
+  it("says of an act settled unchanged that it may not have changed anything, never that it stays on the site (L1, t738)", async () => {
     const ledger = new AutomationStudioSiteResetProjectLedger();
     const brief = ledger.forBrief("brief-1");
     const list = (subjects: string[]) => ({ scope: "p:items", group: "g:items", subjects, states: Object.fromEntries(subjects.map((subject) => [subject, `v:${subject}`])) });
@@ -51,7 +52,10 @@ describe("a reset's done", () => {
     // Core's own look finds the list as the build found it.
     expect(await brief.beforeTrial({ compare: async () => ({ moved: false, differs: [] }), lookAt: async () => brief.observed(read) })).toMatchObject({ kind: "admit" });
     expect(brief.standing("act-1")).toBe("unchanged");
-    expect(automationStudioProjectDispatchResetDone(ledger)).toBe("This reset undid every act of this build it could, but 1 lasting act of this build stays on the site, so the site is not as the build found it: act-1 (press \"Start a draft\" button; nothing it could change showed a change).");
+    const done = automationStudioProjectDispatchResetDone(ledger);
+    expect(done).toBe("Every act of this build that showed a change is undone. 1 act of this build showed no change on the site, so it may not have changed anything: clicked “Start a draft”.");
+    expect(done).not.toContain("not as the build found it");
+    expect(done).not.toMatch(/act-\d/u);
   });
 
   it("names ten acts that stayed and counts the rest", () => {
@@ -59,8 +63,9 @@ describe("a reset's done", () => {
     for (let n = 1; n <= 12; n += 1) ledger.forBrief("brief-1").explored(pressed(`pay.${n}`, `Pay ${n}`, ["move_money"]));
     const done = automationStudioProjectDispatchResetDone(ledger);
     expect(done).toContain("12 lasting acts of this build stay on the site");
-    expect(done).toContain("act-10 (");
-    expect(done).not.toContain("act-11 (");
+    expect(done).toContain("clicked “Pay 10” (FluxIQ cannot undo it)");
+    expect(done).not.toContain("“Pay 11”");
+    expect(done).not.toMatch(/act-\d/u);
     expect(done.endsWith(", and 2 more.")).toBe(true);
   });
 });

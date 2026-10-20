@@ -256,6 +256,7 @@ import { automationStudioLlmEvidenceCanonicalJson } from "../evidence-loop-decis
 import { automationStudioLlmEvidenceResendAdmission } from "./resend-admission.ts";
 import { automationStudioLlmEvidenceRetriesLater } from "./retry-later.ts";
 import { automationStudioLlmEvidenceSearchStreak, type AutomationStudioLlmEvidenceSearchStreak } from "./searching.ts";
+import { automationStudioLlmEvidenceUnchangedStanding } from "./unchanged-standing.ts";
 import { automationStudioLlmEvidenceCallWritten } from "./written-call.ts";
 
 
@@ -330,6 +331,8 @@ export type AutomationStudioLlmEvidenceRepeatedOutcome = {
    * submission sent again is answered with them (`./candidate-feedback.ts`).
    */
   issues?: JsonValue[];
+  /** `failed` only: the revision an unchanged submission's refusal named as standing, and whether it was tried (`./unchanged-standing.ts`, t738). */
+  standing?: { revision: number; digest: string; tried?: true };
 };
 
 /** One call as it ran, for the record. */
@@ -504,13 +507,15 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
       if (preconditions.length) awaiting.set(at, preconditions);
       else awaiting.delete(at);
       const issues = call.refused ? refusalIssues(call.answer) : undefined;
+      const standingNamed = call.refused ? automationStudioLlmEvidenceUnchangedStanding(call.resultCode, call.answer) : undefined;
       outcomes.set(at, {
         callId: call.callId,
         outcome: failed ? "failed" : !changedNothing ? "same_result" : runsDraft ? "same_draft" : "changed_nothing",
         ...(call.resultCode ? { resultCode: call.resultCode } : {}),
         ...(call.resultReason ? { resultReason: call.resultReason } : {}),
         ...(handleUnshown ? { handleUnshown: true as const } : {}),
-        ...(issues ? { issues } : {})
+        ...(issues ? { issues } : {}),
+        ...(standingNamed ? { standing: standingNamed } : {})
       });
     },
     blocks(toolId, input, at) {

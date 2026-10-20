@@ -47,4 +47,22 @@ describe("what a build left on the site, in a person's words", () => {
     expect(told).toContain("clicked “Filter 4”, “Filter 5”, “Filter 6”, “Filter 7”, “Filter 8” and 3 more,");
     expect(told).toContain("and 3 more");
   });
+
+  // t738, job-board `run-mvgf4pk5-55343613`: three open presses on controls no word names were said as "one more change".
+  it("counts acts no word names, so three nameless presses are said as three", () => {
+    const told = automationStudioActivityLeftTold([{ did: "click span" }, { did: "click span" }, { did: "click span" }], []);
+    expect(told).toBe("These changes the build made are still on the site: 3 presses it could not name.");
+    expect(told).not.toContain("one more change");
+    // Named and nameless together, and a nameless act that was no press.
+    expect(automationStudioActivityLeftTold([{ did: "press \"Save recipe\" button" }, { did: "click \"–\" div" }, { did: "select listbox" }], []))
+      .toBe("These changes the build made are still on the site: clicked “Save recipe”, 1 press it could not name and 1 act it could not name.");
+  });
+
+  it("never calls an act no change was seen of a change still on the site", () => {
+    const told = automationStudioActivityLeftTold([{ did: "click span", seen: false }, { did: "click span", seen: false }, { did: "click span", seen: false }], []);
+    expect(told).not.toContain("still on the site");
+    expect(told).toBe("The build left no change on the site that it knows of. It made 3 presses it could not name, but no read ever showed a change from them, so they may have changed nothing; check them if you need the site exactly as it was.");
+    const one = automationStudioActivityLeftTold([{ did: "press \"Add to reading list\" button" }, { did: "press \"Rate it\" button", seen: false }], []);
+    expect(one).toBe("These changes the build made are still on the site: clicked “Add to reading list”. It clicked “Rate it”, but no read ever showed a change from it, so it may have changed nothing; check it if you need the site exactly as it was.");
+  });
 });

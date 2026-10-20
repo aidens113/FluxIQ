@@ -100,13 +100,13 @@ it("hands the ledger the destination a creation was admitted against, so an unch
   expect(await own.beforeTrial(async () => ({ moved: false }))).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1", call: "open" }] } });
 });
 
-it("hands the ledger a destination named later, on a look that names the act under undoes (F1 continuation)", async () => {
+it("refuses an unwitnessed first press unrun, then hands the ledger a destination named later on a look under undoes (F1 continuation, rerun round 2)", async () => {
   const own = new AutomationStudioSiteResetLedger();
   const told: Array<string | undefined> = [];
   const read = { state: {}, differs: [], resource: "r:one", scope: "p:saved-page", collections: [{ scope: "p:saved", group: "g:saved", subjects: ["s:original"], states: { "s:original": "v:original" } }] };
   const permissions = automationStudioFlowBootstrapActionPermissions({
     permittedConsequences: ["modify_existing"], instructionIds: [], requireCreateBaseline: true,
-    siteReset: { createBaseline: (declared, reference) => own.createBaseline(declared, reference), destinationReceipts: () => own.destinationReceipts(), claim: value => own.claim(value), target: (act, declared) => own.target(act, declared), explored: call => {
+    siteReset: { createBaseline: (declared, reference) => own.createBaseline(declared, reference), destinationReceipts: () => own.destinationReceipts(), claim: (value, reference) => own.claim(value, reference), target: (act, declared) => own.target(act, declared), explored: call => {
       told.push(call.resetDestination);
       own.explored(call);
     } },
@@ -118,13 +118,40 @@ it("hands the ledger a destination named later, on a look that names the act und
   });
   own.observed(read);
   const ref = own.destinationReceipts()[0]!.ref;
-  await permissions.executeTool({ callId: "save", toolId: "core.run_node", value: { node: "example.save", parameters: {}, consequences: ["modify_existing"] } });
+  // Before the seal, a reversible press that nothing could ever settle is refused unrun and recorded nowhere.
+  expect(await permissions.executeTool({ callId: "save-unwitnessed", toolId: "core.run_node", value: { node: "example.save", parameters: {}, consequences: ["modify_existing"] } })).toMatchObject({ evidence: { ok: false, code: "candidate.reset_witness_required" } });
+  expect(told).toEqual([]);
+  // Named by its ref, the first press lands and seals the baselines.
+  await permissions.executeTool({ callId: "save", toolId: "core.run_node", value: { node: "example.save", parameters: {}, consequences: ["modify_existing"], resetDestination: ref } });
+  // After the seal a press naming no ref is admitted as before; its destination is named later.
+  await permissions.executeTool({ callId: "save-again", toolId: "core.run_node", value: { node: "example.save", parameters: {}, consequences: ["modify_existing"] } });
   own.observed(read);
   expect(await own.beforeTrial(async () => ({ moved: false }))).toMatchObject({ kind: "refuse" });
-  await permissions.executeTool({ callId: "look", toolId: "core.run_node", value: { node: "example.read", parameters: {}, consequences: [], undoes: "act-1", resetDestination: ref } });
-  expect(told).toEqual([undefined, ref]);
+  await permissions.executeTool({ callId: "look", toolId: "core.run_node", value: { node: "example.read", parameters: {}, consequences: [], undoes: "act-2", resetDestination: ref } });
+  expect(told).toEqual([ref, undefined, ref]);
   own.observed(read);
-  expect(await own.beforeTrial(async () => ({ moved: false }))).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1", call: "save" }] } });
+  expect(await own.beforeTrial(async () => ({ moved: false }))).toMatchObject({ kind: "admit" });
+});
+
+it("refuses a look under undoes that names a ref no receipt printed, before it runs (rerun round 2)", async () => {
+  const own = new AutomationStudioSiteResetLedger();
+  const ran: string[] = [];
+  const read = { state: {}, differs: [], resource: "r:one", scope: "p:saved-page", collections: [{ scope: "p:saved", group: "g:saved", subjects: ["s:original"], states: { "s:original": "v:original" } }] };
+  const permissions = automationStudioFlowBootstrapActionPermissions({
+    permittedConsequences: ["modify_existing"], instructionIds: [], requireCreateBaseline: true,
+    siteReset: { createBaseline: (declared, reference) => own.createBaseline(declared, reference), destinationReceipts: () => own.destinationReceipts(), claim: (value, reference) => own.claim(value, reference), target: (act, declared) => own.target(act, declared), explored: call => own.explored(call) },
+    executeTool: async (call) => {
+      ran.push(call.callId);
+      const look = call.callId === "look";
+      const verdict = await call.permission!(look ? { consequences: [], effect: "observe", control: { name: "Saved" }, verb: "read" } : { consequences: ["modify_existing"], control: { name: "Save", subject: "s:document", page: "s:results", resource: "r:one" }, verb: "press" });
+      return { kind: "llm_evidence_tool_execution", evidence: { ok: verdict.permitted }, effectApplied: verdict.permitted && !look };
+    }
+  });
+  own.observed(read);
+  const ref = own.destinationReceipts()[0]!.ref;
+  await permissions.executeTool({ callId: "save", toolId: "core.run_node", value: { node: "example.save", parameters: {}, consequences: ["modify_existing"], resetDestination: ref } });
+  expect(await permissions.executeTool({ callId: "look", toolId: "core.run_node", value: { node: "example.read", parameters: {}, consequences: [], undoes: "act-1", resetDestination: "destination-99" } })).toMatchObject({ evidence: { ok: false, code: "candidate.reset_destination_unissued" } });
+  expect(ran).toEqual(["save"]);
 });
 
 it("fails closed if an opted-in project adapter omits preflight, while preserving other paths", async () => {

@@ -37,6 +37,18 @@
 // a refused submission sent again with its issues and their fixes, as a
 // candidate's is, and each note names completing with `ended: "blocked"` and
 // the reason as the way out. A candidate's notes are as they were.
+//
+// **An untried revision sent again is told to test it (t738).** Office rerun
+// round 2 (`run-mvgf04kw-310fc169`, brief-4 0128-0137, brief-5 0188-0197):
+// `candidate.unchanged_submission` said revision 1 still stood untested and
+// to test it; the builder sent the identical script again and was told to
+// "submit the whole subflow again", did so twice, and its brief ended. An
+// unchanged refusal names the revision it stands for (`./unchanged-standing.ts`):
+// when that revision was never tried, the note names the test tool with that
+// revision and digest as the next call, in a builder's and a candidate's
+// loop alike. When it was tried, the note says to change what its feedback
+// names and send the changed script, testing that revision again only where
+// its feedback says trying again may pass -- never to send the same again.
 
 import type { JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceRepeatedOutcome } from "./outcomes.ts";
@@ -121,12 +133,30 @@ function isObject(value: JsonValue): value is { [key: string]: JsonValue } {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** A submission refused as unchanged, sent again: its refusal named no issues, only what failed last (header, t489). */
-function unchangedSubmission(call: string): string {
-  return `You already submitted this exact candidate -- the same script, word for word -- in call ${call}, and it was refused as unchanged (sameAsCall, then.resultCode): it is the Flow of a revision already made. `
+/** The revision an unchanged refusal named as standing (`./unchanged-standing.ts`). */
+type Standing = NonNullable<AutomationStudioLlmEvidenceRepeatedOutcome["standing"]>;
+
+/** The tools and the word of the loop a note is for: a candidate's or a builder's (header, t738). */
+type Loop = { submit: string; test: string; subject: string };
+const CANDIDATE_LOOP: Loop = Object.freeze({ submit: SUBMIT_CANDIDATE, test: "core.test_candidate", subject: "candidate" });
+const BUILDER_LOOP: Loop = Object.freeze({ submit: SUBMIT_SUBFLOW, test: TEST_SUBFLOW, subject: "subflow" });
+
+/** An unchanged submission sent again whose standing revision was never tried (header, t738): its test is the next call. */
+function untriedStanding(call: string, standing: Standing, loop: Loop): string {
+  const receipt = `{"revision": ${standing.revision}, "digest": "${standing.digest}"}`;
+  return `You already submitted this exact ${loop.subject} -- the same script, word for word -- in call ${call}, and it was refused as unchanged (sameAsCall, then.resultCode): it is revision ${standing.revision}, which still stands and has not been tested. `
+    + `Sending it again cannot make a new revision, so it was not checked again. Your next call is ${loop.test} with exactly ${receipt}: `
+    + `its trial says whether revision ${standing.revision} passes, and what to change where it does not. Change the ${loop.subject} only after that trial has answered.`;
+}
+
+/** A submission refused as unchanged, sent again: its refusal named no issues, only what failed last (header, t489, t738). */
+function unchangedSubmission(call: string, standing: Standing | undefined, loop: Loop): string {
+  if (standing && standing.tried !== true) return untriedStanding(call, standing, loop);
+  const retest = standing ? `revision ${standing.revision} again with ${loop.test}, using exactly {"revision": ${standing.revision}, "digest": "${standing.digest}"},` : `the same revision again with ${loop.test}`;
+  return `You already submitted this exact ${loop.subject} -- the same script, word for word -- in call ${call}, and it was refused as unchanged (sameAsCall, then.resultCode): it is the ${loop.subject === "subflow" ? "subflow" : "Flow"} of a revision already made. `
     + "It was the same script, so it was not checked again. That refusal lists no issues: what failed is in its answer, under lastTrial (the step that stopped, and what it says happened), or under judged after the judge's no. "
-    + "Change the step that feedback names, or the steps that lead to it, keep every other line as it is, and submit the whole changed candidate; "
-    + "test the same revision again with core.test_candidate only if that feedback says trying again may pass.";
+    + `Change the step that feedback names, or the steps that lead to it, keep every other line as it is, and send that changed ${loop.subject} with ${loop.submit}; `
+    + `test ${retest} only if that feedback says trying again may pass.`;
 }
 
 /** Any other refused submission with no issues, sent again. */
@@ -182,6 +212,8 @@ function builderInstruction(toolId: string, earlier: AutomationStudioLlmEvidence
   if (earlier.handleUnshown) return { instruction: HANDLE_UNSHOWN + tail("it") };
   if (toolId === TEST_SUBFLOW) return { instruction: SAME_BUILDER_CALL + tail("this call") };
   if (earlier.outcome !== "failed") return { instruction: ACCEPTED_SUBFLOW + tail("it") };
+  // An unchanged refusal lists no issues: its standing revision says what comes next (header, t738).
+  if (earlier.resultCode !== undefined && UNCHANGED_CODES.has(earlier.resultCode)) return { instruction: unchangedSubmission(earlier.callId, earlier.standing, BUILDER_LOOP) + tail("it") };
   if (earlier.issues) return { instruction: refusedSubflow(earlier.callId, earlier.issues) + tail("it"), issues: structuredClone(earlier.issues) };
   return { instruction: refusedSubflowWithoutIssues(earlier.callId) + tail("it") };
 }
@@ -205,7 +237,7 @@ export function automationStudioLlmEvidenceCandidateRepeatInstruction(input: {
   if (toolId === SUBMIT_CANDIDATE) {
     if (earlier.outcome !== "failed") return { instruction: ACCEPTED_SUBMISSION + ending(inARow, maxInARow, "it") };
     if (earlier.issues) return { instruction: refusedSubmission(earlier.callId, earlier.issues) + ending(inARow, maxInARow, "it"), issues: structuredClone(earlier.issues) };
-    const said = earlier.resultCode !== undefined && UNCHANGED_CODES.has(earlier.resultCode) ? unchangedSubmission(earlier.callId) : refusedWithoutIssues(earlier.callId);
+    const said = earlier.resultCode !== undefined && UNCHANGED_CODES.has(earlier.resultCode) ? unchangedSubmission(earlier.callId, earlier.standing, CANDIDATE_LOOP) : refusedWithoutIssues(earlier.callId);
     return { instruction: said + ending(inARow, maxInARow, "it") };
   }
   if (earlier.outcome === "same_answer") return { instruction: SAME_LOOK + ending(inARow, maxInARow, "the same look") };

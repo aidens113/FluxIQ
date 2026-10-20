@@ -290,7 +290,8 @@ export function automationStudioProjectBuildBriefPorts(input: {
       const landed: AutomationStudioSubflowEntryLeftAct[] = entry.kind === "prepared" ? project.ledger.snapshot().acts.filter((act) => act.inPlace && act.ref.startsWith(`${entry.runId}#`)).map(({ act, did, possible }) => ({ act, did, ...(possible ? { possibly: true as const } : {}) })) : [];
       const loop = told({ ...placed, tools }, { start: started.told, entry: automationStudioProjectBuildEntryNote(request.scope, entry, absorbedActs, landed), permittedActs: request.brief.permittedActs, arrived });
       // The domain's denied keys, which the dispatcher withholds from a repair's `yourSubflow` (`project-agents/dispatch/run-brief.ts`, t625).
-      return { loop, submission: { ...submission, permissionFor: built.permissions.planStep }, trial, reset, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...built.submissions.observe(observed), decide: built.decide(observed.completionSchema) }), ended: built.ended, deniedEvidenceKeys: binding.deniedEvidenceKeys };
+      // `moves`: the reader's count of the times its looks moved the target, so a test refused after one says where it stands (t738).
+      return { loop, submission: { ...submission, permissionFor: built.permissions.planStep }, trial, reset, moves: () => reader.moves, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...built.submissions.observe(observed), decide: built.decide(observed.completionSchema) }), ended: built.ended, deniedEvidenceKeys: binding.deniedEvidenceKeys };
     },
     reset: async (request) => {
       // An undo aimed at another item is refused in a reset's words (header).

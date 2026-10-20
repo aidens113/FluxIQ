@@ -124,6 +124,11 @@
 // admitted on them exactly as on an explored act's. Where the diff gave
 // neither, it is recorded as before. A start hook takes it back as before.
 //
+// **No witness, no first lasting press (rerun round 2).** Before the seal a
+// reversible press nothing could ever settle is refused unrun
+// (`./reset-witness.ts`), and a `resetDestination` no receipt printed is
+// refused before its call runs, here under `undoes` (`claim`) too.
+//
 // **Cross-page inverses need a destination baseline (t719 review).** A
 // subject/title says which item an effect concerns; it never proves that the
 // whole item belongs to the build. Before adding something whose removal will
@@ -349,8 +354,11 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     for (const act of this.acts) this.settledNow(act);
   }
 
-  claim(undoes: unknown): AutomationStudioSiteResetClaim {
+  claim(undoes: unknown, resetDestination?: unknown): AutomationStudioSiteResetClaim {
     if (undoes === undefined) return { kind: "none" };
+    // A ref no receipt printed is refused before the call runs, never ignored (`./create-baselines.ts`, rerun round 2).
+    const unissued = this.createBaselines.unissued(resetDestination);
+    if (unissued) return { kind: "refused", evidence: unissued };
     const act = typeof undoes === "string" ? this.acts.find((entry) => entry.id === undoes) : undefined;
     const left = act !== undefined && this.settledNow(act) === "unchanged";
     if (act && !act.undone && act.undoable && ((act.kept && !act.strictReset) || left)) return { kind: "refused", evidence: { ok: false, code: "candidate.undo_act_kept", act: act.id, instruction: WORDS.keptAct(left), actsToUndo: this.inPlace() } };
@@ -637,6 +645,11 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     return settled === "unchanged" ? "unchanged" : act.kept && !act.strictReset ? "kept" : "in_place";
   }
 
+  /** Whether any read after the act ever showed a change it made, for words said about it (t738); undefined for an id this ledger never gave. */
+  changeSeen(actId: string): boolean | undefined {
+    return this.acts.find((entry) => entry.id === actId)?.changeSeen;
+  }
+
   /** Still on the site, and still the model's to undo. */
   private toUndo(act: Act): boolean {
     return !this.settledNow(act) && this.claimable(act) && !act.possible;
@@ -686,7 +699,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     const said = namedAct(act);
     if (!this.open(act)) return said;
     const decision = this.evaluate(act);
-    return decision.kind === "open" ? { ...said, settle: settleWords(decision.reasons, this.createBaselines.issuedRefs()) } : said;
+    return decision.kind === "open" ? { ...said, settle: settleWords(decision.reasons, this.createBaselines.issuedRefs(), { closed: this.createBaselines.refsClosed() }) } : said;
   }
 
   /** Still on the site, and an undo may name it: a possibly lasting act too, though it is never asked for (header). An act settled unchanged is left. */

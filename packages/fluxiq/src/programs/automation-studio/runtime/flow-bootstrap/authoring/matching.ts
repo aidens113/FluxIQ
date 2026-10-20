@@ -24,6 +24,8 @@ const PARAMETER_SYNONYMS: ReadonlyMap<string, string[]> = new Map([
   ["on", ["target"]],
   ["columns", ["fields"]],
   ["dataset", ["recordOutput"]],
+  // Only where no parameter is called `records`: a synonym is tried after the
+  // ids and labels, so Write Records' own rows parameter keeps the key (t738).
   ["records", ["recordOutput"]],
   ["save", ["recordOutput"]],
   ["timeout", ["timeoutMs"]],

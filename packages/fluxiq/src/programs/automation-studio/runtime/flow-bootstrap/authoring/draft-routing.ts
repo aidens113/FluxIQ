@@ -93,6 +93,7 @@ const ROW_PORT = "item";
  * page, and was told only to name a listing the Flow runs once; it sent the
  * same script four times. A span holds no second repeat, so no Flow acts on
  * each kept row of every page: the sentence says so, and says what does work.
+ * A row loop inside another repeat is told it too, with how a growing list is read (t738).
  */
 const NO_ROW_LOOP_IN_PAGE_LOOP = "A repeat inside a repeat is not supported, so a Flow cannot act on each kept row of every page of a paged list. To keep rows across pages, read every page in one `repeat while` span and keep the rows the instruction asks for with the listing's `extractList.where`; a condition the rows do not print is usually one of the site's own filters, set before that span. To act on each row, do it on the rows one listing reads, with `repeat over:` that listing.";
 
@@ -335,7 +336,8 @@ function scriptSpan(input: {
   for (let member = index; member <= end; member += 1) {
     const step = steps[member]!;
     members.add(step.label);
-    if (member > index && input.written[member]!.repeat) return refuse("flow_script.repeat_body_is_routed", `The step at line ${step.line} says repeat inside the span that starts at line ${steps[index]!.line}. A repeat inside a repeat is not supported: say repeat once, on the first step of the span.`);
+    const inner = member > index ? input.written[member]!.repeat : undefined;
+    if (inner) return refuse("flow_script.repeat_body_is_routed", `The step at line ${step.line} says repeat inside the span that starts at line ${steps[index]!.line}. A repeat inside a repeat is not supported: say repeat once, on the first step of the span.${inner.over === undefined ? "" : ` ${NO_ROW_LOOP_IN_PAGE_LOOP} A list that grows in place is loaded whole by its own step before the listing read, and the row loop runs once over that read.`}`, `flow.line.${inner.line || step.line}`);
     // An optional step's way past itself is Core's, and goes to its join inside
     // this span (`../script-statements/guarded-steps.ts`); only a branch the
     // model wrote would leave the order the loop runs in.

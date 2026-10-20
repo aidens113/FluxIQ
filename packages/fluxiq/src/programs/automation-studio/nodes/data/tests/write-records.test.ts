@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { JsonValue } from "../../../../../core/index.ts";
 import type { AutomationNodeExecutionResult } from "../../contracts.ts";
+import { resolveAutomationNodeParameterValues } from "../../parameter-bindings.ts";
 import { writeRecordsNode } from "../write-records.ts";
 
 const RECORD_OUTPUT = {
@@ -21,8 +22,9 @@ const RECORD_OUTPUT = {
 const ROWS: JsonValue[] = [{ title: "synthetic-title", cardNumber: "synthetic-excluded" }];
 
 describe("builtin.data.write-records", () => {
-  it("declares a records input, a records data output, and a manual-only record output edited by the record-output control", () => {
-    expect(writeRecordsNode.inputs.find((port) => port.id === "records")).toMatchObject({ valueType: "array", required: true });
+  it("declares an optional records input, a records data output, and a manual-only record output edited by the record-output control", () => {
+    // Not required (t738): a script cannot connect a port, so the rows may come from the records parameter instead.
+    expect(writeRecordsNode.inputs.find((port) => port.id === "records")).toMatchObject({ valueType: "array", required: false });
     expect(writeRecordsNode.outputs.find((port) => port.id === "records")).toEqual({ id: "records", label: "Records", valueType: "array", role: "data" });
     const parameter = writeRecordsNode.parameters.find((entry) => entry.id === "recordOutput");
     expect(parameter).toMatchObject({ valueType: "json", defaultValue: null, allowStateBinding: false, ui: { control: "record-output" } });
@@ -84,6 +86,83 @@ describe("builtin.data.write-records", () => {
       outputs: { error: { code: "record_output.invalid" } },
       failure: { category: "graph_validation_or_unknown_node", code: "record_output.invalid", retryable: false }
     });
+    expect(parseAutomationStudioFailureRecord(result.failure)).toEqual(result.failure);
+  });
+});
+
+// office run-mvgf04kw-310fc169 (t738): four values read one by one could not be
+// saved as one row, because the rows came only through an input port no script
+// line can connect. The records parameter takes the rows as written, each value
+// bound to an earlier step's output, resolved when the node runs.
+describe("builtin.data.write-records given its rows by the records parameter", () => {
+  const ROW_OUTPUT = {
+    datasetId: "account.plan",
+    schema: { schemaVersion: "0.1", fields: [{ id: "plan", label: "Plan", valueType: "string" }, { id: "renews", label: "Renews", valueType: "string" }, { id: "price", label: "Price", valueType: "string" }] },
+    writeMode: "replace"
+  };
+  const BOUND_ROWS: JsonValue = [{ plan: { $state: { path: "plan.value" } }, renews: { $state: { path: "renews.value" } }, price: { $state: { path: "price.value" } } }];
+  const STATE: Record<string, JsonValue> = { plan: { value: "synthetic-plan" }, renews: { value: "synthetic-date" }, price: { value: "synthetic-price" } };
+
+  it("declares a state-bindable list parameter for the rows, with no default, so a step leaves it out to use the input", () => {
+    const parameter = writeRecordsNode.parameters.find((entry) => entry.id === "records");
+    expect(parameter).toMatchObject({ id: "records", valueType: "array" });
+    expect(parameter?.allowStateBinding).not.toBe(false);
+    expect(parameter?.defaultValue).toBeUndefined();
+    expect(parameter?.required).not.toBe(true);
+  });
+
+  it("writes one record holding the values the bindings resolved to", async () => {
+    const resolved = resolveAutomationNodeParameterValues({ recordOutput: ROW_OUTPUT, records: BOUND_ROWS }, STATE);
+    expect(resolved.missingPaths).toEqual([]);
+
+    const result = await execute({}, resolved.values);
+
+    expect(result).toEqual({
+      status: "success",
+      route: "success",
+      outputs: {},
+      effects: [{
+        type: "records.write",
+        payload: { recordOutput: { ...ROW_OUTPUT, recordsPath: "records" }, records: [{ plan: "synthetic-plan", renews: "synthetic-date", price: "synthetic-price" }] }
+      }]
+    });
+  });
+
+  it("takes the written rows over a bare records value another node left in run state", async () => {
+    const result = await execute({ records: ROWS }, { recordOutput: ROW_OUTPUT, records: [{ plan: "synthetic-plan" }] });
+
+    expect(result).toMatchObject({ status: "success", effects: [{ payload: { records: [{ plan: "synthetic-plan" }] } }] });
+  });
+
+  it("reports a binding the run cannot resolve as missing, so the node never runs on a row without it", () => {
+    const resolved = resolveAutomationNodeParameterValues({ recordOutput: ROW_OUTPUT, records: BOUND_ROWS }, { plan: { value: "synthetic-plan" } });
+
+    expect(resolved.missingPaths).toEqual(["renews.value", "price.value"]);
+  });
+
+  it("fails clearly, naming the field and emitting no effect, when a row still holds a binding nothing resolved", async () => {
+    const result = await execute({}, { recordOutput: ROW_OUTPUT, records: BOUND_ROWS });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      route: "failed",
+      effects: [],
+      outputs: { error: { code: "record_output.unresolved_value", fields: ["plan", "renews", "price"] } },
+      failure: { category: "graph_validation_or_unknown_node", code: "record_output.unresolved_value", retryable: false }
+    });
+    expect(result.message).toContain("plan");
+    expect(JSON.stringify(result)).not.toContain("plan.value");
+    expect(parseAutomationStudioFailureRecord(result.failure)).toEqual(result.failure);
+  });
+
+  it.each([
+    ["no rows at all", {}, {}, "record_output.no_records"],
+    ["rows that are not a list of objects", {}, { records: ["synthetic"] }, "record_output.invalid_records"],
+    ["rows that are one value", {}, { records: "synthetic" }, "record_output.invalid_records"]
+  ])("fails clearly, emitting no effect, given %s", async (_case, inputs, parameters, code) => {
+    const result = await execute(inputs as Record<string, JsonValue>, { recordOutput: ROW_OUTPUT, ...parameters } as Record<string, JsonValue>);
+
+    expect(result).toMatchObject({ status: "failed", route: "failed", effects: [], outputs: { error: { code } }, failure: { code, retryable: false } });
     expect(parseAutomationStudioFailureRecord(result.failure)).toEqual(result.failure);
   });
 });

@@ -42,7 +42,7 @@ export function automationStudioProjectBuildResetCalls(project: AutomationStudio
     },
     createBaseline: (declared, reference) => own.createBaseline(declared, reference),
     destinationReceipts: () => own.destinationReceipts(),
-    claim: (undoes) => owner(undoes).claim(undoes),
+    claim: (undoes, reference) => owner(undoes).claim(undoes, reference),
     target: (act, declared) => owner(act).target(act, declared),
     explored: (call) => owner(call.undoes).explored(call),
     actOf: (callId) => own.actOf(callId),
