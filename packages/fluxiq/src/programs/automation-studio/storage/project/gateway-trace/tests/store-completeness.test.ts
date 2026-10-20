@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Source tests T11 and T14 over the persisted store. T11: a captured artifact
 // stays readable after its live source is gone and survives the content sweep,
 // and once its content object is removed the completeness evaluator reports it

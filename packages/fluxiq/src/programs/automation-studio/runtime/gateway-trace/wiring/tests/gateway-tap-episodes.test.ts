@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // T02 and T03 (traces and offline trials, P2): a deterministic scripted-client
 // run through the production executor, graph options, RuntimeService and the
 // client gateway's transport (the fixture pattern of

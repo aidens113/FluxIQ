@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // What only the persisted store has to prove: traces survive the pool being
 // closed and reopened, large events go to the project content store and come
 // back identical, manifests list by episode, a deleted trace takes its rows and

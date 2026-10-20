@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A state-asset upload and traces (traces and offline trials, P2; D13): the
 // expected digest is checked before anything is written, and a stored
 // screenshot is handed to the client gateway's trace intake for the uploading

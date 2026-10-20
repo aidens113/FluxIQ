@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // The memory store's behaviour suite (client-gateway/trace/tests/memory-store.test.ts),
 // run against the reference memory store and the persisted project store
 // alike: the persisted store must answer exactly as the reference does.
