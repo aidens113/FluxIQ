@@ -1,10 +1,22 @@
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { disposeWholeFlowTemplate, wholeFixture, wholeFlowFromTemplate, wholeFlowTemplate, type WholeFlowTemplate } from "./whole-fixture.ts";
+import { disposeWholeFlowTemplate, wholeFlowFromTemplate, wholeFlowTemplate, wholeProjectFromTemplate, wholeProjectTemplate, type WholeFlowTemplate, type WholeProjectTemplate } from "./whole-fixture.ts";
 import { CanonicalAuthorityWholeSql } from "../whole-sql.ts";
 import type { CanonicalWholeSqlCapability } from "../contracts.ts";
 
+// The project is created once and copied into each case; the Flow template is
+// made from a copy of it, so each hook carries one canonical operation (t731:
+// both in one hook ran past the 15 s hook limit in a loaded package run).
+let project: WholeProjectTemplate | undefined;
+let created: WholeFlowTemplate | undefined;
+beforeAll(async () => { project = await wholeProjectTemplate("sql"); });
+beforeAll(async () => { created = await wholeFlowTemplate("sql", project); });
+afterAll(async () => {
+  await disposeWholeFlowTemplate(created);
+  await disposeWholeFlowTemplate(project);
+});
+
 it("binds actual SQL privilege to immutable input, exact opaque identity, and one consumption", async () => {
-  await wholeFixture("sql", async f => {
+  await wholeProjectFromTemplate(project!, async f => {
     let consumed!: CanonicalWholeSqlCapability, boundInput: unknown;
     const issue = f.authority.sqlCapability.bind(f.authority), observations: Array<Promise<void>> = [];
     vi.spyOn(f.authority, "sqlCapability").mockImplementation((kind, entityId, input) => {
@@ -35,10 +47,7 @@ it("never issues privilege from a copied or caller-shaped whole admission", () =
 
 // The twelve probes below share one created Flow, copied per probe: each probe
 // corrupts and holds its own copy, and only the save after creation is tested.
-let created: WholeFlowTemplate | undefined;
 const refusal = { owner: "authority_guard.corrupt_claim", operation: "authority_guard.corrupt_claim", predecessor: "authority_guard.corrupt_claim", mutation: "authority_guard.corrupt_mutation_join", "request-size": "canonical_whole.sql_parent_bounds", "claim-size": "canonical_whole.sql_parent_bounds" } as const;
-beforeAll(async () => { created = await wholeFlowTemplate("sql"); });
-afterAll(async () => { await disposeWholeFlowTemplate(created); });
 
 for (const effect of ["metadata", "feed"] as const) for (const corruption of ["owner", "operation", "predecessor", "mutation", "request-size", "claim-size"] as const) it(`refuses ${corruption} parent corruption before actual ${effect} effect`, async () => {
   await wholeFlowFromTemplate(created!, async f => {
