@@ -5,6 +5,7 @@
 // words. `cell-text.ts` is internal and not re-exported.
 export * from "./condition-holds.ts";
 export * from "./condition-text.ts";
+export * from "./count-unsortable-rows.ts";
 export * from "./parse-condition.ts";
 export * from "./parse-processing.ts";
 export * from "./process-rows.ts";

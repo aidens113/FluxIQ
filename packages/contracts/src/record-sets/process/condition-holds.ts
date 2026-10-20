@@ -13,7 +13,7 @@
 import { cellText, collapsedText, foldedText } from "./cell-text.ts";
 import { AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS, AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS } from "./processing-vocabulary.ts";
 import { readAutomationStudioRecordNumber } from "./read-number.ts";
-import type { AutomationStudioRecordCondition, AutomationStudioRecordConditionValue } from "./types.ts";
+import type { AutomationStudioRecordConditionTest, AutomationStudioRecordConditionValue } from "./types.ts";
 
 type ConditionBound = (typeof AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS)[number];
 type ConditionText = (typeof AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS)[number];
@@ -47,8 +47,13 @@ const TEXT_HOLDS: Record<ConditionText, (text: string, written: string) => boole
   endsWith: (text, written) => foldedText(text).endsWith(foldedText(written))
 };
 
-/** Whether a row whose cell for the condition's field is `cell` satisfies the condition. */
-export function automationStudioRecordConditionHolds(condition: AutomationStudioRecordCondition, cell: unknown): boolean {
+/**
+ * Whether a row whose cell for the condition's field is `cell` satisfies the
+ * condition. The field itself is not read, so a condition naming none judges
+ * the one value it is given; a blank string, `null` and `undefined` are all a
+ * value that is not there.
+ */
+export function automationStudioRecordConditionHolds(condition: AutomationStudioRecordConditionTest, cell: unknown): boolean {
   const held = valueHolds(condition, cell);
   return condition.not === true ? !held : held;
 }
@@ -69,7 +74,7 @@ export function automationStudioRecordConditionPattern(written: string): RegExp 
   }
 }
 
-function valueHolds(condition: AutomationStudioRecordCondition, cell: unknown): boolean {
+function valueHolds(condition: AutomationStudioRecordConditionTest, cell: unknown): boolean {
   const value = cellText(cell);
   const bounds = AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS.filter((key) => condition[key] !== undefined);
   const texts = AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS.filter((key) => condition[key] !== undefined);

@@ -101,8 +101,13 @@ export type AutomationStudioLlmBuildPurseOptions = {
   carriedUsd?: number;
   /** Told of each call that reported costing more than it was held at. */
   onBreach?: () => void;
-  /** Told what each settled call was charged: what it reported, or its hold when it reported nothing. A Flow's purse writes it to the Flow's record (t438). */
-  onSettled?: (chargedUsd: number) => void;
+  /**
+   * Told what each settled call was charged: what it reported, or its hold when
+   * it reported nothing, whether the call was a judge's, and the input tokens
+   * it reported (`null` when it reported none). A Flow's purse writes it to the
+   * Flow's record (t438), itemised by phase and agent role (t728).
+   */
+  onSettled?: (chargedUsd: number, call: { judge: boolean; inputTokens: number | null }) => void;
 };
 
 /** The outcome of asking a purse to hold a call. */

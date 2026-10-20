@@ -320,6 +320,25 @@ describe("AutomationStudioProjectConversationStore", () => {
     await expect(store.appendTurn({ mutationId: "m.long", conversationId: CONVERSATION, turnId: "turn.long", author: "person", text: "x".repeat(16_001) })).rejects.toThrow("at most 16000 characters");
     await expect(store.appendTurn({ mutationId: "m.absent", conversationId: "conversation.absent", turnId: "turn.absent", author: "person", text: "Hello." })).rejects.toThrow("Unknown conversation: conversation.absent");
   });
+
+  it("records the decision a turn of Core's came from, reads it only for Core, and refuses it on a person's turn or as anything else", async () => {
+    const { store } = await openFixture();
+    await store.openConversation({ mutationId: "m.open", conversationId: CONVERSATION, subjectKind: "project", subjectId: PROJECT, changedAt: 10 });
+    await store.appendTurn({ mutationId: "m.1", conversationId: CONVERSATION, turnId: "turn.1", author: "person", text: "What can you do?", changedAt: 11 });
+    const answered = await store.appendTurn({ mutationId: "m.2", conversationId: CONVERSATION, turnId: "turn.2", author: "automation", text: "I can build automations.", decision: "reply", changedAt: 12 });
+    await store.appendTurn({ mutationId: "m.3", conversationId: CONVERSATION, turnId: "turn.3", author: "automation", text: "Still building.", changedAt: 13 });
+
+    // What a client reads, the append's own answer included, carries no decision.
+    expect(answered).not.toHaveProperty("decision");
+    expect((await store.getConversation({ conversationId: CONVERSATION }))?.turns.filter((turn) => "decision" in turn)).toEqual([]);
+    expect((await store.getTurn(CONVERSATION, "turn.2"))).not.toHaveProperty("decision");
+    expect((await store.getConversation({ conversationId: CONVERSATION }, { decisions: true }))?.turns.map((turn) => turn.decision)).toEqual([null, "reply", null]);
+
+    await expect(store.appendTurn({ mutationId: "m.4", conversationId: CONVERSATION, turnId: "turn.4", author: "person", text: "Thanks.", decision: "reply" })).rejects.toThrow("Only a turn Core writes records the decision it came from.");
+    // An untyped caller's write, as a parsed request body would arrive.
+    const untyped: { decision?: null } = JSON.parse('{"decision": "guess"}');
+    await expect(store.appendTurn({ mutationId: "m.5", conversationId: CONVERSATION, turnId: "turn.5", author: "automation", text: "Hm.", ...untyped })).rejects.toThrow("A turn's decision must be reply, clarify or invoke.");
+  });
 });
 
 async function seedAsk(store: AutomationStudioProjectConversationStore): Promise<void> {

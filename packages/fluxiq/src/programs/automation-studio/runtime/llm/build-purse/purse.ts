@@ -383,7 +383,7 @@ export class AutomationStudioLlmBuildPurse {
       if (grant) this.topUps.withdraw(grant);
       return this.refuse(above.refusal);
     }
-    const own = this.ledger.hold(heldUsd, projected);
+    const own = this.ledger.hold(heldUsd, projected, call.judge === true);
     return {
       ok: true,
       hold: {

@@ -1,3 +1,4 @@
+import type { AutomationStudioRecordingCapturePolicy } from "@fluxiq/contracts/automation-studio";
 import type { NormalizationOptions } from "../../normalization/index.ts";
 import type { AppendRecordingEntryInput, CreateRecordingSessionInput, RecordingDomainDefinition, RecordingDomainEventInput, RecordingSession, StateSnapshot } from "../../model/index.ts";
 
@@ -130,4 +131,22 @@ export type InspectStateDiffRequest = {
   previous: StateSnapshot;
   current: StateSnapshot;
   includeStable?: boolean;
+};
+
+/**
+ * Asks Core what a recording client may capture, and whether a Flow may send
+ * direct requests, in a project (t728, audit finding 7). With no project the
+ * answer is the policy Core applies where nothing narrower is set.
+ */
+export type GetRecordingCapturePolicyRequest = {
+  projectId?: string | null;
+};
+
+/**
+ * The policy a client offers the person and clamps its settings to, with
+ * `clampAutomationStudioRecordingCaptureSettings` from
+ * `@fluxiq/contracts/automation-studio` (browser code: `fluxiq/automation-studio/nodes`).
+ */
+export type GetRecordingCapturePolicyResponse = {
+  policy: AutomationStudioRecordingCapturePolicy;
 };

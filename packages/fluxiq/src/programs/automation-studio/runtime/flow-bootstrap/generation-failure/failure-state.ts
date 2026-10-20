@@ -136,6 +136,7 @@ const FLOW_BOOTSTRAP_PROVIDER_REQUEST_RULES: {
   // The stage's default: a request was attempted and its answer is unknown.
   "flow_bootstrap.provider_request_failed": { retryable: false, providerInvocation: "unknown", acceptedProviderInvocations: AMBIGUOUS_PROVIDER_INVOCATIONS, providerResponse: "unknown" },
   "flow_bootstrap.provider_auth_failed": { retryable: false, providerInvocation: "attempted", providerResponse: "received" },
+  "flow_bootstrap.provider_balance_exhausted": { retryable: false, providerInvocation: "attempted", providerResponse: "received" },
   "flow_bootstrap.provider_rate_limited": { retryable: true, providerInvocation: "attempted", providerResponse: "received" },
   "flow_bootstrap.provider_timeout": { retryable: true, providerInvocation: "unknown", acceptedProviderInvocations: AMBIGUOUS_PROVIDER_INVOCATIONS, providerResponse: "not_received" },
   "flow_bootstrap.provider_aborted": { retryable: false, providerInvocation: "unknown", acceptedProviderInvocations: AMBIGUOUS_PROVIDER_INVOCATIONS, providerResponse: "not_received" },

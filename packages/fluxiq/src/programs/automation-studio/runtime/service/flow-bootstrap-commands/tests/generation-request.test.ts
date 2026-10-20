@@ -39,6 +39,14 @@ describe("a Flow Bootstrap generation request", () => {
       expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ interpretationCostUsd: bad }))).toThrow(/interpretation cost/);
     }
   });
+
+  it("reads how many priced calls that reading was, and refuses anything but a whole, non-negative number", () => {
+    expect(readAutomationStudioFlowBootstrapGenerationRequest(input({ interpretationCostUsd: 0.0003, interpretationCalls: 2 }))).toMatchObject({ interpretationCostUsd: 0.0003, interpretationCalls: 2 });
+    expect(readAutomationStudioFlowBootstrapGenerationRequest(input())).not.toHaveProperty("interpretationCalls");
+    for (const bad of [-1, 1.5, "2", null]) {
+      expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ interpretationCalls: bad }))).toThrow(/interpretation call count/);
+    }
+  });
 });
 
 it("candidate authoring is opt-in and requires evidence-guided generation", () => {

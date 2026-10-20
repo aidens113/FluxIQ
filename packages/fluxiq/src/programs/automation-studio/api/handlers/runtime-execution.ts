@@ -47,11 +47,12 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
     permission: "runtime.control",
     classification: "authoring",
     handler: async (request) => {
-      const raw = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; newRunId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string; runIntent?: unknown; permittedConsequences?: unknown; useReusableContext?: true; resultCheckCallerPays?: unknown; interpretationCostUsd?: unknown } : {};
+      const raw = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; newRunId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string; runIntent?: unknown; permittedConsequences?: unknown; useReusableContext?: true; resultCheckCallerPays?: unknown; interpretationCostUsd?: unknown; interpretationCalls?: unknown } : {};
       if ((raw as Record<string, unknown>).useReusableContext !== undefined && raw.useReusableContext !== true) return { ok: false, error: "Runtime reusable-context flag is invalid." };
-      const { runIntent: requestedIntent, permittedConsequences: requestedConsequences, resultCheckCallerPays: requestedCallerPays, interpretationCostUsd: readingCost, ...payload } = raw;
+      const { runIntent: requestedIntent, permittedConsequences: requestedConsequences, resultCheckCallerPays: requestedCallerPays, interpretationCostUsd: readingCost, interpretationCalls: readingCalls, ...payload } = raw;
       // What the chat's reading of the message that started the run cost (the chat's "Run it"): the Flow's spend in a Lab-scoped run (t438).
       if (readingCost !== undefined && (typeof readingCost !== "number" || !Number.isFinite(readingCost) || readingCost < 0)) return { ok: false, error: "The run's interpretation cost is invalid." };
+      if (readingCalls !== undefined && (!Number.isSafeInteger(readingCalls) || (readingCalls as number) < 0)) return { ok: false, error: "The run's interpretation call count is invalid." };
       // A caller may ask to pay for fewer of its run's result checks, never more: the chat's "Run it" for a
       // paired client calls as the person's unlocked session, so it says itself what the paired rule below says.
       if (requestedCallerPays !== undefined && requestedCallerPays !== "repair_checks") return { ok: false, error: "A run can only ask to pay for the result checks that judge a repair." };
@@ -97,7 +98,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
       // A run refused before its first step answers with its closed code (`./run-refusal/response.ts`).
       let ran: Awaited<ReturnType<typeof service.runRuntimeSession>>;
       try {
-        ran = await service.runRuntimeSession({ ...payload, ...(llmExecution ? { llmExecution } : {}), ...(permittedConsequences ? { permittedConsequences } : {}), ...resultCheckCallerPays, ...(readingCost === undefined ? {} : { interpretationCostUsd: readingCost }) });
+        ran = await service.runRuntimeSession({ ...payload, ...(llmExecution ? { llmExecution } : {}), ...(permittedConsequences ? { permittedConsequences } : {}), ...resultCheckCallerPays, ...(readingCost === undefined ? {} : { interpretationCostUsd: readingCost }), ...(readingCalls === undefined ? {} : { interpretationCalls: readingCalls as number }) });
       } catch (error) {
         const refusal = automationStudioRunRefusalResponse(error);
         if (refusal) return refusal;

@@ -197,7 +197,7 @@ export class AutomationStudioConversations {
    * saves as its instruction (t349).
    */
   async personWords(input: { projectId: string; conversationId: string; answerTurnId: string; capability: Pick<AutomationStudioPanelCapability, "title" | "phrases"> }): Promise<{ text: string; saysWhatToDo: boolean } | null> {
-    const text = await this.withStore(input.projectId, (store) => automationStudioConversationPersonWords((page) => store.getConversation(page), input.conversationId, input.answerTurnId));
+    const text = await this.withStore(input.projectId, (store) => automationStudioConversationPersonWords((page) => store.getConversation(page, { decisions: true }), input.conversationId, input.answerTurnId));
     return text === null ? null : { text, saysWhatToDo: automationStudioConversationSaysWhatToDo(input.capability, text) };
   }
 
@@ -268,7 +268,8 @@ export class AutomationStudioConversations {
         author: "automation",
         text: input.text,
         ask: input.ask,
-        attachment: input.attachment
+        attachment: input.attachment,
+        ...(input.decision === undefined ? {} : { decision: input.decision })
       })
     );
   }
@@ -357,8 +358,8 @@ export class AutomationStudioConversations {
       ...(input.limits ? { limits: input.limits } : {})
     });
     // What reading it cost stays off the answer the client sees; it travels to the command the turn runs (`commands/build.ts`).
-    const { costUsd, ...reading } = interpretation;
-    const cost = costUsd === undefined ? {} : { interpretationCostUsd: costUsd };
+    const { costUsd, pricedCalls, ...reading } = interpretation;
+    const cost = costUsd === undefined ? {} : { interpretationCostUsd: costUsd, ...(pricedCalls === undefined ? {} : { interpretationCalls: pricedCalls }) };
     try {
       const written = await respondToAutomationStudioConversationTurn({ host: this, projectId: input.projectId, conversationId: input.conversationId, interpretation, flows: input.flows, pageUrl: onScreen.pageUrl ?? null, waitingAsks: waiting.asks });
       return { turn, response: { ...reading, ...written }, problem: null, ...cost };

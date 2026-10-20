@@ -80,12 +80,27 @@ describe("SQLiteRepository", () => {
   it("filters, sorts, counts, and pages records in SQLite", async () => {
     const root = await tempRoot();
     try {
+      // The seeding is not what this case tests. Through 130 separate puts it
+      // made 130 commits, each fsynced, and unpooled each put also opened the
+      // file and closed it again, checkpointing and deleting the -wal and -shm
+      // files: 3.3 s alone and over 15 s under a full package run. One
+      // transaction writes the same rows into the repository's own table, and
+      // every assertion still reads them back through `listPage`. Concurrent
+      // puts keep their own case below.
       const repo = new SQLiteRepository({ rootDir: root, kind: "widgets" });
-      await Promise.all(Array.from({ length: 130 }, (_, index) => repo.put(createRecord({
-        id: "item-" + String(index).padStart(3, "0"),
-        kind: "widgets",
-        data: { title: index % 10 === 0 ? "Needle " + index : "Ordinary " + index }
-      }))));
+      await repo.transaction({}, async (transaction) => {
+        for (let index = 0; index < 130; index += 1) {
+          const record = createRecord({
+            id: "item-" + String(index).padStart(3, "0"),
+            kind: "widgets",
+            data: { title: index % 10 === 0 ? "Needle " + index : "Ordinary " + index }
+          });
+          await transaction.run(
+            `insert into ${repo.tableName} (id, kind, data, created_at_ms, updated_at_ms) values (?, ?, ?, ?, ?)`,
+            [record.id, record.kind, JSON.stringify(record.data), record.createdAtMs, record.updatedAtMs]
+          );
+        }
+      });
 
       const capped = await repo.listPage({}, { limit: 500, offset: 0, orderBy: "id", direction: "asc" });
       expect(capped.total).toBe(130);

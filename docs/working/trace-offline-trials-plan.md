@@ -33,6 +33,17 @@ session, project and recording) in lanes H and G; Core owns recording and captur
 the Lab's per-step files; an inventory of everything Core accepts from clients and reads later; and the page-snapshot
 spike (see P2), in lane T. P1's evidence-loop and executor edits wait for the reset redesign (t724) to merge.
 
+**Progress (2026-10-19 evening):** P0 complete and P1 merged to the L1 stop point (t729): the trace contract
+(`client-gateway/trace/**`), the trial-evidence result contract (`model/offline-trial/**`), a gateway channel scope
+and the environment port (`runtime/environment/**`) with a trace-fed fixture; no live behaviour changed. Findings:
+live trials are 49.8% of build time over the 25 newest runs (model calls 24.3%, exploration 22.3%, resets 0.6% as a
+lower bound because in-trial resets emit no span); a DOM serialization with a resource map, reloaded with scripts
+and network off, matched live reads and targets on all four sites tried, MHTML did not, so P2 captures that way.
+Two corrections to P1 (decisions D1 and D3 in the downstream `reports/lane-t.md`): the single environment port is
+a clock plus a gateway channel scope, because four domain ports meet only at the gateway's command channel; and the
+chat, asks, run control, screenshot upload and start hook bypass the gateway, so they are captured where Core
+accepts them. U7 (consumer wiring) runs as t734 now that L1 has merged.
+
 **Blocked:** nothing needs the user.
 
 ## Decisions (the supervisor's changes to the source plan)

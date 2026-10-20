@@ -15,13 +15,17 @@
 // because a provider rejects a tool carrying any key it does not know, so the
 // gate metadata has to be dropped at the boundary rather than travel with it.
 
+import { randomUUID } from "node:crypto";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowScope } from "../../../model/index.ts";
 import type { AutomationStudioNodeAvailability } from "../../../nodes/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
+import { automationStudioLlmEvidenceIsOpeningCallId, automationStudioLlmEvidenceOpeningCallScope } from "../evidence-loop/call-id.ts";
 import { automationStudioLlmEvidenceRecallBinding } from "../evidence-recall/index.ts";
 import { builtinAutomationStudioHarnessOptions } from "./builtin.ts";
+import { automationStudioEvidenceBuildId } from "./evidence-build.ts";
+import { runWithAutomationStudioEvidenceBuildScope, type AutomationStudioEvidenceBuildScope } from "./evidence-build-scope.ts";
 import type { AutomationStudioHarnessOptionHost } from "./host.ts";
 import {
   AUTOMATION_STUDIO_HARNESS_OPTION_LIMIT,
@@ -215,21 +219,27 @@ export class AutomationStudioHarnessOptionRegistry {
   /**
    * The pair the evidence loop needs, built from one resolution so the grammar
    * the model is given and the gate its call passes through can never drift.
+   *
+   * Every call runs inside the evidence build scope (`./evidence-build-scope.ts`,
+   * t728): which build it belongs to and how it stands to it, said by Core so
+   * the domain never parses Core's call ids. `buildId` is the build record's id
+   * the caller has in scope, when it has one.
    */
   evidenceLoopBinding(
-    context: { projectId: string; flowId: string; runId?: string },
+    context: { projectId: string; flowId: string; runId?: string; buildId?: string },
     resolution: AutomationStudioHarnessOptionResolution
   ): AutomationStudioHarnessOptionLoopBinding {
     const tools = this.tools(resolution);
     // Only the declarations of bundles the model is offered something from: a
     // key means "a view of the target" only in results of the bundle that said so.
     const observedStateKeys = [...new Set(tools.flatMap((tool) => this.observedStateKeysByOption.get(tool.toolId) ?? []))];
+    const scopeOf = evidenceBuildScopes(context);
     // A held view (`holder.member`) is replaced in what a decision is shown, so
     // the binding offers `core.recall_result` to give it back (`../evidence-recall/`).
     return automationStudioLlmEvidenceRecallBinding<AutomationStudioHarnessOptionLoopBinding>({
       tools,
       ...(observedStateKeys.length ? { observedStateKeys } : {}),
-      executeTool: ({ callId, toolId, value, signal, permission }) => this.execute({
+      executeTool: ({ callId, toolId, value, signal, permission }) => runWithAutomationStudioEvidenceBuildScope(scopeOf({ callId, toolId, value }), () => this.execute({
         projectId: context.projectId,
         flowId: context.flowId,
         ...(context.runId !== undefined ? { runId: context.runId } : {}),
@@ -238,9 +248,35 @@ export class AutomationStudioHarnessOptionRegistry {
         value,
         ...(signal !== undefined ? { signal } : {}),
         ...(permission !== undefined ? { permission } : {})
-      }, resolution)
+      }, resolution))
     });
   }
+}
+
+/**
+ * The key under which Core's opening look of a round whose draft already holds
+ * the Flow carries that Flow's calls (`../evidence-loop.ts`, run 38 C3).
+ */
+const HELD_KEY = "held";
+
+/**
+ * The scope of each call one binding runs (`./evidence-build-scope.ts`). The
+ * call scope is read off the binding's latest opening call, because only the
+ * opening id carries it; a binding serves one loop at a time, so the latest
+ * opening is this round's.
+ */
+function evidenceBuildScopes(context: { projectId: string; flowId: string; runId?: string; buildId?: string }): (call: { callId: string; toolId: string; value: JsonObject }) => AutomationStudioEvidenceBuildScope {
+  let callScope: string | undefined;
+  let minted: string | undefined;
+  return ({ callId, toolId, value }) => {
+    const opening = automationStudioLlmEvidenceIsOpeningCallId(callId) ? (Array.isArray(value[HELD_KEY]) ? "continuing" : "fresh") : undefined;
+    if (opening !== undefined) callScope = automationStudioLlmEvidenceOpeningCallScope(callId, toolId);
+    const buildId = context.runId ?? context.buildId ?? automationStudioEvidenceBuildId() ?? (minted ??= `build.${randomUUID()}`);
+    const scope: { -readonly [K in keyof AutomationStudioEvidenceBuildScope]: AutomationStudioEvidenceBuildScope[K] } = { projectId: context.projectId, flowId: context.flowId, buildId };
+    if (callScope !== undefined) scope.callScope = callScope;
+    if (opening !== undefined) scope.opening = opening;
+    return scope;
+  };
 }
 
 function assertBundleScope(option: AutomationStudioHarnessOption, domainId: string | undefined): void {

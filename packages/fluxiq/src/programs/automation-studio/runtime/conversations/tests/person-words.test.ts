@@ -130,14 +130,93 @@ describe("a build's instruction is the person's own words", () => {
     expect(world.saved()).toEqual([{ endpoint: "save-flow-instruction", payload: { projectId: PROJECT, flowId: "flow.kettle", title: "Improvement: It should also read each kettle's star rating and skip anything und...", body: message, requirement: "required", tags: ["generation"] } }]);
   });
 
-  it("saves every person turn of a request spread over a question and its answer, without the assistant's words", async () => {
+  it("saves every person turn of a request spread over Core's question back and its answer, without the assistant's words", async () => {
     const world = await chat([
-      { reply: "Happy to. Which shop should it look at, and how many kettles?" },
+      { ask: "Which shop should it look at, and how many kettles?" },
       { do: "flow.createHere", with: { instruction: "Collect the first ten kettle prices from this shop." } }
     ]);
     await world.say("Make me an automation that collects kettle prices");
     await world.say("This shop, and only the first ten");
     expect(world.saved().map((call) => call.payload.instruction)).toEqual(["Make me an automation that collects kettle prices\n\nThis shop, and only the first ten"]);
+  });
+
+  it("keeps the request open across Core's question back however it is worded", async () => {
+    const world = await chat([
+      { ask: "Tell me which shop it should look at" },
+      { do: "flow.createHere", with: { instruction: "Collect kettle prices from this shop." } }
+    ]);
+    await world.say("Make me an automation that collects kettle prices");
+    await world.say("This shop");
+    expect(world.saved().map((call) => call.payload.instruction)).toEqual(["Make me an automation that collects kettle prices\n\nThis shop"]);
+  });
+
+  it("closes the request on a plain answer, even one that ends in a question", async () => {
+    const message = "Make one that collects the first ten kettle prices on this page";
+    const world = await chat([
+      { reply: "I can build, run and improve automations here. Want me to build one?" },
+      { do: "flow.createHere", with: { instruction: "Collect ten kettle prices." } }
+    ]);
+    await world.say("What can you do?");
+    await world.say(message);
+    expect(world.saved().map((call) => call.payload.instruction)).toEqual([message]);
+  });
+
+  it("closes the request on Core's announcement of a command it took the words as", async () => {
+    const message = "Now make one that finds bath towels under 10 dollars";
+    const world = await chat([
+      { do: "run.execute", with: { flowId: "flow.kettle" } },
+      { do: "flow.createHere", with: { instruction: "Find towels." } }
+    ]);
+    // Read and announced, but not started, so no result of it is in the thread before the next message.
+    await world.conversations.respondToPersonTurn({ projectId: PROJECT, conversationId: world.conversationId, text: "Run my kettle automation please", actorId: "user.person", capabilities: CAPABILITIES, flows: FLOWS, onScreen: { pageUrl: PAGE }, limits: QUICK });
+    await world.say(message);
+    expect(world.saved().map((call) => call.payload.instruction)).toEqual([message]);
+  });
+
+  it("reads a turn written before decisions were recorded the way it always was, keeping the request open across it", async () => {
+    const world = await chat([{ do: "flow.createHere", with: { instruction: "Collect kettle prices from this shop." } }]);
+    await world.conversations.appendTurn({ projectId: PROJECT, conversationId: world.conversationId, text: "Make me an automation that collects kettle prices" });
+    // Core's turn with nothing recorded on it, as every turn written before the column was.
+    await world.conversations.appendAutomationTurn({ projectId: PROJECT, conversationId: world.conversationId, text: "Tell me which shop it should look at", ask: null, attachment: null });
+    await world.say("This shop");
+    expect(world.saved().map((call) => call.payload.instruction)).toEqual(["Make me an automation that collects kettle prices\n\nThis shop"]);
+  });
+
+  it("leaves out a question Core answered without asking anything back", async () => {
+    const message = "Create a flow that lists the name and price of the first three kettles on this page";
+    const world = await chat([
+      { reply: "I can build, run and improve automations from this page. Tell me what you want in your own words." },
+      { do: "flow.createHere", with: { instruction: "List three kettles." } }
+    ]);
+    await world.say("What can you do?");
+    await world.say(message);
+    expect(world.saved().map((call) => call.payload.instruction)).toEqual([message]);
+    expect(String(world.calls[0]?.payload.name)).toMatch(/^Create a flow that lists/u);
+  });
+
+  it("leaves out a question answered without the model, so the build's instruction and name are the build request alone", async () => {
+    // t728 F3: the headed chat check asks "What can you do?" and then types a
+    // build, with no model key. Core answered the question with its list of
+    // what it can do, and the build then saved "What can you do?\n\nCreate a
+    // flow ..." as its instruction and named the Flow "What can you do?".
+    pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const conversations = new AutomationStudioConversations(pool);
+    const { conversationId } = await conversations.openConversation({ projectId: PROJECT, subject: { kind: "project", id: PROJECT }, title: null });
+    const fake = fakePort();
+    const context: AutomationStudioConversationCommandContext = { port: fake.port, host: conversations, projectId: PROJECT, conversationId, sessionId: "session.person", keyLocked: false, paired: false, startLocation: PAGE };
+    const say = async (text: string) => {
+      const answer = await conversations.respondToPersonTurn({ projectId: PROJECT, conversationId, text, actorId: "user.person", capabilities: CAPABILITIES, flows: FLOWS, onScreen: { pageUrl: PAGE }, limits: QUICK });
+      await startAutomationStudioConversationCommand({ response: answer.response, context });
+      await automationStudioConversationCommandWork.idle();
+      return answer;
+    };
+    const asked = await say("What can you do?");
+    expect(asked.response?.decision.kind).toBe("reply");
+    const message = "Create a flow that lists the name and price of the first three kettles on this page";
+    const built = await say(message);
+    expect(built.response?.source).toBe("closest_match");
+    expect(fake.saved().map((call) => call.payload.instruction)).toEqual([message]);
+    expect(String(fake.calls[0]?.payload.name)).toMatch(/^Create a flow that lists/u);
   });
 
   it("leaves out what was said before something was last done in the thread", async () => {

@@ -1,21 +1,22 @@
 "use client";
 
-// Core's latest event, as the paced status a person reads (`pacer.ts`).
+// Core's latest event, as the paced status a person reads (`paced-status.ts`,
+// over the shared pacer in `fluxiq/ui`).
 //
 // One pacer per project, kept across renders, so the headline and detail
 // change in place rather than being rebuilt from each poll's answer.
 
 import { useEffect, useRef, useState } from "react";
 import type { ConversationActivity } from "./contracts";
-import { ConversationActivityPacer, type ConversationActivityDisplay } from "./pacer";
+import { ConversationPacedStatus, type ConversationActivityDisplay } from "./paced-status";
 
 export function usePacedConversationActivity(current: ConversationActivity | null, projectId: string | null): ConversationActivityDisplay | null {
   const [display, setDisplay] = useState<ConversationActivityDisplay | null>(null);
-  const pacerRef = useRef<ConversationActivityPacer | null>(null);
+  const pacerRef = useRef<ConversationPacedStatus | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const pacer = new ConversationActivityPacer(
+    const pacer = new ConversationPacedStatus(
       {
         now: () => Date.now(),
         setTimeout: (callback, delayMs) => window.setTimeout(callback, delayMs),

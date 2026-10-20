@@ -59,6 +59,10 @@ export type AutomationStudioLlmProviderPreflightErrorCode = (typeof AUTOMATION_S
  */
 export const AUTOMATION_STUDIO_LLM_PROVIDER_CALL_ERROR_CODES = Object.freeze([
   "llm.provider_auth_failed",
+  // The provider refused the call because the account paying for it has no
+  // balance, quota or credit left: an HTTP 402, or a refusal that says so.
+  // Not a rate limit and not a credential fault, and no retry fixes it.
+  "llm.provider_balance_exhausted",
   "llm.provider_rate_limited",
   "llm.provider_timeout",
   "llm.provider_aborted",
@@ -342,6 +346,7 @@ function structurallyTypedProviderError(error: unknown): {
 function defaultProviderFailureProvenance(code: AutomationStudioLlmProviderErrorCode): AutomationStudioLlmProviderFailureProvenance {
   switch (code) {
     case "llm.provider_auth_failed":
+    case "llm.provider_balance_exhausted":
     case "llm.provider_rate_limited":
     case "llm.provider_redirect_rejected":
     case "llm.provider_response_oversize":
@@ -375,6 +380,7 @@ function safeProviderFailureMessage(code: AutomationStudioLlmProviderErrorCode):
   if (AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODE_SET.has(code)) return "The LLM provider refused the request before sending it.";
   const messages: Record<Exclude<AutomationStudioLlmProviderErrorCode, AutomationStudioLlmProviderPreflightErrorCode>, string> = {
     "llm.provider_auth_failed": "The LLM provider rejected the configured credential.",
+    "llm.provider_balance_exhausted": "The LLM provider refused the request because the account's balance is exhausted.",
     "llm.provider_rate_limited": "The LLM provider rate limited the request.",
     "llm.provider_timeout": "The LLM provider request timed out.",
     "llm.provider_aborted": "The LLM provider request was cancelled.",

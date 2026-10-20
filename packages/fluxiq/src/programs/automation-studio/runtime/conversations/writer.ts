@@ -16,7 +16,7 @@
 import type { AutomationStudioActionPermissionRequest } from "../action-permissions/index.ts";
 import type { AutomationStudioConversationAskInput, AutomationStudioConversationAskRoutes, AutomationStudioConversationAskTimeoutAction } from "./ask.ts";
 import type { AutomationStudioConversation, AutomationStudioConversationSubject } from "./thread.ts";
-import type { AutomationStudioConversationAttachment, AutomationStudioConversationTurn } from "./turn.ts";
+import type { AutomationStudioConversationAttachment, AutomationStudioConversationTurn, AutomationStudioConversationTurnDecision } from "./turn.ts";
 
 /** Opening a subject's thread. Without `conversationId` the holder mints one. */
 export type AutomationStudioConversationOpenRequest = {
@@ -33,6 +33,8 @@ export type AutomationStudioConversationAutomationTurnRequest = {
   text: string;
   ask: AutomationStudioConversationAskInput | null;
   attachment: AutomationStudioConversationAttachment | null;
+  /** Set only on the turn Core writes in answer to a person's message: the decision it came from (`instructions/respond.ts`). */
+  decision?: AutomationStudioConversationTurnDecision;
 };
 
 /** What a writer needs from whatever holds the store. The conversations collaborator satisfies it. */

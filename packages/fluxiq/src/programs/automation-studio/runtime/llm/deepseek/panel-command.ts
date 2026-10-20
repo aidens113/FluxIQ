@@ -39,6 +39,7 @@ import { isRecord } from "./json-record.ts";
 import { automationStudioDeepSeekCacheHitInputTokens, estimateAutomationStudioDeepSeekCostUsd } from "./pricing.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL } from "./provider.ts";
 import { raceAutomationStudioDeepSeekSignal } from "./signal-race.ts";
+import { automationStudioDeepSeekBalanceExhausted } from "./balance-exhausted.ts";
 import { automationStudioLlmStepLogModelStep } from "../step-log/index.ts";
 
 export type AutomationStudioDeepSeekPanelCommandOptions = {
@@ -85,7 +86,7 @@ export function createAutomationStudioDeepSeekPanelCommandModel(options: Automat
         // What the reply cost, told before anything can refuse it: a reply Core cannot use was still paid for.
         const costUsd = "value" in envelope ? panelCommandCostUsd(envelope.value, model, sentAtMs) : undefined;
         if (costUsd !== undefined) execution.paid?.(costUsd);
-        if (!response.ok) throw httpFailure(response.status);
+        if (!response.ok) throw httpFailure(response.status, envelope);
         const content = panelCommandContent(envelope);
         step?.succeeded({ content });
         return content;
@@ -151,7 +152,10 @@ function releaseLateReply(late: Response): void {
   late.body?.cancel().catch(/* best-effort: nobody reads this reply */ () => undefined);
 }
 
-function httpFailure(status: number): AutomationStudioLlmProviderError {
+function httpFailure(status: number, envelope: { value: unknown } | { notJson: unknown }): AutomationStudioLlmProviderError {
+  // An empty account first, under any status: DeepSeek's 402, or an error whose own words say so (`./balance-exhausted.ts`).
+  const error = "value" in envelope && isRecord(envelope.value) && isRecord(envelope.value.error) ? envelope.value.error : undefined;
+  if (automationStudioDeepSeekBalanceExhausted(status, error)) return new AutomationStudioLlmProviderError("llm.provider_balance_exhausted", `DeepSeek refused the call: the account's balance is exhausted (${status}).`, false, status);
   if (status === 401 || status === 403) return new AutomationStudioLlmProviderError("llm.provider_auth_failed", `DeepSeek refused the key (${status}).`, false, status);
   if (status === 429) return new AutomationStudioLlmProviderError("llm.provider_rate_limited", "DeepSeek is rate limiting.", true, status);
   return new AutomationStudioLlmProviderError("llm.provider_http_error", `DeepSeek answered ${status}.`, status >= 500, status);

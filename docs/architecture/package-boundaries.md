@@ -71,6 +71,26 @@ both `dev` branches in the same work unit, and give the release a minor version
 and a migration note — these numbers reach a consumer as `confidence`, and the
 runtime's own safety gates read it.
 
+`fluxiq/automation-studio/nodes` is the other browser-safe seam for contract
+logic a browser host must not restate. Since t728 it re-exports by name, from
+`@fluxiq/contracts/automation-studio`, record processing
+(`nodes/record-process.ts`): the condition, sort and presence vocabularies,
+`automationStudioRecordConditionHolds` (which takes an
+`AutomationStudioRecordConditionTest`, every key optional, `field` included, and
+reads a blank or whitespace-only string as absent), `automationStudioRecordConditionPattern`,
+`readAutomationStudioRecordNumber`, `readAutomationStudioRecordDate`,
+`readAutomationStudioRecordSortValue`, `automationStudioRecordAutoSortKind`,
+`automationStudioRecordRowIdentity`, `sortAutomationStudioRecordRows`,
+`countAutomationStudioRecordUnsortableRows` (a row counts once when any key's
+value is missing, blank or not of the key's kind) and the shared
+`AUTOMATION_STUDIO_RECORD_VALUE_READING_CASES` parity table; and the
+recording-capture policy and its clamp (`nodes/recording-capture.ts`,
+[client gateway](automation-studio/client-gateway.md)). Both re-export files
+import only `@fluxiq/contracts/automation-studio`, and
+`contracts/src/record-sets/process/` imports only relative paths; the tests
+beside them fail otherwise. `fluxiq/ui` likewise carries the activity status a
+browser and `apps/web` share (`ui/activity-status/`).
+
 TypeDoc is an optional runtime peer. Repository development installs it to
 generate API reference, while normal runtime import and setup work without it.
 Native `sqlite3` remains external and is installed for the consumer platform.
@@ -107,6 +127,45 @@ publication, tags, signing, provenance, the final legal licensor identity, and
 commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
+
+### Next minor (unreleased): Core owns run accounting, activity status, record processing and capture policy a domain used to restate (`@fluxiq/contracts`, `fluxiq`)
+
+Lane S of the extension-Core boundary audit (t728) moved generic behaviour the
+web domain and extension had each written into Core. Read this entry if a
+domain binds an evidence runtime, a browser host judges records or paces
+activity, or a tool reads build failures or Flow spend.
+
+**Added.**
+- `llm.provider_balance_exhausted` and `flow_bootstrap.provider_balance_exhausted`
+  ([provider transport](automation-studio/llm-flow-bootstrap.md#provider-transport)).
+- `instructedConsequences` on failed-build diagnostics and re-author attempts,
+  `calls` on re-author attempts ([flow authoring](automation-studio/flow-authoring.md)).
+- `interpretationCalls` beside `interpretationCostUsd`; an itemised Flow spend
+  record and `get-flow-spend` ([one purse per Flow creation](automation-studio/llm-flow-bootstrap.md#one-purse-per-flow-creation)).
+- `fluxiq/ui` activity status ([client gateway](automation-studio/client-gateway.md#per-step-activity-and-resolved-asks)).
+- Record processing and the recording-capture policy on
+  `fluxiq/automation-studio/nodes` (above), and `get-recording-capture-policy`
+  on the paired-client allowlist.
+- `automationStudioWithoutCardNumbers`; `AUTOMATION_STUDIO_REPEATED_ANSWER_REASON`
+  in `@fluxiq/contracts/automation-studio`.
+- `automationStudioEvidenceBuildScope()` and
+  `automationStudioDomainBuildState(fluxiq, domainId)`
+  ([build scope and durable state](automation-studio/llm-flow-bootstrap.md#a-domain-tool-calls-build-scope-and-durable-state)).
+
+**Changed behaviour.**
+- A blank or whitespace-only string is absent to a record condition: it fails
+  `present` and every comparison and holds `absent`.
+- A date with no year reads as the occurrence nearest now within six months; a
+  time of day is kept; "5h 12m left" reads as now plus that, so `auto` may sort
+  such a column by date.
+- A card number is credential-shaped to the evidence screen, so a value holding
+  one is withheld or its request refused unless the domain replaced it first.
+- System messages carry Core's recordings, person-limits, loop-authoring, list
+  and efficiency sentences per task kind (pins re-generated); a domain deletes
+  its own copies.
+- `apps/web`'s live line uses the shared pacer: 1,600 ms detail interval (was
+  1,200), "Waiting for you: answer in the FluxIQ panel", and "Build failed" for
+  a build that fails while repairing.
 
 ### Next minor (unreleased): an element target keeps a domain's drawing digest (`fluxiq`)
 

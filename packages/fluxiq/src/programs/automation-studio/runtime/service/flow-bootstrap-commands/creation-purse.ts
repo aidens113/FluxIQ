@@ -70,6 +70,8 @@ export async function automationStudioFlowBootstrapCreationPurse(input: {
   flowPurse?: boolean | undefined;
   /** What the chat's reading of the message that asked for the build cost: carried on top of the record's spend. A repair ignores it. */
   interpretationCostUsd?: number | undefined;
+  /** How many priced calls that reading was: the record's `chat` calls in a Lab-scoped run. */
+  interpretationCalls?: number | undefined;
   ceilingUsd: number;
   maxCalls?: number;
 }): Promise<AutomationStudioFlowBootstrapCreationPurse> {
@@ -79,7 +81,7 @@ export async function automationStudioFlowBootstrapCreationPurse(input: {
   const interpretationUsd = repair ? 0 : input.interpretationCostUsd ?? 0;
   // In a Lab-scoped run the chat's reading is the Flow's spend: added to its record, which is then what the build carries.
   const labCreation = flowPurse && !repair;
-  if (labCreation && interpretationUsd > 0) await store.add(projectId, flowId, interpretationUsd);
+  if (labCreation && interpretationUsd > 0) await store.add(projectId, flowId, interpretationUsd, { phase: "chat", calls: input.interpretationCalls ?? 0 });
   const carriedUsd = labCreation ? store.spentNowUsd(projectId, flowId) : (creation?.spentUsd ?? 0) + interpretationUsd;
   const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: input.ceilingUsd, ...(input.maxCalls === undefined ? {} : { maxCalls: input.maxCalls }), carriedUsd });
   const part = repair ? "reauthor" : "creation";

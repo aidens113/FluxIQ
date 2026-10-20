@@ -41,6 +41,8 @@ export type AutomationStudioConversationInstructionAnswer = {
    * turn runs, so a Flow the chat builds carries it in its creation purse.
    */
   interpretationCostUsd?: number;
+  /** How many priced model calls `interpretationCostUsd` sums. Present beside it. */
+  interpretationCalls?: number;
 };
 
 

@@ -19,6 +19,7 @@
 // again (`rerun.<step>`) that did not fail, or any call that changed the page,
 // ends the walk: what came before it is not what blocked the last fix.
 
+import { AUTOMATION_STUDIO_REPEATED_ANSWER_REASON } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioLlmEvidenceLoopTrace } from "../../llm/index.ts";
 
 /** How one try was stopped, as the ending says it. */
@@ -37,8 +38,6 @@ const ORDER = Object.keys(CLAUSES) as Stopped[];
 
 /** A refusal the web domain gives a handle that does not say which element (`malformed_handle` and its kin). */
 const HANDLE_REASONS: ReadonlySet<string> = new Set(["malformed_handle", "not_a_handle", "handle_in_wrong_parameter"]);
-/** The domain's own word for a refusal it gave again in place of its cause (`repeated-refusal.ts`). */
-const SAME_AGAIN = "answered_the_same_again";
 /** An amendment refused because it changed nothing (`../../flow-draft/amendment/types.ts`). */
 const NOTHING_CHANGED: ReadonlySet<string> = new Set(["changes_nothing", "already_so", "already_in_flow", "already_out"]);
 /** A result code that says the call did not do what it was sent to (as `../../activity/observer.ts` reads one). */
@@ -92,7 +91,7 @@ function stoppedBy(row: AutomationStudioLlmEvidenceLoopTrace): Stopped | "same" 
   if (BOOKKEEPING.test(id) || CORE_CHECK.test(row.toolId ?? "")) return undefined;
   const code = row.resultCode ?? "";
   if (code === REPEAT_REFUSED) return "unchanged";
-  if (row.resultReason === SAME_AGAIN) return "same";
+  if (row.resultReason === AUTOMATION_STUDIO_REPEATED_ANSWER_REASON) return "same";
   if (row.resultReason !== undefined && HANDLE_REASONS.has(row.resultReason)) return /list/iu.test(row.nodeId ?? "") ? "list_handle" : "handle";
   if (FAILING.test(code)) return NOT_SEEN.test(code) ? "unseen" : "failed";
   return row.effectApplied === true || RERUN.test(id) ? "worked" : undefined;
