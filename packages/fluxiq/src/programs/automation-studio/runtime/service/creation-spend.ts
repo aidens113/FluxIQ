@@ -32,7 +32,10 @@ import type { AutomationStudioProjectStore } from "./projects/index.ts";
 // many calls it was: a settled call by the scope it was made in
 // (`flow-bootstrap/creation-spend/phase-of.ts`), the chat's reading as `chat`.
 // The record keeps them as `calls` and `byPhase` beside `spentUsd`, which the
-// `get-flow-spend` endpoint publishes read-only (`api/handlers/flow-spend.ts`).
+// `get-flow-spend` endpoint publishes read-only (`api/handlers/runs.ts`). A
+// settled call also names the agent role its scope carries and the input
+// tokens it reported, kept as `byRole` and `largestInputTokens`: the per-agent
+// tallies and largest decision input the Lab used to read off the step log.
 export class AutomationStudioFlowBootstrapCreationSpendStore {
   private readonly memory = new Map<string, AutomationStudioFlowBootstrapCreationSpend>();
   /** Flows whose record was read, or found absent: from then on memory is the record. */
@@ -89,12 +92,23 @@ export class AutomationStudioFlowBootstrapCreationSpendStore {
    * Adds `deltaUsd` to what the Flow has spent: compare-and-add, so two
    * additions never read the same total. `build` counts one more build of the
    * Flow's creation. `phase` itemises the addition, with the `calls` it was
-   * (none when absent). A Flow with no record gets one.
+   * (none when absent); an itemised addition is also tallied under the agent
+   * `role` that made it, when one did, and its `inputTokens` (one call's
+   * reported input) can raise `largestInputTokens`. A Flow with no record gets
+   * one.
    */
-  async add(projectId: string, flowId: string, deltaUsd: number, options: { build?: boolean; phase?: AutomationStudioFlowSpendPhase; calls?: number } = {}): Promise<void> {
+  async add(
+    projectId: string,
+    flowId: string,
+    deltaUsd: number,
+    options: { build?: boolean; phase?: AutomationStudioFlowSpendPhase; calls?: number; role?: string | undefined; inputTokens?: number | null } = {}
+  ): Promise<void> {
     if (!Number.isFinite(deltaUsd) || deltaUsd < 0) throw new Error("A Flow's spend can only grow, by a finite amount of US dollars.");
     const calls = options.calls ?? 0;
     if (!Number.isSafeInteger(calls) || calls < 0) throw new Error("A Flow's spend counts calls in whole, non-negative numbers.");
+    const inputTokens = options.inputTokens ?? null;
+    if (inputTokens !== null && (!Number.isSafeInteger(inputTokens) || inputTokens < 0)) throw new Error("A call's input tokens are a whole, non-negative number.");
+    const role = options.phase ? options.role : undefined;
     const key = memoryKey(projectId, flowId);
     if (!this.loaded.has(key)) await this.get(projectId, flowId);
     // From here until the write is queued nothing is awaited: the total read is the total written.
@@ -109,7 +123,9 @@ export class AutomationStudioFlowBootstrapCreationSpendStore {
       createdAt: current?.createdAt ?? now,
       updatedAt: now,
       calls: (current?.calls ?? 0) + (options.phase ? calls : 0),
-      byPhase: itemised(current?.byPhase, options.phase, deltaUsd, calls)
+      byPhase: itemised(current?.byPhase, options.phase, deltaUsd, calls),
+      largestInputTokens: options.phase ? larger(current?.largestInputTokens ?? null, inputTokens) : current?.largestInputTokens ?? null,
+      byRole: byRoleWith(current?.byRole ?? {}, role, deltaUsd, calls)
     });
     await this.persist(projectId, flowId);
   }
@@ -130,7 +146,8 @@ export class AutomationStudioFlowBootstrapCreationSpendStore {
       spentUsd: () => this.spentNowUsd(projectId, flowId),
       onSettled: (chargedUsd, call) => {
         // Settled inside the call's own async scope, so the step-log scope it was made in is still current.
-        const write = this.add(projectId, flowId, chargedUsd, { phase: automationStudioFlowSpendPhaseOf(call, automationStudioLlmStepLogScope.current()), calls: 1 });
+        const scope = automationStudioLlmStepLogScope.current();
+        const write = this.add(projectId, flowId, chargedUsd, { phase: automationStudioFlowSpendPhaseOf(call, scope), calls: 1, role: scope?.role, inputTokens: call.inputTokens });
         writes.push(write);
         // Handled here only so it is not reported before `run` is over; `Promise.all(writes)` below throws it.
         write.catch(() => undefined);
@@ -189,6 +206,17 @@ function itemised(
   const next = Object.fromEntries(AUTOMATION_STUDIO_FLOW_SPEND_PHASES.map((each) => [each, { calls: current?.[each].calls ?? 0, usd: current?.[each].usd ?? 0 }])) as Record<AutomationStudioFlowSpendPhase, AutomationStudioFlowSpendItem>;
   if (phase) next[phase] = { calls: next[phase].calls + calls, usd: roundUsd(next[phase].usd + usd) };
   return next;
+}
+
+/** The role tallies with `role` grown by `usd` and `calls`; unchanged when no role made the addition. */
+function byRoleWith(current: Record<string, AutomationStudioFlowSpendItem>, role: string | undefined, usd: number, calls: number): Record<string, AutomationStudioFlowSpendItem> {
+  const next = structuredClone(current);
+  if (role) next[role] = { calls: (next[role]?.calls ?? 0) + calls, usd: roundUsd((next[role]?.usd ?? 0) + usd) };
+  return next;
+}
+
+function larger(current: number | null, next: number | null): number | null {
+  return next === null ? current : current === null ? next : Math.max(current, next);
 }
 
 /** Rounded to the billionth, as a purse rounds. */

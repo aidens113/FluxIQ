@@ -18,6 +18,7 @@ export { endingKindOf } from "./ending-kind.ts";
 export { ACTIVITY_FAN_OUT_INTERVAL_MS, FanOutGate } from "./fan-out-gate.ts";
 export { activityHeadline, type ActivityHeadlineSituation, type ActivityWaitReason } from "./headline.ts";
 export { isHeadlineEcho } from "./headline-echo.ts";
+export type { ActivityHostWords } from "./host-words.ts";
 export { ACTIVITY_HISTORY_LIMITS } from "./history-limits.ts";
 export { isInternalStep } from "./internal-step.ts";
 export { isModelThought } from "./model-thought.ts";

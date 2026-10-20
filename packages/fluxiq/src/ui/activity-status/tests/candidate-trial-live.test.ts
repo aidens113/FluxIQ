@@ -23,6 +23,7 @@ import { expect, test } from "vitest";
 import type { ActivityDisplay, ClientGatewayActivity } from "../index.ts";
 import { ACTIVITY_DETAIL_INTERVAL_MS, ActivityPacer } from "../pacer.ts";
 import { FakeClock } from "./fake-clock.ts";
+import { TEST_HOST_WORDS } from "./test-host-words.ts";
 
 let sequence = 0;
 function event(fields: Partial<ClientGatewayActivity> & Pick<ClientGatewayActivity, "phase" | "label">, kind: "build" | "run" = "build", id = "b5"): ClientGatewayActivity {
@@ -33,7 +34,7 @@ function event(fields: Partial<ClientGatewayActivity> & Pick<ClientGatewayActivi
 function harness() {
   const clock = new FakeClock(1_000);
   const shown: ActivityDisplay[] = [];
-  const pacer = new ActivityPacer({ clock, onChange: (display) => shown.push(display) });
+  const pacer = new ActivityPacer({ clock, hostWords: TEST_HOST_WORDS, onChange: (display) => shown.push(display) });
   /** Feeds each event a full interval apart, so every one is shown; returns the display after each. */
   const feed = (...events: ClientGatewayActivity[]): ActivityDisplay[] => events.map((each) => {
     clock.advance(ACTIVITY_DETAIL_INTERVAL_MS);

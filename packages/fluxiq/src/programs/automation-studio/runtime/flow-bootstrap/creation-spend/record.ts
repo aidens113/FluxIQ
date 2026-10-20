@@ -28,6 +28,14 @@
 // per-creation path outside the Lab, or before this, has neither; one that
 // was already holding spend when itemising began has a `byPhase` summing to
 // less than `spentUsd`, by what it held unitemised.
+//
+// **Largest input and agent roles (t728).** The same addition carries the
+// settled call's reported input tokens and the agent role its step-log scope
+// names (`supervisor`, `builder`, `repair`, `validator`, as the step log writes
+// `role`), so the record also keeps `largestInputTokens` -- how big one call's
+// context grew -- and `byRole`, a project build's spend per agent. A call made
+// by no named agent (a single-agent build, a run, the chat) is in no role. A
+// record from before this reads back with both `null`.
 import type { AUTOMATION_STUDIO_FLOW_SPEND_PHASES } from "./phases.ts";
 
 /** One part of a Flow's life its spend is itemised by. */
@@ -50,4 +58,8 @@ export type AutomationStudioFlowBootstrapCreationSpend = {
   calls?: number;
   /** The Flow's spend by phase, every phase present. Present only on a record a Lab-scoped Flow purse added to. */
   byPhase?: Record<AutomationStudioFlowSpendPhase, AutomationStudioFlowSpendItem>;
+  /** The most input tokens any one itemised call reported; `null` when none reported a count, or on a record from before it was kept. */
+  largestInputTokens?: number | null;
+  /** The itemised calls by the agent role that made them; a call no agent named is in none. `null` on a record from before it was kept. */
+  byRole?: Record<string, AutomationStudioFlowSpendItem> | null;
 };

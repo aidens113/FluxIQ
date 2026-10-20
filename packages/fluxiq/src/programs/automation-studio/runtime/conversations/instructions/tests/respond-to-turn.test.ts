@@ -68,7 +68,16 @@ async function thread(model: AutomationStudioConversationModel | null, setting: 
   });
   const turns = async () => (await conversations.getConversation({ projectId: PROJECT, conversationId: opened.conversationId }))?.turns ?? [];
   const record = (text: string) => conversations.appendTurn({ projectId: PROJECT, conversationId: opened.conversationId, text, attachment: { kind: "panel-capability-result", ref: "run.execute" } });
-  return { say, turns, record };
+  /** Each turn's author and the decision Core recorded on it, read from the store itself: no client read carries it. */
+  const decisions = async () => {
+    const lease = await pool!.acquire(PROJECT);
+    try {
+      return await lease.database.all<{ author: string; decision: string | null }>("select author, decision_kind as decision from conversation_turns where conversation_id = ? order by ordinal", [opened.conversationId]);
+    } finally {
+      await lease.release();
+    }
+  };
+  return { say, turns, record, decisions };
 }
 
 describe("a person's turn, answered in the thread", () => {
@@ -147,6 +156,26 @@ describe("a person's turn, answered in the thread", () => {
     // Identifier-shaped, so the panel's contract parser keeps the turn, and it decodes to exactly what would run.
     expect(confirmation?.attachment?.ref).toMatch(/^[A-Za-z0-9_-]+$/u);
     expect(JSON.parse(Buffer.from(confirmation?.attachment?.ref ?? "", "base64url").toString("utf8"))).toEqual({ capabilityId: "flow.delete", arguments: { flowId: "flow.toaster-2" } });
+  });
+
+  it("records on each answer which decision wrote it, and keeps that off what a client reads", async () => {
+    // t728 F3: what a person said before a plain answer is not part of their next request, and what they said before Core's question back is (`../../person-words.ts`).
+    const { say, turns, decisions } = await thread(scripted(
+      '{"reply": "I can run and delete Flows here. Want me to run one?"}',
+      '{"ask": "Tell me which Flow you mean"}',
+      '{"do": "run.execute", "with": {"flowId": "flow.kettle-1"}}',
+      '{"do": "flow.delete", "with": {"flowId": "toaster"}}'
+    ));
+    for (const text of ["what can you do", "run one", "the kettle one", "now delete the toaster flow"]) await say(text);
+
+    expect(await decisions()).toEqual([
+      { author: "person", decision: null }, { author: "automation", decision: "reply" },
+      { author: "person", decision: null }, { author: "automation", decision: "clarify" },
+      { author: "person", decision: null }, { author: "automation", decision: "invoke" },
+      { author: "person", decision: null }, { author: "automation", decision: "invoke" }
+    ]);
+    // The read the API, the panel and the extension get carries no such field.
+    expect((await turns()).filter((turn) => "decision" in turn)).toEqual([]);
   });
 
   it("answers in plain English when the model fails, and keeps the person's message", async () => {

@@ -169,7 +169,8 @@ describe("get-flow-spend", () => {
     const read = readerOf(creationSpends);
     expect(await read("flow.one")).toEqual({ ok: true, payload: { spend: null } });
     await creationSpends.add("project.one", "flow.one", 0.002, { phase: "chat", calls: 1 });
-    await creationSpends.add("project.one", "flow.one", 0.01, { phase: "judge", calls: 1 });
+    await creationSpends.add("project.one", "flow.one", 0.01, { phase: "judge", calls: 1, inputTokens: 12_000 });
+    await creationSpends.add("project.one", "flow.one", 0.003, { phase: "build", calls: 1, role: "builder", inputTokens: 9_000 });
     const answered = await read("flow.one");
     expect(answered).toMatchObject({
       ok: true,
@@ -177,11 +178,13 @@ describe("get-flow-spend", () => {
         spend: {
           projectId: "project.one",
           flowId: "flow.one",
-          spentUsd: 0.012,
+          spentUsd: 0.015,
           builds: 1,
-          calls: 2,
+          calls: 3,
+          largestInputTokens: 12_000,
+          byRole: { builder: { calls: 1, usd: 0.003 } },
           byPhase: {
-            build: { calls: 0, usd: 0 },
+            build: { calls: 1, usd: 0.003 },
             read: { calls: 0, usd: 0 },
             judge: { calls: 1, usd: 0.01 },
             runtime: { calls: 0, usd: 0 },
@@ -191,13 +194,13 @@ describe("get-flow-spend", () => {
         }
       }
     });
-    expect(Object.keys((answered as { payload: { spend: object } }).payload.spend).sort()).toEqual(["builds", "byPhase", "calls", "createdAt", "flowId", "projectId", "spentUsd", "updatedAt"]);
+    expect(Object.keys((answered as { payload: { spend: object } }).payload.spend).sort()).toEqual(["builds", "byPhase", "byRole", "calls", "createdAt", "flowId", "largestInputTokens", "projectId", "spentUsd", "updatedAt"]);
     expect(await read("flow.other")).toEqual({ ok: true, payload: { spend: null } });
   });
 
-  it("answers an unitemised record with null calls and phases", async () => {
+  it("answers an unitemised record with null calls, phases, largest input and roles", async () => {
     const creationSpends = memoryStore();
     await creationSpends.save({ kind: "flow_creation_spend", projectId: "project.one", flowId: "flow.one", spentUsd: 0.05, builds: 2, createdAt: 1, updatedAt: 2 });
-    expect(await readerOf(creationSpends)("flow.one")).toEqual({ ok: true, payload: { spend: { projectId: "project.one", flowId: "flow.one", spentUsd: 0.05, builds: 2, calls: null, byPhase: null, createdAt: 1, updatedAt: 2 } } });
+    expect(await readerOf(creationSpends)("flow.one")).toEqual({ ok: true, payload: { spend: { projectId: "project.one", flowId: "flow.one", spentUsd: 0.05, builds: 2, calls: null, byPhase: null, largestInputTokens: null, byRole: null, createdAt: 1, updatedAt: 2 } } });
   });
 });

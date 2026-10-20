@@ -24,3 +24,4 @@ export { AUTOMATION_STUDIO_PROJECT_RECORDING_STREAM_MIGRATION } from "./recordin
 
 export { AUTOMATION_STUDIO_PROJECT_RECORDING_DESCRIPTION_MIGRATION } from "./recording-description.ts";
 export { AUTOMATION_STUDIO_PROJECT_INSTRUCTION_NODE_SCOPE_MIGRATION } from "./instruction-node-scope.ts";
+export { AUTOMATION_STUDIO_PROJECT_CONVERSATION_TURN_DECISION_MIGRATION } from "./conversation-turn-decision.ts";

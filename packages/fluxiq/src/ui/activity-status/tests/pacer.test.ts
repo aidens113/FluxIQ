@@ -7,6 +7,7 @@ import { expect, test } from "vitest";
 import type { ActivityDisplay, ClientGatewayActivity } from "../index.ts";
 import { ACTIVITY_DETAIL_INTERVAL_MS, ActivityPacer } from "../pacer.ts";
 import { FakeClock } from "./fake-clock.ts";
+import { TEST_HOST_WORDS } from "./test-host-words.ts";
 
 let sequence = 0;
 function event(fields: Partial<ClientGatewayActivity> & Pick<ClientGatewayActivity, "phase" | "label">, kind: "build" | "run" = "build", id = "b1"): ClientGatewayActivity {
@@ -17,7 +18,7 @@ function event(fields: Partial<ClientGatewayActivity> & Pick<ClientGatewayActivi
 function harness() {
   const clock = new FakeClock(1_000);
   const shown: Array<{ at: number; display: ActivityDisplay }> = [];
-  const pacer = new ActivityPacer({ clock, onChange: (display) => shown.push({ at: clock.now(), display }) });
+  const pacer = new ActivityPacer({ clock, hostWords: TEST_HOST_WORDS, onChange: (display) => shown.push({ at: clock.now(), display }) });
   return { clock, pacer, shown, details: () => shown.map((entry) => entry.display.detail) };
 }
 
@@ -43,7 +44,7 @@ test("headlines for every outcome of a build and a run", () => {
     [event({ phase: "done", label: "Run finished", final: true }, "run", "x4"), "Run finished", "done", null],
     [event({ phase: "failed", label: "Run cancelled", final: true, stopped: true }, "run", "x5"), "Run stopped", "failed", "Run cancelled"],
     [event({ phase: "failed", label: "Build stopped", final: true, stopped: true }, "build", "x7"), "Build stopped", "failed", null],
-    [event({ phase: "waiting_permission", label: "Run is waiting for an answer" }, "run", "x6"), "Waiting for you: answer in the FluxIQ panel", "waiting", "Run is waiting for an answer"]
+    [event({ phase: "waiting_permission", label: "Run is waiting for an answer" }, "run", "x6"), TEST_HOST_WORDS.answer, "waiting", "Run is waiting for an answer"]
   ];
   for (const [input, headline, outcome, detail] of cases) {
     const h = harness();
@@ -112,6 +113,21 @@ test("final, failed and waiting events show at once and replace a waiting senten
   }
 });
 
+test("a wait is headed in the words of the host whose pacer it is, and each host's words appear", () => {
+  const extension = { answer: "Waiting for you: answer in the FluxIQ panel", check: "Waiting for you: finish the check on the page" };
+  const panel = { answer: "Waiting for your answer", check: "Waiting for you: finish the check in your browser" };
+  for (const words of [extension, panel]) {
+    const clock = new FakeClock(1_000);
+    const pacer = new ActivityPacer({ clock, hostWords: words, onChange: () => undefined });
+    pacer.accept(event({ phase: "running", label: "Run started" }, "run", "w1"));
+    pacer.accept(event({ phase: "waiting_permission", label: "Run is waiting for an answer" }, "run", "w1"));
+    expect(pacer.display()?.headline).toBe(words.answer);
+    pacer.accept(event({ phase: "building", label: "Reading your request" }, "build", "w2"));
+    pacer.accept(event({ phase: "exploring", label: "Using core.run_node: web.intervention.required", detail: { kind: "tool", title: "Using core.run_node", status: "succeeded", ref: "core.run_node", text: "Result: web.intervention.required" } }, "build", "w2"));
+    expect(pacer.display()?.headline).toBe(words.check);
+  }
+});
+
 test("work that resumes after waiting shows at once, headed as working again", () => {
   const h = harness();
   h.pacer.accept(event({ phase: "running", label: "Run started" }, "run"));
@@ -119,7 +135,7 @@ test("work that resumes after waiting shows at once, headed as working again", (
   h.pacer.accept(event({ phase: "waiting_permission", label: "Run is waiting for an answer" }, "run"));
   h.clock.advance(10);
   h.pacer.accept(event({ phase: "running", label: "Running step 3 of 4: Pay", step: { index: 3, count: 4 } }, "run"));
-  expect(h.shown.map((entry) => entry.display.headline)).toStrictEqual(["Running your Flow", "Waiting for you: answer in the FluxIQ panel", "Running your Flow"]);
+  expect(h.shown.map((entry) => entry.display.headline)).toStrictEqual(["Running your Flow", TEST_HOST_WORDS.answer, "Running your Flow"]);
 });
 
 test("a new unit of work shows at once with its own headline", () => {
@@ -368,12 +384,12 @@ test("a page that only a person can get past: the headline says so plainly, unti
   const check = { kind: "tool" as const, title: "Using core.run_node", status: "succeeded" as const, ref: "core.run_node", text: "Result: web.intervention.required" };
   h.pacer.accept(event({ phase: "exploring", label: "Using core.run_node: web.intervention.required", detail: check }));
   expect(h.shown.length, "at once").toBe(2);
-  expect([h.pacer.display()?.headline, h.pacer.display()?.detail, h.pacer.display()?.outcome, h.pacer.display()?.working]).toStrictEqual(["Waiting for you: finish the check on the page", "Only a person can get past this page", "waiting", false]);
+  expect([h.pacer.display()?.headline, h.pacer.display()?.detail, h.pacer.display()?.outcome, h.pacer.display()?.working]).toStrictEqual([TEST_HOST_WORDS.check, "Only a person can get past this page", "waiting", false]);
   h.clock.advance(ACTIVITY_DETAIL_INTERVAL_MS);
   h.pacer.accept(event({ phase: "thinking", label: "Deciding the next step" }));
   h.clock.advance(100);
   h.pacer.accept(event({ phase: "exploring", label: "Using core.run_node: web.action.rejected.not_found", detail: { ...check, text: "Result: web.action.rejected.not_found" } }));
-  expect(h.pacer.display()?.headline, "still waiting while Core keeps deciding").toBe("Waiting for you: finish the check on the page");
+  expect(h.pacer.display()?.headline, "still waiting while Core keeps deciding").toBe(TEST_HOST_WORDS.check);
   expect(h.shown.length, "and paced like any detail: the second sentence waits for the interval").toBe(3);
   h.clock.advance(ACTIVITY_DETAIL_INTERVAL_MS);
   h.pacer.accept(event({ phase: "exploring", label: "Using core.run_node: web.inspect.succeeded", detail: { ...check, text: "Result: web.inspect.succeeded" } }));
@@ -388,7 +404,7 @@ test("Core's person-needed ask at a robot check shows at once, whole, as the wai
   h.pacer.accept(event({ phase: "waiting_permission", label: ask }));
   const shown = h.shown.at(-1);
   expect(shown?.at, "inside the detail interval, and still shown at once").toBe(1_100);
-  expect([shown?.display.headline, shown?.display.detail, shown?.display.outcome, shown?.display.working], "Continue and Stop are pressed in the panel").toStrictEqual(["Waiting for you: answer in the FluxIQ panel", ask, "waiting", false]);
+  expect([shown?.display.headline, shown?.display.detail, shown?.display.outcome, shown?.display.working], "Continue and Stop are pressed in the panel").toStrictEqual([TEST_HOST_WORDS.answer, ask, "waiting", false]);
 });
 
 // A model provider outage (live run `run-muq05kas-058193f0`): the live line said

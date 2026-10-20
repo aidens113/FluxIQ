@@ -102,6 +102,7 @@ import { CandidateTrial, type TrialState } from "./candidate-trial.ts";
 import type { ActivityClock, ActivityTimer } from "./clock.ts";
 import { endingKindOf } from "./ending-kind.ts";
 import { activityHeadline } from "./headline.ts";
+import type { ActivityHostWords } from "./host-words.ts";
 import { RunRetry, type RetryState } from "./run-retry.ts";
 import { SupervisorEnding, type SupervisorEndingWords } from "./supervisor-ending.ts";
 import { UnitSituation, type UnitState } from "./unit-situation.ts";
@@ -119,7 +120,7 @@ const MAX_DETAIL = 160;
 /** The most characters of a build's ending that carries its supervisor's reason (`supervisor-ending.ts`): Core's sentence, then why. */
 const MAX_ENDING_DETAIL = 360;
 
-/** The detail under "Waiting for you: finish the check on the page", in place of the page action's own outcome. */
+/** The detail under a check's headline ("Waiting for you: finish the check on the page" in the extension), in place of the page action's own outcome. */
 const CHECK_DETAIL = "Only a person can get past this page";
 
 /** How a wait ends when the person settled it themselves (Core's `ClientGatewayActivityResolution`). */
@@ -141,6 +142,8 @@ export type ActivityPacerOptions = {
   readonly clock: ActivityClock;
   /** Called with the new display whenever what a person sees changes. */
   readonly onChange: (display: ActivityDisplay) => void;
+  /** How this host says a wait on the person; required, so no host inherits another's phrasing (`host-words.ts`). */
+  readonly hostWords: ActivityHostWords;
   readonly detailIntervalMs?: number;
 };
 
@@ -186,10 +189,10 @@ export class ActivityPacer {
     // build's ending turned "Build failed" back into "Fixing your Flow").
     if (latest !== null && latest.activityId === event.activityId && (latest.outcome === "failed" || latest.outcome === "done") && outcomeOf(event) === null) return;
     if (isModelThought(event)) {
-      this.acceptThought(thoughtDisplayFor(event, latest, unit, retry, trial), now);
+      this.acceptThought(thoughtDisplayFor(event, latest, unit, retry, trial, this.options.hostWords), now);
       return;
     }
-    const next = holdMeaningfulLine(event, displayFor(event, this.shown, unit, retry, trial, because), latest);
+    const next = holdMeaningfulLine(event, displayFor(event, this.shown, unit, retry, trial, this.options.hostWords, because), latest);
     const atOnce = opensStage(event) || (this.shownDeciding && startsStep(event));
     this.offer(next, isDeciding(event), atOnce, now);
   }
@@ -258,7 +261,7 @@ export class ActivityPacer {
   }
 }
 
-function displayFor(event: ClientGatewayActivity, previous: ActivityDisplay | null, unit: UnitState, retry: RetryState, trial: TrialState, because?: SupervisorEndingWords): ActivityDisplay {
+function displayFor(event: ClientGatewayActivity, previous: ActivityDisplay | null, unit: UnitState, retry: RetryState, trial: TrialState, words: ActivityHostWords, because?: SupervisorEndingWords): ActivityDisplay {
   // A settling row names the work it ends, which outweighs the subject
   // (`ending-kind.ts`), and the unit keeps that name for every row after it:
   // a thought after a build's ending took the run's headline again, "Couldn't
@@ -269,7 +272,7 @@ function displayFor(event: ClientGatewayActivity, previous: ActivityDisplay | nu
   // through; Core's own settling and waiting events still say what they say.
   const outcome = outcomeOf(event) ?? (unit.check ? "waiting" : null);
   const working = outcome === null;
-  const headline = activityHeadline(subjectKind, outcome, {
+  const headline = activityHeadline(subjectKind, outcome, words, {
     stopped: event.stopped === true,
     // A run pressing a failed step again is not a repair (D12), and nor is
     // anything a candidate trial's run reports (`candidate-trial.ts`).
@@ -314,9 +317,9 @@ function displayFor(event: ClientGatewayActivity, previous: ActivityDisplay | nu
  * run's retry line is FluxIQ's own status, not the model's words: a recovery
  * choice keeps it up, and the thought that ends the retry takes it down.
  */
-function thoughtDisplayFor(event: ClientGatewayActivity, base: ActivityDisplay | null | undefined, unit: UnitState, retry: RetryState, trial: TrialState): ActivityDisplay {
+function thoughtDisplayFor(event: ClientGatewayActivity, base: ActivityDisplay | null | undefined, unit: UnitState, retry: RetryState, trial: TrialState, words: ActivityHostWords): ActivityDisplay {
   const kept = base && base.activityId === event.activityId ? base : null;
-  const own = displayFor(event, kept, unit, retry, trial);
+  const own = displayFor(event, kept, unit, retry, trial, words);
   const keptLine = kept && kept.detail !== retry.ended ? kept.detail : null;
   // A test's opening line is FluxIQ's own words too (`candidate-trial.ts`).
   const line = retry.line ?? (trial.startedNow ? trial.line : null) ?? keptLine;

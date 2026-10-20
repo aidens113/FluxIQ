@@ -8,6 +8,7 @@ import type { ActivityDisplay, ClientGatewayActivity } from "../index.ts";
 import { ActivityPacer } from "../pacer.ts";
 import { SupervisorEnding } from "../supervisor-ending.ts";
 import { FakeClock } from "./fake-clock.ts";
+import { TEST_HOST_WORDS } from "./test-host-words.ts";
 
 type Agent = NonNullable<ClientGatewayActivity["agent"]>;
 const SUPERVISOR: Agent = { role: "supervisor" };
@@ -55,7 +56,7 @@ test("no reason for another ending, a builder's words, a later decision, a reaso
 test("the status a supervisor-ended build settles on says it ended, then why", () => {
   const clock = new FakeClock(1_000);
   const shown: ActivityDisplay[] = [];
-  const pacer = new ActivityPacer({ clock, onChange: (display) => shown.push(display) });
+  const pacer = new ActivityPacer({ clock, hostWords: TEST_HOST_WORDS, onChange: (display) => shown.push(display) });
   pacer.accept(event({ phase: "building", label: "Planning the work" }));
   pacer.accept(finishing(SUPERVISOR, REASON));
   pacer.accept(ending(ENDED));
@@ -63,7 +64,7 @@ test("the status a supervisor-ended build settles on says it ended, then why", (
   expect([settled?.headline, settled?.outcome]).toStrictEqual(["Build failed", "failed"]);
   expect(settled?.detail).toBe(`${ENDED}. ${REASON}`);
 
-  const plain = new ActivityPacer({ clock, onChange: () => undefined });
+  const plain = new ActivityPacer({ clock, hostWords: TEST_HOST_WORDS, onChange: () => undefined });
   plain.accept(event({ phase: "building", label: "Planning the work" }, "b2"));
   plain.accept(ending("Build failed: it ran out of time", "b2"));
   expect(plain.display()?.detail, "an ending with its own why is said as Core said it").toBe("Build failed: it ran out of time");
@@ -97,7 +98,7 @@ test("a newer Core's last row says why itself: its whole sentence is said, and n
   expect(ends.observe(last, () => cut)).toStrictEqual({ sentence });
 
   const clock = new FakeClock(1_000);
-  const pacer = new ActivityPacer({ clock, onChange: () => undefined });
+  const pacer = new ActivityPacer({ clock, hostWords: TEST_HOST_WORDS, onChange: () => undefined });
   pacer.accept(event({ phase: "building", label: "Planning the work" }, "b3"));
   pacer.accept(event({ phase: "failed", label: `${ENDED}: the item can't be had`, detail: { kind: "step", title: `${ENDED}: the item can't be had`, status: "failed", text: "The supervisor ended it because it could not finish the Flow: the item can't be had." }, final: true }, "b3"));
   expect(pacer.display()?.detail, "a title that is whole is said as it is").toBe(`${ENDED}: the item can't be had`);

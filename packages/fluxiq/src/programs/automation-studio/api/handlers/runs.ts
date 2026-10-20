@@ -50,7 +50,8 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
   });
   // A Flow's spend, read-only (t728): what its Lab-scoped Flow purse recorded
   // (`runtime/service/creation-spend.ts`) -- dollars, builds and calls, by
-  // phase -- which the Lab used to rebuild from the step log. Numbers only, so
+  // phase and agent role, and the largest call input -- which the Lab used to
+  // rebuild from the step log. Numbers only, so
   // like a run record it asserts no domain scope. `{ spend: null }` for a Flow
   // with no record.
   registry.register({
@@ -69,6 +70,8 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
           builds: record.builds,
           calls: record.calls ?? null,
           byPhase: record.byPhase ? structuredClone(record.byPhase) : null,
+          largestInputTokens: record.largestInputTokens ?? null,
+          byRole: record.byRole ? structuredClone(record.byRole) : null,
           createdAt: record.createdAt,
           updatedAt: record.updatedAt
         } : null

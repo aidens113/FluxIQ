@@ -33,6 +33,12 @@ describe("a paused or stopped unit of work", () => {
     expect(statusOf(event)).toMatchObject({ outcome: "paused", headline: "Paused: your turn on the page" });
   });
 
+  it("waits on a question in this panel's own words, never the extension's", () => {
+    const waiting = statusOf(read(wire({ phase: "waiting_permission", label: "Run is waiting for an answer" })));
+    expect(waiting).toMatchObject({ outcome: "waiting", headline: "Waiting for your answer" });
+    expect(waiting?.headline).not.toContain("FluxIQ panel");
+  });
+
   it("reads stopped only when Core sends true", () => {
     expect(read(wire({ phase: "failed", final: true, stopped: true }))?.stopped).toBe(true);
     expect(read(wire({ phase: "failed", final: true, stopped: false }))).not.toHaveProperty("stopped");

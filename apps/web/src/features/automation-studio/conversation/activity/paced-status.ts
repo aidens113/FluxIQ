@@ -4,7 +4,10 @@
 // headline and detail as the web extension's, changed no faster (one detail
 // change per 1.6 s; a new headline or outcome at once).
 //
-// Two things sit around the shared pacer here:
+// Three things sit around the shared pacer here:
+//
+// - A wait is said in this panel's own words (`host-words.ts`): a question is
+//   answered here, so it never says "answer in the FluxIQ panel".
 //
 // - The pacer takes each event once, already known to be newer than every one
 //   before it. Each poll hands the current event again, so an event no newer
@@ -18,6 +21,7 @@
 
 import { ActivityPacer, type ActivityClock, type ActivityDisplay } from "fluxiq/ui";
 import type { ConversationActivity } from "./contracts";
+import { CONVERSATION_ACTIVITY_HOST_WORDS } from "./host-words";
 
 /** How the unit of work stands: settled, waiting on the person, held while the person has the page, or still working (null). */
 export type ConversationActivityOutcome = "done" | "failed" | "waiting" | "paused" | null;
@@ -38,6 +42,7 @@ export class ConversationPacedStatus {
   constructor(clock: ActivityClock, onChange: (display: ConversationActivityDisplay) => void, detailIntervalMs?: number) {
     this.pacer = new ActivityPacer({
       clock,
+      hostWords: CONVERSATION_ACTIVITY_HOST_WORDS,
       onChange: (display) => onChange(conversationDisplayOf(display)),
       ...(detailIntervalMs === undefined ? {} : { detailIntervalMs })
     });

@@ -35,7 +35,28 @@ export type AutomationStudioConversationTurn = {
   /** The question this turn asks, or null when it only says something. */
   ask: AutomationStudioConversationAsk | null;
   attachment: AutomationStudioConversationAttachment | null;
+  /**
+   * Core's own reading, never a client's: the decision a turn Core wrote in
+   * answer to a person's message came from (`instructions/respond.ts`), null
+   * when it was not written in answer to one or was written before decisions
+   * were recorded. Present only on a read made for Core itself
+   * (`AutomationStudioConversationStore.getConversation` with `decisions`), so
+   * the thread the API, the web panel and the extension read never carries it.
+   */
+  decision?: AutomationStudioConversationTurnDecision | null;
 };
+
+/**
+ * What Core decided a person's message was, as recorded on its answer: a plain
+ * answer, its one question back, or a capability it took the words as (the
+ * announcement, a confirmation, or the reason it could not set one up).
+ */
+export const AUTOMATION_STUDIO_CONVERSATION_TURN_DECISIONS = ["reply", "clarify", "invoke"] as const;
+export type AutomationStudioConversationTurnDecision = (typeof AUTOMATION_STUDIO_CONVERSATION_TURN_DECISIONS)[number];
+
+export function isAutomationStudioConversationTurnDecision(value: unknown): value is AutomationStudioConversationTurnDecision {
+  return typeof value === "string" && (AUTOMATION_STUDIO_CONVERSATION_TURN_DECISIONS as readonly string[]).includes(value);
+}
 
 export function isAutomationStudioConversationAuthor(value: unknown): value is AutomationStudioConversationAuthor {
   return typeof value === "string" && (AUTOMATION_STUDIO_CONVERSATION_AUTHORS as readonly string[]).includes(value);

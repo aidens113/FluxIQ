@@ -9,7 +9,7 @@
 // person who answers.
 
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConsequence } from "../action-permissions/index.ts";
-import { AUTOMATION_STUDIO_CONVERSATION_TEXT_MAX, type AutomationStudioConversationAttachment, type AutomationStudioConversationAuthor } from "./turn.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_TEXT_MAX, isAutomationStudioConversationTurnDecision, type AutomationStudioConversationAttachment, type AutomationStudioConversationAuthor, type AutomationStudioConversationTurnDecision } from "./turn.ts";
 import type { AutomationStudioConversationAnswerKind, AutomationStudioConversationAskInput } from "./ask.ts";
 import type { AutomationStudioConversationStatus, AutomationStudioConversationSubjectKind } from "./thread.ts";
 
@@ -40,6 +40,8 @@ export type AutomationStudioConversationTurnInput = {
   actorId?: string | null;
   attachment?: AutomationStudioConversationAttachment | null;
   ask?: AutomationStudioConversationAskInput | null;
+  /** On a turn Core writes in answer to a person's message, the decision it came from. Refused on a person's turn. */
+  decision?: AutomationStudioConversationTurnDecision | null;
   changedAt?: number;
 };
 
@@ -71,6 +73,14 @@ export function automationStudioConversationAttachmentOrRefuse(value: Automation
   const ref = typeof value.ref === "string" ? value.ref.trim() : "";
   if (!ref || ref.length > MAX_ATTACHMENT_REF) throw new Error("Conversation attachment reference is missing or too long.");
   return { kind, ref };
+}
+
+/** The decision a turn records: one of the kinds Core writes, and only on a turn Core itself writes. */
+export function automationStudioConversationTurnDecisionOrRefuse(value: unknown, author: AutomationStudioConversationAuthor): AutomationStudioConversationTurnDecision | null {
+  if (value === null || value === undefined) return null;
+  if (author !== "automation") throw new Error("Only a turn Core writes records the decision it came from.");
+  if (!isAutomationStudioConversationTurnDecision(value)) throw new Error("A turn's decision must be reply, clarify or invoke.");
+  return value;
 }
 
 export function automationStudioConversationAskOrRefuse(value: AutomationStudioConversationAskInput | null): AutomationStudioConversationAskInput | null {

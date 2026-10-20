@@ -12,6 +12,7 @@ export {
   type ConversationActivitySnapshot,
   type ConversationActivityStep
 } from "./contracts";
+export { CONVERSATION_ACTIVITY_HOST_WORDS } from "./host-words";
 export { CONVERSATION_ACTIVITY_HISTORY_LIMITS, holdConversationActivity, type ConversationActivityHistoryLimits } from "./history";
 export { conversationActivityPollOutcome, conversationActivityStepText } from "./model";
 export { getConversationActivity, type ConversationActivityQuery, type ConversationActivityReadResult } from "./queries";

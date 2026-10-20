@@ -19,11 +19,11 @@ function storeAt(root: string | undefined): AutomationStudioFlowBootstrapCreatio
   return new AutomationStudioFlowBootstrapCreationSpendStore(projectPaths, new AutomationStudioFlowPaths(projectPaths), projects);
 }
 
-/** One call made through the harness's hold, charged `costUsd`. */
-function call(costUsd: number, judge = false): void {
+/** One call made through the harness's hold, charged `costUsd`, reporting `inputTokens` when given. */
+function call(costUsd: number, judge = false, inputTokens?: number): void {
   const held = automationStudioLlmBuildPurseHoldCall({ provider: { estimateCostUsd: () => costUsd }, estimatedInputTokens: 1000, maxOutputTokens: 100, ...(judge ? { judge: true } : {}) });
   if (!held?.ok) throw new Error("The call was refused.");
-  held.hold.settle({ estimatedCostUsd: costUsd });
+  held.hold.settle({ estimatedCostUsd: costUsd, ...(inputTokens !== undefined ? { inputTokens } : {}) });
 }
 
 describe("a Lab-scoped Flow's itemised spend", () => {
@@ -85,6 +85,32 @@ describe("a Lab-scoped Flow's itemised spend", () => {
       calls: 2,
       byPhase: { chat: { calls: 1, usd: 0.0015 }, runtime: { calls: 1, usd: 0.01 }, build: { calls: 0, usd: 0 } }
     });
+  });
+
+  it("tallies a project build's calls by the agent role that made them, and keeps the largest input", async () => {
+    const store = storeAt(tempRoot);
+    await store.add(PROJECT_ID, FLOW_ID, 0.002, { phase: "chat", calls: 1 });
+    await store.withFlowPurse(PROJECT_ID, FLOW_ID, 1, async () => {
+      await automationStudioLlmStepLogScope.within({ part: "creation" }, async () => {
+        await automationStudioLlmStepLogScope.agent({ role: "supervisor" }, async () => call(0.002, false, 14_700), env);
+        await automationStudioLlmStepLogScope.agent({ role: "builder", briefId: "brief-1" }, async () => {
+          call(0.001, false, 9_000);
+          call(0.002, false, 21_000);
+        }, env);
+        await automationStudioLlmStepLogScope.agent({ role: "builder", briefId: "brief-2" }, async () => call(0.003), env);
+        // A call no agent named -- the build's own judge -- is in no role.
+        call(0.004, true, 30_000);
+      }, env);
+    });
+    const tallies = { largestInputTokens: 30_000, byRole: { supervisor: { calls: 1, usd: 0.002 }, builder: { calls: 3, usd: 0.006 } } };
+    expect(await store.get(PROJECT_ID, FLOW_ID)).toMatchObject({ spentUsd: 0.014, calls: 6, ...tallies });
+    expect(await storeAt(tempRoot).get(PROJECT_ID, FLOW_ID)).toMatchObject(tallies);
+  });
+
+  it("keeps the largest input null and the roles empty when no call reported either", async () => {
+    const store = storeAt(undefined);
+    await store.withFlowPurse(PROJECT_ID, FLOW_ID, 1, async () => call(0.01));
+    expect(await store.get(PROJECT_ID, FLOW_ID)).toMatchObject({ calls: 1, largestInputTokens: null, byRole: {} });
   });
 
   it("refuses a call count that is not a whole number", async () => {

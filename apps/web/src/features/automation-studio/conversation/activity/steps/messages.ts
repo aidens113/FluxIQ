@@ -52,6 +52,7 @@
 
 import { activityActionKey, activityActionOf, activityHeadline, type ActivityAction } from "fluxiq/ui";
 import type { ConversationActivity, ConversationActivityDetail } from "../contracts";
+import { CONVERSATION_ACTIVITY_HOST_WORDS } from "../host-words";
 import { conversationActivityIsInternal } from "./internal";
 import { conversationActivitySentence, conversationActivityTextIsHuman } from "./words";
 
@@ -195,7 +196,7 @@ export function conversationStepMessages(events: readonly ConversationActivity[]
       // The shared headline (`activityHeadline` in `fluxiq/ui`), as the live
       // line and the extension say it: a run whose repair failed "Couldn't fix
       // your Flow", a build that failed "Build failed" even mid-repair.
-      const title = activityHeadline(event.subject.kind, "failed", { repairing: unit.repairing, stopped: event.stopped === true });
+      const title = activityHeadline(event.subject.kind, "failed", CONVERSATION_ACTIVITY_HOST_WORDS, { repairing: unit.repairing, stopped: event.stopped === true });
       add(event, "ended", title, humanText(event.label.split(" — ")[0]));
     }
   }

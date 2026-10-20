@@ -109,11 +109,21 @@ describe("the paced status", () => {
     expect(shown).toEqual(["Running your Flow", "Fixing your Flow", "Couldn't fix your Flow"]);
   });
 
+  it("says a check only the person can pass in this panel's words: finish it in the browser", () => {
+    const time = fakeClock();
+    const status = new ConversationPacedStatus(time.clock, () => undefined);
+    status.accept(event(1, { phase: "building", label: "Reading your request" }));
+    const check = { kind: "tool" as const, title: "Using core.run_node", status: "succeeded" as const, ref: "core.run_node", text: "Result: web.intervention.required" };
+    status.accept(event(2, { phase: "exploring", label: "Using core.run_node: web.intervention.required", detail: check }));
+    expect(status.display()).toMatchObject({ headline: "Waiting for you: finish the check in your browser", outcome: "waiting" });
+  });
+
   it("says what the person is waited on for, and holds a paused run as its own outcome", () => {
     const time = fakeClock();
     const status = new ConversationPacedStatus(time.clock, () => undefined);
     status.accept(event(1, { phase: "waiting_permission", label: "Waiting for your answer" }));
-    expect(status.display()).toMatchObject({ headline: "Waiting for you: answer in the FluxIQ panel", outcome: "waiting" });
+    // This panel is where the question is answered: its own words, never the extension's "answer in the FluxIQ panel".
+    expect(status.display()).toMatchObject({ headline: "Waiting for your answer", outcome: "waiting" });
     status.accept(event(2, { ...RUN, phase: "paused", label: "Paused: you have the page" }));
     expect(status.display()).toMatchObject({ headline: "Paused: your turn on the page", outcome: "paused", detail: null });
     status.accept(event(3, { ...RUN, phase: "running", label: "Continuing from step 2" }));

@@ -13,6 +13,7 @@ import { CandidateTrial } from "../candidate-trial.ts";
 import { activityHeadline } from "../headline.ts";
 import { ACTIVITY_DETAIL_INTERVAL_MS, ActivityPacer } from "../pacer.ts";
 import { FakeClock } from "./fake-clock.ts";
+import { TEST_HOST_WORDS } from "./test-host-words.ts";
 
 let sequence = 0;
 function event(fields: Partial<ClientGatewayActivity> & Pick<ClientGatewayActivity, "phase" | "label">, kind: "build" | "run" = "build", id = "b1"): ClientGatewayActivity {
@@ -23,7 +24,7 @@ function event(fields: Partial<ClientGatewayActivity> & Pick<ClientGatewayActivi
 function harness() {
   const clock = new FakeClock(1_000);
   const shown: ActivityDisplay[] = [];
-  const pacer = new ActivityPacer({ clock, onChange: (display) => shown.push(display) });
+  const pacer = new ActivityPacer({ clock, hostWords: TEST_HOST_WORDS, onChange: (display) => shown.push(display) });
   /** Feeds each event a full interval apart, so every one is shown. */
   const feed = (...events: ClientGatewayActivity[]) => {
     for (const each of events) {
@@ -149,8 +150,8 @@ test("a test is opened by the build's core.test_candidate row, its decision to t
 });
 
 test("the headline names a test above a repair, and a failed test is never a failed fix", () => {
-  expect(activityHeadline("build", null, { testing: true })).toBe("Testing your Flow");
-  expect(activityHeadline("build", null, { testing: true, repairing: true })).toBe("Testing your Flow");
-  expect(activityHeadline("run", "failed", { testing: true, repairing: true })).toBe("Run failed");
-  expect(activityHeadline("build", "waiting", { testing: true, waitingOn: "check" })).toBe("Waiting for you: finish the check on the page");
+  expect(activityHeadline("build", null, TEST_HOST_WORDS, { testing: true })).toBe("Testing your Flow");
+  expect(activityHeadline("build", null, TEST_HOST_WORDS, { testing: true, repairing: true })).toBe("Testing your Flow");
+  expect(activityHeadline("run", "failed", TEST_HOST_WORDS, { testing: true, repairing: true })).toBe("Run failed");
+  expect(activityHeadline("build", "waiting", TEST_HOST_WORDS, { testing: true, waitingOn: "check" })).toBe(TEST_HOST_WORDS.check);
 });

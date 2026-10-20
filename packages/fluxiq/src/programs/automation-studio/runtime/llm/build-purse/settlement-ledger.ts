@@ -68,7 +68,7 @@ export class AutomationStudioLlmBuildPurseLedger {
         const chargedUsd = valid ? reported : heldUsd;
         if (!valid && chargedUsd === 0) this.unreportedZeroChargeCalls += 1;
         this.settled += chargedUsd;
-        this.events.onSettled?.(chargedUsd, { judge });
+        this.events.onSettled?.(chargedUsd, { judge, inputTokens: inputTokensOf(usage) });
         if (valid) this.largestReported = Math.max(this.largestReported, reported);
         if (valid && projected !== undefined && reported > heldUsd + AUTOMATION_STUDIO_LLM_BUILD_PURSE_EPSILON_USD) {
           this.breaches += 1;
@@ -84,4 +84,10 @@ export class AutomationStudioLlmBuildPurseLedger {
       }
     };
   }
+}
+
+/** The input tokens a settled call reported, or `null` when it reported no whole count. */
+function inputTokensOf(usage: { inputTokens?: number } | undefined): number | null {
+  const tokens = usage?.inputTokens;
+  return Number.isSafeInteger(tokens) && (tokens as number) >= 0 ? tokens as number : null;
 }

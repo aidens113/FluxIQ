@@ -197,7 +197,7 @@ export class AutomationStudioConversations {
    * saves as its instruction (t349).
    */
   async personWords(input: { projectId: string; conversationId: string; answerTurnId: string; capability: Pick<AutomationStudioPanelCapability, "title" | "phrases"> }): Promise<{ text: string; saysWhatToDo: boolean } | null> {
-    const text = await this.withStore(input.projectId, (store) => automationStudioConversationPersonWords((page) => store.getConversation(page), input.conversationId, input.answerTurnId));
+    const text = await this.withStore(input.projectId, (store) => automationStudioConversationPersonWords((page) => store.getConversation(page, { decisions: true }), input.conversationId, input.answerTurnId));
     return text === null ? null : { text, saysWhatToDo: automationStudioConversationSaysWhatToDo(input.capability, text) };
   }
 
@@ -268,7 +268,8 @@ export class AutomationStudioConversations {
         author: "automation",
         text: input.text,
         ask: input.ask,
-        attachment: input.attachment
+        attachment: input.attachment,
+        ...(input.decision === undefined ? {} : { decision: input.decision })
       })
     );
   }

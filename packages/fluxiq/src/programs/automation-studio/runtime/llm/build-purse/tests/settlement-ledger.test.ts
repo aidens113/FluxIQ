@@ -25,4 +25,17 @@ describe("a build's canonical settlement provenance", () => {
     expect(ledger.calls.pendingCalls()).toBe(0);
     expect(ledger.settledUsd()).toBe(0.02);
   });
+
+  it("tells onSettled each call's reported input tokens, or null when it reported no whole count", () => {
+    const settled: Array<{ usd: number; judge: boolean; inputTokens: number | null }> = [];
+    const ledger = new AutomationStudioLlmBuildPurseLedger(undefined, { onSettled: (usd, call) => settled.push({ usd, ...call }) });
+    ledger.hold(0.01, 0.01, true).settle({ estimatedCostUsd: 0.004, inputTokens: 12_000 });
+    ledger.hold(0.01, 0.01).settle();
+    ledger.hold(0.01, 0.01).settle({ estimatedCostUsd: 0.002, inputTokens: 1.5 });
+    expect(settled).toEqual([
+      { usd: 0.004, judge: true, inputTokens: 12_000 },
+      { usd: 0.01, judge: false, inputTokens: null },
+      { usd: 0.002, judge: false, inputTokens: null }
+    ]);
+  });
 });

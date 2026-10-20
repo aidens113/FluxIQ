@@ -36,7 +36,12 @@ export type FlowSpendItem = { calls: number; usd: number };
  * A Flow's recorded spend, read-only. `spentUsd` and `builds` are the record's
  * totals; `calls` and `byPhase` are non-null only when a Lab-scoped Flow purse
  * itemised the record, and `byPhase` then sums to `spentUsd` unless the record
- * already held spend when itemising began.
+ * already held spend when itemising began. `largestInputTokens` is the most
+ * input tokens one itemised call reported (`null` when none reported a count)
+ * and `byRole` the itemised calls by the agent role that made them
+ * (`supervisor`, `builder`, `repair`, `validator`, as the step log writes
+ * `role`; a call no agent named is in none); both are `null` on a record kept
+ * before they were.
  */
 export type FlowSpend = {
   projectId: string;
@@ -45,6 +50,8 @@ export type FlowSpend = {
   builds: number;
   calls: number | null;
   byPhase: { build: FlowSpendItem; read: FlowSpendItem; judge: FlowSpendItem; runtime: FlowSpendItem; reauthor: FlowSpendItem; chat: FlowSpendItem } | null;
+  largestInputTokens: number | null;
+  byRole: Record<string, FlowSpendItem> | null;
   createdAt: number;
   updatedAt: number;
 };

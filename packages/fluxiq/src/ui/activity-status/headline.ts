@@ -25,10 +25,12 @@
 //   refuted reads "Fixing your Flow": nothing Core sends tells the two apart.
 // - **A check only the person can answer.** When a page action reports that
 //   the page asks for what only a person can give (a robot check, a code
-//   prompt), the headline says so plainly: "Waiting for you: finish the check
-//   on the page".
+//   prompt), the headline says so plainly, in the host's words (`host-words.ts`;
+//   the extension says "Waiting for you: finish the check on the page").
 // - **A question.** Core's own waiting state (`waiting_permission`, a run
-//   paused on an ask) reads "Waiting for you: answer in the FluxIQ panel".
+//   paused on an ask) reads as the host words it: the extension says "Waiting
+//   for you: answer in the FluxIQ panel", Core's web panel, which is that
+//   panel, says "Waiting for your answer".
 // - **A pause.** A run Core holds between steps -- the person pressed Take
 //   over, or the run was paused -- reads "Paused: your turn on the page". It
 //   is a wait on the person, so it shows at once and never fades, and it
@@ -40,6 +42,7 @@
 //   it is never "Fixing your Flow" (lane A round 4, `run-muyrpbnk-fef374e7`).
 
 import type { ActivityDisplay } from "./activity-display.ts";
+import type { ActivityHostWords } from "./host-words.ts";
 
 /** What the person is being waited on for. */
 export type ActivityWaitReason = "answer" | "check" | "paused";
@@ -70,21 +73,21 @@ const FAILED: Readonly<Record<ActivityDisplay["subjectKind"], string>> = Object.
   run: "Run failed"
 });
 
-const WAITING: Readonly<Record<ActivityWaitReason, string>> = Object.freeze({
-  answer: "Waiting for you: answer in the FluxIQ panel",
-  check: "Waiting for you: finish the check on the page",
-  paused: "Paused: your turn on the page"
-});
+/** The same in every host; a question or a check is worded by the host (`host-words.ts`). */
+const PAUSED = "Paused: your turn on the page";
 
 const REPAIRING = "Fixing your Flow";
 const TESTING = "Testing your Flow";
 /** Only a run's failed repair: a build that fails in its repair says the build failed. */
 const REPAIR_FAILED = "Couldn't fix your Flow";
 
-/** The headline for a unit of work of `kind`, working (`outcome` null) or settled, in `situation`. */
-export function activityHeadline(kind: ActivityDisplay["subjectKind"], outcome: ActivityDisplay["outcome"], situation: ActivityHeadlineSituation = {}): string {
+/** The headline for a unit of work of `kind`, working (`outcome` null) or settled, in `situation`, a wait said in the host's `words`. */
+export function activityHeadline(kind: ActivityDisplay["subjectKind"], outcome: ActivityDisplay["outcome"], words: ActivityHostWords, situation: ActivityHeadlineSituation = {}): string {
   if (outcome === "failed" && situation.stopped) return kind === "build" ? "Build stopped" : "Run stopped";
-  if (outcome === "waiting") return WAITING[situation.waitingOn ?? "answer"];
+  if (outcome === "waiting") {
+    const reason = situation.waitingOn ?? "answer";
+    return reason === "paused" ? PAUSED : words[reason];
+  }
   if (outcome === "done") return DONE[kind];
   if (outcome === "failed") return kind === "run" && situation.repairing && !situation.testing ? REPAIR_FAILED : FAILED[kind];
   if (situation.testing) return TESTING;
