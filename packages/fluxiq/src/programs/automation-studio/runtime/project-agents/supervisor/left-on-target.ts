@@ -69,11 +69,12 @@ export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<Automa
     const claim = ledger.forBrief(owner).claim(act);
     return claim.kind === "refused" && claim.evidence.code === "candidate.undo_act_kept";
   };
-  const acts: Array<AutomationStudioProjectSupervisorLeftOnTarget["acts"][number] & { line: string; stays?: AutomationStudioActivityLeftAct["stays"] }> = [];
+  const acts: Array<AutomationStudioProjectSupervisorLeftOnTarget["acts"][number] & { line: string; stays?: AutomationStudioActivityLeftAct["stays"]; seen?: boolean }> = [];
   for (const act of ledger.snapshot().acts) {
     const named = { act: act.act, did: act.did, brief: act.owner };
     if (!act.undoable) acts.push({ ...named, undoable: false, line: `${act.did} (cannot be undone by FluxIQ)`, stays: "irreversible" });
-    else if (act.inPlace) acts.push({ ...named, undoable: true, line: act.did });
+    // `seen`: whether any read ever showed it change something, so one nothing showed is not told as a change left (t738).
+    else if (act.inPlace) acts.push({ ...named, undoable: true, line: act.did, seen: ledger.forBrief(act.owner).changeSeen(act.act) !== false });
     else if (kept(act.act, act.owner)) acts.push({ ...named, undoable: false, line: `${act.did} (the site offers no way to undo it)`, stays: "kept" });
   }
   const lines = acts.map((act) => act.line);
@@ -85,14 +86,14 @@ export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<Automa
     named.length ? `Possibly still on the target, though nothing checked: ${named.map((act) => act.did).join("; ")}${leftOut ? `; and ${leftOut} earlier such ${leftOut === 1 ? "press" : "presses"}` : ""}.` : ""
   ].filter((sentence) => sentence);
   const note = sentences.length ? sentences.join(" ") : undefined;
-  const told = automationStudioActivityLeftTold(acts.map((act) => ({ did: act.did, ...(act.stays ? { stays: act.stays } : {}) })), possibly);
+  const told = automationStudioActivityLeftTold(acts.map((act) => ({ did: act.did, ...(act.stays ? { stays: act.stays } : {}), ...(act.seen === false ? { seen: false } : {}) })), possibly);
   const fitted = note ? note.slice(0, MAX_REASON - 2) : undefined;
   const reason = (said: string) => {
     // The ending is being named: the build hears what is left in Core's words (header).
     ports.leftAtEnding?.({ note, told });
     return fitted ? `${said.slice(0, MAX_REASON - fitted.length - 1).trimEnd()} ${fitted}`.trim() : said.slice(0, MAX_REASON);
   };
-  return { acts: acts.map(({ line: _line, stays: _stays, ...act }) => act), possibly, undoable: acts.some((act) => act.undoable), note, told, reason };
+  return { acts: acts.map(({ line: _line, stays: _stays, seen: _seen, ...act }) => act), possibly, undoable: acts.some((act) => act.undoable), note, told, reason };
 }
 
 /** Every brief's possibly lasting presses that may still be on the target, in the order the build made them (header). */

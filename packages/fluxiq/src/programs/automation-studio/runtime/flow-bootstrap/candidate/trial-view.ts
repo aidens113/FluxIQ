@@ -25,6 +25,18 @@
 // (`run-mv5yaapy-8c34bf34`, 0029) missed 51,218 of 55,058 input tokens on it
 // (t480). The key is lifted onto the trial's answer, which is the entry the
 // look's page arrives in, so the definition is appended with it.
+//
+// **A refused test that moved the tab shows where it left it (t738).** Core's
+// own checks before a trial -- the start check taking the target back to the
+// build's start, or looking at an act's place itself -- move the tab even when
+// the trial is then refused. Photo rerun round 2 (`run-mvgf801u-cc23575e`,
+// 0057-0069): a builder's test was refused `candidate.trial_reset_required`
+// after the start check loaded the start page; the builder's loop showed no
+// page, and the model pressed a stale handle six times. Office (`run-mvgf04kw-
+// 310fc169`, 0126 and 0159): the same, with the move not even counted. A
+// refusal that moved the target, by its own `effectApplied` or by the caller's
+// `targetMoved` (the start check's count of its moves, `../site-reset/start-check.ts`),
+// gets the same look, says no trial ran, and is answered as having moved it.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
@@ -36,6 +48,10 @@ const VIEW_NOTE = "pageAfterTrial is the page as this trial left it, with the ha
 /** What the model is told when that page could not be looked at. */
 const NO_VIEW_NOTE = "The page could not be looked at after this trial, and it may have moved: look at it again before using a handle from a view before this trial.";
 
+/** The same, for a refused test whose checks moved the tab (header, t738). */
+const REFUSED_VIEW_NOTE = "No trial ran, but Core's own checks before it moved the target: pageAfterTrial is the page where it stands now, with the handles to use now. A handle from a view before this call may name a page that is no longer there.";
+const REFUSED_NO_VIEW_NOTE = "No trial ran, but Core's own checks before it moved the target, and the page could not be looked at after: look at it again before using a handle from a view before this call.";
+
 /** The trial's answer, with the page it left when it ran or moved the target; any other answer as it was. */
 export async function automationStudioCandidateTrialView(input: {
   answer: AutomationStudioLlmEvidenceToolExecutionResult;
@@ -43,10 +59,14 @@ export async function automationStudioCandidateTrialView(input: {
   executeTool: AutomationStudioLlmEvidenceLoopInput["executeTool"];
   callId: string;
   signal?: AbortSignal | undefined;
+  /** Core's own checks moved the target during this call, whatever its answer says (header, t738). */
+  targetMoved?: boolean | undefined;
 }): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
   const { answer } = input;
   const look = input.tools.find((tool) => tool.initialObservation);
-  if (!answer.effectApplied || !look || !isJsonObject(answer.evidence)) return answer;
+  if (!(answer.effectApplied || input.targetMoved === true) || !look || !isJsonObject(answer.evidence)) return answer;
+  // A trial's answer carries its verdict, a refusal only its code: a trial that answered no ran.
+  const refused = answer.evidence.ok === false && answer.evidence.verdict === undefined;
   let page: JsonValue | undefined;
   try {
     const ran = await input.executeTool({ callId: `${input.callId}.page`, toolId: look.toolId, value: structuredClone(look.initialObservation!.input), ...(input.signal ? { signal: input.signal } : {}) });
@@ -66,9 +86,10 @@ export async function automationStudioCandidateTrialView(input: {
     ...answer.evidence,
     ...(named.length ? { [DESCRIBED]: named } : {}),
     ...(seen ? { pageAfterTrial: shown! } : {}),
-    pageAfterTrialNote: seen ? VIEW_NOTE : NO_VIEW_NOTE
+    pageAfterTrialNote: refused ? (seen ? REFUSED_VIEW_NOTE : REFUSED_NO_VIEW_NOTE) : seen ? VIEW_NOTE : NO_VIEW_NOTE
   };
-  return { ...answer, evidence };
+  // A refusal whose checks moved the tab is answered as having moved it (header, t738).
+  return { ...answer, ...(answer.effectApplied ? {} : { effectApplied: true, targetsUnchanged: false }), evidence };
 }
 
 /** The look's page without the nodes it newly described, and those nodes' ids. */

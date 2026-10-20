@@ -28,6 +28,18 @@
 //
 // The frame is Core's alone: a domain reads it, and nothing a model writes can
 // set it, since a model-written id never starts like an opening one.
+//
+// **One frame per process, however many copies of Core it loads** (t738,
+// office run `run-mvgf04kw-310fc169`). The web panel bundles Core into its
+// server, and the web domain's host module, loaded with a native `import()`,
+// imports Core's `dist`: two copies of this module, each with its own store.
+// Core set the frame in the panel's copy and the domain read its own, so the
+// domain never saw one -- no build, no opening -- and every dependent builder's
+// opening look, marked as its arrival, was refused as an unexpected key. The
+// store is therefore kept once per process under a registered symbol, which
+// every copy of this module finds, so a frame either copy sets is the one
+// every copy reads. Nothing else is shared that way: the frame is still set
+// only by a registry binding, and a domain only reads it.
 
 import { AsyncLocalStorage } from "node:async_hooks";
 
@@ -40,7 +52,13 @@ export type AutomationStudioEvidenceBuildScope = {
   readonly opening?: "fresh" | "continuing";
 };
 
-const calls = new AsyncLocalStorage<Readonly<AutomationStudioEvidenceBuildScope>>();
+/** The registered key every copy of this module keeps the one store under (header). */
+const STORE = Symbol.for("fluxiq.automation-studio.evidence-build-scope");
+
+type Store = AsyncLocalStorage<Readonly<AutomationStudioEvidenceBuildScope>>;
+
+const holder = globalThis as typeof globalThis & { [STORE]?: Store };
+const calls: Store = holder[STORE] ??= new AsyncLocalStorage<Readonly<AutomationStudioEvidenceBuildScope>>();
 
 /** Runs `fn` as an evidence call within `scope`: what `automationStudioEvidenceBuildScope` reads, however deep. */
 export function runWithAutomationStudioEvidenceBuildScope<T>(scope: AutomationStudioEvidenceBuildScope, fn: () => T): T {

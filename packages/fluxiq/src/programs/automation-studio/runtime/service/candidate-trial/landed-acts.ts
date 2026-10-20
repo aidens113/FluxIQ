@@ -61,6 +61,19 @@
 // location that is not a bounded single-line string is dropped, and the counts
 // kept.
 //
+// **The address the trial executed with (t738).** The trace read here is the
+// saved one, which withholds every value the run resolved out of state, and
+// `stateDiff` is under its withholding: a press on a page the trial reached by a
+// row-bound address (`url: $row.link`) read its location as the withholding
+// marker, and no settle clause could name that page (rerun round 2
+// `run-mvgf801u-cc23575e`, 24 such clauses). The location alone is taken from
+// the trace the run executed, kept in memory beside the saved one
+// (`../../executor/executed-locations/`); every other field of the act -- its
+// counts, its spot, its control's words -- is the saved trace's, so nothing
+// else withheld reaches the act. Every caller (`./run.ts`,
+// `../subflow-trial/run.ts`, `../project-build/entry-preparation.ts`) reads its
+// acts here, so each gets the address. The saved trace is not changed.
+//
 // The rule is exploration's, positive evidence only (t479): an item is one the
 // step created only when the step stayed on its document, the page before it
 // listed its items, that list lacked the item, and no earlier step of the same
@@ -88,7 +101,7 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../model/index.ts";
 import { automationStudioConsequencesInOrder, isAutomationStudioActionConsequence } from "../../action-permissions/index.ts";
-import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY, automationStudioNodeSideEffectClass, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
+import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY, automationStudioExecutedLocations, automationStudioNodeSideEffectClass, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import type { AutomationStudioCandidateTrialAct } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioSiteResetSpot, AutomationStudioSiteResetTrialActPlace } from "../../flow-bootstrap/site-reset/index.ts";
 import { automationStudioAttemptSettled } from "../../flow-change/index.ts";
@@ -239,7 +252,8 @@ function controlsOf(attempt: AutomationStudioNodeAttemptTrace): AutomationStudio
   if (!isObject(witness)) return undefined;
   const page = token(witness.page), before = countsOf(witness.before), after = countsOf(witness.after);
   if (!page || !before || !after) return undefined;
-  const location = locationOf(witness.location);
+  // The address the run executed with, where the saved trace withheld it; the location alone (header, t738).
+  const location = locationOf(automationStudioExecutedLocations.of(witness) ?? witness.location);
   return { page, ...(location ? { location } : {}), before, after };
 }
 

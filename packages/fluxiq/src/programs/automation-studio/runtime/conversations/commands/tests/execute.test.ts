@@ -693,6 +693,8 @@ describe("conversation commands", () => {
         expect(turns.filter((turn) => turn.ask)).toEqual([]);
         expect(text).toContain(said); expect(text).toContain("nothing was put into the Flow");
         expect(text).not.toContain("is ready");
+        // A test of the whole Flow answered, so the draft's card line never says verification is pending (t738).
+        expect(text).not.toContain("Verification pending");
       }
     });
 

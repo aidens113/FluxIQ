@@ -276,8 +276,13 @@ describe("a project build through the actual service", () => {
 
   it("keeps the assembled Flow as a draft when the whole trial is judged no, and proposes nothing", async () => {
     const run = await projectBuild({ whole: "no" });
-    const result = await run.build();
+    const seen: ClientGatewayActivity[] = [];
+    const unsubscribe = automationStudioActivityHub.subscribe((event) => seen.push(event));
+    const result = await run.build().finally(unsubscribe);
     expect(result).toMatchObject({ status: "draft", verification: "not_performed", promotionAllowed: false, trial: { verdict: "no" } });
+    // The supervisor ended on a draft: its row says Core's record of the tests beside its checked reason (t738, `../../project-build-ending/`).
+    const told = seen.find((event) => event.detail?.title === "FluxIQ stopped with the Flow only partly built.");
+    expect((told?.detail as { text?: string } | undefined)?.text).toBe("The whole Flow's trial was judged not to do what was asked. The one part tested on its own did not pass its own test: it was tested once, and its last test was judged not to do what was asked. The judged test run of the whole Flow from its start ran both of its steps and stored no rows, and was judged not to do what was asked. The build left no change on the site that it knows of.");
     if (result.status !== "draft") throw new Error("expected a draft");
     const store = (run.service as unknown as { candidateDrafts: { get(projectId: string, flowId: string): Promise<unknown> } }).candidateDrafts;
     expect(await store.get(run.projectId, run.flowId)).toMatchObject({ candidateId: result.candidateId, candidate: { revision: result.revision, digest: result.digest } });

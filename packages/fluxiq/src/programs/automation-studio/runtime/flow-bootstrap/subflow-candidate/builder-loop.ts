@@ -127,12 +127,23 @@
 // backstop (t685, `../../llm/build-purse/judge-backstop.ts`), so the builder
 // keeps calls for a last test. t679 kept none, since the judge then drew on the
 // reserve alone.
+//
+// **A test that moved the tab shows the page it left (t738).** Photo rerun
+// round 2 (`run-mvgf801u-cc23575e`, 0057-0069): a test refused after the start
+// check loaded the build's start answered with no page, and the model pressed a
+// stale handle six times. Every `core.test_subflow` answer now goes through the
+// candidate loop's trial view (`../candidate/trial-view.ts`), as a whole
+// candidate's test does: one that ran, or whose checks moved the tab, carries
+// `pageAfterTrial`. The trial's `moves` -- the start check's count of the times
+// it moved the target (`../site-reset/start-check.ts`) -- is read before and
+// after the test, so a refusal whose reset looked at a place itself, and said
+// nothing of it (office, `run-mvgf04kw-310fc169`, 0126 and 0159), shows the page too.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceCompletionCheck, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT } from "../plan/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY } from "../../llm/decision-handlers/index.ts";
-import { automationStudioCandidateSubmissionRefusal } from "../candidate/index.ts";
+import { automationStudioCandidateSubmissionRefusal, automationStudioCandidateTrialView } from "../candidate/index.ts";
 import type { AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import type { AutomationStudioSubflowDoneBefore, AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialResult } from "./contracts.ts";
 import { automationStudioSubflowBriefWords } from "./brief-words.ts";
@@ -209,8 +220,11 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   scope: AutomationStudioSubflowScope;
   siblings: ScopedInput["siblings"];
   submission: ScopedInput["submission"];
-  /** The partial-trial port, and the site reset its gate asks before each trial (`./subflow-trial-gate.ts`, t578). */
-  trial?: { port: AutomationStudioSubflowTrialPreparingPort; reset?: AutomationStudioSiteResetTrialReset | undefined } | undefined;
+  /**
+   * The partial-trial port, and the site reset its gate asks before each trial (`./subflow-trial-gate.ts`, t578);
+   * `moves`, how many times the reset's start check has moved the target (header, t738).
+   */
+  trial?: { port: AutomationStudioSubflowTrialPreparingPort; reset?: AutomationStudioSiteResetTrialReset | undefined; moves?: (() => number) | undefined } | undefined;
   /** Suffixes the opening call's id; passed only when builders of one Flow may run at once (header). */
   callScope?: string | undefined;
   /** Told each proposal Core accepted, so a caller whose loop then fails still knows the latest one. */
@@ -316,7 +330,12 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
     completionSchema: completionSchema(subflowKey),
     executeTool: async (call) => {
       if (call.toolId === AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID) {
-        const answered = await gate.test(call.value, call.signal);
+        // The page the test left, when it ran or its checks moved the tab (header, t738).
+        const moves = input.trial?.moves;
+        const before = moves?.();
+        const tested = await gate.test(call.value, call.signal);
+        const targetMoved = before !== undefined && moves!() > before;
+        const answered = await automationStudioCandidateTrialView({ answer: tested, targetMoved, tools: input.loop.tools, executeTool: (look) => input.loop.executeTool(look), callId: call.callId, signal: call.signal ?? signal });
         const trial = answeredTrial(answered, gate);
         if (trial) {
           tried = true;

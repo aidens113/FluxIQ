@@ -456,8 +456,9 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
  * asked about and goes to the domain as it came.
  */
 function claimed(siteReset: AutomationStudioSiteResetCalls, value: JsonObject): { value: JsonObject; claim: AutomationStudioSiteResetClaim } {
-  const { resetDestination: _destination, [AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY]: undoes, ...rest } = value;
-  return { value: rest, claim: undoes === undefined ? { kind: "none" } : siteReset.claim(undoes) };
+  const { resetDestination, [AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY]: undoes, ...rest } = value;
+  // The ref the same call names goes with the claim, so one no receipt printed is refused before the call runs (rerun round 2).
+  return { value: rest, claim: undoes === undefined ? { kind: "none" } : siteReset.claim(undoes, resetDestination) };
 }
 
 /**

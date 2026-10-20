@@ -206,7 +206,7 @@ function validateSubflow(
       if (targetPort?.multiple === true) joined.push([edge.source.nodeKey, edge.target.nodeKey]);
     }
   }
-  validateRequiredInputConnections(subflow, nodes, issues, path);
+  issues.push(...inputIssues({ subflow, definitions: new Map([...nodes].map(([key, item]) => [key, item.definition])), path }));
   const handlers = new Set([...nodes].filter(([, item]) => item.node.definitionId === AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS.handler).map(([key]) => key));
   validateConnectivityAndDepth(nodes, adjacency, indegree, undirected, joined, handlers, scope.size, issues, path);
 }
@@ -356,16 +356,63 @@ function validateOutputAction(node: AutomationStudioFlowBootstrapNode, definitio
   if (contract.allowedOutputIds && !contract.allowedOutputIds.includes(node.outputActionId)) issues.push(error("bootstrap.invalid_output_action", "Node output action is outside the allowed output contract.", `${path}.outputActionId`));
 }
 
-function validateRequiredInputConnections(
-  subflow: AutomationStudioFlowBootstrapSubflow,
-  nodes: Map<string, { node: AutomationStudioFlowBootstrapNode; definition?: AutomationStudioNodeDefinition }>,
-  issues: AutomationStudioFlowBootstrapIssue[],
-  path: string
-): void {
-  const connected = new Set(subflow.edges.map((edge) => `${edge.target.nodeKey}:${edge.target.portId}`));
-  for (const [key, item] of nodes) for (const port of item.definition?.inputs ?? []) {
-    if (port.required && !connected.has(`${key}:${port.id}`)) issues.push(error("bootstrap.required_input_unconnected", "Required node input port is not connected.", `${path}.nodes.${key}.inputs.${port.id}`));
+/**
+ * How a script feeds an input port, told beside the refusal of one nothing
+ * feeds. Fixed words: no key, port or value is inserted.
+ */
+const UNCONNECTED_INSTEAD = "No script line connects a step's input by name: a step is joined to the step written just before it, and a row loop's list is fed by `repeat over: <the listing step's label>`. Write this step where the step it takes its input from runs just before it, or use a node that takes the value in a parameter you write, with `$step.<label>.<output>` for an earlier step's output.";
+
+/**
+ * What a Subflow's nodes are not given on their inputs, each issue at
+ * `<path>.nodes.<index>`: a required input port nothing connects, and an input
+ * a same-id parameter stands in for with neither written nor connected.
+ *
+ * **Each issue is said at the node's index, never its key (t738).** Office run
+ * `run-mvgf04kw-310fc169` (0216-0220) was refused at `nodes.s13.inputs.records`;
+ * the locator reads node paths by index (`../authoring/locate-issue.ts`), so
+ * the key fell through to the block's own place, and the model was told to
+ * correct the block's first step, which was right as written.
+ *
+ * **A parameter that stands in for a port.** A node may take its value in a
+ * parameter of the same id as an input port (Write Records' `records`), so the
+ * port is not required and the required-input check never sees it. Given
+ * neither, the node failed only once it ran (`record_output.no_records`); it is
+ * refused here, at the parameter the model writes.
+ */
+function inputIssues(input: {
+  subflow: AutomationStudioFlowBootstrapSubflow;
+  /** Each node's definition by node key, where the registry has one. */
+  definitions: ReadonlyMap<string, AutomationStudioNodeDefinition | undefined>;
+  /** `plan.subflows.<S>`. */
+  path: string;
+}): AutomationStudioFlowBootstrapIssue[] {
+  const connected = new Set(input.subflow.edges.map((edge) => `${edge.target.nodeKey}:${edge.target.portId}`));
+  const issues: AutomationStudioFlowBootstrapIssue[] = [];
+  for (const [index, node] of input.subflow.nodes.entries()) {
+    const definition = input.definitions.get(node.key);
+    if (!definition) continue;
+    const nodePath = `${input.path}.nodes.${index}`;
+    for (const port of definition.inputs) {
+      if (connected.has(`${node.key}:${port.id}`)) continue;
+      if (port.required) {
+        issues.push({ ...error("bootstrap.required_input_unconnected", "Required node input port is not connected.", `${nodePath}.inputs.${port.id}`), instead: UNCONNECTED_INSTEAD });
+        continue;
+      }
+      const standIn = definition.parameters.find((parameter) => parameter.id === port.id);
+      const written = node.parameters?.[port.id] ?? standIn?.defaultValue;
+      if (!standIn || (written !== undefined && written !== null)) continue;
+      issues.push({
+        ...error("bootstrap.missing_parameter", "Node input is given neither in its parameter of the same id nor by a connection.", `${nodePath}.parameters.${port.id}`),
+        instead: standInInstead(port.id)
+      });
+    }
   }
+  return issues;
+}
+
+/** What a step given neither writes instead. Only the parameter's id, an identifier, is inserted. */
+function standInInstead(id: string): string {
+  return `This step takes its ${JSON.stringify(id)} from the parameter ${JSON.stringify(id)}, since no script line connects its input of that name, and it was given neither. Write \`${id}:\` on this step; ask core.describe_nodes for the shape it takes.`;
 }
 
 /**

@@ -139,3 +139,31 @@ async function userMessage(request: AutomationStudioLlmTaskRequest): Promise<str
   const body = JSON.parse(outbound) as { messages: Array<{ role: string; content: string }> };
   return body.messages.find((message) => message.role === "user")!.content;
 }
+
+// t738 (photo rerun round 2, `run-mvgf801u-cc23575e`, 0057): a refused test whose
+// checks moved the tab shows where it left it.
+const refusal = (effectApplied: boolean): AutomationStudioLlmEvidenceToolExecutionResult => ({ kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "candidate.trial_reset_required", instruction: "Undo each act." }, effectApplied, targetsUnchanged: !effectApplied, resultCode: "candidate.trial_reset_required", resultReason: "retry_allowed" });
+const REFUSED_PAGE = { page: "PAGE \"Reading list\"\nURL ~/list", handles: ["t3"] };
+
+describe("a refused test and the page its checks left", () => {
+  it("is looked at when the caller says the checks moved the tab, and answered as having moved it", async () => {
+    const executeTool = vi.fn(async () => ({ kind: "llm_evidence_tool_execution", evidence: REFUSED_PAGE, effectApplied: false }));
+    const answered = await automationStudioCandidateTrialView({ answer: refusal(false), targetMoved: true, tools: [look], executeTool, callId: "test.9" });
+    expect(executeTool).toHaveBeenCalledTimes(1);
+    expect(answered).toMatchObject({ effectApplied: true, targetsUnchanged: false, resultCode: "candidate.trial_reset_required", resultReason: "retry_allowed" });
+    expect(answered.evidence).toMatchObject({ code: "candidate.trial_reset_required", pageAfterTrial: REFUSED_PAGE });
+    expect(String((answered.evidence as { pageAfterTrialNote: string }).pageAfterTrialNote)).toContain("No trial ran");
+  });
+
+  it("says to look again, in a refusal's words, when that look failed", async () => {
+    const answered = await automationStudioCandidateTrialView({ answer: refusal(true), tools: [look], executeTool: async () => { throw new Error("capture failed"); }, callId: "test.10" });
+    expect(answered.evidence).not.toHaveProperty("pageAfterTrial");
+    expect(String((answered.evidence as { pageAfterTrialNote: string }).pageAfterTrialNote)).toMatch(/No trial ran.*look at it again/u);
+  });
+
+  it("is left as it was when nothing moved", async () => {
+    const executeTool = vi.fn();
+    expect(await automationStudioCandidateTrialView({ answer: refusal(false), targetMoved: false, tools: [look], executeTool, callId: "test.11" })).toEqual(refusal(false));
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+});

@@ -41,6 +41,7 @@ import {
 import { AUTOMATION_STUDIO_REQUIRED_OUTCOME_UNKNOWN } from "./command-scope/index.ts";
 import { automationStudioRepeatNoProgress } from "./repeat-progress/index.ts";
 import { automationStudioTraceWithholding, automationStudioWithholdRunInputs, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
+import { automationStudioExecutedLocations } from "./executed-locations/index.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
 import { automationStudioActivityHold, automationStudioActivityLoopWords, automationStudioActivityStepAnnounced, automationStudioActivityStepNumbers, emitAutomationStudioActivityStep } from "../activity/index.ts";
 
@@ -202,6 +203,8 @@ async function runGraphToTrace(
   const saved = automationStudioTraceWithLifecycle(withheld, lifecycle, options.invocation);
   withheldBySavedTrace.set(saved, withholding.values());
   capturedBySavedTrace.set(saved, runState.records.captured());
+  // A step's page address the saved trace withheld, read back by a trial act alone (`./executed-locations/`, t738).
+  automationStudioExecutedLocations.remember(defended, saved);
   onExecutedTrace?.(defended, saved);
   return saved;
 }

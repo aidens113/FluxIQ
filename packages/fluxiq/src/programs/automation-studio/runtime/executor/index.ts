@@ -21,4 +21,6 @@ export { automationStudioTraceSummary } from "./trace-summary.ts";
 // A saved trace keeps each value once; this reads an attempt's inputs back whole (t377).
 export { automationStudioAttemptInputs, automationStudioWithWholeAttemptInputs } from "./node-execution/index.ts";
 export { AUTOMATION_STUDIO_WITHHELD_VALUE } from "./trace-withholding.ts";
+// The page address a saved trace withheld from a step's controls, read back for a trial act alone (t738).
+export { automationStudioExecutedLocations } from "./executed-locations/index.ts";
 export { automationStudioExpectationSatisfiedAfterFailure, compareAutomationStudioTransition } from "./transition-comparison.ts";
