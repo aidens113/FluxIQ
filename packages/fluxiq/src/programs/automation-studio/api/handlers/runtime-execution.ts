@@ -4,6 +4,7 @@
 import { AUTOMATION_STUDIO_ENDPOINTS, type AppendRecordingDomainEventRequest, type InspectStateDiffRequest, type ValidateRecordingDomainEventRequest } from "../contracts.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../model/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY, AUTOMATION_STUDIO_RUNTIME_SESSION_LLM_INTENTS, automationStudioRunChangedDurableBehavior, automationStudioWithWholeAttemptInputs, parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioRuntimeSessionLlm } from "../../runtime/index.ts";
+import { AutomationStudioGatewayTraceInstallation } from "../../runtime/gateway-trace/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import { automationStudioRunRefusalResponse } from "./run-refusal/index.ts";
 
@@ -38,6 +39,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
       const runId = typeof payload.runId === "string" ? payload.runId.trim() : "";
       if (!projectId || !runId) return { ok: false, error: "Stopping a run needs its project and run IDs." };
       const reason = typeof payload.reason === "string" && payload.reason.trim() ? payload.reason.trim().slice(0, 500) : undefined;
+      recordCancelIntoRunTrace(projectId, runId, reason ?? null);
       return { ok: true, payload: { runtimeSession: automationStudioWithWholeAttemptInputs(await service.cancelRuntimeSession(projectId, runId, reason)) } };
     }
   });
@@ -203,4 +205,17 @@ function reauthoredOf(detail: AutomationStudioFlowRunDetail | null): { reauthore
   if (!marker || typeof marker !== "object" || Array.isArray(marker) || typeof marker.adaptationId !== "string") return {};
   if (marker.applied === true) return { reauthored: "applied" };
   return typeof marker.notAppliedReason === "string" ? { reauthored: "not_applied" } : {};
+}
+
+/**
+ * A stop arrives over HTTP, outside the run's own async context, so it is
+ * recorded as a control event into the run's open trace, found by its run id
+ * (the episode id, D9), before the run is told to stop. Nothing happens with
+ * tracing off, or when the run has no open trace in this project.
+ */
+function recordCancelIntoRunTrace(projectId: string, runId: string, reason: string | null): void {
+  const episodes = AutomationStudioGatewayTraceInstallation.current();
+  const episode = episodes?.registry.byRunId(runId);
+  if (episodes === undefined || episode === undefined || episode.projectId !== projectId) return;
+  episodes.recordControl({ type: "run_control", payload: { action: "cancel", projectId, runId, reason } }, episode);
 }

@@ -13,6 +13,7 @@
 // three functions.
 
 import type { AutomationStudioConversationAsk, AutomationStudioConversationAskInput, AutomationStudioConversationSubject, AutomationStudioConversationWriter } from "../conversations/index.ts";
+import { AutomationStudioGatewayTraceInstallation } from "../gateway-trace/installation.ts";
 import type { AutomationStudioAsk } from "./ask.ts";
 import type { AutomationStudioAskAnswer } from "./answer.ts";
 import type { AutomationStudioParkingPort } from "./port.ts";
@@ -60,52 +61,73 @@ export function automationStudioConversationParkingPort(input: AutomationStudioC
   const pollIntervalMs = Math.max(1, input.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS);
   let writer: AutomationStudioConversationWriter | undefined;
   const thread = (): AutomationStudioConversationWriter => (writer ??= host.writerFor({ projectId: input.projectId, subject: input.subject }));
+  // Waits in place until the ask is answered, expires, or the run is cancelled.
+  async function waitForAnswer(ask: AutomationStudioAsk, wait: { expiresAtMs?: number; signal?: AbortSignal }): Promise<AutomationStudioAskAnswer | undefined> {
+    for (;;) {
+      // Listening starts before the thread is read, never after it. An answer
+      // written in the gap between the two would otherwise wake nothing, and
+      // the run would sit out a whole poll interval waiting for news that had
+      // already arrived.
+      const settling = listenForSettlement(host, ask.askId);
+      try {
+        // A thread that cannot be read fails the run, with the store's own
+        // error, and a thread that no longer holds the ask fails it with the
+        // sentence below. Neither is swallowed, because the one outcome this
+        // mechanism must never produce is a run waiting forever on a question
+        // nobody will ever answer.
+        const settled = await host.getAsk({ projectId: input.projectId, askId: ask.askId });
+        if (settled === null) throw new Error(`Ask ${ask.askId} is no longer in its thread, so this run has nothing left to wait for.`);
+        const answer = settledAnswer(settled);
+        if (answer !== undefined) return answer;
+        if (settled.status === "expired") return undefined;
+        // A cancelled run is not a question that timed out, but it is a run
+        // that must stop waiting. It leaves the node by the timed-out route
+        // and the executor's own cancellation check ends it before the next
+        // node.
+        if (wait.signal?.aborted) return undefined;
+        if (wait.expiresAtMs !== undefined && now() >= wait.expiresAtMs) {
+          // The store decides the race: an answer that landed first comes
+          // back instead of the timeout that was about to be declared, which
+          // is the only way an ask cannot end up both answered and timed out.
+          return settledAnswer(await host.expireAsk({ projectId: input.projectId, askId: ask.askId }));
+        }
+        await nextLook({
+          settled: settling.settled,
+          pollIntervalMs,
+          now,
+          ...(wait.expiresAtMs === undefined ? {} : { expiresAtMs: wait.expiresAtMs }),
+          ...(wait.signal ? { signal: wait.signal } : {})
+        });
+      } finally {
+        settling.stop();
+      }
+    }
+  }
+
   return {
     open: async (ask) => {
       await thread().ask({ text: ask.text, ask: automationStudioConversationAskInput(ask) });
     },
     awaitAnswer: async (ask, wait) => {
-      for (;;) {
-        // Listening starts before the thread is read, never after it. An answer
-        // written in the gap between the two would otherwise wake nothing, and
-        // the run would sit out a whole poll interval waiting for news that had
-        // already arrived.
-        const settling = listenForSettlement(host, ask.askId);
-        try {
-          // A thread that cannot be read fails the run, with the store's own
-          // error, and a thread that no longer holds the ask fails it with the
-          // sentence below. Neither is swallowed, because the one outcome this
-          // mechanism must never produce is a run waiting forever on a question
-          // nobody will ever answer.
-          const settled = await host.getAsk({ projectId: input.projectId, askId: ask.askId });
-          if (settled === null) throw new Error(`Ask ${ask.askId} is no longer in its thread, so this run has nothing left to wait for.`);
-          const answer = settledAnswer(settled);
-          if (answer !== undefined) return answer;
-          if (settled.status === "expired") return undefined;
-          // A cancelled run is not a question that timed out, but it is a run
-          // that must stop waiting. It leaves the node by the timed-out route
-          // and the executor's own cancellation check ends it before the next
-          // node.
-          if (wait.signal?.aborted) return undefined;
-          if (wait.expiresAtMs !== undefined && now() >= wait.expiresAtMs) {
-            // The store decides the race: an answer that landed first comes
-            // back instead of the timeout that was about to be declared, which
-            // is the only way an ask cannot end up both answered and timed out.
-            return settledAnswer(await host.expireAsk({ projectId: input.projectId, askId: ask.askId }));
-          }
-          await nextLook({
-            settled: settling.settled,
-            pollIntervalMs,
-            now,
-            ...(wait.expiresAtMs === undefined ? {} : { expiresAtMs: wait.expiresAtMs }),
-            ...(wait.signal ? { signal: wait.signal } : {})
-          });
-        } finally {
-          settling.stop();
-        }
-      }
+      const answer = await waitForAnswer(ask, wait);
+      recordConsumedAnswer(ask.askId, answer);
+      return answer;
     }
   };
+}
+
+/**
+ * The answer a waiting episode consumes reaches Core over HTTP, outside the
+ * socket, so it is recorded as a control event into the episode that waits:
+ * `awaitAnswer` runs in that episode's own async context, so the ambient
+ * episode is the one that consumes it, and what is recorded is exactly what it
+ * goes on with -- the answer, or none when the wait ended unanswered (timed
+ * out, or the run was cancelled). Nothing is recorded with tracing off or
+ * outside every traced episode. A wait that failed records nothing: its error
+ * is what the episode goes on with.
+ */
+function recordConsumedAnswer(askId: string, answer: AutomationStudioAskAnswer | undefined): void {
+  AutomationStudioGatewayTraceInstallation.current()?.recordControl({ type: "ask_answer", payload: { askId, answered: answer !== undefined, answer: answer ?? null } });
 }
 
 /**

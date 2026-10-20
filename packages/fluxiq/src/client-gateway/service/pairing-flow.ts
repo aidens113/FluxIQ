@@ -8,6 +8,7 @@ import type { ClientGatewaySessionRegistry } from "./sessions.ts";
 import type { ClientGatewayTransport } from "./transport.ts";
 import type { ClientGatewayTrustedClientRegistry } from "./trusted-clients.ts";
 import type { InternalSession } from "./types.ts";
+import type { ClientGatewayTraceTap } from "./trace-tap/index.ts";
 
 import type { ClientGatewayFacadePorts } from "./facade-ports.ts";
 
@@ -28,6 +29,7 @@ type PairingFlowCollaborators = {
   transport: ClientGatewayTransport;
   audit: ClientGatewayAuditLog;
   events: ClientGatewayEventBus;
+  trace: ClientGatewayTraceTap;
   // Calls into the service's public surface go through this port, never
   // through the collaborator that owns the method. See ./facade-ports.ts.
   facade: ClientGatewayFacadePorts;
@@ -48,6 +50,7 @@ export class ClientGatewayPairingFlow {
   private readonly audit: ClientGatewayAuditLog;
   private readonly events: ClientGatewayEventBus;
   private readonly facade: ClientGatewayFacadePorts;
+  private readonly trace: ClientGatewayTraceTap;
 
   constructor(collaborators: PairingFlowCollaborators) {
     this.config = collaborators.config;
@@ -58,6 +61,7 @@ export class ClientGatewayPairingFlow {
     this.audit = collaborators.audit;
     this.events = collaborators.events;
     this.facade = collaborators.facade;
+    this.trace = collaborators.trace;
   }
 
   create(input: {
@@ -185,6 +189,7 @@ export class ClientGatewayPairingFlow {
     this.sessions.attachTrustedClient(session, trustedClient);
     if (pairing.projectId !== undefined) session.projectId = pairing.projectId;
     session.pairedAt = now;
+    this.trace.lifecycle({ sessionId, clientId: session.clientId }, "pairing.approved", { trustedClientId: trustedClient.trustedClientId, projectId: pairing.projectId ?? null });
     await this.transport.send(sessionId, this.transport.message("server.session_ready", {
       sessionId,
       token,

@@ -12,13 +12,16 @@ class SilentWebSocket implements FluxIQWebSocketLike {
   static last: SilentWebSocket | undefined;
   readyState = 0;
   closed = false;
+  readonly sent: string[] = [];
   private readonly listeners = new Map<string, Set<(event: unknown) => void>>();
 
   constructor(readonly url: string) {
     SilentWebSocket.last = this;
   }
 
-  send(): void {}
+  send(data: string): void {
+    this.sent.push(data);
+  }
 
   close(): void {
     this.closed = true;
@@ -105,5 +108,44 @@ describe("FluxIQClientGatewayWebSocketClient.connect deadline", () => {
   it("refuses a deadline that is not a positive finite number", () => {
     expect(() => client(0)).toThrow(/openTimeoutMs/u);
     expect(() => client(Number.NaN)).toThrow(/openTimeoutMs/u);
+  });
+});
+
+describe("FluxIQClientGatewayWebSocketClient.send envelope", () => {
+  async function ready(): Promise<{ gateway: FluxIQClientGatewayWebSocketClient; socket: SilentWebSocket }> {
+    let minted = 0;
+    const gateway = new FluxIQClientGatewayWebSocketClient({
+      url: "ws://127.0.0.1:1/client",
+      client: { clientId: "extension.test", clientType: "extension", name: "Test extension" },
+      WebSocketImpl: SilentWebSocket,
+      idFactory: () => `fresh.${++minted}`,
+      now: () => 5_000
+    });
+    const connected = gateway.connect();
+    const socket = SilentWebSocket.last!;
+    socket.dispatch("open");
+    await connected;
+    const session = { id: "server-message.1", type: "server.session_ready", protocolVersion: 1, timestamp: 1, payload: { sessionId: "wire.now" } };
+    socket.dispatch("message", { data: JSON.stringify(session) });
+    socket.sent.length = 0;
+    return { gateway, socket };
+  }
+
+  it("keeps a queued envelope's id, timestamp and correlation id, under the current socket's session (D16)", async () => {
+    const { gateway, socket } = await ready();
+    const sent = await gateway.send("client.state_update", { state: { step: 1 } }, { id: "queued.7", timestamp: 1_234, correlationId: "command.3" });
+    const wire = JSON.parse(socket.sent[0]!) as Record<string, unknown>;
+    expect(wire).toMatchObject({ id: "queued.7", timestamp: 1_234, correlationId: "command.3", sessionId: "wire.now", clientId: "extension.test" });
+    expect(sent).toMatchObject({ id: "queued.7", timestamp: 1_234, correlationId: "command.3" });
+  });
+
+  it("mints a fresh id and timestamp when none is given", async () => {
+    const { gateway, socket } = await ready();
+    await gateway.send("client.state_update", { state: { step: 1 } });
+    const wire = JSON.parse(socket.sent[0]!) as Record<string, unknown>;
+    expect(wire.id).toBe("fresh.2");
+    expect(wire.timestamp).toBe(5_000);
+    expect(wire.sessionId).toBe("wire.now");
+    expect("correlationId" in wire).toBe(false);
   });
 });

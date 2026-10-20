@@ -167,6 +167,46 @@ export type ClientGatewayActionResult = {
   metadata?: JsonObject;
 };
 
+/**
+ * Traces (traces and offline trials, P2). Core marks an action command it is
+ * tracing with `metadata.trace` (`ClientGatewayTraceRequest`): the client may
+ * then upload artifacts of what it observed for that command -- content
+ * addressed, PUT to `CLIENT_GATEWAY_TRACE_ARTIFACT_PATH/<sha256>` with its
+ * bearer token -- and reference them from its result's `metadata.trace`
+ * (`ClientGatewayTraceResultMetadata`). Core records the reference in the trace
+ * and takes it off the result before any consumer reads it, so nothing traced
+ * ever reaches a run, a recording or a model. A client that cannot capture
+ * ignores the request; its result simply carries no reference. Never a
+ * top-level key: the durable path refuses a result with an unknown one.
+ */
+export const CLIENT_GATEWAY_TRACE_METADATA_KEY = "trace";
+
+/** On a traced action command's `metadata.trace`. */
+export type ClientGatewayTraceRequest = { artifacts: true };
+
+/** `primary`: the observation itself; `resource`: something the primary artifact refers to, stored once per digest. */
+export const CLIENT_GATEWAY_TRACE_ARTIFACT_ROLES = Object.freeze(["primary", "resource"] as const);
+export type ClientGatewayTraceArtifactRole = (typeof CLIENT_GATEWAY_TRACE_ARTIFACT_ROLES)[number];
+
+/** One artifact a client uploaded for a traced command; `sha256` is the lower-case hex SHA-256 of its bytes. */
+export type ClientGatewayTraceArtifactReference = {
+  sha256: string;
+  mediaType: string;
+  byteLength: number;
+  role: ClientGatewayTraceArtifactRole;
+  /** Where the client found it, opaque to Core (the primary artifact refers to it by this). */
+  source?: string;
+};
+
+/** On a traced command's result `metadata.trace`: what the client uploaded, and how many artifacts it could not. */
+export type ClientGatewayTraceResultMetadata = {
+  artifacts: ClientGatewayTraceArtifactReference[];
+  unavailable: number;
+};
+
+/** Where a paired client uploads a trace artifact: `PUT <path>/<sha256>`, bearer token, `content-type` its media type. */
+export const CLIENT_GATEWAY_TRACE_ARTIFACT_PATH = "/api/client-gateway/trace-artifacts";
+
 /** An action result as a client sends it: Core's result, whose status may also be `interrupted`. */
 export type ClientGatewayReportedActionResult = Omit<ClientGatewayActionResult, "status"> & { status: ClientGatewayReportedActionStatus };
 

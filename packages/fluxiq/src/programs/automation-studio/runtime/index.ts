@@ -17,6 +17,7 @@ export * from "./flow-bootstrap/candidate/index.ts";
 export * from "./flow-change/index.ts";
 export * from "./flow-draft/index.ts";
 export * from "./flow-version/index.ts";
+export * from "./gateway-trace/index.ts";
 export * from "./host-runtime.ts";
 // The host-resource port a domain implements, published so a domain can declare its capacity (automation-project-agents-plan).
 export * from "./project-agents/host-resources/index.ts";

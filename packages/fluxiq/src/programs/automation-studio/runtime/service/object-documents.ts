@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import type { ClientGatewayService } from "../../../../client-gateway/index.ts";
 import type { JsonObject } from "../../../../core/index.ts";
 import { ProgramJsonStore, safeSegment } from "../../../_shared/storage.ts";
 import { normalizeAutomationStudioElementTarget, type AppendRecordingEntryInput, type AutomationStudioProjectArtifactKind, type RecordingSession, type StateSnapshot } from "../../model/index.ts";
@@ -25,6 +27,13 @@ export type AutomationStudioWriteProjectObjectAssetInput = {
   content: Buffer | Uint8Array;
   mediaType: string;
   expectedSha256?: string;
+  /**
+   * The paired client's gateway session the upload came from, and the
+   * client gateway's trace intake (D13): once the asset is stored, every open
+   * trace claiming that session takes it as an artifact, pinned in the trace's
+   * own store, so it outlives the recording prune of the legacy object store.
+   */
+  traceIntake?: { sessionId: string; gateway: Pick<ClientGatewayService, "receiveTraceArtifact"> };
 };
 
 export type AutomationStudioWriteProjectObjectAssetResult = {
@@ -64,10 +73,15 @@ export class AutomationStudioObjectDocuments {
     if (!isAutomationStudioRenderableAssetMediaType(input.mediaType)) {
       throw new Error("Automation Studio state assets must be PNG, JPEG, WebP, or GIF images.");
     }
+    // Checked before anything is written: a mismatched upload must leave no object behind.
+    if (input.expectedSha256 && createHash("sha256").update(input.content).digest("hex") !== input.expectedSha256.toLowerCase()) {
+      throw new Error("Automation Studio state asset digest does not match the requested object digest.");
+    }
     const reference = await this.objectStore.putBytes(input.projectId, input.content, input.mediaType, input.recordingId ? { recordingId: input.recordingId } : {});
     const sha256 = reference.$fluxiqObject.sha256;
-    if (input.expectedSha256 && sha256 !== input.expectedSha256.toLowerCase()) {
-      throw new Error("Automation Studio state asset digest does not match the requested object digest.");
+    if (input.traceIntake !== undefined) {
+      const upload = { sha256, mediaType: reference.$fluxiqObject.mediaType, bytes: new Uint8Array(input.content) };
+      input.traceIntake.gateway.receiveTraceArtifact(input.traceIntake.sessionId, upload);
     }
     return {
       sha256,

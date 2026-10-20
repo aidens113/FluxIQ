@@ -9,6 +9,7 @@ import type { ClientGatewaySessionRegistry } from "./sessions.ts";
 import type { ClientGatewayTransport } from "./transport.ts";
 import type { ClientGatewayTrustedClientRegistry } from "./trusted-clients.ts";
 import type { InternalSession } from "./types.ts";
+import type { ClientGatewayTraceTap } from "./trace-tap/index.ts";
 
 import type { ClientGatewayFacadePorts } from "./facade-ports.ts";
 
@@ -20,6 +21,7 @@ type LifecycleCollaborators = {
   audit: ClientGatewayAuditLog;
   events: ClientGatewayEventBus;
   pairingFlow: ClientGatewayPairingFlow;
+  trace: ClientGatewayTraceTap;
   // Calls into the service's public surface go through this port, never
   // through the collaborator that owns the method. See ./facade-ports.ts.
   facade: ClientGatewayFacadePorts;
@@ -39,6 +41,7 @@ export class ClientGatewayLifecycle {
   private readonly events: ClientGatewayEventBus;
   private readonly pairingFlow: ClientGatewayPairingFlow;
   private readonly facade: ClientGatewayFacadePorts;
+  private readonly trace: ClientGatewayTraceTap;
 
   constructor(collaborators: LifecycleCollaborators) {
     this.config = collaborators.config;
@@ -49,11 +52,14 @@ export class ClientGatewayLifecycle {
     this.events = collaborators.events;
     this.pairingFlow = collaborators.pairingFlow;
     this.facade = collaborators.facade;
+    this.trace = collaborators.trace;
   }
 
   connect(input: { socket?: ClientGatewaySocket; hello?: ClientGatewayClientHello } = {}): ClientGatewaySession {
     const session = this.sessions.create(input);
     this.audit.record("session.connected", "Client connected.", { sessionId: session.sessionId, clientId: session.clientId });
+    // A hello handed over with the connection goes to the traces claiming its client, its token redacted (D7).
+    this.trace.lifecycle({ sessionId: session.sessionId, clientId: session.clientId }, "session.connected", { hello: input.hello ?? null }, [["hello", "token"]]);
     if (input.hello) void this.handleHello(session.sessionId, input.hello);
     return this.sessions.toPublic(session);
   }
@@ -98,6 +104,7 @@ export class ClientGatewayLifecycle {
     this.pairingFlow.withdrawForSession(sessionId, reason);
     void next.socket?.close?.(1000, reason);
     this.audit.record("session.disconnected", "Client disconnected.", { sessionId, reason });
+    this.trace.lifecycle({ sessionId, clientId: next.clientId }, "session.disconnected", { reason });
     void this.events.emit({ type: "session.disconnected", session: this.sessions.toPublic(next) });
     return this.sessions.toPublic(next);
   }

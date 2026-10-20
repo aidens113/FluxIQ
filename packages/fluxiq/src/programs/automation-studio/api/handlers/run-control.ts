@@ -15,6 +15,7 @@
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../contracts.ts";
 import { automationStudioRunControlOf, automationStudioRunProgress, type AutomationStudioRunControlSnapshot, type AutomationStudioRunProgress } from "../../runtime/index.ts";
 import type { AutomationStudioRuntimeSession } from "../../model/index.ts";
+import { AutomationStudioGatewayTraceInstallation } from "../../runtime/gateway-trace/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
 /**
@@ -65,7 +66,9 @@ export function registerRunControlEndpoints(dependencies: AutomationStudioApiDep
       if (!target) return { ok: false, error: "Pausing a run needs its project and run IDs." };
       if (payload.takeControl !== undefined && typeof payload.takeControl !== "boolean") return { ok: false, error: "takeControl must be true or false." };
       const reason = text(payload.reason);
-      const control = runControl()?.pause(target.projectId, target.runId, { holder: payload.takeControl === true ? "person" : "fluxiq", ...(reason ? { reason } : {}) }) ?? null;
+      const holder = payload.takeControl === true ? "person" : "fluxiq";
+      recordIntoRunTrace(target, { action: "pause", holder, reason: reason ?? null });
+      const control = runControl()?.pause(target.projectId, target.runId, { holder, ...(reason ? { reason } : {}) }) ?? null;
       return { ok: true, payload: await answer(target, control, true) };
     }
   });
@@ -81,6 +84,7 @@ export function registerRunControlEndpoints(dependencies: AutomationStudioApiDep
       if (!target) return { ok: false, error: "Resuming a run needs its project and run IDs." };
       if (payload.afterManualAction !== undefined && typeof payload.afterManualAction !== "boolean") return { ok: false, error: "afterManualAction must be true or false." };
       const note = text(payload.note);
+      recordIntoRunTrace(target, { action: "resume", afterManualAction: payload.afterManualAction === true, note: note ?? null });
       const control = await service.instructionAuthority.resume(target.projectId, target.runId, { afterManualAction: payload.afterManualAction === true, ...(note ? { note } : {}) });
       return { ok: true, payload: await answer(target, control, true) };
     }
@@ -97,6 +101,20 @@ export function registerRunControlEndpoints(dependencies: AutomationStudioApiDep
       return { ok: true, payload: await answer(target, runControl()?.snapshot(target.projectId, target.runId) ?? null, false) };
     }
   });
+}
+
+/**
+ * Holding or resuming a run arrives over HTTP, outside the run's own async
+ * context, so it is recorded as a control event into the run's open trace,
+ * found by its run id (the episode id, D9), before the request takes effect.
+ * Nothing happens with tracing off, or when the run has no open trace in this
+ * project.
+ */
+function recordIntoRunTrace(target: RunTarget, control: { action: "pause"; holder: "person" | "fluxiq"; reason: string | null } | { action: "resume"; afterManualAction: boolean; note: string | null }): void {
+  const episodes = AutomationStudioGatewayTraceInstallation.current();
+  const episode = episodes?.registry.byRunId(target.runId);
+  if (episodes === undefined || episode === undefined || episode.projectId !== target.projectId) return;
+  episodes.recordControl({ type: "run_control", payload: { ...control, projectId: target.projectId, runId: target.runId } }, episode);
 }
 
 function record(value: unknown): Record<string, unknown> {
