@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A re-authored Flow's re-run is judged as a repair, and so with the caller's key.
 //
 // The paired extension's Automations Run pays only for the result checks that

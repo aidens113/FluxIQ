@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // The three fixture-heavy cases carry their own 60s budget rather than the
 // suite's 15s. They do real work - one measured 8.6s alone - and after the
 // runtime tests were split across more files, full-suite contention left too

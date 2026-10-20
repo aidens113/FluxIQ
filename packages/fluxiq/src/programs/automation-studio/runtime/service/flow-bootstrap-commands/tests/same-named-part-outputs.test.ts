@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Two parts of one Flow script that hand back an output of the same name
 // (t404's recovery matrix, row 8; contract C12's known alternative always has
 // two). Authoring gives a part's interface ports `id: name`, so both parts'

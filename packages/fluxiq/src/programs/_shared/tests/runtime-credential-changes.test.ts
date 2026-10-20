@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // The global runtime subscribes Secret Keys to Identity Access's credential-change
 // port. These tests run at the production derivation cost. "admin" is the
 // bootstrap administrator's default password; every other password is a dummy.

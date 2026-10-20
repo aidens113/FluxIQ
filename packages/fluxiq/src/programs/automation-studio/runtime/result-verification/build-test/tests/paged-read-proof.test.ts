@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Proof 1 of the read-list redesign (`read-list-collect-design.md` section 7):
 // a provider-free build test of lane C's shape, end to end.
 //

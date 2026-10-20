@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A project build its time limit stops, through the actual service (t601).
 // Everything-store `run-mv8id5vg` reached its time limit and the person read
 // "The supervisor ended the build: it could not finish the Flow", though the

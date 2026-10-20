@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A build whose model provider stops answering, through the real
 // `generateFlowBootstrapAdaptation`: three unanswered requests in a row end the
 // build at once with a message saying the provider is not responding -- no

@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Legacy Automation Studio project workspaces, as the global runtime finds them on disk.
 
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";

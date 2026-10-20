@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A Flow the model says is ready is judged, through the real
 // `generateFlowBootstrapAdaptation` (t195-w25, phase 2's judge).
 //

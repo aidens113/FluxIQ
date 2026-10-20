@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A re-authored Flow is kept only after a whole run that ran it is judged to
 // answer (user, 2026-10-02; t267 blocker 5).
 //

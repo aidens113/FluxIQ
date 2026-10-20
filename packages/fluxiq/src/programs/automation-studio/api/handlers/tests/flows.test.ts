@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Covers handlers/flows.ts, whose graph patch endpoints are the normal editor
 // write API.
 

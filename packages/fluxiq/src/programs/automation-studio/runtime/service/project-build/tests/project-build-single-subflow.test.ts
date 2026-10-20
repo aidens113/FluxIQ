@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A one-part project build through the actual service makes one brief (t679;
 // cost-gap design (5)): a scripted model plays the supervisor and the builder
 // on a stub domain, a community garden's plot board, where a Flow's "Book"

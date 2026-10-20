@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // What "automate this" answers when its build ended because the AI model
 // provider answered nothing (t619), in both authoring modes: Core's ending,
 // whole, then the Flow's state, and the instruction said to be kept once. The

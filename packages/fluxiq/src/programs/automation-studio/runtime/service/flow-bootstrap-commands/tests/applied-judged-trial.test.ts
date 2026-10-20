@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A candidate build's judged-yes trial, remembered by the Flow it saved (t662),
 // through the actual service: the build proposes on two yeses, the chat
 // approves and applies, apply records the trial against the versions it saved,

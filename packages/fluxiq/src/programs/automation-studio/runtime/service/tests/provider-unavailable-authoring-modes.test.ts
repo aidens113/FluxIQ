@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A candidate build and a project build whose model provider answers nothing,
 // through the real `generateFlowBootstrapAdaptation` (t619).
 //

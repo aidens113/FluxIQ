@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Cancelling a run through the real service settles the wait of a run that was
 // parked on a question, and says nothing about a run that was not.
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";

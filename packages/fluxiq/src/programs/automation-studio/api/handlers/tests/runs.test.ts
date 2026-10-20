@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Covers handlers/runs.ts. Starts with export-flow-run-audit, which Runtime
 // Debug's Export Audit button calls and reads back as `payload.audit`.
 

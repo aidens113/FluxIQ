@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // The host's wiring of late action results (C8): the gateway is told which run
 // a command is sent from (`commandOwner`, read from the run's activity scope),
 // and its late results go to Automation Studio's recorder. A result for an

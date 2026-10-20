@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A build that runs out keeps its draft, and the next build of the Flow
 // continues from it -- through the real `generateFlowBootstrapAdaptation`,
 // because all of it is wiring: the service used to drop the loop's steps on

@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 import { expect, it, vi } from "vitest";
 import { canonicalFixture } from "./fixture.ts";
 import { AutomationStudioProjectAuthorityGuardStore as Guard } from "../../project/authority-guard/index.ts";

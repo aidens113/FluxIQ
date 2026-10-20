@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // The whole wrong-answer chain, provider-free, through the real service: a Flow
 // runs, returns the wrong dataset, the judge refutes it with a directive, the
 // re-author is handed that directive and edits the Flow, the edit is persisted,

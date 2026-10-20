@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A candidate build that fails after the model wrote its Flow (t362, lane A
 // round 4, `run-muyrpbnk-fef374e7`, C6): four revisions were accepted and two
 // were test-run, then twelve refused submissions stopped the build, which told

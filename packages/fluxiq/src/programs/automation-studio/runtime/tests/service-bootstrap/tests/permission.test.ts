@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // Building a Flow that needs an action with a lasting consequence: the build
 // asks, rather than refusing on the domain's judgement or taking the action.
 //

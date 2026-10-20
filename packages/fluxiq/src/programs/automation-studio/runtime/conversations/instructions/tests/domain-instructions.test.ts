@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // The bound domain's own system instructions reach the chat's model too: after
 // the panel's fixed vocabulary, before what only this message knows (the
 // project's Flows, what is on screen), with Core's answer-shape rules still

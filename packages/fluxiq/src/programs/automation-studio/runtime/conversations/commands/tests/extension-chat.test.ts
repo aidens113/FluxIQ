@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 import { plan } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 // The browser extension's chat, end to end in Core: what the extension's relay
 // sends reaches a real service through the real registry, and the Flow gets

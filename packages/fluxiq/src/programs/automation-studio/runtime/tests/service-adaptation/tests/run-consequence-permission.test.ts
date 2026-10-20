@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A run a person asked the model into needs no grant to call the model, and
 // still needs the person's permission for a lasting consequence.
 //

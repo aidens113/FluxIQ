@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // A pool keeps one connection per database file only inside a unit of work
 // (t435), and never leaves a handle that blocks removing the file afterwards.
 

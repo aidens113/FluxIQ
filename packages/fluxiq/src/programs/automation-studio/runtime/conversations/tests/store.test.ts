@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // What the conversation store has to be true about, proved against a real
 // project database rather than a stand-in: a turn appends, the thread reads
 // back in the order it was said, `sinceTurnId` returns only what followed, an
