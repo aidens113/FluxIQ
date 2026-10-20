@@ -24,6 +24,10 @@
 //   refusal listed (`steps`) and the entries Core showed the model about it
 //   (`feedback`) -- and `meta.json` (kind `answer`). They carry no provider and
 //   cost nothing.
+// - Reset folders `NNNN-reset` time the site reset a trial makes before it acts
+//   (`reset-step.ts`): `meta.json` alone, kind `reset`, its `stage`
+//   (`start_hook` or `site_check`), `trialToolId` and `outcome` code; nothing
+//   the reset saw. The Lab reads them as reset time inside a trial's window.
 // - `meta.json` is written last: a folder with it is complete. Every kind's
 //   carries `role` and `briefId`: the project agent that made the step
 //   (`automationStudioLlmStepLogScope.agent`), `null` outside every agent.
@@ -36,6 +40,7 @@
 export * from "./answer-step.ts";
 export * from "./directory.ts";
 export * from "./model-step.ts";
+export * from "./reset-step.ts";
 export * from "./scope.ts";
 export * from "./screen.ts";
 export * from "./tool-step.ts";
