@@ -34,6 +34,9 @@ type SocketRecord = {
   tokenInHello: boolean;
   // `server.pairing_required` came on this socket.
   pairingSeen: boolean;
+  // `server.session_ready` came on this socket and its lineage is decided:
+  // only then may client data cross it.
+  ready: boolean;
   // Event types whose `on` subscriptions are already dispatched from this client.
   readonly dispatched: Set<FluxIQClientGatewayWebSocketEventType>;
 };
@@ -158,12 +161,15 @@ export class FluxIQClientGatewayConnection {
   }
 
   /**
-   * Sends over the open socket, or queues the message in the outbox bound to
-   * the current trust lineage, project and recording, to be delivered after the
-   * next `server.session_ready` only where that binding still holds.
+   * Sends over a socket whose session is ready, or queues the message in the
+   * outbox bound to the current trust lineage, project and recording, to be
+   * delivered after the next `server.session_ready` only where that binding
+   * still holds. A socket that is open but still pairing, or whose token the
+   * gateway is still checking, carries no client data: an unapproved session
+   * may not receive it, so it waits in the queue like any other.
    */
   readonly send: ClientGatewayConnectionSender = async (type, payload) => {
-    const client = this.current?.client;
+    const client = this.current?.ready ? this.current.client : undefined;
     if (client?.connected) {
       await (client.send as LooseSend)(type, payload);
       return;
@@ -269,6 +275,7 @@ export class FluxIQClientGatewayConnection {
       }),
       tokenInHello: false,
       pairingSeen: false,
+      ready: false,
       dispatched: new Set()
     };
     return record;
@@ -353,6 +360,7 @@ export class FluxIQClientGatewayConnection {
     });
     client.on("session_ready", async ({ message }) => {
       await this.onSessionReady(record);
+      record.ready = true;
       handlers.onSessionReady?.(message);
     });
     for (const type of this.subscriptions.keys()) this.dispatchSubscriptions(record, type);

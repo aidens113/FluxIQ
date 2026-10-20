@@ -270,6 +270,23 @@ describe("FluxIQClientGatewayConnection offline queue", () => {
     expect(await h.outbox.size()).toBe(0);
   });
 
+  it("queues what is sent while the socket is open but still pairing, and sends nothing over it until the session is ready", async () => {
+    const h = harness();
+    const connecting = h.connection.connect();
+    await h.settle();
+    await connecting;
+    const socket = FakeSocket.latest();
+    socket.serverSays("server.pairing_required", { referenceCode: "REF-1", reason: "Approve this client." });
+    await h.settle();
+    await h.connection.send("client.state_update", { state: { step: 1 } });
+    expect(socket.sentTypes()).toEqual(["client.hello"]);
+    expect(await h.outbox.size()).toBe(1);
+    socket.serverSays("server.session_ready", { sessionId: "wire.1", token: SYNTHETIC_TOKEN });
+    await h.settle();
+    await h.connection.send("client.state_update", { state: { step: 2 } });
+    expect(socket.sentTypes()).toEqual(["client.hello", "client.state_update"]);
+  });
+
   it("sends straight to the socket once connected", async () => {
     const h = harness();
     const socket = await connectReady(h);
