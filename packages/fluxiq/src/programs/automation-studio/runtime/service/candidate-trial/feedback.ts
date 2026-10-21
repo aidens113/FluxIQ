@@ -13,7 +13,8 @@
 // "web.action.rate_limited": no control, nothing to say the second may pass when
 // tried again. A step now carries `control`, the words of the element its node
 // targets (the identity the domain resolved from its handle at submission,
-// already screened there: the same words the model's own step was bound to);
+// already screened there: the same words the model's own step was bound to;
+// a read of words an earlier step may change is named by what it read, t748);
 // `happened`, Core's plain sentence for the failure's category; `retryable`, the
 // producer's word that the same act unchanged may pass; and the producer's
 // `expected`/`actual`, which its contract keeps free of page content. The
@@ -140,7 +141,6 @@
 // `../../result-verification/agreement/refuted-labelled.ts`); its `observed`
 // is shown as it was, with Core's findings in its label. A reading Core refutes
 // in part, and every other, is shown as it was.
-
 //
 // **A yes says whether the converse question confirmed it (t692).** A judged
 // yes carries the judge's `firstAskConfirmed` (t691: its confirming call asked
@@ -170,7 +170,7 @@ import { automationStudioZeroPassLoopBodies } from "../../executor/graph-navigat
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import type { AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
 import { automationStudioAttemptSettled } from "../../flow-change/index.ts";
-import { automationStudioModelFacingControlWords, automationStudioModelFacingFailureText } from "../../llm/model-facing/index.ts";
+import { automationStudioModelFacingFailureText } from "../../llm/model-facing/index.ts";
 import { automationStudioResultAdviceShown } from "../../result-verification/agreement/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES, automationStudioResultReadListContinues, automationStudioResultSummaryWithPagingWords, type AutomationStudioBuildTestVerdict, type AutomationStudioResultReadAccount, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import { automationStudioTrialAbsorbedFeedback } from "./absorbed.ts";
@@ -180,6 +180,7 @@ import { automationStudioTrialFailureHappened } from "./happened.ts";
 import { automationStudioTrialInterruptions } from "./interruptions.ts";
 import { automationStudioTrialProcessedOutFeedback } from "./processed-out.ts";
 import { automationStudioTrialReadsFeedback } from "./reads.ts";
+import { automationStudioTrialStepControl } from "./step-control.ts";
 import { automationStudioTrialStepIssues } from "./step-issues.ts";
 import { automationStudioTrialTargetOnPage } from "./target-on-page.ts";
 
@@ -367,7 +368,7 @@ function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: Au
     const { attempt, attempts, absorbed, pass } = ran[index]!;
     const node = nodes.get(attempt.nodeId);
     const failure = attempt.failure;
-    const control = automationStudioModelFacingControlWords(node?.parameterValues);
+    const control = automationStudioTrialStepControl(node, attempt);
     // A control the step could not find where it was saved, though the domain measured one like it on the page (t420).
     const onPage = failure && !attempt.stateHeld ? automationStudioTrialTargetOnPage({ step: index + 1, node, control, attempt, earlier: absorbed.map((entry) => entry.failed) }) : undefined;
     const step = compact({
@@ -417,7 +418,7 @@ function skippedSaid(skipped: NonNullable<AutomationStudioNodeAttemptTrace["skip
 function learnedPaces(trace: AutomationStudioGraphExecutionTrace | undefined, nodes: ReadonlyMap<string, AutomationStudioFlowNode>): JsonObject[] {
   return (trace?.pace ?? []).filter((pace) => pace.learnedMs !== undefined).map((pace) => {
     const node = nodes.get(pace.nodeId);
-    return compact({ definitionId: node?.definitionId, label: node?.label, control: automationStudioModelFacingControlWords(node?.parameterValues), paceMs: pace.paceMs,
+    return compact({ definitionId: node?.definitionId, label: node?.label, control: automationStudioTrialStepControl(node, undefined), paceMs: pace.paceMs,
       said: `The run learned to start this step at most once every ${(pace.paceMs / 1_000).toFixed(1)} s after the site asked it to slow down${pace.raisedCount > 1 ? ` ${pace.raisedCount} times` : ""}, and held every later pass to it.` });
   });
 }

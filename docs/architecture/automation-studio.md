@@ -258,9 +258,11 @@ other run is its budget; see
 No request setting may raise the absolute total-token ceiling above the
 model's context window, 1,000,000 tokens
 (`AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST`). Core measures
-a request once, with one estimator (UTF-8 bytes / 3), on the larger of the
-packed request and what the provider says it will send (`measureInput`), and
-rejects it before provider invocation when that estimated input plus the output
+a request once, with one estimator (UTF-8 bytes / 3), on what the provider
+says it will send (`measureInput`), or on the packed request only when the
+provider gives no measure (t748: the packed request carries the whole node
+catalog, which is never sent, so counting it refused requests whose sent
+messages fit whenever a node gained a parameter), and rejects it before provider invocation when that estimated input plus the output
 allowance exceeds the effective total. The refusal states the estimated tokens,
 the bytes and the window; nothing is trimmed to fit. Provider transport output
 is untrusted: the harness parses strict registered structures, rejects extra

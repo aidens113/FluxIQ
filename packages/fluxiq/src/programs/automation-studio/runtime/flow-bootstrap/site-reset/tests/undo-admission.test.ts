@@ -150,7 +150,9 @@ describe("its own toggle's place (photo r4 0151)", () => {
   });
 
   it("neither state: control_state_differs; another class while showing the act's state: consequence_not_inverse", () => {
-    refusedFor(toggled(), "act-1", aim([], { ...MARK, state: "st:third" }), { code: UNPROVED, failed: "control_state_differs", canMeet: "no_call" });
+    // Its last open condition, met by no call: the refusal itself lists the act apart (t748, `../undo-reach.ts`).
+    const third = toggled();
+    expect(third.target("act-1", aim([], { ...MARK, state: "st:third" }))).toMatchObject({ kind: "refused", evidence: { code: UNPROVED, act: "act-1", failed: "control_state_differs", canMeet: "no_call", condition: WORDS.condition("control_state_differs", "no_call"), actsToUndo: [], actsUnsettleable: [{ act: "act-1", failed: "no_admissible_undo" }] } });
     refusedFor(toggled(), "act-1", aim(["delete"], { ...MARK, state: "st:on" }), { code: UNPROVED, failed: "consequence_not_inverse", canMeet: "this_page" });
   });
 

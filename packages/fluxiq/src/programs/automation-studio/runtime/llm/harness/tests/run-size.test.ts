@@ -10,6 +10,9 @@
 // window -- so at the window profile one call held the whole $0.25 purse.
 
 import { describe, expect, it } from "vitest";
+import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
+import { webDomainNodeDefinitionsFixture } from "../../../flow-bootstrap/plan/tests/index.ts";
+import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../../evidence-loop.ts";
 import { createAutomationStudioDeepSeekProvider, estimateAutomationStudioDeepSeekCostUsd } from "../../deepseek/index.ts";
 import { AutomationStudioLlmProviderError, normalizedAutomationStudioLlmProviderFailure } from "../../provider-contract.ts";
 import { AutomationStudioLlmProviderRetryLedger } from "../../provider-retry/index.ts";
@@ -176,14 +179,15 @@ describe("what a build's purse holds a call at (t254)", () => {
   });
   const longInstruction = [{ schemaVersion: "0.1" as const, instructionId: "instruction.long", title: "Long", body: "word ".repeat(30_000), scope: { kind: "flow" as const, projectId: "project.llm", flowId: "flow.checkout" }, priority: 100, status: "active" as const, requirement: "required" as const, createdAt: 1, updatedAt: 1 }];
 
-  it("prices what the provider sends, and keeps the packed request for the window refusal alone", async () => {
+  it("prices what the provider sends, and measures the window on it too", async () => {
     held.length = 0;
     const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1 });
     const result = await automationStudioLlmBuildPurseScope(purse, () => harness({ provider: sendsLittle(), instructions: longInstruction as never, tokenLimits: WINDOW }));
 
     expect(result.ok).toBe(true);
-    // The size the window refusal reads is the packed request, the larger measure.
-    expect(result.request.estimatedInputTokens).toBeGreaterThan(10_000);
+    // The size the window refusal reads is what is sent, never the packed
+    // request it carries beside (t748, "the harness's context-window check" below).
+    expect(result.request.estimatedInputTokens).toBe(1_000);
     // The purse held what is sent: 1,000 tokens, not the packed request's.
     expect(held[0]?.inputTokens).toBe(1_000);
     expect(purse.lastProjectedCostUsd).toBeCloseTo(flash(1_000, WINDOW.maxOutputTokens), 12);
@@ -200,5 +204,94 @@ describe("what a build's purse holds a call at (t254)", () => {
     expect(await replies("loop_verification")).toBe(1_250);
     expect(await replies("runtime_diagnosis")).toBe(WINDOW.maxOutputTokens);
     expect(AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES).toEqual({ decisionReplyTokens: 750, judgeReplyTokens: 1_250, judgeInputTokens: 8_000 });
+  });
+});
+
+// The context-window check counts what the provider sends, and nothing else.
+//
+// t748: an evidence decision's packed request carries the whole node catalog,
+// which the DeepSeek adapter never sends -- the model is shown every node by
+// name and only the described entries whole (`../context-packet.ts`,
+// `../../deepseek/request-body.ts`). The harness's size check took the larger
+// of the packed request and the sent messages, so the never-sent catalog
+// counted toward the window: a test's window broke the day one node gained a
+// parameter, with the priced input unchanged (t744). Catalog text that IS
+// sent -- the names, a described node -- is in the sent messages, so it still
+// counts.
+
+const registry = new AutomationStudioNodeRegistry(webDomainNodeDefinitionsFixture());
+const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
+const decisionTools = [{ toolId: "inspect", description: "Collect bounded evidence.", inputSchema: { type: "object" } }];
+const completionSchema = { type: "object" };
+const DECIDED = { response: { kind: "evidence_tool_decision", decision: { action: "complete", reason: "Seen enough.", completion: {} } } };
+
+function sendingDeepSeek(): AutomationStudioLlmProvider {
+  const provider = createAutomationStudioDeepSeekProvider({
+    secretReference: { kind: "secret_reference", id: "secret:deepseek" },
+    resolveSecret: async () => "test-secret",
+    fetchImpl: (async () => { throw new Error("transport must not run"); }) as typeof fetch
+  });
+  return { ...provider, runTask: async () => DECIDED };
+}
+
+function decide(provider: AutomationStudioLlmProvider, tokenLimits: NonNullable<AutomationStudioLlmHarnessInput["tokenLimits"]>): Promise<AutomationStudioLlmTaskResult> {
+  return runAutomationStudioLlmHarness({
+    taskKind: "evidence_tool_decision",
+    projectId: "project.one",
+    flowId: "flow.one",
+    requestId: "request.sent-size",
+    instructions: [],
+    evidenceLoop: { iteration: 1, tools: decisionTools, evidence: [], decisionSchema: buildAutomationStudioLlmEvidenceLoopDecisionSchema(decisionTools, completionSchema), completionSchema, canComplete: true },
+    // The whole catalog, carried in the packet and never sent: 100 more copies
+    // of every node definition under distinct ids.
+    flowBootstrap: { registry: largeRegistry(), resolution },
+    provider,
+    tokenLimits,
+    maxEstimatedCostUsd: 0.1,
+    providerRetry: { wait: async () => {}, ledger: new AutomationStudioLlmProviderRetryLedger() }
+  });
+}
+
+function largeRegistry(): AutomationStudioNodeRegistry {
+  const base = webDomainNodeDefinitionsFixture();
+  return new AutomationStudioNodeRegistry([
+    ...base,
+    ...Array.from({ length: 100 }, (_, copy) => base.map((definition) => ({ ...definition, id: `${definition.id}.copy${copy}` }))).flat()
+  ]);
+}
+
+describe("the harness's context-window check", () => {
+  it("is not tripped by a node catalog the provider never sends, while what it sends fits", async () => {
+    const provider = sendingDeepSeek();
+    const probe = await decide(provider, { maxInputTokens: 2_000_000, maxOutputTokens: 2_000, maxTotalTokens: 2_002_000 });
+    const sent = provider.measureInput!(probe.request).estimatedInputTokens;
+    const packed = Math.ceil(Buffer.byteLength(JSON.stringify(probe.request), "utf8") / 3);
+    // The packed request is far larger than what is sent, because of the catalog.
+    expect(packed).toBeGreaterThan(sent * 2);
+
+    // A window the sent messages fit, and the packed request does not.
+    const window = { maxInputTokens: sent + 100, maxOutputTokens: 2_000, maxTotalTokens: sent + 2_100 };
+    expect(packed).toBeGreaterThan(window.maxInputTokens);
+    const result = await decide(provider, window);
+
+    expect(result.diagnostics.map((entry) => entry.code)).not.toContain("llm_budget.input_limit_exceeded");
+    expect(result.diagnostics.map((entry) => entry.code)).not.toContain("llm_budget.request_total_exceeded");
+    expect(result.providerInvocation).not.toBe("not_attempted");
+    expect(result.request.estimatedInputTokens).toBe(provider.measureInput!(result.request).estimatedInputTokens);
+  });
+
+  it("still refuses, with its size, a request whose sent messages are over the window", async () => {
+    const provider = sendingDeepSeek();
+    const probe = await decide(provider, { maxInputTokens: 2_000_000, maxOutputTokens: 2_000, maxTotalTokens: 2_002_000 });
+    const sent = provider.measureInput!(probe.request);
+    const window = { maxInputTokens: sent.estimatedInputTokens - 1, maxOutputTokens: 2_000, maxTotalTokens: sent.estimatedInputTokens + 1_999 };
+    const refused = await decide(provider, window);
+
+    expect(refused.providerInvocation).toBe("not_attempted");
+    // The size it states is the sent messages' own, not the packed request's.
+    const measured = provider.measureInput!(refused.request);
+    expect(measured.estimatedInputTokens).toBeGreaterThan(window.maxInputTokens);
+    const diagnostic = refused.diagnostics.find((entry) => entry.code === "llm_budget.input_limit_exceeded");
+    expect(diagnostic?.metadata).toMatchObject({ estimatedInputTokens: measured.estimatedInputTokens, estimatedInputBytes: measured.estimatedInputBytes });
   });
 });

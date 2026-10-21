@@ -192,7 +192,9 @@ describe("observed destination witnesses for cross-page reset", () => {
     ledger.explored(acted("fake-delete", ["delete"], { undoes: "act-1", on: "subject" }, destination));
     twoLists(ledger, ["s:baseline"], ["s:stored", "s:document"]);
     expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
-    expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1"]);
+    // Its one unasked removal is spent, so no undo could take the subject out of the sibling list: listed apart (t748).
+    expect(ledger.inPlace()).toEqual([]);
+    expect(ledger.unsatisfiable()).toMatchObject([{ act: "act-1", failed: "no_admissible_undo" }]);
   });
 
   it("preserves a same-subject sibling row that already existed, including its quantity state", async () => {
@@ -686,7 +688,10 @@ describe("a press with no list of its own whose named destination stays exactly 
     if (defect !== "no-read-after") read(ledger, after);
     expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
     expect(await ledger.beforeTrial(back, ["act-1", "act-2"])).toMatchObject({ kind: "refuse" });
-    expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1", "act-2"]);
+    // A changed value of a row held before the presses is reversed by no undo: listed apart, never to undo (t748).
+    const unmeetable = defect === "held-subject-changed";
+    expect(ledger.inPlace().map((act) => act.act)).toEqual(unmeetable ? [] : ["act-1", "act-2"]);
+    expect(ledger.unsatisfiable().map((act) => [act.act, act.failed])).toEqual(unmeetable ? [["act-1", "no_admissible_undo"], ["act-2", "no_admissible_undo"]] : []);
   });
 
   // L1, by design: the named list alone is the witness of a press whose own list was never read before it

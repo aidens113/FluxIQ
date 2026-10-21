@@ -6,11 +6,13 @@
 // act repeats -- the two lists of a witnessed transfer, the list its subject
 // undo was proved on, and its own list: the complete original its control sat
 // in, read before it. What it was about is its `subject`, and its `page` where
-// it sat in no item. Each group they fall in is one witness
+// it sat in no item (`./act-subjects.ts`, t750: the one source site-reset's
+// undo admission and reach read too). Each group they fall in is one witness
 // (`./group-witness.ts`), told by the ref and location of the list
 // it names, for the words an open act is answered with, and by its opaque
 // group, for Core alone (`./reach.ts`). Pure.
 
+import { automationStudioSiteResetActSubjects as actSubjects } from "./act-subjects.ts";
 import { automationStudioSiteResetGroupWitness as groupWitness, type AutomationStudioSiteResetGroupStanding } from "./group-witness.ts";
 import type { AutomationStudioSiteResetObservations } from "./observations.ts";
 import type { AutomationStudioSiteResetSettlementSpot } from "./spot.ts";
@@ -34,7 +36,7 @@ export function automationStudioSiteResetActGroups(input: {
   if (act.subjectUndo) named.push({ scope: act.subjectUndo.scope, group: act.subjectUndo.group });
   const own = spot.scope === undefined ? undefined : observations.originals.get(spot.scope);
   if (spot.scope !== undefined && own && own.beforeAct < input.sequence) named.push({ scope: spot.scope, group: own.group });
-  const subjects = [spot.subject, ...(spot.item === undefined ? [spot.page] : [])].filter((subject): subject is string => subject !== undefined);
+  const subjects = actSubjects(act.spot);
   return [...new Set(named.map((entry) => entry.group))].map((group) => {
     const scopes = [...new Set(named.filter((entry) => entry.group === group).map((entry) => entry.scope))];
     const standing = groupWitness({ observations, group, scopes, subjects, sequence: input.sequence, since: input.since, clock: input.clock });

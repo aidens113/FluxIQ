@@ -56,7 +56,12 @@
 //
 // **Acts no call can settle are listed apart (t743).** Every refusal here that
 // lists the acts to undo lists those no call can settle beside them, under
-// `actsUnsettleable` (`./ledger.ts`, `unsatisfiable`).
+// `actsUnsettleable` (`./ledger.ts`, `unsatisfiable`). An undo refused because
+// the act's own control answered a state that is neither the build's nor the
+// act's (`control_state_differs`, `no_call`) marks the act at once
+// (`pressBackRefused`, `./undo-reach.ts`, t748), so that same refusal already
+// lists it apart when that was its last open condition; a press back admitted
+// at its place clears the mark.
 
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { automationStudioSiteResetRefusal as refusal } from "../reset-answers/index.ts";
@@ -146,7 +151,14 @@ export class AutomationStudioSiteResetUndoClaims {
       return { kind: "refused", evidence: refusal("candidate.undo_unknown_act", { failed: "act_not_listed", canMeet: "this_page", instruction: WORDS.unknownAct(actsToUndo.length > 0), actsToUndo, ...apart }) };
     }
     const answer = undoAdmission({ acts: ledger.acts, seen: ledger.seen, claimable: (entry) => ledger.claimable(entry), inPlace: () => ledger.inPlace(), toggle: (entry) => ledger.toggle(entry), named: (entry) => ledger.named(entry), plain: (entry) => ledger.plain(entry) }, act, declared);
-    return answer.kind === "refused" && "actsToUndo" in answer.evidence ? { kind: "refused", evidence: { ...answer.evidence, ...apart } } : answer;
+    if (answer.kind === "admit" && answer.on === "own" && declared.control.place !== undefined && declared.control.place === ledger.toggle(act)?.place) delete act.pressBackRefused;
+    if (answer.kind !== "refused" || !("actsToUndo" in answer.evidence)) return answer;
+    // Its own control can never be pressed back from a third state it declared (header, t748): listed apart in this very refusal.
+    if (answer.evidence.failed === "control_state_differs" && typeof declared.control.state === "string" && !act.pressBackRefused) {
+      act.pressBackRefused = true;
+      return { kind: "refused", evidence: { ...answer.evidence, actsToUndo: ledger.inPlace(), ...unsettleable(ledger.unsatisfiable()) } };
+    }
+    return { kind: "refused", evidence: { ...answer.evidence, ...apart } };
   }
 
   /** An exploration call that named an act under `undoes` ran (header): what it did to that act. */

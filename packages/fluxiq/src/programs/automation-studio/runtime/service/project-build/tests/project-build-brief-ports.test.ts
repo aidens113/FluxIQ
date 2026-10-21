@@ -450,3 +450,78 @@ it("requires a pre-create baseline through normal project ports and recovers via
   expect(inputs.every(input => !Object.hasOwn(input, "resetDestination"))).toBe(true);
   expect(lastOf(run.latestSeen.keep ?? [], "core.test_subflow")).toMatchObject({ verdict: "yes" });
 });
+
+// Office rounds 2-4 (t748, C6; `run-mvgf04kw-310fc169`, `run-mvgvyaip-d856e135`): after a press was refused for want of a
+// ref, the builder read the list where its effect shows, which issued the ref, and nothing told it to press again with it;
+// it went back and forth for 9 and 14 turns. That read's answer now names the refused call and the refs just issued. A
+// made-up library: a book's page with no list, and the loans list on a page of its own.
+describe("a press refused for want of a ref", () => {
+  it.each([
+    ["create_new", "candidate.create_baseline_required"],
+    ["modify_existing", "candidate.reset_witness_required"]
+  ] as const)("is named, with the refs a later complete read issued, on that read's answer alone (%s)", async (consequence, code) => {
+    let at = "shelf", phase = 0;
+    const loans = ["s:dune"];
+    const seen: Record<string, JsonObject | undefined> = {};
+    const plan = {
+      taskSpec: { parts: [{ id: "p1", quote: { sourceId: "instruction.build", text: TASK }, goalFacts: ["The Flow runs from its start to its end"], lastingActs: [consequence] }], notAsked: [] },
+      subflows: [{ key: "lend", name: "Lend", parts: ["p1"] }]
+    };
+    const invoke = (callId: string, node: string, extra: JsonObject = {}): JsonObject => ({ kind: "tool_call", callId, toolId: "core.run_node", input: { node, parameters: {}, consequences: node === "example.press" ? [consequence] : [], ...extra } });
+    const run = await build({
+      plan, briefs: [{ kind: "build", subflowKey: "lend", parts: ["p1"], permittedActs: [consequence], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.02, maxIterations: 20 }], permittedConsequences: [consequence],
+      tools: [{ toolId: "core.run_node", description: "Run an observed operation", effect: "mutate", perCallEffect: true, inputSchema: { type: "object", properties: { node: { type: "string" }, parameters: { type: "object" }, consequences: { type: "array", items: { type: "string" } } } }, initialObservation: { input: { node: "example.look", parameters: {}, consequences: [] } } }],
+      startState: async () => ({ state: { at }, differs: [], location: `loc:${at}`, resource: "r:library", scope: `p:${at}`, collections: at === "loans" ? [{ scope: "p:loans", group: "g:loans", subjects: [...loans], states: Object.fromEntries(loans.map((subject) => [subject, `v:${subject}`])) }] : [] }),
+      executeTool: async (call) => {
+        const operation = call.value.node;
+        if (operation === "example.loans" || operation === "example.shelf") at = operation === "example.loans" ? "loans" : "shelf";
+        if (operation !== "example.press") return { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false };
+        // About the book, on its own page, in no list: a creation identified by its subject, or a modification with no witness.
+        const verdict = await call.permission!({ consequences: [consequence], effect: "mutate", control: { name: "Borrow", subject: "s:atlas", page: "s:atlas", resource: "r:library", scope: "p:shelf" }, verb: "press" });
+        if (verdict.permitted) loans.push("s:atlas");
+        return { kind: "llm_evidence_tool_execution", evidence: { ok: verdict.permitted }, effectApplied: verdict.permitted };
+      },
+      builderFirst: (_key, evidence) => {
+        phase++;
+        const last = lastOf(evidence, "core.run_node");
+        if (phase === 1) return invoke("press.missing", "example.press");
+        if (phase === 2) {
+          seen.refused = last;
+          return invoke("loans", "example.loans");
+        }
+        if (phase === 3) {
+          seen.read = last;
+          return invoke("shelf", "example.shelf");
+        }
+        if (phase === 4) {
+          seen.back = last;
+          const ref = ((seen.read?.resetDestinations as JsonObject | undefined)?.collections as JsonObject[] | undefined)?.[0]?.ref as string | undefined;
+          return invoke("press.retry", "example.press", ref === undefined ? {} : { resetDestination: ref });
+        }
+        if (phase === 5) {
+          seen.retried = last;
+          return invoke("loans.again", "example.loans");
+        }
+        if (phase === 6) seen.again = last;
+        return { kind: "complete", result: { subflowKey: "lend", revision: 0, digest: "only-the-reads-were-under-test" } };
+      }
+    });
+    await run.run().catch(() => undefined);
+
+    // The refusal itself, and a page that printed no list, carry no such note.
+    expect(seen.refused).toMatchObject({ code });
+    expect(seen.refused).not.toHaveProperty("retryRefused");
+    // The complete read that issued the ref names the refused call and that ref, and says to make the call again with it.
+    expect(seen.read).toMatchObject({ resetDestinations: { collections: [{ ref: "destination-1", count: 1 }] }, retryRefused: { call: "press.missing", refs: [{ ref: "destination-1", count: 1 }] } });
+    const instruction = String((seen.read!.retryRefused as JsonObject).instruction);
+    expect(instruction).toContain("\"press.missing\"");
+    expect(instruction).toContain("destination-1 (1 item)");
+    expect(instruction).toContain("resetDestination");
+    expect(seen.back).toEqual({ ok: true });
+    // Pressed again with the ref, it ran; a later read of the same list is not told again.
+    expect(seen.retried).toEqual({ ok: true });
+    expect(loans).toEqual(["s:dune", "s:atlas"]);
+    expect(seen.again).toMatchObject({ resetDestinations: { collections: [{ ref: "destination-1" }] } });
+    expect(seen.again).not.toHaveProperty("retryRefused");
+  });
+});

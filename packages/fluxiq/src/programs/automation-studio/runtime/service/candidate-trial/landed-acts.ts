@@ -8,7 +8,8 @@
 // consequences (`declaredConsequences`, `../../executor/defensive/lasting-act.ts`)
 // with at least one class Core knows. Steps are numbered as the trial's
 // feedback numbers them (`./executed-steps.ts`), every step, past the listing's
-// cut too, and the control is said in the same words the feedback gives.
+// cut too, and the control is said in the same words the feedback gives
+// (`./step-control.ts`: a read of changing words by what it read, t748).
 //
 // **Only an act whose effect appeared (t475).** A step that "succeeded" while
 // its page showed nothing new -- its traced diff, on the same document, added
@@ -90,6 +91,14 @@
 // A call's page before is still before its child; its page after is not, and
 // the child's own steps, and the steps after the call, list it themselves.
 //
+// **A looped step's passes are named (t748).** Each pass of a loop's body is its
+// own step and its own act, but on job round 4 (`run-mvgw1854-5d10955b`) four
+// passes of one wordless press read alike, `trial step N "save the job"`, and
+// the model sent its undos at the wrong act. A step that ran in more than one
+// loop pass of the trial (`./executed-steps.ts` `pass`) carries `pass`: which of
+// the passes it ran in, counting every one it ran in, landed or not, of how
+// many. A step that ran in one pass, or in none, carries nothing.
+//
 // **Core's own steps leave nothing (t598).** A step of one of Core's own nodes
 // that acts on nothing outside the run (`automationStudioNodeSideEffectClass`
 // `none`: a wait, a branch, a variable) is never a lasting act, whatever it
@@ -105,8 +114,8 @@ import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY, automationStudioE
 import type { AutomationStudioCandidateTrialAct } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioSiteResetSpot, AutomationStudioSiteResetTrialActPlace } from "../../flow-bootstrap/site-reset/index.ts";
 import { automationStudioAttemptSettled } from "../../flow-change/index.ts";
-import { automationStudioModelFacingControlWords } from "../../llm/model-facing/index.ts";
 import { automationStudioTrialExecutedSteps } from "./executed-steps.ts";
+import { automationStudioTrialStepControl } from "./step-control.ts";
 
 /** A trial's act, with where its step sat and what it made when its state diff said so (header, t598). */
 export type AutomationStudioCandidateTrialLandedAct = AutomationStudioCandidateTrialAct & AutomationStudioSiteResetTrialActPlace;
@@ -117,7 +126,9 @@ export function automationStudioCandidateTrialLandedActs(trace: AutomationStudio
   const acts: AutomationStudioCandidateTrialLandedAct[] = [];
   /** Every item an earlier step's pages listed: none of them is one a later step created (header). */
   const seen = new Set<string>();
-  automationStudioTrialExecutedSteps(trace?.attempts ?? []).forEach(({ attempt }, index) => {
+  const steps = automationStudioTrialExecutedSteps(trace?.attempts ?? []);
+  const passes = passesOf(steps);
+  steps.forEach(({ attempt }, index) => {
     const listed = itemsOf(attempt);
     const created = createdBy(attempt, listed, seen);
     // A called part's page after comes after its own steps, which list it themselves (header, t684).
@@ -131,13 +142,27 @@ export function automationStudioCandidateTrialLandedActs(trace: AutomationStudio
     // Declared none, and its own page changed: possibly lasting (header).
     const possible = !consequences.length && Array.isArray(declared) && declared.length === 0 && changedInPlace(attempt);
     if (!consequences.length && !possible) return;
-    const control = automationStudioModelFacingControlWords(node.parameterValues);
+    const control = automationStudioTrialStepControl(node, attempt);
     const spot = spotOf(attempt);
     const collections = collectionsOf(attempt);
     const controls = controlsOf(attempt);
-    acts.push({ step: index + 1, definitionId: attempt.definitionId, ...(node.label ? { label: node.label } : {}), ...(control ? { control } : {}), consequences, ...(possible ? { possible: true as const } : {}), ...(spot ? { spot } : {}), ...(collections ? { collections } : {}), ...(controls ? { controls } : {}), ...(created.length ? { created } : {}) });
+    acts.push({ step: index + 1, definitionId: attempt.definitionId, ...(node.label ? { label: node.label } : {}), ...(control ? { control } : {}), consequences, ...(possible ? { possible: true as const } : {}), ...(spot ? { spot } : {}), ...(collections ? { collections } : {}), ...(controls ? { controls } : {}), ...(created.length ? { created } : {}), ...(passes[index] ? { pass: passes[index] } : {}) });
   });
   return acts;
+}
+
+/** Each step's pass among the loop passes its node ran in this trial, where it ran in more than one (header, t748). */
+function passesOf(steps: ReturnType<typeof automationStudioTrialExecutedSteps>): Array<{ number: number; of: number } | undefined> {
+  const ran = new Map<string, number>();
+  for (const step of steps) if (step.pass) ran.set(step.attempt.nodeId, (ran.get(step.attempt.nodeId) ?? 0) + 1);
+  const counted = new Map<string, number>();
+  return steps.map((step) => {
+    const of = ran.get(step.attempt.nodeId) ?? 0;
+    if (!step.pass || of < 2) return undefined;
+    const number = (counted.get(step.attempt.nodeId) ?? 0) + 1;
+    counted.set(step.attempt.nodeId, number);
+    return { number, of };
+  });
 }
 
 /** The step's own trace says its act left nothing: its effect check found it not landed, or its diff on the same document is empty (header). */

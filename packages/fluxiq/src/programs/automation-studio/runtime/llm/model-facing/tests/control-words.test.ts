@@ -26,4 +26,14 @@ describe("automationStudioModelFacingControlWords", () => {
   it("skips a locator-shaped field for the next field that is words", () => {
     expect(automationStudioModelFacingControlWords({ element: { accessibleName: "[data-testid=composer]", visibleText: "Write something..." } })).toBe("Write something...");
   });
+
+  // t748: a press's control vanished from trial feedback because its own words held "address", a word the failure-text
+  // screen drops as finding talk. On a control those are page words; only a locator, a match score or the finding-only
+  // words still make a control's words no words.
+  it("names a control by its own words when they hold an ordinary page word the failure screen drops", () => {
+    expect(automationStudioModelFacingControlWords({ element: { accessibleName: "Send renewals to this address" } })).toBe("Send renewals to this address");
+    expect(automationStudioModelFacingControlWords({ element: { visibleText: "Show my reading score" } })).toBe("Show my reading score");
+    expect(automationStudioModelFacingControlWords({ element: { accessibleName: "matched by fingerprint", visibleText: "Selector: #renew" } })).toBeUndefined();
+    expect(automationStudioModelFacingControlWords({ element: { accessibleName: "Renew 0.82" } })).toBeUndefined();
+  });
 });

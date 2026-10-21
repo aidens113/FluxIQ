@@ -61,13 +61,13 @@ export async function runAutomationStudioLlmHarness(input: AutomationStudioLlmHa
   };
   // What the request measures, stated on any refusal below: a request over the
   // model's context window is refused loudly and never trimmed to fit. One
-  // estimator (UTF-8 bytes / 3) for the harness and the adapter alike, and the
-  // larger of the two measures -- the packed request, and the messages the
-  // provider will actually send -- so the adapter can never refuse, without a
-  // size, a request this passed. What the call is *priced* at is the second
-  // alone, `pricedInputTokens` (t254): the packed request carries the whole
-  // node catalog, which is never sent or billed, and pricing it held each
-  // build decision about 12,800 tokens over what the provider would read.
+  // estimator (UTF-8 bytes / 3) for the harness and the adapter alike, applied
+  // to the messages the provider will actually send -- the adapter's own
+  // measure, so the adapter can never refuse, without a size, a request this
+  // passed. The packed request carries the whole node catalog, which is never
+  // sent or billed: it was the larger measure here until t748, so the window
+  // counted a catalog the model never reads, and pricing it (until t254) held
+  // each build decision about 12,800 tokens over what the provider would read.
   const { estimatedInputTokens, estimatedInputBytes, pricedInputTokens } = measuredInput(request, input.provider);
   // The declaration travels beside the context so a provider can re-check every
   // evidence slot before sending. Added after the estimate because it is never
@@ -353,18 +353,19 @@ function providerRetryDiagnostics(retry: AutomationStudioLlmProviderRetryAccount
 /**
  * The request's size and its price measure, by Core's one estimator.
  *
- * **Size** (`estimatedInputTokens`, `estimatedInputBytes`): the packed request
- * and -- when the provider says how it will measure it -- the messages it will
- * send, whichever is larger, so the harness's context-window refusal never
- * passes a request the adapter's would refuse. Only that refusal reads it.
- *
- * **Price** (`pricedInputTokens`, t254): the messages the provider will send,
- * which is what it reads and bills; the packed request only where the provider
- * gives no measure, since then nothing better is known. The packed request
- * carries the full node catalog where the provider sends names and the
- * described nodes only, and priced as input it put about 30% on every build
- * decision's hold (`reports/t254-purse-hold-investigation.md` in the extension
- * repository).
+ * **Size** (`estimatedInputTokens`, `estimatedInputBytes`) and **price**
+ * (`pricedInputTokens`) are one measure: the messages the provider will send,
+ * which is what it reads, bills and refuses on, so the harness's
+ * context-window refusal never passes a request the adapter's would refuse.
+ * The packed request stands in only where the provider gives no measure, since
+ * then nothing better is known. The packed request carries the full node
+ * catalog where the provider sends names and the described nodes only: priced
+ * as input it put about 30% on every build decision's hold (t254,
+ * `reports/t254-purse-hold-investigation.md` in the extension repository), and
+ * counted toward the window as the larger measure it refused requests whose
+ * sent messages fit, whenever a node gained a parameter (t748). Catalog text
+ * the provider does send -- names, described nodes, a one-shot build's whole
+ * catalog -- is in its messages and counts.
  *
  * Both count UTF-8 bytes / 3 (`../token-estimation.ts`). That over-counts every
  * call observed: across 206 live calls on 2026-10-03 the densest was 3.24
@@ -390,8 +391,7 @@ function measuredInput(request: AutomationStudioLlmTaskRequest, provider: Automa
   if (!sent || !Number.isSafeInteger(sent.estimatedInputTokens) || !Number.isSafeInteger(sent.estimatedInputBytes) || sent.estimatedInputTokens < 0) {
     return { ...packed, pricedInputTokens: packed.estimatedInputTokens };
   }
-  const size = sent.estimatedInputTokens > packed.estimatedInputTokens ? { estimatedInputTokens: sent.estimatedInputTokens, estimatedInputBytes: sent.estimatedInputBytes } : packed;
-  return { ...size, pricedInputTokens: sent.estimatedInputTokens };
+  return { estimatedInputTokens: sent.estimatedInputTokens, estimatedInputBytes: sent.estimatedInputBytes, pricedInputTokens: sent.estimatedInputTokens };
 }
 
 /**

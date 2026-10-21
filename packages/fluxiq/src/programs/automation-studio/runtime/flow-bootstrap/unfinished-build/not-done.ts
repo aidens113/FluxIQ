@@ -93,6 +93,10 @@ export function automationStudioFlowBootstrapNotDoneSaid(notDone: AutomationStud
 
 /** A refusal the model was shown, as the clause that finishes "... because ...", in a person's words (never "the model"). First match wins. */
 const BLOCKED_WORDS: ReadonlyArray<readonly [RegExp, string]> = [
+  // The refusal a stall carries beside its repeat guard, for the supervisor and a debug (t748,
+  // `../../llm/decision-handlers/refused-repeat.ts`): any site's or domain's own code, which could
+  // match a pattern below by chance. Said as nothing; the guard's own code says what the person hears.
+  [/^llm_evidence_loop\.last_refusal:/u, ""],
   // An act no step does, or only a step the Flow may skip does (`../instructed-acts/optional-only.ts`).
   [/^bootstrap\.instructed_act_(?:missing|only_optional)$/u, "the Flow did not yet do what you asked"],
   [/^bootstrap\.cannot_answer_instruction$/u, "the Flow could not give the answer you asked for"],
