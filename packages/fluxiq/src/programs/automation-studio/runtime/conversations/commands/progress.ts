@@ -9,6 +9,7 @@
 import { automationStudioActivityCheckRefusalReasons, automationStudioActivityIssueWords } from "../../activity/index.ts";
 import { automationStudioActivityFailureCodeWords, automationStudioActivityRefusedStepIssues } from "../../activity/wording/index.ts";
 import { automationStudioCandidateRefusalCodes } from "../../service/candidate-failure/index.ts";
+import { automationStudioProjectBuildReasonUnrepeated } from "../../service/project-build-ending/index.ts";
 import type { AutomationStudioConversationCommandCallResult, AutomationStudioConversationCommandOutcome } from "./command.ts";
 
 /** What the outcome carries however it ends: the ids made, and whose words an instruction it saved were. */
@@ -36,8 +37,13 @@ export type AutomationStudioConversationCommandProgress = {
    * automation here", and lanes B-D ended quoting it (t378). A registry
    * call's own cause ("the build failed: ...") opens the answer as a sentence;
    * any other says "I stopped because ...".
+   *
+   * `account.told`: the work's own ending row already said how it ended -- a
+   * project build's (t753) -- so the answer has no opening: it says what is
+   * left of the Flow, what was kept, and what the person can do next, and
+   * never the verdict or the reason a second time.
    */
-  failed(cause: string, account?: { ending?: string | undefined; left?: string | undefined; kept?: string | undefined }): AutomationStudioConversationCommandOutcome;
+  failed(cause: string, account?: { ending?: string | undefined; left?: string | undefined; kept?: string | undefined; told?: boolean | undefined }): AutomationStudioConversationCommandOutcome;
 };
 
 export function automationStudioConversationCommandProgress(_title: string, keyLocked: boolean): AutomationStudioConversationCommandProgress {
@@ -50,10 +56,17 @@ export function automationStudioConversationCommandProgress(_title: string, keyL
     failed: (cause, account = {}) => {
       // What is stored is what an old thread shows again, so it is said plain however the cause was worded (t276).
       const plainCause = automationStudioConversationPlainCause(cause) || "something went wrong inside FluxIQ";
+      const locked = keyLocked ? " Your model key is locked for this browser: sign out of FluxIQ and sign in again, which unlocks your keys, then ask again." : "";
+      if (account.told) {
+        // The ending row said it (t753): what the Flow keeps, then what to do next, once.
+        const left = account.left ?? (steps.length ? `Before that I ${joined(steps)}; the Flow's steps are unchanged.` : "The Flow's steps are unchanged.");
+        const said = [left, account.kept ?? ""].filter((sentence) => sentence).join(" ");
+        const next = /\bagain\b/u.test(said) ? "" : ` ${AUTOMATION_STUDIO_CONVERSATION_TOLD_NEXT}`;
+        return { status: "failed", summary: `${said}${next}${locked}`, error: plainCause, ...ids };
+      }
       const opening = account.ending ? `${account.ending.replace(/\.$/u, "")}.` : CALL_CAUSE.test(plainCause) ? `${plainCause.charAt(0).toUpperCase()}${plainCause.slice(1)}.` : `I stopped because ${plainCause}.`;
       const distance = account.left ?? (steps.length ? `Before that I ${joined(steps)}.` : "Nothing was changed.");
       const kept = account.kept ? ` ${account.kept}` : "";
-      const locked = keyLocked ? " Your model key is locked for this browser: sign out of FluxIQ and sign in again, which unlocks your keys, then ask again." : "";
       return { status: "failed", summary: `${opening} ${distance}${kept}${locked}`, error: plainCause, ...ids };
     }
   };
@@ -219,7 +232,8 @@ function supervisorEndingWords(diagnostic: Diagnostic | undefined): string | und
   const code = codes.find((entry): entry is string => typeof entry === "string" && Object.hasOwn(SUPERVISOR_ENDING_WORDS, entry));
   if (!code) return undefined;
   // Why the supervisor ended it, its screened reason (`endedBecause`, t649): the person read that it ended and never why.
-  const why = typeof diagnostic?.endedBecause === "string" ? diagnostic.endedBecause.trim().replace(/[.\s]+$/u, "") : "";
+  // Never opening on the ending again: "could not finish the Flow: I could not finish this" (t753).
+  const why = typeof diagnostic?.endedBecause === "string" ? automationStudioProjectBuildReasonUnrepeated(diagnostic.endedBecause).replace(/[.\s]+$/u, "") : "";
   return why ? `${SUPERVISOR_ENDING_WORDS[code]}: ${lowerFirst(why)}` : SUPERVISOR_ENDING_WORDS[code];
 }
 
@@ -261,6 +275,9 @@ export function automationStudioConversationPlainCause(text: string): string {
     .replace(/[\s:.]+$/u, "");
   return codesIn(said).length ? "" : said;
 }
+
+/** What the person can do next, closing an answer whose ending its row told (`./build.ts`, t753). */
+export const AUTOMATION_STUDIO_CONVERSATION_TOLD_NEXT = "You can ask me to build it again.";
 
 /** A cause `automationStudioConversationCallCause` wrote: "<what> failed: <why>", or "<what> could not finish. <ending>". */
 const CALL_CAUSE = /^[a-z][A-Za-z ]* (?:failed: |could not finish\. )/u;

@@ -711,6 +711,61 @@ describe("conversation commands", () => {
     });
   });
 
+  // t753 rerun round 5: a project build's ending row said the ending, then the command's answer and the draft's card
+  // line said its verdict again ("It was never test-run from the start ... Saved candidate draft. It was never test-run
+  // from the start"), and a failure's answer stuttered after it ("The build failed: FluxIQ could not finish the Flow: I
+  // could not finish this."). Where the row told the ending, the answer says only what the Flow keeps and what to do next.
+  describe("a project build whose ending row told the ending", () => {
+    beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", "project"); });
+    const VERDICTS = /judged|never test-run|test run|could not finish|could not confirm|did not get to the end|time limit|failed:|Verification pending|candidate/iu;
+    const told = (verdict: string, codes: readonly string[]): Handler => (payload) => {
+      const answer = CANDIDATE_BUILD_OK(payload) as { ok: true; payload: { candidate: Record<string, unknown> } };
+      return { ok: true, payload: { candidate: { ...answer.payload.candidate, trial: { verdict, runId: "trial.1", codes: [...codes] } } } };
+    };
+    const run = async (id: string, build: Handler) => {
+      const conversations = openConversations(), conversationId = await chat(conversations);
+      const { port } = fakePort({ "create-flow": () => ({ ok: true, payload: { flow: { flowId: "flow.draft" } } }), "save-flow-generation-instruction": () => ({ ok: true }), "save-flow-instruction": () => ({ ok: true }), "generate-flow-bootstrap-adaptation": build, "review-flow-adaptation": REVIEW_OK });
+      const context = contextFor(conversations, conversationId, port, await personAsked(conversations, conversationId, "Pin the note"));
+      const before = (await turnsOf(conversations, conversationId)).length;
+      await executeAutomationStudioConversationCommand({ command: command(id), context, arguments: { flowId: "flow.draft", instruction: "Pin the note", change: "Pin the note", name: "Pin the note" } });
+      await automationStudioConversationCommandWork.idle();
+      // What this command said when it finished: its result and the draft's card line, never the person's words or the announcement.
+      return (await turnsOf(conversations, conversationId)).slice(before).filter((turn) => turn.attachment).map((turn) => turn.text);
+    };
+
+    it.each([
+      ["no", ["candidate.trial_judged_no", "project.build_ending_told"]],
+      ["no", ["candidate.trial_judged_no", "project.build_time_limit", "project.build_ending_told"]],
+      ["yes", ["project.build_ended_unfinished", "project.build_ending_told"]],
+      // A draft whose latest version had no whole test of its own, which the row says, earlier versions' runs included.
+      ["not_tested", ["candidate.trial_not_run"]]
+    ] as const)("a kept draft (%s, %j) says no verdict again, only what is kept and what to do next", async (verdict, codes) => {
+      // An improvement is a candidate build even in project mode, with no ending row of its own: only the code says told.
+      for (const id of verdict === "not_tested" ? ["flow.createHere", "flow.explore"] : ["flow.createHere", "flow.explore", "flow.improve"]) {
+        const turns = await run(id, told(verdict, codes));
+        const text = turns.join(" ");
+        expect(text, id).not.toMatch(VERDICTS);
+        expect(text, id).toContain("nothing was put into the Flow");
+        expect(text, id).toMatch(/ask me to build it again/u);
+        // Said once: the answer and the card line never both say the draft was kept.
+        expect(text.match(/as a draft/gu)?.length ?? 0, `${id}: ${JSON.stringify(turns)}`).toBe(1);
+      }
+    });
+
+    it("a failure the row told says what the Flow keeps and what to do next, never the verdict or a stutter", async () => {
+      const failed: Handler = () => ({ ok: false, error: "Flow Bootstrap generation failed (flow_bootstrap.post_provider_validation_failed).",
+        payload: { diagnostic: { code: "flow_bootstrap.post_provider_validation_failed", stage: "post_provider_validation", issueCodes: ["project.build_blocked", "project.build_ending_told"], endedBecause: "Saving the board left changes on the site that can no longer be checked or undone." } } });
+      const created = (await run("flow.createHere", failed)).join(" ");
+      expect(created).toBe("The Flow \"Pin the note\" has no steps yet, but it keeps your instruction, so you can ask me to build it again.");
+      for (const id of ["flow.explore", "flow.improve"]) {
+        const text = (await run(id, failed)).join(" ");
+        expect(text, id).not.toMatch(VERDICTS);
+        expect(text, id).not.toContain("Saving the board");
+        expect(text, id).toMatch(/ask me to build it again/u);
+      }
+    });
+  });
+
   it("describes and announces the legacy build as applied or asked about", () => {
     const view = { args: {}, flowName: "Kettles", place: "shop.example" };
     expect(command("flow.createHere").capability.summary).toContain("puts those steps into the Flow");

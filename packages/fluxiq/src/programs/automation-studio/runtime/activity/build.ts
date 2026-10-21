@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { activitySaidOnce, cutAtWord } from "../../../../ui/index.ts";
 import { emitAutomationStudioActivity } from "./emit.ts";
 import { runWithAutomationStudioActivity } from "./scope.ts";
 
@@ -34,7 +35,8 @@ export async function withAutomationStudioBuildActivity<T>(target: { projectId?:
       // (`../service/flow-bootstrap-commands/cancellation.ts`): that, not a label, is what says it was stopped.
       const stopped = (error as { name?: string } | null)?.name === "AbortError";
       const cause = stopped || ending ? undefined : await buildFailureCause(error);
-      const title = stopped ? "Build stopped" : ending ? ENDING_TITLES[ending.kind] : cause ? `Build failed: ${cause}` : "Build failed";
+      // Cut where a word ends, within the stream's bound, so the bound's own cut by count never splits a word (t753).
+      const title = stopped ? "Build stopped" : ending ? ENDING_TITLES[ending.kind] : cause ? cutAtWord(`Build failed: ${cause}`, TITLE_MAX) : "Build failed";
       const text = ending ? ending.message : cause ? `${cause.charAt(0).toUpperCase()}${cause.slice(1)}.` : undefined;
       emitAutomationStudioActivity({ phase: "failed", label: title, detail: { kind: "step", title, status: "failed", ...(text ? { text } : {}) }, final: true, ...(stopped ? { stopped: true as const } : {}) });
       throw error;
@@ -109,8 +111,12 @@ async function buildFailureCause(error: unknown): Promise<string | undefined> {
   const diagnostic = parseAutomationStudioFlowBootstrapGenerationError(error);
   if (!diagnostic) return undefined;
   const said = automationStudioConversationCallCause("the build", { ok: false, error: (error as Error).message, payload: { diagnostic } });
-  return CHAT_OPENING.test(said) ? said.replace(CHAT_OPENING, "") : undefined;
+  // A supervisor's ending and its reason can say one thing twice: "FluxIQ could not finish the Flow: I could not finish this" (t753).
+  return CHAT_OPENING.test(said) ? activitySaidOnce(said.replace(CHAT_OPENING, "")) : undefined;
 }
+
+/** The stream's bound on a label and a title (`./bounded.ts`), which it cuts to by count. */
+const TITLE_MAX = 160;
 
 /**
  * The ending a failed build carries for the person, read by shape: this module

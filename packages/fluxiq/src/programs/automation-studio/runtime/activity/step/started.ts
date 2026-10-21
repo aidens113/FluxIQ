@@ -2,6 +2,11 @@ import type { AutomationStudioActivityEmission } from "../contracts.ts";
 import { emitAutomationStudioActivity } from "../emit.ts";
 import { automationStudioActivityPassWords, type AutomationStudioActivityLoopPass } from "../loop/index.ts";
 import { automationStudioActivityAction, automationStudioActivityHumanLabel } from "../wording/index.ts";
+import { ACTIVITY_PAGE_PREPARATION_WORDS, cutAtWord } from "../../../../../ui/index.ts";
+import { automationStudioActivityPreparing } from "./preparation.ts";
+
+/** The stream's bound on a label (`../bounded.ts`), which it cuts to by count; cut here first, where a word ends (t753). */
+const LABEL_MAX = 160;
 
 /**
  * Says the executor is about to run one node: "Running step N of M: action".
@@ -28,7 +33,17 @@ import { automationStudioActivityAction, automationStudioActivityHumanLabel } fr
  * A step a list loop's pass runs carries that pass's row in `step.row`, as a
  * person reads it ("Jonas Weber", `../loop/row.ts`), so its card can say
  * "Confirm · Jonas Weber" (t378, lane D); the wire contract
- * (`ClientGatewayActivity.step.row`) declares it optional.
+ * (`ClientGatewayActivity.step.row`) declares it optional. The label says
+ * the pass's row number after the action ("Running step 4 of 6: Press
+ * Confirm (row 3)"), so a long loop's status line moves as the loop does: it
+ * sat at "Running step 9 of 10: ..." for six minutes while the cards counted
+ * the passes (t753). The card's title keeps its own words.
+ *
+ * A step run only to get the page ready for a part of the Flow
+ * (`./preparation.ts`) says "Getting the page ready: <action>" and no count:
+ * it is no step of a run the person is watching, and its count jumped as it
+ * went into a part's own steps (t753). The label is cut where a word ends
+ * within the stream's bound, which would otherwise cut it inside one.
  */
 export function emitAutomationStudioActivityStep(input: { index: number; count: number; nodeId: string; label?: string | undefined; definitionId?: string | undefined; parameters?: unknown; pass?: AutomationStudioActivityLoopPass | undefined }): void {
   const label = automationStudioActivityHumanLabel(input.label, 160);
@@ -41,9 +56,13 @@ export function emitAutomationStudioActivityStep(input: { index: number; count: 
   const where = `${counted}${passed.after}`;
   const row = input.pass?.row;
   const step: NonNullable<AutomationStudioActivityEmission["step"]> = { index: input.index, count: input.count, nodeId: input.nodeId, ...(label ? { label } : {}), ...(row ? { row } : {}) };
+  const rowNumber = input.pass?.unit === "row" ? ` (row ${input.pass.pass})` : "";
+  const said = automationStudioActivityPreparing()
+    ? `${ACTIVITY_PAGE_PREPARATION_WORDS}${action ? `: ${action}` : ""}`
+    : `Running ${where}${action ? `: ${action}${rowNumber}` : rowNumber}`;
   emitAutomationStudioActivity({
     phase: "running",
-    label: `Running ${where}${action ? `: ${action}` : ""}`,
+    label: cutAtWord(said, LABEL_MAX),
     step,
     // `Node: <definition>` is the record a tool row carries (`ui/activity-action/
     // record.ts`), so a card can tell what the step is from what it runs: a

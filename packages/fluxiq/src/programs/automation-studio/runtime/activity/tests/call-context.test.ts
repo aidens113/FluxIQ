@@ -49,15 +49,15 @@ const cardOf = (callTitle: RegExp) => activityActionOf(ended().find((event) => c
 // U10, live run `run-muw6144a-e56f945d`: the build's navigate to `/friends/`
 // read "Opening the start page" / "Open page · the start page".
 describe("the start page is the address the work starts at", () => {
-  it("names a navigate there the start page, and a navigate elsewhere on this machine by its path", async () => {
+  it("names a navigate there the start page, and a navigate elsewhere on this machine another page, never by its path (t753)", async () => {
     const observed = observeAutomationStudioEvidenceLoop(loopInput());
     await inScope(async () => {
       await observed.executeTool({ callId: "initial.core.run_node", toolId: "core.run_node", value: { node: "web.output.browser-navigate", parameters: { url: START } } });
       await observed.executeTool({ callId: "nav-friends-1", toolId: "core.run_node", value: { node: "web.output.browser-navigate", parameters: { url: "http://127.0.0.1:60766/friends/" } } });
       await observed.executeTool({ callId: "back-1", toolId: "core.run_node", value: { node: "web.output.browser-navigate", parameters: { url: START } } });
     });
-    expect(ended().map((event) => event.detail?.title)).toEqual(["Opening where the Flow starts", "Opening “friends”", "Opening the start page"]);
-    expect(activityActionOf(ended()[1]!)?.target).toBe("friends");
+    expect(ended().map((event) => event.detail?.title)).toEqual(["Opening where the Flow starts", "Opening another page", "Opening the start page"]);
+    expect(activityActionOf(ended()[1]!)?.target).toBe("another page");
     expect(activityActionOf(ended()[2]!)?.target).toBe("the start page");
   });
 
@@ -225,5 +225,31 @@ describe("an exploration check is read by what the page view printed its control
     });
     expect(ended().map((event) => event.detail?.title)).toEqual(["Ticking “Gift wrap”", "Ticking a box"]);
     expect(activityActionOf(ended()[0]!)?.name).toBe("Tick");
+  });
+});
+
+// t753 (round-5 UI review): a wordless icon control's view line prints its
+// class after its kind (`t50 button icon class="css-0732x7m"`), and that class
+// was read as its name: "Reading the details of “css-0732x7m”". Only the words
+// in the name's place name a control; one with none is said by its kind.
+describe("a control the page view printed with no words is said by its kind", () => {
+  const view = (lines: string[]) => ({ callId: "initial.core.run_node", toolId: "core.run_node", value: { evidence: { page: `PAGE "Example"\nURL ~/\n\n[main]\n${lines.join("\n")}` } } });
+  const call = (callId: string, node: string, handle: string) => ({ kind: "tool_call", callId, toolId: "core.run_node", input: { node, parameters: { target: { handle } }, consequences: [] } });
+  const VIEW = ["t50 button icon class=\"css-0732x7m\"", "t51 link icon class=\"css-1q2w3e4\" use=\"#arrow\"", "t52 h2 button \"Say \\\"hi\\\" now\"", "t53 clickable icon class=\"sc-AxjAm\""];
+
+  it("never reads a class as the name, says the kind, and still reads the words in the name's place", async () => {
+    const calls = [call("c1", "web.output.dom-click", "t50"), call("c2", "web.describe_element", "t50"), call("c3", "web.output.dom-click", "t51"), call("c4", "web.output.dom-click", "t52"), call("c5", "web.output.dom-click", "t53")];
+    let next = calls[0]!;
+    const observed = observeAutomationStudioEvidenceLoop({ ...loopInput(), decide: async () => next });
+    await inScope(async () => {
+      for (const [index, each] of calls.entries()) {
+        next = each;
+        await observed.decide({ iteration: index + 1, tools: [], evidence: [view(VIEW)], decisionSchema: {}, canComplete: false });
+        await observed.executeTool({ callId: each.callId, toolId: each.toolId, value: each.input });
+      }
+    });
+    expect(ended().map((event) => event.detail?.title)).toEqual(["Clicking a button", "Reading the details of a button", "Clicking a link", "Clicking “Say \"hi\" now”", "Clicking a control"]);
+    expect(ended().map((event) => activityActionOf(event)?.target)).toEqual(["a button", "a button's details", "a link", "Say \"hi\" now", "a control"]);
+    for (const event of seen) expect(JSON.stringify([event.label, event.detail?.title])).not.toMatch(/css-|sc-/u);
   });
 });

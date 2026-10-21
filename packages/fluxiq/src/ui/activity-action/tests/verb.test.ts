@@ -26,3 +26,12 @@ describe("activityActionVerb", () => {
     expect(activityActionVerb("output", "gerund")).toBeUndefined();
   });
 });
+
+// t753: a box set unchecked read "Ticking" and its card "Tick".
+describe("activityActionVerb: unticking", () => {
+  it("reads uncheck and untick as unticking a box, a click by kind", () => {
+    expect(activityActionVerb("uncheck")).toEqual({ verb: "uncheck", kind: "click" });
+    expect(activityActionVerb("untick")).toEqual({ verb: "uncheck", kind: "click" });
+    expect(activityActionVerb("unticking", "gerund")).toEqual({ verb: "uncheck", kind: "click" });
+  });
+});

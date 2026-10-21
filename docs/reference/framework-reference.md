@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4116
+- Public declarations: 4124
 - Class: 140
 - Interface: 10
-- Object: 542
+- Object: 546
 - Type: 2191
 - Type Alias: 1
-- Value: 1232
+- Value: 1236
 
 ## Public Declarations
 
@@ -33,15 +33,19 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ActionVisualEntityTarget` | Type | `packages/fluxiq/src/programs/automation-studio/model/actions.ts` | - |
 | `ActionVisualTargetResolution` | Type | `packages/fluxiq/src/programs/automation-studio/model/action-visual-target.ts` | - |
 | `ActionVisualTargetSource` | Type | `packages/fluxiq/src/programs/automation-studio/model/actions.ts` | - |
+| `ACTIVITY_ACTION_CONTROL_NOUNS` | Object | `packages/fluxiq/src/ui/activity-action/control-nouns.ts` | Every noun `activityActionControlNoun` says, for a card to read a sentence that names a control by one ("Clicking a button") back (`./action-of.ts`). |
 | `ACTIVITY_ACTION_ICONS` | Object | `packages/fluxiq/src/ui/activity-action/icons.ts` | The icon each action kind's card shows: a lucide icon name (Core's icon set, `lucide-react`), in kebab case. A client maps the name to its own component. |
 | `ACTIVITY_ACTION_NAMES` | Object | `packages/fluxiq/src/ui/activity-action/names.ts` | The short label each action kind's card carries beside its icon. |
 | `ACTIVITY_ACTION_REFUSAL_WORDS` | Object | `packages/fluxiq/src/ui/activity-action/refusal-words.ts` | Core's plain words for why it did not do what a decision asked, written once for every client's card and for Core's own wording (`programs/automation-studio/runtime/activity/wording/draft-edit-card.ts`, which checks at compile time that every reason the draft can give has words here). - `amendment`: why an edit to the draft changed nothing, by the draft's own refusal reason (`programs/automation-studio/runtime/flow-draft/amendment/types.ts`). - `repeated`: why a call, or a step asked to run again, was not run, by what the same call came to before (`programs/automation-studio/runtime/llm/repeat-guard/outcomes.ts`). - `resent`: why a whole Flow sent again unchanged (a candidate build's submission) was not taken, by the same. Each finishes "Not done: ...", so each opens in lower case and is no code. |
 | `ACTIVITY_ACTION_VERB_NAMES` | Object | `packages/fluxiq/src/ui/activity-action/verb-names.ts` | The short name a card carries for a verb whose act is narrower than its kind's name (`./names.ts`): "Choose" for an option chosen, which is a click by kind. A verb not here is named by its kind. |
-| `ACTIVITY_DETAIL_INTERVAL_MS` | Object | `packages/fluxiq/src/ui/activity-status/pacer.ts` | The shortest time between two paced changes of `detail`: more than half of three seconds, so any three seconds show at most two. The overlay used to add this on its own (a 1.6 s dwell over a 1.2 s pace); one pace for both surfaces keeps them in step (D7). |
+| `ACTIVITY_DETAIL_INTERVAL_MS` | Object | `packages/fluxiq/src/ui/activity-status/pacer.ts` | The shortest time between two paced changes of the line: more than half of three seconds, so any three seconds show at most two. The overlay used to add this on its own (a 1.6 s dwell over a 1.2 s pace); one pace for both surfaces keeps them in step (D7). |
 | `ACTIVITY_FAN_OUT_INTERVAL_MS` | Object | `packages/fluxiq/src/ui/activity-status/fan-out-gate.ts` | Four sends a second. |
+| `ACTIVITY_HEADLINE_DWELL_MS` | Object | `packages/fluxiq/src/ui/activity-status/pacer.ts` | The least time a headline stays up before another that does not settle or wait replaces it (t753). |
 | `ACTIVITY_HISTORY_LIMITS` | Object | `packages/fluxiq/src/ui/activity-status/history-limits.ts` | How much of FluxIQ's work the background keeps for the chat's step messages (`background/activity/unit-history.ts`): the last `units` units of work, and at most `eventsPerUnit` events of each, the newest. A build of 60 decisions is about 250 kept events, so a whole build fits with room to spare; the bound is there so a runaway loop cannot grow the panel's state without end. A build still in progress is held to `buildEventsCeiling` instead, and is never the unit dropped for a newer one: a build with a project supervisor, several builders, the validator and a repair passes 500 events, and can pass ten units, on its own (automation-project-agents-plan, chat presentation). The ceiling is still a bound, for the same runaway loop. |
+| `ACTIVITY_PAGE_PREPARATION_WORDS` | Object | `packages/fluxiq/src/ui/activity-status/steady/page-preparation.ts` | Core's words opening every row of a step run to get the page ready; the headline while it lasts. |
 | `ACTIVITY_RESULT_CHECK_LABELS` | Object | `packages/fluxiq/src/ui/activity-action/result-check-labels.ts` | The status sentence (`ClientGatewayActivity.label`) each verdict of a run's result check is said in (`programs/automation-studio/runtime/result-verification/check-activity.ts`). Written once, here, because a chat card reads two of them back: a result Core could not confirm (`unconfirmed`, the two checks disagreed or the model was unsure) and one it could not check at all (`unchecked`) are not a pass, and they are not a failure either. The row's `status` is `failed` for both, fail-closed, so the label is the only thing that tells them from `refuted`. |
 | `ActivityAction` | Type | `packages/fluxiq/src/ui/activity-action/types.ts` | One action, ready for a card. `target` is the name of what it acted on as the event already carried it, or null when it named none (the client says "the page" in its own words). `why` is a short human reason for a failure, or null; never a result code. `tested` is set only on a step a test of the Flow did not simply do again, and says what it did instead, in words a card shows in place of "Done" ("Checked, not pressed", "Already done on the site", "Skipped: not there, optional"; `./tested.ts`), and on a run step skipped rather than run says why (`./skipped.ts`). |
+| `activityActionControlNoun` | Value | `packages/fluxiq/src/ui/activity-action/control-nouns.ts` | - |
 | `ActivityActionEvent` | Type | `packages/fluxiq/src/ui/activity-action/types.ts` | The fields of one activity event the classifier reads. A client passes the `server.activity` payload as it arrived; fields it does not have may be left out. |
 | `activityActionFailureReason` | Value | `packages/fluxiq/src/ui/activity-action/failure-reason.ts` | - |
 | `activityActionKey` | Value | `packages/fluxiq/src/ui/activity-action/key.ts` | - |
@@ -65,10 +69,12 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ActivityPacerOptions` | Type | `packages/fluxiq/src/ui/activity-status/pacer.ts` | - |
 | `ActivityProjectCard` | Type | `packages/fluxiq/src/ui/activity-status/project/project-card.ts` | A card a `note` row carries, as the wire contract declares it. |
 | `ActivityReadRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/activity.ts` | One project's live activity. Nothing else narrows it: the hub keeps one project's latest events. |
+| `activitySaidOnce` | Value | `packages/fluxiq/src/ui/activity-status/steady/said-once.ts` | - |
 | `ActivityStepRecovery` | Type | `packages/fluxiq/src/ui/activity-status/step-recovery.ts` | The recovery a step row reports, as the wire contract declares it. |
 | `ActivityStepSkip` | Type | `packages/fluxiq/src/ui/activity-status/step-skip.ts` | The skip a step row reports, as the wire contract declares it. |
 | `ActivityTimer` | Type | `packages/fluxiq/src/ui/activity-status/clock.ts` | - |
 | `ActivityWaitReason` | Type | `packages/fluxiq/src/ui/activity-status/headline.ts` | What the person is being waited on for. |
+| `activityWithoutHeadline` | Value | `packages/fluxiq/src/ui/activity-status/headline-echo.ts` | - |
 | `activityWording` | Value | `packages/fluxiq/src/ui/activity-status/wording.ts` | - |
 | `ActivityWording` | Type | `packages/fluxiq/src/ui/activity-status/wording.ts` | - |
 | `adaptationConfidence` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/adaptation-promotion.ts` | - |
@@ -208,6 +214,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_CONVERSATION_SUBJECT_KINDS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/thread.ts` | - |
 | `AUTOMATION_STUDIO_CONVERSATION_TEXT_MAX` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/turn.ts` | The longest a turn's text may be. Past it the write is refused, never cut. |
 | `AUTOMATION_STUDIO_CONVERSATION_TITLE_MAX` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/inputs.ts` | The longest a thread's title may be. |
+| `AUTOMATION_STUDIO_CONVERSATION_TOLD_NEXT` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/commands/progress.ts` | What the person can do next, closing an answer whose ending its row told (`./build.ts`, t753). |
 | `AUTOMATION_STUDIO_CONVERSATION_TURN_COLUMNS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/rows.ts` | - |
 | `AUTOMATION_STUDIO_CONVERSATION_TURN_DECISIONS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/turn.ts` | What Core decided a person's message was, as recorded on its answer: a plain answer, its one question back, or a capability it took the words as (the announcement, a confirmation, or the reason it could not set one up). |
 | `AUTOMATION_STUDIO_CORE_LOOP_EVIDENCE_TOOL_POLICY_INSTRUCTION` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/stages/instructions.ts` | How to use tools, for a request that was offered some. This is Core's own evidence loop being described -- its decision schema, its completion variant, its {ok:false,code} result shape -- so it is mechanism rather than stage meaning, and it carries a reserved `core.loop-stage.` id that no registration can address. A domain that replaces "gather" replaces what gathering means for its medium; it does not get to rewrite how Core's loop is answered. It sits between the ordering statement and the stage's own instructions, and carries the text by reference rather than by copy, so there is exactly one copy of it in the codebase and the provider and the protocol cannot drift apart on what exploration means. |
@@ -3683,6 +3690,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `parseConstrainedFlowModule` | Value | `packages/fluxiq/src/programs/automation-studio/dsl/source.ts` | - |
 | `pathSize` | Value | `packages/fluxiq/src/framework/storage-layout.ts` | - |
 | `Permission` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | - |
+| `personFacingTextFaults` | Value | `packages/fluxiq/src/ui/person-facing/text-faults.ts` | - |
 | `planAutomationStudioRuntimeRecovery` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/plan.ts` | - |
 | `PolicyAction` | Type | `packages/fluxiq/src/programs/automation-studio/model/actions.ts` | - |
 | `PolicyEdge` | Type | `packages/fluxiq/src/programs/automation-studio/model/policies.ts` | - |

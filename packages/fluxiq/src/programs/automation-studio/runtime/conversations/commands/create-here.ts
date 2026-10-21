@@ -72,8 +72,8 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     // Flow ... and saved what it should do", read straight after "I could not
     // build this Flow", said the opposite of what had happened (t195,
     // `run-murdouox-c5294247`, UI review).
-    if (!built.ok) return progress.failed(built.cause, { ending: built.ending, left: automationStudioConversationCreateHereLeft(name, built, said.from) });
-    if (built.status === "draft") return { ...progress.succeeded(automationStudioConversationCreateHereDraftSaid(built.candidate)), candidate: built.candidate };
+    if (!built.ok) return progress.failed(built.cause, { ending: built.ending, left: automationStudioConversationCreateHereLeft(name, built, said.from), told: built.told });
+    if (built.status === "draft") return { ...progress.succeeded(automationStudioConversationCreateHereDraftSaid(built.candidate, built.told)), candidate: built.candidate, candidateTold: built.told };
     progress.carry({ adaptationId: built.adaptationId });
     const where = automationStudioConversationSiteName(context.startLocation);
     progress.landed(built.trial ? `explored ${where}, wrote the Flow's steps and test-ran the whole Flow from its start` : `tried the steps on ${where} and worked out which ones work`);
@@ -105,9 +105,10 @@ const TIME_LIMIT_CODE = "project.build_time_limit";
  * failed build's ending (`./progress.ts`): it "reached its time limit before a
  * whole test of the Flow passed".
  */
-function automationStudioConversationCreateHereDraftSaid(candidate: AutomationStudioCandidateAuthoringResult): string {
-  const said = automationStudioConversationCandidateDraftSaid(candidate);
-  if (!candidate.trial?.codes.includes(TIME_LIMIT_CODE)) return said;
+function automationStudioConversationCreateHereDraftSaid(candidate: AutomationStudioCandidateAuthoringResult, told: boolean): string {
+  const said = automationStudioConversationCandidateDraftSaid(candidate, told);
+  // The build's ending row said the time limit (`./build.ts`, t753).
+  if (told || !candidate.trial?.codes.includes(TIME_LIMIT_CODE)) return said;
   return `The build reached its time limit before a whole test of the Flow passed. ${said.replace(/^Its test run/u, "Its last test run")}`;
 }
 
@@ -157,8 +158,10 @@ function automationStudioConversationFlowName(instruction: string): string {
  * loop-provider-unavailable.ts`) -- is not followed by the same again (t619):
  * this names the Flow and what it holds, and says nothing of the instruction.
  */
-function automationStudioConversationCreateHereLeft(name: string, built: { ending?: string | undefined; endingKind?: string | undefined; kept: boolean; candidateKept?: string | undefined }, from: AutomationStudioConversationCommandInstruction["from"]): string {
+function automationStudioConversationCreateHereLeft(name: string, built: { ending?: string | undefined; endingKind?: string | undefined; kept: boolean; candidateKept?: string | undefined; told?: boolean | undefined }, from: AutomationStudioConversationCommandInstruction["from"]): string {
   const instruction = from === "person" ? "your instruction" : `the instruction ${AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS}`;
+  // The build's ending row said how it ended: what the Flow keeps, and that the person can ask again (`./build.ts`, t753).
+  if (built.told) return `${built.candidateKept ? `${built.candidateKept} ` : ""}The Flow "${name}" ${built.candidateKept ? "keeps" : "has no steps yet, but it keeps"} ${instruction}, so you can ask me to build it again.`;
   if (built.ending && built.endingKind && ENDINGS_SAYING_INSTRUCTION_KEPT.has(built.endingKind)) {
     // What a kept draft holds is the ending's own to say (its kept sentence) or the candidate's; the Flow itself holds no step.
     return built.candidateKept ?? `The Flow "${name}" has no steps yet.`;

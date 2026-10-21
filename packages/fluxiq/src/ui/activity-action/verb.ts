@@ -24,6 +24,8 @@ const VERBS: readonly Entry[] = [
   { verb: "clear", kind: "type", word: /^clear$/u, gerund: "clearing" },
   { verb: "select", kind: "click", word: /^(select|choose)$/u, gerund: "choosing" },
   { verb: "check", kind: "click", word: /^check$/u, gerund: "ticking" },
+  // A box set unchecked: it read "Ticking" and its card "Tick" (t753).
+  { verb: "uncheck", kind: "click", word: /^(uncheck|untick)$/u, gerund: "unticking" },
   { verb: "upload", kind: "other", word: /^upload$/u, gerund: "adding" },
   { verb: "read", kind: "read", word: /^(extract|read|collect|scrape)$/u, gerund: "reading" },
   { verb: "list", kind: "read", word: /^list$/u, gerund: "listing" },
