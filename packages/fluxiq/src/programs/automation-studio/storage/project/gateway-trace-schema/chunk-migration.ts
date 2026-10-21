@@ -2,7 +2,7 @@
 // trials-plan, lane T P3). 0030 kept each event's JSON inline or as one
 // content object; P2 measured that JSON at 92-96% of a trace's bytes, mostly
 // views repeated from command to command. A large event is now cut into
-// content-defined chunks (`chunk-bounds.ts`), each stored once per project in
+// content-defined chunks (`../gateway-trace-chunk-codec/chunk-bounds.ts`), each stored once per project in
 // `client_gateway_trace_chunks` keyed by the SHA-256 of its raw bytes, and the
 // event row keeps the ordered digests and the body's byte length.
 //

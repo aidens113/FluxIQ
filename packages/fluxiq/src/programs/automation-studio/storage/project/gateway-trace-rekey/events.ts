@@ -18,8 +18,8 @@
 // names (`chunk-cleanup.ts`).
 import { requestContentAddressScrub } from "../content-address/index.ts";
 import type { AutomationStudioSqlExecutor } from "../database.ts";
-import { prepareGatewayTraceEventBody } from "../gateway-trace/prepare-body.ts";
-import { writeGatewayTraceChunks } from "../gateway-trace/write-chunks.ts";
+import { prepareGatewayTraceEventBody } from "../gateway-trace-chunk-codec/index.ts";
+import { writeGatewayTraceChunks } from "../gateway-trace-chunk-rows/index.ts";
 import type { GatewayTraceRekeyContext, GatewayTraceRekeySkip } from "./context.ts";
 import { readOldGatewayTraceEventBodies } from "./event-bodies.ts";
 import type { GatewayTraceOldEventRow } from "./event-bodies.ts";

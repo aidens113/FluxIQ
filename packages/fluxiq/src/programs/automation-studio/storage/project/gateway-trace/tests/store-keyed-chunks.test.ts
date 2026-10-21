@@ -7,7 +7,7 @@
 // whose key id or digest was tampered with makes the read throw, never answer.
 import { afterEach, describe, expect, it } from "vitest";
 import { AutomationStudioProjectGatewayTraceStore } from "../index.ts";
-import { unpackGatewayTraceChunk } from "../unpack-chunk.ts";
+import { unpackGatewayTraceChunk } from "../../gateway-trace-chunk-codec/index.ts";
 import { CHUNK_ROWS_SQL, EVENT_ROWS_SQL, digestsOf, eventTexts, hostProtection, projectKeyring, recordTrace, viewText } from "./keyed-trace-support.ts";
 import type { KeyedChunkRow, KeyedEventRow } from "./keyed-trace-support.ts";
 import { SqliteTraceFixture } from "./sqlite-trace-fixture.ts";

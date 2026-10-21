@@ -6,11 +6,31 @@ export type AutomationStudioProjectContentProtectionKey = { keyId: string; key: 
 export type AutomationStudioProjectContentProtectionKeyResolver = (input: { projectId: string; keyId?: string }) => AutomationStudioProjectContentProtectionKey | undefined | Promise<AutomationStudioProjectContentProtectionKey | undefined>;
 export type AutomationStudioProtectedProjectContent = { content: Buffer; encryption: string };
 
-/** Generic project-content protection boundary. Implementations must authenticate project and media-type context. */
+/**
+ * Generic project-content protection boundary. Implementations must authenticate project and media-type context.
+ *
+ * Retiring a host key (t747). Everything a project seals (content-store
+ * objects, gateway trace chunks and manifests, the wrapped content-address
+ * keys) stays under the key it was sealed with until it is re-sealed, so a
+ * host retires a key in this order:
+ *  1. make the new key current, while the old key id still resolves;
+ *  2. run `resealAutomationStudioProjectContent` with the old id in
+ *     `retiringKeyIds` for every project until it reports `complete`; it is
+ *     safe to interrupt, and a rerun picks up exactly what is still under the
+ *     old key;
+ *  3. only then stop resolving the old key id.
+ * Content still sealed under a key the host stops resolving is lost.
+ */
 export interface AutomationStudioProjectContentProtection {
   readonly providerId: string;
   seal(input: { projectId: string; mediaType: string; content: Buffer }): Promise<AutomationStudioProtectedProjectContent>;
   open(input: { projectId: string; mediaType: string; content: Buffer; encryption: string }): Promise<Buffer>;
+  /**
+   * The id of the host key `encryption` (a sealed form's envelope) names;
+   * throws when the envelope is not this provider's. The re-seal job selects
+   * by it and refuses a provider without it.
+   */
+  sealedKeyId?(encryption: string): string;
 }
 
 type AesGcmEnvelope = { version: 1; providerId: typeof AUTOMATION_STUDIO_AES_GCM_PROJECT_CONTENT_PROTECTION_ID; keyId: string; iv: string; tag: string };
@@ -52,6 +72,11 @@ export class AutomationStudioAesGcmProjectContentProtection implements Automatio
     } finally {
       key.fill(0);
     }
+  }
+
+  /** The host key id the authenticated envelope names (it is bound into the AAD, so a forged id fails `open`). */
+  sealedKeyId(encryption: string): string {
+    return parseEnvelope(encryption).keyId;
   }
 }
 

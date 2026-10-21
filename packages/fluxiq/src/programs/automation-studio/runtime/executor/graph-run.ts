@@ -409,7 +409,7 @@ async function executeAutomationStudioGraph(
           remainingMs,
           options.signal,
           // Built here, not by the node, so it is stamped here the way node-execution.ts stamps the rest.
-          () => nodeAttemptWithAdaptationIds(node, { attemptId: `${node.id}.attempt.${ctx.nextAttemptNumber()}`, nodeId: node.id, definitionId: node.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.`, failure: { category: "timeout", code: "executor.region.timeout", retryable: false, stage: "execution" } }), options.commandRun
+          () => nodeAttemptWithAdaptationIds(node, { attemptId: `${node.id}.attempt.${ctx.nextAttemptNumber()}`, nodeId: node.id, definitionId: node.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.`, failure: { category: "timeout", code: "executor.region.timeout", retryable: false, stage: "execution" } }), options.commandRun, options.startTimer
         );
       // A required command whose outcome stayed unknown latched the run, so no checkpoint is asked before it stops (`step-loop/uncertain-stop.ts`).
       const outcomeUnknown = executed.failure?.code === AUTOMATION_STUDIO_REQUIRED_OUTCOME_UNKNOWN.code;

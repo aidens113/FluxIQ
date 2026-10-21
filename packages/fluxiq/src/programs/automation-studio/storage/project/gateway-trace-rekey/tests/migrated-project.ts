@@ -16,7 +16,8 @@ import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../admin
 import { AutomationStudioProjectContentStore } from "../../content-store.ts";
 import type { AutomationStudioProjectContentProtection } from "../../content-protection.ts";
 import { AutomationStudioProjectDatabasePool } from "../../database.ts";
-import { AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION, AutomationStudioProjectGatewayTraceStore } from "../../gateway-trace/index.ts";
+import { AutomationStudioProjectGatewayTraceStore } from "../../gateway-trace/index.ts";
+import { AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION } from "../../gateway-trace-schema/index.ts";
 import { recordTrace, viewText } from "../../gateway-trace/tests/keyed-trace-support.ts";
 import type { GatewayTraceRekeyOptions } from "../index.ts";
 

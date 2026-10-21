@@ -11,5 +11,6 @@ export { automationStudioClientGatewayTraceEnabled } from "./from-environment.ts
 export type { AutomationStudioGatewayTraceOpenEpisode } from "./open-episode.ts";
 export { screenAutomationStudioGatewayTracePayload } from "./payload-screen.ts";
 export type { AutomationStudioGatewayTraceRegistry } from "./registry.ts";
+export { AutomationStudioGatewayTraceReplaySources } from "./replay-sources.ts";
 export { AutomationStudioGatewayTraceScreeningSink } from "./screening-sink.ts";
 export type * from "./types.ts";

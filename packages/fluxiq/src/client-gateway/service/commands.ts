@@ -11,7 +11,7 @@ import { COMMAND_ANSWER_MARGIN_MS } from "./command-answer-margin.ts";
 import type { ClientGatewayConfig } from "./config.ts";
 import type { ClientGatewaySessionRegistry } from "./sessions.ts";
 import type { ClientGatewayTransport } from "./transport.ts";
-import type { PendingCommand } from "./types.ts";
+import type { ClientGatewayTimerSource, PendingCommand } from "./types.ts";
 import { ClientGatewayCommandContext, ClientGatewayDurableDispatch, type ClientGatewayDurableActionOptions, type ClientGatewayDurableActionResponse } from "./command-ledger/index.ts";
 import type { ClientGatewayEventBus } from "./event-bus.ts";
 import type { ClientGatewayServiceOptions } from "./types.ts";
@@ -64,7 +64,7 @@ export class ClientGatewayCommands {
     this.transport = collaborators.transport;
     this.audit = collaborators.audit;
     this.trace = collaborators.trace;
-    this.durable = new ClientGatewayDurableDispatch({ ...collaborators, ...(collaborators.resolveCommandLedger ? { resolve: collaborators.resolveCommandLedger } : {}), reconcile: (commandId) => this.reconcileDurable(commandId) });
+    this.durable = new ClientGatewayDurableDispatch({ ...collaborators, ...(collaborators.resolveCommandLedger ? { resolve: collaborators.resolveCommandLedger } : {}), reconcile: (commandId, timers) => this.reconcileDurable(commandId, timers) });
     this.history = new ClientGatewayCommandHistory(collaborators.config.now);
     this.reconciler = new ClientGatewayCommandReconciler({ sessions: this.sessions, transport: this.transport, audit: this.audit, answerMs: collaborators.config.reconcileAnswerMs });
     this.commandOwner = collaborators.commandOwner;
@@ -123,8 +123,11 @@ export class ClientGatewayCommands {
     // own timeout when that runs out; waiting only as long would discard that
     // answer, so a sent timeout is waited on for the answer margin longer.
     const waitMs = command.timeoutMs === undefined ? this.config.commandTimeoutMs : command.timeoutMs + COMMAND_ANSWER_MARGIN_MS;
+    // A command sent inside a scope with its own timers waits on them, as does its reconcile question (`./channel-scope/source.ts`).
+    const timers = this.scopeTimers();
+    const startTimer = timers ?? this.config.startTimer;
     const result = new Promise<ClientGatewayActionResult>((resolve) => {
-      const timeout = this.config.startTimer({ kind: "answer", commandId }, waitMs, () => void this.answerNeverCame(commandId, waitMs));
+      const timeout = startTimer({ kind: "answer", commandId }, waitMs, () => void this.answerNeverCame(commandId, waitMs, timers));
       this.pending.set(commandId, { sessionId, resolve, timeout });
     });
     void this.transport.send(sessionId, message);
@@ -157,11 +160,17 @@ export class ClientGatewayCommands {
    * Asks the client a command was sent to what became of it (C8, B3): answered
    * from what the client kept, never by acting. `undefined` when no session of
    * that client answers such a question, or the command is not one this
-   * gateway remembers sending.
+   * gateway remembers sending. Asked inside a scope with its own timers, its
+   * waits run on them.
    */
   async reconcileAction(commandId: string): Promise<ClientGatewayReconcileAnswer | undefined> {
+    return await this.reconcileWith(commandId, this.scopeTimers());
+  }
+
+  /** `reconcileAction`, its waits on `timers` when given (the timer source of the scope the command was dispatched in). */
+  private async reconcileWith(commandId: string, timers: ClientGatewayTimerSource | undefined): Promise<ClientGatewayReconcileAnswer | undefined> {
     const route = this.history.route(commandId);
-    return route ? await this.reconciler.reconcile(route, commandId) : undefined;
+    return route ? await this.reconciler.reconcile(route, commandId, timers) : undefined;
   }
 
   /** A client's answer to `server.reconcile_command`; false when nobody asked it that. */
@@ -197,10 +206,10 @@ export class ClientGatewayCommands {
    * no client to ask leave it `timed_out` (`./command-reconcile/`). The command
    * stays pending meanwhile, so its own answer, arriving late, still wins.
    */
-  private async answerNeverCame(commandId: string, waitMs: number): Promise<void> {
+  private async answerNeverCame(commandId: string, waitMs: number, timers: ClientGatewayTimerSource | undefined): Promise<void> {
     const pending = this.pending.get(commandId);
     if (!pending) return;
-    const answer = await this.reconcileAction(commandId);
+    const answer = await this.reconcileWith(commandId, timers);
     if (this.pending.get(commandId) !== pending) return;
     this.pending.delete(commandId);
     const result = clientGatewayReconciledResult(commandId, answer, waitMs);
@@ -211,8 +220,8 @@ export class ClientGatewayCommands {
   }
 
   /** A durable command's answer never came: its client is asked, as for any command, before its ledger entry is called unknown (`./command-ledger/dispatch.ts`). */
-  private async reconcileDurable(commandId: string): Promise<ClientGatewayReconcileAnswer | undefined> {
-    const answer = await this.reconcileAction(commandId);
+  private async reconcileDurable(commandId: string, timers: ClientGatewayTimerSource | undefined): Promise<ClientGatewayReconcileAnswer | undefined> {
+    const answer = await this.reconcileWith(commandId, timers);
     if (answer) this.audit.record("command.reconciled", "A durable command whose answer never came was asked about by command id before its outcome was decided.", { commandId, state: answer.state, durable: true });
     return answer;
   }
@@ -246,6 +255,11 @@ export class ClientGatewayCommands {
     const result = clientGatewayHostLeaseRefusal(input.commandId, input.code);
     this.trace.synthesized(input.commandId, "server.execute_action", { outcome: "refused_unsent", code: input.code, message, result });
     return { commandId: input.commandId, message, result: Promise.resolve(result) };
+  }
+
+  /** The timer source of the dispatching channel scope, or nothing: the gateway's own waits (every live command). */
+  private scopeTimers(): ClientGatewayTimerSource | undefined {
+    return this.channelScope?.timers?.();
   }
 
   /** Why `session` may not be sent to from the dispatching channel scope, or nothing when it may. */

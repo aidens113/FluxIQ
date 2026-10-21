@@ -12,9 +12,17 @@
 //
 // Nothing installed: the work runs with the ports unchanged, and no id is
 // minted ahead of the runner.
+//
+// **A trial run in an offline environment records a derived trace (source test
+// T24).** Its world is a recorded trace (or a scripted fixture), not the live
+// target, so its episode's origin is `derived` (a replay), naming the recorded
+// traces it ran on (`../replay-sources.ts`), and its trace can never count as
+// a live episode. A live trial's episode stays `live`.
 
-import { automationStudioLiveRunEnvironment } from "../../environment/index.ts";
+import type { ClientGatewayTraceOrigin } from "../../../../../client-gateway/index.ts";
+import { automationStudioLiveRunEnvironment, type AutomationStudioRunEnvironment } from "../../environment/index.ts";
 import { AutomationStudioGatewayTraceInstallation } from "../installation.ts";
+import { AutomationStudioGatewayTraceReplaySources } from "../replay-sources.ts";
 import type { AutomationStudioGatewayTraceEpisode } from "../types.ts";
 import type { AutomationStudioGatewayTraceTrial } from "./types.ts";
 
@@ -27,6 +35,12 @@ export async function withAutomationStudioGatewayTraceTrial<T>(trial: Automation
   const episodes = AutomationStudioGatewayTraceInstallation.current();
   if (episodes === undefined) return await work(undefined);
   const runId = trial.newRunId?.() ?? (trial.environment ?? automationStudioLiveRunEnvironment).newRunId(trial.prefix);
-  const episode: AutomationStudioGatewayTraceEpisode = { projectId: trial.projectId, episodeId: runId, activity: "test", flowId: trial.flowId, context: trial.context(runId) };
+  const episode: AutomationStudioGatewayTraceEpisode = { projectId: trial.projectId, episodeId: runId, activity: "test", flowId: trial.flowId, context: trial.context(runId), origin: trialOrigin(trial.environment) };
   return await episodes.run(episode, () => work(() => runId));
+}
+
+/** Live for a live trial; a derived replay of the recorded traces in force for any other (header, T24). */
+function trialOrigin(environment: AutomationStudioRunEnvironment | undefined): ClientGatewayTraceOrigin {
+  if (environment === undefined || environment.kind === "live") return { kind: "live" };
+  return { kind: "derived", derivation: "replay", sourceTraceIds: AutomationStudioGatewayTraceReplaySources.current() ?? [] };
 }

@@ -7,7 +7,7 @@
 // sealed manifest read without the protection throws.
 import { afterEach, describe, expect, it } from "vitest";
 import { GATEWAY_TRACE_MANIFEST_MEDIA_TYPE } from "../index.ts";
-import { splitGatewayTraceContentDefined } from "../split-content-defined.ts";
+import { splitGatewayTraceContentDefined } from "../../gateway-trace-chunk-codec/index.ts";
 import { CHUNK_ROWS_SQL, EVENT_ROWS_SQL, digestsOf, eventTexts, hostProtection, projectKeyring, recordTrace, sha256, viewText } from "./keyed-trace-support.ts";
 import type { KeyedChunkRow, KeyedEventRow } from "./keyed-trace-support.ts";
 import { SqliteTraceFixture } from "./sqlite-trace-fixture.ts";

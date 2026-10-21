@@ -94,6 +94,32 @@ describe("trial evidence result validation", () => {
   it("keeps the reason vocabulary closed", () => {
     expect(Object.isFrozen(AUTOMATION_STUDIO_TRIAL_EVIDENCE_REASON_CODES)).toBe(true);
     expect(AUTOMATION_STUDIO_TRIAL_EVIDENCE_REASON_CODES).toContain("offline_not_allowed_in_phase");
+    expect(AUTOMATION_STUDIO_TRIAL_EVIDENCE_REASON_CODES).toContain("source_not_live");
+    expect(AUTOMATION_STUDIO_TRIAL_EVIDENCE_REASON_CODES).toContain("judgement_unavailable");
+  });
+
+  it("accepts an inconclusive result whose judge gave no verdict, naming the judge as the missing evidence", () => {
+    const unjudged = recordedPass({
+      verdict: "inconclusive",
+      assertionsChecked: [{ id: "build_test_judge.task_goal", outcome: "unverified" }],
+      reasonCodes: ["judgement_unavailable"],
+      missingEvidence: [{ reasonCode: "judgement_unavailable", scope: "full_recorded_path", operation: null, detail: "build_test_judge.task_goal: the judge gave no verdict" }]
+    });
+    expect(validateAutomationStudioTrialEvidenceResult(unjudged).ok).toBe(true);
+    expect(codes(recordedPass({ verdict: "inconclusive", assertionsChecked: [{ id: "build_test_judge.task_goal", outcome: "unverified" }], reasonCodes: ["judgement_unavailable"], missingEvidence: [] }))).toContain("trial_evidence.inconclusive_without_missing_evidence");
+    expect(codes(recordedPass({ reasonCodes: ["judgement_unavailable"] }))).toContain("trial_evidence.pass_with_reasons");
+  });
+
+  it("accepts a source that is not a live episode as a reason, under the same rules", () => {
+    const notLive = recordedPass({
+      verdict: "inconclusive",
+      scope: "segment",
+      assertionsChecked: [],
+      reasonCodes: ["source_not_live"],
+      missingEvidence: [{ reasonCode: "source_not_live", scope: "segment", operation: null, detail: "the source trace is derived" }]
+    });
+    expect(validateAutomationStudioTrialEvidenceResult(notLive).ok).toBe(true);
+    expect(codes(recordedPass({ verdict: "inconclusive", scope: "segment", reasonCodes: ["incomplete_capture"], missingEvidence: [{ reasonCode: "source_not_live", scope: "segment", operation: null, detail: "x" }] }))).toContain("trial_evidence.gap_reason_not_listed");
   });
 
   it("refuses a live origin mixed into a recorded result without a live episode", () => {
