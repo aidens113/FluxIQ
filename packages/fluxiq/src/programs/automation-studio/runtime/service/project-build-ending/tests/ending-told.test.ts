@@ -37,4 +37,17 @@ describe("the one account of a project build's ending", () => {
     // With no whole run at all, it still says so.
     expect(automationStudioProjectBuildRecordTold({ parts: new Map([["pin", PASSED]]), assembled: true, wholeRuns: { count: 0, last: "no" } })).toContain("never tested from its start");
   });
+
+  it.each([false, true])("keeps earlier whole tests after a refused assembly, with parts tested: %s", (withParts) => {
+    // A refused submission clears the current candidate, not the build's earlier trial records.
+    const told = automationStudioProjectBuildRecordTold({ parts: new Map(withParts ? [["pin", PASSED]] : []), assembled: false, wholeRuns: { count: 2, last: "no" } });
+    expect(told).toBe(`${withParts ? "The one part tested on its own passed its own test." : "No part of the Flow was tested on its own."} A version of the whole Flow was test-run from its start twice, and the last of those runs was judged not to do what was asked; no current version was assembled to test.`);
+    expect(told).not.toMatch(/never tested|latest version was not tested/u);
+  });
+
+  it.each([0, -1, 1.5, NaN, Infinity])("does not invent whole tests from an invalid count: %s", (count) => {
+    expect(automationStudioProjectBuildRecordTold({ parts: new Map(), assembled: false, wholeRuns: { count, last: "no" } })).toBeUndefined();
+    expect(automationStudioProjectBuildRecordTold({ parts: new Map([["pin", PASSED]]), assembled: false, wholeRuns: { count, last: "no" } })).toContain("No whole Flow was assembled, so it was never tested as one.");
+    expect(automationStudioProjectBuildRecordTold({ parts: new Map(), assembled: true, wholeRuns: { count, last: "no" } })).toContain("A whole Flow was assembled and never tested from its start.");
+  });
 });

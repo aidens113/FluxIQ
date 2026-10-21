@@ -62,8 +62,9 @@ export function automationStudioProjectBuildRecordTold(input: {
   wholeRuns?: WholeRuns | undefined;
 }): string | undefined {
   const { parts, assembled, whole, wholeRuns } = input;
-  if (!parts.size && !assembled && !whole) return undefined;
-  return [partsSaid(parts), wholeSaid(assembled, whole, wholeRuns)].join(" ");
+  const runs = wholeRuns && Number.isSafeInteger(wholeRuns.count) && wholeRuns.count > 0 ? wholeRuns : undefined;
+  if (!parts.size && !assembled && !whole && !runs) return undefined;
+  return [partsSaid(parts), wholeSaid(assembled, whole, runs)].join(" ");
 }
 
 /** How the parts tested on their own came out (header). */
@@ -86,8 +87,8 @@ function partsSaid(parts: ReadonlyMap<string, AutomationStudioActivityTimeLimitT
 /** What became of the whole Flow, and what its judged run did and was judged (header). */
 function wholeSaid(assembled: boolean, whole: Whole | undefined, runs: WholeRuns | undefined): string {
   // An earlier version's whole runs, where the latest has none of its own (header, t753).
-  if (!whole && assembled && runs && runs.count > 0) {
-    return `A version of the whole Flow was test-run from its start ${times(runs.count)}, and ${runs.count === 1 ? "that run" : "the last of those runs"} ${JUDGED[runs.last]}; the latest version was not tested from its start.`;
+  if (!whole && runs) {
+    return `A version of the whole Flow was test-run from its start ${times(runs.count)}, and ${runs.count === 1 ? "that run" : "the last of those runs"} ${JUDGED[runs.last]}; ${assembled ? "the latest version was not tested from its start" : "no current version was assembled to test"}.`;
   }
   if (!whole) return assembled ? "A whole Flow was assembled and never tested from its start." : "No whole Flow was assembled, so it was never tested as one.";
   const did = ran(whole.feedback);
