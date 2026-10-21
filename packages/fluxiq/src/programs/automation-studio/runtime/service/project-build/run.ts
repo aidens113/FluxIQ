@@ -29,7 +29,7 @@ import { automationStudioProjectBuildBriefCalls } from "./brief-calls.ts";
 import { automationStudioProjectBuildBriefPorts } from "./brief-ports.ts";
 import { AutomationStudioProjectBuildDecisions } from "./decisions.ts";
 import { automationStudioProjectBuildDraftRecord } from "./draft-record.ts";
-import { automationStudioProjectBuildReasonChecked, automationStudioProjectBuildRecordTold } from "../project-build-ending/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_CODES, automationStudioProjectBuildEndingTold, automationStudioProjectBuildRecordTold } from "../project-build-ending/index.ts";
 import type { AutomationStudioProjectBuildKeptProposals } from "./entry-preparation.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_LOCAL_HOST } from "./local-host.ts";
 import { AutomationStudioProjectBuildProposals } from "./proposals.ts";
@@ -193,6 +193,29 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // (`../project-build-ending/reason-checked.ts`), so the person never reads a
 // part-level claim the record contradicts. A draft the supervisor ended on,
 // rather than completed, shows that row too, as a build with none does.
+//
+// **The ending row is the one account of the ending (t753).** Round 5 said one
+// verdict three times -- the row, the command's answer ("It was never test-run
+// from the start, so nothing was put into the Flow"), the draft's card line --
+// though both of its tests had been whole runs; and t741 B5's split, the why in
+// the chat's answer and the rest in the row, read "The build failed: FluxIQ
+// could not finish the Flow: I could not finish this. Saving ... left changes
+// on the site" under a row saying the build left no change. The row now says
+// all of it, once (`../project-build-ending/ending-told.ts`): the supervisor's
+// reason, without an opening that restates the ending, then Core's record of
+// its tests, then what is left. What it hands back says so
+// (`project.build_ending_told`: a failure's issue code, a kept draft's ending
+// code, `../project-build-ending/codes.ts`), so the chat's commands add only
+// what the Flow keeps and what the person can do next. The failure still
+// carries why (`endedBecause`), for the build's last status line.
+//
+// Core's record counts every whole run of the Flow, of whichever version
+// (`draft.trialRecords`): a Flow assembled again after its whole runs is said
+// to have been test-run whole, and its latest version not, never "never
+// tested". A supervisor that ended unfinished while its latest whole test was
+// judged yes hands that test back with `project.build_ended_unfinished`, which
+// the promotion keeps as a draft (`../candidate-trial/promotion.ts`), rather
+// than handing back none, which the chat read as never tested.
 
 type DraftInput = Parameters<typeof generateAutomationStudioFlowCandidateDraft>[0];
 type DraftResult = { record: AutomationStudioFlowCandidateDraftRecord; trial: AutomationStudioCandidateTrialResult | undefined };
@@ -275,7 +298,7 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   } catch (error) {
     // A stall a guard ended the loop on is thrown on once its ending is recorded (t586): the person reads that ending (header).
     if (!(error instanceof AutomationStudioFlowBootstrapGenerationError) || draft.loop.signal?.aborted) throw error;
-    throw toldEnding(error, (await records.read(ref))?.record.ending, left, undefined, automationStudioProjectBuildRecordTold({ parts: trials, assembled: false }));
+    throw toldEnding(error, (await records.read(ref))?.record.ending, left, undefined, automationStudioProjectBuildRecordTold({ parts: trials, assembled: false, wholeRuns: wholeRuns(draft) }));
   } finally {
     running = false;
   }
@@ -293,7 +316,7 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
       : new AutomationStudioFlowBootstrapGenerationError({ ...flowBootstrapPhaseFailure("post_provider_validation", spent, "flow_bootstrap.post_provider_validation_failed").diagnostic, issueCodes: [...(outcome.timedOut ? [TIME_LIMIT_CODE] : []), `project.build_${outcome.ending?.outcome ?? "blocked"}`] });
     const timedOut = outcome.timedOut ? timeLimitWords(partSubflows((await records.read(ref))?.record.plans.at(-1)?.plan.partOf), trials) : undefined;
     // What Core recorded of its tests is said beside the supervisor's reason (header, t738).
-    throw toldEnding(failure, outcome.ending, left, timedOut, automationStudioProjectBuildRecordTold({ parts: trials, assembled: false }));
+    throw toldEnding(failure, outcome.ending, left, timedOut, automationStudioProjectBuildRecordTold({ parts: trials, assembled: false, wholeRuns: wholeRuns(draft) }));
   }
   const current = await draft.currentBinding();
   if (current.executionDigest !== candidate.baseDependencyDigest || current.settingsRevision !== draft.baseSettingsRevision) throw new Error("FLOW_BOOTSTRAP_STALE: Flow or settings changed during candidate generation.");
@@ -302,27 +325,42 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
     candidateId, projectId, flowId, candidate, accounting: spent, sourceInstructionIds: draft.sourceInstructionIds, instructionText: draft.submission.instructionText ?? "",
     baseSettingsRevision: draft.baseSettingsRevision, ...(draft.originalSource ? { originalSource: draft.originalSource } : {})
   }), draft.loop.signal);
-  // Only a completion stands on its yes: a supervisor that ended without completing promotes nothing, whatever its last trial said.
-  const own = outcome.status === "candidate" || outcome.trial?.verdict !== "yes" ? outcome.trial : undefined;
+  // Only a completion stands on its yes: a supervisor that ended without completing keeps its yes as the draft's, which never promotes (header, t753).
+  const unfinished = outcome.status === "ended" && outcome.trial?.verdict === "yes";
   // A draft whose latest revision was never finished testing stands on the same Flow's latest finished test (header, G2).
-  const trial = own ?? (outcome.status === "ended" ? outcome.sameFlowTrial : undefined);
+  const trial = outcome.trial ?? (outcome.status === "ended" ? outcome.sameFlowTrial : undefined);
+  // The codes the draft's trial carries beside its own: why its yes does not stand, and that the ending row told it (header, t608, t753).
+  const withCodes = (codes: readonly string[]) => (trial ? { ...trial, feedback: { ...trial.feedback, endingCodes: [...(unfinished ? [ENDED_UNFINISHED_CODE] : []), ...codes] } } : undefined);
   // A draft its time limit kept says the time limit, not only its last whole test (header, t608).
-  if (outcome.timedOut && outcome.status === "ended" && outcome.trial?.verdict !== "yes") {
+  if (outcome.timedOut && outcome.status === "ended" && !unfinished) {
     const subflows = partSubflows((await records.read(ref))?.record.plans.at(-1)?.plan.partOf);
     const words = timeLimitWords(subflows, trials, { tested: trial?.verdict, ...(outcome.trialCut ? { cut: true } : {}) });
     const title = words.title, text = `${words.tested} ${left?.told ?? NOTHING_LEFT}`;
     emitAutomationStudioActivity({ phase: "building", label: title, detail: { kind: "note", title, text, status: "failed" } });
     // The trial's own code stays its code; the time limit, and a test it cut, go beside it (header, t608, G2).
-    return { record, trial: trial ? { ...trial, feedback: { ...trial.feedback, endingCodes: [TIME_LIMIT_CODE, ...(outcome.trialCut ? [TRIAL_CUT_CODE] : [])] } } : undefined };
+    return { record, trial: withCodes([TIME_LIMIT_CODE, ...(outcome.trialCut ? [TRIAL_CUT_CODE] : []), TOLD_CODE]) };
   }
-  // A draft the supervisor ended on says why, against Core's record of its tests, and that record (header, t738).
+  // A draft the supervisor ended on says why, against Core's record of its tests, and that record: the one account (header, t738, t753).
   const ended = outcome.status === "ended" ? outcome.ending : undefined;
   if (ended && (ended.outcome === "partial" || ended.outcome === "blocked")) {
     const title = ENDED_WORDS[ended.outcome];
-    const { text } = endedSaid(ended, left, automationStudioProjectBuildRecordTold({ parts: trials, assembled: true, whole: outcome.trial ?? outcome.sameFlowTrial }));
+    const { text } = automationStudioProjectBuildEndingTold({ reason: ended.reason, left, record: automationStudioProjectBuildRecordTold({ parts: trials, assembled: true, whole: trial, wholeRuns: wholeRuns(draft) }) });
     emitAutomationStudioActivity({ phase: "building", label: title, detail: { kind: "note", title, text, status: "failed" } });
+    return { record, trial: withCodes([TOLD_CODE]) };
   }
-  return { record, trial };
+  return { record, trial: unfinished ? withCodes([]) : trial };
+}
+
+/**
+ * Every whole run of the Flow from its start this build made, of whichever version (header, t753): the build's trial
+ * records, each run once by its run id (a judge asked again names the same run), a trial whose start failed before
+ * any run opened not counted.
+ */
+function wholeRuns(draft: DraftInput): { count: number; last: AutomationStudioCandidateTrialResult["verdict"] } | undefined {
+  const runs = new Map<string, AutomationStudioCandidateTrialResult["verdict"]>();
+  for (const trial of draft.trialRecords?.() ?? []) if (trial.trialRunId) runs.set(trial.trialRunId, trial.verdict);
+  const last = [...runs.values()].at(-1);
+  return last === undefined ? undefined : { count: runs.size, last };
 }
 
 /**
@@ -337,12 +375,13 @@ function partSubflows(partOf: Readonly<Record<string, readonly string[]>> | unde
 const TIME_LIMIT_CODE = "project.build_time_limit";
 /** Beside it, when the limit cut a test of the kept draft's Flow after its latest finished one (header, G2). */
 const TRIAL_CUT_CODE = "project.build_trial_cut";
+/** That the ending row told the ending, and that the build ended without completing on a yes (header, t753). */
+const TOLD_CODE = AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_CODES.told;
+const ENDED_UNFINISHED_CODE = AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_CODES.endedUnfinished;
 
 /** The questions a stall puts to the person: said as they are (`project-agents/supervisor/supervisor-loop.ts`). */
 const PERSON_CODES: ReadonlySet<string> = new Set(["flow_bootstrap.permission_required", "flow_bootstrap.user_intervention_required"]);
 const MAX_MESSAGE = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE;
-/** The most of the supervisor's recorded reason its ending's row says (header, t649). */
-const MAX_ENDED_REASON = 240;
 /** The supervisor's recorded ending, by its kind, in Core's words (header); its reason is said after, screened. */
 const ENDED_WORDS = Object.freeze({
   partial: "FluxIQ stopped with the Flow only partly built.",
@@ -380,35 +419,22 @@ function toldEnding(failure: Error, recorded: AutomationStudioProjectBuildEnding
   }
   // The time limit is said as the time limit, with what was tested and is left (header, t601).
   const title = timedOut?.title ?? ENDED_WORDS[recorded.outcome];
-  // Why the supervisor ended it, in its screened words, then Core's record of its tests, before what is left (header, t649, t738).
-  const said = timedOut ? undefined : endedSaid(recorded, left, record);
+  // The one account (header, t753): why the supervisor ended it, then Core's record of its tests, then what is left.
+  const said = timedOut ? undefined : automationStudioProjectBuildEndingTold({ reason: recorded.reason, left, record });
   const why = said?.why;
-  // The failure carries why too, beside the supervisor's ending it explains, so the build's last row and the chat's ending say it (header, t649).
+  // The failure carries why too, beside the supervisor's ending it explains, for the build's last status line (header, t649).
   const ended = why === undefined ? undefined : why.length <= MAX_DIAGNOSTIC_ENDED_BECAUSE ? why.trim() : automationStudioActivityEndedReason(why, MAX_DIAGNOSTIC_ENDED_BECAUSE);
   const carried = Boolean(ended) && diagnostic.issueCodes?.some((code) => DIAGNOSTIC_SUPERVISOR_ENDING_CODES.has(code)) === true;
-  // Said once (header, t741 B5): where the chat's ending says why, this row says the record and what is left without it.
-  const text = (carried ? said?.rest : said?.text) ?? `${timedOut?.tested ?? ""} ${note ?? NOTHING_LEFT}`.trim();
+  const text = said?.text ?? `${timedOut?.tested ?? ""} ${note ?? NOTHING_LEFT}`.trim();
   emitAutomationStudioActivity({ phase: "building", label: title, detail: { kind: "note", title, text, status: "failed" } });
-  if (!carried || !ended) return failure;
-  return new AutomationStudioFlowBootstrapGenerationError({ ...diagnostic, endedBecause: ended });
+  // This row told the ending: the chat's commands say only what the Flow keeps and what to do next (header, t753).
+  const codes = diagnostic.issueCodes ?? [];
+  const issueCodes = codes.includes(TOLD_CODE) ? [...codes] : [...codes.slice(0, MAX_ISSUE_CODES - 1), TOLD_CODE];
+  return new AutomationStudioFlowBootstrapGenerationError({ ...diagnostic, issueCodes, ...(carried && ended ? { endedBecause: ended } : {}) });
 }
 
-/**
- * The supervisor's recorded ending as its row says it (header, t649, t738):
- * why, in the plain part of its reason -- with its claims of how a part's test
- * went left out where Core's `record` of its tests is said -- then that record,
- * then what is left, once. The build record keeps Core's note of what is left
- * after the model's words (`project-agents/record/store.ts`), so it is cut from
- * the reason and said last.
- */
-function endedSaid(recorded: AutomationStudioProjectBuildEnding, left: { note: string | undefined; told?: string } | undefined, record: string | undefined): { why: string | undefined; text: string; rest: string } {
-  const own = left?.note && recorded.reason.endsWith(left.note) ? recorded.reason.slice(0, -left.note.length) : recorded.reason;
-  // Only what of the supervisor's reason is plain is said (header, t567 lane 4), and none of its part-level test claims beside the record (t738).
-  const why = automationStudioActivityEndedReason(record ? automationStudioProjectBuildReasonChecked(own) : own, MAX_ENDED_REASON);
-  const note = left?.note !== undefined ? left.told ?? left.note : undefined;
-  const rest = [record ?? "", note ?? NOTHING_LEFT].filter((sentence) => sentence).join(" ");
-  return { why, text: why ? `${/[.!?…]$/u.test(why) ? why : `${why}.`} ${rest}` : rest, rest };
-}
+/** The most issue codes a failure carries (`flow-bootstrap/generation-failure/diagnostic.ts`). */
+const MAX_ISSUE_CODES = 16;
 
 /**
  * A message whose last sentence is its advice, with `note` put before that

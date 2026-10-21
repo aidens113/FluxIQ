@@ -1,9 +1,9 @@
 # Traces And Offline Trials
 
 Status: Active
-Status detail: P0-P4 complete (t729, t734, t736, t742, t746); P5 next (t749).
+Status detail: P0-P5 complete (t729, t734, t736, t742, t746, t749); P6 next, after downstream t751.
 Created: 2026-10-19
-Last updated: 2026-10-20
+Last updated: 2026-10-21
 Owner: Senior supervisor agent
 Scope: Core records what it receives from clients during live builds, tests and runs (traces) and runs candidate Flows against those traces through the normal runtime (offline trials), to cut live trial time in the test and repair phases. Not a site simulator; the final judged whole run stays live.
 Paired document: `docs/working/trace-offline-trials-plan.md` in FluxIQWebExtension (extension side)
@@ -15,7 +15,18 @@ Related: [source plan](./trace-offline-trials-plan/source-consultant-plan.md) (t
 
 **Approved (user, 2026-10-19):** this plan, which is the supervisor's revision of the consultant's plan in
 `trace-offline-trials-plan/source-consultant-plan.md`. "don't implement yet" was the instruction while reviewing;
-the user then approved the plan. No code has been written.
+the user then approved implementation. P0-P5 are now merged; the downstream execution hub owns current recovery status.
+
+**Recovery (2026-10-21):** UI task t753 is verified and merged in both repositories (Core `d1c39c0a`, downstream
+`daabd593`), with post-merge owning tests/types/build/audits and the mandatory 64 prompt-contract tests passed.
+Reset t751 and judge/read t752 continue in isolated paired trees. Review additionally requires retained own-list/
+control witnesses when optional runtime diffs are absent, and explicit gaps for inert automatic text disclosures.
+Independent retained-witness checks passed36 tests; the final reset review still requires a captured original before
+every project exploration act, including custom tool routes. t752 integrated owner checks passed except two stale
+labels; their corrected focused rerun passed7 tests, and the frozen Core build is running. Package exports cleanup
+is dispatched independently in paired t754 worktrees. P6 still waits for t751; no paid execution or daily full sweep
+has been launched by Codex. The t754 lifecycle automatically performs its initial downstream workspace build;
+do not repeat that broad build as a per-fix gate.
 
 **Why:** live trials dominate build time. In the downstream breadth round on 2026-10-19 the social build spent 20.5
 of its 25 working minutes in 7 whole trials (one took 337 s), and site-reset failures blocked every trial in three of
@@ -23,10 +34,9 @@ four builds. Model spend was small ($0.23 for four builds); time and live-site e
 
 **Implementation approved (user, 2026-10-19):** with subagents, together with the downstream boundary audit's
 move plan. Execution is run from the downstream `docs/working/trace-offline-trials-plan.md` (lane table). This plan
-is lane T, branch `task/t729-traces-offline-trials` in both repositories (worktrees under
-`C:/Users/osrs_/FluxStuff/fxwork/t729/`), created and not yet dispatched.
+was lane T, initially `task/t729-traces-offline-trials`; its completed phases and successor tasks are recorded below.
 
-**Progress (2026-10-20): P0-P4 complete.** P0/P1 (t729, t734): the trace and trial-evidence contracts, the
+**Progress (2026-10-20): P0-P5 complete.** P0/P1 (t729, t734): the trace and trial-evidence contracts, the
 environment port (a clock plus a gateway channel scope, decision D1) and capture where Core accepts what bypasses the
 gateway (D3); live trials are 49.8% of build time. P2 capture (t736): at the client gateway and Core's ingress into
 each project's store, the extension's DOM-plus-resource-map snapshots, tracing on for every Lab live run, about +11.5%
@@ -42,8 +52,16 @@ reproduce their live judged outcome exactly offline.
 read, so it needs tier 2). The downstream experiment deep-loads three unexported modules (brief scope, scoped
 submission, whole-candidate assembly); P5 replaces that with a public seam.
 
-**Next:** P5 offline reads and targets tier 2 (downstream t749, lane T); then P6 build-loop integration (production
-must pass the live session's view to the matcher) and P7.
+**P5 complete (2026-10-20, t749):** a changed read runs the extension's own content code over the recorded page
+snapshot (scripts and network off) through a reevaluation port on the trace matcher, or returns an explicit gap
+(`snapshot_unavailable`, `dynamic_content`); offline equals live on job-board 84/84 cells, photo 566/566 and social
+906/906; P4's corrected-candidate item met; public seams replace the downstream deep loads, and new audit rules
+`package-exports` and `module-reach` refuse such loads.
+
+**Next:** P6 build-loop integration (offline first in test and repair; live for action changes, gaps and the final
+judged run; production passes the live session's view and hosts the snapshot page), after downstream t751 merges;
+then P7. **Handoff (2026-10-20 evening):** the work goes to Codex; operating detail in the downstream
+`docs/working/trace-offline-trials-plan/reports/handoff-2026-10-20.md`.
 
 **Blocked:** nothing needs the user.
 
@@ -165,6 +183,25 @@ The source plan's T01-T24 are kept. Added:
 - Outcome: Partial (P4's corrected-candidate item moved to P5)
 - Follow-up: P5 (t749).
 
+### 2026-10-21 — Downstream t753 recovered and integrated
+- Changed: Core activity wording/pacing, truthful whole-test history and one ending account, draft promotion
+  guard for unfinished builds, UI text checks and web readiness projection. Downstream chat/overlay companion
+  merged first; Core merge `d1c39c0a`, downstream `daabd593`.
+- Validation: `pnpm.cmd task finish t753 "Readable chat endings and steady activity" --skip-checks` independently
+  ran mandatory prompt contracts: `Test Files 3 passed (3)`, `Tests 64 passed (64)`. The user-required narrow
+  owning tests/types/audits had passed before finish; the full `pnpm check` was not repeated. Supervisor
+  `pnpm.cmd docs:check` reported `Deterministic framework reference is current.` Detailed commands/results and
+  rendering limits are in downstream `reports/codex-t753-integration.md` and `reports/codex-integration-review.md`.
+- Next: finish reset/judge recovery before P6; no paid round while known fixes remain in flight.
+
 ## Open Questions
 
 None requiring user input.
+
+### 2026-10-20 — Codex recovery active
+- Agent: supervisor
+- Changed: corrected stale planning-only Current State text; downstream paired hub holds recovery briefs for t751/t752/t753.
+- Why: resume preserved work before P6 changes the same trial gates.
+- Validation: read both task worktrees and reports; no source acceptance claimed from prior lead reports.
+- Outcome: Partial; see downstream execution hub recovery entry.
+- Follow-up: verify reset/judge/UI tasks, merge paired units, then start P6.

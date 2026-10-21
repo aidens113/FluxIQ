@@ -321,7 +321,7 @@ describe("a project build whose builder leaves a lasting act", () => {
     const reason = ((await run.record()).ending as JsonObject).reason as string;
     expect(reason.startsWith(`${ENDED_REASON} Still on the target from this build: `)).toBe(true);
     const note = reason.slice(ENDED_REASON.length + 1);
-    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked"] });
+    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked", "project.build_ending_told"] });
     expect(note.startsWith("Still on the target from this build: ")).toBe(true);
     const told = seen.find((event) => event.detail?.title === "FluxIQ could not finish the Flow.");
     // Why it ended, the supervisor's words screened, then what is left once, in a person's words (t649, t567 lane 4); the ledger's note stays in the record.
@@ -330,9 +330,10 @@ describe("a project build whose builder leaves a lasting act", () => {
     // Core's record of its tests goes between the reason and what is left (t738, `../../project-build-ending/record-told.ts`).
     // Complete inventories now show both saves' changes, so the ending names
     // them as still present, rather than claiming no read showed a change.
-    // Why is the chat's ending's to say (`endedBecause`), so the row says it no second time (t741 B5).
+    // The row is the one account of the ending (t753): why first, and never "no change" beside acts to check. The
+    // failure still carries why, for the build's last status line.
     expect(diagnostic!.endedBecause).toBe(ENDED_REASON);
-    expect(text).toBe(`Both parts tested on their own passed their own test. No whole Flow was assembled, so it was never tested as one. These changes the build made are still on the site: used “save the recipe” and 1 press it could not name.`);
+    expect(text).toBe(`${ENDED_REASON} Both parts tested on their own passed their own test. No whole Flow was assembled, so it was never tested as one. These changes the build made are still on the site: ran the step “save the recipe” and pressed 1 control with no label.`);
     expect(text).not.toContain("on the target");
     // Its trial's recipe and its explored one, both still there.
     expect([...run.box]).toEqual(["recipe:lentil-soup", TRIAL_RECIPE, "recipe:herb-bread"]);
@@ -717,7 +718,7 @@ describe("a reset brief's requests through DeepSeek's own pre-send checks", () =
     expect(reset).toMatchObject({ ok: true, returns: [{ kind: "reset", outcome: "blocked" }] });
     expect(String((reset.returns as JsonObject[])[0]!.reason)).toContain("flow_bootstrap.provider_evidence_loop_context_invalid");
     // The build fails as every honest blocked ending does: the supervisor's recorded ending, told to the person.
-    expect(parseAutomationStudioFlowBootstrapGenerationError(failure)).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked"] });
+    expect(parseAutomationStudioFlowBootstrapGenerationError(failure)).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked", "project.build_ending_told"] });
     expect(((await run.record()).ending as JsonObject).outcome).toBe("blocked");
     expect(seen.some((event) => event.detail?.title === "FluxIQ could not finish the Flow.")).toBe(true);
   });

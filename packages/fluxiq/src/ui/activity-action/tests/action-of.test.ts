@@ -596,3 +596,40 @@ describe("activityActionOf: a card names the act, the row and a Flow sent again 
     expect(rerun).not.toHaveProperty("name");
   });
 });
+
+// t753 (round-5 UI reviews): cards that showed a tool's name, a box unticked
+// as "Tick", an undo as an ordinary press, and an empty read as a success.
+describe("activityActionOf: t753 plain cards", () => {
+  it("reads a project build's own tools as an edit and a test, never as an unnamed action", () => {
+    expect(activityActionOf(tool("Saving one part of the Flow", undefined, "succeeded", "core.submit_subflow"))).toMatchObject({ kind: "draft", target: null });
+    expect(activityActionOf(tool("Testing one part of the Flow", undefined, "succeeded", "core.test_subflow"))).toMatchObject({ kind: "test", target: null });
+  });
+
+  it("names a part sent again as that, never as a step run again", () => {
+    expect(activityActionOf(tool("Saving one part of the Flow", "Result: llm_evidence_loop.repeat_refused · Reason: changed_nothing", "failed", "core.submit_subflow"))).toMatchObject({ kind: "draft", name: "Send that part again", target: null, outcome: "failed" });
+  });
+
+  it("says Untick for a box unticked", () => {
+    expect(activityActionOf(tool("Unticking “Email me updates”", "Result: web.action.succeeded · Node: web.output.dom-check"))).toMatchObject({ kind: "click", name: "Untick", target: "Email me updates" });
+    expect(activityActionOf(tool("Ticking “Email me updates”", "Result: web.action.succeeded · Node: web.output.dom-check"))).toMatchObject({ kind: "click", name: "Tick" });
+  });
+
+  it("says Put back for an undo of the build's own act", () => {
+    expect(activityActionOf(tool("Putting the site back: clicking “Remove”", "Result: web.action.succeeded · Node: web.output.dom-click"))).toMatchObject({ kind: "click", name: "Put back", target: "Remove", outcome: "done" });
+  });
+
+  it("names a control with no words by its kind, a one-field read by its field, and another page so", () => {
+    expect(activityActionOf(tool("Clicking a button", "Node: web.output.dom-click"))?.target).toBe("a button");
+    expect(activityActionOf(tool("Reading the details of a link", undefined, "succeeded", "web.describe_element"))).toMatchObject({ kind: "look", target: "a link's details" });
+    expect(activityActionOf(tool("Reading the links", "Result: web.action.succeeded · Rows: 4 · Node: web.output.dom-extract_list"))).toMatchObject({ kind: "read", target: "links", result: "4 rows" });
+    expect(activityActionOf(tool("Reading the list", "Node: web.output.dom-extract_list"))?.target).toBeNull();
+    expect(activityActionOf(tool("Opening another page", "Node: web.output.browser-navigate"))?.target).toBe("another page");
+  });
+
+  it("reports a successful empty read truthfully without inventing a failure", () => {
+    const empty = activityActionOf(tool("Reading the links", "Result: web.action.succeeded · Rows: 0 · Pages: 1 · Node: web.output.dom-extract_list"));
+    expect(empty).toMatchObject({ kind: "read", outcome: "done", why: null, result: "No matching rows" });
+    expect(activityActionOf(tool("Reading the links", "Result: web.action.failed ? Rows: 0 ? Node: web.output.dom-extract_list", "failed"))).toMatchObject({ outcome: "failed" });
+    expect(activityActionOf(tool("Reading the links", "Result: core.replay.replayed · Rows: 0 · Node: web.output.dom-extract_list", "succeeded", RUN_NODE, "verifying"))).toMatchObject({ outcome: "done", result: "No matching rows" });
+  });
+});

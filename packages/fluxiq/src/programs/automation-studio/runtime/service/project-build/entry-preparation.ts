@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
+import { runAutomationStudioActivityPreparation } from "../../activity/step/index.ts";
 import type { AutomationStudioCandidateTrialAct } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { runAutomationStudioDetachedSubflow, type AutomationStudioDetachedSubflowIdentity, type AutomationStudioDetachedSubflowProposal } from "../../flow-bootstrap/verification/index.ts";
@@ -37,6 +38,13 @@ import type { AutomationStudioProjectBuildTrialEnvironment } from "./whole-trial
 // failed, or a predecessor's run did not reach its end -- the answer says so
 // and why, and the builder is told plainly that its entry is not prepared
 // (`./brief-ports.ts`).
+//
+// **Its steps say they get the page ready (t753).** The run reports its steps
+// under the build's unit of work, which a status read as the build testing
+// its Flow ("Testing your Flow", its count jumping as the run went into a
+// part's own steps). It runs under the activity's preparation mark
+// (`../../activity/step/preparation.ts`), so each step says "Getting the page
+// ready" instead.
 //
 // **A proposal an amendment kept runs too (t590).** A predecessor's passing
 // proposal counts when it was made under the brief's own plan, or under an
@@ -96,7 +104,8 @@ export async function automationStudioProjectBuildPrepareEntry(input: {
   const identity = await identityOf(scope, target, before, environment);
   let executed: Awaited<ReturnType<typeof runAutomationStudioDetachedSubflow>>;
   try {
-    executed = await (input.execute ?? runAutomationStudioDetachedSubflow)({
+    const execute = input.execute ?? runAutomationStudioDetachedSubflow;
+    executed = await runAutomationStudioActivityPreparation(async () => await execute({
       identity,
       target: detached(target),
       predecessors: before.map(detached),
@@ -115,7 +124,7 @@ export async function automationStudioProjectBuildPrepareEntry(input: {
       start: { receiptId: `${runId}.start`, conditionsDigest: `entry-preparation.${start.status}`, preparedAt: startedAt, pageGeneration: 0, subjectStates: [] },
       ...(input.arrival && environment.startLocation ? { arrival: { ...input.arrival, location: environment.startLocation } } : {}),
       options: environment.graphOptions({ runId, signal })
-    });
+    }));
   } catch (error) {
     await environment.writeSession({ ...opened, status: signal.aborted ? "cancelled" : "failed", startedAt, finishedAt: Date.now() });
     if (signal.aborted) throw error;

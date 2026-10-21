@@ -13,6 +13,7 @@ import {
   type ClientGatewayCapability,
   type ClientGatewayClientHello,
   type ClientGatewayServerMessage,
+  type ClientGatewayTraceReevaluator,
   type ClientGatewayTraceStore
 } from "../../../../../../client-gateway/index.ts";
 import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
@@ -223,14 +224,15 @@ async function pairScriptedClient(gateway: ClientGatewayService, script: ReadScr
   return { received, errors, commands: () => received.filter((message) => message.type === "server.execute_action") };
 }
 
-/** What an offline trial may be given besides its candidate and trace: another store the trace is read from, and a session view the caller supplies. */
-export type OfflineRunOptions = { store?: ClientGatewayTraceStore; sessionView?: ClientGatewayClientHello };
+/** What an offline trial may be given besides its candidate and trace: another store the trace is read from, a session view the caller supplies, and a reevaluator for the matcher. */
+export type OfflineRunOptions = { store?: ClientGatewayTraceStore; sessionView?: ClientGatewayClientHello; reevaluator?: ClientGatewayTraceReevaluator };
 
 /** An offline trial of `candidate` on the trace `traceId`, through the harness's own ports and gateway. */
 export function runOffline(harness: OfflineHarness, candidate: AutomationStudioFlowCandidate, traceId: string, phase: AutomationStudioOfflineTrialPhase = "test", options: OfflineRunOptions = {}) {
   return runAutomationStudioOfflineCandidateTrial({
     request: requestFor(candidate), ports: harness.ports, source: { store: options.store ?? harness.store, traceId }, gateway: harness.gateway, phase,
-    ...(options.sessionView === undefined ? {} : { sessionView: options.sessionView })
+    ...(options.sessionView === undefined ? {} : { sessionView: options.sessionView }),
+    ...(options.reevaluator === undefined ? {} : { reevaluator: options.reevaluator })
   });
 }
 

@@ -18,3 +18,9 @@ describe("ACTIVITY_ACTION_VERB_NAMES", () => {
     }
   });
 });
+
+describe("ACTIVITY_ACTION_VERB_NAMES: unticking (t753)", () => {
+  it("names a box unticked Untick", () => {
+    expect(ACTIVITY_ACTION_VERB_NAMES.uncheck).toBe("Untick");
+  });
+});

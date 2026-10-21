@@ -41,7 +41,7 @@ describe("the plan card", () => {
     inBuild(() => emitAutomationStudioProjectPlanCard({ taskSpec: taskSpec(), structurePlan: plan, briefs: [brief(undefined, plan)], purposes: { list_soups: "Read the newest soups" }, reserveUsd: 0.08 }));
     expect(seen).toHaveLength(1);
     const event = seen[0]!;
-    expect(event.detail).toMatchObject({ kind: "note", title: "Plan: 2 parts in 2 subflows", status: "succeeded" });
+    expect(event.detail).toMatchObject({ kind: "note", title: "Plan: 2 parts of the task, built in 2 pieces", status: "succeeded" });
     expect(event.detail?.ref).toBeUndefined();
     expect(event.detail?.project).toEqual({
       kind: "plan",
@@ -55,6 +55,21 @@ describe("the plan card", () => {
       reserveUsd: 0.08
     });
     expectNoDigest(event);
+  });
+
+  // t753: Core's own subflow that runs the others, with no parts of its own,
+  // was shown as "Main: Runs each of the other subflows in turn…".
+  it("leaves out the part Core adds to run the others", () => {
+    const plan = structurePlan((value) => {
+      value.plan.subflows.unshift({ key: "main", name: "Main", role: "primary", nodes: [], edges: [] });
+      value.plan.router.fallback = { kind: "subflow", targetSubflowKey: "main" };
+      value.partOf = { main: [], ...value.partOf };
+    });
+    inBuild(() => emitAutomationStudioProjectPlanCard({ taskSpec: taskSpec(), structurePlan: plan, purposes: { main: "Runs each of the other subflows in turn." } }));
+    const event = seen[0]!;
+    expect((event.detail?.project as { subflows: Array<{ key: string }> }).subflows.map((subflow) => subflow.key)).toEqual(["list_soups", "save_recipe"]);
+    expect(event.detail?.title).toBe("Plan: 2 parts of the task, built in 2 pieces");
+    expect(event.detail?.text ?? "").not.toMatch(/Main|Runs each|subflow/u);
   });
 
   it("leaves out cases and budget before any brief is written", () => {
@@ -122,21 +137,36 @@ describe("the return card", () => {
 });
 
 describe("the receipt card", () => {
-  it("names a subflow trial and its verdict without its digest", () => {
+  it("names one part's test and its verdict without its digest, in plain words (t753)", () => {
     const [trial] = builderReturn().trials;
     inBuild(() => emitAutomationStudioProjectReceiptCard({ receipt: trial!, verdict: "passed", briefId: "b1", subflowName: "Save recipe" }));
     const event = seen[0]!;
     expect(event.phase).toBe("verifying");
-    expect(event.detail).toMatchObject({ kind: "note", title: "Subflow trial passed: Save recipe", status: "succeeded", ref: "b1" });
+    expect(event.detail).toMatchObject({ kind: "note", title: "One part's test passed: Save recipe", status: "succeeded", ref: "b1" });
     expect(event.detail?.project).toEqual({ kind: "receipt", briefId: "b1", receipt: "subflow_trial", receiptId: "receipt.1", verdict: "passed" });
     expectNoDigest(event);
   });
 
   it("names the judged whole run, with no brief, and an unconfirmed verdict as a failure", () => {
     inBuild(() => emitAutomationStudioProjectReceiptCard({ receipt: { kind: "candidate_trial", receiptId: "receipt.9", digest: "e".repeat(64) }, verdict: "unconfirmed" }));
-    expect(seen[0]!.detail).toMatchObject({ title: "Whole-Flow trial could not be confirmed", status: "failed" });
+    expect(seen[0]!.detail).toMatchObject({ title: "Couldn't confirm the whole Flow's test", status: "failed" });
     expect(seen[0]!.detail?.ref).toBeUndefined();
     expect(seen[0]!.detail?.project).toEqual({ kind: "receipt", receipt: "candidate_trial", receiptId: "receipt.9", verdict: "unconfirmed" });
+  });
+
+  it("says every verdict short, with no trial in it (t753)", () => {
+    inBuild(() => {
+      for (const verdict of ["passed", "failed", "unconfirmed"] as const) {
+        emitAutomationStudioProjectReceiptCard({ receipt: { kind: "candidate_trial", receiptId: "receipt.9", digest: "e".repeat(64) }, verdict });
+        emitAutomationStudioProjectReceiptCard({ receipt: { kind: "subflow_trial", receiptId: "receipt.1", digest: "e".repeat(64) }, verdict, subflowName: "Save recipe" });
+      }
+    });
+    expect(seen.map((event) => event.detail?.title)).toEqual([
+      "The whole Flow's test passed", "One part's test passed: Save recipe",
+      "The whole Flow's test failed", "One part's test failed: Save recipe",
+      "Couldn't confirm the whole Flow's test", "Couldn't confirm one part's test: Save recipe"
+    ]);
+    for (const event of seen) expect(event.label).not.toMatch(/trial|subflow/iu);
   });
 });
 

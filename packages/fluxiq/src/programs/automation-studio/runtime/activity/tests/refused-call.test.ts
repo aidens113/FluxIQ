@@ -96,3 +96,29 @@ describe("a call refused as a repeat", () => {
     expect(activityActionOf(toolRows()[0]!)).toMatchObject({ kind: "click", outcome: "failed", refused: { all: true, because: "it was already tried exactly this way and did not work" } });
   });
 });
+
+// t753: a project builder's part sent again read "Not done: using “Submit
+// subflow” — it was already tried exactly this way…": the tool's own name and
+// a reason that says nothing of a part of the Flow.
+describe("a part of the Flow sent again unchanged", () => {
+  type Evidence = Parameters<AutomationStudioLlmEvidenceLoopInput["decide"]>[0]["evidence"][number];
+  type Decision = Awaited<ReturnType<AutomationStudioLlmEvidenceLoopInput["decide"]>>;
+  const repeatCheck = (iteration: number): Evidence => ({ callId: `core.repeat_check.${iteration}`, toolId: "core.repeat_check", value: { ok: false, code: "llm_evidence_loop.repeat_refused", then: { outcome: "changed_nothing" } } });
+  const toolRows = () => seen.filter((event) => event.detail?.kind === "tool");
+
+  it.each([
+    ["core.submit_subflow", "Not done: saving one part of the Flow — it was sent again unchanged, so it was not checked again", "draft"],
+    ["core.test_subflow", "Not done: testing one part of the Flow — it was asked for again with nothing changed, so it was not run again", "test"]
+  ])("says %s in person words, with why", async (toolId, label, kind) => {
+    let next: Decision = { kind: "tool_call", callId: "c1", toolId, input: { revision: 3 } };
+    const observed = observeAutomationStudioEvidenceLoop(loopInput({ decide: async () => next }));
+    await inScope(async () => {
+      await observed.decide({ ...decideRequest, iteration: 4 });
+      next = { kind: "complete", result: {} };
+      await observed.decide({ ...decideRequest, iteration: 5, evidence: [repeatCheck(4)] });
+    });
+    expect(toolRows()[0]?.label).toBe(label);
+    expect(toolRows()[0]?.detail?.title).not.toMatch(/subflow/iu);
+    expect(activityActionOf(toolRows()[0]!)).toMatchObject({ kind, outcome: "failed" });
+  });
+});

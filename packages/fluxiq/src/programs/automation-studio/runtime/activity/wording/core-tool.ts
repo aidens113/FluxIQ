@@ -11,15 +11,22 @@ const RUN_FLOW = "core.run_flow";
 const SUBMIT_CANDIDATE = "core.submit_candidate";
 /** `core.test_candidate` (`../../flow-bootstrap/candidate/trial-gate.ts`). */
 const TEST_CANDIDATE = "core.test_candidate";
+/** `core.submit_subflow` (`../../flow-bootstrap/subflow-candidate/submit-tool.ts`). */
+const SUBMIT_SUBFLOW = "core.submit_subflow";
+/** `core.test_subflow` (`../../flow-bootstrap/subflow-candidate/subflow-trial-gate.ts`). */
+const TEST_SUBFLOW = "core.test_subflow";
 /**
  * A candidate build's own tools, said as the act a person understands: the
  * chat read "Using “Submit candidate”" and "Using “Test candidate”" (t362,
- * lane A round 4, `run-muyrpbnk-fef374e7`). Never a revision or digest: the
- * call names both, and the person never sees either.
+ * lane A round 4, `run-muyrpbnk-fef374e7`), and a project builder's read
+ * "Using “Submit subflow”" and "Using “Test subflow”" (t753, round 5). Never
+ * a revision or digest: the call names both, and the person never sees either.
  */
 const CANDIDATE_TOOLS: ReadonlyMap<string, string> = new Map([
   [SUBMIT_CANDIDATE, "Saving the Flow's steps"],
-  [TEST_CANDIDATE, "Testing the whole Flow from the start"]
+  [TEST_CANDIDATE, "Testing the whole Flow from the start"],
+  [SUBMIT_SUBFLOW, "Saving one part of the Flow"],
+  [TEST_SUBFLOW, "Testing one part of the Flow"]
 ]);
 /** The most kinds of step a look-up's title says before it says "and more". */
 const MAX_NAMED = 3;

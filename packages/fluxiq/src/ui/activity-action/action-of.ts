@@ -1,4 +1,5 @@
 import { activityActionCheckWhy } from "./check-why.ts";
+import { ACTIVITY_ACTION_CONTROL_NOUNS } from "./control-nouns.ts";
 import { activityActionFailureReason } from "./failure-reason.ts";
 import { activityActionRecordOf } from "./record.ts";
 import { activityActionRefusal } from "./refusal.ts";
@@ -38,16 +39,22 @@ const CORE_TOOL_KINDS: ReadonlyMap<string, ActivityActionKind> = new Map<string,
   // to the Flow, and its trial is a test run of the whole Flow. Before they had
   // rows, the chat showed no card for either (t366).
   ["core.submit_candidate", "draft"],
-  ["core.test_candidate", "test"]
+  ["core.test_candidate", "test"],
+  // A project builder's own tools for one part of the Flow: they read "Action ·
+  // Submit subflow" (t753, round 5).
+  ["core.submit_subflow", "draft"],
+  ["core.test_subflow", "test"]
 ]);
-/** A candidate build's submission of its whole Flow (t373). */
-const SUBMIT_CANDIDATE = "core.submit_candidate";
 /**
- * The name of a submission refused as a repeat: the same Flow sent again
- * unchanged. It read "Change the Flow · run the step again" (lane C,
- * `run-mv0fuotv-805294d7`, defect 4).
+ * A build's submissions -- a candidate build's whole Flow (t373), a project
+ * builder's one part of it (t753) -- and the name of one refused as a repeat:
+ * the same thing sent again unchanged. It read "Change the Flow · run the step
+ * again" (lane C, `run-mv0fuotv-805294d7`, defect 4).
  */
-const RESENT_NAME = "Send the Flow again";
+const RESENT_NAMES: ReadonlyMap<string, string> = new Map([
+  ["core.submit_candidate", "Send the Flow again"],
+  ["core.submit_subflow", "Send that part again"]
+]);
 
 /**
  * Core's own control nodes, by definition id, and the kind each one is. They
@@ -102,7 +109,7 @@ const ADDRESS_PATH = /^…?\/\S*$/u;
  */
 const SITE_NAME = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,24}$/iu;
 /** The navigate wording's name for an address it does not show (`programs/automation-studio/runtime/activity/wording/action.ts`). */
-const START_PAGE = /^Opening (the (?:start|home) page)$/u;
+const START_PAGE = /^Opening (the (?:start|home) page|another page)$/u;
 /** Something shaped like a dotted id ("web.output.dom-click"), which a card never shows. */
 const ID_SHAPED = /[A-Za-z_][\w-]*\.[A-Za-z_][\w-]*/u;
 /** How a wait on the person ended, as the ask row that settles it says (`ClientGatewayActivity.detail.resolution`). */
@@ -128,6 +135,20 @@ const MAX_SHORT_CHARS = 32;
 /** The status sentence of a run's saved records (`runtime/executor/node-execution.ts`): "Saved 20 records". */
 const SAVED_RECORDS = /^Saved (\d{1,9}) records?$/u;
 const RECORDS_SAVED_TITLE = "Records saved";
+/** Any of the nouns the wording names a control with no words by ("a button"), as an alternation. */
+const NOUNS = ACTIVITY_ACTION_CONTROL_NOUNS.map((noun) => noun.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|");
+/**
+ * A control the wording named by what it is, having no words for it
+ * ("Clicking a button", "Typing into a field", t753): the noun is the target.
+ */
+const BY_KIND = new RegExp(`^\\S+(?: into| an option in| a file to)? (${NOUNS})$`, "u");
+/** A look at the details of a control named by what it is ("Reading the details of a button"). */
+const DETAILS_OF_KIND = new RegExp(`^Reading the details of (${NOUNS})$`, "u");
+/** A list read named by the field it reads of each row ("Reading the links", t753); "Reading the list" names nothing. */
+const FIELDS_READ = /^Reading the (?!list$)([a-z][a-z ]{0,60})$/u;
+/** A call that undoes one of the build's own acts (`runtime/activity/wording/tool-call.ts`): it read as an ordinary press (t753). */
+const PUTTING_BACK = /^Putting the site back\b/u;
+const PUT_BACK_NAME = "Put back";
 
 const counted = (count: number, word: string): string => `${count} ${word}${count === 1 ? "" : "s"}`;
 
@@ -142,6 +163,7 @@ function resultOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActi
   if (record.said) return record.said;
   if (kind === "draft") return record.changed;
   if (kind === "read" && record.rows !== undefined) {
+    if (record.rows === 0) return "No matching rows";
     return record.pages !== undefined ? `${counted(record.rows, "row")} from ${counted(record.pages, "page")}` : counted(record.rows, "row");
   }
   const saved = detail.title === RECORDS_SAVED_TITLE ? SAVED_RECORDS.exec(event.label?.trim() ?? "")?.[1] : undefined;
@@ -367,6 +389,8 @@ function targetOfStep(event: ActivityActionEvent, detail: Detail, kind: Activity
   if (kind === "look") {
     const looked = lookedFor(detail.title.trim());
     if (looked) return looked;
+    const ofKind = DETAILS_OF_KIND.exec(detail.title.trim())?.[1];
+    if (ofKind !== undefined) return `${ofKind}'s details`;
   }
   let name: string | undefined;
   for (const candidate of [QUOTED.exec(detail.title)?.[1], event.step?.label]) {
@@ -386,6 +410,9 @@ function targetOfStep(event: ActivityActionEvent, detail: Detail, kind: Activity
   if (said && kind === "type") return name ? `"${said}" into ${name}` : `"${said}"`;
   if (name) return name;
   if (said) return `"${said}"`;
+  const byKind = BY_KIND.exec(detail.title.trim())?.[1];
+  if (byKind !== undefined) return byKind;
+  if (kind === "read") return FIELDS_READ.exec(detail.title.trim())?.[1] ?? null;
   // A navigate to the start page names it unquoted, so it is not read as a control (t174-w116 D2).
   if (kind === "navigate") return START_PAGE.exec(detail.title.trim())?.[1] ?? null;
   // A look that names neither a control nor words is named by what its title
@@ -469,11 +496,13 @@ export function activityActionOf(event: ActivityActionEvent): ActivityAction | n
   // A "check" node that set an option chosen from several -- a colour swatch,
   // a size chip -- is said "Choosing" by the wording, which knows its element:
   // its card read "Tick · Space Grey" (R4a, `run-mv2nlh9l-52e476da`, moment 04).
-  const act = found.verb === "check" && actOfTitle(detail.title)?.verb === "select" ? { ...found, verb: "select" as const } : found;
+  // A "check" node that set a box unchecked is said "Unticking" (t753).
+  const titled = found.verb === "check" ? actOfTitle(detail.title)?.verb : undefined;
+  const act = titled === "select" || titled === "uncheck" ? { ...found, verb: titled } : found;
   const kind = act.kind;
-  // A candidate build's submission sends the whole Flow: one refused as a repeat is that Flow sent again unchanged.
-  const submitted = detail.ref === SUBMIT_CANDIDATE;
-  const refusal = detail.kind === "tool" ? activityActionRefusal(record, submitted) : null;
+  // A build's submission sends the whole Flow, or one part of it: one refused as a repeat is that sent again unchanged.
+  const resentName = detail.ref === undefined ? undefined : RESENT_NAMES.get(detail.ref);
+  const refusal = detail.kind === "tool" ? activityActionRefusal(record, resentName !== undefined) : null;
   const outcome = refusal ? (refusal.all ? "failed" : "done") : outcomeOf(event, detail, record.resultCode, record.excused);
   const unconfirmed = kind === "result_check" && outcome === "failed" && event.label !== undefined && NOT_CONFIRMED.has(event.label.trim());
   const why = outcome !== "failed" || unconfirmed ? null
@@ -489,8 +518,8 @@ export function activityActionOf(event: ActivityActionEvent): ActivityAction | n
   const skipped = outcome === "done" && !refusal ? activityActionSkipped(detail.skipped) : null;
   const tested = skipped ?? (outcome === "done" && record.resultCode && !refusal ? activityActionTested(record.resultCode, { excused: record.excused, kind: kind === "test" ? kindOfTitle(detail.title) : kind }) : null);
   const result = resultOf(event, detail, kind, outcome, record);
-  const resent = kind === "draft" && submitted && refusal?.rerun === true;
-  const name = resent ? RESENT_NAME : act.verb === undefined ? undefined : ACTIVITY_ACTION_VERB_NAMES[act.verb];
+  const resent = kind === "draft" && resentName !== undefined && refusal?.rerun === true;
+  const name = resent ? resentName : PUTTING_BACK.test(detail.title.trim()) ? PUT_BACK_NAME : act.verb === undefined ? undefined : ACTIVITY_ACTION_VERB_NAMES[act.verb];
   const target = resent ? null : kind === "draft" && refusal?.rerun ? "run the step again" : targetOf(event, detail, kind, testing);
   return {
     kind,

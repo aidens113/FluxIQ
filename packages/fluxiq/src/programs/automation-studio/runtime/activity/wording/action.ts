@@ -1,4 +1,4 @@
-import { activityActionVerb, type ActivityActionVerb } from "../../../../../ui/index.ts";
+import { activityActionControlNoun, activityActionVerb, type ActivityActionVerb } from "../../../../../ui/index.ts";
 import { automationStudioActivityHumanLabel } from "./human-label.ts";
 import { automationStudioActivityListName } from "./list-name.ts";
 import { automationStudioActivityPageName } from "./page-name.ts";
@@ -7,6 +7,8 @@ type Phrase = {
   verb: ActivityActionVerb;
   plain: string;
   named?: (name: string) => string;
+  /** The sentence for a control named by no words, by what it is: "Clicking a button" (t753). */
+  kinded?: (noun: string) => string;
   /** The words the call types or looks for, with the control's name when there is one. */
   said?: (text: string, name: string | undefined) => string;
   /**
@@ -24,9 +26,11 @@ type Phrase = {
  * (`../call-context.ts`, R2-U-9), never off the call. `role` is what the page
  * view printed the control as, kept only where it tells a box from an option
  * ("checkbox", "radio", ...; "" for neither, `../call-context.ts`): a call that
- * carries a handle and no element is read by it.
+ * carries a handle and no element is read by it. `kind` is the word the view
+ * printed for what the control is ("button", "link"), which names a control
+ * it printed no words for (`ui/activity-action/control-nouns.ts`, t753).
  */
-export type AutomationStudioActivityCallWords = { target?: string | undefined; text?: string | undefined; list?: string | undefined; role?: string | undefined };
+export type AutomationStudioActivityCallWords = { target?: string | undefined; text?: string | undefined; list?: string | undefined; role?: string | undefined; kind?: string | undefined };
 
 /** A control's name, in the curly quotes a card reads its target from (`ui/activity-action/action-of.ts`). */
 const quoted = (name: string): string => `“${name}”`;
@@ -52,22 +56,28 @@ const PHRASES: readonly Phrase[] = [
   // and one served from this machine by being the start or by its path's
   // words (`./page-name.ts`). "The start page" and "the home page" are said
   // unquoted, so a card does not read them as a control.
+  // A page served from this machine was then named by its path's words,
+  // "Opening “my account”" (t753): it is "another page" unless the call says its title.
   { verb: "navigate", plain: "Opening a page", named: (name) => OWN_PAGE.test(name) ? `Opening ${name}` : `Opening ${quoted(name)}` },
   { verb: "back", plain: "Going back a page" },
-  { verb: "click", plain: "Clicking on the page", named: (name) => `Clicking ${quoted(name)}` },
-  { verb: "type", plain: "Typing into the page", named: (name) => `Typing into ${quoted(name)}`, said: (text, name) => `Typing ${said(text)}${name ? ` into ${quoted(name)}` : ""}` },
+  { verb: "click", plain: "Clicking on the page", named: (name) => `Clicking ${quoted(name)}`, kinded: (noun) => `Clicking ${noun}` },
+  { verb: "type", plain: "Typing into the page", named: (name) => `Typing into ${quoted(name)}`, kinded: (noun) => `Typing into ${noun}`, said: (text, name) => `Typing ${said(text)}${name ? ` into ${quoted(name)}` : ""}` },
   { verb: "search", plain: "Searching the page", said: (text) => `Searching the page for ${said(text)}` },
-  { verb: "clear", plain: "Clearing a field", named: (name) => `Clearing ${quoted(name)}` },
-  { verb: "select", plain: "Choosing an option", named: (name) => `Choosing an option in ${quoted(name)}` },
-  { verb: "check", plain: "Ticking a box", named: (name) => `Ticking ${quoted(name)}` },
-  { verb: "upload", plain: "Adding a file", named: (name) => `Adding a file to ${quoted(name)}` },
+  { verb: "clear", plain: "Clearing a field", named: (name) => `Clearing ${quoted(name)}`, kinded: (noun) => `Clearing ${noun}` },
+  { verb: "select", plain: "Choosing an option", named: (name) => `Choosing an option in ${quoted(name)}`, kinded: (noun) => `Choosing an option in ${noun}` },
+  { verb: "check", plain: "Ticking a box", named: (name) => `Ticking ${quoted(name)}`, kinded: (noun) => `Ticking ${noun}` },
+  // A box set unchecked read "Ticking" (t753): `checked: false` on a check, or an id that says so.
+  { verb: "uncheck", plain: "Unticking a box", named: (name) => `Unticking ${quoted(name)}`, kinded: (noun) => `Unticking ${noun}` },
+  { verb: "upload", plain: "Adding a file", named: (name) => `Adding a file to ${quoted(name)}`, kinded: (noun) => `Adding a file to ${noun}` },
   // A list read named nothing: in a build's test, where every other step's card
   // named its subject, its card read a bare "Test run" (t194,
   // `run-murwcmx2-a1c6edf7`, screenshot 00016). The domain says what it reads,
   // and Core names the list by two of its fields, so the overlay and every
   // card say one name (`./list-name.ts`, R2-U-8).
-  { verb: "read", plain: "Reading from the page", also: { word: /^(list|rows|records|items)$/u, plain: "Reading the list", named: (name) => `Reading the list of ${quoted(automationStudioActivityListName(name))}`, byWords: true } },
-  { verb: "describe", plain: "Reading the details of a control", named: (name) => `Reading the details of ${quoted(name)}` },
+  // A list of one field read "Reading the list of “link”" (t753): it reads
+  // that field of each row, "Reading the links" (`fieldsRead`).
+  { verb: "read", plain: "Reading from the page", also: { word: /^(list|rows|records|items)$/u, plain: "Reading the list", named: (name) => fieldsRead(name) ?? `Reading the list of ${quoted(automationStudioActivityListName(name))}`, byWords: true } },
+  { verb: "describe", plain: "Reading the details of a control", named: (name) => `Reading the details of ${quoted(name)}`, kinded: (noun) => `Reading the details of ${noun}` },
   {
     verb: "detect",
     plain: "Looking for a pattern on the page",
@@ -122,7 +132,35 @@ const BOX_ROLES = new Set(["checkbox", "switch", "menuitemcheckbox"]);
 /** Roles and input types of one option of several, chosen rather than ticked. */
 const CHOICE_ROLES = new Set(["radio", "option", "menuitemradio", "tab"]);
 /** A choice said as one: "Choosing “Space Grey”", which a card reads back as "Choose". */
-const CHOICE: Phrase = { verb: "select", plain: "Choosing an option", named: (name) => `Choosing ${quoted(name)}` };
+const CHOICE: Phrase = { verb: "select", plain: "Choosing an option", named: (name) => `Choosing ${quoted(name)}`, kinded: (noun) => `Choosing ${noun}` };
+
+/** The most words a one-field list's field is said in. */
+const MAX_FIELD_WORDS = 3;
+
+/** A word as more than one of it: "link" is "links", "address" "addresses", "category" "categories"; a word already ending in one s is kept. */
+function plural(word: string): string {
+  if (/(?:ss|x|z|ch|sh)$/u.test(word)) return `${word}es`;
+  if (/[^aeiou]y$/u.test(word)) return `${word.slice(0, -1)}ies`;
+  return word.endsWith("s") ? word : `${word}s`;
+}
+
+/**
+ * What a read of a list of one field reads, said as that field of each row:
+ * "Reading the links" for the domain's "link", "Reading the product titles"
+ * for "productTitle". Nothing for a name of several fields ("name, price and
+ * 4 more"), or one that is no plain words, which keeps the list's name.
+ */
+function fieldsRead(name: string): string | undefined {
+  if (!/^[A-Za-z]+(?:[ _-][A-Za-z]+)*$/u.test(name) || / and /u.test(name)) return undefined;
+  const words = name.replace(/([a-z])([A-Z])/gu, "$1 $2").toLowerCase().split(/[ _-]+/u);
+  if (words.length > MAX_FIELD_WORDS) return undefined;
+  return `Reading the ${[...words.slice(0, -1), plural(words.at(-1)!)].join(" ")}`;
+}
+
+/** True when a step that sets something "checked" sets it unchecked. */
+function unchecked(parameters: unknown): boolean {
+  return !!parameters && typeof parameters === "object" && !Array.isArray(parameters) && (parameters as { checked?: unknown }).checked === false;
+}
 
 /**
  * True when a step that sets something "checked" acts on an option chosen
@@ -150,7 +188,7 @@ function chosen(parameters: unknown, words: AutomationStudioActivityCallWords | 
 }
 
 /** The pages `./page-name.ts` names in words of its own, said unquoted. */
-const OWN_PAGE = /^the (?:start|home) page$/u;
+const OWN_PAGE = /^(?:the (?:start|home) page|another page)$/u;
 
 /** Words a call types or looks for, collapsed and bounded; nothing for an empty one. */
 function saidText(text: string | undefined): string | undefined {
@@ -193,7 +231,8 @@ export function automationStudioActivityAction(input: { id?: string | undefined;
   if (typeof input.id !== "string") return undefined;
   const words = (input.id.split(".").at(-1) ?? "").toLowerCase().split(/[-_\s]+/u).filter(Boolean);
   for (const [index, word] of words.entries()) {
-    const named = activityActionVerb(word)?.verb;
+    const found = activityActionVerb(word)?.verb;
+    const named = found === "check" && unchecked(input.parameters) ? "uncheck" : found;
     const verb = named === "check" && chosen(input.parameters, input.words) ? CHOICE : named ? PHRASES.find((candidate) => candidate.verb === named) : undefined;
     if (!verb) continue;
     // The domain's own reading of the call first (the control a handle names,
@@ -207,7 +246,10 @@ export function automationStudioActivityAction(input: { id?: string | undefined;
     }
     const text = saidText(input.words?.text);
     if (text !== undefined && verb.said) return verb.said(text, name);
-    return name && verb.named ? verb.named(name) : verb.plain;
+    if (name && verb.named) return verb.named(name);
+    // A control the view printed no words for, by what it is (t753).
+    const noun = verb.kinded ? activityActionControlNoun(input.words?.kind) : undefined;
+    return noun && verb.kinded ? verb.kinded(noun) : verb.plain;
   }
   return undefined;
 }

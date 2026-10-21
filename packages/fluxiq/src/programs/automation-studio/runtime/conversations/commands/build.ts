@@ -21,22 +21,42 @@
 // exactly as a legacy one; anything else is a saved draft, which nothing
 // applies, and the command says plainly what the test came to
 // (`automationStudioConversationCandidateDraftSaid`).
+//
+// **What the build's ending row told is not said again (t753).** A project
+// build's ending row is the one account of how it ended -- what happened, why,
+// what Core recorded of its tests and what is left on the site
+// (`../../service/project-build-ending/ending-told.ts`). Round 5 read that row,
+// then "It was never test-run from the start, so nothing was put into the
+// Flow", then "Saved candidate draft. It was never test-run from the start",
+// though both of its tests had been whole runs. A build that hands back
+// `project.build_ending_told` (a failure's issue code, a draft's trial code)
+// is `told`, and the commands then say only what the Flow keeps and what the
+// person can do next. A project build's draft with no whole test of its latest
+// version carries no trial to hold that code, and every such draft is one the
+// supervisor ended, whose row said so: it is told too. An improvement is a
+// candidate build in every mode, with no such row.
 
 import { resolveAutomationStudioAuthoringMode, resolveAutomationStudioBuildAuthoringMode } from "../../../model/authoring-mode/index.ts";
 import { parseAutomationStudioCandidateAuthoringResult, parseAutomationStudioCandidateProposalResult, type AutomationStudioCandidateAuthoringResult } from "../../flow-bootstrap/authoring-result/index.ts";
 import { parseAutomationStudioFlowBootstrapCandidateKept, type AutomationStudioFlowBootstrapCandidateKept } from "../../flow-bootstrap/generation-failure/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_CODES } from "../../service/project-build-ending/index.ts";
 import type { AutomationStudioConversationCommandCallResult, AutomationStudioConversationCommandContext } from "./command.ts";
-import { automationStudioConversationCallCause } from "./progress.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_TOLD_NEXT, automationStudioConversationCallCause } from "./progress.ts";
 
 /** What a create-here, explore or improve says once its candidate draft is saved with no trial runner (candidate mode only). */
 export const AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_SAVED = "Saved a candidate draft. Verification pending; the Flow's steps are unchanged.";
+
+/** What a draft whose ending the build's row told says (header, t753): what is kept and what to do next, never its verdict again. */
+const TOLD_DRAFT = `I kept what I wrote as a draft, and nothing was put into the Flow. ${AUTOMATION_STUDIO_CONVERSATION_TOLD_NEXT}`;
 
 /**
  * What a create-here, explore or improve says when its candidate stayed a
  * draft: what the test run of the whole Flow came to, in plain words, and that
  * nothing was put into the Flow. A draft is never applied.
  */
-export function automationStudioConversationCandidateDraftSaid(candidate: AutomationStudioCandidateAuthoringResult): string {
+export function automationStudioConversationCandidateDraftSaid(candidate: AutomationStudioCandidateAuthoringResult, told = false): string {
+  // The build's ending row said how it ended (header, t753).
+  if (told) return TOLD_DRAFT;
   const trial = candidate.trial;
   if (!trial) return AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_SAVED;
   const kept = "so nothing was put into the Flow. I kept what I wrote as a draft.";
@@ -90,11 +110,13 @@ const LAST_TRIAL: Readonly<Record<AutomationStudioFlowBootstrapCandidateKept["tr
  * wrote a version Core accepted: then there is nothing to say beyond the Flow
  * having no steps. Never a revision number, a candidate id or a code.
  */
-export function automationStudioConversationCandidateKeptSaid(candidate: AutomationStudioFlowBootstrapCandidateKept): string | undefined {
+export function automationStudioConversationCandidateKeptSaid(candidate: AutomationStudioFlowBootstrapCandidateKept, told = false): string | undefined {
   if (candidate.revision === undefined) return undefined;
   const kept = candidate.draft === "saved"
     ? "I kept the latest version of the Flow's steps that I wrote as a draft, but nothing was put into the Flow."
     : "The latest version of the Flow's steps that I wrote could not be kept, and nothing was put into the Flow.";
+  // How its test runs came out is the build's ending row's to say (header, t753).
+  if (told) return kept;
   const last = candidate.trials.at(-1);
   if (candidate.trialCount === 0 || !last) return `${kept} It was never test-run from the start.`;
   const times = candidate.trialCount === 1 ? "once" : candidate.trialCount === 2 ? "twice" : `${candidate.trialCount} times`;
@@ -132,8 +154,8 @@ export type AutomationStudioConversationBuildResult =
       /** Candidate mode only: the trial run whose confirmed yes made this proposal. */
       trial?: { runId: string; calls: number };
     }
-  /** Candidate mode only: saved authoring, never a verified or executable result. */
-  | { ok: true; status: "draft"; candidate: AutomationStudioCandidateAuthoringResult }
+  /** Candidate mode only: saved authoring, never a verified or executable result. `told`: the build's ending row said how it ended (header, t753). */
+  | { ok: true; status: "draft"; candidate: AutomationStudioCandidateAuthoringResult; told: boolean }
   /**
    * `ending` is the build's own account for the person, when it gave one; the
    * answer opens with it (`./progress.ts`). `kept` is true when the build kept
@@ -146,8 +168,10 @@ export type AutomationStudioConversationBuildResult =
    * carried on from, so `kept` stays about the incomplete draft alone.
    * `endingKind` is which ending `ending` is (`build-ending.ts`, `kind`), so a
    * command does not say again what that ending already says (t619).
+   * `told` is true when the build's ending row said how it ended, so the
+   * command says only what the Flow keeps and what to do next (header, t753).
    */
-  | { ok: false; cause: string; ending?: string; endingKind?: string; kept: boolean; candidateKept?: string };
+  | { ok: false; cause: string; ending?: string; endingKind?: string; kept: boolean; candidateKept?: string; told?: boolean };
 
 export async function buildAutomationStudioFlowFromConversation(
   context: AutomationStudioConversationCommandContext,
@@ -173,8 +197,9 @@ export async function buildAutomationStudioFlowFromConversation(
     const cancelled = (response.payload as { cancelled?: boolean } | undefined)?.cancelled === true;
     const ending = cancelled ? "Build stopped. The Flow was not promoted." : buildEnding(response);
     const endingKind = cancelled ? undefined : buildEndingKind(response);
-    const candidateKept = keptCandidate(response);
-    return { ok: false, cause: automationStudioConversationCallCause("the build", response), ...(ending ? { ending } : {}), ...(ending && endingKind ? { endingKind } : {}), kept: keptDraft(response), ...(candidateKept ? { candidateKept } : {}) };
+    const told = !cancelled && failureTold(response);
+    const candidateKept = keptCandidate(response, told);
+    return { ok: false, cause: automationStudioConversationCallCause("the build", response), ...(ending ? { ending } : {}), ...(ending && endingKind ? { endingKind } : {}), kept: keptDraft(response), ...(candidateKept ? { candidateKept } : {}), ...(told ? { told } : {}) };
   }
   if (candidateMode) {
     const subject = { projectId: context.projectId, flowId: input.flowId };
@@ -183,7 +208,9 @@ export async function buildAutomationStudioFlowFromConversation(
     if (proposal) return { ok: true, status: "proposed", adaptationId: proposal.adaptationId, awaitingPermission: proposal.awaitingPermission, trial: { runId: proposal.candidate.trial.runId, calls: proposal.candidate.trial.calls } };
     const candidate = parseAutomationStudioCandidateAuthoringResult(response.payload, subject);
     if (!candidate) return { ok: false, cause: "the build answered without a tested change or a valid candidate draft for this Flow", kept: false };
-    return { ok: true, status: "draft", candidate };
+    // Told by the build's ending row: its code, or a project build's draft with no whole test of its latest version (header, t753).
+    const told = candidate.trial?.codes.includes(TOLD_CODE) === true || (authoringMode === "project" && candidate.trial?.verdict === "not_tested");
+    return { ok: true, status: "draft", candidate, told };
   }
   const payload = response.payload as { candidate?: { status?: unknown }; adaptation?: { status?: unknown; adaptationId?: unknown; permissionRequest?: unknown } } | undefined;
   if (payload?.candidate?.status === "draft" || payload?.adaptation?.status === "draft") return { ok: false, cause: "the build returned an unverified draft, so no change was applied", ending: "Saved a candidate draft. It still needs independent execution and verification; the Flow's steps are unchanged.", kept: true };
@@ -217,8 +244,17 @@ function keptDraft(response: AutomationStudioConversationCommandCallResult): boo
   return typeof draft?.steps === "number" && draft.steps > 0;
 }
 
-/** What a failed candidate build kept, said for the person, when its diagnostic names the candidate (`diagnostic.candidate`). */
-function keptCandidate(response: AutomationStudioConversationCommandCallResult): string | undefined {
+/** What a failed candidate build kept, said for the person, when its diagnostic names the candidate (`diagnostic.candidate`); its tests left to a row that `told` them. */
+function keptCandidate(response: AutomationStudioConversationCommandCallResult, told: boolean): string | undefined {
   const candidate = parseAutomationStudioFlowBootstrapCandidateKept((response.payload as { diagnostic?: { candidate?: unknown } } | undefined)?.diagnostic?.candidate);
-  return candidate ? automationStudioConversationCandidateKeptSaid(candidate) : undefined;
+  return candidate ? automationStudioConversationCandidateKeptSaid(candidate, told) : undefined;
+}
+
+/** The code a project build's ending row sets when it told the ending (`../../service/project-build-ending/codes.ts`, t753). */
+const TOLD_CODE = AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_CODES.told;
+
+/** Whether the failed build's ending row told how it ended: its issue codes say so (header, t753). */
+function failureTold(response: AutomationStudioConversationCommandCallResult): boolean {
+  const codes = (response.payload as { diagnostic?: { issueCodes?: unknown } } | undefined)?.diagnostic?.issueCodes;
+  return Array.isArray(codes) && codes.includes(TOLD_CODE);
 }

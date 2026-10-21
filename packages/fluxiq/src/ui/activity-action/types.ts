@@ -159,6 +159,7 @@ export type ActivityActionVerb =
   | "clear"
   | "select"
   | "check"
+  | "uncheck"
   | "upload"
   | "read"
   | "list"

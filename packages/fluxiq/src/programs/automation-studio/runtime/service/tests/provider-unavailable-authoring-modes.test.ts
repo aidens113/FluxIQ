@@ -174,7 +174,7 @@ describe("a project build whose supervisor's replies arrive and end it without a
     const diagnostic = await rejectedGenerationDiagnostic(generation);
 
     expect(requests.length).toBeGreaterThan(3);
-    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked"] });
+    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked", "project.build_ending_told"] });
     expect(diagnostic.ending).toBeUndefined();
     expect(seen.some((event) => event.detail?.title === "FluxIQ could not finish the Flow.")).toBe(true);
     // t649: the chat cause carries the supervisor's own reason (`endedBecause`) after its ending.

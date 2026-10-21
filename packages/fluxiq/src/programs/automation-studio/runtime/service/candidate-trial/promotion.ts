@@ -42,11 +42,21 @@
 // (`firstAskConfirmed`, `./run.ts`, t677) where the trial's record says, beside
 // its judge calls; apply records both on the saved Flow
 // (`../../flow-version/judged-build-trial/`), for the playback hold.
+//
+// **A yes the build ended on without completing stays a draft (t753).** A
+// project build whose supervisor ended unfinished, holding a whole test judged
+// yes, used to hand back no trial at all, so the draft said not tested and the
+// chat "It was never test-run from the start". It now hands that yes back with
+// `project.build_ended_unfinished` among its ending codes
+// (`../project-build-ending/codes.ts`), and a standing trial carrying it is
+// kept as a draft under that code, whatever its verdict: only a completion
+// stands on its yes.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioCandidateFingerprint as fingerprint, type AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS, type AutomationStudioBootstrapAdaptation, type AutomationStudioFlowBootstrapNode, type AutomationStudioFlowBuildPlan } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioFlowCandidateDraftRecord } from "../candidate-drafts/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_CODES } from "../project-build-ending/index.ts";
 import type { AutomationStudioCandidateDraftTrial, AutomationStudioGeneratedCandidateTrial } from "../flow-bootstrap-commands/index.ts";
 import type { AutomationStudioCandidateTrialRecord } from "./contracts.ts";
 
@@ -68,6 +78,8 @@ export async function promoteAutomationStudioCandidateTrial(input: {
   // The build's own ending codes go after the draft's own code, which stays first (header, t608).
   const draft = (codes: string[]): AutomationStudioCandidatePromotion => ({ status: "draft", trial: { verdict: standing?.verdict ?? "not_tested", ...(standing?.trialRunId ? { runId: standing.trialRunId } : {}), codes: [...codes, ...endingCodes(standing).filter((code) => !codes.includes(code))] } });
   if (!standing) return draft(["candidate.trial_not_run"]);
+  // A build that ended without completing promotes nothing, whatever its last test said (header, t753).
+  if (endingCodes(standing).includes(AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_CODES.endedUnfinished)) return draft([AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_CODES.endedUnfinished]);
   if (standing.digest !== candidate.digest) return draft(["candidate.trial_stale_revision"]);
   // The same Flow's test that is not a yes keeps its own code, whatever revision ran it (header, G2).
   if (standing.verdict !== "yes") return draft([typeof standing.feedback.code === "string" ? standing.feedback.code : `candidate.trial_${standing.verdict}`]);

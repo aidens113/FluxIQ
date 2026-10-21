@@ -13,17 +13,31 @@
 // "These changes the build made are still on the site: one more change": each
 // act became the same words, and the list kept each wording once. An act a
 // name says is said once by verb and name; those no name says are counted,
-// presses apart from other acts, so three stay three ("3 presses it could not
-// name"). A note said after an act (why it cannot be undone) is kept with it,
-// and acts with different notes are never counted together.
+// presses apart from other acts, so three stay three ("pressed 3 controls with
+// no label"). A note said after an act (why it cannot be undone) is kept with
+// it, and acts with different notes are never counted together.
+//
+// **A trial step is said by what it did, once (t753).** Round 5 read "The
+// build used “Unlike”, but could not undo it": a trial step was named by the
+// control its press left showing, the reverse of what stayed on the site, and
+// "It made 6 acts it could not name" counted three saves twice, once per test
+// run, because a looped step's words (`trial step 6, pass 3 of 3 ...`, t748)
+// matched no pattern. A trial step is now said by its own label ("ran the step
+// “save the note”"), or by the control it ran on where it has none, never as
+// "used"; the same step made by another test run is the same act of the Flow
+// and is counted once. A press on a link, or on a control that dismisses,
+// closes or declines something optional ("Not now", "Close chat", "Decline
+// optional cookies"), or moves to another page, is `passing`: it saves nothing
+// by itself, so it is never listed as something that may have stayed.
 
 /**
  * One phrase for the person: a named act (`clicked “Save”`, with its verb and
- * name), or a count of acts no name says (`3 presses it could not name`,
- * `counted`, with no name). `passing`: it only entered text or moved around the
- * page, which saves nothing by itself.
+ * name), or a count of acts no name says (`pressed 3 controls with no label`,
+ * `counted`, with no name). `count` is how many acts it says. `passing`: it
+ * saves nothing by itself -- it only entered text or moved around the page,
+ * dismissed or closed something, or went to another page (t753).
  */
-export type AutomationStudioActivityActSaid = { words: string; counted: boolean; verb: string; name: string | undefined; passing: boolean };
+export type AutomationStudioActivityActSaid = { words: string; counted: boolean; count: number; verb: string; name: string | undefined; passing: boolean };
 
 /** The longest control name said whole. */
 const MAX_NAME = 60;
@@ -33,11 +47,11 @@ const POSSIBLY_MARK = /\s*\(declared no lasting act, but had an effect: possibly
 /** A quoted name, as the ledger writes it (JSON). */
 const QUOTED = String.raw`"(?:[^"\\]|\\.)*"`;
 /** An exploration act: `<verb> "<name>" <kind>`. */
-const EXPLORED = new RegExp(String.raw`^([a-z][a-z ]*?) (${QUOTED})(?: [A-Za-z_-]+)?$`, "u");
+const EXPLORED = new RegExp(String.raw`^([a-z][a-z ]*?) (${QUOTED})(?: ([A-Za-z_-]+))?$`, "u");
 /** An exploration act on a control no name was given for: `<verb> <kind>` (`click span`). */
-const NAMELESS = /^([a-z][a-z ]*?) [A-Za-z_-]+$/u;
-/** A trial step's act: `trial step <n> "<label>"|<id> on "<control>"`. */
-const TRIAL = new RegExp(String.raw`^trial step \d+ (?:(${QUOTED})|\S+)(?: on (${QUOTED}))?$`, "u");
+const NAMELESS = /^([a-z][a-z ]*?) ([A-Za-z_-]+)$/u;
+/** A trial step's act: `trial step <n>[, pass <i> of <n>] "<label>"|<id> on "<control>"` (t748 passes). */
+const TRIAL = new RegExp(String.raw`^trial step \d+(?:, pass \d+ of \d+)? (?:(${QUOTED})|\S+)(?: on (${QUOTED}))?$`, "u");
 
 /** A verb as the person reads it, done; any other is "used". */
 const DONE: ReadonlyMap<string, string> = new Map([
@@ -49,40 +63,76 @@ const DONE: ReadonlyMap<string, string> = new Map([
 const PASSING = /^(?:type(?: text)?|fill|clear|key|press key|scroll|hover|focus|wait|look|read|navigate|go to)$/u;
 /** Verbs that press a control. */
 const PRESSING = /^(?:click|press|tap|double click)$/u;
+/** A link: pressing one goes to another page, which saves nothing by itself (t753). */
+const LINK = /^(?:a|link)$/iu;
+/**
+ * A control that dismisses, closes or declines something optional, or moves
+ * to another page (t753): pressing it saves nothing on the site by itself. A
+ * bare "Decline" or "Reject" is not one: it may answer a request.
+ */
+const FLEETING = new RegExp([
+  String.raw`\bcookies?\b`, String.raw`^(?:close|dismiss|hide|skip|cancel|not now|no,? thanks|maybe later|remind me later|got it)\b`, String.raw`\bclose\b`,
+  String.raw`^(?:reject|decline|refuse)\b.*\b(?:all|optional|non-essential|tracking|marketing)\b`,
+  String.raw`^(?:next|previous|prev|back|go back|home|show more|see more|load more|view more)(?: page)?$`, String.raw`^(?:page )?\d+$`, String.raw`^[×✕✖xX›»‹«<>]$`
+].join("|"), "iu");
 
-type Plain = { verb: string; name: string | undefined; passing: boolean; press: boolean };
+type Plain = { verb: string; name: string | undefined; passing: boolean; press: boolean; trial: boolean };
 
-/** Each named act once, in the order made, then the acts no name says, counted (header); each with its `note` after. */
+/**
+ * Each named act once, in the order made, then the acts no name says, counted
+ * (header); each with its `note` after. A nameless trial step is counted once
+ * however many test runs made it: its words name the step (t753).
+ */
 export function automationStudioActivityActsSaid(acts: readonly { did: string; note?: string | undefined }[]): AutomationStudioActivityActSaid[] {
   const named = new Map<string, AutomationStudioActivityActSaid>();
-  const unnamed = new Map<string, { count: number; plain: Plain; note: string }>();
+  const unnamed = new Map<string, { count: number; plain: Plain; note: string; steps: Set<string> }>();
   for (const act of acts) {
     const plain = plainAct(act.did);
     const note = act.note ? ` ${act.note}` : "";
     if (plain.name) {
       const words = `${plain.verb} ${plain.name}${note}`;
-      if (!named.has(words)) named.set(words, { words, counted: false, verb: plain.verb, name: plain.name, passing: plain.passing });
+      if (!named.has(words)) named.set(words, { words, counted: false, count: 1, verb: plain.verb, name: plain.name, passing: plain.passing });
       continue;
     }
     const key = `${plain.press ? "press" : "act"}${note}`;
-    unnamed.set(key, { count: (unnamed.get(key)?.count ?? 0) + 1, plain, note });
+    const seen = unnamed.get(key) ?? { count: 0, plain, note, steps: new Set<string>() };
+    const step = act.did.replace(POSSIBLY_MARK, "").trim();
+    // The same trial step again is the same act of the Flow (header, t753).
+    if (plain.trial && seen.steps.has(step)) continue;
+    if (plain.trial) seen.steps.add(step);
+    unnamed.set(key, { ...seen, count: seen.count + 1 });
   }
   const counted = [...unnamed.values()].map(({ count, plain, note }) => {
-    const noun = plain.press ? (count === 1 ? "press" : "presses") : count === 1 ? "act" : "acts";
-    return { words: `${count} ${noun} it could not name${note}`, counted: true, verb: plain.verb, name: undefined, passing: plain.passing };
+    const words = plain.press ? `pressed ${count} ${count === 1 ? "control" : "controls"} with no label` : `took ${count} ${count === 1 ? "step" : "steps"} without a label`;
+    return { words: `${words}${note}`, counted: true, count, verb: plain.verb, name: undefined, passing: plain.passing };
   });
   return [...named.values(), ...counted];
 }
 
-/** One act's words for a person (header): never the ledger's own terms. */
+/**
+ * One act's words for a person (header): never the ledger's own terms. A trial
+ * step is said by its own label, what it did, never by the control its press
+ * left showing, which may say the reverse ("Unlike" after a like, t753).
+ */
 function plainAct(did: string): Plain {
   const bare = did.replace(POSSIBLY_MARK, "").trim();
   const trial = TRIAL.exec(bare);
-  if (trial) return { verb: "used", name: readable(trial[2] ?? trial[1]), passing: false, press: false };
-  const explored = EXPLORED.exec(bare) ?? NAMELESS.exec(bare);
-  if (!explored) return { verb: "used", name: undefined, passing: false, press: false };
-  const verb = explored[1]!.trim();
-  return { verb: DONE.get(verb) ?? "used", name: readable(explored[2]), passing: PASSING.test(verb), press: PRESSING.test(verb) };
+  if (trial) {
+    const label = readable(trial[1]);
+    if (label) return { verb: "ran the step", name: label, passing: false, press: false, trial: true };
+    const control = readable(trial[2]);
+    return { verb: control ? "ran a step on" : "used", name: control, passing: false, press: false, trial: true };
+  }
+  const explored = EXPLORED.exec(bare);
+  const nameless = explored ? undefined : NAMELESS.exec(bare);
+  if (!explored && !nameless) return { verb: "used", name: undefined, passing: false, press: false, trial: false };
+  const verb = (explored ?? nameless)![1]!.trim();
+  const kind = explored ? explored[3] : nameless![2];
+  const name = explored ? readable(explored[2]) : undefined;
+  const press = PRESSING.test(verb);
+  // Pressing a link, or a control that dismisses, closes or moves on, saves nothing by itself (header, t753).
+  const fleeting = press && ((kind !== undefined && LINK.test(kind)) || (name !== undefined && FLEETING.test(name.slice(1, -1))));
+  return { verb: DONE.get(verb) ?? "used", name, passing: PASSING.test(verb) || fleeting, press, trial: false };
 }
 
 /** A quoted name in curly quotes, or undefined when it holds no letter or digit a person reads. */

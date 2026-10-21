@@ -5,7 +5,7 @@
 import { expect, test } from "vitest";
 
 import type { ActivityDisplay, ClientGatewayActivity } from "../index.ts";
-import { ACTIVITY_DETAIL_INTERVAL_MS, ActivityPacer } from "../pacer.ts";
+import { ACTIVITY_DETAIL_INTERVAL_MS, ACTIVITY_HEADLINE_DWELL_MS, ActivityPacer } from "../pacer.ts";
 import { FakeClock } from "./fake-clock.ts";
 import { TEST_HOST_WORDS } from "./test-host-words.ts";
 
@@ -107,7 +107,8 @@ test("final, failed and waiting events show at once and replace a waiting senten
     h.pacer.accept(event(settle));
     expect(h.shown.length, settle.phase).toBe(2);
     expect(h.shown[1]!.at, `${settle.phase} is not held back`).toBe(1_100);
-    expect(h.shown[1]!.display.detail).toBe(settle.label);
+    // A detail that opens with the headline keeps only what follows it (t753).
+    expect(h.shown[1]!.display.detail).toBe(settle.label.replace(/^Build failed: n/u, "N"));
     h.clock.advance(5_000);
     expect(h.shown.length, "the overtaken sentence never shows after it").toBe(2);
   }
@@ -256,12 +257,16 @@ test("the headline is never repeated as the detail", () => {
   for (const entry of h.shown) expect(entry.display.detail?.toLowerCase()).not.toBe(entry.display.headline.toLowerCase());
 });
 
-test("a build's repair gets its own headline at once, keeps it while the repair works, and a build that fails in it says the build failed", () => {
+test("a build's repair gets its own headline once the one up had its dwell, keeps it while the repair works, and a build that fails in it says the build failed", () => {
   const h = harness();
   h.pacer.accept(event({ phase: "building", label: "Reading your request" }));
   h.clock.advance(100);
   h.pacer.accept(event({ phase: "repairing", label: "Repairing the Flow: the result check refuted its answer (attempt 1 of 2)" }));
-  expect(h.shown.length, "not held back by the detail interval").toBe(2);
+  // A new headline that neither settles nor waits on the person waits its turn (t753: a headline skipping the pace was flicker).
+  expect(h.shown.length, "the first headline has not had its dwell").toBe(1);
+  h.clock.advance(ACTIVITY_HEADLINE_DWELL_MS);
+  expect(h.shown.length).toBe(2);
+  expect(h.shown[1]!.at).toBe(1_000 + ACTIVITY_HEADLINE_DWELL_MS);
   expect(h.shown[1]!.display.headline).toBe("Fixing your Flow");
   expect(h.shown[1]!.display.working).toBe(true);
   for (const [phase, label] of [["thinking", "Deciding the next step"], ["exploring", "Using core.run_node"], ["building", "Amending the draft Flow"]] as const) {
@@ -300,7 +305,7 @@ test("a run whose step is really being repaired is headed 'Fixing your Flow', an
   h.clock.advance(ACTIVITY_DETAIL_INTERVAL_MS);
   h.pacer.accept(event({ phase: "repairing", label: "Working out what went wrong", detail: { kind: "thought", title: "Working out what went wrong", text: "The cart link moved to the header.", status: "succeeded" } }, "run"));
   expect(h.pacer.display()?.headline, "Core repairing the step is").toBe("Fixing your Flow");
-  h.clock.advance(ACTIVITY_DETAIL_INTERVAL_MS);
+  h.clock.advance(ACTIVITY_HEADLINE_DWELL_MS);
   h.pacer.accept(event({ phase: "running", label: "Running step 3 of 5: Open the cart", step: { index: 3, count: 5 } }, "run"));
   expect(h.pacer.display()?.headline).toBe("Running your Flow");
 });
@@ -351,13 +356,23 @@ test("a step that finished well never leaves '— done' up: the status keeps nam
 
 // D7 of the same review (moment 3, 00006): the status said "Deciding the next
 // step" while the step the decision chose already had its card working.
-test("a step that starts after the decision shows at once, never 'Deciding the next step' beside its working card", () => {
+// t753: that step skipped the pace, and every skip was a change the overlay
+// made faster than the pace allows. A decision takes the model's time, so the
+// step it chose is almost always past the interval; inside it, the step shows
+// as soon as the interval ends, and nothing shows between.
+test("a step that starts after the decision replaces it as soon as the pace allows, with nothing between", () => {
   const h = harness();
   h.pacer.accept(event({ phase: "thinking", label: "Deciding the next step", detail: { kind: "thought", title: "Deciding the next step", status: "started" } }));
   h.clock.advance(300);
   h.pacer.accept(event({ phase: "exploring", label: "Clicking “Get coupons”", detail: { kind: "tool", title: "Clicking “Get coupons”", status: "started", ref: "core.run_node" } }));
+  h.clock.advance(ACTIVITY_DETAIL_INTERVAL_MS);
   expect(h.pacer.display()?.detail).toBe("Clicking “Get coupons”");
-  expect(h.shown.at(-1)?.at, "not held back by the pace").toBe(1_300);
+  expect(h.shown.map((entry) => [entry.at, entry.display.detail])).toStrictEqual([[1_000, "Deciding the next step"], [1_000 + ACTIVITY_DETAIL_INTERVAL_MS, "Clicking “Get coupons”"]]);
+  const quiet = harness();
+  quiet.pacer.accept(event({ phase: "thinking", label: "Deciding the next step", detail: { kind: "thought", title: "Deciding the next step", status: "started" } }, "build", "b2"));
+  quiet.clock.advance(4_000);
+  quiet.pacer.accept(event({ phase: "exploring", label: "Clicking “Get coupons”", detail: { kind: "tool", title: "Clicking “Get coupons”", status: "started", ref: "core.run_node" } }, "build", "b2"));
+  expect(quiet.shown.at(-1)?.at, "a decision that took the model's time is not held back").toBe(5_000);
 });
 
 // D7: the overlay held each line for its own 1.6 s dwell on top of this pace,
@@ -467,7 +482,7 @@ test("a repaired build whose result check passes is no longer headed as a repair
   const h = harness();
   h.pacer.accept(event({ phase: "repairing", label: "Repairing the Flow: the result check refuted its answer (attempt 1 of 2)" }));
   expect(h.pacer.display()?.headline).toBe("Fixing your Flow");
-  h.clock.advance(ACTIVITY_DETAIL_INTERVAL_MS);
+  h.clock.advance(ACTIVITY_HEADLINE_DWELL_MS);
   h.pacer.accept(event({ phase: "verifying", label: "The result answers the request", detail: { kind: "check", title: "Result check", status: "succeeded", text: "The model judged that the result answers the request." } }));
   expect(h.pacer.display()?.headline).toBe("Building your Flow");
   h.clock.advance(ACTIVITY_DETAIL_INTERVAL_MS);

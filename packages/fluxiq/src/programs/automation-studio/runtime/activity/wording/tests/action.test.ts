@@ -122,3 +122,49 @@ describe("automationStudioActivityAction for a step skipped because it was not s
     expect(automationStudioActivityAction({ id: "web.output.dom-click", label: "Dismiss the offer", notShown: false })).toBe("Dismiss the offer");
   });
 });
+
+// t753 (round-5 UI reviews): a CSS class shown as a control's name, a box
+// unticked said as ticked, a one-field list read as "the list of “link”", and
+// a page named after its address path. Generic controls and pages only.
+describe("t753: plain words for what a call acts on", () => {
+  const card = (title: string, ref = "core.run_node") => activityActionOf({ phase: "exploring", detail: { kind: "tool", title, status: "started", ref } });
+
+  it("never names a control by a class or a generated token, and says its kind instead", () => {
+    expect(automationStudioActivityAction({ id: "web.output.dom-click", words: { target: "css-0732x7m", kind: "button" } })).toBe("Clicking a button");
+    expect(automationStudioActivityAction({ id: "web.output.dom-click", words: { kind: "link" } })).toBe("Clicking a link");
+    expect(automationStudioActivityAction({ id: "web.describe_element", words: { target: "css-0732x7m", kind: "button" } })).toBe("Reading the details of a button");
+    expect(automationStudioActivityAction({ id: "web.output.dom-click", parameters: { element: { accessibleName: "css-1q2w3e4" } } })).toBe("Clicking on the page");
+    expect(automationStudioActivityAction({ id: "web.output.dom-click", words: { kind: "button", target: "Save" } })).toBe("Clicking “Save”");
+    expect(card("Clicking a button")).toMatchObject({ kind: "click", target: "a button" });
+    expect(card("Reading the details of a button", "web.describe_element")).toMatchObject({ kind: "look", target: "a button's details" });
+  });
+
+  it("says a box set unchecked as unticked, and its card says Untick", () => {
+    const untick = (element?: Record<string, unknown>) => automationStudioActivityAction({ id: "web.output.dom-check", parameters: { checked: false, ...(element ? { element } : {}) } });
+    expect(untick({ tagName: "input", inputType: "checkbox", label: "Email me updates" })).toBe("Unticking “Email me updates”");
+    expect(untick()).toBe("Unticking a box");
+    const action = activityActionOf({ phase: "running", step: { nodeId: "n1" }, detail: { kind: "step", title: untick({ inputType: "checkbox", label: "Email me updates" })!, status: "started", ref: "n1", text: "Node: web.output.dom-check" } });
+    expect([action?.kind, action?.name, action?.target]).toEqual(["click", "Untick", "Email me updates"]);
+  });
+
+  it("reads a one-field list by its field, and a list of more fields by their names", () => {
+    const read = (target: string) => automationStudioActivityAction({ id: "web.output.dom-extract_list", words: { target } });
+    expect(read("link")).toBe("Reading the links");
+    expect(read("productTitle")).toBe("Reading the product titles");
+    expect(read("category")).toBe("Reading the categories");
+    expect(read("address")).toBe("Reading the addresses");
+    expect(read("name, price and 4 more")).toBe("Reading the list of “name, price and 4 more”");
+    expect(card("Reading the links", "core.run_node")).toMatchObject({ kind: "read", target: "links" });
+  });
+
+  it("never names a page after its address path", () => {
+    const open = (url: string, extra: Record<string, unknown> = {}) => automationStudioActivityAction({ id: "web.output.browser-navigate", parameters: { url, ...extra }, start: "http://127.0.0.1:4100/start/" });
+    expect(open("http://127.0.0.1:4100/some-shop/my-orders/")).toBe("Opening another page");
+    expect(open("http://localhost:4100/myaccount")).toBe("Opening another page");
+    expect(open("http://127.0.0.1:4100/some-shop/my-orders/", { title: "Order history" })).toBe("Opening “Order history”");
+    expect(open("http://127.0.0.1:4100/start/")).toBe("Opening the start page");
+    expect(open("http://127.0.0.1:4100/")).toBe("Opening the home page");
+    expect(open("https://www.example.com/a/b")).toBe("Opening “example.com”");
+    expect(card("Opening another page")).toMatchObject({ kind: "navigate", target: "another page" });
+  });
+});
