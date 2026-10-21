@@ -281,6 +281,12 @@ export type AutomationStudioSiteResetTrialActPlace = {
    * with the page's `location`, as a read carries it beside its `scope`, so a ledger that has read no page of it knows where to look.
    */
   controls?: { page: string; location?: string; before: Record<string, number>; after: Record<string, number> };
+  /**
+   * Which pass of its loop the act was made in (t748), when its step ran in more than one pass of this trial: `number` the
+   * pass among those the step ran in, from 1, of `of`. Each pass is its own step and act; this names them apart where
+   * the control has no words. Absent for a step that ran once.
+   */
+  pass?: { number: number; of: number };
 };
 
 /**

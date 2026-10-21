@@ -14,6 +14,7 @@ export * from "./run.ts";
 export * from "./port.ts";
 export * from "./promotion.ts";
 export * from "./reads.ts";
+export * from "./step-control.ts";
 export * from "./processed-out.ts";
 export * from "./step-issues.ts";
 export * from "./frame-evidence.ts";
