@@ -3,7 +3,7 @@
 Status: Active
 Status detail: P0-P5 complete (t729, t734, t736, t742, t746, t749); P6 next, after downstream t751.
 Created: 2026-10-19
-Last updated: 2026-10-20
+Last updated: 2026-10-21
 Owner: Senior supervisor agent
 Scope: Core records what it receives from clients during live builds, tests and runs (traces) and runs candidate Flows against those traces through the normal runtime (offline trials), to cut live trial time in the test and repair phases. Not a site simulator; the final judged whole run stays live.
 Paired document: `docs/working/trace-offline-trials-plan.md` in FluxIQWebExtension (extension side)
@@ -16,6 +16,12 @@ Related: [source plan](./trace-offline-trials-plan/source-consultant-plan.md) (t
 **Approved (user, 2026-10-19):** this plan, which is the supervisor's revision of the consultant's plan in
 `trace-offline-trials-plan/source-consultant-plan.md`. "don't implement yet" was the instruction while reviewing;
 the user then approved implementation. P0-P5 are now merged; the downstream execution hub owns current recovery status.
+
+**Recovery (2026-10-21):** UI task t753 is verified and merged in both repositories (Core `d1c39c0a`, downstream
+`daabd593`), with post-merge owning tests/types/build/audits and the mandatory 64 prompt-contract tests passed.
+Reset t751 and judge/read t752 continue in isolated paired trees. Review additionally requires retained own-list/
+control witnesses when optional runtime diffs are absent, and explicit gaps for inert automatic text disclosures.
+P6 still waits for t751; no paid execution or daily full sweep has been launched by Codex.
 
 **Why:** live trials dominate build time. In the downstream breadth round on 2026-10-19 the social build spent 20.5
 of its 25 working minutes in 7 whole trials (one took 337 s), and site-reset failures blocked every trial in three of
@@ -171,6 +177,17 @@ The source plan's T01-T24 are kept. Added:
   `tsc` 0; `pnpm docs:check` -> reference current; audits passed. Earlier full gate: 364 files, 2504 tests passed.
 - Outcome: Partial (P4's corrected-candidate item moved to P5)
 - Follow-up: P5 (t749).
+
+### 2026-10-21 — Downstream t753 recovered and integrated
+- Changed: Core activity wording/pacing, truthful whole-test history and one ending account, draft promotion
+  guard for unfinished builds, UI text checks and web readiness projection. Downstream chat/overlay companion
+  merged first; Core merge `d1c39c0a`, downstream `daabd593`.
+- Validation: `pnpm.cmd task finish t753 "Readable chat endings and steady activity" --skip-checks` independently
+  ran mandatory prompt contracts: `Test Files 3 passed (3)`, `Tests 64 passed (64)`. The user-required narrow
+  owning tests/types/audits had passed before finish; the full `pnpm check` was not repeated. Supervisor
+  `pnpm.cmd docs:check` reported `Deterministic framework reference is current.` Detailed commands/results and
+  rendering limits are in downstream `reports/codex-t753-integration.md` and `reports/codex-integration-review.md`.
+- Next: finish reset/judge recovery before P6; no paid round while known fixes remain in flight.
 
 ## Open Questions
 
