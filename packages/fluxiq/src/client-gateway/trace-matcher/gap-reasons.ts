@@ -28,7 +28,11 @@
 // - `incompatible_contract`: the trace was recorded under a contract version
 //   this reader does not speak;
 // - `redacted_input`: what the command would be compared with, or answered
-//   from, was withheld at capture.
+//   from, was withheld at capture;
+// - `snapshot_unavailable`: a reevaluator (`./types.ts`, P5) found no usable
+//   page snapshot in the trace at this point to answer the changed command from;
+// - `dynamic_content`: the reevaluation needed page behaviour a static snapshot
+//   cannot give (content loaded or changed by running the page).
 export const CLIENT_GATEWAY_TRACE_MATCHER_GAP_REASONS = Object.freeze([
   "missing_transition",
   "argument_mismatch",
@@ -36,5 +40,7 @@ export const CLIENT_GATEWAY_TRACE_MATCHER_GAP_REASONS = Object.freeze([
   "missing_artifact",
   "incomplete_capture",
   "incompatible_contract",
-  "redacted_input"
+  "redacted_input",
+  "snapshot_unavailable",
+  "dynamic_content"
 ] as const);

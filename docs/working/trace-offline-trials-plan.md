@@ -1,7 +1,7 @@
 # Traces And Offline Trials
 
 Status: Active
-Status detail: P0-P4 complete (t729, t734, t736, t742, t746); P5 next (t749).
+Status detail: P0-P5 complete (t729, t734, t736, t742, t746, t749); P6 next, after downstream t751.
 Created: 2026-10-19
 Last updated: 2026-10-20
 Owner: Senior supervisor agent
@@ -42,8 +42,16 @@ reproduce their live judged outcome exactly offline.
 read, so it needs tier 2). The downstream experiment deep-loads three unexported modules (brief scope, scoped
 submission, whole-candidate assembly); P5 replaces that with a public seam.
 
-**Next:** P5 offline reads and targets tier 2 (downstream t749, lane T); then P6 build-loop integration (production
-must pass the live session's view to the matcher) and P7.
+**P5 complete (2026-10-20, t749):** a changed read runs the extension's own content code over the recorded page
+snapshot (scripts and network off) through a reevaluation port on the trace matcher, or returns an explicit gap
+(`snapshot_unavailable`, `dynamic_content`); offline equals live on job-board 84/84 cells, photo 566/566 and social
+906/906; P4's corrected-candidate item met; public seams replace the downstream deep loads, and new audit rules
+`package-exports` and `module-reach` refuse such loads.
+
+**Next:** P6 build-loop integration (offline first in test and repair; live for action changes, gaps and the final
+judged run; production passes the live session's view and hosts the snapshot page), after downstream t751 merges;
+then P7. **Handoff (2026-10-20 evening):** the work goes to Codex; operating detail in the downstream
+`docs/working/trace-offline-trials-plan/reports/handoff-2026-10-20.md`.
 
 **Blocked:** nothing needs the user.
 

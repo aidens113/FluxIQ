@@ -33,6 +33,21 @@ describe("trial evidence result validation", () => {
     expect(codes(input)).toContain("trial_evidence.not_object");
   });
 
+  it("accepts a snapshot evaluation origin and the snapshot reasons, normalized into vocabulary order", () => {
+    const answer = validateAutomationStudioTrialEvidenceResult(recordedPass({ evidenceOrigins: ["snapshot_evaluation", "pure_computation", "recorded"] }));
+    expect(answer.ok && answer.result.evidenceOrigins).toEqual(["recorded", "pure_computation", "snapshot_evaluation"]);
+    const gap = (reasonCode: "snapshot_unavailable" | "dynamic_content") => ({ reasonCode, scope: "segment" as const, operation: "example.read#1", detail: "reevaluation" });
+    const inconclusive = recordedPass({
+      verdict: "inconclusive",
+      scope: "segment",
+      reasonCodes: ["snapshot_unavailable", "dynamic_content"],
+      missingEvidence: [gap("snapshot_unavailable"), gap("dynamic_content")],
+      assertionsChecked: [{ id: "output-has-rows", outcome: "unverified" }]
+    });
+    expect(codes(inconclusive)).toEqual([]);
+    expect(AUTOMATION_STUDIO_TRIAL_EVIDENCE_REASON_CODES).toEqual(expect.arrayContaining(["snapshot_unavailable", "dynamic_content"]));
+  });
+
   it("refuses empty or unknown origins", () => {
     expect(codes(recordedPass({ evidenceOrigins: [] }))).toContain("trial_evidence.origins_empty");
     expect(codes({ ...recordedPass(), evidenceOrigins: ["recorded", "guessed"] })).toContain("trial_evidence.origin_unknown");

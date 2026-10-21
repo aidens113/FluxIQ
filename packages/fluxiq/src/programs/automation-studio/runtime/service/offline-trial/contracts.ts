@@ -3,7 +3,14 @@
 // what it answers -- the candidate trial's own outcome beside the trial
 // evidence result (U5) that says what that outcome rests on.
 
-import type { ClientGatewayClientHello, ClientGatewayService, ClientGatewayTraceMatcherReport, ClientGatewayTraceMatcherSessionView, ClientGatewayTraceStore } from "../../../../../client-gateway/index.ts";
+import type {
+  ClientGatewayClientHello,
+  ClientGatewayService,
+  ClientGatewayTraceMatcherReport,
+  ClientGatewayTraceMatcherSessionView,
+  ClientGatewayTraceReevaluator,
+  ClientGatewayTraceStore
+} from "../../../../../client-gateway/index.ts";
 import type { AutomationStudioTrialEvidenceReasonCode, AutomationStudioTrialEvidenceResult } from "../../../model/index.ts";
 import type { AutomationStudioCandidateTrialRequest } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioCandidateTrialOutcome, AutomationStudioCandidateTrialPorts } from "../candidate-trial/index.ts";
@@ -45,6 +52,19 @@ export type AutomationStudioOfflineCandidateTrialInput = {
    * neither, the trial is refused before anything runs (`incomplete_capture`).
    */
   sessionView?: ClientGatewayClientHello | undefined;
+  /**
+   * Handed to the trace matcher (P5): asked to answer a changed command that
+   * keeps the recorded action type, from what the trace recorded up to that
+   * operation. Without it, every changed command is an evidence gap.
+   */
+  reevaluator?: ClientGatewayTraceReevaluator | undefined;
+};
+
+/** An operation a reevaluator answered in the recorded one's place: its ordinal, action type and the fields that differed, by path; never a value. */
+export type AutomationStudioOfflineTrialReevaluatedOperation = {
+  ordinal: number;
+  actionType: string;
+  fields: string[];
 };
 
 /** Something the offline trial took from outside its trace, declared with every result it produced: what, and why it cannot carry what the candidate did. */
@@ -66,7 +86,9 @@ export type AutomationStudioOfflineCandidateTrialRefusal = {
  * that outcome rests on: recorded evidence and pure computation, never live),
  * the matcher's report it was read from, which session view the matcher's
  * session was attached with (a supplied one is also a declared
- * normalization), and how many of the recorded operations the run matched.
+ * normalization), how many of the recorded operations the run matched, and
+ * which of those a reevaluator answered (each also makes `snapshot_evaluation`
+ * one of the result's origins).
  */
 export type AutomationStudioOfflineCandidateTrialRan = {
   status: "ran";
@@ -76,6 +98,7 @@ export type AutomationStudioOfflineCandidateTrialRan = {
   sessionView: ClientGatewayTraceMatcherSessionView["source"];
   normalizations: AutomationStudioOfflineTrialNormalization[];
   supported: { matchedOperations: number; recordedOperations: number };
+  reevaluated: AutomationStudioOfflineTrialReevaluatedOperation[];
 };
 
 export type AutomationStudioOfflineCandidateTrialOutcome = AutomationStudioOfflineCandidateTrialRefusal | AutomationStudioOfflineCandidateTrialRan;
