@@ -382,11 +382,12 @@ describe("a project build through the actual service", () => {
     const failure = await run.build().then(() => undefined, (error: unknown) => error).finally(unsubscribe);
     const diagnostic = parseAutomationStudioFlowBootstrapGenerationError(failure);
     // The code every debug and the Lab read is the build's own, as before t590.
-    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked"] });
+    // Beside it, that the ending row told the ending, so the chat's answer does not say it again (t753).
+    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked", "project.build_ending_told"] });
     expect(diagnostic!.ending).toBeUndefined();
     const told = seen.find((event) => event.detail?.title === "FluxIQ could not finish the Flow.");
-    // Why is said once (t741 B5): the chat's ending says it from the failure, so this row says what is left without it.
-    expect(told?.detail).toMatchObject({ kind: "note", status: "failed", text: "The build left no change on the site that it knows of." });
+    // The row is the one account of the ending (t753): why, then what is left; the chat's answer says neither again.
+    expect(told?.detail).toMatchObject({ kind: "note", status: "failed", text: "The control the task names is not on the start page. No other way to it was found. The build left no change on the site that it knows of." });
     // The failure carries why beside the supervisor's ending, so the chat's ending and the build's last row say it (t649).
     expect(diagnostic!.endedBecause).toBe("The control the task names is not on the start page. No other way to it was found.");
   });

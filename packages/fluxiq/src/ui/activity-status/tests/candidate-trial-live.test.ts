@@ -21,7 +21,7 @@
 import { expect, test } from "vitest";
 
 import type { ActivityDisplay, ClientGatewayActivity } from "../index.ts";
-import { ACTIVITY_DETAIL_INTERVAL_MS, ActivityPacer } from "../pacer.ts";
+import { ACTIVITY_HEADLINE_DWELL_MS, ActivityPacer } from "../pacer.ts";
 import { FakeClock } from "./fake-clock.ts";
 import { TEST_HOST_WORDS } from "./test-host-words.ts";
 
@@ -35,9 +35,9 @@ function harness() {
   const clock = new FakeClock(1_000);
   const shown: ActivityDisplay[] = [];
   const pacer = new ActivityPacer({ clock, hostWords: TEST_HOST_WORDS, onChange: (display) => shown.push(display) });
-  /** Feeds each event a full interval apart, so every one is shown; returns the display after each. */
+  /** Feeds each event a headline's dwell apart, so every one is shown, a new headline too; returns the display after each. */
   const feed = (...events: ClientGatewayActivity[]): ActivityDisplay[] => events.map((each) => {
-    clock.advance(ACTIVITY_DETAIL_INTERVAL_MS);
+    clock.advance(ACTIVITY_HEADLINE_DWELL_MS);
     pacer.accept(each);
     return pacer.display()!;
   });

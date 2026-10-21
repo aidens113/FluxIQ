@@ -32,11 +32,16 @@ const REPEAT_REFUSED = "llm_evidence_loop.repeat_refused";
  * `../../../../../ui/activity-action/record.ts`) and as the status line's
  * reason. Lane C (`run-mv0fuotv-805294d7`) read "Not done: it was already tried
  * exactly this way and did not work" for a whole Flow sent again unchanged,
- * which says nothing of a Flow (t378).
+ * which says nothing of a Flow (t378). A project builder's part of the Flow
+ * read "Not done: using “Submit subflow” — it was already tried exactly this
+ * way…" (t753, round 5).
  */
 const SENT_AGAIN: Readonly<Record<string, string>> = Object.freeze({
   "core.submit_candidate": "the same Flow was sent again unchanged, so it was not checked again",
-  "core.test_candidate": "the same test was asked for again with nothing in the Flow changed, so it was not run again"
+  "core.test_candidate": "the same test was asked for again with nothing in the Flow changed, so it was not run again",
+  // The card's title already says which part ("saving one part of the Flow"), so the reason does not say it again.
+  "core.submit_subflow": "it was sent again unchanged, so it was not checked again",
+  "core.test_subflow": "it was asked for again with nothing changed, so it was not run again"
 });
 /** An earlier outcome as the record may carry it: a code, never a sentence. */
 const OUTCOME_SHAPED = /^[a-z0-9_]{1,64}$/u;

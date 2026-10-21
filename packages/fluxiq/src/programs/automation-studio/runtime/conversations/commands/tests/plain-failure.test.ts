@@ -144,9 +144,20 @@ describe("a supervisor's reason for ending a build", () => {
       error: "Flow Bootstrap generation failed (flow_bootstrap.post_provider_validation_failed).",
       payload: { diagnostic: { code: "flow_bootstrap.post_provider_validation_failed", stage: "post_provider_validation", issueCodes: ["project.build_blocked"], endedBecause } }
     });
-    expect(ended("I could not finish this.")).toBe("the build failed: FluxIQ could not finish the Flow: I could not finish this");
+    expect(ended("I could not finish it because I've found no way to the last page.")).toBe("the build failed: FluxIQ could not finish the Flow: I could not finish it because I've found no way to the last page");
     expect(ended("I've found no way to the last page.")).toBe("the build failed: FluxIQ could not finish the Flow: I've found no way to the last page");
     expect(ended("URL changes broke the second page.")).toBe("the build failed: FluxIQ could not finish the Flow: URL changes broke the second page");
     expect(ended("It stopped on the second page.")).toBe("the build failed: FluxIQ could not finish the Flow: it stopped on the second page");
+  });
+
+  // t753 rerun round 5 (b): "The build failed: FluxIQ could not finish the Flow: I could not finish this. Saving ...".
+  it("never says the ending twice: a reason opening on that it could not finish opens on why", () => {
+    const ended = (endedBecause: string) => automationStudioConversationCallCause("the build", {
+      ok: false,
+      error: "Flow Bootstrap generation failed (flow_bootstrap.post_provider_validation_failed).",
+      payload: { diagnostic: { code: "flow_bootstrap.post_provider_validation_failed", stage: "post_provider_validation", issueCodes: ["project.build_blocked"], endedBecause } }
+    });
+    expect(ended("I could not finish this. Saving the board left changes on the site.")).toBe("the build failed: FluxIQ could not finish the Flow: saving the board left changes on the site");
+    expect(ended("I could not finish this.")).toBe("the build failed: FluxIQ could not finish the Flow");
   });
 });

@@ -64,8 +64,8 @@ export const AUTOMATION_STUDIO_CONVERSATION_EXPLORE: AutomationStudioConversatio
     }
 
     const built = await buildAutomationStudioFlowFromConversation(context, { flowId, mode: "create" });
-    if (!built.ok) return progress.failed(built.cause, { ending: built.ending, kept: built.candidateKept });
-    if (built.status === "draft") return { ...progress.succeeded(automationStudioConversationCandidateDraftSaid(built.candidate)), candidate: built.candidate };
+    if (!built.ok) return progress.failed(built.cause, { ending: built.ending, kept: built.candidateKept, told: built.told });
+    if (built.status === "draft") return { ...progress.succeeded(automationStudioConversationCandidateDraftSaid(built.candidate, built.told)), candidate: built.candidate, candidateTold: built.told };
     progress.carry({ adaptationId: built.adaptationId });
     const where = automationStudioConversationSiteName(context.startLocation);
     progress.landed(built.trial ? `explored ${where}, wrote the Flow's steps and test-ran the whole Flow from its start` : `tried the steps on ${where} and worked out which ones work`);

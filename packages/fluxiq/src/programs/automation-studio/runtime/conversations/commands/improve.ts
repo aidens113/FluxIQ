@@ -60,8 +60,8 @@ export const AUTOMATION_STUDIO_CONVERSATION_IMPROVE: AutomationStudioConversatio
     progress.landed(said.from === "person" ? "saved what should change as an instruction on the Flow" : `saved what should change as an instruction on the Flow, ${AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS}`);
 
     const built = await buildAutomationStudioFlowFromConversation(context, { flowId, mode: "extend" });
-    if (!built.ok) return progress.failed(built.cause, { ending: built.ending, kept: built.candidateKept });
-    if (built.status === "draft") return { ...progress.succeeded(automationStudioConversationCandidateDraftSaid(built.candidate)), candidate: built.candidate };
+    if (!built.ok) return progress.failed(built.cause, { ending: built.ending, kept: built.candidateKept, told: built.told });
+    if (built.status === "draft") return { ...progress.succeeded(automationStudioConversationCandidateDraftSaid(built.candidate, built.told)), candidate: built.candidate, candidateTold: built.told };
     progress.carry({ adaptationId: built.adaptationId });
     return {
       ...progress.succeeded(`Worked out the change on the website${built.trial ? `, and ${AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_JUDGED}` : ""}. It is waiting for you to say whether to apply it.`),

@@ -12,6 +12,15 @@
 // judged. Counts and verdicts only, never a part's name, a page's words or the
 // judge's own text. Every part tried counts, whichever plan it was tried under:
 // a part a later plan replaced still passed or failed its own test.
+//
+// **An earlier version's whole test still counts (t753).** Round 5 said "A
+// whole Flow was assembled and never tested from its start" and "It was never
+// test-run from the start" of a build whose Flow had been test-run whole
+// twice: it was assembled again after those runs, and its latest version had
+// no test of its own. Where the latest version has none, the whole runs of
+// every version (`wholeRuns`, the build's trial records) are said: how many
+// there were, what the last of them was judged, and that the latest version
+// was not tested.
 
 import type { AutomationStudioActivityTimeLimitTried } from "../../activity/index.ts";
 import type { AutomationStudioCandidateTrialResult, AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
@@ -36,20 +45,25 @@ const JUDGED: Readonly<Record<AutomationStudioCandidateTrialVerdict, string>> = 
 
 /** The judged run of the whole Flow, as Core keeps it. */
 type Whole = Pick<AutomationStudioCandidateTrialResult, "verdict" | "feedback">;
+/** Every whole run of the Flow from its start, of whichever version: how many, and the last one's verdict (header, t753). */
+type WholeRuns = { count: number; last: AutomationStudioCandidateTrialVerdict };
 
 /**
  * Core's account of what was tested (header), or undefined when nothing was:
  * `parts` every part's trials by its key, `assembled` whether a whole Flow was
- * put together, and `whole` its judged run from its start, when one finished.
+ * put together, `whole` its judged run from its start, when one finished,
+ * and `wholeRuns` the whole runs of every version, said where `whole` is
+ * absent (header, t753).
  */
 export function automationStudioProjectBuildRecordTold(input: {
   parts: ReadonlyMap<string, AutomationStudioActivityTimeLimitTried>;
   assembled: boolean;
   whole?: Whole | undefined;
+  wholeRuns?: WholeRuns | undefined;
 }): string | undefined {
-  const { parts, assembled, whole } = input;
+  const { parts, assembled, whole, wholeRuns } = input;
   if (!parts.size && !assembled && !whole) return undefined;
-  return [partsSaid(parts), wholeSaid(assembled, whole)].join(" ");
+  return [partsSaid(parts), wholeSaid(assembled, whole, wholeRuns)].join(" ");
 }
 
 /** How the parts tested on their own came out (header). */
@@ -70,7 +84,11 @@ function partsSaid(parts: ReadonlyMap<string, AutomationStudioActivityTimeLimitT
 }
 
 /** What became of the whole Flow, and what its judged run did and was judged (header). */
-function wholeSaid(assembled: boolean, whole: Whole | undefined): string {
+function wholeSaid(assembled: boolean, whole: Whole | undefined, runs: WholeRuns | undefined): string {
+  // An earlier version's whole runs, where the latest has none of its own (header, t753).
+  if (!whole && assembled && runs && runs.count > 0) {
+    return `A version of the whole Flow was test-run from its start ${times(runs.count)}, and ${runs.count === 1 ? "that run" : "the last of those runs"} ${JUDGED[runs.last]}; the latest version was not tested from its start.`;
+  }
   if (!whole) return assembled ? "A whole Flow was assembled and never tested from its start." : "No whole Flow was assembled, so it was never tested as one.";
   const did = ran(whole.feedback);
   return `The judged test run of the whole Flow from its start ${did ? `${did}, and ` : ""}${JUDGED[whole.verdict]}.`;

@@ -6,6 +6,7 @@ const PAIRS: readonly (readonly [ActivityActionVerb, string])[] = [
   // "Click" (lane A U1): the card says the act a person would name.
   ["select", "Choose"],
   ["check", "Tick"],
+  ["uncheck", "Untick"],
   ["dialog", "Answer dialog"],
   // A key pressed is typing by kind; "Type · Enter" said nothing was pressed.
   ["key", "Press key"],

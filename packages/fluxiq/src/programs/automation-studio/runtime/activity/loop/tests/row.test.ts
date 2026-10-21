@@ -42,13 +42,15 @@ describe("the row a list loop's pass is on", () => {
     expect(words.passOf("confirm", [pass(0, { url: "https://circleway.test/u/x", count: 4 })])).toBeUndefined();
   });
 
-  it("is carried on the step's event, and the step's sentence is unchanged", async () => {
+  it("is carried on the step's event, and the step's sentence names the pass", async () => {
     await runWithAutomationStudioActivity({ kind: "run", id: "r1", projectId: "p1" }, async () => {
       emitAutomationStudioActivityStep({ index: 8, count: 9, nodeId: "confirm", definitionId: "web.output.dom-click", pass: words.passOf("confirm", [pass(3, JONAS)]) });
     });
     expect(seen).toHaveLength(1);
     expect(seen[0]!.step).toEqual({ index: 8, count: 9, nodeId: "confirm", row: "Jonas Weber" });
-    // No pass number of its own: the row is the card's to say.
-    expect(seen[0]!.label).toBe("Running step 8 of 9: Clicking on the page");
+    // The row's name is the card's to say; the sentence carries only the pass
+    // number, so the status line (and the overlay, which has no card) moves as
+    // the loop does instead of standing still for a whole loop.
+    expect(seen[0]!.label).toBe("Running step 8 of 9: Clicking on the page (row 4)");
   });
 });

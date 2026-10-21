@@ -174,7 +174,7 @@ describe("a project build its time limit stops", () => {
     expect(clock.held()).toEqual([6_000, 8_000]);
     const diagnostic = parseAutomationStudioFlowBootstrapGenerationError(failure);
     // The code every debug and the Lab read stays the build's own.
-    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_time_limit", "project.build_blocked"] });
+    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_time_limit", "project.build_blocked", "project.build_ending_told"] });
     const told = seen.find((event) => event.detail?.title === "The build reached its time limit of 8 seconds before a whole test of the Flow passed.");
     expect(told?.detail, JSON.stringify(seen.map((event) => event.detail?.title).filter(Boolean))).toMatchObject({
       kind: "note", status: "failed",
@@ -215,7 +215,7 @@ describe("a project build its time limit stops", () => {
     expect(clock.held()).toEqual([6_000, 8_000]);
     // The draft's trial keeps its own code first, which every debug and the Lab read, and carries the time limit beside it,
     // which the chat's reply opens with (`conversations/commands/create-here.ts`).
-    expect(result).toMatchObject({ status: "draft", promotionAllowed: false, trial: { verdict: "no", codes: ["candidate.trial_judged_no", "project.build_time_limit"] } });
+    expect(result).toMatchObject({ status: "draft", promotionAllowed: false, trial: { verdict: "no", codes: ["candidate.trial_judged_no", "project.build_time_limit", "project.build_ending_told"] } });
     const told = seen.find((event) => event.detail?.title === "The build reached its time limit of 8 seconds before a whole test of the Flow passed.");
     expect(told?.detail, JSON.stringify(seen.map((event) => event.detail?.title).filter(Boolean))).toMatchObject({
       kind: "note", status: "failed",

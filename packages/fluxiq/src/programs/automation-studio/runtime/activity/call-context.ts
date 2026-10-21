@@ -47,7 +47,14 @@
 //   role or input type does. A model's exploration calls carry only the
 //   handle, so its colour swatches read "Ticking “Spain”" while the same steps
 //   in a test of the Flow, which carry the saved element, read "Choose" (R4a
-//   attempt 2, `run-mv2pgqkj-f3552c70`, steps 0020-0024, moment 04).
+//   attempt 2, `run-mv2pgqkj-f3552c70`, steps 0020-0024, moment 04). The
+//   word itself is kept as the control's kind, which names a control the view
+//   printed no words for ("Clicking a button", t753).
+// - **Only the words in the name's place.** A view line prints a control's
+//   words right after its handle, its heading tag and its kind; a wordless
+//   icon control prints its class later, after `icon` (`t50 button icon
+//   class="css-0732x7m"`), and taking the first quoted text on the line read
+//   "Reading the details of “css-0732x7m”" (t753, round-5 UI review).
 //
 // Reads only: a call and its result pass through the observer unchanged.
 
@@ -75,17 +82,15 @@ const MAX_LIST_NAME = 60;
 /** The most of a control's name a title carries, as `./wording/action.ts` holds a target. */
 const MAX_TARGET_NAME = 60;
 /**
- * A line of a page view that names a control: a handle (a lower-case letter,
- * then digits), what the view says it is, and its name in double quotes
- * (`t12 link "Friends" ~/friends/`, `t857 button "Close chat"`).
+ * A line of a page view as the web domain writes it, `<handle> [<heading
+ * tag>] [<kind>] ["<words>"] ...`: the handle (a lower-case letter, then
+ * digits), the word it prints for what the element is when it prints one
+ * (`t940 clickable "Space Grey"`, `t872 field[search] ...`; `t880 "Welcome
+ * back"` prints none), and the words in double quotes right after it, an
+ * inner quote written `\"` (`t12 link "Friends" ~/friends/`). A quoted value
+ * after an attribute's name (`class="..."`, `use="..."`) is never the words.
  */
-const PRINTED_LINE = /^([a-z]\d{1,7})\b[^"\n]*?"([^"\n]{1,300})"/gmu;
-/**
- * A line of a page view that starts with a handle, and the word it prints for
- * what the element is when it prints one before the name (`t940 clickable
- * "Space Grey"`, `t872 field[search] ...`; `t880 "Welcome back"` prints none).
- */
-const KIND_LINE = /^([a-z]\d{1,7})(?: ([a-z][a-z0-9]*))?(?=[\s[:]|$)/gmu;
+const VIEW_LINE = /^([a-z]\d{1,7})(?: h[1-6])?(?: ([a-z][a-z0-9]*)(?:\[[^\]\n]*\])?)?(?: "((?:[^"\\\n]|\\.){1,300})")?(?=[\s:]|$)/gmu;
 /** The words a view prints for a role the wording reads a "check" by; any other word says neither. */
 const ROLE_WORDS: ReadonlySet<string> = new Set(["checkbox", "switch", "radio", "option", "tab"]);
 /** How deep into an evidence value its printed text is looked for. */
@@ -147,26 +152,32 @@ function labelColumn(result: unknown): string | undefined {
   return keys.length === 1 ? keys[0] : undefined;
 }
 
+/** What views printed of each handle, the latest print winning: its name, the role its kind word says (`ROLE_WORDS`, else ""), and that word. */
+type Printed = { names: Map<string, string>; roles: Map<string, string>; kinds: Map<string, string> };
+
+const nothingPrinted = (): Printed => ({ names: new Map(), roles: new Map(), kinds: new Map() });
+
 /**
- * Each handle a value's text printed with a name, in the order printed, into
- * `into`; and each handle it printed at all, with the role its kind word says
- * (`ROLE_WORDS`, else ""), into `roles`.
+ * Each handle a value's text printed, in the order printed, into `into`: the
+ * words in its name's place when they read as a name, the role its kind word
+ * says, and that word. A later line that prints no name, or no kind, for a
+ * handle leaves what an earlier one said, as the name always was.
  */
-function printedNames(value: unknown, into: Map<string, string>, roles: Map<string, string>, depth = 0): void {
+function printedNames(value: unknown, into: Printed, depth = 0): void {
   if (typeof value === "string") {
     if (!value.includes("\n") && !HANDLE.test(value.split(" ")[0] ?? "")) return;
-    for (const found of value.matchAll(PRINTED_LINE)) {
-      const name = automationStudioActivityHumanLabel(found[2], MAX_TARGET_NAME);
-      if (name) into.set(found[1]!, name);
-    }
-    for (const found of value.matchAll(KIND_LINE)) {
+    for (const found of value.matchAll(VIEW_LINE)) {
+      const handle = found[1]!;
       const word = found[2] ?? "";
-      roles.set(found[1]!, ROLE_WORDS.has(word) ? word : "");
+      const name = found[3] === undefined ? undefined : automationStudioActivityHumanLabel(found[3].replace(/\\(.)/gu, "$1"), MAX_TARGET_NAME);
+      if (name) into.names.set(handle, name);
+      into.roles.set(handle, ROLE_WORDS.has(word) ? word : "");
+      if (word) into.kinds.set(handle, word);
     }
     return;
   }
   if (depth >= MAX_DEPTH || !value || typeof value !== "object") return;
-  for (const member of Array.isArray(value) ? value : Object.values(value)) printedNames(member, into, roles, depth + 1);
+  for (const member of Array.isArray(value) ? value : Object.values(value)) printedNames(member, into, depth + 1);
 }
 
 /** The handle a call acts on: its parameters' `target` (a handle, or `{ handle }`), else its own. */
@@ -195,22 +206,24 @@ export function automationStudioActivityCallContext(): {
   target(call: { value?: unknown }): string | undefined;
   /** The role the latest view that printed the call's handle said it has ("" for none a "check" is read by), or nothing when no view printed it. */
   role(call: { value?: unknown }): string | undefined;
+  /** The word the latest view that printed the call's handle printed for what it is ("button", "link"), or nothing. */
+  kind(call: { value?: unknown }): string | undefined;
 } {
   let start: string | undefined;
   let column: string | undefined;
-  /** Each handle's name, as the evidence last printed it. */
-  let names = new Map<string, string>();
-  /** Each handle's role, as the evidence last printed its kind. */
-  let roles = new Map<string, string>();
+  /** Each handle's name, role and kind, as the evidence last printed them. */
+  let printed = nothingPrinted();
+  const of = (call: { value?: unknown }, member: keyof Printed): string | undefined => {
+    const handle = handleOf(record(call.value));
+    return handle === undefined ? undefined : printed[member].get(handle);
+  };
   return {
     decided: (evidence) => {
       start = draftStart(evidence) ?? start;
       // Read afresh from what this decision was shown, in order, so the latest view of a handle wins.
-      const next = new Map<string, string>();
-      const kinds = new Map<string, string>();
-      for (const entry of evidence) printedNames(entry.value, next, kinds);
-      names = next;
-      roles = kinds;
+      const next = nothingPrinted();
+      for (const entry of evidence) printedNames(entry.value, next);
+      printed = next;
     },
     sent: (call) => {
       const value = record(call.value);
@@ -230,13 +243,8 @@ export function automationStudioActivityCallContext(): {
       return { ...(rows !== undefined ? { rows } : {}), ...(pages !== undefined ? { pages } : {}), ...(list !== undefined ? { list } : {}) };
     },
     start: () => start,
-    target: (call) => {
-      const handle = handleOf(record(call.value));
-      return handle === undefined ? undefined : names.get(handle);
-    },
-    role: (call) => {
-      const handle = handleOf(record(call.value));
-      return handle === undefined ? undefined : roles.get(handle);
-    }
+    target: (call) => of(call, "names"),
+    role: (call) => of(call, "roles"),
+    kind: (call) => of(call, "kinds")
   };
 }

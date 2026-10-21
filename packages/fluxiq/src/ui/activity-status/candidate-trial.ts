@@ -78,14 +78,24 @@ export class CandidateTrial {
   private activityId: string | undefined;
   private open = false;
 
-  /** Folds `event`, of a unit of `kind`, in and answers what the test makes of it. */
-  observe(event: ClientGatewayActivity, kind: ActivityDisplay["subjectKind"]): TrialState {
+  /**
+   * Folds `event`, of a unit of `kind`, in and answers what the test makes of
+   * it. A step run only to get the page ready (`preparing`,
+   * `steady/page-preparation.ts`) is no test of the Flow, and ends one still
+   * open (t753: a setup rerun read "Testing your Flow").
+   */
+  observe(event: ClientGatewayActivity, kind: ActivityDisplay["subjectKind"], preparing = false): TrialState {
     if (event.activityId !== this.activityId) {
       this.activityId = event.activityId;
       this.open = false;
     }
     // A saved Flow's run is the run itself, never a test of it.
     if (kind !== "build") return OUTSIDE;
+    if (preparing) {
+      const wasOpen = this.open;
+      this.open = false;
+      return wasOpen ? { testing: false, startedNow: false, endedNow: true, line: null } : OUTSIDE;
+    }
     const detail = event.detail;
     if (detail?.kind === "tool" && detail.ref === TEST_CANDIDATE) {
       if (detail.status === "started") return this.opened(null);

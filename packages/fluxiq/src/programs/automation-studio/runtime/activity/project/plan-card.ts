@@ -20,18 +20,33 @@ export type AutomationStudioProjectPlanCardInput = {
 const TEXT = 160;
 
 /**
+ * True for the subflow Core adds to a plan of several to run the others in
+ * turn (`../../project-agents/supervisor/plan-input.ts`): the one the router
+ * falls back to, carrying no part of the task. Read by shape, so a plan of one
+ * subflow, which the router runs and which carries every part, keeps it.
+ */
+function coresRunner(plan: AutomationStudioProjectStructurePlan, key: string): boolean {
+  const fallback = plan.plan.router.fallback;
+  return plan.plan.subflows.length > 1 && fallback.kind === "subflow" && fallback.targetSubflowKey === key && !(plan.partOf[key] ?? []).length;
+}
+
+/**
  * Shows the supervisor's plan in the chat as one card (a `note` row): the
  * task's parts in the person's own words, each subflow with its one-line
  * purpose and the parts it carries, each brief's starting case and allowance,
- * and the reserve. Never a digest in the title, the ref or the card.
+ * and the reserve. Never a digest in the title, the ref or the card. The
+ * subflow Core adds to run the others is left out (`coresRunner`): it was
+ * shown as "Main: Runs each of the other subflows in turn…" (t753, round 5),
+ * and its title says "parts" and "pieces", never "subflows".
  */
 export function emitAutomationStudioProjectPlanCard(input: AutomationStudioProjectPlanCardInput): void {
   const { taskSpec, structurePlan } = input;
   const briefs = input.briefs ?? [];
+  const subflows = structurePlan.plan.subflows.filter((subflow) => !coresRunner(structurePlan, subflow.key));
   const card: ClientGatewayActivityProjectCard = {
     kind: "plan",
     parts: taskSpec.parts.map((part) => ({ id: part.id, words: automationStudioProjectCardWords(part.quote.text, TEXT) })),
-    subflows: structurePlan.plan.subflows.map((subflow) => ({
+    subflows: subflows.map((subflow) => ({
       key: subflow.key,
       name: automationStudioProjectCardWords(subflow.name, TEXT) || subflow.key,
       purpose: automationStudioProjectSubflowPurpose(subflow.key, structurePlan, taskSpec, input.purposes?.[subflow.key]),
@@ -42,8 +57,8 @@ export function emitAutomationStudioProjectPlanCard(input: AutomationStudioProje
     ...(input.reserveUsd === undefined ? {} : { reserveUsd: input.reserveUsd })
   };
   const partCount = taskSpec.parts.length;
-  const subflowCount = structurePlan.plan.subflows.length;
-  const title = `Plan: ${partCount} ${partCount === 1 ? "part" : "parts"} in ${subflowCount} ${subflowCount === 1 ? "subflow" : "subflows"}`;
+  const pieceCount = subflows.length;
+  const title = `Plan: ${partCount} ${partCount === 1 ? "part" : "parts"} of the task, built in ${pieceCount} ${pieceCount === 1 ? "piece" : "pieces"}`;
   const text = automationStudioProjectCardWords(card.subflows.map((subflow) => `${subflow.name}: ${subflow.purpose}`).join(". "), 1_000);
   emitAutomationStudioActivity({
     phase: input.phase ?? "thinking",

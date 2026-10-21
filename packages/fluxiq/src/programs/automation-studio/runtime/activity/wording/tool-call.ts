@@ -30,16 +30,39 @@ const OPENING_LOOK = "Looking over the page the Flow starts on";
 
 const lowerFirst = (text: string): string => `${text.charAt(0).toLowerCase()}${text.slice(1)}`;
 
+/** The prefix of Core's own tools' ids. */
+const CORE_PREFIX = "core.";
+/** The key a call that undoes one of the build's own lasting acts carries (`../../flow-bootstrap/site-reset/undoes-tool.ts`), read as a plain string so this module does not reach into the build. */
+const UNDOES_KEY = "undoes";
+/** How such a call opens: what it is for, then the act it does to get there. */
+const PUTTING_BACK = "Putting the site back";
+
 /**
  * What a call says when no verb names it: the node it runs ("Running the
- * “Merge” step"), else the tool's own words ("Using “recall notes”"), never the
- * id and never "Working on the page", which said nothing a person could tell
- * apart (t193).
+ * “Merge” step"), else, for a tool, what it is in plain words -- work on the
+ * Flow for one of Core's own, a step for any other -- never the id, never
+ * the tool's own name, and never "Working on the page", which said nothing a
+ * person could tell apart (t193). A project builder's tools read "Using
+ * “Submit subflow”" and "Using “Test subflow”" before `./core-tool.ts` named
+ * them (t753, round 5).
  */
 function unnamed(toolId: string, node: string | undefined): string {
-  const name = automationStudioActivityNodeName(node ?? (toolId === RUN_NODE_TOOL_ID ? "" : toolId));
-  if (!name) return "Running a step";
-  return node ? `Running the “${name}” step` : `Using “${name}”`;
+  const name = node ? automationStudioActivityNodeName(node) : undefined;
+  if (name) return `Running the “${name}” step`;
+  return !node && toolId.startsWith(CORE_PREFIX) && toolId !== RUN_NODE_TOOL_ID ? "Working on the Flow" : "Running a step";
+}
+
+/**
+ * A call that undoes one of the build's own lasting acts before a trial
+ * (`undoes`), said as putting the site back, then the act: an undo read as
+ * an ordinary press, "Click · Remove · Done" under a heading about undoing
+ * (t753, round 5). A card reads the opening back as "Put back"
+ * (`ui/activity-action/action-of.ts`).
+ */
+function puttingBack(value: Record<string, unknown>, title: string | undefined): string | undefined {
+  const undoes = value[UNDOES_KEY];
+  if (typeof undoes !== "string" || !undoes) return undefined;
+  return title ? `${PUTTING_BACK}: ${lowerFirst(title)}` : PUTTING_BACK;
 }
 
 /**
@@ -80,7 +103,8 @@ export function automationStudioActivityToolCall(call: { callId: string; toolId:
   if (own) return { phase: "exploring", kind: "tool", title: own, label: own, dryRun: false };
   const value = call.value && typeof call.value === "object" && !Array.isArray(call.value) ? call.value as Record<string, unknown> : {};
   const node = call.toolId === RUN_NODE_TOOL_ID && typeof value.node === "string" && value.node ? value.node : undefined;
-  const action = automationStudioActivityAction({ id: node ?? call.toolId, parameters: value.parameters, words, start: context.start });
+  const acted = automationStudioActivityAction({ id: node ?? call.toolId, parameters: value.parameters, words, start: context.start });
+  const action = puttingBack(value, acted) ?? acted;
   const row = context.row !== undefined ? ` for “${context.row}”` : "";
   const named = node ? { node } : {};
   if (call.callId.startsWith(DRY_RUN_PREFIX)) {

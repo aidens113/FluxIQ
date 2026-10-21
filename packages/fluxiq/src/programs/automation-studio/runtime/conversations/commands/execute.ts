@@ -70,8 +70,8 @@ async function settle(command: AutomationStudioConversationCommand, context: Aut
   });
   if (outcome.status === "done" && outcome.candidate) {
     await context.host.appendAutomationTurn({ projectId: context.projectId, conversationId: context.conversationId,
-      // Pending only when no test of the whole Flow ran; otherwise what it came to (t738, `draftSavedLine`).
-      text: draftSavedLine(outcome.candidate), ask: null,
+      // Pending only when no test of the whole Flow ran; otherwise what it came to (t738, `draftSavedLine`); nothing of it where the build's row told it (t753).
+      text: draftSavedLine(outcome.candidate, outcome.candidateTold === true), ask: null,
       attachment: { kind: "candidate-draft", ref: outcome.candidate.candidateId } });
   }
   if (outcome.status === "done" && !outcome.candidate && outcome.confirm) {
@@ -88,6 +88,9 @@ async function settle(command: AutomationStudioConversationCommand, context: Aut
   }
   return outcome;
 }
+
+/** The card line for a draft whose ending the build's row told, beside an answer that said it was kept (t753): no verdict, said once. */
+const DRAFT_TOLD = "What I wrote so far is kept here.";
 
 /** The card line for a draft no test of the whole Flow stands behind: no trial runner ran one. */
 const DRAFT_PENDING = "Saved candidate draft. Verification pending; the Flow's steps are unchanged.";
@@ -110,6 +113,7 @@ const DRAFT_TESTED: Readonly<Record<NonNullable<AutomationStudioCandidateAuthori
  * of the whole Flow ran at all, and otherwise what that test came to, in the
  * words the draft's own answer uses (`./build.ts`).
  */
-function draftSavedLine(candidate: Pick<AutomationStudioCandidateAuthoringResult, "trial">): string {
+function draftSavedLine(candidate: Pick<AutomationStudioCandidateAuthoringResult, "trial">, told: boolean): string {
+  if (told) return DRAFT_TOLD;
   return candidate.trial ? `Saved candidate draft. ${DRAFT_TESTED[candidate.trial.verdict]}; the Flow's steps are unchanged.` : DRAFT_PENDING;
 }
