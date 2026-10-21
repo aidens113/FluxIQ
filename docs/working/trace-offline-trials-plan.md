@@ -21,7 +21,12 @@ the user then approved implementation. P0-P5 are now merged; the downstream exec
 `daabd593`), with post-merge owning tests/types/build/audits and the mandatory 64 prompt-contract tests passed.
 Reset t751 and judge/read t752 continue in isolated paired trees. Review additionally requires retained own-list/
 control witnesses when optional runtime diffs are absent, and explicit gaps for inert automatic text disclosures.
-P6 still waits for t751; no paid execution or daily full sweep has been launched by Codex.
+Independent retained-witness checks passed36 tests; the final reset review still requires a captured original before
+every project exploration act, including custom tool routes. t752 integrated owner checks passed except two stale
+labels; their corrected focused rerun passed7 tests, and the frozen Core build is running. Package exports cleanup
+is dispatched independently in paired t754 worktrees. P6 still waits for t751; no paid execution or daily full sweep
+has been launched by Codex. The t754 lifecycle automatically performs its initial downstream workspace build;
+do not repeat that broad build as a per-fix gate.
 
 **Why:** live trials dominate build time. In the downstream breadth round on 2026-10-19 the social build spent 20.5
 of its 25 working minutes in 7 whole trials (one took 337 s), and site-reset failures blocked every trial in three of
