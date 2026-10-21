@@ -19,12 +19,13 @@ the user then approved implementation. P0-P5 are now merged; the downstream exec
 
 **Recovery (2026-10-21):** UI task t753 is verified and merged in both repositories (Core `d1c39c0a`, downstream
 `daabd593`), with post-merge owning tests/types/build/audits and the mandatory 64 prompt-contract tests passed.
-Reset t751 and judge/read t752 continue in isolated paired trees. Review additionally requires retained own-list/
-control witnesses when optional runtime diffs are absent, and explicit gaps for inert automatic text disclosures.
-Independent retained-witness checks passed36 tests; the final reset review still requires a captured original before
-every project exploration act, including custom tool routes. t752 integrated owner checks passed except two stale
-labels; their corrected focused rerun passed7 tests, and the frozen Core build is running. Package exports cleanup
-is dispatched independently in paired t754 worktrees. P6 still waits for t751; no paid execution or daily full sweep
+t752 judge/read is verified and merged (Core `149ba69e`, downstream `4da5947c`), including grounded negative judgements,
+retained advice and explicit inert-disclosure gaps. Owning tests/types/build/audits passed; headed social5/5 and offline
+gap1/1 passed; Core task finish independently passed68 mandatory contracts. t751 source is checkpointed and integrating
+accepted dev before final owning/build/browser gates. Independent retained-witness36, project exploration46 and merged
+service11tests passed, including actual pre-act originals for custom tools. Package exports cleanup is checkpointed
+in paired t754 trees; exact38 baseline entries removed with no other baseline changes, final integration remains.
+P6 still waits for t751; no paid execution or daily full sweep
 has been launched by Codex. The t754 lifecycle automatically performs its initial downstream workspace build;
 do not repeat that broad build as a per-fix gate.
 
@@ -193,6 +194,14 @@ The source plan's T01-T24 are kept. Added:
   `pnpm.cmd docs:check` reported `Deterministic framework reference is current.` Detailed commands/results and
   rendering limits are in downstream `reports/codex-t753-integration.md` and `reports/codex-integration-review.md`.
 - Next: finish reset/judge recovery before P6; no paid round while known fixes remain in flight.
+
+### 2026-10-21 — t752 grounded judge recovery accepted
+- Agent: supervisor, recover_t752
+- Changed: current negative defects require structured grounding, earlier advice/history retained, answer-only counts and contradiction metadata preserved. Core149ba69e; downstream4da5947c.
+- Validation: grouped owning315parallelfiles/2463tests initially2461pass+2stale labels; corrected2file7test rerun passed; real-SQL1file3tests passed. Package tsc0, stamped3library build0, docs:check current, audits/freshness0. Downstream domain768/extension595 tests, types and headed social5/offlinegap1 passed; details in downstream reports/codex-t752-integration.md.
+- Validation: `pnpm.cmd task finish t752 "Ground negative judge findings in measured rows" --skip-checks` independently passed3mandatorypromptcontractfiles/68tests, then merged to dev. The already-passed narrow gates replace a repeated full check per user instructions.
+- Outcome: Accepted; paired ledger/baseline push follows. Reset t751 and export t754 remain separate task units.
+- Follow-up: final combined reset gates, then P6. No paid execution or panel management.
 
 ## Open Questions
 
