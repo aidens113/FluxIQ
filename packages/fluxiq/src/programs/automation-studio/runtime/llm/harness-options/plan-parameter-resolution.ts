@@ -113,6 +113,19 @@
 // model wrote -- and the plan feedback adds the line the node takes the token
 // in where it is a word one of its parameters takes
 // (`../../flow-bootstrap/plan/issue-feedback.ts`). A page fact keeps its own path.
+//
+// **A candidate's node is told the steps before it (t748 U1b).** A site can
+// open an item as a dialog over its list while a load of the item's address
+// gives its own page, and one handle can name a control of each, so which one
+// a candidate's step names depends on where the steps before it left the page.
+// The domain used to infer that from the order Core asked it, which could not
+// see the steps Core never asks about -- an untouched inherited step, a handler
+// whose fact was refused -- nor where one plan ended and the next began. So
+// under `handleReach` every node is sent `precedingSteps`: every Subflow's
+// nodes before it in plan order, as the plan held them before any was
+// resolved (handles intact, the declaration taken off), each node its own copy,
+// at most `MAX_PRECEDING_STEPS` of them and none past that. A page fact is no
+// step: it is in no list and is sent none.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
@@ -160,6 +173,8 @@ const MAX_RESOLVED_PARAMETER_BYTES = 16_384;
 /** Bounds on a node's `handleViews` (header): as many as a node may name handles, each location as long as a handle reference's. */
 const MAX_HANDLE_VIEWS = 64;
 const MAX_VIEW_LOCATION_LENGTH = 2_048;
+/** The most steps before a node it is told of (header, t748 U1b); a node with more is told none. */
+const MAX_PRECEDING_STEPS = 200;
 const handleToken = (): RegExp => new RegExp(AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN, "u");
 
 /** The view one handle of a plan node came from (header), with the node named `<subflow key>.<node key>`. */
@@ -224,6 +239,9 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
   }
   const resolvedNodeKeys: string[] = [];
   const handleViews: AutomationStudioFlowBootstrapPlanHandleView[] = [];
+  // Every step in plan order as the plan holds it now, before a fact or a node is resolved into it (header, t748 U1b).
+  const runOrder = input.handleReach === undefined ? undefined : plan.subflows.flatMap((subflow) => subflow.nodes.map((node) => ({ definitionId: node.definitionId, parameters: structuredClone(automationStudioPlanStepConsequences(node).parameters) })));
+  let position = -1;
   // Page facts first (header): a handler's facts are its parameters, so they are resolved before the handler is asked about.
   const refusedHandlers = new Set<string>();
   for (const site of automationStudioPlanFactTargetSites(plan)) {
@@ -245,9 +263,11 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
   for (const [subflowIndex, subflow] of plan.subflows.entries()) {
     for (const [nodeIndex, node] of subflow.nodes.entries()) {
       const ref = `${subflow.key}.${node.key}`;
+      position += 1;
       if (refusedHandlers.has(ref)) continue;
       const permission = input.permissionFor?.({ definitionId: node.definitionId, ref }) ?? automationStudioActionPermissionDenied;
-      const outcome = await resolveNode(node, input, permission, input.inheritedNodeRefs?.has(ref) === true, input.modelWrittenParameters?.get(ref));
+      const preceding = runOrder && position <= MAX_PRECEDING_STEPS ? structuredClone(runOrder.slice(0, position)) : undefined;
+      const outcome = await resolveNode(node, input, permission, input.inheritedNodeRefs?.has(ref) === true, input.modelWrittenParameters?.get(ref), preceding);
       const path = `plan.subflows.${subflowIndex}.nodes.${nodeIndex}.parameters`;
       if (outcome.status === "needs_permission") {
         // Not the model's mistake and not the model's to correct: the gate has
@@ -305,7 +325,9 @@ async function resolveNode(
   input: { projectId: string; flowId: string; binding?: ParameterResolver | undefined; handlesIssued: boolean; handleReach?: AutomationStudioPlanHandleReach | undefined; handleEvidence?: JsonObject | undefined; writtenByModel?: boolean | undefined },
   permission: AutomationStudioActionPermissionCheck,
   inherited: boolean,
-  modelKeys?: readonly string[] | undefined
+  modelKeys?: readonly string[] | undefined,
+  /** The steps before this node (header, t748 U1b): only under `handleReach`, already this call's own copy. */
+  precedingSteps?: { definitionId: string; parameters: JsonObject }[] | undefined
 ): Promise<NodeOutcome> {
   // The declaration comes off first, so nothing downstream -- the handle
   // search, the domain, the registry -- ever sees a parameter no node declares.
@@ -341,6 +363,7 @@ async function resolveNode(
       permission,
       ...(step.declared ? { declaredConsequences: [...step.declared] } : {}),
       ...(input.handleReach ? { handleReach: input.handleReach } : {}),
+      ...(input.handleReach && precedingSteps ? { precedingSteps } : {}),
       // The packet as the caller holds it; the domain reads it and keeps nothing of this copy.
       ...(input.handleEvidence ? { handleEvidence: structuredClone(input.handleEvidence) } : {}),
       ...(input.writtenByModel ? { writtenByModel: true as const } : {}),
