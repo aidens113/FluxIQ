@@ -33,6 +33,7 @@ import { automationStudioWithoutLocators } from "./locator-text.ts";
 import type { AutomationStudioLlmDiagnosisFields } from "./structured-response.ts";
 import { AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS, type AutomationStudioLlmTaskKind } from "./task-kind.ts";
 import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmInRunRepairContext } from "./task-request.ts";
+import { automationStudioLlmWellFormedVerificationDefects } from "../verification-defects/index.ts";
 
 export type AutomationStudioLlmContextPacket = {
   schemaVersion: "0.1";
@@ -482,12 +483,15 @@ function packDiagnosisFields(
   const text = (value: unknown): string | undefined =>
     typeof value === "string" && value.trim() ? value : undefined;
   const flag = (value: unknown): boolean | undefined => (typeof value === "boolean" ? value : undefined);
+  // A verification's defects (t752): each well-formed one rebuilt key by key, a malformed one dropped.
+  const defects = diagnosis.defects === undefined ? [] : automationStudioLlmWellFormedVerificationDefects(diagnosis.defects).kept;
   const packed: AutomationStudioLlmDiagnosisFields = {
     ...(text(diagnosis.expected) !== undefined ? { expected: text(diagnosis.expected)! } : {}),
     ...(text(diagnosis.observed) !== undefined ? { observed: text(diagnosis.observed)! } : {}),
     ...(text(diagnosis.changed) !== undefined ? { changed: text(diagnosis.changed)! } : {}),
     ...(verdict(diagnosis.stillAchievable) ? { stillAchievable: verdict(diagnosis.stillAchievable)! } : {}),
     ...(verdict(diagnosis.deterministicRecoveryPossible) ? { deterministicRecoveryPossible: verdict(diagnosis.deterministicRecoveryPossible)! } : {}),
+    ...(diagnosis.defects !== undefined ? { defects } : {}),
     ...(flag(diagnosis.explorationNeeded) !== undefined ? { explorationNeeded: flag(diagnosis.explorationNeeded)! } : {}),
     ...(flag(diagnosis.patchNeeded) !== undefined ? { patchNeeded: flag(diagnosis.patchNeeded)! } : {})
   };

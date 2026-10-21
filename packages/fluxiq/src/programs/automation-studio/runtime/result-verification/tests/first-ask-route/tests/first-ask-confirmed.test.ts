@@ -99,14 +99,14 @@ describe("a yes reached by re-asking a call that said otherwise", () => {
   it("is not first-ask confirmed after a split's no asked again (t515)", async () => {
     const quoted = { answersRequest: "yes", observed: `Copper Garden Tools Pair is left out, as the request says "leaving out out-of-stock items". Replacement Handle for Garden Tools is left out, as the request says "replacement parts".` };
     // A kept row its advice would exclude: the reason the t515 recheck addresses (t686, `../../../agreement/no-reasons.ts`).
-    const no = { answersRequest: "no", observed: "A refurbished bundle was stored.", changed: "Add a condition that excludes refurbished bundles such as the Copper Garden Tools Pair row." };
+    const no = { answersRequest: "no", defects: [], observed: "A refurbished bundle was stored.", changed: "Add a condition that excludes refurbished bundles such as the Copper Garden Tools Pair row." };
     const report = await verify(scripted([{ answer: quoted }, { answer: no }, { answer: quoted }]).provider, { summary: requestWordsRunSummary(), instructions: [instruction("Collect the catalogue", REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS)] });
     expect(report.outcome).toMatchObject({ verdict: "answers", verdicts: ["answers", "does_not_answer", "answers"], calls: 3 });
     expect(flag(report)).toBeUndefined();
   });
 
   it("is not first-ask confirmed after two refuted nos asked again (t607), the t664 towels trial's shape", async () => {
-    const NO = { answersRequest: "no", ...SAME_LAMP_NO };
+    const NO = { answersRequest: "no", ...SAME_LAMP_NO, defects: [] };
     const LAMP_YES = { answersRequest: "yes", expected: SAME_LAMP_NO.expected, observed: `Condition 1 (sponsored is absent) follows "Leave out sponsored listings". Condition 2 (rating atLeast 4) follows "rated 4 or higher". "${LAMP_SHADE}" is left out as "spare parts such as spare bulbs or lamp shades" says.` };
     const report = await verify(scripted([{ answer: NO }, { answer: NO }, { answer: LAMP_YES }, { answer: LAMP_YES }]).provider, { summary: lampsRunSummary(), instructions: [LAMPS_INSTRUCTION] });
     expect(report.outcome).toMatchObject({ verdict: "answers", calls: 4, refutedNo: { reasked: true } });

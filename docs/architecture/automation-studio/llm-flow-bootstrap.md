@@ -3528,3 +3528,33 @@ that authority before recording its acts; a per-step move's before snapshot may
 already contain an earlier trial creation and is not the original whole-site
 baseline. Missing original authority stays unresolved. Current evidence from
 another resource cannot prove restoration of a different scope.
+
+
+## Judge advice consistency and grounded defects
+
+Each trial carries all earlier judged trials' advice, with Core's comparison of the named
+conditions or step parameters against the current plan. A changed condition is evidence of a
+change only; earlier advice never overrides the original request or excuses an incorrect result.
+Advice text is bounded per entry, but completed trials are not evicted after three entries or deduplicated by local revision: retests and rebriefs can reuse a revision number. Column references resolve once to a unique canonical column for both grounding and claimed-value checks; ambiguous aliases remain unconfirmed.
+
+A current verification schema requires `diagnosis.defects` (an empty list when none is asserted).
+Row defects identify a kept or missing row, or a wrong column value, and quote the original request.
+The optional `value` states the cell value claimed by the judge; Core compares it with the stored
+cell and rejects a contradicted value claim. Row/column existence grounds a reference but does not
+prove the judge's semantic reading correct. Existing no-weighing checks still evaluate measured
+counts, page coverage and left-out condition witnesses before the additional grounding check.
+`other` represents ordering, formatting, required fields/actions and constraints the row checks
+cannot measure. Such claims remain unconfirmed; lack of a locatable row defect never proves yes.
+
+After one recheck, a structured no that Core cannot ground becomes `unsure`, never an automatic
+yes. Promotion still requires independent model confirmation. Only explicit independent yeses on
+recheck may settle the result as yes. Persisted legacy diagnoses remain readable without a structured field. Every current negative
+verification passes a task-specific decoding flag: missing, malformed or partly malformed defect
+accounts are unusable and leave the result unsure, rather than being treated as legacy negatives.
+Positive and unrelated diagnosis replies retain their established decoder behavior.
+
+A read that supplies a repeat loop and is superseded by a later read of the same target is working
+rows when the graph/run evidence establishes that relationship. Its record set is excluded from
+answer-only checks only when every collector is a working read and a later answer set exists.
+The closest repair trial uses answer rows and selects the latest nonempty answer among equally
+ranked verdicts, rather than favoring inflated working-set counts.

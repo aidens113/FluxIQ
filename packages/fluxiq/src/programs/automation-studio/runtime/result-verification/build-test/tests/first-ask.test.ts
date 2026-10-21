@@ -9,7 +9,7 @@ import { LAMP_SHADE, LAMPS_INSTRUCTION, SAME_LAMP_NO, lampsRunSummary } from "..
 import { automationStudioBuildTestJudge } from "../judge.ts";
 
 const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 };
-const NO = { answersRequest: "no", ...SAME_LAMP_NO };
+const NO = { answersRequest: "no", ...SAME_LAMP_NO, defects: [] };
 const YES = {
   answersRequest: "yes",
   expected: SAME_LAMP_NO.expected,

@@ -47,10 +47,10 @@ export function campsiteReadScript(where: readonly JsonObject[], pages = 5): Jso
 }
 
 /** Call 1 (0033's shape): a gap no condition answers, and advice to change condition 1, which Core's record clears. */
-export const GAP_AND_CHANGE_NO = { answersRequest: "no", ...GAP_AND_CHANGE };
+export const GAP_AND_CHANGE_NO = { answersRequest: "no", defects: [], ...GAP_AND_CHANGE };
 
 /** Call 2 (0034's shape): the gap alone. */
-export const GAP_NO = { answersRequest: "no", ...GAP };
+export const GAP_NO = { answersRequest: "no", defects: [], ...GAP };
 
 /** The exact rows' run, judged: each judge call answers the next diagnosis, its read named as a run of `subflows` names it. */
 export function campsiteJudging(...diagnoses: Record<string, unknown>[]): (subflows: ReadonlyArray<{ key: string; nodes: ReadonlyArray<{ key: string; definitionId: string }> }>) => Promise<AutomationStudioBuildTestVerdict> {

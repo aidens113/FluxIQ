@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4125
-- Class: 140
+- Public declarations: 4135
+- Class: 141
 - Interface: 10
 - Object: 547
-- Type: 2191
+- Type: 2195
 - Type Alias: 1
-- Value: 1236
+- Value: 1241
 
 ## Public Declarations
 
@@ -782,6 +782,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioCandidateDraftTrialBlock` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/authoring-result/contracts.ts` | Why a candidate stayed a draft (t340): the standing verdict, the trial run behind it, and Core's codes. |
 | `AutomationStudioCandidateDurableBinding` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/candidate-verification/contracts.ts` | Immutable trusted association; no builder/API acceptance fields. |
 | `AutomationStudioCandidateDurableSession` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/durable-session.ts` | Internal trusted-port orchestration; production promotion is deliberately closed. |
+| `AutomationStudioCandidateEarlierAdviceMemory` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/candidate/earlier-advice-memory.ts` | One gate's memory of its build's judged trials' advice (header). |
+| `AutomationStudioCandidateEarlierAdviceTrial` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/candidate/earlier-advice-memory.ts` | One judged trial with advice, as a gate keeps it (header). |
 | `AutomationStudioCandidateExecutionReceipt` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/contracts.ts` | - |
 | `automationStudioCandidateFingerprint` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/candidate/digest.ts` | One fingerprint owner: byte-compatible legacy graph and source-bound v2. |
 | `automationStudioCandidateGraphSource` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/candidate-graphs.ts` | - |
@@ -1958,6 +1960,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioLlmUnusableDecisionError` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/llm/unusable-decision.ts` | Thrown by a decision callback to say "the provider was asked and its answer cannot be acted on, for a reason another attempt could fix". It carries issue codes only, never a model's words. Where the provider's reply arrived and could not be read, it also carries the reply's account: which malformed case it was, its finish reason, its length and what it cost (`./reply-account.ts`). One code for seven cases is what left 14 refused decisions of `run-munw7ffn-fe1cecd2` unexplained; the loop writes this onto the decision's row. |
 | `AutomationStudioLlmUsageSummary` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/provider.ts` | - |
 | `automationStudioLlmValueWithoutDeniedKeys` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/draft-screen.ts` | - |
+| `AutomationStudioLlmVerificationDefect` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/structured-response.ts` | One defect a `loop_verification` no names (t752): `kept_not_asked`, a row the result keeps that the request does not ask for; `asked_missing`, a row the request asks for that the result lacks (`row` may be "rows not read" for rows the run never read); `wrong_value`, a kept row whose `column` holds a wrong value; `other` names an ordering, formatting, required action/column or other requirement that row membership cannot measure, which remains unsure. `row` names the row as the evidence does (Core's row id or its label); `requestWords` quotes the request's words the row fails. |
 | `AutomationStudioLoadedCompiledPlan` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/compiled-plan-store.ts` | - |
 | `automationStudioLocatorShapedText` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/locator-text.ts` | - |
 | `automationStudioLoopProtocolInstruction` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/stages/instructions.ts` | - |
@@ -2399,6 +2402,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioResultConditionReadings` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/value-readings/condition-readings.ts` | - |
 | `automationStudioResultConditionRequestExclusion` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/standing-no-record/request-exclusion.ts` | - |
 | `automationStudioResultCoreObservation` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/core-observation.ts` | - |
+| `automationStudioResultEarlierAdvice` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/standing-no/earlier-advice.ts` | - |
+| `AutomationStudioResultEarlierAdvice` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/contracts/earlier-advice.ts` | One earlier judged trial's advice, as the judge of a later trial of the same build is told it (header). |
 | `automationStudioResultEndView` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/result-summary.ts` | - |
 | `AutomationStudioResultEndView` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/contracts/run-result-summary.ts` | The view of its target -- for the web domain, the page -- a run or a test ended on, as the domain produced it (t174-w87). Run `run-murwd8le-79e735a8`'s judges never saw `Cart (3)`, the coupon's "Collected" or the quantity field, and one of them invented a quantity that was never committed. |
 | `automationStudioResultEndViewRead` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/result-summary.ts` | - |
@@ -2461,11 +2466,14 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioResultReadPagesClause` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/pages-clause.ts` | - |
 | `automationStudioResultReadParameters` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/read-parameters.ts` | - |
 | `automationStudioResultReadPresence` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/presence.ts` | - |
+| `automationStudioResultReadSameTarget` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/same-target.ts` | - |
 | `automationStudioResultReadSentence` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/sentence.ts` | - |
 | `automationStudioResultReadStop` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/stop.ts` | - |
 | `AutomationStudioResultReadStopMeaning` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/stop.ts` | Why a read's paging stopped, as what a reader does about it. |
 | `automationStudioResultReadStoredColumns` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/stored-columns.ts` | - |
 | `automationStudioResultReadTogetherRows` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/together-rows.ts` | - |
+| `automationStudioResultReadWorkingRows` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/working-rows.ts` | - |
+| `automationStudioResultReadWorkingSets` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/working-sets.ts` | - |
 | `AutomationStudioResultRecordOutput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/value-readings/record-outputs.ts` | One record output a step declares: the dataset it writes, and its `process` when it has one. |
 | `automationStudioResultRecordOutputs` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/value-readings/record-outputs.ts` | - |
 | `AutomationStudioResultRecordSetInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/result-summary.ts` | One record set as the caller reads it out of the store. |
@@ -2494,6 +2502,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioResultRepairWithPurse` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/purse.ts` | - |
 | `automationStudioResultRunAccounting` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/accounting/accounting.ts` | - |
 | `automationStudioResultSameStoredRows` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/build-yes-hold/same-stored-rows.ts` | - |
+| `automationStudioResultScreenedDefects` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/verdict/defects.ts` | - |
 | `automationStudioResultSettledRows` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/value-readings/settled-rows.ts` | - |
 | `AutomationStudioResultSortRead` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/record-set-summary.ts` | One sort key of a record set's answer as Core read it (`./value-readings/sort-reading.ts`, t511). |
 | `automationStudioResultSortReadings` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/value-readings/sort-reading.ts` | - |
@@ -2540,6 +2549,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioResultVerificationWithinDeadline` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/deadline.ts` | - |
 | `AutomationStudioResultWeighedNo` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/build-yes-hold/weighed-nos.ts` | One call's no as Core's record weighed it: `recordContradicts` where the record refutes any of its reading, absent where all of it stands. |
 | `automationStudioResultWeighedNos` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/build-yes-hold/weighed-nos.ts` | - |
+| `AutomationStudioResultWorkingRows` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/contracts/read-account.ts` | Core's flag on a read whose rows are working rows (`AutomationStudioResultReadAccount.workingRows`, t752): node ids, and Core's sentence for them. |
 | `automationStudioResultWrittenCondition` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/standing-no/written-conditions.ts` | - |
 | `automationStudioResultWrittenConditions` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/standing-no/written-conditions.ts` | - |
 | `automationStudioResultWrittenStep` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/standing-no/written-conditions.ts` | - |

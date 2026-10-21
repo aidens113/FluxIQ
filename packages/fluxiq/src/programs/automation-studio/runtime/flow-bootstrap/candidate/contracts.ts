@@ -79,6 +79,13 @@ export type AutomationStudioCandidateTrialRequest = {
    * work or its failure. Absent when the site was as the build found it.
    */
   startedWith?: readonly string[];
+  /**
+   * Each earlier judged trial of this build's advice, oldest first, at most
+   * three, with Core's finding of whether this revision changed what it named
+   * (t752, `./earlier-advice-memory.ts`): the judge is told it, last in its
+   * summary. Absent where no trial of another revision gave advice.
+   */
+  earlierAdvice?: readonly import("../../result-verification/contracts/index.ts").AutomationStudioResultEarlierAdvice[];
 };
 
 export const AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS = Object.freeze(["yes", "no", "unsure", "not_judged", "execution_failed"] as const);

@@ -11,13 +11,13 @@ import { automationStudioBuildTestJudge, type AutomationStudioBuildTestTaskCheck
 import { LAMP_CLAMP, LAMP_SHADE, LAMPS_INSTRUCTION, LAMPS_REQUEST, SAME_LAMP_NO, lampsRunSummary } from "./lamps-fixture.ts";
 
 const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 };
-const NO = { answersRequest: "no", ...SAME_LAMP_NO };
+const NO = { answersRequest: "no", ...SAME_LAMP_NO, defects: [] };
 const YES = {
   answersRequest: "yes",
   expected: SAME_LAMP_NO.expected,
   observed: `Condition 1 (sponsored is absent) follows "Leave out sponsored listings". Condition 2 (rating atLeast 4) follows "rated 4 or higher". "${LAMP_SHADE}" is left out as "spare parts such as spare bulbs or lamp shades" says.`
 };
-const REAL_DEFECT = { answersRequest: "no", expected: SAME_LAMP_NO.expected, observed: `"${LAMP_CLAMP.name}" (LMP2B6N4C8) is a clamp lamp, not a desk lamp, and the request does not ask for it.`, changed: "Leave out clamp lamps." };
+const REAL_DEFECT = { answersRequest: "no", defects: [{ kind: "kept_not_asked", row: LAMP_CLAMP.name, requestWords: "desk lamps" }], expected: SAME_LAMP_NO.expected, observed: `"${LAMP_CLAMP.name}" (LMP2B6N4C8) is a clamp lamp, not a desk lamp, and the request does not ask for it.`, changed: "Leave out clamp lamps." };
 
 /** A provider answering each call with its own diagnosis, keeping every request it was sent. */
 function answering(...diagnoses: Record<string, unknown>[]): { provider: AutomationStudioLlmProvider; seen: AutomationStudioLlmTaskRequest[] } {

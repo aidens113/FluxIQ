@@ -5,6 +5,7 @@ import {
   type AutomationStudioLlmTaskRequest
 } from "../harness.ts";
 import { automationStudioFlowBootstrapOutputSchema, automationStudioFlowBootstrapSizeLimitsOfContext } from "../../flow-bootstrap/index.ts";
+import { AUTOMATION_STUDIO_LLM_VERIFICATION_DEFECTS_SCHEMA } from "../verification-defects/index.ts";
 
 /** The longest summary an evidence decision may answer with. */
 export const AUTOMATION_STUDIO_EVIDENCE_DECISION_MAX_SUMMARY_LENGTH = 240;
@@ -50,13 +51,24 @@ const DIAGNOSIS_OUTPUT_SCHEMA = {
 // off, and left no verdict at all. Written first, the verdict survives such a
 // cut, and the reply envelope reads it (`./verdict-before-cut.ts`). No limit
 // changes: this orders what the model writes and caps nothing.
+//
+// Its diagnosis alone also offers `defects` (t752, `../verification-defects/`),
+// right after the verdict: each defect of the result a no rests on, so Core can
+// find it in its own record rather than read it out of prose. No other
+// diagnosis is offered it.
+const { explorationNeeded, patchNeeded, ...JUDGED_FIELDS } = DIAGNOSIS_FIELDS_SCHEMA.properties;
+const VERIFICATION_FIELDS_SCHEMA = {
+  ...DIAGNOSIS_FIELDS_SCHEMA,
+  required: ["answersRequest", "defects"],
+  properties: { ...JUDGED_FIELDS, defects: AUTOMATION_STUDIO_LLM_VERIFICATION_DEFECTS_SCHEMA, explorationNeeded, patchNeeded }
+} as const;
 const VERIFICATION_OUTPUT_SCHEMA = {
   type: "object",
   additionalProperties: false,
   required: ["kind", "diagnosis", "summary"],
   properties: {
     kind: DIAGNOSIS_OUTPUT_SCHEMA.properties.kind,
-    diagnosis: DIAGNOSIS_FIELDS_SCHEMA,
+    diagnosis: VERIFICATION_FIELDS_SCHEMA,
     confidence: DIAGNOSIS_OUTPUT_SCHEMA.properties.confidence,
     summary: DIAGNOSIS_OUTPUT_SCHEMA.properties.summary,
     metadata: JSON_METADATA_SCHEMA

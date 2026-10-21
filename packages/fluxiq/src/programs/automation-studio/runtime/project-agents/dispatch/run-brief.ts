@@ -109,7 +109,9 @@ import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectDispatc
 // standing nos a brief's gate let stand are kept for the build (`STANDING`,
 // `./standing-nos.ts`) and seed the gate of a later brief of the same subflow
 // and plan, so a repair's gate weighs a no against what the brief before it
-// upheld.
+// upheld. The judged trials' advice its gate kept crosses its briefs the same
+// way (`ADVISED`, t752), so a repair's judge is told what earlier briefs' judges
+// advised and whether the revision changed it.
 //
 // **A repair's opening call carries the calls of the proposal it repairs
 // (A8 `run-mv9zn5ob`, t648).** Its builder was shown that proposal, and the
@@ -249,6 +251,8 @@ type ProposalRef = { briefId: string; revision: number; digest: string };
 const ACCEPTED = new WeakMap<AutomationStudioProjectDispatcherInput, AutomationStudioProjectAcceptedSubflows>();
 /** The standing nos each subflow's briefs kept in one build, as long as the build's dispatcher (header, t634). */
 const STANDING = new WeakMap<AutomationStudioProjectDispatcherInput, AutomationStudioProjectDispatchStandingNos>();
+/** The judged trials' advice each subflow's briefs kept in one build, by subflow and plan, as long as the build's dispatcher (header, t752). */
+const ADVISED = new WeakMap<AutomationStudioProjectDispatcherInput, Map<string, unknown[]>>();
 /** Each subflow's trials and the judges' advice on them across one build's briefs, by subflow key, as long as the build's dispatcher (header, t741 D). */
 const ADVICE = new WeakMap<AutomationStudioProjectDispatcherInput, Map<string, AutomationStudioSubflowRepeatedAdvice>>();
 const YOUR_SUBFLOW_NOTE = "yourSubflow is your subflow as Core accepted it before this brief, at the revision it names: script is the whole text its builder sent, and steps are its steps as Core resolved them, each handle the script names (tN, extraction.N) there replaced by what it stood for on the page that builder saw. "
@@ -371,7 +375,9 @@ async function run(input: {
   // The gate's port: each trial kept as the gate weighed it, the subflow's earlier standing nos handed to it (header, t634).
   const standingNos = STANDING.get(dispatcher) ?? new AutomationStudioProjectDispatchStandingNos();
   STANDING.set(dispatcher, standingNos);
-  const trialPort = (port: NonNullable<typeof ports.trial>) => automationStudioProjectDispatchTrialPort({ port, scope: mapped.scope, receipts, spend, standingNos, remember: (ref, trial) => remember(dispatcher, ref, trial) });
+  const advised = ADVISED.get(dispatcher) ?? new Map<string, unknown[]>();
+  ADVISED.set(dispatcher, advised);
+  const trialPort = (port: NonNullable<typeof ports.trial>) => automationStudioProjectDispatchTrialPort({ port, scope: mapped.scope, receipts, spend, standingNos, advised, remember: (ref, trial) => remember(dispatcher, ref, trial) });
   // A single-subflow plan's brief tests the judged whole run instead, through the same wrapper (header, t679).
   const whole = input.wholeTrial ? new AutomationStudioProjectWholeTestPort(input.wholeTrial, ports.trial, trialPort, dispatcher.trialled) : undefined;
   const gatePort = whole ? whole.port : ports.trial ? trialPort(ports.trial) : undefined;

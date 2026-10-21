@@ -25,6 +25,7 @@ const EXPECTED = "Every mystery novel available to borrow today and rated 4 or h
 /** Step 0060's shape: a stored title called missing, beside a doubt about the step before the read that Core cannot settle. */
 const PART_NO = {
   answersRequest: "no",
+  defects: [{ kind: "asked_missing", row: STORED_TITLE, requestWords: "Every mystery novel" }, { kind: "other", row: "Search step", requestWords: "Every mystery novel" }],
   expected: EXPECTED,
   observed: `Missing qualifying items include ${STORED_TITLE}. The search step before the read does not limit the results to novels.`,
   changed: "Verify the search and filter steps before the read so they keep every title asked for."
@@ -33,6 +34,7 @@ const PART_NO = {
 /** A no that names nothing Core can check: only the steps, to be verified. */
 const UNCHECKABLE_NO = {
   answersRequest: "no",
+  defects: [{ kind: "other", row: "Search step", requestWords: "Every mystery novel" }],
   expected: EXPECTED,
   observed: "The search and filter steps before the read need verification.",
   changed: "Verify the search and filter steps before the read."
@@ -55,9 +57,9 @@ function reading(verdict: AutomationStudioBuildTestVerdict) {
 describe("a split's no Core's record refutes in part (t652)", () => {
   it("is labelled, with recordContradicts part, when the yes came first", async () => {
     // The split's no is asked once more to name its defect (t725), and says the same no again: it stands.
-    const verdict = await judged(LIBRARY_YES, PART_NO, PART_NO);
+    const verdict = await judged(LIBRARY_YES, PART_NO, PART_NO, PART_NO);
     expect(verdict).toMatchObject({ verdict: "unknown", oneCallSaidYes: true });
-    expect(verdict.spent.calls).toBe(3);
+    expect(verdict.spent.calls).toBe(4);
     const read = reading(verdict);
     expect(read?.recordContradicts).toBe("part");
     expect(String(read?.observed)).toMatch(/^Judge call 2 \(Core's record contradicts part of this reading: .+\): Missing qualifying items include /u);
@@ -67,7 +69,7 @@ describe("a split's no Core's record refutes in part (t652)", () => {
   });
 
   it("is labelled the same way when the no came first", async () => {
-    const verdict = await judged(PART_NO, LIBRARY_YES);
+    const verdict = await judged(PART_NO, LIBRARY_YES, PART_NO, PART_NO);
     expect(verdict).toMatchObject({ verdict: "unknown", oneCallSaidYes: true });
     const read = reading(verdict);
     expect(read?.recordContradicts).toBe("part");
@@ -76,12 +78,12 @@ describe("a split's no Core's record refutes in part (t652)", () => {
 
   it("leaves a split no that names nothing Core can check unlabelled, the verdict still unsure", async () => {
     for (const order of [[LIBRARY_YES, UNCHECKABLE_NO], [UNCHECKABLE_NO, LIBRARY_YES]]) {
-      const verdict = await judged(...order);
+      const verdict = await judged(...order, UNCHECKABLE_NO, UNCHECKABLE_NO);
       expect(verdict.verdict).toBe("unknown");
       const read = reading(verdict);
       expect(read?.recordContradicts).toBeUndefined();
-      expect(read?.observed).toBe(UNCHECKABLE_NO.observed);
-      expect(read?.advice).toBe(UNCHECKABLE_NO.changed);
+      expect(read?.observed).toContain(UNCHECKABLE_NO.observed);
+      expect(read?.advice).toContain(UNCHECKABLE_NO.changed);
     }
   });
 });

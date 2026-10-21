@@ -24,7 +24,9 @@ const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedC
 function answering(reading: Record<string, string>): AutomationStudioLlmProvider {
   return {
     metadata: { provider: "mock", model: "debug-model" },
-    runTask: async () => ({ response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: "no", ...reading } }, usage: USAGE })
+    runTask: async () => ({ response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: "no", ...reading, defects: (reading.observed ?? "").includes("is not included")
+      ? [{ kind: "wrong_value", row: DRILL_PRO.name, column: "rating", requestWords: "rating" }]
+      : [{ kind: "asked_missing", row: DRILL_TORVIK, requestWords: "sells itself" }] } }, usage: USAGE })
   };
 }
 

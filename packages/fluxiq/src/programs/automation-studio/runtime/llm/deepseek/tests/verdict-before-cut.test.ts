@@ -4,7 +4,7 @@
 // ceiling and were refused whole. The replies here are a generic library
 // catalogue, not a scenario the Lab measures.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmTaskRequest } from "../../harness.ts";
+import { parseAutomationStudioLlmProviderResult, type AutomationStudioLlmTaskRequest } from "../../harness.ts";
 import { AutomationStudioLlmProviderError } from "../../provider-contract.ts";
 import { parseAutomationStudioDeepSeekEnvelope } from "../response-envelope.ts";
 import { automationStudioDeepSeekVerdictBeforeCut } from "../verdict-before-cut.ts";
@@ -64,6 +64,22 @@ describe("a verification reply cut off after its diagnosis closed", () => {
     const response = automationStudioDeepSeekVerdictBeforeCut(`{"kind":"diagnosis","summary":"Twelve books came back.","diagnosis":${JSON.stringify(DIAGNOSIS)},"confidence":0.`);
     expect(response).toMatchObject({ diagnosis: DIAGNOSIS, truncatedAfterVerdict: true });
     expect(response?.summary).not.toBe("Twelve books came back.");
+  });
+});
+
+// t752: a no's defects travel inside its diagnosis, so a reply cut after that
+// diagnosis closed carries them, through the envelope and the harness's check.
+describe("a verification reply cut off after a diagnosis that names its defects", () => {
+  it("carries each well-formed defect to the harness, and drops a malformed one there", () => {
+    const defects = [
+      { kind: "asked_missing", row: "[row K4R7M2] Field Notes", requestWords: "published since 2000" },
+      { kind: "wrong_value", row: "The Long Road", column: "year", requestWords: "the year each was published" }
+    ];
+    const head = `{"kind":"diagnosis","diagnosis":${JSON.stringify({ ...DIAGNOSIS, defects: [...defects, { kind: "too_strict", row: "x", requestWords: "y" }] })}`;
+    const { response } = parse(`${head},${LOOPING}`);
+    const checked = parseAutomationStudioLlmProviderResult({ response }, "diagnosis");
+    expect(checked.response).toMatchObject({ kind: "diagnosis", diagnosis: { answersRequest: "no", defects }, truncatedAfterVerdict: true });
+    expect(checked.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["llm_output.diagnosis_defect_dropped"]);
   });
 });
 

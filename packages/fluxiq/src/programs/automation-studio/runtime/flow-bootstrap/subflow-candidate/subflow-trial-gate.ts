@@ -222,6 +222,11 @@
 // offline trials, Decisions 3 and 6)**, as in the whole gate: a port whose
 // `environmentKind` is set and not `live` gets no start hook, no site reset and
 // nothing recorded as left on the site, and its yes is answered but never kept.
+//
+// **Each later trial's judge is told what earlier judged trials advised (t752)**, as in the whole gate:
+// the gate keeps each judged trial's advice (`../candidate/earlier-advice-memory.ts`), tells its port each
+// one it kept (`weighed`, `advised`), is seeded from earlier briefs of its subflow (`earlierTrials`), and
+// each request carries Core's finding of whether that revision changed what the advice named.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import { automationStudioLlmStepLogReset } from "../../llm/step-log/index.ts";
@@ -229,12 +234,14 @@ import {
   AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION,
   AUTOMATION_STUDIO_CANDIDATE_OFFLINE_YES_INSTRUCTION,
   AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS,
+  AutomationStudioCandidateEarlierAdviceMemory,
   automationStudioCandidateNotShownInstruction,
   automationStudioCandidateRecordContradictsPart,
   automationStudioCandidateRetestAdvised,
   automationStudioCandidateStartedWithSaid,
   automationStudioCandidateTrialOffline,
   automationStudioCandidateTrialStop as Stop,
+  type AutomationStudioCandidateEarlierAdviceTrial,
   type AutomationStudioCandidateTrialPrepared,
   type AutomationStudioCandidateTrialVerdict
 } from "../candidate/index.ts";
@@ -248,7 +255,7 @@ import {
 } from "../../result-verification/standing-no/index.ts";
 import type { AutomationStudioResultKeptEveryRow } from "../../result-verification/contracts/index.ts";
 import { automationStudioSiteResetExploredOnAbsorbed, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
-import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowScopeIdentity, AutomationStudioSubflowTrialPort, AutomationStudioSubflowTrialResult } from "./contracts.ts";
+import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowScopeIdentity, AutomationStudioSubflowTrialPort, AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult } from "./contracts.ts";
 
 /**
  * A partial trial port that can run the deployment's start hook ahead of the
@@ -263,6 +270,8 @@ export type AutomationStudioSubflowTrialPreparingPort = AutomationStudioSubflowT
   prepareStart?: ((input: { scope: AutomationStudioSubflowScope; revision: number; digest: string; signal: AbortSignal }) => Promise<AutomationStudioCandidateTrialPrepared>) | undefined;
   /** The standing nos earlier briefs of this subflow kept in this build, oldest first, read once as the gate is made (header, t634). Core-only. */
   standingNos?: readonly unknown[] | undefined;
+  /** The judged trials' advice earlier briefs of this subflow kept in this build, oldest first, read once as the gate is made (header, t752). Core-only. */
+  earlierTrials?: readonly unknown[] | undefined;
   /** Told each trial the gate asked, as the gate weighed it (header, t634). */
   weighed?: ((trial: AutomationStudioSubflowTrialWeighed) => void) | undefined;
   /**
@@ -299,6 +308,8 @@ export type AutomationStudioSubflowTrialWeighed = {
   answer: AutomationStudioSubflowTrialResult;
   /** Core's record of the no this answer is, where the gate let that no stand; absent otherwise. */
   standingNo?: unknown;
+  /** The advice the gate kept of this trial, for a later brief of the subflow (header, t752); absent where it kept none. */
+  advised?: AutomationStudioCandidateEarlierAdviceTrial;
 };
 
 /** The builder's test tool: one partial trial of its latest proposal. */
@@ -424,6 +435,8 @@ export class AutomationStudioSubflowTrialGate {
   private readonly keptConditions = new AutomationStudioResultKeptConditionMemory();
   /** The kept conditions the latest prepared trial's port carried, found by another gate (header, t689). */
   private carriedKept: AutomationStudioResultKeptCondition[] = [];
+  /** Each judged trial's advice, earlier briefs' first, for the judge of a later revision's trial (header, t752). */
+  private readonly earlierAdvice: AutomationStudioCandidateEarlierAdviceMemory;
   private readonly fallbackSignal = new AbortController().signal;
 
   constructor(private readonly input: {
@@ -443,6 +456,7 @@ export class AutomationStudioSubflowTrialGate {
     // Earlier briefs' standing nos, at revisions below 1, oldest first (header, t634).
     const earlier = Array.isArray(input.port?.standingNos) ? input.port.standingNos : [];
     earlier.forEach((standingNo, index) => this.standingNos.weigh({ revision: index - earlier.length, verdict: "no", standingNo }));
+    this.earlierAdvice = new AutomationStudioCandidateEarlierAdviceMemory(Array.isArray(input.port?.earlierTrials) ? input.port.earlierTrials : []);
   }
 
   get available(): boolean { return this.input.port !== undefined; }
@@ -499,7 +513,7 @@ export class AutomationStudioSubflowTrialGate {
     const absorbedActs = reset?.kind === "admit" ? reset.absorbedByStartReset ?? [] : [];
     const absorbed = absorbedActs.map(namedAct);
     this.trials.set(key(latest), tried + 1);
-    const asked = await this.ask(port, latest, signal, reset?.kind === "admit" ? automationStudioCandidateStartedWithSaid(reset.startedWith) : []);
+    const asked = await this.ask(port, latest, signal, reset?.kind === "admit" ? automationStudioCandidateStartedWithSaid(reset.startedWith) : [], this.earlierAdvice.advice(latest.revision, latest.subflows ? { subflows: latest.subflows } : undefined));
     // Not a trial: the port did not run it, and says why in the builder's terms (header, t679).
     if (asked.notRun) {
       this.trials.set(key(latest), tried);
@@ -527,7 +541,8 @@ export class AutomationStudioSubflowTrialGate {
     const answer = Stop.told(explored.length ? withCoreFindings(weighedAnswer, explored) : weighedAnswer);
     // The port is told the gate's verdict, even of a trial a stop then cuts short (header, t634).
     const stood = answer.verdict === "no" && answer.entryPrepared && asked.standingNo !== undefined;
-    port.weighed?.({ answer: structuredClone(answer), ...(stood ? { standingNo: structuredClone(asked.standingNo) } : {}) });
+    const advised = answer.entryPrepared ? this.earlierAdvice.remember({ revision: answer.revision, verdict: answer.verdict, feedback: answer.feedback, standingNo: asked.standingNo, plan: latest.subflows ? { subflows: latest.subflows } : undefined }) : undefined;
+    port.weighed?.({ answer: structuredClone(answer), ...(stood ? { standingNo: structuredClone(asked.standingNo) } : {}), ...(advised ? { advised } : {}) });
     signal.throwIfAborted();
     const leftOnSite = offline ? undefined : this.input.reset?.trialRan(answer.acts ?? [], answer.trialRunId);
     // What Core's record of this trial shows its conditions kept out, as the proposal that ran wrote them (header, t641).
@@ -625,13 +640,13 @@ export class AutomationStudioSubflowTrialGate {
   }
 
   /** The trial's answer as the gate keeps it, and Core's record of a no it carried beside it, unread (header, t633). */
-  private async ask(port: AutomationStudioSubflowTrialPort, latest: AutomationStudioSubflowProposal, signal: AbortSignal, startedWith: readonly string[]): Promise<{ answer: AutomationStudioSubflowTrialResult; standingNo?: unknown; keptConditions?: AutomationStudioResultKeptCondition[]; keptEveryRow?: AutomationStudioSubflowTrialKeptEveryRowRead[]; notRun?: AutomationStudioSubflowTrialNotRun["notRun"] }> {
+  private async ask(port: AutomationStudioSubflowTrialPort, latest: AutomationStudioSubflowProposal, signal: AbortSignal, startedWith: readonly string[], earlierAdvice: AutomationStudioSubflowTrialRequest["earlierAdvice"] = []): Promise<{ answer: AutomationStudioSubflowTrialResult; standingNo?: unknown; keptConditions?: AutomationStudioResultKeptCondition[]; keptEveryRow?: AutomationStudioSubflowTrialKeptEveryRowRead[]; notRun?: AutomationStudioSubflowTrialNotRun["notRun"] }> {
     const scope = this.input.scope;
     const identity: AutomationStudioSubflowScopeIdentity = { buildId: scope.buildId, briefId: scope.briefId, planDigest: scope.planDigest, subflowKey: scope.subflowKey };
     const failed = (code: string): { answer: AutomationStudioSubflowTrialResult } => ({ answer: { partial: true, scope: "subflow", identity: { ...identity }, revision: latest.revision, digest: latest.digest, verdict: "execution_failed", feedback: { code }, entryPrepared: false } });
     let raw: unknown;
     try {
-      raw = await port({ scope: structuredClone(scope), proposal: deepFreeze(structuredClone(latest)), signal, ...(startedWith.length ? { startedWith: [...startedWith] } : {}) });
+      raw = await port({ scope: structuredClone(scope), proposal: deepFreeze(structuredClone(latest)), signal, ...(startedWith.length ? { startedWith: [...startedWith] } : {}), ...(earlierAdvice?.length ? { earlierAdvice } : {}) });
     } catch (error) {
       if (signal.aborted) throw error;
       // The port's own error text may carry page or account detail, so the model is told only its kind (header, lane 3).
