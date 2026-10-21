@@ -12,7 +12,9 @@
 //    whose only client is a trace matcher session over the trace
 //    (`ClientGatewayTraceMatcher`, P4b) attached to the trial's own gateway with
 //    the session view the trace recorded, else the one the caller supplied
-//    (declared as a normalization; never over a recorded one). A trace the
+//    (declared as a normalization; never over a recorded one), with the
+//    caller's reevaluator, if any (P5: a changed command that keeps the
+//    recorded action type may be answered from what the trace recorded). A trace the
 //    matcher refuses (incomplete, another contract, sessions it cannot tell
 //    apart; a legacy trace whose one session it cannot attribute), or one with
 //    no session view from either, is refused here, before anything runs or
@@ -29,7 +31,8 @@
 //    (T24, `AutomationStudioGatewayTraceReplaySources`).
 // 5. The end. The matcher's session is detached however the run ended, and the
 //    answer is the runner's outcome beside the trial evidence result
-//    (`./evidence-result.ts`), validated against U5.
+//    (`./evidence-result.ts`), validated against U5, and the operations a
+//    reevaluator answered (ordinal, action type, differing fields; no value).
 //
 // A cancelled build is not a verdict: the abort the runner throws goes on.
 
@@ -70,7 +73,8 @@ export async function runAutomationStudioOfflineCandidateTrial(input: Automation
     gateway,
     clock: advance,
     contractVersions: input.contractVersions ?? AUTOMATION_STUDIO_OFFLINE_TRIAL_READER_CONTRACTS,
-    ...(source.sessionRef === undefined ? {} : { sessionRef: source.sessionRef })
+    ...(source.sessionRef === undefined ? {} : { sessionRef: source.sessionRef }),
+    ...(input.reevaluator === undefined ? {} : { reevaluator: input.reevaluator })
   });
   const refusal = matcher.report().refusal;
   if (refusal !== null) return refused(refusal.reason, refusal.detail);
@@ -99,7 +103,10 @@ export async function runAutomationStudioOfflineCandidateTrial(input: Automation
     matcher: report,
     sessionView: view.source,
     normalizations: view.source === "supplied" ? [{ ...SUPPLIED_VIEW }] : [],
-    supported: { matchedOperations: report.matchedOperations.length, recordedOperations: report.recordedOperations }
+    supported: { matchedOperations: report.matchedOperations.length, recordedOperations: report.recordedOperations },
+    reevaluated: report.matchedOperations
+      .filter((operation) => operation.answeredFrom === "reevaluated")
+      .map((operation) => ({ ordinal: operation.ordinal, actionType: operation.actionType, fields: [...operation.fields] }))
   };
 }
 

@@ -345,6 +345,37 @@ The detailed procedure for each, with the current offenders, is in the
   baselined. The list is empty in Core, which owns provider calls; the web
   extension lists provider hosts, SDKs and key names and allows only its Lab's
   key-handling files.
+- **Loading a package past its exports.** A package's `exports` is its public
+  surface; a load of anything else depends on its private layout, and the
+  first sign of a moved file is a run that fails to load it. In October 2026
+  the web extension's test runner loaded half a dozen Core modules by
+  addresses built beside Core's entry, and no check saw it. The
+  `package-exports` rule holds, counted per file and ratcheted: any load of a
+  package linked from outside the repository by a path its exports do not
+  name; a module address computed beside a linked package's entry
+  (`new URL(<path>, import.meta.resolve("<package>"))`); a load of another
+  workspace package's build output (`dist/` or any directory its build
+  writes); a `<package>/<subpath>` its exports do not name; and a load of a
+  sibling workspace package's `src/` that tsc does not check. A static
+  `import`/`export ... from` of a sibling workspace package's TypeScript
+  source, from a file a tsconfig takes in, is not held: tsc checks it. Only
+  import and load expressions are read, so tooling that names a build path
+  without loading it passes. The remedy is the package's: export what
+  consumers need, then import it by name.
+- **Letting model guidance reach recorded traces.** A recorded trace holds
+  what one site showed during one build; once it can flow into the text a
+  model reads, guidance can start describing a test site and a Lab pass stops
+  meaning the product generalises. An `importBoundaries` entry bans only
+  direct imports. The `module-reach` rule reads each repository's
+  `reachBoundaries` (`{ name, from, to, reason, remedy }`, path prefixes) and
+  follows every chain of value imports from each non-test script under
+  `from`, binding by binding through barrels; one that reaches a module under
+  `to` fails with the shortest chain, never baselined. A `from` entry naming
+  no audited script fails too, so a renamed directory cannot empty the list.
+  Both repositories configure "trace-free model guidance": the prompt, tool,
+  catalogue and script-format modules may not reach the trace, trace-matcher,
+  gateway-trace and offline-trial modules (downstream: the offline-reads,
+  snapshot-page and offline-trial-experiment modules).
 
 ## Worked Example — `automation-studio/storage/`
 

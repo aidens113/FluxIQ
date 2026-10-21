@@ -4,7 +4,10 @@
 //
 // - origins `recorded` and `pure_computation`, never `live`: the trial's
 //   observations were the trace's recorded answers, and everything the
-//   candidate made of them was computed now; `liveEpisodeId` is `null`;
+//   candidate made of them was computed now; `liveEpisodeId` is `null`; and
+//   `snapshot_evaluation` as well when a reevaluator answered any operation in
+//   the recorded one's place (P5), so such a result never reads as purely
+//   recorded;
 // - the source episode is the live episode the trace recorded;
 // - every evidence gap the matcher recorded (a command it answered with a gap,
 //   or a recorded event or artifact it could not read or feed) is missing
@@ -63,7 +66,7 @@ export function automationStudioOfflineTrialEvidenceResult(input: {
   const reasonCodes: AutomationStudioTrialEvidenceReasonCode[] = verdict === "inconclusive" ? missingEvidence.map((gap) => gap.reasonCode) : verdict === "pass" ? [] : ["assertion_failure"];
   const draft: AutomationStudioTrialEvidenceResult = {
     verdict,
-    evidenceOrigins: ["recorded", "pure_computation"],
+    evidenceOrigins: matcher.matchedOperations.some((operation) => operation.answeredFrom === "reevaluated") ? ["recorded", "pure_computation", "snapshot_evaluation"] : ["recorded", "pure_computation"],
     scope,
     candidateRevision: trial.record.revision,
     candidateDigest: trial.record.digest,

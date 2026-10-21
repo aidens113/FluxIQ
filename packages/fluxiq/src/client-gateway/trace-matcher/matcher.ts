@@ -19,6 +19,21 @@
 // point is ever delivered. A trace that is incomplete or recorded under
 // another contract is refused at load, and every command gets its gap.
 //
+// Reevaluation (P5, D31-D33). With a reevaluator in its input, a command that
+// differs from the recorded operation at the cursor but keeps its action type
+// is first offered to it, when the segment recorded after that operation holds
+// exactly one result for it (`./reevaluation-request.ts`). `answered`: the
+// cursor advances and the segment is fed in recorded order, with that one
+// result's payload replaced by the answer (its envelope kept, its command id
+// the recorded one, then translated as any other); the matched entry says it
+// was `reevaluated` and which fields differed. `gap`: the command is answered
+// with that gap (cause `reevaluation`) and the matcher diverges. `declined`:
+// the mismatch gap, as without a reevaluator. A reevaluator that throws, or
+// answers something else, is an `incomplete_capture` gap (cause
+// `reevaluation`, its message kept in `refusedDeliveries`), never a pass.
+// Nothing else is ever offered: not a command of another action type, one past
+// the recorded end, one after a gap or on a refused trace.
+//
 // A recorded event or artifact the matcher cannot read or feed when its point
 // comes (an input written down unreadably, an artifact the store no longer
 // gives back or whose bytes the gateway refuses, no session to feed) is an
@@ -43,7 +58,9 @@ import type { ClientGatewayTraceEvent } from "../trace/index.ts";
 import { readClientGatewayTraceInboundText } from "../trace-replay/index.ts";
 import { translateClientGatewayTraceCommandIds } from "./command-id-translation.ts";
 import { clientGatewayTraceGapAnswer } from "./gap-answer.ts";
+import { CLIENT_GATEWAY_TRACE_MATCHER_GAP_REASONS } from "./gap-reasons.ts";
 import { matchClientGatewayTraceOperation, readClientGatewayTraceOperation } from "./operation/index.ts";
+import { clientGatewayTraceReevaluationRequest } from "./reevaluation-request.ts";
 import { admitClientGatewayTraceForMatching } from "./trace-admission.ts";
 import type {
   ClientGatewayTraceMatchedOperation,
@@ -53,7 +70,9 @@ import type {
   ClientGatewayTraceMatcherGapReason,
   ClientGatewayTraceMatcherInput,
   ClientGatewayTraceMatcherReport,
-  ClientGatewayTraceMatcherSessionView
+  ClientGatewayTraceMatcherSessionView,
+  ClientGatewayTraceOperation,
+  ClientGatewayTraceOperationMatch
 } from "./types.ts";
 
 type JsonRecord = { readonly [key: string]: unknown };
@@ -186,14 +205,62 @@ export class ClientGatewayTraceMatcher implements ClientGatewaySocket {
     if (refusal !== null) return this.answerGap({ ...gap, reason: refusal.reason, cause: "refused_trace", fields: [], recordedSequence: null });
     if (this.diverged) return this.answerGap({ ...gap, reason: "missing_transition", cause: "after_gap", fields: [], recordedSequence: null });
     const match = matchClientGatewayTraceOperation(operation, this.cursor, this.admission.operations);
-    if (match.status === "gap") return this.answerGap({ ...gap, reason: match.reason, cause: match.cause, fields: match.fields, recordedSequence: match.recordedSequence });
+    if (match.status === "gap") {
+      if (await this.reevaluate(payload, operation, match, gap)) return;
+      return this.answerGap({ ...gap, reason: match.reason, cause: match.cause, fields: match.fields, recordedSequence: match.recordedSequence });
+    }
     const segment = this.admission.deliveries.segments[this.cursor] ?? [];
     const unreadable = this.unreadable(segment);
     if (unreadable !== undefined) return this.answerGap({ ...gap, reason: unreadable, cause: "unreadable_answer", fields: [], recordedSequence: match.recorded.sequence });
     this.cursor += 1;
     this.ids.set(match.recorded.commandId, commandId);
-    this.matched.push({ ...gap, recordedCommandId: match.recorded.commandId, recordedSequence: match.recorded.sequence });
+    this.matched.push({ ...gap, recordedCommandId: match.recorded.commandId, recordedSequence: match.recorded.sequence, answeredFrom: "recorded", fields: [] });
     await this.deliver(segment, match.recorded.logicalMs, gap);
+  }
+
+  /**
+   * Offers a mismatched command to the reevaluator, when there is one, the
+   * command keeps the recorded operation's action type and the segment holds
+   * one result to replace. Only an `argument_mismatch` is offered: a recorded
+   * operation whose fields were withheld at capture (`redacted_input`) stays
+   * that gap, so a step that carried a secret is never reevaluated. `true` once
+   * the command is answered (matched from the answer, or a gap); `false` when
+   * the mismatch gap is still to be answered (not offered, or declined).
+   */
+  private async reevaluate(payload: JsonRecord, operation: ClientGatewayTraceOperation, match: Extract<ClientGatewayTraceOperationMatch, { status: "gap" }>, gap: DeliveredAfter): Promise<boolean> {
+    const reevaluator = this.input.reevaluator;
+    const recorded = this.admission.operations[this.cursor];
+    const manifest = this.admission.manifest;
+    if (reevaluator === undefined || manifest === null || match.cause !== "mismatch" || match.reason !== "argument_mismatch" || recorded === undefined || recorded.actionType !== operation.actionType) return false;
+    const answerFailure = async (reason: string): Promise<true> => {
+      this.refusedDeliveries.push(`the reevaluator failed: ${reason}`);
+      await this.answerGap({ ...gap, reason: "incomplete_capture", cause: "reevaluation", fields: match.fields, recordedSequence: recorded.sequence });
+      return true;
+    };
+    const segment = this.admission.deliveries.segments[this.cursor] ?? [];
+    let ask: Awaited<ReturnType<typeof clientGatewayTraceReevaluationRequest>>;
+    let answer: unknown;
+    try {
+      ask = await clientGatewayTraceReevaluationRequest({ store: this.input.store, traceId: this.input.traceId, manifest, operations: this.admission.operations, cursor: this.cursor, segment, command: payload, operation, fields: match.fields });
+      answer = ask === undefined ? undefined : await reevaluator.reevaluate(ask.request);
+    } catch (error) {
+      return answerFailure(messageOf(error));
+    }
+    if (ask === undefined) return false;
+    if (!isRecord(answer)) return answerFailure("its answer is not an object");
+    if (answer.status === "declined") return false;
+    if (answer.status === "gap") {
+      if (!isGapReason(answer.reason) || !isFieldList(answer.fields)) return answerFailure("it answered a gap with an unknown reason or unreadable fields");
+      await this.answerGap({ ...gap, reason: answer.reason, cause: "reevaluation", fields: [...answer.fields], recordedSequence: recorded.sequence });
+      return true;
+    }
+    if (answer.status !== "answered" || !isRecord(answer.result)) return answerFailure("it answered neither a result object, a gap nor a decline");
+    this.cursor += 1;
+    this.ids.set(recorded.commandId, gap.commandId);
+    this.matched.push({ ...gap, recordedCommandId: recorded.commandId, recordedSequence: recorded.sequence, answeredFrom: "reevaluated", fields: match.fields });
+    const replacement = JSON.stringify({ ...ask.envelope, payload: { ...answer.result, commandId: recorded.commandId } });
+    await this.deliver(segment, recorded.logicalMs, gap, new Map([[ask.replaced.event.sequence, replacement]]));
+    return true;
   }
 
   /** The gap that makes a segment unusable: an input the trace withheld or cannot write back. */
@@ -218,8 +285,12 @@ export class ClientGatewayTraceMatcher implements ClientGatewaySocket {
     await this.receive(clientGatewayTraceGapAnswer(gap.commandId, gap.reason), `the gap answer to ${gap.commandId}`);
   }
 
-  /** Feeds `segment` (recorded after `after`) in recorded order, moving the clock to each event's logical time measured from `fromMs`. */
-  private async deliver(segment: readonly ClientGatewayTraceMatcherDelivery[], fromMs: number, after: DeliveredAfter): Promise<void> {
+  /**
+   * Feeds `segment` (recorded after `after`) in recorded order, moving the
+   * clock to each event's logical time measured from `fromMs`; an input whose
+   * sequence `replaced` names is fed with that text in place of its recorded one.
+   */
+  private async deliver(segment: readonly ClientGatewayTraceMatcherDelivery[], fromMs: number, after: DeliveredAfter, replaced?: ReadonlyMap<number, string>): Promise<void> {
     let at = fromMs;
     for (const delivery of segment) {
       if (delivery.atMs > at) {
@@ -227,13 +298,14 @@ export class ClientGatewayTraceMatcher implements ClientGatewaySocket {
         at = delivery.atMs;
       }
       if (delivery.kind === "artifact") await this.feedArtifact(delivery, after);
-      else if (delivery.kind === "input") await this.feedInput(delivery, after);
+      else if (delivery.kind === "input") await this.feedInput(delivery, after, replaced?.get(delivery.event.sequence));
     }
   }
 
-  private async feedInput(delivery: ClientGatewayTraceMatcherDelivery, after: DeliveredAfter): Promise<void> {
+  /** Feeds a recorded input, or `replacement` in its place (a reevaluated result), with recorded command ids translated. */
+  private async feedInput(delivery: ClientGatewayTraceMatcherDelivery, after: DeliveredAfter, replacement?: string): Promise<void> {
     const sequence = delivery.event.sequence;
-    const read = readClientGatewayTraceInboundText(delivery.event);
+    const read = replacement === undefined ? readClientGatewayTraceInboundText(delivery.event) : { text: replacement };
     if ("gap" in read) return this.failedDelivery(after, unreadableReason(delivery.event) ?? "incomplete_capture", sequence);
     const text = translateClientGatewayTraceCommandIds(read.text, this.ids);
     const question = delivery.event.messageType === "client.reconcile_result" ? reconciledCommandId(text) : undefined;
@@ -303,6 +375,14 @@ function parseRecord(text: string): JsonRecord | undefined {
     if (error instanceof SyntaxError) return undefined;
     throw error;
   }
+}
+
+function isGapReason(value: unknown): value is ClientGatewayTraceMatcherGapReason {
+  return CLIENT_GATEWAY_TRACE_MATCHER_GAP_REASONS.some((reason) => reason === value);
+}
+
+function isFieldList(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every((field) => typeof field === "string");
 }
 
 function messageOf(error: unknown): string {

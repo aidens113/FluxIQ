@@ -4,7 +4,7 @@
 // (`client-gateway/trace-matcher/gap-reasons.ts`); this fails the moment the
 // two drift. The reasons only a program gives (a judge's, a phase's, a
 // source's) are pinned too, so a code added on either side is a deliberate
-// edit here.
+// edit here, and so are the snapshot reasons a reevaluation answers with (P5a).
 import { describe, expect, it } from "vitest";
 import { CLIENT_GATEWAY_TRACE_MATCHER_GAP_REASONS } from "../../../../../../client-gateway/index.ts";
 import { AUTOMATION_STUDIO_TRIAL_EVIDENCE_REASON_CODES } from "../../../../model/index.ts";
@@ -22,11 +22,23 @@ const PROGRAM_ONLY = [
   "judgement_unavailable"
 ];
 
+/** The reasons a reevaluation on a recorded snapshot can answer with (D33): the trace holds no usable snapshot, or the read needed page behaviour a snapshot cannot give. */
+const SNAPSHOT_REASONS = ["snapshot_unavailable", "dynamic_content"];
+
 describe("the trace matcher's gap reasons", () => {
   it("are all in the trial evidence reason vocabulary", () => {
     const known: readonly string[] = AUTOMATION_STUDIO_TRIAL_EVIDENCE_REASON_CODES;
     expect(CLIENT_GATEWAY_TRACE_MATCHER_GAP_REASONS.filter((reason) => !known.includes(reason))).toEqual([]);
     expect(CLIENT_GATEWAY_TRACE_MATCHER_GAP_REASONS.length).toBeGreaterThan(0);
+  });
+
+  it("include the snapshot reasons a reevaluation can answer with, on both sides", () => {
+    const matcher: readonly string[] = CLIENT_GATEWAY_TRACE_MATCHER_GAP_REASONS;
+    const known: readonly string[] = AUTOMATION_STUDIO_TRIAL_EVIDENCE_REASON_CODES;
+    for (const reason of SNAPSHOT_REASONS) {
+      expect(matcher).toContain(reason);
+      expect(known).toContain(reason);
+    }
   });
 
   it("leave exactly the program's own reasons, the source and judge reasons among them, out of the matcher", () => {

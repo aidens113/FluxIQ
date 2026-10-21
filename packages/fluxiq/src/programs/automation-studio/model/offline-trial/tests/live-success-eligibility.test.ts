@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAutomationStudioTrialEvidenceLiveSuccess } from "../index.ts";
+import { isAutomationStudioTrialEvidenceLiveSuccess, validateAutomationStudioTrialEvidenceResult } from "../index.ts";
 import { livePass, recordedPass } from "./trial-evidence-builders.ts";
 
 describe("live-success eligibility", () => {
@@ -11,6 +11,14 @@ describe("live-success eligibility", () => {
     expect(isAutomationStudioTrialEvidenceLiveSuccess(recordedPass())).toBe(false);
     expect(isAutomationStudioTrialEvidenceLiveSuccess(recordedPass({ scope: "segment" }))).toBe(false);
     expect(isAutomationStudioTrialEvidenceLiveSuccess(recordedPass({ scope: "supplied_state", evidenceOrigins: ["pure_computation"], sourceEpisodeIds: [] }))).toBe(false);
+  });
+
+  it("refuses an offline pass whose reads were reevaluated on a recorded snapshot, at any scope", () => {
+    const reevaluated = recordedPass({ evidenceOrigins: ["recorded", "pure_computation", "snapshot_evaluation"] });
+    expect(validateAutomationStudioTrialEvidenceResult(reevaluated).ok).toBe(true);
+    expect(isAutomationStudioTrialEvidenceLiveSuccess(reevaluated)).toBe(false);
+    expect(isAutomationStudioTrialEvidenceLiveSuccess(recordedPass({ evidenceOrigins: ["recorded", "snapshot_evaluation"], scope: "segment" }))).toBe(false);
+    expect(isAutomationStudioTrialEvidenceLiveSuccess(livePass("run-live-9", { evidenceOrigins: ["live", "snapshot_evaluation"], scope: "segment" }))).toBe(false);
   });
 
   it("refuses a live segment pass", () => {
