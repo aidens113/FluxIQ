@@ -13,7 +13,9 @@
 // each list group of the act's that differs on a fresh complete read, with
 // its relevant scopes (`differing`), the originals read before the act, and
 // the latest reads. The admission paths of `./undo-admission.ts` fall in two
-// kinds:
+// kinds, each read through the act gates both share (`./undo-paths.ts`, t750:
+// one source, so a path's gate cannot drift between the two), and what an act
+// was about through the settlement's own (`../reset-settlement/act-subjects.ts`):
 //
 // - Paths no read can rule out: a confirmation dialog after an undo that
 //   landed (`chain`), a witnessed transfer moved back, an own control's
@@ -49,9 +51,9 @@
 // still refuses every trial, and the admission still decides every undo.
 // Only undo calls under `undoes` count; a call without it is a new act.
 
-import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
-import type { AutomationStudioSiteResetObservations, AutomationStudioSiteResetOpenReason, AutomationStudioSiteResetOriginal } from "../reset-settlement/index.ts";
+import { automationStudioSiteResetActSubjects as actSubjects, type AutomationStudioSiteResetObservations, type AutomationStudioSiteResetOpenReason, type AutomationStudioSiteResetOriginal } from "../reset-settlement/index.ts";
 import type { AutomationStudioSiteResetLedgerAct as Act } from "./ledger-act.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_UNDO_PATHS as PATHS } from "./undo-paths.ts";
 
 type Scope = { scope: string; group: string };
 /** One subject a differing list holds now that its original did not: what a removal must take away. */
@@ -72,9 +74,6 @@ type Ledger = {
   /** A list scope's receipt, if it has one: a look under `undoes` can name it. */
   described(scope: string): unknown;
 };
-
-/** The classes after which a removal on a destination the act named is admitted (`./undo-admission.ts`, `destinationRemovalUnmet`). */
-const CHANGED: ReadonlySet<AutomationStudioActionConsequence> = new Set(["create_new", "modify_existing"]);
 
 /** How `act`'s open reasons this rule judges read (header): `no_admissible_undo` where no undo could meet one, none otherwise. Computed once per call. */
 export function automationStudioSiteResetUndoReach(ledger: Ledger, act: Act): (reason: AutomationStudioSiteResetOpenReason) => "no_admissible_undo" | undefined {
@@ -101,11 +100,10 @@ function noUndoReaches(ledger: Ledger, act: Act): boolean {
 
 /** A path of `act`'s that no read rules out (header). */
 function unruled(ledger: Ledger, act: Act): boolean {
-  if (act.chain !== undefined || act.transfer !== undefined) return true;
+  if (PATHS.followUp(act) || PATHS.transfer(act)) return true;
   if ((act.press !== undefined || ledger.toggle(act) !== undefined) && !act.pressBackRefused) return true;
-  if (!act.strictReset && act.createdItems.length > 0) return true;
-  const item = act.spot?.item;
-  return item !== undefined && !act.createdItems.includes(item) && !ownItemGone(ledger, act);
+  if (PATHS.createdItems(act).length > 0) return true;
+  return PATHS.ownItem(act) && !ownItemGone(ledger, act);
 }
 
 /** Whether a fresh complete read of the list `act`'s own item sat in no longer holds it. */
@@ -122,7 +120,7 @@ function ownItemGone(ledger: Ledger, act: Act): boolean {
 function differences(ledger: Ledger, act: Act, groups: ReadonlyArray<{ group: string; scopes: readonly string[] }>): Removal[] | undefined {
   const { seen } = ledger;
   const sequence = ledger.acts.indexOf(act) + 1;
-  const about = subjectsOf(act);
+  const about = actSubjects(act.spot);
   const removals = new Map<string, Removal>();
   const add = (scope: string, subject: string): void => void removals.set(JSON.stringify([scope, subject]), { scope, subject });
   for (const { group, scopes } of groups) {
@@ -138,7 +136,7 @@ function differences(ledger: Ledger, act: Act, groups: ReadonlyArray<{ group: st
     for (const scope of seen.latestGroupScopes.get(group) ?? []) {
       if (scopes.includes(scope)) continue;
       const original = seen.originals.get(scope);
-      const before = original && original.beforeAct < sequence ? original : undefined;
+      const before = PATHS.readBefore(original, sequence) ? original : undefined;
       for (const subject of about) {
         if (!seen.currentSubjects.get(scope)?.has(subject)) continue;
         if (!before?.subjects.has(subject)) add(scope, subject);
@@ -163,10 +161,10 @@ function backWithout(seen: AutomationStudioSiteResetObservations, scope: string,
 /** Whether an undo of `act` could be admitted to remove `removal` (header): its subject deletion, or a removal on a destination it named or can name. */
 function removes(ledger: Ledger, act: Act, removal: Removal): boolean {
   const original = ledger.seen.originals.get(removal.scope);
-  if (!original || original.beforeAct >= ledger.acts.indexOf(act) + 1 || original.subjects.has(removal.subject)) return false;
-  if (act.consequences.includes("create_new") && subjectsOf(act).includes(removal.subject)) return true;
-  if (!act.strictReset || !act.consequences.some((consequence) => CHANGED.has(consequence))) return false;
-  return [...act.destinations, ...ledger.lent(act)].some((entry) => entry.scope === removal.scope) || ledger.described(removal.scope) !== undefined;
+  if (!PATHS.readBefore(original, ledger.acts.indexOf(act) + 1) || original.subjects.has(removal.subject)) return false;
+  if (PATHS.deletesCreated(act) && actSubjects(act.spot).includes(removal.subject)) return true;
+  if (!PATHS.removesOnDestination(act)) return false;
+  return PATHS.named(act, ledger.lent(act), removal.scope) || ledger.described(removal.scope) !== undefined;
 }
 
 /** Whether each removal can go to a different act able to make it: one unasked removal per act (header), by augmenting paths. */
@@ -185,10 +183,4 @@ function everyRemoved(removals: readonly Removal[], acts: ReadonlyArray<(removal
     return false;
   };
   return removals.every((_, index) => assign(index, new Set()));
-}
-
-/** What an act was about: its subject, and its page where it sat in no item (`../reset-settlement/act-groups.ts`). */
-function subjectsOf(act: Act): string[] {
-  const spot = act.spot ?? {};
-  return [spot.subject, ...(spot.item === undefined ? [spot.page] : [])].filter((subject): subject is string => subject !== undefined);
 }
