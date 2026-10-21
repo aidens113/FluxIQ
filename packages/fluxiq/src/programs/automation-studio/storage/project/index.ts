@@ -45,4 +45,7 @@ export * from "./command-ledger/index.ts";
 export * from "./authority-guard/index.ts";
 export * from "./recording-stream/index.ts";
 export * from "./gateway-trace/index.ts";
+export * from "./gateway-trace-schema/index.ts";
+export { sweepUnusedGatewayTraceChunks } from "./gateway-trace-chunk-rows/index.ts";
 export * from "./content-address/index.ts";
+export * from "./content-reseal/index.ts";

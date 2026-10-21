@@ -16,7 +16,7 @@
 // between, the update does nothing and the new sealed object's reference is
 // dropped again. A row whose object is missing or does not verify is counted
 // and left as it is; it still fails (or reads as missing) exactly as before.
-import { gatewayTraceArtifactRowDigest } from "../gateway-trace/keyed-digests.ts";
+import { gatewayTraceArtifactRowDigest } from "../gateway-trace-chunk-codec/index.ts";
 import { requestContentAddressScrub } from "../content-address/index.ts";
 import type { AutomationStudioSqlExecutor } from "../database.ts";
 import { AutomationStudioProjectObjectRepository } from "../object-repository.ts";

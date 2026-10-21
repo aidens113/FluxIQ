@@ -9,8 +9,7 @@
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ClientGatewayTraceEvent } from "../../../../../../client-gateway/trace/index.ts";
-import { gatewayTraceKeyedGearTable } from "../keyed-digests.ts";
-import { splitGatewayTraceContentDefined } from "../split-content-defined.ts";
+import { gatewayTraceKeyedGearTable, splitGatewayTraceContentDefined } from "../../gateway-trace-chunk-codec/index.ts";
 import { EVENT_ROWS_SQL, hostProtection, projectFiles, projectKeyring, recordTrace, sha256, viewText } from "./keyed-trace-support.ts";
 import type { KeyedEventRow } from "./keyed-trace-support.ts";
 import { SqliteTraceFixture } from "./sqlite-trace-fixture.ts";

@@ -6,7 +6,7 @@
 // parse as JSON naming this row's trace and sequence. A row that fails any of
 // it is named with a reason and no cause: a reader's message may carry an old
 // plain digest, and a JSON error may quote the body.
-import { readGatewayTraceChunkedBodies } from "../gateway-trace/read-bodies.ts";
+import { readGatewayTraceChunkedBodies } from "../gateway-trace-chunk-rows/index.ts";
 import type { GatewayTraceRekeyContext } from "./context.ts";
 
 /** An event row as the event pass selects it. */

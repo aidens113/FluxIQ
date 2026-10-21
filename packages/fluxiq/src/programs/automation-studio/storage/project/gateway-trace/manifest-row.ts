@@ -13,7 +13,7 @@
 import { cloneClientGatewayTraceJson } from "../../../../../client-gateway/trace/index.ts";
 import type { ClientGatewayTraceManifest } from "../../../../../client-gateway/trace/index.ts";
 import type { AutomationStudioSqlExecutor } from "../database.ts";
-import type { GatewayTraceChunkSealing } from "./types.ts";
+import type { GatewayTraceChunkSealing } from "../gateway-trace-chunk-codec/index.ts";
 
 export const GATEWAY_TRACE_MANIFEST_MEDIA_TYPE = "application/vnd.fluxiq.client-gateway-trace-manifest+json";
 
