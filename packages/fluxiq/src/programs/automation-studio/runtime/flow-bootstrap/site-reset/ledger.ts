@@ -90,6 +90,8 @@
 // `../../service/candidate-trial/landed-acts.ts`), and an undo of it is
 // admitted on them exactly as on an explored act's. Where the diff gave
 // neither, it is recorded as before. A start hook takes it back as before.
+// A step that ran in several loop passes says its pass (t748): `trial step 6,
+// pass 3 of 3 "<label>"`; one that ran once keeps `trial step N "<label>"`.
 //
 // **No witness, no first lasting press (rerun round 2).** Before the seal a
 // reversible press nothing could ever settle is refused unrun
@@ -137,7 +139,10 @@
 // is not weakened, and the refusal offers the honest exit, to end the brief
 // blocked naming those acts (`./trial-policy.ts`). An act that settles with a
 // list Core could not read again is told to every later trial's judge as such
-// (`unread`), under `startedWith.cannotUndo` as an unchanged act is.
+// (`unread`), under `startedWith.cannotUndo` as an unchanged act is. A third
+// case (t748, t743 open item 2): an act whose differing lists no undo could
+// ever put back, or whose own control answered a state it cannot be pressed
+// back from, fails `no_admissible_undo` (`./undo-reach.ts`).
 //
 // A phase runs from the build's start, or from one trial to the next. The
 // policy before a trial (`./trial-policy.ts`) reads it.
@@ -177,6 +182,7 @@ import { automationStudioSiteResetTrialPolicy, type AutomationStudioSiteResetPha
 import type { AutomationStudioSiteResetLedgerAct } from "./ledger-act.ts";
 import type { AutomationStudioSiteResetUndoDeclared } from "./undo-admission.ts";
 import { AutomationStudioSiteResetUndoClaims } from "./undo-claims.ts";
+import { automationStudioSiteResetUndoReach as undoReach } from "./undo-reach.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "./words.ts";
 
 /** The classes an act may leave that the site's own controls can reverse. */
@@ -235,6 +241,8 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
   private readonly judge: AutomationStudioSiteResetSettlementJudge;
   /** What a call under `undoes` may name and act on, and what one that ran did (`./undo-claims.ts`). */
   private readonly undos: AutomationStudioSiteResetUndoClaims;
+  /** The ledger as `./undo-reach.ts` reads it: whether any undo could still put back what an open act's lists show (header, t748). */
+  private readonly reachable: Parameters<typeof undoReach>[0];
 
   constructor(options: AutomationStudioSiteResetLedgerOptions = {}) {
     this.options = { ...options };
@@ -265,6 +273,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
         if (place !== undefined) this.tracker.press(place, this.clock);
       }
     });
+    this.reachable = { acts: this.acts, seen: this.seen, clock: () => this.clock, claimable: (act) => this.claimable(act), lent: (act) => this.judge.lent(act), toggle: (act) => this.judge.toggleOf(act), differing: (act) => this.judge.differing(act), described: (scope) => this.createBaselines.described(scope) };
   }
 
   createBaseline(declared: Pick<AutomationStudioSiteResetDeclared, "effect" | "consequences" | "control">, reference: unknown) { return this.createBaselines.check(declared, reference); }
@@ -460,7 +469,8 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     const explored = this.buildExplored();
     for (const act of acts) {
       const label = act.label ? JSON.stringify(act.label) : act.definitionId;
-      const did = `trial step ${act.step} ${label}${act.control ? ` on ${JSON.stringify(act.control)}` : ""}`;
+      // A looped step's pass is named, so its passes' acts read apart (header, t748).
+      const did = `trial step ${act.step}${passWords(act.pass)} ${label}${act.control ? ` on ${JSON.stringify(act.control)}` : ""}`;
       // Where its step's control sat and what it made, as exploration records an act (header, t598).
       const recorded = this.record(did, `${trialRunId ?? "trial"}#step-${act.step}`, act.consequences, undefined, spotOf(act.spot), this.options.possible === true && act.possible === true, act.created, act.control, act.definitionId);
       const place = act.spot?.place;
@@ -526,9 +536,9 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     return !this.settledNow(act) && this.claimable(act) && !act.possible && this.unmet(act) === undefined;
   }
 
-  /** The closed condition an open strict act fails where no call can settle it (header, t743); none otherwise. */
+  /** The closed condition an open strict act fails where no call can settle it (header, t743, t748); none otherwise. */
   private unmet(act: Act): ReturnType<AutomationStudioSiteResetSettlementJudge["unmet"]> {
-    return this.open(act) && this.claimable(act) ? this.judge.unmet(act) : undefined;
+    return this.open(act) && this.claimable(act) ? this.judge.unmet(act, undoReach(this.reachable, act)) : undefined;
   }
 
   /** A strict act that may still settle (header, L1). */
@@ -576,6 +586,11 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     this.options.sink?.({ ...namedAct(act), ...(this.options.owner !== undefined ? { owner: this.options.owner } : {}), ref, undoable });
     return act;
   }
+}
+
+/** `, pass K of N` for a well-formed pass of a step that ran more than once (header, t748); nothing otherwise. */
+function passWords(pass: AutomationStudioSiteResetTrialAct["pass"]): string {
+  return pass && Number.isSafeInteger(pass.number) && Number.isSafeInteger(pass.of) && pass.of > 1 && pass.number >= 1 && pass.number <= pass.of ? `, pass ${pass.number} of ${pass.of}` : "";
 }
 
 /** Freeze only a pure, unambiguous immediate transition (`../reset-settlement/transfer-witness.ts`); no later current observation establishes ownership. `sequence`: the act's 1-based place among its ledger's acts. */

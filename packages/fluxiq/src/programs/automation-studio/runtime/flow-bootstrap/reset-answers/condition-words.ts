@@ -39,6 +39,7 @@ const CONDITIONS: Readonly<Record<AutomationStudioSiteResetFailed, string>> = {
   start_differs: "The site still differs from how this build found it.",
   witness_unreachable: "The only lists that could show this act put back cannot be read again: Core's own look at where they were read does not show them.",
   nothing_to_name: "Nothing read shows where this act's effect would be, and no list can be named for it any more.",
+  no_admissible_undo: "No call this build may make can put back what still differs: it is not an item this build added that an undo here may remove, and no control of the act's own can be pressed back to how this build found it.",
   acts_unsettleable: "Acts this build made are still on the site, and no call can settle them: nothing that can still be read would show them put back.",
   no_witness: "Nothing could ever show this press put back: no list it would show in was read complete, no ref names one, and its control shows no state of its own.",
   no_destination_original: "No complete original read of the list where this creation would show proves its item absent there."
