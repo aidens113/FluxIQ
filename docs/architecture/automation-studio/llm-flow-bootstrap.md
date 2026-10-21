@@ -216,20 +216,44 @@ reset-settlement's):
   trial's trace by `service/candidate-trial/landed-acts.ts`) become acts too.
   An act that moved money or sent something cannot be undone and is never asked
   for.
-- **Original destination before exploratory creation.** Project builders opt
-  into a preflight for identified, purely `create_new` exploration. Before the
-  effect executes, its trusted resource and subject must have an exact
-  same-scope original absence witness, or a `resetDestination` reference issued
-  by an earlier complete original destination observation. The reference is
-  build-only, bounded and opaque; the domain never receives this envelope key.
-  Original inventories and their counts remain immutable across owners. No
-  first read after a lasting act can establish original authority. A missing,
-  foreign, partial or malformed witness refuses without an effect or permission
-  question, and safe observation followed by a retry remains available. Missing
-  preflight capability also refuses. A reference does not grant an inverse;
-  the strict restoration checks still apply. Ordinary candidate mode, finalized
-  runs, irreversible classes and unseen or dynamic trial actions do not gain
-  this exploratory preflight.
+- **One witness admission (t751).** `flow-bootstrap/reset-admission/` serves
+  exploration and plan submission. A reversible press needs an issued original
+  destination, its own complete list, its control's state, or a witnessed
+  explored act it repeats. The `resetDestination` envelope key stays build-only;
+  the domain never receives it. Original inventories remain immutable across
+  owners. An act seals only its witness groups: a first read after that group
+  was touched never becomes original authority, while an unrelated group can
+  still issue a ref. Existing brief ledgers receive shared originals immediately.
+  A missing witness refuses unrun; an unidentified project press ends honestly
+  with `no_target_identity`, met by no call. Standalone legacy exploration keeps
+  its compatibility policy.
+- **Project exploration also requires retained originals.** A declared control
+  place and current state alone prove no original counts. The one admission
+  refuses the press until those counts were actually read before the build
+  acted there. This applies to custom domain tools as well as `core.run_node`,
+  regardless of the older optional creation-preflight flag; an unavailable
+  project ledger refuses reversible effects before execution. Project custom
+  calls publish reads before their effects even when consequences are declared
+  only inside their permission call. Standalone custom-tool compatibility stays
+  explicit. A missing original is meetable by a safe read only before the build
+  could have changed it; an unprovable original is met by no call.
+- **Every execution door checks before preparing the site.** At submission Core
+  stamps admitted reversible steps with `resetWitness`; model-written stamps
+  are refused or stripped. The candidate and subflow gates, their predecessor
+  steps, and phase entry preparation check stamps before any start hook or
+  baseline moves. A missing stamp refuses unrun as
+  `candidate.trial_step_unwitnessed`, naming the step and the exploration call
+  that can provide its witness. Stamps survive assembly and reach landed acts.
+  Own-list admission uses that list's immutable destination receipt. A control
+  stamp names a `control-N` receipt held by this build, retaining the original
+  counts read before any build press at that resource and place. Submission's
+  current state never replaces those counts. Bare or unresolved project control
+  stamps refuse before execution; optional runtime diff fields cannot erase a
+  pre-admitted witness. Core can resolve a retained list original for its own
+  stamp without issuing an unseen ref to the model; model `resetDestination`
+  calls still require a receipt actually printed to it.
+  A phase never reruns predecessors while this build's effects remain on the
+  site: its entry stays unprepared with `project.entry_site_not_reset`.
 - **Which list a creation names, and the step after reading it (t748).** Core
   does not judge which issued list a creation's `resetDestination` names,
   beyond same resource, a valid group and the subject absent from the list: by
@@ -244,11 +268,9 @@ reset-settlement's):
   later answer that prints refs the refusal did not print carries
   `retryRefused`: the refused call, those refs, and words saying to make the
   call again naming the ref of the list where its effect shows. It stops once
-  a call lands an act (`service/project-build/brief-ports.ts`). Before the
-  seal, an unidentified `create_new` (no subject, and in an item or on a page
-  with a heading), which the ledger still holds strictly, needs a witness like
-  any other reversible press (`site-reset/reset-witness.ts`); only a creation
-  whose control names nothing keeps the legacy policy.
+  a call lands an act (`service/project-build/brief-ports.ts`). Every reversible
+  press needs a witness before and after earlier build acts. Unknown legacy
+  effect locations still seal all groups; no global seal bypasses admission.
 - **Undo through the normal tool.** In candidate mode with a trial runner,
   `core.run_node` takes an optional `undoes: "act-N"`. The wrapper strips it
   before the domain sees the call. The ledger accepts it only for an act still
@@ -373,7 +395,7 @@ reset-settlement's):
   original row on a list the act named is `subject_there_before` with `no_call`.
   An undo pressed on the act's own toggle that already shows the state the
   build found is answered `candidate.undo_already_back` (`already_back`,
-  `no_call`), carrying the act's remaining `settle`, not `undo_unproved`. A
+  `no_call`), after fresh evidence settles it; stale evidence asks for a read instead of another press. A
   source scan (`site-reset/tests/refusal-sites.test.ts`, over site-reset and
   reset-settlement) fails the build on a refusal built by hand: a `code:
   "candidate.` literal, an `ok: false` value, or any other `candidate.*`
@@ -417,17 +439,14 @@ the collection type in `reset-settlement/collection-groups.ts`).
     block it. A relevant scope missing from the read, or a malformed group
     (`collection-groups.ts`), is `incomplete`; a group with no relevant scope
     read before the act is no witness.
-  - **Lists a witnessless act adopts** (`reset-settlement/judge.ts`). A trial
-    or entry act with no witness of its own adopts only lists it could have
-    changed: issued lists that some act of this ledger, or an explored act of
-    the build, named as its destination; and issued lists read on the act's own
-    page (`Act.pageLocation`, from the trial step's `controls.location` or the
-    tracker's location of its page). A list the model merely read elsewhere is
-    never adopted, and a list Core's look cannot read again (below) is dropped
-    from the adoption. With nothing adoptable the act is to `name` a list; once
-    refs are closed (no further ref can be issued, which includes a build that
-    never read a list complete), `name` is unmet for a trial act always, and for
-    an explored act only when no ref was ever issued.
+  - **No adoption.** Trial and entry acts take their step's stamp: a
+    destination attaches that original; a repeat lends its explored act's
+    witnesses; a control receipt retains its actual original counts across
+    brief owners even when execution reports no spot or controls. Fresh reads
+    compare every count with that original, and only an observed single-control
+    transition authorizes its inverse. No unrelated list becomes a witness. A legacy act with no
+    witness can name only a list read before that act; otherwise its condition
+    is unmet, independent of a global refs-closed flag.
   - **Toggle witness** (`reset-settlement/toggle-witness.ts`,
     `reset-settlement/control-tracker.ts`). Only for an act declaring exactly
     `modify_existing` whose control has a `place` and `state`
@@ -441,12 +460,11 @@ the collection type in `reset-settlement/collection-groups.ts`).
     domain can place each pass's control in the row that pass ran on, and each
     pass's act carries its own row's spot rather than the recorded row's. It exists
     only when exactly one control at that place went from `state` to one other
-    state and nothing else there moved. It holds when the last press at that
-    place, landed no earlier than the act, left the place at the build's start
-    counts for both states, and the latest read of that page, after the latest
-    lasting call, still shows them. A control that reverts by itself never
-    holds: the return must follow a press. A press whose page has not been read
-    again keeps its act open.
+    state and nothing else there moved. It holds when a fresh read after the act and
+    latest lasting call shows the build's start counts, including when the
+    site reverted the control itself. No return press is required. A place's
+    start is never seeded after this build pressed it; an unproven start is
+    `no_baseline`. A page not read again keeps its act open.
 - **Fresh reads and the clock.** The ledger's clock advances on each landed,
   permitted `mutate` that declares a lasting class or is recorded as possibly
   lasting, on any landed `mutate` under `undoes`, and on each `trialRan`; an
@@ -470,7 +488,7 @@ the collection type in `reset-settlement/collection-groups.ts`).
   witnesses, the act stays open with the reason `unreachable`, which no call
   can meet.
 - **Acts no call can settle (`gate_unsatisfiable`).** An open act whose every
-  reason is unmet (`unreachable`, or `name` once refs are closed, above, or an
+  reason is unmet (`unreachable`, or `name` with no original before that act, or an
   `undo` or `toggle` reason no undo could meet, below) leaves `inPlace` and
   `actsToUndo`. Every claim and target refusal that
   carries `actsToUndo`, `trial_reset_unproved` and the trial policy list it
@@ -3500,9 +3518,10 @@ resource identifier or row value enters this Core contract.
 
 Whole-project trial ownership shares original inventory authority explicitly.
 The project ledger retains immutable first complete scope/group inventories only
-while no known lasting project act has been recorded. A mere possible effect
-from a nonlasting UI press does not close that boundary. Later reset reads never
-become original authority. Each owner can adopt these original inventories,
+until a known lasting project act touches that inventory's group. An act of
+unknown scope seals all groups. A mere possible effect from a nonlasting UI
+press does not close that boundary. Later reads of touched groups never
+become original authority. Each owner receives these original inventories,
 keyed by the domain's trusted opaque resource-bound scope, without replacing its
 current observations. Whole-trial recording refreshes the supervisor owner from
 that authority before recording its acts; a per-step move's before snapshot may

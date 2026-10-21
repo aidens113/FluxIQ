@@ -76,3 +76,30 @@ describe("a plan node's pace", () => {
     }
   });
 });
+
+// A plan node's reset witness (t751, R3 door 2): Core-derived at submission,
+// so the parser keeps only the exact stamp the one admission answers and
+// refuses any other value at the node's field.
+describe("a plan node's reset witness", () => {
+  function stampedPlan(resetWitness: unknown): Record<string, unknown> {
+    const plan = planWith(undefined);
+    const node = (plan.subflows as Array<{ nodes: Array<Record<string, unknown>> }>)[0]!.nodes[0]!;
+    delete node.routeSignatures;
+    node.resetWitness = resetWitness;
+    return plan;
+  }
+
+  it("accepts and keeps each stamp form", () => {
+    for (const stamp of [{ via: "destination", ref: "destination-2" }, { via: "own_list" }, { via: "control" }, { via: "repeats", act: "act-3" }, { via: "legacy" }]) {
+      const parsed = parseAutomationStudioFlowBootstrapPlan(stampedPlan(stamp));
+      expect(parsed.issues).toEqual([]);
+      expect(parsed.plan?.subflows[0]?.nodes[0]?.resetWitness).toEqual(stamp);
+    }
+  });
+
+  it("refuses anything else, naming the node's field", () => {
+    for (const value of [{ via: "control", place: "p:opaque" }, { via: "destination", ref: "list-1" }, { via: "seen" }, "control", null, { via: "repeats" }]) {
+      expect(parseAutomationStudioFlowBootstrapPlan(stampedPlan(value)).issues.map((issue) => `${issue.code} ${issue.path}`), JSON.stringify(value)).toEqual(["bootstrap.invalid_reset_witness plan.subflows.0.nodes.0.resetWitness"]);
+    }
+  });
+});

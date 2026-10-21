@@ -126,10 +126,19 @@
 // resolved (handles intact, the declaration taken off), each node its own copy,
 // at most `MAX_PRECEDING_STEPS` of them and none past that. A page fact is no
 // step: it is in no list and is sent none.
+//
+// **A lasting step carries its reset witness (t751, R3 door 2).** The check a
+// step is handed may be told, for each reversible lasting declaration the
+// domain puts to it, the stamp the build's one site-reset admission answers
+// (`witnessed`, `../../flow-bootstrap/action-permissions.ts`). This module is
+// the stamp's only writer: every node it asks about leaves with the latest
+// stamp its check was told, or none, whatever the plan arrived with, so a stamp
+// a model wrote never survives resolution. A missing witness never refuses here.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapIssueDetail, AutomationStudioFlowBootstrapNode, AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
+import type { AutomationStudioSiteResetWitnessStamp } from "../../flow-bootstrap/reset-admission/index.ts";
 // From the plan barrel, not the flow-bootstrap barrel, whose imports lead back here (t489).
 import { automationStudioFlowBootstrapIssueDetailSentence } from "../../flow-bootstrap/plan/index.ts";
 // From the module that owns them: `../harness.ts` and the harness barrel both lead back into this module's import cycle, and through them the two read as undefined when this module loads inside it.
@@ -203,7 +212,7 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
    * `automationStudioActionPermissionDenied`: a plan resolved with no build
    * behind it has nobody to ask, so no step with a lasting consequence passes.
    */
-  permissionFor?: ((step: { definitionId: string; ref: string }) => AutomationStudioActionPermissionCheck) | undefined;
+  permissionFor?: ((step: { definitionId: string; ref: string; witnessed?: (stamp: AutomationStudioSiteResetWitnessStamp | undefined) => void }) => AutomationStudioActionPermissionCheck) | undefined;
   /**
    * The nodes, by `<subflow key>.<node key>`, that the Flow being extended
    * already contains and the build left exactly as they were
@@ -265,7 +274,10 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
       const ref = `${subflow.key}.${node.key}`;
       position += 1;
       if (refusedHandlers.has(ref)) continue;
-      const permission = input.permissionFor?.({ definitionId: node.definitionId, ref }) ?? automationStudioActionPermissionDenied;
+      // Core's stamp alone (header, t751): none until this node's check is told one.
+      delete node.resetWitness;
+      const told: { witness?: AutomationStudioSiteResetWitnessStamp | undefined } = {};
+      const permission = input.permissionFor?.({ definitionId: node.definitionId, ref, witnessed: (stamp) => { told.witness = stamp; } }) ?? automationStudioActionPermissionDenied;
       const preceding = runOrder && position <= MAX_PRECEDING_STEPS ? structuredClone(runOrder.slice(0, position)) : undefined;
       const outcome = await resolveNode(node, input, permission, input.inheritedNodeRefs?.has(ref) === true, input.modelWrittenParameters?.get(ref), preceding);
       const path = `plan.subflows.${subflowIndex}.nodes.${nodeIndex}.parameters`;
@@ -284,6 +296,7 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
         issues.push(...(left ? [{ severity: "error" as const, code: outcome.issueCodes[0]!, message: left.message, path: `${path}.${left.parameter}` }] : refusalIssues(outcome, path)));
         continue;
       }
+      if (told.witness) node.resetWitness = told.witness;
       if (outcome.status === "unchanged") continue;
       node.parameters = outcome.parameters;
       // What the act on its control made true, where the build signed no effect of its own (header, t447).

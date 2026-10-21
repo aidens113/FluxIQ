@@ -126,6 +126,7 @@ import {
   type AutomationStudioSiteResetTarget
 } from "./site-reset/contracts.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS } from "./site-reset/words.ts";
+import { automationStudioSiteResetWitnessStampValid, type AutomationStudioSiteResetAdmissionDeclared, type AutomationStudioSiteResetWitness, type AutomationStudioSiteResetWitnessStamp } from "./reset-admission/index.ts";
 
 /**
  * How long a build waits for an answer, for a caller that waits at all.
@@ -142,8 +143,12 @@ export type AutomationStudioFlowBootstrapPermissionAsk = AutomationStudioPermiss
 export type AutomationStudioFlowBootstrapActionPermissions = {
   /** The domain's executor, with the build's permission check handed to every action. */
   executeTool: AutomationStudioLlmEvidenceLoopInput["executeTool"];
-  /** The check for one step of the Flow being built, handed to the domain as it resolves the step. */
-  planStep: (step: { definitionId: string; ref: string }) => AutomationStudioActionPermissionCheck;
+  /**
+   * The check for one step of the Flow being built, handed to the domain as it resolves the step. `witnessed`, when given,
+   * is told the reset witness stamp of each reversible lasting declaration the domain puts to it (t751, R3 door 2;
+   * `stepWitness`), or `undefined` where the build's site reset found none or has no step admission.
+   */
+  planStep: (step: { definitionId: string; ref: string; witnessed?: ((stamp: AutomationStudioSiteResetWitnessStamp | undefined) => void) | undefined }) => AutomationStudioActionPermissionCheck;
   /**
    * Aborted when a *plan* step is refused, which is the refusal the loop cannot
    * see. The evidence loop runs under it. An exploration refusal leaves it
@@ -323,9 +328,18 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       if (!siteReset) {
         // Before the domain has the call, not from inside its permission check (see the header).
         if (automationStudioFlowDraftDeclaresLasting(call.value.consequences)) await read();
-        const permission = asking({ kind: "exploration_step", id: call.toolId, ref: call.callId });
+        const check = asking({ kind: "exploration_step", id: call.toolId, ref: call.callId });
+        let unproved = false;
+        const permission: AutomationStudioActionPermissionCheck = async (declaration) => {
+          if (input.authoringMode === "project" && reversibleLasting(readAutomationStudioActionDeclaration(declaration))) {
+            unproved = true;
+            return { permitted: false, missing: [], requestId: null };
+          }
+          return await check(declaration);
+        };
         const execution = await input.executeTool({ ...call, permission });
         gate.observe(execution);
+        if (unproved) return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "candidate.create_baseline_unavailable", instruction: "This lasting action was not run because this project's original-state preflight is unavailable. End honestly naming the unavailable precondition; no new permission is required." }, effectApplied: false, targetsUnchanged: true, resultCode: "candidate.create_baseline_unavailable" };
         // Recoverable. The domain has already turned a refusal nobody granted
         // into evidence the model can read and route around, and the request it
         // names is on the build whatever the model does next.
@@ -351,9 +365,9 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
           const action = readAutomationStudioActionDeclaration(declaration);
           const needsBaseline = action.effect === "mutate" && action.consequences.length === 1 && action.consequences[0] === "create_new" && (action.controlSubject !== null || (action.controlItem === null && action.controlPage !== null));
           let baseline: ReturnType<NonNullable<AutomationStudioSiteResetCalls["createBaseline"]>> | undefined;
-          if (input.requireCreateBaseline === true && call.toolId === "core.run_node" && typeof value.node === "string") {
+          if (input.authoringMode === "project" || (input.requireCreateBaseline === true && call.toolId === "core.run_node" && typeof value.node === "string")) {
             if (siteReset.createBaseline) baseline = siteReset.createBaseline({ effect: action.effect, consequences: action.effect === "observe" ? [] : action.consequences, control: { name: null, kind: null, ...placeOf(action) } }, call.value.resetDestination);
-            else if (needsBaseline) baseline = { kind: "refused", evidence: { ok: false, code: "candidate.create_baseline_unavailable", instruction: "This creation was not run because the build's original-state preflight is unavailable. Looking and navigating remain safe; report the unavailable precondition instead of creating an unproved effect. No new permission is required." } };
+            else if (needsBaseline || (input.authoringMode === "project" && reversibleLasting(action))) baseline = { kind: "refused", evidence: { ok: false, code: "candidate.create_baseline_unavailable", instruction: "This lasting action was not run because the build's original-state preflight is unavailable. Looking and navigating remain safe; report the unavailable precondition instead of making an unproved effect. No new permission is required." } };
           }
           if (baseline?.kind === "refused") {
             createRefusal = baseline;
@@ -407,6 +421,11 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
         // The completion check is opaque to the loop, so a refusal inside it
         // has to stop the loop from here or it is asked again unanswerably.
         if (!decision.permitted) planRefused.abort();
+        // The step's witness, from the one admission, for the resolver to stamp; never a refusal (t751, R3 door 2).
+        else if (step.witnessed) {
+          const read = readAutomationStudioActionDeclaration(declaration);
+          if (reversibleLasting(read)) step.witnessed(stepWitness(input.siteReset, { effect: read.effect, consequences: read.consequences, control: { name: null, kind: null, ...placeOf(read) } }, step.definitionId));
+        }
         return decision;
       };
     },
@@ -494,6 +513,32 @@ function placeOf(read: AutomationStudioReadActionDeclaration): AutomationStudioS
     ...(read.controlPlace !== null ? { place: read.controlPlace } : {}),
     ...(read.controlState !== null ? { state: read.controlState } : {})
   };
+}
+
+/** The classes a site's own controls can reverse: the only declarations a plan step is stamped for (t751, R3 door 2). */
+const REVERSIBLE: ReadonlySet<string> = new Set(["create_new", "modify_existing", "delete"]);
+
+/** A mutating declaration whose every lasting class is reversible. */
+function reversibleLasting(read: AutomationStudioReadActionDeclaration): boolean {
+  return read.effect === "mutate" && read.consequences.length > 0 && read.consequences.every((consequence) => REVERSIBLE.has(consequence));
+}
+
+/**
+ * The site reset's step admission, as this gate calls it (t751, R3 door 2): structural, so a ledger without it compiles
+ * and answers nothing. Its answer is read whichever form it takes -- a stamp, or the admission's verdict -- and only a
+ * valid stamp comes back.
+ */
+type StepAdmitting = { admitStep?(declared: AutomationStudioSiteResetAdmissionDeclared, definitionId: string): unknown };
+
+/** The stamp the build's site reset admits a plan step's declaration with, or `undefined` (`StepAdmitting`). */
+function stepWitness(siteReset: AutomationStudioSiteResetCalls | undefined, declared: AutomationStudioSiteResetAdmissionDeclared, definitionId: string): AutomationStudioSiteResetWitnessStamp | undefined {
+  const admit = (siteReset as (AutomationStudioSiteResetCalls & StepAdmitting) | undefined)?.admitStep;
+  if (typeof admit !== "function") return undefined;
+  const answer: unknown = admit.call(siteReset, declared, definitionId);
+  if (automationStudioSiteResetWitnessStampValid(answer)) return answer;
+  const witness = answer !== null && typeof answer === "object" && (answer as { kind?: unknown }).kind === "admit" ? (answer as { witness?: AutomationStudioSiteResetWitness }).witness : undefined;
+  const stamp = witness === undefined ? undefined : witness.via === "destination" ? { via: witness.via, ref: witness.ref } : witness.via === "repeats" ? { via: witness.via, act: witness.act } : { via: witness.via };
+  return automationStudioSiteResetWitnessStampValid(stamp) ? stamp : undefined;
 }
 
 /** An evidence tool's own answer, as opposed to bare JSON. */

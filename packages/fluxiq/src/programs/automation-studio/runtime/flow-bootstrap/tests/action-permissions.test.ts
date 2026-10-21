@@ -14,10 +14,97 @@ import type { AutomationStudioActionDeclaration, AutomationStudioActionPermissio
 import type { AutomationStudioAsk, AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../parking/index.ts";
 import { automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapUnansweredSaid } from "../action-permissions.ts";
 import { automationStudioInstructedActs } from "../instructed-acts/index.ts";
-import { AutomationStudioSiteResetLedger } from "../site-reset/index.ts";
+import type { AutomationStudioSiteResetWitnessStamp } from "../reset-admission/index.ts";
+import { AutomationStudioSiteResetLedger, automationStudioSiteResetPlacedCall } from "../site-reset/index.ts";
 
 const CHECKOUT: AutomationStudioActionDeclaration = { consequences: ["move_money"], control: { name: "Continue to checkout", kind: "button" }, verb: "press" };
 const PLACE: AutomationStudioActionDeclaration = { consequences: ["move_money"], control: { name: "Place order", kind: "button" }, verb: "press" };
+
+it.each(["core.run_node", "custom.press"])("requires a project control original before any effect through %s", async (toolId) => {
+  const ledger = new AutomationStudioSiteResetLedger({ owner: "builder" });
+  let effects = 0;
+  const control = { name: "Star", kind: "button", resource: "r:card", subject: "s:card", place: "pl:star", state: "st:off" };
+  let target: AutomationStudioActionDeclaration["control"] = control;
+  const permissions = automationStudioFlowBootstrapActionPermissions({
+    authoringMode: "project", requireCreateBaseline: false, permittedConsequences: [], instructionIds: [], siteReset: ledger,
+    executeTool: async (call) => {
+      const answer = await call.permission!({ consequences: ["modify_existing"], control: target, effect: "mutate", verb: "press" });
+      if (answer.permitted) effects += 1;
+      return { kind: "llm_evidence_tool_execution", evidence: { ok: answer.permitted }, effectApplied: answer.permitted };
+    }
+  });
+  const run = () => permissions.executeTool({ callId: "star", toolId, value: { node: "demo.star", consequences: ["modify_existing"] } });
+  expect(await run()).toMatchObject({ resultCode: "candidate.reset_witness_required", evidence: { canMeet: "this_page" }, effectApplied: false });
+  target = { name: "Unidentified", kind: "button" };
+  expect(await run()).toMatchObject({ resultCode: "candidate.reset_target_unidentified", effectApplied: false });
+  expect(effects).toBe(0);
+  expect(ledger.inPlace()).toEqual([]);
+  ledger.observed({ state: {}, differs: [], resource: "r:card", scope: "p:card", controls: { "pl:star": { "st:off": 1 } } });
+  target = control;
+  expect(await run()).toMatchObject({ effectApplied: true });
+  expect(effects).toBe(1);
+});
+
+it("keeps explicit standalone custom-tool legacy compatibility", async () => {
+  const permissions = automationStudioFlowBootstrapActionPermissions({
+    authoringMode: "legacy", permittedConsequences: [], instructionIds: [], siteReset: new AutomationStudioSiteResetLedger(),
+    executeTool: async (call) => {
+      const answer = await call.permission!({ consequences: ["modify_existing"], control: { name: "Legacy", kind: "button" }, verb: "press" });
+      return { kind: "llm_evidence_tool_execution", evidence: { ok: answer.permitted }, effectApplied: answer.permitted };
+    }
+  });
+  expect(await permissions.executeTool({ callId: "legacy", toolId: "custom.press", value: { consequences: ["modify_existing"] } })).toMatchObject({ effectApplied: true });
+});
+
+it("refuses a project lasting tool when its reset preflight is unavailable", async () => {
+  let effects = 0;
+  const permissions = automationStudioFlowBootstrapActionPermissions({
+    authoringMode: "project", permittedConsequences: [], instructionIds: [],
+    executeTool: async (call) => {
+      const answer = await call.permission!({ consequences: ["modify_existing"], control: { name: "Star", kind: "button", subject: "s:card" }, verb: "press" });
+      if (answer.permitted) effects += 1;
+      return { kind: "llm_evidence_tool_execution", evidence: { ok: answer.permitted }, effectApplied: answer.permitted };
+    }
+  });
+  expect(await permissions.executeTool({ callId: "star", toolId: "custom.press", value: {} })).toMatchObject({ resultCode: "candidate.create_baseline_unavailable", effectApplied: false });
+  expect(effects).toBe(0);
+});
+
+it("captures, records and settles a project custom effect whose raw args omit consequences", async () => {
+  const ledger = new AutomationStudioSiteResetLedger({ owner: "builder" });
+  let state = "st:off", effects = 0;
+  const raw: JsonObject[] = [];
+  const permissions = automationStudioFlowBootstrapActionPermissions({
+    authoringMode: "project", permittedConsequences: [], instructionIds: [], siteReset: ledger,
+    executeTool: async (call) => {
+      raw.push(call.value);
+      const answer = await call.permission!({ consequences: ["modify_existing"], control: { name: "Star", kind: "button", subject: "s:card", resource: "r:card", place: "pl:star", state }, effect: "mutate", verb: "press" });
+      if (answer.permitted) {
+        state = state === "st:off" ? "st:on" : "st:off";
+        effects += 1;
+      }
+      return { kind: "llm_evidence_tool_execution", evidence: { ok: answer.permitted }, effectApplied: answer.permitted };
+    }
+  });
+  const run = (callId: string, value: JsonObject = {}) => {
+    const call = { callId, toolId: "custom.star", value };
+    return automationStudioSiteResetPlacedCall({
+      call, ledger, allTools: true,
+      reader: { read: async () => ({ state: {}, differs: [], resource: "r:card", scope: "p:card", location: "loc:card", controls: { "pl:star": { [state]: 1 } } }) },
+      run: () => permissions.executeTool(call)
+    });
+  };
+  expect(await run("star")).toMatchObject({ effectApplied: true });
+  expect(effects).toBe(1);
+  expect(ledger.inPlace()).toMatchObject([{ act: "act-1" }]);
+  expect(await ledger.beforeTrial({ compare: async () => ({ moved: false }) })).toMatchObject({ kind: "refuse" });
+  expect(await run("undo", { undoes: "act-1" })).toMatchObject({ effectApplied: true });
+  expect(effects).toBe(2);
+  expect(state).toBe("st:off");
+  expect(ledger.standing("act-1")).toBe("restored");
+  expect(await ledger.beforeTrial({ compare: async () => ({ moved: false }) })).toMatchObject({ kind: "admit" });
+  expect(raw.every((value) => !Object.hasOwn(value, "consequences") && !Object.hasOwn(value, "undoes"))).toBe(true);
+});
 
 it("refuses an identified exploratory creation before execution when no original destination was observed", async () => {
   const ledger = new AutomationStudioSiteResetLedger();
@@ -100,7 +187,7 @@ it("hands the ledger the destination a creation was admitted against, so an unch
   expect(await own.beforeTrial(async () => ({ moved: false }))).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1", call: "open" }] } });
 });
 
-it("refuses an unwitnessed first press unrun, then hands the ledger a destination named later on a look under undoes (F1 continuation, rerun round 2)", async () => {
+it("refuses an unwitnessed press unrun before and after the first lasting act, since the admission has no seal (rerun round 2, t751)", async () => {
   const own = new AutomationStudioSiteResetLedger();
   const told: Array<string | undefined> = [];
   const read = { state: {}, differs: [], resource: "r:one", scope: "p:saved-page", collections: [{ scope: "p:saved", group: "g:saved", subjects: ["s:original"], states: { "s:original": "v:original" } }] };
@@ -112,7 +199,9 @@ it("refuses an unwitnessed first press unrun, then hands the ledger a destinatio
     } },
     executeTool: async (call) => {
       const look = call.callId === "look";
-      const verdict = await call.permission!(look ? { consequences: [], effect: "observe", control: { name: "Saved" }, verb: "read" } : { consequences: ["modify_existing"], control: { name: "Save", subject: "s:document", page: "s:results", resource: "r:one" }, verb: "press" });
+      // `pin-other` presses another control, about another item, through another node: nothing explored repeats it.
+      const other = call.callId === "pin-other";
+      const verdict = await call.permission!(look ? { consequences: [], effect: "observe", control: { name: "Saved" }, verb: "read" } : { consequences: ["modify_existing"], control: { name: other ? "Pin" : "Save", subject: other ? "s:other" : "s:document", page: "s:results", resource: "r:one" }, verb: "press" });
       return { kind: "llm_evidence_tool_execution", evidence: { ok: verdict.permitted }, effectApplied: verdict.permitted && !look };
     }
   });
@@ -121,16 +210,17 @@ it("refuses an unwitnessed first press unrun, then hands the ledger a destinatio
   // Before the seal, a reversible press that nothing could ever settle is refused unrun and recorded nowhere.
   expect(await permissions.executeTool({ callId: "save-unwitnessed", toolId: "core.run_node", value: { node: "example.save", parameters: {}, consequences: ["modify_existing"] } })).toMatchObject({ evidence: { ok: false, code: "candidate.reset_witness_required" } });
   expect(told).toEqual([]);
-  // Named by its ref, the first press lands and seals the baselines.
+  // Named by its ref, the first press lands.
   await permissions.executeTool({ callId: "save", toolId: "core.run_node", value: { node: "example.save", parameters: {}, consequences: ["modify_existing"], resetDestination: ref } });
-  // After the seal a press naming no ref is admitted as before; its destination is named later.
-  await permissions.executeTool({ callId: "save-again", toolId: "core.run_node", value: { node: "example.save", parameters: {}, consequences: ["modify_existing"] } });
+  // After it, a press naming no ref that repeats nothing explored is still refused unrun and recorded nowhere: nothing is admitted unwitnessed once an act has landed (t751, R3 door 1).
+  expect(await permissions.executeTool({ callId: "pin-other", toolId: "core.run_node", value: { node: "example.pin", parameters: {}, consequences: ["modify_existing"] } })).toMatchObject({ evidence: { ok: false, code: "candidate.reset_witness_required" } });
+  expect(told).toEqual([ref]);
   own.observed(read);
-  expect(await own.beforeTrial(async () => ({ moved: false }))).toMatchObject({ kind: "refuse" });
-  await permissions.executeTool({ callId: "look", toolId: "core.run_node", value: { node: "example.read", parameters: {}, consequences: [], undoes: "act-2", resetDestination: ref } });
-  expect(told).toEqual([ref, undefined, ref]);
-  own.observed(read);
+  // Only the witnessed act is on the site, and its list reads as it did before it: the trial is admitted.
   expect(await own.beforeTrial(async () => ({ moved: false }))).toMatchObject({ kind: "admit" });
+  // The same press again, naming no ref, repeats the witnessed act and shares its witness, so it runs.
+  expect(await permissions.executeTool({ callId: "save-again", toolId: "core.run_node", value: { node: "example.save", parameters: {}, consequences: ["modify_existing"] } })).toMatchObject({ evidence: { ok: true } });
+  expect(told).toEqual([ref, undefined]);
 });
 
 it("refuses a look under undoes that names a ref no receipt printed, before it runs (rerun round 2)", async () => {
@@ -559,5 +649,63 @@ describe("the line that names the acts the read gave no answer for", () => {
     expect(automationStudioFlowBootstrapUnansweredSaid(["add the towels"])).toBe("I could not tell from your instruction whether \"add the towels\" changes something that stays changed, so when the build tests its steps it checks the step that does it rather than doing it again.");
     // t370 (lane A rounds 6 and 7 UI): the old words, "Reading your instruction gave no answer for ...", are gone.
     expect(automationStudioFlowBootstrapUnansweredSaid(["add the towels"])).not.toContain("gave no answer");
+  });
+});
+
+// A plan step's reset witness (t751, R3 door 2): where the build has a site
+// reset, each reversible lasting declaration the domain puts to a plan step's
+// check is admitted by the reset's step admission, and the stamp it answers is
+// told to the resolver. Submission never refuses for a missing witness.
+describe("a plan step's reset witness", () => {
+  const SAVE: AutomationStudioActionDeclaration = { consequences: ["modify_existing"], control: { name: "Save", kind: "button", place: "c:save", state: "s:off", scope: "p:results" }, verb: "press" };
+  function build(admitStep?: (declared: unknown, definitionId: string) => unknown) {
+    const asked: Array<{ declared: unknown; definitionId: string }> = [];
+    const ledger = new AutomationStudioSiteResetLedger();
+    // A variable, not a literal: the fake compiles whether or not the ledger's own type declares a step admission yet.
+    const siteReset = {
+      claim: (value: unknown) => ledger.claim(value), target: (act: string, declared: Parameters<AutomationStudioSiteResetLedger["target"]>[1]) => ledger.target(act, declared), explored: (call: Parameters<AutomationStudioSiteResetLedger["explored"]>[0]) => ledger.explored(call),
+      // Answers of any shape, as the gate reads whichever form a ledger gives (`stepWitness`).
+      ...(admitStep ? { admitStep: ((declared: unknown, definitionId: string) => {
+        asked.push({ declared, definitionId });
+        return admitStep(declared, definitionId);
+      }) as (declared: unknown, definitionId?: string) => AutomationStudioSiteResetWitnessStamp | undefined } : {})
+    };
+    const permissions = automationStudioFlowBootstrapActionPermissions({ permittedConsequences: ["modify_existing", "send_or_publish"], instructionIds: [], siteReset, executeTool: async () => ({}) });
+    return { permissions, asked };
+  }
+  async function stampOf(permissions: ReturnType<typeof build>["permissions"], declaration: AutomationStudioActionDeclaration) {
+    const told: unknown[] = [];
+    const verdict = await permissions.planStep({ definitionId: "example.save", ref: "main.s2", witnessed: (stamp) => told.push(stamp) })(declaration);
+    return { verdict, told };
+  }
+
+  it("tells the resolver the stamp the admission answers, as a verdict or a stamp, with the step's declaration and definition", async () => {
+    const run = build(() => ({ kind: "admit", witness: { via: "control", place: "c:save" } }));
+    expect(await stampOf(run.permissions, SAVE)).toMatchObject({ verdict: { permitted: true }, told: [{ via: "control" }] });
+    expect(run.asked).toEqual([{ declared: { effect: "mutate", consequences: ["modify_existing"], control: { name: null, kind: null, place: "c:save", state: "s:off", scope: "p:results" } }, definitionId: "example.save" }]);
+    const stamped = build(() => ({ via: "destination", ref: "destination-1" }));
+    expect((await stampOf(stamped.permissions, SAVE)).told).toEqual([{ via: "destination", ref: "destination-1" }]);
+    const repeats = build(() => ({ kind: "admit", witness: { via: "repeats", act: "act-2" } }));
+    expect((await stampOf(repeats.permissions, SAVE)).told).toEqual([{ via: "repeats", act: "act-2" }]);
+  });
+
+  it("tells none, and still permits the step, where the admission refuses, answers nothing usable, or there is no step admission", async () => {
+    for (const answer of [{ kind: "refused", evidence: { ok: false, code: "candidate.reset_witness_required" } }, { kind: "admit" }, { via: "control", place: "c:save" }, undefined]) {
+      const run = build(() => answer);
+      expect(await stampOf(run.permissions, SAVE), JSON.stringify(answer)).toMatchObject({ verdict: { permitted: true }, told: [undefined] });
+      expect(run.permissions.signal.aborted).toBe(false);
+    }
+    expect(await stampOf(build().permissions, SAVE)).toMatchObject({ verdict: { permitted: true }, told: [undefined] });
+  });
+
+  it("asks nothing for a step that is not a reversible lasting act, or that the gate refused", async () => {
+    const run = build(() => ({ via: "control" }));
+    expect((await stampOf(run.permissions, { consequences: ["send_or_publish"], control: { name: "Post", kind: "button" }, verb: "press" })).told).toEqual([]);
+    expect((await stampOf(run.permissions, { consequences: [], effect: "observe", control: { name: "Results" }, verb: "read" })).told).toEqual([]);
+    expect((await stampOf(run.permissions, { consequences: ["modify_existing", "send_or_publish"], control: { name: "Save and post", kind: "button" }, verb: "press" })).told).toEqual([]);
+    const refused = await stampOf(run.permissions, { consequences: ["move_money"], control: { name: "Pay", kind: "button" }, verb: "press" });
+    expect(refused.verdict.permitted).toBe(false);
+    expect(refused.told).toEqual([]);
+    expect(run.asked).toEqual([]);
   });
 });

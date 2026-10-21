@@ -23,7 +23,7 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import type { AutomationStudioActionConsequence } from "../../../action-permissions/index.ts";
 import { AutomationStudioFlowCandidateTrialGate, type AutomationStudioFlowCandidate } from "../../../flow-bootstrap/candidate/index.ts";
-import { validateAutomationStudioFlowBootstrapPlan } from "../../../flow-bootstrap/plan/index.ts";
+import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSubflow } from "../../../flow-bootstrap/plan/index.ts";
 import { AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetComparison, type AutomationStudioSiteResetExplored } from "../../../flow-bootstrap/site-reset/index.ts";
 import { AutomationStudioSubflowTrialGate, type AutomationStudioSubflowProposal, type AutomationStudioSubflowScope } from "../../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioArrivalPlanNode } from "../../../flow-bootstrap/verification/index.ts";
@@ -49,6 +49,17 @@ const GO: AutomationStudioNodeDefinition = {
 };
 const ARRIVAL = { node: GO.id, parameter: "location" };
 const POSSIBLY = "(declared no lasting act, but had an effect: possibly lasting)";
+
+/** Direct proposals use the same source-derived admission as submitted domain declarations. */
+function stampParts(project: AutomationStudioSiteResetProjectLedger, subflows: readonly AutomationStudioFlowBootstrapSubflow[]): void {
+  const authority = project.forBrief("brief.authority");
+  for (const subflow of subflows) for (const node of subflow.nodes) {
+    if (!node.consequences?.length) continue;
+    const stamp = authority.admitStep({ effect: "mutate", consequences: node.consequences as AutomationStudioActionConsequence[], control: { name: "Press", kind: "button", resource: "r:phase", scope: "p:phase", subject: `s:${node.key}` } }, node.definitionId);
+    expect(stamp).toEqual({ via: "destination", ref: "destination-1" });
+    node.resetWitness = stamp!;
+  }
+}
 
 /** One press the model made while exploring, as the build's permission wrapper tells the ledger. */
 const acted = (callId: string, consequences: AutomationStudioActionConsequence[], extra: Partial<AutomationStudioSiteResetExplored> = {}): AutomationStudioSiteResetExplored => ({
@@ -80,6 +91,12 @@ function site(options: { hook: boolean }) {
   };
   // What an earlier phase left: a lasting act, and a press that declared nothing lasting (header).
   const ledger = new AutomationStudioSiteResetProjectLedger();
+  const authority = ledger.forBrief("brief.authority");
+  const original = { state: {}, differs: [], resource: "r:phase", scope: "p:phase", collections: [{ scope: "p:phase", group: "g:phase", subjects: [], states: {} }] };
+  ledger.observed(original);
+  authority.observed(original);
+  authority.destinationReceipts();
+  stampParts(ledger, f.findProposal.subflows);
   const earlier = ledger.forBrief("brief.earlier");
   earlier.explored(acted("call.add", ["create_new"]));
   earlier.explored(acted("call.coupon", []));
@@ -106,6 +123,18 @@ const yes = () => mockProvider(async () => judgeReply("yes"));
 const nothingDiffers = async (): Promise<AutomationStudioSiteResetComparison> => ({ moved: true, differs: [] });
 
 describe("every phase of a project build starts from the build's one start", () => {
+  it("refuses unwitnessed entry preparation before its start hook", async () => {
+    const run = site({ hook: true });
+    for (const subflow of run.f.findProposal.subflows) {
+      for (const node of subflow.nodes) delete node.resetWitness;
+    }
+    // Replace the kept passing proposal with the unstamped one, as an old proposal may arrive.
+    run.proposals.trialled(scopeOf("find", "brief.find", []), run.f.findProposal, "yes");
+    const started = await run.start.explore({ phase: "builder", scope: scopeOf("add", "brief.add", ["find"]), own: run.ledger.forBrief("brief.add"), signal: new AbortController().signal, openingArrives: true });
+    expect(started.entry).toMatchObject({ kind: "unprepared", code: "candidate.trial_step_unwitnessed" });
+    expect(run.state.hooks).toBe(0);
+    expect(run.state.ran).toEqual([]);
+  });
   const explored = [
     { phase: "builder" as const, predecessors: [] as string[] },
     { phase: "builder" as const, predecessors: ["find"] },
@@ -138,7 +167,11 @@ describe("every phase of a project build starts from the build's one start", () 
           expect(String(told.note)).toContain(phase === "reset" ? "they are what this reset undoes: act-1" : "so it is not as the build found it: act-1");
         }
         // (c) and (d)
-        if (predecessors.length) {
+        if (predecessors.length && !hook) {
+          expect(started.entry).toMatchObject({ kind: "unprepared", code: "project.entry_site_not_reset" });
+          expect(run.state.ran).toEqual([]);
+          expect(own.inPlace()).toEqual([]);
+        } else if (predecessors.length) {
           expect(told, JSON.stringify(started.record)).toMatchObject({ arrival: "loaded", predecessors: { ran: ["find"], prepared: true }, standsOn: "where \"find\" leave the site" });
           // Loaded first, after the hook, though the tab showed another page; then the predecessor, from there.
           expect(run.state.ran).toEqual([...(hook ? ["hook"] : []), `go ${START}`, `${PRESS.id} on ${START}`]);
@@ -159,6 +192,7 @@ describe("every phase of a project build starts from the build's one start", () 
       const run = site({ hook });
       const scope = scopeOf("add", "brief.add", ["find"]);
       const proposal: AutomationStudioSubflowProposal = { ...run.f.request().proposal, scope: { buildId: "build.1", briefId: "brief.add", planDigest: "plan.1", subflowKey: "add" } };
+      stampParts(run.ledger, proposal.subflows);
       const trials = automationStudioProjectBuildSubflowTrials({
         ref: { projectId: "project", flowId: "parent", buildId: "build.1" }, environment: run.environment, binding, judge: { provider: yes() },
         records: { read: async () => RECORD }, proposals: run.proposals, leases: { assertCurrent: () => undefined }, running: () => true
@@ -190,7 +224,7 @@ describe("every phase of a project build starts from the build's one start", () 
 
     it(`the whole trial of the assembled Flow ${hook ? "with" : "with no"} start hook`, async () => {
       const run = site({ hook });
-      const candidate = assembled(run.registry, run.f.ports.resolution);
+      const candidate = assembled(run.registry, run.f.ports.resolution, run.ledger);
       const trials = automationStudioProjectBuildWholeTrials({ candidateId: "candidate.1", environment: run.environment, binding, judge: { provider: yes(), instructions: [] }, ledger: run.ledger });
       // The supervisor's reset over the build's one reset (`project-agents/supervisor/whole-trial.ts`).
       // The build's one reset as the supervisor asks it: no brief of its own, and no look at the target (header).
@@ -251,12 +285,13 @@ describe("what a phase is told of an act no call can settle", () => {
 });
 
 /** The Flow a project build assembles from the two subflows' proposals: the router-run subflow's arrival, then a call to each (`project-agents/supervisor/assembly.ts`). */
-function assembled(registry: AutomationStudioNodeRegistry, resolution: Parameters<typeof validateAutomationStudioFlowBootstrapPlan>[0]["resolution"]): AutomationStudioFlowCandidate {
+function assembled(registry: AutomationStudioNodeRegistry, resolution: Parameters<typeof validateAutomationStudioFlowBootstrapPlan>[0]["resolution"], ledger: AutomationStudioSiteResetProjectLedger): AutomationStudioFlowCandidate {
   const spec = { parts: [{ id: "p1", quote: { sourceId: "s", text: "x" }, goalFacts: [], lastingActs: [] }], notAsked: [] };
   const taskSpecDigest = automationStudioProjectTaskSpec.digest(spec);
   const main = { key: "main", name: "Main", role: "primary" as const, nodes: [], edges: [] };
   const find = part("find", "utility");
   const add = part("add", "utility");
+  stampParts(ledger, [find, add]);
   const plan = { schemaVersion: "0.1" as const, router: { name: "R", rules: [], fallback: { kind: "subflow" as const, targetSubflowKey: "main" } }, subflows: [main, find, add] };
   const partOf = { main: [], find: ["p1"], add: ["p1"] };
   const structure = { taskSpecDigest, plan, partOf, digest: automationStudioProjectStructurePlan.digest({ taskSpecDigest, plan, partOf }) };

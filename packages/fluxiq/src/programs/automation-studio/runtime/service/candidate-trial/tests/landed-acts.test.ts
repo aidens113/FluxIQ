@@ -74,6 +74,17 @@ describe("the lasting acts a trial landed", () => {
     expect(automationStudioCandidateTrialLandedActs(trace(attempts), graph)).toEqual([expect.objectContaining({ step: 46 })]);
   });
 
+  // t751 (R3 door 2): a step's reset witness stamp, from its Flow node's metadata, travels with each act it lands.
+  it("carries the step's reset witness stamp from its node, and drops a malformed one keeping the act", () => {
+    const stamped = (id: string, resetWitness: unknown) => ({ ...press(id, "Save it", ["modify_existing"]), metadata: { declaredConsequences: ["modify_existing"], resetWitness } });
+    const witnessed = { nodes: [stamped("save", { via: "control" }), stamped("keep", { via: "destination", ref: "destination-2" }), stamped("bad", { via: "control", place: "c:opaque" })] } as unknown as AutomationStudioFlowArtifact;
+    const at = (nodeId: string): AutomationStudioNodeAttemptTrace => ({ attemptId: `w${++next}`, nodeId, definitionId: "web.output.dom-click", startedAt: next, status: "succeeded", inputs: {}, outputs: {}, effects: [] });
+    const acts = automationStudioCandidateTrialLandedActs(trace([at("save"), at("keep"), at("bad")]), witnessed);
+    expect(acts.map((act) => act.witness)).toEqual([{ via: "control" }, { via: "destination", ref: "destination-2" }, undefined]);
+    expect(acts[2]).not.toHaveProperty("witness");
+    expect(acts.map((act) => act.consequences)).toEqual([["modify_existing"], ["modify_existing"], ["modify_existing"]]);
+  });
+
   it("answers nothing without a trace or a graph", () => {
     expect(automationStudioCandidateTrialLandedActs(undefined, graph)).toEqual([]);
     expect(automationStudioCandidateTrialLandedActs(trace([attempt("add", "succeeded")]), undefined)).toEqual([]);

@@ -54,6 +54,13 @@
 // look, whatever it was admitted as. The fresh read settles the act,
 // `unchanged` when it shows the baseline.
 //
+// **An act already back is answered from settlement (t751 R2).** A call
+// naming an act a fresh read settled `restored` -- whatever put it back -- is
+// refused `candidate.undo_already_back`, met by no call, with the act listed
+// nowhere, never `candidate.undo_unknown_act`; one aimed at its own control
+// while that shows the build's start, with no fresh read of it yet, is met on
+// this page by a look (`./undo-admission.ts`).
+//
 // **Acts no call can settle are listed apart (t743).** Every refusal here that
 // lists the acts to undo lists those no call can settle beside them, under
 // `actsUnsettleable` (`./ledger.ts`, `unsatisfiable`). An undo refused because
@@ -63,6 +70,7 @@
 // lists it apart when that was its last open condition; a press back admitted
 // at its place clears the mark.
 
+import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { automationStudioSiteResetRefusal as refusal } from "../reset-answers/index.ts";
 import type { AutomationStudioSiteResetObservations } from "../reset-settlement/index.ts";
@@ -118,9 +126,11 @@ export class AutomationStudioSiteResetUndoClaims {
     const unissued = ledger.receipts.unissued(resetDestination);
     if (unissued) return { kind: "refused", evidence: unissued };
     const act = typeof undoes === "string" ? ledger.acts.find((entry) => entry.id === undoes) : undefined;
-    const left = act !== undefined && ledger.settledNow(act) === "unchanged";
+    const settled = act === undefined ? undefined : ledger.settledNow(act);
+    const left = settled === "unchanged";
     // Acts no call can settle are listed beside the acts to undo wherever those are answered (header, t743).
     const apart = unsettleable(ledger.unsatisfiable());
+    if (act && settled === "restored") return { kind: "refused", evidence: back(ledger, act, apart) };
     if (act && !act.undone && act.undoable && ((act.kept && !act.strictReset) || left)) return { kind: "refused", evidence: refusal("candidate.undo_act_kept", { act: act.id, failed: left ? "act_left" : "act_kept", canMeet: "no_call", instruction: WORDS.keptAct(left), actsToUndo: ledger.inPlace(), ...apart }) };
     if (!act || !ledger.claimable(act)) {
       const actsToUndo = ledger.inPlace();
@@ -146,6 +156,7 @@ export class AutomationStudioSiteResetUndoClaims {
     const ledger = this.ledger;
     const act = ledger.acts.find((entry) => entry.id === actId);
     const apart = unsettleable(ledger.unsatisfiable());
+    if (act && ledger.settledNow(act) === "restored") return { kind: "refused", evidence: back(ledger, act, apart) };
     if (!act || !ledger.claimable(act)) {
       const actsToUndo = ledger.inPlace();
       return { kind: "refused", evidence: refusal("candidate.undo_unknown_act", { failed: "act_not_listed", canMeet: "this_page", instruction: WORDS.unknownAct(actsToUndo.length > 0), actsToUndo, ...apart }) };
@@ -173,8 +184,9 @@ export class AutomationStudioSiteResetUndoClaims {
     if (pressed && !look) ledger.pressed(declared.control.place);
     const act = ledger.acts.find((entry) => entry.id === call.undoes);
     if (!act || !ledger.claimable(act)) return;
-    // Where its effect would show, named after it: an issued ref, resolved without the act's resource (header, F1, L1); accumulated.
-    const named = call.resetDestination === undefined ? undefined : ledger.receipts.named(call.resetDestination);
+    // Where its effect would show, named after it: an issued ref, resolved without the act's resource (header, F1, L1); accumulated,
+    // and only from a call that landed (t751 R6: office `run-mvhibit5-e1d3a4f3` settled acts on a list a refused call named).
+    const named = !call.landed || call.resetDestination === undefined ? undefined : ledger.receipts.named(call.resetDestination);
     if (named && !act.destinations.some((entry) => entry.scope === named.scope)) act.destinations.push(named);
     // A look leaves the act as it was: the fresh read settles it (header, L1).
     if (look) return;
@@ -196,6 +208,11 @@ export class AutomationStudioSiteResetUndoClaims {
     // The site's one confirmation of that undo is given: no further lasting dialog press follows from it (header, t479).
     else if (call.on === "follow_up" && declared.consequences.some((consequence) => LASTING.has(consequence))) act.chain = undefined;
   }
+}
+
+/** An act a fresh read settled `restored`, named under `undoes` (header, t751 R2): already back, listed nowhere, nothing owed. */
+function back(ledger: AutomationStudioSiteResetUndoClaimsLedger, act: Act, apart: ReturnType<typeof unsettleable>): JsonObject & { code: string } {
+  return refusal("candidate.undo_already_back", { act: act.id, failed: "already_back", canMeet: "no_call", instruction: WORDS.alreadyBack(true), actsToUndo: ledger.inPlace(), ...apart });
 }
 
 /** The acts no call can settle, under `actsUnsettleable` beside `actsToUndo`, or nothing where there are none (header, t743). */

@@ -14,6 +14,7 @@
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence, AutomationStudioActionEffect } from "../../action-permissions/index.ts";
+import type { AutomationStudioSiteResetAdmissionDeclared, AutomationStudioSiteResetWitnessStamp } from "../reset-admission/index.ts";
 import type { AutomationStudioSiteResetCollection, AutomationStudioSiteResetUnmet } from "../reset-settlement/index.ts";
 
 // The `undoes` key moved to `../reset-settlement/undoes-key.ts` (t743), which the settle words say it from; it stays
@@ -116,6 +117,12 @@ export type AutomationStudioSiteResetCalls = {
   /** Asked, for an undo, of each action the domain puts to the gate, before it acts (t475). */
   target(act: string, declared: { effect: AutomationStudioActionEffect; consequences: readonly AutomationStudioActionConsequence[]; control: AutomationStudioSiteResetSpot }): AutomationStudioSiteResetTarget;
   explored(call: AutomationStudioSiteResetExplored): void;
+  /**
+   * The step door of the one admission (t751 R3, `../reset-admission/admission.ts`): asked of a lasting plan step's declaration
+   * at submission (`operation`: the step's registered definition), it answers the witness stamp its node carries, or none
+   * where the step has no witness or needs none. It never refuses: a trial refuses a reversible step whose stamp is missing.
+   */
+  admitStep?(declared: AutomationStudioSiteResetAdmissionDeclared, operation?: string): AutomationStudioSiteResetWitnessStamp | undefined;
 };
 
 /**
@@ -260,6 +267,8 @@ export type AutomationStudioSiteResetTrialAct = {
   control?: string;
   consequences: readonly AutomationStudioActionConsequence[];
   possible?: true;
+  /** Its step's witness stamp, as its plan node carried it (t751 R3): what the act takes of it (`./ledger.ts`, `trialRan`). */
+  witness?: AutomationStudioSiteResetWitnessStamp;
 } & AutomationStudioSiteResetTrialActPlace;
 
 /**
@@ -307,4 +316,20 @@ export type AutomationStudioSiteResetTrialReset = {
   beforeTrial(signal?: AbortSignal, cannotUndo?: readonly string[], options?: AutomationStudioSiteResetBeforeTrialOptions): Promise<AutomationStudioSiteResetDecision>;
   /** Restarts the reset phase and answers the acts now on the site, the trial's own among them (`leftOnSite`). */
   trialRan(acts: readonly AutomationStudioSiteResetTrialAct[], trialRunId?: string): AutomationStudioSiteResetNamedAct[];
+  /**
+   * Asked before a trial runs its steps, before the start hook and before any baseline moves (t751 R3): every reversible
+   * lasting step needs a witness stamp that still resolves, or the trial is refused unrun. A project build's reset only
+   * (`./project-reset.ts`); absent, nothing is asked.
+   */
+  admit?(steps: readonly AutomationStudioSiteResetTrialStep[]): AutomationStudioSiteResetStepAdmission;
 };
+
+/** One step a trial will run, as its trial door hands it to `admit`: its number and label, its lasting classes, and its node's witness stamp, unread. */
+export type AutomationStudioSiteResetTrialStep = { step: number; label?: string; consequences: readonly AutomationStudioActionConsequence[]; witness?: unknown };
+
+/**
+ * The answer to `admit`: run the trial, or refuse it unrun (`candidate.trial_step_unwitnessed`, `no_witness`, met on another
+ * page), naming under `stepsUnwitnessed` each reversible step whose stamp is missing or no longer resolves. A refusal is not
+ * a trial, and nothing moved.
+ */
+export type AutomationStudioSiteResetStepAdmission = { kind: "admit" } | { kind: "refuse"; evidence: JsonObject & { code: string }; moved: false };

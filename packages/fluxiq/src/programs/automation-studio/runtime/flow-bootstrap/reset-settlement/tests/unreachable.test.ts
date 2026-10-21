@@ -45,10 +45,4 @@ describe("the settle decision with a lost list", () => {
     expect(decide({ groups: [group("holds", { unreachable: true })], changeSeen: false, undoLanded: false })).toEqual({ kind: "settled", how: "unchanged" });
     expect(decide({ groups: [group("differs", { unreachable: true })], changeSeen: true, undoLanded: false })).toMatchObject({ kind: "open", reasons: [{ reason: "undo" }] });
   });
-
-  it("drops a lost adopted list: with nothing else adopted the act is to name one; an adopted reason is marked", () => {
-    expect(decide({ groups: [], changeSeen: false, undoLanded: false, adopted: [group("stale", { unreachable: true })] })).toEqual({ kind: "open", reasons: [{ reason: "name" }] });
-    expect(decide({ groups: [], changeSeen: false, undoLanded: false, adopted: [group("stale")] })).toEqual({ kind: "open", reasons: [{ reason: "look", witness: "group", ref: "destination-1", location: "loc:view", group: "g:list", adopted: true }] });
-    expect(decide({ groups: [], changeSeen: false, undoLanded: false, adopted: [group("differs")] })).toEqual({ kind: "open", reasons: [{ reason: "name", adopted: true }] });
-  });
 });

@@ -27,6 +27,8 @@ import { isAutomationStudioAdaptationId, withAutomationStudioNodeAdaptationId } 
 import { AUTOMATION_STUDIO_ROUTE_SIGNATURES_METADATA_KEY, automationStudioRouteSignaturesValue } from "../route-state/signatures/index.ts";
 import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY as DECLARED_CONSEQUENCES_METADATA_KEY } from "../executor/defensive/index.ts";
 import { AUTOMATION_STUDIO_PACE_METADATA_KEY as PACE_METADATA_KEY } from "../executor/pacing/index.ts";
+import { AUTOMATION_STUDIO_RESET_WITNESS_METADATA_KEY as RESET_WITNESS_METADATA_KEY } from "./candidate/reset-witness-key.ts";
+import { automationStudioSiteResetWitnessStampValid } from "./reset-admission/index.ts";
 
 /**
  * `create` builds a whole topology on a blank Flow; `extend` only adds to an
@@ -248,6 +250,8 @@ export function normalizeAutomationStudioFlowBuildPlan(input: {
           // `repeat pace:`, or the pace a judged trial learned (t378). Every
           // graph run reads it, trial and playback alike (`../executor/pacing/`).
           ...(node.paceMs !== undefined ? { [PACE_METADATA_KEY]: node.paceMs } : {}),
+          // What the step's reversible lasting act is witnessed by, as Core's admission stamped it at submission (t751): each act a trial of the node lands takes it (`../service/candidate-trial/landed-acts.ts`).
+          ...(automationStudioSiteResetWitnessStampValid(node.resetWitness) ? { [RESET_WITNESS_METADATA_KEY]: { ...node.resetWitness } } : {}),
           // Where a run may start or be brought back to (C2): `fluxiq.entry`, `fluxiq.checkpoint`.
           ...(node.metadata ? structuredClone(node.metadata) as JsonObject : {})
         }, input.adaptationId)

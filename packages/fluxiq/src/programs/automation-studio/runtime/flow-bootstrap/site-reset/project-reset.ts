@@ -36,21 +36,39 @@
 //
 // Above capacity 1 briefs run on separate host resources, and another brief's
 // act is not on this site; the web domain declares capacity 1.
+//
+// **No unwitnessed step runs (t751 R3).** Before a trial runs its steps --
+// before the start hook and before any baseline moves -- its door asks
+// `admit`: every reversible lasting step (lasting classes all among
+// create_new, modify_existing and delete) must carry a witness stamp its node
+// took at submission that still resolves (`./project-ledger.ts`,
+// `stepWitnessResolves`), or the trial is refused unrun,
+// `candidate.trial_step_unwitnessed`, naming each such step and how its witness
+// is made while exploring. Only a project build's reset asks; a standalone
+// ledger has no `admit`.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
+import { automationStudioSiteResetRefusal as refusal } from "../reset-answers/index.ts";
 import type {
   AutomationStudioSiteResetChecks,
   AutomationStudioSiteResetComparison,
   AutomationStudioSiteResetDecision,
   AutomationStudioSiteResetNamedAct,
-  AutomationStudioSiteResetTrialReset
+  AutomationStudioSiteResetStepAdmission,
+  AutomationStudioSiteResetTrialReset,
+  AutomationStudioSiteResetTrialStep
 } from "./contracts.ts";
 import type { AutomationStudioSiteResetLedger } from "./ledger.ts";
 import type { AutomationStudioSiteResetProjectLedger } from "./project-ledger.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "./words.ts";
 
+/** The classes the site's own controls can reverse: a step declaring only these needs a witness (header). */
+const REVERSIBLE: ReadonlySet<AutomationStudioActionConsequence> = new Set(["create_new", "modify_existing", "delete"]);
+
 export function automationStudioSiteResetProjectReset(input: {
-  project: Pick<AutomationStudioSiteResetProjectLedger, "snapshot" | "forBrief">;
+  /** The build's ledger; `stepWitnessResolves` and `issuedRefs` answer `admit` (header), absent where a caller holds a narrower port, and then every reversible step is refused. */
+  project: Pick<AutomationStudioSiteResetProjectLedger, "snapshot" | "forBrief"> & Partial<Pick<AutomationStudioSiteResetProjectLedger, "stepWitnessResolves" | "issuedRefs">>;
   /** The phase's own brief's ledger, which its trials' acts go into; absent for the supervisor, which records none. */
   own?: AutomationStudioSiteResetLedger | undefined;
   /** The start check, under the signal of the trial or phase being prepared. */
@@ -83,8 +101,19 @@ export function automationStudioSiteResetProjectReset(input: {
       const left = own ? own.trialRan(acts, trialRunId) : [];
       for (const ledger of ledgers()) if (ledger !== own) left.push(...ledger.trialRan([], trialRunId));
       return left;
+    },
+    admit(steps) {
+      return admitted(steps, (witness) => project.stepWitnessResolves?.(witness) === true, () => project.issuedRefs?.() ?? []);
     }
   };
+}
+
+/** Every reversible lasting step with a stamp that still resolves, or the refusal naming each one without (header). */
+function admitted(steps: readonly AutomationStudioSiteResetTrialStep[], resolves: (witness: unknown) => boolean, issued: () => Parameters<typeof WORDS.stepWitnessRequired>[0]): AutomationStudioSiteResetStepAdmission {
+  const unwitnessed = steps.filter((step) => step.consequences.length > 0 && step.consequences.every((consequence) => REVERSIBLE.has(consequence)) && !resolves(step.witness));
+  if (!unwitnessed.length) return { kind: "admit" };
+  const stepsUnwitnessed = unwitnessed.map((step) => ({ step: step.step, ...(step.label !== undefined ? { label: step.label } : {}) }));
+  return { kind: "refuse", moved: false, evidence: refusal("candidate.trial_step_unwitnessed", { failed: "no_witness", canMeet: "another_page", stepsUnwitnessed, instruction: WORDS.stepWitnessRequired(issued()) }) };
 }
 
 /** Every ledger's answer as one (header). */

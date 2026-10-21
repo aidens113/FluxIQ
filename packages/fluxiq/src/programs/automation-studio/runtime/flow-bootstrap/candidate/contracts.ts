@@ -2,6 +2,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { AutomationStudioFlowBuildPlan } from "../plan/index.ts";
 import type { AutomationStudioSiteResetTrialActPlace } from "../site-reset/index.ts";
+import type { AutomationStudioSiteResetWitnessStamp } from "../reset-admission/index.ts";
 import type { AutomationStudioFlowBootstrapCompletionVerdict, AutomationStudioFlowBootstrapPlanHandleView } from "../../llm/harness-options/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import type { AutomationStudioRunEnvironmentKind } from "../../environment/index.ts";
@@ -105,6 +106,13 @@ export type AutomationStudioCandidateTrialAct = {
    * gate that keeps only declared acts drops it.
    */
   possible?: true;
+  /**
+   * What its step's reversible lasting act is witnessed by (t751, R3 door 2):
+   * the stamp Core's admission gave the step at submission, read off the Flow
+   * node's metadata (`./reset-witness-key.ts`) and valid as a stamp. Absent
+   * where the step carried none.
+   */
+  witness?: AutomationStudioSiteResetWitnessStamp;
 };
 
 /** What the trial port answers. Only `yes` for the exact latest revision and digest lets the model complete. */

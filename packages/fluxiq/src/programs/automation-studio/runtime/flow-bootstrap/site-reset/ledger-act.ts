@@ -7,6 +7,7 @@
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { AutomationStudioSiteResetPress } from "../reset-settlement/index.ts";
 import type { AutomationStudioSiteResetPlace, AutomationStudioSiteResetSpot } from "./contracts.ts";
+import type { AutomationStudioSiteResetControlOriginal } from "./control-witnesses.ts";
 
 /** One act of this build, as the ledger records, judges and undoes it (header). */
 export type AutomationStudioSiteResetLedgerAct = {
@@ -47,6 +48,7 @@ export type AutomationStudioSiteResetLedgerAct = {
   clock: number;
   /** Its own press, until the read after it says whether it was a toggle (L1). */
   press?: AutomationStudioSiteResetPress;
+  controlOriginal?: AutomationStudioSiteResetControlOriginal;
   /** One control at its place flipped from `from` to `to` (L1); only for an act that declared exactly `modify_existing`. */
   toggle?: { page: string; place: string; from: string; to: string };
   /** Its own control answered a state that is neither the build's nor the act's, so it cannot be pressed back (`./undo-reach.ts`, t748); cleared once a press back is admitted. */
@@ -57,8 +59,6 @@ export type AutomationStudioSiteResetLedgerAct = {
   settled?: "restored" | "unchanged";
   /** Settled with lists named for it that Core could not read again: their refs, told to every later trial's judge (header, t743). */
   unread?: string[];
-  /** Where a trial step's own page is, when its step said: lists read there may be adopted (`../reset-settlement/judge.ts`, t743). */
-  pageLocation?: string;
   /** Its own page before it, and what it changed there. */
   place?: AutomationStudioSiteResetPlace;
   /** Where the control it acted on sat; absent when that is not known (a trial's act whose step's diff gave none, t598). */

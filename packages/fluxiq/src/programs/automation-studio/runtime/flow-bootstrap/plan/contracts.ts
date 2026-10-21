@@ -4,6 +4,7 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationNodeParameter, AutomationNodeValueType } from "../../../nodes/index.ts";
 import type { AutomationStudioRouteSignatures } from "../../route-state/index.ts";
+import type { AutomationStudioSiteResetWitnessStamp } from "../reset-admission/index.ts";
 import type { AutomationStudioFlowBootstrapRouteCondition } from "./route-condition.ts";
 import type { AutomationStudioFlowBootstrapRoutingContext } from "./routing-context.ts";
 
@@ -75,6 +76,19 @@ export type AutomationStudioFlowBootstrapNode = {
    * `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS` (`./limits.ts`).
    */
   paceMs?: number;
+  /**
+   * What this step's reversible lasting act is witnessed by (t751, R3 door 2):
+   * the stamp Core's one admission (`../reset-admission/`) answered when the
+   * domain put the step's declaration to the build's permission check at
+   * submission (`../../llm/harness-options/plan-parameter-resolution.ts`).
+   * Core-derived only: never read from what a model wrote (a script line or a
+   * JSON-plan field of this name is refused or dropped), accepted here only in
+   * the exact stamp form (`automationStudioSiteResetWitnessStampValid`), and
+   * written to the Flow node's metadata (`../adaptation.ts`), from which each
+   * trial act of the step takes it. Absent where the step is not a reversible
+   * lasting act, or no witness was found for it.
+   */
+  resetWitness?: AutomationStudioSiteResetWitnessStamp;
   /**
    * Where a run may begin or come back to this node, as the state-aware
    * recovery contract stores it on the Flow node (C2): `fluxiq.entry`, an

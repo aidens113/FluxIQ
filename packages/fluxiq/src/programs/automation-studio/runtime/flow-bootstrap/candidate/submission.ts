@@ -159,7 +159,8 @@ export class AutomationStudioFlowCandidateSubmissionController {
     // The last revision accepted: the standing one, or the one a refusal since cleared.
     const last = standing ?? this.previous;
     const text = submissionText(result);
-    if (last && text !== undefined && text === this.currentText) return this.sameAsLast(standing, last, history, history.refuted?.(last.digest));
+    // A Flow with a reversible lasting step is checked again even as the same text: its steps' reset witnesses are stamped as it is resolved, and a new stamp is a new Flow (t751).
+    if (last && text !== undefined && text === this.currentText && !restampable(last.buildPlan.plan)) return this.sameAsLast(standing, last, history, history.refuted?.(last.digest));
     // Even a refused revision invalidates any earlier candidate and receipt.
     const revision = ++this.revision;
     this.current = undefined;
@@ -285,6 +286,14 @@ export class AutomationStudioFlowCandidateSubmissionController {
     });
     return { ok: false, revision: (same ?? standing)?.revision ?? this.revision, check };
   }
+}
+
+/** The classes a site's own controls can reverse: a step declaring only these may be stamped with a reset witness (t751). */
+const REVERSIBLE: ReadonlySet<string> = new Set(["create_new", "modify_existing", "delete"]);
+
+/** Whether any step of `plan` declares a reversible lasting class, so resolving it again may stamp a different reset witness (t751). */
+function restampable(plan: AutomationStudioFlowBootstrapPlan): boolean {
+  return plan.subflows.some((subflow) => subflow.nodes.some((node) => node.consequences?.some((consequence) => REVERSIBLE.has(consequence)) === true));
 }
 
 /** A kept condition as a refusal of it is remembered: as written, and the revision whose trial showed it, so a later trial's showing may refuse once more. */

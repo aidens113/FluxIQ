@@ -6,7 +6,10 @@
 //   acts the ledger had recorded when it landed (`beforeAct`): a list is an
 //   original for an act only when it was read before that act. A read routed
 //   with `baseline` false (another brief's resource) never makes one, and a
-//   project's original evidence is adopted explicitly (`adopt`).
+//   project's original evidence is adopted explicitly (`adopt`). A group an
+//   act of the build already counts among its witnesses (`touched`, decided by
+//   the caller) makes none either: the seal is per group (t751 R1), so a list
+//   first read after an unrelated act is still an original for later acts.
 // - **Latest reads.** Per scope its subjects in order and their row values;
 //   per group the scopes its latest read held, how many acts were recorded
 //   then, the ledger clock then (`../site-reset/ledger.ts`: a read is fresh only when no
@@ -43,8 +46,8 @@ export class AutomationStudioSiteResetObservations {
     }
   }
 
-  /** A passive whole-scope read after `acts` recorded acts, at ledger `clock`; answers the groups it read. */
-  observe(read: Read, baseline: boolean, acts: number, clock: number): ReadonlySet<string> {
+  /** A passive whole-scope read after `acts` recorded acts, at ledger `clock`; answers the groups it read. No original is kept for a `touched` group (header); by default none is. */
+  observe(read: Read, baseline: boolean, acts: number, clock: number, touched: (group: string) => boolean = () => false): ReadonlySet<string> {
     const observed = new Map<string, Set<string>>();
     const collections = read.collections ?? [];
     const invalid = invalidCollectionGroups(collections);
@@ -54,7 +57,7 @@ export class AutomationStudioSiteResetObservations {
     for (const collection of collections) {
       if (invalid.has(collection.group)) continue;
       const subjects = new Set(collection.subjects);
-      if (baseline && !this.originals.has(collection.scope)) this.originals.set(collection.scope, { beforeAct: acts, subjects, group: collection.group, states: new Map(Object.entries(collection.states)) });
+      if (baseline && !this.originals.has(collection.scope) && !touched(collection.group)) this.originals.set(collection.scope, { beforeAct: acts, subjects, group: collection.group, states: new Map(Object.entries(collection.states)) });
       this.currentSubjects.set(collection.scope, subjects);
       this.currentStates.set(collection.scope, new Map(Object.entries(collection.states)));
       this.currentGroups.set(collection.scope, collection.group);

@@ -51,5 +51,8 @@ describe("the condition words", () => {
     }
     expect(WORDS.condition("subject_differs", "another_page")).toContain("a different item than the one the act was about");
     expect(WORDS.condition("already_back", "no_call")).toContain("already shows the state this build found it in");
+    // t751 R1: an act whose control's start was never read (the settlement's `no_baseline`) names its condition too.
+    expect(AUTOMATION_STUDIO_SITE_RESET_FAILED).toContain("no_baseline");
+    expect(WORDS.condition("no_baseline", "no_call")).toContain("never read before this build acted");
   });
 });

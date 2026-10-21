@@ -34,30 +34,21 @@
 // `../site-reset/project-ledger.ts`), asked at each match and each judgement,
 // so a destination named later still counts; a standalone ledger has its own.
 //
-// **A trial act with no witness adopts the lists it could have changed (office
-// r3, narrowed by t743).** Every trial and every entry preparation that re-runs
-// a predecessor makes a new act; one in no list had no witness, and each
-// needed its own model look naming a list under `undoes` (office rerun round
-// 3, `run-mvgo5xft-25460ba2`: act-12, act-15, act-18, one per brief, and the
-// build stalled one look short). That look added nothing Core cannot do. So an
-// act made by no exploration call (`call` absent: a trial step's or an entry
-// preparation's) with no witness of its own -- no group, no toggle, after its
-// repeats' lent destinations -- is judged on the issued lists it could have
-// changed, and Core's own pre-trial look reads them. Round 4 (office
-// `run-mvgvyaip-d856e135`) adopted every issued list, a search-results list
-// only a typed search reaches among them, and Core's look could not reach it,
-// so the act stayed open on it across briefs. Adopted now are only (a) issued
-// lists some act of this build named as where its effect shows -- any act of
-// this ledger, any explored act of the build -- and (b) issued lists read on
-// the act's own page (its step's page location); a list Core cannot read again
-// (`./reach.ts`) is dropped. Every one holding settles it `unchanged`, sticky
-// and told to every later trial's judge, exactly as above. One differing never
-// asks to undo it there (another act may have changed that list): it stays
-// open with its `name` words. An adopted list is never a change seen of its
-// own. With nothing adoptable it is to `name` a list while refs can still be
-// issued; once no ref can be (`refsClosed`), no call can settle it. Explored
-// acts are untouched: the witness rule before the seal covers them
-// (`../site-reset/reset-witness.ts`).
+// **An act with no witness names a list read before it (t751 R6).** A trial
+// act with no witness once adopted the build's issued lists it could have
+// changed (office r3, narrowed by t743). Those were lists named for other
+// acts: office `run-mvhibit5-e1d3a4f3` (cause 2) settled three trial acts
+// `unchanged` on a home-page list named for an address act, through a
+// destination attached by a call that never landed. Adoption is deleted: an
+// act with no witness of its own -- no group, no toggle, after its repeats'
+// lent destinations -- is open with `name`, whoever made it. Naming can meet
+// it only with a list read complete before it (`./group-witness.ts`: an
+// original counts only when read before the act), so `name` is judged per act:
+// meetable while some list with a receipt -- not lost (`./reach.ts`) -- was
+// read complete before the act, and `nothing_to_name` otherwise (this replaced
+// the build-wide `refsClosed`). A receipt not yet shown still counts: reading
+// that list again prints its ref (t743's "a ref can still be issued"). Its
+// words list only the issued refs among those lists (`./words.ts`).
 //
 // **A list Core cannot read again (t743, photo `run-mvgw7320-de416190`).**
 // When Core's own look at a stale list's location lands and the list is still
@@ -67,8 +58,9 @@
 // never a `look` again (`./decision.ts`).
 //
 // **No call can meet it: `gate_unsatisfiable` (t743).** An open act whose
-// every reason no call can meet -- its only witnesses lost, or nothing to name
-// once refs are closed -- is answered by `unmet` with the closed condition
+// every reason no call can meet -- its only witnesses lost, nothing read
+// before it to name, or its control's start never read (`baseline`,
+// `./control-tracker.ts`, t751 R1) -- is answered by `unmet` with the closed condition
 // that failed; the ledger takes it out of the acts to undo and lists it
 // apart, and trials stay refused while it is in place. A reason only
 // site-reset can judge -- a list that still differs, an own control -- is
@@ -101,16 +93,19 @@ export type AutomationStudioSiteResetJudgedAct = {
   /** The ledger clock it landed at. */
   clock: number;
   press?: AutomationStudioSiteResetPress | undefined;
+  /** Immutable counts retained by the step's trusted admission receipt, independent of runtime diff completeness. */
+  controlOriginal?: { resource: string; page: string; place: string; before: Readonly<Record<string, number>>; location?: string } | undefined;
   toggle?: { page: string; place: string; from: string; to: string } | undefined;
   changeSeen: boolean;
   /** Undo calls of it that landed. */
   attempts: number;
-  /** Where its own page is, for a trial step's act whose step gave it: lists read there may be adopted (header). */
-  pageLocation?: string | undefined;
 };
 
-/** The closed conditions an act no call can settle fails on (header): its only witnesses lost, nothing to name once refs are closed, or what still differs no undo could put back (t748). */
-export type AutomationStudioSiteResetUnmet = Extract<AutomationStudioSiteResetFailed, "witness_unreachable" | "nothing_to_name" | "no_admissible_undo">;
+/**
+ * The closed conditions an act no call can settle fails on (header): its only witnesses lost, nothing read before it to
+ * name, what still differs no undo could put back (t748), or its control's start never read (`no_baseline`, t751 R1).
+ */
+export type AutomationStudioSiteResetUnmet = Extract<AutomationStudioSiteResetFailed, "witness_unreachable" | "nothing_to_name" | "no_admissible_undo" | "no_baseline">;
 
 /** What the judgement is handed by its ledger (header). */
 export type AutomationStudioSiteResetJudgePorts = {
@@ -123,7 +118,6 @@ export type AutomationStudioSiteResetJudgePorts = {
     named(reference: unknown): Scope | undefined;
     described(scope: string): { ref: string; location?: string } | undefined;
     issuedRefs(): AutomationStudioSiteResetIssuedRef[];
-    refsClosed(): boolean;
   };
   /** The ledger's acts, in the order recorded. */
   acts(): readonly AutomationStudioSiteResetJudgedAct[];
@@ -160,11 +154,9 @@ export class AutomationStudioSiteResetSettlementJudge {
     if (groups.some((group) => group.changed)) act.changeSeen = true;
     const toggle = this.toggleOf(act);
     const { tracker } = this.ports;
-    const control = toggle ? tracker.standing(toggle.place, toggle, act.clock, this.ports.clock()) : act.press ? tracker.unread(act.press) : undefined;
-    // A trial act with no witness of its own adopts the issued lists it could have changed; never their changes (header).
-    const witnessless = act.call === undefined && !control && groups.every((group) => group.status === "none");
-    const adopted = witnessless ? this.groupsOf(act, this.adoptable(act)) : undefined;
-    return settleDecision({ groups, toggle: control, changeSeen: act.changeSeen, undoLanded: act.attempts > 0, adopted });
+    const control = act.controlOriginal ? tracker.originalStanding(act.controlOriginal, act.clock, this.ports.clock()) : toggle ? tracker.standing(toggle.place, toggle, act.clock, this.ports.clock()) : act.press ? tracker.unread(act.press) : undefined;
+    if (act.controlOriginal && control?.status === "open") act.changeSeen = true;
+    return settleDecision({ groups, toggle: control, changeSeen: act.changeSeen, undoLanded: act.attempts > 0 });
   }
 
   /** The destinations the explored acts `act` repeats lend it, named whenever (header); the site-reset admission reads them too (t743). */
@@ -176,6 +168,7 @@ export class AutomationStudioSiteResetSettlementJudge {
 
   /** The toggle its own press made, once the read after it is in (header). */
   toggleOf(act: AutomationStudioSiteResetJudgedAct): AutomationStudioSiteResetJudgedAct["toggle"] {
+    if (act.controlOriginal && !act.toggle) act.toggle = this.ports.tracker.originalToggle(act.controlOriginal, act.clock, this.ports.clock());
     const press = act.press;
     if (act.toggle || !press?.after) return act.toggle;
     delete act.press;
@@ -190,8 +183,8 @@ export class AutomationStudioSiteResetSettlementJudge {
   settle(act: AutomationStudioSiteResetJudgedAct): string | undefined {
     const decision = this.evaluate(act);
     if (decision.kind !== "open") return undefined;
-    const { receipts } = this.ports;
-    return settleWords(decision.reasons, receipts.issuedRefs(), { closed: receipts.refsClosed() });
+    const namable = this.namable(act);
+    return settleWords(decision.reasons, namable.issued, { unnamable: !namable.any });
   }
 
   /**
@@ -201,12 +194,12 @@ export class AutomationStudioSiteResetSettlementJudge {
   unmet(act: AutomationStudioSiteResetJudgedAct, more?: (reason: AutomationStudioSiteResetOpenReason) => AutomationStudioSiteResetUnmet | undefined): AutomationStudioSiteResetUnmet | undefined {
     const decision = this.evaluate(act);
     if (decision.kind !== "open") return undefined;
-    const { receipts } = this.ports;
-    // `name` is unmet only once no ref can be issued: for a trial act always then (header), for an explored act when none was.
-    const nameUnmet = receipts.refsClosed() && (act.call === undefined || receipts.issuedRefs().length === 0);
+    // `name` is unmet where no list with a receipt was read complete before this act (header).
+    let nameUnmet: boolean | undefined;
     const unmet: AutomationStudioSiteResetUnmet[] = [];
     for (const reason of decision.reasons) {
-      const failed = reason.reason === "unreachable" ? "witness_unreachable" : reason.reason === "name" && reason.adopted !== true && nameUnmet ? "nothing_to_name" : more?.(reason);
+      if (reason.reason === "name") nameUnmet ??= !this.namable(act).any;
+      const failed = reason.reason === "unreachable" ? "witness_unreachable" : reason.reason === "baseline" ? "no_baseline" : reason.reason === "name" ? (nameUnmet ? "nothing_to_name" : undefined) : more?.(reason);
       if (failed === undefined) return undefined;
       unmet.push(failed);
     }
@@ -265,15 +258,18 @@ export class AutomationStudioSiteResetSettlementJudge {
     return groups.map((group) => ({ ...group, unreachable: reach.unreachable(group.group) }));
   }
 
-  /** The issued lists a witnessless trial act could have changed (header): named for some act of the build, or read on its own page. */
-  private adoptable(act: AutomationStudioSiteResetJudgedAct): Scope[] {
-    const { receipts, reach } = this.ports;
-    const named = new Set([...this.ports.acts().flatMap((entry) => entry.destinations), ...this.ports.explored().flatMap((entry) => entry.destinations)].map((entry) => entry.scope));
-    return receipts.issuedRefs().flatMap((entry) => {
+  /**
+   * Whether any list with a receipt, not lost, was read complete before `act` (`any`, header), and the issued refs among those
+   * lists (`issued`): the only ones naming can meet it with.
+   */
+  private namable(act: AutomationStudioSiteResetJudgedAct): { any: boolean; issued: AutomationStudioSiteResetIssuedRef[] } {
+    const { receipts, seen, reach } = this.ports;
+    const sequence = this.ports.acts().indexOf(act) + 1;
+    const scopes = new Set([...seen.originals].flatMap(([scope, original]) => (original.beforeAct < sequence && !reach.unreachable(original.group) && receipts.described(scope) !== undefined ? [scope] : [])));
+    const issued = receipts.issuedRefs().filter((entry) => {
       const list = receipts.named(entry.ref);
-      if (!list || reach.unreachable(list.group)) return [];
-      const ownPage = act.pageLocation !== undefined && entry.location === act.pageLocation;
-      return named.has(list.scope) || ownPage ? [list] : [];
+      return list !== undefined && scopes.has(list.scope) && seen.originals.get(list.scope)?.group === list.group;
     });
+    return { any: scopes.size > 0, issued };
   }
 }
