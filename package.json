@@ -41,7 +41,8 @@
     "esbuild": "^0.25.0",
     "publint": "^0.3.12",
     "typescript": "^5.7.0",
-    "vitest": "^2.1.0"
+    "vitest": "^2.1.0",
+    "fluxiq": "workspace:0.7.0"
   },
   "pnpm": {
     "overrides": {
