@@ -15,7 +15,7 @@ Related: [source plan](./trace-offline-trials-plan/source-consultant-plan.md) (t
 
 **Approved (user, 2026-10-19):** this plan, which is the supervisor's revision of the consultant's plan in
 `trace-offline-trials-plan/source-consultant-plan.md`. "don't implement yet" was the instruction while reviewing;
-the user then approved the plan. No code has been written.
+the user then approved implementation. P0-P5 are now merged; the downstream execution hub owns current recovery status.
 
 **Why:** live trials dominate build time. In the downstream breadth round on 2026-10-19 the social build spent 20.5
 of its 25 working minutes in 7 whole trials (one took 337 s), and site-reset failures blocked every trial in three of
@@ -23,10 +23,9 @@ four builds. Model spend was small ($0.23 for four builds); time and live-site e
 
 **Implementation approved (user, 2026-10-19):** with subagents, together with the downstream boundary audit's
 move plan. Execution is run from the downstream `docs/working/trace-offline-trials-plan.md` (lane table). This plan
-is lane T, branch `task/t729-traces-offline-trials` in both repositories (worktrees under
-`C:/Users/osrs_/FluxStuff/fxwork/t729/`), created and not yet dispatched.
+was lane T, initially `task/t729-traces-offline-trials`; its completed phases and successor tasks are recorded below.
 
-**Progress (2026-10-20): P0-P4 complete.** P0/P1 (t729, t734): the trace and trial-evidence contracts, the
+**Progress (2026-10-20): P0-P5 complete.** P0/P1 (t729, t734): the trace and trial-evidence contracts, the
 environment port (a clock plus a gateway channel scope, decision D1) and capture where Core accepts what bypasses the
 gateway (D3); live trials are 49.8% of build time. P2 capture (t736): at the client gateway and Core's ingress into
 each project's store, the extension's DOM-plus-resource-map snapshots, tracing on for every Lab live run, about +11.5%
@@ -176,3 +175,11 @@ The source plan's T01-T24 are kept. Added:
 ## Open Questions
 
 None requiring user input.
+
+### 2026-10-20 — Codex recovery active
+- Agent: supervisor
+- Changed: corrected stale planning-only Current State text; downstream paired hub holds recovery briefs for t751/t752/t753.
+- Why: resume preserved work before P6 changes the same trial gates.
+- Validation: read both task worktrees and reports; no source acceptance claimed from prior lead reports.
+- Outcome: Partial; see downstream execution hub recovery entry.
+- Follow-up: verify reset/judge/UI tasks, merge paired units, then start P6.
