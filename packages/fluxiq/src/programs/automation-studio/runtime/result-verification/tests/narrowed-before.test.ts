@@ -119,14 +119,16 @@ describe("a read names the steps that acted on the page before it", () => {
 
   it("reaches the judge's request under the read, beside its paging words, where a step that kept less than asked is the judge's to refuse", async () => {
     const seen: AutomationStudioLlmTaskRequest[] = [];
-    const judge = provider("no", seen, undefined, { observed: "s4 keeps only 2010 and later.", changed: "Remove s4; keep year atLeast 2000 on the read." });
+    const judge = provider("no", seen, undefined, { observed: "s4 keeps only 2010 and later.", changed: "Remove s4; keep year atLeast 2000 on the read." }, [{ kind: "other", row: "publication years narrowed before the read", requestWords: "since 2000" }]);
     const report = await verifyAutomationStudioRunResult({
       projectId: "project-1", flowId: "flow-1", runId: "run-1", summary: summary(), instructions: [instruction("List the astronomy books published since 2000.")], deniedEvidenceKeys: DENIED, provider: judge
     });
     const read = seen[0]?.context.resultSummary?.reads?.[0] as (Record<string, unknown> | undefined);
     expect(read?.narrowedBefore).toEqual(EXPECTED);
     expect(typeof read?.paging).toBe("string");
-    expect(report.outcome.performed && report.outcome.verdict).toBe("does_not_answer");
+    // The step and original request are visible, but no missing row was measured.
+    // The new structured judge keeps that incomplete coverage claim unconfirmed.
+    expect(report.outcome.performed && report.outcome.verdict).toBe("unsure");
   });
 });
 

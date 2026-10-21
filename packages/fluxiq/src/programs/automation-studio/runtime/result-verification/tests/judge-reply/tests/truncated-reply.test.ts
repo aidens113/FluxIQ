@@ -19,7 +19,7 @@ import type { AutomationStudioFlowInstruction } from "../../../../../model/index
 // The verification first: the adapter's barrel reaches back into this module's
 // own imports, and loaded first it would find them not yet evaluated.
 import { verifyAutomationStudioRunResult } from "../../../verify.ts";
-import { REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS, requestWordsRunSummary } from "../../../request-rows/tests/request-words-fixture.ts";
+import { REQUEST_WORDS_HANDLE, REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS, requestWordsRunSummary } from "../../../request-rows/tests/request-words-fixture.ts";
 import { createAutomationStudioDeepSeekProvider } from "../../../../llm/deepseek/index.ts";
 
 const instruction: AutomationStudioFlowInstruction = {
@@ -31,9 +31,10 @@ const instruction: AutomationStudioFlowInstruction = {
 const LOOP = "That matches. The result seems to satisfy the request. ".repeat(400);
 const NO = {
   expected: "Every garden tool on the first page, less out-of-stock items and replacement parts.",
-  observed: "The read kept 3 rows; condition 1 (stock is present) alone left out the Copper Garden Tools Pair.",
-  changed: "Nothing in the conditions needs to change; a further page was not read.",
-  answersRequest: "no"
+  observed: "The result stores a replacement handle that the request excludes.",
+  changed: "Remove the replacement handle from the answer.",
+  answersRequest: "no",
+  defects: [{ kind: "kept_not_asked", row: REQUEST_WORDS_HANDLE, requestWords: "replacement parts" }]
 };
 const UNKNOWN = { observed: "The read kept 3 rows; whether a second page exists is not shown.", answersRequest: "unknown" };
 /** The quotes a yes owes beside each row a condition alone left out (`../../../verdict/`, t515). */
@@ -44,14 +45,14 @@ const YES_BARE = { observed: "The read kept 3 rows, each a garden tool in stock.
 type Reply = { finish: "stop" | "length"; content: string };
 
 /** A reply that wrote its diagnosis, then a summary that looped until it was cut. */
-const cutAfter = (diagnosis: Record<string, string>, summary = "The read kept 3 rows. "): Reply =>
+const cutAfter = (diagnosis: Record<string, unknown>, summary = "The read kept 3 rows. "): Reply =>
   ({ finish: "length", content: `{"kind":"diagnosis","diagnosis":${JSON.stringify(diagnosis)},"summary":${JSON.stringify(`${summary}${LOOP}`).slice(0, -1)}` });
 /** A reply cut inside its diagnosis: the verdict never closed. */
-const cutInside = (diagnosis: Record<string, string>): Reply => {
+const cutInside = (diagnosis: Record<string, unknown>): Reply => {
   const whole = JSON.stringify({ kind: "diagnosis", diagnosis: { ...diagnosis, observed: `${diagnosis.observed ?? ""} ${LOOP}` } });
   return { finish: "length", content: whole.slice(0, whole.indexOf("That matches.") + 2_000) };
 };
-const whole = (diagnosis: Record<string, string>, extra: Record<string, unknown> = {}): Reply => ({ finish: "stop", content: JSON.stringify({ kind: "diagnosis", diagnosis, summary: "Judged.", ...extra }) });
+const whole = (diagnosis: Record<string, unknown>, extra: Record<string, unknown> = {}): Reply => ({ finish: "stop", content: JSON.stringify({ kind: "diagnosis", diagnosis, summary: "Judged.", ...extra }) });
 /** The plain sentence the adapter writes in place of a cut summary: words for a reader, which nothing decides on. */
 const CUT_SENTENCE = "The reply was cut off at the provider's output limit after its diagnosis closed; what followed it did not arrive whole and is not read.";
 
@@ -76,10 +77,17 @@ function served(replies: readonly Reply[]) {
   return { provider, calls: () => calls };
 }
 
-const verify = (replies: readonly Reply[], confirmAnswer = false) => {
+const verify = (replies: readonly Reply[], confirmAnswer = false, wrongRow = false) => {
   const { provider, calls } = served(replies);
+  const summary = requestWordsRunSummary();
+  // The two negative-verdict transport tests need an actual excluded row.
+  if (wrongRow) {
+    summary.recordSets[0]!.sampleRows!.push({ name: REQUEST_WORDS_HANDLE, price: "$2.00" });
+    summary.recordSets[0]!.recordCount += 1;
+    summary.totalRecordCount += 1;
+  }
   const report = verifyAutomationStudioRunResult({
-    projectId: "project-1", flowId: "flow-1", runId: "run-1", summary: requestWordsRunSummary(), instructions: [instruction], deniedEvidenceKeys: [], provider,
+    projectId: "project-1", flowId: "flow-1", runId: "run-1", summary, instructions: [instruction], deniedEvidenceKeys: [], provider,
     ...(confirmAnswer ? { confirmAnswer } : {})
   });
   return report.then((value) => ({ ...value, calls: calls() }));
@@ -88,12 +96,12 @@ const cut = (report: Awaited<ReturnType<typeof verify>>) => report.interventions
 
 describe("a judge reply cut off after its diagnosis closed", () => {
   it("is read for its no, flagged, and never asked again for being cut", async () => {
-    const report = await verify([cutAfter(NO), cutAfter(NO), whole(NO)]);
+    const report = await verify([cutAfter(NO), cutAfter(NO), whole(NO)], false, true);
     expect(report.calls).toBe(2);
     expect(report.outcome).toMatchObject({ performed: true, verdict: "does_not_answer", basis: "model", calls: 2 });
     expect(cut(report)).toEqual([true, true]);
     // The no's reading is its diagnosis; the loop it was cut in reaches nothing.
-    expect(JSON.stringify(report.outcome)).toContain("a further page was not read");
+    expect(JSON.stringify(report.outcome)).toContain("replacement handle");
     expect(JSON.stringify(report.outcome)).not.toContain("That matches");
   });
 
@@ -115,7 +123,7 @@ describe("a judge reply cut off after its diagnosis closed", () => {
 
 describe("a judge reply cut off before its verdict was whole", () => {
   it("is unavailable when cut inside its diagnosis, and asked again; the answer then given stands", async () => {
-    const report = await verify([cutInside(NO), whole(NO), whole(NO)]);
+    const report = await verify([cutInside(NO), whole(NO), whole(NO)], false, true);
     expect(report.calls).toBe(3);
     expect(report.outcome).toMatchObject({ performed: true, verdict: "does_not_answer", calls: 2 });
     expect(cut(report)).toEqual([false, false, false]);

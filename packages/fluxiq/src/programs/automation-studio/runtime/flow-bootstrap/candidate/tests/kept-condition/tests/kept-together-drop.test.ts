@@ -89,7 +89,7 @@ describe("conditions that left a row out only together, through the judge, the g
   it("are kept as one; dropping both is refused once in Core's words, dropping one never, and the same drop sent again is accepted", async () => {
     const { gate, submit, test } = build(summary());
     const exact = await accepted(submit(script([promoted, open, rating, campground, notCabin])));
-    expect((await test(exact)).resultCode).toBe("candidate.trial_no");
+    expect((await test(exact)).resultCode).toBe("candidate.trial_unsure");
     const kept = (gate.standing(exact) as { keptConditions?: Array<{ name: string; members?: unknown[] }> }).keptConditions ?? [];
     expect(kept.find((condition) => condition.members)?.name).toBe("condition 4 (name contains [\"Campground\"]) and condition 5 (name not contains [\"Cabin\"])");
 

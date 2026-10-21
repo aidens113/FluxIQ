@@ -72,8 +72,9 @@ describe("complete quantity and cohort guidance in the actual verification reque
     expect(user.context.instructions.instructions[0].body).toBe(instruction.body);
     expect(user.context.resultSummary.totalRecordCount).toBe(0);
     expect(user.outputSchema.properties.diagnosis.additionalProperties).toBe(false);
+    // A verification's diagnosis also names each defect its no rests on (t752); no other diagnosis is offered it.
     expect(Object.keys(user.outputSchema.properties.diagnosis.properties)).toEqual([
-      "expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "explorationNeeded", "patchNeeded"
+      "expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "defects", "explorationNeeded", "patchNeeded"
     ]);
     expect(answered.response.diagnosis.answersRequest).toBe("unknown");
   });
@@ -155,6 +156,63 @@ describe("Automation Studio LLM structured diagnosis channel", () => {
     ]);
     // And the provider's own parse returns what the model put there.
     expect(answered.response).toEqual({ kind: "diagnosis", summary: "The target is gone.", diagnosis: fields });
+  });
+});
+
+// t752 (round-5 breadth rerun): a no Core read out of prose rested on how a
+// condition was written and on a claim the request refuted, naming no row. The
+// no's grounds are a checked list: each defect a kind Core knows, the row, an
+// optional column and the request's words, each a bounded string. A malformed
+// defect is dropped with a warning, never the reply. A library catalogue, not a
+// scenario the Lab measures.
+describe("a verification's defects through the diagnosis channel (t752)", () => {
+  const kept = { kind: "kept_not_asked", row: "[row K4R7M2] The Long Road", requestWords: "published since 2000" } as const;
+  const wrong = { kind: "wrong_value", row: "Field Notes", column: "year", requestWords: "the year each was published" } as const;
+  const missing = { kind: "asked_missing", row: "rows not read", requestWords: "every book on the shelf" } as const;
+  const answer = (defects: unknown) => diagnose({ kind: "diagnosis", summary: "Not what was asked.", diagnosis: { answersRequest: "no", defects } });
+  const dropped = (result: Awaited<ReturnType<typeof diagnose>>) => result.diagnostics.filter((diagnostic) => diagnostic.code === "llm_output.diagnosis_defect_dropped");
+
+  it("carries each well-formed defect, as written", async () => {
+    const result = await answer([kept, wrong, missing]);
+    expect(result.ok).toBe(true);
+    expect(result.response).toEqual({ kind: "diagnosis", summary: "Not what was asked.", diagnosis: { answersRequest: "no", defects: [kept, wrong, missing] } });
+    expect(dropped(result)).toEqual([]);
+  });
+
+  it("drops a malformed defect with a warning naming its place, and keeps the reply and every other defect", async () => {
+    const malformed = [
+      { ...kept, kind: "too_strict" },
+      { ...kept, row: "   " },
+      { ...kept, row: 7 },
+      { kind: "kept_not_asked", row: "The Long Road" },
+      { ...wrong, column: "" },
+      { ...kept, requestWords: "x".repeat(501) },
+      { ...kept, because: "a list of values" },
+      "The Long Road"
+    ];
+    const result = await answer([kept, ...malformed, wrong]);
+    expect(result.ok).toBe(true);
+    expect(result.response).toMatchObject({ diagnosis: { answersRequest: "no", defects: [kept, wrong] } });
+    expect(dropped(result).map((diagnostic) => [diagnostic.severity, diagnostic.path])).toEqual(malformed.map((_, index) => ["warning", `response.diagnosis.defects[${index + 1}]`]));
+    // The warning never carries what the model wrote.
+    expect(JSON.stringify(result.diagnostics)).not.toContain("too_strict");
+    expect(JSON.stringify(result.diagnostics)).not.toContain("a list of values");
+  });
+
+  it("drops defects that are not a list, or are all malformed, and keeps the verdict", async () => {
+    for (const defects of ["The Long Road was kept", { 0: kept }, [{ kind: "wrong_value" }]]) {
+      const result = await answer(defects);
+      expect(result.ok).toBe(true);
+      expect(result.response).toEqual({ kind: "diagnosis", summary: "Not what was asked.", diagnosis: { answersRequest: "no", defects: [] } });
+      expect(dropped(result)).toHaveLength(1);
+    }
+  });
+
+  it("keeps the first 12 and drops the rest with a warning", async () => {
+    const many = Array.from({ length: 14 }, (_, index) => ({ ...kept, row: `Book ${index + 1}` }));
+    const result = await answer(many);
+    expect(result.response).toMatchObject({ diagnosis: { defects: many.slice(0, 12) } });
+    expect(dropped(result).map((diagnostic) => diagnostic.path)).toEqual(["response.diagnosis.defects[12]", "response.diagnosis.defects[13]"]);
   });
 });
 

@@ -31,7 +31,7 @@ const STANDS_WHOLE = { observed: "A Lantern at Low Tide is not a large-print edi
 
 /** The run's result check with the service's port over a saved Flow whose metadata is `flowMetadata`. */
 function checked(options: { trialRows?: JsonObject[]; flowMetadata?: () => Promise<JsonObject | undefined>; said?: Record<string, string> } = {}) {
-  const context = harness({ answer: ANSWER.no, said: options.said ?? PART_REFUTED, instructions: [REQUEST], schema: SCHEMA, rows: BOOKS });
+  const context = harness({ answer: ANSWER.no, said: options.said ?? PART_REFUTED, instructions: [REQUEST], schema: SCHEMA, rows: BOOKS, defects: [{ kind: "kept_not_asked", row: "A Lantern at Low Tide", requestWords: "large-print mysteries" }] });
   const stored: Record<string, JsonObject[]> = { "run-1": BOOKS, [TRIAL_RUN]: options.trialRows ?? BOOKS };
   const summary = (runId: string): AutomationStudioRunDatasetSummary => datasetSummary({ runId, datasetId: runId === TRIAL_RUN ? "trial-books" : "books", recordCount: stored[runId]!.length });
   context.ports.listRunDatasets = async ({ runId }) => [summary(runId)];

@@ -15,7 +15,8 @@ import { CABIN_KEPT_NO, cabinKeptSummary, cabinLeftOutSummary } from "../../../r
 import { AutomationStudioFlowCandidateTrialGate, type AutomationStudioCandidateTrialResult, type AutomationStudioFlowCandidate } from "../index.ts";
 
 const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 };
-const no = (reading: Record<string, string>) => ({ answersRequest: "no", ...reading });
+const no = (reading: Record<string, string>) => ({ answersRequest: "no", ...reading,
+  defects: reading === CABIN_KEPT_NO ? [{ kind: "kept_not_asked", row: "Aspen Grove Rental Cabin 3", requestWords: "every campsite" }] : [] });
 
 const CABIN_KEPT = { revision: 1, digest: "c".repeat(64) } as AutomationStudioFlowCandidate;
 const EXACT = { revision: 2, digest: "d".repeat(64) } as AutomationStudioFlowCandidate;
@@ -46,28 +47,21 @@ describe("an exclusion a standing no upheld holds across a build's whole-candida
     const { gate, calls, submit } = swing(no(CABIN_KEPT_NO), no(CABIN_KEPT_NO), no(DROP_NAME_CONDITIONS_NO), no(DROP_NAME_CONDITIONS_NO), CAMPSITE_YES, CAMPSITE_YES);
     expect((await gate.test(receipt(CABIN_KEPT))).resultCode).toBe("candidate.trial_no");
     submit(EXACT);
+    // The current judge reconciliation asks the unsupported negative again
+    // within this same trial. Its independent yeses settle it immediately,
+    // without recording the exact revision as refuted or requiring a new trial.
     const second = await gate.test(receipt(EXACT));
-    const evidence = second.evidence as JsonObject;
-    expect(second).toMatchObject({ resultCode: "candidate.trial_unsure", resultReason: "retry_allowed" });
-    expect(evidence).toMatchObject({ verdict: "unsure", retestsLeft: 2, feedback: { code: "candidate.trial_judged_no" } });
-    expect(String((evidence.feedback as JsonObject).contradictedByBuild)).toContain("Revision 1, read without condition 4");
-    const told = String(evidence.instruction);
-    expect(told).toContain("Core's record of this build contradicts that no");
-    expect(told).toContain("do not make the change that no asks for");
-    expect(told).toContain("submit the whole candidate");
+    expect(second.resultCode).toBe("candidate.trial_yes");
     expect(gate.refuted(EXACT.digest)).toBeUndefined();
-    expect(gate.retestable()).toEqual({ revision: 2, digest: EXACT.digest, trials: 1 });
-    expect(gate.completion(EXACT)).toMatchObject({ ok: false, issueCodes: ["candidate.trial_unsure"], feedback: { instruction: told } });
-    expect(JSON.stringify(evidence)).not.toContain("Aspen Grove");
-    expect((await gate.test(receipt(EXACT))).resultCode).toBe("candidate.trial_yes");
     expect(gate.completion(EXACT)).toEqual({ ok: true });
+    expect(JSON.stringify(second.evidence)).not.toContain("Aspen Grove");
     expect(calls()).toBe(6);
   });
 
-  it("leaves a no standing where no earlier no of the build upheld the rows its remedy would bring back", async () => {
+  it("does not refute an exact revision for unsupported advice even without an earlier trial", async () => {
     const { gate, submit } = swing(no(DROP_NAME_CONDITIONS_NO), no(DROP_NAME_CONDITIONS_NO));
     submit(EXACT);
-    expect((await gate.test(receipt(EXACT))).resultCode).toBe("candidate.trial_no");
-    expect(gate.refuted(EXACT.digest)).toBeDefined();
+    expect((await gate.test(receipt(EXACT))).resultCode).toBe("candidate.trial_unsure");
+    expect(gate.refuted(EXACT.digest)).toBeUndefined();
   });
 });

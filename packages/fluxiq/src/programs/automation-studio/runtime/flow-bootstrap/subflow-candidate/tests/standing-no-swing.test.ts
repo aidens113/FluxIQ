@@ -19,7 +19,8 @@ import { AutomationStudioSubflowTrialGate, type AutomationStudioSubflowProposal,
 import { testScope } from "./subflow-fixture.ts";
 
 const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 };
-const no = (reading: Record<string, string>) => ({ answersRequest: "no", ...reading });
+const no = (reading: Record<string, string>) => ({ answersRequest: "no", ...reading,
+  defects: reading === CABIN_KEPT_NO ? [{ kind: "kept_not_asked", row: "Aspen Grove Rental Cabin 3", requestWords: "every campsite" }] : [] });
 
 const scope = testScope();
 const identity = { buildId: scope.buildId, briefId: scope.briefId, planDigest: scope.planDigest, subflowKey: scope.subflowKey };
@@ -67,40 +68,23 @@ describe("an exclusion a standing no upheld holds across a brief's trials (t633)
 
     // Revision 2: exactly the campsites; the no asking to remove the conditions that left the cabin out is not taken.
     submit(EXACT);
+    // The current judge reconciliation asks the unsupported negative again
+    // within this same trial. Its independent yeses settle it immediately,
+    // without recording the exact revision as refuted or requiring a new trial.
     const second = await gate.test(receipt(EXACT));
-    const evidence = second.evidence as JsonObject;
-    expect(second.resultCode).toBe("subflow.trial_unsure");
-    expect(second.resultReason).toBe("retry_allowed");
-    expect(evidence).toMatchObject({ verdict: "unsure", retestsLeft: 2 });
-    const feedback = evidence.feedback as JsonObject;
-    // The judge's no is still there to read, its code first; Core's words beside it.
-    expect(feedback.code).toBe("candidate.trial_judged_no");
-    expect(String(feedback.contradictedByBuild)).toContain("Revision 1, read without condition 4");
-    expect(String(feedback.contradictedByBuild)).toContain("this no is not taken");
-    const told = String(evidence.instruction);
-    expect(told).toContain("Core's record of this build contradicts that no");
-    expect(told).toContain("Test this same revision again");
-    expect(told).toContain("do not make the change that no asks for");
-    // Not closed: nothing refuses the re-test or a completion after a yes.
+    expect(second.resultCode).toBe("subflow.trial_yes");
     expect(gate.refuted(EXACT.digest)).toBeUndefined();
-    expect(gate.completion(EXACT)).toMatchObject({ ok: false, issueCodes: ["subflow.trial_unsure"], feedback: { instruction: told } });
-    // Core's record never reaches what the builder is shown.
-    expect(JSON.stringify(second.evidence)).not.toContain("upheldKind");
-    expect(JSON.stringify(second.evidence)).not.toContain("Aspen Grove");
-
-    // The re-test of revision 2, judged yes twice, confirms the exact subflow.
-    const third = await gate.test(receipt(EXACT));
-    expect(third.resultCode).toBe("subflow.trial_yes");
     expect(gate.completion(EXACT)).toEqual({ ok: true });
+    expect(JSON.stringify(second.evidence)).not.toContain("Aspen Grove");
     expect(calls()).toBe(6);
   });
 
-  it("leaves a no standing where no earlier no of the brief upheld the rows its remedy would bring back", async () => {
+  it("does not refute an exact revision for unsupported advice even without an earlier trial", async () => {
     const { gate, submit } = swing(no(DROP_NAME_CONDITIONS_NO), no(DROP_NAME_CONDITIONS_NO));
     submit(EXACT);
     const ran = await gate.test(receipt(EXACT));
-    expect(ran.resultCode).toBe("subflow.trial_no");
-    expect(gate.refuted(EXACT.digest)).toBeDefined();
+    expect(ran.resultCode).toBe("subflow.trial_unsure");
+    expect(gate.refuted(EXACT.digest)).toBeUndefined();
   });
 
   it("is said in words naming no site, task or product", async () => {

@@ -8,10 +8,12 @@ import { describe, expect, it } from "vitest";
 import { AutomationStudioLlmBuildPurse, automationStudioLlmFlowPurseScope } from "../../../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../llm/index.ts";
 import { AUTOMATION_STUDIO_RESULT_SPLIT_NO_RECHECK } from "../../../agreement/index.ts";
-import { RECIPE_DEFECT_NO, RECIPE_HYPOTHETICAL_NO, RECIPE_YES, recipeInstruction, recipeRunSummary } from "../../../agreement/tests/recipe-split-fixture.ts";
+import { RECIPE_DEFECT_NO as DEFECT_READING, RECIPE_HYPOTHETICAL_NO as HYPOTHETICAL_READING, RECIPE_YES, recipeInstruction, recipeRunSummary } from "../../../agreement/tests/recipe-split-fixture.ts";
 import { verifyAutomationStudioRunResult } from "../../../verify.ts";
 
 const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 };
+const RECIPE_HYPOTHETICAL_NO = { ...HYPOTHETICAL_READING, defects: [] };
+const RECIPE_DEFECT_NO = { ...DEFECT_READING, defects: [{ kind: "wrong_value", row: "Spiced Lentil Soup", column: "cookingTime", value: "40 min", requestWords: "with its title and cooking time" }] };
 
 /** A provider answering each call with its own diagnosis, keeping every request it was sent. */
 function answering(...diagnoses: Record<string, unknown>[]): { provider: AutomationStudioLlmProvider; seen: AutomationStudioLlmTaskRequest[] } {
@@ -58,7 +60,7 @@ describe("a split's no that names no defect, through the verification (t725)", (
     expect(seen).toHaveLength(3);
   });
 
-  it("asks nothing more where both calls agree", async () => {
+  it("keeps a grounded real defect beside an unsupported no without another ask", async () => {
     const { provider, seen } = answering(RECIPE_HYPOTHETICAL_NO, RECIPE_DEFECT_NO);
     const report = await verify(provider);
     expect(report.outcome).toMatchObject({ verdict: "does_not_answer", calls: 2 });

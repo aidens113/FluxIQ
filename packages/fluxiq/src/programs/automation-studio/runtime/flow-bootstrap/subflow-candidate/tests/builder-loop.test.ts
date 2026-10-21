@@ -332,7 +332,9 @@ describe("a judge's advice repeated to the same builder", () => {
 
 // S5 (`run-mvgw3ve5-294881b5`, 0114, 0115, 0151): the judges advised adding a field to the same read
 // that the build had been refused `incomplete_text` for, the builder did, and the next trial was refused
-// the same way. Once a read was refused so, that advice is said as the disclosure order instead.
+// the same way. Once a read was refused so, that advice is said as Core's note instead: since t752 the
+// read opens each kept row's own collapsed text itself, so a refusal means it could not, and the note
+// says to leave the field out or narrow the conditions, never the two-read shape it once taught.
 // (`../disclosure-advice.ts`, through the builder loop and `../repeated-advice.ts`.)
 describe("advice to add a field a read was refused incomplete_text for (S5, t743)", () => {
   /** Model guidance never mirrors a realistic Lab scenario (AGENTS.md). */
@@ -356,35 +358,36 @@ describe("advice to add a field a read was refused incomplete_text for (S5, t743
       expect(advice.told(judgedNo(1, `Judge call 1: ${ADD_FIELD} Judge call 2: ${KEEP}`))).toEqual(judgedNo(1, `Judge call 1: ${ADD_FIELD} Judge call 2: ${KEEP}`));
     });
 
-    it("is said as the disclosure order, naming the refused field, once a read was refused for its cut-short text, keeping every other sentence", () => {
+    it("is said as Core's note, naming the refused field, once a read was refused for its cut-short text, keeping every other sentence", () => {
       const advice = new AutomationStudioSubflowRepeatedAdvice();
       advice.saw(refusedRead());
       const told = judgeOf(advice.told(judgedNo(1, `Judge call 1: ${ADD_FIELD} Judge call 2: ${KEEP}`)));
       const said = String(told.advice);
-      expect(said.startsWith("Judge call 1: Core: a read in this build was already refused because the field `due_note` was cut short on the page (incomplete_text), so adding it to the same read would be refused again.")).toBe(true);
-      expect(said).toContain("read the listing's row-context columns without the field `due_note`; then repeat over that read, pressing each kept row's own disclosure control;");
-      expect(said).toContain("then, after that repeat, not inside it, read the same listing again with the field `due_note`. Give both reads the same conditions, so every row the final read keeps was disclosed by the repeat.");
+      expect(said.startsWith("Judge call 1: Core: a read in this build was already refused because the field `due_note` was cut short on the page and the read could not open it (incomplete_text), so adding it to the same read would be refused again.")).toBe(true);
+      expect(said).toContain("The read already opens each kept row's own collapsed text itself, so no click step or repeat will help: leave the field `due_note` out, or narrow the read's conditions so the rows whose text would not open are not kept.");
+      // t752 C2: never the two-read shape the note once taught.
+      expect(said).not.toMatch(/row-context|repeat over that read|pressing each kept row|read the same listing again|Do this in order/u);
       expect(said.endsWith(`Judge call 2: ${KEEP}`)).toBe(true);
       expect(said).not.toContain("Add a due-note field");
       expect(told).toMatchObject({ expected: "Every loan with its whole note.", observed: "No note column." });
       expect(said.replace(KEEP, "")).not.toMatch(LAB_TASK_WORDS);
     });
 
-    it("says the order once when both calls asked for the field, and counts a trial step refused for cut-short text", () => {
+    it("says the note once when both calls asked for the field, and counts a trial step refused for cut-short text", () => {
       const advice = new AutomationStudioSubflowRepeatedAdvice();
       const failed = trialAnswer(1, "execution_failed", { code: "candidate.execution_incomplete", steps: [{ step: 4, definitionId: "web.output.dom-extract_list", status: "failed", failureCode: "web.validation.output_not_observed", actual: "incomplete_text: field note" }] });
       expect(advice.told(failed)).toEqual(failed);
       const said = String(judgeOf(advice.told(judgedNo(2, `Judge call 1: ${ADD_FIELD} Judge call 2: Also include the note column in that read.`))).advice);
-      expect(said.match(/Do this in order instead/gu)).toHaveLength(1);
-      expect(said).toContain("the text field");
-      expect(said.endsWith("Judge call 2: Core: this call also asked to add the field to the same read; follow the order above instead.")).toBe(true);
+      expect(said.match(/no click step or repeat will help/gu)).toHaveLength(1);
+      expect(said).toContain("leave the text field out");
+      expect(said.endsWith("Judge call 2: Core: this call also asked to add the field to the same read; follow the note above instead.")).toBe(true);
     });
 
     it("rewrites an unsure's readings too, and leaves advice that adds no field as it was", () => {
       const advice = new AutomationStudioSubflowRepeatedAdvice();
       advice.saw(refusedRead());
       const unsure = advice.told(trialAnswer(1, "unsure", { code: "candidate.trial_unconfirmed", unconfirmedReading: { advice: ADD_FIELD }, answeredReading: { advice: KEEP } }));
-      expect(String((feedbackOf(unsure).unconfirmedReading as JsonObject).advice)).toContain("Do this in order instead");
+      expect(String((feedbackOf(unsure).unconfirmedReading as JsonObject).advice)).toContain("no click step or repeat will help");
       expect((feedbackOf(unsure).answeredReading as JsonObject).advice).toBe(KEEP);
       expect(advice.told(judgedNo(2, KEEP))).toEqual(judgedNo(2, KEEP));
     });
@@ -420,7 +423,7 @@ describe("advice to add a field a read was refused incomplete_text for (S5, t743
       expect(outcome.loop.ok, JSON.stringify(outcome.loop)).toBe(true);
       expect(shown).toHaveLength(1);
       const said = String(((shown[0]!.feedback as JsonObject).judge as JsonObject).advice);
-      expect(said).toContain("Do this in order instead");
+      expect(said).toContain("no click step or repeat will help");
       expect(said).not.toContain("Add a due-note field");
     });
   });

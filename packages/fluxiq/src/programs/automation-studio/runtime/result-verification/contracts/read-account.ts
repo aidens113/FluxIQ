@@ -133,6 +133,17 @@ export type AutomationStudioResultReadAccount = {
    */
   keptEveryRow?: AutomationStudioResultKeptEveryRow;
   /**
+   * Core's flag on a read whose kept rows a later step was repeated over and
+   * whose list a later read of the same target read again
+   * (`../read-account/working-rows.ts`, t752): its rows are working rows, what
+   * the repeat walked, and the answer is the later read's. Every read collects
+   * its rows into a record set, so a set only flagged reads collected is never
+   * the result (`../read-account/working-sets.ts`): no holder of a row the
+   * later read left out, and no row a yes must account for. Absent where it
+   * does not hold, or the caller gave no edges.
+   */
+  workingRows?: AutomationStudioResultWorkingRows;
+  /**
    * How the list this read read goes on past it, as the read itself saw it on
    * the page (F8): `kind` (`next_page`, `load_more`, `infinite_scroll`, or
    * `unknown` for a word this Core does not know) and `evidence`, the closed
@@ -169,6 +180,22 @@ export type AutomationStudioResultKeptEveryRow = {
    * (`../request-rows/unquoted-rows.ts`). Absent where none is known.
    */
   storedIn?: string[];
+};
+
+/**
+ * Core's flag on a read whose rows are working rows
+ * (`AutomationStudioResultReadAccount.workingRows`, t752): node ids, and
+ * Core's sentence for them.
+ */
+export type AutomationStudioResultWorkingRows = {
+  /** The later read of the same list, whose rows are the answer. */
+  rereadBy: string;
+  /** The steps repeated once per row of this read that succeeded before that later read ran, in run order. */
+  repeatedBy: string[];
+  /** How Core found the two reads read one list: the loop's rows come from this read, and both have one read target. */
+  sameList: "items_edge_and_read_target";
+  /** Core's sentence: what was measured, and what it means for the answer. */
+  said: string;
 };
 
 /**

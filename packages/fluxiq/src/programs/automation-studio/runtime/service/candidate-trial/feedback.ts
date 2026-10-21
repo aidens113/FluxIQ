@@ -164,6 +164,14 @@
 // run was never shown. A run of more than `MAX_STEPS` steps now lists its first
 // `MAX_STEPS - 1` and then the last step it ran, with its real step number and
 // what it said; `stepsLeftOut` counts the steps between them.
+//
+// **What was stored also names the answer set's rows (t752).** `stored.rows`
+// sums every record set the run stored, a working read's included. A trial
+// that stored a few wrong answer rows beside a large unconditioned working set
+// outnumbered a later trial whose answer was exactly right, and the repair was
+// seeded from the earlier one. `stored.answerRows` is the row count of the set
+// the Flow answers with: the set written by the run's last storing step, in run
+// order (`flowShape`), or the last set listed where the run order names none.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../../../model/index.ts";
 import { automationStudioZeroPassLoopBodies } from "../../executor/graph-navigation/index.ts";
@@ -255,7 +263,9 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
     const paged = reads.some((read) => read.paging !== undefined);
     // The rows the saved answer's processing alone left out, by label (`./processed-out.ts`, t493).
     const processedOut = automationStudioTrialProcessedOutFeedback(input.summary);
-    const stored: JsonObject = { rows: input.summary.totalRecordCount, refused: input.summary.totalRefusedCount, missingRequired: input.summary.totalRowsMissingRequired, ...(processedOut ? { processedOut } : {}) };
+    // With the answer set's rows beside every set's sum (header, t752).
+    const answerRows = answerSetRows(input.summary);
+    const stored: JsonObject = { rows: input.summary.totalRecordCount, ...(answerRows !== undefined ? { answerRows } : {}), refused: input.summary.totalRefusedCount, missingRequired: input.summary.totalRowsMissingRequired, ...(processedOut ? { processedOut } : {}) };
     const common: JsonObject = { trialRunId: input.trialRunId, start: input.start, stored, ...(reads.length ? { reads, ...pagingNote(reads) } : {}), ...steps(input.trace, input.graph, input.wayOuts) };
     // Whether the yes was confirmed by the converse question (t691), the fact a gate's row check reads (t692).
     if (judged.verdict === "yes") return { verdict: "yes", feedback: { ...common, judge: "The trial was judged twice to do what the instruction asks.", ...(judged.firstAskConfirmed !== undefined ? { firstAskConfirmed: judged.firstAskConfirmed } : {}) } };
@@ -278,6 +288,21 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
     return { verdict: "not_judged", code: "candidate.trial_not_judged", feedback: { ...common, code: "candidate.trial_not_judged", why: judged.why, ...(judged.yesUnconfirmed ? { yesUnconfirmed: true } : {}), ...advised } };
   }
 });
+
+/**
+ * The rows of the set the Flow answers with (header, t752): the set whose
+ * latest writing step ran last, by the run order; where no set's step is in it,
+ * the last set listed. Undefined when the run stored no set.
+ */
+function answerSetRows(summary: AutomationStudioRunResultSummary): number | undefined {
+  const order = new Map(summary.flowShape.map((step, index) => [step.nodeId, index]));
+  let answer: { at: number; rows: number } | undefined;
+  for (const set of summary.recordSets) {
+    const at = Math.max(-1, ...(set.processing?.passes ?? []).map((pass) => order.get(pass.node) ?? -1));
+    if (!answer || at >= answer.at) answer = { at, rows: set.recordCount };
+  }
+  return answer?.rows;
+}
 
 /**
  * Each read's feedback with how its paging ended, for a read that paged or was

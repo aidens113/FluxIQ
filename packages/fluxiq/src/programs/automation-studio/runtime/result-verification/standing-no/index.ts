@@ -51,11 +51,18 @@
 // out a row Core reads as asked for (`./kept-conditions.ts`); its refusal says
 // the request's words (`./kept-condition-drop.ts`).
 //
+// **And what each earlier judged trial advised (t752).** A revision made
+// exactly the change an earlier no's judge advised, and its judges, told
+// nothing of it, answered no for that change. A gate keeps each judged trial's
+// advice with its record and plan, and hands the next judge what it named and
+// whether the revision changed it (`./earlier-advice.ts`).
+//
 // This directory reads nothing of a run but those records, a trial's
 // feedback and the plans the gates hold, so the gates import it without the reads that import the
 // flow-bootstrap back; the builder of a record, which does, is
 // `../standing-no-record/`.
 export * from "./contradiction.ts";
+export * from "./earlier-advice.ts";
 export * from "./kept-condition-drop.ts";
 export * from "./kept-conditions.ts";
 export * from "./kept-steps.ts";

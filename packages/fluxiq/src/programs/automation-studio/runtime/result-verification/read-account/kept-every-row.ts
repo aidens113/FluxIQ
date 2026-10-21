@@ -22,13 +22,8 @@
 //    edge into the For Each's `items` port, the port the build wires a
 //    `repeat over` into (`../../flow-bootstrap/authoring/draft-routing.ts`).
 //  - Read target: both reads are of one node definition, and their authored
-//    read parameters (`./read-parameters.ts`) agree, member for member, on
-//    everything that says where the rows come from. The members that say what
-//    a read keeps and how it stores them are set aside first: its conditions
-//    (`where`), its columns (`fields`), `dedupe`, `paginate`, `recordOutput`,
-//    and any bound (`min…`, `max…`, `timeout…`). What remains is the domain's
-//    own target, compared as values and never read or said: a read whose
-//    target holds nothing to compare is never the same list.
+//    read parameters agree on everything that says where the rows come from,
+//    compared as values and never read or said (`./same-target.ts`).
 //
 // **Said in Core's words, as a measurement, never a verdict.** The flag names
 // the two reads and the acting steps by node id, with the counts each read
@@ -36,12 +31,12 @@
 // the request's own words for what the answer holds. No locator, page value or
 // row label is carried.
 
-import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../model/index.ts";
 import { automationStudioActivityLoops } from "../../activity/loop/index.ts";
 import { automationStudioNodeActLasts } from "../../executor/defensive/index.ts";
 import type { AutomationStudioResultKeptEveryRow, AutomationStudioResultReadAccount } from "../contracts/index.ts";
 import { automationStudioResultReadParameters } from "./read-parameters.ts";
+import { automationStudioResultReadSameTarget } from "./same-target.ts";
 
 /** The list loop: a section run once for each row of a list (`nodes/control-flow/for-each.ts`). */
 const FOR_EACH = "builtin.control.for-each";
@@ -49,10 +44,6 @@ const FOR_EACH = "builtin.control.for-each";
 const ITEMS_PORT = "items";
 /** Core's own step definitions: none of them acts on a site. */
 const CORE_STEP = /^builtin\./u;
-/** The read parameters that say what a read keeps and how it stores it, never where its rows come from. */
-const KEEPING_KEYS: ReadonlySet<string> = new Set(["where", "fields", "dedupe", "paginate", "recordOutput"]);
-/** A bound on a read: how few, how many, how long. */
-const BOUND_KEY = /^(min|max|timeout)/u;
 
 /**
  * The flag for each read, aligned with `reads`: undefined for a read it does
@@ -80,7 +71,7 @@ export function automationStudioResultReadKeptEveryRow(input: {
       const narrower = input.reads.findIndex((read, at) => at !== index && sources.includes(read.nodeId) && input.speaking[at]?.parentAttemptId === laterAttempt.parentAttemptId);
       const earlier = input.reads[narrower];
       const earlierNode = input.nodes[narrower];
-      if (!earlier || !earlierNode || !narrowedByItsConditions(earlier) || !sameTarget(earlierNode, laterNode)) continue;
+      if (!earlier || !earlierNode || !narrowedByItsConditions(earlier) || !automationStudioResultReadSameTarget(earlierNode, laterNode)) continue;
       // The lasting steps of the loop that acted, in this frame, before the later read spoke.
       const acted = input.actionAttempts.filter((attempt) => loop.members.has(attempt.nodeId) && attempt.parentAttemptId === laterAttempt.parentAttemptId
         && attempt.status === "succeeded" && attempt.skipped === undefined && attempt.stateHeld === undefined && (order.get(attempt) ?? Infinity) < laterAt
@@ -113,29 +104,6 @@ function acts(node: AutomationStudioFlowNode | undefined): boolean {
   return node !== undefined && !CORE_STEP.test(node.definitionId) && automationStudioNodeActLasts(node);
 }
 
-/** One definition, and the same read target: the read parameters less what says what a read keeps (header). Never said. */
-function sameTarget(first: AutomationStudioFlowNode, second: AutomationStudioFlowNode): boolean {
-  if (first.definitionId !== second.definitionId) return false;
-  const one = target(first);
-  const two = target(second);
-  return one !== undefined && one === two;
-}
-
-/** The read's target as a canonical string; undefined where nothing remains to compare. */
-function target(node: AutomationStudioFlowNode): string | undefined {
-  const parameters = automationStudioResultReadParameters(node.parameterValues);
-  if (!parameters) return undefined;
-  const kept = Object.entries(parameters).filter(([key]) => !KEEPING_KEYS.has(key) && !BOUND_KEY.test(key));
-  return kept.length ? canonical(Object.fromEntries(kept)) : undefined;
-}
-
-/** A value as one string whatever order its members were written in. */
-function canonical(value: JsonValue | undefined): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (isRecord(value)) return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
-  return JSON.stringify(value ?? null);
-}
-
 /** Core's sentence for the flag (header): what was measured, then the check. Generic words. */
 function said(later: AutomationStudioResultReadAccount, flag: Omit<AutomationStudioResultKeptEveryRow, "said">): string {
   const steps = flag.actedBy.map((id) => `step ${id}`);
@@ -144,8 +112,4 @@ function said(later: AutomationStudioResultReadAccount, flag: Omit<AutomationStu
     + `Step ${flag.narrowerRead}'s conditions kept ${flag.narrowerKept} of the ${flag.narrowerSeen} items it saw; step ${later.nodeId} has no condition and kept every one of the ${later.kept} items it saw. `
     + `So nothing in step ${later.nodeId} chose which of its rows the answer holds. Check each row step ${later.nodeId} stored, one by one, against the request's own words for what the answer holds: `
     + "a yes names each such row with the request's words that ask for it, and a row those words do not ask for is not one the answer should hold, whether or not the Flow acted on it.";
-}
-
-function isRecord(value: unknown): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

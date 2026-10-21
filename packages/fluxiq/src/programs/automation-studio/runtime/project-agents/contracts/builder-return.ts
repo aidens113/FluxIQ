@@ -19,6 +19,16 @@ import type { AutomationStudioProjectSubflowBrief } from "./subflow-brief.ts";
  * digest is made as before, from the trial's verdict among the rest
  * (`../dispatch/receipts.ts`), so these fields never change it. A return
  * written before them lists neither.
+ *
+ * **`rows` is the answer set's, and among one verdict the latest wins (t752).**
+ * Trials of one verdict were ranked by the rows they stored, summed over every
+ * record set. A trial that stored a few wrong answer rows beside a large
+ * unconditioned working read outnumbered a later trial whose answer was exactly
+ * right plus the same working read, and the repair was seeded from the earlier
+ * one. For a filtered request more rows is not closer to passing. `rows` now
+ * counts the answer set alone (`../dispatch/receipts.ts`), and among trials of
+ * one verdict `closestTrial` takes the latest, unless the latest stored no
+ * answer rows and an earlier one did.
  */
 export type AutomationStudioProjectTrialRef = AutomationStudioProjectReceiptRef & {
   verdict?: AutomationStudioCandidateTrialVerdict;
@@ -105,8 +115,9 @@ export const automationStudioProjectBuilderReturn = Object.freeze({
    * The trial of a subflow a repair should start from (t606): the closest to
    * passing of every trial the returns given (oldest first) listed, not the
    * latest. Unsure over no, no over a trial that was not judged, that over one
-   * whose run failed; among the same verdict, more rows stored; among equals,
-   * the latest. A trial that answered yes is no failing trial and is never
+   * whose run failed; among the same verdict, the latest, unless the latest
+   * stored no answer rows and an earlier one did, then the latest that did
+   * (header, t752). A trial that answered yes is no failing trial and is never
    * chosen, and one listed without its verdict ranks below every one with it.
    * Undefined when no trial that did not pass was listed.
    */
@@ -120,7 +131,11 @@ export const automationStudioProjectBuilderReturn = Object.freeze({
     return closest;
   },
 
-  /** Whether `left` ranks strictly above `right` as `closestTrial` ranks them. */
+  /**
+   * Whether `left` ranks strictly above `right` as `closestTrial` ranks them, order aside: a better verdict, or the
+   * same verdict with answer rows stored where `right` stored none (header, t752). Two trials of one verdict that both
+   * stored answer rows, or neither did, rank equal; `closestTrial` then takes the later.
+   */
   trialAbove(left: AutomationStudioProjectTrialRef, right: AutomationStudioProjectTrialRef): boolean {
     return trialAbove(left, right);
   },
@@ -133,8 +148,9 @@ export const automationStudioProjectBuilderReturn = Object.freeze({
 
 const TRIAL_RANK: Readonly<Record<string, number>> = { unsure: 3, no: 2, not_judged: 1, execution_failed: 0 };
 
+/** A trial's verdict rank, and whether it stored answer rows: the count itself never ranks it (header, t752). */
 function trialRank(trial: AutomationStudioProjectTrialRef): [number, number] {
-  return [trial.verdict === undefined ? -1 : TRIAL_RANK[trial.verdict] ?? -1, trial.rows ?? -1];
+  return [trial.verdict === undefined ? -1 : TRIAL_RANK[trial.verdict] ?? -1, (trial.rows ?? 0) > 0 ? 1 : 0];
 }
 
 function trialAbove(left: AutomationStudioProjectTrialRef, right: AutomationStudioProjectTrialRef): boolean {

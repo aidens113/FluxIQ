@@ -92,6 +92,16 @@
 // answer holds them. A yes the converse question confirmed (t691) is
 // held to it as any yes is: that both calls said yes is not that either looked
 // at each row.
+//
+// **Never working rows (t752).** A record set of working rows
+// (`../read-account/working-sets.ts`: Core flagged the read that collected it as one whose rows
+// a loop walked before a later read of the same list stored the answer) is not
+// the result. Its rows are no holder of a left-out row (`summary-reads.ts`, so
+// no `stored` hold for a row only it holds) and no kept row Core flags here,
+// even where the read that collected it also carries `keptEveryRow`. A row the
+// later read's condition left out that only such a set holds is held as any
+// left-out row is (above, t515): a yes that names only the answer's rows, and
+// settles that condition's rows with one quote of its bound, is not held.
 
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import type { AutomationStudioRequestWording } from "./request-wording.ts";
@@ -99,6 +109,8 @@ import { automationStudioRequestRowNaming, automationStudioRequestTextNamesRead,
 import { automationStudioRequestRowsReads, automationStudioRequestRowsStoredOf } from "./summary-reads.ts";
 import type { AutomationStudioRequestRowsCondition, AutomationStudioRequestRowsKept, AutomationStudioRequestRowsUnquoted } from "./types.ts";
 import { automationStudioRequestRowWordCarries, automationStudioRequestRowWords } from "./words.ts";
+// The leaf, not the barrel (`summary-reads.ts`).
+import { automationStudioResultReadWorkingSets } from "../read-account/working-sets.ts";
 
 /** Where a line's sentences break: a sentence's end before the next one starts. */
 const SENTENCE_BREAK = /(?<=[.!?])\s+(?=[\p{Lu}"“‘'([])/gu;
@@ -163,11 +175,13 @@ export function automationStudioResultKeptRowsUnquoted(flags: readonly Automatio
  * label. None where the read names no set or the set shows no row.
  */
 export function automationStudioResultKeptEveryRowFlagged(summary: AutomationStudioRunResultSummary): AutomationStudioRequestRowsKept[] {
+  // Working rows are not the result (header, t752).
+  const working = automationStudioResultReadWorkingSets(summary);
   return (summary.reads ?? []).flatMap((read) => {
     const flag = read.keptEveryRow;
     const storedIn = new Set(flag?.storedIn ?? []);
     if (!flag || !storedIn.size) return [];
-    return summary.recordSets.filter((set) => storedIn.has(set.datasetId)).flatMap((set): AutomationStudioRequestRowsKept[] => {
+    return summary.recordSets.filter((set) => storedIn.has(set.datasetId) && !working.has(set.datasetId)).flatMap((set): AutomationStudioRequestRowsKept[] => {
       const labels = [...new Set(automationStudioRequestRowsStoredOf(set).map((row) => row.label))];
       return labels.length ? [{ kind: "every_row", datasetId: set.datasetId, nodeId: read.nodeId, missing: flag.narrowerRead, rows: labels, of: set.recordCount, pool: labels }] : [];
     });

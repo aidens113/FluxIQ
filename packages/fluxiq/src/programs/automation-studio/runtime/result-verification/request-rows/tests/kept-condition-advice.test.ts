@@ -24,6 +24,7 @@ const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedC
 /** The no of step 0029, in this site's words: a wrong reason about condition 1, and advice to keep two conditions the read applies. */
 const KEEP_NO = {
   answersRequest: "no",
+  defects: [],
   expected: AUDIOBOOKS_YES.expected,
   observed: `3 rows stored. Condition 1 (promoted is absent) alone left out 2 rows the request asks for: ${AUDIOBOOKS_PROMOTED.join("; ")}. These are ordinary titles, not promoted entries, so the request does not exclude them.`,
   changed: `Remove or replace condition 1 (promoted is absent) on ${AUDIOBOOKS_READ}, which is dropping rows the request asks for. Keep condition 3 (rating atLeast 4) and condition 4 (title not contains Sampler).`

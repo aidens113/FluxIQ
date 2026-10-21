@@ -141,7 +141,7 @@ const INSTRUCTION: AutomationStudioFlowInstruction = {
   schemaVersion: "0.1", instructionId: "instruction.flow.goal", title: "Goal", body: BODY,
   scope: { kind: "flow", projectId: "project-1", flowId: "flow-1" }, priority: 1, status: "active", requirement: "required", createdAt: 1, updatedAt: 1
 };
-const STEP_NO = { answersRequest: "no", expected: EXPECTED, observed: BLAMES_FORMAT, changed: REMOVE_FORMAT };
+const STEP_NO = { answersRequest: "no", expected: EXPECTED, observed: BLAMES_FORMAT, changed: REMOVE_FORMAT, defects: [] };
 
 function answering(...diagnoses: Record<string, unknown>[]): { provider: AutomationStudioLlmProvider; seen: string[] } {
   const seen: string[] = [];
@@ -172,12 +172,12 @@ describe("through the judge both build trials and the runtime check ask (t659)",
     expect(seen[0]).not.toContain("so it removed no row");
   });
 
-  it("two nos blaming a step that removed rows stay a no, asked nothing more", async () => {
-    const changed = { ...STEP_NO, observed: `${S4} chose "Available today (40)", which drops atlases the request asks for.`, changed: `Remove ${S4}.` };
+  it("a changed count without an identified missing row is unconfirmed by the structured check", async () => {
+    const changed = { ...STEP_NO, observed: `${S4} chose "Available today (40)", which drops atlases the request asks for.`, changed: `Remove ${S4}.`, defects: [{ kind: "other", row: "narrowed availability", requestWords: "available today" }] };
     const { provider, seen } = answering(changed, changed);
     const verdict = await judge(provider)({ summary: summary(), budget: { maxCostUsd: 0.2 } });
-    expect(verdict.verdict).toBe("no");
-    expect(seen).toHaveLength(2);
+    expect(verdict.verdict).toBe("unknown");
+    expect(seen).toHaveLength(4);
   });
 });
 

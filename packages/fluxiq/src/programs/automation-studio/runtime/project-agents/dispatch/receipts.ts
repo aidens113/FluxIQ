@@ -14,6 +14,13 @@ import { automationStudioProjectDigest, type AutomationStudioProjectTrialRef } f
 // fields it always was, so a reference a brief copies, `kind`, `receiptId`
 // and `digest`, matches the one listed here as before.
 //
+// **The rows listed are the answer set's (t752).** A trial's feedback sums
+// every record set it stored (`stored.rows`), a working read's included, so a
+// trial with a few wrong answer rows beside a large working set listed more
+// rows than a later one whose answer was exactly right. The rows listed are
+// the answer set's (`stored.answerRows`, `../../service/candidate-trial/`
+// `feedback.ts`); only feedback that names no answer set lists the sum.
+//
 // **The verdict listed is the gate's (t634).** The port answers before the
 // brief's gate weighs the trial, and the gate may weigh it otherwise: a no the
 // build's own record contradicts is unsure (t633). The gate tells the port
@@ -85,9 +92,16 @@ function refOf(receiptId: string, result: AutomationStudioSubflowTrialResult): A
   return { kind: "subflow_trial", receiptId, digest, verdict: result.verdict, ...(rows !== undefined ? { rows } : {}) };
 }
 
-/** The rows a trial stored, as its feedback says them (`feedback.stored.rows`); undefined where it does not. */
+/**
+ * The rows of the trial's answer set, as its feedback says them (`feedback.stored.answerRows`), or every set's sum
+ * (`feedback.stored.rows`) where it names no answer set (header, t752); undefined where it says neither.
+ */
 function storedRows(result: AutomationStudioSubflowTrialResult): number | undefined {
   const stored = result.feedback.stored;
-  const rows = stored && typeof stored === "object" && !Array.isArray(stored) ? stored.rows : undefined;
-  return typeof rows === "number" && Number.isInteger(rows) && rows >= 0 ? rows : undefined;
+  if (!stored || typeof stored !== "object" || Array.isArray(stored)) return undefined;
+  return count(stored.answerRows) ?? count(stored.rows);
+}
+
+function count(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
 }

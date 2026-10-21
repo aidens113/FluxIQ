@@ -90,6 +90,7 @@ export {
   isAutomationStudioRuntimeTargetOverrideTarget,
   type AutomationStudioLlmDiagnosisFields,
   type AutomationStudioLlmStructuredResponse,
+  type AutomationStudioLlmVerificationDefect,
   type AutomationStudioNoRepairReason,
   type AutomationStudioRuntimePatch,
   type AutomationStudioRuntimePatchStep,

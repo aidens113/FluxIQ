@@ -29,7 +29,11 @@
 // marked on the judge's copy (`storedThoughLeftOut`, `summary-with-also-in-result.ts`),
 // held against a yes that does not name it beside that read
 // (`unquoted-rows.ts`, naming the read as `row-naming.ts` reads it), and said
-// in Core's line (`stored-line.ts`).
+// in Core's line (`stored-line.ts`). And never the record sets that hold
+// working rows, what a repeat walked before a later read of the same list
+// stored the answer (t752, by the one rule in `../read-account/working-sets.ts`):
+// never the result, never a holder of a left-out row, never a kept row Core
+// flags.
 export * from "./applied-exclusions.ts";
 export * from "./checked-rows.ts";
 export * from "./checked-rows-named.ts";

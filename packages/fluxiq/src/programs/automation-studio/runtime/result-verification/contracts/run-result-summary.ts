@@ -1,6 +1,7 @@
 import type { JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioResultRecordSetSummary } from "../record-set-summary.ts";
 import type { AutomationStudioBuildTestAccount } from "./build-test.ts";
+import type { AutomationStudioResultEarlierAdvice } from "./earlier-advice.ts";
 import type { AutomationStudioResultFlowStepSummary } from "./flow-step-summary.ts";
 import type { AutomationStudioResultReadAccount } from "./read-account.ts";
 import type { AutomationStudioResultTaskChecklist } from "./task-checklist.ts";
@@ -123,6 +124,14 @@ export type AutomationStudioRunResultSummary = {
    * judged (run `run-mux6pndp-16feb842`: "2 · $28.96" read as the two packs).
    */
   startView?: AutomationStudioResultEndView;
+  /**
+   * A build test only (t752, `./earlier-advice.ts`): each earlier judged trial
+   * of this build's advice, oldest first, at most three, with whether this
+   * revision changed what it named. Set by the gate that keeps the build's
+   * trials; appended last where the summary is made, so the judge's cached
+   * prefix is unchanged. Never set on a finished run's summary.
+   */
+  earlierAdvice?: AutomationStudioResultEarlierAdvice[];
 };
 
 /**

@@ -30,6 +30,11 @@
 //     (`../refuted-no/`, t607), beside a yes or           findings; its answer takes its place, and
 //     another such no (beside a no that stands: no)       a no still refuted is unknown, saying so
 //                                                         in why -- never a no, never a yes Core made
+//   a no naming no defect Core finds in its record      -> that call asked once more to list each
+//     (`../agreement/unsupported-no.ts`, t752), beside     (beside a no that names one: no); still
+//     a yes or another such no                            naming none, unknown with its reading,
+//                                                         Core's record and `unsupportedNo` --
+//                                                         never a no
 //   not performed (no model), or the deadline passed  -> not_judged
 //   no call came back usable, each asked again after a -> not_judged, saying why and how
 //     temporary fault (`../verify.ts`)                     many times it was asked (t473)
@@ -193,6 +198,14 @@ export type AutomationStudioBuildTestVerdict =
      * answered. A doubt the record contradicts is no evidence against the Flow.
      */
     doubtContradicted?: string;
+    /**
+     * Only on an `unknown` where a no, asked once more to list each defect,
+     * still named none Core can find in its record of the test
+     * (`AutomationStudioResultVerification.unsupportedNo`, t752): the fact,
+     * never read off `why`'s words. Such a no is no evidence against the Flow;
+     * its reading rides in `unconfirmedReading`, labelled so.
+     */
+    unsupportedNo?: true;
     /**
      * Only on a `not_judged` whose every call answered yes and Core held the
      * yes for the exclusion evidence it lacked
@@ -364,7 +377,9 @@ export function automationStudioBuildTestJudge(deps: {
     const doubt = doubtContradicted(outcome);
     // ...and Core's record of the judged test, for the gate that keeps the build's trials (t652); never model-facing.
     const record = outcome.standingNo ? { standingNo: structuredClone(outcome.standingNo) } : {};
-    return { verdict: "unknown", why: outcome.reason, ...carried, ...(reading ? { unconfirmedReading: { ...reading } } : {}), ...(answered ? { answeredReading: { ...answered } } : {}), ...(outcome.basis === "model_disagreed" ? { oneCallSaidYes: true as const } : {}), ...(doubt ? { doubtContradicted: doubt } : {}), ...record, spent };
+    // ...and a no that still named no defect Core finds, as the fact (t752).
+    const unsupported = outcome.unsupportedNo ? { unsupportedNo: true as const } : {};
+    return { verdict: "unknown", why: outcome.reason, ...carried, ...(reading ? { unconfirmedReading: { ...reading } } : {}), ...(answered ? { answeredReading: { ...answered } } : {}), ...(outcome.basis === "model_disagreed" ? { oneCallSaidYes: true as const } : {}), ...(doubt ? { doubtContradicted: doubt } : {}), ...unsupported, ...record, spent };
   };
 }
 

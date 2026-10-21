@@ -175,8 +175,8 @@ describe("one candidate trial", () => {
     ["a yes then unknown", ["yes", "unknown"], "unsure", 2],
     ["a yes then a silent reply", ["yes", "silent"], "unsure", 2],
     // The split's no is asked once more to name its defect (t725), and says no again.
-    ["a yes then no", ["yes", "no", "no"], "unsure", 3],
-    ["two noes", ["no", "no"], "no", 2]
+    ["a yes then an unmeasured no", ["yes", "no", "no", "no"], "unsure", 4],
+    ["two unmeasured noes", ["no", "no", "no", "no"], "unsure", 4]
   ] as const)("the real build-test judge: %s gives %s", async (_name, replies, expected, calls) => {
     const fixture = trialFixture(); pressing(fixture);
     const requests: AutomationStudioLlmTaskRequest[] = [];
@@ -184,14 +184,14 @@ describe("one candidate trial", () => {
       requests.push(request);
       const reply = replies[requests.length - 1];
       if (reply === "silent") return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: {} }, usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0.0001 } };
-      return judgeReply(reply ?? "unknown", reply === "no" ? { expected: "the hub in the cart", observed: "the cart is empty" } : {});
+      const answer = judgeReply(reply ?? "unknown", reply === "no" ? { expected: "the hub in the cart", observed: "the cart is empty" } : {});
+      return { ...answer, response: { ...answer.response, diagnosis: { ...answer.response.diagnosis, ...(reply === "no" ? { defects: [] } : {}) } } };
     });
     fixture.ports.judge = automationStudioBuildTestJudge({ provider, instructions: [], deniedEvidenceKeys: [], projectId: "project", flowId: "parent" });
     const { result, record } = await runAutomationStudioCandidateTrial(fixture.request(), fixture.ports);
     expect(result.verdict).toBe(expected);
     expect(record.judge.calls).toBe(calls);
     expect(requests.every((request) => request.taskKind === "loop_verification")).toBe(true);
-    if (expected === "no") expect(result.feedback).toMatchObject({ code: "candidate.trial_judged_no", judge: { expected: "the hub in the cart", observed: "the cart is empty" } });
   });
 
   it("the port is bound to its candidate id, refuses mismatched bytes, and keeps every trial and its spend", async () => {

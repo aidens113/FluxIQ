@@ -17,10 +17,10 @@ import { automationStudioBuildTestJudge, type AutomationStudioBuildTestTaskCheck
 import {
   DROPPED_INCLUDING_NO, LIBRARY_YES, MISSING_LIST_NO, MISSING_QUALIFYING_NO, UNREAD_TITLE_NO
 } from "./library-readings-fixture.ts";
-import { LIBRARY_REQUEST, libraryInstruction, libraryRunSummary } from "./library-fixture.ts";
+import { BOOK_LARKSPUR, LIBRARY_REQUEST, libraryInstruction, libraryRunSummary } from "./library-fixture.ts";
 
 const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 };
-const no = (reading: Record<string, string>) => ({ answersRequest: "no", ...reading });
+const no = (reading: Record<string, string>) => ({ answersRequest: "no", ...reading, defects: reading === UNREAD_TITLE_NO ? [{ kind: "asked_missing", row: BOOK_LARKSPUR, requestWords: "every mystery novel" }] : [] });
 
 /** A provider answering each call with its own diagnosis, keeping every request it was sent. */
 function answering(...diagnoses: Record<string, unknown>[]): { provider: AutomationStudioLlmProvider; seen: AutomationStudioLlmTaskRequest[] } {

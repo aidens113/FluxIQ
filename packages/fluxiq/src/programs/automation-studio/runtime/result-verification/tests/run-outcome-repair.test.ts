@@ -12,7 +12,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowRunDetail } from "../../../model/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY, automationStudioRefutedResultReauthored } from "../../recovery/refuted-result/index.ts";
 import { verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts } from "../run-outcome.ts";
-import { ANSWER, flow, harness, runDetail, session, type ScriptedAnswer } from "./run-outcome-harness.ts";
+import { ANSWER, flow, memberHarness as harness, runDetail, session, type ScriptedAnswer } from "./run-outcome-harness.ts";
 
 describe("the re-run a repair earns", () => {
   /** A repair that routed, edited the Flow, and says so on the run. */

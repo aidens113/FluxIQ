@@ -95,7 +95,7 @@ const INSTRUCTION: AutomationStudioFlowInstruction = {
   schemaVersion: "0.1", instructionId: "instruction.flow.goal", title: "Goal", body: BODY,
   scope: { kind: "flow", projectId: "project-1", flowId: "flow-1" }, priority: 1, status: "active", requirement: "required", createdAt: 1, updatedAt: 1
 };
-const KIND_NO = { answersRequest: "no", expected: EXPECTED, observed: KIND_WITH_COLON, changed: "Leave out bookmarks." };
+const KIND_NO = { answersRequest: "no", expected: EXPECTED, observed: KIND_WITH_COLON, changed: "Leave out bookmarks.", defects: [{ kind: "kept_not_asked", row: BOOKMARK, requestWords: "every atlas" }] };
 
 function answering(...diagnoses: Record<string, unknown>[]): { provider: AutomationStudioLlmProvider; calls: () => number } {
   let calls = 0;

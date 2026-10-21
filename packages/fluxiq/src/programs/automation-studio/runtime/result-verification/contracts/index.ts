@@ -40,6 +40,7 @@ export * from "./flow-step-summary.ts";
 export * from "./read-account.ts";
 export * from "./run-result-summary.ts";
 export * from "./build-test.ts";
+export * from "./earlier-advice.ts";
 export * from "./task-checklist.ts";
 export * from "./repair.ts";
 export * from "./verification.ts";
