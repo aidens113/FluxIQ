@@ -111,9 +111,10 @@ describe("a reversible press with no witness before the seal", () => {
       { effect: "mutate" as const, consequences: [], control: { ...unscoped, ...ADD } },
       { effect: "mutate" as const, consequences: ["send_or_publish" as const], control: { ...unscoped, ...ADD } },
       { effect: "mutate" as const, consequences: ["modify_existing" as const, "move_money" as const], control: { ...unscoped, ...ADD } },
-      // An unscoped press keeps its legacy policy; a creation keeps the creation precondition's own.
+      // An unscoped press keeps its legacy policy, and so does a creation that names nothing (an identified one keeps the
+      // creation precondition's own; a scoped unidentified one is held to the witness rule, below).
       { effect: "mutate" as const, consequences: ["modify_existing" as const], control: unscoped },
-      { effect: "mutate" as const, consequences: ["create_new" as const], control: { ...unscoped, item: "i:new", scope: "p:book-page", resource: SITE } }
+      { effect: "mutate" as const, consequences: ["create_new" as const], control: { ...unscoped, item: "i:new", resource: SITE } }
     ]) expect(baselines.check(other, undefined)).toEqual({ kind: "admit" });
     expect(baselines.check(declared(ADD, ["create_new"]), undefined)).toMatchObject({ kind: "refused", evidence: { code: "candidate.create_baseline_required" } });
   });
@@ -236,5 +237,45 @@ describe("a witness refusal once refs are issued", () => {
     const instruction = verdict.kind === "refused" ? String(verdict.evidence.instruction) : "";
     expect(instruction).toContain("destination-1 (2 items)");
     expect(instruction).not.toContain(WITHHELD);
+  });
+});
+
+// t748 (t738's open point): the rule left every lone create_new on the creation precondition's policy, but that
+// precondition covers only an identified creation. One whose control sits in an untitled item -- nothing names what it
+// makes -- on a page with a heading is held strictly by the ledger, and was admitted with no witness before the seal:
+// once it landed, nothing could ever settle it. It is now held to the witness rule like any other reversible press.
+describe("an unidentified creation before the seal (t748)", () => {
+  /** "Copy" on an untitled row of a list never read complete, on a page with a heading: held strictly, by its page. */
+  const COPY: AutomationStudioSiteResetSpot = { item: "i:untitled", page: "s:shelf-page", scope: "p:unread-list", resource: SITE };
+
+  it("is refused unrun with no witness, and records no act", () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.observed(bookPage());
+    expect(attempt(ledger, "copy", COPY, ["create_new"])).toMatchObject(WITNESS);
+    expect(ledger.actOf("copy")).toBeUndefined();
+    expect(ledger.inPlace()).toEqual([]);
+    // Why: after the seal it is admitted as before, and with nothing read complete no call can ever settle it.
+    const sealed = new AutomationStudioSiteResetLedger();
+    sealed.observed(bookPage());
+    expect(attempt(sealed, "star", STAR)).toEqual({ kind: "admit" });
+    expect(attempt(sealed, "copy", COPY, ["create_new"])).toEqual({ kind: "admit" });
+    expect(sealed.unsatisfiable().map((act) => [act.act, act.failed])).toContainEqual(["act-2", "nothing_to_name"]);
+  });
+
+  it("is admitted with a witness: an issued ref, or a control inside a list read complete", () => {
+    const named = new AutomationStudioSiteResetLedger();
+    named.observed(readingList());
+    named.destinationReceipts();
+    expect(attempt(named, "copy", COPY, ["create_new"], "destination-1")).toEqual({ kind: "admit" });
+    expect(named.actOf("copy")).toBe("act-1");
+    const listed = new AutomationStudioSiteResetLedger();
+    listed.observed(readingList());
+    expect(attempt(listed, "copy", { ...COPY, scope: "p:reading-list" }, ["create_new"])).toEqual({ kind: "admit" });
+  });
+
+  it("leaves a creation that names nothing on its legacy policy, and an identified one on the creation precondition", () => {
+    const baselines = new AutomationStudioSiteResetCreateBaselines();
+    expect(baselines.check(declared({ item: "i:untitled", resource: SITE }, ["create_new"]), undefined)).toEqual({ kind: "admit" });
+    expect(baselines.check(declared(ADD, ["create_new"]), undefined)).toMatchObject({ kind: "refused", evidence: { code: "candidate.create_baseline_required" } });
   });
 });

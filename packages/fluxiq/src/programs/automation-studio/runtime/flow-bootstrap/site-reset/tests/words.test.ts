@@ -89,3 +89,26 @@ describe("site reset words for an undo already back (t743)", () => {
     for (const words of [WORDS.alreadyBack(), WORDS.unprovedUndo(true), WORDS.createBaselineRequired(), WORDS.actionDeclarations(), WORDS.witnessRequired([])]) expect(words).not.toMatch(REALISTIC);
   });
 });
+
+// Office rounds 2-4 (t748, C6): after a complete read issued the ref a refused press needed, nothing said to press it
+// again with that ref, and builders went back and forth for 9 and 14 turns. The read's answer now says so.
+describe("site reset words after a read issues refs a refused press wants (t748)", () => {
+  const REALISTIC = /(store|shop|cart|basket|checkout|address|job|save|saved|heart|photo|like|liked|post|friend|order|product|follow|feed|profile|apply)/iu;
+
+  it("name the refused call and the refs just issued, and say to press it again naming the one where its effect shows", () => {
+    const words = WORDS.retryRefused("press.missing", [{ ref: "destination-2", count: 3 }, { ref: "destination-3", count: 0, location: "loc:lists" }]);
+    expect(words).toContain("\"press.missing\"");
+    expect(words).toContain("destination-2 (3 items), destination-3 (0 items at loc:lists)");
+    expect(words).toContain("make that call again");
+    expect(words).toContain("naming that list's ref as resetDestination");
+    expect(words).toContain("If none of them is where its effect would show");
+    expect(words).not.toMatch(REALISTIC);
+  });
+
+  it("keep the creation refusal generic with refs named", () => {
+    const words = WORDS.createBaselineRequired([{ ref: "destination-1", count: 1 }], [{ ref: "destination-2", count: 2, location: "loc:elsewhere" }]);
+    expect(words).toContain("destination-1 (1 item)");
+    expect(words).toContain("destination-2 (2 items at loc:elsewhere)");
+    expect(words).not.toMatch(REALISTIC);
+  });
+});

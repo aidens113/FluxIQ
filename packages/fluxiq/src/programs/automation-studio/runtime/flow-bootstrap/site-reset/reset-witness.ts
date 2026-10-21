@@ -23,9 +23,19 @@
 //   needs both.
 //
 // Only a press the ledger would hold strictly (its control names a subject,
-// page or scope) needs one: an unscoped act keeps its legacy policy. An
-// identified or unidentified `create_new` alone keeps the creation
-// precondition's own policy, unchanged. Pure.
+// page or scope) needs one: an unscoped act keeps its legacy policy, which
+// `cannotUndo` can still answer, so it never stays on the site unsettleable.
+// An identified `create_new` alone never reaches this rule: the caller holds
+// it to the creation precondition, which asks for its destination's original.
+//
+// **An unidentified creation is held to it too (t748, t738's open point).**
+// The creation precondition covers only a creation identified by its subject,
+// or by its page where it sits in no item. One in an untitled item on a page
+// with a heading is held strictly by the ledger and has no other witness, and
+// it used to be admitted here as "a creation", so it landed unsettleable.
+// The stated-state witness counts only for exactly `modify_existing` at a
+// place because the ledger keeps a press's toggle only then
+// (`./ledger.ts`, `onlyModifies`); the toggle needs the state too. Pure.
 
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { AutomationStudioSiteResetDeclared } from "./contracts.ts";
@@ -41,7 +51,6 @@ export function automationStudioSiteResetWitnessMissing(
   const { control, consequences } = declared;
   if (declared.effect !== "mutate" || consequences.length === 0 || !consequences.every((consequence) => REVERSIBLE.has(consequence))) return false;
   const only = consequences.length === 1 ? consequences[0] : undefined;
-  if (only === "create_new") return false;
   if (control.subject === undefined && control.page === undefined && control.scope === undefined) return false;
   if (known.destination()) return false;
   if (control.scope !== undefined && control.resource !== undefined && known.original(control.scope, control.resource)) return false;

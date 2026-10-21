@@ -134,9 +134,11 @@ describe("build-only original creation receipts", () => {
 
   it("preserves observation, unclassified, ordinary modifications and irreversible/mixed policy", () => {
     const baseline = new AutomationStudioSiteResetCreateBaselines();
+    // A creation that names nothing at all keeps its legacy policy; one in a list scope is held to the witness rule (t748, reset-witness.test.ts).
     const unidentified = create();
     delete unidentified.control.subject;
     delete unidentified.control.page;
+    delete unidentified.control.scope;
     for (const declaration of [
       { ...create(), effect: "observe" as const },
       unidentified,
@@ -147,5 +149,49 @@ describe("build-only original creation receipts", () => {
       { ...create(), consequences: ["move_money" as const] },
       { ...create(), consequences: ["create_new" as const, "send_or_publish" as const] }
     ]) expect(baseline.check(declaration, undefined)).toEqual({ kind: "admit" });
+  });
+});
+
+// Office rounds 2 and 4 (t748, C5): a creation's refusal printed beside it only the lists of the page it was pressed on,
+// and the builder named a list of other items suggested beside the subject, which nothing the creation makes ever joins.
+// By what Core reads -- list place, the act's subject and page, groups, the original's subjects -- such a list has the
+// same shape as one a creation on its own page does join: a note added under a recipe joins the notes list there. So
+// Core accepts both, and the refusal says which lists were read on this page and which elsewhere, and which list to name.
+describe("a creation's destination on its own page (t748)", () => {
+  const states = (subjects: string[]) => Object.fromEntries(subjects.map((subject) => [subject, `v:${subject}`]));
+  const recipePage = (): AutomationStudioSiteResetRead => ({ state: {}, differs: [], resource: "r:recipes", scope: "p:recipe-page", location: "loc:recipe", collections: [
+    { scope: "p:notes", group: "g:recipe", subjects: ["s:note-1"], states: states(["s:note-1"]) },
+    { scope: "p:similar", group: "g:recipe", subjects: ["s:soup", "s:stew", "s:bread"], states: states(["s:soup", "s:stew", "s:bread"]) }
+  ] });
+  const planPage = (): AutomationStudioSiteResetRead => ({ state: {}, differs: [], resource: "r:recipes", scope: "p:plan-page", location: "loc:week", collections: [
+    { scope: "p:plan", group: "g:plan", subjects: ["s:salad"], states: states(["s:salad"]) }
+  ] });
+  /** A control about the recipe on its own page, in no list: "Add a note", "Add to meal plan". */
+  const onRecipe = create({ subject: "s:pie", page: "s:pie", scope: "p:recipe-page", resource: "r:recipes" });
+
+  it("still accepts a list on the creation's own page, which a creation pressed there can join", () => {
+    const baseline = new AutomationStudioSiteResetCreateBaselines();
+    baseline.observed(recipePage());
+    expect(baseline.receipts().map((receipt) => receipt.ref)).toEqual(["destination-1", "destination-2"]);
+    expect(baseline.check(onRecipe, "destination-1")).toEqual({ kind: "admit" });
+    expect(baseline.destination(onRecipe, "destination-1")).toEqual({ scope: "p:notes", group: "g:recipe" });
+    // The list of suggested recipes has the same shape by everything Core reads, so it is not refused (report, C5).
+    expect(baseline.check(onRecipe, "destination-2")).toEqual({ kind: "admit" });
+  });
+
+  it("refused, names the lists read complete on this page apart from those read elsewhere, and which list to name", () => {
+    const baseline = new AutomationStudioSiteResetCreateBaselines();
+    baseline.observed(planPage());
+    baseline.receipts();
+    baseline.observed(recipePage());
+    baseline.receipts();
+    const verdict = baseline.check(onRecipe, undefined);
+    expect(verdict).toMatchObject(REFUSED);
+    const instruction = verdict.kind === "refused" ? String(verdict.evidence.instruction) : "";
+    expect(instruction).toContain("Lists read complete on this page: destination-2 (1 item), destination-3 (3 items).");
+    expect(instruction).toContain("Lists read complete elsewhere: destination-1 (1 item at loc:week)");
+    expect(instruction).toContain("only where the new entry would appear in that very list");
+    expect(instruction).toContain("A list that only suggests or relates other items to the one acted on never gains the new entry");
+    expect(instruction).not.toMatch(/(store|shop|cart|basket|checkout|address|job|save|heart|photo|like|post|friend|order|product|follow|feed|profile|apply|recipe|note|plan)/iu);
   });
 });
