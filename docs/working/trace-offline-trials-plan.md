@@ -1,9 +1,9 @@
 # Traces And Offline Trials
 
 Status: Active
-Status detail: Plan of record approved and implementation approved by the user on 2026-10-19; lane T (t729) created, not yet dispatched; P0 is next.
+Status detail: P0-P4 complete (t729, t734, t736, t742, t746); P5 next (t749).
 Created: 2026-10-19
-Last updated: 2026-10-19
+Last updated: 2026-10-20
 Owner: Senior supervisor agent
 Scope: Core records what it receives from clients during live builds, tests and runs (traces) and runs candidate Flows against those traces through the normal runtime (offline trials), to cut live trial time in the test and repair phases. Not a site simulator; the final judged whole run stays live.
 Paired document: `docs/working/trace-offline-trials-plan.md` in FluxIQWebExtension (extension side)
@@ -26,23 +26,24 @@ move plan. Execution is run from the downstream `docs/working/trace-offline-tria
 is lane T, branch `task/t729-traces-offline-trials` in both repositories (worktrees under
 `C:/Users/osrs_/FluxStuff/fxwork/t729/`), created and not yet dispatched.
 
-**Dispatched 2026-10-19:** lane T is running P0 and P1 (brief in the downstream execution hub); the boundary moves are tracked in [extension-boundary-moves.md](./extension-boundary-moves.md).
+**Progress (2026-10-20): P0-P4 complete.** P0/P1 (t729, t734): the trace and trial-evidence contracts, the
+environment port (a clock plus a gateway channel scope, decision D1) and capture where Core accepts what bypasses the
+gateway (D3); live trials are 49.8% of build time. P2 capture (t736): at the client gateway and Core's ingress into
+each project's store, the extension's DOM-plus-resource-map snapshots, tracing on for every Lab live run, about +11.5%
+overhead. P3 intake parity (t742): 3,333 of 3,333 saved-Flow delivery points and 4,274 of 6,941 live points matched
+(honest capture gaps), 0 intake defects; trace payloads chunked and protected (migrations 0031-0032). Keyed content
+addresses in protected projects (t745, migrations 0033-0035) and the storage follow-ups (t747: sweep race, re-seal
+job, `gateway-trace` storage layout, migration 0036). P4 offline trials tier 1 (t746): the candidate trial runner
+against a recorded trace through the real intake, a strict trace matcher (`client-gateway/trace-matcher/`), virtual
+timers, U5 results with explicit gaps; source tests T05-T08, T10, T12-T16, T20, T22-T24 pass; round 4's social trials
+reproduce their live judged outcome exactly offline.
 
-**Next:** P0, all in parallel: downstream audit Phases 0 and 1 (provider-call guard; offline queue scoped to its
-session, project and recording) in lanes H and G; Core owns recording and capture policy (lane S); a baseline from
-the Lab's per-step files; an inventory of everything Core accepts from clients and reads later; and the page-snapshot
-spike (see P2), in lane T. P1's evidence-loop and executor edits wait for the reset redesign (t724) to merge.
+**Moved to P5:** P4's corrected-candidate gate item (the social correction changes a filter inside the extension's
+read, so it needs tier 2). The downstream experiment deep-loads three unexported modules (brief scope, scoped
+submission, whole-candidate assembly); P5 replaces that with a public seam.
 
-**Progress (2026-10-19 evening):** P0 complete and P1 merged to the L1 stop point (t729): the trace contract
-(`client-gateway/trace/**`), the trial-evidence result contract (`model/offline-trial/**`), a gateway channel scope
-and the environment port (`runtime/environment/**`) with a trace-fed fixture; no live behaviour changed. Findings:
-live trials are 49.8% of build time over the 25 newest runs (model calls 24.3%, exploration 22.3%, resets 0.6% as a
-lower bound because in-trial resets emit no span); a DOM serialization with a resource map, reloaded with scripts
-and network off, matched live reads and targets on all four sites tried, MHTML did not, so P2 captures that way.
-Two corrections to P1 (decisions D1 and D3 in the downstream `reports/lane-t.md`): the single environment port is
-a clock plus a gateway channel scope, because four domain ports meet only at the gateway's command channel; and the
-chat, asks, run control, screenshot upload and start hook bypass the gateway, so they are captured where Core
-accepts them. U7 (consumer wiring) runs as t734 now that L1 has merged.
+**Next:** P5 offline reads and targets tier 2 (downstream t749, lane T); then P6 build-loop integration (production
+must pass the live session's view to the matcher) and P7.
 
 **Blocked:** nothing needs the user.
 
@@ -152,6 +153,17 @@ The source plan's T01-T24 are kept. Added:
   `"id":"t729","branch":"task/t729-traces-offline-trials"`; both worktrees `git status --short` -> 0 lines.
 - Outcome: Partial (nothing implemented yet)
 - Follow-up: dispatch lane T from the downstream lane table.
+
+### 2026-10-20 - P2-P4 merged; P5 next
+- Agent: supervisor (lane T; execution hub in the downstream repository)
+- Changed: P2 capture (t736), P3 intake parity (t742), keyed content addresses (t745), storage follow-ups (t747) and
+  P4 offline trials tier 1 (t746) merged to `dev` in both repositories; validation for each is in the downstream
+  hub's ledger (`docs/working/trace-offline-trials-plan.md`).
+- Validation: t746's gate after its last dev merge: Core trace-matcher, trace, gateway-trace, offline-trial,
+  environment, storage gateway-trace, model offline-trial -> `Test Files 62 passed (62)`, `Tests 355 passed (355)`;
+  `tsc` 0; `pnpm docs:check` -> reference current; audits passed. Earlier full gate: 364 files, 2504 tests passed.
+- Outcome: Partial (P4's corrected-candidate item moved to P5)
+- Follow-up: P5 (t749).
 
 ## Open Questions
 
