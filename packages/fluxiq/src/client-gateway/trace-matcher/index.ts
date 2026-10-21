@@ -12,4 +12,5 @@ export * from "./gap-answer.ts";
 export * from "./command-id-translation.ts";
 export * from "./recorded-deliveries.ts";
 export * from "./trace-admission.ts";
+export * from "./reevaluation-request.ts";
 export * from "./matcher.ts";

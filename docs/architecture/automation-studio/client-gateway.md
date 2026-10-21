@@ -1085,3 +1085,81 @@ a durable command's own context, or what the optional
 sent. The Automation Studio service records it on that run's detail
 (`AutomationStudioService.lateActionResults.record`, see
 [persistence](./persistence.md)).
+
+## Gateway traces and offline trials
+
+A gateway trace is what Core received from clients during one live episode,
+captured inside the gateway (`client-gateway/trace/`): a manifest (contract
+versions, the session's capabilities, the clock origin, completeness, and the
+artifacts by wire SHA-256 and recorded sequence) and an ordered event log of
+the commands Core sent and the inputs it took in, on a logical clock. How a
+project stores, seals and addresses traces is in
+[persistence](./persistence.md) ("Keyed content addresses").
+
+**Tier 1, strict matching** (`client-gateway/trace-matcher/`,
+`ClientGatewayTraceMatcher`). An offline trial runs a candidate on a recorded
+trace instead of a live client: the matcher is the socket of a scoped session
+on the trial's own gateway, attached with the view the trace recorded when it
+claimed the session. Each action command must equal the recorded operation at
+the cursor (action type, target, parameters). On a match the clock moves by the
+recorded latency and the segment recorded after that operation is fed through
+`receiveRaw` in recorded order, command ids translated. On a mismatch, past the
+recorded end, or after an earlier gap, the command is answered at once with a
+classified, non-retryable evidence gap; nothing recorded after the matched
+point is ever delivered. A trace that is incomplete or recorded under another
+contract is refused at load.
+
+**Tier 2, the reevaluation port** (`ClientGatewayTraceReevaluator`,
+`ClientGatewayTraceReevaluationRequest`, `ClientGatewayTraceReevaluation`). A
+domain may pass a reevaluator in the matcher's input. It is asked only about a
+mismatch whose reason is `argument_mismatch`: same action type as the recorded
+operation at the cursor, different target or parameters, and a segment after
+that operation holding exactly one readable `client.action_result` for it. A
+recorded operation with withheld fields (`redacted_input`), a new operation,
+one past the recorded end, one after a gap, or a refused trace is never
+offered. `clientGatewayTraceReevaluationRequest` builds the request: the
+command and its compared form, the recorded operation and the command it was
+recorded with (`null` when withheld), the differing fields by path, the
+recorded result's payload, and the artifacts recorded before the next recorded
+operation. `readArtifact` returns bytes only for those listed artifacts, so a
+reevaluation never sees what the client went on to report after the operation
+it replaces. The answer is one of:
+
+- `answered`: its result replaces the payload of that one recorded result (the
+  envelope and the rest of the segment are fed as recorded), the cursor
+  advances, and the matched entry has `answeredFrom: "reevaluated"`;
+- `gap`: the command is answered with that gap, cause `reevaluation`;
+- `declined`: the ordinary mismatch gap.
+
+A reevaluator that throws, or answers anything else, is an
+`incomplete_capture` gap (cause `reevaluation`), never a pass. Core stays
+domain-neutral: it only asks, feeds the answer, and reads failure as a gap.
+
+**Gap vocabulary.** `CLIENT_GATEWAY_TRACE_MATCHER_GAP_REASONS` (`gap-reasons.ts`)
+holds `missing_transition`, `argument_mismatch`, `ambiguous_context`,
+`missing_artifact`, `incomplete_capture`, `incompatible_contract`,
+`redacted_input`, and the reevaluator's `snapshot_unavailable` and
+`dynamic_content`, spelled as the Automation Studio trial evidence vocabulary
+(U5, `programs/automation-studio/model/offline-trial/vocabulary.ts`) spells
+them. A trial in which a reevaluator answered any operation carries the
+evidence origin `snapshot_evaluation` beside `recorded` and `pure_computation`,
+so it never reads as purely recorded, and lists those operations in
+`reevaluated` (ordinal, action type, fields; never a value). Any gap makes the
+trial `inconclusive`.
+
+**Evidence only.** An offline pass never satisfies the whole-run gate:
+`satisfiesAutomationStudioWholeRunGate` accepts only a live success of the
+exact candidate revision, digest and goal contract, so the judged whole run
+stays live.
+
+**Seams a host uses** (exported from `programs/automation-studio/runtime/index.ts`
+and the client-gateway barrel): `runAutomationStudioOfflineCandidateTrial` (the
+candidate trial runner on a trace environment, with an optional `reevaluator`;
+refused in exploration and on a derived trace);
+`automationStudioProjectSingleSubflowRebuild` (rebuilds a single-subflow
+candidate from a stored build record through the builder's own submission and
+assembly); `automationStudioServiceWholeTrialPorts` (the whole-candidate trial
+ports a build makes, with the caller's judge and no start hook);
+`automationStudioGatewayTraceServiceStore` (a project's trace store, opened and
+sealed as the host writes it); and `clientGatewayTraceReevaluationRequest`, so
+a tool asks a reevaluator exactly as the matcher does.

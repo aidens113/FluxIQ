@@ -11,9 +11,11 @@ export const AUTOMATION_STUDIO_TRIAL_EVIDENCE_VERDICTS = Object.freeze(["pass", 
  * Where the evidence behind a result came from. `recorded`: traces of what Core
  * received during an earlier live run. `pure_computation`: computed from data
  * already held, with no observation. `live`: observed in a live run now.
- * `modeled`: synthetic or modeled input.
+ * `modeled`: synthetic or modeled input. `snapshot_evaluation`: a changed read
+ * answered by evaluating it against a page snapshot the trace recorded (P5),
+ * not by anything the recorded run observed for it; never live.
  */
-export const AUTOMATION_STUDIO_TRIAL_EVIDENCE_ORIGINS = Object.freeze(["recorded", "pure_computation", "live", "modeled"] as const);
+export const AUTOMATION_STUDIO_TRIAL_EVIDENCE_ORIGINS = Object.freeze(["recorded", "pure_computation", "live", "modeled", "snapshot_evaluation"] as const);
 
 /**
  * How much of the Flow the result covers. A `full_recorded_path` is still a
@@ -27,7 +29,11 @@ export const AUTOMATION_STUDIO_TRIAL_EVIDENCE_SCOPES = Object.freeze(["supplied_
  * `source_not_live`: an offline trial's source trace is not a live episode's
  * capture (it was derived or replayed), so it holds no live evidence to run on;
  * `judgement_unavailable`: the task-goal judge gave no verdict (it was not
- * asked, or it was unsure), so the goal is neither met nor missed.
+ * asked, or it was unsure), so the goal is neither met nor missed;
+ * `snapshot_unavailable`: the trace holds no usable page snapshot at the point
+ * a changed read was to be evaluated; `dynamic_content`: the evaluation needed
+ * page behaviour a static snapshot cannot give. The trace matcher spells the
+ * last two alike (`client-gateway/trace-matcher/gap-reasons.ts`).
  */
 export const AUTOMATION_STUDIO_TRIAL_EVIDENCE_REASON_CODES = Object.freeze([
   "missing_transition",
@@ -45,7 +51,9 @@ export const AUTOMATION_STUDIO_TRIAL_EVIDENCE_REASON_CODES = Object.freeze([
   "redacted_input",
   "offline_not_allowed_in_phase",
   "source_not_live",
-  "judgement_unavailable"
+  "judgement_unavailable",
+  "snapshot_unavailable",
+  "dynamic_content"
 ] as const);
 
 /** How one checked assertion came out. `unverified` means its evidence was unavailable. */
