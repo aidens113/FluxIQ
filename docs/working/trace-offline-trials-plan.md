@@ -1,7 +1,7 @@
 # Traces And Offline Trials
 
-Status: Active
-Status detail: P0-P5 complete (t729, t734, t736, t742, t746, t749); P6 next, after downstream t751.
+Status: Paused
+Status detail: User stopped all work; t753/t752 pushed, Core t754 finish pending, reset t751 preserved before final acceptance.
 Created: 2026-10-19
 Last updated: 2026-10-21
 Owner: Senior supervisor agent
@@ -12,6 +12,15 @@ Related: [source plan](./trace-offline-trials-plan/source-consultant-plan.md) (t
 ---
 
 ## Current State
+
+**PAUSED at the user's explicit stop-all request (2026-10-21).** All recovery agents and their task processes are
+stopped. No implementation, checks, builds, integration or paid runs resume until the user asks. Authoritative
+handoff: downstream `docs/working/trace-offline-trials-plan/reports/handoff-2026-10-21-codex.md`.
+Latest pushed dev heads are Core `f396c9d0`, downstream `83e07232`, including t753 and t752. t754's downstream
+task finish completed only locally (`54d27653`); Core finish has NOT begun. Its clean paired worktree remains
+on `task/t754-package-exports-cleanup` at `efa96a4b`. Do not publish the downstream half alone. t751 has five
+dirty Core source/test files; latest focused corrections passed, but final integrated build/browser acceptance
+is outstanding. P6, live rounds and daily sweeps were not started. Only handoff documentation follows this stop.
 
 **Approved (user, 2026-10-19):** this plan, which is the supervisor's revision of the consultant's plan in
 `trace-offline-trials-plan/source-consultant-plan.md`. "don't implement yet" was the instruction while reviewing;
@@ -202,6 +211,13 @@ The source plan's T01-T24 are kept. Added:
 - Validation: `pnpm.cmd task finish t752 "Ground negative judge findings in measured rows" --skip-checks` independently passed3mandatorypromptcontractfiles/68tests, then merged to dev. The already-passed narrow gates replace a repeated full check per user instructions.
 - Outcome: Accepted; paired ledger/baseline push follows. Reset t751 and export t754 remain separate task units.
 - Follow-up: final combined reset gates, then P6. No paid execution or panel management.
+
+### 2026-10-21 - User requested stop and handoff
+- Agent: supervisor
+- Changed: plan paused; downstream handoff-2026-10-21-codex.md records exact source, validation and publication boundaries.
+- Validation: all recovery agents stopped; process inspection found zero task-owned node/browser processes. No new implementation/check/build/integration after stop; only handoff documentation maintained.
+- Outcome: Paused. Core t754 task finish has not begun; downstream local merge54d27653 is unpublished. t751 source remains uncommitted at its documented final correction boundary.
+- Follow-up: wait for user resume; preserve both task trees and publish no downstream half alone.
 
 ## Open Questions
 
