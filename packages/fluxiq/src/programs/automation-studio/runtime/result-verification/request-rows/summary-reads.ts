@@ -79,12 +79,25 @@
 // carries `storedElsewhere`: each label one of its conditions left out that
 // another read stored and this read did not, with those reads. Its `inResult`
 // still holds every stored label; `unquoted-rows.ts` reads the two together.
+//
+// **Not working rows (t752).** A Flow read a list with no condition, repeated
+// a display-only press over its rows, then read the same list again with a
+// condition and stored the answer. Every read collects its rows into a record
+// set, so the first read's whole list was taken here for the result: each row
+// the last read's condition left out was "stored elsewhere" by the first read,
+// and the answer could not be judged yes. A record set of working rows
+// (`../read-account/working-sets.ts`, from Core's flag on the read whose rows a loop walked
+// before a later read of the same list) is left out here as the entry's sets
+// are: its rows are not stored, not `inResult`, never a holder that
+// `automationStudioRequestRowsStoredBy` names, and its processing conditions
+// are not the result's. A row only it holds is a left-out row like any other.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import type { AutomationStudioResultProcessingCondition } from "../processing-account.ts";
 // The leaf, not the barrel: `../read-account/` reaches `../../llm/`, which reaches this directory, so a value through the barrel would close a module cycle.
 import { automationStudioResultConditionName } from "../read-account/condition-name.ts";
+import { automationStudioResultReadWorkingSets } from "../read-account/working-sets.ts";
 import { AutomationStudioRequestRowId } from "./row-id.ts";
 import type { AutomationStudioRequestRowsCondition, AutomationStudioRequestRowsRead, AutomationStudioRequestRowsStored } from "./types.ts";
 import { automationStudioRequestRowWords } from "./words.ts";
@@ -111,7 +124,9 @@ export function automationStudioRequestRowsReads(summary: AutomationStudioRunRes
   const entrySteps = new Set(withEntry ? [] : summary.taskChecklist?.entry?.steps ?? []);
   // A record set only the entry's steps collected is the entry's too.
   const entrySet = (set: AutomationStudioResultRecordSetSummary): boolean => entrySteps.size > 0 && (set.processing?.passes.length ?? 0) > 0 && set.processing!.passes.every((pass) => entrySteps.has(pass.node));
-  const recordSets = summary.recordSets.filter((set) => !entrySet(set));
+  // Working rows are never the result (header, t752).
+  const working = automationStudioResultReadWorkingSets(summary);
+  const recordSets = summary.recordSets.filter((set) => !entrySet(set) && !working.has(set.datasetId));
   const stored = recordSets.flatMap(automationStudioRequestRowsStoredOf);
   const reads: AutomationStudioRequestRowsRead[] = [];
   for (const step of summary.buildTest?.steps ?? []) {
@@ -153,7 +168,7 @@ export function automationStudioRequestRowsReads(summary: AutomationStudioRunRes
     }
   }
   // The left-out rows another read stored, never this read's own copy (header, t691).
-  const storedBy = automationStudioRequestRowsStoredBy(recordSets);
+  const storedBy = automationStudioRequestRowsStoredBy({ ...summary, recordSets });
   for (const entry of reads) {
     if (entry.nodeId === undefined) continue;
     const elsewhere = unique(entry.conditions.flatMap((condition) => condition.labels)).flatMap((label) => {
@@ -230,10 +245,14 @@ export function automationStudioRequestRowsStoredOf(set: AutomationStudioResultR
  * For a read and a label it left out: the reads that stored that label, where
  * none of them is that read and Core knows each (header); none otherwise --
  * the label is not stored, or that read, or a read Core cannot name, stored it.
+ * A record set of working rows (`../read-account/working-sets.ts`, t752) is no holder: it is
+ * not the result.
  */
-export function automationStudioRequestRowsStoredBy(recordSets: readonly AutomationStudioResultRecordSetSummary[]): (nodeId: string, label: string) => string[] | undefined {
+export function automationStudioRequestRowsStoredBy(summary: Pick<AutomationStudioRunResultSummary, "reads" | "recordSets">): (nodeId: string, label: string) => string[] | undefined {
+  const working = automationStudioResultReadWorkingSets(summary);
   const holders = new Map<string, Array<readonly string[] | undefined>>();
-  for (const set of recordSets) {
+  for (const set of summary.recordSets) {
+    if (working.has(set.datasetId)) continue;
     const nodes = [...new Set((set.processing?.passes ?? []).map((pass) => pass.node))];
     for (const label of new Set(automationStudioRequestRowsStoredOf(set).map((row) => row.label))) {
       holders.set(label, [...(holders.get(label) ?? []), nodes.length ? nodes : undefined]);

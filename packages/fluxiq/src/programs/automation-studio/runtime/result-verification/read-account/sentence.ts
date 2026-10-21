@@ -29,7 +29,9 @@
 //
 // **A read Core flagged as keeping every item it saw after an act repeated
 // over a narrower read of the same list says Core's sentence for it** in the
-// full length (`kept-every-row.ts`, t692).
+// full length (`kept-every-row.ts`, t692), and so does a read whose rows Core
+// flagged as working rows, what a repeat walked before a later read of the same
+// list stored the answer (`working-rows.ts`, t752).
 
 import type { AutomationStudioResultReadAccount } from "../contracts/index.ts";
 import { automationStudioResultConditionName, automationStudioResultReadPageBoundSentence, automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./index.ts";
@@ -97,6 +99,8 @@ function fullTail(read: AutomationStudioResultReadAccount): string {
   if (read.unfiltered) lines.push("Every row failed its conditions, so it answered with the unfiltered rows.");
   // A read that kept every item it saw after an act repeated over a narrower read of the same list (`kept-every-row.ts`, t692).
   if (read.keptEveryRow) lines.push(read.keptEveryRow.said);
+  // A read whose rows are working rows, what a repeat walked before a later read of the same list (`working-rows.ts`, t752).
+  if (read.workingRows) lines.push(read.workingRows.said);
   // A read of one part of a list that goes on past it (header, F8).
   const continued = automationStudioResultReadListContinues(read);
   if (continued) lines.push(continued.said);

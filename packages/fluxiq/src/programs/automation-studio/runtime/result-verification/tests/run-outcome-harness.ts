@@ -4,7 +4,7 @@
 import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetPage, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowInstruction, AutomationStudioFlowRunDetail, AutomationStudioRuntimeSession } from "../../../model/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest, AutomationStudioLlmVerificationDefect } from "../../llm/index.ts";
 import type { AutomationStudioFlowGraphJudgement } from "../../flow-version/index.ts";
 import { verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts } from "../run-outcome.ts";
 
@@ -90,7 +90,8 @@ export function provider(
   seen: AutomationStudioLlmTaskRequest[],
   answers?: readonly ScriptedAnswer[],
   /** The rest of what the judgement said, where a test is about the reading rather than the verdict. */
-  said?: Record<string, string>
+  said?: Record<string, string>,
+  defects?: readonly AutomationStudioLlmVerificationDefect[]
 ): AutomationStudioLlmProvider {
   return {
     metadata: { provider: "mock", model: "debug-model" },
@@ -100,7 +101,7 @@ export function provider(
       if (scripted === UNAVAILABLE) throw new Error("provider down");
       const answer_ = scripted;
       return {
-        response: { kind: "diagnosis", summary: "Judged.", ...(answer_ ? { diagnosis: { answersRequest: answer_, ...(said ?? {}) } } : {}) },
+        response: { kind: "diagnosis", summary: "Judged.", ...(answer_ ? { diagnosis: { answersRequest: answer_, ...(said ?? {}), ...(answer_ === ANSWER.no && defects !== undefined ? { defects } : {}) } } : {}) },
         usage: { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 }
       };
     }
@@ -136,6 +137,8 @@ export function harness(options: {
   noJudgementStore?: boolean;
   /** What the judgement said beyond its verdict, for the tests about the reading it hands on. */
   said?: Record<string, string>;
+  /** The measured defect a current negative reply names; omission deliberately exercises strict decoding. */
+  defects?: readonly AutomationStudioLlmVerificationDefect[];
 } = {}): Harness {
   const written: AutomationStudioRuntimeSession[] = [];
   const saved: AutomationStudioFlowRunDetail[] = [];
@@ -164,10 +167,19 @@ export function harness(options: {
     ...(options.withProvider === false ? {} : {
       resolveProvider: options.resolverHangs
         ? () => { resolutions.count += 1; return new Promise<never>(() => undefined); }
-        : async () => { resolutions.count += 1; return { provider: provider(options.answer, requests, options.answers, options.said) }; }
+        : async () => { resolutions.count += 1; return { provider: provider(options.answer, requests, options.answers, options.said, options.defects) }; }
     })
   };
   return { ports, written, saved, requests, resolutions, judgements };
+}
+
+/** A measured wrong answer: the request asks for admins, while the stored member's role is member. */
+export function memberHarness(options: NonNullable<Parameters<typeof harness>[0]> = {}): Harness {
+  return harness({
+    instructions: [instruction("List members who are admins.")],
+    defects: [{ kind: "kept_not_asked", row: "Hollis Abbott", column: "role", value: "member", requestWords: "who are admins" }],
+    ...options
+  });
 }
 
 export const verify = async (context: Harness, overrides: Partial<Parameters<typeof verifyAutomationStudioRuntimeSessionResult>[0]> = {}) =>

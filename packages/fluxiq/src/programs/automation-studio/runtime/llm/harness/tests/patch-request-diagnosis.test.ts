@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { packAutomationStudioLlmContext } from "../context-packet.ts";
+import type { AutomationStudioLlmDiagnosisFields } from "../structured-response.ts";
 import type { AutomationStudioLlmHarnessInput } from "../task-request.ts";
 
 // The patch stage is told to "carry out the plan you just stated", and the plan
@@ -44,6 +45,23 @@ describe("carrying the diagnosis into the patch request", () => {
       "changed", "deterministicRecoveryPossible", "expected", "explorationNeeded", "observed", "patchNeeded"
     ]);
     expect(JSON.stringify(packed)).not.toContain("data-testid");
+  });
+
+  // t752: a verification's defects are a named key of the channel, checked on the way out as on the way in.
+  it("carries each well-formed defect the diagnosis named, and drops a malformed one", () => {
+    const defects = [
+      { kind: "kept_not_asked", row: "[row K4R7M2] The Long Road", requestWords: "published since 2000" },
+      { kind: "wrong_value", row: "Field Notes", column: "year", requestWords: "the year each was published" }
+    ] as const;
+    // A diagnosis as a caller might hand it, its defects unchecked: the channel's own type, loosened only there.
+    const unchecked = (fields: Omit<AutomationStudioLlmDiagnosisFields, "defects"> & { defects: unknown[] }): AutomationStudioLlmDiagnosisFields => fields as AutomationStudioLlmDiagnosisFields;
+    const packed = packAutomationStudioLlmContext(patchInput({
+      diagnosis: unchecked({ ...DIAGNOSIS, defects: [...defects, { kind: "too_strict", row: "x", requestWords: "y" }, { ...defects[0], selector: "[data-testid=\"row\"]" }] })
+    }));
+    expect(packed.diagnosis).toEqual({ ...DIAGNOSIS, defects });
+    expect(JSON.stringify(packed)).not.toContain("too_strict");
+    expect(JSON.stringify(packed)).not.toContain("data-testid");
+    expect(packAutomationStudioLlmContext(patchInput({ diagnosis: unchecked({ expected: "x", defects: [{ kind: "wrong_value" }] }) })).diagnosis).toEqual({ expected: "x", defects: [] });
   });
 
   it("omits the slot when the diagnosis produced nothing worth carrying", () => {

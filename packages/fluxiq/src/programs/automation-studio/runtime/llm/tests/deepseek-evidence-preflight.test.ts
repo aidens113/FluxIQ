@@ -300,6 +300,8 @@ function verificationRequest(summary: JsonObject, overrides: Partial<AutomationS
     taskKind: "loop_verification",
     promptVersion: "automation-studio.loop-verification.v3",
     expectedOutput: "diagnosis",
+    // A judge's own budget (t752): its prompt and the 5,000-character row below outgrew the 8,000 tokens a runtime diagnosis is given here.
+    tokenLimits: { maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 },
     context: { ...base.context, taskKind: "loop_verification", promptVersion: "automation-studio.loop-verification.v3", resultSummary: summary as never },
     ...overrides
   };

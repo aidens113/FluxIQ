@@ -12,11 +12,11 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { automationStudioBuildTestJudge, type AutomationStudioBuildTestTaskChecklist } from "../../build-test/index.ts";
-import { CAMPSITE_REQUEST, campsiteInstruction, campsiteRunSummary } from "./campsite-fixture.ts";
+import { CAMP_SILVER, CAMPSITE_REQUEST, campsiteInstruction, campsiteRunSummary } from "./campsite-fixture.ts";
 import { CAMPSITE_YES, DROP_NAME_CONDITIONS_NO, DROPPED_NOT_EXCLUDED_NO, RELAX_ONE_CONDITION_NO, WRONGLY_LEFT_OUT_NO } from "./campsite-readings-fixture.ts";
 
 const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 };
-const no = (reading: Record<string, string>) => ({ answersRequest: "no", ...reading });
+const no = (reading: Record<string, string>) => ({ answersRequest: "no", ...reading, defects: reading === WRONGLY_LEFT_OUT_NO ? [{ kind: "asked_missing", row: CAMP_SILVER, requestWords: "every campsite" }] : [] });
 
 /** A provider answering each call with its own diagnosis, keeping every request it was sent. */
 function answering(...diagnoses: Record<string, unknown>[]): { provider: AutomationStudioLlmProvider; seen: AutomationStudioLlmTaskRequest[] } {
@@ -87,11 +87,11 @@ describe.each(TRIALS)("$trial: nos refuted by what they reference", ({ taskCheck
     expect(verdict.verdict).not.toBe("no");
   });
 
-  it("nos asking to drop two conditions that may have left out a campsite together still stand: two are a no, asked nothing more", async () => {
-    const { provider, seen } = answering(no(DROP_NAME_CONDITIONS_NO), no(DROP_NAME_CONDITIONS_NO), CAMPSITE_YES, CAMPSITE_YES);
+  it("unnamed possible jointly dropped rows remain unsure: counts alone cannot locate a missing campsite", async () => {
+    const { provider, seen } = answering(no(DROP_NAME_CONDITIONS_NO), no(DROP_NAME_CONDITIONS_NO), no(DROP_NAME_CONDITIONS_NO), no(DROP_NAME_CONDITIONS_NO));
     const verdict = await judge(provider)({ summary: campsiteRunSummary({ together: true }), taskChecklist, budget: { maxCostUsd: 0.2 } });
-    expect(verdict).toMatchObject({ verdict: "no" });
-    expect(seen).toHaveLength(2);
+    expect(verdict).toMatchObject({ verdict: "unknown" });
+    expect(seen).toHaveLength(4);
   });
 
   it("a no naming a campsite the read wrongly left out still stands: two are a no, asked nothing more", async () => {

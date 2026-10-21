@@ -100,6 +100,8 @@ export type AutomationStudioSubflowTrialRequest = {
   signal: AbortSignal;
   /** What of this build was already on the site when the trial began; absent when the site was as the build found it. */
   startedWith?: readonly string[];
+  /** Each earlier judged trial's advice for this subflow, oldest first, at most three, with whether this revision changed what it named (t752, `../candidate/earlier-advice-memory.ts`): the judge is told it, last in its summary. */
+  earlierAdvice?: readonly import("../../result-verification/contracts/index.ts").AutomationStudioResultEarlierAdvice[];
 };
 
 /**

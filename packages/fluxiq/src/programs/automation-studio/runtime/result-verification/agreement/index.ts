@@ -171,8 +171,32 @@
 // stands. It is asked after the more pointed re-asks above, through the
 // verification's own `ask`, so its call is charged to the same purse.
 //
+// **A no that names no defect Core can find is not a no (t752).** A breadth
+// rerun's trial stored exactly the rows asked for, beside the working rows of
+// an earlier read of the same list, after an earlier judge of the build advised
+// the very change the revision made. Both calls said no: one for that method
+// and a count of the rows, the other for a claim about a condition the
+// request's own words refute. Neither named a row wrongly kept, a row missing
+// or a wrong value, yet Core's pattern weighing (`../refuted-no/weigh.ts`) left
+// a sentence standing and the right answer failed -- as earlier judge errors
+// had failed others, each answered by one more pattern. A no now lists its
+// defects (`diagnosis.defects`), and Core looks for each in its own record
+// (`located-defects/`), working rows left out (`../refuted-no/record.ts`).
+// After every re-ask above, each no that names none Core finds -- both of a
+// double no, or a split's no that survived -- is asked once more
+// (`unsupported-no.ts`) to list each defect quoting the request, told that a
+// concern that is no defect is advice beside a yes, that a claim that a
+// condition keeps or drops rows is a defect only with a row of this result,
+// and, where this revision changed what an earlier judge advised
+// (`summary.earlierAdvice`), that the change proves neither advice compliance
+// nor correctness and the original request still governs. Its answer takes its
+// place under `agree`; a no still naming none counts for nothing
+// (`unsupportedNo`): beside a no that names one the verdict stays no, and
+// otherwise the outcome is unsure (`refutationUnsupported`), never a no.
+//
 // The agreement itself is `verification-agreement.ts` over `agree.ts`; the
-// re-asks are `reask-contradicted.ts` and, last, `reask-split-no.ts`; whether
+// re-asks are `reask-contradicted.ts`, `reask-split-no.ts` and, last,
+// `unsupported-no.ts` over `located-defects/`; whether
 // a first verdict is asked again is `ask-again.ts`; whether a no's reasons let it be asked again is
 // `no-reasons.ts`. The rest are the pieces they weigh with: the record a no
 // is weighed against (`no-record.ts`, `weighed-no.ts`), the readings the
@@ -187,6 +211,7 @@ export * from "./no-reasons.ts";
 export * from "./reask-contradicted.ts";
 export * from "./reask-split-no.ts";
 export * from "./split-no-words.ts";
+export * from "./unsupported-no.ts";
 // The advice a builder is shown of a judged trial, less a wholly refuted reading's (t687).
 export { automationStudioResultAdviceShown } from "./refuted-labelled.ts";
 export type { AutomationStudioResultVerificationAgreementInput } from "./types.ts";

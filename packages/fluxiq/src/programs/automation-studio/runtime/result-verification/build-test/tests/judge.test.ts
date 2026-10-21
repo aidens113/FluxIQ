@@ -31,7 +31,7 @@ function scripted(answers: readonly string[], said: Record<string, string> = {})
       runTask: async (request: AutomationStudioLlmTaskRequest) => {
         const answer = answers[seen.length];
         seen.push(request);
-        return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: answer, ...said } }, usage: USAGE };
+        return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: answer, ...(answer === "no" ? { defects: [] } : {}), ...said } }, usage: USAGE };
       }
     }
   };
@@ -45,58 +45,55 @@ const run40Summary = () => automationStudioBuildTestResultSummary({
   instructionText: PICKUP_CART, result: { summary: "Added.", acts: RUN_40_CLAIMS }, startLocation: SITE, deniedEvidenceKeys: DENIED
 });
 
+// These are mapping tests: the verifier already established a negative. Its
+// row-grounding/decoder behavior has dedicated current-provider tests below.
 describe("a judged no carries the judge's reading to the repair", () => {
-  it("run 36: maps two scripted noes to no, with what was observed and no record-set finding a test cannot have", async () => {
+  const mapped = (reading: { expected?: string; observed?: string; advice?: string; stillAchievable?: "yes" | "no" | "unknown" }) => {
+    const seen: AutomationStudioResultVerificationRequest[] = [];
+    return {
+      seen,
+      verify: async (request: AutomationStudioResultVerificationRequest): Promise<AutomationStudioResultVerificationReport> => {
+        seen.push(request);
+        return { interventions: [], outcome: {
+          schemaVersion: "automation-studio.result-verification.v1", performed: true,
+          verdict: "does_not_answer", basis: "model", code: "core.result.does_not_answer_request", reason: "Independent negative fixture", observation: "Checked.",
+          repair: { schemaVersion: "automation-studio.result-repair-directive.v1", findings: [], fix: [], judgement: reading }
+        } };
+      }
+    };
+  };
+
+  it("maps an independently refuted action result to no with the reading and whole test packet", async () => {
     const summary = automationStudioBuildTestResultSummary({
       steps: RUN_36_STEPS, report: run36Report(), nodes: [], instructionText: ACCEPT_FRIENDS,
       result: { summary: "Accepted.", acts: [{ action: "a1", step: "4" }] }, startLocation: FRIENDS, deniedEvidenceKeys: DENIED
     });
-    const { provider, seen } = scripted(["no", "no"], {
-      expected: "Every request from someone with at least five mutual friends accepted, and a table of them.",
-      observed: "Step 6 confirms Priya Nair (4 mutual); step 4's condition excludes Jonas Weber (5); only 4 requests were listed; no step reads the accepted requests.",
-      changed: "Fix step 4's condition, press See all before it, and add a read of the accepted requests."
-    });
-    const verdict = await judge(ACCEPT_FRIENDS, { provider })({ summary, budget: { maxCostUsd: 0.2 } });
-    expect(verdict).toMatchObject({
-      verdict: "no",
-      observed: expect.stringContaining("Priya Nair (4 mutual)"),
-      expected: expect.stringContaining("at least five"),
-      advice: expect.stringContaining("See all"),
-      findings: []
-    });
-    // What the model was sent is the test's packet, whole.
-    expect(seen[0]?.context.resultSummary?.buildTest?.steps[3]?.observed).toEqual({ rows: [{ name: "Amara Osei", mutual: "23 mutual friends" }], itemsSeen: 4 });
-    // Verify may ask twice, so each call gets half of what the build has left.
-    expect(seen[0]?.maxEstimatedCostUsd).toBe(0.1);
+    const fixture = mapped({ expected: "At least five mutual friends.", observed: "The accepted request has four mutual friends.", advice: "Fix the condition." });
+    const verdict = await judge(ACCEPT_FRIENDS, { verify: fixture.verify })({ summary, budget: { maxCostUsd: 0.2 } });
+    expect(verdict).toMatchObject({ verdict: "no", observed: "The accepted request has four mutual friends.", expected: "At least five mutual friends.", advice: "Fix the condition.", findings: [] });
+    expect(fixture.seen[0]?.summary.buildTest?.steps[3]?.observed).toEqual({ rows: [{ name: "Amara Osei", mutual: "23 mutual friends" }], itemsSeen: 4 });
+    expect(fixture.seen[0]?.maxEstimatedCostUsd).toBe(0.1);
   });
 
-  it("run 40: maps a scripted no to no", async () => {
-    const { provider } = scripted(["no", "no"], { observed: "No step searches for or adds the napkins; two packs are never set.", changed: "Add steps that search the napkins, choose 250 Count and add them; set the towels' quantity to two." });
-    const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
-    expect(verdict).toMatchObject({ verdict: "no", observed: expect.stringContaining("napkins"), advice: expect.stringContaining("250 Count") });
-    expect(verdict.spent).toEqual({ inputTokens: 1800, outputTokens: 120, totalTokens: 1920, estimatedCostUsd: 0.002, calls: 2 });
+  it("maps a refuted cart result to no", async () => {
+    const fixture = mapped({ observed: "The napkins are missing.", advice: "Add the napkins." });
+    const verdict = await judge(PICKUP_CART, { verify: fixture.verify })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
+    expect(verdict).toMatchObject({ verdict: "no", observed: "The napkins are missing.", advice: "Add the napkins." });
   });
 
-  // t195-w37 (live run run-murwcaj0-40e56557): a build ends "not doable" only when the judge says what was asked
-  // can no longer be had, so a no carries the judge's stillAchievable (a reply with any other word is refused by the
-  // harness's schema, and the verdict reader's screen is pinned in ../../tests/verdict.test.ts).
-  it("carries the judge's stillAchievable on a no", async () => {
-    for (const said of ["no", "yes", "unknown"] as const) {
-      const { provider } = scripted(["no", "no"], { observed: "No step reads the list after the confirms.", stillAchievable: said });
-      const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
-      expect(verdict, said).toMatchObject({ verdict: "no", stillAchievable: said });
+  it("carries the independent judge's stillAchievable only when given", async () => {
+    for (const stillAchievable of ["no", "yes", "unknown"] as const) {
+      const verdict = await judge(PICKUP_CART, { verify: mapped({ observed: "A required action was not completed.", stillAchievable }).verify })({ summary: run40Summary() });
+      expect(verdict).toMatchObject({ verdict: "no", stillAchievable });
     }
-    const { provider } = scripted(["no", "no"], { observed: "No step reads the list after the confirms." });
-    const silent = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
+    const silent = await judge(PICKUP_CART, { verify: mapped({ observed: "A required action was not completed." }).verify })({ summary: run40Summary() });
     expect(silent.verdict).toBe("no");
-    expect("stillAchievable" in silent).toBe(false);
+    expect(silent).not.toHaveProperty("stillAchievable");
   });
 
-  // A build measures a repair by what its test stored (t240): the counts the verdict was reached from travel with a no.
-  it("carries the summary's stored, refused and missing-required counts on a no", async () => {
+  it("carries the summary's stored, refused and missing-required counts on an independently established no", async () => {
     const summary = { ...run40Summary(), totalRecordCount: 7, totalRefusedCount: 3, totalRowsMissingRequired: 2 };
-    const { provider } = scripted(["no", "no"], { observed: "Seven rows stored, three refused." });
-    const verdict = await judge(PICKUP_CART, { provider })({ summary, budget: { maxCostUsd: 0.2 } });
+    const verdict = await judge(PICKUP_CART, { verify: mapped({ observed: "Seven rows stored, three refused." }).verify })({ summary });
     expect(verdict).toMatchObject({ verdict: "no", records: { stored: 7, refused: 3, missingRequired: 2 } });
   });
 });
@@ -280,23 +277,23 @@ describe("run murwcmx2: the judge's reading reaches the build", () => {
     let call = 0;
     return {
       metadata: { provider: "mock", model: "debug-model" },
-      runTask: async () => ({ response: { kind: "diagnosis", summary: "Judged.", diagnosis: diagnoses[call++] ?? {} }, usage: USAGE })
+      runTask: async () => ({ response: { kind: "diagnosis", summary: "Judged.", diagnosis: { defects: [], ...(diagnoses[call++] ?? {}) } }, usage: USAGE })
     };
   };
 
   // Both calls' readings reach the build, each under its call's label (t501, D1:
   // live run `run-mv6i27oi-a87fb247` forwarded only the first and lost the second's defect).
-  it("two noes refute although the second's advice ran past its bound: a no, with both calls' readings", async () => {
+  it("unmeasured negative advice stays unknown even when both calls repeat it, and its long advice survives", async () => {
     const provider = answering({ answersRequest: "no", ...FIRST }, { answersRequest: "no", expected: FIRST.expected, changed: LONG_CHANGED });
     const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
     // The expectation both calls worded alike is said once; the first call alone said what it observed.
-    expect(verdict).toMatchObject({ verdict: "no", expected: FIRST.expected, observed: `Judge call 1: ${FIRST.observed}` });
-    const advice = verdict.verdict === "no" ? verdict.advice ?? "" : "";
-    expect(advice.startsWith(`Judge call 1: ${FIRST.changed} Judge call 2: `)).toBe(true);
+    expect(verdict).toMatchObject({ verdict: "unknown", unconfirmedReading: { expected: FIRST.expected, observed: expect.stringContaining(FIRST.observed) } });
+    const advice = verdict.verdict === "unknown" ? verdict.unconfirmedReading?.advice ?? "" : "";
+    expect(advice).toContain(FIRST.changed);
     // The second call's advice is carried, clipped to its bound, never dropped.
-    expect(advice).toContain(`Judge call 2: ${LONG_CHANGED.slice(0, 120)}`);
+    expect(advice).toContain(LONG_CHANGED.slice(0, 120));
     expect(advice).not.toContain("contradicted by Core's record");
-    expect(verdict.spent.calls).toBe(2);
+    expect(verdict.spent.calls).toBe(4);
   });
 
   // Through the real check (`../verify.ts` hands the reads to `../agreement/`):
@@ -307,15 +304,12 @@ describe("run murwcmx2: the judge's reading reaches the build", () => {
   const ended = { nodeId: "s7", definitionId: "web.dom.extract_list", pagesRead: 5, pageLimit: 10, stop: "control_disabled", truncated: false, kept: 15, paginates: true };
   const PAGES = { answersRequest: "no", expected: FIRST.expected, observed: "There are many more pages; the read stopped at page 5, not every page.", changed: "Follow the remaining pages." };
 
-  it("two noes, one claiming pages the record says do not exist: the other reading leads and that one is marked contradicted", async () => {
+  it("a refuted page claim beside an unmeasured negative stays unknown rather than promoting either reading", async () => {
     const provider = answering(PAGES, { answersRequest: "no", ...FIRST });
     const verdict = await judge(PICKUP_CART, { provider })({ summary: { ...run40Summary(), reads: [ended] }, budget: { maxCostUsd: 0.2 } });
-    expect(verdict.verdict).toBe("no");
-    const observed = verdict.verdict === "no" ? verdict.observed ?? "" : "";
-    expect(observed.startsWith(`Judge call 2: ${FIRST.observed} Judge call 1 (contradicted by Core's record`)).toBe(true);
-    expect(observed).toContain("): There are many more pages");
-    expect(verdict).toMatchObject({ expected: FIRST.expected });
-    expect(verdict.spent.calls).toBe(2);
+    expect(verdict.verdict).toBe("unknown");
+    expect(verdict).toMatchObject({ unsupportedNo: true, unconfirmedReading: { observed: expect.stringContaining(FIRST.observed) } });
+    expect(verdict.spent.calls).toBe(4);
   });
 
   it("two noes both claiming pages the record says do not exist: each call is asked again, and the same claim again is unknown, never a no", async () => {
@@ -351,7 +345,7 @@ describe("run murwcmx2: a build's yes is confirmed by a second call", () => {
   };
   const answering = (...diagnoses: Record<string, unknown>[]): { provider: AutomationStudioLlmProvider; seen: AutomationStudioLlmTaskRequest[] } => {
     const seen: AutomationStudioLlmTaskRequest[] = [];
-    return { seen, provider: { metadata: { provider: "mock", model: "debug-model" }, runTask: async (request) => { const diagnosis = diagnoses[seen.length] ?? {}; seen.push(request); return { response: { kind: "diagnosis", summary: "Judged.", diagnosis }, usage: USAGE }; } } };
+    return { seen, provider: { metadata: { provider: "mock", model: "debug-model" }, runTask: async (request) => { const diagnosis = { defects: [], ...(diagnoses[seen.length] ?? {}) }; seen.push(request); return { response: { kind: "diagnosis", summary: "Judged.", diagnosis }, usage: USAGE }; } } };
   };
 
   it("yes, yes is yes, and both calls are paid for", async () => {
@@ -370,14 +364,14 @@ describe("run murwcmx2: a build's yes is confirmed by a second call", () => {
     // The split's no is asked once more to name its defect (t725), and says the same no again: it stands, a third call paid for.
     const { provider } = answering({ answersRequest: "yes" }, NO, NO);
     const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
-    expect(verdict).toMatchObject({ verdict: "unknown", unconfirmedReading: { expected: NO.expected, observed: NO.observed, advice: NO.changed }, spent: { calls: 3 } });
+    expect(verdict).toMatchObject({ verdict: "unknown", unconfirmedReading: { expected: NO.expected, observed: expect.stringContaining(NO.observed), advice: expect.stringContaining(NO.changed) }, spent: { calls: 4 } });
   });
 
   // Live run run-musp4h2f-72e8ed99 (t193 round 1003): the last judgement was no, then yes. The build must know one
   // call said yes (`oneCallSaidYes`) to measure the repair that got there as progress; a no then unknown never says so.
   it("no, then yes, is unknown with oneCallSaidYes; no, then unknown, is unknown without it", async () => {
     const split = await judge(PICKUP_CART, { provider: answering(NO, { answersRequest: "yes" }).provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
-    expect(split).toMatchObject({ verdict: "unknown", oneCallSaidYes: true, unconfirmedReading: { observed: NO.observed } });
+    expect(split).toMatchObject({ verdict: "unknown", oneCallSaidYes: true, unconfirmedReading: { observed: expect.stringContaining(NO.observed) } });
     const unconfirmed = await judge(PICKUP_CART, { provider: answering(NO, { answersRequest: "unknown" }).provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
     expect(unconfirmed.verdict).toBe("unknown");
     expect(unconfirmed).not.toHaveProperty("oneCallSaidYes");
@@ -388,7 +382,7 @@ describe("run murwcmx2: a build's yes is confirmed by a second call", () => {
   it("no, then yes, carries the yes's reading beside the no's; no, then unknown, carries none", async () => {
     const YES = { answersRequest: "yes", expected: "The cart holds the item for pickup.", observed: "The end view shows the item in the cart for pickup.", changed: "Remove step 4." };
     const split = await judge(PICKUP_CART, { provider: answering(NO, YES).provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
-    expect(split).toMatchObject({ verdict: "unknown", oneCallSaidYes: true, unconfirmedReading: { observed: NO.observed }, answeredReading: { expected: YES.expected, observed: YES.observed } });
+    expect(split).toMatchObject({ verdict: "unknown", oneCallSaidYes: true, unconfirmedReading: { observed: expect.stringContaining(NO.observed) }, answeredReading: { expected: YES.expected, observed: YES.observed } });
     expect(JSON.stringify(split)).not.toContain(YES.changed);
     const unconfirmed = await judge(PICKUP_CART, { provider: answering(NO, { answersRequest: "unknown" }).provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
     expect(unconfirmed).not.toHaveProperty("answeredReading");

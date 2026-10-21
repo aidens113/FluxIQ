@@ -98,6 +98,32 @@ export type AutomationStudioLlmDiagnosisFields = {
    * result verification fails closed on rather than letting it read as a pass.
    */
   answersRequest?: "yes" | "no" | "unknown";
+  /**
+   * A `loop_verification` no only (t752): each defect of the result the no
+   * rests on, so Core can find it in its own record rather than read it out of
+   * prose (`../../result-verification/agreement/`). A no that names none Core
+   * can locate is not a no. Optional for persisted legacy diagnoses and unrelated tasks. Current negative
+   * verification replies require a well-formed list, including an explicit empty one.
+   */
+  defects?: AutomationStudioLlmVerificationDefect[];
+};
+
+/**
+ * One defect a `loop_verification` no names (t752): `kept_not_asked`, a row the
+ * result keeps that the request does not ask for; `asked_missing`, a row the
+ * request asks for that the result lacks (`row` may be "rows not read" for rows
+ * the run never read); `wrong_value`, a kept row whose `column` holds a wrong
+ * value; `other` names an ordering, formatting, required action/column or other
+ * requirement that row membership cannot measure, which remains unsure. `row` names the row as the evidence does (Core's row id or its label);
+ * `requestWords` quotes the request's words the row fails.
+ */
+export type AutomationStudioLlmVerificationDefect = {
+  kind: "kept_not_asked" | "asked_missing" | "wrong_value" | "other";
+  row: string;
+  column?: string;
+  /** The value the judge claims this stored cell holds, checked against Core's own stored cell. */
+  value?: string;
+  requestWords: string;
 };
 
 /**

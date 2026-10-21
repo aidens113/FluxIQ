@@ -18,7 +18,7 @@ const instruction: AutomationStudioFlowInstruction = {
   scope: { kind: "flow", projectId: "project-1", flowId: "flow-1" }, priority: 1, status: "active", requirement: "required", createdAt: 1, updatedAt: 1
 };
 const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 };
-const NO = { answersRequest: "no", expected: "Only earbuds.", observed: "Two accessories are kept.", changed: "Leave out the accessories." };
+const NO = { answersRequest: "no", expected: "Only earbuds.", observed: "Two accessories are kept.", changed: "Leave out the accessories.", defects: [{ kind: "kept_not_asked", row: "Replacement Ear Tips for Wireless Earbuds, Memory Foam Eartips, 3 Pairs (S/M/L), Black", requestWords: "accessories" }] };
 
 /** What one scripted call does: answer with a diagnosis, or fail as `fault` says. */
 type Call = { answer: Record<string, unknown> } | { fault: "timeout" | "unavailable" | "untyped" | "truncated" | "malformed" | "auth" };
@@ -255,9 +255,15 @@ describe("a verification held to the request's own words", () => {
 
   it("does not turn an evidence correction into permission to ignore a genuine no", async () => {
     const deficient = yesSaying("no quotation supplied");
-    const no = { answersRequest: "no", observed: "A required row was lost.", changed: "Restore the missing row." };
+    const no = { answersRequest: "no", observed: "The result wrongly stores a replacement handle.", changed: "Remove the replacement handle.", defects: [{ kind: "kept_not_asked", row: "Replacement Handle for Garden Tools", requestWords: "replacement parts" }] };
     const { provider, seen } = scripted([{ answer: deficient }, { answer: no }, { answer: no }]);
-    const report = await held(provider, { confirmAnswer: true });
+    const wrong = requestWordsRunSummary();
+    // This test promises a genuine negative: explicitly store the excluded
+    // replacement row instead of inventing an unnamed missing row.
+    wrong.recordSets[0]!.sampleRows!.push({ name: "Replacement Handle for Garden Tools" });
+    wrong.recordSets[0]!.recordCount += 1;
+    wrong.totalRecordCount += 1;
+    const report = await held(provider, { confirmAnswer: true, summary: wrong });
     expect(seen).toHaveLength(3);
     expect(report.outcome).toMatchObject({ verdict: "does_not_answer" });
     expect(report.outcome).not.toHaveProperty("exclusionEvidenceMissing");
@@ -304,7 +310,7 @@ describe("a verification held to the request's own words", () => {
   it("asks a split's no once more when its advice excludes by words the request never states", async () => {
     const quoted = yesSaying("as the request says \"replacement parts\"");
     // A kept row its advice would exclude: the reason the t515 recheck addresses (t686, `../agreement/no-reasons.ts`).
-    const no = { answersRequest: "no", observed: "A refurbished bundle was stored.", changed: "Add a condition that excludes refurbished bundles such as the Copper Garden Tools Pair row." };
+    const no = { answersRequest: "no", observed: "A refurbished bundle was stored.", changed: "Add a condition that excludes refurbished bundles such as the Copper Garden Tools Pair row.", defects: [] };
     const { provider, seen } = scripted([{ answer: quoted }, { answer: no }, { answer: quoted }]);
     const report = await held(provider, { confirmAnswer: true });
     expect(seen).toHaveLength(3);

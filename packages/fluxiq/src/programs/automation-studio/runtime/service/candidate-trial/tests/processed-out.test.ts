@@ -5,7 +5,7 @@
 // dropped. The rows here are a stand-in site's, not the run's.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import type { AutomationStudioBuildTestVerdict, AutomationStudioRunResultSummary } from "../../../result-verification/index.ts";
+import type { AutomationStudioBuildTestVerdict, AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../../../result-verification/index.ts";
 import { automationStudioCandidateTrialFeedback, automationStudioTrialProcessedOutFeedback } from "../index.ts";
 
 const LEFT_OUT = ["Trail Watch 2, GPS, Heart Rate, Charging Dock, Black", "Trail Watch Lite, GPS, Ivory with Charging Dock"];
@@ -49,5 +49,37 @@ describe("the rows a saved answer's processing alone left out, for the model", (
     const stored = feedback.stored as JsonObject;
     expect(stored).toMatchObject({ rows: 1, refused: 0, missingRequired: 0 });
     expect(JSON.stringify(stored.processedOut)).toContain(LEFT_OUT[1]);
+  });
+});
+
+// t752: a trial's stored rows sum every record set, a working read's included.
+// The feedback also says how many rows the answer set holds: the set the last
+// storing step of the run writes, which is what the Flow answers with.
+const answerSet = (datasetId: string, recordCount: number, node?: string): AutomationStudioResultRecordSetSummary => ({
+  datasetId, recordCount, refusedCount: 0, truncated: false, columns: ["name"], columnsWithheld: false, rowsChecked: 0, rowsMissingRequired: 0, missingRequiredColumns: [],
+  ...(node ? { processing: { collected: recordCount, duplicates: 0, filteredOut: 0, cut: 0, kept: recordCount, passes: [{ node, pass: 1, rows: recordCount, newRows: recordCount }] } } : {})
+});
+const setsSummary = (recordSets: AutomationStudioResultRecordSetSummary[], order: string[] = []): AutomationStudioRunResultSummary => ({
+  schemaVersion: "automation-studio.run-result-summary.v1", totalRecordCount: recordSets.reduce((sum, each) => sum + each.recordCount, 0), totalRefusedCount: 0, totalRowsMissingRequired: 0,
+  recordSetCount: recordSets.length, recordSets, flowShape: order.map((nodeId) => ({ nodeId, definitionId: "read" })), withheld: false
+});
+const storedOf = (input: AutomationStudioRunResultSummary): JsonObject => {
+  const verdict = { verdict: "no", expected: "e", observed: "o", findings: [], spent: {} } as unknown as AutomationStudioBuildTestVerdict;
+  return automationStudioCandidateTrialFeedback.judged({ verdict, summary: input, trialRunId: "trial.1", start: "reset" }).feedback.stored as JsonObject;
+};
+
+describe("the answer rows a judged trial's feedback states", () => {
+  it("are the rows of the set the run's last storing step writes, beside every set's sum", () => {
+    // The answer set listed first, the working set after it: the run order decides, not the list's.
+    expect(storedOf(setsSummary([answerSet("answer", 3, "s5"), answerSet("working", 27, "s2")], ["s1", "s2", "s3", "s5"]))).toMatchObject({ rows: 30, answerRows: 3 });
+  });
+
+  it("are the only set's rows where one set was stored, and the last listed set's where the run order names none", () => {
+    expect(storedOf(setsSummary([answerSet("only", 4)]))).toMatchObject({ rows: 4, answerRows: 4 });
+    expect(storedOf(setsSummary([answerSet("working", 27), answerSet("answer", 0)]))).toMatchObject({ rows: 27, answerRows: 0 });
+  });
+
+  it("are absent where nothing was stored", () => {
+    expect(storedOf(setsSummary([]))).not.toHaveProperty("answerRows");
   });
 });

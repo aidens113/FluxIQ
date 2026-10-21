@@ -6,13 +6,16 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioLlmProvider } from "../../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../../build-test/index.ts";
-import { CAMP_CEDAR, CAMP_LARCH, CAMP_OSPREY, CAMP_READ, CAMP_WILLOW, campsiteInstruction, campsiteRunSummary, NAME_CONDITIONS } from "../../refuted-no/tests/campsite-fixture.ts";
+import { CAMP_CEDAR, CAMP_SILVER, CAMP_LARCH, CAMP_OSPREY, CAMP_READ, CAMP_WILLOW, campsiteInstruction, campsiteRunSummary, NAME_CONDITIONS } from "../../refuted-no/tests/campsite-fixture.ts";
 import { CAMPSITE_YES, DROP_NAME_CONDITIONS_NO, GAP_AND_CHANGE_NO, GAP_NO, WRONGLY_LEFT_OUT_NO } from "../../refuted-no/tests/campsite-readings-fixture.ts";
 import { verifyAutomationStudioRunResult } from "../../verify.ts";
 import { CABIN_KEPT_NO, CAMP_CABIN, cabinKeptSummary, cabinLeftOutSummary } from "./campsite-swing-fixture.ts";
 
 const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 };
-const no = (reading: Record<string, string>) => ({ answersRequest: "no", ...reading });
+const no = (reading: Record<string, string>) => ({ answersRequest: "no", ...reading,
+  defects: reading === CABIN_KEPT_NO ? [{ kind: "kept_not_asked", row: CAMP_CABIN.name, requestWords: "every campsite" }]
+    : reading === WRONGLY_LEFT_OUT_NO ? [{ kind: "asked_missing", row: CAMP_SILVER, requestWords: "every campsite" }]
+      : [] });
 
 /** A provider answering each call with its own diagnosis. */
 function answering(...diagnoses: Record<string, unknown>[]): AutomationStudioLlmProvider {
@@ -33,7 +36,7 @@ describe("Core's record of a build test's no (t633)", () => {
   it("keeps the stored row a standing no called not the asked kind, by its own exclusion's words", async () => {
     const verdict = await judge(answering(no(CABIN_KEPT_NO), no(CABIN_KEPT_NO)))({ summary: cabinKeptSummary(), budget: { maxCostUsd: 0.2 } });
     expect(verdict.verdict).toBe("no");
-    const record = verdict.verdict === "no" ? verdict.standingNo : undefined;
+    const record = "standingNo" in verdict ? verdict.standingNo : undefined;
     expect(record).toBeDefined();
     expect(record!.upheldKind).toEqual([CAMP_CABIN.name]);
     expect(record!.stored).toContain(CAMP_CABIN.name);
@@ -48,8 +51,8 @@ describe("Core's record of a build test's no (t633)", () => {
 
   it("keeps the conditions a standing no asks to remove, where its reading names no row besides", async () => {
     const verdict = await judge(answering(no(DROP_NAME_CONDITIONS_NO), no(DROP_NAME_CONDITIONS_NO)))({ summary: cabinLeftOutSummary(), budget: { maxCostUsd: 0.2 } });
-    expect(verdict.verdict).toBe("no");
-    const record = verdict.verdict === "no" ? verdict.standingNo : undefined;
+    expect(verdict.verdict).toBe("unknown");
+    const record = "standingNo" in verdict ? verdict.standingNo : undefined;
     expect(record!.standing).toEqual([{ call: 1, drops: NAME_KEYS }, { call: 2, drops: NAME_KEYS }]);
     expect(record!.stored).not.toContain(CAMP_CABIN.name);
     expect(record!.stored).toHaveLength(4);
@@ -59,7 +62,7 @@ describe("Core's record of a build test's no (t633)", () => {
   it("keeps no remedy for a no that names a row the read left out", async () => {
     const verdict = await judge(answering(no(WRONGLY_LEFT_OUT_NO), no(WRONGLY_LEFT_OUT_NO)))({ summary: campsiteRunSummary({ nameDrops: true }), budget: { maxCostUsd: 0.2 } });
     expect(verdict.verdict).toBe("no");
-    const record = verdict.verdict === "no" ? verdict.standingNo : undefined;
+    const record = "standingNo" in verdict ? verdict.standingNo : undefined;
     expect(record!.standing).toEqual([{ call: 1 }, { call: 2 }]);
   });
 
@@ -75,7 +78,7 @@ describe("Core's record of a build test's no (t633)", () => {
   // A8 wave 14 candidate towels `run-mv9ul5dy-e9a1b1c1`, trial 2 (t641): the exact rows, judged no on advice the record refutes in part.
   it("says where each condition stands, and which left out only rows Core's record accounts for, whatever the judges said", async () => {
     const verdict = await judge(answering(no(GAP_AND_CHANGE_NO), no(GAP_NO)))({ summary: campsiteRunSummary(), budget: { maxCostUsd: 0.2 } });
-    const record = verdict.verdict === "no" ? verdict.standingNo : undefined;
+    const record = "standingNo" in verdict ? verdict.standingNo : undefined;
     expect(record).toBeDefined();
     expect(record!.conditions.map((condition) => [condition.nodeId, condition.number])).toEqual([1, 2, 3, 4, 5].map((number) => [CAMP_READ, number]));
     const byNumber = new Map(record!.conditions.map((condition) => [condition.number, condition]));

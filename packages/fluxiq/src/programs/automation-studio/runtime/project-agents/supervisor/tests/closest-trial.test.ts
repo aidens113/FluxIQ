@@ -21,9 +21,11 @@ describe("the closest trial to passing", () => {
     expect(RETURN.closestTrial([returned(FIVE)])?.receiptId).toBe("trial-3");
   });
 
-  it("is, among the same verdict, the one that stored more rows", () => {
-    expect(RETURN.closestTrial([returned([trial(1, "no", 10), trial(2, "no", 2)])])?.receiptId).toBe("trial-1");
+  // More rows is not closer to passing for a filtered request (t752): among one verdict the latest that stored answer rows.
+  it("is, among the same verdict, the latest, unless only an earlier one stored answer rows", () => {
+    expect(RETURN.closestTrial([returned([trial(1, "no", 10), trial(2, "no", 2)])])?.receiptId).toBe("trial-2");
     expect(RETURN.closestTrial([returned([trial(1, "no", 2), trial(2, "no", 2)])])?.receiptId).toBe("trial-2");
+    expect(RETURN.closestTrial([returned([trial(1, "no", 2), trial(2, "no", 0)])])?.receiptId).toBe("trial-1");
   });
 
   it("ranks no over a trial not judged and one whose run failed, and looks across every return of the subflow", () => {

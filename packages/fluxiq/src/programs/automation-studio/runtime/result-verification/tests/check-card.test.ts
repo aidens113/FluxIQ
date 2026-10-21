@@ -31,9 +31,9 @@ function scripted(answers: readonly string[]): AutomationStudioLlmProvider {
   return {
     metadata: { provider: "mock", model: "debug-model" },
     runTask: async () => {
-      const answer = answers[asked];
+      const answer = answers[asked] ?? answers.at(-1);
       asked += 1;
-      return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: answer, observed: "One pack is added.", changed: "Set the quantity before the add." } }, usage: USAGE };
+      return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: answer, defects: [{ kind: "other", row: "Cart quantity", requestWords: "two packs" }], observed: "One pack is added.", changed: "Set the quantity before the add." } }, usage: USAGE };
     }
   };
 }
@@ -76,11 +76,11 @@ describe("the result check in the chat (C11)", () => {
 });
 
 describe("the reason two agreeing noes settle on (C6)", () => {
-  it("says only what is true: judged twice with the same evidence, and nothing about every step succeeding", async () => {
+  it("keeps an unmeasured quantity claim unsure and says nothing about every step succeeding", async () => {
     const report = await check(["no", "no"]);
-    expect(report.outcome).toMatchObject({ performed: true, verdict: "does_not_answer", calls: 2 });
+    expect(report.outcome).toMatchObject({ performed: true, verdict: "unsure", calls: 4 });
     const reason = report.outcome.performed ? report.outcome.reason : "";
-    expect(reason).toContain("twice and with the same evidence");
+    expect(reason).toContain("without naming a defect Core can find");
     expect(reason).not.toMatch(/every step/u);
     // What the card shows is that reason.
     expect(seen.at(-1)?.detail?.text).not.toMatch(/every step/u);

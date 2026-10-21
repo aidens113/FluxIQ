@@ -42,6 +42,7 @@ function summary(chose: string): AutomationStudioRunResultSummary {
 /** 0064's shape: the step before the read keeps less than the request asks, so remove it. */
 const blaming = (chose: string) => ({
   answersRequest: "no",
+  defects: [{ kind: "other", requestWords: "every campsite", row: "Region step" }],
   expected: "Every campsite the request asks for.",
   observed: `The region step at ${CAMP_REGION} chose ${chose}, which narrows the list to fewer campsites than the request asks for.`,
   changed: `Remove the region step ${CAMP_REGION} so the read runs over every campsite.`
@@ -62,20 +63,20 @@ describe("a no blaming a step that chose the request's own words, through the ve
     expect(JSON.stringify(seen[1])).not.toContain("Core did not see the rows such a step removed");
   });
 
-  it("stays a split where the re-asked call says no again, asked only once", async () => {
-    const { provider } = answering(blaming("Lakeshore"), CAMPSITE_YES, blaming("Lakeshore"), CAMPSITE_YES);
+  it("stays unsure where both refutation and support rechecks repeat the unmeasured no", async () => {
+    const { provider } = answering(blaming("Lakeshore"), CAMPSITE_YES, blaming("Lakeshore"), blaming("Lakeshore"));
     const verdict = await judge(provider, REQUEST)({ summary: summary("Lakeshore"), budget: { maxCostUsd: 0.2 } });
     expect(verdict).toMatchObject({ verdict: "unknown" });
-    expect(verdict.spent.calls).toBe(3);
+    expect(verdict.spent.calls).toBe(4);
   });
 
-  it("is not asked again where the step's option is not the request's words", async () => {
+  it("rechecks an unmeasured region restriction even where the option is not the request's words", async () => {
     // Only the split's own re-ask (t725) asks it again, for a named defect, and it names the same no: the split stands.
-    const { provider, seen } = answering(blaming("Riverside"), CAMPSITE_YES, blaming("Riverside"));
+    const { provider, seen } = answering(blaming("Riverside"), CAMPSITE_YES, blaming("Riverside"), blaming("Riverside"));
     const verdict = await judge(provider, REQUEST)({ summary: summary("Riverside"), budget: { maxCostUsd: 0.2 } });
     expect(verdict).toMatchObject({ verdict: "unknown" });
-    expect(verdict.spent.calls).toBe(3);
-    expect(seen).toHaveLength(3);
+    expect(verdict.spent.calls).toBe(4);
+    expect(seen).toHaveLength(4);
     expect(JSON.stringify(seen[2])).not.toContain("Core did not see the rows such a step removed");
     expect(JSON.stringify(seen[2])).toContain("Answer no only for a defect you name in this result");
   });

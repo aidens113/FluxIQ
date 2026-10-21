@@ -384,3 +384,40 @@ describe("a yes lacking its quote that also advised a change (t636)", () => {
     expect(automationStudioResultAdviceKept(no, advising)).toBe(no);
   });
 });
+
+// t752: a no lists the defects it rests on (`diagnosis.defects`), so Core can
+// find each in its own record (`../agreement/located-defects/`). They ride on
+// the no's reading, screened as every word a judge wrote is, read forgivingly.
+describe("a no's defects (t752)", () => {
+  it("are carried on its reading, each well-formed one screened, never on a yes", () => {
+    const verification = automationStudioResultVerdict({
+      summary,
+      diagnosis: {
+        answersRequest: "no",
+        observed: "A member the request excludes is kept.",
+        defects: [
+          { kind: "kept_not_asked", row: " Dana Whitfield ", requestWords: "leaving out former members" },
+          { kind: "wrong_value", row: "Ravi Menon", column: "joined", requestWords: "with the date each joined" },
+          { kind: "duplicated", row: "Ravi Menon", requestWords: "each member once" },
+          { kind: "asked_missing", row: "", requestWords: "every member" },
+          { kind: "asked_missing", row: "rows not read", requestWords: "sk-live-0123456789abcdefghijklmnopqrstuv" }
+        ] as unknown as NonNullable<NonNullable<Parameters<typeof automationStudioResultVerdict>[0]["diagnosis"]>["defects"]>
+      },
+      basis: "model"
+    });
+    expect(verification.repair?.judgement?.defects).toEqual([
+      { kind: "kept_not_asked", row: "Dana Whitfield", requestWords: "leaving out former members" },
+      { kind: "wrong_value", row: "Ravi Menon", column: "joined", requestWords: "with the date each joined" }
+    ]);
+    expect(verification.repair?.withheld).toBe(true);
+    // Never in what a run records.
+    expect(JSON.stringify(automationStudioResultRecordedOutcome({ ...verification, performed: true }))).not.toContain("Dana Whitfield");
+    const yes = automationStudioResultVerdict({ summary, diagnosis: { answersRequest: "yes", defects: [{ kind: "kept_not_asked", row: "Dana Whitfield", requestWords: "former" }] }, basis: "model" });
+    expect(JSON.stringify(yes)).not.toContain("Dana Whitfield");
+  });
+
+  it("retains an explicitly empty defect account on a no", () => {
+    const verification = automationStudioResultVerdict({ summary, diagnosis: { answersRequest: "no", observed: "Wrong rows.", defects: [] }, basis: "model" });
+    expect(verification.repair?.judgement).toEqual({ observed: "Wrong rows.", defects: [] });
+  });
+});

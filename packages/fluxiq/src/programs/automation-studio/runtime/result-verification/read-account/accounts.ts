@@ -84,6 +84,11 @@
 // where the caller gives the Flow's edges (`flowEdges`), which say what list a
 // loop walks: each row it stored must be checked against the request's words.
 //
+// **And a read whose kept rows a step was repeated over, and whose list a
+// later read of the same target read again, carries Core's flag that its rows
+// are working rows (`working-rows.ts`, t752)**, from the same edges: its record
+// set is never the result (`./working-sets.ts`).
+//
 // **And how a read of one part of a list saw it go on (F8)**: the read's own
 // two closed words (`listContinues`), carried as sent, so Core can say that the
 // list went on past what was read (`list-continues.ts`).
@@ -108,6 +113,7 @@ import { automationStudioResultReadLoopPasses } from "./loop-passes.ts";
 import { automationStudioResultReadPresence } from "./presence.ts";
 import { automationStudioResultReadStoredColumns } from "./stored-columns.ts";
 import { automationStudioResultReadTogetherRows } from "./together-rows.ts";
+import { automationStudioResultReadWorkingRows } from "./working-rows.ts";
 
 /** A closed word the read reports, as extraction-summary.ts admits them. */
 const STOP_WORD = /^[a-z_]{1,40}$/u;
@@ -135,7 +141,9 @@ export type AutomationStudioResultReadAccountsInput = {
   /**
    * The Flow's edges, with `flowNodes`: what list each loop walks. Given, a read
    * that kept every item it saw after an act repeated over a narrower read of
-   * the same list carries `keptEveryRow` (header, t692). Absent, none does.
+   * the same list carries `keptEveryRow` (header, t692), and a read whose
+   * kept rows a loop walked before a later read of the same list carries
+   * `workingRows` (header, t752). Absent, none does.
    */
   flowEdges?: readonly AutomationStudioFlowEdge[] | undefined;
 };
@@ -198,8 +206,14 @@ export function automationStudioResultReadAccounts(input: AutomationStudioResult
   if (!input.flowEdges) return { reads, authoredNodes };
   // A read that kept every item it saw after an act repeated over a narrower read of the same list (header, t692).
   const speaking = [...latest.values()].map(({ attempt }) => attempt);
-  const flags = automationStudioResultReadKeptEveryRow({ reads, nodes: authoredNodes, speaking, flowNodes: input.flowNodes ?? [], flowEdges: input.flowEdges, actionAttempts: run });
-  return { reads: reads.map((read, index) => flags[index] ? { ...read, keptEveryRow: flags[index] } : read), authoredNodes };
+  const graph = { reads, nodes: authoredNodes, speaking, flowNodes: input.flowNodes ?? [], flowEdges: input.flowEdges, actionAttempts: run };
+  const flags = automationStudioResultReadKeptEveryRow(graph);
+  // A read whose rows a loop walked before a later read of the same list read it again: working rows (header, t752).
+  const working = automationStudioResultReadWorkingRows(graph);
+  return {
+    reads: reads.map((read, index) => ({ ...read, ...(flags[index] ? { keptEveryRow: flags[index] } : {}), ...(working[index] ? { workingRows: working[index] } : {}) })),
+    authoredNodes
+  };
 }
 
 /** Whether a node's authored conditions are as many as the read counted rejections for; true where either is not said. */

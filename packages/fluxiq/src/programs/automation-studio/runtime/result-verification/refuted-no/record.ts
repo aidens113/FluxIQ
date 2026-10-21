@@ -75,10 +75,21 @@
 // Each read's together rows join its pool and the stored pool; those not already
 // in a pool are `unnamed`: they lengthen other labels' prefixes, and are named by
 // none of their own (`./named-rows.ts`).
+//
+// **Never working rows (t752).** A breadth rerun's Flow read a list with no
+// condition, repeated a display-only press over its rows, then read the same
+// list again with a condition and stored exactly the rows asked for. Every read
+// collects its rows into a record set, so the first read's whole list stood
+// beside the answer, and this record took every row of it for a row of the
+// result: a no's claim was weighed as though the answer held rows it never
+// held. A record set Core flags as working rows
+// (`../read-account/working-sets.ts`) is left out of the stored rows, the
+// count stored and the repeats removed; its rows that the answer's condition
+// alone left out are left-out rows like any other.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../contracts/index.ts";
-import { automationStudioResultConditionName } from "../read-account/index.ts";
+import { automationStudioResultConditionName, automationStudioResultReadWorkingSets } from "../read-account/index.ts";
 import {
   automationStudioRequestPhrases,
   automationStudioRequestRowLabel,
@@ -107,7 +118,10 @@ export function automationStudioResultNoRecord(input: {
 }): AutomationStudioResultNoRecord {
   const { summary } = input;
   const { reads } = automationStudioRequestRowsReads(summary);
-  const stored = summary.recordSets.flatMap((set) => (set.sampleRows ?? []).flatMap((row) => storedRow(row, set.columns)));
+  // The answer's record sets: never one of working rows (header, t752).
+  const working = automationStudioResultReadWorkingSets(summary);
+  const answer = summary.recordSets.filter((set) => !working.has(set.datasetId));
+  const stored = answer.flatMap((set) => (set.sampleRows ?? []).flatMap((row) => storedRow(row, set.columns)));
   const testsLabel = labelTested(summary, stored);
   const quotes = requestQuotes(summary, testsLabel, input.requestText, input.wording?.says);
   const leftOut = reads.flatMap((read) => read.conditions.flatMap((condition) => condition.rows.map((given, index) => {
@@ -132,9 +146,9 @@ export function automationStudioResultNoRecord(input: {
     stored,
     leftOut,
     pools,
-    storedCount: tested ? tested.reduce((total, store) => total + store.answer.rows, 0) : summary.totalRecordCount,
-    duplicatesRemoved: summary.recordSets.reduce((total, set) => total + (set.processing?.duplicates ?? 0), 0),
-    duplicatesCounted: summary.recordSets.length > 0 && summary.recordSets.every((set) => set.processing !== undefined)
+    storedCount: tested ? tested.reduce((total, store) => total + store.answer.rows, 0) : working.size ? answer.reduce((total, set) => total + set.recordCount, 0) : summary.totalRecordCount,
+    duplicatesRemoved: answer.reduce((total, set) => total + (set.processing?.duplicates ?? 0), 0),
+    duplicatesCounted: answer.length > 0 && answer.every((set) => set.processing !== undefined)
       && !(tested ?? []).some((store) => (store.removed?.duplicates ?? 0) > 0),
     nodeIds: summary.flowShape.map((step) => step.nodeId),
     conditions: automationStudioResultNoConditions(summary, leftOut, new Set(storedLabels)),

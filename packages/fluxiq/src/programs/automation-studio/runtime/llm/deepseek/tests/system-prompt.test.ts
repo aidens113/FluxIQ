@@ -24,7 +24,17 @@
 // round 3 `run-mvgoawg4-ed85dd5a`) both verification pins by exactly one
 // sentence, that a list going on past an end the page marks, or past the range
 // the request asks for, is not rows missing from that range, inserted after the
-// reads sentence that ends "is the one to change." With
+// reads sentence that ends "is the one to change."; and in t752 (round-5
+// breadth rerun, a trial judged no over how a condition was written and over
+// advice an earlier judge gave) both verification pins by six sentences and
+// one clause: what a read's workingRows flag means, after the keptEveryRow
+// sentence; that the narrowing rule is about steps before a read, after the
+// sentence that ends "is correct."; that a record set only flagged reads
+// collected is not the answer, in the record-set sentence; and, after the last
+// sentence, the defects a no lists, that a concern that is no defect of the
+// result is no ground for a no, a relation-defined set's sign, and earlierAdvice
+// -- and the build-test pin by one more clause, that such a dataset in
+// buildTest.stores is not the answer. With
 // them, the domain's text sits after Core's format, injection and schema rules
 // and before Core's task prose, set off by blank lines -- and every word of
 // Core's message is still there.
@@ -115,6 +125,60 @@ describe("a verification's system message, on a list that goes on past what was 
     for (const name of Object.keys(CASES).filter((key) => !key.startsWith("loop_verification"))) {
       expect(automationStudioDeepSeekSystemPrompt(CASES[name]!)).not.toContain("an end the page itself marks");
     }
+  });
+});
+
+// t752 (round-5 breadth rerun): a trial stored exactly the rows asked for and
+// both judges said no, over a condition that lists values -- which an earlier
+// judge had advised -- and over a claim the request's "on or after" refuted,
+// naming no row kept, missing or wrong. The no's grounds are now a list Core can
+// check, and the judges are told what is no defect of the result.
+describe("a verification's system message, on the defects a no rests on (t752)", () => {
+  const DEFECTS = "When you answer no, list in diagnosis.defects each defect of this result the no rests on: kind kept_not_asked (a row kept that the request does not ask for), asked_missing (a row asked for that the result lacks) or wrong_value (a kept row whose column holds a wrong value); use other for ordering, formatting, missing columns, actions or requirements not expressible as a row defect, naming the unmet requirement in row; row, the row as the evidence names it, by Core's id for it or its label, or \"rows not read\" for rows the run never read; column, for a wrong value, and value, the actual cell value the defect claims, so Core can compare it with the stored cell; and requestWords, quoting the request's words it fails.";
+  const NOT_A_DEFECT = "A concern that is not a defect of this result -- a method, wording, how a condition is written, what another run might meet -- is no ground for a no: where it is all you find, answer yes and give it as advice in changed.";
+  const RELATION = "Where the request defines its set by the person's relation to each item, a condition should read the sign of that relation each row shows, its own control or mark: advise that sign, never a literal list of today's values, and a literal list that keeps exactly the rows asked for is no defect of this result; for example, a library's \"books I have on loan\" are kept by each row's Return button.";
+  const EARLIER = "resultSummary.earlierAdvice, where present, says what an earlier judge of this build advised and, in followed, whether this revision changed what it named: a changed step or condition does not prove that the advice was followed or correct. Earlier advice never overrides the original request: independently check every requirement, including ordering, formatting, required fields and actions, and report any defect introduced by earlier advice. An absent structured row defect does not prove correctness; answer unknown when the evidence cannot settle a requirement.";
+  const WORKING = "resultSummary.reads[].workingRows, where present, is Core's flag on a read whose kept rows a later step was repeated over and whose list a later read (rereadBy) read again: its rows are working rows, what the repeat went over, not the answer, so judge the answer by the later read's rows.";
+  const WORKING_SET = "Each record set holds the run's answer, unless only reads Core flagged with workingRows collected it:";
+  const NARROWING = "That rule is for steps that act on the site before a read, never a read's own conditions, which are judged by the rows they keep and leave out.";
+  const STORES = "buildTest.stores is the answer the Flow would give (a dataset only reads flagged with workingRows fill holds working rows, not the answer):";
+  const SAID = [DEFECTS, NOT_A_DEFECT, RELATION, EARLIER, WORKING, WORKING_SET, NARROWING];
+  const verifications = ["loop_verification", "loop_verification_build_test"];
+
+  it("says each once to both verifications and to no other task", () => {
+    for (const name of verifications) {
+      const prompt = automationStudioDeepSeekSystemPrompt(CASES[name]!);
+      for (const said of SAID) expect(prompt.split(said), `${name}: ${said.slice(0, 40)}`).toHaveLength(2);
+    }
+    for (const name of Object.keys(CASES).filter((key) => !verifications.includes(key))) {
+      const prompt = automationStudioDeepSeekSystemPrompt(CASES[name]!);
+      for (const said of [...SAID, STORES]) expect(prompt, `${name}: ${said.slice(0, 40)}`).not.toContain(said);
+      for (const word of ["defects", "earlierAdvice", "workingRows"]) expect(prompt, name).not.toContain(word);
+    }
+  });
+
+  it("puts each where it reads: the defects after the last sentence, the flag after keptEveryRow, the narrowing scope after the narrowing rule", () => {
+    for (const name of verifications) {
+      const prompt = automationStudioDeepSeekSystemPrompt(CASES[name]!);
+      expect(prompt).toContain(`nothing fails for it. ${DEFECTS} ${NOT_A_DEFECT} ${RELATION} ${EARLIER}`);
+      expect(prompt).toContain(`ask for each row it stored. ${WORKING} Before answering yes`);
+      expect(prompt).toContain(`(a notice closed, a page opened), is correct. ${NARROWING} The converse holds too`);
+      expect(prompt).toContain(`${WORKING_SET} the rows its reads collected on every page`);
+      expect(prompt).not.toContain("Each record set holds the run's answer:");
+    }
+    expect(automationStudioDeepSeekSystemPrompt(CASES.loop_verification!).endsWith(`${DEFECTS} ${NOT_A_DEFECT} ${RELATION} ${EARLIER}`)).toBe(true);
+  });
+
+  it("tells only the build-test judge that a dataset only flagged reads fill is not the answer", () => {
+    expect(automationStudioDeepSeekSystemPrompt(CASES.loop_verification_build_test!).split(STORES)).toHaveLength(2);
+    expect(automationStudioDeepSeekSystemPrompt(CASES.loop_verification!)).not.toContain("buildTest.stores");
+  });
+
+  it("teaches nothing a Lab scenario could be passed by: its example is a library", () => {
+    for (const said of [...SAID, STORES]) {
+      expect(said).not.toMatch(/[$€£]|\bprice|\bcart\b|\bshop|earbud|friend|\bjob|listing|rating|sponsor|mutual|follow(?!ed)|connect|accept|auction|bid\b|photo|feed\b/iu);
+    }
+    expect(RELATION).toContain("library");
   });
 });
 

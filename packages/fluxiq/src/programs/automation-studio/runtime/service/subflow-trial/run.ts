@@ -85,6 +85,10 @@
 // and its judgement, so the start hook's answer -- whether the gate's
 // `prepareStart` or this runner called it -- lands in the build's trace. A
 // trial refused before it runs opens no episode.
+//
+// Earlier judged trials' advice reaches the judge, as in the whole trial
+// (`../candidate-trial/run.ts`, t752): the request's `earlierAdvice`, made by
+// the subflow gate, goes to the summary the judge reads, last.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
@@ -229,7 +233,8 @@ async function runIn(environment: AutomationStudioRunEnvironment, request: Autom
   try {
     summary = await automationStudioCandidateTrialSummary({ recordSets: await ports.recordSets(runId), graph: frames.graph, trace: executed.trace,
       ...(ports.readEndView ? { readEndView: () => ports.readEndView!({ runId }) } : {}), actionAttempts: ports.actionAttempts?.(ended),
-      observedStateKeys: ports.observedStateKeys, deniedEvidenceKeys: ports.deniedEvidenceKeys, ...(request.startedWith?.length ? { startedWith: request.startedWith } : {}) });
+      observedStateKeys: ports.observedStateKeys, deniedEvidenceKeys: ports.deniedEvidenceKeys, ...(request.startedWith?.length ? { startedWith: request.startedWith } : {}),
+      ...(request.earlierAdvice?.length ? { earlierAdvice: request.earlierAdvice } : {}) });
   } catch (error) {
     // What the run stored could not be read, so nobody can say whether it answers: not judged, and never a yes.
     const code = "candidate.trial_result_unreadable";

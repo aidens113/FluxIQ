@@ -31,6 +31,20 @@
 // overdue books, then list the books now shown as renewed; a last read that
 // also stores the books never renewed has to say why each is there.
 //
+// **Never a row only working rows hold (t752).** A Flow read a list with no
+// condition, repeated a display-only press over its rows, then read the same
+// list again with a condition and stored the answer. Every read collects its
+// rows into a record set, so each row the last read's condition left out was
+// held by the first read's set, and this file listed it in
+// `storedThoughLeftOut` and told the judge it was a row of the result the
+// answer should not hold: an exactly right answer could not be judged yes. A
+// record set of working rows (`../read-account/working-sets.ts`, from Core's flag on the read
+// whose rows a loop walked before a later read of the same list) is not the
+// result, so it is neither a stored copy (`summary-reads.ts`) nor a holder
+// (`automationStudioRequestRowsStoredBy`): a row only it holds is marked
+// neither way, and stays a left-out row of its condition. t691's last read is
+// no working read, so its rows are still marked.
+//
 // **Never a row Core settled (live-lane-1 fix 4).** Run `run-mvd8ypsv-32cde667`
 // steps 0056 and 0057: a presence test alone left out five rows, all five in
 // its `leftOutSettled` (Core read on each the value the request says to leave
@@ -71,7 +85,7 @@ function storedAnyway(condition: string, by: readonly string[]): string {
 export function automationStudioResultSummaryWithAlsoInResult(summary: AutomationStudioRunResultSummary): AutomationStudioRunResultSummary {
   if (!summary.reads?.some((read) => read.conditions?.some((entry) => entry.leftOutOnlyByThis?.length))) return summary;
   const stored = new Set(automationStudioRequestRowsReads(summary, true).stored.map((row) => row.label));
-  const storedBy = automationStudioRequestRowsStoredBy(summary.recordSets);
+  const storedBy = automationStudioRequestRowsStoredBy(summary);
   let changed = false;
   const reads = summary.reads.map((read): AutomationStudioResultReadAccount => {
     if (!read.conditions?.length) return read;

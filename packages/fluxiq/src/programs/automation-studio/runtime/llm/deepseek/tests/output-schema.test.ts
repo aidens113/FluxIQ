@@ -23,10 +23,14 @@ describe("automationStudioDeepSeekOutputSchema for a result verification", () =>
   it("lists kind and diagnosis before summary, and requires the diagnosis", () => {
     expect(members(verification)).toEqual(["kind", "diagnosis", "confidence", "summary", "metadata"]);
     expect((automationStudioDeepSeekOutputSchema(verification) as { required: string[] }).required).toEqual(["kind", "diagnosis", "summary"]);
-    // The same members and the same field shapes: only the order and the requirement moved.
-    const { properties: ordered } = automationStudioDeepSeekOutputSchema(verification) as { properties: Record<string, unknown> };
-    const { properties: plain } = automationStudioDeepSeekOutputSchema(diagnosis) as { properties: Record<string, unknown> };
+    // The same members and the same field shapes: only the order and the
+    // requirement moved, and the diagnosis took the verification's defects (t752).
+    const { properties: { diagnosis: orderedFields, ...ordered } } = automationStudioDeepSeekOutputSchema(verification) as { properties: Record<string, { properties: Record<string, unknown> }> };
+    const { properties: { diagnosis: plainFields, ...plain } } = automationStudioDeepSeekOutputSchema(diagnosis) as { properties: Record<string, { properties: Record<string, unknown> }> };
     expect(ordered).toEqual(plain);
+    const { defects: _defects, ...judged } = orderedFields!.properties;
+    expect({ ...orderedFields, required: undefined, properties: judged }).toEqual({ ...plainFields, required: undefined });
+    expect((orderedFields as { required?: string[] }).required).toEqual(["answersRequest", "defects"]);
   });
 
   it("is the only diagnosis whose order moved", () => {
@@ -40,6 +44,42 @@ describe("automationStudioDeepSeekOutputSchema for a result verification", () =>
     expect(prompt.indexOf(ORDER)).toBeGreaterThan(prompt.indexOf("Put your reading of the failure in the diagnosis object"));
     expect(prompt.indexOf(ORDER)).toBeLessThan(prompt.indexOf("This call judges a finished run's result"));
     expect(automationStudioDeepSeekSystemPrompt(diagnosis)).not.toContain(ORDER);
+  });
+});
+
+// t752 (round-5 breadth rerun): both judges of a trial that stored exactly the
+// rows asked for said no over how a condition was written, naming no row kept,
+// missing or wrong. A verification's no now names each defect it rests on, in a
+// field only a verification is offered.
+describe("a verification's defects (t752)", () => {
+  const verification = { taskKind: "loop_verification", expectedOutput: "diagnosis", context: {} } as unknown as AutomationStudioLlmTaskRequest;
+  const fieldsOf = (request: AutomationStudioLlmTaskRequest) => (automationStudioDeepSeekOutputSchema(request) as { properties: { diagnosis: { properties: Record<string, unknown> } } }).properties.diagnosis.properties;
+
+  it("offers at most 12 closed defects, each a kind, the row, an optional column and the request's words, right after the verdict", () => {
+    expect(Object.keys(fieldsOf(verification))).toEqual(["expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "defects", "explorationNeeded", "patchNeeded"]);
+    expect(fieldsOf(verification).defects).toEqual({
+      type: "array",
+      maxItems: 12,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind", "row", "requestWords"],
+        properties: {
+          kind: { enum: ["kept_not_asked", "asked_missing", "wrong_value", "other"] },
+          row: { type: "string", minLength: 1, maxLength: 500 },
+          column: { type: "string", minLength: 1, maxLength: 500 },
+            value: { type: "string", minLength: 1, maxLength: 500 },
+          requestWords: { type: "string", minLength: 1, maxLength: 500 }
+        }
+      }
+    });
+  });
+
+  it("is offered to no other diagnosis", () => {
+    for (const taskKind of ["runtime_diagnosis", "diagnosis_only_report", "loop_plan"]) {
+      const request = { taskKind, expectedOutput: "diagnosis", context: {} } as unknown as AutomationStudioLlmTaskRequest;
+      expect(JSON.stringify(automationStudioDeepSeekOutputSchema(request)), taskKind).not.toContain("defects");
+    }
   });
 });
 

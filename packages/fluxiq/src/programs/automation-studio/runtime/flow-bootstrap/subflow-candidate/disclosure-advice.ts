@@ -1,5 +1,5 @@
 // A judge's advice to add a field to a read this build was refused for its
-// field's cut-short text, said as the order that can pass (S5).
+// field's cut-short text, said as what can pass (S5).
 //
 // Social rerun rounds 3 and 4 (`run-mvgw3ve5-294881b5`, 0114, 0115, 0151): the
 // judged run lacked a column the request asks for, and the judges advised
@@ -15,12 +15,21 @@
 // `detail.missing`), or a trial step whose `actual` starts with that closed
 // marker. Once one was, each sentence of a judged no's advice -- or of an
 // unsure's or a held yes's reading -- that asks to add or include a field or
-// column is replaced by Core's sentence for the disclosure order: read the
-// row-context columns without the field, repeat over that read pressing each
-// kept row's own disclosure control, then read the same listing again with the
-// field, both reads under the same conditions. Core's sentence is said once per
-// advice; every other sentence stays as it was. Advice is never rewritten
-// before such a refusal, and nothing here judges the advice wrong otherwise.
+// column is replaced by Core's note: the read already opens each kept row's own
+// collapsed text itself, so the refusal means that text could not be opened, and
+// what can pass is leaving the field out or narrowing the read's conditions so
+// those rows are not kept; no click step or repeat helps. Core's note is said
+// once per advice; every other sentence stays as it was. Advice is never
+// rewritten before such a refusal, and nothing here judges the advice wrong
+// otherwise.
+//
+// Until t752 (2026-10-20) the note taught a two-read shape -- a read of the
+// row-context columns without the field, a repeat pressing each kept row's own
+// disclosure control, then the same read with the field -- which builds got
+// wrong three social rerun rounds running; in round 5 its unconditioned first
+// read pressed every row of a long list a step at a time and the build ran out
+// of time. The downstream read now presses each kept row's control itself by
+// default, so that shape is never needed and the note no longer teaches it.
 //
 // Generic words only: no site's, task's or list's terms.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
@@ -35,8 +44,8 @@ const CALL_PREFIX = /^Judge call [12](?: \([^)]*\))?: /u;
 const ADDS_FIELD = [/\b(?:add|adding|include|including|put back)\b[^.!?]*\b(?:field|column)s?\b/iu, /\b(?:field|column)s?\b[^.!?]*\b(?:added|included)\b/iu];
 /** A field key the note may name: an identifier, as the refusal's own keys are. */
 const KEY_NAME = /^[A-Za-z][A-Za-z0-9_]{0,63}$/u;
-/** Said in place of a later judge call's add-a-field sentence, once Core's order was said. */
-const AS_ABOVE = "Core: this call also asked to add the field to the same read; follow the order above instead.";
+/** Said in place of a later judge call's add-a-field sentence, once Core's note was said. */
+const AS_ABOVE = "Core: this call also asked to add the field to the same read; follow the note above instead.";
 /** The most keys the note names. */
 const MAX_KEYS = 3;
 
@@ -56,7 +65,7 @@ export class AutomationStudioSubflowDisclosureAdvice {
     }
   }
 
-  /** The test tool's answer as the builder is shown it: advice to add a field said as the disclosure order once a read was refused for one (header). Records the trial's own refused steps first. */
+  /** The test tool's answer as the builder is shown it: advice to add a field said as Core's note once a read was refused for one (header). Records the trial's own refused steps first. */
   told<T extends { evidence: JsonValue }>(answered: T): T {
     const evidence = answered.evidence;
     if (!isObject(evidence) || typeof evidence.verdict !== "string" || !isObject(evidence.feedback)) return answered;
@@ -71,13 +80,12 @@ export class AutomationStudioSubflowDisclosureAdvice {
     return { ...answered, evidence: { ...evidence, feedback: told } } as T;
   }
 
-  /** Core's sentence for the disclosure order, naming the refused field where the refusal named one. */
+  /** Core's note on what can pass, naming the refused field where the refusal named one. */
   private order(): string {
     const keys = [...this.keys].slice(-MAX_KEYS);
     const field = keys.length ? `the field ${keys.map((key) => `\`${key}\``).join(" or ")}` : "the text field";
-    return `Core: a read in this build was already refused because ${field} was cut short on the page (incomplete_text), so adding it to the same read would be refused again. `
-      + `Do this in order instead: read the listing's row-context columns without ${field}; then repeat over that read, pressing each kept row's own disclosure control; `
-      + `then, after that repeat, not inside it, read the same listing again with ${field}. Give both reads the same conditions, so every row the final read keeps was disclosed by the repeat.`;
+    return `Core: a read in this build was already refused because ${field} was cut short on the page and the read could not open it (incomplete_text), so adding it to the same read would be refused again. `
+      + `The read already opens each kept row's own collapsed text itself, so no click step or repeat will help: leave ${field} out, or narrow the read's conditions so the rows whose text would not open are not kept.`;
   }
 }
 

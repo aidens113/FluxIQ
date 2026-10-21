@@ -83,7 +83,7 @@ describe("a build test's no carries the rows Core's check named, per read and co
       runTask: async (_request: AutomationStudioLlmTaskRequest) => ({
         response: {
           kind: "diagnosis", summary: "The name condition is too broad.",
-          diagnosis: { ...RUN_MUW60J7C_TEST_JUDGE.diagnosis, answersRequest: "no", observed: `The name condition alone left out earbuds, not accessories: ${RUN_MUW60J7C_PAIRS_LEFT_OUT.join("; ")}.`, changed: "Narrow the name exclusion." }
+          diagnosis: { ...RUN_MUW60J7C_TEST_JUDGE.diagnosis, answersRequest: "no", defects: RUN_MUW60J7C_PAIRS_LEFT_OUT.map((row) => ({ kind: "asked_missing", row, requestWords: "every pair of wireless earbuds" })), observed: `The name condition alone left out earbuds, not accessories: ${RUN_MUW60J7C_PAIRS_LEFT_OUT.join("; ")}.`, changed: "Narrow the name exclusion." }
         },
         usage: USAGE
       }) as never

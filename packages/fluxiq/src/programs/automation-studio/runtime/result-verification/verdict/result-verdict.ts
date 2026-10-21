@@ -1,4 +1,4 @@
-import type { AutomationStudioResultVerification } from "../contracts/index.ts";
+import type { AutomationStudioResultRepairDirective, AutomationStudioResultVerification } from "../contracts/index.ts";
 import { automationStudioResultScreenedJudgement } from "../judgement-screen.ts";
 import { automationStudioResultRepairDirective } from "../repair-directive.ts";
 import { automationStudioResultCheckedRows, automationStudioResultKeptRowsUnquoted, automationStudioResultLeftOutRowsUnaccounted, automationStudioResultLeftOutRowsUnquoted, automationStudioResultLeftOutStatingAKeptNumber } from "../request-rows/index.ts";
@@ -11,6 +11,7 @@ import { heldYesReason } from "./held-yes-reason.ts";
 import { keptLine } from "./kept-line.ts";
 import { keptNumberLine } from "./kept-number-line.ts";
 import { automationStudioResultKeptRowsFlagged } from "./kept-rows-flagged.ts";
+import { automationStudioResultScreenedDefects } from "./defects.ts";
 import { automationStudioResultObservation } from "./observation.ts";
 import { refusedYesReason } from "./refused-yes-reason.ts";
 import { replyText } from "./reply-text.ts";
@@ -86,7 +87,7 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
     };
   }
   if (verdict === "does_not_answer") {
-    return failed(verdict, "model", codes.doesNotAnswer, "The result was judged not to answer the request the Flow was built for.", observation, automationStudioResultRepairDirective({
+    return failed(verdict, "model", codes.doesNotAnswer, "The result was judged not to answer the request the Flow was built for.", observation, withDefects(automationStudioResultRepairDirective({
       summary: input.summary,
       judgement: {
         ...(input.diagnosis?.expected !== undefined ? { expected: input.diagnosis.expected } : {}),
@@ -103,11 +104,23 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
       checked: automationStudioResultCheckedRows(input.summary, replyText(input)),
       // Core's own finding beside the judgement's: the repair has the rows whoever saw them.
       leftOutKeptNumber: keptNumber
-    }));
+    }), input.diagnosis?.defects));
   }
   const silent = input.basis === "model_silent" || input.diagnosis?.answersRequest === undefined;
   if (silent) return failed(verdict, "model_silent", codes.silent, "The verification call answered without saying whether the result answers the request, so nothing confirmed it.", observation);
   // What it doubted, screened as a no's reading is: an unsure beside a yes is weighed by it against Core's record (`../agreement/`, t503).
   const doubt = automationStudioResultScreenedJudgement({ expected: input.diagnosis?.expected, observed: input.diagnosis?.observed, advice: advice(input) }).judgement;
   return { ...failed(verdict, "model", codes.unsure, "The verification call could not tell whether the result answers the request, so nothing confirmed it.", observation), ...(doubt ? { unsureReading: doubt } : {}) };
+}
+
+/**
+ * A no's directive with the defects its reply listed on its reading
+ * (`./defects.ts`, t752): what Core looks for in its own record before the no
+ * counts (`../agreement/unsupported-no.ts`). Nothing where it listed none.
+ */
+function withDefects(repair: AutomationStudioResultRepairDirective, listed: unknown): AutomationStudioResultRepairDirective {
+  const screened = automationStudioResultScreenedDefects(listed);
+  const withheld = screened.withheld || repair.withheld === true;
+  if (!screened.defects.length && listed === undefined) return withheld ? { ...repair, withheld: true } : repair;
+  return { ...repair, judgement: { ...repair.judgement, defects: screened.defects }, ...(withheld ? { withheld: true } : {}) };
 }
