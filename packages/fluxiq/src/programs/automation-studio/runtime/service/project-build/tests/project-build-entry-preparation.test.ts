@@ -6,6 +6,7 @@
 // run every phase through it), so it is handed that start and runs no hook.
 
 import { describe, expect, it } from "vitest";
+import { automationStudioActivityPreparing } from "../../../activity/step/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope } from "../../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioDetachedSubflowInput, AutomationStudioDetachedSubflowResult } from "../../../flow-bootstrap/verification/index.ts";
 import type { AutomationStudioCandidateTrialStart } from "../../candidate-trial/index.ts";
@@ -39,6 +40,8 @@ function harness(options: { startFails?: boolean; keptUnder?: AutomationStudioPr
     recordSets: async () => []
   } as unknown as AutomationStudioProjectBuildTrialEnvironment;
   const ran: AutomationStudioDetachedSubflowInput[] = [];
+  /** Whether each run ran marked as getting the page ready, so its steps are not read as a test (t753). */
+  const marked: boolean[] = [];
   const result = (status: "succeeded" | "failed", failedPredecessor?: string): AutomationStudioDetachedSubflowResult => ({
     partial: true, entryPrepared: status === "succeeded", ...(failedPredecessor ? { failedPredecessor, code: "candidate.trial_failed" } : {}),
     receipt: { status, finishedAt: 2 } as unknown as AutomationStudioDetachedSubflowResult["receipt"]
@@ -52,11 +55,12 @@ function harness(options: { startFails?: boolean; keptUnder?: AutomationStudioPr
     scope, proposals, environment, start, signal: new AbortController().signal, newRunId: () => "entry-run-1",
     execute: async (input) => {
       happened.push("execute");
+      marked.push(automationStudioActivityPreparing());
       ran.push(input);
       return answer;
     }
   });
-  return { happened, ran, passed, proposals, prepare, result };
+  return { happened, ran, marked, passed, proposals, prepare, result };
 }
 
 describe("a dependent builder's entry", () => {
@@ -81,6 +85,15 @@ describe("a dependent builder's entry", () => {
     expect(run.ran[0]!.identity).toMatchObject({ buildId: "build-1", briefId: "brief-3", target: { subflowKey: "second", revision: 2 }, predecessors: [{ subflowKey: "first", revision: 3 }] });
     expect(run.happened[0]).toContain(`"entryPreparation":{"buildId":"build-1","briefId":"brief-3","subflowKey":"third"`);
     expect(run.happened.slice(1)).toEqual(["write running", "execute", "datasets", "write succeeded"]);
+  });
+
+  // t753: a setup rerun read "Testing your Flow" with its count jumping from "Step 1 of 3" to "Step 2 of 5".
+  it("runs the predecessors marked as getting the page ready, so their steps never read as a test", async () => {
+    const run = harness();
+    run.passed("first", "brief-1", 1);
+    await run.prepare(scopeOf("second", "brief-2", ["first"]));
+    expect(run.marked).toEqual([true]);
+    expect(automationStudioActivityPreparing(), "the mark ends with the run").toBe(false);
   });
 
   it("says which predecessor has no passing proposal, and runs nothing", async () => {

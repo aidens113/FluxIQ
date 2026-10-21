@@ -72,8 +72,8 @@ describe("an ending with possibly lasting presses on the target", () => {
     const { left } = leftOn(ledger);
 
     expect(left.acts.map((act) => act.act)).toEqual(["act-1", "act-2", "act-3"]);
-    expect(left.told).toContain("3 presses it could not name");
-    expect(left.told).toContain("may have changed nothing; check them");
+    expect(left.told).toContain("pressed 3 controls with no label");
+    expect(left.told).toContain("nothing read afterwards could show whether they changed anything; check them");
     expect(left.told).not.toContain("These changes the build made are still on the site");
   });
 
@@ -106,11 +106,13 @@ describe("an ending the person reads", () => {
     brief.explored(clicked("c3", "No thanks", "link"));
     brief.explored(clicked("c4", "–", "div"));
     for (let press = 5; press <= 8; press += 1) brief.explored(clicked(`c${press}`, "Platform Engineer", "link"));
+    for (const press of [9, 10]) brief.explored(clicked(`c${press}`, "Add to shortlist", "button"));
     const told: Array<string | undefined> = [];
     const left = automationStudioProjectSupervisorLeftOnTarget({ projectLedger: ledger, leftAtEnding: (said) => told.push(said.told) });
 
     expect(left.note).toContain("click \"Platform Engineer\" link (declared no lasting act, but had an effect: possibly lasting)");
-    expect(left.told).toBe("The build left no change on the site that it knows of. It also clicked “Reject non-essential”, “No thanks” and “Platform Engineer”, which changed the page and might have left something behind, so check them if you need the site exactly as it was.");
+    // A dismissal and a link save nothing by themselves, and are not listed (t753, `activity/wording/act-words.ts`).
+    expect(left.told).toBe("The build clicked “Add to shortlist”, which changed the page and might have left something behind, so check it if you need the site exactly as it was.");
     left.reason("Done.");
     expect(told).toEqual([left.told]);
   });
@@ -170,6 +172,6 @@ describe("an ending with an act no call can settle on the target", () => {
     expect(left.acts).toEqual([{ act: "act-1", did: "press \"Mark\" button", brief: "brief.earlier", undoable: false, unsettleable: true }]);
     expect(left).toMatchObject({ undoable: false, unsettleable: true, note: "Still on the target from this build: press \"Mark\" button (it can no longer be checked or put back; it may still be there)." });
     // No read ever showed it change anything: the person is told it may have changed nothing, to check (t738).
-    expect(left.told).toContain("It clicked “Mark”, but no read ever showed a change from it, so it may have changed nothing; check it");
+    expect(left.told).toContain("The build clicked “Mark”, and nothing read afterwards could show whether it changed anything; check it");
   });
 });

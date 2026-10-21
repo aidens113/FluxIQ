@@ -652,8 +652,13 @@ Node API, used by the extension's background and by `apps/web` alike.
 - **Pacer**: `ActivityPacer` turns Core's raw activity events, each taken once,
   into an `ActivityDisplay`. The detail changes at most once per
   `ACTIVITY_DETAIL_INTERVAL_MS` (1,600 ms), showing only the newest at the end
-  of the period, and nothing is dropped for good; a headline change shows at
-  once. It holds the last meaningful line through "Deciding
+  of the period. Ordinary headline changes also wait until the current
+  headline has shown for 3,200 ms; a new unit, settlement or a person wait
+  can show at once. Agent-local test, repair, preparation and count state
+  prevents one builder's rows from ending another's stage, and focus stays
+  with an active agent for four seconds before switching. Entry preparation
+  reads "Getting the page ready"; reset work reads "Putting the site back".
+  It holds the last meaningful line through "Deciding
   the next step", never shows a model thought, gives a paused run no detail,
   does not echo the person's answer, cuts the detail at a word within 160
   characters (`cutAtWord`), does not reopen a settled unit for late rows, and
@@ -671,6 +676,20 @@ Node API, used by the extension's background and by `apps/web` alike.
   is held to 5,000 events instead and is never the unit dropped.
 - **Clock**: `systemActivityClock` (`ActivityClock`, `ActivityTimer`); tests
   pass a fake.
+
+Activity wording uses readable control names and kind nouns for generated or
+class-like names. Undo calls identify that they put the site back, and checked
+false is an untick. Project cards hide Core's routing piece and call the others
+pieces or parts. A successful empty read stays successful and says "No matching
+rows"; the UI never invents a domain failure from an empty answer. The
+`personFacingTextFaults` guard checks emitted activity and rendered chat/overlay
+text for internal terms, code identifiers, generated names and repeated phrases.
+
+A project build's ending row owns its reason, observed test record and remaining
+site changes. A result marker prevents the subsequent conversation response from
+repeating that account; it says what was kept and how to continue. Earlier whole
+runs remain in the record when the latest version has no whole test. A draft
+ended unfinished cannot promote merely because an earlier test passed.
 
 `fluxiq/ui` re-exports `ClientGatewayActivity` and `ClientGatewayActivityPhase`,
 so neither consumer needs a contracts dependency for them. The extension keeps

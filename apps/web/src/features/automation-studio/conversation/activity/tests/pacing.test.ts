@@ -2,7 +2,7 @@
 // the panel's live line, so it says what the web extension's status says, at
 // the same pace.
 
-import { ACTIVITY_DETAIL_INTERVAL_MS } from "fluxiq/ui";
+import { ACTIVITY_DETAIL_INTERVAL_MS, ACTIVITY_HEADLINE_DWELL_MS } from "fluxiq/ui";
 import { describe, expect, it } from "vitest";
 import { ConversationPacedStatus, type ConversationActivity, type ConversationActivityDisplay } from "..";
 
@@ -82,7 +82,7 @@ describe("the paced status", () => {
     expect(shown).toEqual(["Looking at the page 1", "Looking at the page 3"]);
   });
 
-  it("shows a repair, a settling or a new unit of work at once, in the extension's words", () => {
+  it("shows settlement and new work at once without flashing a brief repair headline", () => {
     const time = fakeClock();
     const shown: string[] = [];
     const status = new ConversationPacedStatus(time.clock, (display) => shown.push(display.headline));
@@ -96,7 +96,7 @@ describe("the paced status", () => {
     time.advance(10);
     status.accept(event(5, { ...RUN, phase: "running", label: "Run started" }));
     // A build that fails mid-repair failed as a build: it had no Flow to fix.
-    expect(shown).toEqual(["Building your Flow", "Fixing your Flow", "Build failed", "Running your Flow"]);
+    expect(shown).toEqual(["Building your Flow", "Build failed", "Running your Flow"]);
   });
 
   it("says a run whose repair failed couldn't fix the Flow", () => {
@@ -105,6 +105,7 @@ describe("the paced status", () => {
     const status = new ConversationPacedStatus(time.clock, (display) => shown.push(display.headline));
     status.accept(event(1, { ...RUN, phase: "running", label: "Run started" }));
     status.accept(event(2, { ...RUN, phase: "repairing", label: "Repairing the Flow" }));
+    time.advance(ACTIVITY_HEADLINE_DWELL_MS);
     status.accept(event(3, { ...RUN, phase: "failed", label: "Stopped", final: true }));
     expect(shown).toEqual(["Running your Flow", "Fixing your Flow", "Couldn't fix your Flow"]);
   });

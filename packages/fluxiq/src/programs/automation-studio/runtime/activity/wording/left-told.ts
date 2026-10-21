@@ -25,9 +25,10 @@
 // presses on nameless controls, each worded "one more change" and then kept
 // once, so the chat said "still on the site: one more change", of three acts
 // none of which any read showed changing anything. Acts no name says are
-// counted (`./act-words.ts`: "3 presses it could not name"), and an act whose
+// counted (`./act-words.ts`: "pressed 3 controls with no label"), and an act whose
 // caller knows no change of it was ever seen (`seen: false`) is said apart, as
-// one that may have changed nothing, to check, never as a change still on the site.
+// one no read could show changing anything, to check, never as a change still on the site, and never
+// as one that may have changed nothing, which contradicted a reason saying those acts left changes (t753).
 //
 // **An act the build could not undo is never said to be beyond the site
 // (t741 B5).** Photo-social `run-mvgobp8h-b99ede98` ended "These changes the
@@ -40,6 +41,17 @@
 // Only an act of a class no site control takes back (`stays: "irreversible"`,
 // the ledger's `undoable: false`) is said as still there because it cannot be
 // undone.
+//
+// **"No change" is never said beside acts that may have left one (t753).**
+// Round 5 read "The build left no change on the site that it knows of. It made
+// 6 acts it could not name, but no read ever showed a change from them", and
+// "... no change ... It also clicked “Decline optional cookies”, “Not now” and
+// “Close chat”, which changed the page and might have left something behind".
+// That nothing is left is now said only when no act is said at all; otherwise
+// the first sentence names the build and the rest follow it. Dismissals,
+// closes, declined options and moves to another page are not listed as
+// possibly lasting (`./act-words.ts`, `passing`), and each act is said once,
+// in plain words, never "acts it could not name".
 
 import { automationStudioActivityActsSaid, type AutomationStudioActivityActSaid } from "./act-words.ts";
 
@@ -77,7 +89,8 @@ function grouped(acts: readonly Plain[]): string {
   const more = once.length - named.length;
   // Under one verb the rest are counted among its names ("clicked “A”, “B” and 3 more"); under several, after them.
   const one = byVerb.size === 1;
-  const groups = [...byVerb].map(([verb, names]) => `${verb} ${joined(one && more ? [...names, `${more} more`] : names)}`);
+  // Several steps a test ran are "the steps" (`./act-words.ts`).
+  const groups = [...byVerb].map(([verb, names]) => `${verb === "ran the step" && (names.length > 1 || (one && more)) ? "ran the steps" : verb} ${joined(one && more ? [...names, `${more} more`] : names)}`);
   return one ? groups[0] ?? "" : joined(more ? [...groups, `${more} more`] : groups, "; ");
 }
 
@@ -88,38 +101,48 @@ function said(acts: readonly AutomationStudioActivityLeftAct[]): AutomationStudi
   return automationStudioActivityActsSaid(acts.map((act) => ({ did: act.did, note: act.stays === "irreversible" ? IRREVERSIBLE : undefined })));
 }
 
+/** What is said when the build knows of nothing it left (header). */
+const NOTHING_LEFT = "The build left no change on the site that it knows of.";
+
 /**
  * What a build left on the target, for the person (header): the acts it knows
- * are still there, or that none are; the acts it could not undo, as ones that
- * may still be there, to check; the acts no change of was ever seen, as
- * ones that may have changed nothing, to check; then the presses that changed the
- * page and might have left something behind.
+ * are still there; the acts it could not undo, as ones that may still be
+ * there, to check; the acts no change of was ever seen, as ones no read could
+ * show changing anything, to check; then the presses that changed the page and might
+ * have left something behind. That nothing is left is said only when none of
+ * these is (t753).
  */
 export function automationStudioActivityLeftTold(acts: readonly AutomationStudioActivityLeftAct[], possibly: readonly { did: string }[]): string {
   const inPlace = said(acts.filter((act) => act.stays !== "kept" && act.seen !== false));
   const kept = said(acts.filter((act) => act.stays === "kept"));
   const quiet = said(acts.filter((act) => act.stays !== "kept" && act.seen === false));
-  const sentences = inPlace.length
-    ? [`These changes the build made are still on the site: ${listed(inPlace.map((act) => act.words))}.`]
-    : kept.length ? [] : ["The build left no change on the site that it knows of."];
+  // A press no word names, or one that saves nothing by itself, is not said (header, t753).
+  const changed = automationStudioActivityActsSaid(possibly).flatMap((act) => (act.name !== undefined && !act.passing ? [{ verb: act.verb, name: act.name }] : []));
+  if (!inPlace.length && !kept.length && !quiet.length && !changed.length) return NOTHING_LEFT;
+  const sentences: string[] = [];
+  // The first sentence names the build; the ones after it say "It" (header, t753).
+  const subject = (first: string, after: string) => (sentences.length ? after : first);
+  if (inPlace.length) sentences.push(`These changes the build made are still on the site: ${listed(inPlace.map((act) => act.words))}.`);
   if (kept.length) {
     // Known only to be not undone by the build: never "still there", never "the site offers no way" (header, t741 B5).
-    const words = listed(kept.map((act) => (act.counted ? `made ${act.words}` : act.words)));
-    const many = kept.length > 1 || kept.some((act) => act.counted && !/^1 /u.test(act.words));
-    sentences.push(`The build ${words}, but could not undo ${many ? "them" : "it"}, so ${many ? "they" : "it"} may still be on the site; check ${many ? "them" : "it"} if you need the site exactly as it was.`);
+    const them = pronouns(kept);
+    sentences.push(`The build ${listed(kept.map((act) => act.words))}, but could not undo ${them.it}, so ${them.they} may still be on the site; check ${them.it} if you need the site exactly as it was.`);
   }
   if (quiet.length) {
-    // A count is said as acts it made; a named act by its own verb (header).
-    const words = listed(quiet.map((act) => (act.counted ? `made ${act.words}` : act.words)));
-    const many = quiet.length > 1 || quiet.some((act) => act.counted && !/^1 /u.test(act.words));
-    // Hedged both ways: nothing read showed a change, which is not proof there was none (a save no list was read for).
-    sentences.push(`It ${words}, but no read ever showed a change from ${many ? "them" : "it"}, so ${many ? "they" : "it"} may have changed nothing; check ${many ? "them" : "it"} if you need the site exactly as it was.`);
+    const them = pronouns(quiet);
+    // Neither way (t753): nothing read showed a change, which is not proof there was none (a save no list was read
+    // for), and the build's own reason may say the same acts left changes; "may have changed nothing" contradicted it.
+    sentences.push(`${subject("The build", "It")} ${listed(quiet.map((act) => act.words))}, and nothing read afterwards could show whether ${them.they} changed anything; check ${them.it} if you need the site exactly as it was.`);
   }
-  // A press no word names, or one that only entered text or moved around, is not said (header).
-  const changed = automationStudioActivityActsSaid(possibly).flatMap((act) => (act.name !== undefined && !act.passing ? [{ verb: act.verb, name: act.name }] : []));
   if (changed.length) {
     const once = new Set(changed.map((act) => `${act.verb} ${act.name}`)).size;
-    sentences.push(`It also ${grouped(changed)}, which changed the page and might have left something behind, so check ${once === 1 ? "it" : "them"} if you need the site exactly as it was.`);
+    sentences.push(`${subject("The build", "It also")} ${grouped(changed)}, which changed the page and might have left something behind, so check ${once === 1 ? "it" : "them"} if you need the site exactly as it was.`);
   }
   return sentences.join(" ");
+}
+
+/** "it" and "it" for one act, "them" and "they" for several, a count of several included. */
+function pronouns(acts: readonly AutomationStudioActivityActSaid[]): { it: string; they: string } {
+  const many = acts.reduce((sum, act) => sum + act.count, 0) > 1;
+  return many ? { it: "them", they: "they" } : { it: "it", they: "it" };
 }

@@ -15,6 +15,8 @@ const SUPERVISOR: Agent = { role: "supervisor" };
 const BUILDER: Agent = { role: "builder", briefId: "brief-1", subflowName: "Add the item" };
 const REASON = "The item can't be collected from this branch, so the task cannot be done.";
 const ENDED = "Build failed: the supervisor ended it because it could not finish the Flow";
+/** The same ending as the status line says it under its "Build failed" headline, which it does not say twice (t753). */
+const ENDED_UNDER_HEADLINE = "The supervisor ended it because it could not finish the Flow";
 
 let sequence = 0;
 function event(fields: Partial<ClientGatewayActivity> & Pick<ClientGatewayActivity, "phase" | "label">, id = "b1"): ClientGatewayActivity {
@@ -62,12 +64,12 @@ test("the status a supervisor-ended build settles on says it ended, then why", (
   pacer.accept(ending(ENDED));
   const settled = pacer.display();
   expect([settled?.headline, settled?.outcome]).toStrictEqual(["Build failed", "failed"]);
-  expect(settled?.detail).toBe(`${ENDED}. ${REASON}`);
+  expect(settled?.detail).toBe(`${ENDED_UNDER_HEADLINE}. ${REASON}`);
 
   const plain = new ActivityPacer({ clock, hostWords: TEST_HOST_WORDS, onChange: () => undefined });
   plain.accept(event({ phase: "building", label: "Planning the work" }, "b2"));
   plain.accept(ending("Build failed: it ran out of time", "b2"));
-  expect(plain.display()?.detail, "an ending with its own why is said as Core said it").toBe("Build failed: it ran out of time");
+  expect(plain.display()?.detail, "an ending with its own why is said as Core said it").toBe("It ran out of time");
 });
 
 // Round 2 of t649: Core's row saying the supervisor's ending carries its screened reason and what is
@@ -101,7 +103,7 @@ test("a newer Core's last row says why itself: its whole sentence is said, and n
   const pacer = new ActivityPacer({ clock, hostWords: TEST_HOST_WORDS, onChange: () => undefined });
   pacer.accept(event({ phase: "building", label: "Planning the work" }, "b3"));
   pacer.accept(event({ phase: "failed", label: `${ENDED}: the item can't be had`, detail: { kind: "step", title: `${ENDED}: the item can't be had`, status: "failed", text: "The supervisor ended it because it could not finish the Flow: the item can't be had." }, final: true }, "b3"));
-  expect(pacer.display()?.detail, "a title that is whole is said as it is").toBe(`${ENDED}: the item can't be had`);
+  expect(pacer.display()?.detail, "a title that is whole is said as it is").toBe(`${ENDED_UNDER_HEADLINE}: the item can't be had`);
 });
 
 // t741 B5 (job-board `run-mvgo9wzn-fad4e050`): the pronoun "I" that opens Core's whole sentence is

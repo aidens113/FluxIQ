@@ -132,6 +132,15 @@ describe("promoting a judged candidate", () => {
     expect(propose).not.toHaveBeenCalled();
   });
 
+  // t753 round 5 (a): a supervisor that ended without completing held a whole test judged yes, which was dropped, so
+  // the chat said the Flow "was never test-run from the start". The yes is kept as the draft's, and never promotes.
+  it("keeps a yes the build ended on without completing as the draft's, and never promotes it", async () => {
+    const { input, propose } = promotionFixture();
+    input.standing = { ...input.standing!, feedback: { endingCodes: ["project.build_ended_unfinished", "project.build_ending_told"] } };
+    expect(await promoteAutomationStudioCandidateTrial(input)).toEqual({ status: "draft", trial: { verdict: "yes", runId: "trial.2", codes: ["project.build_ended_unfinished", "project.build_ending_told"] } });
+    expect(propose).not.toHaveBeenCalled();
+  });
+
   it("a base that moves under the adaptation lock keeps the draft as stale; any other failure is thrown", async () => {
     const stale = promotionFixture();
     stale.propose.mockRejectedValueOnce(new Error("FLOW_BOOTSTRAP_STALE: base dependency digest does not match the current Flow."));

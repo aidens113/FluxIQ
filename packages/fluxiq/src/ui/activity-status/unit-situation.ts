@@ -42,6 +42,13 @@
 
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 
+/** A supervisor's card opening or closing a brief, when `event` is one. */
+function projectCardOf(event: ClientGatewayActivity): { kind: "brief"; brief: string } | { kind: "return" } | undefined {
+  const card = event.detail?.kind === "note" ? event.detail.project : undefined;
+  if (card?.kind === "brief") return { kind: "brief", brief: card.brief };
+  return card?.kind === "return" ? { kind: "return" } : undefined;
+}
+
 /** The extension's result code for a page that only a person can get past. */
 const INTERVENTION_CODE = /\bweb\.intervention\.[a-z_.]+|\buser_intervention_required\b/u;
 
@@ -52,6 +59,8 @@ export type UnitState = {
   readonly check: boolean;
   /** This very event is the one that reported the check. */
   readonly checkReportedNow: boolean;
+  /** A project build's reset brief is putting the site back: no repair is under way while it does. */
+  readonly resetting: boolean;
 };
 
 export class UnitSituation {
@@ -60,6 +69,13 @@ export class UnitSituation {
   private rebuilding = false;
   private check = false;
   private paused = false;
+  private resetting = false;
+
+  /** A new brief began elsewhere in the unit: whatever repair this one was in is over (t753). */
+  endRepair(): void {
+    this.repairing = false;
+    this.rebuilding = false;
+  }
 
   /**
    * Folds `event` in and answers the unit's state after it. An event of a
@@ -74,10 +90,23 @@ export class UnitSituation {
       this.rebuilding = false;
       this.check = false;
       this.paused = false;
+      this.resetting = false;
     }
     const continued = this.paused && event.phase === "running";
     this.paused = event.phase === "paused";
-    if (event.phase === "repairing" && !inTrial) this.repairing = true;
+    // A brief's card opens new work, which a repair before it does not reach
+    // into; a reset brief puts the site back, and that is not fixing the Flow
+    // (t753: "Fixing your Flow" stayed up through a reset). Its return card ends it.
+    const card = projectCardOf(event);
+    if (card?.kind === "brief") {
+      this.repairing = card.brief === "repair";
+      this.rebuilding = false;
+      this.resetting = card.brief === "reset";
+    } else if (card?.kind === "return") {
+      this.repairing = false;
+      this.resetting = false;
+    }
+    if (event.phase === "repairing" && !inTrial && !this.resetting) this.repairing = true;
     if (repairsTheFlow(event) && !inTrial) this.rebuilding = true;
     const runMovedOn = event.phase === "running" && event.step !== undefined;
     if (runMovedOn || resultCheckPassed(event)) this.repairing = false;
@@ -85,7 +114,7 @@ export class UnitSituation {
     const reported = asksForPerson(event);
     if (reported) this.check = true;
     else if (runMovedOn || continued || pageActionSucceeded(event) || isSettledAsk(event)) this.check = false;
-    return { repairing: this.repairing, rebuilding: this.rebuilding, check: this.check, checkReportedNow: reported };
+    return { repairing: this.repairing, rebuilding: this.rebuilding, check: this.check, checkReportedNow: reported, resetting: this.resetting };
   }
 }
 

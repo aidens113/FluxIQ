@@ -120,6 +120,8 @@ export type AutomationStudioConversationCommandOutcome = {
   adaptationId?: string;
   /** Successful authoring only; never a verified or executable result. */
   candidate?: AutomationStudioCandidateAuthoringResult;
+  /** With `candidate`: the build's ending row already said how it ended, so the draft's card line says no verdict (`./build.ts`, t753). */
+  candidateTold?: boolean;
   /** Asked after the result is written, when the command's work needs a yes before it takes effect. */
   confirm?: AutomationStudioConversationCommandConfirmation;
   /**

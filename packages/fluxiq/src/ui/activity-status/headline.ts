@@ -40,9 +40,17 @@
 //   from its start (`candidate-trial.ts`), the work reads "Testing your Flow",
 //   whatever its run reports: a trial repairs nothing, so a step that fails in
 //   it is never "Fixing your Flow" (lane A round 4, `run-muyrpbnk-fef374e7`).
+// - **Getting the page ready.** While Core runs the parts before a part once
+//   to put the page where that part begins (`steady/page-preparation.ts`), the
+//   work reads "Getting the page ready": it is neither a test nor a repair
+//   (t753: a setup rerun read "Testing your Flow").
+// - **Putting the site back.** While a project build's reset brief undoes what
+//   the build did on the site, the work reads "Putting the site back", never
+//   "Fixing your Flow" (t753: a repair's headline stayed up through a reset).
 
 import type { ActivityDisplay } from "./activity-display.ts";
 import type { ActivityHostWords } from "./host-words.ts";
+import { ACTIVITY_PAGE_PREPARATION_WORDS } from "./steady/index.ts";
 
 /** What the person is being waited on for. */
 export type ActivityWaitReason = "answer" | "check" | "paused";
@@ -54,6 +62,10 @@ export type ActivityHeadlineSituation = {
   readonly repairing?: boolean;
   /** A candidate build is test-running the Flow it submitted; outweighs `repairing`. */
   readonly testing?: boolean;
+  /** Core is running the parts before a part only to get the page ready for it; outweighs the rest of the work. */
+  readonly preparing?: boolean;
+  /** A project build's reset brief is putting the site back; outweighs `repairing`. */
+  readonly resetting?: boolean;
   /** Why the work waits, when `outcome` is `waiting`. */
   readonly waitingOn?: ActivityWaitReason;
 };
@@ -78,6 +90,7 @@ const PAUSED = "Paused: your turn on the page";
 
 const REPAIRING = "Fixing your Flow";
 const TESTING = "Testing your Flow";
+const RESETTING = "Putting the site back";
 /** Only a run's failed repair: a build that fails in its repair says the build failed. */
 const REPAIR_FAILED = "Couldn't fix your Flow";
 
@@ -90,6 +103,8 @@ export function activityHeadline(kind: ActivityDisplay["subjectKind"], outcome: 
   }
   if (outcome === "done") return DONE[kind];
   if (outcome === "failed") return kind === "run" && situation.repairing && !situation.testing ? REPAIR_FAILED : FAILED[kind];
+  if (situation.preparing) return ACTIVITY_PAGE_PREPARATION_WORDS;
   if (situation.testing) return TESTING;
+  if (situation.resetting) return RESETTING;
   return situation.repairing ? REPAIRING : WORKING[kind];
 }

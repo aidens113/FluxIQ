@@ -4,6 +4,7 @@
 // client that shows the activity stream, and the one sentence splitter for
 // the words the chat shows.
 export { activityActionOf } from "./action-of.ts";
+export { ACTIVITY_ACTION_CONTROL_NOUNS, activityActionControlNoun } from "./control-nouns.ts";
 export { activityActionFailureReason } from "./failure-reason.ts";
 export { ACTIVITY_ACTION_ICONS } from "./icons.ts";
 export { activityActionKey } from "./key.ts";

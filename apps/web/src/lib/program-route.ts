@@ -348,19 +348,19 @@ function forbidden(error: string): PairedClientRequestNarrowing {
 export function projectPairedClientResponse<TResponse extends { ok: boolean; payload?: unknown }>(programId: string, endpoint: string, response: TResponse): TResponse {
   if (programId.trim().toLowerCase() !== "secret-keys" || endpoint.trim().toLowerCase() !== "snapshot" || !response.ok) return response;
   const keys = payloadRecord(response.payload)?.keys;
+  // No snapshot list means readiness is unknown, not that no key exists.
+  if (!Array.isArray(keys)) return { ...response, payload: {} };
   return {
     ...response,
     payload: {
-      keys: Array.isArray(keys)
-        ? keys.map((key) => {
+      keys: keys.map((key) => {
           const summary = payloadRecord(key) ?? {};
           return {
             kind: typeof summary.kind === "string" ? summary.kind : null,
             provider: typeof summary.provider === "string" ? summary.provider : null,
             enabled: summary.enabled === true,
           };
-        })
-        : [],
+        }),
     },
   };
 }

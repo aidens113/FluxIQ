@@ -222,6 +222,13 @@ describe("a paired client on the program route", () => {
     expect(narrowPairedClientRequest("secret-keys", "snapshot", undefined)).toEqual({ ok: true, payload: undefined });
   });
 
+  it("keeps readiness unknown when the snapshot supplied no list", () => {
+    for (const payload of [undefined, null, {}, { keys: null }, { keys: "unavailable" }]) {
+      expect(projectPairedClientResponse("secret-keys", "snapshot", { ok: true, payload })).toEqual({ ok: true, payload: {} });
+    }
+    expect(projectPairedClientResponse("secret-keys", "snapshot", { ok: true, payload: { keys: [] } })).toEqual({ ok: true, payload: { keys: [] } });
+  });
+
   it("answers the secret-keys snapshot with kind, provider and enabled only", () => {
     const response = {
       ok: true,

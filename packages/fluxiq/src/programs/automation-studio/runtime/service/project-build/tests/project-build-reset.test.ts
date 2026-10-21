@@ -320,7 +320,7 @@ describe("a project build whose builder leaves a lasting act", () => {
     const reason = ((await run.record()).ending as JsonObject).reason as string;
     expect(reason.startsWith(`${ENDED_REASON} Still on the target from this build: `)).toBe(true);
     const note = reason.slice(ENDED_REASON.length + 1);
-    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked"] });
+    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked", "project.build_ending_told"] });
     expect(note.startsWith("Still on the target from this build: ")).toBe(true);
     const told = seen.find((event) => event.detail?.title === "FluxIQ could not finish the Flow.");
     // Why it ended, the supervisor's words screened, then what is left once, in a person's words (t649, t567 lane 4); the ledger's note stays in the record.
@@ -328,9 +328,10 @@ describe("a project build whose builder leaves a lasting act", () => {
     const text = (told?.detail as { text: string }).text;
     // Core's record of its tests goes between the reason and what is left (t738, `../../project-build-ending/record-told.ts`).
     // No read showed the save's change, so it is told as acts to check, never as no act at all (t738, `left-on-target.ts` `seen`).
-    // Why is the chat's ending's to say (`endedBecause`), so the row says it no second time (t741 B5).
+    // The row is the one account of the ending (t753): why first, and never "no change" beside acts to check. The
+    // failure still carries why, for the build's last status line.
     expect(diagnostic!.endedBecause).toBe(ENDED_REASON);
-    expect(text).toBe(`Both parts tested on their own passed their own test. No whole Flow was assembled, so it was never tested as one. The build left no change on the site that it knows of. It used “save the recipe” and made 1 press it could not name, but no read ever showed a change from them, so they may have changed nothing; check them if you need the site exactly as it was.`);
+    expect(text).toBe(`${ENDED_REASON} Both parts tested on their own passed their own test. No whole Flow was assembled, so it was never tested as one. The build ran the step “save the recipe” and pressed 1 control with no label, and nothing read afterwards could show whether they changed anything; check them if you need the site exactly as it was.`);
     expect(text).not.toContain("on the target");
     // Its trial's recipe and its explored one, both still there.
     expect([...run.box]).toEqual(["recipe:lentil-soup", TRIAL_RECIPE, "recipe:herb-bread"]);
@@ -349,7 +350,7 @@ describe("a project build whose builder leaves a lasting act", () => {
     expect(said).not.toContain("Every lasting act this build made is undone");
     // Named in a person's words, never by its ledger id (t738, `../../../project-agents/dispatch/reset-done.ts`).
     // Kept, it is of a reversible class: said as not undone, never as beyond the site (t741 B5) -- the line was in fact removed.
-    expect(said).toContain("1 act of this build could not be undone, so it may still be on the site: used “add it to the cart”.");
+    expect(said).toContain("1 act of this build could not be undone, so it may still be on the site: ran the step “add it to the cart”.");
     expect(said).not.toContain("site offers no way");
     // The add, then the removal of the very line it created; the domain never saw `undoes`.
     expect(run.acted).toEqual(["add herb-tea", "remove herb-tea"]);
@@ -711,7 +712,7 @@ describe("a reset brief's requests through DeepSeek's own pre-send checks", () =
     expect(reset).toMatchObject({ ok: true, returns: [{ kind: "reset", outcome: "blocked" }] });
     expect(String((reset.returns as JsonObject[])[0]!.reason)).toContain("flow_bootstrap.provider_evidence_loop_context_invalid");
     // The build fails as every honest blocked ending does: the supervisor's recorded ending, told to the person.
-    expect(parseAutomationStudioFlowBootstrapGenerationError(failure)).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked"] });
+    expect(parseAutomationStudioFlowBootstrapGenerationError(failure)).toMatchObject({ code: "flow_bootstrap.post_provider_validation_failed", issueCodes: ["project.build_blocked", "project.build_ending_told"] });
     expect(((await run.record()).ending as JsonObject).outcome).toBe("blocked");
     expect(seen.some((event) => event.detail?.title === "FluxIQ could not finish the Flow.")).toBe(true);
   });

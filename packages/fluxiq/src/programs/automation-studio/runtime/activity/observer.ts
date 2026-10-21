@@ -284,12 +284,16 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
   // The role the view printed for the control rides along either way, so an
   // exploration call's "check" is read by the element rule a saved step's is
   // (R4a attempt 2, `run-mv2pgqkj-f3552c70`, moment 04).
+  // The kind the view printed rides along too: a control it printed no words
+  // for is said by it, "Clicking a button" (t753).
   const describedOf = (call: { toolId: string; value?: unknown }): AutomationStudioActivityCallWords | undefined => {
     const role = context.role(call);
+    const kind = context.kind(call);
     const words = describeSafely(input.describeCall, call);
     const target = words?.target ?? context.target(call);
     const named = target === undefined ? words : { ...words, target };
-    return role === undefined ? named : { ...named, role };
+    const kinded = kind === undefined ? named : { ...named, kind };
+    return role === undefined ? kinded : { ...kinded, role };
   };
   return {
     ...input,
