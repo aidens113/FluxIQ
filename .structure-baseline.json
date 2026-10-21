@@ -684,6 +684,11 @@
       "packages/fluxiq/src/programs/automation-studio/model::state": 3,
       "apps/web/src/features/programs/shared-ui.tsx": 1
     },
+    "package-exports": {
+      "scripts/automation-studio-scale-baseline.mjs": 1,
+      "scripts/automation-studio-scale-certification.mjs": 1,
+      "scripts/flow-compiler.mjs": 1
+    },
     "statement-packing": {
       "apps/web/src/features/programs/live-views/tests/deployment-sync-recovery.test.tsx": 66,
       "apps/web/src/features/programs/live-views/tests/database-manager-json.test.tsx": 61,

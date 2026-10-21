@@ -43,4 +43,11 @@ export * from "./region-compiler.ts";
 export * from "./router-runtime.ts";
 export * from "./service.ts";
 export * from "./service/offline-trial/index.ts";
+// Traces and offline trials, P5: the public seams a host runs a recorded build's trials through instead of loading
+// Core's build files -- a single-subflow candidate rebuilt from a submitted script, the whole-candidate trial ports a
+// service makes outside a build (and their type), and a project's gateway trace store by its service.
+export { automationStudioProjectSingleSubflowRebuild, type AutomationStudioProjectSingleSubflowRebuildInput, type AutomationStudioProjectSingleSubflowRebuildSubmission, type AutomationStudioProjectSingleSubflowRebuilt } from "./project-agents/single-subflow/index.ts";
+export { automationStudioServiceWholeTrialPorts, type AutomationStudioServiceWholeTrialPortsInput } from "./service/trial-ports/index.ts";
+export type { AutomationStudioCandidateTrialPorts } from "./service/candidate-trial/index.ts";
+export { automationStudioGatewayTraceServiceStore } from "./gateway-trace/wiring/index.ts";
 export * from "./training-modes.ts";

@@ -8,8 +8,8 @@ import { withAutomationStudioProjectAgent } from "../attribution/index.ts";
 import type { AutomationStudioProjectStructurePlan } from "../contracts/index.ts";
 import type { AutomationStudioProjectDispatchWholeTrial, AutomationStudioProjectDispatchWholeTrialAnswer } from "../dispatch/index.ts";
 import type { AutomationStudioProjectSupervisorPorts } from "../supervisor/index.ts";
-import { automationStudioProjectAssembleLatest } from "./assemble-latest.ts";
 import { AutomationStudioProjectAssembledFrom } from "./assembled-from.ts";
+import { automationStudioProjectSingleSubflowAssemble } from "./proposal-assembly.ts";
 import { automationStudioProjectSingleSubflowPlan } from "./single-subflow-plan.ts";
 
 // A single-subflow plan's one-brief path (t679; cost-gap design (5)). On a plan
@@ -19,7 +19,8 @@ import { automationStudioProjectSingleSubflowPlan } from "./single-subflow-plan.
 // the builder's `core.test_subflow` is the judged whole run itself:
 //
 // - the proposal under test is assembled with the code `project.assemble` uses
-//   (`./assemble-latest.ts`) and submitted through the whole candidate's
+//   (`./assemble-latest.ts`, through `./proposal-assembly.ts`, which a
+//   rebuild also calls) and submitted through the whole candidate's
 //   controller, so the revision tested is the revision the supervisor
 //   completes on;
 // - that revision is tested with the supervisor's whole test
@@ -151,11 +152,8 @@ export function automationStudioProjectSingleSubflowTrial(input: AutomationStudi
     if (scope.subflowKey !== subflowKey || scope.planDigest !== structure.digest || proposal.scope.briefId !== scope.briefId || proposal.scope.subflowKey !== subflowKey) return refused("project.whole_trial_not_this_plan", WORDS.notThisPlan);
     // Kept for the supervisor to read back by the name a done return gives it (`./assembled-from.ts`).
     AutomationStudioProjectAssembledFrom.of(controller).keep(proposal);
-    const assembled = await automationStudioProjectAssembleLatest({
-      structure, ports, controller, gate, kept: input.kept, inHand: proposal,
-      from: [{ subflowKey, briefId: scope.briefId, revision: proposal.revision, digest: proposal.digest, predecessors: scope.predecessors }],
-      summary: `A Flow of one subflow, ${subflowKey}, assembled from its builder's proposal under test.`
-    });
+    // The one single-subflow assembly, which a rebuild of a submitted script also calls (`./proposal-assembly.ts`).
+    const assembled = await automationStudioProjectSingleSubflowAssemble({ structure, ports, controller, gate, kept: input.kept, scope, proposal });
     if (!assembled.ok) {
       if (assembled.kind === "assembly") return refused("project.assemble_refused", WORDS.assembleRefused, { issues: assembled.issues.map((issue) => ({ ...issue })) });
       return refused(assembled.code, assembled.code === UNCHANGED_AFTER_NO ? WORDS.judgedNo : WORDS.composedRefused, { refusal: assembled.feedback, issueCodes: assembled.issueCodes });

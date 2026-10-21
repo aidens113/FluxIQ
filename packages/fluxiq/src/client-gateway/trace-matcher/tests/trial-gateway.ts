@@ -11,6 +11,7 @@ import {
   type ClientGatewayClientHello,
   type ClientGatewaySession,
   type ClientGatewayTraceMatcherGateway,
+  type ClientGatewayTraceReevaluator,
   type ClientGatewayTraceStore
 } from "../../index.ts";
 import type { ClientGatewayChannelScopeSource } from "../../service/channel-scope/index.ts";
@@ -38,8 +39,15 @@ export type Trial = {
   close(): Promise<void>;
 };
 
-/** A trial gateway with the matcher over `traceId` attached under the trial scope, with the view the trace recorded, else `sessionView`. */
-export async function openTrial(input: { store: ClientGatewayTraceStore; traceId: string; contractVersions?: Readonly<Record<string, string>>; commandTimeoutMs?: number; sessionView?: ClientGatewayClientHello }): Promise<Trial> {
+/** A trial gateway with the matcher over `traceId` attached under the trial scope, with the view the trace recorded, else `sessionView`; `reevaluator` is handed to the matcher. */
+export async function openTrial(input: {
+  store: ClientGatewayTraceStore;
+  traceId: string;
+  contractVersions?: Readonly<Record<string, string>>;
+  commandTimeoutMs?: number;
+  sessionView?: ClientGatewayClientHello;
+  reevaluator?: ClientGatewayTraceReevaluator;
+}): Promise<Trial> {
   const scope = manualScope();
   const gateway = new ClientGatewayService({ commandTimeoutMs: input.commandTimeoutMs ?? 60_000, reconcileAnswerMs: 5_000, channelScope: scope });
   const fed: string[] = [];
@@ -60,7 +68,7 @@ export async function openTrial(input: { store: ClientGatewayTraceStore; traceId
       await new Promise((resolve) => setTimeout(resolve, ms));
     }
   };
-  const matcher = await ClientGatewayTraceMatcher.load({ store: input.store, traceId: input.traceId, gateway: port, clock, contractVersions: input.contractVersions ?? PROTOCOL });
+  const matcher = await ClientGatewayTraceMatcher.load({ store: input.store, traceId: input.traceId, gateway: port, clock, contractVersions: input.contractVersions ?? PROTOCOL, ...(input.reevaluator === undefined ? {} : { reevaluator: input.reevaluator }) });
   const session = matcher.attach(TRIAL_SCOPE, input.sessionView);
   const execute = (command: ClientGatewayActionCommand): Promise<ClientGatewayActionResult> => {
     scope.enter(TRIAL_SCOPE);

@@ -7,6 +7,8 @@ export * from "./types.ts";
 export * from "./dispatcher.ts";
 export * from "./dependencies.ts";
 export * from "./call-order.ts";
+// The brief's scope, which a rebuild of a submitted script maps as the dispatcher does (`../single-subflow/rebuild.ts`).
+export * from "./scope.ts";
 export * from "./host-lease.ts";
 // The reset brief's completion schema, which the build's reset ports send as its request's (F3).
 export * from "./reset-completion.ts";

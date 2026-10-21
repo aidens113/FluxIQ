@@ -153,6 +153,52 @@ export const CONFIG = {
   // call written there fails the build instead of only a Lab network policy.
   restrictedReferences: [],
 
+  // Modules that must never load others through any chain of imports, for the
+  // module-reach rule. Each entry is { name, from, to, reason, remedy }; a
+  // prefix ending in `/` is a directory, any other names one file. A `from`
+  // entry that names no audited script fails, so a rename cannot empty it.
+  //
+  // Trace content never reaches model guidance (trace plan D36). `from` is the
+  // text a model reads: the model-facing words, the system prompt and domain
+  // instructions, stage and diagnosis instructions, the node descriptions
+  // `core.describe_nodes` returns, the Flow catalogue and script format, the
+  // supervisor's instructions and guidance, and the conversation prompt. `to`
+  // is everything that holds or replays a recorded gateway trace.
+  reachBoundaries: [
+    {
+      name: "trace-free model guidance",
+      from: [
+        "packages/fluxiq/src/programs/automation-studio/runtime/llm/model-facing/",
+        "packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/system-prompt.ts",
+        "packages/fluxiq/src/programs/automation-studio/runtime/llm/domain-instructions/",
+        "packages/fluxiq/src/programs/automation-studio/runtime/llm/diagnosis-instructions.ts",
+        "packages/fluxiq/src/programs/automation-studio/runtime/llm/stages/instructions.ts",
+        "packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/node-descriptions.ts",
+        "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/catalog.ts",
+        "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/catalog-names.ts",
+        "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/flow-script-format.ts",
+        "packages/fluxiq/src/programs/automation-studio/runtime/project-agents/supervisor/system-instructions.ts",
+        "packages/fluxiq/src/programs/automation-studio/runtime/project-agents/supervisor/guidance.ts",
+        "packages/fluxiq/src/programs/automation-studio/runtime/conversations/instructions/prompt.ts"
+      ],
+      to: [
+        "packages/fluxiq/src/client-gateway/trace/",
+        "packages/fluxiq/src/client-gateway/trace-replay/",
+        "packages/fluxiq/src/client-gateway/trace-matcher/",
+        "packages/fluxiq/src/programs/automation-studio/runtime/gateway-trace/",
+        "packages/fluxiq/src/programs/automation-studio/runtime/service/offline-trial/",
+        "packages/fluxiq/src/programs/automation-studio/model/offline-trial/",
+        "packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace/",
+        "packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace-chunk-codec/",
+        "packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace-chunk-rows/",
+        "packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace-rekey/",
+        "packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace-schema/"
+      ],
+      reason: "A recorded trace holds what one site showed during one build. Once it can flow into the text a model reads, that text can start describing a test site, and a Lab pass stops measuring whether FluxIQ generalises",
+      remedy: "Keep guidance built from generic words and the current call's own inputs. If a trace-derived fact must reach the model, pass it as the call's evidence, not through a guidance module's imports."
+    }
+  ],
+
   workingDocsDir: "docs/working",
   workingDocsIndexKind: "core"
 };

@@ -4,11 +4,11 @@ import type { AutomationStudioSiteResetProjectLedger } from "../../flow-bootstra
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider } from "../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../../result-verification/index.ts";
 import { automationStudioCandidateTrialPort, type AutomationStudioCandidateTrialPorts } from "../candidate-trial/index.ts";
+import { automationStudioWholeTrialPorts } from "../trial-ports/index.ts";
 import { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
 import { AutomationStudioProjectBuildPhaseStart } from "./phase-start.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER } from "./supervisor-ledger.ts";
 import { AutomationStudioProjectBuildTaskChecklist } from "./task-checklist.ts";
-import { automationStudioProjectBuildTrialReads } from "./trial-reads.ts";
 
 // The whole candidate's trial runner and judge, once per build (t340; unit
 // A5c moved them out of `service.ts`): each trial runs the exact submitted
@@ -66,7 +66,8 @@ export function automationStudioProjectBuildWholeTrials(input: {
     const taskChecklist = await AutomationStudioProjectBuildTaskChecklist.whole(environment);
     return await asked(taskChecklist ? { ...judged, taskChecklist } : judged);
   };
-  const trials = automationStudioCandidateTrialPort(input.candidateId, { ...environment, ...automationStudioProjectBuildTrialReads(binding, projectId, flowId), judge });
+  // The whole ports, as the trial-ports seam a host uses outside a build makes them (`../trial-ports/whole-ports.ts`).
+  const trials = automationStudioCandidateTrialPort(input.candidateId, automationStudioWholeTrialPorts({ environment, binding, judge }));
   const ledger = input.ledger;
   if (!ledger) return trials;
   const arrival = AutomationStudioProjectBuildPhaseStart.arrival(binding.runsNodes?.arrival, environment);
