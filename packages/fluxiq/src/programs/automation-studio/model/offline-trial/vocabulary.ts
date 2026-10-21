@@ -22,7 +22,13 @@ export const AUTOMATION_STUDIO_TRIAL_EVIDENCE_ORIGINS = Object.freeze(["recorded
  */
 export const AUTOMATION_STUDIO_TRIAL_EVIDENCE_SCOPES = Object.freeze(["supplied_state", "segment", "full_recorded_path", "full_live_run"] as const);
 
-/** Why a result is not a pass, or what evidence it lacked. Closed. */
+/**
+ * Why a result is not a pass, or what evidence it lacked. Closed. Among them:
+ * `source_not_live`: an offline trial's source trace is not a live episode's
+ * capture (it was derived or replayed), so it holds no live evidence to run on;
+ * `judgement_unavailable`: the task-goal judge gave no verdict (it was not
+ * asked, or it was unsure), so the goal is neither met nor missed.
+ */
 export const AUTOMATION_STUDIO_TRIAL_EVIDENCE_REASON_CODES = Object.freeze([
   "missing_transition",
   "argument_mismatch",
@@ -37,7 +43,9 @@ export const AUTOMATION_STUDIO_TRIAL_EVIDENCE_REASON_CODES = Object.freeze([
   "model_request_changed",
   "stale_checkpoint",
   "redacted_input",
-  "offline_not_allowed_in_phase"
+  "offline_not_allowed_in_phase",
+  "source_not_live",
+  "judgement_unavailable"
 ] as const);
 
 /** How one checked assertion came out. `unverified` means its evidence was unavailable. */

@@ -21,6 +21,15 @@ export type AutomationStudioRunEnvironment = {
   now: NonNullable<AutomationStudioGraphExecutionOptions["now"]>;
   delay: NonNullable<AutomationStudioGraphExecutionOptions["delay"]>;
   random: NonNullable<AutomationStudioGraphExecutionOptions["random"]>;
+  /**
+   * The timer source this environment's deadlines run on (traces and offline
+   * trials, P4, "Virtual clock"), in the gateway's timer-source shape
+   * (`ClientGatewayTimerSource`), so the same source serves the executor's
+   * region timeout (`AutomationStudioGraphExecutionOptions.startTimer`) and the
+   * gateway's waits for a command sent inside `within`. Absent: real timers,
+   * as the live environment leaves it.
+   */
+  startTimer?: ((wait: { readonly kind: string }, delayMs: number, fire: () => void) => { cancel(): void }) | undefined;
   /** A fresh run id, `<prefix>.<unique>`, as the trial runner's own fallback mints one (`trial.<uuid>`). */
   newRunId(prefix: string): string;
   /**

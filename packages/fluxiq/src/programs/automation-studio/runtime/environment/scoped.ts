@@ -17,6 +17,11 @@ export type AutomationStudioScopedRunEnvironment = AutomationStudioRunEnvironmen
  * scripted client in unit tests) and can never reach a live one. `random` and
  * `newRunId` default to the live ones; a caller that needs them reproducible
  * passes its own.
+ *
+ * Its deadlines are the clock's timers (P4, "Virtual clock"): `startTimer` is
+ * the clock's, and `within` carries it in the scope, so the gateway's waits
+ * for a command sent inside run out in the clock's time, as the executor's
+ * region timeout does once its options take `startTimer`.
  */
 export function createAutomationStudioScopedRunEnvironment(input: {
   kind: "trace" | "fixture";
@@ -35,8 +40,9 @@ export function createAutomationStudioScopedRunEnvironment(input: {
     scopeId,
     now: () => clock.now(),
     delay: (ms: number, signal?: AbortSignal) => clock.delay(ms, signal),
+    startTimer: clock.startTimer,
     random,
     newRunId,
-    within: <T>(work: () => Promise<T>): Promise<T> => AutomationStudioChannelScope.run(scopeId, work)
+    within: <T>(work: () => Promise<T>): Promise<T> => AutomationStudioChannelScope.run(scopeId, work, clock.startTimer)
   });
 }
