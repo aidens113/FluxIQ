@@ -40,6 +40,7 @@ const { promoted, open, rating, campground, notCabin } = CAMP_WHERE;
 function answered(request: { revision: number; digest: string }, verdict: AutomationStudioBuildTestVerdict): AutomationStudioCandidateTrialResult {
   const base = { revision: request.revision, digest: request.digest };
   if (verdict.verdict === "no") return { ...base, verdict: "no", feedback: { code: "candidate.trial_judged_no", judge: { ...(verdict.observed ? { observed: verdict.observed } : {}), ...(verdict.advice ? { advice: verdict.advice } : {}) } }, ...(verdict.standingNo ? { standingNo: verdict.standingNo } : {}) } as AutomationStudioCandidateTrialResult;
+  if (verdict.verdict === "unknown") return { ...base, verdict: "unsure", feedback: { code: "candidate.trial_unconfirmed", ...(verdict.unconfirmedReading ? { unconfirmedReading: { ...verdict.unconfirmedReading } } : {}) }, ...(verdict.standingNo ? { standingNo: verdict.standingNo } : {}) } as AutomationStudioCandidateTrialResult;
   return { ...base, verdict: verdict.verdict === "yes" ? "yes" : "unsure", feedback: { code: "candidate.trial_unconfirmed" } };
 }
 
@@ -68,9 +69,9 @@ describe("a condition Core's record kept, dropped after a no on advice it refute
     const { controller, gate, submit, test } = build(GAP_AND_CHANGE_NO, GAP_NO);
     const exact = await accepted(submit(script([promoted, open, rating, campground, notCabin])));
     const trial = await test(exact);
-    expect(trial.resultCode).toBe("candidate.trial_no");
+    expect(trial.resultCode).toBe("candidate.trial_unsure");
     // The label shows: the advice Core's record contradicts says so, with Core's finding.
-    const judged = ((trial.evidence as JsonObject).feedback as JsonObject).judge as JsonObject;
+    const judged = ((trial.evidence as JsonObject).feedback as JsonObject).unconfirmedReading as JsonObject;
     expect(String(judged.advice)).toContain("Judge call 1 (Core's record contradicts part of this reading: Of the 2 rows condition 1 (promoted is absent)");
     // What the gate keeps rides outside the feedback a model is shown.
     expect(JSON.stringify(trial.evidence)).not.toContain("keptConditions");

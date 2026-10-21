@@ -51,7 +51,7 @@ const YES = {
 
 /** Call 2: a no Core's record does not settle, naming nothing about the delivery condition. */
 const NO = {
-  answersRequest: "no",
+  answersRequest: "no", defects: [],
   expected: `Every cordless drill ${HOUSE} sells itself, ready for delivery tomorrow and rated 4 or higher, each once.`,
   observed: `The rating value of ${DRILL_PRO.name} is not included.`,
   changed: "Store each drill's rating as shown on the page."
@@ -93,7 +93,7 @@ function answered(request: { revision: number; digest: string }, verdict: Automa
 
 function build() {
   const controller = new AutomationStudioFlowCandidateSubmissionController(KEPT_CONDITION_SUBMISSION);
-  const judge = judging(YES, NO, NO);
+  const judge = judging(YES, NO, NO, NO);
   const gate = new AutomationStudioFlowCandidateTrialGate({
     latest: () => controller.latest(),
     trial: { candidateId: "candidate.drills", port: async (request) => answered(request, await judge(request.candidate.buildPlan.plan.subflows)) }

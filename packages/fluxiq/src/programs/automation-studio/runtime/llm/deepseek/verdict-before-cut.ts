@@ -19,6 +19,9 @@
 // is not carried even when it closed: Core's own plain sentence stands in its
 // place, for a reader of the call, and nothing decides on it. Whatever is
 // returned is validated as any reply is, by the envelope and by the harness.
+// A no's `defects` (t752) sit inside the diagnosis, right after its verdict, so
+// they arrive whole exactly when the verdict does, and the harness holds each
+// to its shape as it would in a whole reply.
 
 import { isRecord } from "./json-record.ts";
 

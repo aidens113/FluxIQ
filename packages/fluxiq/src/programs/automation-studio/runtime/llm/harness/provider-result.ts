@@ -19,6 +19,7 @@ import {
 import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskRequest } from "./task-request.ts";
 import { AUTOMATION_STUDIO_RUNTIME_PATCH_HANDLER_EVENTS } from "./runtime-patch-schema.ts";
 import { automationStudioLlmToolCallKeysFolded } from "../tool-call-keys/index.ts";
+import { automationStudioLlmWellFormedVerificationDefects } from "../verification-defects/index.ts";
 
 /** Every runtime patch kind a model may answer with; the in-run repair's two are offered only when a request declares them. */
 const RUNTIME_PATCH_KINDS: readonly string[] = ["temporary_action_sequence", "temporary_wait_retry", "temporary_target_override", "temporary_recovery_subflow_call", "temporary_reroute", "add_handler", "replace_unit"];
@@ -32,7 +33,9 @@ export function parseAutomationStudioLlmProviderResult(
    * written beside `input` is moved into it before the decision is checked
    * (`../tool-call-keys/folded.ts`, run-mvcwp3wh-bcea2115). Absent, nothing moves.
    */
-  evidenceTools?: NonNullable<AutomationStudioLlmHarnessInput["evidenceLoop"]>["tools"]
+  evidenceTools?: NonNullable<AutomationStudioLlmHarnessInput["evidenceLoop"]>["tools"],
+  /** Current verification replies must account for every negative verdict; persisted reads omit this flag. */
+  currentVerification = false
 ): {
   response?: AutomationStudioLlmStructuredResponse;
   usage?: AutomationStudioLlmUsageSummary;
@@ -47,6 +50,10 @@ export function parseAutomationStudioLlmProviderResult(
   const responseDiagnostics: AutomationStudioLlmDiagnostic[] = [];
   const response = parseAutomationStudioLlmStructuredResponse(value.response, responseDiagnostics, flowBootstrap?.size, evidenceTools);
   diagnostics.push(...parseProviderDiagnostics(value.diagnostics), ...responseDiagnostics);
+  if (currentVerification && isRecord(value.response) && isRecord(value.response.diagnosis) && value.response.diagnosis.answersRequest === "no") {
+    const listed = value.response.diagnosis.defects;
+    if (!Array.isArray(listed) || automationStudioLlmWellFormedVerificationDefects(listed).dropped.length) diagnostics.push({ severity: "error", code: "llm_output.verification_defects_required", message: "A current negative verification must list well-formed defects, or an explicit empty list when it finds none.", path: "response.diagnosis.defects" });
+  }
   if (response) diagnostics.push(...validateAutomationStudioLlmOutput(response, expectedOutput, flowBootstrap));
   const usage = parseAutomationStudioLlmUsage(value.usage, diagnostics);
   // Every finding (2026-09-30): past 200 the rest were suppressed under `llm_output.finding_limit`.
@@ -166,6 +173,10 @@ function isOverLongText(value: unknown): boolean {
  * half it was handed and labelled the whole reading contradicted -- text it never
  * read. Core never caps what a model wrote. The bound stays 500 in the
  * instruction and the output schema. A copy: the reply stays as it came.
+ *
+ * Legacy or non-verification `defects` (t752) retain their well-formed entries,
+ * each rebuilt key by key; none well-formed is no field at all
+ * (`../verification-defects/well-formed.ts`).
  */
 function readDiagnosisText(diagnosis: Record<string, unknown>): Record<string, unknown> {
   const copy = { ...diagnosis };
@@ -173,6 +184,10 @@ function readDiagnosisText(diagnosis: Record<string, unknown>): Record<string, u
     const text = copy[field];
     if (isBlankText(text)) delete copy[field];
     else if (typeof text === "string" && text.length > AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH) copy[field] = text.trim();
+  }
+  if (copy.defects !== undefined) {
+    const { kept } = automationStudioLlmWellFormedVerificationDefects(copy.defects);
+    copy.defects = kept;
   }
   return copy;
 }
@@ -192,7 +207,15 @@ function validateUnknownDiagnosisFields(value: unknown, diagnostics: AutomationS
     diagnostics.push({ severity: "error", code: "llm_output.invalid_diagnosis_fields", message: "Diagnosis fields must be an object.", path });
     return;
   }
-  rejectUnexpectedFields(value, ["expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "explorationNeeded", "patchNeeded"], path, diagnostics);
+  rejectUnexpectedFields(value, ["expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "defects", "explorationNeeded", "patchNeeded"], path, diagnostics);
+  // A malformed defect is dropped with a warning naming its place, never the
+  // reply (t752): the verdict and every other defect stand. The warning says
+  // nothing the model wrote.
+  if (value.defects !== undefined) {
+    for (const index of automationStudioLlmWellFormedVerificationDefects(value.defects).dropped) {
+      diagnostics.push({ severity: "warning", code: "llm_output.diagnosis_defect_dropped", message: index === undefined ? "Diagnosis defects must be a list, and were dropped." : "A diagnosis defect was not a kind Core knows with its row and the request's words as bounded text, or came past the twelfth, and was dropped.", path: index === undefined ? `${path}.defects` : `${path}.defects[${index}]` });
+    }
+  }
   for (const field of DIAGNOSIS_TEXT_FIELDS) {
     // Blank is omitted, not invalid: the instruction asks for an unanswerable field to be left out.
     const text = value[field];

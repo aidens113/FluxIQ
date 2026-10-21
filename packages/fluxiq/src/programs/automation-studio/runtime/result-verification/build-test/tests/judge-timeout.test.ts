@@ -13,7 +13,8 @@ import { PICKUP_CART, RUN_40_CLAIMS, RUN_40_STEPS, run40 } from "./live-run-draf
 import { DENIED, SITE, replayed, report, verified } from "./draft-steps.ts";
 
 const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 };
-const NO = { answersRequest: "no", observed: "No step adds the napkins.", changed: "Add the napkins." };
+// Timeout mechanics need a usable response, independently of negative row grounding.
+const YES = { answersRequest: "yes", observed: "The requested action completed." };
 
 const instruction: AutomationStudioFlowInstruction = {
   schemaVersion: "0.1", instructionId: "instruction.flow.goal", title: "Goal", body: PICKUP_CART,
@@ -27,7 +28,7 @@ const summary = () => automationStudioBuildTestResultSummary({
 
 /**
  * A provider whose call `n` takes `slowMs[n]` milliseconds (0 when absent) and
- * then answers no, unless its deadline cut it off first; `never` calls never
+ * then answers yes, unless its deadline cut it off first; `never` calls never
  * answer. Each call's start and end on the (faked) clock are kept.
  */
 function slow(slowMs: readonly number[], never: ReadonlySet<number> = new Set()) {
@@ -44,7 +45,7 @@ function slow(slowMs: readonly number[], never: ReadonlySet<number> = new Set())
       await new Promise((resolve) => setTimeout(resolve, slowMs[call] ?? 0));
       // A call its deadline already cut off keeps the moment it was cut off.
       span.end ??= Date.now();
-      return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: NO }, usage: USAGE } as Awaited<ReturnType<AutomationStudioLlmProvider["runTask"]>>;
+      return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: YES }, usage: USAGE } as Awaited<ReturnType<AutomationStudioLlmProvider["runTask"]>>;
     }
   };
   return { provider, seen, spans };
@@ -79,7 +80,7 @@ describe("the build's judge and its per-call timeout", () => {
     vi.useFakeTimers();
     const underBuild = slow([30_000]);
     const verdict = await settled(judge(underBuild.provider, AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS)({ summary: summary() }));
-    expect(verdict).toMatchObject({ verdict: "no", spent: { calls: 2 } });
+    expect(verdict).toMatchObject({ verdict: "yes", spent: { calls: 2 } });
     expect(underBuild.spans[0]!.end! - underBuild.spans[0]!.start).toBe(30_000);
 
     // The live run's shape: the default deadline ends the first call at 20 s (measured there as 19,985 ms) ...
@@ -89,7 +90,7 @@ describe("the build's judge and its per-call timeout", () => {
     // ... and it is now asked again on the same evidence, and its answer is the verdict: no trial is run again for it.
     expect(underDefault.seen).toHaveLength(3);
     expect(underDefault.seen[1]?.context.resultSummary).toEqual(underDefault.seen[0]?.context.resultSummary);
-    expect(asked).toMatchObject({ verdict: "no", observed: NO.observed, spent: { calls: 3 } });
+    expect(asked).toMatchObject({ verdict: "yes", spent: { calls: 3 } });
   });
 
   it("a judge that still cannot answer is not judged, with the cause, never a no or an unsure verdict", async () => {

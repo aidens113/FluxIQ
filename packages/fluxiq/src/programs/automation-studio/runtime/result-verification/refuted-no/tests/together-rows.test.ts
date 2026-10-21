@@ -7,6 +7,7 @@
 // scenario.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../../contracts/index.ts";
+import { LOANS_DUE, LOANS_LATER, loanRequestText, loanRunSummary } from "../../agreement/tests/loan-fixture.ts";
 import { automationStudioResultAdviceConditions, automationStudioResultNoRecord, automationStudioResultRefutedReading, automationStudioResultSentenceRows, automationStudioResultUnseenRowClaim } from "../index.ts";
 
 const REQUEST = "Goal\nList every hardcover mystery novel in the library catalogue rated 4 or higher, with columns title, author, rating and url. Leave out box sets.";
@@ -156,5 +157,25 @@ describe("the rows left out together, in the pools a label is told apart in (t66
   it("still names the stored row by its own label", () => {
     const named = automationStudioResultSentenceRows(`The result includes "${OMNIBUS}", which is rated 4.4.`, withOmnibus([OMNIBUS_BOX]));
     expect(named.stored.map((row) => row.label)).toEqual([OMNIBUS]);
+  });
+});
+
+// t752: a record set of working rows -- an earlier read of the same list, its
+// rows walked by a loop before a later read stored the answer
+// (`../../read-account/working-sets.ts`) -- holds no row of the result, so a
+// no is never weighed as though the answer held its rows. The made-up library
+// account of `../../agreement/tests/loan-fixture.ts`.
+describe("working rows in Core's record (t752)", () => {
+  it("are no stored rows: only the answer's rows are stored, and counted", () => {
+    const record = automationStudioResultNoRecord({ summary: loanRunSummary(), requestText: loanRequestText() });
+    expect(record.stored.map((row) => row.label)).toEqual(LOANS_DUE.map((book) => book.title));
+    expect(record.storedCount).toBe(LOANS_DUE.length);
+    // The rows the answer's condition alone left out are left-out rows, held to the request's words as before.
+    expect(record.leftOut.map((row) => row.label)).toEqual(LOANS_LATER.map((book) => book.title));
+  });
+
+  it("are stored rows where no read is flagged as working rows", () => {
+    const record = automationStudioResultNoRecord({ summary: loanRunSummary({ working: false }), requestText: loanRequestText() });
+    expect(record.stored).toHaveLength(LOANS_DUE.length + LOANS_LATER.length + LOANS_DUE.length);
   });
 });

@@ -16,11 +16,11 @@ import { campsiteInstruction, campsiteRunSummary } from "./campsite-fixture.ts";
 import { GAP_AND_CHANGE_NO, GAP_NO } from "./campsite-readings-fixture.ts";
 
 const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 };
-const no = (reading: Record<string, string>) => ({ answersRequest: "no", ...reading });
+const no = (reading: Record<string, string>) => ({ answersRequest: "no", ...reading, defects: [{ kind: "other", row: "Region filter", requestWords: "park service's search results" }] });
 
 function answering(...diagnoses: Record<string, unknown>[]): AutomationStudioLlmProvider {
   let calls = 0;
-  return { metadata: { provider: "mock", model: "debug-model" }, runTask: async () => ({ response: { kind: "diagnosis", summary: "Judged.", diagnosis: diagnoses[calls++] ?? {} }, usage: USAGE }) };
+  return { metadata: { provider: "mock", model: "debug-model" }, runTask: async () => ({ response: { kind: "diagnosis", summary: "Judged.", diagnosis: diagnoses[calls++] ?? diagnoses.at(-1) ?? {} }, usage: USAGE }) };
 }
 
 const judge = (provider: AutomationStudioLlmProvider) =>
@@ -30,29 +30,29 @@ const judge = (provider: AutomationStudioLlmProvider) =>
 const PROMOTED_FINDING = "Of the 2 rows condition 1 (promoted is absent) left out by itself, 2 are also a row of the result, another copy kept. Removing or loosening it alone brings back no row the request asks for.";
 
 describe("a double no over the exact rows whose advice Core's record refutes in part (t641)", () => {
-  it("stays a no, asked nothing more, and the reading the record refutes in part says so, with Core's finding, before its own words", async () => {
-    const verdict = await judge(answering(no(GAP_AND_CHANGE_NO), no(GAP_NO)))({ summary: campsiteRunSummary(), budget: { maxCostUsd: 0.2 } });
-    expect(verdict.verdict).toBe("no");
-    if (verdict.verdict !== "no") return;
-    expect(verdict.spent.calls).toBe(2);
-    const advice = String(verdict.advice);
+  it("keeps unmeasured region doubts unsure and labels the refuted condition advice", async () => {
+    const verdict = await judge(answering(no(GAP_AND_CHANGE_NO), no(GAP_NO), no(GAP_AND_CHANGE_NO), no(GAP_NO)))({ summary: campsiteRunSummary(), budget: { maxCostUsd: 0.2 } });
+    expect(verdict.verdict).toBe("unknown");
+    if (verdict.verdict !== "unknown") return;
+    expect(verdict.spent.calls).toBe(4);
+    const advice = String(verdict.unconfirmedReading?.advice);
     expect(advice).toContain(`Judge call 1 (Core's record contradicts part of this reading: ${PROMOTED_FINDING}): ${GAP_AND_CHANGE_NO.changed}`);
-    expect(advice).toContain(`Judge call 2: ${GAP_NO.changed}`);
-    // Both still stand, in the order asked; neither is called contradicted outright.
+    expect(advice).toContain(`Judge call 2 (no defect Core can find in this result): ${GAP_NO.changed}`);
+    // Neither unmeasured claim stands; both readings remain ordered and explicitly unconfirmed.
     expect(advice.indexOf("Judge call 1")).toBeLessThan(advice.indexOf("Judge call 2"));
     expect(advice).not.toContain("contradicted by Core's record");
-    expect(String(verdict.observed)).toContain(`Judge call 1 (Core's record contradicts part of this reading: ${PROMOTED_FINDING}): ${GAP_AND_CHANGE_NO.observed}`);
+    expect(String(verdict.unconfirmedReading?.observed)).toContain(GAP_AND_CHANGE_NO.observed);
   });
 
   it("labels the one reading of two calls worded alike", async () => {
     const verdict = await judge(answering(no(GAP_AND_CHANGE_NO), no(GAP_AND_CHANGE_NO)))({ summary: campsiteRunSummary(), budget: { maxCostUsd: 0.2 } });
-    expect(verdict).toMatchObject({ verdict: "no" });
-    if (verdict.verdict !== "no") return;
-    expect(String(verdict.advice)).toBe(`Judge call 1 (Core's record contradicts part of this reading: ${PROMOTED_FINDING}): ${GAP_AND_CHANGE_NO.changed}`);
+    expect(verdict).toMatchObject({ verdict: "unknown" });
+    if (verdict.verdict !== "unknown") return;
+    expect(String(verdict.unconfirmedReading?.advice)).toContain(GAP_AND_CHANGE_NO.changed);
   });
 
   it("leaves a no the record refutes nothing of as it was", async () => {
     const verdict = await judge(answering(no(GAP_NO), no(GAP_NO)))({ summary: campsiteRunSummary(), budget: { maxCostUsd: 0.2 } });
-    expect(verdict).toMatchObject({ verdict: "no", advice: GAP_NO.changed });
+    expect(verdict).toMatchObject({ verdict: "unknown", unsupportedNo: true, unconfirmedReading: { advice: expect.stringContaining(GAP_NO.changed) } });
   });
 });

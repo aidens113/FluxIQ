@@ -44,7 +44,7 @@ const STANDS_WHOLE = { observed: "The Millrace 12V Compact Drill is not sold by 
 
 /** The run's result check with the build's trial named, each run's rows read from its own store. */
 function checked(options: { trial?: Named; trialRows?: JsonObject[]; answer?: string; said?: Record<string, string> } = {}): Harness & { asked: number[] } {
-  const context = harness({ answer: options.answer ?? ANSWER.no, said: options.said ?? PART_REFUTED, instructions: [REQUEST], schema: SCHEMA, rows: DRILLS });
+  const context = harness({ answer: options.answer ?? ANSWER.no, said: options.said ?? PART_REFUTED, instructions: [REQUEST], schema: SCHEMA, rows: DRILLS, defects: [{ kind: "kept_not_asked", row: "Millrace 12V Compact Drill", requestWords: "sells itself" }] });
   const asked: number[] = [];
   const stored: Record<string, JsonObject[]> = { "run-1": DRILLS, [TRIAL_RUN]: options.trialRows ?? DRILLS };
   const summary = (runId: string): AutomationStudioRunDatasetSummary => datasetSummary({ runId, datasetId: runId === TRIAL_RUN ? "trial-drills" : "drills", recordCount: stored[runId]!.length });

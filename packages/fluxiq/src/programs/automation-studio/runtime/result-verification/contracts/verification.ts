@@ -20,7 +20,7 @@ export type AutomationStudioResultVerification = import("../standing-no/index.ts
    * only, never the model's prose. Absent when no model was asked.
    */
   verdicts?: AutomationStudioResultVerdict[];
-  /** The verification calls made or attempted: 1, 2, 3 with a re-ask, or 4 where both refuted nos were asked again. Absent when no model was asked. */
+  /** The verification calls made or attempted: 1, 2, 3 with a re-ask, or more where both refuted nos, or both nos naming no defect Core can find (t752), were asked again. Absent when no model was asked. */
   calls?: number;
   /**
    * Set exactly on a confirming verification's (`confirmAnswer`) yes that its
@@ -77,6 +77,15 @@ export type AutomationStudioResultVerification = import("../standing-no/index.ts
   contradictedUnsure?: { call: 1 | 2; record: string; about?: "dedupe" | "narrowing"; reasked?: true };
   /** The calls whose no Core's record wholly refutes, and Core's findings (`./refuted-no/`, t607): each asked once more (`reasked`); a no still refuted is unsure. */
   refutedNo?: { calls: Array<1 | 2>; findings: string[]; reasked?: true };
+  /**
+   * The calls whose no still names no defect Core can find in its record of
+   * this result after it was asked once more to list each (t752,
+   * `../agreement/unsupported-no.ts`), and Core's findings of what each listed:
+   * such a no counts for nothing. Beside a no that names one the verdict stays
+   * no; otherwise the outcome is unsure (`refutationUnsupported`), never a no.
+   * Core's words with the rows a judge named, never recorded on a run.
+   */
+  unsupportedNo?: { calls: Array<1 | 2>; findings: string[]; reasked: true };
   /**
    * On a double no where Core's record could weigh them (`./agreement.ts`,
    * t664): one entry per call, `recordContradicts` where the record refutes its

@@ -237,6 +237,11 @@
 // left on the site. Its yes is answered as evidence, but never kept as the
 // verdict `standing` and `completion` read, so it never lets the build
 // complete; the answer says a live trial's yes is still needed.
+//
+// **Each later trial's judge is told what earlier judged trials advised (t752).** A revision made exactly
+// the change an earlier no's judge advised, and its judges answered no for that change, told nothing of it.
+// The gate keeps each judged trial's advice (`./earlier-advice-memory.ts`) and each request carries it,
+// with Core's finding of whether that revision changed what the advice named (`earlierAdvice`).
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
@@ -245,6 +250,7 @@ import { automationStudioCandidateTrialActs } from "./trial-acts.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS } from "../plan/index.ts";
 import { automationStudioCandidateStartedWithSaid } from "./started-with.ts";
 import { automationStudioCandidateTrialStop as Stop } from "./trial-stop.ts";
+import { AutomationStudioCandidateEarlierAdviceMemory } from "./earlier-advice-memory.ts";
 // Its own barrel, not result-verification's, whose reads import flow-bootstrap back (a module cycle).
 import {
   AutomationStudioResultKeptConditionMemory,
@@ -253,7 +259,7 @@ import {
   type AutomationStudioResultStandingNoContradiction
 } from "../../result-verification/standing-no/index.ts";
 import { automationStudioSiteResetExploredOnAbsorbed, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
-import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialResult, type AutomationStudioCandidateTrialVerdict, type AutomationStudioFlowCandidate } from "./contracts.ts";
+import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialRequest, type AutomationStudioCandidateTrialResult, type AutomationStudioCandidateTrialVerdict, type AutomationStudioFlowCandidate } from "./contracts.ts";
 
 export const AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID = "core.test_candidate";
 
@@ -386,6 +392,8 @@ export class AutomationStudioFlowCandidateTrialGate {
   private readonly standingNos = new AutomationStudioResultStandingNoMemory();
   /** The conditions Core's record showed keep out only rows the request does not ask for (header, t641). */
   private readonly keptConditions = new AutomationStudioResultKeptConditionMemory();
+  /** Each judged trial's advice, for the judge of a later revision's trial (header, t752). */
+  private readonly earlierAdvice = new AutomationStudioCandidateEarlierAdviceMemory();
   private readonly fallbackSignal = new AbortController().signal;
 
   constructor(private readonly input: {
@@ -443,7 +451,7 @@ export class AutomationStudioFlowCandidateTrialGate {
     const absorbed = absorbedActs.map(namedAct);
     this.absorbed.push(...absorbed);
     this.trials.set(key(latest), tried + 1);
-    const asked = await this.ask(trial, latest, signal, reset?.kind === "admit" ? automationStudioCandidateStartedWithSaid(reset.startedWith) : []);
+    const asked = await this.ask(trial, latest, signal, reset?.kind === "admit" ? automationStudioCandidateStartedWithSaid(reset.startedWith) : [], this.earlierAdvice.advice(latest.revision, latest.buildPlan?.plan));
     signal.throwIfAborted();
     // Not a trial: the purse could not pay its two judge calls, so nothing ran and nothing is counted (header, t661).
     if (asked.answer.feedback.code === UNAFFORDABLE_CODE) {
@@ -462,6 +470,7 @@ export class AutomationStudioFlowCandidateTrialGate {
     // What Core's record of this trial shows its conditions kept out, as the revision that ran wrote them (header, t641).
     this.keptConditions.remember({ revision: answer.revision, standingNo: asked.standingNo, plan: latest.buildPlan?.plan });
     const keptConditions = this.keptConditions.conditions();
+    this.earlierAdvice.remember({ revision: answer.revision, verdict: answer.verdict, feedback: answer.feedback, standingNo: asked.standingNo, plan: latest.buildPlan?.plan });
     const leftOnSite = offline ? undefined : this.input.reset?.trialRan(answer.acts ?? [], answer.trialRunId);
     // An offline yes is never the verdict kept for completion, and a stale one of this revision goes (header, Decision 3).
     const offlineYes = offline && answer.verdict === "yes";
@@ -562,11 +571,11 @@ export class AutomationStudioFlowCandidateTrialGate {
   }
 
   /** The trial's answer as the gate keeps it, and Core's record of a no it carried beside it, unread (header, t633). */
-  private async ask(trial: { candidateId: string; port: AutomationStudioCandidateTrialPort }, latest: AutomationStudioFlowCandidate, signal: AbortSignal, startedWith: readonly string[]): Promise<{ answer: AutomationStudioCandidateTrialResult; standingNo?: unknown }> {
+  private async ask(trial: { candidateId: string; port: AutomationStudioCandidateTrialPort }, latest: AutomationStudioFlowCandidate, signal: AbortSignal, startedWith: readonly string[], earlierAdvice: AutomationStudioCandidateTrialRequest["earlierAdvice"] = []): Promise<{ answer: AutomationStudioCandidateTrialResult; standingNo?: unknown }> {
     const failed = (code: string): { answer: AutomationStudioCandidateTrialResult } => ({ answer: { revision: latest.revision, digest: latest.digest, verdict: "execution_failed", feedback: { code } } });
     let raw: unknown;
     try {
-      raw = await trial.port({ candidateId: trial.candidateId, revision: latest.revision, digest: latest.digest, signal, candidate: deepFreeze(structuredClone(latest)), ...(startedWith.length ? { startedWith: [...startedWith] } : {}) });
+      raw = await trial.port({ candidateId: trial.candidateId, revision: latest.revision, digest: latest.digest, signal, candidate: deepFreeze(structuredClone(latest)), ...(startedWith.length ? { startedWith: [...startedWith] } : {}), ...(earlierAdvice?.length ? { earlierAdvice } : {}) });
     } catch (error) {
       if (signal.aborted) throw error;
       // The port's own error text may carry page or account detail, so the model is told only its kind (header).

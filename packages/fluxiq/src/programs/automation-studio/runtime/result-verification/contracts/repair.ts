@@ -1,3 +1,5 @@
+import type { AutomationStudioLlmVerificationDefect } from "../../llm/index.ts";
+
 /**
  * One thing wrong with what a run produced, as Core's own arithmetic found it.
  *
@@ -56,7 +58,19 @@ export type AutomationStudioResultRepairDirective = {
    * absent advice is still a valid refutation, and a run must never fail because
    * the judgement was terse.
    */
-  judgement?: { expected?: string; observed?: string; advice?: string; /** Whether what was asked can still be had: a build ends "not doable" only on `no` (t195-w37). */ stillAchievable?: "yes" | "no" | "unknown" };
+  judgement?: {
+    expected?: string; observed?: string; advice?: string; /** Whether what was asked can still be had: a build ends "not doable" only on `no` (t195-w37). */ stillAchievable?: "yes" | "no" | "unknown";
+    /**
+     * A no's own list of the defects it rests on (`diagnosis.defects`, t752),
+     * each well-formed one screened as every word a judge wrote is
+     * (`../verdict/defects.ts`); absent where it listed none. What Core looks
+     * for in its own record before the no counts (`../agreement/located-defects/`):
+     * a no naming no defect Core can find is asked once more, and still naming
+     * none is never a no (`../agreement/unsupported-no.ts`). The model's words,
+     * never recorded on a run.
+     */
+    defects?: AutomationStudioLlmVerificationDefect[];
+  };
   /**
    * Core's check of the rows the judgement names against what the run holds,
    * one line each in Core's words (`request-rows/`): a row it calls left out

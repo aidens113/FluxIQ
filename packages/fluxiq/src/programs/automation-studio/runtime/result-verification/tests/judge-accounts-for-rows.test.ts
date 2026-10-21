@@ -119,7 +119,11 @@ describe("a yes that does not account for the rows that name the asked item (C-2
 
 describe("a no whose rows the result contradicts (C-5)", () => {
   it("carries Core's check: B0J5MCMBAY and B07Z1RZGJG are in the result, so advice resting on that reading is not supported", async () => {
-    const { provider, seen } = scripted([RUN_MUW60J7C_RESULT_JUDGE, RUN_MUW60J7C_RESULT_JUDGE]);
+    // The original reading contains both misread exclusions and a genuine
+    // stored accessory; state that real defect explicitly under the new schema.
+    const no = { ...RUN_MUW60J7C_RESULT_JUDGE, diagnosis: { ...RUN_MUW60J7C_RESULT_JUDGE.diagnosis,
+      defects: [{ kind: "kept_not_asked", row: "Replacement Ear Tips for Wireless Earbuds, Memory Foam Eartips, 3 Pairs (S/M/L), Black", requestWords: "accessories" }] } };
+    const { provider, seen } = scripted([no, no]);
     const report = await verifyAutomationStudioRunResult({
       projectId: "project-1", flowId: "flow-1", runId: "run-1", summary: runMuw60j7cRunSummary(), instructions: [instruction], deniedEvidenceKeys: [], provider
     });

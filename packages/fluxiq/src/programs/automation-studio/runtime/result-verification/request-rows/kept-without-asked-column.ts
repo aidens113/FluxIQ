@@ -28,7 +28,10 @@
 // A row is named by its label, its first column holding text, as
 // `summary-reads.ts` names a stored row; a row with no text is not flagged, for
 // nothing could name it. The record sets only a subflow trial's entry
-// collected are left out, as `summary-reads.ts` leaves them out.
+// collected are left out, as `summary-reads.ts` leaves them out, and so are
+// record sets of working rows (`../read-account/working-sets.ts`, t752): the rows a repeat
+// walked before a later read of the same list stored the answer are not rows
+// the result keeps.
 //
 // It flags; it does not judge. The row may be exactly what was asked, its value
 // simply not shown on the page: `../verdict/` holds a yes to naming it, in a
@@ -37,6 +40,8 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import type { AutomationStudioRequestRowsKept } from "./types.ts";
+// The leaf, not the barrel (`summary-reads.ts`).
+import { automationStudioResultReadWorkingSets } from "../read-account/working-sets.ts";
 
 /** How many rows in each ten may lack a column for them to be flagged, at least one (header). */
 const FEW_IN = 10;
@@ -46,7 +51,9 @@ const CARRYING_AT_LEAST = 4;
 /** Each record set's kept rows that alone lack an answer column, one flag per column; none when there are none. */
 export function automationStudioResultKeptWithoutAskedColumn(summary: AutomationStudioRunResultSummary): AutomationStudioRequestRowsKept[] {
   const entrySteps = new Set(summary.taskChecklist?.entry?.steps ?? []);
+  const working = automationStudioResultReadWorkingSets(summary);
   return summary.recordSets.flatMap((set) => {
+    if (working.has(set.datasetId)) return [];
     if (entrySteps.size && (set.processing?.passes.length ?? 0) > 0 && set.processing!.passes.every((pass) => entrySteps.has(pass.node))) return [];
     const rows = set.sampleRows ?? [];
     if (set.truncated || set.columnsWithheld || rows.length !== set.recordCount) return [];

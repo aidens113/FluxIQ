@@ -15,7 +15,11 @@
 // (`without-tested-label.ts`), and Core's flag on a read that kept every item
 // it saw after an act repeated over a narrower read of the same list
 // (`kept-every-row.ts`), and Core's words for a read of one part of a list
-// that goes on past it (`list-continues.ts`).
+// that goes on past it (`list-continues.ts`), and Core's flag on a read whose
+// rows are working rows, walked by a repeat before a later read of the same
+// list (`working-rows.ts`, t752), the two flags deciding "one target" alike
+// (`same-target.ts`), and the one rule for which record sets that flag makes
+// working rows, never the result (`working-sets.ts`).
 export * from "./accounts.ts";
 export * from "./alone-rows.ts";
 export * from "./condition.ts";
@@ -28,6 +32,7 @@ export * from "./loop-passes.ts";
 export * from "./looped-account.ts";
 export * from "./page-bound-sentence.ts";
 export * from "./read-parameters.ts";
+export * from "./same-target.ts";
 export * from "./pages-clause.ts";
 export * from "./presence.ts";
 export * from "./emptied-columns.ts";
@@ -37,3 +42,5 @@ export * from "./stored-columns.ts";
 export * from "./together-rows.ts";
 export * from "./unread-columns.ts";
 export * from "./without-tested-label.ts";
+export * from "./working-rows.ts";
+export * from "./working-sets.ts";

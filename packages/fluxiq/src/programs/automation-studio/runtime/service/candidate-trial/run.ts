@@ -71,6 +71,12 @@
 // the build's context and its answer lands in the build's trace, correlated by
 // candidate, revision and digest; a trial refused before it runs opens no
 // episode. With nothing installed the run id is minted exactly as before.
+//
+// **Earlier judged trials' advice reaches the judge (t752).** A revision made
+// exactly the change an earlier no's judge advised, and its judges, told
+// nothing of it, answered no for that change. The request's `earlierAdvice`,
+// made by the gate that keeps the build's trials, goes to the summary the
+// judge reads, last (`./summary.ts`).
 
 import { createHash } from "node:crypto";
 import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
@@ -185,7 +191,8 @@ async function runIn(environment: AutomationStudioRunEnvironment, request: Autom
   try {
     summary = await automationStudioCandidateTrialSummary({ recordSets: await ports.recordSets(runId), graph: frames.graph, trace: executed.trace,
       ...(ports.readEndView ? { readEndView: () => ports.readEndView!({ runId }) } : {}), actionAttempts: ports.actionAttempts?.(ended),
-      observedStateKeys: ports.observedStateKeys, deniedEvidenceKeys: ports.deniedEvidenceKeys, ...(request.startedWith?.length ? { startedWith: request.startedWith } : {}) });
+      observedStateKeys: ports.observedStateKeys, deniedEvidenceKeys: ports.deniedEvidenceKeys, ...(request.startedWith?.length ? { startedWith: request.startedWith } : {}),
+      ...(request.earlierAdvice?.length ? { earlierAdvice: request.earlierAdvice } : {}) });
   } catch (error) {
     // What the run stored could not be read, so nobody can say whether it answers: not judged, and never a yes.
     const code = "candidate.trial_result_unreadable";

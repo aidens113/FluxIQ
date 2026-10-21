@@ -36,6 +36,7 @@ const scope = testScope();
 function answered(request: AutomationStudioSubflowTrialRequest, verdict: AutomationStudioBuildTestVerdict): AutomationStudioSubflowTrialResult {
   const base = { partial: true as const, scope: "subflow" as const, identity: { ...request.proposal.scope }, revision: request.proposal.revision, digest: request.proposal.digest, entryPrepared: true };
   if (verdict.verdict === "no") return { ...base, verdict: "no", feedback: { code: "candidate.trial_judged_no", judge: { ...(verdict.advice ? { advice: verdict.advice } : {}) } }, ...(verdict.standingNo ? { standingNo: verdict.standingNo } : {}) } as AutomationStudioSubflowTrialResult;
+  if (verdict.verdict === "unknown") return { ...base, verdict: "unsure", feedback: { code: "candidate.trial_unconfirmed", ...(verdict.unconfirmedReading ? { unconfirmedReading: { ...verdict.unconfirmedReading } } : {}) }, ...(verdict.standingNo ? { standingNo: verdict.standingNo } : {}) } as AutomationStudioSubflowTrialResult;
   return { ...base, verdict: verdict.verdict === "yes" ? "yes" : "unsure", feedback: { code: "candidate.trial_unconfirmed" } };
 }
 
@@ -59,8 +60,8 @@ describe("a brief's condition Core's record kept, dropped after a no on advice i
     const { gate, submit } = brief(GAP_AND_CHANGE_NO, GAP_NO);
     const exact = await proposed(submit(script([promoted, open, rating, campground, notCabin])));
     const trial = await gate.test({ revision: exact.revision, digest: exact.digest });
-    expect(trial.resultCode).toBe("subflow.trial_no");
-    expect(String((((trial.evidence as JsonObject).feedback as JsonObject).judge as JsonObject).advice)).toContain("Judge call 1 (Core's record contradicts part of this reading:");
+    expect(trial.resultCode).toBe("subflow.trial_unsure");
+    expect(String((((trial.evidence as JsonObject).feedback as JsonObject).unconfirmedReading as JsonObject).advice)).toContain("Judge call 1 (Core's record contradicts part of this reading: Of the 2 rows condition 1 (promoted is absent)");
     expect(JSON.stringify(trial.evidence)).not.toContain("keptConditions");
     expect(gate.standing(exact)).toMatchObject({ keptConditions: [{ name: "condition 1 (promoted is absent)" }, { revision: exact.revision }] });
 

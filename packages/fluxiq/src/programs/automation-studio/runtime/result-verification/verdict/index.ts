@@ -88,12 +88,21 @@
 // that does not is held as a missing quote is, never refused: the row may be
 // exactly what was asked, and the hold asks only that it be looked at.
 //
+// **And a no carries the defects it lists (t752).** A breadth rerun's trial
+// stored exactly the rows asked for, and both judges said no for a method
+// objection and a claim about a condition, naming no row wrongly kept, no row
+// missing and no wrong value. A no now lists each defect it rests on
+// (`diagnosis.defects`), and its reading carries each well-formed one,
+// screened as every word a judge wrote is (`defects.ts`), for Core to find in
+// its own record before the no counts (`../agreement/unsupported-no.ts`).
+//
 // The verdict itself is `result-verdict.ts`; its codes `codes.ts`, its input
 // `types.ts`, the answer word `from-diagnosis.ts`, Core's one-line account
 // `observation.ts`, and the kept rows a yes is held to `kept-rows-flagged.ts`.
 // The rest are the lines, reasons and pieces `result-verdict.ts` composes.
 
 export { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "./codes.ts";
+export { automationStudioResultScreenedDefects } from "./defects.ts";
 export { automationStudioResultVerdictFromDiagnosis } from "./from-diagnosis.ts";
 export { automationStudioResultKeptRowsFlagged } from "./kept-rows-flagged.ts";
 export { automationStudioResultObservation } from "./observation.ts";

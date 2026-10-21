@@ -25,6 +25,13 @@ import type { AutomationStudioProjectDispatchStandingNos } from "./standing-nos.
 // the ones earlier briefs kept are handed to this brief's gate as it is made
 // (`standingNos`), so a repair's gate weighs a no against what the build brief
 // before it upheld. Core's records, never shown to a model.
+//
+// **And so do its judged trials' advice (t752).** A revision made exactly the
+// change an earlier no's judge advised, and its judges, told nothing of it,
+// answered no for that change. Each advice a brief's gate kept is told here
+// (`weighed`, `advised`), kept for the build by subflow and plan (`advised`,
+// `./run-brief.ts`), and the latest three handed to a later brief's gate as it
+// is made (`earlierTrials`), as standing nos are.
 
 export function automationStudioProjectDispatchTrialPort(input: {
   /** The brief's own port, from its ports factory. */
@@ -34,6 +41,8 @@ export function automationStudioProjectDispatchTrialPort(input: {
   receipts: AutomationStudioProjectDispatchReceipts;
   spend: AutomationStudioProjectDispatchSpend;
   standingNos: AutomationStudioProjectDispatchStandingNos;
+  /** The judged trials' advice the build's briefs kept, by subflow and plan (header, t752); absent, none crosses briefs. */
+  advised?: Map<string, unknown[]> | undefined;
   /** Told each trial listed under its reference, and again where the gate's answer remade that reference. */
   remember(ref: AutomationStudioProjectTrialRef, trial: AutomationStudioSubflowTrialResult): void;
 }): AutomationStudioSubflowTrialPreparingPort {
@@ -51,6 +60,10 @@ export function automationStudioProjectDispatchTrialPort(input: {
   if (port.checkRows) asked.checkRows = port.checkRows;
   const earlier = standingNos.earlier(scope);
   if (earlier.length) asked.standingNos = earlier;
+  // The advice earlier briefs of this subflow kept under this plan, the latest three (header, t752).
+  const plan = JSON.stringify([scope.subflowKey, scope.planDigest]);
+  const advised = input.advised?.get(plan) ?? [];
+  if (advised.length) asked.earlierTrials = structuredClone(advised);
   asked.weighed = (trial) => {
     const { answer } = trial;
     const ref = receipts.weighed(answer);
@@ -58,6 +71,7 @@ export function automationStudioProjectDispatchTrialPort(input: {
     const heard = spend.trial;
     if (heard && heard.identity?.briefId === answer.identity.briefId && heard.revision === answer.revision && heard.digest === answer.digest) spend.trial = structuredClone(answer);
     if (trial.standingNo !== undefined) standingNos.stood(scope, trial.standingNo);
+    if (trial.advised && input.advised) input.advised.set(plan, [...(input.advised.get(plan) ?? []), structuredClone(trial.advised)].slice(-3));
     port.weighed?.(structuredClone(trial));
   };
   return asked;

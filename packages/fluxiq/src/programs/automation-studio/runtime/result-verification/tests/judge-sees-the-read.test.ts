@@ -113,7 +113,7 @@ describe("the judge sees how the read went", () => {
     const readFlow: AutomationStudioFlowDocument = { ...flow, nodes: steps() };
     const detail: AutomationStudioFlowRunDetail = { ...runDetail(), actionAttempts: [earbudsAttempt()] };
     const actual: (string | undefined)[] = [];
-    const context = harness({ answer: ANSWER.no, datasets: [datasetSummary({ datasetId: "earbuds", recordCount: 8 })], schema, rows, said: { observed: "8 of 13 earbuds", changed: "loosen the accessory rule" } });
+    const context = harness({ answer: ANSWER.no, datasets: [datasetSummary({ datasetId: "earbuds", recordCount: 8 })], schema, rows, said: { observed: "8 of 13 earbuds", changed: "loosen the accessory rule" }, defects: [{ kind: "asked_missing", row: "rows not read", requestWords: "List members" }] });
     const next = await verify(context, {
       flow: readFlow,
       session: session({ flow: readFlow }),

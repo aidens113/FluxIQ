@@ -61,4 +61,12 @@ describe("the receipts a brief's trials are listed by", () => {
     expect(receipts.list()[0]).toEqual(before[0]);
     expect(receipts.list().map((ref) => ref.verdict)).toEqual(["no", "no"]);
   });
+
+  // t752: a trial's rows are its answer set's, never the sum of every set it stored.
+  it("carry the answer set's rows where the feedback names them, not every set's sum", async () => {
+    const receipts = new AutomationStudioProjectDispatchReceipts("brief-1");
+    const port = receipts.wrap(async () => result("no", { code: "candidate.trial_judged_no", stored: { rows: 30, answerRows: 3 } }, "run-1"));
+    await port({} as AutomationStudioSubflowTrialRequest);
+    expect(receipts.list()[0]).toMatchObject({ receiptId: "run-1", verdict: "no", rows: 3 });
+  });
 });
