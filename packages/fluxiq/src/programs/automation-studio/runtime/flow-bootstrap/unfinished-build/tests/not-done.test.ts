@@ -108,6 +108,14 @@ describe("what the person is told stopped the build", () => {
     expect(automationStudioFlowBootstrapBlockedSaid(["llm_evidence_loop.draft_amendment_undone"])).toBe("it kept trying changes to the Flow that changed nothing");
   });
 
+  // t748: a stall after refused repeats also carries the refusal they followed, for the supervisor and a debug.
+  // That code is any site's or domain's own and can hold "node" or "plan" by chance; the person hears the guard's words.
+  it("says nothing of the refusal a stall carries beside its repeat guard", () => {
+    expect(automationStudioFlowBootstrapBlockedSaid(["llm_evidence_loop.repeat_refused", "llm_evidence_loop.last_refusal:web.target.node_detached"]))
+      .toBe("it kept asking to run steps again exactly as they had already run, which changes nothing");
+    expect(automationStudioFlowBootstrapBlockedSaid(["llm_evidence_loop.last_refusal:candidate.permission_needed"])).toBe("");
+  });
+
   it("says an act left to a step the Flow may skip as not yet done (`../../instructed-acts/optional-only.ts`)", () => {
     expect(automationStudioFlowBootstrapBlockedSaid(["bootstrap.instructed_act_only_optional"])).toBe("the Flow did not yet do what you asked");
     expect(automationStudioFlowBootstrapStopSaid("unusable_decisions", ["bootstrap.instructed_act_only_optional"]))
