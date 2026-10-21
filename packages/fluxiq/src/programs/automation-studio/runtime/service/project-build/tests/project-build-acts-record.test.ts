@@ -99,4 +99,20 @@ describe("the project ledger's acts in the build record", () => {
       ["act-3", { role: "builder", briefId: "b-reset" }, ["modify_existing"], true]
     ]);
   });
+  // t748: a looped trial step's passes are one act each, written apart with their own words and classes.
+  it("writes each pass of a looped trial step as its own act, named by its pass", async () => {
+    const { store } = await recorded();
+    const ledger = new AutomationStudioSiteResetProjectLedger();
+    const acts = AutomationStudioProjectBuildActsRecord.of(ledger);
+    acts.bind(store, REF);
+    const passes = [1, 2, 3].map((number) => ({ step: number * 2, definitionId: "web.browser.click", label: "Join", consequences: ["create_new" as const], pass: { number, of: 3 } }));
+    ledger.forBrief("b-sign").trialRan(passes, "run.trial-1");
+    acts.trialRan(passes, "run.trial-1");
+    await acts.flushed();
+    expect((await store.read(REF))!.record.lastingActs.map((entry) => [entry.act, entry.description, entry.consequences])).toEqual([
+      ["act-1", "act-1: trial step 2, pass 1 of 3 \"Join\"", ["create_new"]],
+      ["act-2", "act-2: trial step 4, pass 2 of 3 \"Join\"", ["create_new"]],
+      ["act-3", "act-3: trial step 6, pass 3 of 3 \"Join\"", ["create_new"]]
+    ]);
+  });
 });

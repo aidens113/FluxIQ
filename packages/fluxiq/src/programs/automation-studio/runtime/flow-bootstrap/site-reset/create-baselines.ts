@@ -117,12 +117,20 @@ export class AutomationStudioSiteResetCreateBaselines {
    * identified creation needs its destination's original, as before. Any
    * other call naming a ref no receipt printed is refused (rerun round 2,
    * job steps 0105/0107). Before the seal, a reversible lasting press with no
-   * witness is refused (`./reset-witness.ts`); after it, nothing more is
-   * asked. A refusal records nothing and seals nothing.
+   * witness is refused (`./reset-witness.ts`), an unidentified creation
+   * among them (t748); after it, nothing more is asked. A refusal records
+   * nothing and seals nothing.
+   *
+   * Which issued list a creation names is never judged here (t748, C5): a
+   * list on the creation's own page that it can never join (others suggested
+   * beside its subject) and one it does join (replies under what a reply
+   * answers) read the same by list place, subject, page, group and original
+   * subjects. The refusal names the refs read on this page apart from those
+   * read elsewhere, and says which list to name (`./words.ts`).
    */
   check(declared: Pick<AutomationStudioSiteResetDeclared, "effect" | "consequences" | "control">, reference: unknown): { kind: "admit" } | { kind: "refused"; evidence: { ok: false; code: string; instruction: string } } {
     // This necessary precondition is not a classifier for inventory semantics.
-    // Irreversible/mixed and unidentified operations keep their existing policy.
+    // Irreversible/mixed operations keep their existing policy; every other press goes to the witness rule.
     if (!identifiedCreate(declared)) {
       const unissued = this.unissued(reference);
       if (unissued) return { kind: "refused", evidence: unissued };
@@ -131,8 +139,12 @@ export class AutomationStudioSiteResetCreateBaselines {
       return { kind: "refused", evidence: refusal("candidate.reset_witness_required", { failed: "no_witness", canMeet: "another_page", instruction: WORDS.witnessRequired(this.issuedRefs()) }) };
     }
     if (this.destination(declared, reference)) return { kind: "admit" };
+    // The refs already shown, those read on this page apart (t748, C5): which list the creation joins is only said, never judged.
+    const here = new Set(this.current.map((receipt) => receipt.ref));
+    const issued = this.issuedRefs();
+    const instruction = WORDS.createBaselineRequired(issued.filter((entry) => here.has(entry.ref)), issued.filter((entry) => !here.has(entry.ref)));
     // Sealed with no original at all, no read can ever issue one (t743): no call meets it. Otherwise a complete read where it would show can.
-    return { kind: "refused", evidence: refusal("candidate.create_baseline_required", { failed: "no_destination_original", canMeet: this.sealed && this.originals.size === 0 ? "no_call" : "another_page", instruction: WORDS.createBaselineRequired() }) };
+    return { kind: "refused", evidence: refusal("candidate.create_baseline_required", { failed: "no_destination_original", canMeet: this.sealed && this.originals.size === 0 ? "no_call" : "another_page", instruction }) };
   }
 
   /** Whether `scope` is a recorded original of `resource` in a group still valid: a control there sits in a list read complete (`./reset-witness.ts`). */

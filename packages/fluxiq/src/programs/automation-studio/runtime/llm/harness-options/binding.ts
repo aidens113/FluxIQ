@@ -442,6 +442,24 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
      */
     handleReach?: AutomationStudioPlanHandleReach | undefined;
     /**
+     * The plan's steps before this node, in the order the Flow runs them, sent
+     * beside `handleReach: "view_history"` alone (t748 U1b): every Subflow's
+     * nodes before this one in plan order, including the ones Core never asks
+     * about -- an inherited step left untouched, a handler whose page fact was
+     * refused. Each is `{ definitionId, parameters }` as the plan held it before
+     * any node was resolved: handles intact, the step's own consequence
+     * declaration taken off (`automationStudioPlanStepConsequences`), and a copy
+     * of its own. A page fact's target is not a step, so it is in no list and is
+     * sent none. Plan order is not run order in a Flow whose nodes branch.
+     *
+     * A domain reads where these steps leave the page -- which control a press
+     * opened, say -- to know what this node's handles stand on, from this field
+     * alone and never from the order it is called in. At most 200 steps: a node
+     * with more before it is sent none, as is every node of a resolution that
+     * did not ask for the view history.
+     */
+    precedingSteps?: readonly { definitionId: string; parameters: JsonObject }[] | undefined;
+    /**
      * The packet every handle of this node was issued in, exactly as the model
      * read it, for a step a repair wrote (t429). A domain numbers its handles
      * per packet, and a repair's model was shown the failure packet and the

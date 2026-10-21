@@ -49,6 +49,8 @@ export type AutomationStudioSiteResetLedgerAct = {
   press?: AutomationStudioSiteResetPress;
   /** One control at its place flipped from `from` to `to` (L1); only for an act that declared exactly `modify_existing`. */
   toggle?: { page: string; place: string; from: string; to: string };
+  /** Its own control answered a state that is neither the build's nor the act's, so it cannot be pressed back (`./undo-reach.ts`, t748); cleared once a press back is admitted. */
+  pressBackRefused?: true;
   /** A read after it showed one of its witnesses changed. */
   changeSeen: boolean;
   /** Settled, for good (header, L1): `restored` also marks it undone. */

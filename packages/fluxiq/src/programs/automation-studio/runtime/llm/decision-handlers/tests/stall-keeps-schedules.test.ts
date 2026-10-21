@@ -37,7 +37,7 @@ function page() {
 }
 
 /** The steps the stall handed over, after the loop ran `decisions` and then completes. */
-async function stalledSteps(decisions: readonly JsonObject[], issueCode: string): Promise<AutomationStudioFlowDraftStep[]> {
+async function stalledSteps(decisions: readonly JsonObject[], issueCodes: readonly string[]): Promise<AutomationStudioFlowDraftStep[]> {
   const handed: Array<{ issueCodes: string[]; steps: AutomationStudioFlowDraftStep[] }> = [];
   const stalledError = new Error("stalled");
   const decide = vi.fn();
@@ -54,7 +54,7 @@ async function stalledSteps(decisions: readonly JsonObject[], issueCode: string)
       }
     }
   })).rejects.toBe(stalledError);
-  expect(handed.map((stall) => stall.issueCodes)).toEqual([[issueCode]]);
+  expect(handed.map((stall) => stall.issueCodes)).toEqual([issueCodes]);
   return handed[0]!.steps;
 }
 
@@ -69,14 +69,14 @@ const gone = (target: string) => ({ kind: "tool_call", callId: `gone.${target}`,
 describe("a round stall hands over the draft", () => {
   it("keeps each saved step's scheduled candidate when three refusals of one kind stall the round", async () => {
     const keep = (step: number) => ({ kind: "amend_draft", amendments: [{ step, change: "keep" }] });
-    expectScheduled(await stalledSteps([keep(1), keep(2), keep(3)], "llm_evidence_loop.draft_amendments_refused"));
+    expectScheduled(await stalledSteps([keep(1), keep(2), keep(3)], ["llm_evidence_loop.draft_amendments_refused"]));
   });
 
   it("keeps each saved step's scheduled candidate when refused repeats stall the round", async () => {
-    expectScheduled(await stalledSteps([gone("A"), gone("A"), gone("A"), gone("A"), gone("A")], "llm_evidence_loop.repeat_refused"));
+    expectScheduled(await stalledSteps([gone("A"), gone("A"), gone("A"), gone("A"), gone("A")], ["llm_evidence_loop.repeat_refused", "llm_evidence_loop.last_refusal:web.action.rejected.target_unobserved"]));
   });
 
   it("keeps each saved step's scheduled candidate when looking without acting stalls the round", async () => {
-    expectScheduled(await stalledSteps(Array.from({ length: 8 }, (_, index) => ({ kind: "tool_call", callId: `find.${index}`, toolId: "find", input: { query: `query ${index}` } })), "llm_evidence_loop.searching_without_acting"));
+    expectScheduled(await stalledSteps(Array.from({ length: 8 }, (_, index) => ({ kind: "tool_call", callId: `find.${index}`, toolId: "find", input: { query: `query ${index}` } })), ["llm_evidence_loop.searching_without_acting"]));
   });
 });

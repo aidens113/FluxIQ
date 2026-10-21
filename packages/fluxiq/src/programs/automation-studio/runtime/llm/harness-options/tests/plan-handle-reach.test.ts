@@ -121,3 +121,85 @@ describe("a completion check and the view history", () => {
     expect(Object.hasOwn(verdict, "handleViews")).toBe(false);
   });
 });
+
+// A candidate's node is told the plan's steps before it (t748 U1b, `../plan-parameter-resolution.ts`): every Subflow's
+// nodes before it in plan order, as the plan held them -- handles intact, the step's own declaration taken off -- and
+// with them the steps Core never asks about, an untouched inherited step and a handler whose fact was refused. A page
+// fact's target is not a step, so it is in no list and is told none.
+describe("the steps before a candidate's node", () => {
+  const HANDLER = "builtin.control.handler";
+  const GO = "domain.demo.go";
+  const go = { url: `${START}cart` };
+  const handler = { event: "retry", scope: { kind: "nodes", nodeIds: ["n0"] }, when: [{ fact: "exists", op: "exists", target: { handle: "t9" } }], order: 1, maxRuns: 1 };
+  const node = (key: string, definitionId: string, parameters: JsonObject) => ({ key, definitionId, definitionVersion: "1.0.0", parameters });
+  const subflow = (key: string, role: "primary" | "secondary", nodes: ReturnType<typeof node>[]) => ({ key, name: key, role, nodes, edges: [] });
+  /** An inherited navigation, a handler whose fact the domain refuses, a press declaring nothing lasting on its parameters, another press; then a second Subflow's press. */
+  function steps(): AutomationStudioFlowBootstrapPlan {
+    return {
+      schemaVersion: "0.1", router: { name: "Press", rules: [], fallback: { kind: "subflow", targetSubflowKey: "primary" } },
+      subflows: [
+        subflow("primary", "primary", [node("n0", GO, go), node("h1", HANDLER, handler), node("n1", definition.id, { target: { handle: "t478" }, consequences: "none" }), node("n2", definition.id, { target: { handle: "t925" } })]),
+        subflow("later", "secondary", [node("m0", definition.id, { target: { handle: "t5" } })])
+      ]
+    } as AutomationStudioFlowBootstrapPlan;
+  }
+  /** Refuses the handler's fact; resolves every press; keeps a clone of what it was asked. */
+  const standIn = (asked: Asked[]): Resolver => (input) => {
+    asked.push({ ...structuredClone({ ...input, permission: undefined }), permission: input.permission });
+    const handle = String((input.parameters.target as JsonObject | undefined)?.handle);
+    if (handle === "t9") return { status: "refused", issueCodes: ["demo.handle_unknown"] };
+    return { status: "resolved", parameters: { target: { selector: `#${handle}` } } };
+  };
+  const run = (asked: Asked[], plan: AutomationStudioFlowBootstrapPlan, handleReach?: "view_history") => resolveAutomationStudioFlowBootstrapPlanParameters({
+    plan, projectId: "project.shop", flowId: "flow.cart", binding: { resolvePlanNodeParameters: standIn(asked) }, handlesIssued: true,
+    inheritedNodeRefs: new Set(["primary.n0"]), permissionFor: () => async () => ({ permitted: true as const }), ...(handleReach ? { handleReach } : {})
+  });
+
+  it("sends each node of a candidate the steps before it in plan order, inherited and refused ones included, and a fact none", async () => {
+    const asked: Asked[] = [];
+    await run(asked, steps(), "view_history");
+    const n0 = { definitionId: GO, parameters: go };
+    const h1 = { definitionId: HANDLER, parameters: handler };
+    const n1 = { definitionId: definition.id, parameters: { target: { handle: "t478" } } };
+    const n2 = { definitionId: definition.id, parameters: { target: { handle: "t925" } } };
+    // Asked, in order: the handler's fact, then n1, n2 and m0; never the inherited navigation or the refused handler.
+    expect(asked.map((input) => [input.nodeDefinitionId, (input.parameters.target as JsonObject).handle])).toEqual([
+      ["fluxiq.fact.target", "t9"], [definition.id, "t478"], [definition.id, "t925"], [definition.id, "t5"]
+    ]);
+    expect(Object.hasOwn(asked[0]!, "precedingSteps")).toBe(false);
+    expect(asked.slice(1).map((input) => input.precedingSteps)).toEqual([[n0, h1], [n0, h1, n1], [n0, h1, n1, n2]]);
+  });
+
+  it("hands each node its own copy, so a domain that changes one changes nothing else", async () => {
+    const asked: Asked[] = [];
+    const plan = steps();
+    await resolveAutomationStudioFlowBootstrapPlanParameters({
+      plan, projectId: "project.shop", flowId: "flow.cart", handlesIssued: true, handleReach: "view_history", inheritedNodeRefs: new Set(["primary.n0"]),
+      permissionFor: () => async () => ({ permitted: true as const }),
+      binding: { resolvePlanNodeParameters: (input) => {
+        const answer = standIn(asked)(input);
+        for (const step of input.precedingSteps ?? []) (step.parameters as Record<string, unknown>).url = "changed";
+        return answer;
+      } }
+    });
+    expect(asked.at(-1)?.precedingSteps?.[0]).toEqual({ definitionId: GO, parameters: go });
+    expect(plan.subflows[0]!.nodes[0]!.parameters).toEqual(go);
+  });
+
+  it("sends none without the view history", async () => {
+    const asked: Asked[] = [];
+    await run(asked, steps());
+    expect(asked.length).toBe(4);
+    expect(asked.some((input) => Object.hasOwn(input, "precedingSteps"))).toBe(false);
+  });
+
+  it("sends at most 200 steps, and none past them", async () => {
+    const asked: Asked[] = [];
+    const presses = Array.from({ length: 202 }, (_, index) => node(`p${index}`, definition.id, { target: { handle: `t${index + 1}` } }));
+    const long = { ...steps(), subflows: [subflow("primary", "primary", presses)] } as AutomationStudioFlowBootstrapPlan;
+    await run(asked, long, "view_history");
+    expect(asked.length).toBe(202);
+    expect(asked[200]!.precedingSteps?.length).toBe(200);
+    expect(Object.hasOwn(asked[201]!, "precedingSteps")).toBe(false);
+  });
+});

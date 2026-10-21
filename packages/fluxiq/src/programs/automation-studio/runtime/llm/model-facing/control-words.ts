@@ -22,15 +22,18 @@
 // target-finding failure carries neither, and they described how the control
 // was looked for.
 //
-// **Screened.** Words that trip the model-facing screen (`./sayable-text.ts`)
-// are no words: a control is then named by nothing rather than by its address.
+// **Screened.** Words that carry a locator, a match score or a finding-only
+// word (`./control-text.ts`) are no words: a control is then named by nothing
+// rather than by how it was found. Ordinary page words the failure-text screen
+// drops ("address", "score": `./sayable-text.ts`) are a control's own words
+// and stay (t748).
 //
 // Domain-neutral: the field names are Core's element-target fingerprint's
 // (`../../../model/action-element-target.ts`) plus the two a target is
 // commonly authored with (`name`, `placeholder`); no domain's vocabulary.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import { automationStudioModelFacingSayableText } from "./sayable-text.ts";
+import { automationStudioModelFacingControlText } from "./control-text.ts";
 
 /** The fields that carry a control's own words, in the order they are preferred. */
 const WORD_FIELDS = ["accessibleName", "visibleText", "label", "placeholder"] as const;
@@ -52,7 +55,7 @@ export function automationStudioModelFacingControlWords(parameters: JsonObject |
       const value = identity[field];
       if (typeof value !== "string") continue;
       const words = value.replace(/\s+/gu, " ").trim();
-      if (words && automationStudioModelFacingSayableText(words)) return words;
+      if (words && automationStudioModelFacingControlText(words)) return words;
     }
   }
   return undefined;

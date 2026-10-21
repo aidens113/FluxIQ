@@ -128,6 +128,26 @@ commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
 
+### Next minor (unreleased): a candidate's node is told the steps before it, and the window counts only what is sent (`fluxiq`)
+
+Read this entry if you implement `resolvePlanNodeParameters` or an LLM
+provider with `measureInput`.
+
+**Added.**
+- `precedingSteps?: readonly { definitionId: string; parameters: JsonObject }[]`
+  on the `resolvePlanNodeParameters` input
+  (`runtime/llm/harness-options/binding.ts`), sent beside `handleReach:
+  "view_history"` alone: every Subflow's nodes before this one in plan order,
+  as the plan held them before resolution, including inherited and refused
+  ones; none past 200 steps. A domain that ignores it is unchanged.
+
+**Changed.**
+- The context-window refusal measures the messages the provider says it will
+  send (`measureInput`) instead of the larger of that and the packed request.
+  A provider without `measureInput` is still measured on the packed request.
+  A request whose sent messages fit is no longer refused for the node catalog
+  it never sends.
+
 ### Next minor (unreleased): Core owns run accounting, activity status, record processing and capture policy a domain used to restate (`@fluxiq/contracts`, `fluxiq`)
 
 Lane S of the extension-Core boundary audit (t728) moved generic behaviour the

@@ -163,14 +163,14 @@ describe("creating a Flow through an exploration, with no grant", () => {
   // every call already paid for.
   it("records a build's token totals past one request's ceiling when its budget allows them", async () => {
     const run = await create({
-      // One request's window is the harness's 30,000: what matters here is only that the build's 60,880 is past it
-      // while a run's budget of 100,000 allows that. The packed request carries the whole node catalog (2026-09-30),
-      // so a window sized close to it breaks whenever a node gains a parameter: 12,000 stopped fitting then, and
-      // 22,000 stopped fitting when write-records gained its records parameter (t738), leaving the third request
-      // 35 tokens over at 20,035. The product's own window is 1,000,000; this is the test's, not a product ceiling.
+      // Nine calls at 22,000 is what lets a run's budget reach 100,000: what matters here is only that the build's
+      // 60,880 is past one request's window while the run's budget allows it. The window counts what is sent, never
+      // the whole node catalog the packed request carries beside it (t748): counted, it grew whenever a node gained a
+      // parameter, and write-records' records parameter (t738) pushed this window 35 tokens over. The product's own
+      // window is 1,000,000; this is the test's, not a product ceiling.
       maxCalls: 9,
       looksAreSteps: true,
-      tokenLimits: { maxInputTokens: 28_000, maxOutputTokens: 2_000, maxTotalTokens: 30_000 },
+      tokenLimits: { maxInputTokens: 20_000, maxOutputTokens: 2_000, maxTotalTokens: 22_000 },
       maxTotalTokensPerRun: 100_000,
       billed: { promptTokens: 10_000, completionTokens: 2_000 },
       reply: (_call, iteration) => iteration === 1 ? lookAdded(1) : iteration <= 4 ? look(iteration) : complete()

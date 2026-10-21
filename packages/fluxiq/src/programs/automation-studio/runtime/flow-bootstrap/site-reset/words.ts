@@ -16,6 +16,17 @@ import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY as UNDOES, type AutomationStudi
 const OWN_URL = "Name a list read on a page that loads at its own URL, so the reset can read it there again.";
 
 /**
+ * Which list a creation's destination is (t748, office rounds 2 and 4, C5): a builder named a list of other items suggested
+ * beside the subject, which nothing the creation makes ever joins. Core cannot tell that list from one a creation on its
+ * own page does join (a reply joins the replies under what it answers), so only the words say which to name.
+ */
+const JOINS = "Name the list the new entry would join: a list on this page shows the creation only where the new entry would appear in that very list. "
+  + "A list that only suggests or relates other items to the one acted on never gains the new entry, so it could never show the creation or its undo.";
+
+/** The same, for any reversible press (C5): said wherever a ref is offered for one. */
+const SHOWS = "A list that only suggests or relates other items to the one acted on never shows the effect of a press on it.";
+
+/**
  * How a reversible act of this build settles (L1, `../reset-settlement/decision.ts`):
  * the one rule, said once, beside each open act's own `settle`.
  */
@@ -166,6 +177,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
       + `then retry this press naming the resetDestination ref that observation issues. ${OWN_URL} `
       + (known.length ? `Refs already issued for lists read complete: ${known.join(", ")}; if the list where this press's effect would show is one of them, retry naming its ref as resetDestination without reading it again. ` : "")
       + "A press on a control inside a list already read complete, or on a control whose own state the page shows, needs no ref. "
+      + `${SHOWS} `
       + "Without such a list nothing could ever show the change put back, and no trial could run for the rest of the build. Looking and navigating remain available; no new permission is needed.";
   },
   /**
@@ -191,10 +203,23 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
    * An identified reversible creation with no original of its destination (`./create-baselines.ts`): moved here from its
    * refusal whole (t743), with the clause naming a list read on a page that loads at its own URL (photo debug fix 2).
    */
-  createBaselineRequired(): string {
+  createBaselineRequired(here: readonly AutomationStudioSiteResetIssuedRef[] = [], elsewhere: readonly AutomationStudioSiteResetIssuedRef[] = []): string {
     return "This creation was not run. Before creating an identified reversible effect, observe its destination's complete original inventory through the site's own controls, then return and retry with the resetDestination reference that observation issued. "
       + "The original inventory must belong to this resource and prove the subject absent. A first observation after a lasting build effect, another resource, a matching name, or an invented reference is insufficient. "
+      + `${JOINS} `
+      + (here.length ? `Lists read complete on this page: ${refList(here, false)}. ` : "")
+      + (elsewhere.length ? `Lists read complete elsewhere: ${refList(elsewhere, true)}; if the list the new entry would join is one of them, retry naming its ref without reading it again. ` : "")
       + `${OWN_URL} Looking and navigating remain available; no new permission is needed.`;
+  },
+  /**
+   * Said beside a complete read's receipts while a press stands refused for want of a ref (t748, office rounds 2-4, C6:
+   * builders read the list, got its ref, and went back and forth for 9 and 14 turns before pressing with it). `call`: the
+   * refused call's id; `refs`: the refs this read printed that were not printed beside the refusal itself.
+   */
+  retryRefused(call: string, refs: readonly AutomationStudioSiteResetIssuedRef[]): string {
+    return `The call ${JSON.stringify(call)} was refused for want of a resetDestination ref, and this complete read issued ${refs.length === 1 ? "a ref" : "refs"}: ${refList(refs, true)}. `
+      + "If what that call makes or changes would show in one of these lists, go back to where it was refused and make that call again, the same as before, naming that list's ref as resetDestination; do not read the list again first. "
+      + `If none of them is where its effect would show, read that list completely, then make the call again naming the ref that read issues. ${SHOWS}`;
   },
   /**
    * The build's standing guidance on declaring lasting acts and observing their destinations, aligned with
@@ -219,6 +244,11 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
       + "Retry without resetDestination, or with a ref such a receipt printed. Looking and navigating remain available; no new permission is needed.";
   }
 });
+
+/** `ref (n items at <location>), ...`: each ref with its count, and where it was read when `where` and a location may be said. */
+function refList(refs: readonly AutomationStudioSiteResetIssuedRef[], where: boolean): string {
+  return refs.map((entry) => `${entry.ref} (${entry.count} ${entry.count === 1 ? "item" : "items"}${where ? placed(entry.location) : ""})`).join(", ");
+}
 
 /** ` at <location>`, or nothing where the location is absent or withheld (`../reset-settlement/words.ts` says places the same way). */
 function placed(location: string | undefined): string {

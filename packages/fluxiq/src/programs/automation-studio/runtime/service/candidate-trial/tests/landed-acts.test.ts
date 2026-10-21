@@ -46,8 +46,9 @@ describe("the lasting acts a trial landed", () => {
     ]);
     const acts = automationStudioCandidateTrialLandedActs(run, graph);
     expect(acts).toEqual([
-      { step: 3, definitionId: "web.output.dom-click", label: "Press add", control: "Add item", consequences: ["create_new"] },
-      { step: 5, definitionId: "web.output.dom-click", label: "Press add", control: "Add item", consequences: ["create_new"] },
+      // Two loop passes of one step, each named by its pass (t748).
+      { step: 3, definitionId: "web.output.dom-click", label: "Press add", control: "Add item", consequences: ["create_new"], pass: { number: 1, of: 2 } },
+      { step: 5, definitionId: "web.output.dom-click", label: "Press add", control: "Add item", consequences: ["create_new"], pass: { number: 2, of: 2 } },
       // Core's order, each once.
       { step: 7, definitionId: "web.output.dom-click", label: "Press pay", control: "Pay now", consequences: ["move_money", "create_new"] }
     ]);
@@ -266,4 +267,47 @@ it("takes a trial act's page address from the run as executed, where the saved t
   expect(withheld).toHaveLength(1);
   expect(withheld[0]?.controls?.location).toBe(AUTOMATION_STUDIO_WITHHELD_VALUE);
   expect(acts).toEqual([{ ...withheld[0], controls: { ...withheld[0]!.controls!, location: address } }]);
+});
+
+// t748: a step whose target's words are the value it reads (`readsWords`) names its act by the words it read, as the
+// trial feedback does, never by the words saved before an earlier step changed them. A library site.
+it("names a read step's lasting act by the words it read in this trial, as the feedback names its step", () => {
+  const library = { nodes: [{ id: "due", definitionId: "custom.read", label: "read the due date", metadata: { declaredConsequences: ["modify_existing"] },
+    parameterValues: { element: { tagName: "p", visibleText: "Due back 3 March", readsWords: true } } }] } as unknown as AutomationStudioFlowArtifact;
+  const run = trace([{ attemptId: "due", nodeId: "due", definitionId: "custom.read", startedAt: 1, status: "succeeded", inputs: {}, outputs: { value: "Due back 17 March" }, effects: [] }]);
+  expect(automationStudioCandidateTrialLandedActs(run, library)).toEqual([{ step: 1, definitionId: "custom.read", label: "read the due date", control: "Due back 17 March", consequences: ["modify_existing"] }]);
+  expect((automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph: library, trace: run }).feedback.steps as JsonObject[])[0]?.control).toBe("Due back 17 March");
+});
+
+// t748, job round 4 (`run-mvgw1854-5d10955b`): four passes of one wordless press read alike, so the model could not tell
+// which act pressed which row. A library's renew button, pressed in a loop over three loans.
+describe("a looped step's lasting acts", () => {
+  const library = { nodes: [
+    { id: "loans", definitionId: "builtin.control.for-each", parameterValues: {} },
+    { id: "renew", definitionId: "custom.press", label: "renew the loan", metadata: { declaredConsequences: ["modify_existing"] }, parameterValues: {} },
+    { id: "note", definitionId: "custom.press", label: "note the renewal", metadata: { declaredConsequences: ["create_new"] }, parameterValues: {} }
+  ] } as unknown as AutomationStudioFlowArtifact;
+  let at = 0;
+  const ran = (nodeId: string, extra: Partial<AutomationStudioNodeAttemptTrace> = {}): AutomationStudioNodeAttemptTrace => {
+    const definitionId = nodeId === "loans" ? "builtin.control.for-each" : "custom.press";
+    return { attemptId: `l${++at}`, nodeId, definitionId, startedAt: at, status: "succeeded", inputs: {}, outputs: {}, effects: [], ...extra };
+  };
+  const pass = (index: number) => ran("loans", { route: "body", outputs: { index, count: 3 } });
+
+  it("names each pass of a step that ran three times, one act per pass", () => {
+    const acts = automationStudioCandidateTrialLandedActs(trace([pass(0), ran("renew"), pass(1), ran("renew"), pass(2), ran("renew"), ran("loans", { route: "done", outputs: { count: 3 } }), ran("note")]), library);
+    expect(acts.map(({ step, pass }) => ({ step, pass }))).toEqual([
+      { step: 2, pass: { number: 1, of: 3 } },
+      { step: 4, pass: { number: 2, of: 3 } },
+      { step: 6, pass: { number: 3, of: 3 } },
+      // After the loop, it ran once: no pass.
+      { step: 8, pass: undefined }
+    ]);
+  });
+
+  it("numbers the passes the step ran in, landed or not, and names none for a step that ran in one pass", () => {
+    const acts = automationStudioCandidateTrialLandedActs(trace([pass(0), ran("renew"), pass(1), ran("renew", { effectCheck: { result: "not_landed", checkedAt: 1 } }), pass(2), ran("renew")]), library);
+    expect(acts.map(({ step, pass }) => ({ step, pass }))).toEqual([{ step: 2, pass: { number: 1, of: 3 } }, { step: 6, pass: { number: 3, of: 3 } }]);
+    expect(automationStudioCandidateTrialLandedActs(trace([pass(0), ran("renew")]), library)).toEqual([{ step: 2, definitionId: "custom.press", label: "renew the loan", consequences: ["modify_existing"] }]);
+  });
 });

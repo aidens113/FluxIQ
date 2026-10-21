@@ -117,7 +117,31 @@ export function automationStudioLlmEvidenceRepeatStop(
   if (input.unusableDecisions) {
     const stall = recoverAt === undefined ? { kind: "stall" as const, issueCodes: [issueCode] } : automationStudioLlmEvidenceStallRecovery(context, recoverAt, [issueCode]);
     if (stall.kind === "recover") return stall;
-    return { kind: "stalled", error: input.unusableDecisions.stalled({ issueCodes: stall.issueCodes, trace: [...trace], accounting: { ...accounting }, steps: draftSteps.map((step) => automationStudioFlowDraftStepCopy(step)) }) };
+    // The caller is asked to recover with the guard's codes alone; the stall it ends under also names the refusal the repeats followed (t748).
+    return { kind: "stalled", error: input.unusableDecisions.stalled({ issueCodes: [...stall.issueCodes, ...lastRefusal(context)], trace: [...trace], accounting: { ...accounting }, steps: draftSteps.map((step) => automationStudioFlowDraftStepCopy(step)) }) };
   }
   return { kind: "end", result: failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting) };
+}
+
+/**
+ * The prefix a stall carries the last refusal before its repeats under, as
+ * `<prefix><code>` (t748). A run of refused repeats is a symptom: in live run
+ * `run-mvgw7320-de416190` a reset brief's press was refused by Core, and the
+ * builder asked one look again until this guard ended the brief, whose stall
+ * then named only the guard. The supervisor's brief return
+ * (`../../project-agents/dispatch/ending.ts`) and the debug read the stall's
+ * codes; this one says which answer stranded the builder. Nothing more is refused.
+ */
+const LAST_REFUSAL = "llm_evidence_loop.last_refusal:";
+
+/** The newest call or look the history records as refused under a code of its own (not a refused repeat), as one code, or none. */
+function lastRefusal(context: AutomationStudioLlmEvidenceDecisionHandlerContext): string[] {
+  const records = context.history.records();
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    const decision = records[index]!.decision;
+    if ((decision.kind !== "call" && decision.kind !== "look") || decision.refused !== true) continue;
+    const code = decision.resultCode;
+    if (code && code !== "ok" && code !== AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE) return [`${LAST_REFUSAL}${code}`];
+  }
+  return [];
 }

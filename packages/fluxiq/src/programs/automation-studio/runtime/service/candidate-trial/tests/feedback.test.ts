@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../../model/index.ts";
-import type { AutomationStudioGraphExecutionTrace } from "../../../executor/index.ts";
+import { AUTOMATION_STUDIO_WITHHELD_VALUE, type AutomationStudioGraphExecutionTrace } from "../../../executor/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../../result-verification/index.ts";
 import { automationStudioCandidateTrialStop } from "../../../flow-bootstrap/candidate/index.ts";
-import { automationStudioCandidateTrialFeedback } from "../index.ts";
+import { automationStudioCandidateTrialFeedback, automationStudioTrialStepControl } from "../index.ts";
 
 // Lane A round 4 (`run-muyrpbnk-fef374e7`, 0032 and 0048): the model was told only "step 2, dom-click, failed,
 // web.target.not_found" and then "web.action.rate_limited". C4: each step names the control it acted on and what
@@ -386,5 +386,43 @@ describe("trial feedback for a step its node refused as written", () => {
     const step = (feedback.steps as JsonObject[])[1]!;
     expect(step).not.toHaveProperty("issues");
     expect(step.happened).not.toBe("The step names a node that cannot run.");
+  });
+});
+
+// t748 (t743 office spec): a read of a line its own Flow changed was labelled with the words saved before the change.
+// A step whose target's words are the value it reads (`readsWords`) is named by what it read, or by nothing. A library site.
+describe("trial feedback for a read of words an earlier step changed", () => {
+  type Attempt = AutomationStudioGraphExecutionTrace["attempts"][number];
+  const libraryGraph = { nodes: [
+    { id: "renew", definitionId: "custom.press", label: "renew the loan", parameterValues: { element: { tagName: "button", visibleText: "Renew loan" } } },
+    { id: "due", definitionId: "custom.read", label: "read the due date", parameterValues: { element: { tagName: "p", visibleText: "Due back 3 March", readsWords: true } } }
+  ] } as unknown as AutomationStudioFlowArtifact;
+  const ran = (nodeId: string, extra: Partial<Attempt> = {}): Attempt => ({ attemptId: nodeId, nodeId, definitionId: nodeId === "due" ? "custom.read" : "custom.press", startedAt: 1, status: "succeeded", inputs: {}, outputs: {}, effects: [], ...extra });
+  const told = (due: Attempt, pace?: AutomationStudioGraphExecutionTrace["pace"]) => automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph: libraryGraph,
+    trace: { status: "failed", startedAt: 1, values: {}, effects: [], attempts: [ran("renew"), due], ...(pace ? { pace } : {}) } }).feedback;
+
+  it("names the read by the words it read in this trial, never the words saved before the change", () => {
+    const feedback = told(ran("due", { outputs: { value: "Due back 17 March" } }));
+    expect(feedback.steps).toMatchObject([{ control: "Renew loan" }, { step: 2, label: "read the due date", control: "Due back 17 March", status: "succeeded" }]);
+    expect(JSON.stringify(feedback)).not.toContain("3 March");
+  });
+
+  it("names a read that read nothing, and its learned pace, by nothing rather than by the saved words", () => {
+    const feedback = told(ran("due", { status: "failed", failure: { category: "action_failed", code: "custom.target_missing", retryable: false, stage: "execution" } }),
+      [{ nodeId: "due", paceMs: 2_000, learnedMs: 2_000, raisedCount: 1, waitedMs: 0 }]);
+    expect((feedback.steps as JsonObject[])[1]).toMatchObject({ label: "read the due date", status: "failed" });
+    expect((feedback.steps as JsonObject[])[1]).not.toHaveProperty("control");
+    expect(feedback.paces).toEqual([expect.objectContaining({ label: "read the due date" })]);
+    expect(JSON.stringify(feedback)).not.toContain("3 March");
+  });
+
+  // The owner of those words (`../step-control.ts`); its cases sit here because this folder is at its file limit.
+  it("names a read by nothing where what it handed on is no short sayable words, and every other control by its saved words", () => {
+    const [renew, due] = libraryGraph.nodes;
+    for (const value of [17, AUTOMATION_STUDIO_WITHHELD_VALUE, "x".repeat(161), "#due-line > p"]) expect(automationStudioTrialStepControl(due, ran("due", { outputs: { value } }))).toBeUndefined();
+    expect(automationStudioTrialStepControl(due, ran("due", { outputs: { value: "  Due back\n17 March " } }))).toBe("Due back 17 March");
+    expect(automationStudioTrialStepControl(due, undefined)).toBeUndefined();
+    expect(automationStudioTrialStepControl(renew, ran("renew", { outputs: { value: "Renewed" } }))).toBe("Renew loan");
+    expect(automationStudioTrialStepControl({ ...due!, parameterValues: { element: { visibleText: "Due back 3 March", readsWords: false } } }, ran("due", { outputs: { value: "Due back 17 March" } }))).toBe("Due back 3 March");
   });
 });

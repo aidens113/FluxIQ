@@ -70,12 +70,15 @@
 // every reason no call can meet -- its only witnesses lost, or nothing to name
 // once refs are closed -- is answered by `unmet` with the closed condition
 // that failed; the ledger takes it out of the acts to undo and lists it
-// apart, and trials stay refused while it is in place.
+// apart, and trials stay refused while it is in place. A reason only
+// site-reset can judge -- a list that still differs, an own control -- is
+// answered by the ledger's own rule (`more`: `../site-reset/undo-reach.ts`,
+// t748), handed the lists that differ (`differing`).
 
 import type { AutomationStudioSiteResetFailed } from "../reset-answers/index.ts";
 import { automationStudioSiteResetActGroups as actGroups } from "./act-groups.ts";
 import type { AutomationStudioSiteResetControlTracker, AutomationStudioSiteResetPress } from "./control-tracker.ts";
-import { automationStudioSiteResetSettleDecision as settleDecision, type AutomationStudioSiteResetJudgedGroup, type AutomationStudioSiteResetSettlement } from "./decision.ts";
+import { automationStudioSiteResetSettleDecision as settleDecision, type AutomationStudioSiteResetJudgedGroup, type AutomationStudioSiteResetOpenReason, type AutomationStudioSiteResetSettlement } from "./decision.ts";
 import type { AutomationStudioSiteResetObservations } from "./observations.ts";
 import type { AutomationStudioSiteResetReach } from "./reach.ts";
 import type { AutomationStudioSiteResetSettlementSpot } from "./spot.ts";
@@ -106,8 +109,8 @@ export type AutomationStudioSiteResetJudgedAct = {
   pageLocation?: string | undefined;
 };
 
-/** The closed conditions an act no call can settle fails on (header): its only witnesses lost, or nothing to name once refs are closed. */
-export type AutomationStudioSiteResetUnmet = Extract<AutomationStudioSiteResetFailed, "witness_unreachable" | "nothing_to_name">;
+/** The closed conditions an act no call can settle fails on (header): its only witnesses lost, nothing to name once refs are closed, or what still differs no undo could put back (t748). */
+export type AutomationStudioSiteResetUnmet = Extract<AutomationStudioSiteResetFailed, "witness_unreachable" | "nothing_to_name" | "no_admissible_undo">;
 
 /** What the judgement is handed by its ledger (header). */
 export type AutomationStudioSiteResetJudgePorts = {
@@ -191,15 +194,28 @@ export class AutomationStudioSiteResetSettlementJudge {
     return settleWords(decision.reasons, receipts.issuedRefs(), { closed: receipts.refsClosed() });
   }
 
-  /** The closed condition no call can meet, where every open reason of `act` is one (header); none otherwise. */
-  unmet(act: AutomationStudioSiteResetJudgedAct): AutomationStudioSiteResetUnmet | undefined {
+  /**
+   * The closed condition no call can meet, where every open reason of `act` is one (header); none otherwise. `more` judges a
+   * reason this judgement leaves open (an `undo` or a `toggle`), asked only while every reason before it is unmet.
+   */
+  unmet(act: AutomationStudioSiteResetJudgedAct, more?: (reason: AutomationStudioSiteResetOpenReason) => AutomationStudioSiteResetUnmet | undefined): AutomationStudioSiteResetUnmet | undefined {
     const decision = this.evaluate(act);
     if (decision.kind !== "open") return undefined;
     const { receipts } = this.ports;
     // `name` is unmet only once no ref can be issued: for a trial act always then (header), for an explored act when none was.
     const nameUnmet = receipts.refsClosed() && (act.call === undefined || receipts.issuedRefs().length === 0);
-    const unmet = decision.reasons.map((reason): AutomationStudioSiteResetUnmet | undefined => (reason.reason === "unreachable" ? "witness_unreachable" : reason.reason === "name" && reason.adopted !== true && nameUnmet ? "nothing_to_name" : undefined));
-    return unmet.every((entry) => entry !== undefined) ? unmet[0] : undefined;
+    const unmet: AutomationStudioSiteResetUnmet[] = [];
+    for (const reason of decision.reasons) {
+      const failed = reason.reason === "unreachable" ? "witness_unreachable" : reason.reason === "name" && reason.adopted !== true && nameUnmet ? "nothing_to_name" : more?.(reason);
+      if (failed === undefined) return undefined;
+      unmet.push(failed);
+    }
+    return unmet[0];
+  }
+
+  /** The act's own list witnesses that differ now, each with its relevant scopes (`./group-witness.ts`): what an undo would have to put back (header, t748). */
+  differing(act: AutomationStudioSiteResetJudgedAct): Array<{ group?: string | undefined; scopes: string[] }> {
+    return this.groupsOf(act, [...act.destinations, ...this.lent(act)]).filter((group) => group.status === "differs").map((group) => ({ group: group.group, scopes: [...group.scopes] }));
   }
 
   /**

@@ -230,6 +230,25 @@ reset-settlement's):
   the strict restoration checks still apply. Ordinary candidate mode, finalized
   runs, irreversible classes and unseen or dynamic trial actions do not gain
   this exploratory preflight.
+- **Which list a creation names, and the step after reading it (t748).** Core
+  does not judge which issued list a creation's `resetDestination` names,
+  beyond same resource, a valid group and the subject absent from the list: by
+  everything Core reads, a list of other items suggested beside the subject has
+  the same shape as a list a creation on its own page does join (replies under
+  what a reply answers, a collection panel beside an item). So the
+  `candidate.create_baseline_required` refusal lists the refs already issued,
+  split into those read on this page and those read elsewhere, says to name the
+  list the new entry would join, and that a list that only suggests or relates
+  other items never gains it; `candidate.reset_witness_required` says the same
+  of a press's effect. While a press stands refused for want of a ref, each
+  later answer that prints refs the refusal did not print carries
+  `retryRefused`: the refused call, those refs, and words saying to make the
+  call again naming the ref of the list where its effect shows. It stops once
+  a call lands an act (`service/project-build/brief-ports.ts`). Before the
+  seal, an unidentified `create_new` (no subject, and in an item or on a page
+  with a heading), which the ledger still holds strictly, needs a witness like
+  any other reversible press (`site-reset/reset-witness.ts`); only a creation
+  whose control names nothing keeps the legacy policy.
 - **Undo through the normal tool.** In candidate mode with a trial runner,
   `core.run_node` takes an optional `undoes: "act-N"`. The wrapper strips it
   before the domain sees the call. The ledger accepts it only for an act still
@@ -451,8 +470,9 @@ the collection type in `reset-settlement/collection-groups.ts`).
   witnesses, the act stays open with the reason `unreachable`, which no call
   can meet.
 - **Acts no call can settle (`gate_unsatisfiable`).** An open act whose every
-  reason is unmet (`unreachable`, or `name` once refs are closed, above)
-  leaves `inPlace` and `actsToUndo`. Every claim and target refusal that
+  reason is unmet (`unreachable`, or `name` once refs are closed, above, or an
+  `undo` or `toggle` reason no undo could meet, below) leaves `inPlace` and
+  `actsToUndo`. Every claim and target refusal that
   carries `actsToUndo`, `trial_reset_unproved` and the trial policy list it
   under `actsUnsettleable: [{act, did, call?, reason: "gate_unsatisfiable",
   failed}]`; `project-reset.ts` merges them across ledgers, puts a meetable
@@ -463,6 +483,25 @@ the collection type in `reset-settlement/collection-groups.ts`).
   "gate_unsatisfiable"`). The ledger reads `unsatisfiable()` and
   `issuedRefs()` (issued refs with count and location); the project ledger
   reads them build-wide, `unsatisfiable()` with each act's `owner`.
+- **No undo can put it back: `no_admissible_undo` (t748).** An open act is
+  also `gate_unsatisfiable` when no undo under `undoes` could ever settle it,
+  decided from Core's own reads (`site-reset/undo-reach.ts`). The only undo
+  paths that act on a list a read can describe are removals of a subject new
+  on that list: the subject deletion for an act that created it, or the
+  removal on a destination the act named or can name, at most one per act
+  before it is spent. So where an act's differing list shows a row held before
+  the build that is gone, a value of one that changed, rows out of order, or
+  more new rows than the acts able to remove them, and no act of the ledger has
+  a path no read can rule out (its own item still listed, its own toggle, a
+  transfer, a pending confirmation), the act is listed apart with `failed:
+  "no_admissible_undo"`. The same holds at once when the act's own control, on
+  its last open condition, answers a state that is neither the build's nor the
+  act's (`control_state_differs`); a press back admitted later clears it. A
+  differing list the reads could not name a group for is never judged. Nothing
+  is newly admitted. `undo-reach.ts` mirrors the admission paths of
+  `undo-admission.ts` by copy, so `site-reset/tests/settlement-unmeetable.test.ts`
+  pins the admitting lines: a path changed there fails the build until the
+  reach rule is checked against it and the pin is updated.
 - **Settled or open** (`reset-settlement/decision.ts`). With every witness holding,
   an act is **settled restored** when a change was seen at some point or an
   undo of it landed, and **settled unchanged** when no read ever showed a
@@ -822,6 +861,29 @@ left out. The step log names what a tool threw by the error's name
 (`llm/step-log/summary.ts`), and its `loopVerdict` is
 `llm_evidence_loop.cancelled` for an `AbortError` or `TimeoutError`,
 otherwise `llm_evidence_loop.tool_failed` (`llm/step-log/tool-step.ts`).
+
+**What a trial calls each step's control (t748).** One owner,
+`service/candidate-trial/step-control.ts`, gives the feedback's
+`steps[n].control` and a landed act's `on "<control>"` the same words. A control
+is named by its own words as the domain resolved them
+(`llm/model-facing/control-words.ts`), screened by `control-text.ts`: no
+locator shape, no match score, no finding-only word (selector, fingerprint).
+The failure-text screen (`sayable-text.ts`) also drops "address" and "score",
+which a failure's text uses for the finding; on a control they are page words,
+so a button whose words hold "address" keeps its name (rerun round 3's confirm
+press had lost it, which was not its page reload). A target whose words are the
+value its step reads (`readsWords`) is named by what the step read in that
+trial (`outputs.value`, whitespace collapsed, at most 160 characters, the same
+screen), or by nothing when it read none, never by the words captured before an
+earlier step changed them. A step that ran in more than one loop pass names its
+pass in each act's words, `trial step N, pass K of M "<label>"`, where K counts
+the passes the step ran in; a step that ran once keeps `trial step N
+"<label>"`. Every pass is its own executed step, act and call ref
+(`<trialRunId>#step-N`). **Cross-repository contract:** Core reads the
+downstream mark `readsWords: true` on a resolved `element`, set by the web
+domain's `domain/src/runtime/llm-evidence/plan-resolution/read-identity.ts`;
+Core's element-target type does not declare it, and renaming it there silently
+names read steps by their saved words again.
 
 **Judge advice after a refused undisclosed read (t743).** The judge's advice
 reaches the builder through the subflow's repeated-advice memory
@@ -1288,7 +1350,16 @@ every node, once each (`resolveAutomationStudioFlowBootstrapPlanParameters` in
 through `resolvePlanNodeParameters` on its evidence binding
 (`runtime/llm/harness-options/binding.ts`). It receives the project ID, Flow ID,
 node definition ID, and a copy of the node's parameters as the model wrote
-them. It answers with one of three results:
+them. Under `handleReach: "view_history"` (a candidate submission) each node is
+also sent `precedingSteps` (t748): every Subflow's nodes before it in plan
+order, as the plan held them before any was resolved (handles intact, the
+consequence declaration taken off), each call its own copy, including the steps
+Core never asks about (an inherited step left untouched, a handler whose page
+fact was refused). A page fact's target is no step and is sent none, and a node
+with more than 200 steps before it is sent none. A domain reads where a node
+stands -- which dialog a press before it opened, say -- from this list alone,
+never from the order of the calls. Plan order is not run order in a branching
+Flow. It answers with one of three results:
 
 - `unchanged`: the parameters stand as written.
 - `resolved`: the node's complete parameters, with every handle replaced from
@@ -2497,7 +2568,8 @@ instruction, every decision, the test and the judge are all held against it.
   unchanged by itemising.
 - **Holds price what is sent, with an observed reply reserve (t254).** Each
   call is held at the input its provider will send -- never the packed request,
-  which carries the whole node catalog and is kept only for the window refusal
+  which carries the whole node catalog and, since t748, counts toward neither
+  the price nor the window refusal unless the provider gives no measure
   -- all uncached at the rate in force, measured at 3 UTF-8 bytes per token plus
   16 framing tokens (densest call recorded: 3.24 bytes per token), plus its reply
   at a reserve: twice the largest reply observed for its kind
@@ -2701,7 +2773,15 @@ refused before it runs, with nothing spent but the decision. It is recorded as
 note saying when it was tried, what came of it, and what to do instead. A rerun
 amendment is checked against the same record and refused as `changes_nothing`.
 Three such decisions in a row stall the round, which the build then tests,
-judges and repairs, or ends as not doable with its reason.
+judges and repairs, or ends as not doable with its reason. The stall's issue
+codes are the guard's own followed by `llm_evidence_loop.last_refusal:<code>`
+(t748), where `<code>` is the result code of the newest call or look Core
+refused for a reason of its own before the repeats (a `candidate.*` or
+reset-gate code, say), so a supervisor's brief return ("It was stopped by ...")
+and a debug see which answer stranded the builder. Recovery is still asked with
+the guard's code alone, and the person's ending says nothing for the carried
+code (`flow-bootstrap/unfinished-build/not-done.ts`): it is any site's or
+domain's own code and could match a pattern there by chance.
 
 The guard is checked before the repeat policy, so every action repeat is
 refused in one place. It never refuses:

@@ -40,6 +40,11 @@
 // state the build found is `candidate.undo_already_back`: nothing to press,
 // and pressing would make the act's change again (photo `run-mvgw7320-de416190`
 // 0151). Which condition is named never changes what is admitted.
+//
+// `./undo-reach.ts` reads these paths to say when none could ever admit an
+// undo for what an act's differing lists show (t748, `no_admissible_undo`):
+// a path added or widened here must be added or widened there too, or an act
+// an undo could still settle would be listed apart.
 
 import type { AutomationStudioActionConsequence, AutomationStudioActionEffect } from "../../action-permissions/index.ts";
 import { automationStudioSiteResetRefusal as refusal, type AutomationStudioSiteResetCanMeet, type AutomationStudioSiteResetFailed } from "../reset-answers/index.ts";

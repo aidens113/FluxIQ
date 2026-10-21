@@ -599,3 +599,33 @@ describe("a creation whose admitted destination a complete fresh read shows unch
     expect(ledger.target("act-1", aim(["delete"], { scope: "p:lines", subject: "s:first", resource: SITE }))).toMatchObject({ kind: "refused" });
   });
 });
+
+// t748, job round 4 (`run-mvgw1854-5d10955b`): a looped step's acts each read `trial step N "<label>"`, alike when the
+// control has no words. A library's renew button, pressed in a loop over three loans.
+describe("a looped trial step's acts", () => {
+  const renew = (step: number, pass?: { number: number; of: number }) => ({ step, definitionId: "custom.press", label: "renew the loan", consequences: ["modify_existing" as const], ...(pass ? { pass } : {}) });
+
+  it("names each pass in the act's words, with one act and one call per pass", () => {
+    const records: Array<{ act: string; ref: string }> = [];
+    const ledger = new AutomationStudioSiteResetLedger({ sink: (entry) => records.push({ act: entry.act, ref: entry.ref }) });
+    const left = ledger.trialRan([renew(2, { number: 1, of: 3 }), renew(4, { number: 2, of: 3 }), renew(6, { number: 3, of: 3 })], "trial.1");
+    expect(left.map(({ act, did }) => ({ act, did }))).toEqual([
+      { act: "act-1", did: "trial step 2, pass 1 of 3 \"renew the loan\"" },
+      { act: "act-2", did: "trial step 4, pass 2 of 3 \"renew the loan\"" },
+      { act: "act-3", did: "trial step 6, pass 3 of 3 \"renew the loan\"" }
+    ]);
+    expect(new Set(records.map((entry) => entry.ref)).size).toBe(3);
+    expect(records.map((entry) => entry.act)).toEqual(["act-1", "act-2", "act-3"]);
+    // Each pass is undone on its own: a claim of one leaves the others in place.
+    expect(ledger.claim("act-2")).toEqual({ kind: "undo", undo: { act: "act-2", allowed: [] } });
+    expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1", "act-2", "act-3"]);
+  });
+
+  it("keeps today's words and call for a step that ran once, and for a pass that is not well formed", () => {
+    const records: string[] = [];
+    const ledger = new AutomationStudioSiteResetLedger({ sink: (entry) => records.push(entry.ref) });
+    const left = ledger.trialRan([{ ...renew(3), control: "Renew" }, renew(5, { number: 1, of: 1 }), renew(7, { number: 4, of: 3 })], "trial.1");
+    expect(left.map((act) => act.did)).toEqual(["trial step 3 \"renew the loan\" on \"Renew\"", "trial step 5 \"renew the loan\"", "trial step 7 \"renew the loan\""]);
+    expect(records).toEqual(["trial.1#step-3", "trial.1#step-5", "trial.1#step-7"]);
+  });
+});
