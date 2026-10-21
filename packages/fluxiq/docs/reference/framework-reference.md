@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4063
-- Class: 139
+- Public declarations: 4101
+- Class: 140
 - Interface: 10
-- Object: 538
-- Type: 2157
+- Object: 542
+- Type: 2180
 - Type Alias: 1
-- Value: 1218
+- Value: 1228
 
 ## Public Declarations
 
@@ -79,6 +79,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `adaptLegacyTaskToAutomationStudioFlow` | Value | `packages/fluxiq/src/programs/automation-studio/model/flow-compatibility.ts` | - |
 | `adaptPolicyGraphToPolicyRegion` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/region-compiler.ts` | - |
 | `adminRole` | Object | `packages/fluxiq/src/programs/identity-access/runtime/roles.ts` | - |
+| `admitClientGatewayTraceForMatching` | Value | `packages/fluxiq/src/client-gateway/trace-matcher/trace-admission.ts` | - |
 | `adoptUncommittedFluxIQStorage` | Value | `packages/fluxiq/src/framework/uncommitted-v2-adoption.ts` | - |
 | `AdvanceProductionRunRequest` | Type | `packages/fluxiq/src/programs/production-runner/api/contracts.ts` | - |
 | `annotateAutomationStudioRunDetailWithRuntimeLlm` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/annotate.ts` | - |
@@ -401,6 +402,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_NODE_WRITTEN_CODE` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/replay.ts` | The code a host answers a written step with: checked, frozen and not done. Not a replay code: a replay answered with it did not run, so `automationStudioNodeReplayStatus` reads it as `failed`. |
 | `AUTOMATION_STUDIO_NORMAL_EDITOR_GRAPH_WRITE_ENDPOINT` | Object | `packages/fluxiq/src/programs/automation-studio/api/contracts/endpoints.ts` | - |
 | `AUTOMATION_STUDIO_OBJECT_THRESHOLD_BYTES` | Object | `packages/fluxiq/src/programs/automation-studio/storage/object-store.ts` | - |
+| `AUTOMATION_STUDIO_OFFLINE_TRIAL_READER_CONTRACTS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/service/offline-trial/reader-contracts.ts` | - |
 | `AUTOMATION_STUDIO_PACE_METADATA_KEY` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/executor/pacing/pace-metadata.ts` | The Flow node metadata key a pace is authored under: a positive whole number of milliseconds, the least time between two successive starts of that node in one run. Written by the Flow script's pace syntax and by a promotion that keeps the pace a trial learned; read by every graph run, trial and playback alike (`./pace-keeper.ts`). |
 | `AUTOMATION_STUDIO_PAGE_CURSOR_VERSION` | Object | `packages/fluxiq/src/programs/automation-studio/storage/paging.ts` | - |
 | `AUTOMATION_STUDIO_PAIRED_CLIENT_SESSION_PREFIX` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/commands/caller.ts` | The session prefix a paired client's actor carries. |
@@ -543,7 +545,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_TRIAL_EVIDENCE_ASSERTION_OUTCOMES` | Object | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/vocabulary.ts` | How one checked assertion came out. `unverified` means its evidence was unavailable. |
 | `AUTOMATION_STUDIO_TRIAL_EVIDENCE_ORIGINS` | Object | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/vocabulary.ts` | Where the evidence behind a result came from. `recorded`: traces of what Core received during an earlier live run. `pure_computation`: computed from data already held, with no observation. `live`: observed in a live run now. `modeled`: synthetic or modeled input. |
 | `AUTOMATION_STUDIO_TRIAL_EVIDENCE_PROVENANCES` | Object | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/vocabulary.ts` | Whether a result is the record its trial produced (`original`) or a copy that left Core and came back through export and re-ingest (`derived`). |
-| `AUTOMATION_STUDIO_TRIAL_EVIDENCE_REASON_CODES` | Object | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/vocabulary.ts` | Why a result is not a pass, or what evidence it lacked. Closed. |
+| `AUTOMATION_STUDIO_TRIAL_EVIDENCE_REASON_CODES` | Object | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/vocabulary.ts` | Why a result is not a pass, or what evidence it lacked. Closed. Among them: `source_not_live`: an offline trial's source trace is not a live episode's capture (it was derived or replayed), so it holds no live evidence to run on; `judgement_unavailable`: the task-goal judge gave no verdict (it was not asked, or it was unsure), so the goal is neither met nor missed. |
 | `AUTOMATION_STUDIO_TRIAL_EVIDENCE_SCOPES` | Object | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/vocabulary.ts` | How much of the Flow the result covers. A `full_recorded_path` is still a historical scenario; only `full_live_run` is a whole run against the live target. |
 | `AUTOMATION_STUDIO_TRIAL_EVIDENCE_VERDICTS` | Object | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/vocabulary.ts` | What a trial concluded. `inconclusive` is an evidence gap, never a soft pass. |
 | `AUTOMATION_STUDIO_UI_CACHE_MAX_BATCH_ENTRIES` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/ui-cache-store.ts` | - |
@@ -1566,6 +1568,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioGatewayTraceMeasure` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace/measure.ts` | One trace's storage. Counts and byte lengths only: never a body, a digest or a payload. |
 | `AutomationStudioGatewayTraceOpenEpisode` | Interface | `packages/fluxiq/src/programs/automation-studio/runtime/gateway-trace/open-episode.ts` | - |
 | `AutomationStudioGatewayTraceRegistry` | Interface | `packages/fluxiq/src/programs/automation-studio/runtime/gateway-trace/registry.ts` | - |
+| `AutomationStudioGatewayTraceReplaySources` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/gateway-trace/replay-sources.ts` | - |
 | `AutomationStudioGatewayTraceScreeningSink` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/gateway-trace/screening-sink.ts` | - |
 | `AutomationStudioGatewayTraceTermination` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/gateway-trace/types.ts` | How a closed episode ended. |
 | `AutomationStudioGeneratedCandidateTrial` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service/flow-bootstrap-commands/contracts.ts` | Which candidate, at which revision and digest, and which trial run's confirmed yes produced a proposal. |
@@ -2050,6 +2053,15 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioObjectSummary` | Type | `packages/fluxiq/src/programs/automation-studio/storage/file-store.ts` | - |
 | `AutomationStudioObjectWriteOptions` | Type | `packages/fluxiq/src/programs/automation-studio/storage/object-store.ts` | - |
 | `AutomationStudioObservation` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/adapters.ts` | - |
+| `AutomationStudioOfflineCandidateTrialInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service/offline-trial/contracts.ts` | - |
+| `AutomationStudioOfflineCandidateTrialOutcome` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service/offline-trial/contracts.ts` | - |
+| `AutomationStudioOfflineCandidateTrialRan` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service/offline-trial/contracts.ts` | An offline trial that ran: the candidate trial runner's own outcome (what the trial gate reads), the trial evidence result validated against U5 (what that outcome rests on: recorded evidence and pure computation, never live), the matcher's report it was read from, which session view the matcher's session was attached with (a supplied one is also a declared normalization), and how many of the recorded operations the run matched. |
+| `AutomationStudioOfflineCandidateTrialRefusal` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service/offline-trial/contracts.ts` | Why an offline trial was not run: nothing ran, nothing was judged, and no evidence result exists. |
+| `automationStudioOfflineTrialEvidenceResult` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/service/offline-trial/evidence-result.ts` | - |
+| `AutomationStudioOfflineTrialGateway` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service/offline-trial/contracts.ts` | The gateway the trial's matcher session is attached to, fed through and detached from: the trial's own live gateway. |
+| `AutomationStudioOfflineTrialNormalization` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service/offline-trial/contracts.ts` | Something the offline trial took from outside its trace, declared with every result it produced: what, and why it cannot carry what the candidate did. |
+| `AutomationStudioOfflineTrialPhase` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service/offline-trial/contracts.ts` | The build phase asking for the trial. Offline trials stay out of exploration (Decision 2): `exploration` is refused with `offline_not_allowed_in_phase`; `test` and `repair` may run one. |
+| `AutomationStudioOfflineTrialSource` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service/offline-trial/contracts.ts` | The recorded trace an offline trial runs on: a live trial's `test` trace, by its store and id. |
 | `automationStudioOptionalStepWayOn` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/step-skip/optional-step.ts` | - |
 | `AutomationStudioOutputRead` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/defensive/output-reads.ts` | One place a node reads what another produces: the reader, and the run value path it reads (`${producerId}.${outputId}`, a deeper path under one, the producer's id alone, or a bare output id the run also keys values under). |
 | `automationStudioOutputReads` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/defensive/output-reads.ts` | - |
@@ -2899,6 +2911,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `CLIENT_GATEWAY_TRACE_EVENT_KINDS` | Object | `packages/fluxiq/src/client-gateway/trace/vocabulary.ts` | What an event is. `inbound`: a client message as Core received it. `outbound`: a message Core sent. `lifecycle`: connect, disconnect, pairing. `disposition`: what Core did with an inbound message. `synthesized`: an outcome Core produced itself (a timeout, a close). `control`: an input that arrived outside the socket. `artifact`: captured content arriving. |
 | `CLIENT_GATEWAY_TRACE_ISSUE_CODES` | Object | `packages/fluxiq/src/client-gateway/trace/completeness-vocabulary.ts` | What makes a trace incomplete, each tagged by sequence range or artifact. |
 | `CLIENT_GATEWAY_TRACE_LOSS_REASONS` | Object | `packages/fluxiq/src/client-gateway/trace/completeness-vocabulary.ts` | Why the recorder could not keep a sequence it assigned. |
+| `CLIENT_GATEWAY_TRACE_MATCHER_FIELDS` | Object | `packages/fluxiq/src/client-gateway/trace-matcher/operation/fields.ts` | - |
+| `CLIENT_GATEWAY_TRACE_MATCHER_GAP_REASONS` | Object | `packages/fluxiq/src/client-gateway/trace-matcher/gap-reasons.ts` | - |
 | `CLIENT_GATEWAY_TRACE_METADATA_KEY` | Object | `packages/contracts/src/client-gateway.ts` | Traces (traces and offline trials, P2). Core marks an action command it is tracing with `metadata.trace` (`ClientGatewayTraceRequest`): the client may then upload artifacts of what it observed for that command -- content addressed, PUT to `CLIENT_GATEWAY_TRACE_ARTIFACT_PATH/<sha256>` with its bearer token -- and reference them from its result's `metadata.trace` (`ClientGatewayTraceResultMetadata`). Core records the reference in the trace and takes it off the result before any consumer reads it, so nothing traced ever reaches a run, a recording or a model. A client that cannot capture ignores the request; its result simply carries no reference. Never a top-level key: the durable path refuses a result with an unknown one. |
 | `CLIENT_GATEWAY_TRACE_MINTED_FIELDS` | Object | `packages/fluxiq/src/client-gateway/trace-replay/comparison/minted-fields.ts` | - |
 | `CLIENT_GATEWAY_TRACE_PARITY_CLASSES` | Object | `packages/fluxiq/src/client-gateway/trace-replay/parity-classes.ts` | - |
@@ -2991,6 +3005,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ClientGatewayTraceCompletenessIssue` | Type | `packages/fluxiq/src/client-gateway/trace/types.ts` | One reason a trace is incomplete, tagged by sequence range or artifact. |
 | `ClientGatewayTraceCompletenessStatus` | Type | `packages/fluxiq/src/client-gateway/trace/types.ts` | - |
 | `ClientGatewayTraceContext` | Type | `packages/fluxiq/src/client-gateway/trace/types.ts` | Opaque program context (task inputs, goal contract version), named by its schema. |
+| `clientGatewayTraceContractCompatibility` | Value | `packages/fluxiq/src/client-gateway/trace-matcher/contract-compatibility.ts` | - |
 | `ClientGatewayTraceCorrelation` | Type | `packages/fluxiq/src/client-gateway/trace/types.ts` | Explicit correlations only. A cause is recorded only when it is known; the next state change is never assumed to follow from the previous command. |
 | `ClientGatewayTraceCorrelationInput` | Type | `packages/fluxiq/src/client-gateway/trace/types.ts` | Correlation as the gateway supplies it; `owner` is cloned on record. |
 | `ClientGatewayTraceCorrelationKey` | Type | `packages/fluxiq/src/client-gateway/trace/types.ts` | The correlation fields a store indexes. |
@@ -3002,15 +3017,32 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ClientGatewayTraceEventKind` | Type | `packages/fluxiq/src/client-gateway/trace/types.ts` | - |
 | `clientGatewayTraceEventsWithOnlySession` | Value | `packages/fluxiq/src/client-gateway/trace-replay/session-references/attached.ts` | - |
 | `ClientGatewayTraceFidelityLimitation` | Type | `packages/fluxiq/src/client-gateway/trace/types.ts` | A scope whose evidence is present but withheld: it cannot pass exact parity. |
+| `clientGatewayTraceGapAnswer` | Value | `packages/fluxiq/src/client-gateway/trace-matcher/gap-answer.ts` | - |
 | `ClientGatewayTraceIssueCode` | Type | `packages/fluxiq/src/client-gateway/trace/types.ts` | - |
 | `clientGatewayTraceJsonDifferences` | Value | `packages/fluxiq/src/client-gateway/trace-replay/comparison/json-differences.ts` | - |
 | `ClientGatewayTraceJsonValue` | Type | `packages/fluxiq/src/client-gateway/trace/types.ts` | A deep-frozen JSON value. |
 | `ClientGatewayTraceLoss` | Type | `packages/fluxiq/src/client-gateway/trace/types.ts` | Sequences the recorder assigned and could not keep. |
 | `ClientGatewayTraceLossReason` | Type | `packages/fluxiq/src/client-gateway/trace/types.ts` | - |
 | `ClientGatewayTraceManifest` | Type | `packages/fluxiq/src/client-gateway/trace/types.ts` | What identifies and qualifies one trace. Episode ids are live run ids. |
+| `ClientGatewayTraceMatchedOperation` | Type | `packages/fluxiq/src/client-gateway/trace-matcher/types.ts` | A command answered from the trace. `ordinal`: its place among the commands the matcher was sent, from 1. |
+| `ClientGatewayTraceMatcher` | Class | `packages/fluxiq/src/client-gateway/trace-matcher/matcher.ts` | - |
+| `ClientGatewayTraceMatcherAdmission` | Type | `packages/fluxiq/src/client-gateway/trace-matcher/types.ts` | A trace read and judged for matching: refused, or its operations and deliveries for one session. |
+| `ClientGatewayTraceMatcherClock` | Type | `packages/fluxiq/src/client-gateway/trace-matcher/types.ts` | The trial's clock. Time moves only when the matcher asks it to, by a recorded latency or delta. |
+| `ClientGatewayTraceMatcherDeliveries` | Type | `packages/fluxiq/src/client-gateway/trace-matcher/types.ts` | What the trace delivers before the first recorded operation, and after each one up to the next. |
+| `ClientGatewayTraceMatcherDelivery` | Type | `packages/fluxiq/src/client-gateway/trace-matcher/types.ts` | One recorded event the matcher hands the gateway once its point is reached: an inbound message, an uploaded artifact, or the point where Core's own answer wait ran out for a command (`deadline`: nothing is fed, the clock is moved past it). `atMs` is the logical time the clock is moved to before it. |
+| `ClientGatewayTraceMatcherGap` | Type | `packages/fluxiq/src/client-gateway/trace-matcher/types.ts` | An evidence gap: a command answered with one, or a recorded event or artifact that could not be read or fed. `fields` names what differed from the recorded operation it was compared with, by path, never by value. `cause`: the trace was refused, the command differed from the next recorded operation, it came past the recorded end, it came after an earlier gap, the trace's answer to it could not be read back, or (`failed_delivery`) a recorded event delivered after it could not be read or fed: then the ordinal, command id and action type are the matched command's (0, "" and "" before the first), and `recordedSequence` is the event's. |
+| `ClientGatewayTraceMatcherGapReason` | Type | `packages/fluxiq/src/client-gateway/trace-matcher/types.ts` | - |
+| `ClientGatewayTraceMatcherGateway` | Type | `packages/fluxiq/src/client-gateway/trace-matcher/types.ts` | The gateway the matcher's session is attached to and feeds. |
+| `ClientGatewayTraceMatcherInput` | Type | `packages/fluxiq/src/client-gateway/trace-matcher/types.ts` | - |
+| `ClientGatewayTraceMatcherRefusal` | Type | `packages/fluxiq/src/client-gateway/trace-matcher/types.ts` | Why a trace cannot be matched against at all. |
+| `ClientGatewayTraceMatcherReport` | Type | `packages/fluxiq/src/client-gateway/trace-matcher/types.ts` | What a trial reads from the matcher for its result. |
+| `ClientGatewayTraceMatcherSessionView` | Type | `packages/fluxiq/src/client-gateway/trace-matcher/types.ts` | The public view the matcher's session is attached with, and where it came from: `recorded`, the view the trace took when it first claimed the session (`session.claimed`); `supplied`, a view the caller handed in for a trace that recorded none (in a build, the live session's public view for the same client). A supplied view never stands in for a recorded one. |
 | `ClientGatewayTraceMemoryStore` | Class | `packages/fluxiq/src/client-gateway/trace/memory-store.ts` | - |
 | `clientGatewayTraceOlderDispositionView` | Value | `packages/fluxiq/src/client-gateway/trace-replay/comparison/older-disposition.ts` | - |
 | `ClientGatewayTraceOlderDispositionView` | Type | `packages/fluxiq/src/client-gateway/trace-replay/comparison/older-disposition.ts` | What a version 1 disposition is compared against, and the gap it leaves when nothing else differs. |
+| `ClientGatewayTraceOperation` | Type | `packages/fluxiq/src/client-gateway/trace-matcher/types.ts` | An external call, as the matcher compares it (`./operation/fields.ts`). |
+| `clientGatewayTraceOperationDifferences` | Value | `packages/fluxiq/src/client-gateway/trace-matcher/operation/differences.ts` | - |
+| `ClientGatewayTraceOperationMatch` | Type | `packages/fluxiq/src/client-gateway/trace-matcher/types.ts` | The outcome of comparing one command with the trace at the cursor. |
 | `ClientGatewayTraceOrigin` | Type | `packages/fluxiq/src/client-gateway/trace/types.ts` | Whether a trace is what a live episode delivered (`live`) or something produced from traces: a replay's diagnostic trace, or a trace that left Core and came back (`derived`). A derived trace is never read as live (T24). |
 | `ClientGatewayTraceParityClass` | Type | `packages/fluxiq/src/client-gateway/trace-replay/types.ts` | Why a delivery point diverged. `capture_gap`: the trace lacks something the replay needs. `nondeterminism`: an id or time Core minted, or the order of concurrent handling. `intake_defect`: the same input, a different derivation. |
 | `ClientGatewayTraceParityDivergence` | Type | `packages/fluxiq/src/client-gateway/trace-replay/types.ts` | One delivery point that did not match. |
@@ -3021,6 +3053,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ClientGatewayTracePayloadInput` | Type | `packages/fluxiq/src/client-gateway/trace/types.ts` | - |
 | `ClientGatewayTraceProvenance` | Type | `packages/fluxiq/src/client-gateway/trace/types.ts` | - |
 | `ClientGatewayTraceRecordedCommand` | Type | `packages/fluxiq/src/client-gateway/trace-replay/walk/recorded-command.ts` | - |
+| `clientGatewayTraceRecordedDeliveries` | Value | `packages/fluxiq/src/client-gateway/trace-matcher/recorded-deliveries.ts` | - |
+| `ClientGatewayTraceRecordedOperation` | Type | `packages/fluxiq/src/client-gateway/trace-matcher/types.ts` | A recorded `server.execute_action`: the operation, where the trace delivered it, and the command id it went out with. |
 | `ClientGatewayTraceRecordedSession` | Type | `packages/fluxiq/src/client-gateway/trace-replay/types.ts` | A session the trace met, as the original recorded it. |
 | `ClientGatewayTraceRecorder` | Class | `packages/fluxiq/src/client-gateway/trace/recorder.ts` | - |
 | `ClientGatewayTraceRecorderOptions` | Type | `packages/fluxiq/src/client-gateway/trace/recorder.ts` | - |
@@ -3555,6 +3589,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `LoadFluxIQEnvOptions` | Type | `packages/fluxiq/src/framework/index.ts` | - |
 | `longestWordCut` | Value | `packages/fluxiq/src/ui/activity-status/word-cut.ts` | - |
 | `MarkerEntry` | Type | `packages/fluxiq/src/programs/automation-studio/model/timeline.ts` | - |
+| `matchClientGatewayTraceOperation` | Value | `packages/fluxiq/src/client-gateway/trace-matcher/operation/match.ts` | - |
 | `MAX_DIAGNOSTIC_ENDED_BECAUSE` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/diagnostic.ts` | The most characters a supervisor's screened reason for ending a build carries (`endedBecause`). |
 | `MAX_DIAGNOSTIC_ISSUE_CODES` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/diagnostic.ts` | - |
 | `measureAutomationStudioGraphStoreBenchmark` | Value | `packages/fluxiq/src/programs/automation-studio/testing/scale-graph-store.ts` | - |
@@ -3705,6 +3740,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `readClientGatewayTraceHello` | Value | `packages/fluxiq/src/client-gateway/trace-replay/walk/hello.ts` | - |
 | `readClientGatewayTraceInboundText` | Value | `packages/fluxiq/src/client-gateway/trace-replay/walk/inbound-text.ts` | - |
 | `readClientGatewayTraceMessageStamp` | Value | `packages/fluxiq/src/client-gateway/trace-replay/walk/message-stamp.ts` | - |
+| `readClientGatewayTraceOperation` | Value | `packages/fluxiq/src/client-gateway/trace-matcher/operation/read.ts` | - |
 | `readClientGatewayTraceRecordedCommand` | Value | `packages/fluxiq/src/client-gateway/trace-replay/walk/recorded-command.ts` | - |
 | `readClientGatewayTraceSessions` | Value | `packages/fluxiq/src/client-gateway/trace-replay/walk/recorded-sessions.ts` | - |
 | `readMigrationJournal` | Value | `packages/fluxiq/src/framework/storage-layout.ts` | - |
@@ -3851,6 +3887,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `runAutomationStudioLegacyMigrationOrchestration` | Value | `packages/fluxiq/src/programs/automation-studio/storage/project/migration-cutover.ts` | - |
 | `runAutomationStudioLlmEvidenceLoop` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop.ts` | - |
 | `runAutomationStudioLlmHarness` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/run.ts` | - |
+| `runAutomationStudioOfflineCandidateTrial` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/service/offline-trial/run.ts` | - |
 | `runAutomationStudioRecoveryExploration` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/exploration.ts` | - |
 | `runAutomationStudioRecoveryLadder` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/ladder-run.ts` | - |
 | `runAutomationStudioRouter` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/router-runtime.ts` | - |
@@ -4008,6 +4045,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `TimeoutPolicy` | Type | `packages/fluxiq/src/programs/automation-studio/model/policies.ts` | - |
 | `TotpConfirmRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | - |
 | `TotpRequiredError` | Class | `packages/fluxiq/src/programs/identity-access/runtime/service.ts` | - |
+| `translateClientGatewayTraceCommandIds` | Value | `packages/fluxiq/src/client-gateway/trace-matcher/command-id-translation.ts` | - |
 | `trialAutomationStudioFlowChange` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-change/trial.ts` | - |
 | `TrialState` | Type | `packages/fluxiq/src/ui/activity-status/candidate-trial.ts` | What a build's test of its Flow makes of one event. |
 | `TrustedModuleBuildIdentity` | Type | `packages/fluxiq/src/runtime/build-identity/modules/types.ts` | Optional provenance supplied only by trusted, locally loaded runtime modules. |
