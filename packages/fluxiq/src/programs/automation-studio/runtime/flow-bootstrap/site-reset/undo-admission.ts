@@ -41,15 +41,21 @@
 // and pressing would make the act's change again (photo `run-mvgw7320-de416190`
 // 0151). Which condition is named never changes what is admitted.
 //
-// `./undo-reach.ts` reads these paths to say when none could ever admit an
-// undo for what an act's differing lists show (t748, `no_admissible_undo`):
-// a path added or widened here must be added or widened there too, or an act
-// an undo could still settle would be listed apart.
+// The act's side of each path (what the act must be: a legacy act's created
+// items, its own item, a witnessed transfer, a landed undo's chain, an act that
+// created, a strict act that created or changed, a list it named or was lent)
+// is read from `./undo-paths.ts` (t750), the one source `./undo-reach.ts` also
+// reads to say when none could ever admit an undo for what an act's differing
+// lists show (t748, `no_admissible_undo`); what the act was about is read from
+// `../reset-settlement/act-subjects.ts`, as the settlement reads it. A path's
+// act gate added or widened goes there; what stays here is the control's side
+// and the classes declared.
 
 import type { AutomationStudioActionConsequence, AutomationStudioActionEffect } from "../../action-permissions/index.ts";
 import { automationStudioSiteResetRefusal as refusal, type AutomationStudioSiteResetCanMeet, type AutomationStudioSiteResetFailed } from "../reset-answers/index.ts";
-import type { AutomationStudioSiteResetObservations } from "../reset-settlement/index.ts";
+import { automationStudioSiteResetActSubjects as actSubjects, type AutomationStudioSiteResetObservations } from "../reset-settlement/index.ts";
 import type { AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetSpot, AutomationStudioSiteResetTarget } from "./contracts.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_UNDO_PATHS as PATHS } from "./undo-paths.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "./words.ts";
 
 /** For each undoable class, the classes an undo tied to its act by subject may declare (t719): what reverses it, and nothing else lasting. */
@@ -119,7 +125,7 @@ export function automationStudioSiteResetUndoAdmission<A extends AutomationStudi
     return unproved(declared.control.state !== toggle.to ? ["control_state_differs", "no_call"] : ["consequence_not_inverse", "this_page"]);
   }
   if (act.strictReset && declared.consequences.length === 0 && (declared.control.scope !== undefined || declared.control.subject !== undefined || declared.control.item !== undefined)) return unproved(toggle ? ["control_elsewhere", "another_page"] : ["undeclared_press", "this_page"]);
-  if (act.transfer && declared.consequences.length > 0) {
+  if (PATHS.transfer(act) && declared.consequences.length > 0) {
     const transfer = act.transfer;
     const unmet = transferUnmet(ledger.seen, act, declared);
     if (!unmet) {
@@ -129,12 +135,11 @@ export function automationStudioSiteResetUndoAdmission<A extends AutomationStudi
     return unproved(unmet);
   }
   const { item, dialog } = declared.control;
-  const createdItem = item !== undefined && act.createdItems.includes(item);
-  if (createdItem && !act.strictReset) return { kind: "admit", on: "created", allowed: act.spent ? [] : ["delete"] };
+  if (item !== undefined && PATHS.createdItems(act).includes(item)) return { kind: "admit", on: "created", allowed: act.spent ? [] : ["delete"] };
   // Identified created items use the same complete original-scope proof as
   // cross-page subjects below; an item token alone cannot prove restoration.
-  if (!createdItem && act.spot && sameItem(act.spot, declared.control)) return { kind: "admit", on: "own", allowed: [] };
-  if (item === undefined && dialog !== undefined && act.chain) return { kind: "admit", on: "follow_up", allowed: act.chain === "created" && !act.spent ? ["delete"] : [] };
+  if (act.spot && PATHS.ownItem(act) && sameItem(act.spot, declared.control)) return { kind: "admit", on: "own", allowed: [] };
+  if (item === undefined && dialog !== undefined && PATHS.followUp(act)) return { kind: "admit", on: "follow_up", allowed: act.chain === "created" && !act.spent ? ["delete"] : [] };
   if (item === undefined && dialog === undefined && declared.consequences.length === 0) return { kind: "admit", on: "moving", allowed: [] };
   // About what the act was about, by a positive match, reversing its classes only (t719).
   if (aboutTheAct(act, declared.control) && reverses(act.consequences, declared.consequences)) {
@@ -214,11 +219,11 @@ function subjectDeletionUnmet<A extends AutomationStudioSiteResetAdmittedAct>(le
   const { scope, subject } = declared.control;
   if (scope === undefined || subject === undefined) return ["no_item_identity", "this_page"];
   const baseline = seen.originals.get(scope);
-  if (!baseline || baseline.beforeAct >= acts.indexOf(act) + 1) return ["no_destination_read_before", "no_call"];
+  if (!PATHS.readBefore(baseline, acts.indexOf(act) + 1)) return ["no_destination_read_before", "no_call"];
   if (seen.currentGroups.get(scope) !== baseline.group || !seen.latestGroupScopes.get(baseline.group)?.has(scope)) return ["destination_not_read_now", "this_page"];
   if (baseline.subjects.has(subject)) return ["subject_there_before", "no_call"];
   if (!seen.currentSubjects.get(scope)?.has(subject)) return ["subject_not_present_now", "no_call"];
-  if (!act.consequences.includes("create_new")) return ["no_exact_inverse", "no_call"];
+  if (!PATHS.deletesCreated(act)) return ["no_exact_inverse", "no_call"];
   if (declared.consequences.length !== 1 || declared.consequences[0] !== "delete") return ["consequence_not_inverse", "this_page"];
   return undefined;
 }
@@ -237,8 +242,7 @@ function destinationRemoval<A extends AutomationStudioSiteResetAdmittedAct>(ledg
 
 /** Whether `control` sits in a list the act named, its own or lent (header, t743). */
 function namedDestination(act: AutomationStudioSiteResetAdmittedAct, control: AutomationStudioSiteResetSpot): boolean {
-  if (control.scope === undefined) return false;
-  return [...act.destinations, ...(act.lent ?? [])].some((entry) => entry.scope === control.scope);
+  return control.scope !== undefined && PATHS.named(act, act.lent, control.scope);
 }
 
 /**
@@ -256,12 +260,13 @@ function destinationRemovalUnmet<A extends AutomationStudioSiteResetAdmittedAct>
   if (act.spent) return ["undo_spent", "no_call"];
   const sequence = acts.indexOf(act) + 1;
   const baseline = seen.originals.get(scope);
-  if (!baseline || baseline.beforeAct >= sequence) return ["no_destination_read_before", "no_call"];
+  if (!PATHS.readBefore(baseline, sequence)) return ["no_destination_read_before", "no_call"];
   const fresh = seen.currentGroups.get(scope) === baseline.group && seen.latestGroupScopes.get(baseline.group)?.has(scope) === true && (seen.groupObservedAfter.get(baseline.group) ?? -1) >= sequence;
   if (!fresh) return ["destination_not_read_now", "this_page"];
   if (baseline.subjects.has(subject)) return ["subject_there_before", "no_call"];
   if (!seen.currentSubjects.get(scope)?.has(subject)) return ["subject_not_present_now", "no_call"];
-  if (!act.consequences.some((consequence) => consequence === "create_new" || consequence === "modify_existing")) return ["no_exact_inverse", "no_call"];
+  // Only a strict act reaches here (`destinationRemoval`, `unmatched`), so the gate's own strictness changes nothing.
+  if (!PATHS.removesOnDestination(act)) return ["no_exact_inverse", "no_call"];
   if (declared.consequences.length === 0 || declared.consequences.some((consequence) => !REMOVES.has(consequence))) return ["consequence_not_inverse", "this_page"];
   return undefined;
 }
@@ -326,9 +331,7 @@ function sameItem(spot: AutomationStudioSiteResetSpot, control: AutomationStudio
  * present and equal; a token missing on either side is never a match.
  */
 function aboutTheAct(act: AutomationStudioSiteResetAdmittedAct, control: AutomationStudioSiteResetSpot): boolean {
-  if (control.subject === undefined) return false;
-  if (act.spot?.subject === control.subject) return true;
-  return act.spot?.item === undefined && act.spot?.page === control.subject;
+  return control.subject !== undefined && actSubjects(act.spot).includes(control.subject);
 }
 
 /** Whether every lasting class an undo declares reverses one of the act's (t719); declaring none reverses nothing and is no harm. */

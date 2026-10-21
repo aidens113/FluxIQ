@@ -1,6 +1,3 @@
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioActionConsequence } from "../../../action-permissions/index.ts";
 import {
@@ -130,19 +127,5 @@ describe("an act an undo can still put back is unchanged (guard)", () => {
     readList(ledger, [...ORIGINAL, ["s:codex", "v:unread"], ["s:stray", "v:unread"]]);
     expect(ledger.unsatisfiable()).toEqual([]);
     expect(ledger.inPlace().map((entry) => entry.act)).toEqual(["act-1", "act-2"]);
-  });
-});
-
-// `../undo-reach.ts` mirrors the admission paths of `../undo-admission.ts` by copy (both headers say so). A path added,
-// removed or changed there changes what no undo can reach, and an act an undo could still settle would be listed
-// apart. This pin fails on any change to an admitting line until `../undo-reach.ts` is checked against it (t748).
-describe("the admission paths undo-reach mirrors", () => {
-  it("are the ones undo-admission admits on, unchanged", () => {
-    const source = readFileSync(fileURLToPath(new URL("../undo-admission.ts", import.meta.url)), "utf8");
-    const admitting = source.split(/\r?\n/u).filter((line) => line.includes('kind: "admit"')).map((line) => line.trim());
-    const kinds = [...source.matchAll(/\{ kind: "admit", on: "([a-z_]+)"/gu)].map((match) => match[1]);
-    const why = "an admitting line of ../undo-admission.ts changed: update ../undo-reach.ts to match, then this pin";
-    expect(kinds, why).toEqual(["moving", "own", "subject", "created", "own", "follow_up", "moving", "subject", "subject"]);
-    expect(createHash("sha256").update(admitting.join("\n")).digest("hex").slice(0, 16), why).toBe("ba1fdbb1b48d4c11");
   });
 });

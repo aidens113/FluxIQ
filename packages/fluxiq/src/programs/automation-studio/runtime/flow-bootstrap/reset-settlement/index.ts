@@ -5,6 +5,7 @@
 // judgement to. Site-reset depends on this directory; it never depends on
 // site-reset.
 export * from "./act-groups.ts";
+export * from "./act-subjects.ts";
 export * from "./collection-groups.ts";
 export * from "./control-tracker.ts";
 export * from "./decision.ts";
