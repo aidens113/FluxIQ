@@ -61,7 +61,7 @@ describe("a brief's condition Core's record kept, dropped after a no on advice i
     const exact = await proposed(submit(script([promoted, open, rating, campground, notCabin])));
     const trial = await gate.test({ revision: exact.revision, digest: exact.digest });
     expect(trial.resultCode).toBe("subflow.trial_unsure");
-    expect(String((((trial.evidence as JsonObject).feedback as JsonObject).unconfirmedReading as JsonObject).advice)).toContain("Judge call 1 (no defect Core can find in this result)");
+    expect(String((((trial.evidence as JsonObject).feedback as JsonObject).unconfirmedReading as JsonObject).advice)).toContain("Judge call 1 (Core's record contradicts part of this reading: Of the 2 rows condition 1 (promoted is absent)");
     expect(JSON.stringify(trial.evidence)).not.toContain("keptConditions");
     expect(gate.standing(exact)).toMatchObject({ keptConditions: [{ name: "condition 1 (promoted is absent)" }, { revision: exact.revision }] });
 
