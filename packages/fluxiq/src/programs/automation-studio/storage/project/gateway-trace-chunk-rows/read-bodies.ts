@@ -6,8 +6,8 @@
 // it names must be in the same form (t745): the same address key, or none; a
 // chunk in another form throws, as a keyed chunk the store cannot verify does.
 import type { AutomationStudioSqlExecutor } from "../database.ts";
-import { openGatewayTraceChunk } from "./open-chunk.ts";
-import type { GatewayTraceChunkSealing, GatewayTraceChunkedBodyRef } from "./types.ts";
+import { openGatewayTraceChunk } from "../gateway-trace-chunk-codec/index.ts";
+import type { GatewayTraceChunkSealing, GatewayTraceChunkedBodyRef } from "../gateway-trace-chunk-codec/index.ts";
 
 const DIGEST_BYTES = 32;
 const DIGESTS_PER_STATEMENT = 400;

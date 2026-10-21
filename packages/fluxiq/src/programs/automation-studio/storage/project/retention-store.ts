@@ -3,7 +3,7 @@ import { AutomationStudioProjectAdministration } from "./administration.ts";
 import { AutomationStudioProjectContentStore } from "./content-store.ts";
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "./database.ts";
 import type { AutomationStudioEventStreamKind } from "./event-chunk-store.ts";
-import { sweepUnusedGatewayTraceChunks } from "./gateway-trace/index.ts";
+import { sweepUnusedGatewayTraceChunks } from "./gateway-trace-chunk-rows/index.ts";
 
 export type AutomationStudioArchivedChunk = { chunkId: string; objectId: string; lastSequence: number; archivedAt: number; jobId: string };
 

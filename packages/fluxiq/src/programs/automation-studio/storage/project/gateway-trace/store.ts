@@ -7,7 +7,7 @@
 //
 // An event's JSON is kept inline below `GATEWAY_TRACE_CHUNK_BOUNDS.inlineBelowBytes`,
 // otherwise cut into content-defined chunks stored once per project
-// (`chunk-bounds.ts`, lane T P3): a view repeated from command to command is kept
+// (`../gateway-trace-chunk-codec/chunk-bounds.ts`, lane T P3): a view repeated from command to command is kept
 // once, not once per event. Rows 0030 wrote with the JSON in one content object
 // still read. Artifact bytes always go to the content store, and every content
 // object a trace uses carries an owner reference
@@ -20,11 +20,12 @@
 // as an event whose content object is gone does: never a shortened payload.
 //
 // Opened with a content protection (lane T P3-E), no event JSON stays inline and
-// every chunk and artifact is sealed with it (`seal-chunk.ts`, `protect-chunks.ts`).
+// every chunk and artifact is sealed with it (`../gateway-trace-chunk-codec/seal-chunk.ts`,
+// `../gateway-trace-chunk-rows/protect-chunks.ts`).
 // It also opens the project's content-address keyring (t745; a keyring that
 // cannot open fails the open): new chunks are cut and addressed under its
 // current key, artifact digests are keyed and manifests sealed
-// (`keyed-digests.ts`, `manifest-row.ts`). Every row records its form, so rows in the old form
+// (`../gateway-trace-chunk-codec/keyed-digests.ts`, `manifest-row.ts`). Every row records its form, so rows in the old form
 // (null key id) still read, by any store; keyed rows read only with the keyring.
 // A protected open first converts what the project already holds to the keyed
 // forms (`../gateway-trace-rekey/`): old-form event bodies re-cut into keyed
@@ -51,21 +52,20 @@ import { AutomationStudioProjectContentStore } from "../content-store.ts";
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../database.ts";
 import { rekeyGatewayTraceStore } from "../gateway-trace-rekey/index.ts";
 import type { GatewayTraceRekeyOptions, GatewayTraceRekeyResult } from "../gateway-trace-rekey/index.ts";
-import { AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_MIGRATION } from "./chunk-migration.ts";
-import { AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_PROTECTION_MIGRATION } from "./chunk-protection-migration.ts";
+import { gatewayTraceArtifactRowDigest, prepareGatewayTraceEventBody } from "../gateway-trace-chunk-codec/index.ts";
+import type { GatewayTraceChunkSealing, GatewayTraceChunkedBodyRef, GatewayTraceEventBody } from "../gateway-trace-chunk-codec/index.ts";
+import { deleteGatewayTraceChunkUses, readGatewayTraceChunkedBodies, writeGatewayTraceChunks } from "../gateway-trace-chunk-rows/index.ts";
+import {
+  AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_MIGRATION,
+  AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_PROTECTION_MIGRATION,
+  AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_KEYED_ADDRESS_MIGRATION,
+  AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION
+} from "../gateway-trace-schema/index.ts";
 import type { AutomationStudioGatewayTraceChunkSetMeasure } from "./chunk-set-measure.ts";
-import { deleteGatewayTraceChunkUses } from "./delete-chunk-uses.ts";
-import { AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_KEYED_ADDRESS_MIGRATION } from "./keyed-address-migration.ts";
-import { gatewayTraceArtifactRowDigest } from "./keyed-digests.ts";
 import { readGatewayTraceManifestRow, writeGatewayTraceManifestRow } from "./manifest-row.ts";
 import type { GatewayTraceManifestRow } from "./manifest-row.ts";
 import type { AutomationStudioGatewayTraceMeasure } from "./measure.ts";
 import { measureGatewayTraceChunkSetRows, measureGatewayTraceRows } from "./measure-rows.ts";
-import { AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION } from "./migration.ts";
-import { prepareGatewayTraceEventBody } from "./prepare-body.ts";
-import { readGatewayTraceChunkedBodies } from "./read-bodies.ts";
-import type { GatewayTraceChunkSealing, GatewayTraceChunkedBodyRef, GatewayTraceEventBody } from "./types.ts";
-import { writeGatewayTraceChunks } from "./write-chunks.ts";
 
 const OWNER_KIND = "client_gateway_trace";
 

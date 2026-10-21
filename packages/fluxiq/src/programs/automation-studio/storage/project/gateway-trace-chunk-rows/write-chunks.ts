@@ -2,15 +2,14 @@
 // them. Runs inside the append transaction, so the existence check and the
 // insert see the same state a concurrent trace deletion leaves: a chunk this
 // batch counts on cannot be freed between the two. Only chunks the project
-// does not hold yet are compressed and sealed (`seal-chunk.ts`), and a held
+// does not hold yet are compressed and sealed (`../gateway-trace-chunk-codec/seal-chunk.ts`), and a held
 // chunk that is not sealed is sealed now when the store has a protection: a
 // write never leaves page content it reuses unprotected. Each row records the
 // address key its digest was made under (t745); a held row in another form than
 // the chunk being written throws, since the event would not read back.
 import type { AutomationStudioSqlExecutor } from "../database.ts";
-import { packGatewayTraceChunk } from "./pack-chunk.ts";
-import { sealGatewayTraceChunk } from "./seal-chunk.ts";
-import type { GatewayTraceChunk, GatewayTraceChunkSealing } from "./types.ts";
+import { packGatewayTraceChunk, sealGatewayTraceChunk } from "../gateway-trace-chunk-codec/index.ts";
+import type { GatewayTraceChunk, GatewayTraceChunkSealing } from "../gateway-trace-chunk-codec/index.ts";
 
 /** Rows per multi-row statement; keeps every statement well under SQLite's bound-parameter limit. */
 const ROWS_PER_STATEMENT = 400;

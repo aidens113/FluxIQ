@@ -22,7 +22,7 @@
 // with no request the scrub is one read. Its status is reported, never thrown.
 import type { AutomationStudioProjectDatabase } from "../database.ts";
 import { scrubProjectDatabaseIfRequested } from "../content-address/index.ts";
-import { protectGatewayTraceChunks } from "../gateway-trace/protect-chunks.ts";
+import { protectGatewayTraceChunks } from "../gateway-trace-chunk-rows/index.ts";
 import type { ContentAddressScrubStatus } from "../content-address/index.ts";
 import { rekeyGatewayTraceArtifacts } from "./artifacts.ts";
 import type { GatewayTraceArtifactRekeyResult } from "./artifacts.ts";

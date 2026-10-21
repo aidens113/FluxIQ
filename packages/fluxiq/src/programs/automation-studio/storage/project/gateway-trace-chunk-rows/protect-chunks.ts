@@ -9,8 +9,8 @@
 // a batch that sealed rows in place requests one in its own transaction.
 import { requestContentAddressScrub } from "../content-address/index.ts";
 import type { AutomationStudioProjectDatabase } from "../database.ts";
-import { sealGatewayTraceChunk } from "./seal-chunk.ts";
-import type { GatewayTraceChunkSealing } from "./types.ts";
+import { sealGatewayTraceChunk } from "../gateway-trace-chunk-codec/index.ts";
+import type { GatewayTraceChunkSealing } from "../gateway-trace-chunk-codec/index.ts";
 
 const ROWS_PER_BATCH = 200;
 
