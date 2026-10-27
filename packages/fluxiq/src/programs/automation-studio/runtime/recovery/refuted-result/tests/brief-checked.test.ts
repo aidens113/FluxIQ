@@ -19,9 +19,16 @@ const instruction: AutomationStudioFlowInstruction = {
   scope: { kind: "flow", projectId: "project-1", flowId: "flow-1" }, priority: 1, status: "active", requirement: "required", createdAt: 1, updatedAt: 1
 };
 
+// A current negative verdict must list its defects (t752, 534c41fb), and Core only takes a no whose defect it finds in its own record.
+// The judge of step 0039 also said the result keeps sponsored placements and lists a pair twice; those it can find. Its claim that the
+// Plus condition left out B0J5MCMBAY and B07Z1RZGJG is the one Core's check contradicts, which is what this test is about.
+const DEFECTS = [
+  { kind: "kept_not_asked", row: "Lumo Audio Drift Wireless Earbuds, Bluetooth 5.3 Headphones with 50H Playtime, Ear Hooks for Running, IPX7 Waterproof, Rose Gold", requestWords: "list each pair only once even if it turns up on two pages" }
+];
+
 const provider: AutomationStudioLlmProvider = {
   metadata: { provider: "mock", model: "debug-model" },
-  runTask: async (_request: AutomationStudioLlmTaskRequest) => ({ response: { kind: "diagnosis", summary: RUN_MUW60J7C_RESULT_JUDGE.summary, diagnosis: RUN_MUW60J7C_RESULT_JUDGE.diagnosis }, usage: USAGE }) as never
+  runTask: async (_request: AutomationStudioLlmTaskRequest) => ({ response: { kind: "diagnosis", summary: RUN_MUW60J7C_RESULT_JUDGE.summary, diagnosis: { ...RUN_MUW60J7C_RESULT_JUDGE.diagnosis, defects: DEFECTS } }, usage: USAGE }) as never
 };
 
 /** The brief the re-author of step 0039's refutation is given, from the real verification. */

@@ -34,6 +34,16 @@
 // it is. A list whose next part the page names by a number or a control says
 // what it said; the judges' prose says the same for every list
 // (`../../llm/diagnosis-instructions.ts`).
+//
+// **A list goes on, ends, or is paused by the site (t755).** A list whose
+// loader answered the read's reveal with a notice to wait before it loads more
+// grew no further, and until 2026-10-27 read as one that had ended: a read of
+// the first screens of a longer list said nothing of the rest while the page
+// asked to wait under it. Such a read now carries `loader_asked_to_wait`; its
+// sentence says the list paused rather than ended, and its fix line says each
+// move to the next part waits out the page's pause first. An ended list still
+// sends nothing: a step that moves the list on says when it has ended (its
+// `ended` answer), and that is where a loop learns it.
 
 import type { AutomationStudioResultReadAccount } from "../contracts/index.ts";
 
@@ -44,12 +54,20 @@ export function automationStudioResultReadListContinues(read: AutomationStudioRe
   const seen = read.itemsSeen !== undefined ? `saw ${read.itemsSeen} ${read.itemsSeen === 1 ? "item" : "items"} and kept ${read.kept}` : `kept ${read.kept}`;
   return {
     said: `Step ${read.nodeId} read one part of a list that goes on past it (${shownBy(fact)}): it ${seen}, and no item after those was read.${grows(fact) ? ` ${PAST_THE_RANGE}` : ""}`,
-    fix: `To read past what step ${read.nodeId} read, move that same list on to its next part (${wayOn(fact.kind)}) and repeat the read after each move, in a loop, until the list ends or holds what the request asks for. Where the request asks only for what its first part shows, or what was read already reaches an end the page itself marks or the end of the range the request asks for, leave the read as it is.`
+    fix: `To read past what step ${read.nodeId} read, move that same list on to its next part (${wayOn(fact.kind)}) and repeat the read after each move, in a loop, until the list ends or holds what the request asks for.${paused(fact) ? ` ${PAUSED_FIX}` : ""} Where the request asks only for what its first part shows, or what was read already reaches an end the page itself marks or the end of the range the request asks for, leave the read as it is.`
   };
 }
 
 /** That a list going on past its own end, or past the range asked for, is not rows missing from that range (header, t741 D). */
 const PAST_THE_RANGE = "Where it goes on past an end the page itself marks, or past the range the request asks for, what follows is not rows missing from that range: judge what was read against the request's own range.";
+
+/** That a paused list is moved on only once the page's own pause is over (header, t755). */
+const PAUSED_FIX = "The page paused this list: before each move, wait as long as its notice asks, or press the retry control the notice offers once it shows, as a person would.";
+
+/** Whether the list's loader asked to wait, rather than the list ending (header, t755). */
+function paused(fact: { evidence: string }): boolean {
+  return fact.evidence === "loader_asked_to_wait";
+}
 
 /** Whether the list grows as it is revealed, rather than naming its next part by a number or a control (header, t741 D). */
 function grows(fact: { kind: string; evidence: string }): boolean {
@@ -61,6 +79,7 @@ function shownBy(fact: { kind: string; evidence: string }): string {
   if (fact.evidence === "following_page_number") return "the page shows a numbered page after the current one";
   if (fact.evidence === "declared_feed") return "the page marks it as a list that loads more as it is scrolled, and it was still growing when the read stopped revealing more of it";
   if (fact.evidence === "still_growing") return "it was still growing when the read stopped revealing more of it";
+  if (fact.evidence === "loader_asked_to_wait") return "the page answered the read's reveal of its end with a notice to wait before it loads more, so the list paused there rather than ended";
   if (fact.kind === "next_page") return "the page shows a control to its next page";
   if (fact.kind === "load_more") return "the page shows a control that loads more of it";
   if (fact.kind === "infinite_scroll") return "the page marks it as a list that loads more as it is scrolled";

@@ -111,8 +111,7 @@ const TESTED_VALUE = /^(.+?) — (?:\(withheld\)|[\p{L}\p{N}_.$@-]{1,64}: .*)$/s
 const TESTED_COLUMN = /^.+? — ([\p{L}\p{N}_.$@-]{1,64}): /su;
 /** A presence test's wording (`../read-account/condition.ts`): its column, what its read found where said, and `is present` or `is absent`. */
 const PRESENCE_WORDING = /^([\p{L}\p{N}_.$@-]{1,64})(?: \(read .*\))? (?:not )?is (?:present|absent)$/su;
-/** A text test's relation, with quoted text or a list of it (t624); and its wording when a column names what it tests. */
-const TEXT_RELATION = / (?:not )?(?:contains|startsWith|endsWith|matches|equals) \[?"/u;
+/** A text test's wording when a column names what it tests (t624). */
 const TEXT_WORDING = /^([\p{L}\p{N}_.$@-]{1,64})(?: \(read .*\))? (?:not )?(?:contains|startsWith|endsWith|matches|equals) \[?"/su;
 
 /**
@@ -149,7 +148,7 @@ export function automationStudioRequestRowsReads(summary: AutomationStudioRunRes
     const conditions = (account.conditions ?? []).flatMap((entry, index) => {
       if (!entry.leftOutOnlyByThis?.length) return [];
       const number = entry.number ?? index + 1;
-      const settled = entry.leftOutSettled?.length ? { labels: entry.leftOutSettled.map(automationStudioRequestRowLabel), names: boundNames(number, entry.leftOutSettled, entry.condition) } : undefined;
+      const settled = entry.leftOutSettled?.length ? { labels: entry.leftOutSettled.map(automationStudioRequestRowLabel), names: boundNames(number, entry.leftOutSettled, entry.condition, entry.settledKind ?? "bound"), kind: entry.settledKind ?? "bound" } : undefined;
       return [condition(automationStudioResultConditionName(number, entry.condition), entry.leftOutOnlyByThis, entry.testedLabel === true, settled)];
     });
     const leftOut = new Set(conditions.flatMap((entry) => entry.labels));
@@ -208,10 +207,11 @@ function condition(name: string, rows: string[], testedLabel: boolean, settled?:
  * it, and its wording gives no number: it bounds nothing, and a number in a
  * text test's text is part of what it looks for (header, t624).
  */
-function boundNames(number: number, settledRows: readonly string[], wording: string | undefined): string[][] {
+function boundNames(number: number, settledRows: readonly string[], wording: string | undefined, kind: "bound" | "presence" | "text"): string[][] {
   const names = [wordsOf(`condition ${number}`)];
   const presence = PRESENCE_WORDING.exec(wording ?? "")?.[1];
-  const unbounded = presence !== undefined || TEXT_RELATION.test(wording ?? "");
+  // Whether the condition bounds a number is the kind Core settled it by, not a re-reading of its wording.
+  const unbounded = kind !== "bound";
   const column = TESTED_COLUMN.exec(AutomationStudioRequestRowId.unsaid(settledRows[0] ?? ""))?.[1] ?? presence ?? TEXT_WORDING.exec(wording ?? "")?.[1];
   if (column) names.push(wordsOf(column), wordsOf(column.replace(/(\p{Ll})(\p{Lu})/gu, "$1 $2")));
   if (!unbounded) for (const word of wordsOf(wording ?? "")) if (/^\p{N}+$/u.test(word)) names.push([word]);

@@ -252,9 +252,8 @@ re-dispatched worker is still the same unit of work. Workers never commit, so
 agent identity travels in commit trailers rather than in a branch name.
 
 MeritClaude's automatic git management applies here only as this file allows:
-branches go through `pnpm task`, never MeritClaude's `branch.mjs`, and nothing
-here runs `branch.mjs promote` or otherwise moves `main` (see Committing And
-Pushing).
+branches go through `pnpm task`, never MeritClaude's `branch.mjs`, and `main`
+moves only as Committing And Pushing says.
 
 The supervisor picks the tier when it writes the brief:
 
@@ -330,8 +329,17 @@ the downstream change ships.
 Otherwise commit locally and say what is holding the push. Always state what
 was pushed and what was not.
 
-Require explicit user approval every time for: pushing to `main` or opening a
-pull request into it; any force-push; any history rewrite, including
+**Promote `dev` to `main` without being asked** (user, 2026-10-27: "automatically
+manage pushing to main"). The supervisor fast-forwards `main` to a `dev` commit
+and pushes it once a full sweep on that commit (`pnpm check`, `pnpm test`,
+`pnpm build`, and the whole vitest run) passed and nothing known to be broken is
+on it. Paired work promotes both repositories in the same unit. Promotion is a
+fast-forward only (`git push origin <dev-commit>:main`); if `main` has diverged
+from `dev`, stop and ask. Never promote through MeritClaude's
+`branch.mjs promote`, which also publishes packages.
+
+Require explicit user approval every time for: opening a pull request into
+`main`; any force-push; any history rewrite, including
 `filter-repo`, interactive rebase, and amending pushed commits; deleting
 remote branches or tags.
 

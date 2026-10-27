@@ -140,6 +140,19 @@ describe("the build-test judge with a checklist", () => {
     expect(JSON.stringify(given)).toBe(before);
     expect(judged.buildTest).toBe(given.buildTest);
   });
+
+  // t757 (a request for records confirmed with none kept): a part's declared answer rides on its asked entry, labelled; a checklist declaring none is as before.
+  it("carries a part's declared answer of records and says what it asks; a checklist declaring none is byte for byte as before", () => {
+    const declared: AutomationStudioBuildTestTaskChecklist = { ...CHECKLIST, parts: [CHECKLIST.parts[0]!, { ...CHECKLIST.parts[1]!, answer: { kind: "records", columns: ["title", "year"] } }] };
+    const section = (automationStudioBuildTestSummaryWithTaskChecklist(summary(), declared) as unknown as { taskChecklist: { supplementary: string; asked: Array<Record<string, unknown>> } }).taskChecklist;
+    expect(section.asked[1]).toEqual({ part: "p2", words: "record each volume's title", goalFacts: ["Every volume's title is recorded"], lastingActs: ["create_new"], answer: { kind: "records", columns: ["title", "year"] } });
+    expect(section.asked[0]).not.toHaveProperty("answer");
+    expect(section.supplementary).toContain("answer.columns");
+    expect(section.supplementary).toContain("recordSets");
+    const plain = (automationStudioBuildTestSummaryWithTaskChecklist(summary(), CHECKLIST) as unknown as { taskChecklist: { supplementary: string } }).taskChecklist;
+    expect(plain.supplementary).not.toContain("answer");
+    expect(section.supplementary.startsWith(plain.supplementary)).toBe(true);
+  });
 });
 
 // User rule: model guidance never teaches to the test. The section's label is
@@ -152,8 +165,9 @@ describe("the checklist's label", () => {
   const LAB_TASK_WORDS = /friend|earbud|kettle|basket|cart\b|towel|napkin|dish soap|pickup|watchlist|bid\b|auction|coupon|connection|invitation|saved item|classified|giveaway|glaze|moon jar|quote|gas engineer|job|rust role|group post|feed|digest|open day|rating|shirt|colour|size\b|quantity|rate limit|brightaisle|farbazaar|valueridge|kerbfind|guildline|hammerline|circleway|voltbay|tidewell/iu;
 
   it("names none of the ten realistic scenarios, their sites or their tasks", () => {
-    const section = (automationStudioBuildTestSummaryWithTaskChecklist(summary(), { parts: [], notAsked: [], outOfScope: [{ id: "p9", words: "" }], possiblyLasting: ["n1"] }) as unknown as { taskChecklist: Record<string, unknown> }).taskChecklist;
-    const text = `${String(section.supplementary)}\n${Object.keys(section).join("\n")}\n${["part", "words", "goalFacts", "lastingActs"].join("\n")}`;
+    const declared = [{ id: "p8", words: "", goalFacts: [], lastingActs: [], answer: { kind: "records" as const, columns: [] } }];
+    const section = (automationStudioBuildTestSummaryWithTaskChecklist(summary(), { parts: declared, notAsked: [], outOfScope: [{ id: "p9", words: "" }], possiblyLasting: ["n1"] }) as unknown as { taskChecklist: Record<string, unknown> }).taskChecklist;
+    const text = `${String(section.supplementary)}\n${Object.keys(section).join("\n")}\n${["part", "words", "goalFacts", "lastingActs", "answer", "kind", "records", "columns"].join("\n")}`;
     for (const scenario of SCENARIOS) {
       expect(text.toLowerCase()).not.toContain(scenario);
       for (const word of scenario.split("-")) expect(text.toLowerCase(), word).not.toMatch(new RegExp(`\\b${word}\\b`, "u"));

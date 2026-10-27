@@ -34,13 +34,30 @@ import { automationStudioProjectJsonShape as shape, type AutomationStudioProject
 // `notAsked` item the amendment adds that holds a part's words, or is held in
 // them, is refused under the same code. Core measures the text and nothing
 // else; giving a part up is an honest ending, never a plan without it.
+//
+// **A part that asks for records says so (t757).** Auction
+// `run-mveba82m-fd0616dc` asked for a record with three columns; the Flow read
+// three values, stored no record set, and every judge said yes with
+// `recordSetCount 0` in front of it. Nothing typed said the request wanted
+// records, and Core may not infer that from the request's words. So a part may
+// declare `answer: { kind: "records", columns }`: the answer it asks for is
+// records, with the columns the request names (none named, an empty list). A
+// judge's yes on a run that stored none is then held
+// (`../../result-verification/requested-output/`). Absent, the part asks for an
+// act, or a read nobody owes records for, as every part did before; a spec
+// digested before the field existed keeps its digest.
 
 export type AutomationStudioProjectTaskPart = {
   id: string;
   quote: { sourceId: string; text: string };
   goalFacts: string[];
   lastingActs: AutomationStudioActionConsequence[];
+  /** The answer the part asks for, where it is records (header, t757). Absent, none is owed. */
+  answer?: AutomationStudioProjectTaskAnswer;
 };
+
+/** A part's declared answer (header, t757): records, with the columns the request names, in its order. */
+export type AutomationStudioProjectTaskAnswer = { kind: "records"; columns: string[] };
 
 export type AutomationStudioProjectTaskSpec = {
   parts: AutomationStudioProjectTaskPart[];
@@ -49,7 +66,8 @@ export type AutomationStudioProjectTaskSpec = {
 };
 
 const VERSION = "project.task_spec.v1";
-const LIMITS = { parts: 50, quote: 4000, facts: 50, fact: 500, notAsked: 50 } as const;
+const LIMITS = { parts: 50, quote: 4000, facts: 50, fact: 500, notAsked: 50, columns: 50, column: 200 } as const;
+const ANSWER_KINDS = ["records"] as const;
 
 export const automationStudioProjectTaskSpec = Object.freeze({
   /** The digest of a spec's content; the `digest` field is excluded. */
@@ -180,7 +198,7 @@ function read(value: unknown): AutomationStudioProjectTaskSpec {
 }
 
 function readPart(value: unknown, path: string): AutomationStudioProjectTaskPart {
-  const fields = shape.object(value, path, ["id", "quote", "goalFacts", "lastingActs"]);
+  const fields = shape.object(value, path, ["id", "quote", "goalFacts", "lastingActs"], ["answer"]);
   const quote = shape.object(fields.quote, `${path}.quote`, ["sourceId", "text"]);
   const lastingActs = shape.array(fields.lastingActs, `${path}.lastingActs`, AUTOMATION_STUDIO_ACTION_CONSEQUENCES.length)
     .map((act, index) => shape.oneOf(act, `${path}.lastingActs.${index}`, AUTOMATION_STUDIO_ACTION_CONSEQUENCES));
@@ -189,6 +207,16 @@ function readPart(value: unknown, path: string): AutomationStudioProjectTaskPart
     id: shape.id(fields.id, `${path}.id`),
     quote: { sourceId: shape.id(quote.sourceId, `${path}.quote.sourceId`), text: shape.text(quote.text, `${path}.quote.text`, LIMITS.quote) },
     goalFacts: shape.array(fields.goalFacts, `${path}.goalFacts`, LIMITS.facts).map((fact, index) => shape.text(fact, `${path}.goalFacts.${index}`, LIMITS.fact)),
-    lastingActs
+    lastingActs,
+    ...(fields.answer !== undefined ? { answer: readAnswer(fields.answer, `${path}.answer`) } : {})
   };
+}
+
+/** A part's declared answer (header, t757): a known kind and distinct column names. */
+function readAnswer(value: unknown, path: string): AutomationStudioProjectTaskAnswer {
+  const fields = shape.object(value, path, ["kind", "columns"]);
+  const kind = shape.oneOf(fields.kind, `${path}.kind`, ANSWER_KINDS);
+  const columns = shape.array(fields.columns, `${path}.columns`, LIMITS.columns).map((column, index) => shape.text(column, `${path}.columns.${index}`, LIMITS.column));
+  if (new Set(columns).size !== columns.length) return shape.refuse("project.duplicate", `${path}.columns`);
+  return { kind, columns };
 }

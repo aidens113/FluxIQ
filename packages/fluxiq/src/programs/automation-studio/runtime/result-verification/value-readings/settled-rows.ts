@@ -76,7 +76,7 @@
 
 import { automationStudioRecordConditionHolds, readAutomationStudioRecordNumber, type AutomationStudioRecordCondition } from "@fluxiq/contracts/automation-studio";
 import { automationStudioResultConditionName } from "../read-account/index.ts";
-import type { AutomationStudioResultLeftOutObservation } from "../read-condition.ts";
+import type { AutomationStudioResultLeftOutObservation, AutomationStudioResultReadCondition } from "../read-condition.ts";
 import type { AutomationStudioResultReadCell } from "./condition-readings.ts";
 
 /** The relations that compare a number. */
@@ -85,6 +85,9 @@ const BOUNDS = ["atLeast", "atMost", "lessThan", "greaterThan"] as const;
 const TEXTS = ["matches", "contains", "startsWith", "endsWith"] as const;
 /** What a left-out row says for an empty tested value (`../read-account/alone-rows.ts`). */
 const NO_VALUE = "(no value)";
+
+/** The rows Core settled, its sentence, and the kind of condition that settled them (`settledKind`, carried to `../request-rows/summary-reads.ts`). */
+type SettledRows = { leftOutSettled: string[]; settled: string; settledKind: NonNullable<AutomationStudioResultReadCondition["settledKind"]> };
 
 /** One left-out row as given, with its tested cell where the row says one, and its witness where the read sent one for every row. */
 type LeftOutRow = { row: string; cell: AutomationStudioResultReadCell | undefined; witness?: AutomationStudioResultLeftOutObservation | null | undefined };
@@ -102,7 +105,7 @@ export function automationStudioResultSettledRows(input: {
   number: number;
   wording: string | undefined;
   leftOut: readonly LeftOutRow[];
-}): { leftOutSettled: string[]; settled: string } | undefined {
+}): SettledRows | undefined {
   const { condition, column } = input;
   const name = automationStudioResultConditionName(input.number, input.wording);
   const named = column === undefined ? name : `${name} or ${column}`;
@@ -117,6 +120,7 @@ export function automationStudioResultSettledRows(input: {
     const asks = keeps === "present" ? "only rows that have it" : "only rows without it";
     return {
       leftOutSettled: settled.map(({ row }) => row),
+      settledKind: "presence",
       settled: `On each row in leftOutSettled the read ${found}, so each fails ${name} as written: Core settled these rows, so a yes need not quote the request beside each of them. `
         + `It must still show the condition is the request's: quote, once, in a sentence that names ${named}, the request's own words asking for ${asks}. If the request asks no such thing, these rows are ones it asks for.`
     };
@@ -136,6 +140,7 @@ export function automationStudioResultSettledRows(input: {
       : `Core read ${column} on each row in leftOutSettled, and each fails ${name} as written: where the row states a number, that number fails it, and where the read found no ${column}, a row with no number fails every bound`;
   return {
     leftOutSettled: settled.map(({ row }) => row),
+    settledKind: "bound",
     settled: `${read}: Core settled these rows, so a yes need not quote the request beside each of them. `
       + `It must still show the bound is the request's: quote, once, in a sentence that names ${named}, the request's own words stating that bound. If the request states no such bound, these rows are ones it asks for.`
   };
@@ -157,7 +162,7 @@ function foundEmpty({ row, witness }: LeftOutRow, column: string): boolean {
  * whose value, as found, fails the condition as written. Its sentence names the
  * value by its column where one is known.
  */
-function textSettled(input: { condition: AutomationStudioRecordCondition; column: string | undefined; leftOut: readonly LeftOutRow[] }, name: string, named: string): { leftOutSettled: string[]; settled: string } | undefined {
+function textSettled(input: { condition: AutomationStudioRecordCondition; column: string | undefined; leftOut: readonly LeftOutRow[] }, name: string, named: string): SettledRows | undefined {
   // A text test fails on no value unless it is negated (header, t636).
   const failsAbsent = !automationStudioRecordConditionHolds(input.condition, undefined);
   const absent = ({ witness }: LeftOutRow) => failsAbsent && witness?.state === "absent";
@@ -173,6 +178,7 @@ function textSettled(input: { condition: AutomationStudioRecordCondition; column
       : `On each row in leftOutSettled the read found ${value} or found ${none}, as that row's witness in leftOutObservations gives it, and Core tested what it found against ${name} as written: each fails it, a row with no value as well`;
   return {
     leftOutSettled: settled.map(({ row }) => row),
+    settledKind: "text",
     settled: `${read}, so Core settled these rows, and a yes need not quote the request beside each of them. `
       + `It must still show the condition is the request's: quote, once, in a sentence that names ${named}, the request's own words ${asks} ${value} says what the condition looks for. If the request asks no such thing, these rows are ones it asks for.`
   };
