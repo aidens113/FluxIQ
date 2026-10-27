@@ -54,8 +54,11 @@ import type { AutomationStudioResultTaskChecklist, AutomationStudioRunResultSumm
 
 /** What the instructions ask, part by part, and what they do not ask: the build's own reading, never the request. */
 export type AutomationStudioBuildTestTaskChecklist = {
-  /** Each part: its id, the instructions' own words for it, the facts true once it is done and the lasting acts it needs. */
-  parts: ReadonlyArray<{ id: string; words: string; goalFacts: readonly string[]; lastingActs: readonly string[] }>;
+  /**
+   * Each part: its id, the instructions' own words for it, the facts true once it is done and the lasting acts it needs,
+   * and the answer it asks for where its task spec declares one (t757): what a yes is held to (`../requested-output/`).
+   */
+  parts: ReadonlyArray<{ id: string; words: string; goalFacts: readonly string[]; lastingActs: readonly string[]; answer?: { kind: "records"; columns: readonly string[] } | undefined }>;
   /** What the instructions do not ask for. */
   notAsked: readonly string[];
   /** A subflow trial's only: the task's other parts, each another subflow's work, by id and the instructions' own words (header, t594). */
@@ -86,15 +89,23 @@ const ENTRY = "Before this subflow, this trial ran the subflows entry.subflows n
 const POSSIBLY_LASTING = "possiblyLasting holds, by nodeId, steps of this subflow that declared no lasting act yet changed their own page where they acted, so Core recorded each as possibly lasting. "
   + "Such a step's own consequences label is no proof it left nothing: judge it by what it changed, as a step that may have made a lasting act, against asked and outOfScope.";
 
+/** Said when a part declares the answer it asks for (t757, `../requested-output/`). */
+const ANSWER = "A part carrying answer asks for records (answer.kind), with the columns answer.columns names, in the instructions' order. "
+  + "Such a part is done only when the run's recordSets hold those records, or when its reads show a list read to its end with nothing in it matching; a value a step only read and handed on is not a record.";
+
 /** `summary` with the checklist as its labelled supplementary section, `taskChecklist`; the summary itself is not changed. */
 export function automationStudioBuildTestSummaryWithTaskChecklist(summary: AutomationStudioRunResultSummary, checklist: AutomationStudioBuildTestTaskChecklist): AutomationStudioRunResultSummary {
   const outOfScope = checklist.outOfScope ?? [];
   const entry = checklist.entry?.steps.length ? checklist.entry : undefined;
   const possiblyLasting = checklist.possiblyLasting ?? [];
-  const said = [SUPPLEMENTARY, ...(outOfScope.length ? [entry ? OUT_OF_SCOPE_WITH_ENTRY : OUT_OF_SCOPE] : []), ...(entry ? [ENTRY] : []), ...(possiblyLasting.length ? [POSSIBLY_LASTING] : [])];
+  const answers = checklist.parts.some((part) => part.answer !== undefined);
+  const said = [SUPPLEMENTARY, ...(answers ? [ANSWER] : []), ...(outOfScope.length ? [entry ? OUT_OF_SCOPE_WITH_ENTRY : OUT_OF_SCOPE] : []), ...(entry ? [ENTRY] : []), ...(possiblyLasting.length ? [POSSIBLY_LASTING] : [])];
   const taskChecklist: AutomationStudioResultTaskChecklist = {
     supplementary: said.join(" "),
-    asked: checklist.parts.map((part) => ({ part: part.id, words: part.words, goalFacts: [...part.goalFacts], lastingActs: [...part.lastingActs] })),
+    asked: checklist.parts.map((part) => ({
+      part: part.id, words: part.words, goalFacts: [...part.goalFacts], lastingActs: [...part.lastingActs],
+      ...(part.answer ? { answer: { kind: part.answer.kind, columns: [...part.answer.columns] } } : {})
+    })),
     notAsked: [...checklist.notAsked]
   };
   if (outOfScope.length) taskChecklist.outOfScope = outOfScope.map((part) => ({ part: part.id, words: part.words }));

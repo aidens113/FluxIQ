@@ -53,6 +53,13 @@ export type AutomationStudioRunResultSummary = {
   /** The steps the Flow is built from, in authored order: what it can do at all. */
   flowShape: AutomationStudioResultFlowStepSummary[];
   /**
+   * The single value each step returned in this run, in run order, with Core's
+   * sentence saying a returned value is handed on and is no stored record
+   * (`../returned-values.ts`, t757). Absent where no step returned one or no
+   * denied-keys declaration was made.
+   */
+  returned?: AutomationStudioResultReturnedValues;
+  /**
    * Core's sentence naming the columns the instruction asks for that no stored
    * column reads (`read-account/unread-columns.ts`). Set only on the summary the
    * judge is shown, and only when there are some. Information, never a verdict.
@@ -145,4 +152,15 @@ export type AutomationStudioResultEndView = {
   after?: number | string;
   /** The domain's view, by its own keys and screened, otherwise as it came. */
   view: JsonValue;
+};
+
+/**
+ * The single values a run's steps returned (`AutomationStudioRunResultSummary.returned`,
+ * t757): each by the step that returned it, in run order, beside Core's
+ * sentence for what they are. Read off a step's `outputs.value`, Core's port
+ * for a node's single value, and screened as every run value is.
+ */
+export type AutomationStudioResultReturnedValues = {
+  said: string;
+  values: Array<{ nodeId: string; value: string | number | boolean }>;
 };

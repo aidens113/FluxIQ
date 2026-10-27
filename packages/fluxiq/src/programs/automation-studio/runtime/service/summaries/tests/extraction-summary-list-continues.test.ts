@@ -13,6 +13,8 @@ describe("a read's word that its list goes on", () => {
   it("is admitted as sent, and nothing a producer put beside the two words travels", () => {
     expect(admit({ ...READ, listContinues: { kind: "load_more", evidence: "load_more_control" } })).toEqual({ ...READ, listContinues: { kind: "load_more", evidence: "load_more_control" } });
     expect(admit({ ...READ, listContinues: { kind: "infinite_scroll", evidence: "still_growing" } })?.listContinues).toEqual({ kind: "infinite_scroll", evidence: "still_growing" });
+    // Paused by the site, not ended (t755): a word this Core knows, so not renamed "unknown".
+    expect(admit({ ...READ, listContinues: { kind: "infinite_scroll", evidence: "loader_asked_to_wait" } })?.listContinues).toEqual({ kind: "infinite_scroll", evidence: "loader_asked_to_wait" });
     expect(admit({ ...READ, listContinues: { kind: "next_page", evidence: "next_control", label: "More recipes" } })?.listContinues).toEqual({ kind: "next_page", evidence: "next_control" });
   });
 

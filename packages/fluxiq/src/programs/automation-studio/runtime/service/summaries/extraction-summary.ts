@@ -157,7 +157,8 @@ const PAGINATION_STOP_UNKNOWN = "unknown";
  * states (`result-verification/read-account/list-continues.ts` says it).
  */
 const CONTINUES_KINDS = new Set(["next_page", "load_more", "infinite_scroll"]);
-const CONTINUES_EVIDENCE = new Set(["next_control", "following_page_number", "load_more_control", "declared_feed", "still_growing"]);
+// `loader_asked_to_wait`: the list's loader answered the read's reveal with a notice to wait -- paused by the site, not ended (t755).
+const CONTINUES_EVIDENCE = new Set(["next_control", "following_page_number", "load_more_control", "declared_feed", "still_growing", "loader_asked_to_wait"]);
 
 /** A value that is an address rather than text: a URL, or a path from an origin. */
 const ADDRESS = /^(?:[a-z][a-z\d+.-]*:\/\/|\/)/iu;
