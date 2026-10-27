@@ -5,6 +5,8 @@ const TOKEN = /^[A-Za-z0-9:_-]{1,128}$/u;
 /** Trusted pre-act control evidence. Opaque identities stay inside Core; a plan carries only its receipt ref. */
 export type AutomationStudioSiteResetControlOriginal = {
   resource: string; page: string; place: string; before: Readonly<Record<string, number>>; location?: string;
+  /** A looped pass's own original (`./ledger.ts`, `stamped`): judged only on reads at this location, since items share place tokens. */
+  at?: string;
 };
 
 /** Immutable control originals and receipts owned by one build, shared across its brief ledgers. */

@@ -538,6 +538,8 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       // Where its step's control sat and what it made, as exploration records an act (header, t598).
       const recorded = this.record(did, `${trialRunId ?? "trial"}#step-${act.step}`, act.consequences, undefined, spotOf(act.spot), this.options.possible === true && act.possible === true, act.created, act.control, act.definitionId);
       const place = act.spot?.place;
+      // Whether the build pressed this step's own item (its page) at that place before: then its diff's before is no original (t751 R1).
+      const itemPressed = place !== undefined && act.controls !== undefined && this.tracker.pressedAt(act.controls.page, place);
       // Its step's press at its control's place, read on both sides by the step's own diff, with where its page is (L1, d7).
       const press = place !== undefined && act.controls ? this.tracker.landed(act.controls.page, place, act.controls.before, act.controls.after, this.clock, act.controls.location) : undefined;
       // A lasting act at a place its step read no controls at: a press there, so no later read seeds that place's start (t751 R1).
@@ -549,7 +551,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       if (press && onlyModifies(act.consequences)) recorded.press = press;
       // The explored acts it repeats lend it their destinations, named whenever (header, L1).
       if (recorded.strictReset) recorded.repeats = explored.filter((other) => repeats({ consequences: act.consequences, definitionId: act.definitionId, spot: act.spot }, { consequences: other.consequences, operation: other.operation, spot: other.spot })).map((other) => other.id);
-      this.stamped(recorded, act.witness);
+      this.stamped(recorded, act.witness, itemPressed ? undefined : act.controls);
       this.locate(recorded);
     }
     // A possibly lasting act is not answered as left: it is answered under `possiblyInPlace` (header).
@@ -597,8 +599,15 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
    * What a trial act takes of its step's witness stamp (header, t751 R3): a destination ref attaches that issued list, a
    * repeated explored act lends its witnesses; a control receipt retains its immutable pre-act counts even without the
    * optional runtime diff. Own-list admission emits a destination stamp. Bare standalone stamps add no authority.
+   *
+   * A control receipt covers only the item it was read on (t751 final acceptance, photo-dialog-act). Items may share
+   * their control's place token, so a looped step carries the explored item's receipt into every pass: a pass whose
+   * own diff (`pass`) shows it pressed another item -- another location, or another page where none is given -- is
+   * witnessed instead by that item's own control as the pass read it just before its press (R1, per pass), judged
+   * only on reads at its location. `pass` is withheld where the build had already pressed that item there: a later
+   * before is never an original (R1), and the receipt stands as it did.
    */
-  private stamped(act: Act, witness: unknown): void {
+  private stamped(act: Act, witness: unknown, pass?: AutomationStudioSiteResetTrialAct["controls"]): void {
     if (!stampValid(witness)) return;
     if (witness.via === "destination") {
       const named = this.createBaselines.retained(witness.ref);
@@ -606,7 +615,9 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     } else if (witness.via === "repeats" && act.strictReset && !act.repeats.includes(witness.act)) {
       act.repeats.push(witness.act);
     } else if (witness.via === "control") {
-      const original = this.controlWitnesses.resolve(witness.ref);
+      const stamped = this.controlWitnesses.resolve(witness.ref);
+      const otherItem = stamped !== undefined && pass !== undefined && (pass.location !== undefined && stamped.location !== undefined ? pass.location !== stamped.location : pass.page !== stamped.page);
+      const original = otherItem && pass ? { resource: stamped.resource, page: pass.page, place: stamped.place, before: { ...pass.before }, ...(pass.location !== undefined ? { location: pass.location, at: pass.location } : {}) } : stamped;
       if (original) {
         act.controlOriginal = original;
         act.spot = { ...act.spot, resource: original.resource, scope: original.page, place: original.place };

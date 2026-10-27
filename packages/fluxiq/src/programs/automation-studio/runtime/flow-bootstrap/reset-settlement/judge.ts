@@ -21,7 +21,11 @@
 // `startedWith.cannotUndo` as left with nothing it could change showing a
 // change. Open otherwise, and every open act says under `settle` what to read
 // or undo (`./words.ts`); before refusing, the ledger's `beforeTrial` has Core
-// look at each stale witness's place itself (`lookFirst`, `checks.lookAt`).
+// look at each stale witness's place itself (`lookFirst`, `checks.lookAt`), and
+// loads again, once per landed undo, a list that still differs after that act's
+// undo landed: a site may draw a removal only on the list's next load, so the
+// read in place just after the undo is not yet a fresh read of it (t751 final
+// acceptance, job-board My jobs).
 // `cannotUndo` never settles a strict act. A toggle is undone by pressing its
 // own control back at its place, admitted `own` with `modify_existing` unasked;
 // a control at another place, or already back, is refused unrun.
@@ -94,7 +98,7 @@ export type AutomationStudioSiteResetJudgedAct = {
   clock: number;
   press?: AutomationStudioSiteResetPress | undefined;
   /** Immutable counts retained by the step's trusted admission receipt, independent of runtime diff completeness. */
-  controlOriginal?: { resource: string; page: string; place: string; before: Readonly<Record<string, number>>; location?: string } | undefined;
+  controlOriginal?: { resource: string; page: string; place: string; before: Readonly<Record<string, number>>; location?: string; at?: string } | undefined;
   toggle?: { page: string; place: string; from: string; to: string } | undefined;
   changeSeen: boolean;
   /** Undo calls of it that landed. */
@@ -137,6 +141,8 @@ export class AutomationStudioSiteResetSettlementJudge {
   /** Pre-trial looks this ledger has made, and per group the ones that answered unread (header). */
   private checks = 0;
   private readonly unread = new Map<string, Set<number>>();
+  /** Per act, the landed undo count at Core's last reload of each location an `undo` reason named (`lookFirst`). */
+  private readonly reloaded = new WeakMap<AutomationStudioSiteResetJudgedAct, Map<string, number>>();
 
   constructor(ports: AutomationStudioSiteResetJudgePorts) {
     this.ports = ports;
@@ -154,7 +160,7 @@ export class AutomationStudioSiteResetSettlementJudge {
     if (groups.some((group) => group.changed)) act.changeSeen = true;
     const toggle = this.toggleOf(act);
     const { tracker } = this.ports;
-    const control = act.controlOriginal ? tracker.originalStanding(act.controlOriginal, act.clock, this.ports.clock()) : toggle ? tracker.standing(toggle.place, toggle, act.clock, this.ports.clock()) : act.press ? tracker.unread(act.press) : undefined;
+    const control = act.controlOriginal ? tracker.originalStanding(act.controlOriginal, act.clock, this.ports.clock(), toggle) : toggle ? tracker.standing(toggle.place, toggle, act.clock, this.ports.clock()) : act.press ? tracker.unread(act.press) : undefined;
     if (act.controlOriginal && control?.status === "open") act.changeSeen = true;
     return settleDecision({ groups, toggle: control, changeSeen: act.changeSeen, undoLanded: act.attempts > 0 });
   }
@@ -223,7 +229,13 @@ export class AutomationStudioSiteResetSettlementJudge {
       const decision = this.evaluate(act);
       if (decision.kind !== "open") continue;
       for (const reason of decision.reasons) {
-        if (reason.reason !== "look" || !reason.location || looked.has(reason.location)) continue;
+        if (!reason.location) continue;
+        // A list that still differs after this act's undo landed is loaded again once per landed undo (t751 R2, final
+        // acceptance job): a site may draw the removal only on its next load, so a read in place can be stale.
+        const reload = reason.reason === "undo" && act.attempts > 0 && this.reloaded.get(act)?.get(reason.location) !== act.attempts;
+        if (reason.reason !== "look" && !reload) continue;
+        if (reload) this.reloaded.set(act, new Map([...(this.reloaded.get(act) ?? []), [reason.location, act.attempts]]));
+        if (looked.has(reason.location)) continue;
         looked.add(reason.location);
         const before = this.reads;
         await lookAt(reason.location);

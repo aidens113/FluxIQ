@@ -131,7 +131,11 @@ describe("a candidate build's undo through the permission wrapper", () => {
     expect(run.permissions.request()?.missing).toEqual(["delete"]);
     expect(execution).toMatchObject({ kind: "llm_evidence_tool_execution", effectApplied: false, resultCode: "candidate.undo_refused",
       evidence: { ok: false, code: "candidate.undo_refused", act: "act-1", refusal: { ok: false, code: "permission_required" } } });
-    expect(String((execution as { evidence: { instruction: string } }).evidence.instruction)).toContain("this act stays as it is");
+    // t751: a refusal changes nothing and admits no trial by itself; the current reset conditions still decide.
+    const instruction = String((execution as { evidence: { instruction: string } }).evidence.instruction);
+    expect(instruction).toContain("nothing was done");
+    expect(instruction).toContain("current listed reset and settlement conditions");
+    expect(instruction).not.toContain("kept and not asked for again");
     expect(reset.explored[0]).toMatchObject({ undoes: "act-1", on: "own", declared: { permitted: false }, landed: false });
   });
 

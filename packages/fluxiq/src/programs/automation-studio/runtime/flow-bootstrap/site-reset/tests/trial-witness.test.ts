@@ -106,6 +106,55 @@ it.each([false, true])("retains an original control across brief owners without 
   expect(await supervisor.beforeTrial({ compare })).toMatchObject({ kind: "admit" });
 });
 
+// t751 final acceptance (headed photo-toggle, photo-dialog-step, photo-dialog-destination): a place also holds other
+// controls, and one view of it (a dialog) shows more of them than another (the item's own page). A trial act stamped
+// with the place's original is pressed back on the other view: its own toggle's two states are back at the original's
+// counts, and the other controls' counts, which differ only by view, are no effect of the act and never hold it open.
+it("settles a control-stamped trial act pressed back on another view of its place by its toggle's own two states", () => {
+  const project = new AutomationStudioSiteResetProjectLedger();
+  const builder = project.forBrief("builder");
+  const dialog = (state: string) => page("p:dialog", "loc:item", undefined, { "pl:star": { [state]: 1, "st:note": 2, "st:pin": 1 } });
+  const itemPage = (state: string) => page("p:item", "loc:item", undefined, { "pl:star": { [state]: 1, "st:note": 1 } });
+  builder.observed(dialog("st:off"));
+  const witness = builder.admitStep({ effect: "mutate", consequences: ["modify_existing"], control: { name: "Star", kind: "button", resource: SITE, subject: "s:item", place: "pl:star", state: "st:off" } });
+  expect(witness).toEqual({ via: "control", ref: "control-1" });
+  const supervisor = project.forBrief("supervisor");
+  supervisor.trialRan([{ step: 1, definitionId: "demo.star", consequences: ["modify_existing"], witness: witness! }]);
+  supervisor.observed(dialog("st:on"));
+  expect(supervisor.standing("act-1")).toBe("in_place");
+  supervisor.observed(itemPage("st:on"));
+  // Still on, on that other view, it stays in place: only the act's own two states decide, both ways.
+  expect(supervisor.standing("act-1")).toBe("in_place");
+  expect(supervisor.target("act-1", { effect: "mutate", consequences: ["modify_existing"], control: { resource: SITE, place: "pl:star", state: "st:on" } })).toMatchObject({ kind: "admit" });
+  supervisor.observed(itemPage("st:off"));
+  expect(supervisor.standing("act-1")).toBe("restored");
+});
+
+// t751 final acceptance (headed photo-dialog-act): every item's control has the same place token, so the original read on
+// the explored item is the receipt a looped step carries. A pass that pressed another item is witnessed by that item's
+// own control, read just before that pass's press, and is judged only on reads of that item: never the explored one.
+it("witnesses a looped pass that pressed another item by that item's own control, never the explored item's", () => {
+  const project = new AutomationStudioSiteResetProjectLedger();
+  const builder = project.forBrief("builder");
+  const item = (scope: string, location: string, state: string) => page(scope, location, undefined, { "pl:star": { [state]: 1, "st:note": 1 } });
+  builder.observed(item("p:a", "loc:a", "st:off"));
+  const witness = builder.admitStep({ effect: "mutate", consequences: ["modify_existing"], control: { name: "Star", kind: "button", resource: SITE, subject: "s:item", place: "pl:star", state: "st:off" } });
+  expect(witness).toEqual({ via: "control", ref: "control-1" });
+  const supervisor = project.forBrief("supervisor");
+  supervisor.trialRan([{ step: 2, definitionId: "demo.star", consequences: ["modify_existing"], witness: witness!, spot: { place: "pl:star", state: "st:off" }, controls: { page: "p:b", location: "loc:b", before: { "st:off": 1, "st:note": 1 }, after: { "st:on": 1, "st:note": 1 } } }]);
+  // Its settle names the item it pressed, not the explored one.
+  expect(supervisor.inPlace()[0]?.settle).toContain("loc:b");
+  expect(supervisor.inPlace()[0]?.settle).not.toContain("loc:a");
+  // The explored item, read untouched, never settles it.
+  supervisor.observed(item("p:a", "loc:a", "st:off"));
+  expect(supervisor.standing("act-1")).toBe("in_place");
+  supervisor.observed(item("p:b", "loc:b", "st:on"));
+  expect(supervisor.standing("act-1")).toBe("in_place");
+  expect(supervisor.target("act-1", { effect: "mutate", consequences: ["modify_existing"], control: { resource: SITE, place: "pl:star", state: "st:on" } })).toMatchObject({ kind: "admit" });
+  supervisor.observed(item("p:b", "loc:b", "st:off"));
+  expect(supervisor.standing("act-1")).toBe("restored");
+});
+
 it("never settles or infers an inverse from another resource's colliding control tokens", () => {
   const project = new AutomationStudioSiteResetProjectLedger();
   const builder = project.forBrief("builder");
