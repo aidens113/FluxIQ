@@ -37,3 +37,21 @@ export function automationStudioResultReadStop(read: Pick<AutomationStudioResult
   if (read.pagesRead < read.pageLimit && !read.truncated) return "list_ended";
   return read.pagesRead >= read.pageLimit && read.truncated ? "page_bound" : "other";
 }
+
+/**
+ * Whether the read's own record shows its list ended, not only that nothing
+ * said otherwise: a list-ending stop word it reported, no truncation, page
+ * counts within its bound, and a step authored to follow pages. An absent stop
+ * is no observed end, nor is a first page with no next control, which may be a
+ * control that names nothing. What the judge's paging words state as an end
+ * (`./judge-paging.ts`), and what an honestly empty answer needs
+ * (`../requested-output/`, t757).
+ */
+export function automationStudioResultReadObservedEnd(read: Pick<AutomationStudioResultReadAccount, "pagesRead" | "pageLimit" | "stop" | "truncated" | "keptPerPage" | "paginates">): boolean {
+  // A looped read's bound counts its loop's passes, not its pages.
+  const reach = read.keptPerPage?.length ?? read.pagesRead;
+  const countsAgree = Number.isSafeInteger(read.pagesRead) && read.pagesRead > 0
+    && (read.pageLimit === undefined || (Number.isSafeInteger(read.pageLimit) && read.pageLimit >= reach));
+  return automationStudioResultReadStop(read) === "list_ended" && read.stop !== undefined && !read.truncated
+    && countsAgree && read.paginates !== false && !(read.stop === "control_absent" && read.pagesRead === 1);
+}

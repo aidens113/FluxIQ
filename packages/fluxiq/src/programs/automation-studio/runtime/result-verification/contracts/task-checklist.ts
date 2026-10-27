@@ -1,13 +1,17 @@
+import type { AutomationStudioResultRequestedAnswer } from "./requested-output.ts";
+
 /**
  * The task checklist a project build's judge is sent (`taskChecklist`): first
  * its own label, saying the instructions are the only authority and how the
  * checklist is used, because the judge's standing instruction does not name
  * it; then each part the instructions ask for, in their own words, and what
  * they do not ask for; for a subflow trial, the parts other subflows do.
+ * A part whose task spec declares the answer it asks for carries it
+ * (`answer`, t757): the obligation a yes is held to (`../requested-output/`).
  */
 export type AutomationStudioResultTaskChecklist = {
   supplementary: string;
-  asked: Array<{ part: string; words: string; goalFacts: string[]; lastingActs: string[] }>;
+  asked: Array<{ part: string; words: string; goalFacts: string[]; lastingActs: string[]; answer?: AutomationStudioResultRequestedAnswer }>;
   notAsked: string[];
   /**
    * A subflow trial's only (t594): the other parts of the same instructions,

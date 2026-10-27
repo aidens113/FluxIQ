@@ -74,6 +74,28 @@ describe("task spec", () => {
     expect(automationStudioProjectTaskSpec.quoteIssues(taskSpec((spec) => (spec.parts[1]!.quote = { sourceId: "instruction.2", text: spec.parts[0]!.quote.text })), apart)).toEqual([]);
   });
 
+  // t757: a part that asks for records says so in a typed field, which the judge holds a yes to; a part without it is as before.
+  it("reads a part's declared answer of records, keeps a spec without one byte for byte, and refuses a malformed one", () => {
+    const declared = taskSpec((spec) => (spec.parts[0]!.answer = { kind: "records", columns: ["name", "date"] }));
+    expect(automationStudioProjectTaskSpec.parse(declared)).toEqual({ status: "valid", value: declared });
+    expect(declared.digest).not.toBe(taskSpec().digest);
+    const unnamed = taskSpec((spec) => (spec.parts[0]!.answer = { kind: "records", columns: [] }));
+    expect(automationStudioProjectTaskSpec.parse(unnamed)).toEqual({ status: "valid", value: unnamed });
+    // A spec digested before the field existed still reads, under the digest it always had.
+    expect(automationStudioProjectTaskSpec.parse(taskSpec())).toEqual({ status: "valid", value: taskSpec() });
+    for (const [answer, code] of [
+      [{ kind: "rows", columns: [] }, "project.invalid_choice"],
+      [{ kind: "records" }, "project.missing_field"],
+      [{ kind: "records", columns: ["name"], extra: 1 }, "project.unknown_field"],
+      [{ kind: "records", columns: ["  "] }, "project.invalid_text"],
+      [{ kind: "records", columns: ["name", "name"] }, "project.duplicate"]
+    ] as const) {
+      const value = structuredClone(taskSpec()) as unknown as { parts: Array<Record<string, unknown>> };
+      value.parts[0]!.answer = answer;
+      expect(automationStudioProjectTaskSpec.parse(value)).toMatchObject({ status: "invalid", code, path: expect.stringMatching(/^taskSpec\.parts\.0\.answer/u) });
+    }
+  });
+
   it("takes only active instructions as sources", () => {
     const instruction = (instructionId: string, status: AutomationStudioFlowInstruction["status"]): AutomationStudioFlowInstruction =>
       ({ schemaVersion: "0.1", instructionId, title: instructionId, body: `body of ${instructionId}`, status, priority: 1, createdAt: 1, updatedAt: 1 }) as AutomationStudioFlowInstruction;

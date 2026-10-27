@@ -126,6 +126,14 @@
 // standalone `verify` would be refused by Core's own ordering rule and the
 // refusal would be right: this is not the fifth stage of a recovery, it is a
 // check every finished run gets whether or not a recovery ever happened.
+//
+// **A yes is held to the answer the build declared (t757).** Where the build's
+// task spec declares a part's answer to be records -- on the judge's checklist
+// (`summary.taskChecklist`), or passed as `requestedOutput` -- and the run
+// stored none, with nothing in its record showing the empty answer honest, the
+// settled yes becomes `unsure` with Core's finding (`./requested-output/`). A
+// first yes so held is not asked again to confirm it: no answer could change
+// what the run stored.
 
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowInstruction, AutomationStudioFlowIntervention, AutomationStudioFlowRunDetail } from "../../model/index.ts";
 import {
@@ -136,7 +144,7 @@ import {
   type AutomationStudioLlmRunBudgetLedger,
   type AutomationStudioLlmTokenLimits
 } from "../llm/index.ts";
-import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "./contracts/index.ts";
+import type { AutomationStudioResultRequestedOutput, AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "./contracts/index.ts";
 import {
   automationStudioResultVerificationAgreement,
   automationStudioResultVerificationAskAgain,
@@ -149,6 +157,7 @@ import {
 import { automationStudioResultCheckActivity } from "./check-activity.ts";
 import { automationStudioResultCoreObservation } from "./core-observation.ts";
 import { automationStudioResultSummaryWithPagingWords, automationStudioResultSummaryWithUnreadColumns } from "./read-account/index.ts";
+import { automationStudioResultRequestedOutputHeld, automationStudioResultRequestedOutputMissing, automationStudioResultRequestedOutputOwed } from "./requested-output/index.ts";
 import { automationStudioRequestWording, automationStudioResultSummaryWithAlsoInResult, automationStudioResultSummaryWithLeftOutNamingTheItem, automationStudioResultSummaryWithRowIds } from "./request-rows/index.ts";
 import { automationStudioResultReaskNarrowingNo } from "./unsure-doubts/index.ts";
 import { automationStudioResultVerdict } from "./verdict/index.ts";
@@ -204,6 +213,13 @@ export type AutomationStudioResultVerificationRequest = {
    * whose `yes` finishes a build; the runtime result check leaves it unset.
    */
   confirmAnswer?: boolean | undefined;
+  /**
+   * What the run owes by the build's own declaration (`./requested-output/`,
+   * t757), for a caller that holds it outside the summary's task checklist.
+   * Absent, the checklist's declared answers are read; with neither, a yes is
+   * judged as it always was.
+   */
+  requestedOutput?: AutomationStudioResultRequestedOutput | undefined;
   /** Completed receipts survive a later check's outer deadline; this does not count dispatches. */
   recordIntervention?: ((intervention: AutomationStudioFlowIntervention) => void) | undefined;
 };
@@ -251,8 +267,13 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
   // How the yes was reached, recorded as the calls are made (`./first-ask/`, t677).
   const trail: CheckTrail = { interventions, verdictChanged: false, reasks: 0 };
   const first = await askCheck(request, provider, 1, trail);
-  if (!automationStudioResultVerificationAskAgain(first, { confirmAnswer })) {
-    return said({ outcome: { ...automationStudioResultVerificationAgreement({ first }), performed: true }, interventions });
+  // What the run owes by the build's declaration, and the yes held where it stored none of it (header, t757).
+  const owed = automationStudioResultRequestedOutputOwed(request.summary, request.requestedOutput);
+  const held = (outcome: ReturnType<typeof automationStudioResultVerificationAgreement>) => automationStudioResultRequestedOutputHeld(outcome, request.summary, owed);
+  // A first yes so held is not asked to confirm: no answer changes what the run stored (header).
+  const heldFirst = first.verdict === "answers" && automationStudioResultRequestedOutputMissing(request.summary, owed) !== undefined;
+  if (heldFirst || !automationStudioResultVerificationAskAgain(first, { confirmAnswer })) {
+    return said({ outcome: { ...held(automationStudioResultVerificationAgreement({ first })), performed: true }, interventions });
   }
   // A first yes a build test confirms is asked the converse question, never the same one again (header, t691).
   const converse = screenedRecheck(automationStudioResultVerificationConfirmingAsk(first, request.summary, { confirmAnswer }), request.deniedEvidenceKeys);
@@ -284,7 +305,7 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
   // Last, where still nothing was asked again, a split's no is asked once to name its defect, quoting the request (t725, `./agreement/reask-split-no.ts`).
   const split = await automationStudioResultVerificationReaskSplitNo({ settled: narrowed, first, second, ask, agree });
   // Last of all, each no naming no defect Core finds in its record is asked once more to list each (header, t752).
-  const outcome = await automationStudioResultVerificationReaskUnsupportedNo({ settled: split, calls: current, record: automationStudioResultVerificationNoRecord(input), summary: request.summary, ask, agree });
+  const outcome = held(await automationStudioResultVerificationReaskUnsupportedNo({ settled: split, calls: current, record: automationStudioResultVerificationNoRecord(input), summary: request.summary, ask, agree }));
   const confirmed = automationStudioResultFirstAskConfirmed({ confirmAnswer, outcome, first, second, verdictChanged: trail.verdictChanged, reasks: trail.reasks, secondAsked: converse ? "converse" : "same" });
   return said({ outcome: { ...outcome, performed: true, ...(confirmed ? { firstAskConfirmed: true as const } : {}) }, interventions });
 }

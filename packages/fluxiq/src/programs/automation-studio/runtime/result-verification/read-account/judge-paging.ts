@@ -11,7 +11,7 @@
 // that after its paging words (`./list-continues.ts`, F8): the same sentence
 // the builder's trial feedback carries, so judge and builder see one account.
 import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../contracts/index.ts";
-import { automationStudioResultReadPageBoundSentence, automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./index.ts";
+import { automationStudioResultReadObservedEnd, automationStudioResultReadPageBoundSentence, automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./index.ts";
 import { automationStudioResultReadListContinues } from "./list-continues.ts";
 import { automationStudioResultSummaryWithoutTestedLabel } from "./without-tested-label.ts";
 
@@ -35,10 +35,8 @@ function pagingWords(read: AutomationStudioResultReadAccount): AutomationStudioR
   const countsAgree = Number.isSafeInteger(read.pagesRead) && read.pagesRead > 0
     && (read.pageLimit === undefined || (Number.isSafeInteger(read.pageLimit) && read.pageLimit >= reach));
   // An absent stop is not an observed end. A first-page absent control can also
-  // be a control that names nothing, as the shared sentence already explains.
-  const observedEnd = meaning === "list_ended" && read.stop !== undefined && !read.truncated
-    && countsAgree && read.paginates !== false && !(read.stop === "control_absent" && read.pagesRead === 1);
-  if (observedEnd) {
+  // be a control that names nothing, as the shared sentence already explains (`./stop.ts`).
+  if (automationStudioResultReadObservedEnd(read)) {
     const { pageLimit: _bound, ...rest } = read;
     return { ...rest, paging: `Read ${automationStudioResultReadPagesClause(read)}. There is no further page.` };
   }

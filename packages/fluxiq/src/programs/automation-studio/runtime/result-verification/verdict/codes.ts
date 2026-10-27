@@ -17,5 +17,7 @@ export const AUTOMATION_STUDIO_RESULT_VERDICT_CODES = Object.freeze({
   /** A no whose every reason Core's own record refutes, asked once more and still not standing (`../refuted-no/`, t607): unsure. */
   refutationContradicted: "core.result.refutation_contradicted",
   /** A no naming no defect Core can find in its record of the result, asked once more to list each and still naming none (`../agreement/unsupported-no.ts`, t752): unsure, never a no. */
-  refutationUnsupported: "core.result.refutation_unsupported"
+  refutationUnsupported: "core.result.refutation_unsupported",
+  /** A yes on a run that stored none of the records the build declared its task asks for, with no sign the empty answer is honest (`../requested-output/`, t757): unsure, never a yes. */
+  requestedOutputMissing: "core.result.requested_output_missing"
 } as const);
