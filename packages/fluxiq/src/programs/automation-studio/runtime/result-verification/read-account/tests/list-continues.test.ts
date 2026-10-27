@@ -90,6 +90,29 @@ describe("a read whose list grows as it is revealed", () => {
   });
 });
 
+// A list goes on, ends, or is paused by the site (t755, from t756's trace of a
+// profile grid): a loader that answers the read's reveal with a notice to wait
+// grew nothing, so the list read as ended. It now says it paused, never that it
+// was still growing, and its fix line says to wait out the pause before each move.
+describe("a read whose list's loader asked it to wait", () => {
+  const paused = read({ listContinues: { kind: "infinite_scroll", evidence: "loader_asked_to_wait" } });
+
+  it("says the list paused rather than ended, and never that it was still growing", () => {
+    const words = automationStudioResultReadListContinues(paused)!;
+    expect(words.said).toContain("(the page answered the read's reveal of its end with a notice to wait before it loads more, so the list paused there rather than ended)");
+    expect(words.said).not.toContain("still growing");
+    expect(words.fix).toContain("move that same list on to its next part (a scroll down it)");
+    expect(words.fix).toContain("The page paused this list: before each move, wait as long as its notice asks, or press the retry control the notice offers once it shows, as a person would.");
+  });
+
+  it("is carried on the account as sent, and no other word gets the pause line", () => {
+    const { reads } = automationStudioResultReadAccounts({ actionAttempts: [attempt({ kind: "infinite_scroll", evidence: "loader_asked_to_wait" })] });
+    expect(reads[0]).toMatchObject({ listContinues: { kind: "infinite_scroll", evidence: "loader_asked_to_wait" } });
+    for (const evidence of ["declared_feed", "still_growing", "load_more_control", "next_control"]) {
+      expect(automationStudioResultReadListContinues(read({ listContinues: { kind: "infinite_scroll", evidence } }))!.fix).not.toContain("paused");
+    }
+  });
+});
 describe("the judges' words for a read whose list goes on", () => {
   const continuing = read({ paginates: false, listContinues: { kind: "infinite_scroll", evidence: "still_growing" } });
   const said = automationStudioResultReadListContinues(continuing)!.said;
