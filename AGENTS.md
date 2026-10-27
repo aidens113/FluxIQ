@@ -251,6 +251,11 @@ a worker: workers are ephemeral, several may serve one brief, and a
 re-dispatched worker is still the same unit of work. Workers never commit, so
 agent identity travels in commit trailers rather than in a branch name.
 
+MeritClaude's automatic git management applies here only as this file allows:
+branches go through `pnpm task`, never MeritClaude's `branch.mjs`, and nothing
+here runs `branch.mjs promote` or otherwise moves `main` (see Committing And
+Pushing).
+
 The supervisor picks the tier when it writes the brief:
 
 - **Direct on `dev`** for supervisor edits of at most two files it already

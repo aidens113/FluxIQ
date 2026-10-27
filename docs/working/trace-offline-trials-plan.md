@@ -1,7 +1,7 @@
 # Traces And Offline Trials
 
-Status: Active
-Status detail: P0-P5 complete (t729, t734, t736, t742, t746, t749); P6 next, after downstream t751.
+Status: Paused
+Status detail: User stopped all work; t753/t752 pushed, Core t754 finish pending, reset t751 preserved before final acceptance.
 Created: 2026-10-19
 Last updated: 2026-10-21
 Owner: Senior supervisor agent
@@ -12,6 +12,12 @@ Related: [source plan](./trace-offline-trials-plan/source-consultant-plan.md) (t
 ---
 
 ## Current State
+
+**RESUMED (user, 2026-10-27: "get this MVP done"; no feature freeze).** Resume order is the downstream
+handoff `docs/working/trace-offline-trials-plan/reports/handoff-2026-10-21-codex.md`. t754 is merged and
+published in both repositories. Next: t751's five dirty Core files reviewed and checkpointed, current `dev`
+integrated into both t751 trees, final gates and headed site-reset specs, t751 finish; then P6. The downstream
+execution hub owns current status.
 
 **Approved (user, 2026-10-19):** this plan, which is the supervisor's revision of the consultant's plan in
 `trace-offline-trials-plan/source-consultant-plan.md`. "don't implement yet" was the instruction while reviewing;
@@ -202,6 +208,20 @@ The source plan's T01-T24 are kept. Added:
 - Validation: `pnpm.cmd task finish t752 "Ground negative judge findings in measured rows" --skip-checks` independently passed3mandatorypromptcontractfiles/68tests, then merged to dev. The already-passed narrow gates replace a repeated full check per user instructions.
 - Outcome: Accepted; paired ledger/baseline push follows. Reset t751 and export t754 remain separate task units.
 - Follow-up: final combined reset gates, then P6. No paid execution or panel management.
+
+### 2026-10-21 - User requested stop and handoff
+- Agent: supervisor
+- Changed: plan paused; downstream handoff-2026-10-21-codex.md records exact source, validation and publication boundaries.
+- Validation: all recovery agents stopped; process inspection found zero task-owned node/browser processes. No new implementation/check/build/integration after stop; only handoff documentation maintained.
+- Outcome: Paused. Core t754 task finish has not begun; downstream local merge54d27653 is unpublished. t751 source remains uncommitted at its documented final correction boundary.
+- Follow-up: wait for user resume; preserve both task trees and publish no downstream half alone.
+
+### 2026-10-27 - Resumed; t754 package exports finished in Core
+- Agent: supervisor
+- Changed: `pnpm task finish t754 "Replace private build path loads with package exports" --skip-checks` merged the clean paired task (worktree detached first, as the tool requires).
+- Validation: the finish's mandatory contracts ran `vitest run` over 3 files: "Test Files 3 passed (3)", "Tests 68 passed (68)". `pnpm structure:check` after the merge: "passed (443 warning(s), 1152 baselined)"; downstream "passed (222 warning(s), 616 baselined)", matching t754's recorded gates. `pnpm install --frozen-lockfile` in both main checkouts: "Done". `node scripts/flow-compiler.mjs --help` printed its usage; `automation-studio-scale-baseline.mjs` loaded through the export and exited 0.
+- Outcome: Accepted; both dev branches published together.
+- Follow-up: t751 final integration, then P6.
 
 ## Open Questions
 

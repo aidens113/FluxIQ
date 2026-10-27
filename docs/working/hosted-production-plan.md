@@ -74,14 +74,14 @@ next works on this plan revises it around these first; each is the user's own in
 - This document owns: discovery, the connect protocol and the browser credential, client gateway 0.2, the provisioning API, the authorization model, profiles and tenancy, panel extension points, and the billing and entitlement ports.
 - The paired document owns: the extension client, manifests and stores, consent and data minimisation, the product site and sign-up backend, hosted infrastructure, user docs, privacy, cookies and legal prerequisites, and Lab coverage.
 
-**Schedule: what fits and what does not.** Today is 2026-10-18; the freeze is 2026-10-29 and the deadline 2026-11-10.
-- **Fits before the freeze:**
+**Schedule: what fits and what does not.** Today is 2026-10-18; the deadline is 2026-11-10, with no feature freeze (user, 2026-10-27).
+- **Fits before 11-10:**
   - H0 decisions and spikes S1 to S5;
   - the contracts;
   - inert new modules (platform store, provisioning and connect libraries, discovery);
   - hardening that is safe for local use;
   - staging prepared and kept closed.
-- **Does not fit before the freeze, and must not merge before 11-10:**
+- **Does not fit before 11-10, and must not merge before it:**
   - tenancy wiring, which sends every route through the workspace manager;
   - connect end to end;
   - the extension's sign-in client;
@@ -638,19 +638,19 @@ An external penetration test is recommended. It can follow the Chrome release by
 
 Effort is in rough agent-days. Work merges as task branches on narrow checks.
 
-H1 is one paired unit of work: one task ID in both repositories, nested worktrees with its own Core worktree. It takes `dev` in daily and merges back after the MVP release-candidate tag. Before the freeze, merges are limited to new modules that nothing on the local path references, and to hardening that is safe for local use.
+H1 is one paired unit of work: one task ID in both repositories, nested worktrees with its own Core worktree. It takes `dev` in daily and merges back after the MVP release-candidate tag. Until then, merges are limited to new modules that nothing on the local path references, and to hardening that is safe for local use. There is no feature freeze (user, 2026-10-27).
 
-| Work | Before freeze (to 10-29) | Freeze to 11-10 | After 11-10 |
-| --- | --- | --- | --- |
-| H0 decisions, spikes S1 to S5 | Yes | | |
-| Contracts (discovery, connect, provisioning, gateway 0.2, panel product) | Merged (new files) | | |
-| Platform store, provisioning and connect libraries, discovery route | Merged inert, if lanes are free | | |
-| Local-safe hardening (frames, crypto codes, pairing caps, "check nothing" endpoints, throttle) | Yes; it helps the MVP | Approved freeze fixes only | |
-| Tenancy wiring, call-site migration, classification | H1 worktree | Worktree | Merges after the release-candidate tag |
-| Connect pages, gateway 0.2 wiring, extension sign-in (paired) | Worktree | Worktree | After the tag |
-| Product site and sign-up (paired) | Worktree | Worktree | After the tag |
-| Staging on getfluxiq.com | VM and DNS ready, closed | Closed, from the worktree build | Public after the gate |
-| Chrome Web Store submission with sign-in | No | No | About 12-01 |
+| Work | Until 11-10 | After 11-10 |
+| --- | --- | --- |
+| H0 decisions, spikes S1 to S5 | Yes | |
+| Contracts (discovery, connect, provisioning, gateway 0.2, panel product) | Merged (new files) | |
+| Platform store, provisioning and connect libraries, discovery route | Merged inert, if lanes are free | |
+| Local-safe hardening (frames, crypto codes, pairing caps, "check nothing" endpoints, throttle) | Yes; it helps the MVP | |
+| Tenancy wiring, call-site migration, classification | H1 worktree | Merges after the release-candidate tag |
+| Connect pages, gateway 0.2 wiring, extension sign-in (paired) | Worktree | After the tag |
+| Product site and sign-up (paired) | Worktree | After the tag |
+| Staging on getfluxiq.com | VM and DNS ready, closed, from the worktree build | Public after the gate |
+| Chrome Web Store submission with sign-in | No | About 12-01 |
 
 **H0** (10-18 to 10-22; 3 to 4 days; briefs go into this document before dispatch):
 - S1 (paired D0): tab observation in Chrome, Edge and Firefox.
@@ -735,7 +735,7 @@ The user approves the Chrome submission (about 12-01). getfluxiq.com opens on st
 ## Risks
 
 - **MVP contention.** H1 runs beside the MVP lanes. If MVP qualification slips, H1's merge slips with it, and the MVP keeps priority.
-- **Late merge.** H1 accumulates in a worktree through the freeze. Merge `dev` in daily, and keep the pre-freeze inert merges small.
+- **Late merge.** H1 accumulates in a worktree until 11-10. Merge `dev` in daily, and keep the inert merges before then small.
 - **Instance cost.** If S3 is heavy, evict harder, or split into a shared runtime with per-workspace storage, which would re-plan lane C.
 - **Hidden globals.** S4, the route matrix and the two-tenant Lab scenario cover them.
 - **Hand-written authorization.** The scope is small: one public client, code plus PKCE. RFC vectors and a review.

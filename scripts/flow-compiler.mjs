@@ -1,7 +1,7 @@
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import { compileFlowSource } from "../packages/fluxiq/dist/programs/automation-studio/dsl/index.js";
+import { compileFlowSource } from "fluxiq/automation-studio/dsl";
 
 const args = process.argv.slice(2);
 const mode = args.includes("--build") ? "build" : "check";
