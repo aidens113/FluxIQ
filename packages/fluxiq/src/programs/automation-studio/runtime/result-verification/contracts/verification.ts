@@ -1,5 +1,6 @@
 import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioResultRepairDirective } from "./repair.ts";
+import type { AutomationStudioResultRequestedOutputMissing } from "./requested-output.ts";
 import type { AutomationStudioResultVerdict, AutomationStudioResultVerdictBasis } from "./verdict.ts";
 
 /** The verdict, the reason a person reads, and the observation behind it. */
@@ -107,6 +108,15 @@ export type AutomationStudioResultVerification = import("../standing-no/index.ts
   failureCode?: string;
   /** Core's bounded missing-proof lines for a yes lacking row-local exclusion evidence. Not a refutation or permission to promote; never recorded on a run. */ exclusionEvidenceMissing?: string[];
   /** Beside it, set exactly when every call asked answered a plain yes (none no, none unsure, none unanswered) and Core held that yes for the exclusion evidence it lacked (`../verdict/`, `./agreement.ts`, t611): what a build reads, never the reason's words. Never a yes or permission to promote. */ yesUnconfirmed?: true;
+  /**
+   * On a yes Core held because the build declared records owed and the run
+   * stored none, with nothing in its record showing a list read to its end
+   * where nothing matched (`../requested-output/`, t757): the parts and columns
+   * owed, and Core's sentence. The verification is `unsure` and fails a
+   * finished run; a build's trial is not promoted on it. Core's finding, never
+   * the model's words.
+   */
+  requestedOutputMissing?: AutomationStudioResultRequestedOutputMissing;
   /** On a yes Core held for its exclusion evidence (`exclusionEvidenceMissing`) whose reply also said the Flow needs a change (`patchNeeded: true`, `../verdict/`, t636): in place of `yesUnconfirmed`, which is said only of a plain yes. A recheck's yes keeps the advice's code (`answersWithChangeAdvised`, `./verify.ts`). Never a yes or permission to promote. */ changeAdvised?: true;
 };
 

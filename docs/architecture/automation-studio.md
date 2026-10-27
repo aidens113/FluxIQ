@@ -428,6 +428,22 @@ Flow's steps show it looked, and `refuted` where the steps show it never looked
 or could not have stored what it found. A refutation reaches the same
 wrong-answer route a non-empty one does, so the repair re-enters exploration.
 
+**A yes is held to the answer the build declared (t757).** A project build's
+task spec part may declare `answer: { kind: "records", columns }`
+(`project-agents/contracts/task-spec.ts`), and the judge's checklist carries it.
+Where a part owes records and the run stored none, a yes becomes `unsure`,
+`core.result.requested_output_missing`, carrying `requestedOutputMissing` (the
+parts and columns owed) and Core's sentence as the reason, so the trial is not
+promoted and a finished run fails (`result-verification/requested-output/`). A
+first yes so held is not asked again to confirm it. The empty answer stays a yes
+only where the run's own record shows it honest: a read that saw its list end
+(`automationStudioResultReadObservedEnd`) and kept nothing, or reads that all
+saw their lists end and an answer that kept none of their rows. A part with no
+declared answer owes nothing, so action-only requests are judged as before.
+Nothing here reads the request's words. The judge's summary also lists the
+single value each step returned (`returned`, from `outputs.value`), labelled as
+handed on and not a stored record (`result-verification/returned-values.ts`).
+
 **The whole verification is bounded**
 (`runtime/result-verification/deadline.ts`). Resolving the provider, reading the
 instructions and the run detail, and both calls run inside one deadline —
