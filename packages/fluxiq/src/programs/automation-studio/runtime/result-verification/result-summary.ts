@@ -87,6 +87,12 @@
 // rows are in that order (`sortRead`). Live run `run-mv6qr7fk-77f30b49`'s judges
 // never saw "£72k" read as 72, and four times called a date-sorted answer
 // unsorted.
+//
+// **And the single value each step returned** (`returned`, t757,
+// `./returned-values.ts`), by step in run order, with Core's sentence that a
+// returned value is handed on and is no stored record: auction
+// `run-mveba82m-fd0616dc`'s judges saw three read values only as authored
+// targets and page text, beside no record set, and said yes.
 
 import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
@@ -104,6 +110,7 @@ import { automationStudioResultCapturedRows } from "./captured-rows.ts";
 import { automationStudioResultNarrowedBefore } from "./narrowed-before.ts";
 import { automationStudioResultProcessingAccount } from "./processing-account.ts";
 import { automationStudioResultReadAccounts } from "./read-account/index.ts";
+import { automationStudioResultReturnedValues } from "./returned-values.ts";
 import { automationStudioResultStepChanges } from "./step-changes.ts";
 import { automationStudioResultStepRows } from "./step-rows.ts";
 import { automationStudioResultValueReadings } from "./value-readings/index.ts";
@@ -233,6 +240,9 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
       ...(bound ? { rowsActedOn: [...(perRow?.rows.get(node.id) ?? [])], perRow: PER_ROW } : {})
     };
   });
+  // The single value each step returned, said as handed on and no stored record (`./returned-values.ts`, t757).
+  const returned = automationStudioResultReturnedValues(input.sessionAttempts, input.deniedEvidenceKeys);
+  if (returned.withheld) withheld = true;
   const ended = input.endView ? automationStudioResultEndView(input.endView, input.deniedEvidenceKeys) : undefined;
   if (ended?.withheld || input.endViewUnreadable !== undefined) withheld = true;
   const begun = startedOn(input.sessionAttempts, input.observedStateKeys ?? viewKeysOf(input.endView));
@@ -270,6 +280,7 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
     recordSets,
     ...(reads.length ? { reads } : {}),
     flowShape,
+    ...(returned.returned ? { returned: returned.returned } : {}),
     withheld,
     ...(ended?.endView ? { endView: ended.endView } : {})
   };

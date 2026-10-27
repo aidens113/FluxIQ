@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4134
+- Public declarations: 4139
 - Class: 141
 - Interface: 10
 - Object: 546
-- Type: 2195
+- Type: 2199
 - Type Alias: 1
-- Value: 1241
+- Value: 1242
 
 ## Public Declarations
 
@@ -2461,6 +2461,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioResultReadLoopedAccountInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/looped-account.ts` | - |
 | `automationStudioResultReadLoopPasses` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/loop-passes.ts` | - |
 | `AutomationStudioResultReadLoopPasses` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/loop-passes.ts` | A read step's passes of one loop: the Repeat that counts them, each pass's attempts, and how the loop ended. |
+| `automationStudioResultReadObservedEnd` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/stop.ts` | - |
 | `automationStudioResultReadPageBoundSentence` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/page-bound-sentence.ts` | - |
 | `automationStudioResultReadPagesClause` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/pages-clause.ts` | - |
 | `automationStudioResultReadParameters` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/read-parameters.ts` | - |
@@ -2499,6 +2500,10 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioResultRepairStop` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/history.ts` | Why a refuted run was not re-authored again, in codes a reader can key on. |
 | `automationStudioResultRepairUnchangedInARow` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/history.ts` | - |
 | `automationStudioResultRepairWithPurse` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/purse.ts` | - |
+| `AutomationStudioResultRequestedAnswer` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/contracts/requested-output.ts` | The answer a part of the build's task spec declares it asks for, as the judge's checklist carries it (`project-agents/contracts/task-spec.ts`, `answer`, t757): records, with the columns the request names, in its order; an empty list where it names none. Absent on a part, none is owed. |
+| `AutomationStudioResultRequestedOutput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/contracts/requested-output.ts` | What a run owes by the build's own declaration (`../requested-output/`, t757): each part whose declared answer is records, by id, with its columns. Never read off the request's words. |
+| `AutomationStudioResultRequestedOutputMissing` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/contracts/requested-output.ts` | Core's finding that a run owed records and stored none, with nothing in the run's own record showing a list read to its end where nothing matched (`../requested-output/`, t757): the parts and columns owed, and Core's sentence for it. Set on the verification of a yes it holds. |
+| `AutomationStudioResultReturnedValues` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/contracts/run-result-summary.ts` | The single values a run's steps returned (`AutomationStudioRunResultSummary.returned`, t757): each by the step that returned it, in run order, beside Core's sentence for what they are. Read off a step's `outputs.value`, Core's port for a node's single value, and screened as every run value is. |
 | `automationStudioResultRunAccounting` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/accounting/accounting.ts` | - |
 | `automationStudioResultSameStoredRows` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/build-yes-hold/same-stored-rows.ts` | - |
 | `automationStudioResultScreenedDefects` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/verdict/defects.ts` | - |
@@ -2523,7 +2528,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioResultSummaryWithPagingWords` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/judge-paging.ts` | - |
 | `automationStudioResultSummaryWithRowIds` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/request-rows/summary-with-row-ids.ts` | - |
 | `automationStudioResultSummaryWithUnreadColumns` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/unread-columns.ts` | - |
-| `AutomationStudioResultTaskChecklist` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/contracts/task-checklist.ts` | The task checklist a project build's judge is sent (`taskChecklist`): first its own label, saying the instructions are the only authority and how the checklist is used, because the judge's standing instruction does not name it; then each part the instructions ask for, in their own words, and what they do not ask for; for a subflow trial, the parts other subflows do. |
+| `AutomationStudioResultTaskChecklist` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/contracts/task-checklist.ts` | The task checklist a project build's judge is sent (`taskChecklist`): first its own label, saying the instructions are the only authority and how the checklist is used, because the judge's standing instruction does not name it; then each part the instructions ask for, in their own words, and what they do not ask for; for a subflow trial, the parts other subflows do. A part whose task spec declares the answer it asks for carries it (`answer`, t757): the obligation a yes is held to (`../requested-output/`). |
 | `automationStudioResultTextMatch` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/value-readings/text-match.ts` | - |
 | `automationStudioResultValueReadings` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/value-readings/summary-readings.ts` | - |
 | `automationStudioResultVerdict` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/verdict/result-verdict.ts` | - |

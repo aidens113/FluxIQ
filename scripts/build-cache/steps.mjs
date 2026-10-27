@@ -48,12 +48,15 @@
 // `<dir>:check`, where `<dir>` is the package's directory name.
 
 const CACHE = "node_modules/.cache/fluxiq-build";
-const LIBRARY_BUILD = "tsc -b tsconfig.build.json --clean && tsc -b tsconfig.build.json && node ../../scripts/rewrite-declaration-imports.mjs dist";
+// The library type checks need more than node's default heap on a 12 GB Windows machine (exit 134),
+// so tsc runs under node with an explicit ceiling rather than relying on each caller's NODE_OPTIONS.
+const TSC = "node --max-old-space-size=4096 node_modules/typescript/bin/tsc";
+const LIBRARY_BUILD = `${TSC} -b tsconfig.build.json --clean && ${TSC} -b tsconfig.build.json && node ../../scripts/rewrite-declaration-imports.mjs dist`;
 // `--incremental` keeps each file's diagnostics keyed by its version and
 // re-reports them, so the set of errors is what a cold run reports; the build
 // info sits under node_modules, away from the source tree and from the build's
 // own `tsconfig.build.tsbuildinfo`.
-const INCREMENTAL_CHECK = `tsc --noEmit --incremental --tsBuildInfoFile ${CACHE}/check.tsbuildinfo`;
+const INCREMENTAL_CHECK = `${TSC} --noEmit --incremental --tsBuildInfoFile ${CACHE}/check.tsbuildinfo`;
 
 function library(dir) {
   return {
