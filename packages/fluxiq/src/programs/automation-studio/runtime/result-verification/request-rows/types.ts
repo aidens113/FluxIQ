@@ -32,7 +32,7 @@ export type AutomationStudioRequestRowsCondition = {
    * `condition N`, its column, and the numbers its bound writes. A yes need
    * not quote beside these rows, only once beside a naming of the condition.
    */
-  settled?: { labels: string[]; names: string[][] };
+  settled?: { labels: string[]; names: string[][]; kind: "bound" | "presence" | "text" };
 };
 
 /** One list read, as the rows a summary holds for it. */
@@ -115,6 +115,8 @@ export type AutomationStudioRequestRowsUnquoted = {
    * bound. Absent for rows the yes did not quote beside.
    */
   bound?: true;
+  /** With `bound`: what kind of condition Core settled the rows by, carried from `../value-readings/settled-rows.ts` so `../verdict/unquoted-line.ts` words the line by it and never re-parses the condition's wording. */
+  boundKind?: "bound" | "presence" | "text";
   /**
    * The reads that stored the rows, where this condition left them out of what
    * the Flow acted on and another read stored them (t691,
