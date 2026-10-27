@@ -11,6 +11,8 @@
     "./auth": { "types": "./dist/programs/identity-access/index.d.ts", "import": "./dist/programs/identity-access/index.js" },
     "./client-gateway": { "types": "./dist/client-gateway/index.d.ts", "import": "./dist/client-gateway/index.js" },
     "./automation-studio": { "types": "./dist/programs/automation-studio/index.d.ts", "import": "./dist/programs/automation-studio/index.js" },
+    "./automation-studio/testing": { "types": "./dist/programs/automation-studio/testing/index.d.ts", "import": "./dist/programs/automation-studio/testing/index.js" },
+    "./automation-studio/evidence-build-scope": { "types": "./dist/programs/automation-studio/runtime/llm/harness-options/evidence-build-scope.d.ts", "import": "./dist/programs/automation-studio/runtime/llm/harness-options/evidence-build-scope.js" },
     "./automation-studio/candidate-authoring": { "types": "./dist/programs/automation-studio/runtime/flow-bootstrap/authoring-result/index.d.ts", "import": "./dist/programs/automation-studio/runtime/flow-bootstrap/authoring-result/index.js" },
     "./automation-studio/llm-models": {
     "types": "./dist/programs/automation-studio/runtime/llm/deepseek/models.d.ts",

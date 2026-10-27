@@ -4,7 +4,7 @@ import process from "node:process";
 import {
   createAutomationStudioScaleCertificationReport,
   createAutomationStudioScaleCertificationTemplate
-} from "../packages/fluxiq/dist/programs/automation-studio/testing/index.js";
+} from "fluxiq/automation-studio/testing";
 
 const evidencePath = readArg("--evidence") ?? process.env.FLUXIQ_STUDIO_CERTIFICATION_EVIDENCE;
 const outputPath = readArg("--output") ?? process.env.FLUXIQ_STUDIO_CERTIFICATION_OUTPUT;
