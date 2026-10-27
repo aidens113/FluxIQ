@@ -74,7 +74,7 @@ export function automationStudioSiteResetAdmission(input: AutomationStudioSiteRe
   const own = control.scope !== undefined && control.resource !== undefined ? known.original(control.scope, control.resource) : undefined;
   if (own) return { kind: "admit", witness: { via: "own_list", scope: own.scope, group: own.group } };
   if (consequences.length === 1 && consequences[0] === "modify_existing" && control.place !== undefined && control.state !== undefined) {
-    if (input.requireIdentity && known.controlOriginal?.(control) !== true) return refused("candidate.reset_witness_required", "no_witness", known.controlOriginalCanBeRead?.(control) ? "this_page" : "no_call", "This control's original counts were not read before this build acted there. Read its stateful controls before any press; if that original is no longer provable, end honestly naming the unresolved baseline.");
+    if (input.requireIdentity && known.controlOriginal?.(control) !== true) return refused("candidate.reset_witness_required", "no_witness", known.controlOriginalCanBeRead?.(control) ? "this_page" : "no_call", WORDS.controlOriginalRequired());
     return { kind: "admit", witness: { via: "control", place: control.place } };
   }
   const repeated = repeatedAct(input, known);

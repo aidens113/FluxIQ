@@ -190,6 +190,10 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
       + `${SHOWS} `
       + "Without such a list nothing could ever show the change put back, and no trial could run for the rest of the build. Looking and navigating remain available; no new permission is needed.";
   },
+  /** A project control's pre-act original was not read (`../reset-admission/admission.ts`). */
+  controlOriginalRequired(): string {
+    return "This build has no proven original counts for this control. Read its stateful controls with core.run_node before any press; if that original is no longer provable, end honestly naming the unresolved baseline.";
+  },
   /**
    * A plan step that is a reversible lasting press with no witness (`../reset-admission/admission.ts`, the step door, t751):
    * a step can carry no resetDestination, so its witness is made while exploring -- one press of that control, naming the ref

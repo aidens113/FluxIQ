@@ -34,7 +34,10 @@ it.each(["core.run_node", "custom.press"])("requires a project control original 
     }
   });
   const run = () => permissions.executeTool({ callId: "star", toolId, value: { node: "demo.star", consequences: ["modify_existing"] } });
-  expect(await run()).toMatchObject({ resultCode: "candidate.reset_witness_required", evidence: { canMeet: "this_page" }, effectApplied: false });
+  const missingOriginal = await run();
+  expect(missingOriginal).toMatchObject({ resultCode: "candidate.reset_witness_required", evidence: { canMeet: "this_page", instruction: expect.stringContaining("This build has no proven original counts for this control.") }, effectApplied: false });
+  expect(JSON.stringify(missingOriginal.evidence)).not.toContain("build acted");
+  expect(effects).toBe(0);
   target = { name: "Unidentified", kind: "button" };
   expect(await run()).toMatchObject({ resultCode: "candidate.reset_target_unidentified", effectApplied: false });
   expect(effects).toBe(0);
