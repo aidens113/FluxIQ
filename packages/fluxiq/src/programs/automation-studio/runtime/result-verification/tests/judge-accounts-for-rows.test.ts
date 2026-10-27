@@ -21,6 +21,7 @@ import {
   AutomationStudioRequestRowId, automationStudioRequestRowLabel, automationStudioRequestRowNaming, automationStudioRequestWording,
   automationStudioResultSummaryWithLeftOutNamingTheItem, automationStudioResultSummaryWithRowIds
 } from "../request-rows/index.ts";
+import { BADGE_CATALOGUE_INSTRUCTION, BADGE_CATALOGUE_PROMOTED, badgeCatalogueSummary } from "../value-readings/tests/badge-catalogue.ts";
 import {
   PRESENCE_CATALOGUE_INSTRUCTION, PRESENCE_CATALOGUE_KEPT, PRESENCE_CATALOGUE_NO_MEMBER, PRESENCE_CATALOGUE_PROMOTED, PRESENCE_CATALOGUE_SPARE,
   presenceCatalogueSummary, type PresenceCatalogueWitness
@@ -251,5 +252,33 @@ describe("a yes over rows a presence or absence test left out, which Core measur
     expect(report.outcome.performed && report.outcome.verdict).toBe("answers");
     expect(seen.length).toBe(2);
     for (const request of seen) expect(request.context.resultSummary?.reads?.[0]?.conditions?.[2]?.leftOutOnlyByThis).toEqual([`[row ${spareId}] ${PRESENCE_CATALOGUE_SPARE}`]);
+  });
+});
+
+// t758: the line a held yes is sent says what kind of condition Core settled the
+// rows by, carried from the settling, not read back from the condition's wording.
+describe("a yes over rows a presence exclusion with no column left out (t758)", () => {
+  const catalogue = [BADGE_CATALOGUE_INSTRUCTION];
+  const summary = badgeCatalogueSummary();
+  const verdictOf = (reply: string) => automationStudioResultVerdict({ summary: automationStudioResultSummaryWithLeftOutNamingTheItem(summary, catalogue), diagnosis: { answersRequest: "yes", observed: reply }, basis: "model", wording: automationStudioRequestWording(catalogue, summary) });
+
+  it("settles the rows as a presence test, worded by what the read found", () => {
+    const [condition] = summary.reads![0]!.conditions!;
+    expect(condition!.condition).toBe(`the item's text "Promoted" is absent (a row is kept only when it has no "Promoted")`);
+    expect(condition!.leftOutSettled).toEqual(BADGE_CATALOGUE_PROMOTED);
+    expect(condition!.settledKind).toBe("presence");
+  });
+
+  it("holds a yes that never names the condition, asking for the words that ask for what it tests and never a bound", () => {
+    const held = verdictOf('The two promoted trails are left out, as the request says: "leaving out promoted items".');
+    expect(held).toMatchObject({ verdict: "unsure", code: "core.result.exclusion_evidence_missing" });
+    const [line] = held.exclusionEvidenceMissing!;
+    expect(line).toContain("the request's words asking for what that condition tests");
+    expect(line).not.toContain("bound");
+    for (const row of BADGE_CATALOGUE_PROMOTED) expect(line).not.toContain(row);
+  });
+
+  it("takes a yes that names condition 1 beside a quote of the request", () => {
+    expect(verdictOf('Condition 1 leaves out what the request excludes: "leaving out promoted items".')).toMatchObject({ verdict: "answers" });
   });
 });

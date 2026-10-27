@@ -148,7 +148,7 @@ export function automationStudioResultLeftOutRowsUnquoted(summary: AutomationStu
       const stored = storedUnquoted(condition, elsewhere, storedAccounting, read.labels);
       return [
         ...(rows.length ? [{ ...where, condition: condition.condition, rows }] : []),
-        ...(bound.length ? [{ ...where, condition: condition.condition, rows: bound, bound: true as const }] : []),
+        ...(bound.length ? [{ ...where, condition: condition.condition, rows: bound, bound: true as const, boundKind: condition.settled!.kind }] : []),
         ...(stored.rows.length ? [{ ...where, condition: condition.condition, rows: stored.rows, stored: stored.by }] : [])
       ];
     });

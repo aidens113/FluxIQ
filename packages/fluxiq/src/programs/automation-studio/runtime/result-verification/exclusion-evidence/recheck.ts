@@ -22,7 +22,7 @@ import { screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
 /** What the recheck asks, said once above Core's lines (header). Written for no site or kind of item. */
 const RECHECK = "Your affirmative judgement lacked required exclusion evidence. Recheck the same request and result; do not change the Flow or invent an exclusion. "
   + "For every row named below, use its full displayed name or exact distinguishing identifier, or the id the summary shows in brackets before it (as in [row K4R7M2]), in a sentence that also quotes in double quotes the request's own words excluding that row. "
-  + "Where a line says Core already read a condition's left-out rows as failing its bound, those rows need no quote of their own: quote once, in a sentence that names that condition as the line does, the request's own words stating that bound. "
+  + "Where a line says Core already read a condition's left-out rows as failing it, those rows need no quote of their own: quote once, in a sentence that names that condition as the line does, the request's own words the line asks for (stating its bound, or asking for what it tests). "
   + "Search or navigation words alone exclude nothing. If the request does not justify the exclusion, answer no; if evidence is insufficient, answer unknown. "
   + "Where a line names rows the result keeps rather than rows left out, there is no exclusion to show: name each such row in a sentence that quotes in double quotes the request's own words for what it asks for, and say whether the row is that; if the request does not ask for a row the result keeps, answer no.";
 
