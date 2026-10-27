@@ -13,14 +13,11 @@ Related: [source plan](./trace-offline-trials-plan/source-consultant-plan.md) (t
 
 ## Current State
 
-**PAUSED at the user's explicit stop-all request (2026-10-21).** All recovery agents and their task processes are
-stopped. No implementation, checks, builds, integration or paid runs resume until the user asks. Authoritative
-handoff: downstream `docs/working/trace-offline-trials-plan/reports/handoff-2026-10-21-codex.md`.
-Latest pushed dev heads are Core `f396c9d0`, downstream `83e07232`, including t753 and t752. t754's downstream
-task finish completed only locally (`54d27653`); Core finish has NOT begun. Its clean paired worktree remains
-on `task/t754-package-exports-cleanup` at `efa96a4b`. Do not publish the downstream half alone. t751 has five
-dirty Core source/test files; latest focused corrections passed, but final integrated build/browser acceptance
-is outstanding. P6, live rounds and daily sweeps were not started. Only handoff documentation follows this stop.
+**RESUMED (user, 2026-10-27: "get this MVP done"; no feature freeze).** Resume order is the downstream
+handoff `docs/working/trace-offline-trials-plan/reports/handoff-2026-10-21-codex.md`. t754 is merged and
+published in both repositories. Next: t751's five dirty Core files reviewed and checkpointed, current `dev`
+integrated into both t751 trees, final gates and headed site-reset specs, t751 finish; then P6. The downstream
+execution hub owns current status.
 
 **Approved (user, 2026-10-19):** this plan, which is the supervisor's revision of the consultant's plan in
 `trace-offline-trials-plan/source-consultant-plan.md`. "don't implement yet" was the instruction while reviewing;
@@ -218,6 +215,13 @@ The source plan's T01-T24 are kept. Added:
 - Validation: all recovery agents stopped; process inspection found zero task-owned node/browser processes. No new implementation/check/build/integration after stop; only handoff documentation maintained.
 - Outcome: Paused. Core t754 task finish has not begun; downstream local merge54d27653 is unpublished. t751 source remains uncommitted at its documented final correction boundary.
 - Follow-up: wait for user resume; preserve both task trees and publish no downstream half alone.
+
+### 2026-10-27 - Resumed; t754 package exports finished in Core
+- Agent: supervisor
+- Changed: `pnpm task finish t754 "Replace private build path loads with package exports" --skip-checks` merged the clean paired task (worktree detached first, as the tool requires).
+- Validation: the finish's mandatory contracts ran `vitest run` over 3 files: "Test Files 3 passed (3)", "Tests 68 passed (68)". `pnpm structure:check` after the merge: "passed (443 warning(s), 1152 baselined)"; downstream "passed (222 warning(s), 616 baselined)", matching t754's recorded gates. `pnpm install --frozen-lockfile` in both main checkouts: "Done". `node scripts/flow-compiler.mjs --help` printed its usage; `automation-studio-scale-baseline.mjs` loaded through the export and exited 0.
+- Outcome: Accepted; both dev branches published together.
+- Follow-up: t751 final integration, then P6.
 
 ## Open Questions
 

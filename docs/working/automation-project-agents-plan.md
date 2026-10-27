@@ -683,7 +683,7 @@ Entries for 2026-10-14 (t613, t617) and 2026-10-15 (A8 waves 5 to frozen pair 5,
 ## Open Questions
 
 - **Schedule against the MVP** (user). Recommendation, acted on in the plan:
-  A1-A6 before the 2026-10-29 freeze behind mode `project`, `candidate`
+  A1-A6 before the 2026-11-10 deadline behind mode `project`, `candidate`
   stays the default; flip only if the Lab comparison passes. Overrule to move
   it after November 10. Outcome: the comparison passed on 2026-10-16 (A8
   frozen pair 8) and `project` is the default (t667).
