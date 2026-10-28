@@ -80,7 +80,10 @@
 //   Core running the parts before a part only to get the page ready is
 //   neither: it reads "Getting the page ready" and counts no step
 //   (`steady/page-preparation.ts`), and a reset brief reads "Putting the site
-//   back" (t753).
+//   back" (t753). A test checked against the recorded run reads as that,
+//   counting its steps as a test does (`steady/recorded-check.ts`); a test
+//   refused before it ran never reads as testing, and its closing line says
+//   it didn't run and why (`steady/test-ending.ts`, t769 b13).
 // - A stopped ending -- "Run stopped", "Build stopped" -- is read from Core's
 //   `stopped` field on the final event, set from the cancellation itself, never
 //   from its words.
@@ -132,7 +135,7 @@ import { endingKindOf } from "./ending-kind.ts";
 import { activityHeadline } from "./headline.ts";
 import type { ActivityHostWords } from "./host-words.ts";
 import { RunRetry, type RetryState } from "./run-retry.ts";
-import { activityAgentKey, activitySaidOnce, AgentFocus, AgentStates, type CountedStep, type PreparationState } from "./steady/index.ts";
+import { activityAgentKey, activitySaidOnce, AgentFocus, AgentStates, type CountedStep, type PreparationState, type RecordedCheckState } from "./steady/index.ts";
 import { SupervisorEnding, type SupervisorEndingWords } from "./supervisor-ending.ts";
 import type { UnitState } from "./unit-situation.ts";
 
@@ -199,6 +202,7 @@ type Reading = {
   readonly retry: RetryState;
   readonly trial: TrialState;
   readonly preparation: PreparationState;
+  readonly recorded: RecordedCheckState;
   /** The step the run is on, by the count it first said; null for a row with no step. */
   readonly counted: CountedStep | null;
   /** The display shown came from the same agent. */
@@ -247,11 +251,14 @@ export class ActivityPacer {
     const kind = subjectKindOf(event);
     const agent = this.agents.of(event);
     const preparation = agent.preparation.observe(event);
-    const trial = agent.trial.observe(event, kind, preparation.preparing);
-    const unit = agent.situation.observe(event, trial.testing || trial.endedNow || preparation.preparing);
-    if (trial.startedNow || trial.endedNow || preparation.startedNow || unit.rebuilding) agent.count.restart();
-    // A build's test, and getting its page ready, run a Flow as a run does, so their retries are told as a run's are.
-    const retry = this.retry.observe(event, trial.testing || preparation.preparing ? "run" : kind);
+    const recorded = agent.recorded.observe(event);
+    const trial = agent.trial.observe(event, kind, preparation.preparing ? "preparing" : recorded.checking ? "recorded" : null);
+    // A run made aside from a test on the site: getting the page ready, or checking against the recorded run.
+    const aside = preparation.preparing || recorded.checking;
+    const unit = agent.situation.observe(event, trial.testing || trial.endedNow || aside);
+    if (trial.startedNow || trial.endedNow || preparation.startedNow || recorded.startedNow || unit.rebuilding) agent.count.restart();
+    // A build's test, getting its page ready and checking it against the recorded run run a Flow as a run does, so their retries are told as a run's are.
+    const retry = this.retry.observe(event, trial.testing || aside ? "run" : kind);
     // Why the supervisor ended a project build, for the row that ends it (t649).
     const because = this.ending.observe(event, () => statusSentence(event));
     const step = stepOf(event.step);
@@ -264,7 +271,7 @@ export class ActivityPacer {
     if (latest !== null && latest.activityId === event.activityId && isSettled(latest) && outcomeOf(event) === null) return;
     if (isClearedWait(event)) return;
     const key = `${event.activityId}|${activityAgentKey(event)}`;
-    const reading: Reading = { unit, retry, trial, preparation, counted, sameAgent: this.shownKey === key };
+    const reading: Reading = { unit, retry, trial, preparation, recorded, counted, sameAgent: this.shownKey === key };
     // A refusal said verbatim -- Core's own sentence, not a line of FluxIQ's own such as a test's failed step.
     const quiet = isModelThought(event) || REFUSED.test(sentenceFor(event, reading, because) ?? "");
     const next = quiet
@@ -424,7 +431,7 @@ export class ActivityPacer {
 }
 
 function displayFor(event: ClientGatewayActivity, previous: ActivityDisplay | null, reading: Reading, words: ActivityHostWords, because?: SupervisorEndingWords): ActivityDisplay {
-  const { unit, retry, trial, preparation, counted } = reading;
+  const { unit, retry, trial, preparation, recorded, counted } = reading;
   // A settling row names the work it ends, which outweighs the subject
   // (`ending-kind.ts`), and the unit keeps that name for every row after it:
   // a thought after a build's ending took the run's headline again, "Couldn't
@@ -438,9 +445,11 @@ function displayFor(event: ClientGatewayActivity, previous: ActivityDisplay | nu
   const headline = activityHeadline(subjectKind, outcome, words, {
     stopped: event.stopped === true,
     // A run pressing a failed step again is not a repair (D12), and nor is
-    // anything a candidate trial's run, or getting the page ready, reports.
-    repairing: unit.repairing && retry.repairing && !trial.testing && !preparation.preparing,
+    // anything a candidate trial's run, getting the page ready, or checking
+    // against the recorded run reports.
+    repairing: unit.repairing && retry.repairing && !trial.testing && !preparation.preparing && !recorded.checking,
     testing: trial.testing,
+    checkingRecording: recorded.checking,
     preparing: preparation.preparing,
     resetting: unit.resetting,
     waitingOn: event.phase === "waiting_permission" ? "answer" : event.phase === "paused" ? "paused" : "check"
@@ -464,7 +473,7 @@ function displayFor(event: ClientGatewayActivity, previous: ActivityDisplay | nu
     subjectKind,
     // A trial's failed step reports Core's `repairing` phase; the trial is
     // still only running the Flow, so it is coloured as running.
-    phase: (trial.testing || preparation.preparing) && event.phase === "repairing" ? "running" : event.phase,
+    phase: (trial.testing || preparation.preparing || recorded.checking) && event.phase === "repairing" ? "running" : event.phase,
     headline,
     detail,
     step: step === null ? null : { index: step.index, count: step.count },
@@ -485,7 +494,7 @@ function sentenceFor(event: ClientGatewayActivity, reading: Reading, because: Su
     return because.reason === undefined ? sentence : withReason(sentence, because.reason);
   }
   if (reading.unit.checkReportedNow) return CHECK_DETAIL;
-  return reading.preparation.line ?? reading.trial.line ?? reading.retry.line ?? statusSentence(event);
+  return reading.preparation.line ?? reading.recorded.line ?? reading.trial.line ?? reading.retry.line ?? statusSentence(event);
 }
 
 /**
@@ -501,8 +510,8 @@ function quietDisplayFor(event: ClientGatewayActivity, base: ActivityDisplay | n
   const kept = base && base.activityId === event.activityId ? base : null;
   const own = displayFor(event, kept, reading, words);
   const keptLine = kept && kept.detail !== retry.ended ? kept.detail : null;
-  // A test's opening line is FluxIQ's own words too (`candidate-trial.ts`).
-  const line = retry.line ?? (trial.startedNow ? trial.line : null) ?? keptLine;
+  // A test's opening line is FluxIQ's own words too (`candidate-trial.ts`), said as the decision to test begins it.
+  const line = retry.line ?? (trial.startedNow || trial.calledNow ? trial.line : null) ?? keptLine;
   return {
     ...own,
     phase: kept?.phase ?? own.phase,

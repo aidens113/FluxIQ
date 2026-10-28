@@ -54,15 +54,16 @@ test("a build exploring the page is headed 'Building your Flow'", () => {
   expect(new Set(h.shown.map((display) => display.headline))).toStrictEqual(new Set(["Building your Flow"]));
 });
 
-test("a candidate trial is headed 'Testing your Flow' with its run's steps, and a step that fails in it is never a repair", () => {
+test("a candidate trial is headed 'Testing your Flow on the site' with its run's steps, and a step that fails in it is never a repair", () => {
   const h = harness();
   h.feed(event({ phase: "exploring", label: "Using core.run_node" }), trialStarted());
-  expect([h.now().headline, h.now().detail, h.now().step], "the trial opens with no step of the build's carried in").toStrictEqual(["Testing your Flow", TITLE, null]);
+  // t769 b13: the call's opening row runs nothing, and the gate may still refuse it.
+  expect([h.now().headline, h.now().detail, h.now().step], "the test call begins with no step of the build's carried in").toStrictEqual(["Building your Flow", TITLE, null]);
   h.feed(trialStep(1, "Opening the start page"), trialStep(2, "Clicking “Collected”"));
-  expect([h.now().headline, h.now().step]).toStrictEqual(["Testing your Flow", { index: 2, count: 8 }]);
+  expect([h.now().headline, h.now().step]).toStrictEqual(["Testing your Flow on the site", { index: 2, count: 8 }]);
   h.feed(...trialStepFailed(2, "Clicking “Collected”"));
   const failedStep = h.now();
-  expect([failedStep.headline, failedStep.detail, failedStep.phase, failedStep.step]).toStrictEqual(["Testing your Flow", "A step didn't work in the test: FluxIQ couldn't find it where it was saved", "running", { index: 2, count: 8 }]);
+  expect([failedStep.headline, failedStep.detail, failedStep.phase, failedStep.step]).toStrictEqual(["Testing your Flow on the site", "A step didn't work in the test: FluxIQ couldn't find it where it was saved", "running", { index: 2, count: 8 }]);
   const during = h.shown.slice(1);
   expect(during.every((display) => !REPAIR_WORDS.test(words(display))), during.map(words).join(" | ")).toBeTruthy();
   expect(during.every((display) => display.phase !== "repairing"), "a trial is coloured as running, not repairing").toBeTruthy();
@@ -89,7 +90,9 @@ test("each trial verdict is said as the test's own result", () => {
     ["candidate.trial_execution_failed", "The test failed: a step didn't work. Next: changing the Flow and testing again"],
     ["candidate.trial_unsure", "The test couldn't be judged. Next: testing the Flow again"],
     ["candidate.trial_not_judged", "The test couldn't be judged. Next: testing the Flow again"],
-    ["candidate.trial_stale_revision", "The test didn't run. Next: deciding what to do"]
+    // t769 b13: a test that didn't run says why, in plain words for its code where its row has none.
+    ["candidate.trial_stale_revision", "The test didn't run: only the latest saved steps can be tested"],
+    ["candidate.trial_some_new_refusal", "The test didn't run. Next: deciding what to do"]
   ];
   for (const [code, detail] of cases) {
     const h = harness();
@@ -128,30 +131,34 @@ test("a build's repair of a refuted answer outside any trial is still 'Fixing yo
   expect(h.now().headline).toBe("Fixing your Flow");
 });
 
-test("a test is opened by the build's core.test_candidate row, its decision to test, or its run's first step, and closed by the build's own next work", () => {
+test("a test is begun by the build's core.test_* row or its decision to test, opened only by its run's first step, and closed by the build's own next work", () => {
   const trial = new CandidateTrial();
   expect(trial.observe(event({ phase: "exploring", label: "Saving the Flow's steps", detail: { kind: "tool", title: "Saving the Flow's steps", status: "started", ref: "core.submit_candidate" } }), "build").testing).toBe(false);
-  expect(trial.observe(trialStarted(), "build")).toStrictEqual({ testing: true, startedNow: true, endedNow: false, line: null });
-  expect(trial.observe(trialStep(1, "Opening the start page"), "build").testing).toBe(true);
+  // t769 b13: the call's row only begins it; the gate may refuse it before anything runs.
+  expect(trial.observe(trialStarted(), "build")).toStrictEqual({ testing: false, startedNow: false, endedNow: false, calledNow: true, line: null });
+  expect(trial.observe(trialStep(1, "Opening the start page"), "build")).toStrictEqual({ testing: true, startedNow: true, endedNow: false, line: null });
   // A new unit of work starts outside any test; a build's run step there opens its own (t366: Core sends no core.test_candidate row).
   expect(trial.observe(event({ phase: "exploring", label: "Using core.run_node" }, "build", "other"), "build")).toStrictEqual({ testing: false, startedNow: false, endedNow: false, line: null });
   expect(trial.observe(trialStep(1, "Opening the start page", "other"), "build")).toStrictEqual({ testing: true, startedNow: true, endedNow: false, line: null });
   // The build's next decision closes it, with no line of its own.
   expect(trial.observe(event({ phase: "thinking", label: "Deciding the next step", detail: { kind: "thought", title: "Deciding the next step", status: "started" } }, "build", "other"), "build")).toStrictEqual({ testing: false, startedNow: false, endedNow: true, line: null });
-  // The decision to test opens it with Core's words for the test, and a loop tool row closes it.
-  expect(trial.observe(event({ phase: "exploring", label: TITLE, detail: { kind: "thought", title: TITLE, text: "Testing revision 2.", status: "succeeded" } }, "build", "other"), "build")).toStrictEqual({ testing: true, startedNow: true, endedNow: false, line: TITLE });
+  // The decision to test begins it with Core's words for the test; its first step opens it, and a loop tool row closes it.
+  expect(trial.observe(event({ phase: "exploring", label: TITLE, detail: { kind: "thought", title: TITLE, text: "Testing revision 2.", status: "succeeded" } }, "build", "other"), "build")).toStrictEqual({ testing: false, startedNow: false, endedNow: false, calledNow: true, line: TITLE });
+  expect(trial.observe(trialStep(1, "Opening the start page", "other"), "build").startedNow).toBe(true);
   expect(trial.observe(event({ phase: "exploring", label: "Looking over the whole page", detail: { kind: "tool", title: "Looking over the whole page", status: "started", ref: "web.find_on_page" } }, "build", "other"), "build").endedNow).toBe(true);
   // A saved Flow's run step is the run itself, never a test.
   expect(trial.observe(trialStep(1, "Opening the start page", "r1"), "run").testing).toBe(false);
-  expect(trial.observe(trialStarted("b3"), "build").startedNow).toStrictEqual(true);
+  expect(trial.observe(trialStarted("b3"), "build").calledNow).toStrictEqual(true);
+  expect(trial.observe(trialStep(1, "Opening the start page", "b3"), "build").startedNow).toStrictEqual(true);
   // A unit that settles with its test open closes it.
   expect(trial.observe(event({ phase: "failed", label: "Build failed", final: true }, "build", "b3"), "build").testing).toBe(false);
   expect(trial.observe(event({ phase: "exploring", label: "Using core.run_node" }, "build", "b3"), "build").testing).toBe(false);
 });
 
 test("the headline names a test above a repair, and a failed test is never a failed fix", () => {
-  expect(activityHeadline("build", null, TEST_HOST_WORDS, { testing: true })).toBe("Testing your Flow");
-  expect(activityHeadline("build", null, TEST_HOST_WORDS, { testing: true, repairing: true })).toBe("Testing your Flow");
+  expect(activityHeadline("build", null, TEST_HOST_WORDS, { testing: true })).toBe("Testing your Flow on the site");
+  expect(activityHeadline("build", null, TEST_HOST_WORDS, { testing: true, repairing: true })).toBe("Testing your Flow on the site");
+  expect(activityHeadline("build", null, TEST_HOST_WORDS, { testing: true, checkingRecording: true }), "a check against the recording is never a test on the site").toBe("Checking your Flow against the recorded run");
   expect(activityHeadline("run", "failed", TEST_HOST_WORDS, { testing: true, repairing: true })).toBe("Run failed");
   expect(activityHeadline("build", "waiting", TEST_HOST_WORDS, { testing: true, waitingOn: "check" })).toBe(TEST_HOST_WORDS.check);
 });

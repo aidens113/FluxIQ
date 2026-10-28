@@ -1,5 +1,6 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialVerdict, type AutomationStudioFlowCandidateSubmissionController, type AutomationStudioFlowCandidateTrialGate } from "../../flow-bootstrap/candidate/index.ts";
+import { AUTOMATION_STUDIO_TRIAL_OFFLINE_FIRST_WORDS as OFFLINE } from "../../flow-bootstrap/offline-first/index.ts";
 import type { AutomationStudioSubflowTrialKeptEveryRowRead, AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult, AutomationStudioSubflowTrialRowCheck } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioResultKeptCondition, AutomationStudioResultKeptConditionsCarrier } from "../../result-verification/standing-no/index.ts";
 import { automationStudioLlmBuildPurseJudgeBackstopScope, automationStudioLlmBuildPurseScope, automationStudioLlmCurrentBuildPurse, type AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
@@ -104,6 +105,20 @@ import { automationStudioProjectSingleSubflowPlan } from "./single-subflow-plan.
 // as that refusal said it, and to end its brief partial, since another test
 // is refused the same way and its last finished test stands.
 //
+// **A whole test may be answered from the recording (P6, D48).** The whole
+// port is offline-first (`service/project-build/whole-trials.ts`): a revision
+// not tried yet is first run against the recording of the build's last live
+// whole test, and a failure shown there is kept by the whole gate with nothing
+// done on the site (its evidence `checkedAgainst`). It reaches the builder as
+// any trial does -- its gate stands it, the build's proposals learn it -- and
+// its `wholeTest` says so: `checkedAgainst`, with the recording's words in
+// place of "ran the whole Flow"; a whole test run live after the check carries
+// the check's note (`offlineCheck`). An offline yes never comes back: the whole
+// gate runs that revision live. The trial itself carries `checkedAgainst` too,
+// so the builder's gate says and keeps it as its own kept answer: on top of its
+// evidence, the recording's words first, nothing recorded as left on the site,
+// and no page look after it (`flow-bootstrap/subflow-candidate/subflow-trial-gate.ts`).
+//
 // Every other plan gets no such test: `undefined`.
 
 /** What the single-subflow test works with: the supervisor's plan, ports, controller and gate, and its whole test. */
@@ -122,6 +137,9 @@ export type AutomationStudioProjectSingleSubflowTrialInput = {
 const WORDS = Object.freeze({
   wholeTest: "This test ran the whole Flow from its start, as the build's judged run: the plan is your one subflow, behind the step that opens the build's start page. "
     + "Its verdict is the judged whole run's, so a yes completes this brief; the supervisor completes the Flow on it (complete).",
+  /** After the recording's words (header, D48): what was checked, and that only a test on the site can pass. */
+  wholeTestKept: "It checked the whole Flow joined from your subflow, as the build's judged run tests it: the plan is your one subflow, behind the step that opens the build's start page. "
+    + "Only a test that runs on the site can answer yes.",
   notThisPlan: "This test runs the whole Flow only for the one subflow of the plan in force, and this brief is not of it, so nothing ran. End the brief blocked and say so.",
   assembleRefused: "Core could not join your subflow into the whole Flow, as listed under issues, so nothing ran. Change your subflow for what they name, submit it with core.submit_subflow, then test the new revision.",
   composedRefused: "Core joined your subflow into the whole Flow, and that Flow was refused, as listed under refusal, so nothing ran. Change your subflow for what it names, submit it with core.submit_subflow, then test the new revision.",
@@ -222,9 +240,12 @@ function answerOf(request: AutomationStudioSubflowTrialRequest, ran: AutomationS
   if (verdict === undefined || evidence.revision !== complete.revision || evidence.digest !== complete.digest) return refusalOf(evidence);
   const { scope, proposal } = request;
   const trialRunId = typeof evidence.trialRunId === "string" && evidence.trialRunId ? evidence.trialRunId : undefined;
+  // Answered from the recording, or run live after checking it (header, D48).
+  const recorded = evidence.checkedAgainst === "recorded_run";
+  const checked = recorded ? { checkedAgainst: "recorded_run" } : isObject(evidence.offlineCheck) ? { offlineCheck: structuredClone(evidence.offlineCheck) } : {};
   const feedback: JsonObject = {
     ...(isObject(evidence.feedback) ? structuredClone(evidence.feedback) : {}),
-    wholeTest: { revision: complete.revision, digest: complete.digest, verdict, ...(trialRunId ? { trialRunId } : {}), said: WORDS.wholeTest },
+    wholeTest: { revision: complete.revision, digest: complete.digest, verdict, ...(trialRunId ? { trialRunId } : {}), ...checked, said: recorded ? `${OFFLINE.kept} ${WORDS.wholeTestKept}` : WORDS.wholeTest },
     complete: { ...complete },
     // A pass the run rescued says so to the builder too; the supervisor answers it with a repair (`../supervisor/completion.ts`).
     ...(Array.isArray(evidence.slowDown) ? { slowDown: structuredClone(evidence.slowDown) } : {})
@@ -240,6 +261,8 @@ function answerOf(request: AutomationStudioSubflowTrialRequest, ran: AutomationS
     entryPrepared: true
   };
   if (trialRunId) trial.trialRunId = trialRunId;
+  // Answered from the recording: the builder's gate says and keeps it as its own kept answer (header, D48).
+  if (recorded) trial.checkedAgainst = "recorded_run";
   // The whole gate's kept conditions, every time, so the builder's gate replaces what it carried before (header, t689).
   if (kept) trial.keptConditions = kept;
   // The reads Core flagged and whether the converse confirmed the yes, beside the trial (header, t692).

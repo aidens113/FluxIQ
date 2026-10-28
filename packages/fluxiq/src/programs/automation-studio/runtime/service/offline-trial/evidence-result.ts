@@ -1,6 +1,8 @@
 // The trial evidence result (U5) of one offline trial, read from what the
-// candidate trial runner answered and what the trace matcher reports
-// (traces and offline trials, P4, "Result"):
+// trial runner answered -- a whole candidate's or, t769 P6, a subflow
+// proposal's partial one; only how it ended, its revision and digest, and the
+// judge's verdict -- and what the trace matcher reports (traces and offline
+// trials, P4, "Result"):
 //
 // - origins `recorded` and `pure_computation`, never `live`: the trial's
 //   observations were the trace's recorded answers, and everything the
@@ -43,13 +45,13 @@ import {
   type AutomationStudioTrialEvidenceScope,
   type AutomationStudioTrialEvidenceVerdict
 } from "../../../model/index.ts";
-import type { AutomationStudioCandidateTrialOutcome } from "../candidate-trial/index.ts";
+import type { AutomationStudioOfflineTrialRunOutcome } from "./contracts.ts";
 
 /** The task-goal assertion an offline trial checks: the build-test judge's question, asked of the new run's evidence. */
 const TASK_GOAL = "build_test_judge.task_goal";
 
 export function automationStudioOfflineTrialEvidenceResult(input: {
-  trial: AutomationStudioCandidateTrialOutcome;
+  trial: AutomationStudioOfflineTrialRunOutcome;
   matcher: ClientGatewayTraceMatcherReport;
   sourceEpisodeId: string;
   goalContractVersion: string;
@@ -107,7 +109,7 @@ function unreachedClient(matcher: ClientGatewayTraceMatcherReport): AutomationSt
 }
 
 /** The judge as missing evidence, when it gave no verdict on a run the trace supported throughout. */
-function unavailableJudgement(trial: AutomationStudioCandidateTrialOutcome, scope: AutomationStudioTrialEvidenceScope): AutomationStudioTrialEvidenceGap | undefined {
+function unavailableJudgement(trial: AutomationStudioOfflineTrialRunOutcome, scope: AutomationStudioTrialEvidenceScope): AutomationStudioTrialEvidenceGap | undefined {
   const verdict = trial.result.verdict;
   if (verdict !== "not_judged" && verdict !== "unsure") return undefined;
   return {

@@ -1170,3 +1170,64 @@ ports a build makes, with the caller's judge and no start hook);
 `automationStudioGatewayTraceServiceStore` (a project's trace store, opened and
 sealed as the host writes it); and `clientGatewayTraceReevaluationRequest`, so
 a tool asks a reevaluator exactly as the matcher does.
+
+### Offline trials in builds (P6)
+
+A build's test call runs offline first. Every build trial port does it, in the
+test and repair phases and never in exploration: the subflow trial
+(`core.test_subflow`) and the whole-candidate trial (`core.test_candidate`),
+the project build's whole trials included. It is asked once per revision and
+digest; every retest is live. The source is the build's latest eligible live
+trial trace of the same scope (a whole candidate, or one subflow of a build):
+a record with a trial run and a trace id, that ran, was not judged again, and
+for a subflow had its entry prepared. An offline run's own trace is never a
+source. The host installs the trial host (`service/offline-first/`,
+`AutomationStudioOfflineTrialInstallation`) when tracing is on;
+`FLUXIQ_OFFLINE_TRIALS=0` turns it off, and with it off, no source, a request
+that is not the candidate's, or ports that are not live, the call runs live
+and the step log says why (`not_tried`).
+
+**Outcome mapping** (`service/offline-first/answer.ts`):
+
+- A recorded `no` or `execution_failed` is kept as the builder's repair
+  feedback, marked `checkedAgainst: "recorded_run"`. It sends no site command,
+  needs no reset and takes no look at the page, and it counts toward the
+  same-failure rule. It keeps `effectApplied`, so the repeat guard does not
+  refuse the live retest.
+- A pass runs live in the same call. A gap or an inconclusive outcome runs
+  live in the same call too, with the gap step and reason in the evidence
+  (`offlineCheck`). The live run is the trial itself: that subflow from its
+  entry, never the whole Flow (`core.run_flow` is not offered in builder
+  loops).
+- An offline `yes` never stands. The gate always runs live after it, so the
+  judged whole run is always a live success and an offline pass never satisfies
+  the whole-run gate. Live-success accounting counts live episodes only. An
+  offline pass pays the judge twice, offline and then live.
+- An answer that does not match its revision and digest, or is malformed, runs
+  live as inconclusive (`flow-bootstrap/offline-first/gate-step.ts`).
+
+The offline check runs before admission, the start hook and any reset. An
+offline trial makes no site change, so it needs no reset and no before/after
+site reading. Its matcher takes the session view the trace recorded; when the
+trace holds none it falls back to the live session's public view, which the
+host supplies only when exactly one ready, unscoped, action-capable session of
+the project exists. Otherwise the gap is `incomplete_capture`.
+
+Production binds tier 1 only; no reevaluator is installed yet. Tier 2 is to be
+hosted in the Core host process behind a capability.
+
+**What the person sees.** The chat and status words are truthful about where a
+test ran: "Testing your Flow on the site" for a live trial, "Checking your
+Flow against the recorded run" for an offline one, and "The test didn't run:
+<reason>" for a refused one (`activity/candidate/offline-words.ts`,
+`ui/activity-status/`). A kept offline answer says it ran against the
+recording of the last live test, not the site. A setup rerun inside a subflow
+trial is marked as preparation.
+
+**Step log.** Each offline check writes `NNNN-offline/meta.json` (kind
+`offline_trial`, the outcome `kept_no`, `kept_failed`, `passed`, `gap`,
+`inconclusive` or `refused:<why>`, the gap step, matched and recorded counts,
+timing) beside the `NNNN-reset` and trial folders; a `not_tried` note is
+logged but adds no evidence for the model. See
+[LLM Flow bootstrap](./llm-flow-bootstrap.md) for the trial gate it runs ahead
+of.

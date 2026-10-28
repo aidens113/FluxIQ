@@ -34,7 +34,7 @@ import { automationStudioRunGraphOptions } from "../../runtime-session/index.ts"
 import { AUTOMATION_STUDIO_OFFLINE_TRIAL_READER_CONTRACTS, runAutomationStudioOfflineCandidateTrial, type AutomationStudioOfflineTrialPhase } from "../index.ts";
 
 const DOMAIN = "example";
-const READ = "example.read";
+export const READ = "example.read";
 const PROJECT = "project.offline-trial";
 const SPENT = Object.freeze({ inputTokens: 300, outputTokens: 30, totalTokens: 330, estimatedCostUsd: 0.001, calls: 2 });
 
@@ -54,7 +54,7 @@ export const ROWS: readonly JsonObject[] = Object.freeze([
   { name: "lamp-c", price: 20, stock: 7 }
 ]);
 
-const RECORD_OUTPUT: JsonObject = {
+export const RECORD_OUTPUT: JsonObject = {
   datasetId: "items", label: "Items", recordsPath: "rows", writeMode: "replace",
   schema: { schemaVersion: "0.1", fields: [
     { id: "name", label: "Name", valueType: "string", required: true },
@@ -191,7 +191,7 @@ export async function offlineHarness(script: ReadScript = ANSWER_ROWS) {
     if (traces !== before + 1) throw new Error(`the live trial opened ${traces - before} episodes`);
     return { outcome, traceId: `trace.offline-${traces}` };
   };
-  return { store, episodes, gateway, live, runtimeService, io, localDispatches, judged, verdict, executed, batches, sessions, ports, recordLive, close: async () => {
+  return { store, episodes, gateway, live, runtimeService, io, localDispatches, judged, verdict, executed, batches, sessions, ports, recordLive, traces: () => traces, close: async () => {
     uninstall();
     await gateway.close();
   } };

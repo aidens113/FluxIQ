@@ -2,8 +2,9 @@ import type { AutomationStudioActivityEmission } from "../contracts.ts";
 import { emitAutomationStudioActivity } from "../emit.ts";
 import { automationStudioActivityPassWords, type AutomationStudioActivityLoopPass } from "../loop/index.ts";
 import { automationStudioActivityAction, automationStudioActivityHumanLabel } from "../wording/index.ts";
-import { ACTIVITY_PAGE_PREPARATION_WORDS, cutAtWord } from "../../../../../ui/index.ts";
+import { ACTIVITY_PAGE_PREPARATION_WORDS, ACTIVITY_RECORDED_CHECK_WORDS, cutAtWord } from "../../../../../ui/index.ts";
 import { automationStudioActivityPreparing } from "./preparation.ts";
+import { automationStudioActivityRecordedCheck } from "./recorded-check.ts";
 
 /** The stream's bound on a label (`../bounded.ts`), which it cuts to by count; cut here first, where a word ends (t753). */
 const LABEL_MAX = 160;
@@ -42,8 +43,13 @@ const LABEL_MAX = 160;
  * A step run only to get the page ready for a part of the Flow
  * (`./preparation.ts`) says "Getting the page ready: <action>" and no count:
  * it is no step of a run the person is watching, and its count jumped as it
- * went into a part's own steps (t753). The label is cut where a word ends
- * within the stream's bound, which would otherwise cut it inside one.
+ * went into a part's own steps (t753). A step run to check a build's test
+ * against the recorded run (`./recorded-check.ts`) says "Checking against the
+ * recorded run: <action>" and keeps its step: it is a step of the Flow under
+ * test, but nothing of it touches the site (t769 b13). That mark outweighs the
+ * page being got ready, which a check against the recording also only reads.
+ * The label is cut where a word ends within the stream's bound, which would
+ * otherwise cut it inside one.
  */
 export function emitAutomationStudioActivityStep(input: { index: number; count: number; nodeId: string; label?: string | undefined; definitionId?: string | undefined; parameters?: unknown; pass?: AutomationStudioActivityLoopPass | undefined }): void {
   const label = automationStudioActivityHumanLabel(input.label, 160);
@@ -57,8 +63,9 @@ export function emitAutomationStudioActivityStep(input: { index: number; count: 
   const row = input.pass?.row;
   const step: NonNullable<AutomationStudioActivityEmission["step"]> = { index: input.index, count: input.count, nodeId: input.nodeId, ...(label ? { label } : {}), ...(row ? { row } : {}) };
   const rowNumber = input.pass?.unit === "row" ? ` (row ${input.pass.pass})` : "";
-  const said = automationStudioActivityPreparing()
-    ? `${ACTIVITY_PAGE_PREPARATION_WORDS}${action ? `: ${action}` : ""}`
+  const aside = automationStudioActivityRecordedCheck.active() ? ACTIVITY_RECORDED_CHECK_WORDS : automationStudioActivityPreparing() ? ACTIVITY_PAGE_PREPARATION_WORDS : undefined;
+  const said = aside !== undefined
+    ? `${aside}${action ? `: ${action}` : ""}`
     : `Running ${where}${action ? `: ${action}${rowNumber}` : rowNumber}`;
   emitAutomationStudioActivity({
     phase: "running",

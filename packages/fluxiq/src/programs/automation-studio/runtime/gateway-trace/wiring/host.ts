@@ -3,8 +3,10 @@
 // service's own per-project pool (D10), declaring the gateway tap's streams and
 // the contract versions a reader checks, installed for the service's build,
 // run and trial ports to find; the capture source the client gateway is
-// handed; and the candidate start hook, recording its answers. Off: nothing is
-// built, installed or passed, and the start hook is the one given.
+// handed; the candidate start hook, recording its answers; and, once the
+// client gateway exists, offline-first trials in builds over it and these
+// traces (trace plan P6). Off: nothing is built, installed or passed, and the
+// start hook is the one given.
 //
 // The pool is asked for when an episode opens, not now: the service that owns
 // it is constructed after the start hook it is handed. A service without
@@ -22,9 +24,12 @@ import {
   type ClientGatewayTraceStore
 } from "../../../../../client-gateway/index.ts";
 import type { AutomationStudioProjectDatabasePool } from "../../../storage/index.ts";
+// From its owner, not the barrel: `../../service/offline-first/index.ts` leads back here through the trial runners.
+import { AutomationStudioOfflineTrialInstallation } from "../../service/offline-first/installation.ts";
 import { AutomationStudioGatewayTraceEpisodes } from "../episodes.ts";
 import { AutomationStudioGatewayTraceInstallation } from "../installation.ts";
 import { AutomationStudioGatewayTraceProjectStore } from "./project-store.ts";
+import { automationStudioOfflineTrialSessionView } from "./offline-trial-session-view.ts";
 import { AutomationStudioGatewayTraceServicePools } from "./service-pools.ts";
 import { automationStudioGatewayTraceStartHook } from "./start-hook.ts";
 import type { AutomationStudioGatewayTraceEpisodesOptions } from "../types.ts";
@@ -33,7 +38,7 @@ import type { AutomationStudioGatewayTraceHost } from "./types.ts";
 /** Buffered events are written every 256 events, and every second while any wait. */
 const HOST_FLUSH = Object.freeze({ everyEvents: 256, intervalMs: 1_000 });
 
-const OFF: AutomationStudioGatewayTraceHost = Object.freeze({ episodes: undefined, source: undefined, startHook: (hook) => hook, uninstall: () => undefined });
+const OFF: AutomationStudioGatewayTraceHost = Object.freeze({ episodes: undefined, source: undefined, startHook: (hook) => hook, storeFor: undefined, installOfflineTrials: () => undefined, uninstall: () => undefined });
 
 /**
  * Builds and installs the host's trace episodes when `enabled`, in place of
@@ -69,11 +74,21 @@ export function createAutomationStudioGatewayTraceHost(input: {
     ...(input.options?.newTraceId ? { newTraceId: input.options.newTraceId } : {}),
     ...(input.options?.reportFailure ? { reportFailure: input.options.reportFailure } : {})
   });
-  const uninstall = AutomationStudioGatewayTraceInstallation.install(episodes);
+  const uninstallEpisodes = AutomationStudioGatewayTraceInstallation.install(episodes);
+  // Offline-first trials (trace plan P6, D44) read the traces these episodes write; no reevaluator yet (tier 1).
+  let uninstallOfflineTrials = (): void => undefined;
   return {
     episodes,
     source: episodes.gatewaySource,
     startHook: (hook) => (hook === undefined ? undefined : automationStudioGatewayTraceStartHook(hook, episodes)),
-    uninstall
+    storeFor,
+    installOfflineTrials: (gateway) => {
+      uninstallOfflineTrials();
+      uninstallOfflineTrials = AutomationStudioOfflineTrialInstallation.install({ gateway, storeFor, sessionViewFor: (projectId) => automationStudioOfflineTrialSessionView(gateway, projectId) });
+    },
+    uninstall: () => {
+      uninstallOfflineTrials();
+      uninstallEpisodes();
+    }
   };
 }

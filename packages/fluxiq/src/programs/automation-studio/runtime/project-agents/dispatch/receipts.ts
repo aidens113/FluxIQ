@@ -28,6 +28,12 @@ import { automationStudioProjectDigest, type AutomationStudioProjectTrialRef } f
 // that trial is then made again from the gate's answer -- the same receipt id,
 // its verdict and digest the gate's -- so the supervisor reads and a repair
 // names what the gate said.
+//
+// **A trial the gate kept from the recording is listed too (trace plan P6, t769).** The gate keeps a failure the
+// recording of the build's last live test demonstrates without asking the port (`kept`), so no `wrap` saw it; it is
+// listed from the gate's answer as any trial is, so the supervisor and a repair brief see the failing trial. A
+// reference carries no flag that it was checked against the recording: its shape is fixed
+// (`../contracts/receipt-ref.ts`) and its parser refuses a field beside it.
 
 /** The most trials a return carries (`contracts/builder-return.ts`); the latest are kept. */
 const MAX_TRIALS = 100;
@@ -66,6 +72,16 @@ export class AutomationStudioProjectDispatchReceipts {
     if (!same || (answer.verdict === result.verdict && answer.entryPrepared === result.entryPrepared)) return undefined;
     this.refs[at] = refOf(this.refs[at]!.receiptId, answer);
     return { ...this.refs[at]! };
+  }
+
+  /**
+   * A trial the gate kept from the recording without the port answering it (header): listed from the gate's answer
+   * under a receipt id of this brief's own, and returned. Whatever trial the port last answered is no longer pending.
+   */
+  kept(answer: AutomationStudioSubflowTrialResult): AutomationStudioProjectTrialRef {
+    this.pending = undefined;
+    this.add(answer);
+    return { ...this.refs.at(-1)! };
   }
 
   /** The references so far, the latest `MAX_TRIALS`. */

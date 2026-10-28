@@ -3,6 +3,7 @@ import type { AutomationStudioFlowBootstrapInterface, AutomationStudioFlowBootst
 import type { AutomationStudioCandidateTrialAct, AutomationStudioCandidateTrialVerdict } from "../candidate/index.ts";
 import type { AutomationStudioSiteResetTrialActPlace } from "../site-reset/index.ts";
 import type { AutomationStudioRunEnvironmentKind } from "../../environment/index.ts";
+import type { AutomationStudioTrialOfflineFirst } from "../offline-first/index.ts";
 
 // What a subflow builder works within, what it submits and how its own subflow
 // is tried (automation-project-agents-plan.md, `Scoped submission`, `Subflow
@@ -123,6 +124,13 @@ export type AutomationStudioSubflowTrialResult = {
   entryPrepared: boolean;
   /** Lasting acts that landed, predecessors' included, whatever the verdict, each with where its step sat and what it made (L1). */
   acts?: Array<AutomationStudioCandidateTrialAct & AutomationStudioSiteResetTrialActPlace>;
+  /**
+   * Set by a port whose answer came from the recording of this build's last
+   * live test, nothing done on the site for it (trace plan P6, D48: the
+   * single-subflow whole test the whole gate kept). The subflow trial gate
+   * says and keeps it as it does its own kept answer.
+   */
+  checkedAgainst?: "recorded_run";
 };
 
 /**
@@ -134,4 +142,11 @@ export type AutomationStudioSubflowTrialResult = {
  */
 export type AutomationStudioSubflowTrialPort = ((request: AutomationStudioSubflowTrialRequest) => Promise<AutomationStudioSubflowTrialResult>) & {
   readonly environmentKind?: AutomationStudioRunEnvironmentKind | undefined;
+  /**
+   * Asked once per revision and digest, before any site action (trace plan P6,
+   * `../offline-first/`): a failure the recording of this build's last live
+   * test demonstrates is kept as the trial, with nothing done on the site;
+   * anything else runs live in the same call. Absent, every trial is live.
+   */
+  readonly offlineFirst?: AutomationStudioTrialOfflineFirst<AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult> | undefined;
 };

@@ -337,6 +337,9 @@ reset-settlement's):
     while acts are still to undo;
   - `candidate.trial_start_differs`, once per phase, when nothing is left to
     undo, none is kept, but the start still differs.
+  Before this gate admits a live test, a build trial first checks the
+  recorded run (offline-first): see
+  [Offline trials in builds](./client-gateway.md#offline-trials-in-builds-p6).
 
   Acts no call can settle (`gate_unsatisfiable`, see "How an act settles")
   never admit a trial and never sit under `actsToUndo`. With nothing else in

@@ -6,6 +6,7 @@ import type { AutomationStudioSiteResetWitnessStamp } from "../reset-admission/i
 import type { AutomationStudioFlowBootstrapCompletionVerdict, AutomationStudioFlowBootstrapPlanHandleView } from "../../llm/harness-options/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import type { AutomationStudioRunEnvironmentKind } from "../../environment/index.ts";
+import type { AutomationStudioTrialOfflineFirst } from "../offline-first/index.ts";
 
 /** Historical owner-enumerated bytes, never pinned-read or execution authority. */
 export type AutomationStudioCandidateOriginalSources = {
@@ -162,8 +163,14 @@ export type AutomationStudioCandidateTrialPrepared = "reset" | "failed" | "none"
  * trial gate runs no start hook and no site reset for it (Decision 6), and its
  * yes is evidence only, never the judged pass that lets the build complete
  * (Decision 3). Absent, the trials are live.
+ *
+ * `offlineFirst`, when present (trace plan P6, t769), is asked by the trial
+ * gate once per revision and digest, before any site action: a failure the
+ * recording of the build's last live test demonstrates is kept in place of a
+ * site trial, and anything else runs live (`../offline-first/contracts.ts`).
  */
 export type AutomationStudioCandidateTrialPort = ((request: AutomationStudioCandidateTrialRequest) => Promise<AutomationStudioCandidateTrialResult>) & {
   prepareStart?: ((input: { revision: number; digest: string; signal: AbortSignal }) => Promise<AutomationStudioCandidateTrialPrepared>) | undefined;
   readonly environmentKind?: AutomationStudioRunEnvironmentKind | undefined;
+  offlineFirst?: AutomationStudioTrialOfflineFirst<AutomationStudioCandidateTrialRequest, AutomationStudioCandidateTrialResult> | undefined;
 };

@@ -67,6 +67,13 @@ export type AutomationStudioSubflowTrialRecord = {
   digest: string;
   /** The trial's own runtime session; absent when nothing ran. */
   trialRunId?: string;
+  /**
+   * The gateway trace this trial's run was captured in, when tracing was on
+   * (t769): a build later runs an offline trial against its latest live trace
+   * of a scope, and the trace store reads only by id. Absent without tracing,
+   * and when nothing ran.
+   */
+  traceId?: string;
   start: AutomationStudioCandidateTrialStart | { status: "not_run" };
   execution: "succeeded" | "failed" | "cancelled" | "not_run";
   entryPrepared: boolean;

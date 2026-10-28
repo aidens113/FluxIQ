@@ -101,6 +101,17 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
 // (no `retry_allowed`). One listing acts to undo as well is still
 // `project.trial_reset_required`, with the others named and said apart. The
 // repeated refusal names them too.
+//
+// **A test answered from the recording is a no, never a measure of time (P6,
+// D48).** The build's whole port is offline-first
+// (`service/project-build/whole-trials.ts`): the gate may keep a failure the
+// recording of the build's last live test shows for a revision not tried yet,
+// with no start hook, no reset and nothing on the site, its evidence marked
+// `checkedAgainst`. It is taken as any no here -- a receipt naming the offline
+// run, a failed whole test, the Flow's latest finished test -- but it took no
+// site time, so the Flow's measured time and the build's latest stay the last
+// test that ran on the site (G2). An offline yes never stands: the gate runs
+// that revision live in the same call.
 
 /** How much more than its measured time a test is given room for: a fifth, and at least ten seconds (header, G2). */
 const TIME_MARGIN = 0.2;
@@ -110,7 +121,7 @@ const MIN_TIME_MARGIN_MS = 10_000;
 type WholeTrialTime = { now(): number; workLeftMs(): number };
 
 /** One Flow's (digest's) whole tests (header, G2): its latest finished one, and whether a test the deadline cut came after it. */
-type FlowTests = { finished?: { revision: number; ms: number }; cutAfter: boolean };
+type FlowTests = { finished?: { revision: number; ms: number | undefined }; cutAfter: boolean };
 
 /** A trial's start as the supervisor checks it: no look at the target, which it never acts on (header). */
 const UNLOOKED: AutomationStudioSiteResetChecks = { compare: async () => ({ moved: false }) };
@@ -162,7 +173,8 @@ export class AutomationStudioProjectSupervisorWholeTrial {
     const evidence = ran.evidence as JsonObject;
     if (evidence.code === "candidate.trial_reset_required") return this.resetRequired(evidence);
     if (typeof evidence.verdict !== "string" || typeof evidence.revision !== "number" || typeof evidence.digest !== "string") return ran;
-    this.finished(evidence.digest, evidence.revision, started);
+    // A test answered from the recording took no site time (header, D48).
+    this.finished(evidence.digest, evidence.revision, evidence.checkedAgainst === "recorded_run" ? undefined : started);
     const verdict = evidence.verdict;
     const receiptId = typeof evidence.trialRunId === "string" && evidence.trialRunId ? evidence.trialRunId : `whole-trial-${evidence.revision}-${Date.now()}`;
     await ports.record.recordReceipt(ports.build, { receipt: { kind: "candidate_trial", receiptId, digest: evidence.digest } });
@@ -190,11 +202,15 @@ export class AutomationStudioProjectSupervisorWholeTrial {
     });
   }
 
-  /** Records a finished whole test of `digest` and how long it took (header, G2): the Flow's latest finished test, with no cut after it yet. */
+  /**
+   * Records a finished whole test of `digest` and how long it took (header, G2): the Flow's latest finished test, with no
+   * cut after it yet. Unmeasured (`started` undefined: no clock, or a test answered from the recording, D48), the Flow
+   * keeps the measure of its last test that was.
+   */
   private finished(digest: string, revision: number, started: number | undefined): void {
     const flow = this.flowOf(digest);
     const ms = started === undefined || !this.input.time ? undefined : Math.max(0, this.input.time.now() - started);
-    flow.finished = ms === undefined ? { revision, ms: flow.finished?.ms ?? 0 } : { revision, ms };
+    flow.finished = { revision, ms: ms ?? flow.finished?.ms };
     flow.cutAfter = false;
     if (ms !== undefined) this.latestMs = ms;
   }
