@@ -22,6 +22,7 @@
 // opens in lower case, as the rest of the line it finishes, and says the rows
 // were saved.
 
+import { ACTIVITY_DOUBTED_ENDING_CLOSE } from "../../../../../ui/index.ts";
 import { automationStudioActivityReasonText } from "./reason-text.ts";
 
 type Fields = Readonly<Record<string, unknown>>;
@@ -33,8 +34,34 @@ export function automationStudioActivityRunEnding(record: Fields | null | undefi
   const repair = fields(record?.resultRepair);
   const rows = rowCount(repair, verification);
   const refuted = verification.verdict === "does_not_answer";
+  if (refuted && doubtOnly(verification, repair, fields(record?.resultReauthor))) return doubted(rows);
   const repaired = repairEnding(repair, fields(record?.resultReauthor));
   return `${judged(rows, refuted)}${repaired ? `, and ${repaired}` : ""}.`;
+}
+
+/**
+ * Whether the refutation rests on the judges' word alone and the repair changed
+ * nothing: the verdict's basis is a model's (no count, no located defect of
+ * Core's own, `repair.findings` empty) and the repair either found nothing to
+ * change or kept giving the same answer. The saved Flow is then unchanged, and
+ * "couldn't fix your Flow" would tell a person a working Flow was broken
+ * (`run-mvskodlp-9966d618`: the 3 rows were exactly right, t785).
+ */
+function doubtOnly(verification: Fields, repair: Fields | undefined, reauthor: Fields | undefined): boolean {
+  if (verification.basis !== "model") return false;
+  const findings = fields(verification.repair)?.findings;
+  if (Array.isArray(findings) && findings.length > 0) return false;
+  if (reauthor?.outcome === "nothing_to_change") return true;
+  if (repair?.attempted === true && repair.outcome === "stopped" && repair.stopped === "result_repair.not_converging") return true;
+  // A re-author that ended with no edit applied or held, and no fixed Flow run: the repair
+  // stopped before it changed anything (`run-mvskodlp-9966d618`'s `flow_bootstrap.build_not_finished`).
+  return reauthor !== undefined && reauthor.applied !== true && reauthor.held !== true && repair?.outcome !== "rerun_failed" && repair?.outcome !== "unverified";
+}
+
+/** The ending for a check that only doubted the rows: what was saved, that the repair changed nothing, and that the Flow stands. */
+function doubted(rows: number | undefined): string {
+  const saved = rows === undefined ? "the check doubted its result" : `it saved ${rows} ${rows === 1 ? "row" : "rows"}, but the check doubted ${rows === 1 ? "it" : "them"}`;
+  return `${saved}, the repair changed nothing, and ${ACTIVITY_DOUBTED_ENDING_CLOSE}.`;
 }
 
 /** What the run saved and what the check made of it. */

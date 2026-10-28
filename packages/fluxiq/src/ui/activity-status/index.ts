@@ -14,6 +14,7 @@ export { CandidateTrial, type TrialState } from "./candidate-trial.ts";
 export { systemActivityClock, type ActivityClock, type ActivityTimer } from "./clock.ts";
 export { cutAtWord } from "./cut-at-word.ts";
 export { declinedSubmission } from "./declined-submission.ts";
+export { ACTIVITY_DOUBTED_ENDING_CLOSE, ACTIVITY_DOUBTED_HEADLINE, endsOnDoubt } from "./doubted-ending.ts";
 export { endingKindOf } from "./ending-kind.ts";
 export { ACTIVITY_FAN_OUT_INTERVAL_MS, FanOutGate } from "./fan-out-gate.ts";
 export { activityHeadline, type ActivityHeadlineSituation, type ActivityWaitReason } from "./headline.ts";

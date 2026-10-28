@@ -380,6 +380,7 @@ async function run(input: {
   const trialPort = (port: NonNullable<typeof ports.trial>) => automationStudioProjectDispatchTrialPort({ port, scope: mapped.scope, receipts, spend, standingNos, advised, remember: (ref, trial) => remember(dispatcher, ref, trial) });
   // A single-subflow plan's brief tests the judged whole run instead, through the same wrapper (header, t679).
   const whole = input.wholeTrial ? new AutomationStudioProjectWholeTestPort(input.wholeTrial, ports.trial, trialPort, dispatcher.trialled) : undefined;
+  if (whole) spend.wholeTest = true;
   const gatePort = whole ? whole.port : ports.trial ? trialPort(ports.trial) : undefined;
   // Each script Core accepts is read off the submit tool's answer, then the ports' own observer wraps the loop (header).
   const observe = (observed: AutomationStudioLlmEvidenceLoopInput) => {

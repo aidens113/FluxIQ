@@ -118,3 +118,26 @@ describe("what the check objected to", () => {
     expect(automationStudioActivityRunObjection({ resultVerification: { status: "confirmed", performed: true, verdict: "answers", reason } })).toBeUndefined();
   });
 });
+
+describe("a refutation that rests on the judges' word alone (t785, run-mvskodlp-9966d618)", () => {
+  const doubted = { resultVerification: { ...refuted.resultVerification, basis: "model", observation: "3 records stored, across 1 record set", repair: { findings: [] } } };
+  it("says the check doubted the rows, the repair changed nothing and the Flow is unchanged", () => {
+    const said = automationStudioActivityRunEnding({ ...doubted, resultReauthor: { outcome: "nothing_to_change" }, resultRepair: repairEnded({ outcome: "not_rerun" }) });
+    expect(said).toBe("it saved 13 rows, but the check doubted them, the repair changed nothing, and the saved Flow is unchanged.");
+    expect(automationStudioActivityRunEnding({ ...doubted, resultRepair: repairEnded({ outcome: "stopped", stopped: "result_repair.not_converging" }) })).toMatch(/the saved Flow is unchanged\.$/u);
+  });
+  it("says the same when the repair stopped before it applied anything (the run's own shape)", () => {
+    const unfinished = { routed: true, applied: false, code: "flow_bootstrap.build_not_finished" };
+    expect(automationStudioActivityRunEnding({ ...doubted, resultReauthor: unfinished, resultRepair: repairEnded({ outcome: "not_rerun" }) })).toBe("it saved 13 rows, but the check doubted them, the repair changed nothing, and the saved Flow is unchanged.");
+    expect(automationStudioActivityRunEnding({ ...doubted, resultReauthor: unfinished, resultRepair: { attempted: true, phase: "reauthoring" } })).toMatch(/the saved Flow is unchanged\.$/u);
+    // An edit applied or held is a change: today's words.
+    expect(automationStudioActivityRunEnding({ ...doubted, resultReauthor: { ...unfinished, applied: true }, resultRepair: repairEnded({ outcome: "not_rerun" }) })).toMatch(/they don't answer what you asked/u);
+    expect(automationStudioActivityRunEnding({ ...doubted, resultReauthor: { ...unfinished, held: true }, resultRepair: repairEnded({ outcome: "not_rerun" }) })).toMatch(/they don't answer what you asked/u);
+  });
+  it("keeps today's words when a defect of Core's own refuted the rows, or the repair did something", () => {
+    const grounded = { resultVerification: { ...doubted.resultVerification, repair: { findings: [{ code: "x", detail: "y" }] } } };
+    expect(automationStudioActivityRunEnding({ ...grounded, resultReauthor: { outcome: "nothing_to_change" } })).toMatch(/they don't answer what you asked/u);
+    expect(automationStudioActivityRunEnding({ ...doubted, resultRepair: repairEnded({ outcome: "rerun_failed" }) })).toMatch(/they don't answer what you asked/u);
+    expect(automationStudioActivityRunEnding({ ...refuted, resultReauthor: { outcome: "nothing_to_change" } })).toMatch(/they don't answer what you asked/u);
+  });
+});

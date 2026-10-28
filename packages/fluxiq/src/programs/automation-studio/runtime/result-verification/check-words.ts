@@ -115,8 +115,13 @@ function setsWords(sets: number, each: string | undefined, rowsTold: string | un
   return `Rows came back in ${sets} record sets: ${perSet}.`;
 }
 
+/** The label that tells one judge call from another in the model-facing reading (`./agreement/`): "Judge call 1: ", also joined as "Judge call 1 and 2: ". Not the person's. */
+const JUDGE_LABEL = /\bJudge calls? \d+(?: (?:and|&|,) \d+)*(?: \([^\n]*?\))?:\s*/giu;
+
 /** The model's sentences a person may read, joined, or nothing when none survives. */
 function plain(text: string | undefined): string | undefined {
+  if (!text) return undefined;
+  text = text.replace(JUDGE_LABEL, "").trim();
   if (!text) return undefined;
   // Whole sentences: never split after "e.g." nor inside an aside (R2-U-3).
   const kept = activityActionSentences(text)

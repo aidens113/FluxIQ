@@ -186,6 +186,7 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
       const evidence: JsonObject = { ok: true, status: "draft", revision: submitted.candidate.revision, digest: submitted.candidate.digest, changedPaths: submitted.candidate.changedPaths, verification: "not_performed", promotionAllowed: false,
         // Which view each target was resolved from, so a step aimed at a control of another page than the one it runs on can be seen (t358).
         ...(submitted.handleViews.length ? { handleViews: submitted.handleViews.map((view) => ({ node: view.node, handle: view.handle, view: view.view, location: view.location })) } : {}),
+        ...(submitted.advice?.length ? { advice: submitted.advice } : {}),
         // The whole Flow this revision is, as it was sent, labelled by its revision (t498, t503).
         ...acceptedScript(call.value, submitted.candidate),
         next: gate.available ? `Test next with ${testId} using exactly {"revision": ${submitted.candidate.revision}, "digest": "${submitted.candidate.digest}"}. Do not complete until that exact revision's trial answers yes. Submitting again makes a new revision that needs its own trial.` : "No trial runner is available here; completing leaves an unverified draft." };

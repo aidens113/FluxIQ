@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioActionConsequence } from "../../../action-permissions/index.ts";
 import { AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetComparison, type AutomationStudioSiteResetExplored } from "../../../flow-bootstrap/site-reset/index.ts";
+import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
+import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../activity/index.ts";
 import { automationStudioProjectSupervisorLeftOnTarget } from "../left-on-target.ts";
 
 // What an ending names still on the target (t597): a press that declared no
@@ -173,5 +175,33 @@ describe("an ending with an act no call can settle on the target", () => {
     expect(left).toMatchObject({ undoable: false, unsettleable: true, note: "Still on the target from this build: press \"Mark\" button (it can no longer be checked or put back; it may still be there)." });
     // No read ever showed it change anything: the person is told it may have changed nothing, to check (t738).
     expect(left.told).toContain("The build clicked “Mark”, and nothing read afterwards could show whether it changed anything; check it");
+  });
+});
+
+// t785: a build that ends with a Flow says which of its own acts remain, in generic words, and nothing when none do.
+describe("announcing what a finished build left", () => {
+  function announced(ledger: AutomationStudioSiteResetProjectLedger): ClientGatewayActivity[] {
+    const seen: ClientGatewayActivity[] = [];
+    const unsubscribe = automationStudioActivityHub.subscribe((event) => seen.push(event));
+    try {
+      runWithAutomationStudioActivity({ kind: "build", id: "b1", projectId: "p1" }, () => leftOn(ledger).left.announce());
+    } finally {
+      unsubscribe();
+    }
+    return seen;
+  }
+
+  it("says nothing when nothing is left", () => {
+    expect(announced(new AutomationStudioSiteResetProjectLedger())).toEqual([]);
+  });
+
+  it("says a press that changed its page and might have left something behind, in the ledger's person words", () => {
+    const ledger = new AutomationStudioSiteResetProjectLedger();
+    ledger.forBrief("brief-1").explored(pressed("coupon", "Apply coupon", []));
+    const rows = announced(ledger);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.label).toBe("Left on the site");
+    expect(JSON.stringify(rows[0]!.detail)).toContain("Apply coupon");
+    expect(JSON.stringify(rows[0]!.detail)).not.toContain("The build left no change");
   });
 });

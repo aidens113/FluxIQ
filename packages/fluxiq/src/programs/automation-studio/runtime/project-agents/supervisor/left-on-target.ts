@@ -64,7 +64,7 @@
 // holds an ending for it (`./completion.ts`). The person is told it as an act
 // the build could not undo, which may still be there; or, where no read ever
 // showed it change anything, as one that may have changed nothing.
-import { automationStudioActivityLeftTold, type AutomationStudioActivityLeftAct } from "../../activity/index.ts";
+import { AUTOMATION_STUDIO_ACTIVITY_NOTHING_LEFT, automationStudioActivityLeftTold, emitAutomationStudioActivity, type AutomationStudioActivityLeftAct } from "../../activity/index.ts";
 import type { AutomationStudioProjectSupervisorPorts } from "./ports.ts";
 
 /** Each act still on the target, as the ledger names it, and a line for the person when anything is left. */
@@ -83,6 +83,8 @@ export type AutomationStudioProjectSupervisorLeftOnTarget = {
   told: string;
   /** An ending's reason with the note after it, within the record's 2000 characters: the model's words give way, never Core's note. */
   reason: (said: string) => string;
+  /** Says what is left as a chat row when a build ends with a Flow (header, t785); says nothing when nothing is left. */
+  announce: () => void;
 };
 
 /** The longest ending reason the build record keeps. */
@@ -120,13 +122,18 @@ export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<Automa
   ].filter((sentence) => sentence);
   const note = sentences.length ? sentences.join(" ") : undefined;
   const told = automationStudioActivityLeftTold(acts.map((act) => ({ did: act.did, ...(act.stays ? { stays: act.stays } : {}), ...(act.seen === false ? { seen: false } : {}) })), possibly);
+  // A build that ends with a Flow no longer cleans up (t775): the person is told, in generic words, which of its own acts remain; nothing extra when none do (t785).
+  const announce = () => {
+    if (told === AUTOMATION_STUDIO_ACTIVITY_NOTHING_LEFT) return;
+    emitAutomationStudioActivity({ phase: "verifying", label: "Left on the site", detail: { kind: "note", title: "Left on the site", status: "succeeded", text: told } });
+  };
   const fitted = note ? noteWithin(note, MAX_REASON - 2) : undefined;
   const reason = (said: string) => {
     // The ending is being named: the build hears what is left in Core's words (header).
     ports.leftAtEnding?.({ note, told });
     return fitted ? `${saidWithin(said, MAX_REASON - fitted.length - 1)} ${fitted}`.trim() : saidWithin(said, MAX_REASON);
   };
-  return { acts: acts.map(({ line: _line, stays: _stays, seen: _seen, ...act }) => act), unsettleable: acts.some((act) => act.unsettleable === true), possibly, undoable: acts.some((act) => act.undoable), note, told, reason };
+  return { acts: acts.map(({ line: _line, stays: _stays, seen: _seen, ...act }) => act), unsettleable: acts.some((act) => act.unsettleable === true), possibly, undoable: acts.some((act) => act.undoable), note, told, reason, announce };
 }
 
 /** `said` within `max`: whole, else up to the last sentence end that fits, else cut at a word's end with "…" (header, t741 B5). */

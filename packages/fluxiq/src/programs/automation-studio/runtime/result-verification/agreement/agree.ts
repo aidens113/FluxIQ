@@ -5,6 +5,7 @@ import { automationStudioResultVerificationAskAgain } from "./ask-again.ts";
 import { bothReadings } from "./both-readings.ts";
 import { changeAdvised } from "./change-advised.ts";
 import { contradictedUnsure } from "./contradicted-unsure.ts";
+import { listedValuesAdvice } from "./exclusion-words.ts";
 import { noRecordOf } from "./no-record.ts";
 import { said } from "./said.ts";
 import { standingNoOf } from "./standing-record.ts";
@@ -62,7 +63,8 @@ export function agree(input: AutomationStudioResultVerificationAgreementInput, r
     // the first blamed paging against the record, the second named the two
     // stored rows that were wrong, and only the first was forwarded.
     return {
-      ...bothReadings(first, second, input.reads, input.recordSets, weighed),
+      // The agreed nos' advice keeps its words; a list of values the request never says gets a note (t785, `./exclusion-words.ts`).
+      ...notedAdvice(bothReadings(first, second, input.reads, input.recordSets, weighed), input.wording),
       // Each call's weighing as a field a gate reads (`../build-yes-hold/`, t664), never from the labels above; absent without the record.
       ...(noRecordOf(input) ? { weighedNos: ([1, 2] as const).map((call) => ({ call, ...(weighed.has(call) ? { recordContradicts: weighed.get(call)!.wholly ? "whole" as const : "part" as const } : {}) })) } : {}),
       // Nothing about the steps: this file reads only the two verdicts, and a
@@ -90,4 +92,12 @@ export function agree(input: AutomationStudioResultVerificationAgreementInput, r
     ...unsettled(first, second, "model_unconfirmed", codes.unconfirmed, `This result was checked twice with the same evidence, and neither answer was that it does what was asked, nor were both that it does not: the first was ${said(first)}, the second ${said(second)} (${second.code}). ${UNSETTLED.model_unconfirmed.run}`, verdicts, { refuted }),
     ...doubt
   };
+}
+
+/** The verification with its repair advice noted where it lists values the request never says; the advice stays whole. */
+function notedAdvice(verification: AutomationStudioResultVerification, wording: AutomationStudioResultVerificationAgreementInput["wording"]): AutomationStudioResultVerification {
+  const judgement = verification.repair?.judgement;
+  if (!verification.repair || !judgement?.advice) return verification;
+  const advice = listedValuesAdvice(judgement.advice, wording);
+  return advice === judgement.advice ? verification : { ...verification, repair: { ...verification.repair, judgement: { ...judgement, advice } } };
 }

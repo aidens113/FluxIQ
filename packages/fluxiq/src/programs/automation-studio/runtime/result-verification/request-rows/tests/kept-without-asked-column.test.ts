@@ -1,6 +1,7 @@
 // A kept row that alone has no value in a column the answer asks for is
 // flagged, and a yes that does not name it beside a quote of the request is
 // held, never refused (t663, A8 towels `run-mvahlxuu-760d9e28`, fix 1).
+import type { JsonValue } from "../../../../../../core/index.ts";
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioResultVerdict } from "../../verdict/index.ts";
@@ -86,5 +87,31 @@ describe("a kept row without a value in an answer column", () => {
     const summary = atlasWithBookmarkSummary();
     const cut = { ...summary, recordSets: summary.recordSets.map((set) => ({ ...set, recordCount: 40 })) };
     expect(automationStudioResultKeptWithoutAskedColumn(cut)).toEqual([]);
+  });
+
+  describe("with the answer's columns stored as the parameter screen's { count, items }", () => {
+    const storedAs = (summary: AutomationStudioRunResultSummary, columns: JsonValue): AutomationStudioRunResultSummary => ({
+      ...summary,
+      flowShape: summary.flowShape.map((step) => step.parameters
+        ? { ...step, parameters: { recordOutput: { datasetId: "atlases", process: { columns } } } }
+        : step)
+    });
+    const rows = [...ATLASES, BOOKMARK].map((title, index) => {
+      const row = atlasRow(title, index);
+      if (title !== BOOKMARK) return row;
+      const { url: _url, ...rest } = row;
+      return rest;
+    });
+
+    it("narrows to them: a row empty only in an unasked column is not flagged", () => {
+      const summary = atlasRunSummary(rows, ["title"]);
+      expect(automationStudioResultKeptWithoutAskedColumn(storedAs(summary, { count: 3, items: ["title", "pages", "isbn"] }))).toEqual([]);
+    });
+
+    it("falls back to every stored column where the screen dropped an item", () => {
+      const summary = atlasRunSummary(rows, ["title"]);
+      expect(automationStudioResultKeptWithoutAskedColumn(storedAs(summary, { count: 4, items: ["title", "pages", "isbn"] })))
+        .toEqual([expect.objectContaining({ missing: "url", rows: [BOOKMARK] })]);
+    });
   });
 });

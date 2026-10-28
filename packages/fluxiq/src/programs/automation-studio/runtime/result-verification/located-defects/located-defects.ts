@@ -11,6 +11,7 @@ import { AutomationStudioRequestRowId } from "../request-rows/index.ts";
 import { automationStudioResultActDefectNotFound } from "./act-located.ts";
 import { automationStudioResultActSteps, type AutomationStudioResultActStep } from "./act-steps.ts";
 import { automationStudioResultLeftOutLabelKey, automationStudioResultLeftOutRowCells } from "./row-cells.ts";
+import { automationStudioResultAskedTestedValueOnly } from "./tested-value-only.ts";
 
 type Defect = AutomationStudioLlmVerificationDefect;
 type Context = { record: AutomationStudioResultNoRecord; summary: Pick<AutomationStudioRunResultSummary, "reads" | "recordSets" | "flowShape" | "buildTest"> };
@@ -66,7 +67,8 @@ function notFound(defect: Defect, context: Context, actSteps: () => AutomationSt
   // A left-out row Core accounts for by the request's own words is no row the request asks for (`../../refuted-no/record.ts`, t629).
   if (rows.leftOut.length && rows.leftOut.every((row) => row.quotesRequest)) return [...new Set(rows.leftOut.map(automationStudioResultLeftOutFinding))].join(" ");
   // A row a read saw and left out is one the request asks for only by its own cells (header, t771).
-  if (rows.leftOut.length || rows.seen) return askedCellNotFound(defect, quoted, rows.cells, rows.label);
+  // Nor by the one value a condition tested and left it out for, which the request does not say (`./tested-value-only.ts`, t785).
+  if (rows.leftOut.length || rows.seen) return askedCellNotFound(defect, quoted, rows.cells, rows.label) ?? automationStudioResultAskedTestedValueOnly(defect, rows.label, quoted, summary, record.says);
   // Rows not read, or a row Core holds no record of: only a read whose own account says its list goes on can have missed it.
   return listGoesOn(summary.reads ?? []) ? undefined : `Core holds no record of ${quoted} as a row any read saw, and every read's own account says its list ended where it stopped reading.`;
 }

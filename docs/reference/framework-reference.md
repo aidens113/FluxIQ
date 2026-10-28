@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4233
+- Public declarations: 4243
 - Class: 144
 - Interface: 10
-- Object: 551
-- Type: 2260
+- Object: 554
+- Type: 2265
 - Type Alias: 1
-- Value: 1267
+- Value: 1269
 
 ## Public Declarations
 
@@ -39,6 +39,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ACTIVITY_ACTION_REFUSAL_WORDS` | Object | `packages/fluxiq/src/ui/activity-action/refusal-words.ts` | Core's plain words for why it did not do what a decision asked, written once for every client's card and for Core's own wording (`programs/automation-studio/runtime/activity/wording/draft-edit-card.ts`, which checks at compile time that every reason the draft can give has words here). - `amendment`: why an edit to the draft changed nothing, by the draft's own refusal reason (`programs/automation-studio/runtime/flow-draft/amendment/types.ts`). - `repeated`: why a call, or a step asked to run again, was not run, by what the same call came to before (`programs/automation-studio/runtime/llm/repeat-guard/outcomes.ts`). - `resent`: why a whole Flow sent again unchanged (a candidate build's submission) was not taken, by the same. Each finishes "Not done: ...", so each opens in lower case and is no code. |
 | `ACTIVITY_ACTION_VERB_NAMES` | Object | `packages/fluxiq/src/ui/activity-action/verb-names.ts` | The short name a card carries for a verb whose act is narrower than its kind's name (`./names.ts`): "Choose" for an option chosen, which is a click by kind. A verb not here is named by its kind. |
 | `ACTIVITY_DETAIL_INTERVAL_MS` | Object | `packages/fluxiq/src/ui/activity-status/pacer.ts` | The shortest time between two paced changes of the line: more than half of three seconds, so any three seconds show at most two. The overlay used to add this on its own (a 1.6 s dwell over a 1.2 s pace); one pace for both surfaces keeps them in step (D7). |
+| `ACTIVITY_DOUBTED_ENDING_CLOSE` | Object | `packages/fluxiq/src/ui/activity-status/doubted-ending.ts` | The words that close such an ending; shared by the sentence's builder and the headline's reader. |
+| `ACTIVITY_DOUBTED_HEADLINE` | Object | `packages/fluxiq/src/ui/activity-status/doubted-ending.ts` | The headline for such an ending. |
 | `ACTIVITY_FAN_OUT_INTERVAL_MS` | Object | `packages/fluxiq/src/ui/activity-status/fan-out-gate.ts` | Four sends a second. |
 | `ACTIVITY_HEADLINE_DWELL_MS` | Object | `packages/fluxiq/src/ui/activity-status/pacer.ts` | The least time a headline stays up before another that does not settle or wait replaces it (t753). |
 | `ACTIVITY_HISTORY_LIMITS` | Object | `packages/fluxiq/src/ui/activity-status/history-limits.ts` | How much of FluxIQ's work the background keeps for the chat's step messages (`background/activity/unit-history.ts`): the last `units` units of work, and at most `eventsPerUnit` events of each, the newest. A build of 60 decisions is about 250 kept events, so a whole build fits with room to spare; the bound is there so a runaway loop cannot grow the panel's state without end. A build still in progress is held to `buildEventsCeiling` instead, and is never the unit dropped for a newer one: a build with a project supervisor, several builders, the validator and a repair passes 500 events, and can pass ten units, on its own (automation-project-agents-plan, chat presentation). The ceiling is still a bound, for the same runaway loop. |
@@ -146,6 +148,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_ACTION_PERMISSION_CONTROL_NAME_MAX` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/action-permissions/request.ts` | The longest control name a request carries. Past it the name is cut, never widened. |
 | `AUTOMATION_STUDIO_ACTION_PERMISSION_REQUEST_SCHEMA_VERSION` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/action-permissions/request.ts` | - |
 | `AUTOMATION_STUDIO_ACTIVITY_LIMITS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/activity/limits.ts` | The bounds on every activity event (D4 of the live activity plan): string lengths match what `ClientGatewayActivity` promises its readers, and `recent` is how many events one project's snapshot keeps. |
+| `AUTOMATION_STUDIO_ACTIVITY_NOTHING_LEFT` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/activity/wording/left-told.ts` | What is said when the build knows of nothing it left (header). |
 | `AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES` | Object | `packages/contracts/src/failure/adaptive-class.ts` | FluxIQ's one failure-category list. Core names every member and classifies failed attempts into them; a domain decides which member applies and reports it in an `AutomationStudioFailureRecord`. No second list exists in Core or in an importing domain. Adding a member breaks exhaustive consumers, so before 1.0 it is a minor version bump with a migration note. |
 | `AUTOMATION_STUDIO_AES_GCM_PROJECT_CONTENT_PROTECTION_ID` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/content-protection.ts` | - |
 | `AUTOMATION_STUDIO_ARRIVAL_STEP_KEY` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/arrival-node.ts` | The arrival step's key in the subflow it opens. |
@@ -1320,6 +1323,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioFlowBootstrapStepsNotRunInThisBuild` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/not-run.ts` | - |
 | `AutomationStudioFlowBootstrapStillAchievable` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts` | Whether the judge said what was asked can still be had (its diagnosis's `stillAchievable`). Only a `no` ends a build "not doable" (t195-w37: the user's rule, "only if there is absolutely no way"); absent is `unknown`. |
 | `AutomationStudioFlowBootstrapStoodStill` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts` | Why a build with a route still open stopped, as the not-finished ending says it (t240; t195-w37): `no_progress` -- the last round, and `rounds` in a row, measurably did no better than the judged round before (`before`, the judgement before the last); `repeated_unchanged` -- the round ended on refused repeats of the same calls and handed back the Flow it started from, so a second round would only repeat it (run 38, cause C8). |
+| `automationStudioFlowBootstrapStopAnnouncementSaid` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/not-done.ts` | - |
 | `automationStudioFlowBootstrapStopSaid` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/not-done.ts` | - |
 | `AutomationStudioFlowBootstrapSubflow` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/contracts.ts` | - |
 | `AutomationStudioFlowBootstrapSubflowMetadata` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/contracts.ts` | Graph-level declarations of one Subflow: what proves it worked (C2) and what a runtime must support to run it (C10). |
@@ -3021,7 +3025,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `CLIENT_GATEWAY_ACTIVITY_RESOLUTIONS` | Object | `packages/contracts/src/client-gateway.ts` | How a wait on the person ended, on the `ask` row that says so: - `answered`: the person answered (a robot check's Continue, a choice, words); - `allowed`: the person granted a permission ask; - `waited_out`: a check that clears by itself cleared while Core waited; - `declined`: the person refused, or pressed Stop at a robot check; - `timed_out`: nobody answered in time; - `cancelled`: the work stopped before anyone answered -- it was cancelled or failed while it waited, or the question could no longer be read. |
 | `CLIENT_GATEWAY_ACTIVITY_SKIP_REASONS` | Object | `packages/contracts/src/client-gateway.ts` | Why a run step was skipped rather than run, on the `step` row that says so: - `already_done`: the run already completed the step's lasting act for the same row, so it was not done again (the executor's completed-act ledger); - `already_in_state`: the step's control already showed the state it asks for, so it was not pressed (no failure, and not a lasting act this run did); - `optional_absent`: a sometimes-present step whose target was not shown; - `state_routed`: the page was elsewhere, so state routing passed the step over and the run went on at the step the page is at. Additive: a client that does not know a reason reads the row as a plain step. |
 | `CLIENT_GATEWAY_HOST_LEASE_REFUSAL_CODES` | Object | `packages/contracts/src/client-gateway.ts` | Failure codes for a command refused because of its host lease; category `blocked_by_capability_or_policy`, effect `unacted`. |
-| `CLIENT_GATEWAY_PROTOCOL_VERSION` | Object | `packages/contracts/src/client-gateway.ts` | - |
+| `CLIENT_GATEWAY_PROTOCOL_VERSION` | Object | `packages/contracts/src/client-gateway.ts` | The version the gateway stamps on its envelopes. Gateway 0.2 (hosted production plan) is additive over 0.1 and shares its major version; the versions this contract describes are `CLIENT_GATEWAY_PROTOCOL_VERSIONS`. This stays `0.1` until the gateway sends the 0.2 messages, since it is also a recorded trace's contract version. |
 | `CLIENT_GATEWAY_RECONCILE_ANSWER_METADATA_KEY` | Object | `packages/contracts/src/client-gateway.ts` | The capability metadata field a client sets to `true` to say it answers `server.reconcile_command`. Core asks only a session that declared it, on any capability; a session that did not is never asked, and a lost reply to it keeps the outcome it had (`timed_out`). |
 | `CLIENT_GATEWAY_RECONCILE_STATES` | Object | `packages/contracts/src/client-gateway.ts` | What became of one command, as the client that was sent it answers `server.reconcile_command` (state-aware recovery plan, C8 and B3). The client answers from what it kept and never by acting: - `landed`: the command finished there; `result` is the result it kept, the one whose delivery was lost; - `not_seen`: the client has no record of that id, so the act never reached it and making it again is not a second act. A client that answers this refuses the id from then on, so a copy still on its way cannot act later; - `running`: the command is still being carried out; - `unknown`: the client cannot say -- for example its record was cleared by a restart before a result was kept. Core never makes the act again on it. |
 | `CLIENT_GATEWAY_REPORTED_ACTION_STATUSES` | Object | `packages/contracts/src/client-gateway.ts` | The statuses a client may report for an action, in order of the wire: Core's own five, plus `interrupted` -- the client lost the command in flight (its background worker stopped, or its channel to the page closed) and does not know whether the act happened. Core reads `interrupted` the way it reads the wire status a client sent before it existed (state-aware recovery plan, C8 and B3): a committing act is `unknown`, its outcome uncertain (`effect: "ambiguous"`), and every other act is `failed` having done nothing (`effect: "unacted"`). Which acts commit is the domain's fact, so Core takes it from the result's `failure.effect`: only a record stating `unacted` makes it a failure, and a result that states nothing is held uncertain. A client built earlier sends `unknown` or `failed` with `payload.status: "interrupted"`, which Core still accepts and records as interrupted. |
@@ -3064,7 +3068,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ClientGatewayAppendRecordingEntryRequest` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayAuditEntry` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayCapability` | Type | `packages/contracts/src/client-gateway.ts` | - |
-| `ClientGatewayClientHello` | Type | `packages/contracts/src/client-gateway.ts` | - |
+| `ClientGatewayClientHello` | Type | `packages/contracts/src/client-gateway.ts` | `token` is the client's credential: under gateway 0.2 the connected-client credential from the connect flow (`ConnectTokenResponse.credential`), under 0.1 a trusted-client token. |
 | `ClientGatewayClientMessage` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayClientType` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayCommandClosure` | Type | `packages/fluxiq/src/client-gateway/service/command-history.ts` | How Core had stopped waiting for a command when its late result came. |
@@ -3076,11 +3080,14 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ClientGatewayEnvelope` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayEvent` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayEventHandler` | Type | `packages/contracts/src/client-gateway.ts` | - |
+| `ClientGatewayGoingAwayNotice` | Type | `packages/contracts/src/client-gateway.ts` | `server.going_away` (gateway 0.2): the server is draining. No new work is sent; the client keeps its credential and reconnects after `retryAfterMs`. |
+| `ClientGatewayHelloMetadata` | Type | `packages/contracts/src/client-gateway.ts` | A hello's metadata. Open, as in 0.1; gateway 0.2 names `clientLabel`, the person-readable name of this client ("Work laptop") that the connect consent page and the account's client list show. |
 | `ClientGatewayHostLease` | Type | `packages/contracts/src/client-gateway.ts` | The host lease a command is issued under (automation-project-agents-plan, `Host resources and concurrency`). Core's gateway stamps it from the scheduler's scope; a caller never writes it. `resourceKey` is opaque to Core and names the domain's resource (for the web extension, its automation tab); `epoch` rises every time the resource is granted again, so a client refuses a command whose epoch is lower than the highest it has seen for that key. |
 | `ClientGatewayItemKind` | Type | `packages/fluxiq/src/client-gateway/service/types.ts` | - |
 | `ClientGatewayLateActionResult` | Type | `packages/fluxiq/src/client-gateway/service/command-history.ts` | A result that arrived for a command Core no longer awaited. It names the command and how it ended, never what the client said in words: no message, payload or target, so no page data reaches the run's evidence through it. |
 | `ClientGatewayLateActionResultListener` | Type | `packages/fluxiq/src/client-gateway/service/command-history.ts` | - |
 | `ClientGatewayPairingChallenge` | Type | `packages/contracts/src/client-gateway.ts` | - |
+| `ClientGatewayPairingRequired` | Type | `packages/contracts/src/client-gateway.ts` | `server.pairing_required`. Gateway 0.2 adds `codeEntryUrl`, the same-origin path where the signed-in person types `referenceCode` (Flow B). |
 | `ClientGatewayReconcileAnswer` | Type | `packages/contracts/src/client-gateway.ts` | A client's answer to `server.reconcile_command`. `result` is present only on `landed`. |
 | `ClientGatewayReconcileRequest` | Type | `packages/contracts/src/client-gateway.ts` | Core asking a client what became of a command it sent: answered, never executed. |
 | `ClientGatewayReconcileState` | Type | `packages/contracts/src/client-gateway.ts` | - |
@@ -3088,12 +3095,14 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ClientGatewayReportedActionResult` | Type | `packages/contracts/src/client-gateway.ts` | An action result as a client sends it: Core's result, whose status may also be `interrupted`. |
 | `ClientGatewayReportedActionStatus` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayRequiredCommandContext` | Class | `packages/fluxiq/src/client-gateway/service/command-ledger/required-context.ts` | Registration validation and STOP only; the real resolver still enforces live ownership/storage. |
+| `ClientGatewayRevokedNotice` | Type | `packages/contracts/src/client-gateway.ts` | `server.revoked` (gateway 0.2): the credential this socket connected with is revoked. The gateway closes the socket after it; the client discards the credential and must connect again through the connect flow. |
 | `ClientGatewayRuntimeTransport` | Class | `packages/fluxiq/src/runtime/client-gateway-transport.ts` | - |
 | `ClientGatewayRuntimeTransportOptions` | Type | `packages/fluxiq/src/runtime/client-gateway-transport.ts` | - |
 | `ClientGatewayServerMessage` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayService` | Class | `packages/fluxiq/src/client-gateway/service.ts` | The client gateway: pairing, durable client trust, session lifecycle, and the command channel to a paired client. This class is a facade. It holds no gateway state of its own; each method forwards to the collaborator under `service/` that owns the state it touches. Its public surface is the gateway contract every program imports, so a method is added or removed here only when that contract changes — the collaborators behind it can be reshaped freely. |
 | `ClientGatewayServiceOptions` | Type | `packages/fluxiq/src/client-gateway/service/types.ts` | Construction options for `ClientGatewayService`. |
 | `ClientGatewaySession` | Type | `packages/contracts/src/client-gateway.ts` | - |
+| `ClientGatewaySessionReady` | Type | `packages/contracts/src/client-gateway.ts` | `server.session_ready`. Gateway 0.2 adds who the session acts as (`user`, `workspace`) and `credentialExpiresAt` (epoch milliseconds); a connected client's credential rotates on every connect, and `token` is then the new credential the client stores in place of the old one. |
 | `ClientGatewaySessionStatus` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewaySnapshot` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewaySnapshotView` | Type | `packages/contracts/src/client-gateway.ts` | - |
@@ -3471,6 +3480,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `EncryptedSecretValueRecordV1` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | A version 1 seal: scrypt at Node's default cost (N=2^14), recording no parameters, with the base64url salt text itself as the scrypt salt. Still read; never written. It is re-sealed as version 2 at its next successful unlock or reveal. |
 | `EncryptedSecretValueRecordV2` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | A version 2 seal: records its scrypt parameters, which must be in the read allowlist, and derives from the decoded salt bytes. `sealedByUserId` is a non-secret hint naming the account whose password sealed the value, so a login tries only that user's keys; tampering with it affects availability only. |
 | `endingKindOf` | Value | `packages/fluxiq/src/ui/activity-status/ending-kind.ts` | - |
+| `endsOnDoubt` | Value | `packages/fluxiq/src/ui/activity-status/doubted-ending.ts` | - |
 | `EnvironmentDescriptor` | Type | `packages/fluxiq/src/programs/automation-studio/model/descriptors.ts` | - |
 | `estimateAutomationStudioDeepSeekCostUsd` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/pricing.ts` | - |
 | `estimateAutomationStudioDeepSeekInputTokens` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/request-body.ts` | - |

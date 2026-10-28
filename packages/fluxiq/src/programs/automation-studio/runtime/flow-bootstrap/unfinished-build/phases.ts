@@ -222,7 +222,7 @@ import { automationStudioFlowBootstrapJudgementProgress, automationStudioFlowBoo
 import { automationStudioFlowBootstrapRepliesUnreadable } from "./replies-unreadable.ts";
 import { automationStudioFlowBootstrapJudgeAtReserve } from "./reserve-judging.ts";
 import { automationStudioFlowBootstrapProviderUnavailable } from "./provider-unavailable.ts";
-import { automationStudioFlowBootstrapRepairingJudgedSaid, automationStudioFlowBootstrapRepairingNotRunSaid, automationStudioFlowBootstrapStopSaid, automationStudioFlowBootstrapTestReachSaid } from "./not-done.ts";
+import { automationStudioFlowBootstrapRepairingJudgedSaid, automationStudioFlowBootstrapRepairingNotRunSaid, automationStudioFlowBootstrapStopAnnouncementSaid, automationStudioFlowBootstrapStopSaid, automationStudioFlowBootstrapTestReachSaid } from "./not-done.ts";
 import { automationStudioFlowBootstrapRoundEnding } from "./round-ending.ts";
 import { automationStudioFlowBootstrapRoundFunding } from "./round-funding.ts";
 import { AutomationStudioFlowBootstrapUnfinishedStall } from "./unfinished-stall.ts";
@@ -306,6 +306,8 @@ export type AutomationStudioFlowBootstrapBuildPhasesInput = {
    * a yes about a Flow that cannot be built would finish nothing. Absent: it can.
    */
   acceptStopped?(loop: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: true }>): Promise<boolean>;
+  /** True where this build is a result repair (a re-author after a refuted run): the Flow it starts from was finished, so a stalled round says the repair stopped (t785). */
+  resultRepair?: boolean;
   /** Tell the person the build moved to a phase: the chat's row for it. */
   announce?(event: { phase: "exploring" | "verifying" | "repairing"; label: string; text: string }): void;
   /**
@@ -469,7 +471,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       if ((ending.kind === "unfinished" || atReserve) && toTest.length && input.replayable(toTest)) {
         input.announce?.(atReserve
           ? { phase: "verifying", label: "Testing the Flow so far", text: `The build reached its ${boundSaid} before the Flow was finished. Running the Flow as far as it got from its start, and judging it with what was kept back for judging.` }
-          : { phase: "verifying", label: "Testing the Flow so far", text: `The build stopped before the Flow was finished: ${automationStudioFlowBootstrapStopSaid(stopped, ending.lastIssueCodes)}. Running the Flow as far as it got from its start, to judge what it does and what is left.` });
+          : { phase: "verifying", label: "Testing the Flow so far", text: automationStudioFlowBootstrapStopAnnouncementSaid({ resultRepair: input.resultRepair === true, reason: automationStudioFlowBootstrapStopSaid(stopped, ending.lastIssueCodes) }) });
       }
       // Phase 2: a round any other budget stopped is judged from the checklist alone; nothing more is run for a build that is ending.
       const judged = await automationStudioFlowBootstrapJudgeUnfinished({
