@@ -14,10 +14,10 @@ export type Reply = JsonObject | "malformed" | "timeout_after_send" | "unauthori
  * How the endpoint answers one `loop_verification` call: the judge of a
  * finished build's test (`result-verification/build-test/judge.ts`). Its
  * `answersRequest`, and the rest of what its diagnosis said (`changed` is read
- * as its advice). Verify asks again on anything but `yes`, so a `no` is two
- * calls (`result-verification/verify.ts`).
+ * as its advice, `defects` what a no rests on). Verify asks again on anything
+ * but `yes`, so a `no` is two calls (`result-verification/verify.ts`).
  */
-export type JudgeReply = { answersRequest: "yes" | "no" | "unknown"; expected?: string; observed?: string; changed?: string };
+export type JudgeReply = { answersRequest: "yes" | "no" | "unknown"; expected?: string; observed?: string; changed?: string; defects?: JsonObject[] };
 
 export function look(iteration: number): JsonObject {
   return { kind: "tool_call", callId: `call.${iteration}`, toolId: LOOK_TOOL_ID, input: { area: `area.${iteration}` } };
@@ -119,5 +119,8 @@ export const JUDGE_NO: JudgeReply = {
   answersRequest: "no",
   expected: "Rows of every catalog item with columns name and price.",
   observed: "No step reads the catalog's items: the Flow opens and filters the catalog and stores no row.",
-  changed: "Add a step that extracts each item's name and price as a list of rows after the filter."
+  changed: "Add a step that extracts each item's name and price as a list of rows after the filter.",
+  // A current no lists its defects (t752, 534c41fb): a Flow that stores no rows names the read no step does (t766),
+  // which Core finds in the test's steps. Without it the reply is unreadable and the test not judged.
+  defects: [{ kind: "act_missing", row: "each catalog item's name and price", requestWords: "give me rows with columns name and price" }]
 };

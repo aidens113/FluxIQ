@@ -177,7 +177,8 @@ async function createHarness() {
         return providerResponse({
           kind: "diagnosis",
           summary: wrong ? "The records include items that are not red." : "Every record is a red product.",
-          diagnosis: wrong ? { answersRequest: "no", changed: ADVICE } : { answersRequest: "yes" }
+          // A current no lists its defects (t752, 534c41fb): a row the run stores, quoting the request, which Core finds in its record.
+          diagnosis: wrong ? { answersRequest: "no", changed: ADVICE, defects: [{ kind: "kept_not_asked", row: "Beta", requestWords: "every red product" }] } : { answersRequest: "yes" }
         });
       }
 

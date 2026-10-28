@@ -2,7 +2,8 @@
 // each it cannot (t752, `./schema.ts`).
 //
 // A defect is kept only as the schema offers it: an object with no key but
-// kind, row, column and requestWords, a kind Core knows, and each text a
+// kind, row, column, value, step and requestWords, a kind Core knows, an
+// `act_wrong` naming its step (t766), and each text a
 // non-blank string within its bound. Legacy reads drop malformed entries and keep an explicit empty account;
 // current negative verification replies reject any malformed account. The legacy reply check warns
 // with the dropped one's place (`../harness/provider-result.ts`). Past the
@@ -40,11 +41,13 @@ function wellFormed(entry: unknown): AutomationStudioLlmVerificationDefect | und
   if (!KINDS.includes(record.kind) || !boundedText(record.row) || !boundedText(record.requestWords)) return undefined;
   if (record.column !== undefined && !boundedText(record.column)) return undefined;
   if (record.value !== undefined && (!boundedText(record.value) || !boundedText(record.column))) return undefined;
+  if (record.step !== undefined ? !boundedText(record.step) : record.kind === "act_wrong") return undefined;
   return {
     kind: record.kind as AutomationStudioLlmVerificationDefect["kind"],
     row: record.row,
     ...(record.column !== undefined ? { column: record.column as string } : {}),
     ...(record.value !== undefined ? { value: record.value as string } : {}),
+    ...(record.step !== undefined ? { step: record.step as string } : {}),
     requestWords: record.requestWords
   };
 }

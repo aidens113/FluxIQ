@@ -231,9 +231,11 @@ export const JUDGE_USAGE = Object.freeze({ inputTokens: 200, outputTokens: 20, t
 
 /**
  * The judge's reply: `yes` unless told otherwise, with the rest of what its
- * judgement said (`expected`, `observed`, and `changed` for its advice).
+ * judgement said (`expected`, `observed`, and `changed` for its advice). A
+ * current no must list its `defects` (t752), so a no that should count says
+ * them here too; one that lists none is an unreadable reply.
  */
-export function judgeReply(answersRequest: "yes" | "no" | "unknown" = "yes", said: Record<string, string> = {}) {
+export function judgeReply(answersRequest: "yes" | "no" | "unknown" = "yes", said: Record<string, unknown> = {}) {
   return {
     response: { kind: "diagnosis", summary: "Judged the build's test.", diagnosis: { answersRequest, ...said } },
     usage: { ...JUDGE_USAGE }

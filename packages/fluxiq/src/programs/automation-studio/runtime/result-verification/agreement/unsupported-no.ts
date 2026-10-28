@@ -88,7 +88,7 @@ export async function automationStudioResultVerificationReaskUnsupportedNo(input
     basis,
     code: codes.refutationUnsupported,
     // Core's words only: a run records the reason, and the rows a judge named are in `unsupportedNo` beside it.
-    reason: `This result was checked with the same evidence, and ${both ? "both checks" : "a check"} answered that it does not do what was asked without naming a defect Core can find in its own record of this run: a row the result keeps that the request does not ask for, a row the request asks for that it lacks, or a wrong value, each with the request's own words. Asked once more to list each, ${both ? "neither" : "it"} named one, so ${both ? "neither no is" : "that no is not"} taken. ${UNSETTLED[basis].run}`,
+    reason: `This result was checked with the same evidence, and ${both ? "both checks" : "a check"} answered that it does not do what was asked without naming a defect Core can find in its own record of this run: a row the result keeps that the request does not ask for, a row the request asks for that it lacks, a wrong value, or an act missing or done wrong by a step it took, each with the request's own words. Asked once more to list each, ${both ? "neither" : "it"} named one, so ${both ? "neither no is" : "that no is not"} taken. ${UNSETTLED[basis].run}`,
     observation: settled.observation,
     verdicts,
     calls: verdicts.length,
@@ -135,7 +135,7 @@ function recheckWords(findings: readonly string[], earlier: readonly AutomationS
       : `This revision changed steps or conditions named by the judges of revisions ${followed.slice(0, -1).join(", ")} and ${followed[followed.length - 1]}. That change does not prove the advice was followed or correct. Earlier advice is context only: judge the result against the original request, including defects introduced by that advice. `;
   return "This same evidence was judged before, and that answer said the result does not answer the request, but named no defect Core can find in this result. "
     + advised
-    + "Answer no only for a defect of this result, and list each defect in defects: kept_not_asked for a row it keeps that the request does not ask for, asked_missing for a row the request asks for that it lacks, or wrong_value for a kept row whose column holds a wrong value. "
+    + "Answer no only for a defect of this result, and list each defect in defects: kept_not_asked for a row it keeps that the request does not ask for, asked_missing for a row the request asks for that it lacks, or wrong_value for a kept row whose column holds a wrong value; and for an act the request asks for, act_missing for an act no step does, or act_wrong for a step, named in step, that did its act to the wrong thing, with the wrong value or with no effect the evidence shows. "
     + "Name each row as the evidence names it, and quote in requestWords the request's own words it fails. "
     + "For a claim about kept or dropped rows, name the row when the evidence identifies it. Ordering, formatting, missing columns, actions, and constraints not measurable from these rows can still violate the original request: report them in observed and do not answer yes unless the evidence independently supports correctness. "
     + "A concern about another possible run alone is advice. An absent structured row defect does not establish correctness: answer unknown when the evidence cannot settle a requirement, and answer yes only after independently checking every requirement of the original request."

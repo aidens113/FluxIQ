@@ -233,9 +233,10 @@ async function createHarness(options: {
             verificationCalls <= 2
               ? "The returned records do not answer the instruction."
               : "The repaired Flow answers the instruction.",
-          diagnosis: {
-            answersRequest: verificationCalls <= 2 ? "no" : "yes",
-          },
+          // A current no lists its defects (t752, 534c41fb): a row the run stores, quoting the request, which Core finds in its record.
+          diagnosis: verificationCalls <= 2
+            ? { answersRequest: "no", defects: [{ kind: "kept_not_asked", row: "Beta", requestWords: "Return three records from the fixture" }] }
+            : { answersRequest: "yes" },
         });
       }
 

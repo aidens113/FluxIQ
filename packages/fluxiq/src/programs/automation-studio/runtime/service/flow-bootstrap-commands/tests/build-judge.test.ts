@@ -33,6 +33,13 @@ const read: AutomationStudioFlowDraftStep = {
   input: { node: "web.output.dom-extract", parameters: { field: "price" } }, effect: "observe", proposes: true, disposition: "kept"
 };
 
+/**
+ * The judge's no names its defect as a current no must (t752, 534c41fb): a Flow that stores no rows has none to
+ * name, so it names the read no step does (t766), which Core finds in the test's steps. Without it the reply is
+ * unreadable and the verdict `not_judged`.
+ */
+const NO_TABLE_READ = { kind: "act_missing", row: "every product the search returns", requestWords: "as a table with columns name and price" };
+
 function scripted(): { provider: AutomationStudioLlmProvider; seen: AutomationStudioLlmTaskRequest[] } {
   const seen: AutomationStudioLlmTaskRequest[] = [];
   return {
@@ -41,7 +48,7 @@ function scripted(): { provider: AutomationStudioLlmProvider; seen: AutomationSt
       metadata: { provider: "mock", model: "debug-model" },
       runTask: async (request: AutomationStudioLlmTaskRequest) => {
         seen.push(request);
-        return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: "no", observed: "No step reads a table." } }, usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0 } };
+        return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: "no", observed: "No step reads a table.", defects: [NO_TABLE_READ] } }, usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0 } };
       }
     }
   };

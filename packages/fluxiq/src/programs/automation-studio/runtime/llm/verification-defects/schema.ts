@@ -10,8 +10,18 @@
 // One source for the shape: the verification's schema offers it
 // (`../deepseek/output-schema.ts`) and the reply check holds a defect to it
 // (`./well-formed.ts`), so the two cannot disagree on a kind or a bound.
+//
+// **And an act the request asks for (t766).** A result that stores no rows --
+// a Flow that only acts: saves, sends, adds to a cart -- has no row a no could
+// name, so every no of it named `other` and came to unsure, and its failures
+// never reached a repair. Such a no names the act instead: `act_missing`, an
+// act the request asks for that no step does (`row` names what it is done to),
+// or `act_wrong`, a step that did its act to the wrong thing, with the wrong
+// value or with no effect the evidence shows (`step` names that step). Core
+// finds each in its record of the steps the run took
+// (`../../result-verification/located-defects/act-located.ts`).
 
-/** The shape of `diagnosis.defects` a verification is offered: at most 12, each a closed kind, the row, an optional column and the request's words, each a bounded string. */
+/** The shape of `diagnosis.defects` a verification is offered: at most 12, each a closed kind, the row, an optional column, value and step, and the request's words, each a bounded string. */
 export const AUTOMATION_STUDIO_LLM_VERIFICATION_DEFECTS_SCHEMA = {
   type: "array",
   maxItems: 12,
@@ -20,10 +30,11 @@ export const AUTOMATION_STUDIO_LLM_VERIFICATION_DEFECTS_SCHEMA = {
     additionalProperties: false,
     required: ["kind", "row", "requestWords"],
     properties: {
-      kind: { enum: ["kept_not_asked", "asked_missing", "wrong_value", "other"] },
+      kind: { enum: ["kept_not_asked", "asked_missing", "wrong_value", "act_missing", "act_wrong", "other"] },
       row: { type: "string", minLength: 1, maxLength: 500 },
       column: { type: "string", minLength: 1, maxLength: 500 },
       value: { type: "string", minLength: 1, maxLength: 500 },
+      step: { type: "string", minLength: 1, maxLength: 500 },
       requestWords: { type: "string", minLength: 1, maxLength: 500 }
     }
   }

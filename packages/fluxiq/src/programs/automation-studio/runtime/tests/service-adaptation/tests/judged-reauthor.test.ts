@@ -73,6 +73,9 @@ afterEach(async () => {
  * the caller's key says of the re-run; `rerunFails` makes the re-run's extraction
  * fail. Each dispatch records which adaptation owned the stored graph at the time.
  */
+// A current no lists its defects (t752, 534c41fb): a row the run stores, quoting the request, which Core finds in its record.
+const KEPT_NOT_ASKED = [{ kind: "kept_not_asked", row: "Beta", requestWords: "Return three records from the fixture" }];
+
 async function reauthoredRun(options: { repairVerdict: "yes" | "no"; rerunFails?: boolean }) {
   let decisions = 0;
   let dispatches = 0;
@@ -140,14 +143,14 @@ async function reauthoredRun(options: { repairVerdict: "yes" | "no"; rerunFails?
         const judgesBuild = buildTestCalls > 0;
         if (judgesBuild) buildTestCalls -= 1;
         const yes = judgesBuild || options.repairVerdict === "yes";
-        return { response: { kind: "diagnosis", summary: yes ? "The Flow answers the instruction." : "The records still do not answer the instruction.", diagnosis: { answersRequest: yes ? "yes" : "no" } }, usage: USAGE };
+        return { response: { kind: "diagnosis", summary: yes ? "The Flow answers the instruction." : "The records still do not answer the instruction.", diagnosis: yes ? { answersRequest: "yes" } : { answersRequest: "no", defects: KEPT_NOT_ASKED } }, usage: USAGE };
       }
     } }),
     // The Flow's standing authorization: routine sampling, which refutes the first pass.
     resultCheckProviderResolver: (request) => ({
       provider: {
         metadata: { provider: "mock", model: "standing-judge" },
-        runTask: async () => ({ response: { kind: "diagnosis", summary: "The returned records do not answer the instruction.", diagnosis: { answersRequest: "no" } }, usage: USAGE })
+        runTask: async () => ({ response: { kind: "diagnosis", summary: "The returned records do not answer the instruction.", diagnosis: { answersRequest: "no", defects: KEPT_NOT_ASKED } }, usage: USAGE })
       },
       maxEstimatedCostUsd: request.maxEstimatedCostUsd
     }),
