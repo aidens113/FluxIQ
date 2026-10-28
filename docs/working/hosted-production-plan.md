@@ -62,9 +62,9 @@ document owns the extension, stores, website, infrastructure, docs, legal and La
 lanes in parallel to 11-08 (the extension's connection files merge 11-10); hosted gate 11-11 to
 11-12; store submission about 11-13; public when Google approves.
 
-**Next.** (1) The supervisor dispatches the contract-freeze worker (carrying digest fields for
-`approvingSessionId` and `startedFromSessionId`, `secrets.locked`, the Origin grammar) and opens the
-paired H1 task (one ID, nested worktrees); lanes A, B1, B2 and C start with the H0 changes. (2) The
+**Next.** (1) Contracts frozen 2026-10-28 (t784, `@fluxiq/contracts` 0.3.0: `/platform`, `/iam`,
+gateway 0.2 additions; decisions in the paired document's ledger); lanes A, B1, B2 and C start with
+the H0 changes, each as its own task. (2) The
 user answers N1 to N7 and creates the VM, DNS and store developer account (paired U9). Nothing
 blocks H1.
 
