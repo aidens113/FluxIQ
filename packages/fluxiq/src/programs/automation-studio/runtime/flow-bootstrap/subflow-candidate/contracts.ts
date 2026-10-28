@@ -4,6 +4,7 @@ import type { AutomationStudioCandidateTrialAct, AutomationStudioCandidateTrialV
 import type { AutomationStudioSiteResetTrialActPlace } from "../site-reset/index.ts";
 import type { AutomationStudioRunEnvironmentKind } from "../../environment/index.ts";
 import type { AutomationStudioTrialOfflineFirst } from "../offline-first/index.ts";
+import type { AutomationStudioTrialChangeAct, AutomationStudioTrialChangeOutcome, AutomationStudioTrialPartEffect } from "../trial-change/index.ts";
 
 // What a subflow builder works within, what it submits and how its own subflow
 // is tried (automation-project-agents-plan.md, `Scoped submission`, `Subflow
@@ -23,6 +24,12 @@ export type AutomationStudioSubflowScopePart = {
    * is asked of it.
    */
   lastingActs?: readonly string[];
+  /**
+   * The change the task spec says this part asks for (t775), when the dispatcher carries it: a trial is judged by it
+   * (`../trial-change/`), and an end state another step of this build already made is undone first, just that act
+   * (`candidate.trial_starts_in_end_state`). Absent, the part is judged from the run alone.
+   */
+  effect?: AutomationStudioTrialPartEffect;
 };
 
 /**
@@ -103,6 +110,12 @@ export type AutomationStudioSubflowTrialRequest = {
   startedWith?: readonly string[];
   /** Each earlier judged trial's advice for this subflow, oldest first, at most three, with whether this revision changed what it named (t752, `../candidate/earlier-advice-memory.ts`): the judge is told it, last in its summary. */
   earlierAdvice?: readonly import("../../result-verification/contracts/index.ts").AutomationStudioResultEarlierAdvice[];
+  /**
+   * What the live trial changed on the site (t775, `../candidate/contracts.ts` says the same of a whole trial): the port
+   * calls it after its end view and before its judge with the trial's acts, and hands the judge `siteChange`. Absent for
+   * an offline trial and where nothing of the change could be read.
+   */
+  siteChange?: (acts: readonly AutomationStudioTrialChangeAct[], signal?: AbortSignal) => Promise<AutomationStudioTrialChangeOutcome>;
 };
 
 /**

@@ -10,7 +10,7 @@ import { automationStudioProjectBuildEvidenceBeside as beside } from "./beside.t
 // header). A call that names an act under `undoes` is the undo a trial refusal
 // or a reset demands, in any role, so it is never "outside the brief" (t772
 // R4). A landed call that declared a lasting class the brief's parts do not ask
-// for is recorded as the build's act, to undo before a trial; its note never
+// for is recorded as the build's act; its note never
 // forbids the step, because the request may need it and only the plan's classes
 // are then wrong (t772, office r6 cause 2).
 
@@ -47,7 +47,7 @@ export function automationStudioProjectBuildBriefTold<L extends { executeTool: E
       return beside(ran, "outsideBrief", { consequences: outside, note: `This call declared ${outside.join(", ")} and named no act under ${AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY}, so it was outside this reset, which only undoes the build's listed acts. It ran, and it stays on the site as this build's act: where the site can undo it, it is listed with the acts to undo. Do nothing on the site but undo the listed acts.` });
     }
     const asked = said.permittedActs.length ? `they ask only for ${said.permittedActs.join(", ")}` : "they ask for no lasting act";
-    return beside(ran, "outsideBrief", { consequences: outside, note: `This call declared ${outside.join(", ")}, which your brief's parts do not ask for (${asked}). It ran, and it is recorded as this build's act, which is undone before a trial. If the request needs this kind of change, the plan's lasting classes are wrong: say so in your return, so the supervisor can amend the plan with project.amend_plan.` });
+    return beside(ran, "outsideBrief", { consequences: outside, note: `This call declared ${outside.join(", ")}, which your brief's parts do not ask for (${asked}). It ran, and it is recorded as this build's act and stays on the site; a trial is judged by the change from what was there just before it, not from what the site held before the build. If the request needs this kind of change, the plan's lasting classes are wrong: say so in your return, so the supervisor can amend the plan with project.amend_plan.` });
   };
   return { ...loop, executeTool };
 }

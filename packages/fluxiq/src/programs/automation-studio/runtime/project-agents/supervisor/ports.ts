@@ -1,5 +1,5 @@
 import type { AutomationStudioCandidateTrialPort, AutomationStudioFlowCandidateSubmissionController } from "../../flow-bootstrap/candidate/index.ts";
-import type { AutomationStudioSiteResetProjectLedger } from "../../flow-bootstrap/site-reset/index.ts";
+import type { AutomationStudioSiteResetChecks, AutomationStudioSiteResetProjectLedger } from "../../flow-bootstrap/site-reset/index.ts";
 import type { AutomationStudioSubflowProposal } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioLlmBuildPurse, AutomationStudioLlmBuildPurseJudging } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioProjectInstructionSource } from "../contracts/index.ts";
@@ -29,11 +29,15 @@ export type AutomationStudioProjectSupervisorKept = { planDigest: string; madeUn
  *   it. Undefined when it holds none by that name.
  * - `projectLedger`: the build's lasting-act ledger (t538), asked per brief
  *   (`forBrief`) as well as whole: before each whole trial the deployment's
- *   start hook puts the site back where there is one, otherwise each brief's
- *   ledger is asked, and an act still to undo refuses the trial until a reset
- *   brief has come back; an act no control undoes is kept and the trial runs
- *   with it, its judge told (`./whole-trial.ts`, t586). Every ending names
- *   what it holds still on the target (`./left-on-target.ts`).
+ *   start hook puts the site back where there is one; otherwise the trial runs
+ *   with this build's acts on the site, its judge told them, and is judged by
+ *   what it changed (`./whole-trial.ts`, t775). Every ending names what it
+ *   holds still on the target (`./left-on-target.ts`).
+ * - `look`: Core's own look at a place, under the signal of the whole trial
+ *   being prepared (`service/project-build/phase-start.ts`, t775 D5): the
+ *   whole trial's witnesses are read through it just before the trial and
+ *   again after it, and each read reaches every ledger holding an act. Absent,
+ *   Core never looks and the whole trial gets no readings.
  * - `kept`: told, each time a plan comes into force, which done proposals made
  *   under an earlier plan it keeps, by subflow key with the plan digest each
  *   was made under (`./state.ts`, t590), so a dependent builder's entry may
@@ -69,6 +73,7 @@ export type AutomationStudioProjectSupervisorPorts = {
   dispatch: AutomationStudioProjectDispatchPort;
   proposals: (ref: AutomationStudioProjectProposalRef) => AutomationStudioSubflowProposal | undefined | Promise<AutomationStudioSubflowProposal | undefined>;
   projectLedger: Pick<AutomationStudioSiteResetProjectLedger, "snapshot" | "forBrief">;
+  look?: ((signal: AbortSignal | undefined) => NonNullable<AutomationStudioSiteResetChecks["lookAt"]>) | undefined;
   kept?: ((kept: AutomationStudioProjectSupervisorKept) => void) | undefined;
   leftAtEnding?: ((left: { note: string | undefined; told?: string }) => void) | undefined;
   submission: ConstructorParameters<typeof AutomationStudioFlowCandidateSubmissionController>[0];

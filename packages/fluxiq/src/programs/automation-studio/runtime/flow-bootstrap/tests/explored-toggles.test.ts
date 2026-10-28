@@ -48,4 +48,18 @@ describe("the explored toggles record", () => {
     await permissions.executeTool({ callId: "c9", toolId: "core.run_node", value: PRESS });
     expect(permissions.exploredToggles.list()).toMatchObject([{ callId: "c9", node: "domain.demo.press", signature: { state: "s.on" } }]);
   });
+
+  it("writes into a record it is given, so two gates of one build share it, and keeps its own otherwise", async () => {
+    const shared = new AutomationStudioExploredToggles();
+    const gate = (record?: AutomationStudioExploredToggles) => automationStudioFlowBootstrapActionPermissions({
+      permittedConsequences: ["modify_existing"], instructionIds: [], ...(record ? { exploredToggles: record } : {}),
+      executeTool: async () => answer({ toggle: { signature: { state: "s.on" } } })
+    });
+    const first = gate(shared);
+    const second = gate(shared);
+    await first.executeTool({ callId: "c1", toolId: "core.run_node", value: PRESS });
+    expect(second.exploredToggles).toBe(shared);
+    expect(second.exploredToggles.list()).toMatchObject([{ callId: "c1" }]);
+    expect(gate().exploredToggles.list()).toEqual([]);
+  });
 });

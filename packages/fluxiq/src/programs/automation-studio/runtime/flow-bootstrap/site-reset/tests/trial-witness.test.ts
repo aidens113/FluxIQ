@@ -14,6 +14,11 @@ import {
   type AutomationStudioSiteResetTrialAct
 } from "../index.ts";
 
+/** Whether a trial starts with acts of this build still on the site (t775: said under `startedWith.acts`; a trial is never refused for them). */
+function stillOpen(decision: { kind: string; startedWith?: { acts?: unknown } }): boolean {
+  return decision.kind === "admit" && Array.isArray(decision.startedWith?.acts) && decision.startedWith.acts.length > 0;
+}
+
 // What a trial act is witnessed by (t751 R3, R6). A trial or entry-preparation act takes its step's stamp, the witness its
 // plan node took at submission: a destination ref attaches that issued list, a repeated explored act lends its witnesses.
 // Adoption is deleted: a trial act with no stamp and no witness of its own is never judged on lists named for other acts
@@ -48,7 +53,7 @@ it("keeps a destination-stamped project trial strict when its diff reports no co
   own.trialRan([{ step: 1, definitionId: "demo.add", consequences: ["create_new"], witness: { via: "destination", ref: "destination-1" } }]);
   expect(own.inPlace()[0]?.settle).toContain("destination-1");
   await own.beforeTrial({ compare });
-  expect(await own.beforeTrial({ compare }, ["act-1"])).toMatchObject({ kind: "refuse" });
+  expect(stillOpen(await own.beforeTrial({ compare }, ["act-1"]))).toBe(true);
   own.observed(boxPage());
   expect(own.standing("act-1")).toBe("unchanged");
 });
@@ -57,7 +62,7 @@ it("retains explicit standalone legacy trial compatibility", async () => {
   const own = new AutomationStudioSiteResetLedger();
   own.trialRan([{ step: 1, definitionId: "demo.add", consequences: ["create_new"], witness: { via: "legacy" } }]);
   await own.beforeTrial({ compare });
-  expect(await own.beforeTrial({ compare }, ["act-1"])).toMatchObject({ kind: "admit" });
+  expect(stillOpen(await own.beforeTrial({ compare }, ["act-1"]))).toBe(false);
 });
 
 it("retains an own-list original through a missing trial diff", () => {
@@ -104,7 +109,7 @@ it.each([false, true])("retains an original control across brief owners without 
     supervisor.observed(control("st:off"));
   }
   expect(supervisor.standing("act-2")).toBe(changed ? "restored" : "unchanged");
-  expect(await supervisor.beforeTrial({ compare })).toMatchObject({ kind: "admit" });
+  expect(stillOpen(await supervisor.beforeTrial({ compare }))).toBe(false);
 });
 
 // t751 final acceptance (headed photo-toggle, photo-dialog-step, photo-dialog-destination): a place also holds other
@@ -244,7 +249,8 @@ it("allows an unrelated resource's first control original after a witnessed coll
   builder.trialRan([{ step: 1, definitionId: "demo.add", consequences: ["create_new"], witness: { via: "destination", ref: "destination-1" } }]);
   builder.observed(page("p:late", "loc:late", undefined, { "pl:late": { "st:off": 1 } }));
   expect(builder.admitStep({ effect: "mutate", consequences: ["modify_existing"], control: { name: "Late", kind: "button", resource: SITE, subject: "s:late", place: "pl:late", state: "st:off" } })).toBeUndefined();
-  expect(builder.createBaseline({ effect: "mutate", consequences: ["modify_existing"], control: { name: "Late", kind: "button", resource: SITE, subject: "s:late", place: "pl:late", state: "st:off" } }, undefined)).toMatchObject({ kind: "refused", evidence: { canMeet: "no_call" } });
+  // t775: the exploration door admits it with no witness; the step door above gives it no stamp.
+  expect(builder.createBaseline({ effect: "mutate", consequences: ["modify_existing"], control: { name: "Late", kind: "button", resource: SITE, subject: "s:late", place: "pl:late", state: "st:off" } }, undefined)).toEqual({ kind: "admit" });
   const other = { ...page("p:other", "loc:other", undefined, { "pl:star": { "st:off": 1 } }), resource: "r:other" };
   builder.observed(other);
   expect(builder.admitStep({ effect: "mutate", consequences: ["modify_existing"], control: { name: "Star", kind: "button", resource: "r:other", subject: "s:card", place: "pl:star", state: "st:off" } })).toEqual({ via: "control", ref: "control-1" });
@@ -258,11 +264,8 @@ const looking = (observe: (read: AutomationStudioSiteResetRead) => void, reads: 
   } };
   return { looked, checks };
 };
-const settleOf = (decision: Awaited<ReturnType<AutomationStudioSiteResetLedger["beforeTrial"]>>, act: string): string => {
-  const acts = decision.kind === "refuse" ? decision.evidence.actsToUndo : undefined;
-  const found = Array.isArray(acts) ? acts.find((entry) => typeof entry === "object" && entry !== null && !Array.isArray(entry) && entry.act === act) : undefined;
-  return typeof found === "object" && found !== null && !Array.isArray(found) && typeof found.settle === "string" ? found.settle : "";
-};
+/** What an act still on the site says settles it (t775: the ledger tells it; no trial refusal carries it any more). */
+const settleOf = (ledger: Pick<AutomationStudioSiteResetLedger, "inPlace">, act: string): string => ledger.inPlace().find((entry) => entry.act === act)?.settle ?? "";
 /** A ledger that read the box complete and was shown both its refs. */
 const boxed = (): AutomationStudioSiteResetLedger => {
   const ledger = new AutomationStudioSiteResetLedger();
@@ -289,8 +292,8 @@ describe("a trial act takes its step's stamp (t751 R3)", () => {
     const ledger = boxed();
     ledger.trialRan([confirmStep({ via: "destination", ref: "destination-1" })], "trial.1");
     const refused = await ledger.beforeTrial(compare);
-    expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-1" }] } });
-    expect(settleOf(refused, "act-1")).toBe("Read destination-1 at loc:box completely again.");
+    expect(refused).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-1" }] } });
+    expect(settleOf(ledger, "act-1")).toBe("Read destination-1 at loc:box completely again.");
   });
 
   it("a repeats stamp lends the explored act's witnesses, though the step's definition matches no explored act", async () => {
@@ -323,7 +326,7 @@ describe("a trial act with no witness is never adopted onto other lists (t751 R6
     const refused = await ledger.beforeTrial(checks);
     // No witness: Core has nowhere of its own to look.
     expect(looked).toEqual([]);
-    const settle = settleOf(refused, "act-1");
+    const settle = settleOf(ledger, "act-1");
     expect(settle).toContain("Nothing read shows where its effect would be");
     expect(settle).toContain("destination-1 (2 items at loc:box), destination-2 (1 item at loc:box)");
     expect(settle).not.toContain("still differs");
@@ -343,12 +346,12 @@ describe("a trial act with no witness is never adopted onto other lists (t751 R6
     closed.trialRan([confirmStep()], "trial.1");
     const closedLooks = looking((read) => closed.observed(read), () => ({}));
     const sealed = await closed.beforeTrial(closedLooks.checks);
-    expect(sealed).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", failed: "acts_unsettleable", actsToUndo: [], actsUnsettleable: [{ act: "act-1", failed: "nothing_to_name" }] } });
+    expect(sealed).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-1", failed: "nothing_to_name" }] } });
     expect(closedLooks.looked).toEqual([]);
     const unshown = new AutomationStudioSiteResetLedger();
     unshown.observed(boxPage());
     unshown.trialRan([confirmStep()], "trial.1");
-    expect(settleOf(await unshown.beforeTrial(compare), "act-1")).toContain("(no ref has been shown yet)");
+    expect((await unshown.beforeTrial(compare), settleOf(unshown, "act-1"))).toContain("(no ref has been shown yet)");
   });
 
   it("leaves explored acts as they were: one with no witness is still asked to name its list", async () => {
@@ -357,8 +360,8 @@ describe("a trial act with no witness is never adopted onto other lists (t751 R6
     ledger.explored(press("mark", ["modify_existing"], { subject: "s:jam", page: "s:jam", resource: SITE }));
     const { looked, checks } = looking((read) => ledger.observed(read), () => ({ "loc:box": boxPage() }));
     const refused = await ledger.beforeTrial(checks);
-    expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-2" }] } });
-    expect(settleOf(refused, "act-2")).toContain("name that list's ref as resetDestination on a look that names this act under undoes");
+    expect(refused).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-2" }] } });
+    expect(settleOf(ledger, "act-2")).toContain("name that list's ref as resetDestination on a look that names this act under undoes");
     expect(looked).toEqual(["loc:box"]);
     expect([ledger.standing("act-1"), ledger.standing("act-2")]).toEqual(["unchanged", "in_place"]);
   });

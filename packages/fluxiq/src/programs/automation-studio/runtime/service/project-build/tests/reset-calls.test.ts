@@ -15,14 +15,16 @@ describe("project reset observation routing", () => {
     const second = automationStudioProjectBuildResetCalls(project, project.forBrief("second"));
     const declaration = { ...add.declared, control: { ...add.declared.control, resource: "r:one", scope: "p:source" } };
     expect(second.createBaseline!(declaration, ref)).toEqual({ kind: "admit" });
-    expect(second.createBaseline!({ ...declaration, control: { ...declaration.control, resource: "r:other" } }, ref)).toMatchObject({ kind: "refused" });
+    // t775: the exploration door admits a press with no witness; a ref of another resource is still no witness for it.
+    expect(second.createBaseline!({ ...declaration, control: { ...declaration.control, resource: "r:other" } }, ref)).toEqual({ kind: "admit" });
     second.explored(add);
     const late = { ...read([]), resource: "r:one", scope: "p:late-page", location: "late", collections: [{ ...read([]).collections[0]!, scope: "p:late", group: "g:late" }] };
     first.observed(late);
-    expect(first.destinationReceipts!()).toEqual([]);
+    // t775: an act with no witness seals no group, so a complete read after it still issues a ref a later step can name.
+    expect(first.destinationReceipts!().map((receipt) => receipt.ref)).toEqual(["destination-2"]);
     const third = automationStudioProjectBuildResetCalls(project, project.forBrief("third"));
     expect(third.createBaseline!(declaration, ref)).toEqual({ kind: "admit" });
-    expect(third.createBaseline!(declaration, "destination-2")).toMatchObject({ kind: "refused" });
+    expect(third.createBaseline!(declaration, "destination-2")).toEqual({ kind: "admit" });
   });
   // t751 (R3 door 2): a plan step's admission is the brief's own ledger's, whoever else's acts its undos are routed to.
   it("forwards a plan step's admission to the brief's own ledger, its answer unchanged", () => {
@@ -73,7 +75,9 @@ describe("project reset observation routing", () => {
 });
 
 
-it("does not create original project authority from first observations after a lasting act", () => {
+// t775: a strict act with no witness seals no group, so a complete read after it is an original; what it lacks before a later
+// act is that act's to remove, and nothing read in it -- all that existed then, before or of the build -- is ever removed.
+it("takes a complete read after an unwitnessed act as an original for later acts, whose own subject an undo may then remove", () => {
   const project = new AutomationStudioSiteResetProjectLedger();
   const owner = project.forBrief("builder");
   const builder = automationStudioProjectBuildResetCalls(project, owner);
@@ -83,7 +87,7 @@ it("does not create original project authority from first observations after a l
   whole.trialRan([{ step: 1, definitionId: "demo.add", consequences: ["create_new"], spot: { subject: "s:document" } }]);
   const reset = automationStudioProjectBuildResetCalls(project, project.forBrief("reset"));
   reset.observed(read(["s:document"]));
-  expect(reset.target("act-2", deletion)).toMatchObject({ kind: "refused" });
+  expect(reset.target("act-2", deletion)).toMatchObject({ kind: "admit", on: "subject" });
 });
 
 // Rerun round 3 (office `run-mvgo5xft-25460ba2`, 0110): a refused claim routed

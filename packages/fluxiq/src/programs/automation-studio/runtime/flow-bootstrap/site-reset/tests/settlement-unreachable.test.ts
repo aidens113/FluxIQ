@@ -52,11 +52,8 @@ const looking = (observe: (read: AutomationStudioSiteResetRead) => void, reads: 
   } };
   return { looked, checks };
 };
-const settleOf = (decision: Awaited<ReturnType<AutomationStudioSiteResetLedger["beforeTrial"]>>, act: string): string => {
-  const acts = decision.kind === "refuse" ? decision.evidence.actsToUndo : undefined;
-  const found = Array.isArray(acts) ? acts.find((entry) => typeof entry === "object" && entry !== null && !Array.isArray(entry) && entry.act === act) : undefined;
-  return typeof found === "object" && found !== null && !Array.isArray(found) && typeof found.settle === "string" ? found.settle : "";
-};
+/** What an act still on the site says settles it (t775: the ledger tells it; no trial refusal carries it any more). */
+const settleOfOpen = (ledger: Pick<AutomationStudioSiteResetLedger, "inPlace">, act: string): string => ledger.inPlace().find((entry) => entry.act === act)?.settle ?? "";
 /** A ledger that read the starred list in its view, was shown its ref, and then read the card. */
 const shown = (): AutomationStudioSiteResetLedger => {
   const ledger = new AutomationStudioSiteResetLedger();
@@ -65,7 +62,8 @@ const shown = (): AutomationStudioSiteResetLedger => {
   ledger.observed(card("st:off"));
   return ledger;
 };
-const UNSETTLEABLE = { code: "candidate.trial_reset_required", failed: "acts_unsettleable", canMeet: "no_call", condition: WORDS.condition("acts_unsettleable", "no_call"), instruction: WORDS.unsettleable(false), actsToUndo: [] };
+/** What a trial starts with when only acts no call can settle remain (t775): they are listed on the site, and it runs. */
+const UNSETTLEABLE = (acts: unknown[]) => ({ kind: "admit", startedWith: { acts, instruction: WORDS.startedWith(false) } });
 
 describe("a list Core's own look cannot read again (photo r4)", () => {
   it("a toggle press with a destination its look cannot read settles restored after its toggle undo, and every later judge is told", async () => {
@@ -76,8 +74,8 @@ describe("a list Core's own look cannot read again (photo r4)", () => {
     // Core's look lands on a page without the starred list: lost, and never a `look` again; the toggle still owes its press back.
     const refused = await ledger.beforeTrial(checks);
     expect(looked).toEqual(["loc:overlay"]);
-    expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", failed: "acts_in_place", actsToUndo: [{ act: "act-1" }] } });
-    expect(settleOf(refused, "act-1")).toBe("Its control at loc:card still shows the state this act set: press that same control back once, naming this act under undoes.");
+    expect(refused).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-1" }] } });
+    expect(settleOfOpen(ledger, "act-1")).toBe("Its control at loc:card still shows the state this act set: press that same control back once, naming this act under undoes.");
     expect(ledger.unsatisfiable()).toEqual([]);
     // The model goes back to the card and presses its own control back.
     ledger.observed(card("st:on"));
@@ -100,14 +98,14 @@ describe("a list Core's own look cannot read again (photo r4)", () => {
     ledger.explored(press("keep", ["modify_existing"], KEEP, { resetDestination: "destination-1" }));
     const { looked, checks } = looking((read) => ledger.observed(read), { "loc:overlay": standalone });
     const apart = [{ act: "act-1", call: "keep", did: "press \"Keep\" button", reason: "gate_unsatisfiable", failed: "witness_unreachable" }];
-    for (let ask = 0; ask < 3; ask += 1) expect(await ledger.beforeTrial(checks)).toEqual({ kind: "refuse", moved: false, evidence: { ok: false, ...UNSETTLEABLE, actsUnsettleable: apart } });
+    for (let ask = 0; ask < 3; ask += 1) expect(await ledger.beforeTrial(checks)).toEqual(UNSETTLEABLE(apart));
     // One look: lost for good.
     expect(looked).toEqual(["loc:overlay"]);
     expect(ledger.inPlace()).toEqual([]);
     expect(ledger.unsatisfiable()).toEqual(apart);
     expect(ledger.standing("act-1")).toBe("unsettleable");
     // cannotUndo never settles it either, and every answer listing the acts to undo lists it apart.
-    expect(await ledger.beforeTrial(checks, ["act-1"])).toMatchObject({ kind: "refuse", evidence: { failed: "acts_unsettleable", actsUnsettleable: apart } });
+    expect(await ledger.beforeTrial(checks, ["act-1"])).toMatchObject(UNSETTLEABLE(apart));
     expect(ledger.claim("act-9")).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_unknown_act", actsToUndo: [], actsUnsettleable: apart } });
     expect(ledger.target("act-9", aim([], {}))).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_unknown_act", actsUnsettleable: apart } });
   });
@@ -117,10 +115,10 @@ describe("a list Core's own look cannot read again (photo r4)", () => {
     ledger.explored(press("keep", ["modify_existing"], KEEP, { resetDestination: "destination-1" }));
     const { looked, checks } = looking((read) => ledger.observed(read), {});
     const first = await ledger.beforeTrial(checks);
-    expect(settleOf(first, "act-1")).toBe("Read destination-1 at loc:overlay completely again.");
+    expect(settleOfOpen(ledger, "act-1")).toBe("Read destination-1 at loc:overlay completely again.");
     expect(ledger.unsatisfiable()).toEqual([]);
-    expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "refuse", evidence: { ...UNSETTLEABLE, actsUnsettleable: [{ act: "act-1", failed: "witness_unreachable" }] } });
-    expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "refuse", evidence: { failed: "acts_unsettleable" } });
+    expect(await ledger.beforeTrial(checks)).toMatchObject(UNSETTLEABLE([{ act: "act-1", failed: "witness_unreachable" }]));
+    expect(ledger.unsatisfiable()).toMatchObject([{ act: "act-1", failed: "witness_unreachable" }]);
     expect(looked).toEqual(["loc:overlay", "loc:overlay"]);
   });
 
@@ -145,12 +143,12 @@ describe("a list Core's own look cannot read again (photo r4)", () => {
     first.explored(press("keep", ["modify_existing"], KEEP, { resetDestination: "destination-1" }));
     const { looked, checks } = looking(route, { "loc:overlay": standalone });
     const reset = automationStudioSiteResetProjectReset({ project, checks: () => checks });
-    expect(await reset.beforeTrial(undefined)).toMatchObject({ kind: "refuse", evidence: { failed: "acts_unsettleable", actsUnsettleable: [{ act: "act-1", failed: "witness_unreachable" }] } });
+    expect(await reset.beforeTrial(undefined)).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-1", failed: "witness_unreachable" }] } });
     const second = project.forBrief("brief-2");
     second.explored(press("keep.again", ["modify_existing"], { ...KEEP, subject: "s:tart", page: "s:tart" }, { resetDestination: "destination-1" }));
     expect(second.unsatisfiable()).toMatchObject([{ act: "act-2", failed: "witness_unreachable" }]);
     const both = await automationStudioSiteResetProjectReset({ project, own: second, checks: () => checks }).beforeTrial(undefined);
-    expect(both).toMatchObject({ kind: "refuse", evidence: { failed: "acts_unsettleable", actsUnsettleable: [{ act: "act-2" }, { act: "act-1" }] } });
+    expect(both).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-2" }, { act: "act-1" }] } });
     expect(project.unsatisfiable().map((act) => [act.act, act.owner])).toEqual([["act-1", "brief-1"], ["act-2", "brief-2"]]);
     expect(looked).toEqual(["loc:overlay"]);
   });

@@ -84,53 +84,7 @@ function heldClock() {
 }
 
 describe("a supervisor that reaches its time limit", () => {
-  it("stops the builder in flight at the work deadline, runs Core's reset and records an ending inside the bound", async () => {
-    const built = project({ ledger: {}, purse: new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.5 }) });
-    const held = heldClock();
-    // The clock reaches the work deadline while the second dispatch's builder is still working.
-    const sent = hanging(built, [1], () => held.reach(600));
-    const run = await supervise([call(IDS.writePlan, TWO_PART), dispatch(BUILDS), AGAIN, call(IDS.assemble)], built, { timeLimit: { maxMs: 1_200, endingMs: 600 }, clock: held.clock });
 
-    expect(run.outcome.timedOut).toBe(true);
-    expect(run.outcome.status).toBe("ended");
-    // The builder working at the deadline was stopped, and no decision was asked for after it.
-    expect(sent.requests[1]!.signal.aborted).toBe(true);
-    expect(run.offered).toHaveLength(3);
-    expect(built.dispatched.map((request) => request.briefs.map((brief) => brief.kind))).toEqual([["build", "build"], ["build"], ["reset"]]);
-    // Core's reset ran under the bound's signal, not the stopped work's.
-    expect(sent.requests[2]!.signal.aborted).toBe(false);
-    const view = await built.record.read(BUILD);
-    expect(view?.record.ending?.outcome).toBe("partial");
-    expect(view?.record.ending?.reason).toContain("The build reached its time limit of 1 second before a whole trial passed.");
-    expect(view?.record.ending?.reason).not.toContain("Still on the target");
-    expect(built.ledger.snapshot().acts.every((act) => !act.inPlace)).toBe(true);
-    // The work deadline is the bound less its ending; it fired, and the run ended inside the bound, which it then cleared.
-    expect(held.timers()).toEqual(["600 fired", "1200 cleared"]);
-  });
-
-  it("stops a reset that overruns at the bound itself and still records the ending, naming what is left", async () => {
-    const built = project({ ledger: { undoes: false }, purse: new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.5 }) });
-    const held = heldClock();
-    /** Whether the reset's signal had aborted when it began working, before the clock reached the bound. */
-    let resetStoppedAtStart: boolean | undefined;
-    // The work deadline while the second dispatch's builder works; the bound itself while the reset still works.
-    const sent = hanging(built, [1, 2], (n, request) => {
-      if (n === 2) resetStoppedAtStart = request.signal.aborted;
-      held.reach(n === 1 ? 500 : 900);
-    });
-    const run = await supervise([call(IDS.writePlan, TWO_PART), dispatch(BUILDS), AGAIN, call(IDS.assemble)], built, { timeLimit: { maxMs: 900, endingMs: 400 }, clock: held.clock });
-
-    expect(run.outcome.timedOut).toBe(true);
-    expect(built.dispatched.map((request) => request.briefs.map((brief) => brief.kind))).toEqual([["build", "build"], ["build"], ["reset"]]);
-    // The reset began after the work deadline, under the bound's signal, and was stopped only at the bound itself.
-    expect(resetStoppedAtStart).toBe(false);
-    expect(sent.requests[2]!.signal.aborted).toBe(true);
-    expect(held.timers()).toEqual(["500 fired", "900 fired"]);
-    const view = await built.record.read(BUILD);
-    expect(view?.record.ending?.outcome).toBe("partial");
-    expect(view?.record.ending?.reason).toContain("reached its time limit");
-    expect(view?.record.ending?.reason).toContain("Still on the target from this build: trial step 1 \"press hold for place_hold\".");
-  });
 
   it("ends a run that did nothing before its limit blocked, with no reset to send", async () => {
     const built = project({ ledger: {}, purse: new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.5 }) });

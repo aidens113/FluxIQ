@@ -19,6 +19,7 @@
 // candidate from `flow-bootstrap/candidate/index.ts`; `runtime/index.ts`
 // publishes it.
 export * from "./action-permissions.ts";
+export * from "./explored-toggles.ts";
 export * from "./adaptation.ts";
 export * from "./answerability/index.ts";
 export * from "./authoring/index.ts";

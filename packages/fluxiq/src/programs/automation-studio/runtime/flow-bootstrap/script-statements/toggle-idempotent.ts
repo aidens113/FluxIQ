@@ -20,6 +20,13 @@
 //   signature, and the domain presses only where the page is not already so.
 //   A loop's step carries it on its node, so every pass is held to it.
 //
+// Only a node whose definition declares `ensureState` is given it. A plan is
+// validated again before it runs (`../verification/detached-execution.ts`),
+// and validation resolves a key the node does not declare to the nearest one
+// it does (`../plan/name-correction.ts`): an undeclared `ensureState` became the
+// press's `expectedState`, and the trial flipped the control back (t775-P, the
+// photo-social like loop). A node that cannot take it stays a plain press.
+//
 // The model never writes `ensureState`: one it wrote is taken off first. Pure;
 // returns a new plan.
 
@@ -52,6 +59,8 @@ export function automationStudioFlowPlanToggleSteps(input: {
   /** Which handle each node was resolved from, the node named `<subflow key>.<node key>`. */
   handleViews?: readonly { node: string; handle: string }[] | undefined;
   explored: readonly AutomationStudioExploredToggle[];
+  /** Whether a node's definition declares `ensureState` (header); absent, every node is taken to. */
+  takesEnsureState?: ((definitionId: string) => boolean) | undefined;
 }): { plan: AutomationStudioFlowBootstrapPlan; issues: AutomationStudioFlowBootstrapIssue[] } {
   const plan = structuredClone(input.plan);
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
@@ -72,6 +81,7 @@ export function automationStudioFlowPlanToggleSteps(input: {
         issues.push({ severity: "error", code: NOT_IDEMPOTENT, message: refusal(press.idempotentWith), path: `plan.subflows.${subflowIndex}.nodes.${nodeIndex}` });
         continue;
       }
+      if (input.takesEnsureState?.(node.definitionId) === false) continue;
       node.parameters = { ...node.parameters, [ENSURE_STATE]: structuredClone(press.signature) };
     }
   }

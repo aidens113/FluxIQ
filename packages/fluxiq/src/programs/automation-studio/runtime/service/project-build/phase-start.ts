@@ -1,7 +1,11 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import { AutomationStudioNodeRegistry } from "../../../nodes/index.ts";
 import {
+  AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS,
+  AutomationStudioSiteResetStartCheck,
   automationStudioSiteResetProjectReset,
   type AutomationStudioSiteResetChecks,
+  type AutomationStudioSiteResetLiveCheck,
   type AutomationStudioSiteResetLedger,
   type AutomationStudioSiteResetNamedAct,
   type AutomationStudioSiteResetProjectLedger,
@@ -9,7 +13,9 @@ import {
 } from "../../flow-bootstrap/site-reset/index.ts";
 import type { AutomationStudioSubflowScope } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import type { runAutomationStudioDetachedSubflow } from "../../flow-bootstrap/verification/index.ts";
+import { automationStudioHarnessOptionRegistry, type AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/index.ts";
 import { automationStudioCandidateTrialStart, type AutomationStudioCandidateTrialStart } from "../candidate-trial/index.ts";
+import type { AutomationStudioBuildCancellation } from "../flow-bootstrap-commands/index.ts";
 import { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
 import { automationStudioProjectBuildPrepareEntry, type AutomationStudioProjectBuildEntry, type AutomationStudioProjectBuildKeptProposals } from "./entry-preparation.ts";
 import { automationStudioProjectBuildPhaseStartTold, type AutomationStudioProjectBuildPhaseStartRecord } from "./phase-start-told.ts";
@@ -58,6 +64,23 @@ import type { AutomationStudioProjectBuildTrialEnvironment } from "./whole-trial
 //   same project reset; (c) is the assembled Flow's first step
 //   (`project-agents/supervisor/assembly.ts`); (e) as for a subflow trial
 //   (`./whole-trials.ts`).
+//
+// **The judged whole run is read like a builder's trial (t775 D5; user,
+// 2026-10-27: a trial is judged against the state recorded just before it and
+// the change asked for).** A builder looks at a place through its own start
+// check, made over its evidence loop (`./brief-ports.ts`). The supervisor has
+// no loop that acts on the site, so its reset had no look, and the whole run --
+// the user's own example, a cart line at 9 that is 10 after "add 1" -- got no
+// reading at all. `look` makes the same look outside any loop: a start check
+// over the build's registry binding, the binding and run-node option a
+// builder's calls go through, framed in the build (its evidence frame) and as
+// Core's own move (`start-check.ts`). Its calls carry no permission, so it can
+// only arrive and read. Each read reaches every ledger holding an act, never as
+// a baseline, as a read around another brief's call does (`./reset-calls.ts`).
+// There is a look only where a run Core makes arrives at the build's start
+// location (c), so the whole run's first step takes the tab back from wherever
+// a look left it. Without that arrival, or without the domain's `startState`,
+// there is no look and the whole run gets no readings, as before.
 //
 // **An act no call can settle is told as on the site, and not to undo (t743,
 // S2).** The project ledger's `unsatisfiable()` acts leave its acts in place,
@@ -122,6 +145,32 @@ export class AutomationStudioProjectBuildPhaseStart {
       ...(input.startLocation ? { startLocation: input.startLocation } : {})
     };
     return automationStudioProjectBuildPhaseStartTold(record);
+  }
+
+  /**
+   * Core's own look at a place for the supervisor's judged whole run (header, t775 D5): over the build's registry
+   * binding, each read handed to every ledger holding an act. Undefined where no run Core makes arrives at the build's
+   * start location, or the domain cannot read its state. `liveCheck` is replaced only by tests.
+   */
+  static look(input: {
+    binding: AutomationStudioLlmEvidenceRuntimeBinding;
+    environment: Pick<AutomationStudioProjectBuildTrialEnvironment, "projectId" | "flowId" | "startLocation" | "registry" | "resolution">;
+    ledger: Pick<AutomationStudioSiteResetProjectLedger, "snapshot" | "forBrief">;
+    cancellation?: Pick<AutomationStudioBuildCancellation, "tool"> | undefined;
+    liveCheck?: AutomationStudioSiteResetLiveCheck | undefined;
+  }): ((signal: AbortSignal | undefined) => NonNullable<AutomationStudioSiteResetChecks["lookAt"]>) | undefined {
+    const { binding, environment, ledger } = input;
+    if (!binding.startState || !AutomationStudioProjectBuildPhaseStart.arrival(binding.runsNodes?.arrival, environment)) return undefined;
+    const { projectId, flowId, startLocation, resolution } = environment;
+    const registry = environment.registry ?? new AutomationStudioNodeRegistry();
+    const harness = automationStudioHarnessOptionRegistry({ binding, nodeIds: registry.list(resolution).map((definition) => definition.id), startLocation }).evidenceLoopBinding({ projectId, flowId }, { ...resolution, allowSideEffectsWithoutPolicy: true });
+    const execute = input.cancellation ? input.cancellation.tool(harness.executeTool) : harness.executeTool;
+    const reader = new AutomationStudioSiteResetStartCheck({ binding, projectId, flowId, tools: harness.tools, executeTool: (call) => execute(call), liveCheck: input.liveCheck ?? { settleMs: AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS } });
+    return (signal) => async (location, start) => {
+      const read = await reader.lookAt(location, signal, start);
+      if ("unread" in read) return;
+      for (const owner of new Set(ledger.snapshot().acts.map((act) => act.owner))) ledger.forBrief(owner).observed(read, false);
+    };
   }
 
   /** (c) This build's arrival (header). */

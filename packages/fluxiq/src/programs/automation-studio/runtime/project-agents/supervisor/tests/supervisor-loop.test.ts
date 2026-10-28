@@ -1,7 +1,7 @@
 // The project supervisor's loop with a stub provider (a scripted list of
 // decisions), a stub dispatcher and a stub whole trial
 // (`./supervisor-fixture.ts`, run by `./supervisor-script.ts`): planning, dispatch order, refusals, triage,
-// honest endings, the reset before the whole trial, the reserve, and
+// honest endings, a whole trial on the site as it stands (t775), the reserve, and
 // completion only on a yes for the exact assembled revision.
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { describe, expect, it } from "vitest";
@@ -70,28 +70,10 @@ describe("the project supervisor", () => {
     expect(run.outcome.candidate!.buildPlan.plan.subflows.find((subflow) => subflow.key === "place_hold")?.interface?.outputs.map((port) => port.id)).toEqual(["shelf"]);
   });
 
-  it("refuses the whole trial while the build's lasting acts are in place, naming a reset brief, and runs it once the reset came back", async () => {
-    const run = await supervise([
-      call(IDS.writePlan, TWO_PART),
-      dispatch([brief("find_titles", ["p1"]), brief("place_hold", ["p2"], ["find_titles"], { permittedActs: ["create_new"] })]),
-      call(IDS.assemble),
-      test,
-      dispatch([reset()], "Put the target back before the whole test."),
-      test,
-      complete
-    ]);
-    expect(run.outcome.status).toBe("candidate");
-    const tests = run.seen.filter((entry) => entry.toolId === IDS.testCandidate).map((entry) => entry.value as JsonObject);
-    expect(tests[0]).toMatchObject({ ok: false, code: "project.trial_reset_required", actsInPlace: [{ act: "act-1", brief: "brief-2" }] });
-    expect(String(tests[0]!.instruction)).toContain("project.dispatch");
-    expect(tests[1]).toMatchObject({ verdict: "yes" });
-    expect(run.trials).toHaveLength(1);
-    expect(run.dispatched[1]!.briefs.map((sent) => sent.kind)).toEqual(["reset"]);
-    // A reset comes back done with no proposal, and is read as done.
-    expect(lastOf(run.seen, IDS.dispatch)).toMatchObject({ ok: true, returns: [{ kind: "reset", outcome: "done" }] });
-  });
 
-  it("clears what a whole trial left once a reset came back done, and refuses a survey brief", async () => {
+  // t775: a whole trial's act no longer refuses the next test; that test runs with it, its judge told under
+  // startedWith. A reset the model sends of its own clears it, so the test after it starts with nothing of the build.
+  it("tests again with what a whole trial left said to its judge, clears it once a reset came back done, and refuses a survey brief", async () => {
     const run = await supervise([
       call(IDS.writePlan, ONE_PART),
       dispatch([{ kind: "survey", subflowKey: "main", parts: ["p1"], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.01, maxIterations: 5 }]),
@@ -99,16 +81,24 @@ describe("the project supervisor", () => {
       call(IDS.assemble),
       test,
       test,
-      dispatch([reset()], "Undo what the judged-no trial left."),
+      dispatch([reset()], "Undo what the trials left."),
       test,
-      end("blocked", "Judged no twice.")
+      end("blocked", "Judged unsure three times.")
     ], project({ trial: () => "unsure", trialActs: true }));
     const answers = run.seen.filter((entry) => entry.toolId === IDS.dispatch);
+    expect(answers[0]!.value).toMatchObject({ ok: false });
     expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build"], ["reset"]]);
     const tests = run.seen.filter((entry) => entry.toolId === IDS.testCandidate).map((entry) => entry.value as JsonObject);
-    expect(tests.map((value) => value.code ?? value.verdict)).toEqual(["unsure", "project.trial_reset_required", "unsure"]);
+    expect(tests.map((value) => value.code ?? value.verdict)).toEqual(["unsure", "unsure", "unsure"]);
+    // The first trial's act was on the site for the second, said to its judge; the reset undid both, so the third started with none.
+    expect(tests[0]).not.toHaveProperty("startedWith");
+    expect(((tests[1]!.startedWith as JsonObject).acts as JsonObject[]).map((act) => act.act)).toEqual(["act-1"]);
+    expect(tests[2]).not.toHaveProperty("startedWith");
     expect(answers).toHaveLength(3);
-    expect(run.trials).toHaveLength(2);
+    expect(run.trials).toHaveLength(3);
+    // Only the third trial's act is still on the site, and the ending names it.
+    expect(run.ledger.snapshot().acts.filter((act) => act.inPlace).map((act) => act.act)).toEqual(["act-3"]);
+    expect(run.outcome.ending?.reason).toContain("Still on the target from this build:");
   });
 
   it("refuses a plan that leaves a part uncovered, and a dispatch before any plan", async () => {
@@ -181,45 +171,28 @@ describe("the project supervisor", () => {
       test,
       complete,
       test,
-      end("blocked", "The whole test was judged no."),
-      dispatch([reset()], "Put the target back before ending."),
       end("blocked", "The whole test was judged no.")
     ], project({ trial: () => "no", trialActs: true }));
     const codes = run.feedback.map((entry) => entry.code);
-    // The ending waits for the reset of what the judged-no trial left (bigbox debug fix 10).
-    expect(codes).toEqual(["project.completion_nothing_assembled", "candidate.trial_required", "project.completion_not_latest", "candidate.trial_unchanged_after_no", "project.completion_reset_first"]);
+    // The ending is never held for a reset of what the judged-no trial left (t775): it ends at once, naming it.
+    expect(codes).toEqual(["project.completion_nothing_assembled", "candidate.trial_required", "project.completion_not_latest", "candidate.trial_unchanged_after_no"]);
     // The judged-no trial's act is in the ledger, under the supervisor; the same revision is not tested again after its no.
     expect(lastOf(run.seen, IDS.testCandidate)).toMatchObject({ ok: false, code: "candidate.trial_unchanged_after_no" });
-    expect(run.ledger.snapshot().acts).toEqual([expect.objectContaining({ owner: "supervisor" })]);
+    expect(run.ledger.snapshot().acts).toEqual([expect.objectContaining({ owner: "supervisor", inPlace: true })]);
+    expect(run.dispatched.flatMap((request) => request.briefs.map((sent) => sent.kind))).toEqual(["build"]);
     expect(run.trials).toHaveLength(1);
     expect(run.outcome.status).toBe("ended");
     expect(run.outcome.ending?.outcome).toBe("blocked");
+    expect(run.outcome.ending?.reason).toMatch(/^The whole test was judged no\. Still on the target from this build: .+\.$/u);
   });
 
-  it("holds an honest ending until a reset brief came back, while the build's lasting acts are on the target (bigbox debug fix 10)", async () => {
-    const builder: BuilderPlan = (sent) => (sent.subflowKey === "note_shelf" ? "blocked" : "done");
-    const briefs = [brief("find_titles", ["p1"]), brief("place_hold", ["p2"], ["find_titles"], { permittedActs: ["create_new"] }), brief("note_shelf", ["p3"], ["place_hold"])];
-    const run = await supervise([
-      call(IDS.writePlan, THREE_PART),
-      dispatch(briefs),
-      end("blocked", "The shelf is not shown."),
-      // Held once for a changed brief of the failed subflow first (t743).
-      end("blocked", "The shelf is not shown."),
-      dispatch([reset()], "Put the target back before ending."),
-      end("blocked", "The shelf is not shown.")
-    ], project({ builder }));
-    const held = run.feedback.find((entry) => entry.code === "project.completion_reset_first")!;
-    expect(held.actsInPlace).toEqual([{ act: "act-1", did: "trial step 1 \"press hold for place_hold\"", brief: "brief-2" }]);
-    expect(run.ledger.snapshot().acts.every((act) => !act.inPlace)).toBe(true);
-    // Nothing is left, so the reason is the model's own.
-    expect(run.outcome.ending).toMatchObject({ outcome: "blocked", reason: "The shelf is not shown." });
-  });
 
-  it("lets an ending with acts still in place through after two holds, and names exactly what is left in its reason", async () => {
+  it("never holds an ending for acts still in place (t775): it names exactly what is left in its reason", async () => {
     const builder: BuilderPlan = (sent) => (sent.subflowKey === "note_shelf" ? "blocked" : "done");
     const briefs = [brief("find_titles", ["p1"]), brief("place_hold", ["p2"], ["find_titles"], { permittedActs: ["create_new"] }), brief("note_shelf", ["p3"], ["place_hold"])];
     const run = await supervise([call(IDS.writePlan, THREE_PART), dispatch(briefs), ...Array.from({ length: 4 }, () => end("blocked", "The shelf is not shown."))], project({ builder }), { spareTurns: 3 });
-    expect(run.feedback.map((entry) => entry.code)).toEqual(["project.completion_repair_first", "project.completion_reset_first", "project.completion_reset_first"]);
+    expect(run.feedback.map((entry) => entry.code)).toEqual(["project.completion_repair_first"]);
+    expect(run.dispatched.flatMap((request) => request.briefs.map((sent) => sent.kind))).not.toContain("reset");
     expect(run.ledger.snapshot().acts.filter((act) => act.inPlace)).toHaveLength(1);
     expect(run.outcome.ending).toMatchObject({ outcome: "blocked", reason: "The shelf is not shown. Still on the target from this build: trial step 1 \"press hold for place_hold\"." });
     expect(run.view?.record.ending?.reason).toContain("press hold for place_hold");

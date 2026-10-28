@@ -29,17 +29,14 @@ export const AUTOMATION_STUDIO_SITE_RESET_FAILED = [
   "act_not_listed",
   "undo_spent",
   "destination_unissued",
-  // Trials (`../trial-policy.ts`, `../ledger.ts`).
-  "acts_in_place",
-  "acts_not_settled",
-  "start_differs",
+  // Trials (`../site-reset/ledger.ts`, t775): only a start already in an asked end state by this build's own act made by another step.
+  "starts_in_end_state",
   // Acts no call can settle (`../reset-settlement/judge.ts`, `gate_unsatisfiable`; `../site-reset/undo-reach.ts`, t748; a control's start never read, t751 R1): what each failed on, and the trial refused on them.
   "witness_unreachable",
   "nothing_to_name",
   "no_admissible_undo",
   "no_baseline",
   "value_not_back",
-  "acts_unsettleable",
   // Presses with no witness (`../reset-admission/admission.ts`, t751; every door asks it).
   "no_witness",
   "no_target_identity",

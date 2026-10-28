@@ -37,6 +37,12 @@ describe("an end-state part's proof", () => {
     expect(proof({ part: alert, deltas: [unchanged], acts: [], carried: true }).proof).toBe("carried");
   });
 
+  it("is unproven when its only witnesses are lists that read the same: a list an act could reach says nothing of the state asked", () => {
+    const sameList: AutomationStudioTrialDelta = { witness: "w1", kind: "list", status: "unchanged", added: [], removed: [], changed: [], unchanged: ["s:a"] };
+    expect(proof({ part: alert, deltas: [sameList], acts: [], carried: false }).proof).toBe("unproven");
+    expect(proof({ part: alert, deltas: [sameList, unchanged], acts: [], carried: false }).proof).toBe("already_in_end_state");
+  });
+
   it("is shown when a witness changed, unproven when no witness was read", () => {
     const changed: AutomationStudioTrialDelta = { witness: "w9", kind: "control", status: "changed", before: { "st:off": 1 }, after: { "st:on": 1 } };
     expect(proof({ part: alert, deltas: [changed], acts: [], carried: false }).proof).toBe("shown");

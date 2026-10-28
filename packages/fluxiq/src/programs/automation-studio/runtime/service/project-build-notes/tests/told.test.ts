@@ -26,11 +26,13 @@ describe("outsideBrief notes (t772)", () => {
     expect(await outsideOf({ ...base, role: "reset" }, value)).toBeUndefined();
   });
 
-  it("never tell a build to write no step or not to do it again, and say the act is undone before a trial and who can amend the plan", async () => {
+  it("never tell a build to write no step or not to do it again, and say the act stays on the site, the trial is judged by the change from just before it, and who can amend the plan", async () => {
     const note = (await outsideOf(base, { consequences: ["modify_existing"] }))!.note;
     expect(note).not.toContain("do not do it again");
     expect(note).not.toContain("Write no step");
-    expect(note).toContain("undo");
+    expect(note).not.toContain("undone before a trial");
+    expect(note).toContain("stays on the site");
+    expect(note).toContain("change from what was there just before");
     expect(note).toContain("project.amend_plan");
   });
 

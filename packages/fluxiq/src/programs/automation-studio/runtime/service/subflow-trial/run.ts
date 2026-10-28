@@ -101,6 +101,7 @@ import { runAutomationStudioDetachedSubflow, type AutomationStudioCandidateStart
 import { automationStudioResultReadAccounts, type AutomationStudioBuildTestVerdict, type AutomationStudioResultStandingNoCarrier, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import {
   automationStudioCandidateFrameEvidence,
+  automationStudioCandidateTrialAlreadyInState,
   automationStudioCandidateTrialFeedback as Feedback,
   automationStudioCandidateTrialLandedActs,
   automationStudioCandidateTrialSummary,
@@ -110,6 +111,7 @@ import {
   type AutomationStudioCandidateTrialLandedAct,
   type AutomationStudioCandidateTrialStart
 } from "../candidate-trial/index.ts";
+import { automationStudioTrialChangeAfterRead } from "../../flow-bootstrap/trial-change/index.ts";
 import { automationStudioSubflowTrialPredecessorGap } from "./predecessor-gap.ts";
 import { automationStudioSubflowTrialStart } from "./start.ts";
 import type { AutomationStudioSubflowTrialJudgeInput, AutomationStudioSubflowTrialPorts, AutomationStudioSubflowTrialRecord } from "./types.ts";
@@ -240,7 +242,9 @@ async function runIn(environment: AutomationStudioRunEnvironment, request: Autom
     summary = await automationStudioCandidateTrialSummary({ recordSets: await ports.recordSets(runId), graph: frames.graph, trace: executed.trace,
       ...(ports.readEndView ? { readEndView: () => ports.readEndView!({ runId }) } : {}), actionAttempts: ports.actionAttempts?.(ended),
       observedStateKeys: ports.observedStateKeys, deniedEvidenceKeys: ports.deniedEvidenceKeys, ...(request.startedWith?.length ? { startedWith: request.startedWith } : {}),
-      ...(request.earlierAdvice?.length ? { earlierAdvice: request.earlierAdvice } : {}) });
+      ...(request.earlierAdvice?.length ? { earlierAdvice: request.earlierAdvice } : {}),
+      // What the trial changed, read after the end view and before the judge (t775, `../candidate-trial/run.ts`).
+      ...(request.siteChange ? { siteChangeRead: automationStudioTrialChangeAfterRead({ signal: request.signal, siteChange: request.siteChange }, acts, automationStudioCandidateTrialAlreadyInState(executed.trace, frames.graph)) } : {}) });
   } catch (error) {
     // What the run stored could not be read, so nobody can say whether it answers: not judged, and never a yes.
     const code = "candidate.trial_result_unreadable";

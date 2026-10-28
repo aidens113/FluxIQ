@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "../../site-reset/index.ts";
 import type { AutomationStudioActionConsequence } from "../../../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../../executor/index.ts";
 import {
@@ -34,7 +35,8 @@ const COPY: AutomationStudioSiteResetSpot = { item: "i:untitled", page: "s:shelf
 const declared = (control: AutomationStudioSiteResetSpot, consequences: AutomationStudioActionConsequence[] = ["modify_existing"]) => ({ effect: "mutate" as const, consequences, control: { name: "Add to reading list", kind: "button", ...control } });
 const pressed = (callId: string, control: AutomationStudioSiteResetSpot, consequences: AutomationStudioActionConsequence[], extra: Partial<AutomationStudioSiteResetExplored> = {}): AutomationStudioSiteResetExplored => ({ callId, toolId: "core.run_node", landed: true, operation: "demo.press", declared: { permitted: true, verb: "press", ...declared(control, consequences) }, ...extra });
 const compare = async (): Promise<AutomationStudioSiteResetComparison> => ({ moved: false, differs: [] });
-const WITNESS = { kind: "refused", evidence: { ok: false, code: "candidate.reset_witness_required" } };
+// t775: the exploration door no longer refuses a press for want of a witness; it admits it with none.
+const WITNESS = { kind: "admit" };
 const UNISSUED = { kind: "refused", evidence: { ok: false, code: "candidate.reset_destination_unissued" } };
 const REALISTIC = /\b(cart|basket|checkout|job|post|friend|order|product|book|reading)\b/iu;
 
@@ -44,34 +46,27 @@ const attempt = (ledger: AutomationStudioSiteResetLedger, callId: string, contro
   if (verdict.kind === "admit") ledger.explored(pressed(callId, control, consequences, resetDestination === undefined ? {} : { resetDestination }));
   return verdict;
 };
-const settles = (decision: Awaited<ReturnType<AutomationStudioSiteResetLedger["beforeTrial"]>>): string[] => {
-  const acts = decision.kind === "refuse" ? [decision.evidence.actsToUndo, decision.evidence.actsToRestore].flatMap((value) => (Array.isArray(value) ? value : [])) : [];
-  return acts.flatMap((entry) => (typeof entry === "object" && entry !== null && !Array.isArray(entry) && typeof entry.settle === "string" ? [entry.settle] : []));
-};
-const said = (verdict: ReturnType<AutomationStudioSiteResetLedger["createBaseline"]>): string => (verdict.kind === "refused" ? String(verdict.evidence.instruction) : "");
+/** What each act still on the site says settles it (t775: the ledger tells it; no trial refusal carries it). */
+const settles = (ledger: AutomationStudioSiteResetLedger): string[] => ledger.inPlace().flatMap((act) => (act.settle ? [act.settle] : []));
 
 describe("a reversible press with no witness at the exploration door", () => {
-  it("is refused unrun, records no act, and the instruction says to observe the list and name its ref", () => {
+  it("is admitted with no witness (t775): the act is recorded and said as on the site", () => {
     const ledger = new AutomationStudioSiteResetLedger();
     ledger.observed(bookPage());
     const verdict = attempt(ledger, "add", ADD);
-    expect(verdict).toMatchObject(WITNESS);
-    expect(said(verdict)).toContain("observe completely");
-    expect(said(verdict)).toContain("resetDestination");
-    expect(said(verdict)).toContain("no new permission is needed");
-    expect(said(verdict)).not.toMatch(REALISTIC);
-    expect(ledger.inPlace()).toEqual([]);
-    expect(ledger.actOf("add")).toBeUndefined();
+    expect(verdict).toEqual(WITNESS);
+    expect(ledger.actOf("add")).toBe("act-1");
+    expect(ledger.standing("act-1")).toBeDefined();
   });
 
-  it("is still refused after an earlier lasting act of the build (t751: the seal no longer admits it)", () => {
+  it("is admitted after an earlier lasting act of the build too", () => {
     const ledger = new AutomationStudioSiteResetLedger();
     ledger.observed(bookPage());
     expect(attempt(ledger, "star", STAR)).toEqual({ kind: "admit" });
     expect(ledger.actOf("star")).toBe("act-1");
-    expect(attempt(ledger, "add", ADD)).toMatchObject(WITNESS);
-    expect(ledger.actOf("add")).toBeUndefined();
-    expect(attempt(ledger, "copy", COPY, ["create_new"])).toMatchObject(WITNESS);
+    expect(attempt(ledger, "add", ADD)).toEqual(WITNESS);
+    expect(ledger.actOf("add")).toBe("act-2");
+    expect(attempt(ledger, "copy", COPY, ["create_new"])).toEqual(WITNESS);
     // A witnessed press after it is admitted as before.
     expect(attempt(ledger, "star.again", { ...STAR, subject: "s:emma", page: "s:emma", place: "pl:star-2" })).toEqual({ kind: "admit" });
   });
@@ -116,7 +111,7 @@ describe("a reversible press with no witness at the exploration door", () => {
       { effect: "mutate" as const, consequences: ["modify_existing" as const], control: unscoped },
       { effect: "mutate" as const, consequences: ["create_new" as const], control: { ...unscoped, item: "i:new", resource: SITE } }
     ]) expect(baselines.check(other, undefined)).toEqual({ kind: "admit" });
-    expect(baselines.check(declared(ADD, ["create_new"]), undefined)).toMatchObject({ kind: "refused", evidence: { code: "candidate.create_baseline_required" } });
+    expect(baselines.check(declared(ADD, ["create_new"]), undefined)).toEqual({ kind: "admit" });
   });
 });
 
@@ -136,7 +131,7 @@ describe("an invented resetDestination", () => {
     expect(ledger.claim("act-1", "destination-1")).toEqual({ kind: "undo", undo: { act: "act-1", allowed: [] } });
     expect(ledger.claim("act-1")).toEqual({ kind: "undo", undo: { act: "act-1", allowed: [] } });
     // A creation's precondition is unchanged: an invented ref stays insufficient under its own code.
-    expect(ledger.createBaseline(declared(ADD, ["create_new"]), "destination-7")).toMatchObject({ kind: "refused", evidence: { code: "candidate.create_baseline_required" } });
+    expect(ledger.createBaseline(declared(ADD, ["create_new"]), "destination-7")).toEqual({ kind: "admit" });
   });
 
   it("is refused after a lasting act too, where no ref was ever issued", () => {
@@ -147,39 +142,36 @@ describe("an invented resetDestination", () => {
   });
 });
 
-// Rerun round 3 (job `run-mvgo9wzn-fad4e050`): a witness refusal names the refs already issued, never a withheld place.
-describe("a witness refusal once refs are issued", () => {
-  it("names each ref already issued with its count and place, and still says to observe a list that has none", () => {
+// Rerun round 3 (job `run-mvgo9wzn-fad4e050`): the words that ask a step to name where its change shows name the refs already
+// issued, never a withheld place (t775: the step door's words; the exploration door no longer refuses).
+describe("the words asking a step to name where its change shows, once refs are issued", () => {
+  it("name each ref already issued with its count and place", () => {
     const ledger = new AutomationStudioSiteResetLedger();
     ledger.observed(readingList());
     expect(ledger.destinationReceipts().map((receipt) => receipt.ref)).toEqual(["destination-1"]);
-    ledger.observed(bookPage());
-    const verdict = attempt(ledger, "add", ADD);
-    expect(verdict).toMatchObject(WITNESS);
-    expect(said(verdict)).toContain("destination-1 (2 items at loc:reading-list)");
-    expect(said(verdict)).toContain("observe completely");
-    expect(said(verdict)).toContain("no new permission is needed");
+    const words = WORDS.stepWitnessRequired(ledger.issuedRefs());
+    expect(words).toContain("destination-1 (2 items at loc:reading-list)");
+    expect(words).toContain("Name where this step's change shows");
   });
 
-  it("never prints a withheld place", () => {
+  it("never print a withheld place", () => {
     const ledger = new AutomationStudioSiteResetLedger();
     ledger.observed(readingList(`loc:${WITHHELD}`));
     ledger.destinationReceipts();
-    const instruction = said(attempt(ledger, "add", ADD));
-    expect(instruction).toContain("destination-1 (2 items)");
-    expect(instruction).not.toContain(WITHHELD);
+    const words = WORDS.stepWitnessRequired(ledger.issuedRefs());
+    expect(words).toContain("destination-1 (2 items)");
+    expect(words).not.toContain(WITHHELD);
   });
 });
 
 // t748 (t738's open point): an unidentified creation in an untitled item on a page with a heading is held strictly by the
 // ledger, so it is held to the witness rule like any other reversible press.
 describe("an unidentified creation (t748)", () => {
-  it("is refused unrun with no witness, and records no act", () => {
+  it("is admitted with no witness at the exploration door (t775), and recorded", () => {
     const ledger = new AutomationStudioSiteResetLedger();
     ledger.observed(bookPage());
-    expect(attempt(ledger, "copy", COPY, ["create_new"])).toMatchObject(WITNESS);
-    expect(ledger.actOf("copy")).toBeUndefined();
-    expect(ledger.inPlace()).toEqual([]);
+    expect(attempt(ledger, "copy", COPY, ["create_new"])).toEqual(WITNESS);
+    expect(ledger.actOf("copy")).toBe("act-1");
   });
 
   it("is admitted with a witness: an issued ref, or a control inside a list read complete", () => {
@@ -196,7 +188,7 @@ describe("an unidentified creation (t748)", () => {
   it("leaves a creation that names nothing on its legacy policy, and an identified one on the creation precondition", () => {
     const baselines = new AutomationStudioSiteResetCreateBaselines();
     expect(baselines.check(declared({ item: "i:untitled", resource: SITE }, ["create_new"]), undefined)).toEqual({ kind: "admit" });
-    expect(baselines.check(declared(ADD, ["create_new"]), undefined)).toMatchObject({ kind: "refused", evidence: { code: "candidate.create_baseline_required" } });
+    expect(baselines.check(declared(ADD, ["create_new"]), undefined)).toEqual({ kind: "admit" });
   });
 });
 
@@ -224,7 +216,8 @@ describe("settle words for a list read at a withheld place", () => {
     ledger.destinationReceipts();
     attempt(ledger, "add", ADD, ["modify_existing"], "destination-1");
     ledger.explored(pressed("add.other", { ...ADD, subject: "s:bronte", page: "s:bronte" }, ["modify_existing"]));
-    const open = settles(await ledger.beforeTrial(compare));
+    await ledger.beforeTrial(compare);
+    const open = settles(ledger);
     expect(open.length).toBeGreaterThan(0);
     for (const settle of open) expect(settle).not.toContain(WITHHELD);
   });

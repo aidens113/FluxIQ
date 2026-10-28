@@ -8,10 +8,14 @@
 //   read), and `no_change` only when every witness was read and none changed.
 //   A part with no witness at all is `unproven`.
 // - `end_state`: `shown` when any witness changed; otherwise `unproven` while
-//   any is unread; when every witness was read unchanged, the state held before
-//   the trial, so the run proves it only as `carried` (the same step was seen
+//   any is unread; when every witness was read unchanged and one of them is a
+//   control (the place the state itself shows), the state held before the
+//   trial, so the run proves it only as `carried` (the same step was seen
 //   making this change earlier in the build), else `already_in_end_state`,
-//   which can never be a yes.
+//   which can never be a yes. Unchanged lists alone are `unproven`: a list a
+//   step's effect could reach (a basket behind a button that opens a checkout)
+//   says nothing about whether the asked state held before, which the judge
+//   reads from the run and its end view (t775 integration).
 //
 // Design section 3 words `no_change` as "every witness shows change: none"; a
 // read-unchanged witness beside an unread one is therefore `unproven`, never a
@@ -33,5 +37,6 @@ export function automationStudioTrialPartProof(input: {
   if (deltas.some((delta) => delta.status === "changed")) return { ...base, proof: "shown" };
   if (!deltas.length || deltas.some((delta) => delta.status === "unread")) return { ...base, proof: "unproven" };
   if (part.effect.kind === "change") return { ...base, proof: "no_change" };
+  if (!deltas.some((delta) => delta.kind === "control")) return { ...base, proof: "unproven" };
   return { ...base, proof: carried ? "carried" : "already_in_end_state" };
 }

@@ -3,11 +3,11 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioActionConsequence } from "../../../action-permissions/index.ts";
+import { automationStudioSiteResetAdmission } from "../../reset-admission/index.ts";
 import {
   AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS,
   AutomationStudioSiteResetCreateBaselines,
   AutomationStudioSiteResetLedger,
-  automationStudioSiteResetTrialPolicy,
   type AutomationStudioSiteResetComparison,
   type AutomationStudioSiteResetExplored,
   type AutomationStudioSiteResetRead,
@@ -136,25 +136,23 @@ describe("each refusal site names its failed condition (ledger claims and target
     expect(kept.claim("act-1")).toMatchObject({ kind: "refused", evidence: { ...named("candidate.undo_act_kept", "act_kept", "no_call"), act: "act-1", instruction: WORDS.keptAct(false) } });
   });
 
-  it("an unsettled kept reversible act refuses a trial: acts_not_settled", async () => {
+  it("an unsettled kept reversible act never refuses a trial (t775): it stays listed on the site", async () => {
     const ledger = new AutomationStudioSiteResetLedger();
     const LIST = { scope: "p:documents", subject: "s:document" };
-    // A trusted resource, so the list could still issue a ref: the act is to name one, not one no call can settle (t743).
-    const observe = (subjects: string[]) => ledger.observed({ state: {}, location: "loc:documents", differs: [], resource: "r:documents", scope: LIST.scope, subjects, collections: [{ scope: LIST.scope, group: "g:page", subjects, states: Object.fromEntries(subjects.map((subject) => [subject, `v:${subject}`])) }] });
+    const observe = (subjects: string[]) => ledger.observed({ state: {}, location: "loc:documents", differs: [], resource: "r:documents", scope: LIST.scope, subjects, collections: [{ scope: LIST.scope, group: "g:page", subjects, states: Object.fromEntries(subjects.map((subject) => [subject, "v:1"])) }] });
     observe(["s:document"]);
     ledger.explored(acted("add", ["create_new"], { subject: "s:document", page: "s:document" }));
     observe(["s:document"]);
     await ledger.beforeTrial(back);
-    expect(await ledger.beforeTrial(back, ["act-1"])).toMatchObject({ kind: "refuse", evidence: { ...named("candidate.trial_reset_unproved", "acts_not_settled", "another_page"), actsToRestore: [{ act: "act-1" }], instruction: WORDS.unprovedReset() } });
+    expect(await ledger.beforeTrial(back, ["act-1"])).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-1" }] } });
   });
 });
 
 describe("each refusal site names its failed condition (trial policy, baselines)", () => {
-  const act = { act: "act-1", did: "press \"Mark\" button" };
-  const phase = { recorded: 1, refusals: 0, startDiffersSent: false };
-  it("acts in place: acts_in_place; a start that only differs: start_differs", async () => {
-    expect(await automationStudioSiteResetTrialPolicy({ phase, inPlace: [act], compare: async () => ({ moved: false, differs: [] }) })).toMatchObject({ kind: "refuse", evidence: { ...named("candidate.trial_reset_required", "acts_in_place", "another_page"), instruction: WORDS.resetRequired(false), actsToUndo: [act] } });
-    expect(await automationStudioSiteResetTrialPolicy({ phase, inPlace: [], compare: async () => ({ moved: false, differs: ["a"] }) })).toMatchObject({ kind: "refuse", evidence: { ...named("candidate.trial_start_differs", "start_differs", "another_page"), instruction: WORDS.startDiffers(), differs: ["a"] } });
+  it("the one trial refusal left: starts_in_end_state, met on another page, naming just the acts given (t775)", () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    const act = { act: "act-1", did: "press \"Mark\" button" };
+    expect(ledger.startsInEndState([act])).toMatchObject({ kind: "refuse", moved: false, evidence: { ...named("candidate.trial_starts_in_end_state", "starts_in_end_state", "another_page"), actsToUndo: [act], instruction: WORDS.startsInEndState() } });
   });
 
   const SITE = "r:catalogue";
@@ -163,15 +161,19 @@ describe("each refusal site names its failed condition (trial policy, baselines)
   const shelf: AutomationStudioSiteResetRead = { state: {}, differs: [], resource: SITE, scope: "p:shelf-page", location: "loc:shelf", collections: [{ scope: "p:shelf", group: "g:shelf", subjects: ["s:other"], states: { "s:other": "v:other" } }] };
 
   // t751 R3: the one admission has no seal check, so a creation with no original is met on another page, sealed or not.
-  it("no witness: no_witness; no original for a creation: no_destination_original, met on another page, sealed or not", () => {
+  it("no witness: no_witness; no original for a creation: no_destination_original, at the step door, met on another page, sealed or not; the exploration door admits both (t775)", () => {
     const baselines = new AutomationStudioSiteResetCreateBaselines();
-    expect(baselines.check(declared(ENTRY, ["modify_existing"]), undefined)).toMatchObject({ kind: "refused", evidence: { ...named("candidate.reset_witness_required", "no_witness", "another_page"), instruction: WORDS.witnessRequired([]) } });
-    expect(baselines.check(declared(ENTRY, ["create_new"]), undefined)).toMatchObject({ kind: "refused", evidence: { ...named("candidate.create_baseline_required", "no_destination_original", "another_page"), instruction: WORDS.createBaselineRequired() } });
+    const step = (from: AutomationStudioSiteResetCreateBaselines, consequences: AutomationStudioActionConsequence[]) => automationStudioSiteResetAdmission({ declared: declared(ENTRY, consequences), door: "step" }, { ...from.known(), explored: () => [] });
+    expect(baselines.check(declared(ENTRY, ["modify_existing"]), undefined)).toEqual({ kind: "admit" });
+    expect(baselines.check(declared(ENTRY, ["create_new"]), undefined)).toEqual({ kind: "admit" });
+    expect(step(baselines, ["modify_existing"])).toMatchObject({ kind: "refused", evidence: { ...named("candidate.reset_witness_required", "no_witness", "another_page"), instruction: WORDS.stepWitnessRequired([]) } });
+    expect(step(baselines, ["create_new"])).toMatchObject({ kind: "refused", evidence: { ...named("candidate.create_baseline_required", "no_destination_original", "another_page"), instruction: WORDS.stepWitnessRequired([]) } });
     baselines.seal();
-    expect(baselines.check(declared(ENTRY, ["create_new"]), undefined)).toMatchObject({ kind: "refused", evidence: named("candidate.create_baseline_required", "no_destination_original", "another_page") });
+    expect(step(baselines, ["create_new"])).toMatchObject({ kind: "refused", evidence: named("candidate.create_baseline_required", "no_destination_original", "another_page") });
     const read = new AutomationStudioSiteResetCreateBaselines();
     read.observed(shelf);
     read.seal();
-    expect(read.check(declared(ENTRY, ["create_new"]), undefined)).toMatchObject({ kind: "refused", evidence: named("candidate.create_baseline_required", "no_destination_original", "another_page") });
+    expect(step(read, ["create_new"])).toMatchObject({ kind: "refused", evidence: named("candidate.create_baseline_required", "no_destination_original", "another_page") });
   });
 });
+

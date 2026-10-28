@@ -6,8 +6,8 @@
 // For each phase the start's steps are asserted:
 // (a) the hook ran, or there is none;
 // (b) after a hook every act of this build counts undone, and each lasting one is named (a possibly lasting press is taken
-//     back unnamed); without one, the acts still in place are told (and a trial is refused until they are undone), and the
-//     possibly lasting press is told but never refuses anything;
+//     back unnamed); without one, the acts still in place are told (a trial runs with them, its judge told them: t775),
+//     and the possibly lasting press is told but never refuses anything;
 // (c) the phase arrives at the build's start location: a run Core makes opens by loading it, a phase a model explores in
 //     opens with the domain's arriving look;
 // (d) a phase that begins after a predecessor has its latest passing proposal run first, from the start location;
@@ -15,8 +15,8 @@
 //
 // Builder, repair and reset explorations run through `explore`; a builder's subflow trial through its real gate and the
 // build's subflow trial port; the whole trial through its real gate, the build's one reset as the supervisor asks it (no
-// brief of its own, no look; its repeated refusal until a reset brief is back is `project-agents/supervisor/tests/whole-trial.test.ts`'s)
-// and the build's whole trial port, on the Flow assembly writes. Every run is the real detached runner over a stub native executor.
+// brief of its own) and the build's whole trial port, on the Flow assembly writes. Every run is the real detached runner
+// over a stub native executor. The whole trial's readings through Core's own look (t775 D5) are the last describe's.
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
@@ -202,15 +202,9 @@ describe("every phase of a project build starts from the build's one start", () 
       const gate = new AutomationStudioSubflowTrialGate({ scope, latest: () => structuredClone(proposal), port: trials.port, reset: run.start.reset(own, () => ({ compare: nothingDiffers, compareAt: nothingDiffers })) });
       const leases = new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler(new StubHost({ capacity: 1 })));
       const test = async () => (await leases.run({ role: "subflow_builder", briefId: "brief.add" }, async () => await gate.test({ revision: proposal.revision, digest: proposal.digest }))).evidence as JsonObject;
-      let evidence = await test();
-      if (!hook) {
-        // (b) without a hook: refused until this build's act is undone; the possibly lasting press refuses nothing.
-        expect(evidence).toMatchObject({ ok: false, code: "candidate.trial_reset_required" });
-        expect((evidence.actsToUndo as JsonObject[]).map((act) => act.act)).toEqual(["act-1"]);
-        expect(run.state.ran).toEqual([]);
-        run.undoAdd();
-        evidence = await test();
-      }
+      const evidence = await test();
+      // (b) without a hook: the trial runs with this build's act on the site, said under startedWith (t775).
+      if (!hook) expect(((evidence.startedWith as JsonObject).acts as JsonObject[]).map((act) => act.act)).toEqual(["act-1"]);
       expect(evidence, JSON.stringify(evidence)).toMatchObject({ verdict: "yes", entryPrepared: true });
       // (a) and (b)
       expect(run.state.hooks).toBe(hook ? 1 : 0);
@@ -226,19 +220,13 @@ describe("every phase of a project build starts from the build's one start", () 
       const run = site({ hook });
       const candidate = assembled(run.registry, run.f.ports.resolution, run.ledger);
       const trials = automationStudioProjectBuildWholeTrials({ candidateId: "candidate.1", environment: run.environment, binding, judge: { provider: yes(), instructions: [] }, ledger: run.ledger });
-      // The supervisor's reset over the build's one reset (`project-agents/supervisor/whole-trial.ts`).
-      // The build's one reset as the supervisor asks it: no brief of its own, and no look at the target (header).
+      // The build's one reset as the supervisor asks it with no look (`project-agents/supervisor/whole-trial.ts`): no brief of its own.
       const reset = run.start.reset(undefined, () => ({ compare: async () => ({ moved: false }) }));
       const gate = new AutomationStudioFlowCandidateTrialGate({ latest: () => structuredClone(candidate), trial: { candidateId: "candidate.1", port: trials.port }, reset });
       const test = async () => (await gate.test({ revision: candidate.revision, digest: candidate.digest })).evidence as JsonObject;
-      let evidence = await test();
-      if (!hook) {
-        expect(evidence).toMatchObject({ ok: false, code: "candidate.trial_reset_required" });
-        expect((evidence.actsToUndo as JsonObject[]).map((act) => act.act)).toEqual(["act-1"]);
-        // A reset brief undoes it; the supervisor then tests again.
-        run.undoAdd();
-        evidence = await test();
-      }
+      const evidence = await test();
+      // Without a hook the whole trial runs with this build's act on the site, said under startedWith (t775): no reset brief.
+      if (!hook) expect(((evidence.startedWith as JsonObject).acts as JsonObject[]).map((act) => act.act)).toEqual(["act-1"]);
       expect(evidence, JSON.stringify(evidence)).toMatchObject({ verdict: "yes" });
       // (a) and (b)
       expect(run.state.hooks).toBe(hook ? 1 : 0);
@@ -246,14 +234,112 @@ describe("every phase of a project build starts from the build's one start", () 
       // (c): the assembled Flow's first step loads the start location, though the tab showed another page; then its calls.
       expect(candidate.buildPlan.plan.subflows[0]!.nodes[0]).toMatchObject({ key: "arrival", definitionId: GO.id, parameters: { location: START } });
       expect(run.state.ran).toEqual([...(hook ? ["hook"] : []), `go ${START}`, `${PRESS.id} on ${START}`, `${PRESS.id} on ${START}`]);
-      // (b): what is still on the site afterwards is the trial's own, never the build's earlier acts.
-      expect(run.ledger.snapshot().acts.find((act) => act.act === "act-1")).toMatchObject({ inPlace: false });
+      // (b): after a hook the build's earlier act counts undone; without one nothing undoes it, so it is still on the site, as the trial was told (t775).
+      expect(run.ledger.snapshot().acts.find((act) => act.act === "act-1")).toMatchObject({ inPlace: !hook });
       // (e); it begins after nothing, so it names no predecessors.
       const told = (evidence.feedback as JsonObject).phaseStart as JsonObject;
       expect(told).toMatchObject({ phase: "whole_trial", startHook: hook ? "ran" : "none", arrival: "loaded", standsOn: `the build's start location (${START})` });
       expect(told).not.toHaveProperty("predecessors");
     });
   }
+});
+
+// t775 D5 (user, 2026-10-27): a trial is judged against the state recorded just before it and the change asked for; a
+// line at 9 that is 10 after "add 1" passed, with no reset. The supervisor's judged whole run is that example, and takes
+// its readings through Core's own look (`../phase-start.ts`, `look`): a start check over the build's registry binding,
+// outside any loop, each read handed to every ledger that holds an act. Here the build's earlier add left the list's row
+// at 9, a trial since made that read stale, and each press of the whole run adds one.
+describe("the judged whole run, read through Core's own look (t775 D5)", () => {
+  const LIST = "https://site.test/list";
+  const ADDS = { kind: "change" as const, direction: "adds" as const, count: 1, what: "item on the list" };
+
+  function reading(run: ReturnType<typeof site>) {
+    const rows: Record<string, string> = { "s:item": "v:count-9" };
+    const arrivals: string[] = [];
+    const starts: JsonObject[] = [];
+    const judged: unknown[] = [];
+    /** The list page as the domain reads it, its lines worded against `start` when given. */
+    const read = (start?: JsonObject) => ({
+      state: { rows: { ...rows } }, differs: [], location: LIST, resource: "r:phase", scope: "p:phase-page",
+      collections: [{ scope: "p:phase", group: "g:phase", subjects: Object.keys(rows), states: { ...rows } }],
+      ...(start ? { lines: { gone: ["Item: 9 on the list"], added: [`Item: ${rows["s:item"] === "v:count-9" ? 9 : 10} on the list`] } } : {})
+    });
+    const bound = {
+      ...binding,
+      startState: async (input: { start?: JsonObject }) => {
+        if (input.start) starts.push(input.start);
+        return read(input.start);
+      },
+      executeTool: async (call: { toolId: string; value: JsonObject }) => {
+        if (call.toolId === "core.run_node") arrivals.push(String((call.value.parameters as JsonObject).location));
+        return { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true };
+      }
+    } as unknown as AutomationStudioLlmEvidenceRuntimeBinding;
+    // Each press the whole run makes adds one to the row.
+    const environment: AutomationStudioProjectBuildTrialEnvironment = {
+      ...run.environment,
+      graphOptions: (input) => {
+        const options = run.environment.graphOptions(input);
+        return { ...options, nativeNodeExecutor: async (call) => {
+          if (call.node.definitionId === PRESS.id) rows["s:item"] = "v:count-10";
+          return await options.nativeNodeExecutor!(call);
+        } };
+      }
+    };
+    const provider = mockProvider(async (request) => (judged.push(request), judgeReply("yes")));
+    return { rows, arrivals, starts, judged, read, bound, environment, provider };
+  }
+
+  it("reads the row at 9 just before and 10 after, with no reset, and its judge is sent the change with the part shown", async () => {
+    const run = site({ hook: false });
+    const site_ = reading(run);
+    const candidate = assembled(run.registry, run.f.ports.resolution, run.ledger);
+    // The list was read at 9 after the build's earlier add; a trial since made that read stale.
+    for (const owner of new Set(run.ledger.snapshot().acts.map((act) => act.owner))) run.ledger.forBrief(owner).observed(site_.read(), false);
+    run.ledger.forBrief("brief.earlier").trialRan([], "trial.earlier");
+    const look = AutomationStudioProjectBuildPhaseStart.look({ binding: site_.bound, environment: run.environment, ledger: run.ledger, liveCheck: { settleMs: 0 } });
+    expect(look).toBeDefined();
+    const trials = automationStudioProjectBuildWholeTrials({ candidateId: "candidate.1", environment: site_.environment, binding: site_.bound, judge: { provider: site_.provider, instructions: [] }, ledger: run.ledger });
+    // The supervisor's reset as `project-agents/supervisor/whole-trial.ts` makes it: no brief of its own, never back to the start, Core's own look.
+    const reset = run.start.reset(undefined, (signal) => ({ compare: async () => ({ moved: false }), lookAt: look!(signal) }));
+    const partsOf: Record<string, string[]> = { main: [], find: ["p1"], add: ["p1"] };
+    const gate = new AutomationStudioFlowCandidateTrialGate({
+      latest: () => structuredClone(candidate), trial: { candidateId: "candidate.1", port: trials.port }, reset,
+      changeParts: () => ({ parts: [{ id: "p1", effect: ADDS }], partsOf: (key) => partsOf[key ?? ""] ?? [] })
+    });
+    const evidence = (await gate.test({ revision: candidate.revision, digest: candidate.digest })).evidence as JsonObject;
+    // No reset: the trial ran with the build's add on the site, said under startedWith.
+    expect(evidence, JSON.stringify(evidence)).toMatchObject({ verdict: "yes" });
+    expect(((evidence.startedWith as JsonObject).acts as JsonObject[]).map((act) => act.act)).toEqual(["act-1"]);
+    expect(run.ledger.snapshot().acts.find((act) => act.act === "act-1")).toMatchObject({ inPlace: true });
+    // Core looked at the list itself just before the run (its read was stale) and again after it, worded against the before state.
+    expect(site_.arrivals).toEqual([LIST, LIST]);
+    expect(site_.starts).toContainEqual({ rows: { "s:item": "v:count-9" } });
+    // The judge (its yes and the yes's recheck) was sent the change: the row read at 9 by Core's look, 10 after, the part's adds shown.
+    expect(site_.judged).toHaveLength(2);
+    for (const request of site_.judged) {
+      expect(keyed(request, "siteChange")).toEqual({
+        witnesses: [{
+          id: "w1", kind: "list", where: LIST, steps: [4, 7], parts: ["p1"],
+          before: { source: "core_look", rows: 1 }, after: { source: "core_look", rows: 1 },
+          change: { added: 0, removed: 0, changed: 1, unchanged: 0, lines: { gone: ["Item: 9 on the list"], added: ["Item: 10 on the list"] } }
+        }],
+        acts: [{ step: 4, outcome: "changed", witness: "w1", parts: ["p1"] }, { step: 7, outcome: "changed", witness: "w1", parts: ["p1"] }],
+        leftFromEarlier: [{ did: "press \"Add\" button" }],
+        proofs: [{ part: "p1", effect: ADDS, proof: "shown", steps: [4, 7] }]
+      });
+    }
+  });
+
+  it("is no look where no run Core makes arrives at the build's start location, or the domain cannot read its state", () => {
+    const run = site({ hook: false });
+    const site_ = reading(run);
+    const { startLocation: _startLocation, ...unlocated } = run.environment;
+    expect(AutomationStudioProjectBuildPhaseStart.look({ binding: site_.bound, environment: unlocated, ledger: run.ledger })).toBeUndefined();
+    expect(AutomationStudioProjectBuildPhaseStart.look({ binding: { ...site_.bound, runsNodes: {} }, environment: run.environment, ledger: run.ledger })).toBeUndefined();
+    const { startState: _startState, ...unread } = site_.bound;
+    expect(AutomationStudioProjectBuildPhaseStart.look({ binding: unread, environment: run.environment, ledger: run.ledger })).toBeUndefined();
+  });
 });
 
 describe("what a phase is told of possibly lasting presses", () => {
@@ -302,4 +388,11 @@ function assembled(registry: AutomationStudioNodeRegistry, resolution: Parameter
   const validation = validateAutomationStudioFlowBootstrapPlan({ plan: result.assembled.plan, registry, resolution });
   if (!validation.ok || !validation.validated) throw new Error(JSON.stringify(validation.issues));
   return { revision: 1, digest: "whole.1", baseDependencyDigest: "base", status: "draft", summary: "assembled", buildPlan: validation.validated, changedPaths: [] };
+}
+
+/** The first value under `key` anywhere in `value`, depth first: where a judge request carries the trial's summary. */
+function keyed(value: unknown, key: string): unknown {
+  if (!value || typeof value !== "object") return undefined;
+  if (!Array.isArray(value) && key in value) return (value as Record<string, unknown>)[key];
+  return Object.values(value).map((entry) => keyed(entry, key)).find((found) => found !== undefined);
 }

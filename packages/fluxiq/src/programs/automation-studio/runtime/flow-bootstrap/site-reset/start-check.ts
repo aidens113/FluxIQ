@@ -197,8 +197,10 @@ export class AutomationStudioSiteResetStartCheck {
    * Takes the target to `location` and reads it there, settled (L1): Core
    * looks at an open act's watched place itself before asking the model. The
    * caller hands the read to the ledgers; an unread answer says why not.
+   * `start` (t775): the before state of a trial's witness there, so the read's
+   * lines say what changed from it.
    */
-  async lookAt(location: string, signal?: AbortSignal): Promise<AutomationStudioSiteResetReadAnswer> {
+  async lookAt(location: string, signal?: AbortSignal, start?: JsonObject): Promise<AutomationStudioSiteResetReadAnswer> {
     const tool = this.input.tools.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID);
     const to = this.input.binding?.runsNodes?.arrival;
     if (!this.input.binding?.startState) return { unread: "no_reader" };
@@ -210,7 +212,7 @@ export class AutomationStudioSiteResetStartCheck {
       const ran = await this.arrive({ callId: `site-reset.look.${n}.arrival`, toolId: tool.toolId, value: { node: to.node, parameters: { [to.parameter]: location }, consequences: [] }, ...(signal ? { signal } : {}) });
       this.arrived(ran);
       if (!landed(ran)) return { unread: "no_answer" };
-      return await this.settled(undefined, signal);
+      return await this.settled(start, signal);
     } catch (error) {
       if (signal?.aborted) throw error;
       this.lastFailure = error;

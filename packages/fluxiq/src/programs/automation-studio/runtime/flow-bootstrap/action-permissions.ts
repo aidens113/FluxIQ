@@ -238,6 +238,8 @@ export type AutomationStudioFlowBootstrapActionPermissions = {
 export function automationStudioFlowBootstrapActionPermissions(input: {
   /** Project-builder exploration only; other authoring and finalized run paths are unchanged. */
   requireCreateBaseline?: boolean;
+  /** The record of explored toggles to write into; a project build shares one across its briefs (t775). Absent, this gate keeps its own. */
+  exploredToggles?: AutomationStudioExploredToggles | undefined;
   /** The consequences the build was permitted. Absent permits nothing. */
   permittedConsequences: readonly string[] | undefined;
   /** The instructions the build carries out: the reason any action was wanted. */
@@ -320,7 +322,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
     };
   };
   // The presses the domain answered as a toggle (header, t775).
-  const exploredToggles = new AutomationStudioExploredToggles();
+  const exploredToggles = input.exploredToggles ?? new AutomationStudioExploredToggles();
   // The read, once, with any act it left unanswered said once in the thread.
   let unansweredSaid = false;
   const read = async (): Promise<readonly AutomationStudioInstructedConsequence[]> => {
@@ -403,7 +405,8 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       };
       const execution = await input.executeTool({ ...call, value, permission });
       gate.observe(execution);
-      exploredToggles.explored({ ...call, value }, execution);
+      // An undo puts a control back: its toggle answer is the reverse of the state a step asks for, so it never ties a step (t775).
+      if (!undo) exploredToggles.explored({ ...call, value }, execution);
       if (createRefusal) return { kind: "llm_evidence_tool_execution", evidence: createRefusal.evidence, effectApplied: false, targetsUnchanged: true, resultCode: createRefusal.evidence.code };
       siteReset.explored({
         callId: call.callId,

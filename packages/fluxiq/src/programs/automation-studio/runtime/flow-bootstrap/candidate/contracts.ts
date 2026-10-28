@@ -7,6 +7,7 @@ import type { AutomationStudioFlowBootstrapCompletionVerdict, AutomationStudioFl
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import type { AutomationStudioRunEnvironmentKind } from "../../environment/index.ts";
 import type { AutomationStudioTrialOfflineFirst } from "../offline-first/index.ts";
+import type { AutomationStudioTrialChangeAct, AutomationStudioTrialChangeOutcome } from "../trial-change/index.ts";
 
 /** Historical owner-enumerated bytes, never pinned-read or execution authority. */
 export type AutomationStudioCandidateOriginalSources = {
@@ -87,6 +88,13 @@ export type AutomationStudioCandidateTrialRequest = {
    * summary. Absent where no trial of another revision gave advice.
    */
   earlierAdvice?: readonly import("../../result-verification/contracts/index.ts").AutomationStudioResultEarlierAdvice[];
+  /**
+   * What the live trial changed on the site (t775): Core read each place a lasting step's change shows just before the
+   * trial; the port calls this after its end view and before its judge, with the trial's acts (landed, and passed over as
+   * already in the asked state), and hands the packet and Core's findings to the judge's summary as `siteChange`. Absent
+   * for an offline trial, which changes nothing, and where nothing of the change could be read.
+   */
+  siteChange?: (acts: readonly AutomationStudioTrialChangeAct[], signal?: AbortSignal) => Promise<AutomationStudioTrialChangeOutcome>;
 };
 
 export const AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS = Object.freeze(["yes", "no", "unsure", "not_judged", "execution_failed"] as const);

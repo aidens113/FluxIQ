@@ -7,7 +7,8 @@ const original = (resource = "r:one"): AutomationStudioSiteResetRead => ({ state
   { scope: "p:sibling", group: "g:destination", subjects: [], states: {} }
 ] });
 const create = (over: Partial<AutomationStudioSiteResetDeclared["control"]> = {}): AutomationStudioSiteResetDeclared => ({ permitted: true, effect: "mutate", consequences: ["create_new"], control: { name: null, kind: null, subject: "s:document", scope: "p:source", resource: "r:one", ...over }, verb: "press" });
-const REFUSED = { kind: "refused", evidence: { code: "candidate.create_baseline_required" } };
+// t775: the exploration door no longer refuses a press for want of a witness; it admits it with none.
+const REFUSED = { kind: "admit" };
 
 describe("build-only original creation receipts", () => {
   it("issues closed refs from the actual complete observation, then accepts only its same-resource absent subject", () => {
@@ -179,20 +180,14 @@ describe("a creation's destination on its own page (t748)", () => {
     expect(baseline.check(onRecipe, "destination-2")).toEqual({ kind: "admit" });
   });
 
-  it("refused, names the lists read complete on this page apart from those read elsewhere, and which list to name", () => {
+  it("is admitted at the exploration door with no witness (t775): nothing asks for a list read before the creation", () => {
     const baseline = new AutomationStudioSiteResetCreateBaselines();
     baseline.observed(planPage());
     baseline.receipts();
     baseline.observed(recipePage());
     baseline.receipts();
-    const verdict = baseline.check(onRecipe, undefined);
-    expect(verdict).toMatchObject(REFUSED);
-    const instruction = verdict.kind === "refused" ? String(verdict.evidence.instruction) : "";
-    expect(instruction).toContain("Lists read complete on this page: destination-2 (1 item), destination-3 (3 items).");
-    expect(instruction).toContain("Lists read complete elsewhere: destination-1 (1 item at loc:week)");
-    expect(instruction).toContain("only where the new entry would appear in that very list");
-    expect(instruction).toContain("A list that only suggests or relates other items to the one acted on never gains the new entry");
-    expect(instruction).not.toMatch(/(store|shop|cart|basket|checkout|address|job|save|heart|photo|like|post|friend|order|product|follow|feed|profile|apply|recipe|note|plan)/iu);
+    expect(baseline.check(onRecipe, undefined)).toEqual({ kind: "admit" });
+    expect(baseline.destination(onRecipe, undefined)).toBeUndefined();
   });
 });
 
@@ -204,7 +199,8 @@ describe("per-group seal and the admission port (t751)", () => {
     { scope, group, subjects: ["s:sketch"], states: { "s:sketch": "v:sketch" } }
   ] });
   const pin = (over: Partial<AutomationStudioSiteResetDeclared["control"]> = {}, consequences: AutomationStudioSiteResetDeclared["consequences"] = ["modify_existing"]): AutomationStudioSiteResetDeclared => ({ permitted: true, effect: "mutate", consequences, control: { name: null, kind: null, subject: "s:print", page: "s:print", scope: "p:print-page", resource: SITE, ...over }, verb: "press" });
-  const WITNESS = { kind: "refused", evidence: { code: "candidate.reset_witness_required", failed: "no_witness", canMeet: "another_page" } };
+  // t775: admitted at the exploration door with no witness.
+  const WITNESS = { kind: "admit" };
 
   it("a list first read after an act that touched another group still becomes an original and issues a ref", () => {
     const baseline = new AutomationStudioSiteResetCreateBaselines();
@@ -243,7 +239,7 @@ describe("per-group seal and the admission port (t751)", () => {
     expect(baseline.check(pin(), undefined)).toMatchObject(WITNESS);
     expect(baseline.check({ ...pin({}, ["create_new"]), control: { name: null, kind: null, item: "i:untitled", page: "s:print", scope: "p:print-page", resource: SITE } }, undefined)).toMatchObject(WITNESS);
     // And a creation with no original at all is met on another page, never by no call (t751: a list can always still be read).
-    expect(baseline.check(pin({}, ["create_new"]), undefined)).toMatchObject({ kind: "refused", evidence: { code: "candidate.create_baseline_required", canMeet: "another_page" } });
+    expect(baseline.check(pin({}, ["create_new"]), undefined)).toEqual({ kind: "admit" });
   });
 
   it("admits a press that repeats a witnessed explored act, through the explored acts it is handed", () => {

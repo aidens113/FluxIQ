@@ -6,13 +6,10 @@ import { automationStudioProjectSupervisorBriefSizing } from "./brief-sizing.ts"
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";
 import { automationStudioProjectSupervisorLeftOnTarget } from "./left-on-target.ts";
-import type { AutomationStudioProjectSupervisorCompletedOnPass, AutomationStudioProjectSupervisorRecoveryShortfall, AutomationStudioProjectSupervisorReliesOnRecovery, AutomationStudioProjectSupervisorResetToEnd, AutomationStudioProjectSupervisorStandingRescue } from "./state.ts";
+import type { AutomationStudioProjectSupervisorCompletedOnPass, AutomationStudioProjectSupervisorRecoveryShortfall, AutomationStudioProjectSupervisorReliesOnRecovery, AutomationStudioProjectSupervisorStandingRescue } from "./state.ts";
 
-/** The supervisor decisions a held ending needs left (header, t743): the repair's dispatch, a reset the reset rule may ask for, and the ending again. */
+/** The supervisor decisions a held ending needs left (header, t743): the repair's dispatch, a turn to spare, and the ending again. */
 const REPAIR_TURNS = 3;
-
-/** How many times an ending is held back for a reset before it is let through with what is left named (header). */
-const MAX_HELD_FOR_RESET = 2;
 
 /** An honest ending the model completed with, once the check accepted it. */
 export type AutomationStudioProjectSupervisorEnded = { outcome: "blocked" | "partial"; reason: string };
@@ -34,17 +31,14 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_COMPLETION_SCHEMA: JsonObject 
  * back blocked or partial, or a whole trial did not pass. `ended` is told the
  * ending the check accepted, for the caller to record.
  *
- * **An honest ending puts the target back first (bigbox debug fix 10).** Bigbox
- * `run-mv8186yr-a385fd3a` ended blocked with nine of the build's acts on the
- * site. While this build's lasting acts are still in place and a reset brief
- * could undo them, an ending is refused `project.completion_reset_first` until
- * a reset brief has come back after the build's last other brief and its last
- * whole test (`resetCameBackLast`, `./state.ts`, t684). A reset that
- * came back without undoing everything, acts no reset can undo, or
- * `MAX_HELD_FOR_RESET` such refusals already given (so a reset that cannot be
- * sent never holds the build until its ceiling) let the ending through; and
- * whatever is still left Core names in the ending's reason itself
- * (`./left-on-target.ts`), so the person is told exactly what is on the target.
+ * **An ending says what the build left on the target (bigbox debug fix 10;
+ * t775).** Bigbox `run-mv8186yr-a385fd3a` ended blocked with nine of the
+ * build's acts on the site, untold. Since t775 (user, 2026-10-27: reset as
+ * rarely as possible) nothing holds an ending or a completion for a reset and
+ * Core sends no cleanup of its own: whatever of the build is still on the
+ * target, Core names in the ending's reason itself (`./left-on-target.ts`), so
+ * the person is told exactly what is there, and may ask for it to be put back.
+ * The `project.completion_reset_first` hold is retired.
  *
  * **A pass the run rescued (social debug, t603).** A yes the trial gate holds
  * back only for what the run recovered from by itself and the Flow does not
@@ -85,18 +79,16 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_COMPLETION_SCHEMA: JsonObject 
  * completes on it, said as above with the later assembly named as set aside.
  * Unlike the latest assembly's own rescued pass, whose trial was the last thing
  * run on the target, the fallback's Flow was not: later trials and builders
- * acted since. So the reset rule holds first, exactly as for an ending: while
- * this build's own acts are still in place and a reset brief could undo them,
- * the ending is refused `project.completion_reset_first` until one has come
- * back, and what no reset undid is named after the person's words. The
- * ending is never refused as too soon: a passing revision stands.
+ * acted since. What of the build is still on the target is named after the
+ * person's words, as for an ending (t775). The ending is never refused as too
+ * soon: a passing revision stands.
  *
  * **The fallback is any pass, and may be named (coordinator, t637).** The
  * fallback is the most recent whole-test pass of either kind: a rescued one,
  * said with the recovery words, or an outright one, said plainly -- the later
  * revision never passed, so the build completes on the last that passed. A
- * completion naming the fallback's revision and digest completes on it under
- * the same reset rule (`completed`), rather than being refused as not the
+ * completion naming the fallback's revision and digest completes on it the
+ * same way (`completed`), rather than being refused as not the
  * latest; one naming any other revision that is not the latest is refused
  * `project.completion_not_latest` as before.
  *
@@ -133,7 +125,6 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_COMPLETION_SCHEMA: JsonObject 
  * the reset and offering a test it does not need.
  */
 export function automationStudioProjectSupervisorCompletion(context: AutomationStudioProjectSupervisorContext, ended: (ending: AutomationStudioProjectSupervisorEnded) => void): (result: JsonObject, loop?: { turnsLeft?: number | undefined }) => AutomationStudioLlmEvidenceCompletionCheck {
-  let heldForReset = 0;
   /** Each subflow a repair-first refusal has named: it never holds an ending again (header, t743). */
   const heldForRepair = new Set<string>();
   /** The repair-first rule before an ending (header, t743): a refusal naming each failed subflow not yet given a changed brief, while a brief can be paid for. */
@@ -146,17 +137,8 @@ export function automationStudioProjectSupervisorCompletion(context: AutomationS
     for (const entry of due) heldForRepair.add(entry.subflowKey);
     return refused("project.completion_repair_first", GUIDANCE.completion.repairFirst, { unrepaired: due.map((entry) => ({ subflowKey: entry.subflowKey, failingBrief: entry.briefId })) });
   };
-  /**
-   * The reset rule before an ending, or a completion on the fallback (header): a refusal while a reset could still undo this build's acts, else what is left.
-   * A refusal keeps why the reset is asked for (`for`, t683), so the answer after it says to end or complete again, never to test.
-   */
-  const resetFirst = (held: AutomationStudioProjectSupervisorResetToEnd): { refusal: AutomationStudioLlmEvidenceCompletionCheck | undefined; left: ReturnType<typeof automationStudioProjectSupervisorLeftOnTarget> } => {
-    const left = automationStudioProjectSupervisorLeftOnTarget(context.ports);
-    if (!left.note || !left.undoable || context.state.resetCameBackLast() || heldForReset >= MAX_HELD_FOR_RESET) return { refusal: undefined, left };
-    heldForReset += 1;
-    context.state.resetToEnd = held;
-    return { refusal: refused("project.completion_reset_first", GUIDANCE.completion.resetFirst, { actsInPlace: left.acts.filter((act) => act.undoable).map((act) => ({ act: act.act, did: act.did, brief: act.brief })) }), left };
-  };
+  /** What of the build is still on the target, named in an ending's or a fallback completion's words (header, t775): nothing is held for it. */
+  const leftNow = (): ReturnType<typeof automationStudioProjectSupervisorLeftOnTarget> => automationStudioProjectSupervisorLeftOnTarget(context.ports);
   return (result, loop) => {
     const keys = Object.keys(result);
     // A result naming a revision and a digest is judged as a completion on it, whatever else it carries (header).
@@ -176,9 +158,8 @@ export function automationStudioProjectSupervisorCompletion(context: AutomationS
       // Each failed subflow gets one changed brief while money is left, before the reset rule (header, t743).
       const repair = rescue ? undefined : repairFirst(loop?.turnsLeft);
       if (repair) return repair;
-      const { refusal, left } = resetFirst({ by: "ending" });
-      if (refusal) return refusal;
-      // The build's fallback stands: once the reset rule held, the ending completes on it (header, t637).
+      const left = leftNow();
+      // The build's fallback stands: the ending completes on it (header, t637).
       if (rescue) {
         automationStudioProjectSupervisorReliesOnRecovery(context, "ended", { endedWith, rescue, left: left.note });
         return { ok: true };
@@ -189,11 +170,10 @@ export function automationStudioProjectSupervisorCompletion(context: AutomationS
     const candidate = context.controller.latest();
     if (!candidate) return refused("project.completion_nothing_assembled", GUIDANCE.completion.nothingAssembled, { submitted: false });
     if (!names || !context.controller.matches({ revision: result.revision as number, digest: result.digest as string, baseDependencyDigest: candidate.baseDependencyDigest })) {
-      // A completion naming the build's fallback completes on it, once the reset rule held (header, t637).
+      // A completion naming the build's fallback completes on it (header, t637).
       const rescue = names ? context.state.standingRescue(context.controller, context.gate) : undefined;
       if (rescue?.fallback && rescue.fallback.revision === result.revision && rescue.fallback.digest === result.digest) {
-        const { refusal, left } = resetFirst({ by: "completion", complete: { revision: rescue.fallback.revision, digest: rescue.fallback.digest } });
-        if (refusal) return refusal;
+        const left = leftNow();
         automationStudioProjectSupervisorReliesOnRecovery(context, "completed", { rescue, left: left.note });
         return { ok: true };
       }

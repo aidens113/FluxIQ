@@ -6,7 +6,7 @@
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { refusalTestSubmission } from "../../../flow-bootstrap/candidate/tests/refusal-domain-fixture.ts";
 import type { AutomationStudioCandidateTrialAct, AutomationStudioCandidateTrialPort, AutomationStudioCandidateTrialResult } from "../../../flow-bootstrap/candidate/index.ts";
-import { AutomationStudioSiteResetProjectLedger } from "../../../flow-bootstrap/site-reset/index.ts";
+import { AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetRead } from "../../../flow-bootstrap/site-reset/index.ts";
 import { AutomationStudioSubflowScopedSubmissionController, type AutomationStudioSubflowProposal } from "../../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioFlowBootstrapActionPermissions } from "../../../flow-bootstrap/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
@@ -87,6 +87,14 @@ export function project(options: {
   ledger?: { hook?: boolean; undoes?: boolean };
   /** The output a return that is not done names as one its subflow could not make (t645); none when absent. */
   unmadeOutput?: (brief: AutomationStudioProjectSubflowBrief) => string | undefined;
+  /**
+   * The judged whole run's readings (t775 D5): the holds list the builders read before acting is at `HOLDS_AT`, Core's
+   * own look (`look`, as `service/project-build/phase-start.ts` makes it) reads it there and hands the read to every
+   * ledger holding an act, and each whole trial adds one copy to its one row, counted from `copies`. The trial port
+   * takes the trial's readings after its run, as the service's does after the end view, and keeps each packet as its
+   * judge would be sent it (`judged`).
+   */
+  readings?: { copies: number };
 } = {}) {
   const projects = new AutomationStudioProjectPaths(undefined);
   let clock = 1000;
@@ -101,6 +109,20 @@ export function project(options: {
   const kept: AutomationStudioProjectSupervisorKept[] = [];
   /** How many whole trials had run each time the start hook ran. */
   const hooks: number[] = [];
+  /** The judged whole run's readings (`readings`): the holds row's copies, Core's looks, and what each judge was sent. */
+  const site = { copies: options.readings?.copies ?? 0 };
+  const looks: Array<{ location: string; start?: JsonObject }> = [];
+  const judged: JsonObject[] = [];
+  const holds = (start?: JsonObject): AutomationStudioSiteResetRead => ({
+    state: { copies: site.copies }, differs: [], location: HOLDS_AT, resource: "r:fixture", scope: "p:holds-page",
+    collections: [{ scope: "p:holds", group: "g:holds", subjects: ["s:hold"], states: { "s:hold": `v:copies-${site.copies}` } }],
+    ...(start ? { lines: { gone: [`The hold: ${String(start.copies)} copies`], added: [`The hold: ${site.copies} copies`] } } : {})
+  });
+  const look: NonNullable<AutomationStudioProjectSupervisorPorts["look"]> = () => async (location, start) => {
+    looks.push({ location, ...(start ? { start } : {}) });
+    const read = holds(start);
+    for (const owner of new Set(ledger.snapshot().acts.map((act) => act.owner))) ledger.forBrief(owner).observed(read, false);
+  };
   /** A real reset brief: each act in place undone on its own item where the site has a control, then what is left checked, as its completion is. */
   const resetOnLedger = async (real: AutomationStudioSiteResetProjectLedger): Promise<boolean> => {
     const inPlace = real.snapshot().acts.filter((act) => act.inPlace);
@@ -145,7 +167,7 @@ export function project(options: {
     const plan = view!.record.plans.at(-1)!.plan;
     const spec = view!.record.taskSpecs.at(-1)!.taskSpec;
     const subflow = plan.plan.subflows.find((candidate) => candidate.key === brief.subflowKey)!;
-    ledger.observed({ state: {}, differs: [], resource: "r:fixture", scope: "p:fixture", collections: [{ scope: "p:holds", group: "g:holds", subjects: [], states: {} }] });
+    ledger.observed({ state: {}, differs: [], resource: "r:fixture", scope: "p:fixture", ...(options.readings ? { location: HOLDS_AT } : {}), collections: [{ scope: "p:holds", group: "g:holds", subjects: [], states: {} }] });
     const own = ledger.forBrief(brief.briefId);
     own.destinationReceipts();
     const permissions = automationStudioFlowBootstrapActionPermissions({ permittedConsequences: brief.permittedActs, instructionIds: [], authoringMode: "project", siteReset: own, executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: {} }) });
@@ -177,6 +199,10 @@ export function project(options: {
     options.onTrial?.();
     const verdict = options.trial?.(trials.length) ?? "yes";
     const trialActs: AutomationStudioCandidateTrialAct[] = options.trialActs ? [{ step: 1, definitionId: "web.output.dom-click", consequences: ["create_new"] }] : [];
+    // The run adds one copy to the hold; its readings are taken after it and the packet kept as its judge is sent it (`readings`).
+    if (options.readings) site.copies += 1;
+    const read = await request.siteChange?.([]);
+    if (read) judged.push(structuredClone(read.siteChange) as unknown as JsonObject);
     // As the service's whole-trial port records them (`service/project-build/whole-trials.ts`).
     if (trialActs.length) ledger.forBrief("supervisor").trialRan(trialActs, `run-${trials.length}`);
     return { revision: request.revision, digest: request.digest, verdict, feedback: options.trialFeedback?.(trials.length) ?? { said: verdict }, trialRunId: `run-${trials.length}`, ...(trialActs.length ? { acts: trialActs } : {}) };
@@ -194,6 +220,7 @@ export function project(options: {
     dispatch,
     proposals: (ref) => proposals.get(ref.briefId),
     projectLedger: ledger,
+    ...(options.readings ? { look } : {}),
     kept: (told) => {
       kept.push({ planDigest: told.planDigest, madeUnder: new Map(told.madeUnder) });
     },
@@ -202,8 +229,11 @@ export function project(options: {
     ...(options.purse ? { purse: options.purse } : {}),
     ...(options.reserve ? { reserve: options.reserve } : {})
   };
-  return { ports, record, dispatched, proposals, trials, ledger, hooks, kept };
+  return { ports, record, dispatched, proposals, trials, ledger, hooks, kept, looks, judged };
 }
+
+/** Where the fixture's holds list is read, for the judged whole run's readings (`readings`). */
+export const HOLDS_AT = "https://library.test/holds";
 
 /** A tool the harness offers beside the supervisor's: one observe-only look, and some it must not get. */
 export const HOST_TOOLS: AutomationStudioLlmEvidenceTool[] = [

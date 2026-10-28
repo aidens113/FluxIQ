@@ -112,8 +112,9 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
     beforeTrial: (resetSignal, cannotUndo, options) => ledger.beforeTrial({
       compare: () => startCheck.compare(resetSignal),
       compareAt: (place) => startCheck.compareAt(place, resetSignal),
-      lookAt: async (location) => {
-        const read = await startCheck.lookAt(location, resetSignal);
+      // A trial's after-reading passes its before-reading's state, so the read says what changed in lines (t775).
+      lookAt: async (location, start) => {
+        const read = await startCheck.lookAt(location, resetSignal, start);
         if (!("unread" in read)) ledger.observed(read);
       }
     }, cannotUndo, options),

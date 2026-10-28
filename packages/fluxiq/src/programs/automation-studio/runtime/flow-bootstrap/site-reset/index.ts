@@ -14,6 +14,7 @@ export * from "./project-ledger.ts";
 export * from "./project-reset.ts";
 export * from "./settle-ms.ts";
 export * from "./start-check.ts";
+export * from "./trial-change-port.ts";
 export * from "./trial-policy.ts";
 export * from "./undoes-tool.ts";
 export * from "./words.ts";

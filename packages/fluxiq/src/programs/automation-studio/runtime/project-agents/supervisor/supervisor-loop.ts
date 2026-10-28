@@ -31,17 +31,18 @@
 // names, in Core's words, what this build still has on the target
 // (`./left-on-target.ts`).
 //
-// **A loop a guard stopped puts the target back first (t586).** Bigbox
-// `run-mv85vjqo` stalled on the refusal-run guard: under
+// **A loop a guard stopped still ends, naming what is left (t586; t775).**
+// Bigbox `run-mv85vjqo` stalled on the refusal-run guard: under
 // `propagateDecisionErrors` the stall is thrown out of the loop, so no ending
-// was recorded, no reset ran and the build's acts stayed on the site untold.
-// The stall the loop's `unusableDecisions` builds is now known when it is
-// thrown; that one, and a loop that returned stopped short, end the way the
-// model's honest ending does (`./completion.ts`): while a reset brief could
-// still undo acts of this build and none came back after its last other brief,
-// Core dispatches one itself (`./dispatch-tool.ts`, sized from the purse as
-// any brief is), then records the ending naming what is still left. A thrown
-// stall is then thrown on, so the caller ends the build as it did.
+// was recorded and the build's acts stayed on the site untold. The stall the
+// loop's `unusableDecisions` builds is now known when it is thrown; that one,
+// and a loop that returned stopped short, end the way the model's honest
+// ending does (`./completion.ts`): the ending names what of the build is still
+// on the target. Since t775 (user, 2026-10-27: reset as rarely as possible)
+// Core sends no cleanup reset of its own before an ending (`resetBeforeEnding`
+// is retired); the person is told what is left and may ask for it to be put
+// back. A thrown stall is then thrown on, so the caller ends the build as it
+// did.
 //
 // **A run has a time limit, and reaching it is an ending too (t592).** A
 // project build ran under no bound of its own: the Lab's chat stopped watching
@@ -53,9 +54,8 @@
 // trial -- runs under a signal that aborts `AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_MS`
 // before the bound: a builder in flight is stopped and comes back stopped, as on
 // a cancel, and the loop ends. That is not the person's cancel: the build ends
-// as a guard's stop does, through Core's reset brief and the ending naming what
-// is left, under a second signal that aborts at the bound itself, so even a
-// reset that overruns cannot carry the build past it. The outcome says
+// as a guard's stop does, through the ending naming what is left, under a
+// second signal that aborts at the bound itself. The outcome says
 // `timedOut`. A supervisor started again on a build under way starts a clock of
 // its own. Its two timers are set on the clock it is handed
 // (`AutomationStudioProjectSupervisorClock`, t616): production always runs on
@@ -101,33 +101,26 @@
 // pass replaces it. Every guard-forced end above completes on it as on
 // the latest assembly's own, and the run hands its caller the fallback's own
 // Flow and its own yes (`completedOn`), never the later assembly, so the
-// caller promotes the revision that passed. The fallback's trial was not the
-// last thing run on the target, so the reset rule holds first, as for an
-// ending: Core's reset brief undoes this build's own acts still in place,
-// except where an ending sends none -- money spent, a provider that stopped
-// answering, a question put to the person -- and what is left is named after
-// the person's words. The person's cancel still completes on nothing.
+// caller promotes the revision that passed. What of the build is still on the
+// target is named after the person's words (t775: no cleanup reset). The
+// person's cancel still completes on nothing.
 // The fallback is the most recent pass of either kind (coordinator, t637): an
 // outright one completes the same way, said plainly (`completedOnPass`). So
 // does the latest assembly's own outright pass when a guard ends the loop
 // before the supervisor completed on it (`latestPass`): a standing pass is
 // Core's evidence however the loop stopped, as t611 holds for a brief. The
 // person is told the supervisor stopped before completing, then what stopped
-// it; the reset rule holds first, and the person's cancel completes on nothing.
+// it, and the person's cancel completes on nothing.
 //
-// **A provider that stopped answering is not asked to reset (t621).** A8
-// canary `run-mv8zw5l2-98064abf`: the model provider answered none of the
+// **A provider that stopped answering is said as that (t621).** A8 canary
+// `run-mv8zw5l2-98064abf`: the model provider answered none of the
 // supervisor's decisions, and the loop ended
-// `llm_evidence_loop.provider_unavailable`. Core's reset brief is a builder
-// run on that same provider, so it could only wait out more deadlines and
-// undo nothing. A loop the provider stopped sends no reset: its ending names,
-// in Core's words, every act of this build still on the target, so the person
-// knows what to take back. Every other ending a guard forced still resets
-// first. Its record reason says the provider stopped answering, under the code
+// `llm_evidence_loop.provider_unavailable`. Its ending names, in Core's words,
+// every act of this build still on the target, so the person knows what to
+// take back. Its record reason says the provider stopped answering, under the code
 // the person's ending carries (`flow_bootstrap.provider_unavailable`), never
 // "the supervisor stopped".
 import { AutomationStudioFlowCandidateSubmissionController, AutomationStudioFlowCandidateTrialGate, type AutomationStudioCandidateTrialResult, type AutomationStudioFlowCandidate } from "../../flow-bootstrap/candidate/index.ts";
-import { AutomationStudioFlowBootstrapGenerationError } from "../../flow-bootstrap/generation-failure/index.ts";
 import { automationStudioLlmBuildPurseRun, AutomationStudioLlmBuildPurseRefused } from "../../llm/build-purse/index.ts";
 import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceLoopResult } from "../../llm/evidence-loop.ts";
 import type { AutomationStudioLlmEvidenceLoopProviderUnavailable } from "../../llm/index.ts";
@@ -234,9 +227,8 @@ async function supervise(input: SupervisorInput, clock: Clock): Promise<Automati
   const { ports } = input;
   const signals = [ports.signal, ports.submission.signal].filter((value): value is AbortSignal => value !== undefined);
   const signal = signals.length ? AbortSignal.any(signals) : undefined;
-  // The supervisor's work stops at the work deadline; its ending, at the bound (header). Neither is the person's cancel.
+  // The supervisor's work stops at the work deadline (header). It is not the person's cancel.
   const working = AbortSignal.any([...signals, clock.work]);
-  const ending = AbortSignal.any([...signals, clock.whole]);
   const outOfTime = (at: AbortSignal) => at.aborted && !signal?.aborted;
   const state = new AutomationStudioProjectSupervisorState();
   const view = await ports.record.read(ports.build);
@@ -253,7 +245,9 @@ async function supervise(input: SupervisorInput, clock: Clock): Promise<Automati
   const controller = new AutomationStudioFlowCandidateSubmissionController(signal ? { ...ports.submission, signal } : ports.submission);
   // The whole trial's gate puts the target back as a candidate build's does: start hook first, then the build's ledgers (`./whole-trial.ts`).
   const wholeTrial = new AutomationStudioProjectSupervisorWholeTrial({ ports, state, time: clock.time });
-  const gate = new AutomationStudioFlowCandidateTrialGate({ latest: () => controller.latest(), trial: ports.trial, signal, reset: wholeTrial.reset });
+  // The task's parts and their typed effects, and the parts each subflow serves, for the whole test's one targeted refusal (t775).
+  const changeParts = () => state.taskSpec && state.structure ? { parts: state.taskSpec.parts.map((part) => ({ id: part.id, ...(part.effect ? { effect: structuredClone(part.effect) } : {}) })), partsOf: (key: string | undefined) => (key === undefined ? [] : state.structure?.partOf[key] ?? []) } : undefined;
+  const gate = new AutomationStudioFlowCandidateTrialGate({ latest: () => controller.latest(), trial: ports.trial, signal, reset: wholeTrial.reset, changeParts });
   // One whole test for every path that tests the whole Flow, timed and remembered once (`./context.ts`, G2).
   const context: AutomationStudioProjectSupervisorContext = { ports, state, controller, gate, signal: working, wholeTest: (value, callSignal) => wholeTrial.test(context, value, callSignal) };
   let ended: AutomationStudioProjectSupervisorEnded | undefined;
@@ -328,8 +322,6 @@ async function supervise(input: SupervisorInput, clock: Clock): Promise<Automati
   // A rescued pass or the fallback, else the latest assembly's own outright pass (header, t637).
   const rescue = shortfall && !signal?.aborted ? state.standingRescue(controller, gate) ?? state.latestPass(controller, gate) : undefined;
   if (shortfall && rescue) {
-    // On the fallback or the latest outright pass the reset rule holds first, where an ending would send a reset (header, t637).
-    if (rescue.fallback && shortfall !== "money" && shortfall !== "provider" && !personEnded(stalled?.error)) await resetBeforeEnding({ ...context, signal: ending }, () => outOfTime(ending), rescue.fallback.latest ? LATEST_PASS_RESET_REASON : FALLBACK_RESET_REASON);
     const left = rescue.fallback ? automationStudioProjectSupervisorLeftOnTarget(ports).note : undefined;
     automationStudioProjectSupervisorReliesOnRecovery(context, shortfall, { rescue, left });
     return done("candidate");
@@ -349,9 +341,7 @@ async function supervise(input: SupervisorInput, clock: Clock): Promise<Automati
           : unanswered
             ? { outcome: state.anyDone() ? "partial" : "blocked", reason: providerStoppedReason(unanswered.providerUnavailable, automationStudioProjectSupervisorLeftOnTarget(ports).undoable) }
             : { outcome: state.anyDone() ? "partial" : "blocked", reason: automationStudioProjectSupervisorStopReason({ loop, stalledOn: stalled?.issueCodes }) };
-  // A guard or the time limit stopped the loop: the target is put back, where a reset brief still can and inside the bound, before the ending names what is left (header).
-  // A provider that stopped answering is not asked to (header, t621): its ending names what is left instead.
-  if (!outOfMoney && !cancelled && !unanswered && finished !== ended && !personEnded(stalled?.error)) await resetBeforeEnding({ ...context, signal: ending }, () => outOfTime(ending));
+  // No cleanup reset before an ending (header, t775): it names what is left.
   // An ending the model gave already names what is left (`./completion.ts`); every other ending Core names it in here.
   const named = finished === ended ? finished : { ...finished, reason: automationStudioProjectSupervisorLeftOnTarget(ports).reason(finished.reason) };
   const recorded = await ports.record.end(ports.build, named);
@@ -406,50 +396,4 @@ function spoken(ms: number): string {
   if (ms >= 60_000 && ms % 60_000 === 0) return `${ms / 60_000} minutes`;
   const seconds = Math.max(1, Math.round(ms / 1_000));
   return seconds === 1 ? "1 second" : `${seconds} seconds`;
-}
-
-/** The endings a stall yields to because the person was asked and did not answer yes: no brief is sent past them. */
-const PERSON_ENDINGS: ReadonlySet<string> = new Set(["flow_bootstrap.permission_required", "flow_bootstrap.user_intervention_required"]);
-
-/** Whether the loop ended on a question put to the person rather than a guard (`service/flow-bootstrap-commands/unusable-decisions.ts`). */
-function personEnded(error: unknown): boolean {
-  return error instanceof AutomationStudioFlowBootstrapGenerationError && PERSON_ENDINGS.has(error.diagnostic.code);
-}
-
-/** Why Core dispatched the reset itself, for the build record. */
-const CORE_RESET_REASON = "The supervisor stopped before a whole trial passed, so Core puts back the lasting acts this build made before the build ends.";
-/** Why Core dispatched the reset itself before completing on the build's fallback (header, t637). */
-const FALLBACK_RESET_REASON = "The supervisor stopped before a later revision passed its whole test, so Core puts back the lasting acts this build made before it completes on the last revision that passed.";
-/** Why Core dispatched the reset itself before completing on the latest assembly's own outright pass (header, t637). */
-const LATEST_PASS_RESET_REASON = "The supervisor stopped before completing, so Core puts back the lasting acts this build made before it completes on the revision that passed its whole test.";
-
-/**
- * Core's own reset brief before an ending a guard forced (header): only while
- * a reset could still undo an act of this build, none came back after the
- * build's last other brief, a plan is in force and a purse can size it. Its
- * dispatch is the supervisor's own tool, so it is recorded, shown and sized as
- * any brief is; a refusal of it, a purse that cannot pay for it, or the run's
- * bound stopping it, leaves the ending to name what is left. The state keeps
- * that it was sent so the build can end (`resetToEnd`, t683), so its answer
- * says the build ends now rather than offering a test.
- */
-async function resetBeforeEnding(context: AutomationStudioProjectSupervisorContext, pastTheBound: () => boolean, reason = CORE_RESET_REASON): Promise<void> {
-  const { ports, state } = context;
-  const structure = state.structure;
-  const left = automationStudioProjectSupervisorLeftOnTarget(ports);
-  if (!ports.purse || !structure || !state.taskSpec || !left.undoable || state.resetCameBackLast()) return;
-  const keys = new Set(structure.plan.subflows.map((subflow) => subflow.key));
-  const owner = left.acts.find((act) => act.undoable)?.brief;
-  const ownerKey = state.briefs.find((brief) => brief.briefId === owner)?.subflowKey;
-  const subflowKey = ownerKey && keys.has(ownerKey) ? ownerKey : structure.plan.subflows[0]?.key;
-  if (!subflowKey) return;
-  const value = { reason, briefs: [{ kind: "reset", subflowKey, entry: { caseId: "observed-current", predecessors: [] } }] };
-  // Sent so the build can end, and its answer says so, never to test (`./state.ts`, `resetToEnd`, t683).
-  state.resetToEnd = { by: "core" };
-  try {
-    await withAutomationStudioProjectAgent({ role: "supervisor" }, () => automationStudioLlmBuildPurseRun(ports.purse, () => automationStudioProjectSupervisorDispatchTool(context, value)));
-  } catch (error) {
-    // A reset the bound stopped leaves the ending to name what is left, as a refused one does (header).
-    if (!(error instanceof AutomationStudioLlmBuildPurseRefused) && !pastTheBound()) throw error;
-  }
 }

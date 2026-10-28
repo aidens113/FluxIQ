@@ -9,6 +9,11 @@ import {
   type AutomationStudioSiteResetSpot
 } from "../index.ts";
 
+/** Whether a trial starts with acts of this build still on the site (t775: said under `startedWith.acts`; a trial is never refused for them). */
+function stillOpen(decision: { kind: string; startedWith?: { acts?: unknown } }): boolean {
+  return decision.kind === "admit" && Array.isArray(decision.startedWith?.acts) && decision.startedWith.acts.length > 0;
+}
+
 // A list a site draws again only when it is loaded again (t751 final acceptance, headed job-unexplored-step on the job
 // board's My jobs): after an undo lands, the read in place still shows the removed row. Core loads the named list again,
 // once per landed undo, before it judges the act, and never calls the act unsettleable on that stale read
@@ -49,7 +54,7 @@ describe("an undo whose list is drawn again only on its next load (job board My 
     // The read in place after the undo: the row is still drawn.
     ledger.observed(saved());
     const { looked, checks } = looking(ledger, { "loc:mine": minePage() });
-    expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "admit" });
+    expect(stillOpen(await ledger.beforeTrial(checks))).toBe(false);
     expect(looked).toEqual(["loc:mine"]);
     expect(ledger.standing("act-1")).toBe("restored");
   });
@@ -67,8 +72,8 @@ describe("an undo whose list is drawn again only on its next load (job board My 
     ledger.observed(saved());
     // The undo did not take: the reload still shows the row.
     const { looked, checks } = looking(ledger, { "loc:mine": saved() });
-    expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required" } });
-    expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required" } });
+    expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "admit", startedWith: { acts: expect.arrayContaining([expect.anything()]) } });
+    expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "admit", startedWith: { acts: expect.arrayContaining([expect.anything()]) } });
     expect(looked).toEqual(["loc:mine"]);
     expect(ledger.standing("act-1")).not.toBe("restored");
   });
@@ -116,7 +121,7 @@ describe("acts on a list read in place after one of their undos landed (t772 R1,
     for (const act of inPlace) expect(act.settle).toMatch(/only after it loads again: .*open that list's page again/u);
     // Core's own look loads the list again: the cancelled row is gone, the other two acts stay to undo and are judged.
     const { looked, checks } = looking(ledger, { "loc:reservations": reservations(["s:held-a", "s:book-2", "s:book-3"]) });
-    expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "refuse" });
+    expect(stillOpen(await ledger.beforeTrial(checks))).toBe(true);
     expect(looked).toEqual(["loc:reservations"]);
     expect(ledger.unsatisfiable()).toEqual([]);
     expect(ids(ledger.inPlace())).toEqual(expect.arrayContaining(["act-2", "act-3"]));
@@ -126,7 +131,7 @@ describe("acts on a list read in place after one of their undos landed (t772 R1,
     cancel(ledger, 3);
     ledger.observed(reservations(["s:held-a", "s:book-1"]));
     const again = looking(ledger, { "loc:reservations": reservations(["s:held-a"]) });
-    expect(await ledger.beforeTrial(again.checks)).toMatchObject({ kind: "admit" });
+    expect(stillOpen(await ledger.beforeTrial(again.checks))).toBe(false);
     expect(again.looked).toEqual(["loc:reservations"]);
     for (const act of ["act-1", "act-2", "act-3"]) expect(ledger.standing(act)).toBe("restored");
   });

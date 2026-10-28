@@ -204,7 +204,8 @@ export class AutomationStudioFlowCandidateSubmissionController {
       return { ok: false, revision, check: bindingRefusal([...bindings, ...wayOut, ...optionalActs], verdict.locator, code) };
     }
     // A step on a control explored as a toggle: given `ensureState`, or refused for the node that sets the state (header of `submit`, t775).
-    const toggled = holdKept ? automationStudioFlowPlanToggleSteps({ plan: verdict.buildPlan.plan, handleViews: verdict.handleViews, explored: this.input.exploredToggles?.list() ?? [] }) : undefined;
+    const toggled = holdKept ? automationStudioFlowPlanToggleSteps({ plan: verdict.buildPlan.plan, handleViews: verdict.handleViews, explored: this.input.exploredToggles?.list() ?? [],
+      takesEnsureState: (definitionId) => this.input.registry.get(definitionId, this.input.resolution)?.parameters.some((parameter) => parameter.id === "ensureState") === true }) : undefined;
     if (toggled?.issues.length) return { ok: false, revision, check: bindingRefusal(toggled.issues, verdict.locator, "candidate.toggle_not_idempotent") };
     const plan = structuredClone(toggled ? { ...verdict.buildPlan, plan: toggled.plan } : verdict.buildPlan);
     const digest = fingerprint.candidate({ buildPlan: plan, baseDependencyDigest: this.input.baseDependencyDigest, projectId: this.input.projectId, flowId: this.input.flowId, instructionText: this.input.instructionText ?? "",

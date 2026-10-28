@@ -103,7 +103,7 @@ test("a test refused before it ran reads that it didn't run, with its plain reas
     testEnded(id2, "Result: project.trial_reset_required · Reason: retry_allowed · Declined: the test couldn't start", "failed", "not done", "core.test_candidate", WHOLE_TEST)
   );
   expect(shown.map((display) => display.headline), shown.map(words).join("\n")).toStrictEqual(["Building your Flow", "Building your Flow"]);
-  expect(shown.at(-1)!.detail).toBe("The test didn't run: the site first has to be put back the way the build found it");
+  expect(shown.at(-1)!.detail).toBe("The test didn't run: the site had changes left from earlier in the build");
 
   // A retest limit, worded by Core's card.
   const h3 = harness();

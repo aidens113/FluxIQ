@@ -44,4 +44,24 @@ describe("a trial's siteChange in its judge's summary (t775)", () => {
     expect(summary.siteChange?.proofs).toEqual(change.proofs);
     expect(summary.withheld).toBe(true);
   });
+
+  it("reads the change only after the end view, and a read that fails gives no packet (t775 D1)", async () => {
+    const order: string[] = [];
+    const readEndView = async () => {
+      order.push("end view");
+      return undefined;
+    };
+    const summary = await automationStudioCandidateTrialSummary({
+      recordSets: [], graph: undefined, trace: undefined, readEndView, startedWith: STARTED, earlierAdvice: EARLIER,
+      siteChangeRead: async () => {
+        order.push("site change");
+        return { siteChange: libraryHoldsChange(), findings: [] };
+      }
+    });
+    expect(order).toEqual(["end view", "site change"]);
+    expect(summary.siteChange).toEqual(libraryHoldsChange());
+    expect(Object.keys(summary).slice(-3)).toEqual(["startedWith", "siteChange", "earlierAdvice"]);
+    const unread = await automationStudioCandidateTrialSummary({ recordSets: [], graph: undefined, trace: undefined, siteChangeRead: async () => undefined });
+    expect(unread.siteChange).toBeUndefined();
+  });
 });

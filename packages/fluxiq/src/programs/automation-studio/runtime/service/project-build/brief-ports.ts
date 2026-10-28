@@ -3,7 +3,7 @@ import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import { AutomationStudioNodeRegistry } from "../../../nodes/index.ts";
 import { type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { observeAutomationStudioEvidenceLoop } from "../../activity/index.ts";
-import { automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapPersonNeeded, flowBootstrapEvidenceUnusableDecisionFailure, type AutomationStudioBootstrapAccounting, type AutomationStudioFlowBootstrapActionPermissions, type AutomationStudioFlowBootstrapPersonNeeded } from "../../flow-bootstrap/index.ts";
+import { AutomationStudioExploredToggles, automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapPersonNeeded, flowBootstrapEvidenceUnusableDecisionFailure, type AutomationStudioBootstrapAccounting, type AutomationStudioFlowBootstrapActionPermissions, type AutomationStudioFlowBootstrapPersonNeeded } from "../../flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY, AUTOMATION_STUDIO_SITE_RESET_WORDS, AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetCalls, type AutomationStudioSiteResetIssuedRef, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetTarget, type AutomationStudioSiteResetTrialReset } from "../../flow-bootstrap/site-reset/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, type AutomationStudioSubflowEntryLeftAct, type AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
@@ -268,6 +268,8 @@ export function automationStudioProjectBuildBriefPorts(input: {
   const pages = new Map<string, string>();
   /** Every destination ref a receipt printed in this build, by ref, with its list's count (header). */
   const issued = new Map<string, AutomationStudioSiteResetIssuedRef>();
+  /** The presses any brief of this build explored that the domain answered as a toggle: every brief's gate records here and every submission reads it (t775). */
+  const exploredToggles = new AutomationStudioExploredToggles();
   const environment = async (request: AutomationStudioProjectBriefPortRequest, siteReset: AutomationStudioSiteResetCalls, task?: () => AutomationStudioFlowInstruction[]) => {
     const registry = draft.submission.registry ?? new AutomationStudioNodeRegistry();
     const nodeDescriptions = automationStudioLlmNodeDescriptions({ registry, resolution });
@@ -275,7 +277,7 @@ export function automationStudioProjectBuildBriefPorts(input: {
     const routing = await startAutomationStudioBuildRouting({ hostRuntime: project.hostRuntime, projectId, flowId, flowInputs: project.flowInputs, start: "first_look", pageless: [AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID] });
     const permittedActs: readonly string[] = request.brief.permittedActs;
     const permittedConsequences = (project.permissions.permittedConsequences ?? []).filter((consequence) => permittedActs.includes(consequence)) as AutomationStudioActionConsequence[];
-    const permissions = automationStudioFlowBootstrapActionPermissions({ ...project.permissions, authoringMode: "project", permittedConsequences, requireCreateBaseline: true, siteReset: input.acts.calls(siteReset), executeTool: project.cancellation.tool(harness.executeTool) });
+    const permissions = automationStudioFlowBootstrapActionPermissions({ ...project.permissions, authoringMode: "project", exploredToggles, permittedConsequences, requireCreateBaseline: true, siteReset: input.acts.calls(siteReset), executeTool: project.cancellation.tool(harness.executeTool) });
     AutomationStudioProjectBuildPermissions.of(project).add(permissions);
     const personNeeded = automationStudioFlowBootstrapPersonNeeded({ executeTool: permissions.executeTool, tools: harness.tools, signal: AbortSignal.any([permissions.signal, request.signal]), clearedResultCode: automationStudioFlowDraftReplayClearedCode, ...(project.personAsk ? { ask: project.personAsk } : {}) });
     const denied = binding.deniedEvidenceKeys;
@@ -529,9 +531,10 @@ async function remainingActs(ledger: AutomationStudioSiteResetProjectLedger, rea
 type Observing = Pick<Routing, "observed" | "openActs">;
 
 /** Core's own look at `location` (header, L1): read there, settled, and the read handed to every ledger through `calls`; an unread answer changes nothing. */
-function looking(reader: AutomationStudioSiteResetStartCheck, calls: Observing, signal: AbortSignal | undefined): (location: string) => Promise<void> {
-  return async (location) => {
-    const read = await reader.lookAt(location, signal);
+function looking(reader: AutomationStudioSiteResetStartCheck, calls: Observing, signal: AbortSignal | undefined): (location: string, start?: JsonObject) => Promise<void> {
+  // A trial's after-reading passes its before-reading's state, so the read says what changed in lines (t775).
+  return async (location, start) => {
+    const read = await reader.lookAt(location, signal, start);
     if (!("unread" in read)) calls.observed(read);
   };
 }

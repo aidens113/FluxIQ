@@ -441,17 +441,17 @@ function sentKey(context: AutomationStudioProjectSupervisorContext, brief: Autom
  * on the fallback, or Core's own reset before an ending a guard forced.
  */
 const AFTER_RESET_TO_END: Readonly<Record<AutomationStudioProjectSupervisorResetToEnd["by"], string>> = Object.freeze({
-  ending: "The reset came back. It was sent because your ending was held for it (project.completion_reset_first), and nothing holds that ending back now: end again now with ended and your reason. Do not test the Flow for it; Core names in your ending whatever is still on the target.",
-  completion: "The reset came back. It was sent because your completion on the build's last passing revision was held for it (project.completion_reset_first), and nothing holds that completion back now: complete again now with the complete object under completeAgain. Do not test the Flow for it; Core names whatever is still on the target.",
+  ending: "The reset came back. It was sent for your ending, and nothing holds that ending back: end again now with ended and your reason. Do not test the Flow for it; Core names in your ending whatever is still on the target.",
+  completion: "The reset came back. It was sent for your completion on the build's last passing revision, and nothing holds that completion back: complete again now with the complete object under completeAgain. Do not test the Flow for it; Core names whatever is still on the target.",
   core: "The reset came back. Core sent it because the build is ending, so the build ends now; Core names whatever is still on the target."
 });
 
 /** The refusal of a repeated reset sent so the build can end (header, t683): no reset was run, and the ending or completion it was for is not held back. */
 const RESET_REPEATED_TO_END: Readonly<Record<AutomationStudioProjectSupervisorResetToEnd["by"], string>> = Object.freeze({
   ending: "The last brief was a reset that came back without undoing everything, and the target still holds exactly what it left, as listed: another reset would only do the same, so none was run. "
-    + "That reset was sent for your ending (project.completion_reset_first), which nothing holds back now: end again now with ended and your reason, and Core names what is left.",
+    + "That reset was sent for your ending, which nothing holds back: end again now with ended and your reason, and Core names what is left.",
   completion: "The last brief was a reset that came back without undoing everything, and the target still holds exactly what it left, as listed: another reset would only do the same, so none was run. "
-    + "That reset was sent for your completion on the build's last passing revision (project.completion_reset_first), which nothing holds back now: complete again now with the complete object under completeAgain, and Core names what is left.",
+    + "That reset was sent for your completion on the build's last passing revision, which nothing holds back: complete again now with the complete object under completeAgain, and Core names what is left.",
   core: "The last brief was a reset that came back without undoing everything, and the target still holds exactly what it left, as listed: another reset would only do the same, so none was run. Core sent that reset because the build is ending, so the build ends now and Core names what is left."
 });
 

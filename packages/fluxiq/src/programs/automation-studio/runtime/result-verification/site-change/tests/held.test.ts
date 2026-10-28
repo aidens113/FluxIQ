@@ -34,11 +34,12 @@ describe("two yeses on a trial whose change proves an end state only as already_
     expect(agreed).toMatchObject({ verdict: "answers", basis: "model", verdicts: ["answers", "answers"], calls: 2 });
   });
 
-  it("are not taken where a change part shows no change, or a place went unread, each named", () => {
+  it("are not taken where a change part shows no change, named; a place that went unread is left to the judge", () => {
     const base = libraryHoldsChange("carried");
     const proofs = (proof: "no_change" | "unproven") => ({ ...base, proofs: [{ ...base.proofs[0]!, proof }, base.proofs[1]!] });
     expect(twoYeses(libraryHoldsSummary(proofs("no_change"))).reason).toContain('part "p1" (no_change: it asks for a change, and every place that change shows read the same before and after this trial)');
-    expect(twoYeses(libraryHoldsSummary(proofs("unproven"))).reason).toContain('part "p1" (unproven: a place its change shows was not read before or after this trial');
+    // Unproven says nothing failed: Core read nothing there, and the judge decides from the run and its end view.
+    expect(twoYeses(libraryHoldsSummary(proofs("unproven")))).toMatchObject({ verdict: "answers" });
   });
 
   it("leaves a no, an unsure and a summary with no siteChange exactly as they were", () => {

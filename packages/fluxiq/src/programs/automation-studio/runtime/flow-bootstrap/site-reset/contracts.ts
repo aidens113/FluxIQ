@@ -2,9 +2,11 @@
 // other (t462: a build resets the site before it re-runs its Flow; user,
 // 2026-10-12).
 //
-// Before every trial of a candidate the model returns the site to the state
-// the build started from, through the site's own controls, undoing exactly the
-// lasting acts this build made and nothing that was there before it began. An
+// A trial is judged against the state recorded just before it and the change
+// asked for (t775; user, 2026-10-27), so the site is put back only where that
+// before-state cannot make a trial meaningful, or when the person asks: then
+// the model undoes exactly the lasting acts this build made, through the
+// site's own controls, and nothing that was there before it began. An
 // exploration call that undoes one names that act under `undoes` on its
 // `core.run_node` input. The ledger reads the claim; the permission wrapper
 // (`../action-permissions.ts`) strips the key before the domain sees the call,
@@ -16,6 +18,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence, AutomationStudioActionEffect } from "../../action-permissions/index.ts";
 import type { AutomationStudioSiteResetAdmissionDeclared, AutomationStudioSiteResetWitnessStamp } from "../reset-admission/index.ts";
 import type { AutomationStudioSiteResetCollection, AutomationStudioSiteResetUnmet, AutomationStudioSiteResetValueWitness } from "../reset-settlement/index.ts";
+import type { AutomationStudioTrialChangeAsk, AutomationStudioTrialChangeSession } from "../trial-change/index.ts";
 
 // The `undoes` key moved to `../reset-settlement/undoes-key.ts` (t743), which the settle words say it from; it stays
 // exported here for the callers that import this file directly (`../action-permissions.ts`).
@@ -228,8 +231,10 @@ export type AutomationStudioSiteResetChecks = {
    * Takes the target to `location` and reads it there; the read reaches every
    * ledger the way any read around a call does (L1: Core looks at an open act's
    * watched places itself before asking the model). Absent: Core never looks.
+   * `start`, where the caller passes it on (t775), is the state the domain words
+   * the read's lines against: a trial's after reading of a witness.
    */
-  lookAt?(location: string): Promise<void>;
+  lookAt?(location: string, start?: JsonObject): Promise<void>;
 };
 
 /**
@@ -262,9 +267,15 @@ export type AutomationStudioSiteResetLines = { gone: string[]; added: string[] }
  * the build keeps say so rather than let the act vanish. Absent when the hook
  * took back nothing of the build, or no hook ran. It never changes whether the
  * trial is admitted.
+ *
+ * `change` (t775): the trial's witnesses read just before it, which its trial
+ * port finishes after the end view and before the judge
+ * (`../trial-change/session.ts`); asked for with `change` in the options and
+ * absent where the trial has no witness and nothing of the build is on the site,
+ * or where no look is possible.
  */
 export type AutomationStudioSiteResetDecision =
-  | { kind: "admit"; startedWith?: JsonObject; absorbedByStartReset?: AutomationStudioSiteResetAbsorbedAct[] }
+  | { kind: "admit"; startedWith?: JsonObject; absorbedByStartReset?: AutomationStudioSiteResetAbsorbedAct[]; change?: AutomationStudioTrialChangeSession }
   | { kind: "refuse"; evidence: JsonObject & { code: string }; moved: boolean };
 
 /**
@@ -316,16 +327,21 @@ export type AutomationStudioSiteResetTrialActPlace = {
  * How a trial's start was made (t475). `startReset`: the deployment's start
  * hook has just put the site back, before the check, so every act of this
  * build counts undone and the model is asked for nothing (t479); the acts it
- * took back are answered under `absorbedByStartReset` (t504).
+ * took back are answered under `absorbedByStartReset` (t504). `change` (t775):
+ * the trial's steps and task parts, for its readings and for the one targeted
+ * refusal left (`candidate.trial_starts_in_end_state`, `./ledger.ts`).
  */
-export type AutomationStudioSiteResetBeforeTrialOptions = { startReset?: boolean };
+export type AutomationStudioSiteResetBeforeTrialOptions = { startReset?: boolean; change?: AutomationStudioTrialChangeAsk | undefined };
 
 /** What the trial gate (`../candidate/trial-gate.ts`) is given: asked before each trial, and told what each trial left. */
 export type AutomationStudioSiteResetTrialReset = {
   /**
-   * Asked before each trial. `cannotUndo` names acts the model says the site
-   * offers no way to undo (`core.test_candidate`'s own key): each one the reset
-   * already asked for is kept, and the trial runs with it in place (t471).
+   * Asked before each trial. It refuses only a start already in an asked end
+   * state by this build's own act made with another step (t775); otherwise the
+   * trial runs, told under `startedWith` what of the build is on the site.
+   * `cannotUndo` names acts the model says the site offers no way to undo
+   * (`core.test_candidate`'s own key): each one the reset already asked for is
+   * kept (t471).
    */
   beforeTrial(signal?: AbortSignal, cannotUndo?: readonly string[], options?: AutomationStudioSiteResetBeforeTrialOptions): Promise<AutomationStudioSiteResetDecision>;
   /** Restarts the reset phase and answers the acts now on the site, the trial's own among them (`leftOnSite`). */

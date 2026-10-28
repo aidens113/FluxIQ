@@ -10,19 +10,24 @@ type Proof = NonNullable<AutomationStudioRunResultSummary["siteChange"]>["proofs
 /** What each proof that is no proof says, in Core's words. */
 const NOT_PROOF: Readonly<Partial<Record<Proof["proof"], string>>> = Object.freeze({
   no_change: "it asks for a change, and every place that change shows read the same before and after this trial",
-  already_in_end_state: "the state it asks for already held before this trial began, and no step of this build was seen making that change",
-  unproven: "a place its change shows was not read before or after this trial, so Core cannot say what changed there"
+  already_in_end_state: "the state it asks for already held before this trial began, and no step of this build was seen making that change"
 });
 
 /**
  * `verification` as it stands, or, where it is a yes and the judged summary's
- * `siteChange` proves some part with a typed effect only as `no_change`,
- * `already_in_end_state` or `unproven`, or shows a change part's change at a
+ * `siteChange` proves some part with a typed effect only as `no_change` or
+ * `already_in_end_state`, or shows a change part's change at a
  * place as a whole move other than the count it asks
  * (`./count-differs.ts`) (`./index.ts`), that yes not taken:
  * `unsure`, unconfirmed, the reason naming each such part and its proof. Never
  * a no Core made: nothing fails a run on it, and no repair is built from it.
  * What the yes compared and the calls it took are kept.
+ *
+ * `unproven` (a place not read, or an end state whose only witnesses are lists
+ * that read the same) is not held: Core read nothing that says the run failed,
+ * the packet says what was not read, and the judge decides from the run and
+ * its end view. Holding it made every yes unsure wherever a look could not be
+ * taken (t775 integration).
  */
 export function automationStudioResultSiteChangeHeld(verification: AutomationStudioResultVerification, summary: AutomationStudioRunResultSummary | undefined): AutomationStudioResultVerification {
   if (verification.verdict !== "answers") return verification;

@@ -10,6 +10,11 @@ import {
 } from "../../site-reset/index.ts";
 import { AutomationStudioSiteResetObservations, automationStudioSiteResetGroupWitness as groupWitness } from "../index.ts";
 
+/** Whether a trial starts with acts of this build still on the site (t775: said under `startedWith.acts`; a trial is never refused for them). */
+function stillOpen(decision: { kind: string; startedWith?: { acts?: unknown } }): boolean {
+  return decision.kind === "admit" && Array.isArray(decision.startedWith?.acts) && decision.startedWith.acts.length > 0;
+}
+
 // t772 w10: one act on a shared list settles by its own subjects. Several lasting acts each add their own subject to one
 // list read complete before them. Once some are undone and a fresh load shows their subjects back as the build found them,
 // those settle `restored` while the others' subjects still show: each remaining difference is another open act's own
@@ -64,8 +69,8 @@ describe("acts on one shared list settle by their own subjects (t772 w10)", () =
   it("settles the two undone acts restored on a load showing their rows gone, and leaves only the third to undo", async () => {
     const ledger = twoUndone();
     const answer = await ledger.beforeTrial(loading(ledger, ["s:held-a", "s:book-3"]));
-    expect(answer).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required" } });
-    expect(ids((answer as { evidence: { actsToUndo?: unknown } }).evidence.actsToUndo)).toEqual(["act-3"]);
+    expect(answer).toMatchObject({ kind: "admit", startedWith: { acts: expect.arrayContaining([expect.anything()]) } });
+    expect(ids((answer as { startedWith: { acts?: unknown } }).startedWith.acts)).toEqual(["act-3"]);
     expect(ledger.unsatisfiable()).toEqual([]);
     expect([ledger.standing("act-1"), ledger.standing("act-2"), ledger.standing("act-3")]).toEqual(["restored", "restored", "in_place"]);
     expect(ids(ledger.inPlace())).toEqual(["act-3"]);
@@ -77,7 +82,7 @@ describe("acts on one shared list settle by their own subjects (t772 w10)", () =
     // The admission agrees: a settled act has nothing left to undo, the third is still admitted.
     expect(ledger.target("act-1", aim(["delete"], row(1)))).not.toMatchObject({ kind: "admit" });
     cancel(ledger, 3);
-    expect(await ledger.beforeTrial(loading(ledger, ["s:held-a"]))).toMatchObject({ kind: "admit" });
+    expect(stillOpen(await ledger.beforeTrial(loading(ledger, ["s:held-a"])))).toBe(false);
     expect(ledger.standing("act-3")).toBe("restored");
   });
 
@@ -211,7 +216,7 @@ describe("acts whose own row only their landed undo proved settle by that row (t
     expect(ledger.unsatisfiable()).toEqual([]);
     remove(ledger, 3);
     const answer = await ledger.beforeTrial(loading(ledger, ["s:held-a", "s:book-2"]));
-    expect(answer).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required" } });
+    expect(answer).toMatchObject({ kind: "admit", startedWith: { acts: expect.arrayContaining([expect.anything()]) } });
     // Only act 2 is left: its own row shows. Acts 1 and 3 are back, each by the row its own undo removed.
     expect([...ids(ledger.inPlace()), ...ids(ledger.unsatisfiable())]).toEqual(["act-2"]);
     expect([ledger.standing("act-1"), ledger.standing("act-3")]).toEqual(["restored", "restored"]);

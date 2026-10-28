@@ -1,16 +1,15 @@
-// The supervisor's whole test puts the target back as a candidate build's
-// does (t586): the deployment's start hook first, then the build's own
-// ledgers, a reset brief only for acts left after that; and a supervisor a
-// guard stopped is followed by Core's own reset and an ending that names what
-// is still on the target. Run on the build of `./supervisor-fixture.ts` with
-// its real lasting-act ledger.
+// The supervisor's whole test (t586, t775): the deployment's start hook first,
+// which takes back the build's acts; otherwise the test runs on the site as it
+// stands, its judge told what of the build is there, and -- given Core's own
+// look -- judged by what it changed from the state read just before it. Every
+// ending names what is still on the target. Run on the build of
+// `./supervisor-fixture.ts` with its real lasting-act ledger.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE, AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
-import { BUILD, planInput, project, subflow, taskSpecInput } from "./supervisor-fixture.ts";
+import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
+import { BUILD, HOLDS_AT, planInput, project, subflow, taskSpecInput } from "./supervisor-fixture.ts";
 import { singleBuild } from "../../single-subflow/tests/single-build.ts";
-import { FIND, HOLD, assembled, brief, call, complete, dispatch, end, lastOf, reset, supervise, test, type Step } from "./supervisor-script.ts";
+import { FIND, HOLD, brief, call, complete, dispatch, end, lastOf, supervise, test, type Step } from "./supervisor-script.ts";
 import { AutomationStudioSiteResetProjectLedger } from "../../../flow-bootstrap/site-reset/index.ts";
 import type { AutomationStudioProjectSupervisorContext } from "../context.ts";
 import { AutomationStudioProjectSupervisorState } from "../state.ts";
@@ -32,48 +31,59 @@ describe("the supervisor's whole test", () => {
     expect(run.ledger!.snapshot().acts).toEqual([expect.objectContaining({ act: "act-1", owner: "brief-2", inPlace: false })]);
   });
 
-  it("asks for a reset brief for the acts no hook took back, repeats that until one came back, then tests", async () => {
-    const run = await supervise([call(IDS.writePlan, TWO_PART), dispatch(BUILDS), call(IDS.assemble), test, dispatch([brief("find_titles", ["p1"])], "Read the titles again."), test, dispatch([reset()], "Put the target back before the whole test."), test, complete], project({ ledger: {} }));
-    expect(run.outcome.status, JSON.stringify(run.outcome.loop)).toBe("candidate");
-    const [first, again, after] = tests(run.shown);
-    expect(first).toMatchObject({ ok: false, code: "project.trial_reset_required", actsInPlace: [{ act: "act-1", brief: "brief-2" }] });
-    expect(String(first!.instruction)).toContain("project.dispatch");
-    // A test sent again after other work but no reset is refused the same way, never admitted as the ledgers' no-progress case.
-    expect(again).toMatchObject({ ok: false, code: "project.trial_reset_required", actsInPlace: [{ act: "act-1" }] });
-    expect(after).toMatchObject({ verdict: "yes" });
-    expect(after!.startedWith).toBeUndefined();
-    expect(run.trials).toHaveLength(1);
-    expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build", "build"], ["build"], ["reset"]]);
-  });
 
-  // F1 continuation (user, 2026-10-12): a reset that came back blocked no longer lets the whole test run on what it
-  // left. Only an act named under cannotUndo is kept; one nobody named is still to undo, and the test is refused.
-  it("refuses the test after a reset that undid nothing and named nothing under cannotUndo, and runs no trial on the leftovers", async () => {
-    const run = await supervise([
-      call(IDS.writePlan, TWO_PART), dispatch(BUILDS), call(IDS.assemble), test,
-      dispatch([reset()], "Put the target back before the whole test."), test,
-      end("blocked", "The act could not be undone.")
-    ], project({ ledger: { undoes: false }, trial: () => "no" }));
-    const [first, again] = tests(run.shown);
-    expect(first).toMatchObject({ code: "project.trial_reset_required" });
-    expect(again).toMatchObject({ ok: false, code: "project.trial_reset_required", actsInPlace: [{ act: "act-1", brief: "brief-2" }] });
-    expect(run.trials).toHaveLength(0);
-    expect(run.ledger!.snapshot().acts).toEqual([expect.objectContaining({ act: "act-1", inPlace: true })]);
-  });
-
-  it("runs the test with an act the site cannot undo, named under cannotUndo, kept and the judge told, and an ending names it", async () => {
-    const cannotUndo: Step = call(IDS.testCandidate, (evidence) => ({ ...assembled(evidence), cannotUndo: ["act-1"] }));
-    const run = await supervise([
-      call(IDS.writePlan, TWO_PART), dispatch(BUILDS), call(IDS.assemble), test,
-      dispatch([reset()], "Put the target back before the whole test."), cannotUndo,
-      end("blocked", "The whole test was judged no.")
-    ], project({ ledger: { undoes: false }, trial: () => "no" }));
-    const [first, ran] = tests(run.shown);
-    expect(first).toMatchObject({ code: "project.trial_reset_required" });
-    expect(ran).toMatchObject({ verdict: "no", startedWith: { cannotUndo: [{ act: "act-1" }] } });
+  // t775 (user, 2026-10-27: reset as rarely as possible): with no hook the whole test runs on the site as it stands. The
+  // act a builder's trial left is said to the judge under startedWith, no reset brief is sent first, and the ending
+  // still names what this build left on the target.
+  it("runs the test with the build's act still on the site, its judge told under startedWith, and an ending names it", async () => {
+    const run = await supervise([call(IDS.writePlan, TWO_PART), dispatch(BUILDS), call(IDS.assemble), test, end("blocked", "The whole test was judged no.")], project({ trial: () => "no" }));
+    const [ran] = tests(run.shown);
+    expect(ran).toMatchObject({ verdict: "no", startedWith: { acts: [{ act: "act-1" }] } });
     expect(run.trials).toHaveLength(1);
+    expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build", "build"]]);
+    expect(run.ledger.snapshot().acts).toEqual([expect.objectContaining({ act: "act-1", owner: "brief-2", inPlace: true })]);
     expect(run.outcome.status).toBe("ended");
-    expect(run.outcome.ending?.reason).toContain("Still on the target from this build: trial step 1 \"press hold for place_hold\" (the build could not undo it; it may still be there).");
+    expect(run.outcome.ending?.reason).toBe("The whole test was judged no. Still on the target from this build: trial step 1 \"press hold for place_hold\".");
+  });
+});
+
+// t775 D5 (user, 2026-10-27): a trial is judged against the state recorded just before it and the change asked for; a
+// line at 9 that is 10 after "add 1" passed, with no reset. The supervisor's judged whole run is that example. Given
+// Core's own look (`ports.look`, `service/project-build/phase-start.ts`), it reads the witness of the plan's lasting
+// step just before the run -- the builder's add left the hold's row at 9 -- and again after it, and its judge is sent
+// the change, the part's proof from its typed effect, and what of the build was on the site from earlier.
+describe("the supervisor's judged whole run, read by its change (t775 D5)", () => {
+  const spec = taskSpecInput([["p1", FIND, []], ["p2", HOLD, ["create_new"]]]);
+  const ADDS = { kind: "change", direction: "adds", count: 1, what: "copy on hold" };
+  (spec.parts as JsonObject[])[1]!.effect = ADDS;
+  const READ_PLAN = planInput([subflow("find_titles", ["p1"], { inputs: ["author"], outputs: ["titles"] }), subflow("place_hold", ["p2"], { inputs: ["titles"], outputs: ["shelf"] })], spec);
+
+  it("reads the hold at 9 just before and 10 after, with no reset brief, and its judge is sent the change with the part shown", async () => {
+    const run = await supervise([call(IDS.writePlan, READ_PLAN), dispatch(BUILDS), call(IDS.assemble), test, complete], project({ readings: { copies: 9 } }));
+    expect(run.outcome.status, JSON.stringify(run.outcome.loop)).toBe("candidate");
+    // No reset: the builder's add stayed on the site, and the trial ran with it, said under startedWith.
+    expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build", "build"]]);
+    expect(tests(run.shown)[0]).toMatchObject({ verdict: "yes", startedWith: { acts: [{ act: "act-1" }] } });
+    expect(run.ledger.snapshot().acts).toEqual([expect.objectContaining({ act: "act-1", inPlace: true })]);
+    // Core looked at the hold's list just before the run (no read of it since the add) and after it, worded against the before state.
+    expect(run.looks).toEqual([{ location: HOLDS_AT }, { location: HOLDS_AT, start: { copies: 9 } }]);
+    expect(run.judged).toEqual([{
+      witnesses: [{
+        id: "w1", kind: "list", where: HOLDS_AT, steps: [], parts: ["p2"],
+        before: { source: "core_look", rows: 1 }, after: { source: "core_look", rows: 1 },
+        change: { added: 0, removed: 0, changed: 1, unchanged: 0, lines: { gone: ["The hold: 9 copies"], added: ["The hold: 10 copies"] } }
+      }],
+      acts: [],
+      leftFromEarlier: [{ did: "trial step 1 \"press hold for place_hold\"" }],
+      // p1 declares no effect, so it has no proof to show: its judge decides it from the run alone.
+      proofs: [{ part: "p2", effect: ADDS, proof: "shown", steps: [] }]
+    }]);
+  });
+
+  it("takes no readings without Core's look: the whole run is judged with no siteChange, as before", async () => {
+    const run = await supervise([call(IDS.writePlan, READ_PLAN), dispatch(BUILDS), call(IDS.assemble), test, complete], project());
+    expect(run.outcome.status).toBe("candidate");
+    expect(run.judged).toEqual([]);
   });
 });
 
@@ -92,50 +102,6 @@ describe("the supervisor's whole test of a single-subflow plan", () => {
     expect(String(again.instruction)).toContain("No second trial ran");
     // One receipt: the builder's test's.
     expect((await run.record.read(BUILD))!.record.receipts).toHaveLength(1);
-  });
-});
-
-describe("a supervisor a guard stopped", () => {
-  // Completions with nothing assembled, refused until the no-progress guard stalls the loop.
-  const unassembled = () => ({ kind: "complete", result: { revision: 1, digest: "a".repeat(64) } });
-  const stalls = [call(IDS.writePlan, TWO_PART), dispatch(BUILDS), unassembled, unassembled, unassembled];
-
-  it("is followed by Core's own reset brief, and its ending names what that reset left in place", async () => {
-    const built = project({ ledger: { undoes: false }, purse: new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.5 }) });
-    await expect(supervise(stalls, built, { maxStepsWithoutProgress: 2, propagateDecisionErrors: true })).rejects.toThrow("stalled");
-    expect(built.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build", "build"], ["reset"]]);
-    expect(built.dispatched[1]!.briefs[0]).toMatchObject({ subflowKey: "place_hold", permittedActs: [] });
-    const view = await built.record.read(BUILD);
-    expect(view?.record.ending?.outcome).toBe("partial");
-    expect(view?.record.ending?.reason).toContain("The supervisor stopped before a whole trial passed");
-    expect(view?.record.ending?.reason).toContain("Still on the target from this build: trial step 1 \"press hold for place_hold\".");
-  });
-
-  it("ends naming nothing left once Core's reset undid every act", async () => {
-    const built = project({ ledger: {}, purse: new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.5 }) });
-    await expect(supervise(stalls, built, { maxStepsWithoutProgress: 2, propagateDecisionErrors: true })).rejects.toThrow("stalled");
-    expect(built.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build", "build"], ["reset"]]);
-    const view = await built.record.read(BUILD);
-    expect(view?.record.ending?.reason).not.toContain("Still on the target");
-    expect(built.ledger!.snapshot().acts.every((act) => !act.inPlace)).toBe(true);
-  });
-});
-
-// t684 (t683 open question 2): an ending held for a reset kept its reason through a test refused for that reset, so the reset's
-// answer said to end again, though the model had chosen to test.
-describe("a whole test refused for a reset", () => {
-  it("drops the reason an ending or a completion was held for, as a test that ran does", async () => {
-    const ledger = new AutomationStudioSiteResetProjectLedger();
-    const state = new AutomationStudioProjectSupervisorState();
-    const trial = new AutomationStudioProjectSupervisorWholeTrial({ ports: { projectLedger: ledger }, state });
-    const gate = { test: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "candidate.trial_reset_required", actsToUndo: [] } }) };
-    const context = { ports: { projectLedger: ledger }, state, gate, controller: { latest: () => undefined }, signal: undefined } as unknown as AutomationStudioProjectSupervisorContext;
-    for (const held of [{ by: "ending" as const }, { by: "completion" as const, complete: { revision: 2, digest: "d".repeat(64) } }]) {
-      state.resetToEnd = held;
-      const answered = await trial.test(context, { revision: 2, digest: "d".repeat(64) }, undefined);
-      expect(answered.evidence).toMatchObject({ ok: false, code: "project.trial_reset_required" });
-      expect(state.resetToEnd).toBeUndefined();
-    }
   });
 });
 
@@ -257,42 +223,6 @@ describe("what a whole test remembers of each Flow for the build's ending", () =
     };
     await expect(run.trial.test(run.context, { revision: 1, digest: SECOND }, stopped.signal)).rejects.toThrow("time limit");
     expect(run.trial.lastOfFlow(SECOND)).toEqual({ revision: undefined, cutAfter: true });
-  });
-});
-
-// t743 (S2): an act no call can settle -- a press on a control in no list any read showed, so nothing can be named for
-// it -- is never one to undo, yet every trial is refused while it is on the target. A whole test refused only for such
-// acts says to end, not to reset or test again; one refused for acts to undo as well still asks for a reset.
-describe("a whole test refused for acts no call can settle", () => {
-  function refusedWith(evidence: (trial: AutomationStudioProjectSupervisorWholeTrial) => Promise<JsonObject>) {
-    const ledger = new AutomationStudioSiteResetProjectLedger();
-    const state = new AutomationStudioProjectSupervisorState();
-    const trial = new AutomationStudioProjectSupervisorWholeTrial({ ports: { projectLedger: ledger }, state });
-    const gate = { test: async () => ({ kind: "llm_evidence_tool_execution", evidence: await evidence(trial) }) };
-    const context = { ports: { projectLedger: ledger }, state, gate, controller: { latest: () => undefined }, signal: undefined } as unknown as AutomationStudioProjectSupervisorContext;
-    return { ledger, test: () => trial.test(context, { revision: 2, digest: "d".repeat(64) }, undefined) };
-  }
-
-  it("says to end honestly, not to reset or test again, when they are all the gate listed", async () => {
-    const run = refusedWith(async (trial) => {
-      const decision = await trial.reset.beforeTrial(new AbortController().signal);
-      expect(decision.kind).toBe("refuse");
-      return (decision as { evidence: JsonObject }).evidence;
-    });
-    run.ledger.forBrief("brief.earlier").explored({ callId: "mark", toolId: "core.run_node", landed: true, declared: { permitted: true, effect: "mutate", consequences: ["modify_existing"], control: { name: "Mark", kind: "button", subject: "s:mark" }, verb: "press" } });
-    expect(run.ledger.unsatisfiable().map((act) => act.act)).toEqual(["act-1"]);
-    const answered = await run.test();
-    expect(answered.evidence).toMatchObject({ ok: false, code: "project.trial_unsettleable", instruction: GUIDANCE.refusals.trialUnsettleable, actsUnsettleable: [{ act: "act-1", did: "press \"Mark\" button", brief: "brief.earlier" }] });
-    expect(answered.evidence).not.toHaveProperty("actsInPlace");
-    expect(answered.resultReason).toBeUndefined();
-  });
-
-  it("still asks for a reset for the acts to undo, naming the others apart", async () => {
-    const run = refusedWith(async () => ({ ok: false, code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-2", did: "press \"Save\" button" }], actsUnsettleable: [{ act: "act-1", did: "press \"Mark\" button", reason: "gate_unsatisfiable", failed: "nothing_to_name" }] }));
-    const answered = await run.test();
-    expect(answered.evidence).toMatchObject({ code: "project.trial_reset_required", actsInPlace: [{ act: "act-2" }], actsUnsettleable: [{ act: "act-1" }] });
-    expect(String((answered.evidence as JsonObject).instruction)).toBe(`${GUIDANCE.refusals.resetRequired} ${GUIDANCE.refusals.resetRequiredUnsettleable}`);
-    expect(answered.resultReason).toBe("retry_allowed");
   });
 });
 

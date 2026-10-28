@@ -21,7 +21,7 @@ const look = (callId: string, refused = false): AutomationStudioLlmEvidenceCallO
 
 describe("a trial refused until the site is put back", () => {
   it("runs again after a look on the same page, for each reset refusal and its project form", () => {
-    for (const code of ["candidate.trial_reset_required", "candidate.trial_reset_unproved", "candidate.trial_start_differs", "project.trial_reset_required"]) {
+    for (const code of ["candidate.trial_reset_required", "candidate.trial_reset_unproved", "candidate.trial_start_differs", "candidate.trial_starts_in_end_state", "project.trial_reset_required"]) {
       const guard = automationStudioLlmEvidenceRepeatGuard();
       guard.seen("cart");
       guard.recorded(refusedTrial("t1", code));

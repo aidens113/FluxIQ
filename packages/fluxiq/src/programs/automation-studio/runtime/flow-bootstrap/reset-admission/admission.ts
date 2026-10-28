@@ -24,20 +24,26 @@
 // 4. An identified creation (exactly create_new, about its subject, or its page
 //    where it sits in no item) is witnessed by the original its reference or
 //    own scope names with the subject absent, else by a witnessed explored act
-//    it repeats; otherwise refused `create_baseline_required`, always met on
-//    another page: with groups sealed one by one, a list can still be read
-//    complete and issue a ref until an act touches it.
+//    it repeats; otherwise, at the step door, refused `create_baseline_required`,
+//    met on another page (the exploration door admits it with no witness, t775).
 // 5. Any other reversible scoped press is witnessed by the destination an
 //    issued ref names, the list its control sits in, its own control's place
 //    (exactly modify_existing, with a state there and actual pre-act original
 //    counts in project mode), or a witnessed explored act
 //    it repeats (`../reset-settlement/trial-repeat.ts`, the operation standing
-//    for a step's definition); otherwise refused `reset_witness_required`.
+//    for a step's definition); otherwise, at the step door, refused
+//    `reset_witness_required` (the exploration door admits it with none, t775).
 //
-// The door changes only the words of a refusal: a plan step can carry no
+// **The exploration door no longer refuses for want of a witness (t775).** A
+// trial is judged by the change it made from the state just before it, so a
+// press while exploring needs no list read before it: where rules 4 and 5 find
+// no witness, the exploration door admits it with none (the ledger records the
+// act, which is then said as on the site, never asked back). The step door
+// still answers no stamp there, and a trial of such a step is refused
+// `candidate.trial_step_unwitnessed` until the step names where its change
+// shows (`../site-reset/project-reset.ts`). A plan step can carry no
 // `resetDestination`, so it is told how its witness is made while exploring.
-// Which issued list a creation names is never judged here (t748, C5): the
-// refusal names the refs read on this page apart from those read elsewhere.
+// Which issued list a creation names is never judged here (t748, C5).
 // Pure.
 
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
@@ -67,20 +73,19 @@ export function automationStudioSiteResetAdmission(input: AutomationStudioSiteRe
     // An invented ref stays insufficient under the creation's own code, whatever it repeats.
     const repeated = known.unissued(reference) ? undefined : repeatedAct(input, known);
     if (repeated) return { kind: "admit", witness: { via: "repeats", act: repeated } };
-    const here = new Set(known.here());
-    const issued = known.issuedRefs();
-    return refused("candidate.create_baseline_required", "no_destination_original", "another_page", door === "step" ? WORDS.stepWitnessRequired(issued) : WORDS.createBaselineRequired(issued.filter((entry) => here.has(entry.ref)), issued.filter((entry) => !here.has(entry.ref))));
+    if (door === "exploration") return { kind: "admit" };
+    return refused("candidate.create_baseline_required", "no_destination_original", "another_page", WORDS.stepWitnessRequired(known.issuedRefs()));
   }
   const own = control.scope !== undefined && control.resource !== undefined ? known.original(control.scope, control.resource) : undefined;
   if (own) return { kind: "admit", witness: { via: "own_list", scope: own.scope, group: own.group } };
   if (consequences.length === 1 && consequences[0] === "modify_existing" && control.place !== undefined && control.state !== undefined) {
-    if (input.requireIdentity && known.controlOriginal?.(control) !== true) return refused("candidate.reset_witness_required", "no_witness", known.controlOriginalCanBeRead?.(control) ? "this_page" : "no_call", WORDS.controlOriginalRequired());
+    if (input.requireIdentity && known.controlOriginal?.(control) !== true) return door === "exploration" ? { kind: "admit" } : refused("candidate.reset_witness_required", "no_witness", known.controlOriginalCanBeRead?.(control) ? "this_page" : "no_call", WORDS.controlOriginalRequired());
     return { kind: "admit", witness: { via: "control", place: control.place } };
   }
   const repeated = repeatedAct(input, known);
   if (repeated) return { kind: "admit", witness: { via: "repeats", act: repeated } };
-  const issued = known.issuedRefs();
-  return refused("candidate.reset_witness_required", "no_witness", "another_page", door === "step" ? WORDS.stepWitnessRequired(issued) : WORDS.witnessRequired(issued));
+  if (door === "exploration") return { kind: "admit" };
+  return refused("candidate.reset_witness_required", "no_witness", "another_page", WORDS.stepWitnessRequired(known.issuedRefs()));
 }
 
 /** The id of the first witnessed explored act this action repeats, or none. */

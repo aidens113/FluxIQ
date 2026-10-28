@@ -104,44 +104,39 @@ const portOf = (asked: AutomationStudioCandidateTrialRequest[], acts: unknown[] 
   return { revision: request.revision, digest: request.digest, verdict: "unsure", feedback: { said: "unsure" }, trialRunId: `trial.${asked.length}`, acts: acts as TrialActs };
 };
 
-describe("candidate trial gate: the site is put back first", () => {
+describe("candidate trial gate: a trial runs on the site as it stands (t775)", () => {
   it("reads the start right after the opening arrival, with no start given", async () => {
     const { fake } = await run([submit], portOf([]));
     expect(fake.state.executed[0]).toBe("initial.core.run_node");
     expect(fake.state.starts).toEqual([undefined]);
   });
 
-  it("refuses a trial while the build's act is in place, then runs it once the act is undone, listing what the trial left", async () => {
+  it("runs a trial with the build's act still in place, saying it under startedWith and asking no undo (t775)", async () => {
     const asked: AutomationStudioCandidateTrialRequest[] = [];
     const trialActs = [{ step: 1, definitionId: definition.id, label: "Inspect", consequences: ["create_new"] }, { step: 2, definitionId: "x", consequences: ["not_a_class"] }, { bad: true }];
-    const { seen, fake } = await run([act(), submit, test, act({ node: "demo.remove", consequences: ["delete"], undoes: "act-1" }), test, submit], portOf(asked, trialActs));
-    const refused = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)!;
-    expect(refused).toMatchObject({ ok: false, code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-1", did: "press \"Add\" button" }], differs: ["1 lines where the start had 0"] });
-    // The refusal took the target back to the start through the arrival; it was not a trial.
+    const { seen, fake } = await run([act(), submit, test, submit], portOf(asked, trialActs));
+    const ran = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)!;
+    expect(ran).toMatchObject({ verdict: "unsure", retestsLeft: 2, trialRunId: "trial.1", startedWith: { acts: [{ act: "act-1", did: "press \"Add\" button" }], differs: ["1 lines where the start had 0"] } });
+    expect(JSON.stringify(ran)).not.toContain("trial_reset_required");
+    // The target went back to the start through the arrival before the trial, which was asked of the port once.
     expect(fake.state.executed).toContain("site-reset.1.arrival");
-    // Two tests, one trial: the refused one was never asked of the port nor counted against the revision.
-    const ran = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)!;
-    expect(ran).toMatchObject({ verdict: "unsure", retestsLeft: 2, trialRunId: "trial.1" });
     expect(asked).toHaveLength(1);
-    expect(fake.state.executed.filter((callId) => callId.endsWith(".arrival"))).toEqual(["site-reset.1.arrival", "site-reset.2.arrival"]);
-    expect(ran.startedWith).toBeUndefined();
-    // Only the well-formed trial act is kept, as act-2.
-    expect(ran.leftOnSite).toEqual([{ act: "act-2", did: "trial step 1 \"Inspect\"" }]);
+    expect(asked[0]!.startedWith).toEqual(["already done by this build (act-1): press \"Add\" button", "not as the build found it: 1 lines where the start had 0"]);
+    // Only the well-formed trial act is kept, as act-2; act-1 stays on the site too.
+    expect(ran.leftOnSite).toEqual([{ act: "act-1", did: "press \"Add\" button", call: expect.stringMatching(/^act\./u) }, { act: "act-2", did: "trial step 1 \"Inspect\"" }]);
   });
 
   // F1 continuation (user, 2026-10-12): a test sent again without progress, or past the policy's refusals, once ran on
   // the leftovers. It is now refused every time while the act is still to undo; the trial runs only once the act is
   // named under cannotUndo, and then says under startedWith what was still in place.
-  it("refuses a trial without progress however often it is asked, and runs it only once the act is named under cannotUndo, saying under startedWith what was still in place", async () => {
+  it("runs every test with the act in place, and an act listed in place may be named under cannotUndo after it (t775, t471)", async () => {
     const asked: AutomationStudioCandidateTrialRequest[] = [];
     const cannot: Step = (evidence) => ({ kind: "tool_call", toolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, callId: `test.${++calls}`, input: { ...receipt(evidence), cannotUndo: ["act-1"] } });
-    const { seen } = await run([act(), submit, test, test, test, test, cannot, submit], portOf(asked));
-    for (const index of [3, 4, 5, 6]) {
-      expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[index]!)).toMatchObject({ ok: false, code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-1" }], differs: ["1 lines where the start had 0"] });
-    }
-    const ran = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[7]!)!;
-    expect(ran).toMatchObject({ verdict: "unsure", startedWith: { cannotUndo: [{ act: "act-1" }], differs: ["1 lines where the start had 0"] }, leftOnSite: [{ act: "act-1" }] });
-    expect(asked).toHaveLength(1);
+    const { seen } = await run([act(), submit, test, cannot, submit], portOf(asked));
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)).toMatchObject({ verdict: "unsure", startedWith: { acts: [{ act: "act-1" }] } });
+    const ran = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[4]!)!;
+    expect(ran).toMatchObject({ verdict: "unsure", startedWith: { cannotUndo: [{ act: "act-1" }], differs: ["1 lines where the start had 0"] } });
+    expect(asked).toHaveLength(2);
   });
 
   it("refuses an undo naming an act the build never made", async () => {
@@ -149,11 +144,11 @@ describe("candidate trial gate: the site is put back first", () => {
     expect(latestOf("core.run_node", seen[1]!)).toMatchObject({ ok: false, code: "candidate.undo_unknown_act" });
   });
 
-  it("offers undoes on the library tool only with a ledger, and the test tool says to reset first", async () => {
+  it("offers undoes on the library tool only with a ledger, and the test tool says the trial runs on the site as it stands", async () => {
     const withLedger = await run([submit], portOf([]));
     const library = withLedger.offered[0]!.find((tool) => tool.toolId === "core.run_node")!;
     expect((library.inputSchema.properties as JsonObject).undoes).toMatchObject({ type: "string", pattern: "^act-[1-9][0-9]{0,3}$" });
-    expect(withLedger.offered[0]!.find((tool) => tool.toolId === AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID)!.description).toContain("put the site back the way this build found it");
+    expect(withLedger.offered[0]!.find((tool) => tool.toolId === AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID)!.description).toContain("on the site as it stands: what this build already did there stays, the judge is told it");
     const without = await run([submit], portOf([]), { reset: false });
     expect((without.offered[0]!.find((tool) => tool.toolId === "core.run_node")!.inputSchema.properties as JsonObject).undoes).toBeUndefined();
     expect(without.fake.state.starts).toEqual([]);
@@ -185,15 +180,14 @@ describe("candidate trial gate: the site is put back first", () => {
     expect(told).toEqual([[[{ step: 4, definitionId: "n", control: "Keep", consequences: ["modify_existing"] }], "trial.1"]]);
     expect(gate.standing(latest)?.acts).toEqual([{ step: 4, definitionId: "n", control: "Keep", consequences: ["modify_existing"] }]);
   });
-  it("lets the model say an act listed for undoing cannot be undone: the trial runs with it, and the judge is told (t471)", async () => {
+  it("lets the model say an act listed on the site cannot be undone: the trial runs with it under cannotUndo, and the judge is told (t471)", async () => {
     const asked: AutomationStudioCandidateTrialRequest[] = [];
     const cannot: Step = (evidence) => ({ kind: "tool_call", toolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, callId: `test.${++calls}`, input: { ...receipt(evidence), cannotUndo: ["act-1"] } });
     const { seen } = await run([act(), submit, test, cannot, submit], portOf(asked));
-    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)).toMatchObject({ code: "candidate.trial_reset_required" });
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)).toMatchObject({ verdict: "unsure", startedWith: { acts: [{ act: "act-1", did: "press \"Add\" button" }] } });
     const ran = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[4]!)!;
     expect(ran).toMatchObject({ verdict: "unsure", startedWith: { cannotUndo: [{ act: "act-1", did: "press \"Add\" button" }] } });
-    expect(asked).toHaveLength(1);
-    expect(asked[0]!.startedWith).toEqual(["already done by this build (act-1): press \"Add\" button", "not as the build found it: 1 lines where the start had 0"]);
+    expect(asked[1]!.startedWith).toEqual(["already done by this build (act-1): press \"Add\" button", "not as the build found it: 1 lines where the start had 0"]);
   });
 
   // Lane D round 17 (`run-mv6lgt3s-c3aa6fac`): a start hook took back an exploration act, and nothing the trial answered
@@ -263,8 +257,8 @@ describe("candidate trial gate: the site is put back first", () => {
       { step: 2, definitionId: "domain.library.add", label: "Add the novel", consequences: ["create_new"], spot: { item: "i:card-novel" }, created: ["i:line-novel"] },
       { step: 3, definitionId: "domain.library.add", label: "Add the atlas", consequences: ["create_new"], spot: { item: "i:card-atlas" } }
     ]);
-    // No hook took them back: the next test is refused until both are undone.
-    expect((await gate.test({ revision: 1, digest: "d1" })).evidence).toMatchObject({ code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-1" }, { act: "act-2" }] });
+    // No hook took them back: the next test runs with both on the site, said under startedWith (t775).
+    expect((await gate.test({ revision: 1, digest: "d1" })).evidence).toMatchObject({ verdict: "unsure", startedWith: { acts: [{ act: "act-1" }, { act: "act-2" }] } });
     // The novel's line, which the trial's step made, is removed unasked; the atlas is put back on its own card.
     const aim = (consequences: Array<"delete" | "modify_existing">, item: string) => ({ effect: "mutate" as const, consequences, control: { item } });
     expect(ledger.claim("act-1")).toEqual({ kind: "undo", undo: { act: "act-1", allowed: [] } });
@@ -275,9 +269,10 @@ describe("candidate trial gate: the site is put back first", () => {
     ledger.explored({ callId: "undo.atlas", toolId: "core.run_node", landed: true, undoes: "act-2", on: "own", declared: { permitted: true, effect: "mutate", consequences: ["modify_existing"], control: { name: "Saved", kind: "button", item: "i:card-atlas" }, verb: "press" } });
     ledger.undoSeen("act-2", true);
     const again = await gate.test({ revision: 1, digest: "d1" });
-    expect(again.evidence).toMatchObject({ verdict: "unsure", trialRunId: "trial.2" });
-    expect((again.evidence as JsonObject).startedWith).toBeUndefined();
-    expect(asked).toHaveLength(2);
+    expect(again.evidence).toMatchObject({ verdict: "unsure", trialRunId: "trial.3" });
+    // Only what the second trial left is on the site now: the two undone acts are not said (t775).
+    expect((again.evidence as JsonObject).startedWith).toMatchObject({ acts: [{ act: "act-3" }, { act: "act-4" }] });
+    expect(asked).toHaveLength(3);
   });
 
   it("refuses a test whose cannotUndo is not a list of act ids", async () => {
