@@ -40,7 +40,29 @@
 // state the build found is `candidate.undo_already_back`: nothing to press,
 // and pressing would make the act's change again (photo `run-mvgw7320-de416190`
 // 0151); a look on this page meets it, since its fresh read settles the act
-// (t751 R2). Which condition is named never changes what is admitted.
+// (t751 R2). Which condition is named never changes what is admitted. Where its
+// own control stands is read by the one answer the settlement reads it by
+// (`../reset-settlement/own-control.ts`, t772), so an admission answering
+// already back and a settlement asking to press it back cannot both hold.
+//
+// **A value act (t772, rerun round 6 `run-mvrj7qg8-6916b3f7` cause 1).** An act
+// witnessed by the shown values its press replaced (a choice confirmed by a
+// press that reloads its page) is set back by its own control: the same
+// resource, page, place and state, in the same item and dialog or in none,
+// declaring exactly `modify_existing`, is admitted `own` with it unasked, and
+// the settlement judges what it did. A press declaring nothing on the act's own
+// page (its resource: a chooser's options sit in a list of their own) is a
+// `step` toward that undo -- choosing the value it replaced -- never an undo,
+// so it counts no attempt. Its own control declaring anything else is refused
+// `consequence_not_inverse`, and another control declaring a lasting class
+// `value_not_own_control`, both met on that page; while no call can settle the
+// act (its control has no tokens, its value's place was never read before it,
+// or its value never came back) every press is refused met by no call. A move
+// elsewhere that touches nothing is still a look. A value act never reaches
+// the subject deletion's conditions, and neither does an act that created
+// nothing, named no list and sat in no item: such an act is refused
+// `no_exact_inverse`, met by no call, never with a condition of a path it can
+// never take (`no_destination_read_before`, `no_item_identity`).
 //
 // The act's side of each path (what the act must be: a legacy act's created
 // items, its own item, a witnessed transfer, a landed undo's chain, an act that
@@ -54,7 +76,7 @@
 
 import type { AutomationStudioActionConsequence, AutomationStudioActionEffect } from "../../action-permissions/index.ts";
 import { automationStudioSiteResetRefusal as refusal, type AutomationStudioSiteResetCanMeet, type AutomationStudioSiteResetFailed } from "../reset-answers/index.ts";
-import { automationStudioSiteResetActSubjects as actSubjects, type AutomationStudioSiteResetObservations } from "../reset-settlement/index.ts";
+import { automationStudioSiteResetActSubjects as actSubjects, automationStudioSiteResetOwnControlStanding as ownControlStanding, type AutomationStudioSiteResetObservations, type AutomationStudioSiteResetValueWitness } from "../reset-settlement/index.ts";
 import type { AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetSpot, AutomationStudioSiteResetTarget } from "./contracts.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_UNDO_PATHS as PATHS } from "./undo-paths.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "./words.ts";
@@ -86,6 +108,8 @@ export type AutomationStudioSiteResetAdmittedAct = {
   chain?: "own" | "created" | undefined;
   subjectUndo?: { scope: string; subject: string; group: string; origin?: string };
   transfer?: { origin: string; scope: string; group: string; subject: string; state: string };
+  /** The shown values its press replaced, where those witness it (`./ledger-act.ts`, t772). */
+  value?: AutomationStudioSiteResetValueWitness | undefined;
 };
 
 /** The ledger as the admission reads it. */
@@ -118,14 +142,18 @@ export function automationStudioSiteResetUndoAdmission<A extends AutomationStudi
   };
   // Its own toggle pressed back (L1): the same place, still showing the state the act set, declaring nothing else lasting.
   const toggle = ledger.toggle(act);
-  if (toggle && declared.control.place === toggle.place) {
+  const own = toggle ? ownControlStanding(toggle, { place: declared.control.place, state: declared.control.state }) : "elsewhere";
+  if (toggle && own !== "elsewhere") {
     if (act.spot?.resource !== undefined && declared.control.resource !== act.spot.resource) return unproved(["control_elsewhere", "another_page"]);
     const back = declared.consequences.length === 0 || (declared.consequences.length === 1 && declared.consequences[0] === "modify_existing");
-    if (back && declared.control.state === toggle.to) return { kind: "admit", on: "own", allowed: ["modify_existing"] };
+    if (back && own === "set") return { kind: "admit", on: "own", allowed: ["modify_existing"] };
     // Already showing the state the build found (t743, photo 0151): nothing to press, and pressing would make the act's change again.
-    if (declared.control.state === toggle.from) return alreadyBack(ledger, act);
-    return unproved(declared.control.state !== toggle.to ? ["control_state_differs", "no_call"] : ["consequence_not_inverse", "this_page"]);
+    if (own === "back") return alreadyBack(ledger, act);
+    return unproved(own === "other" ? ["control_state_differs", "no_call"] : ["consequence_not_inverse", "this_page"]);
   }
+  // A value act: its own control, or a step toward it (header, t772).
+  const value = PATHS.valued(act) ? valueUndo(ledger, act, declared) : undefined;
+  if (value) return "kind" in value ? value : unproved(value);
   if (act.strictReset && declared.consequences.length === 0 && (declared.control.scope !== undefined || declared.control.subject !== undefined || declared.control.item !== undefined)) return unproved(toggle ? ["control_elsewhere", "another_page"] : ["undeclared_press", "this_page"]);
   if (PATHS.transfer(act) && declared.consequences.length > 0) {
     const transfer = act.transfer;
@@ -170,19 +198,40 @@ function alreadyBack<A extends AutomationStudioSiteResetAdmittedAct>(ledger: Aut
 }
 
 /**
+ * A value act's undo (header, t772): its own control declaring exactly `modify_existing` is its own undo, a press declaring
+ * nothing on its page a step toward it, and anything else lasting is refused, met on that page only while a call can still
+ * settle the act. Undefined for a move elsewhere that touches nothing, which the admission answers as for any act.
+ */
+function valueUndo<A extends AutomationStudioSiteResetAdmittedAct>(ledger: AutomationStudioSiteResetAdmissionLedger<A>, act: A, declared: AutomationStudioSiteResetUndoDeclared): AutomationStudioSiteResetTarget | Unmet | undefined {
+  const { control, consequences } = declared;
+  const page = act.spot?.resource !== undefined && control.resource === act.spot.resource;
+  if (!page && !consequences.length && control.item === undefined && control.dialog === undefined && control.scope === undefined && control.subject === undefined) return undefined;
+  // No call can settle it -- no own control's tokens, its value never read before it, or never back -- so nothing is met here.
+  if (!PATHS.ownControl(act) || !ledger.inPlace().some((entry) => entry.act === act.id)) return ["no_admissible_undo", "no_call"];
+  if (act.spot && sameControl(act.spot, control)) return consequences.length === 1 && consequences[0] === "modify_existing" ? { kind: "admit", on: "own", allowed: ["modify_existing"] } : ["consequence_not_inverse", "this_page"];
+  if (page && !consequences.length) return { kind: "admit", on: "step", allowed: [] };
+  return ["value_not_own_control", page ? "this_page" : "another_page"];
+}
+
+/**
  * Why a strict act's undo found no admission past its own item (t743): the
  * first of the conditions the paths above checked that does not hold, in the
  * order they check them. Its own control elsewhere, a control about another
  * item or about none, classes that do not reverse the act's, then the subject
- * deletion's own conditions.
+ * deletion's own conditions. An act with no subject path -- it created
+ * nothing, named no list and sat in no item -- fails none of those: no exact
+ * inverse, met by no call (header, t772).
  */
 function unmatched<A extends AutomationStudioSiteResetAdmittedAct>(ledger: AutomationStudioSiteResetAdmissionLedger<A>, act: A, declared: AutomationStudioSiteResetUndoDeclared, toggled: boolean): Unmet {
+  const noSubjectPath = !PATHS.deletesCreated(act) && !PATHS.ownItem(act) && !act.destinations.length && !act.lent?.length;
   if (!aboutTheAct(act, declared.control)) {
     // On a destination the act named, the removal's own condition (t743).
     if (namedDestination(act, declared.control)) return destinationRemovalUnmet(ledger, act, declared) ?? ["no_exact_inverse", "no_call"];
     if (toggled) return ["control_elsewhere", "another_page"];
+    if (noSubjectPath) return ["no_exact_inverse", "no_call"];
     return declared.control.subject === undefined ? ["no_item_identity", "this_page"] : ["subject_differs", "another_page"];
   }
+  if (noSubjectPath) return ["no_exact_inverse", "no_call"];
   if (!reverses(act.consequences, declared.consequences)) return ["consequence_not_inverse", "this_page"];
   return subjectDeletionUnmet(ledger, act, declared) ?? ["no_exact_inverse", "no_call"];
 }
@@ -327,6 +376,15 @@ function otherObservedEffect<A extends AutomationStudioSiteResetAdmittedAct>(led
 function sameItem(spot: AutomationStudioSiteResetSpot, control: AutomationStudioSiteResetSpot): boolean {
   if (spot.item === undefined || control.item === undefined || spot.item !== control.item) return false;
   return (spot.dialog ?? null) === (control.dialog ?? null) && (spot.scope ?? null) === (control.scope ?? null);
+}
+
+/**
+ * Whether `control` is the act's own control by a value (header, t772): the same resource, page, place and state, all
+ * present, in the same item and dialog or in none.
+ */
+function sameControl(spot: AutomationStudioSiteResetSpot, control: AutomationStudioSiteResetSpot): boolean {
+  const tokens = ["resource", "scope", "place", "state"] as const;
+  return tokens.every((key) => spot[key] !== undefined && spot[key] === control[key]) && spot.item === control.item && spot.dialog === control.dialog;
 }
 
 /**

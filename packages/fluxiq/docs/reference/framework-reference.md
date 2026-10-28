@@ -1091,7 +1091,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioEvidenceFlowBootstrapLimitsExceeded` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/profile-limits.ts` | - |
 | `automationStudioEvidenceKey` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/failure-evidence.ts` | - |
 | `automationStudioExecutableTargetKey` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/evidence-screen.ts` | - |
-| `automationStudioExecutedLocations` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/executor/executed-locations/locations.ts` | The executed address behind a saved trace's withheld `controls.location` (header). |
+| `automationStudioExecutedLocations` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/executor/executed-locations/locations.ts` | The executed address behind a saved trace's withheld `controls.location` or `values.location` (header). |
 | `AutomationStudioExecutionMode` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/training-modes.ts` | - |
 | `automationStudioExpectationSatisfiedAfterFailure` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/transition-comparison.ts` | - |
 | `AutomationStudioExpectedTransition` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/contracts.ts` | - |

@@ -22,6 +22,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_FAILED = [
   "no_exact_inverse",
   "transfer_not_witnessed",
   "not_own_item",
+  "value_not_own_control",
   // Claims under `undoes` (`../ledger.ts`, `claim` and `target`).
   "act_kept",
   "act_left",
@@ -37,6 +38,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_FAILED = [
   "nothing_to_name",
   "no_admissible_undo",
   "no_baseline",
+  "value_not_back",
   "acts_unsettleable",
   // Presses with no witness (`../reset-admission/admission.ts`, t751; every door asks it).
   "no_witness",

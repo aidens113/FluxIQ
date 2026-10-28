@@ -10,17 +10,22 @@
 // undo admission and reach read too). Each group they fall in is one witness
 // (`./group-witness.ts`), told by the ref and location of the list
 // it names, for the words an open act is answered with, and by its opaque
-// group, for Core alone (`./reach.ts`). Pure.
+// group, for Core alone (`./reach.ts`). A difference on a group may be put
+// down to the other acts the caller hands for it (`others`, t772 w10: per group,
+// absent where its latest read is stale in place), so one act on a shared list
+// settles by its own subjects (`./group-witness.ts`). Its own subjects are read
+// per group: on the group its subject undo was admitted on, they include the
+// row that undo removes (`./group-subjects.ts`, t772 w11). Pure.
 
-import { automationStudioSiteResetActSubjects as actSubjects } from "./act-subjects.ts";
-import { automationStudioSiteResetGroupWitness as groupWitness, type AutomationStudioSiteResetGroupStanding } from "./group-witness.ts";
+import { automationStudioSiteResetGroupSubjects as groupSubjects } from "./group-subjects.ts";
+import { automationStudioSiteResetGroupWitness as groupWitness, type AutomationStudioSiteResetGroupStanding, type AutomationStudioSiteResetOtherAct } from "./group-witness.ts";
 import type { AutomationStudioSiteResetObservations } from "./observations.ts";
 import type { AutomationStudioSiteResetSettlementSpot } from "./spot.ts";
 
 type Scope = { scope: string; group: string };
 
 export function automationStudioSiteResetActGroups(input: {
-  act: { spot?: AutomationStudioSiteResetSettlementSpot | undefined; destinations: readonly Scope[]; transfer?: { origin: string; scope: string; group: string } | undefined; subjectUndo?: Scope | undefined };
+  act: { spot?: AutomationStudioSiteResetSettlementSpot | undefined; destinations: readonly Scope[]; transfer?: { origin: string; scope: string; group: string } | undefined; subjectUndo?: (Scope & { subject?: string | undefined }) | undefined };
   /** The act's 1-based place among its ledger's acts, the ledger clock it landed at, and the ledger clock now. */
   sequence: number;
   since: number;
@@ -28,6 +33,8 @@ export function automationStudioSiteResetActGroups(input: {
   observations: AutomationStudioSiteResetObservations;
   /** A list scope's issued ref and where it was read, if it is an original. */
   described(scope: string): { ref: string; location?: string } | undefined;
+  /** The other acts a difference on `group` may be attributable to (header, t772 w10); absent or undefined, the whole group is judged. */
+  others?: ((group: string) => ReadonlyArray<AutomationStudioSiteResetOtherAct> | undefined) | undefined;
 }): Array<AutomationStudioSiteResetGroupStanding & { group: string; ref?: string; location?: string }> {
   const { act, observations } = input;
   const spot = act.spot ?? {};
@@ -36,10 +43,11 @@ export function automationStudioSiteResetActGroups(input: {
   if (act.subjectUndo) named.push({ scope: act.subjectUndo.scope, group: act.subjectUndo.group });
   const own = spot.scope === undefined ? undefined : observations.originals.get(spot.scope);
   if (spot.scope !== undefined && own && own.beforeAct < input.sequence) named.push({ scope: spot.scope, group: own.group });
-  const subjects = actSubjects(act.spot);
   return [...new Set(named.map((entry) => entry.group))].map((group) => {
     const scopes = [...new Set(named.filter((entry) => entry.group === group).map((entry) => entry.scope))];
-    const standing = groupWitness({ observations, group, scopes, subjects, sequence: input.sequence, since: input.since, clock: input.clock });
+    const subjects = groupSubjects(act, group);
+    const others = subjects.length ? input.others?.(group) : undefined;
+    const standing = groupWitness({ observations, group, scopes, subjects, sequence: input.sequence, since: input.since, clock: input.clock, ...(others ? { others } : {}) });
     const described = [...scopes, ...standing.scopes].map((scope) => input.described(scope)).find((entry) => entry !== undefined);
     const location = observations.groupLocation.get(group) ?? described?.location;
     return { ...standing, group, ...(described ? { ref: described.ref } : {}), ...(location ? { location } : {}) };

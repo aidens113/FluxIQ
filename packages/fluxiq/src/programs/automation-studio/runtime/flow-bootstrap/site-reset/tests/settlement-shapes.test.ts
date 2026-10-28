@@ -158,8 +158,8 @@ describe("shape E: the trial's own act, and the retest after a settling look (of
   it("a trial act repeating an explored act shares its named list, and Core's look settles it with no model work", async () => {
     const ledger = boxed();
     explored(ledger);
-    // Both are on the site still: the explored act is left, the trial's own is new.
-    expect(ledger.trialRan([trialStep("demo.press")], "trial.1").map((act) => act.act)).toEqual(["act-1", "act-2"]);
+    // The explored act settled unchanged, so it is never returned as left (t772 w7, `../leftover.ts`); the trial's own is new.
+    expect(ledger.trialRan([trialStep("demo.press")], "trial.1").map((act) => act.act)).toEqual(["act-2"]);
     const { looked, checks } = looking(ledger, { "loc:box": boxPage() });
     expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1" }, { act: "act-2", did: `trial step 5 "start the draft" on "Start a draft" (${WORDS.leftUnchanged()})` }] } });
     expect(looked).toEqual(["loc:box"]);
@@ -207,7 +207,8 @@ describe("shape F: lists the domain cannot vouch complete issue no ref (job r2)"
     expect(refused).toMatchObject(unsettleable);
     expect(settleOf(refused, "actsToUndo", "act-1")).toBe("");
     expect(await ledger.beforeTrial(compare, ["act-1"])).toMatchObject(unsettleable);
-    expect(ledger.standing("act-1")).toBe("in_place");
+    // Possibly left, closed as no call can settle it: never `in_place` beside being listed apart (t772 w7).
+    expect(ledger.standing("act-1")).toBe("unsettleable");
   });
 
   it("once the list is reported complete it issues a ref, and the act named against it settles", async () => {
@@ -372,6 +373,8 @@ describe("invariants no shape may weaken", () => {
     const ledger = new AutomationStudioSiteResetLedger();
     ledger.explored(press("pay", ["move_money"], { subject: "s:order", page: "s:order" }));
     ledger.explored(press("pin", ["modify_existing"], { subject: "s:atlas", page: "s:atlas" }));
-    expect([ledger.standing("act-1"), ledger.standing("act-2"), ledger.standing("act-9")]).toEqual(["irreversible", "in_place", undefined]);
+    // act-2 has no witness and nothing read before it to name: no call can settle it, and its standing says so (t772 w7).
+    expect([ledger.standing("act-1"), ledger.standing("act-2"), ledger.standing("act-9")]).toEqual(["irreversible", "unsettleable", undefined]);
+    expect(ledger.unsatisfiable().map((act) => [act.act, act.failed])).toEqual([["act-2", "nothing_to_name"]]);
   });
 });

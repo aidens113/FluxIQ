@@ -22,13 +22,53 @@
 // change. Open otherwise, and every open act says under `settle` what to read
 // or undo (`./words.ts`); before refusing, the ledger's `beforeTrial` has Core
 // look at each stale witness's place itself (`lookFirst`, `checks.lookAt`), and
-// loads again, once per landed undo, a list that still differs after that act's
-// undo landed: a site may draw a removal only on the list's next load, so the
-// read in place just after the undo is not yet a fresh read of it (t751 final
-// acceptance, job-board My jobs).
+// loads again a list that differs on a read made in place after an undo landed
+// on an act it witnesses: a site may draw a removal only on the list's next
+// load, so that read is not yet a fresh read of it (t751 final acceptance; t772
+// R1). Whether a list's latest read is such a read is one fact, kept by the
+// observations (`./observations.ts`, `readInPlace`) from the undos this judge
+// counts per group (`undosOn`) at each load; `evaluate` (the `reload` reason,
+// `./decision.ts`), `lookFirst` and `../site-reset/undo-reach.ts` (through
+// `differing`) all read it, so no act is called unsettleable on that read
+// (rerun round 6 `run-mvrj7qg9-b6dc94f6`).
+// An undone act on a list several acts changed settles by its own subjects
+// (t772 w10, headed job-undo-redraws-on-load: two undone acts stayed open, and
+// were reported left, while the third's row still showed). For an act an undo of
+// which landed, on a group whose latest read is not stale in place, a
+// difference may be put down to another act of this ledger still left on the
+// site -- not undone, not settled -- that witnesses that group too and was
+// recorded after the list's original was read, by its own subjects
+// (`othersOn`, `./group-witness.ts`). Such an act's own witness on the group
+// still differs, so it stays open while its subject shows, whatever order the
+// acts are judged in. A difference no such act explains keeps every act open.
+// An act's own subjects there include the row its admitted subject undo removes
+// on that group (`./group-subjects.ts`, t772 w11): a press from an item's own
+// page is often about nothing that tells the items apart, and that row is then
+// the only subject tying it to the list. Only an undone act is judged so, and so it settles only `restored`: a read
+// just after an act on a list that draws a new row only on its next load does
+// not yet show that act's row, and would settle it `unchanged` for good on a
+// sibling's row (shape B's failed press keeps the whole-list rule too).
 // `cannotUndo` never settles a strict act. A toggle is undone by pressing its
 // own control back at its place, admitted `own` with `modify_existing` unasked;
 // a control at another place, or already back, is refused unrun.
+//
+// **A value witness (t772, rerun round 6 `run-mvrj7qg8-6916b3f7` cause 1).** A
+// lasting `modify_existing` press that confirms a choice and reloads its page to
+// the same address shows its effect on no list and not on its own control,
+// only on a value the page shows. The shown values its press replaced -- read
+// around it by Core, or off a trial step's own diff -- witness it
+// (`./value-tracker.ts`, `valued`), and only while nothing else does: no list
+// group, no toggle or control original, no transfer, no subject undo, so an act
+// another witness settles is never blocked by a notice that changed with it.
+// It is settled `restored` when a fresh read after the latest lasting call
+// shows the build's start value at its place; `look` while stale, `baseline`
+// (`no_baseline`) where that place was never read before the build replaced
+// it, and `value` otherwise, set back by its own control
+// (`../site-reset/undo-admission.ts`). An own control with no tokens is
+// answered by the ledger's own rule (`more`: `no_admissible_undo`). After
+// `VALUE_UNDOS` landed undos, each read fresh still showing the value it set,
+// it is closed `value_not_back`: its value never came back, so it is never
+// left open as meetable.
 //
 // **A trial act repeats any explored act of its build.** In a single-subflow
 // plan the builder's test is the judged whole run, whose acts the supervisor's
@@ -66,7 +106,14 @@
 // before it to name, or its control's start never read (`baseline`,
 // `./control-tracker.ts`, t751 R1) -- is answered by `unmet` with the closed condition
 // that failed; the ledger takes it out of the acts to undo and lists it
-// apart, and trials stay refused while it is in place. A reason only
+// apart, and trials stay refused while it is in place. An act whose own
+// control a fresh read shows back at the state the build found
+// (`./own-control.ts`, the same answer the undo admission gives
+// `already_back` on) while its control witness stays open is one (`own_back`,
+// `already_back`, t772): no press is left to make, so it is never left open
+// as meetable (rerun round 6 `run-mvrj7qgf-a44a1427`: settlement asked to
+// press a control back that the admission answered already back, for 110
+// steps). A reason only
 // site-reset can judge -- a list that still differs, an own control -- is
 // answered by the ledger's own rule (`more`: `../site-reset/undo-reach.ts`,
 // t748), handed the lists that differ (`differing`).
@@ -75,10 +122,14 @@ import type { AutomationStudioSiteResetFailed } from "../reset-answers/index.ts"
 import { automationStudioSiteResetActGroups as actGroups } from "./act-groups.ts";
 import type { AutomationStudioSiteResetControlTracker, AutomationStudioSiteResetPress } from "./control-tracker.ts";
 import { automationStudioSiteResetSettleDecision as settleDecision, type AutomationStudioSiteResetJudgedGroup, type AutomationStudioSiteResetOpenReason, type AutomationStudioSiteResetSettlement } from "./decision.ts";
+import { automationStudioSiteResetGroupSubjects as groupSubjects } from "./group-subjects.ts";
+import type { AutomationStudioSiteResetOtherAct } from "./group-witness.ts";
 import type { AutomationStudioSiteResetObservations } from "./observations.ts";
+import { automationStudioSiteResetOwnControlStanding as ownControlStanding } from "./own-control.ts";
 import type { AutomationStudioSiteResetReach } from "./reach.ts";
 import type { AutomationStudioSiteResetSettlementSpot } from "./spot.ts";
 import { automationStudioSiteResetToggleWitness as toggleWitness } from "./toggle-witness.ts";
+import { AutomationStudioSiteResetValueTracker, type AutomationStudioSiteResetValueWitness } from "./value-tracker.ts";
 import { automationStudioSiteResetSettleWords as settleWords, type AutomationStudioSiteResetIssuedRef } from "./words.ts";
 
 type Scope = { scope: string; group: string };
@@ -93,28 +144,38 @@ export type AutomationStudioSiteResetJudgedAct = {
   /** The explored acts a trial act repeats, by id. */
   repeats: string[];
   transfer?: { origin: string; scope: string; group: string } | undefined;
-  subjectUndo?: Scope | undefined;
+  /** Where its admitted subject undo removes, and what (`./group-subjects.ts`). */
+  subjectUndo?: (Scope & { subject?: string | undefined }) | undefined;
   /** The ledger clock it landed at. */
   clock: number;
   press?: AutomationStudioSiteResetPress | undefined;
   /** Immutable counts retained by the step's trusted admission receipt, independent of runtime diff completeness. */
   controlOriginal?: { resource: string; page: string; place: string; before: Readonly<Record<string, number>>; location?: string; at?: string } | undefined;
   toggle?: { page: string; place: string; from: string; to: string } | undefined;
+  /** The shown values its press replaced, while nothing else witnesses it (header, t772). */
+  value?: AutomationStudioSiteResetValueWitness | undefined;
   changeSeen: boolean;
   /** Undo calls of it that landed. */
   attempts: number;
+  /** Counted undone, and settled for good, by its ledger: either way no longer left on the site to explain a difference (header, t772 w10). */
+  undone?: boolean | undefined;
+  settled?: "restored" | "unchanged" | undefined;
 };
 
 /**
  * The closed conditions an act no call can settle fails on (header): its only witnesses lost, nothing read before it to
- * name, what still differs no undo could put back (t748), or its control's start never read (`no_baseline`, t751 R1).
+ * name, what still differs no undo could put back (t748), its control's start never read (`no_baseline`, t751 R1), or its
+ * own control already back while its witness stays open (`already_back`, header, t772), or its value never back after
+ * `VALUE_UNDOS` undos (`value_not_back`, header, t772).
  */
-export type AutomationStudioSiteResetUnmet = Extract<AutomationStudioSiteResetFailed, "witness_unreachable" | "nothing_to_name" | "no_admissible_undo" | "no_baseline">;
+export type AutomationStudioSiteResetUnmet = Extract<AutomationStudioSiteResetFailed, "witness_unreachable" | "nothing_to_name" | "no_admissible_undo" | "no_baseline" | "already_back" | "value_not_back">;
 
 /** What the judgement is handed by its ledger (header). */
 export type AutomationStudioSiteResetJudgePorts = {
   seen: AutomationStudioSiteResetObservations;
   tracker: AutomationStudioSiteResetControlTracker;
+  /** The shown values it has seen (header, t772); absent, the judge keeps its own, fed by `read`. */
+  values?: AutomationStudioSiteResetValueTracker;
   /** The build's lost groups, shared by every ledger of one build. */
   reach: AutomationStudioSiteResetReach;
   /** The build's destination receipts (`../site-reset/create-baselines.ts`). */
@@ -133,6 +194,8 @@ export type AutomationStudioSiteResetJudgePorts = {
 
 /** Pre-trial checks of this ledger in which Core's look at a list answered unread, before the list is lost (header). */
 const UNREAD_CHECKS = 2;
+/** Landed undos, each read fresh still not showing the value it set, after which a value act is closed (header, t772). */
+const VALUE_UNDOS = 2;
 
 export class AutomationStudioSiteResetSettlementJudge {
   private readonly ports: AutomationStudioSiteResetJudgePorts;
@@ -141,16 +204,36 @@ export class AutomationStudioSiteResetSettlementJudge {
   /** Pre-trial looks this ledger has made, and per group the ones that answered unread (header). */
   private checks = 0;
   private readonly unread = new Map<string, Set<number>>();
-  /** Per act, the landed undo count at Core's last reload of each location an `undo` reason named (`lookFirst`). */
-  private readonly reloaded = new WeakMap<AutomationStudioSiteResetJudgedAct, Map<string, number>>();
+  private readonly values: AutomationStudioSiteResetValueTracker;
+  /** Per value act, the landed-undo counts after which a fresh read still showed the value it set (header, t772). */
+  private readonly misses = new WeakMap<AutomationStudioSiteResetJudgedAct, Set<number>>();
 
   constructor(ports: AutomationStudioSiteResetJudgePorts) {
     this.ports = ports;
+    this.values = ports.values ?? new AutomationStudioSiteResetValueTracker();
   }
 
-  /** A read reached the ledger. */
-  read(): void {
+  /**
+   * A read reached the ledger: its shown values are taken in at the ledger's clock (header, t772), and each group it loaded
+   * counts the undos landed on the acts it witnesses now (header, t772 R1).
+   */
+  read(read?: { scope?: string | undefined; location?: string | undefined; values?: Readonly<Record<string, string>> | undefined }): void {
     this.reads += 1;
+    if (read) this.values.read(read, this.ports.clock());
+    this.ports.seen.loads((group) => this.undosOn(group));
+  }
+
+  /**
+   * The shown values `act`'s press replaced (header, t772), read around it by Core (`read`) or off its trial step's own diff
+   * (`diff`: a place with no start starts at its `from`). Its places are the build's from now on; they witness the act only
+   * where nothing else does, and then a change was seen.
+   */
+  valued(act: AutomationStudioSiteResetJudgedAct, witness: AutomationStudioSiteResetValueWitness, how: "read" | "diff"): void {
+    if (how === "diff") this.values.landed(witness);
+    else this.values.witnessed(witness);
+    if (this.toggleOf(act) || act.controlOriginal || act.transfer || act.subjectUndo || this.groupsOf(act, [...act.destinations, ...this.lent(act)]).some((group) => group.status !== "none")) return;
+    act.value = witness;
+    act.changeSeen = true;
   }
 
   /** Every witness of `act`, judged against the latest reads (`./decision.ts`); a witness seen changed is remembered. */
@@ -160,9 +243,34 @@ export class AutomationStudioSiteResetSettlementJudge {
     if (groups.some((group) => group.changed)) act.changeSeen = true;
     const toggle = this.toggleOf(act);
     const { tracker } = this.ports;
-    const control = act.controlOriginal ? tracker.originalStanding(act.controlOriginal, act.clock, this.ports.clock(), toggle) : toggle ? tracker.standing(toggle.place, toggle, act.clock, this.ports.clock()) : act.press ? tracker.unread(act.press) : undefined;
+    let control = act.controlOriginal ? tracker.originalStanding(act.controlOriginal, act.clock, this.ports.clock(), toggle) : toggle ? tracker.standing(toggle.place, toggle, act.clock, this.ports.clock()) : act.press ? tracker.unread(act.press) : undefined;
     if (act.controlOriginal && control?.status === "open") act.changeSeen = true;
-    return settleDecision({ groups, toggle: control, changeSeen: act.changeSeen, undoLanded: act.attempts > 0 });
+    // Its own control read back where its witness stays open: closed, never a press to ask for (header, t772).
+    if (control?.status === "open" && this.ownBack(act, toggle)) control = { ...control, status: "own_back" };
+    // Its value witness, only where nothing else witnesses it (header, t772).
+    const value = act.value && !control && !act.transfer && !act.subjectUndo && !groups.some((group) => group.status !== "none") ? this.valueStanding(act, act.value) : undefined;
+    return settleDecision({ groups, toggle: control, value, changeSeen: act.changeSeen, undoLanded: act.attempts > 0 });
+  }
+
+  /** Where a value act's witness stands (`./value-tracker.ts`); a fresh read still open after landed undos is a miss (header, t772). */
+  private valueStanding(act: AutomationStudioSiteResetJudgedAct, witness: AutomationStudioSiteResetValueWitness): ReturnType<AutomationStudioSiteResetValueTracker["standing"]> {
+    const standing = this.values.standing(witness, act.clock, this.ports.clock());
+    if (standing.status === "open" && act.attempts > 0) this.misses.set(act, (this.misses.get(act) ?? new Set<number>()).add(act.attempts));
+    return standing;
+  }
+
+  /**
+   * Whether a fresh read -- after the act and at the ledger's clock -- shows the act's own control (its toggle) back at the
+   * state the build found at its place (`./own-control.ts`, header, t772): at its original's place, against the original's
+   * counts and only where the original is judged; at any other place, against that place's start.
+   */
+  private ownBack(act: AutomationStudioSiteResetJudgedAct, toggle: AutomationStudioSiteResetJudgedAct["toggle"]): boolean {
+    if (!toggle) return false;
+    const { tracker } = this.ports;
+    const original = act.controlOriginal?.place === toggle.place ? act.controlOriginal : undefined;
+    const counts = tracker.freshAt(toggle.place, toggle.page, act.clock, this.ports.clock(), original?.resource ?? act.spot?.resource, original?.at);
+    const found = original ? original.before : tracker.start(toggle.place);
+    return counts !== undefined && found !== undefined && ownControlStanding(toggle, { place: toggle.place, counts, found }) === "back";
   }
 
   /** The destinations the explored acts `act` repeats lend it, named whenever (header); the site-reset admission reads them too (t743). */
@@ -205,16 +313,24 @@ export class AutomationStudioSiteResetSettlementJudge {
     const unmet: AutomationStudioSiteResetUnmet[] = [];
     for (const reason of decision.reasons) {
       if (reason.reason === "name") nameUnmet ??= !this.namable(act).any;
-      const failed = reason.reason === "unreachable" ? "witness_unreachable" : reason.reason === "baseline" ? "no_baseline" : reason.reason === "name" ? (nameUnmet ? "nothing_to_name" : undefined) : more?.(reason);
+      const failed = reason.reason === "unreachable" ? "witness_unreachable" : reason.reason === "baseline" ? "no_baseline" : reason.reason === "own_back" ? "already_back" : reason.reason === "name" ? (nameUnmet ? "nothing_to_name" : undefined) : this.neverBack(act, reason) ? "value_not_back" : more?.(reason);
       if (failed === undefined) return undefined;
       unmet.push(failed);
     }
     return unmet[0];
   }
 
-  /** The act's own list witnesses that differ now, each with its relevant scopes (`./group-witness.ts`): what an undo would have to put back (header, t748). */
-  differing(act: AutomationStudioSiteResetJudgedAct): Array<{ group?: string | undefined; scopes: string[] }> {
-    return this.groupsOf(act, [...act.destinations, ...this.lent(act)]).filter((group) => group.status === "differs").map((group) => ({ group: group.group, scopes: [...group.scopes] }));
+  /** Whether `reason` is a value still showing after `VALUE_UNDOS` landed undos, each read fresh (header, t772). */
+  private neverBack(act: AutomationStudioSiteResetJudgedAct, reason: AutomationStudioSiteResetOpenReason): boolean {
+    return reason.reason === "value" && (this.misses.get(act)?.size ?? 0) >= VALUE_UNDOS;
+  }
+
+  /**
+   * The act's own list witnesses that differ now, each with its relevant scopes (`./group-witness.ts`): what an undo would
+   * have to put back (header, t748); `inPlace` where that read was made in place after an undo (header, t772 R1).
+   */
+  differing(act: AutomationStudioSiteResetJudgedAct): Array<{ group?: string | undefined; scopes: string[]; inPlace: boolean }> {
+    return this.groupsOf(act, [...act.destinations, ...this.lent(act)]).filter((group) => group.status === "differs").map((group) => ({ group: group.group, scopes: [...group.scopes], inPlace: group.inPlace === true }));
   }
 
   /**
@@ -230,15 +346,18 @@ export class AutomationStudioSiteResetSettlementJudge {
       if (decision.kind !== "open") continue;
       for (const reason of decision.reasons) {
         if (!reason.location) continue;
-        // A list that still differs after this act's undo landed is loaded again once per landed undo (t751 R2, final
-        // acceptance job): a site may draw the removal only on its next load, so a read in place can be stale.
-        const reload = reason.reason === "undo" && act.attempts > 0 && this.reloaded.get(act)?.get(reason.location) !== act.attempts;
-        if (reason.reason !== "look" && !reload) continue;
-        if (reload) this.reloaded.set(act, new Map([...(this.reloaded.get(act) ?? []), [reason.location, act.attempts]]));
+        // A list that differs on a read in place after an undo landed is loaded again (t751 R2, t772 R1): a site may draw
+        // the removal only on its next load. The load clears that fact (`./observations.ts`), so it is loaded once per undo.
+        if (reason.reason !== "look" && reason.reason !== "reload") continue;
         if (looked.has(reason.location)) continue;
         looked.add(reason.location);
         const before = this.reads;
-        await lookAt(reason.location);
+        this.ports.seen.loading(reason.location);
+        try {
+          await lookAt(reason.location);
+        } finally {
+          this.ports.seen.loading(undefined);
+        }
         this.reached(open, reason.location, this.reads > before);
       }
     }
@@ -249,7 +368,7 @@ export class AutomationStudioSiteResetSettlementJudge {
     const stale = new Set(open.flatMap((act) => {
       const decision = this.evaluate(act);
       if (decision.kind !== "open") return [];
-      return decision.reasons.flatMap((reason) => (reason.reason === "look" && reason.witness === "group" && reason.location === location && reason.group !== undefined ? [reason.group] : []));
+      return decision.reasons.flatMap((reason) => ((reason.reason === "look" || reason.reason === "reload") && reason.witness === "group" && reason.location === location && reason.group !== undefined ? [reason.group] : []));
     }));
     for (const group of stale) {
       if (landed) {
@@ -263,11 +382,42 @@ export class AutomationStudioSiteResetSettlementJudge {
     }
   }
 
-  /** Every complete list group `act` could change, with `destinations` as its named ones (`./act-groups.ts`), each marked lost or not. */
+  /**
+   * Every complete list group `act` could change, with `destinations` as its named ones (`./act-groups.ts`), each marked lost
+   * or not, and read in place after an undo or not (`./observations.ts`, header, t772 R1).
+   */
   private groupsOf(act: AutomationStudioSiteResetJudgedAct, destinations: readonly Scope[]): AutomationStudioSiteResetJudgedGroup[] {
-    const { seen, receipts, reach } = this.ports;
-    const groups = actGroups({ act: { ...act, destinations }, sequence: this.ports.acts().indexOf(act) + 1, since: act.clock, clock: this.ports.clock(), observations: seen, described: (scope) => receipts.described(scope) });
-    return groups.map((group) => ({ ...group, unreachable: reach.unreachable(group.group) }));
+    const { seen, reach } = this.ports;
+    const inPlace = new Map<string, boolean>();
+    const placed = (group: string): boolean => inPlace.get(group) ?? inPlace.set(group, seen.readInPlace(group, this.undosOn(group))).get(group)!;
+    // For an undone act, a difference on a group read fresh, not in place, may be another open act's (header, t772 w10).
+    const others = (group: string): AutomationStudioSiteResetOtherAct[] | undefined => (act.attempts === 0 || placed(group) ? undefined : this.othersOn(act, group));
+    return this.witnessed(act, destinations, others).map((group) => ({ ...group, unreachable: reach.unreachable(group.group), inPlace: placed(group.group) }));
+  }
+
+  /** `act`'s list group witnesses as judged against the latest reads (`./act-groups.ts`), a difference put down to `others` where handed. */
+  private witnessed(act: AutomationStudioSiteResetJudgedAct, destinations: readonly Scope[], others?: (group: string) => AutomationStudioSiteResetOtherAct[] | undefined): ReturnType<typeof actGroups> {
+    const { seen, receipts } = this.ports;
+    return actGroups({ act: { ...act, destinations }, sequence: this.ports.acts().indexOf(act) + 1, since: act.clock, clock: this.ports.clock(), observations: seen, described: (scope) => receipts.described(scope), ...(others ? { others } : {}) });
+  }
+
+  /** The other acts of this ledger still left on the site that witness `group`, with their place and own subjects: what a difference there may be put down to (header, t772 w10). */
+  private othersOn(act: AutomationStudioSiteResetJudgedAct, group: string): AutomationStudioSiteResetOtherAct[] {
+    return this.ports.acts().flatMap((other, index) => {
+      if (other === act || other.undone === true || other.settled !== undefined) return [];
+      const subjects = groupSubjects(other, group);
+      if (!subjects.length || !this.witnessed(other, [...other.destinations, ...this.lent(other)]).some((entry) => entry.group === group)) return [];
+      return [{ sequence: index + 1, subjects }];
+    });
+  }
+
+  /** The undos landed, in all, on this ledger's acts that witness `group` (header, t772 R1). */
+  private undosOn(group: string): number {
+    let undos = 0;
+    for (const act of this.ports.acts()) {
+      if (act.attempts > 0 && this.witnessed(act, [...act.destinations, ...this.lent(act)]).some((entry) => entry.group === group)) undos += act.attempts;
+    }
+    return undos;
   }
 
   /**

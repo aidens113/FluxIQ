@@ -216,13 +216,13 @@ describe("site reset start check", () => {
   // L1 reset settlement: Core looks at an open act's watched place itself, and every read reports the page's stateful controls.
   describe("looking at a place", () => {
     const goes = { arrival: { node: "demo.go", parameter: "to" }, runnable: ["demo.go"] };
-    function looking(controls: unknown) {
+    function looking(controls: unknown, values?: unknown) {
       const ran: Array<{ callId: string; toolId: string; value: JsonObject }> = [];
       const asked: string[] = [];
       const binding = {
         startState: async (input: { callId: string }) => {
           asked.push(input.callId);
-          return { state: { n: asked.length }, differs: [], location: "https://site.test/watched", controls: controls as Record<string, Record<string, number>> };
+          return { state: { n: asked.length }, differs: [], location: "https://site.test/watched", controls: controls as Record<string, Record<string, number>>, ...(values === undefined ? {} : { values: values as Record<string, string> }) };
         },
         runsNodes: goes
       };
@@ -249,6 +249,21 @@ describe("site reset start check", () => {
         const read = await looking(controls).check.lookAt("https://site.test/watched");
         if ("unread" in read) throw new Error("the read should have answered");
         expect(read.controls).toBeUndefined();
+        expect(read.location).toBe("https://site.test/watched");
+      }
+    });
+
+    // t772 value witness: a read carries the page's shown values, each place and value an opaque token; any malformed
+    // entry drops the whole map, never the read (`../../reset-settlement/values-of.ts`). Made-up fixture: a settings page.
+    it("keeps a read's well-formed shown values, and drops them all when any entry is malformed while keeping the read", async () => {
+      const values = { "pl:theme": "v:light", "pl:font-size": "v:medium" };
+      const kept = await looking(undefined, values).check.read();
+      if ("unread" in kept) throw new Error("the read should have answered");
+      expect(kept.values).toEqual(values);
+      for (const malformed of [{ ...values, "a place, in words": "v:light" }, { ...values, "pl:theme": "the light theme" }, { "pl:theme": 7 }, ["pl:theme"], "v:light"]) {
+        const read = await looking(undefined, malformed).check.read();
+        if ("unread" in read) throw new Error("the read should have answered");
+        expect(read.values).toBeUndefined();
         expect(read.location).toBe("https://site.test/watched");
       }
     });

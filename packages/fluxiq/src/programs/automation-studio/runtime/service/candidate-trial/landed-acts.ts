@@ -120,6 +120,7 @@ import { automationStudioConsequencesInOrder, isAutomationStudioActionConsequenc
 import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY, automationStudioExecutedLocations, automationStudioNodeSideEffectClass, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import { AUTOMATION_STUDIO_RESET_WITNESS_METADATA_KEY, type AutomationStudioCandidateTrialAct } from "../../flow-bootstrap/candidate/index.ts";
 import { automationStudioSiteResetWitnessStampValid } from "../../flow-bootstrap/reset-admission/index.ts";
+import { automationStudioSiteResetValueWitnessOf } from "../../flow-bootstrap/reset-settlement/index.ts";
 import type { AutomationStudioSiteResetSpot, AutomationStudioSiteResetTrialActPlace } from "../../flow-bootstrap/site-reset/index.ts";
 import { automationStudioAttemptSettled } from "../../flow-change/index.ts";
 import { automationStudioTrialExecutedSteps } from "./executed-steps.ts";
@@ -154,9 +155,10 @@ export function automationStudioCandidateTrialLandedActs(trace: AutomationStudio
     const spot = spotOf(attempt);
     const collections = collectionsOf(attempt);
     const controls = controlsOf(attempt);
+    const values = valuesOf(attempt);
     // The step's stamp from submission, where its node carries a valid one (header, t751).
     const witness = node.metadata?.[AUTOMATION_STUDIO_RESET_WITNESS_METADATA_KEY];
-    acts.push({ step: index + 1, definitionId: attempt.definitionId, ...(node.label ? { label: node.label } : {}), ...(control ? { control } : {}), consequences, ...(possible ? { possible: true as const } : {}), ...(spot ? { spot } : {}), ...(collections ? { collections } : {}), ...(controls ? { controls } : {}), ...(created.length ? { created } : {}), ...(passes[index] ? { pass: passes[index] } : {}), ...(automationStudioSiteResetWitnessStampValid(witness) ? { witness: { ...witness } } : {}) });
+    acts.push({ step: index + 1, definitionId: attempt.definitionId, ...(node.label ? { label: node.label } : {}), ...(control ? { control } : {}), consequences, ...(possible ? { possible: true as const } : {}), ...(spot ? { spot } : {}), ...(collections ? { collections } : {}), ...(controls ? { controls } : {}), ...(values ? { values } : {}), ...(created.length ? { created } : {}), ...(passes[index] ? { pass: passes[index] } : {}), ...(automationStudioSiteResetWitnessStampValid(witness) ? { witness: { ...witness } } : {}) });
   });
   return acts;
 }
@@ -290,6 +292,13 @@ function controlsOf(attempt: AutomationStudioNodeAttemptTrace): AutomationStudio
   // The address the run executed with, where the saved trace withheld it; the location alone (header, t738).
   const location = locationOf(automationStudioExecutedLocations.of(witness) ?? witness.location);
   return { page, ...(location ? { location } : {}), before, after };
+}
+
+/** The diff's shown values the step replaced (t772 value witness), at the address the run executed it with, as `controlsOf` reads it; otherwise none. */
+function valuesOf(attempt: AutomationStudioNodeAttemptTrace): AutomationStudioSiteResetTrialActPlace["values"] {
+  const witness = attempt.stateRefs?.stateDiff?.values;
+  if (!isObject(witness)) return undefined;
+  return automationStudioSiteResetValueWitnessOf(witness, locationOf(automationStudioExecutedLocations.of(witness) ?? witness.location));
 }
 
 /** The longest location a read or a trial step carries (`../../flow-bootstrap/start-location.ts`). */

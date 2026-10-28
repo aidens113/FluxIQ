@@ -4,7 +4,7 @@
 // product or task is named (AGENTS.md, "Model guidance never teaches to the
 // test").
 //
-// Two guards:
+// Four guards:
 //
 // - **Only refs read before the act (t751 R6, replacing rerun round 2's
 //   `closed`).** An act with no witness is told only the issued refs whose
@@ -14,6 +14,13 @@
 //   `run-mvgf4pk5-55343613`: told to, the model invented `destination-1`); it
 //   is told that this act cannot be settled in this build, so trials stay
 //   refused while it is in place.
+// - A list read in place after an undo (`reload`, t772 R1) is told to load
+//   again, never to be undone or given up on: the read says nothing yet.
+// - **Words follow the witness kind (t772).** An act witnessed by a value its
+//   press replaced is told to set that value back where it shows -- choose the
+//   value it replaced, then press the control it pressed -- and then look; the
+//   list route (read a list, name its ref) is said only to an act with no
+//   witness, which a value act never is.
 // - A withheld place is never printed: a location that is absent or carries
 //   the trace-withholding marker (`../../executor/trace-withholding.ts`) names
 //   no address.
@@ -36,11 +43,22 @@ function clause(reason: AutomationStudioSiteResetOpenReason, before: readonly Au
   const at = where(reason.location);
   const list = reason.ref ?? "the list it was checked against";
   if (reason.reason === "look" && reason.witness === "toggle") return `read the page${at} again so its control's state can be seen`;
+  if (reason.reason === "look" && reason.witness === "value") return `read the page${at} again so the value this act set can be seen`;
   if (reason.reason === "look") return `read ${list}${at} completely again`;
   if (reason.reason === "undo") return `${list}${at} still differs from how the build found it: undo this act there, naming it under ${UNDOES}`;
+  // A list read in place after an undo landed (`./observations.ts`, t772 R1): nothing is judged on that read.
+  if (reason.reason === "reload") return `${list}${at} was read without loading again since an undo landed, and the page may show the removal only after it loads again: open that list's page again from another page (Core also loads it itself before the next trial)`;
   if (reason.reason === "toggle") return `its control${at} still shows the state this act set: press that same control back once, naming this act under ${UNDOES}`;
+  // The value its press replaced still shows (`./value-tracker.ts`, t772): set back where it shows, by its own control.
+  if (reason.reason === "value") {
+    return `the value this act set still shows${at}: set it back where it shows -- choose the value it replaced with a press that declares no lasting class, then press the control this act pressed, declaring modify_existing, each naming this act under ${UNDOES} -- then look at the page`;
+  }
+  // A value whose place was never read before the build replaced it (`./value-tracker.ts`, t772): no call can meet it.
+  if (reason.reason === "baseline" && reason.witness === "value") return `the value it changed${at} was never read before the build changed it, so nothing read can show it put back: no call can settle it in this build`;
   // A control whose place was never read before the build acted there (`./control-tracker.ts`, t751 R1): no call can meet it.
   if (reason.reason === "baseline") return `its control${at} was never read before the build acted there, so nothing read can show it put back: no call can settle it in this build`;
+  // Its own control read back at its found state while its witness does not hold (`./own-control.ts`, t772): no call can meet it.
+  if (reason.reason === "own_back") return `its own control${at} already shows the state the build found it in, so there is nothing to press back, but the control it is judged on does not show it put back: no call can settle it in this build`;
   // A list Core's own look could not read again (`./reach.ts`, t743): no call can meet it.
   if (reason.reason === "unreachable") return `${list}${at} could not be read again, and nothing else shows this act put back: no call can settle it in this build`;
   if (unnamable) {

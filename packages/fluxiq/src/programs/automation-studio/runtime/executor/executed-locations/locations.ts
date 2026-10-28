@@ -13,7 +13,9 @@
 // string the run executed with, in memory only, keyed by the saved trace's own
 // `controls` object, the one a reader holds when it reads the step. Nothing else
 // of the executed trace is kept: a reader that wants the address asks for this
-// witness's, and every other field it reads stays the withheld one.
+// witness's, and every other field it reads stays the withheld one. The same
+// holds for the diff's `values` witness (t772 value witness), whose `location`
+// is withheld the same way: each witness object is keyed on its own.
 //
 // A saved attempt is paired with the executed attempt of the same id and node in
 // the same frame, so an attempt the saved trace adds (a lifecycle handler body)
@@ -24,19 +26,19 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../contracts.ts";
 
-/** Each saved `controls` witness the withholding rewrote, and the location the run executed with. */
+/** Each saved `controls` or `values` witness the withholding rewrote, and the location the run executed with. */
 const locations = new WeakMap<object, string>();
 
 /** No frame nests deeper than this in a run; past it nothing is paired. */
 const MAXIMUM_FRAME_DEPTH = 64;
 
-/** The executed address behind a saved trace's withheld `controls.location` (header). */
+/** The executed address behind a saved trace's withheld `controls.location` or `values.location` (header). */
 export const automationStudioExecutedLocations = {
   /** Pairs the trace the run executed with the saved trace it returned; called once per graph run (`../graph-run.ts`). */
   remember(executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace): void {
     if (executed !== saved) pair(executed.attempts, saved.attempts, 0);
   },
-  /** The location the run executed with for this saved `controls` witness, or none when it was never rewritten. */
+  /** The location the run executed with for this saved `controls` or `values` witness, or none when it was never rewritten. */
   of(witness: JsonValue | undefined): string | undefined {
     return typeof witness === "object" && witness !== null ? locations.get(witness) : undefined;
   }
@@ -50,8 +52,9 @@ function pair(executed: readonly AutomationStudioNodeAttemptTrace[], saved: read
   for (const kept of saved) {
     const ran = byId.get(kept.attemptId);
     if (!ran || ran.nodeId !== kept.nodeId) continue;
-    const real = controlsOf(ran), shown = controlsOf(kept);
-    if (real && shown && real !== shown) {
+    for (const key of WITNESS_KEYS) {
+      const real = witnessOf(ran, key), shown = witnessOf(kept, key);
+      if (!real || !shown || real === shown) continue;
       const location = locations.get(real) ?? (typeof real.location === "string" ? real.location : undefined);
       if (location !== undefined) locations.set(shown, location);
     }
@@ -59,7 +62,10 @@ function pair(executed: readonly AutomationStudioNodeAttemptTrace[], saved: read
   }
 }
 
-function controlsOf(attempt: AutomationStudioNodeAttemptTrace): JsonObject | undefined {
-  const controls = attempt.stateRefs?.stateDiff?.controls;
-  return typeof controls === "object" && controls !== null && !Array.isArray(controls) ? controls : undefined;
+/** The state-diff witnesses that carry the page's location (header). */
+const WITNESS_KEYS = ["controls", "values"] as const;
+
+function witnessOf(attempt: AutomationStudioNodeAttemptTrace, key: (typeof WITNESS_KEYS)[number]): JsonObject | undefined {
+  const witness = attempt.stateRefs?.stateDiff?.[key];
+  return typeof witness === "object" && witness !== null && !Array.isArray(witness) ? witness : undefined;
 }
