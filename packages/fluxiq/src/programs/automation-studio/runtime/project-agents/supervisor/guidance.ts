@@ -220,8 +220,7 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     afterOutputUnmadeUntaken: "{producer} could not make {value}, which the plan asks it to hand on and no other subflow takes: none of its steps makes that value. "
       + "If the person asked for that value, send {producer} a changed brief saying where on the target it is read, or end honestly; otherwise change the plan with project.amend_plan to drop {value}.",
     /**
-     * After a call of reset briefs only, while the latest assembled Flow may be tested (`./dispatch-tool.ts`, t638). A reset sent for a held
-     * ending or completion is answered by the state's reason instead (`resetToEnd`, t683), so these words no longer ask which it was (t684).
+     * After a call of reset briefs only, while the latest assembled Flow may be tested (`./dispatch-tool.ts`, t638).
      */
     afterReset: "The reset came back. Test the latest assembled Flow with core.test_candidate.",
     /** After a call of reset briefs only, with nothing assembled (`./dispatch-tool.ts`, t638): there is no Flow to test. */

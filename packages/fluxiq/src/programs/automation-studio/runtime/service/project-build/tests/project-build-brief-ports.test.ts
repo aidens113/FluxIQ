@@ -498,10 +498,10 @@ it("tests with the build's create still on the site, said under startedWith, and
 });
 
 // Office rounds 2-4 (t748, C6; `run-mvgf04kw-310fc169`, `run-mvgvyaip-d856e135`): a press was refused for want of a ref
-// until the builder read the list where its effect shows, and a later read then named the refused call. Since t775 a
+// until the builder read the list where its effect shows. Since t775 a
 // press while exploring is never refused for want of a list read before it (`flow-bootstrap/reset-admission/admission.ts`):
 // a trial is judged by the change from the state just before it. So the press runs at once, a later complete read still
-// issues its ref, and no answer names a refused call. A made-up library: a book's page with no list, and the loans list on
+// issues its ref. A made-up library: a book's page with no list, and the loans list on
 // a page of its own.
 describe("a press with no list read before it", () => {
   it.each([
@@ -550,10 +550,9 @@ describe("a press with no list read before it", () => {
     // The press ran on its first call, with no refusal and no code: the domain's own answer, and the loan is on the list.
     expect(seen.pressed).toEqual({ ok: true });
     expect(loans).toEqual(["s:dune", "s:atlas"]);
-    // The complete read still issues the list's ref; with nothing refused, it names no call to make again.
+    // The complete read still issues the list's ref.
     expect(seen.read).toMatchObject({ resetDestinations: { collections: [{ ref: "destination-1" }] } });
-    expect(seen.read).not.toHaveProperty("retryRefused");
-    // A page that printed no list carries neither.
+    // A page that printed no list carries none.
     expect(seen.back).toEqual({ ok: true });
   });
 });

@@ -34,6 +34,13 @@ const SETTLE_MODEL = "An act counts as settled when fresh complete reads, taken 
 /** How an act settled with no change seen is said (L1). */
 const LEFT_UNCHANGED = "left on the site; nothing it could change showed a change in fresh complete reads taken after it";
 
+/** What a settled act's unread lists mean (L1, t743, t783): said identically by an undo's answer and a later trial's `startedWith`. Empty where every list was read again. */
+function unreadWords(unread?: readonly string[]): string {
+  if (unread === undefined) return "";
+  const lists = unread.length ? `${unread.length === 1 ? "the list" : "the lists"} named for it (${unread.join(", ")})` : "a list named for it";
+  return `${lists} could not be read again, so whether ${unread.length > 1 ? "they are" : "it is"} as the build found it is not known`;
+}
+
 /** The instructions the ledger and its trial policy answer with. */
 export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
   /** The condition a refusal names as failed, and whether any call can meet it (`../reset-answers/condition-words.ts`, t743). */
@@ -53,8 +60,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
    * back, with the refs of lists named for it that Core could not read again (`unread`) where there were any.
    */
   settledAs(how: "restored" | "unchanged", unread?: readonly string[]): string {
-    const lists = unread === undefined ? "" : unread.length ? `${unread.length === 1 ? "the list" : "the lists"} named for it (${unread.join(", ")})` : "a list named for it";
-    const notRead = lists ? `${lists} could not be read again, so whether ${unread !== undefined && unread.length > 1 ? "they are" : "it is"} as the build found it is not known` : "";
+    const notRead = unreadWords(unread);
     if (how === "unchanged") return notRead ? `${LEFT_UNCHANGED}; ${notRead}` : LEFT_UNCHANGED;
     return notRead ? `put back as far as fresh complete reads can show; ${notRead}` : "put back: fresh complete reads show everything it could change as the build found it";
   },
@@ -87,7 +93,8 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
    * kept because the site offers no control that undoes it (an act with no
    * identified item or resource; an identified one is never kept this way).
    */
-  keptAct(left = false): string {
+  keptAct(left = false, unread?: readonly string[]): string {
+    if (left && unread !== undefined) return `That act is left on the site: ${LEFT_UNCHANGED}; ${unreadWords(unread)}. No undo is owed and this call was not run. Do not try to undo it; trials run with it on the site, and their judge is told. Make the call without "${UNDOES}" if it does something else.`;
     if (left) return `That act is left on the site: fresh complete reads of everything it could change showed no change, so no undo is owed and this call was not run. Do not try to undo it; trials run with it on the site, and their judge is told. Make the call without "${UNDOES}" if it does something else.`;
     return "That act is kept on this site: the site offered no control that undoes it, so this call was not run. Trials run with it on the site, listed under startedWith.cannotUndo, and their judge is told. "
       + `Do not try to undo it again; make the call without "${UNDOES}" if it does something else.`;
@@ -133,7 +140,11 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
    * is listed nowhere and nothing is owed. Otherwise its own control was aimed at while showing the state the build found,
    * and no fresh read shows that yet: pressing would make the act's change again, and a look on this page settles it.
    */
-  alreadyBack(settled = false): string {
+  alreadyBack(settled = false, unread?: readonly string[]): string {
+    if (settled && unread !== undefined) {
+      return `That call was not run: this act is already settled, put back as far as fresh complete reads can show; ${unreadWords(unread)}. It is no longer listed, and nothing more can be read for it. `
+        + `Do not name it under "${UNDOES}" again; undo the other acts still listed under actsToUndo, if any.`;
+    }
     if (settled) {
       return "That call was not run: this act is already back. Fresh reads show everything it could change as this build found it, so it is settled, it is no longer listed, and nothing is owed for it. "
         + `Do not name it under "${UNDOES}" again; undo the other acts still listed under actsToUndo, if any.`;
@@ -168,8 +179,11 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
    * What a call naming an act under `undoes` settled (rerun round 3, office `run-mvgo5xft-25460ba2`): a settling look used to
    * answer with only its page, so the model repeated it. `settled`: the act is settled; `open`: acts of the build are still open.
    */
-  lookSettled(settled: boolean, open: boolean): string {
-    const head = settled
+  lookSettled(settled: boolean, open: boolean, unread?: readonly string[]): string {
+    // Settled with a list unread (t783): says what `startedWith.cannotUndo` says of it, never "everything".
+    const head = settled && unread !== undefined
+      ? `This call settled the act it named under ${UNDOES}, put back as far as fresh complete reads can show; ${unreadWords(unread)}. Nothing more can be read for it now; do not name it again. `
+      : settled
       ? `This call settled the act it named under ${UNDOES}: fresh complete reads show everything it could change as the build found it, so nothing more is owed for it; do not name it again. `
       : `This call has not settled the act it named under ${UNDOES} yet: its settle says what is still needed. `;
     return head + (open ? "Each act under actsStillOpen, across the whole build, says under settle what is still needed." : "No act of this build is still open.");
@@ -182,16 +196,6 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
     return `This call named resetDestination but no act under "${UNDOES}", so it settled nothing: a ref names the list for an act only on a call that also names that act under "${UNDOES}". `
       + "Each act under actsStillOpen says under settle what is still needed."
       + (example ? " To name a list for one, make the look again with both keys, as in example." : "");
-  },
-  /**
-   * Said beside a complete read's receipts while a press stands refused for want of a ref (t748, office rounds 2-4, C6:
-   * builders read the list, got its ref, and went back and forth for 9 and 14 turns before pressing with it). `call`: the
-   * refused call's id; `refs`: the refs this read printed that were not printed beside the refusal itself.
-   */
-  retryRefused(call: string, refs: readonly AutomationStudioSiteResetIssuedRef[]): string {
-    return `The call ${JSON.stringify(call)} was refused for want of a resetDestination ref, and this complete read issued ${refs.length === 1 ? "a ref" : "refs"}: ${refList(refs, true)}. `
-      + "If what that call makes or changes would show in one of these lists, make it again on its own page, pressing the control by its handle in the newest view and naming that list's ref as resetDestination; the list need not be read again first. "
-      + `If none of them is where its effect would show, make the call again without resetDestination. ${SHOWS}`;
   },
   /**
    * The build's standing guidance on declaring lasting acts and observing their destinations, aligned with

@@ -52,6 +52,8 @@ export function automationStudioProjectBuildResetCalls(project: AutomationStudio
   standing(act: string): ReturnType<AutomationStudioSiteResetLedger["standing"]>;
   /** Every act of the build still to undo, in the order recorded, as its own ledger names it (with `settle` while open), and its ref. */
   openActs(): Array<AutomationStudioSiteResetNamedAct & { ref: string }>;
+  /** The lists named for one settled act that its owner's ledger could not read again (`ledger.ts`, `unreadOf`); undefined where none, or for an id no brief gave. */
+  unreadOf(act: string): readonly string[] | undefined;
 } {
   const ownerOf = (act: unknown): string | undefined => (typeof act === "string" ? project.snapshot().acts.find((entry) => entry.act === act)?.owner : undefined);
   const owner = (act: unknown): AutomationStudioSiteResetLedger => {
@@ -104,6 +106,7 @@ export function automationStudioProjectBuildResetCalls(project: AutomationStudio
     undoSeen: (act, changedInPlace) => owner(act).undoSeen(act, changedInPlace),
     noEffect: (act) => owner(act).noEffect(act),
     standing: (act) => (ownerOf(act) === undefined ? undefined : owner(act).standing(act)),
+    unreadOf: (act) => (ownerOf(act) === undefined ? undefined : owner(act).unreadOf(act)),
     openActs
   };
 }
