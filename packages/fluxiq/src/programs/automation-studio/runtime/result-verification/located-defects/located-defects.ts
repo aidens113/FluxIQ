@@ -9,8 +9,11 @@ import {
   type AutomationStudioResultNoStoredRow
 } from "../refuted-no/index.ts";
 import { AutomationStudioRequestRowId } from "../request-rows/index.ts";
+import { automationStudioResultActDefectNotFound } from "./act-located.ts";
+import { automationStudioResultActSteps, type AutomationStudioResultActStep } from "./act-steps.ts";
 
 type Defect = AutomationStudioLlmVerificationDefect;
+type Context = { record: AutomationStudioResultNoRecord; summary: Pick<AutomationStudioRunResultSummary, "reads" | "recordSets" | "flowShape" | "buildTest"> };
 
 /**
  * Which of a no's defects Core finds in its own record of the result (header,
@@ -19,12 +22,15 @@ type Defect = AutomationStudioLlmVerificationDefect;
  */
 export function automationStudioResultDefectsLocated(
   defects: readonly Defect[],
-  context: { record: AutomationStudioResultNoRecord; summary: Pick<AutomationStudioRunResultSummary, "reads" | "recordSets"> }
+  context: Context
 ): { located: Defect[]; findings: string[] } {
   const located: Defect[] = [];
   const findings: string[] = [];
+  // Core's record of the steps the run took, read once and only for an act defect (`./act-steps.ts`, t766).
+  let steps: AutomationStudioResultActStep[] | undefined;
+  const actSteps = (): AutomationStudioResultActStep[] => (steps ??= automationStudioResultActSteps(context.summary));
   for (const defect of defects) {
-    const missing = notFound(defect, context);
+    const missing = notFound(defect, context, actSteps);
     if (missing === undefined) located.push(defect);
     else findings.push(missing);
   }
@@ -32,12 +38,14 @@ export function automationStudioResultDefectsLocated(
 }
 
 /** Why Core does not find one defect in its record, or nothing where it does. */
-function notFound(defect: Defect, context: { record: AutomationStudioResultNoRecord; summary: Pick<AutomationStudioRunResultSummary, "reads" | "recordSets"> }): string | undefined {
+function notFound(defect: Defect, context: Context, actSteps: () => AutomationStudioResultActStep[]): string | undefined {
   const { record, summary } = context;
   // Core cannot locate non-row requirements by row membership. Keep the uncertainty explicit; never infer correctness from this boundary.
   if (defect.kind === "other") return "This requirement is not measurable by Core\'s row-membership checks; it remains unconfirmed against the original request.";
   const unsaid = requestWordsUnsaid(defect.requestWords, record.says);
   if (unsaid) return unsaid;
+  // An act the request asks for, looked for in Core's record of the steps the run took (`./act-located.ts`, t766).
+  if (defect.kind === "act_missing" || defect.kind === "act_wrong") return automationStudioResultActDefectNotFound(defect, actSteps());
   const quoted = `"${defect.row}"`;
   const rows = rowsNamed(defect.row, record);
   if (defect.kind !== "asked_missing") {
@@ -85,7 +93,7 @@ function rowsNamed(row: string, record: AutomationStudioResultNoRecord): { store
 }
 
 /** Whether a stored row's own cells, or the answer's record sets, hold a column by that name, compared without case, spaces or marks. */
-function storedColumn(column: string, rows: readonly AutomationStudioResultNoStoredRow[], summary: Pick<AutomationStudioRunResultSummary, "reads" | "recordSets">): string | undefined {
+function storedColumn(column: string, rows: readonly AutomationStudioResultNoStoredRow[], summary: Context["summary"]): string | undefined {
   const wanted = bare(column);
   if (!wanted) return undefined;
   const working = automationStudioResultReadWorkingSets(summary);

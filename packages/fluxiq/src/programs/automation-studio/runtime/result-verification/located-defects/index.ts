@@ -23,8 +23,28 @@
 //   past what it read.
 // - Every defect's `requestWords` run word for word in the request.
 //
+// **And an act the request asks for (t766).** A Flow that only acts -- saves,
+// sends, adds to a cart -- stores no rows, so a no of its result had no row to
+// name: every one came to unsure (`../agreement/unsupported-no.ts`), and its
+// failures never reached a repair. A no may name an act instead, and Core
+// looks for it in its record of the steps
+// the run took (`./act-steps.ts`: each step of the Flow with what the run saw
+// it change, and a build test's steps with their targets), never in prose
+// (`./act-located.ts`):
+//
+// - `act_wrong` -- a step Core holds, by its node id, label or a build test's
+//   number, that acts rather than reads.
+// - `act_missing` -- what the act is done to, which no step Core holds names.
+//
+// The steps are evidence apart from the rows (supervisor, 2026-10-27): a
+// request that owes records and asks for an act beside them takes an act
+// defect too, and every row claim -- a row kept, missing or wrong -- still
+// needs its row in the record, exactly as before.
+//
 // A row is named as any no's sentence names one: its whole label, Core's short
 // id, or the start of its label (`../../refuted-no/named-rows.ts`). What a no
 // whose defects Core finds none of comes to is `../unsupported-no.ts`.
 
+export * from "./act-located.ts";
+export * from "./act-steps.ts";
 export * from "./located-defects.ts";

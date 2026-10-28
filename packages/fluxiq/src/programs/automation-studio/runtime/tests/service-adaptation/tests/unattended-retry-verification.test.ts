@@ -30,13 +30,16 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { IoRegistry } from "../../../../../../io/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
-import type { AutomationStudioLlmProvider } from "../../../llm/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider } from "../../../llm/index.ts";
 import type { AutomationStudioRuntimeSessionLlm } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES } from "../../../result-check-authorization/index.ts";
 import { AUTOMATION_STUDIO_RESULT_CHECK_CODES } from "../../../result-check-schedule/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { adaptiveTrainingMetadata } from "../../service-fixtures.ts";
+
+/** A domain that declares its denied evidence keys and offers no tool (see the service's `llmEvidenceRuntime` below). */
+const DECLARED_KEYS: AutomationStudioLlmEvidenceRuntimeBinding = { domainId: "example", deniedEvidenceKeys: [], tools: [], executeTool: async () => ({}) };
 
 const RECORD_OUTPUT: JsonObject = {
   datasetId: "products",
@@ -180,7 +183,8 @@ async function harness(options: {
     runTask: async (request) => {
       standingCalls.push(request.taskKind);
       return {
-        response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: options.verdict ?? "yes" } },
+        // A current no lists its defects (t752, 534c41fb): a row the run stores, quoting the request, which Core finds in its record.
+        response: { kind: "diagnosis", summary: "Judged.", diagnosis: options.verdict === "no" ? { answersRequest: "no", defects: [{ kind: "kept_not_asked", row: "Desk", requestWords: "return its result" }] } : { answersRequest: options.verdict ?? "yes" } },
         usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12, estimatedCostUsd: 0.0015 }
       };
     }
@@ -218,7 +222,11 @@ async function harness(options: {
     resultCheckProviderResolver: (request) => {
       standingRequests.push({ keyId: request.keyId, maxEstimatedCostUsd: request.maxEstimatedCostUsd, authorizedByUserId: request.authorizedByUserId });
       return { provider: judge, maxEstimatedCostUsd: request.maxEstimatedCostUsd };
-    }
+    },
+    // The domain's declared denied keys, as every bound domain declares them: without them a run's check withholds every
+    // value, so no row a no names is one Core can find in its record, and no no of a stored row ever counts (t752, 534c41fb).
+    // Nothing here offers a tool: no exploration or re-author is reachable through it.
+    llmEvidenceRuntime: DECLARED_KEYS
   }).bindIoRuntime(io, "example").bindNativeNodeRuntime(native);
   services.add(service);
 

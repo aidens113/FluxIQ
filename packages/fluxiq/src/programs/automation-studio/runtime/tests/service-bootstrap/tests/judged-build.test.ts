@@ -87,7 +87,7 @@ async function build(script: {
   instruction: string;
   decisions: JsonObject[];
   judge: JudgeAnswer[];
-  judgeSaid?: Record<string, string>;
+  judgeSaid?: Record<string, unknown>;
   /** What each decision cost, by its index; `USAGE` where absent. */
   usage?: (decision: number) => Usage;
 }) {
@@ -213,7 +213,9 @@ describe("a Flow the model says is ready", () => {
     const said = {
       expected: "A table of every paper towel on the shelf with its name and price.",
       observed: "The test read one list of two rows; nothing reads the prices of the 12 Rolls pack on its own page.",
-      changed: "Open the 12 Rolls pack and read its price as well."
+      changed: "Open the 12 Rolls pack and read its price as well.",
+      // A current no lists its defects (t752, 534c41fb); a test that stores no rows names the act no step does (t766).
+      defects: [{ kind: "act_missing", row: "the 12 Rolls pack on its own page", requestWords: "give me a table of each one's name and price" }]
     };
     const script = () => ({
       instruction: READ_TOWELS,
@@ -300,7 +302,9 @@ describe("lane A's run 40: the napkins claimed on the towels' Add to cart", () =
   ];
   const said = {
     observed: "No step searches for or adds the napkins; the one Add to cart is on the towels' page.",
-    changed: "Search the napkins, choose 250 Count and add them to the cart."
+    changed: "Search the napkins, choose 250 Count and add them to the cart.",
+    // A current no lists its defects (t752, 534c41fb): the act no step does, which Core finds in the test's steps (t766).
+    defects: [{ kind: "act_missing", row: "ValueRidge Everyday Dinner Napkins", requestWords: "one pack of the ValueRidge Everyday Dinner Napkins in the 250 Count size" }]
   };
 
   it("is no longer refused at completion: it reaches the judge, whose packet shows no step naming the napkins", async () => {
@@ -346,7 +350,11 @@ describe("lane A's run 40: the napkins claimed on the towels' Add to cart", () =
 const RESERVE_READ_ID = "domain.example.read";
 /** One dollar per million tokens, in and out: a decision is held at about a cent. */
 const RESERVE_PER_TOKEN_USD = 1e-6;
-const RESERVE_SAID = { observed: "The test read the rows, but no price column was read.", changed: "Read the price of each row as well." };
+const RESERVE_SAID = {
+  observed: "The test read the rows, but no price column was read.", changed: "Read the price of each row as well.",
+  // A current no lists its defects (t752, 534c41fb); a test that stores no rows names the act no step does (t766).
+  defects: [{ kind: "act_missing", row: "the price of each row", requestWords: "Read the rows the catalog lists" }]
+};
 
 function reserveDefinition(id: string, label: string): AutomationStudioNodeDefinition {
   return {

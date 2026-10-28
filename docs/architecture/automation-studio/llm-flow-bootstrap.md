@@ -3553,6 +3553,25 @@ verification passes a task-specific decoding flag: missing, malformed or partly 
 accounts are unusable and leave the result unsure, rather than being treated as legacy negatives.
 Positive and unrelated diagnosis replies retain their established decoder behavior.
 
+A result that stores no answer rows -- a Flow that only acts: saves, sends, likes, adds to a cart --
+is grounded against Core's record of the steps the run took, not against rows (t766), and so is an
+act of a request that also owes records. Until then
+such a no could only name `other`, so every act-only failure came to unsure, failed nothing and
+asked for no repair. Two act kinds now exist: `act_missing`, an act the request asks for that no
+step does, naming in `row` what it is done to; and `act_wrong`, a step (`step`: its node id, its
+label, or a build test's step number) that did its act to the wrong thing, with the wrong value or
+with no effect the evidence shows. Core's act record is each step of the Flow with its label,
+authored parameters and the changes the run saw it make (`flowShape`), and a build test's steps
+with their targets; a step whose record set or build-test observation is rows is a read, not an
+act. `act_wrong` is found when it names a step Core holds that acts; `act_missing` when no acting
+step's own words name what it is done to (a step that names it did that act). Both still quote the
+request's own words. The steps are evidence apart from the rows, so a result that also stores rows
+-- a request that owes records and asks for an act beside them -- takes an act defect too
+(supervisor, 2026-10-27), while every row claim (a row kept, missing or wrong) still needs its row
+in Core's record exactly as before.
+A found act defect keeps the no, which fails the run and hands its repair the judge's reading, as a
+found row defect does; a no naming nothing Core finds stays unsure.
+
 A read that supplies a repeat loop and is superseded by a later read of the same target is working
 rows when the graph/run evidence establishes that relationship. Its record set is excluded from
 answer-only checks only when every collector is a working read and a later answer set exists.

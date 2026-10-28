@@ -88,7 +88,9 @@ export async function createHarness(flowMaxCostUsd: number, dataDir: string, ser
       // The judge is the result check's, not the repair's, and costs nothing here.
       if (request.taskKind === "loop_verification") {
         calls.push({ taskKind: request.taskKind, costUsd: 0 });
-        return { response: { kind: "diagnosis", summary: "The records include items that are not red.", diagnosis: { answersRequest: "no", changed: "Keep only the red products." } }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0 } };
+        // A current no lists its defects (t752, 534c41fb): a row the run stores, quoting the request, which Core finds in its record.
+        const defects = [{ kind: "kept_not_asked", row: "Beta", requestWords: "every red product" }];
+        return { response: { kind: "diagnosis", summary: "The records include items that are not red.", diagnosis: { answersRequest: "no", changed: "Keep only the red products.", defects } }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0 } };
       }
       calls.push({ taskKind: request.taskKind, costUsd: COST_PER_CALL });
       const usage = { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: COST_PER_CALL };

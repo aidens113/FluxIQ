@@ -21,7 +21,7 @@ import type { AutomationStudioRecordSchema } from "@fluxiq/contracts/automation-
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowRunDetail, AutomationStudioRuntimeSession } from "../../../../model/index.ts";
-import type { AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
+import type { AutomationStudioLlmTaskRequest, AutomationStudioLlmVerificationDefect } from "../../../llm/index.ts";
 import {
   automationStudioFlowGraphVersion,
   automationStudioFlowInstructionDigest,
@@ -80,12 +80,17 @@ async function stored(service: AutomationStudioService, projectId: string, runId
 
 /**
  * What each judge's no says: a count Core's record refutes (2 rows stored, not
- * 5) beside a claim it cannot check; that claim alone stands whole. The claim
- * names a condition, not a row: this run's summary withholds values, so a row's
- * name is not one Core reads off it.
+ * 5) beside a claim it cannot check; that claim alone stands whole. The prose
+ * names a condition, not a row; the row each no rests on is in its defects
+ * (`KEPT`).
  */
 const PART_REFUTED = { observed: "Only 5 rows were stored. Condition 1 should not have kept the hybrid packets." };
 const STANDS_WHOLE = { observed: "Condition 1 should not have kept the hybrid packets." };
+/**
+ * The defect each no lists, as a current no must (t752, 534c41fb): a row every playback here stores, quoting the request, which Core finds
+ * in the run's own record. Without it the reply is unreadable and the check is never a no.
+ */
+const KEPT: AutomationStudioLlmVerificationDefect[] = [{ kind: "kept_not_asked", row: "Brandywine Pink", requestWords: "Create a deterministic Start to End Flow" }];
 
 /** The run's result check over the service's own stores and saved Flow, with a judge that says no on every call, as `said` reads. */
 async function checkedAsTheServiceChecks(service: AutomationStudioService, projectId: string, session: AutomationStudioRuntimeSession, said: Record<string, string> = PART_REFUTED) {
@@ -98,7 +103,10 @@ async function checkedAsTheServiceChecks(service: AutomationStudioService, proje
     flowInstructionSet: (request) => service.getFlowInstructionSet(request),
     getFlowRunDetail: async () => null, saveFlowRunDetail: async (detail: AutomationStudioFlowRunDetail) => detail, writeRuntimeSession: async (_projectId, saved) => { written.push(saved); },
     listRunDatasets: (request) => service.runDatasets.listRunDatasets(request), getRunDatasetPage: (request) => service.runDatasets.getRunDatasetPage(request),
-    resolveProvider: async () => ({ provider: judging("no", asked, undefined, said) }),
+    resolveProvider: async () => ({ provider: judging("no", asked, undefined, said, KEPT) }),
+    // The runtime's declared denied keys, as `service.ts` hands them to every run's check: without them the check withholds every value,
+    // and no row a no names could be one Core finds in its record (t752).
+    deniedEvidenceKeys: [],
     // The port exactly as `service.ts` builds it for a run's result check.
     judgedBuildTrial: automationStudioResultJudgedBuildTrialOfSavedFlow({ flowMetadata: async (project, flow) => (await service.getFlow(project, flow)).metadata })
   } });

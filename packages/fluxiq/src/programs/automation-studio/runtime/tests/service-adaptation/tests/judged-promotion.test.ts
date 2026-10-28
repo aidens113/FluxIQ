@@ -23,10 +23,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { IoRegistry } from "../../../../../../io/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
-import type { AutomationStudioLlmProvider } from "../../../llm/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { adaptiveTrainingMetadata } from "../../service-fixtures.ts";
+
+/** A domain that declares its denied evidence keys and offers no tool (see the service's `llmEvidenceRuntime` below). */
+const DECLARED_KEYS: AutomationStudioLlmEvidenceRuntimeBinding = { domainId: "example", deniedEvidenceKeys: [], tools: [], executeTool: async () => ({}) };
 
 const RECORD_OUTPUT: JsonObject = {
   datasetId: "products",
@@ -125,7 +128,9 @@ async function harness(options: {
       storedAtJudgement.push(await readStoredDrift?.());
       const answersRequest = options.verdicts?.[judgeCalls] ?? options.verdict ?? "yes";
       judgeCalls += 1;
-      return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest } }, usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12, estimatedCostUsd: 0.0015 } };
+      // A current no lists its defects (t752, 534c41fb): a row the run stores, quoting the request, which Core finds in its record.
+      const diagnosis = answersRequest === "no" ? { answersRequest, defects: [{ kind: "kept_not_asked", row: "Desk", requestWords: "return its result" }] } : { answersRequest };
+      return { response: { kind: "diagnosis", summary: "Judged.", diagnosis }, usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12, estimatedCostUsd: 0.0015 } };
     }
   };
   const service = new AutomationStudioService({
@@ -145,7 +150,11 @@ async function harness(options: {
         }
         : { response: { kind: "diagnosis", summary: "The drift action needs a retry setting." }, usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6, estimatedCostUsd: 0.001 } }
     }),
-    resultCheckProviderResolver: (request) => ({ provider: judge, maxEstimatedCostUsd: request.maxEstimatedCostUsd })
+    resultCheckProviderResolver: (request) => ({ provider: judge, maxEstimatedCostUsd: request.maxEstimatedCostUsd }),
+    // The domain's declared denied keys, as every bound domain declares them: without them a run's check withholds every
+    // value, so no row a no names is one Core can find in its record, and no no of a stored row ever counts (t752, 534c41fb).
+    // Nothing here offers a tool: no exploration or re-author is reachable through it.
+    llmEvidenceRuntime: DECLARED_KEYS
   }).bindIoRuntime(io, "example").bindNativeNodeRuntime(native);
   services.add(service);
 

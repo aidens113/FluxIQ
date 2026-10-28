@@ -132,7 +132,8 @@ it("judges a re-authored Flow's re-run with the caller's key, after the standing
         metadata: { provider: "mock", model: "standing-judge" },
         runTask: async (task) => {
           standingCalls.push(task.taskKind);
-          return { response: { kind: "diagnosis", summary: "The returned records do not answer the instruction.", diagnosis: { answersRequest: "no" } }, usage: USAGE };
+          // A current no lists its defects (t752, 534c41fb): a row the run stores, quoting the request, which Core finds in its record.
+          return { response: { kind: "diagnosis", summary: "The returned records do not answer the instruction.", diagnosis: { answersRequest: "no", defects: [{ kind: "kept_not_asked", row: "Beta", requestWords: "Return three records from the fixture" }] } }, usage: USAGE };
         }
       },
       maxEstimatedCostUsd: request.maxEstimatedCostUsd

@@ -55,7 +55,7 @@ describe("a verification's defects (t752)", () => {
   const verification = { taskKind: "loop_verification", expectedOutput: "diagnosis", context: {} } as unknown as AutomationStudioLlmTaskRequest;
   const fieldsOf = (request: AutomationStudioLlmTaskRequest) => (automationStudioDeepSeekOutputSchema(request) as { properties: { diagnosis: { properties: Record<string, unknown> } } }).properties.diagnosis.properties;
 
-  it("offers at most 12 closed defects, each a kind, the row, an optional column and the request's words, right after the verdict", () => {
+  it("offers at most 12 closed defects, each a kind, the row, an optional column, value and step, and the request's words, right after the verdict", () => {
     expect(Object.keys(fieldsOf(verification))).toEqual(["expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "defects", "explorationNeeded", "patchNeeded"]);
     expect(fieldsOf(verification).defects).toEqual({
       type: "array",
@@ -65,10 +65,12 @@ describe("a verification's defects (t752)", () => {
         additionalProperties: false,
         required: ["kind", "row", "requestWords"],
         properties: {
-          kind: { enum: ["kept_not_asked", "asked_missing", "wrong_value", "other"] },
+          // The act kinds and the step an act_wrong names (t766): a result that stores no rows has no row a no could name.
+          kind: { enum: ["kept_not_asked", "asked_missing", "wrong_value", "act_missing", "act_wrong", "other"] },
           row: { type: "string", minLength: 1, maxLength: 500 },
           column: { type: "string", minLength: 1, maxLength: 500 },
-            value: { type: "string", minLength: 1, maxLength: 500 },
+          value: { type: "string", minLength: 1, maxLength: 500 },
+          step: { type: "string", minLength: 1, maxLength: 500 },
           requestWords: { type: "string", minLength: 1, maxLength: 500 }
         }
       }

@@ -20,11 +20,17 @@ type Reply = (call: number, latest: { revision?: number; digest?: string } | und
 /** A submission the completion check refuses, the same way each time. */
 const refusedSubmission = { kind: "tool_call", callId: "submit-bad", toolId: "core.submit_candidate", input: { summary: "popups first", plan: { schemaVersion: "0.1" } } };
 
+/**
+ * What the trial's judge names when it says no: a current no lists its defects (t752, 534c41fb), and a Flow that
+ * stores no rows names the act no step does (t766), which Core finds in the trial's steps.
+ */
+const NO_DEFECTS = [{ kind: "act_missing", row: "a deterministic step between Start and End", requestWords: "Create a deterministic Start to End Flow" }];
+
 async function candidateBuild(reply: Reply, verdict: "yes" | "no" = "no") {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-candidate-kept-"));
   let calls = 0;
   const provider = mockProvider(async (request) => {
-    if (request.taskKind === "loop_verification") return judgeReply(verdict);
+    if (request.taskKind === "loop_verification") return judgeReply(verdict, verdict === "no" ? { defects: NO_DEFECTS } : {});
     calls++;
     const evidence = request.context.evidenceLoop?.evidence ?? [];
     const latest = [...evidence].reverse().find((entry) => entry.toolId === "core.submit_candidate" && (entry.value as { ok?: unknown } | undefined)?.ok === true)?.value as { revision?: number; digest?: string } | undefined;
