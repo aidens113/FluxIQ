@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4143
+- Public declarations: 4144
 - Class: 141
 - Interface: 10
 - Object: 547
 - Type: 2200
 - Type Alias: 1
-- Value: 1244
+- Value: 1245
 
 ## Public Declarations
 
@@ -917,6 +917,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioConversationAskRow` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/rows.ts` | - |
 | `AutomationStudioConversationAskStatus` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/ask.ts` | - |
 | `AutomationStudioConversationAskTimeoutAction` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/ask.ts` | - |
+| `automationStudioConversationAttachedRecordingProblem` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/attached-recording/problem.ts` | - |
 | `AutomationStudioConversationAttachment` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/turn.ts` | What a turn shows beside its words. `kind` names the renderer; `ref` is what it renders. |
 | `AutomationStudioConversationAttachmentAnswer` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/conversations.ts` | A turn's attachment and, when a resolver is configured, what it refers to. |
 | `automationStudioConversationAttachmentOrRefuse` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/inputs.ts` | - |
