@@ -15,6 +15,7 @@ describe("a read's word that its list goes on", () => {
     expect(admit({ ...READ, listContinues: { kind: "infinite_scroll", evidence: "still_growing" } })?.listContinues).toEqual({ kind: "infinite_scroll", evidence: "still_growing" });
     // Paused by the site, not ended (t755): a word this Core knows, so not renamed "unknown".
     expect(admit({ ...READ, listContinues: { kind: "infinite_scroll", evidence: "loader_asked_to_wait" } })?.listContinues).toEqual({ kind: "infinite_scroll", evidence: "loader_asked_to_wait" });
+    expect(admit({ ...READ, listContinues: { kind: "load_more", evidence: "unopened_replies" } })?.listContinues).toEqual({ kind: "load_more", evidence: "unopened_replies" });
     expect(admit({ ...READ, listContinues: { kind: "next_page", evidence: "next_control", label: "More recipes" } })?.listContinues).toEqual({ kind: "next_page", evidence: "next_control" });
   });
 

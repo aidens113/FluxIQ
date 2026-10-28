@@ -35,6 +35,12 @@
 // what it said; the judges' prose says the same for every list
 // (`../../llm/diagnosis-instructions.ts`).
 //
+// **Closed replies are coverage too (t762).** Items that each carry a control
+// opening more of the list -- "View 3 replies" -- hold rows the read, which
+// reads what is on the page, never saw. The read carries `unopened_replies`; the
+// sentence says those controls were not opened and the fix line says to open
+// them before reading, not to page the list on.
+//
 // **A list goes on, ends, or is paused by the site (t755).** A list whose
 // loader answered the read's reveal with a notice to wait before it loads more
 // grew no further, and until 2026-10-27 read as one that had ended: a read of
@@ -52,9 +58,18 @@ export function automationStudioResultReadListContinues(read: AutomationStudioRe
   const fact = read.listContinues;
   if (!fact || read.paginates === true || read.keptPerPage !== undefined || read.pagesRead > 1 || read.stop !== undefined) return undefined;
   const seen = read.itemsSeen !== undefined ? `saw ${read.itemsSeen} ${read.itemsSeen === 1 ? "item" : "items"} and kept ${read.kept}` : `kept ${read.kept}`;
+  if (fact.evidence === "unopened_replies") return unopened(read.nodeId, seen);
   return {
     said: `Step ${read.nodeId} read one part of a list that goes on past it (${shownBy(fact)}): it ${seen}, and no item after those was read.${grows(fact) ? ` ${PAST_THE_RANGE}` : ""}`,
     fix: `To read past what step ${read.nodeId} read, move that same list on to its next part (${wayOn(fact.kind)}) and repeat the read after each move, in a loop, until the list ends or holds what the request asks for.${paused(fact) ? ` ${PAUSED_FIX}` : ""} Where the request asks only for what its first part shows, or what was read already reaches an end the page itself marks or the end of the range the request asks for, leave the read as it is.`
+  };
+}
+
+/** Closed controls that open more of the list: what those hold was not read, and they are opened before the read (header, t762). */
+function unopened(nodeId: string, seen: string): { said: string; fix: string } {
+  return {
+    said: `Step ${nodeId} read the list as the page showed it: it ${seen}, and its items carry controls that open more of the list (replies) which were not opened, so what those controls hold was not read.`,
+    fix: `To read what those controls hold, open them before step ${nodeId} reads: press each item's control that opens its replies, as a person would, and read the list again once they are open. Where the request asks only for the items the page shows without opening anything, leave the read as it is.`
   };
 }
 

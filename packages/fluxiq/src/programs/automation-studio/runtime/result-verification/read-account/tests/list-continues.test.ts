@@ -113,6 +113,25 @@ describe("a read whose list's loader asked it to wait", () => {
     }
   });
 });
+// Items that carry closed replies controls (t762): the read says they were not
+// opened, and the fix is to open them before reading, not to page the list on.
+describe("a read whose items carry replies controls that were not opened", () => {
+  const closed = read({ itemsSeen: 25, kept: 5, listContinues: { kind: "load_more", evidence: "unopened_replies" } });
+
+  it("says what those controls hold was not read, and the fix opens them before the read", () => {
+    const words = automationStudioResultReadListContinues(closed)!;
+    expect(words.said).toContain("its items carry controls that open more of the list (replies) which were not opened, so what those controls hold was not read");
+    expect(words.said).toContain("saw 25 items and kept 5");
+    expect(words.fix).toContain("open them before step");
+    expect(words.fix).not.toContain("move that same list on");
+    expect(words.fix).not.toContain("paused");
+  });
+
+  it("is carried on the account as sent", () => {
+    const { reads } = automationStudioResultReadAccounts({ actionAttempts: [attempt({ kind: "load_more", evidence: "unopened_replies" })] });
+    expect(reads[0]).toMatchObject({ listContinues: { kind: "load_more", evidence: "unopened_replies" } });
+  });
+});
 describe("the judges' words for a read whose list goes on", () => {
   const continuing = read({ paginates: false, listContinues: { kind: "infinite_scroll", evidence: "still_growing" } });
   const said = automationStudioResultReadListContinues(continuing)!.said;
