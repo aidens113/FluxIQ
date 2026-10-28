@@ -1,3 +1,4 @@
+import { cutAtWord } from "../../../../ui/index.ts";
 import type { ClientGatewayActivityProjectCard } from "@fluxiq/contracts/client-gateway";
 
 // The bounds on a `note` row's project card (`ClientGatewayActivityProjectCard`):
@@ -133,7 +134,7 @@ function closed<T extends string>(value: unknown, allowed: Readonly<Record<T, tr
 function words(value: unknown, max: number): string | undefined {
   const trimmed = typeof value === "string" ? value.trim() : "";
   if (!trimmed) return undefined;
-  return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max - 1)}…`;
+  return cutAtWord(trimmed, max);
 }
 
 function amount(value: unknown): number | undefined {
