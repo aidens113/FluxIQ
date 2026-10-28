@@ -69,18 +69,6 @@ export type AutomationStudioProjectSupervisorCompletedOnPass = {
   endedWith?: { outcome: "blocked" | "partial"; reason: string };
 };
 
-/**
- * Why a reset is being sent so the build can end (header, t683): the
- * supervisor's honest ending was held for it (`ending`), or its completion on
- * the build's fallback was (`completion`, with that fallback's complete object
- * to send again), or Core sends it itself before an ending a guard forced
- * (`core`, `./supervisor-loop.ts`).
- */
-export type AutomationStudioProjectSupervisorResetToEnd =
-  | { by: "ending" }
-  | { by: "completion"; complete: { revision: number; digest: string } }
-  | { by: "core" };
-
 /** The trial gate's refusal of a yes whose Flow does not answer what the site asked the run to do (`flow-bootstrap/candidate/trial-gate.ts`). */
 const SLOW_DOWN_UNHANDLED = "candidate.trial_slow_down_unhandled";
 
@@ -226,26 +214,13 @@ const short = (answered: { returned: AutomationStudioProjectBuilderReturn }): bo
  * the gate's standing too (`Build Record`: resuming after a Core restart is
  * post-MVP).
  *
- * **A reset sent so the build can end says so after it (t683).** t638 made the
- * words after a reset say "end again if your ending was held for it", which
- * asked the model to remember why it sent the reset. Now the reason is kept
- * here when it is given (`resetToEnd`): an ending or a completion on the
- * fallback refused `project.completion_reset_first` (`./completion.ts`), or
- * Core's own reset before an ending a guard forced (`./supervisor-loop.ts`).
- * The answer to a call of resets only, and the refusal of a repeated reset,
- * then say to end (or complete) again now, never to test (`./dispatch-tool.ts`).
- * The build going on drops it: a brief other than a reset, a whole test run,
- * or a plan taken into force.
- *
  * **A whole test after a reset acts on the target again (t684).** The ending
  * rule holds an ending until "a reset brief has come back after the build's
  * last other brief" (`./completion.ts`), and `resetCameBackLast` asked only
  * that the latest brief was a reset that came back. A whole test run after it
  * leaves its own act on the target, yet the next ending was let through
  * unheld. Returns and whole tests are now counted in the order they happened,
- * and a reset counts as last only when no whole test ran after it. A test
- * asked, even one refused for a reset, also drops `resetToEnd`
- * (`./whole-trial.ts`).
+ * and a reset counts as last only when no whole test ran after it.
  */
 export class AutomationStudioProjectSupervisorState {
   taskSpec: AutomationStudioProjectTaskSpec | undefined;
@@ -270,8 +245,6 @@ export class AutomationStudioProjectSupervisorState {
    * (social debug fix 5, `./dispatch-tool.ts`).
    */
   resetLeft: { briefId: string; outcome: string; reason: string; left: string } | undefined;
-  /** Set when a reset is asked for so the build can end, until the build goes on (header, t683). */
-  resetToEnd: AutomationStudioProjectSupervisorResetToEnd | undefined;
   /** A count of this run's returns and whole tests, in the order they happened (`resetCameBackLast`, header, t684). */
   private moments = 0;
   /** When each return this run received came back, on `moments`. */
@@ -325,8 +298,6 @@ export class AutomationStudioProjectSupervisorState {
     this.purposes = plan.purposes;
     this.after = plan.after;
     this.carried = this.carry();
-    // A plan taken into force is the build going on: a reset sent next is not for an ending held before it (header, t683).
-    this.resetToEnd = undefined;
     return this.carried;
   }
 
@@ -476,8 +447,6 @@ export class AutomationStudioProjectSupervisorState {
    * fallback's own revision tested again and no longer passing drops it.
    */
   noteWholeTest(controller: Pick<AutomationStudioFlowCandidateSubmissionController, "latest">, gate: Pick<AutomationStudioFlowCandidateTrialGate, "standing" | "completion">): void {
-    // A whole test that ran is the build going on, not ending (header, t683).
-    this.resetToEnd = undefined;
     // It acted on the target after any reset that came back before it (`resetCameBackLast`, header, t684).
     this.moments += 1;
     this.testedAt = this.moments;

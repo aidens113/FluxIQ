@@ -63,12 +63,6 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
 // yes and its `complete` object, records no receipt again, and says to
 // complete. A pass the run rescued is tested as before.
 //
-// **A test asked drops the reason for a reset (t684).** An ending held for a
-// reset sets the state's `resetToEnd`, which a whole test that ran clears
-// (`./state.ts`, `noteWholeTest`). A test refused `project.trial_reset_required`
-// never reached it, so the reset the model then sent was answered "end again
-// now", though it had chosen to test. Every test asked now clears it first.
-//
 // **A test the build's working time cannot cover is not started (G2).** Social
 // `run-mvfq957o-40103539` asked, with about 2.5 minutes of the build's working
 // time left, for a test of a revision whose last test had taken 337 s; the
@@ -132,8 +126,6 @@ export class AutomationStudioProjectSupervisorWholeTrial {
 
   async test(context: AutomationStudioProjectSupervisorContext, value: JsonObject, callSignal: AbortSignal | undefined): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
     const { ports, state, gate } = context;
-    // A test asked is the build going on, not ending, even one refused for a reset: the reset's answer then says to test (header, t684).
-    state.resetToEnd = undefined;
     // The revision a single-subflow builder's test already judged yes is not tried again (header, t679).
     const judged = this.alreadyJudged(context, value);
     if (judged) return judged;

@@ -297,6 +297,17 @@ describe("what a look under undoes is answered, across briefs", () => {
     expect(repeat.resetSettlement).toBeUndefined();
   });
 
+  it("says a settled act whose named list could not be read again is not known to be as found, never everything (t783)", async () => {
+    const { project, first } = twoBriefs();
+    const ports = await portsFor(project).reset(resetRequest(project));
+    const spy = vi.spyOn(first, "unreadOf").mockReturnValue(["destination-1"]);
+    const said = evidenceOf(await ports.loop.executeTool(look("look-1", { undoes: "act-1", resetDestination: "destination-1" }))).resetSettlement as JsonObject;
+    expect(spy).toHaveBeenCalledWith("act-1");
+    expect(said.settled).toBe("act-1");
+    expect(String(said.instruction)).toContain("the list named for it (destination-1) could not be read again, so whether it is as the build found it is not known");
+    expect(String(said.instruction)).not.toContain("everything it could change");
+  });
+
   it("says an act a look did not settle is still open, with its settle", async () => {
     const { project } = twoBriefs();
     const ports = await portsFor(project).reset(resetRequest(project));

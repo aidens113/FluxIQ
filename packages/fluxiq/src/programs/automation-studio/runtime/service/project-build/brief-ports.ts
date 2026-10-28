@@ -169,16 +169,6 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // and one example call built from a real open act and an issued ref. Every ref
 // a receipt printed is kept for the build (`issued`), for that example.
 //
-// **A read that issues a ref a refused press wants says so (t748, office rounds
-// 2-4, C6).** A press refused `candidate.create_baseline_required` or
-// `candidate.reset_witness_required` waits for a ref; builders read the list,
-// got its ref, and went back and forth for 9 and 14 turns before pressing with
-// it. Until a later call lands an act, every answer printing refs other than
-// those printed beside the refusal itself (the refused page's own lists, which
-// the refusal's words already name) carries `retryRefused`: the refused call,
-// those refs, and words saying to make that call again naming the ref of the
-// list where its effect shows (`AUTOMATION_STUDIO_SITE_RESET_WORDS.retryRefused`).
-//
 // **Every brief is given the build's places (t743, office rerun round 4).**
 // Both a builder's ports and a reset's give `issuedRefs`: every ref the build
 // issued, with where its list was read, as the project ledger holds them
@@ -373,17 +363,15 @@ export function automationStudioProjectBuildBriefPorts(input: {
 
 type Execute = AutomationStudioLlmEvidenceLoopInput["executeTool"];
 type Routing = ReturnType<typeof automationStudioProjectBuildResetCalls>;
-type PlacedLedger = Parameters<typeof automationStudioSiteResetPlacedCall>[0]["ledger"] & Pick<Routing, "standing" | "openActs" | "actOf"> & { destinationReceipts?(): Array<{ ref: string; ordinal: number; count: number }> };
+type PlacedLedger = Parameters<typeof automationStudioSiteResetPlacedCall>[0]["ledger"] & Pick<Routing, "standing" | "openActs" | "actOf" | "unreadOf"> & { destinationReceipts?(): Array<{ ref: string; ordinal: number; count: number }> };
 
 /**
  * `loop` with every call that makes or undoes an act read around in place, the start read around the opening call when
  * `capture`, and each answer composed (header): the receipts it printed, kept in `issued`, what a call naming an act
- * or a ref settled, and, while a press stands refused for want of a ref, the refs a later read issued for it.
+ * or a ref settled.
  */
 function placing<L extends { executeTool: Execute }>(loop: L, ledger: PlacedLedger, reader: AutomationStudioSiteResetStartCheck, options: { capture: boolean; signal: AbortSignal; issued: Map<string, AutomationStudioSiteResetIssuedRef> }): L {
   const inner = loop.executeTool;
-  // The latest press refused for want of a ref, and the refs printed beside its refusal (header, t748); gone once a later call lands an act.
-  let wanting: { call: string; shown: ReadonlySet<string> } | undefined;
   const executeTool: Execute = async (call) => {
     const opening = isOpeningCall(call.callId);
     const signal = call.signal ?? options.signal;
@@ -392,26 +380,18 @@ function placing<L extends { executeTool: Execute }>(loop: L, ledger: PlacedLedg
     if (options.capture && opening) await reader.capture(signal);
     const receipts = ledger.destinationReceipts?.() ?? [];
     for (const receipt of receipts) if (!options.issued.has(receipt.ref)) options.issued.set(receipt.ref, { ref: receipt.ref, count: receipt.count });
-    if (isExecution(ran) && typeof ran.resultCode === "string" && WANTS_REF.has(ran.resultCode)) wanting = { call: call.callId, shown: new Set(receipts.map((receipt) => receipt.ref)) };
-    else if (wanting && ledger.actOf(call.callId) !== undefined) wanting = undefined;
     const answered = opening ? ran : settlementAnswer(call, ran, ledger, options.issued);
     if (!receipts.length) return answered;
-    const listed = beside(answered, "resetDestinations", { collections: receipts });
-    const refused = wanting;
-    const offered = refused ? receipts.filter((receipt) => !refused.shown.has(receipt.ref)).map(({ ref, count }) => ({ ref, count })) : [];
-    return refused && offered.length ? beside(listed, "retryRefused", { call: refused.call, refs: offered, instruction: AUTOMATION_STUDIO_SITE_RESET_WORDS.retryRefused(refused.call, offered) }) : listed;
+    return beside(answered, "resetDestinations", { collections: receipts });
   };
   return { ...loop, executeTool };
 }
-
-/** The refusals that leave a press waiting for a ref a complete read issues (header, t748). */
-const WANTS_REF: ReadonlySet<string> = new Set(["candidate.create_baseline_required", "candidate.reset_witness_required"]);
 
 /**
  * What a call naming an act under `undoes`, or a `resetDestination` with none, settled (header), beside its answer; any other
  * answer unchanged, and so is a call Core itself refused (its own `candidate.*` code, which already lists the open acts).
  */
-function settlementAnswer(call: Parameters<Execute>[0], ran: Ran, ledger: Pick<Routing, "standing" | "openActs" | "actOf">, issued: ReadonlyMap<string, AutomationStudioSiteResetIssuedRef>): Ran {
+function settlementAnswer(call: Parameters<Execute>[0], ran: Ran, ledger: Pick<Routing, "standing" | "openActs" | "actOf" | "unreadOf">, issued: ReadonlyMap<string, AutomationStudioSiteResetIssuedRef>): Ran {
   if (call.toolId !== AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID || !isExecution(ran) || (typeof ran.resultCode === "string" && ran.resultCode.startsWith("candidate."))) return ran;
   const undoes = call.value[AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY];
   const destination = call.value.resetDestination;
@@ -423,7 +403,7 @@ function settlementAnswer(call: Parameters<Execute>[0], ran: Ran, ledger: Pick<R
     const own = open.find((act) => act.act === undoes);
     if (!settled && !own) return ran;
     const head = settled ? { settled: undoes } : { open: undoes, ...(own?.settle ? { settle: own.settle } : {}) };
-    return beside(ran, "resetSettlement", { ...head, actsStillOpen: open as unknown as JsonObject[], instruction: AUTOMATION_STUDIO_SITE_RESET_WORDS.lookSettled(settled, open.length > 0) });
+    return beside(ran, "resetSettlement", { ...head, actsStillOpen: open as unknown as JsonObject[], instruction: AUTOMATION_STUDIO_SITE_RESET_WORDS.lookSettled(settled, open.length > 0, settled ? ledger.unreadOf(undoes) : undefined) });
   }
   if (undoes !== undefined || typeof destination !== "string" || ledger.actOf(call.callId) !== undefined) return ran;
   const open = ledger.openActs().map(({ ref: _ref, ...act }) => act);
