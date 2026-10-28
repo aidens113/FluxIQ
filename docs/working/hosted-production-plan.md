@@ -1,7 +1,7 @@
 # Hosted Production Plan
 
 Status: Active
-Status detail: Revised 2026-10-28 around the user's 2026-10-18 directions (FluxIQWebsite is the public site, local simulation first, IAM-style permissions with tenancy as an enterprise feature, a re-cut schedule); plan only, no code changed; H0 can start now.
+Status detail: Revised 2026-10-28 around the user's 2026-10-18 directions, then the H0 spike results (S1 to S6) folded in the same day; plan only, no code changed; the contract freeze and H1 are next.
 Created: 2026-10-17
 Last updated: 2026-10-28
 Owner: Lane lead hosted-production-planner (plan); the senior supervisor agent owns execution
@@ -15,122 +15,74 @@ Related: [package boundaries](../architecture/package-boundaries.md), [current s
 
 **What is true now.** This is a plan. No hosted code exists yet: on 2026-10-28 Core has no
 `packages/fluxiq/src/platform/`, no `packages/contracts/src/platform/`, no `FLUXIQ_PROFILE`, no
-provisioning and no Dockerfile. The baseline below was re-checked in the code on 2026-10-28.
+provisioning and no Dockerfile. **H0 is done** (spikes S1 to S6, task t782, 2026-10-28): summary
+`hosted-production-plan/reports/h0.md`, detail `h0-s1.md` to `h0-s6.md`; the results are folded
+into the sections that own them. The baseline audit and older ledger entries moved to
+`hosted-production-plan/archive/2026-10-28-baseline-and-ledger.md`.
 
-**The user's directions of 2026-10-18 are folded in** (each is the user's own instruction):
-1. **The public site is the user's repository, FluxIQWebsite** (github.com/aidens113/FluxIQWebsite,
-   live at getfluxiq.com). It is a Next.js 16 static export on Hostinger with no server and no
-   accounts. It gains sign-up and a small sign-up backend; Core keeps sign-in, connect and the
-   panel on `app.getfluxiq.com`. The earlier "product site as a Core plugin" idea is dropped for
-   public pages (see Target Topology). Details of the website side are in the paired document.
-2. **The website side is simulated locally first,** in a stand-in that the paired document
-   specifies. Core's part is the same in both: the provisioning listener and the welcome link.
-3. **Permissions follow AWS IAM** (see Permissions). Principals, named resources, per-type
-   actions, allow and deny policies with conditions, explicit deny wins, default deny, groups and
-   roles, and an audit of every decision. The old `admin`, `viewer` and `user` roles become
-   predefined policies. Single-owner local and self-hosted keep working through
-   `FluxIQOwnerFullAccess`. Shared workspaces with separated workers are an enterprise feature;
-   Core stays freemium.
-4. **The schedule is re-cut into parallel lanes** with the constraint behind each date named.
-   Store submission moves from about 12-01 to about 11-13.
+**The user's directions of 2026-10-18 are folded in:** FluxIQWebsite is the public site (it gains
+sign-up and a backend, built locally first as a stand-in; paired document), Core keeps sign-in,
+connect and the panel on `app.getfluxiq.com`; permissions follow AWS IAM, tenancy an enterprise
+feature; the schedule is re-cut into parallel lanes.
 
-**User decisions** (2026-10-17, 10-18, 10-27):
-- **Self-hosting stays first-class (binding).** Three deployments, one codebase; the extension
-  connects to any of them. Single-user self-hosting needs none of the multi-user machinery.
-- **Hosted ships with the Chrome Web Store release,** built into Core directly.
-- **getfluxiq.com runs on Core as its control panel.** The website's backend provisions users into
-  Core; each user reaches only the data their permissions allow, never admin or database access.
-- **Bring your own provider key,** stored securely, never visible to others or in logs. No
-  platform key; billing stays a port.
-- **No company exists yet;** only launch prerequisites need one. **Optional cookies are declined
-  by default** (separate work). **No feature freeze** (user, 2026-10-27).
+**User decisions** (2026-10-17, 10-18, 10-27): self-hosting stays first-class (binding): three
+deployments, one codebase, the extension connects to any, and single-user self-hosting needs none
+of the multi-user machinery. Hosted ships with the Chrome Web Store release, built into Core;
+getfluxiq.com runs on Core as its control panel and the website's backend provisions users. Bring
+your own provider key, no platform key, billing a port. No company exists yet. Optional cookies
+are declined by default (separate work). No feature freeze.
 
-**Recommended architecture.** One image, three profiles (`FLUXIQ_PROFILE=local|self-hosted|service`).
-`getfluxiq.com` serves FluxIQWebsite; `app.getfluxiq.com` serves Core (sign-in, welcome, connect,
-panel, API, discovery, `/client`). The website backend calls `platform.provisioning` on a private
-listener reachable only inside the VM's network, and never handles a password: Core's welcome link
-verifies the email and sets it. One IAM evaluator sits behind the program API registry (289
-endpoints), the 15 app routes, plugin routes and the gateway, and every decision is audited.
-Workspace-per-root tenancy under `service`; extension sign-in by code plus PKCE in a normal tab;
-keys sealed under the user's password; billing and entitlement are ports.
+**Architecture and ownership.** One image, three profiles (`FLUXIQ_PROFILE=local|self-hosted|service`);
+getfluxiq.com serves FluxIQWebsite and app.getfluxiq.com serves Core; the website backend calls
+`platform.provisioning` on a private listener and never handles a password; one IAM evaluator
+audits every decision; workspace-per-root tenancy under `service`; PKCE sign-in in a normal tab;
+keys sealed under the user's password. Core owns the domain-neutral contracts; the paired
+document owns the extension, stores, website, infrastructure, docs, legal and Lab.
 
-**Contract ownership.** Here: discovery, connect and the browser credential, gateway 0.2,
-provisioning and its listener, IAM, profiles and tenancy, panel extension points, billing and
-entitlement ports. Paired: the extension, stores, consent, the website and its stand-in,
-infrastructure, user docs, privacy, legal, Lab.
+**H0 results** (the section that owns each change is named).
+- **S1 sign-in tab flow (= D0) passes** in Chrome 156, Edge 156 and Playwright's Firefox 1475, with
+  no new permission; the paired document owns the changes.
+- **S2 Caddy and `wss`:** transport, Origin filtering and `pairing_required` work over `wss` through
+  a Node TLS proxy stand-in; Caddy was not run (not installed). Lane A gaps: no `moz-extension://*`
+  matching, frame cap, hello deadline, rate limit or client IP; public profiles must require an
+  allowlist. **Decision** (supervisor, 2026-10-28; the user can overrule, N7): no Origin is refused
+  on `service` and accepted on `local` and loopback `self-hosted`.
+- **S3 instances:** idle cost ~0.5 MB and ~10 ms; `close()` is not eviction. LRU cap 100, pinned
+  while busy, C0 fixes first (Tenancy And Data). **S4:** 31 direct call sites in 22 files plus 17
+  via `lib/auth.ts`; C2 is 5 batches over 18 files; four singletons the plan missed.
+- **S5 key release:** `approvingSessionId` cannot be the key handle (the session ends within 12
+  hours, the credential lasts 60 days). Resolve the user's live unlock on each call, else a typed
+  `secrets.locked`; `session-key.ts` takes the Flow's key or the caller's own, never the newest
+  key of anyone; an administrator's session revoke drops the unlock (Model Calls).
+- **S6 audit volume:** a compact ~59 B row, day-partitioned and written through a buffer off the
+  request path, replaces the 450 B JSON row (3.4 TB over 90 days at 1,000 users) (Permissions).
+- **Estimates:** Core about 56 agent-days (was 50); dates unchanged (parallel lanes).
 
-**Schedule** (today 10-28; the MVP deadline is 11-10; details in Phases And Release Cut).
-- 10-28 to 10-30: H0 spikes S1 to S6 and the contract freeze, in parallel.
-- 10-30 to 11-08: eight Core lanes and the paired lanes in parallel. Core lanes merge to `dev`
-  as each is green, guarded by the IAM parity test; the extension's connection files merge on
-  11-10, when the MVP live lanes release them.
-- 11-11 to 11-12: the hosted gate on staging. About 11-13: Chrome Web Store submission.
-- Public: when Google approves. Google states most reviews finish "within a few days, but it can
-  take up to a few weeks", and `<all_urls>` draws extra scrutiny.
+**Schedule** (details in Phases And Release Cut): H0 done 10-28; contract freeze 10-30; Core and paired
+lanes in parallel to 11-08 (the extension's connection files merge 11-10); hosted gate 11-11 to
+11-12; store submission about 11-13; public when Google approves.
 
-**Next.**
-1. The supervisor dispatches H0 (S1 to S6) and the contract-freeze worker, and opens the paired
-   H1 task (one ID, nested worktrees).
-2. The user answers N1 to N6, and creates the VM, DNS and store developer account (paired U9).
+**Next.** (1) The supervisor dispatches the contract-freeze worker (carrying digest fields for
+`approvingSessionId` and `startedFromSessionId`, `secrets.locked`, the Origin grammar) and opens the
+paired H1 task (one ID, nested worktrees); lanes A, B1, B2 and C start with the H0 changes. (2) The
+user answers N1 to N7 and creates the VM, DNS and store developer account (paired U9). Nothing
+blocks H1.
 
-**Blocked.** Nothing blocks H0 or H1.
-
-**Not verified.** Tab-flow observation in Edge and the Firefox popup (S1); memory per workspace
-instance (S3); how an extension-started build finds an unlocked key session (S5); the volume of
-auditing every decision and the cost of list filtering (S6); whether Next.js serves `/.well-known`
-directly (a rewrite is planned); when the store assigns the item ID (believed: first draft upload).
+**Not verified** (open after H0).
+- Caddy itself (WebSocket pass-through, Caddyfile syntax, `header_up` replacing a client
+  `X-Forwarded-For`); the draft is in the S2 spike.
+- Whether Next.js serves `app/.well-known/` directly: the test could not run (webpack rejects `!`
+  in the checkout path; turbopack rejected the junctioned `node_modules`), so the rewrite stays.
+- The memory of a building workspace (25 MB per used workspace is an assumption); a natural idle
+  stop over 30 s; real polling rates and Core's real evaluator; whether bootstrap command records
+  carrying `actorSessionId` are persisted (the raw cookie at rest); the chat wording of a mid-build
+  locked-key error. Chrome item-ID timing, stock Firefox and Web Store builds: paired document.
 
 ## Current System Baseline
 
-Paths are relative to this repository unless prefixed `ext:`. Read 2026-10-17, re-checked 2026-10-28.
-
-- **Panel.** Next.js 15.5.24 App Router in `apps/web`, `next start --hostname 127.0.0.1` on
-  port 3000; same-origin fetches and polling. Login is `app/AuthShell.tsx`; pages check the
-  session on the server (`lib/auth.ts`). "FluxIQ" is hard-coded in `app/layout.tsx` and
-  `AuthShell.tsx`; the catalog is `GLOBAL_PROGRAMS` (`programs/_shared/catalog.ts`).
-- **Gateway.** A hand-written WebSocket server (`apps/web/src/server/client-gateway-websocket.ts`)
-  on port 4777 `/client`, started in-process by `startSharedClientGateway` (`lib/fluxiq.ts`).
-  Beyond loopback it needs `FLUXIQ_CLIENT_GATEWAY_ALLOWED_ORIGINS`; an empty list admits every
-  Origin. `publicUrl` is always `ws://`. Unbounded frames, session records, audit log and pending
-  pairings.
-- **Identity** (`programs/identity-access/runtime/`). Roles are flat permission lists
-  (`roles.ts`): `admin` has all eight (`programs.read`, `programs.write`, `flows.write`,
-  `runtime.control`, `compute.control`, `identity.manage`, `data.manage`, `secrets.manage`);
-  `viewer` has `programs.read`. scrypt, TOTP, PIN; 12-hour sessions stored as SHA-256;
-  admin/admin at first start (`service.ts:728-738`); 100 failures lock everyone out for a minute
-  (`api/auth/login/route.ts:17`). Cookie `fluxiq_session`, Secure only in production; no CSRF or
-  Origin check, no CORS, no `middleware.ts`.
-- **Authorization today.** One choke point, `GlobalProgramApiRegistry.call`
-  (`programs/_shared/api.ts:97-120`), checks `actor.permissions.includes(registration.permission)`.
-  289 endpoint registrations each declare one `permission` (`programs.read` 124, `flows.write`
-  59, `runtime.control` 45, `programs.write` 30, `identity.manage` 11, `data.manage` 8,
-  `compute.control` 7, `secrets.manage` 5) and a `classification` (`read`, `authoring`,
-  `destructive`, `program-gated`, `destructive-ungated`); destructive ones also need the PIN.
-  `ProgramApiActor` is `{sessionId, userId, roleId, permissions}`: no resource is named. 15 app
-  routes under `apps/web/src/app/api`; 9 check `auth.role.permissions` themselves.
-- **Pairing.** Six-digit `Math.random` code; any `runtime.control` user approves; a 32-byte
-  token stored hashed in `client-gateway/trusted-clients`, 30-day expiry, rotating without
-  extension. Bearer HTTP only while the socket is ready, on an allowlist (`service/access.ts`).
-- **Single-tenant assumptions.** One FluxIQ instance per process on `globalThis`. Projects,
-  Flows, recordings, runs and datasets have no owner (`automation-studio/api/contracts/project.ts`
-  has only `domainId`). Every `runtime.control` user sees every session. `selectSession`
-  (`runtime/client-gateway-transport.ts:110-115`) falls back to any ready matching session.
-  Process singletons: activity hub, host-lease scope, retry ledger, endpoint load, hash limiter,
-  `automationStudioContexts`.
-- **Storage.** Node `sqlite3`: `global.sqlite`, per-domain and per-project databases (26
-  forward-only migrations). SQLite-specific SQL; in-process locks. `Repository<T>` is the only
-  backend-neutral interface.
-- **Secrets.** AES-256-GCM sealed under the creator's password-derived key; unlocks held per
-  login session (`held-keys.ts`). `releaseAutomationStudioSessionDeepSeekKey`
-  (`runtime/llm/deepseek/session-key.ts:33-43`) takes the first enabled DeepSeek key of anyone.
-- **Model spend.** DeepSeek only; per-run ceiling $0.25 (max $10), per-Flow purse, 250-call backstop.
-- **Retention and export.** Projects and recordings deletable; runs not. The retention store
-  is unused. Only datasets and run audits export.
-- **Domain hooks.** Synchronous `registerFluxIQHost(fluxiq)` from `FLUXIQ_HOST_MODULE`, per
-  instance. `componentPacks` and `programExtensions` unused (`domains/index.ts:53-54`).
-- **Operator-only surfaces.** Deployment Sync, Database Manager, root Docs, Status paths; the
-  "check nothing" endpoints in `package-boundaries.md`.
-- **Hosting.** No Dockerfile, TLS or proxy support. Licence: Sustainable Use License.
+Moved 2026-10-28 to `hosted-production-plan/archive/2026-10-28-baseline-and-ledger.md`: the audit of
+the system before this plan, with H0's corrections inline (key choice, the gateway's missing limits
+and client IP, four more singletons). Read it before changing the single-tenant code paths.
 
 ## Target Topology
 
@@ -387,16 +339,23 @@ well as a policy condition: a browser executes only its own user's runs, whateve
 - The 15 app routes, through `lib/program-route.ts` and `lib/operational-route-contract.ts`.
 - Plugin routes (`app/api/x/`), the gateway (hello, command dispatch, Bearer HTTP) and the
   provisioning listener.
-- **List endpoints** filter items by the item's `Read` action (full-access fast path above).
+- **List endpoints** filter items by the item's `Read` action (full-access fast path above),
+  with one compiled evaluator per request and pages capped near 100 items (S6).
 - Under public profiles an endpoint with no action and resource is refused at startup.
 
-**Audit of every decision.** Each decision, allow or deny, is recorded:
+**Audit of every decision.** Each decision, allow or deny, is recorded and read back as
 `{time, requestId, principal, action, resources, decision, matched {policy, sid} | "implicit",
-origin, ipPrefix}`. Per-workspace table in the workspace root; platform decisions in the platform
-store. IAM changes and denies are kept 1 year; allows 90 days under `service` (S6 measures volume
-from panel polling first). A user sees decisions about their own principal; a workspace admin
-sees the workspace; the operator uses the command line. Enterprise adds export and a policy
-simulator.
+origin, ipPrefix}`, in the workspace root (platform decisions in the platform store). **Stored
+compactly** (H0-S6): integer epoch seconds, a request counter, and principal, action, resource,
+policy, origin and IP prefix interned in dictionary tables, about 59 B a row against 450 B as
+JSON. Allows are partitioned by day, so 90-day expiry (`service`) is a drop; denies and IAM
+changes (1 year) have their own time-indexed table. **Writes stay off the request path:** a buffer
+flushes in one transaction every 1 s or 100 rows (SQLite WAL), denies and IAM changes at once; a
+crash can lose up to a second of allows. Every per-item list decision keeps its own row; the
+full-access fast path writes one row. Sizing: panel polling makes 40,000 to 85,000 allow rows per
+user per day, 0.2 to 0.45 GB per user over 90 days. A user sees decisions about their own
+principal; a workspace admin sees the workspace; the operator uses the command line. Enterprise
+adds export and a policy simulator.
 
 **Parity, the mechanical guarantee.** A generated test walks all 289 registrations and the 15
 routes and asserts that `FluxIQAdministratorAccess` and `FluxIQReadOnlyAccess` allow exactly
@@ -442,7 +401,7 @@ client kind).
    `signUpUrl?continue=<this authorize URL>`. After the welcome link the user returns here.
 4. Consent shows the browser label, the workspace and "can run your automations in this browser".
 5. The server issues a code (32 bytes, single use, 120-second TTL, bound to challenge, install
-   ID, user, workspace and approving session) and redirects to `/connect/done#code=..&state=..`.
+   ID, user, workspace and a digest of the approving session) and redirects to `/connect/done#code=..&state=..`.
    That page sends `Referrer-Policy: no-referrer` and `Cache-Control: no-store`, loads no
    third-party resource and never shows the code. No analytics runs on `app.getfluxiq.com`.
 6. The extension accepts the URL only from its own tab, exact origin, matching `state`; closes the
@@ -465,6 +424,8 @@ workspace. At most 5 pending per IP, 1,000 total. `local` keeps one-click approv
   `browser`, `os`, `createdAt`, `lastSeenAt`, `lastIpPrefix`, `credentialHash`,
   `previousCredentialHash`, `previousValidUntil`, `expiresAt`, `revokedAt`, `revocationReason`,
   `approvingSessionId`.
+- `approvingSessionId` is a digest of the approving session, for audit only, never a key handle:
+  the session ends within 12 hours, the credential lasts 60 days (Model Calls).
 - Rotates on every connect (sliding 60 days); the previous one stays valid once for 2 minutes.
   Presenting an older one revokes the browser, audits it and emails the owner.
 - Acts as its user under the session policy `FluxIQBrowserSession`; Bearer valid only while the
@@ -478,7 +439,8 @@ workspace. At most 5 pending per IP, 1,000 total. `local` keeps one-click approv
 `service/protocol-version.ts`): `server.revoked {reason}`; `server.going_away {reason,
 retryAfterMs}`; `session_ready` gains `user`, `workspace`, `credentialExpiresAt`;
 `pairing_required` gains `codeEntryUrl`; hello metadata gains `clientLabel`; every action command
-gains `runContext {runId, actorUserId, workspaceId, origin, startedFromSessionId}`.
+gains `runContext {runId, actorUserId, workspaceId, origin, startedFromSessionId}`
+(`startedFromSessionId` is a session digest or the gateway session id, never the raw session id).
 
 **Migration.** Under single tenancy, trusted clients become browsers of their approver. Legacy
 tokens keep working on loopback for two releases. Public profiles accept only user-bound
@@ -489,15 +451,22 @@ credentials.
 - **Same origin as the panel.** Caddy routes `app.getfluxiq.com/client` to the gateway; one
   certificate, port 443 only; the gateway stays plain `ws` behind it.
   `FLUXIQ_PUBLIC_CLIENT_WS_URL` becomes authoritative for status and discovery (`lib/fluxiq.ts`);
-  the bundle path in `gateway-runtime/load.ts` becomes configurable.
-- **Origin rule** (`client-gateway-websocket.ts`): exact origins, `chrome-extension://<id>`
-  (Chrome and Edge IDs differ), `moz-extension://*`. Other web origins and `*` refused; a missing
-  Origin is allowed (the credential authenticates). Public profiles default to the product's
-  extension IDs plus `moz-extension://*`.
-- **Limits** (configurable, with metrics): 16 MiB frames; hello within 10 seconds; 50 messages per
-  second, bursts of 200; ended sessions pruned; an audit ring of 10,000 per workspace with
-  security events persisted; pending pairings capped as in Flow B.
-- **Client IP** from `X-Forwarded-For` only with `FLUXIQ_TRUST_PROXY`; audited as a prefix.
+  the bundle path in `gateway-runtime/load.ts` becomes configurable. H0-S2 proved `wss` to plain
+  `ws` and Origin filtering through a Node TLS proxy; Caddy has not run (draft in the S2 spike).
+- **Origin rule** (`client-gateway-websocket.ts`; exact-string matching only today): exact
+  origins, `chrome-extension://<id>` (Chrome and Edge IDs differ), `moz-extension://*` by prefix
+  (Firefox IDs are per-install). Other web origins and `*` refused. A public profile refuses to
+  start without an allowlist (none admits every Origin) and defaults to the product's extension
+  IDs plus `moz-extension://*`. A missing Origin (supervisor decision 2026-10-28, N7) is refused
+  on `service` and any public bind and accepted on `local` and loopback `self-hosted`; today it
+  is refused whenever an allowlist is set, and a test pins that.
+- **Limits** (configurable, with metrics; none exists today): 16 MiB frames, refused before
+  buffering; hello within 10 seconds; 50 messages per second, bursts of 200; ended sessions
+  pruned; an audit ring of 10,000 per workspace with security events persisted; pending pairings
+  capped as in Flow B.
+- **Client IP.** Neither the peer address nor `X-Forwarded-For` is read today; lane A plumbs both
+  into sessions and audit, trusting the header only with `FLUXIQ_TRUST_PROXY`, audited as a
+  prefix. Caddy replaces the client-sent header.
 - **Graceful drain.** On SIGTERM: refuse new builds, send `server.going_away {retryAfterMs}`, wait
   up to `FLUXIQ_DRAIN_SECONDS`, exit.
 - **HTTP from the extension** is not subject to CORS; Core sends no CORS headers. State-changing
@@ -518,10 +487,19 @@ workspaces, members, platform principals, browsers, throttles and the platform a
 `single`, both are today's `.fluxiq` and no files move.
 
 **Workspace manager** (`apps/web/src/lib/workspaces/`, replacing `globalThis.__fluxiqWebRuntime`):
-a map of workspace to `{fluxiq, gateway, lastUsedAt}`; lazy `FluxIQ.create({rootDir})` plus the
-host module; idle eviction after 15 minutes with an LRU cap sized from S3. Route handlers call
-`workspaceFluxIQ(request)`; S4 lists the call sites first. Under `single` it holds one entry
-created exactly as today.
+a map of workspace to `{fluxiq, gateway, lastUsedAt, busy}`; lazy `FluxIQ.create({rootDir})` plus
+the host module; idle eviction after 15 minutes under an LRU cap of 100
+(`FLUXIQ_WORKSPACE_CACHE_MAX`), a safety bound rather than a RAM fit (an idle instance is ~0.5 MB
+and 10 ms; the 3.5 to 7 s module load is per process, S3). **A workspace is pinned while a run,
+build, scheduled task, open socket or live key unlock exists.** Callers use
+`workspaceFluxIQ(request or headers/cookies)`; pages, `lib/auth.ts` and login have no `Request` and
+resolve through the platform session store (S4 D1). Under `single` it holds one entry created
+exactly as today. **`close()` is not eviction yet** (S3, S5): the module-level activity hub keeps
+every closed instance reachable; `close()` runs `closeAll()` on the module-level
+`programStateConnections` pool, cutting other workspaces' runs; and it revokes every key unlock.
+**Lane C0 fixes these first:** a disposable hub subscription (or a per-instance hub, S4 D2); a
+per-instance connection pool; `HeldKeys` moved into the manager's entry, with an eviction mode of
+`close()` that skips `revokeAll`; a leak test (create, close, drop, gc, assert the WeakRef clears).
 
 **Gateway per workspace.** One listener verifies the hello credential against the platform store,
 then hands the socket to that workspace's `ClientGatewayService`.
@@ -530,8 +508,12 @@ then hands the socket to that workspace's `ClientGatewayService`.
 `operatorUserId` is the run's actor and loses the any-session fallback. The paired document
 applies the same rule in the domain.
 
-**Per-workspace singletons** (S4 confirms): `automationStudioContexts`, activity hub, host-lease
-scope, step-log directory. Provider throttles stay process-wide.
+**Per-workspace singletons** (S4): `automationStudioContexts`, the activity hub, the host-lease
+scope, the gateway-trace and offline-trial `installed` slots, the login `trackers` map. The
+step-log directory is one process env var: off under `service`, else per workspace. One shutdown
+handler closes all entries; `FLUXIQ_PUBLIC_CLIENT_WS_URL` goes with C3's single listener;
+`getFluxIQWebRuntimeStatus` omits `hostRoot` and `fluxiqDir` under `service`. Provider throttles
+stay process-wide.
 
 **Storage.** SQLite per workspace on an encrypted volume; Postgres deferred behind `PlatformStore`;
 an `ObjectStore` port when disk becomes the constraint. **Quotas** (`service`): storage bytes and
@@ -588,13 +570,19 @@ AES-256-GCM under their password-derived key, so the operator cannot decrypt it 
 keys exist only in memory for that user's unlocked sessions; never revealed to the browser, other
 users or the operator; redacted from logs, step logs (off under `service`) and error reports.
 
-**Selection fix (H1, security).** `session-key.ts` releases the caller's own key or the Flow's
-`llmSecretKeyId`, after `secrets:UseKey` is allowed for that key, never the first key of anyone.
+**Selection fix (H1, security).** Today `session-key.ts` takes the newest enabled DeepSeek key of
+anyone, ignores the Flow's `llmSecretKeyId` and checks no `secrets:UseKey`; release then refuses a
+key that is not the caller's, a denial rather than a leak (H0-S5). It takes the Flow's
+`llmSecretKeyId`, else the caller's own newest enabled DeepSeek key, after `secrets:UseKey`.
 
 **Unlock.** Keys unlock at panel sign-in (the welcome link and Flow A's tab sign-in count). The
-browser records `approvingSessionId`, so extension-started builds use that session's unlock while
-it lives (S5 verifies). After a restart, extension-started builds stop with "Sign in at
-app.getfluxiq.com to unlock your model key" (N4). H2 adds a browser-held unwrap key.
+approving session is not the key handle: it ends within 12 hours, the credential lasts 60 days,
+and its id is the cookie. **Each model call resolves the user's live unlock in this workspace**,
+preferring the session the build started from, else raises a typed `secrets.locked`; a logout
+during a build no longer fails it while another unlock lives. An administrator's `revokeSession`
+also drops the unlock, as logout does. After a restart or an eviction, one message covers every
+locked path, "Sign in at app.getfluxiq.com to unlock your model key" (N4), and the panel offers a
+re-unlock with the password without signing out. H2 adds a browser-held unwrap key.
 
 **Spend.** The per-Flow purse stays ($0.25 by default) on the user's own key; an optional daily
 limit per user in H2. **Billing.** `BillingProvider` and `EntitlementPolicy` are ports with no-op
@@ -636,8 +624,8 @@ website backend; the supply chain.
 | 6 | Website backend compromised | Provisioner policy denies all content and privileged policies; private listener with hashed token and source allowlist; no passwords cross it; rate limit; audited (H1) |
 | 7 | Operator surfaces exposed | Setup-code claim; service guardrail; fix the "check nothing" endpoints; hidden paths (H1) |
 | 8 | CSRF | Origin and `Sec-Fetch-Site` middleware; `__Host-` cookie; SameSite=Lax (H1) |
-| 9 | Denial of service | Frame, rate and pairing limits; pruning; quotas; proxy limits (H1) |
-| 10 | Theft or misuse of a user's key | Password sealing; `secrets:UseKey` per key; never revealed; redacted; selection fix; purse (H1) |
+| 9 | Denial of service | Frame, hello and rate limits (none exist today, S2); pairing limits; pruning; quotas; proxy limits; eviction pins busy workspaces (H1) |
+| 10 | Theft or misuse of a user's key | Password sealing; `secrets:UseKey` per key; never revealed; redacted; selection fix (Flow key or the caller's own); per-call unlock resolution; admin revoke drops the unlock; purse (H1) |
 | 11 | Sensitive page data at rest | Extension-side screening (paired audit); encrypted volume and backups; step logs off; retention (H2) |
 | 12 | Server-side code execution | Host modules are build-time operator code; custom nodes denied by guardrail; audit the Flow DSL (H1) |
 | 13 | Supply chain | Lockfile; `pnpm audit`; Dependabot; pinned images; Trivy (H1) |
@@ -658,14 +646,16 @@ recommended; it can follow the store release by a few weeks (N3).
   `NotResource`, wildcards, variables, each operator, `IfExists`, groups, role trust, session
   policies, boundaries, guardrails); the catalog drift check; parity; an escalation suite (a
   `FluxIQUserAccess` principal cannot attach policies, assume roles or reach another owner's
-  resources); audit rows for allow and deny.
+  resources); audit rows for allow and deny, the buffered flush and its crash window, day-partition expiry.
 - **Identity:** welcome link (single use, expiry, `continueUrl`), reset, owner claim, throttles,
   anti-enumeration. **Provisioning:** every operation, idempotency, the listener's token,
   rotation, source allowlist, refusal of a public bind, `forbidden_policy`.
 - **Connect:** RFC 7636 vectors; code reuse and expiry; redirect and `state`; rotation, grace and
-  reuse revocation; typed-code limits. **Transport and tenancy:** Origin grammar, limits, drain;
+  reuse revocation; typed-code limits. **Transport and tenancy:** Origin grammar (prefix match, the missing-Origin rule, no start without an allowlist), frame,
+  hello and rate limits, client IP, drain; the instance leak test; eviction skips a busy workspace;
   workspace manager; host modules per instance; the browser-owner invariant. **Keys:** the
-  selection fix, redaction, unlock tied to the approving session, no-op billing ports.
+  selection fix, redaction, per-call unlock resolution (logout during a build, administrator revoke, `secrets.locked`), no-op
+billing ports.
 
 **Route matrix** (`apps/web/src/app/tests/`): calls every registry endpoint and route as workspace
 A against B's identifiers, and each `ops:` or `platform:` action as a `FluxIQUserAccess`
@@ -682,10 +672,10 @@ audit); full suites run in the twice-daily sweep. H1 is one paired unit: one tas
 repositories, nested worktrees, `dev` merged in daily.
 
 **What forces each date** (agent throughput is not the constraint):
-- **Contract freeze (10-30):** lanes building against each other need fixed interfaces; it
-  follows S1 to S6 because their answers shape the contracts.
-- **Lane dependencies,** not lane length, set 11-03 to 11-08: C needs S3, S4 and B1's store; B3
-  needs B2; D needs A's gateway steps.
+- **Contract freeze (10-30):** lanes building against each other need fixed interfaces; H0
+  finished 10-28 and its answers (digest fields, `secrets.locked`, Origin grammar) go into it.
+- **Lane dependencies,** not lane length, set 11-03 to 11-08: C needs B1's store, and C0 comes
+  before any eviction; B3 needs B2; D needs A's gateway steps.
 - **MVP qualification (11-10):** the MVP live lanes edit the extension's connection files until
   then. Core lanes do not wait: parity and single-tenancy identity keep them inert locally.
 - **User actions:** VM, DNS, email DNS records, store developer account (paired U9), by 11-03;
@@ -695,24 +685,28 @@ repositories, nested worktrees, `dev` merged in daily.
 
 | Lane | Owns (Core; may edit) | Dates | Agent-days |
 | --- | --- | --- | --- |
-| H0: S1 tab flow (paired D0); S2 Caddy carries `wss` and the private listener; S3 instance memory and start time; S4 global-instance callers and singletons; S5 key release for extension-started builds; S6 decision-audit volume under panel polling, list-filter cost | spike worktrees, written results in this document's reports | 10-28 to 10-30 | 3 |
+| H0 (done 10-28, task t782): S1 tab flow (D0); S2 Caddy and `wss`; S3 instance cost; S4 call sites and singletons; S5 key release; S6 audit volume | spike worktrees; results in `hosted-production-plan/reports/h0*.md` | 10-28 | 3 (spent) |
 | Contracts: discovery, connect, provisioning, gateway 0.2, IAM policy grammar, FRN, action catalog format, `PanelProduct` | `packages/contracts/src/{platform,iam}/`, `client-gateway.ts` | 10-29 to 10-30 | 2 |
-| A hardening: profile resolution; public origin, `wss` URL, bundle path; Origin grammar and limits; pairing caps, crypto codes, pruning, audit ring; middleware and cookie naming; throttles; owner claim; "check nothing" endpoints; health, drain, logs; discovery route | `packages/fluxiq/src/platform/profile/`, `lib/fluxiq.ts`, `gateway-runtime/load.ts`, `client-gateway-websocket.ts`, `client-gateway/service/{pairings,sessions,audit-log}.ts`, `middleware.ts`, `api/auth/login/`, `lib/auth.ts`, `lib/login-attempts.ts`, `app/setup/`, `app/api/discovery/`, `SECURITY.md`, `docs/integrations/client-gateway-websocket.md` | 10-30 to 11-04 | 6 |
-| B1 platform store and provisioning: `PlatformStore`; operations; private listener; command line; welcome link, reset, `EmailSender`; key selection fix | `packages/fluxiq/src/platform/{store,provisioning}/`, `apps/web/src/server/provisioning-listener/`, `app/{welcome,reset}/`, `identity-access/runtime/providers/`, `session-key.ts` | 10-30 to 11-04 | 5 |
-| B2 IAM engine: FRN, grammar, evaluator, predefined policies, groups, roles, service identities, attachments store, decision audit, catalog generator, parity test | `packages/fluxiq/src/platform/iam/`, `identity-access/runtime/roles.ts` | 10-30 to 11-03 | 5 |
+| A hardening: profile resolution; public origin, `wss` URL, bundle path; Origin grammar (prefix match for `moz-extension://*`, the missing-Origin rule, no start without an allowlist on public binds); frame cap, hello deadline and rate limits (none exist); peer address and `X-Forwarded-For` into sessions and audit; pairing caps, crypto codes, pruning, audit ring; middleware and cookie naming; throttles; owner claim; "check nothing" endpoints; health, drain, logs; discovery route | `packages/fluxiq/src/platform/profile/`, `lib/fluxiq.ts`, `gateway-runtime/load.ts`, `client-gateway-websocket.ts`, `client-gateway/service/{pairings,sessions,audit-log}.ts`, `middleware.ts`, `api/auth/login/`, `lib/auth.ts`, `lib/login-attempts.ts`, `app/setup/`, `app/api/discovery/`, `SECURITY.md`, `docs/integrations/client-gateway-websocket.md` | 10-30 to 11-04 | 7 |
+| B1 platform store and provisioning: `PlatformStore`; operations; private listener; command line; welcome link, reset, `EmailSender`; key selection fix (Flow key or the caller's own, after `UseKey`); per-call unlock resolution and `secrets.locked`; administrator revoke drops the unlock | `packages/fluxiq/src/platform/{store,provisioning}/`, `apps/web/src/server/provisioning-listener/`, `app/{welcome,reset}/`, `identity-access/runtime/providers/`, `session-key.ts`, `llm/session-key-provider.ts`, `conversations/commands/caller.ts`, `api/handlers/{llm-generation,runtime-execution}.ts`, `identity-access/{api/handlers.ts,runtime/service.ts}` | 10-30 to 11-04 | 6 |
+| B2 IAM engine: FRN, grammar, evaluator, predefined policies, groups, roles, service identities, attachments store, decision audit (compact, day-partitioned, buffered), catalog generator, parity test | `packages/fluxiq/src/platform/iam/`, `identity-access/runtime/roles.ts` | 10-30 to 11-03 | 6 |
 | B3 IAM enforcement: `action`, `resource`, `accessLevel` on every registration (several workers, partitioned by program directory); registry and route integration; list filtering; project ownership migration; `docs/architecture/platform.md` | `programs/*/api/` registrations, `programs/_shared/api.ts`, `lib/{program-route,operational-route-contract}.ts`, the 15 routes, `automation-studio/api/contracts/project.ts` and its migration | 11-03 to 11-07 | 6 |
-| C tenancy: C1 layout v3 and workspace manager; C2 call-site migration in S4 batches (parallel workers by file); C3 gateway routing by credential, browser-owner invariant, per-workspace singletons, `deleteAccount` wiring; route matrix | `framework/storage-layout.ts`, `apps/web/src/lib/workspaces/`, the S4 call sites, `runtime/client-gateway-transport.ts`, `apps/web/src/app/tests/` | C1 10-31 to 11-04; C2, C3 11-03 to 11-07; matrix 11-07 to 11-08 | 11 |
-| D connect: codes and tokens; credential with `approvingSessionId`; typed-code claim; connect, account and browsers pages; `revoked`, `going_away`, `runContext`; trusted-client migration | `packages/fluxiq/src/platform/connect/`, `trusted-clients.ts`, `lifecycle.ts`, `access.ts`, `pairing-flow.ts`, `app/connect/`, `app/account/`, `app/api/connect/` | 10-31 to 11-05 | 6 |
+| C tenancy: C0 eviction prerequisites (disposable activity-hub subscription, per-instance `programStateConnections`, `HeldKeys` out of the instance with an eviction mode of `close()`, leak test); C1 layout v3 and workspace manager (LRU cap 100, pinned while busy); C2 call-site migration in five S4 batches (auth, client-gateway, framework and recordings, programs API, pages: 18 files, 29 calls, 14 test files; parallel workers by file; C1 keeps `lib/fluxiq.ts`, `lib/auth.ts`, `instrumentation.ts`); C3 gateway routing by credential, browser-owner invariant, per-workspace singletons (with the four S4 added), `deleteAccount` wiring; route matrix | `framework/{storage-layout,index}.ts`, `automation-studio/runtime/activity/`, `programs/_shared/runtime.ts`, `secret-keys/runtime/{service,held-keys}.ts`, the module holding `programStateConnections`, `apps/web/src/lib/workspaces/`, the S4 call sites, `runtime/client-gateway-transport.ts`, `apps/web/src/app/tests/` | C0 10-31 to 11-03; C1 10-31 to 11-04; C2, C3 11-03 to 11-07; matrix 11-07 to 11-08 | 13 |
+| D connect: codes and tokens; credential with `approvingSessionId` as an audit digest; typed-code claim; connect, account and browsers pages; `revoked`, `going_away`, `runContext` (`startedFromSessionId` a digest); trusted-client migration | `packages/fluxiq/src/platform/connect/`, `trusted-clients.ts`, `lifecycle.ts`, `access.ts`, `pairing-flow.ts`, `app/connect/`, `app/account/`, `app/api/connect/` | 10-31 to 11-05 | 6 |
 | E product manifest and hooks: `PanelProduct` registry, multi-module host loading, `registerFluxIQPlatform`, assets route, branding, onboarding cards, fixture host module | `packages/fluxiq/src/platform/panel/`, `layout.tsx`, `AuthShell.tsx`, `app/product/`, host-module loader | 10-30 to 11-01 | 2 |
 | F packaging: Dockerfile, compose and Caddy examples, metrics, `migrate`, CI image job and scan, self-hosting guide | `deploy/`, `.github/workflows/`, `docs/operations/self-hosting.md` | 10-30 to 11-03 | 4 |
+| P panel polling cuts (optional, S6): slow or pause the hidden-tab conversation beat; one server-side "pending asks" read in place of `1 + min(N,12)` calls a cycle; gate run control and the Clients view on tab visibility; merge the pairing and prompt reads; add call counts to the parity overhead check | `apps/web/src/app/{GlobalConversationPrompt,GlobalClientGatewayPairing}.tsx`, `thread/poller.ts`, `runtime/useRunControl.ts`, `clients/useClientGatewayController.ts` | any time before the gate | 1 |
 
-About 50 Core agent-days; about 38 more downstream. The sum is not the calendar: the critical
-path runs H0, contracts, B2, B3, the route matrix and the gate, about 13 working days.
+About 56 Core agent-days (H0's 3 spent; the H0 results added 6) and about 39 more downstream.
+The sum is not the calendar: the critical path runs contracts, B2, B3, the route matrix and the
+gate, still about 13 working days from 10-28, because the added work sits in parallel lanes.
 
-**Lane validation** (beside each change, plus): A, the S2 Caddy smoke (a `wss` hello reaches
-pairing, a web Origin is refused, an oversized frame closes); B1, a provisioning round trip on the
-listener and a refused public bind; B2, the vector table and parity; B3, parity across the whole
-registry; C, the route matrix; D, the extension's D2 tests against each profile; E, the fixture
+**Lane validation** (beside each change, plus): A, the Caddy smoke from the S2 spike, its first
+real run (a `wss` hello reaches pairing, a web or missing Origin is refused, an oversized frame
+closes, a silent socket drops at the hello deadline); B1, a provisioning round trip on the
+listener, a refused public bind, the selection and `secrets.locked` tests; B2, the vector table,
+parity and the buffered-audit tests; B3, parity across the whole
+registry; C, the leak test and the route matrix; D, the extension's D2 tests against each profile; E, the fixture
 host module and the contrast test.
 
 **Merges.** Each Core lane merges to `dev` when green. B3 and C2 touch every route: they merge
@@ -739,10 +733,14 @@ Chrome submission (about 11-13). getfluxiq.com sign-up opens on store approval.
 - **IAM breadth.** 289 endpoints need correct resource extractors; a wrong one silently widens or
   narrows access. The route matrix, parity and escalation suites are the mechanical check; B3 is
   partitioned by program so each worker owns a reviewable slice.
-- **Audit volume.** Recording every allow under panel polling may be large (S6). If so, store
-  allow rows compactly; never drop or aggregate them away, since the user asked for every decision.
-- **Instance cost** (S3): evict harder, or split runtime from storage, which re-plans C. **Hidden
-  globals:** S4, the route matrix and the two-tenant Lab scenario cover them.
+- **Audit volume** (S6): affordable only compact and buffered (213 to 449 GB over 90 days at
+  1,000 users, against 1.6 to 3.4 TB as JSON); rates come from timer constants, so re-measure in
+  H1. Never drop or aggregate allows; the user asked for every decision.
+- **Eviction and instance cost** (S3, S4): eviction leaks and breaks other workspaces until C0
+  lands, so nothing is evicted before it; a building workspace was not measured. **Hidden
+  globals:** S4 found four the plan missed; the route matrix and the two-tenant Lab scenario cover
+  the rest. **Key unlock** (S5): a restart, deploy or eviction locks every key and users sign in
+  again. **Gateway exposure** (S2): no limits exist today and Caddy has not run.
 - **Hand-written authorization:** one public client, code plus PKCE; RFC vectors and a review.
   **Unlock after restarts:** users sign in again after a deploy until H2; announce and drain.
 - **One provider:** DeepSeek's processing in China needs disclosure (Q8). **No legal entity:**
@@ -750,21 +748,23 @@ Chrome submission (about 11-13). getfluxiq.com sign-up opens on store approval.
 
 ## Work Ledger
 
-### 2026-10-17 — Hosted production plan written
-- Agent: lane lead hosted-production-planner
-- Changed: created this document and the paired downstream document; no code, config or index edited
-- Why: the user asked for a production plan (hosted service on their domain, login and connect via the website, panel customisation in the framework), with self-hosting kept first-class
-- Validation: `node scripts/structure-audit.mjs` (Core) -> "1 violation(s) across 1 rule(s)": `[working-docs] docs/working/README.md is out of date`. The index row is left to the supervisor; no header, size or link findings for this document. Baseline re-read in `apps/web/package.json`, `client-gateway-websocket.ts:27-45`, `client-gateway-transport.ts:98-107`, `session-key.ts:33-43`, `project.ts:6-15`, `domains/index.ts:53-54`, `login/route.ts:116-122`
-- Outcome: Partial
-- Follow-up: the user answers the Open Questions; the supervisor adds the index row and dispatches P0
+Compacted 2026-10-28 (the document was at the 800-line limit). The three earlier entries are
+merged into one below with their validation substance; the verbatim entries are in
+`hosted-production-plan/archive/2026-10-28-baseline-and-ledger.md`.
 
-### 2026-10-18 — Revised with the user's decisions
-- Agent: lane lead hosted-production-planner
-- Changed: this document (Current State, topology, identity, new provisioning and authorization sections, keys, security, testing, phases, questions); the paired document in step
-- Why: the user decided that hosted ships with the Chrome release on getfluxiq.com, that the website's backend provisions accounts through a Core API, that keys are bring-your-own only, and that billing stays a port
-- Validation: `node scripts/structure-audit.mjs` (Core) -> "1 violation(s) across 1 rule(s)": only `docs/working/README.md is out of date` (the index row, left to the supervisor). The document is 751 lines, with a 73-line Current State. Re-read `programs/secret-keys/runtime/held-keys.ts:12-88` (unlocks keyed by session) and `api/handlers/conversations.ts:200-278` (callers pass `sessionId`)
-- Outcome: Partial
-- Follow-up: dispatch H0; the user answers N1 to N4
+### 2026-10-17 to 10-28 — Plan written, revised with the user's decisions, revised around FluxIQWebsite
+- Agent: lane lead hosted-production-planner; supervisor and a worker-heavy for the 10-28 revision (notes `!FluxIQWebExtension/docs/working/hosted-production-plan/reports/revision-2026-10-28-notes.md`)
+- Changed: created this document and the paired one; revised both on 10-18 (hosted with the Chrome release, provisioning API, bring-your-own-key, billing a port) and 10-28 (FluxIQWebsite is the public site, Core on app.getfluxiq.com behind a private provisioning listener, `apps/site` shrinks to `apps/product`, local website stand-in, AWS-IAM-style permissions with an inert-for-local parity test, parallel lanes, store submission about 11-13); no code, config or index edited
+- Validation: `node scripts/structure-audit.mjs` (Core), 10-17 and 10-18 -> "1 violation(s) across 1 rule(s)": only `[working-docs] docs/working/README.md is out of date` (index row left to the supervisor), no header, size or link findings; on 10-18 the document was 751 lines with a 73-line Current State. The 10-28 worker checked the cited Core facts in code (no `platform/` or provisioning yet; one permission check in `_shared/api.ts`; 289 permission declarations); its post-swap audit result was not recorded. Baseline re-read in `apps/web/package.json`, `client-gateway-websocket.ts:27-45`, `client-gateway-transport.ts:98-107`, `session-key.ts:33-43`, `project.ts:6-15`, `domains/index.ts:53-54`, `login/route.ts:116-122`, `held-keys.ts:12-88`, `conversations.ts:200-278`
+- Outcome: Partial (10-17, 10-18); revised, H0 startable (10-28)
+- Follow-up: the user's answers to the Open Questions; H0 (done below)
+
+### 2026-10-28 — H0 spikes folded in
+- Agent: supervisor; spikes by sub-supervisor t782 (S5 on Opus, the rest on Sonnet); this fold drafted by a worker (brief H0-fold)
+- Changed: this document: Current State; Audit of every decision; credential and gateway 0.2 fields; Gateway Transport (Origin rule, limits, client IP); Tenancy (workspace manager, `close()`, singletons); Model Calls (selection fix, unlock); Security rows 9 and 10; Testing; Phases (lanes A, B1, B2, C with new C0, D; optional lane P; totals); Risks; N7; baseline and old ledger moved to the archive
+- Validation: the sub-supervisor's re-runs, from `reports/h0.md`: S2 `node run.mjs list` -> two 101 upgrades to `server.pairing_required`, 403 for refused Origins and a direct evil Origin; S3 `node --expose-gc retain.mjs` -> `"alive":[true,true,true,true]` after close and gc; S5 `npx vitest run --dir ../../spikes/h0-s5` from `packages/fluxiq` -> 3 of 3 passed; S6 `bench-filter.cjs` and `volume.cjs` -> volume figures match, per-item SQLite rows 32 to 46 µs. S1 outputs read (3 accepted, 3 rejected per browser, boot ids change); S4 tables read, rg counts not re-run. This fold: not validated by command (plan text only); the supervisor runs `node scripts/structure-audit.mjs` after the swap
+- Outcome: Partial (S2 ran through a Node TLS stand-in; Caddy is not installed)
+- Follow-up: contract freeze with the H0 changes; C0; the user's answer on N7
 
 ## Open Questions
 
@@ -785,6 +785,10 @@ Owner: the user, for all of them. A recommendation follows each; the plan procee
 - **N6. How is enterprise enabled on self-hosted?** Recommendation: a signed entitlement file read
   by the `EntitlementPolicy` port, issued under a commercial agreement once a contracting party
   exists; on getfluxiq.com, by plan through the billing port.
+- **N7. Missing Origin on the gateway?** Supervisor decision 2026-10-28, which you can overrule:
+  refuse it on `service` and any public bind, accept it on `local` and loopback `self-hosted`
+  (extensions always send an Origin). Self-hosted beyond loopback follows `service` (the
+  supervisor's reading of "allowlist required").
 - **Q5. Sign-in providers?** Recommendation: email and password at launch; Google in H2; generic
   OIDC for self-hosters and enterprise SSO.
 - **Q7. Hosting provider and region?** Recommendation: one VM (Hetzner or DigitalOcean, 4 vCPU,
@@ -792,9 +796,3 @@ Owner: the user, for all of them. A recommendation follows each; the plan procee
 - **Q8. How should DeepSeek's processing in China be disclosed?** Recommendation: in the privacy
   notice and at key entry, with a second provider adapter after launch.
 - **Q10. Operator console?** Recommendation: the command line at launch; a web page in H2.
-
-### 2026-10-28 — Revised around the user's 2026-10-18 directions
-- Agent: supervisor; plan revision by a worker-heavy (brief H1), notes `!FluxIQWebExtension/docs/working/hosted-production-plan/reports/revision-2026-10-28-notes.md`
-- Changed: FluxIQWebsite (Next.js 16 static export on Hostinger) is the public site at getfluxiq.com and gains sign-up and its backend; Core moves to app.getfluxiq.com behind a private provisioning listener; `apps/site` shrinks to `apps/product`; a local website stand-in (`packages/website-stand-in/`, W0-W4) comes first; permissions follow AWS IAM (FRNs, generated actions, policies with explicit deny, predefined `FluxIQUserAccess`/`FluxIQOwnerFullAccess`, an inert-for-local parity test); the schedule is re-cut into parallel lanes (hosted gate 11-11/12, store submission about 11-13, each date's constraint named). The "Next revision owed" block is removed.
-- Validation: the worker checked the cited Core facts in code (no `platform/` or provisioning yet; one permission check in `_shared/api.ts`; 289 permission declarations); `node scripts/structure-audit.mjs` after the swap (below).
-- Outcome: plan revised; D0 and Core H0 can start. Open for the user: N2 (two hostnames), N5, N6, U9 (VM, DNS, store developer account), U10 (Google Analytics vs decline-by-default), U11 (go-ahead to edit FluxIQWebsite).
