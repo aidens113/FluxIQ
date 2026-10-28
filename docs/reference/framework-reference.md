@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4178
+- Public declarations: 4180
 - Class: 142
 - Interface: 10
 - Object: 550
 - Type: 2225
 - Type Alias: 1
-- Value: 1250
+- Value: 1252
 
 ## Public Declarations
 
@@ -919,6 +919,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioConversationAskRow` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/rows.ts` | - |
 | `AutomationStudioConversationAskStatus` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/ask.ts` | - |
 | `AutomationStudioConversationAskTimeoutAction` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/ask.ts` | - |
+| `automationStudioConversationAttachedRecordingProblem` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/attached-recording/problem.ts` | - |
 | `AutomationStudioConversationAttachment` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/turn.ts` | What a turn shows beside its words. `kind` names the renderer; `ref` is what it renders. |
 | `AutomationStudioConversationAttachmentAnswer` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/conversations.ts` | A turn's attachment and, when a resolver is configured, what it refers to. |
 | `automationStudioConversationAttachmentOrRefuse` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/inputs.ts` | - |
@@ -2484,6 +2485,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioResultReadDedupe` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/dedupe.ts` | - |
 | `automationStudioResultReadEmptiedColumns` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/emptied-columns.ts` | - |
 | `automationStudioResultReadKeptEveryRow` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/kept-every-row.ts` | - |
+| `automationStudioResultReadLeftOutCells` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/left-out-cells/left-out-cells.ts` | - |
 | `automationStudioResultReadListContinues` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/list-continues.ts` | - |
 | `automationStudioResultReadLoopedAccount` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/looped-account.ts` | - |
 | `AutomationStudioResultReadLoopedAccountInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/looped-account.ts` | - |

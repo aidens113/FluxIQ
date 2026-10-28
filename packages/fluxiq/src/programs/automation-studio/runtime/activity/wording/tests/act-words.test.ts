@@ -55,4 +55,15 @@ describe("acts of the build in a person's words", () => {
       expect(automationStudioActivityActsSaid([{ did }])[0], did).toMatchObject({ passing: false });
     }
   });
+
+  // t774 round 6: "It also clicked ... ran the step 'show more of the feed', which changed the page and might have left
+  // something behind" listed a scroll for the next page beside "Nothing was changed on your account".
+  it("treats a trial step labelled for moving around or reading the page as saving nothing by itself", () => {
+    for (const label of ["show more of the feed", "go to the reels page", "find the newest posts", "scroll to the end"]) {
+      expect(automationStudioActivityActsSaid([{ did: `trial step 4 "${label}" on "Feed"` }])[0], label).toMatchObject({ verb: "ran the step", passing: true });
+    }
+    for (const label of ["like the post", "save the job", "add it to the cart"]) {
+      expect(automationStudioActivityActsSaid([{ did: `trial step 4 "${label}" on "Feed"` }])[0], label).toMatchObject({ passing: false });
+    }
+  });
 });

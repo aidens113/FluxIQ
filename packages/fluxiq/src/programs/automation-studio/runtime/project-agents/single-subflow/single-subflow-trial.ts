@@ -5,6 +5,7 @@ import type { AutomationStudioSubflowTrialKeptEveryRowRead, AutomationStudioSubf
 import type { AutomationStudioResultKeptCondition, AutomationStudioResultKeptConditionsCarrier } from "../../result-verification/standing-no/index.ts";
 import { automationStudioLlmBuildPurseJudgeBackstopScope, automationStudioLlmBuildPurseScope, automationStudioLlmCurrentBuildPurse, type AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
+import { currentAutomationStudioActivityAgent, runWithAutomationStudioActivityAgent } from "../../activity/index.ts";
 import { withAutomationStudioProjectAgent } from "../attribution/index.ts";
 import type { AutomationStudioProjectStructurePlan } from "../contracts/index.ts";
 import type { AutomationStudioProjectDispatchWholeTrial, AutomationStudioProjectDispatchWholeTrialAnswer } from "../dispatch/index.ts";
@@ -179,7 +180,11 @@ export function automationStudioProjectSingleSubflowTrial(input: AutomationStudi
     const { candidate } = assembled;
     const complete = { revision: candidate.revision, digest: candidate.digest };
     // The supervisor's judge, paid by the brief's allowance with the judging reserve as its backstop (header, t685).
-    const ran = await withAutomationStudioProjectAgent({ role: "supervisor" }, () => paidByBrief(ports.purse, () => input.test({ ...complete }, request.signal)));
+    // The steps it runs are the builder's own test (its `test_subflow` asked for it): the chat puts them under the builder's heading,
+    // never "Supervisor" (t774), while the step log and the purse keep the judge the supervisor's.
+    const builder = currentAutomationStudioActivityAgent();
+    const test = () => paidByBrief(ports.purse, () => input.test({ ...complete }, request.signal));
+    const ran = await withAutomationStudioProjectAgent({ role: "supervisor" }, () => (builder ? runWithAutomationStudioActivityAgent(builder, test) : test()));
     return answerOf(request, ran, complete, keptOf(request, gate.standing(complete), AutomationStudioProjectAssembledFrom.of(controller)));
   };
 }

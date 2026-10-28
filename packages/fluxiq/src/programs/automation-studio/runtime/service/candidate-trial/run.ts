@@ -79,6 +79,7 @@
 // judge reads, last (`./summary.ts`).
 
 import { createHash } from "node:crypto";
+import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import type { AutomationStudioCandidateTrialAct, AutomationStudioCandidateTrialRequest, AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
 import { runAutomationStudioDetachedCandidate, type AutomationStudioCandidateStartReceipt, type AutomationStudioCandidateVerificationIdentity } from "../../flow-bootstrap/verification/index.ts";
@@ -178,6 +179,12 @@ async function runIn(environment: AutomationStudioRunEnvironment, request: Autom
     startedAt, finishedAt: executed.receipt.finishedAt, ...(executed.trace ? { trace: executed.trace } : {}),
     metadata: { ...(opened.metadata ?? {}), candidateTrial: { candidateId: request.candidateId, revision: request.revision, digest: request.digest, start: start.status, execution: executed.receipt.status, ...(executed.code ? { code: executed.code } : {}) } } };
   await ports.writeSession(ended);
+  // The trial's verdict goes on its session too, beside the run's own facts, so a reader of the sessions never reads it back from the chat's words (t773).
+  const verdictKept = async (outcome: AutomationStudioCandidateTrialOutcome): Promise<AutomationStudioCandidateTrialOutcome> => {
+    const { verdict, code } = outcome.record;
+    await ports.writeSession({ ...ended, metadata: { ...(ended.metadata ?? {}), candidateTrial: { ...(ended.metadata?.candidateTrial as JsonObject), verdict, ...(code ? { verdictCode: code } : {}) } } });
+    return outcome;
+  };
   signal.throwIfAborted();
   // The handle of each way out the run pressed to close a layer the page put in the way, named by the domain (`./interruptions.ts`, t470).
   const frames = automationStudioCandidateFrameEvidence(executed.trace?.attempts ?? [], executed.graph, executed.candidateGraphs);
@@ -191,7 +198,7 @@ async function runIn(environment: AutomationStudioRunEnvironment, request: Autom
     // What each list read kept, from the run's own read accounts, as a judged trial's summary has them (t474).
     const { reads } = automationStudioResultReadAccounts({ actionAttempts: ports.actionAttempts?.(ended)?.filter((attempt) => !attempt.subflowTarget), flowNodes: frames.graph?.nodes, deniedEvidenceKeys: ports.deniedEvidenceKeys });
     const failed = Feedback.executionFailed({ code, ...shown, reads });
-    return answer(failed.verdict, failed.feedback, { trialRunId: runId, start, execution: executed.receipt.status, code, ...paced, judge: { ...NO_SPEND } }, acts);
+    return await verdictKept(answer(failed.verdict, failed.feedback, { trialRunId: runId, start, execution: executed.receipt.status, code, ...paced, judge: { ...NO_SPEND } }, acts));
   }
   let summary: AutomationStudioRunResultSummary;
   try {
@@ -202,9 +209,9 @@ async function runIn(environment: AutomationStudioRunEnvironment, request: Autom
   } catch (error) {
     // What the run stored could not be read, so nobody can say whether it answers: not judged, and never a yes.
     const code = "candidate.trial_result_unreadable";
-    return answer("not_judged", { code, trialRunId: runId, start: start.status, failure: error instanceof Error && error.name ? error.name : "unknown error" }, { trialRunId: runId, start, execution: "succeeded", code, ...paced, judge: { ...NO_SPEND } }, acts);
+    return await verdictKept(answer("not_judged", { code, trialRunId: runId, start: start.status, failure: error instanceof Error && error.name ? error.name : "unknown error" }, { trialRunId: runId, start, execution: "succeeded", code, ...paced, judge: { ...NO_SPEND } }, acts));
   }
-  return await judged(request, ports, { summary, shown, start, ...paced }, acts);
+  return await verdictKept(await judged(request, ports, { summary, shown, start, ...paced }, acts));
 }
 
 /**

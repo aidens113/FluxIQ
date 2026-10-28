@@ -72,12 +72,27 @@ async function played(): Promise<void> {
 }
 
 describe("a failed playback step's row", () => {
-  it("is settled, by the row right after it, with the failure's code that words why it failed", async () => {
+  // t774 round 6: a first press the fixture refused and a retry absorbed showed a red "Didn't work" card and "A step didn't work
+  // in the test" beside a step that then worked. A failure the ladder retries is not settled as failed; the thought says it
+  // is trying again.
+  it("is not settled as failed when the step is tried again and goes through", async () => {
     await played();
 
     const started = seen.findIndex((event) => event.step?.nodeId === "n3.coupon");
     expect(started).toBeGreaterThan(-1);
-    const settle = seen[started + 1]!;
+    expect(seen.some((event) => event.detail?.kind === "step" && event.detail.status === "failed" && event.detail.ref === "n3.coupon")).toBe(false);
+    expect(seen.some((event) => event.label.startsWith("Recovering from a failed step"))).toBe(false);
+    expect(seen.some((event) => event.phase === "repairing" && event.detail?.kind === "thought" && event.detail.ref === "n3.coupon")).toBe(true);
+    expect(seen.filter((event) => event.step?.nodeId === "n4.cart").length).toBeGreaterThan(0);
+  });
+
+  it("is settled, by the row right after it, with the failure's code that words why it failed, when it is not tried again", async () => {
+    const refusing: NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]> = (effect) => JSON.stringify(effect.payload ?? null).includes("\"coupon\"")
+      ? { status: "failed", route: "failed", message: "Action refused by the page for now: it said it was busy; it named no wait.", failure: { category: "timeout", code: "web.action.rate_limited", retryable: false, stage: "execution", effect: "unacted" } }
+      : { status: "success", route: "success", outputs: { ok: true } };
+    await runWithAutomationStudioActivity({ kind: "run", id: "run.2", projectId: "project.1", flowId: flow.flowId }, () => runAutomationStudioGraph(flow, { delay: async () => undefined, effectDispatcher: refusing }));
+
+    const settle = seen.find((event) => event.label.startsWith("Recovering from a failed step"))!;
     expect(settle.phase).toBe("repairing");
     expect(settle.label).toBe("Recovering from a failed step: Get coupons");
     expect(settle.step).toBeUndefined();

@@ -85,11 +85,19 @@ describe("withAutomationStudioBuildActivity", () => {
   });
 
   // G2 (social `run-mvfq957o-40103539`, final screenshot): "Your Flow is ready" showed beside a chat saying no Flow was built.
+  // t774: the toast said "no Flow was built" while the chat said FluxIQ stopped with the Flow only partly built and kept a draft.
+  it("names a draft the way the chat does, never as no Flow", async () => {
+    const draft = { status: "draft", candidateId: "candidate.1" };
+    await withAutomationStudioBuildActivity({ projectId: "p1", flowId: "f1" }, async () => draft);
+    expect(seen[1]!.label).not.toMatch(/no Flow was built/u);
+    expect(seen[1]!.label).toMatch(/draft/u);
+  });
+
   it("never says a Flow is ready for a build that ended as a draft", async () => {
     const draft = { status: "draft", candidateId: "candidate.1", trial: { verdict: "unsure", codes: ["candidate.trial_unconfirmed", "project.build_time_limit"] } };
     expect(await withAutomationStudioBuildActivity({ projectId: "p1", flowId: "f1" }, async () => draft)).toBe(draft);
     expect(seen.map((event) => [event.phase, event.final])).toEqual([["building", undefined], ["failed", true]]);
-    expect(seen[1]).toMatchObject({ label: "Build ended: no Flow was built", detail: { kind: "step", title: "Build ended: no Flow was built", status: "failed", text: "What it wrote is kept as a draft, and nothing was put into the Flow." } });
+    expect(seen[1]).toMatchObject({ label: "Build stopped: only a draft was kept", detail: { kind: "step", title: "Build stopped: only a draft was kept", status: "failed", text: "What it wrote is kept as a draft, and nothing was put into the Flow." } });
     expect(JSON.stringify(seen)).not.toMatch(/ready|succeeded/u);
     expect(seen[1]!.stopped).toBeUndefined();
   });
@@ -114,7 +122,7 @@ describe("withAutomationStudioBuildActivity", () => {
     const unreadable = Object.assign(new Error("z"), { diagnostic: { code: "flow_bootstrap.model_replies_unreadable", ending: { kind: "replies_unreadable", message: "The build stopped because the replies it got back could not be read." } } });
     await expect(withAutomationStudioBuildActivity({ projectId: "p1" }, async () => { throw unreadable; })).rejects.toBe(unreadable);
     expect(seen[5]).toMatchObject({ label: "Build stopped: the replies it got back could not be read", detail: { title: "Build stopped: the replies it got back could not be read" } });
-    expect(seen[5]!.label).not.toMatch(/model/u);
+    expect(seen[5]!.label).not.toMatch(/\bmodel\b/u);
   });
 
   // R4a (`run-mv2nlh9l-52e476da`, moment 10): the overlay read a bare "Build failed" while the

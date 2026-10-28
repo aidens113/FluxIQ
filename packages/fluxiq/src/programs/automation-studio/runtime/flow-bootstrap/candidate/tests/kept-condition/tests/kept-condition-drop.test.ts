@@ -70,9 +70,10 @@ describe("a condition Core's record kept, dropped after a no on advice it refute
     const exact = await accepted(submit(script([promoted, open, rating, campground, notCabin])));
     const trial = await test(exact);
     expect(trial.resultCode).toBe("candidate.trial_unsure");
-    // The label shows: the advice Core's record contradicts says so, with Core's finding.
+    // Core's fact shows that its record contradicts the no in part; nothing the no observed or advised is carried on (t771).
     const judged = ((trial.evidence as JsonObject).feedback as JsonObject).unconfirmedReading as JsonObject;
-    expect(String(judged.advice)).toContain("Judge call 1 (Core's record contradicts part of this reading: Of the 2 rows condition 1 (promoted is absent)");
+    expect(judged.recordContradicts).toBe("part");
+    expect(judged.advice).toBeUndefined();
     // What the gate keeps rides outside the feedback a model is shown.
     expect(JSON.stringify(trial.evidence)).not.toContain("keptConditions");
     expect(gate.standing(exact)).toMatchObject({ keptConditions: [{ name: "condition 1 (promoted is absent)", revision: 1 }, { revision: 1 }] });

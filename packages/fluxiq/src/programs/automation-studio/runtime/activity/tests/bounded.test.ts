@@ -60,4 +60,12 @@ describe("the bounds on one activity event", () => {
     expect(boundedAutomationStudioActivity({ ...base, step: { ...step, row: "Jonas Weber" } }).step).toEqual({ ...step, row: "Jonas Weber" });
     expect(boundedAutomationStudioActivity({ ...base, step }).step).not.toHaveProperty("row");
   });
+  it("cuts a label that is too long at a word, never inside one (t774)", () => {
+    const label = `${"The build ran the step and might have left something behind, so check the site ".repeat(3)}`.trim();
+    const cut = boundedAutomationStudioActivity({ ...base, label }).label;
+    expect(cut.length).toBeLessThanOrEqual(160);
+    expect(cut.endsWith("…")).toBe(true);
+    expect(label.startsWith(cut.slice(0, -1).replace(/[\s,;:]+$/u, ""))).toBe(true);
+    expect(/\s/u.test(label.charAt(cut.slice(0, -1).replace(/[\s,;:]+$/u, "").length))).toBe(true);
+  });
 });

@@ -77,11 +77,19 @@ describe("an earlier judged trial's advice, as a later trial's judge is told it 
     expect(automationStudioResultEarlierAdvice({ trials: [trial({ advice: "Loosen condition 1.", standingNo: two })], revision: 3, plan: PLAN_2 })[0]).toMatchObject({ followed: "unknown" });
   });
 
-  it("hands all completed trials, oldest first, retaining advice beyond three trials and same-revision retests, and says an unsure as unsure", () => {
-    const trials = [1, 2, 3, 4, 5].map((revision) => trial({ revision, verdict: revision === 4 ? "unsure" : "no" }));
+  it("hands all completed trials judged no, oldest first, retaining advice beyond three trials and same-revision retests", () => {
+    const trials = [1, 2, 3, 5].map((revision) => trial({ revision }));
     const told = automationStudioResultEarlierAdvice({ trials, revision: 5, plan: PLAN_2 });
-    expect(told.map((one) => one.revision)).toEqual([1, 2, 3, 4, 5]);
-    expect(told[3]!.said).toContain("After the trial of revision 4 (judged unsure) the judge advised:");
+    expect(told.map((one) => one.revision)).toEqual([1, 2, 3, 5]);
     expect(automationStudioResultEarlierAdvice({ trials: [trial()], revision: 2, plan: PLAN_2 })).toMatchObject([{ revision: 2, followed: "unchanged" }]);
+  });
+
+  // Rerun round 6 social `run-mvrj7qg8-c20c132e`: an unsure trial's advice rested on rows its judge invented, reached every
+  // later judge, and the repair followed it. An unsure trial stood on no no Core grounded, so its advice is told to none (t771).
+  it("tells a later judge nothing of a trial judged unsure", () => {
+    const trials = [trial({ revision: 2, verdict: "unsure", advice: "Drop the club-link condition." }), trial({ revision: 3 })];
+    const told = automationStudioResultEarlierAdvice({ trials, revision: 4, plan: PLAN_2 });
+    expect(told.map((one) => one.revision)).toEqual([3]);
+    expect(JSON.stringify(told)).not.toContain("Drop the club-link condition.");
   });
 });

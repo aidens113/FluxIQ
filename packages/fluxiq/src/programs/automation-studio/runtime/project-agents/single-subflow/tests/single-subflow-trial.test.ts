@@ -116,7 +116,15 @@ describe("a single-subflow plan's builder test", () => {
   });
 
   // t685: paid as a candidate builder's trial is; the record still names the judge the supervisor's.
-  it("runs the whole judge under the supervisor's attribution, in the brief's allowance carved from the build's purse", async () => {
+  it("shows the whole test's steps under the builder that asked for it, not the supervisor (t774), and keeps the judge's purse the brief's", async () => {
+    const roles: Array<string | undefined> = [];
+    const built = singleBuild({ onTrial: () => { roles.push(currentAutomationStudioActivityAgent()?.role); } });
+    const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([BUILD_ONE]), completeOnDispatch], built);
+    expect(run.outcome.status, JSON.stringify(run.outcome.loop)).toBe("candidate");
+    expect(roles).toEqual(["builder"]);
+  });
+
+  it("runs the whole judge, in the brief's allowance carved from the build's purse", async () => {
     const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.5 });
     const frames: Array<{ purse: AutomationStudioLlmBuildPurse | undefined; role: string | undefined }> = [];
     const built = singleBuild({
@@ -128,7 +136,6 @@ describe("a single-subflow plan's builder test", () => {
     const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([BUILD_ONE]), completeOnDispatch], built);
     expect(run.outcome.status, JSON.stringify(run.outcome.loop)).toBe("candidate");
     expect(frames).toHaveLength(1);
-    expect(frames[0]!.role).toBe("supervisor");
     expect(frames[0]!.purse?.parent).toBe(purse);
     expect(frames[0]!.purse?.attribution).toEqual({ role: "builder", briefId: "brief-1" });
   });
