@@ -77,7 +77,9 @@ describe("a double no naming no defect Core can find, through the verification (
     expect(outcome.unsupportedNo?.findings.join(" ")).toContain("are not words the request says");
     expect(automationStudioResultVerificationFailsRun(outcome)).toBe(false);
     expect(outcome.repair).toBeUndefined();
-    expect(outcome.unconfirmedReading?.advice).toContain("Remove the status condition.");
+    // t771: nothing a no Core could not ground advised is carried on.
+    expect(outcome.unconfirmedReading?.advice).toBeUndefined();
+    expect(JSON.stringify(outcome)).not.toContain("Remove the status condition.");
     expect(outcome.standingNo).toBeDefined();
     // The reason a run records is Core's words: no row, no judge's prose.
     expect(outcome.reason).not.toMatch(/Cartographer|renewal|status text/u);

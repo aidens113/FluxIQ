@@ -26,7 +26,7 @@ function answering(reading: Record<string, string>): AutomationStudioLlmProvider
     metadata: { provider: "mock", model: "debug-model" },
     runTask: async () => ({ response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: "no", ...reading, defects: (reading.observed ?? "").includes("is not included")
       ? [{ kind: "wrong_value", row: DRILL_PRO.name, column: "rating", requestWords: "rating" }]
-      : [{ kind: "asked_missing", row: DRILL_TORVIK, requestWords: "sells itself" }] } }, usage: USAGE })
+      : [{ kind: "asked_missing", row: DRILL_TORVIK, column: "name", value: "Drill", requestWords: "sells itself" }] } }, usage: USAGE })
   };
 }
 

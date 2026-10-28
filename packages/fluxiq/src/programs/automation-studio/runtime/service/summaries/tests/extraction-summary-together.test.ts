@@ -79,7 +79,8 @@ describe("rows two or more conditions left out together, from the page to Core's
 
   it("make a read whose counts add up complete, and t654's unseen-row refutation fires", () => {
     const read = account(6);
-    expect(read.leftOutTogether).toEqual([{ conditions: [1, 2], rows: [BOTH.title] }]);
+    // With the row's own cells beside its label (t771).
+    expect(read.leftOutTogether).toEqual([{ conditions: [1, 2], rows: [BOTH.title], cells: [BOTH] }]);
     const record = automationStudioResultNoRecord({ summary: summary(read), requestText: REQUEST });
     expect(record.seen?.[0]?.whole).toBe(true);
     const weighed = automationStudioResultRefutedReading(NO, record);

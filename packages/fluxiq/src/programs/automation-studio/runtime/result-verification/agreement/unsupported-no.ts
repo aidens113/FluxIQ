@@ -31,6 +31,20 @@ const CORE_LOCATED: ReadonlySet<string> = new Set([
  * (`refutationUnsupported`) -- never a no, and never a yes Core made. A double
  * no where a no names a defect Core finds is no as it was, and nothing is asked
  * twice. `settled` unchanged without Core's record.
+ *
+ * **A lone yes beside nos Core refused every one of (t771, lead decision
+ * 2026-10-27).** Rerun round 6 social `run-mvrj7qg8-c20c132e`: a trial stored
+ * exactly the rows asked for; one call said yes, and the other's no, asked
+ * once more, still named only rows its judge invented. The outcome was unsure
+ * by this rule, and the build was never told its right answer. Such a yes is
+ * asked once more (`CONFIRM_LONE_YES`), in the refused no's place: a second yes
+ * stands as the agreement weighs two yeses; any other answer leaves it unsure.
+ *
+ * **Nothing of a no Core could not ground is carried on (t771).** In that run
+ * such a no's advice reached every later judge as earlier advice and the
+ * repair as the unconfirmed reading, and the repair dropped the right
+ * condition. The unsure outcome's `unconfirmedReading` holds only what that no
+ * read the request to ask (`expected`); Core's findings stay in `unsupportedNo`.
  */
 export async function automationStudioResultVerificationReaskUnsupportedNo(input: {
   settled: Verification;
@@ -79,8 +93,16 @@ export async function automationStudioResultVerificationReaskUnsupportedNo(input
   const standing = taken.find(modelNo);
   if (standing) return { ...input.agree(standing, standing), verdicts, calls: verdicts.length, unsupportedNo };
   const yes = taken.find(modelYes);
+  // A lone yes beside nos Core refused every one of is asked once more to confirm; a second yes stands (header, t771).
+  if (yes && nos.every((call) => notTaken.has(call))) {
+    const call = nos[0]!;
+    const confirming = await input.ask(CONFIRM_LONE_YES, call);
+    verdicts.push(confirming.verdict);
+    if (modelYes(confirming)) return { ...input.agree(yes, confirming), verdicts, calls: verdicts.length, unsupportedNo };
+  }
   const basis = yes ? "model_disagreed" as const : "model_unconfirmed" as const;
-  const reading = labelled([...notTaken.keys()].map((call) => ({ call, reading: (modelNo(calls[call - 1]!) ? calls[call - 1]! : before.get(call)!.verification).repair?.judgement })), record);
+  // Nothing of a no Core could not ground is carried on: no reading, no advice (header, t771).
+  const reading = expectedOf([...notTaken.keys()].map((call) => (modelNo(calls[call - 1]!) ? calls[call - 1]! : before.get(call)!.verification).repair?.judgement), record);
   const both = notTaken.size === 2;
   return {
     schemaVersion: settled.schemaVersion,
@@ -135,8 +157,8 @@ function recheckWords(findings: readonly string[], earlier: readonly AutomationS
       : `This revision changed steps or conditions named by the judges of revisions ${followed.slice(0, -1).join(", ")} and ${followed[followed.length - 1]}. That change does not prove the advice was followed or correct. Earlier advice is context only: judge the result against the original request, including defects introduced by that advice. `;
   return "This same evidence was judged before, and that answer said the result does not answer the request, but named no defect Core can find in this result. "
     + advised
-    + "Answer no only for a defect of this result, and list each defect in defects: kept_not_asked for a row it keeps that the request does not ask for, asked_missing for a row the request asks for that it lacks, or wrong_value for a kept row whose column holds a wrong value; and for an act the request asks for, act_missing for an act no step does, or act_wrong for a step, named in step, that did its act to the wrong thing, with the wrong value or with no effect the evidence shows. "
-    + "Name each row as the evidence names it, and quote in requestWords the request's own words it fails. "
+    + "Answer no only for a defect of this result, and list each defect in defects: kept_not_asked for a row it keeps that the request does not ask for, asked_missing for a row the request asks for that it lacks, with column and value, that row's own value in the column that makes it asked for, or wrong_value for a kept row whose column holds a wrong value; and for an act the request asks for, act_missing for an act no step does, or act_wrong for a step, named in step, that did its act to the wrong thing, with the wrong value or with no effect the evidence shows. "
+    + "Name each row as the evidence names it, by Core's id or its whole label, and quote in requestWords the request's own words it fails. "
     + "For a claim about kept or dropped rows, name the row when the evidence identifies it. Ordering, formatting, missing columns, actions, and constraints not measurable from these rows can still violate the original request: report them in observed and do not answer yes unless the evidence independently supports correctness. "
     + "A concern about another possible run alone is advice. An absent structured row defect does not establish correctness: answer unknown when the evidence cannot settle a requirement, and answer yes only after independently checking every requirement of the original request."
     + (findings.length ? ` What Core found of that answer: ${findings.join(" ")}` : "");
@@ -148,21 +170,28 @@ function concernOf(no: Verification): string | undefined {
   return judgement?.advice ?? judgement?.observed;
 }
 
-/** The readings of the nos not taken, each field labelled with its call, as `../refuted-no/reask.ts` labels a refuted reading. */
-function labelled(readings: ReadonlyArray<{ call: 1 | 2; reading: Reading | undefined }>, record: AutomationStudioResultNoRecord): { expected?: string; observed?: string; advice?: string; recordContradicts?: "whole" | "part" } | undefined {
-  const weighed = readings.map((one) => ({ ...one, refuted: automationStudioResultRefutedReading(one.reading, record) }));
-  const field = (name: "observed" | "advice"): string | undefined => {
-    const parts = weighed.filter((one) => one.reading?.[name]).map((one) => {
-      const contradiction = one.refuted.findings.length ? `Core's record contradicts ${one.refuted.wholly ? "this reading" : "part of this reading"}: ${one.refuted.findings.join(" ")}` : "no defect Core can find in this result";
-      return `Judge call ${one.call} (${contradiction}): ${one.reading![name]}`;
-    });
-    return parts.length ? parts.join(" ") : undefined;
-  };
-  const expected = readings.find((one) => one.reading?.expected)?.reading?.expected;
-  const observed = field("observed");
-  const advice = field("advice");
-  const contradicted = weighed.filter((one) => one.refuted.findings.length);
-  const recordContradicts = contradicted.length ? (contradicted.length === weighed.length && contradicted.every((one) => one.refuted.wholly) ? "whole" as const : "part" as const) : undefined;
-  const said = { ...(expected ? { expected } : {}), ...(observed ? { observed } : {}), ...(advice ? { advice } : {}), ...(recordContradicts ? { recordContradicts } : {}) };
+/**
+ * What a no Core could not ground carries on (header, t771): what it read the
+ * request to ask, and, as Core's fact for the gates that keep a build's trials,
+ * whether Core's record contradicts its reading wholly or in part
+ * (`recordContradicts`, t641) -- nothing of what it observed or advised. Run
+ * `run-mvrj7qg8-c20c132e`: such a no's advice, resting on rows its judge
+ * invented, reached every later judge and the repair, which dropped the right
+ * condition.
+ */
+function expectedOf(readings: ReadonlyArray<Reading | undefined>, record: AutomationStudioResultNoRecord): { expected?: string; recordContradicts?: "whole" | "part" } | undefined {
+  const expected = readings.find((reading) => reading?.expected)?.expected;
+  const refuted = readings.map((reading) => automationStudioResultRefutedReading(reading, record));
+  const contradicted = refuted.filter((one) => one.findings.length);
+  const recordContradicts = contradicted.length ? (contradicted.length === refuted.length && contradicted.every((one) => one.wholly) ? "whole" as const : "part" as const) : undefined;
+  const said = { ...(expected ? { expected } : {}), ...(recordContradicts ? { recordContradicts } : {}) };
   return Object.keys(said).length ? said : undefined;
 }
+
+/**
+ * The one confirming ask of a lone yes beside nos Core refused every one of
+ * (header, t771): Core's words, naming no site or task.
+ */
+const CONFIRM_LONE_YES = "This same evidence was judged before: one check answered that the result does what the request asks, and every check that answered no named no defect Core can find in this result, even asked once more. Judge it once more from the evidence alone. "
+  + "Answer yes only after checking every requirement of the original request against the stored rows, the rows each read left out with their own cells, and the steps the run took. "
+  + "Answer no only for a defect of this result, listed in defects: a row it keeps that the request does not ask for, a row the request asks for that it lacks -- named by Core's id or its whole label, with the column and that row's own value in it that makes it asked for -- a wrong value, or an act missing or done wrong. Answer unknown when the evidence cannot settle a requirement.";

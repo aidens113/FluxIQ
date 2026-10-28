@@ -38,8 +38,10 @@ describe("one candidate trial", () => {
     expect(fixture.judged[0]!.summary.flowShape.map((step) => step.definitionId)).toEqual(["builtin.control.start", "custom.press"]);
     expect(fixture.judged[0]!.summary).toMatchObject({ totalRecordCount: 1, endView: { view: { cart: "1 item" } } });
     // Its session opened queued, ran, and ended with the trace; the trial is recorded on it.
-    expect(fixture.sessions.map((session) => session.status)).toEqual(["queued", "running", "succeeded"]);
-    expect(fixture.sessions.at(-1)).toMatchObject({ runId: "trial.1", trace: { status: "succeeded" }, metadata: { candidateTrial: { candidateId: "candidate.1", revision: 1, start: "not_reset", execution: "succeeded" } } });
+    // The last write adds the trial's verdict to the same session (t773).
+    expect(fixture.sessions.map((session) => session.status)).toEqual(["queued", "running", "succeeded", "succeeded"]);
+    expect(fixture.sessions.at(-1)).toMatchObject({ runId: "trial.1", trace: { status: "succeeded" }, metadata: { candidateTrial: { candidateId: "candidate.1", revision: 1, start: "not_reset", execution: "succeeded", verdict: "yes" } } });
+    expect(fixture.sessions.at(-2)?.metadata?.candidateTrial).not.toHaveProperty("verdict");
   });
 
   // Lane D round 9 (`run-mv5q4j2n-25784472`, t471): the judge was never told the site already held the build's acts.
@@ -127,6 +129,7 @@ describe("one candidate trial", () => {
     expect(result).toMatchObject({ verdict: "execution_failed", feedback: { code: "candidate.execution_incomplete", steps: [{ step: 1, definitionId: "builtin.control.start" }, { step: 2, definitionId: "custom.press", status: "failed" }] } });
     expect(record).toMatchObject({ execution: "failed", judge: { calls: 0 } });
     expect(fixture.sessions.at(-1)?.status).toBe("failed");
+    expect(fixture.sessions.at(-1)?.metadata?.candidateTrial).toMatchObject({ verdict: "execution_failed", verdictCode: "candidate.execution_incomplete" });
   });
 
   // t474 (lane D round 9): a run that did not reach its end says what its reads kept, as a judged one does.
@@ -174,8 +177,8 @@ describe("one candidate trial", () => {
     ["a yes confirmed by a second yes", ["yes", "yes"], "yes", 2],
     ["a yes then unknown", ["yes", "unknown"], "unsure", 2],
     ["a yes then a silent reply", ["yes", "silent"], "unsure", 2],
-    // The split's no is asked once more to name its defect (t725), and says no again.
-    ["a yes then an unmeasured no", ["yes", "no", "no", "no"], "unsure", 4],
+    // The split's no is asked once more to name its defect (t725), and says no again; the lone yes is then asked once more (t771), and says no.
+    ["a yes then an unmeasured no", ["yes", "no", "no", "no", "no"], "unsure", 5],
     ["two unmeasured noes", ["no", "no", "no", "no"], "unsure", 4]
   ] as const)("the real build-test judge: %s gives %s", async (_name, replies, expected, calls) => {
     const fixture = trialFixture(); pressing(fixture);

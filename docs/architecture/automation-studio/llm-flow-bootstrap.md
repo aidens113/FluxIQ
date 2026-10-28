@@ -3532,7 +3532,7 @@ another resource cannot prove restoration of a different scope.
 
 ## Judge advice consistency and grounded defects
 
-Each trial carries all earlier judged trials' advice, with Core's comparison of the named
+Each trial carries the advice of all earlier trials judged no (never of one judged unsure, t771), with Core's comparison of the named
 conditions or step parameters against the current plan. A changed condition is evidence of a
 change only; earlier advice never overrides the original request or excuses an incorrect result.
 Advice text is bounded per entry, but completed trials are not evicted after three entries or deduplicated by local revision: retests and rebriefs can reuse a revision number. Column references resolve once to a unique canonical column for both grounding and claimed-value checks; ambiguous aliases remain unconfirmed.
@@ -3571,6 +3571,26 @@ request's own words. The steps are evidence apart from the rows, so a result tha
 in Core's record exactly as before.
 A found act defect keeps the no, which fails the run and hands its repair the judge's reading, as a
 found row defect does; a no naming nothing Core finds stays unsure.
+
+A missing row is held to its own cells (t771; rerun round 6 social `run-mvrj7qg8-c20c132e`, where
+judges gave a friend's own post a group it does not have, Core located the claim because the row
+existed, and the wrong double no's advice led the build away from the right condition). Each row a
+read leaves out reaches the judge with its own cells beside its label: `leftOutCells` on a
+condition, aligned with `leftOutOnlyByThis`, and `cells` on a `leftOutTogether` set -- every
+declared column, screened as stored rows are, empty where the read found nothing. An
+`asked_missing` defect for a row a read saw is located only where it gives the `column` and that
+row's own `value` in it that makes the row asked for, and Core's cell of that row says it (where
+Core holds no cell of that column, as for a build test's rows, the row's own label must say it).
+A row is named by its whole label, Core's id for it, or its whole label first with more words after
+it, which tell apart rows sharing the label; never by another row's label found later in its words.
+A build test's record holds its answer's labels (`buildTest.stores`) as stored rows, so a kept row
+of a test is located and a row its answer holds is never located missing.
+
+A lone yes beside nos Core refused every one of, after their re-asks, is asked once more to
+confirm (lead decision, 2026-10-27): a second yes stands as yes, anything else is unsure. Nothing
+a no Core could not ground observed or advised is carried on: its unsure outcome's
+`unconfirmedReading` holds only what it read the request to ask and `recordContradicts`, and a
+later trial's judge is told the advice of earlier trials judged no only (`earlierAdvice`).
 
 A read that supplies a repeat loop and is superseded by a later read of the same target is working
 rows when the graph/run evidence establishes that relationship. Its record set is excluded from

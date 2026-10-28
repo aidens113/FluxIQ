@@ -45,7 +45,8 @@ const WIDE = { name: "Heavy Rotary Drill 36V", price: "$249.00", voltage: "36V" 
 describe("the rows conditions left out together, on a read's account", () => {
   it("are said once under the conditions they failed, numbered from 1, by label alone", () => {
     const { reads } = automationStudioResultReadAccounts({ actionAttempts: [attempt([{ failed: [0, 1], rows: [WIDE] }])], flowNodes: [node()], deniedEvidenceKeys: [] });
-    expect(reads[0]?.leftOutTogether).toEqual([{ conditions: [1, 2], rows: ["Heavy Rotary Drill 36V"] }]);
+    // Each with its own cells beside its label (t771).
+    expect(reads[0]?.leftOutTogether).toEqual([{ conditions: [1, 2], rows: ["Heavy Rotary Drill 36V"], cells: [WIDE] }]);
     expect(reads[0]?.conditions?.map((condition) => condition.leftOutOnlyByThis)).toEqual([["Corded Hammer Drill — price: $129.00"], ["Compact Drill Driver — voltage: 12V"]]);
   });
 
@@ -58,7 +59,8 @@ describe("the rows conditions left out together, on a read's account", () => {
 
   it("are screened as a condition's alone rows are: a denied column or a credential shape is said withheld, and still counts", () => {
     const rows = automationStudioResultReadTogetherRows([{ failed: [1, 0], rows: [{ name: "token sk-live-4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c" }, { sku: "DR-1" }] }], 2, ["sku"]);
-    expect(rows).toEqual([{ conditions: [1, 2], rows: ["(withheld)", "(withheld)"] }]);
+    // Its cells are screened too: the credential-shaped value withheld, the denied column left out (t771).
+    expect(rows).toEqual([{ conditions: [1, 2], rows: ["(withheld)", "(withheld)"], cells: [{ name: "(withheld)" }, {}] }]);
   });
 
   it("add up every pass of a loop, each set once", () => {
