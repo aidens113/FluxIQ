@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4142
+- Public declarations: 4143
 - Class: 141
 - Interface: 10
 - Object: 547
 - Type: 2200
 - Type Alias: 1
-- Value: 1243
+- Value: 1244
 
 ## Public Declarations
 
@@ -2459,6 +2459,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioResultReadDedupe` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/dedupe.ts` | - |
 | `automationStudioResultReadEmptiedColumns` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/emptied-columns.ts` | - |
 | `automationStudioResultReadKeptEveryRow` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/kept-every-row.ts` | - |
+| `automationStudioResultReadLeftOutCells` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/left-out-cells/left-out-cells.ts` | - |
 | `automationStudioResultReadListContinues` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/list-continues.ts` | - |
 | `automationStudioResultReadLoopedAccount` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/looped-account.ts` | - |
 | `AutomationStudioResultReadLoopedAccountInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/looped-account.ts` | - |

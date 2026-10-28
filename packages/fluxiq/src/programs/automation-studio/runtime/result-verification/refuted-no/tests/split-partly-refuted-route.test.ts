@@ -57,15 +57,15 @@ function reading(verdict: AutomationStudioBuildTestVerdict) {
 describe("a split's no Core's record refutes in part (t652)", () => {
   it("is labelled, with recordContradicts part, when the yes came first", async () => {
     // The split's no is asked once more to name its defect (t725), and says the same no again: it stands.
+    // t771: the yes beside the refused no is asked once more; this judge answers nothing usable, so it stays unknown.
     const verdict = await judged(LIBRARY_YES, PART_NO, PART_NO, PART_NO);
     expect(verdict).toMatchObject({ verdict: "unknown", oneCallSaidYes: true });
-    expect(verdict.spent.calls).toBe(4);
+    expect(verdict.spent.calls).toBe(5);
     const read = reading(verdict);
     expect(read?.recordContradicts).toBe("part");
-    expect(String(read?.observed)).toMatch(/^Judge call 2 \(Core's record contradicts part of this reading: .+\): Missing qualifying items include /u);
-    expect(String(read?.observed)).toContain(STORED_TITLE);
-    expect(String(read?.advice)).toContain(`Judge call 2 (Core's record contradicts part of this reading:`);
-    expect(String(read?.advice)).toContain(PART_NO.changed);
+    // t771: nothing of a no Core could not ground -- what it observed or advised -- is carried on; Core's fact recordContradicts is.
+    expect(read?.observed).toBeUndefined();
+    expect(read?.advice).toBeUndefined();
   });
 
   it("is labelled the same way when the no came first", async () => {
@@ -73,17 +73,17 @@ describe("a split's no Core's record refutes in part (t652)", () => {
     expect(verdict).toMatchObject({ verdict: "unknown", oneCallSaidYes: true });
     const read = reading(verdict);
     expect(read?.recordContradicts).toBe("part");
-    expect(String(read?.observed)).toMatch(/^Judge call 1 \(Core's record contradicts part of this reading: /u);
+    expect(read?.observed).toBeUndefined();
   });
 
-  it("leaves a split no that names nothing Core can check unlabelled, the verdict still unsure", async () => {
+  it("leaves a split no that names nothing Core can check unmarked, carrying none of it, the verdict still unsure", async () => {
     for (const order of [[LIBRARY_YES, UNCHECKABLE_NO], [UNCHECKABLE_NO, LIBRARY_YES]]) {
       const verdict = await judged(...order, UNCHECKABLE_NO, UNCHECKABLE_NO);
       expect(verdict.verdict).toBe("unknown");
       const read = reading(verdict);
       expect(read?.recordContradicts).toBeUndefined();
-      expect(read?.observed).toContain(UNCHECKABLE_NO.observed);
-      expect(read?.advice).toContain(UNCHECKABLE_NO.changed);
+      expect(read?.observed).toBeUndefined();
+      expect(read?.advice).toBeUndefined();
     }
   });
 });

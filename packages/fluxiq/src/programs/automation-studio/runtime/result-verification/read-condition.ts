@@ -34,6 +34,14 @@ export type AutomationStudioResultReadCondition = {
   number?: number;
   condition?: string; rejected?: number; alone?: number; leftOutOnlyByThis?: string[]; leftOutObservations?: Array<AutomationStudioResultLeftOutObservation | null>; testedLabel?: true;
   /**
+   * Each row of `leftOutOnlyByThis`, in its order, by every column the read
+   * declares, screened (`./left-out-cells/`, t771): the row's
+   * own cells, an empty one where the read found nothing. What a no calling
+   * such a row missing is held to (`./located-defects/`). Absent where the
+   * read sent the rows by label only.
+   */
+  leftOutCells?: Array<Record<string, string>>;
+  /**
    * How Core read the tested value on a few rows the condition kept and left
    * out (`./value-readings/`, t511): the number a bound compared, or the part
    * of the text a text test matched. Absent where no such row is known.

@@ -107,6 +107,7 @@ import { automationStudioResultReadAloneRows } from "./alone-rows.ts";
 import { automationStudioResultReadConditionColumn, automationStudioResultReadConditionText } from "./condition.ts";
 import { automationStudioResultReadDedupe } from "./dedupe.ts";
 import { automationStudioResultReadKeptEveryRow } from "./kept-every-row.ts";
+import { automationStudioResultReadLeftOutCells } from "../left-out-cells/index.ts";
 import { automationStudioResultReadLoopedAccount } from "./looped-account.ts";
 import { automationStudioResultReadParameters } from "./read-parameters.ts";
 import { automationStudioResultReadLoopPasses } from "./loop-passes.ts";
@@ -333,6 +334,8 @@ function conditionAccounts(
     const leftOutOnlyByThis = deniedKeys
       ? automationStudioResultReadAloneRows(rows, deniedKeys, undefined, { observations: aloneObservations[index], conditionIndex: index, evidenceKey, onScreened: observations => { leftOutObservations = observations; } })
       : undefined;
+    // Each of those rows by its own cells, beside its label (`../left-out-cells/`, t771).
+    const leftOutCells = deniedKeys && leftOutOnlyByThis ? automationStudioResultReadLeftOutCells(aloneRows[index], leftOutOnlyByThis.length, deniedKeys) : undefined;
     // A presence test of its own read is said by the word it found on a row it left out, screened as those rows are (`condition.ts`, t482 N3).
     const leftOutSeen = leftOutObservations?.find((observation) => observation?.state === "present")?.value;
     const condition = deniedKeys ? automationStudioResultReadConditionText(written[index], columns, deniedKeys, seen[index], stored, leftOutSeen) : undefined;
@@ -343,6 +346,7 @@ function conditionAccounts(
       ...(byItself !== undefined && (rejectedRows === undefined || byItself <= rejectedRows) ? { alone: byItself } : {}),
       ...(leftOutOnlyByThis ? { leftOutOnlyByThis } : {}),
       ...(leftOutObservations ? { leftOutObservations: leftOutObservations.map(underItsCondition) } : {}),
+      ...(leftOutCells ? { leftOutCells } : {}),
       ...(leftOutOnlyByThis?.length && labelledBy(aloneRows[index], tested) ? { testedLabel: true as const } : {}),
       ...(presence && leftOutOnlyByThis?.length ? { presence } : {})
     });

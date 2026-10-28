@@ -76,6 +76,12 @@
 // in a pool are `unnamed`: they lengthen other labels' prefixes, and are named by
 // none of their own (`./named-rows.ts`).
 //
+// **And what a build's test would store (t771).** A test stores no record set,
+// so its record held no stored row: a no naming a kept row of the test could
+// never be found, and a row the test read was "found" missing though its
+// answer held it. Each label of the test's answer (`buildTest.stores`) is a
+// stored row, by its label alone, as its judge was sent it.
+//
 // **Never working rows (t752).** A breadth rerun's Flow read a list with no
 // condition, repeated a display-only press over its rows, then read the same
 // list again with a condition and stored exactly the rows asked for. Every read
@@ -121,7 +127,8 @@ export function automationStudioResultNoRecord(input: {
   // The answer's record sets: never one of working rows (header, t752).
   const working = automationStudioResultReadWorkingSets(summary);
   const answer = summary.recordSets.filter((set) => !working.has(set.datasetId));
-  const stored = answer.flatMap((set) => (set.sampleRows ?? []).flatMap((row) => storedRow(row, set.columns)));
+  // And what a build's test would store, which stores no record set itself (header, t771).
+  const stored = [...answer.flatMap((set) => (set.sampleRows ?? []).flatMap((row) => storedRow(row, set.columns))), ...testAnswerRows(summary)];
   const testsLabel = labelTested(summary, stored);
   const quotes = requestQuotes(summary, testsLabel, input.requestText, input.wording?.says);
   const leftOut = reads.flatMap((read) => read.conditions.flatMap((condition) => condition.rows.map((given, index) => {
@@ -332,6 +339,15 @@ function valuesOf(summary: AutomationStudioRunResultSummary, stored: readonly Au
 /** A text as values are compared: lower case, each run of spaces one, no closing stop or comma. */
 function fold(text: string): string {
   return text.toLowerCase().replace(/\s+/gu, " ").replace(/[\s.,;:]+$/u, "").trim();
+}
+
+/**
+ * The rows a build's test would store (header, t771): each label of each
+ * dataset's answer (`buildTest.stores`, `../build-test/stores.ts`), by its
+ * label alone -- a test's judge is sent no row's values -- never a withheld one.
+ */
+function testAnswerRows(summary: AutomationStudioRunResultSummary): AutomationStudioResultNoStoredRow[] {
+  return (summary.buildTest?.stores ?? []).flatMap((store) => store.answer.labels.filter((label) => label.trim() && label !== WITHHELD_LABEL).map((label) => ({ label, cells: {} })));
 }
 
 /** A stored row by its text cells, labelled by its first text column, as `../request-rows/summary-reads.ts` labels it. */
