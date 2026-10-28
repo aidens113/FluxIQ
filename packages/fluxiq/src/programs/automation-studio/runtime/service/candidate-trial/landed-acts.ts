@@ -99,6 +99,13 @@
 // the passes it ran in, counting every one it ran in, landed or not, of how
 // many. A step that ran in one pass, or in none, carries nothing.
 //
+// **A step's reset witness travels with its act (t751, R3 door 2).** The stamp
+// Core's one admission gave a lasting step at submission is on its Flow node's
+// metadata (`AUTOMATION_STUDIO_RESET_WITNESS_METADATA_KEY`,
+// `../../flow-bootstrap/adaptation.ts`); each act the node lands carries it as
+// `witness`, read through `automationStudioSiteResetWitnessStampValid`, so a
+// malformed value is dropped and the act kept, as with every other field.
+//
 // **Core's own steps leave nothing (t598).** A step of one of Core's own nodes
 // that acts on nothing outside the run (`automationStudioNodeSideEffectClass`
 // `none`: a wait, a branch, a variable) is never a lasting act, whatever it
@@ -111,7 +118,8 @@ import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../model/index.ts";
 import { automationStudioConsequencesInOrder, isAutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY, automationStudioExecutedLocations, automationStudioNodeSideEffectClass, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
-import type { AutomationStudioCandidateTrialAct } from "../../flow-bootstrap/candidate/index.ts";
+import { AUTOMATION_STUDIO_RESET_WITNESS_METADATA_KEY, type AutomationStudioCandidateTrialAct } from "../../flow-bootstrap/candidate/index.ts";
+import { automationStudioSiteResetWitnessStampValid } from "../../flow-bootstrap/reset-admission/index.ts";
 import type { AutomationStudioSiteResetSpot, AutomationStudioSiteResetTrialActPlace } from "../../flow-bootstrap/site-reset/index.ts";
 import { automationStudioAttemptSettled } from "../../flow-change/index.ts";
 import { automationStudioTrialExecutedSteps } from "./executed-steps.ts";
@@ -146,7 +154,9 @@ export function automationStudioCandidateTrialLandedActs(trace: AutomationStudio
     const spot = spotOf(attempt);
     const collections = collectionsOf(attempt);
     const controls = controlsOf(attempt);
-    acts.push({ step: index + 1, definitionId: attempt.definitionId, ...(node.label ? { label: node.label } : {}), ...(control ? { control } : {}), consequences, ...(possible ? { possible: true as const } : {}), ...(spot ? { spot } : {}), ...(collections ? { collections } : {}), ...(controls ? { controls } : {}), ...(created.length ? { created } : {}), ...(passes[index] ? { pass: passes[index] } : {}) });
+    // The step's stamp from submission, where its node carries a valid one (header, t751).
+    const witness = node.metadata?.[AUTOMATION_STUDIO_RESET_WITNESS_METADATA_KEY];
+    acts.push({ step: index + 1, definitionId: attempt.definitionId, ...(node.label ? { label: node.label } : {}), ...(control ? { control } : {}), consequences, ...(possible ? { possible: true as const } : {}), ...(spot ? { spot } : {}), ...(collections ? { collections } : {}), ...(controls ? { controls } : {}), ...(created.length ? { created } : {}), ...(passes[index] ? { pass: passes[index] } : {}), ...(automationStudioSiteResetWitnessStampValid(witness) ? { witness: { ...witness } } : {}) });
   });
   return acts;
 }

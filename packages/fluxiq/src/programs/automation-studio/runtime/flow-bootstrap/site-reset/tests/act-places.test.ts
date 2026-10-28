@@ -11,7 +11,8 @@ function harness(reads: AutomationStudioSiteResetReadAnswer[], act?: string) {
   const placed: Array<[string, AutomationStudioSiteResetPlace]> = [];
   const seen: Array<[string, boolean]> = [];
   let ran = 0;
-  const run = (call: { callId: string; toolId?: string; value: JsonObject }) => automationStudioSiteResetPlacedCall({
+  const run = (call: { callId: string; toolId?: string; value: JsonObject }, allTools = false) => automationStudioSiteResetPlacedCall({
+    allTools,
     call: { toolId: "core.run_node", ...call },
     ledger: {
       actOf: () => act,
@@ -39,6 +40,15 @@ function harness(reads: AutomationStudioSiteResetReadAnswer[], act?: string) {
 const at = (location: string, differs: string[] = [], state: JsonObject = { page: location }): AutomationStudioSiteResetRead => ({ state, differs, location, lines: { gone: [], added: differs } });
 
 describe("site reset reads around an act", () => {
+  it("reads a project's custom domain tool before its effect, while explicit standalone custom calls retain compatibility", async () => {
+    const call = { callId: "custom", toolId: "custom.press", value: { consequences: ["modify_existing"] } };
+    const legacy = harness([at("loc:card"), at("loc:card", ["changed"])], "act-1");
+    await legacy.run(call);
+    expect(legacy.asked).toEqual([]);
+    const project = harness([at("loc:card"), at("loc:card", ["changed"])], "act-1");
+    await project.run(call, true);
+    expect(project.asked).toEqual([undefined, { page: "loc:card" }]);
+  });
   it("keeps an act's page before it and what it changed there, read in place before and after", async () => {
     const h = harness([at("https://site.test/item"), at("https://site.test/item", ["2 in basket"])], "act-1");
     expect(await h.run({ callId: "add", value: { node: "demo.press", consequences: ["create_new"] } })).toBe("ran");

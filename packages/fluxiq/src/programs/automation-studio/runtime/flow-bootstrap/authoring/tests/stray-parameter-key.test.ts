@@ -18,7 +18,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
-import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions } from "../../../../nodes/index.ts";
+import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import { acceptAutomationStudioFlowBootstrapResult } from "../index.ts";
 import { automationStudioFlowBootstrapIssueFeedback } from "../../plan/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../plan/tests/index.ts";
@@ -147,5 +147,46 @@ describe("a Flow that narrows before it reads", () => {
     const chosen = nodes[1]?.parameters?.target as JsonValue;
     expect(chosen).toEqual({ handle: "target.4" });
     expect((nodes[3]?.parameters?.extractList as JsonObject).minItems).toBe(0);
+  });
+});
+
+// A plan node's reset witness is Core-derived (t751, R3 door 2): a model can
+// never write one. A `resetWitness:` line is refused as the unknown key it is
+// -- even beside a parameter whose name is one letter away, which nearness
+// would otherwise take -- and a JSON plan's node field of that name reaches no
+// node.
+describe("a reset witness the model wrote", () => {
+  const near: AutomationStudioNodeDefinition = {
+    schemaVersion: "0.1", id: "domain.demo.press", version: "1.0.0", label: "Press", description: "Press one control", category: "action",
+    source: { kind: "importer", domainId: "demo", implementationKey: "press" }, availability: { kind: "domain", domainId: "demo" }, capabilities: { executable: true },
+    inputs: [{ id: "in", label: "In", valueType: "any" }], outputs: [{ id: "success", label: "Success", valueType: "any" }],
+    parameters: [{ id: "resetWitnes", label: "Reset witnes", valueType: "string" }, { id: "text", label: "Text", valueType: "string" }]
+  };
+  const demo = { registry: new AutomationStudioNodeRegistry([near]), resolution: { scope: { kind: "domain" as const, domainId: "demo" }, runtimeCapabilities: [], permissions: [] } };
+
+  it("is refused as an unknown key in a Flow script, never read as the nearest parameter", () => {
+    for (const key of ["resetWitness", "reset witness", "reset_witness"]) {
+      const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { summary: "s", flow: ["flow: Press", "step: press it", "  node: domain.demo.press", `  ${key}: control`].join("\n") }, ...demo });
+      expect(accepted.ok, key).toBe(false);
+      if (accepted.ok) continue;
+      expect(accepted.issues.map((issue) => issue.code), key).toContain("bootstrap.unknown_parameter");
+      expect(JSON.stringify(accepted.refusedPlan ?? {}), key).not.toContain("resetWitnes\"");
+    }
+    // The same nearness still corrects a real slip.
+    const slip = acceptAutomationStudioFlowBootstrapResult({ result: { summary: "s", flow: ["flow: Press", "step: press it", "  node: domain.demo.press", "  resetWitnss: noted"].join("\n") }, ...demo });
+    expect(slip.ok && slip.plan.subflows[0]?.nodes[0]?.parameters).toMatchObject({ resetWitnes: "noted" });
+  });
+
+  it("is refused among a JSON plan's parameters and dropped as a JSON plan's node field", () => {
+    const plan = (node: JsonObject) => ({ summary: "s", plan: { subflows: [{ key: "main", name: "Main", nodes: [node] }] } });
+    const inParameters = acceptAutomationStudioFlowBootstrapResult({ result: plan({ key: "s1", definitionId: "domain.demo.press", parameters: { resetWitness: { via: "control" } } }), ...demo });
+    expect(inParameters.ok).toBe(false);
+    if (!inParameters.ok) expect(inParameters.issues.map((issue) => issue.code)).toContain("bootstrap.unknown_parameter");
+    const asField = acceptAutomationStudioFlowBootstrapResult({ result: plan({ key: "s1", definitionId: "domain.demo.press", resetWitness: { via: "control" }, parameters: { text: "hi" } }), ...demo });
+    expect(asField.ok, JSON.stringify(asField)).toBe(true);
+    if (asField.ok) {
+      expect(asField.plan.subflows[0]?.nodes[0]).not.toHaveProperty("resetWitness");
+      expect(asField.plan.subflows[0]?.nodes[0]?.parameters).not.toHaveProperty("resetWitnes");
+    }
   });
 });

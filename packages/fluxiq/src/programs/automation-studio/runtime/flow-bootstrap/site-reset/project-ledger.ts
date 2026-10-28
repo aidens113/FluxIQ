@@ -30,6 +30,12 @@
 //   each brief's ledger is handed every brief's explored acts, asked whenever
 //   it matches or judges a trial act, so a whole run the supervisor's ledger
 //   records inherits a builder's named destination, named before or after.
+// - **Originals per group (t751 R1).** A list read through any brief's gate
+//   is an original unless an act of the build touched its group or one whose
+//   effect location is unknown sealed every group (`./create-baselines.ts`);
+//   no "first act anywhere" cut. Each brief's ledger adopts them.
+// - **A plan step's stamp still resolves** (`stepWitnessResolves`, t751 R3):
+//   the project reset's `admit` asks it before a trial runs a step.
 // - **A list Core cannot read again is lost for the whole build** (t743):
 //   every brief's ledger shares one store of them
 //   (`../reset-settlement/reach.ts`), so a later brief never looks for it
@@ -38,6 +44,8 @@
 //   are read here build-wide, for Core's own wiring.
 
 import { AutomationStudioSiteResetCreateBaselines } from "./create-baselines.ts";
+import { AutomationStudioSiteResetControlWitnesses } from "./control-witnesses.ts";
+import { automationStudioSiteResetWitnessStampValid } from "../reset-admission/index.ts";
 import type { AutomationStudioSiteResetRead, AutomationStudioSiteResetUnsettleableAct } from "./contracts.ts";
 import { AutomationStudioSiteResetReach, automationStudioSiteResetInvalidCollectionGroups, type AutomationStudioSiteResetIssuedRef } from "../reset-settlement/index.ts";
 import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetRecordedAct } from "./ledger.ts";
@@ -61,6 +69,7 @@ export type AutomationStudioSiteResetProjectLedgerOptions = {
 };
 
 export class AutomationStudioSiteResetProjectLedger {
+  private readonly controlWitnesses = new AutomationStudioSiteResetControlWitnesses();
   private readonly createBaselines = new AutomationStudioSiteResetCreateBaselines();
   /** The lists Core cannot read again, for every brief of the build (header). */
   private readonly reach = new AutomationStudioSiteResetReach();
@@ -87,6 +96,7 @@ export class AutomationStudioSiteResetProjectLedger {
     const ledger = new AutomationStudioSiteResetLedger({
       owner: briefId,
       createBaselines: this.createBaselines,
+      controlWitnesses: this.controlWitnesses,
       reach: this.reach,
       nextActId: () => this.nextActId(),
       sink: (recorded) => this.recorded(briefId, recorded),
@@ -99,16 +109,32 @@ export class AutomationStudioSiteResetProjectLedger {
     return ledger;
   }
 
-  /** Immutable original evidence only before the first known lasting effect anywhere in this project. */
+  /** Immutable original evidence, per group (header): a group an act touched, or every group once one is sealed, takes none. */
   observed(read: AutomationStudioSiteResetRead): void {
-    this.createBaselines.observed(read, !this.acts.some((act) => !act.possible));
-    if (this.acts.some((act) => !act.possible)) return;
+    this.controlWitnesses.observed(read);
+    this.createBaselines.observed(read);
     const collections = read.collections ?? [];
     const invalid = automationStudioSiteResetInvalidCollectionGroups(collections);
     for (const collection of collections) {
-      if (invalid.has(collection.group)) continue;
+      if (invalid.has(collection.group) || this.createBaselines.closed(collection.group)) continue;
       if (!this.originals.has(collection.scope)) this.originals.set(collection.scope, structuredClone(collection));
     }
+    for (const brief of this.briefs.values()) brief.adoptOriginalCollections([...this.originals.values()]);
+  }
+
+  /**
+   * Whether a plan step's witness stamp still resolves (t751 R3, `./project-reset.ts` `admit`): a destination ref the build
+   * was shown, its list still valid; a repeated act among the build's explored acts, with a witness of its own; any other
+   * control receipt owned by this build. Bare control/own-list and legacy forms never admit a project trial.
+   */
+  stepWitnessResolves(witness: unknown): boolean {
+    if (!automationStudioSiteResetWitnessStampValid(witness)) return false;
+    if (witness.via === "legacy") return false;
+    if (witness.via === "own_list") return false;
+    if (witness.via === "control") return this.controlWitnesses.resolve(witness.ref) !== undefined;
+    if (witness.via === "destination") return this.createBaselines.retained(witness.ref) !== undefined;
+    if (witness.via === "repeats") return [...this.briefs.values()].some((brief) => brief.exploredActs().some((act) => act.id === witness.act && act.witnessed && act.destinations.length > 0));
+    return true;
   }
 
   /** Every act of the build in the order recorded, with its owner and whether its brief still has it to undo. */

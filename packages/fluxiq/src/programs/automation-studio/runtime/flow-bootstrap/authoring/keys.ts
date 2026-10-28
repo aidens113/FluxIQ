@@ -32,3 +32,14 @@ export function authoringFieldId(value: string): string | undefined {
   const id = value.trim().replace(/\s+/gu, "_").replace(/[^A-Za-z0-9_-]+/gu, "").slice(0, 100);
   return id && !["__proto__", "constructor", "prototype"].includes(id) ? id : undefined;
 }
+
+/**
+ * Whether a key the model wrote names a plan node field only Core derives
+ * (t751): `resetWitness`, the stamp the one admission answers at submission
+ * (`../plan/contracts.ts`). Such a key is refused as the unknown key it is and
+ * never read as the nearest parameter a node declares, so no spelling of it
+ * can reach a node.
+ */
+export function authoringCoreDerivedKey(value: string): boolean {
+  return authoringKey(value) === "resetwitness";
+}

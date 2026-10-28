@@ -1,5 +1,6 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
+import { automationStudioSiteResetWitnessStampValid } from "../reset-admission/index.ts";
 import type { AutomationStudioSiteResetSpot, AutomationStudioSiteResetTrialActPlace } from "../site-reset/index.ts";
 import type { AutomationStudioCandidateTrialAct } from "./contracts.ts";
 
@@ -12,7 +13,8 @@ import type { AutomationStudioCandidateTrialAct } from "./contracts.ts";
 // L1 d7), `collections` (the complete
 // inventories around it) and `created`. Each is copied whole, every token held
 // to the declaration's opaque form; a malformed one is dropped from its act and
-// the act kept, as the ledger records an act without it.
+// the act kept, as the ledger records an act without it. So is its step's
+// reset `witness` stamp (t751), kept only when it is a valid stamp.
 //
 // Which acts are kept does not change here: only an act with a declared lasting
 // consequence is (an act whose step declared none, `possible`, is a project
@@ -44,7 +46,8 @@ export function automationStudioCandidateTrialActs(value: unknown): KeptTrialAct
       ...(spot ? { spot } : {}),
       ...(created ? { created } : {}),
       ...(controls ? { controls } : {}),
-      ...(collections ? { collections } : {})
+      ...(collections ? { collections } : {}),
+      ...(automationStudioSiteResetWitnessStampValid(entry.witness) ? { witness: { ...entry.witness } } : {})
     }];
   });
 }

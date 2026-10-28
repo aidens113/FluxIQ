@@ -585,21 +585,24 @@ function fromReply(
   instructionText: string | undefined
 ): AutomationStudioFlowBootstrapAcceptance {
   const accepted = acceptAutomationStudioFlowBootstrapResult({ result, registry, resolution, instructionText });
-  return accepted.ok ? { ...accepted, plan: withoutRouteSignatures(accepted.plan) } : accepted;
+  return accepted.ok ? { ...accepted, plan: withoutCoreDerived(accepted.plan) } : accepted;
 }
 
 /**
- * A plan with no node carrying route signatures. They say which page a step
- * ran between as the build saw it, so only the build may set them: a model
- * that wrote its own would be telling a run where to continue.
+ * A plan with no node carrying route signatures or a reset witness. Route
+ * signatures say which page a step ran between as the build saw it, so only
+ * the build may set them: a model that wrote its own would be telling a run
+ * where to continue. A reset witness says what Core can read a lasting step's
+ * act back by (t751), so only Core's admission may stamp one, as the step is
+ * resolved (`./plan-parameter-resolution.ts`).
  */
-function withoutRouteSignatures(plan: AutomationStudioFlowBootstrapPlan): AutomationStudioFlowBootstrapPlan {
-  if (!plan.subflows.some((subflow) => subflow.nodes.some((node) => "routeSignatures" in node))) return plan;
+function withoutCoreDerived(plan: AutomationStudioFlowBootstrapPlan): AutomationStudioFlowBootstrapPlan {
+  if (!plan.subflows.some((subflow) => subflow.nodes.some((node) => "routeSignatures" in node || "resetWitness" in node))) return plan;
   return {
     ...plan,
     subflows: plan.subflows.map((subflow) => ({
       ...subflow,
-      nodes: subflow.nodes.map(({ routeSignatures: _dropped, ...node }) => node)
+      nodes: subflow.nodes.map(({ routeSignatures: _dropped, resetWitness: _stamp, ...node }) => node)
     }))
   };
 }

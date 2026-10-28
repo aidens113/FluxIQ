@@ -75,6 +75,17 @@ describe("a group witness", () => {
     expect(judge(observations)).toMatchObject({ status: defect === "missing" || defect === "malformed" ? "incomplete" : "differs" });
   });
 
+  it("keeps no original for a group an act already touched (per-group seal, t751 R1), and keeps every other group's", () => {
+    const observations = new AutomationStudioSiteResetObservations();
+    observations.observe({ location: "loc:box", collections: [collection("p:cards", ["s:soup"]), { ...collection("p:other", ["s:tea"]), group: "g:other" }] }, true, 1, 1, (group) => group === "g:box");
+    expect([observations.originals.has("p:cards"), observations.originals.has("p:other")]).toEqual([false, true]);
+    // The latest read is still kept for the touched group.
+    expect(observations.latestGroupScopes.get("g:box")).toEqual(new Set(["p:cards"]));
+    // By default nothing is touched.
+    observations.observe({ collections: [collection("p:cards", ["s:soup"])] }, true, 1, 1);
+    expect(observations.originals.get("p:cards")).toMatchObject({ beforeAct: 1, group: "g:box" });
+  });
+
   it("is no witness where no named or subject-holding scope was read before the act", () => {
     expect(groupWitness({ observations: seen(), group: "g:box", scopes: ["p:unread"], subjects: ["s:bread"], sequence: 1, since: 1, clock: 1 })).toEqual({ status: "none", scopes: [], changed: false });
   });
@@ -84,18 +95,19 @@ describe("the control tracker", () => {
   const read = (tracker: AutomationStudioSiteResetControlTracker, scope: string, counts: Record<string, number>, clock: number) => tracker.read({ scope, location: `loc:${scope}`, controls: { "pl:pin": counts } }, clock);
   const PIN = { from: "st:off", to: "st:on" };
 
-  it("holds a toggle only after a later press at its place left it at the build's start, on a fresh read of that page", () => {
+  it("holds a toggle on the latest fresh read reporting its place at the build's start, whatever put it back (t751 R2)", () => {
     const tracker = new AutomationStudioSiteResetControlTracker();
     read(tracker, "p:card", { "st:off": 1 }, 0);
     const own = tracker.press("pl:pin", 1);
     read(tracker, "p:card", { "st:on": 1 }, 1);
     expect(own).toMatchObject({ page: "p:card", before: { "st:off": 1 }, after: { "st:on": 1 } });
     expect(tracker.standing("pl:pin", PIN, 1, 1)).toEqual({ status: "open", location: "loc:p:card" });
-    // Back by itself, with no press: still open.
+    // Back by itself, with no press: holds.
     read(tracker, "p:card", { "st:off": 1 }, 1);
-    expect(tracker.standing("pl:pin", PIN, 1, 1)).toMatchObject({ status: "open" });
-    // A press on another page at the same place, read back there.
+    expect(tracker.standing("pl:pin", PIN, 1, 1)).toEqual({ status: "holds", location: "loc:p:card" });
+    // The same place read on another page, latest: judged there.
     read(tracker, "p:item", { "st:on": 1 }, 1);
+    expect(tracker.standing("pl:pin", PIN, 1, 1)).toEqual({ status: "open", location: "loc:p:item" });
     tracker.press("pl:pin", 2);
     read(tracker, "p:item", { "st:off": 1 }, 2);
     expect(tracker.standing("pl:pin", PIN, 1, 2)).toEqual({ status: "holds", location: "loc:p:item" });
@@ -105,10 +117,10 @@ describe("the control tracker", () => {
     expect(tracker.standing("pl:pin", PIN, 1, 3)).toMatchObject({ status: "open" });
   });
 
-  it("takes a trial step's press as read on both sides", () => {
+  it("takes a trial step's press as read on both sides: its page is to be read again before it can hold", () => {
     const tracker = new AutomationStudioSiteResetControlTracker();
-    tracker.landed("p:card", "pl:pin", { "st:off": 1 }, { "st:on": 1 }, 1);
-    expect(tracker.standing("pl:pin", PIN, 1, 1)).toMatchObject({ status: "open" });
+    tracker.landed("p:card", "pl:pin", { "st:off": 1 }, { "st:on": 1 }, 1, "loc:p:card");
+    expect(tracker.standing("pl:pin", PIN, 1, 1)).toEqual({ status: "stale", location: "loc:p:card" });
   });
 });
 
@@ -120,6 +132,7 @@ describe("the settle decision and its words", () => {
     expect(decide({ groups: [group("holds")], toggle: { status: "holds" }, changeSeen: true, undoLanded: false })).toEqual({ kind: "settled", how: "restored" });
     expect(decide({ groups: [group("holds")], changeSeen: false, undoLanded: true })).toEqual({ kind: "settled", how: "restored" });
     expect(decide({ groups: [group("none")], changeSeen: false, undoLanded: false })).toEqual({ kind: "open", reasons: [{ reason: "name" }] });
+    expect(decide({ groups: [group("holds")], toggle: { status: "unproven", location: "loc:card" }, changeSeen: true, undoLanded: false })).toEqual({ kind: "open", reasons: [{ reason: "baseline", witness: "toggle", location: "loc:card" }] });
     expect(decide({ groups: [group("holds"), group("stale", "destination-2"), group("incomplete", "destination-3"), group("differs", "destination-4")], toggle: { status: "open", location: "loc:card" }, changeSeen: true, undoLanded: true })).toEqual({ kind: "open", reasons: [
       { reason: "look", witness: "group", ref: "destination-2", location: "loc:box" },
       { reason: "look", witness: "group", ref: "destination-3", location: "loc:box" },
@@ -130,8 +143,9 @@ describe("the settle decision and its words", () => {
 
   it("says each reason once, in generic words naming only this run's refs and locations", () => {
     const said = settleWords([{ reason: "look", witness: "group", ref: "destination-2", location: "loc:box" }, { reason: "look", witness: "group", ref: "destination-2", location: "loc:box" }, { reason: "undo", witness: "group", ref: "destination-4" }, { reason: "toggle", witness: "toggle", location: "loc:card" }, { reason: "look", witness: "toggle" }, { reason: "name" }], [{ ref: "destination-1", count: 1, location: "loc:box" }]);
-    expect(said).toBe("Read destination-2 at loc:box completely again; destination-4 still differs from how the build found it: undo this act there, naming it under undoes; its control at loc:card still shows the state this act set: press that same control back once, naming this act under undoes; read the page again so its control's state can be seen; nothing read shows where its effect would be: read the list where it would show completely and name that list's ref as resetDestination on a look that names this act under undoes (lists read complete before the build acted: destination-1 (1 item at loc:box)).");
+    expect(said).toBe("Read destination-2 at loc:box completely again; destination-4 still differs from how the build found it: undo this act there, naming it under undoes; its control at loc:card still shows the state this act set: press that same control back once, naming this act under undoes; read the page again so its control's state can be seen; nothing read shows where its effect would be: read the list where it would show completely and name that list's ref as resetDestination on a look that names this act under undoes (lists read complete before this act: destination-1 (1 item at loc:box)).");
     expect(said).not.toMatch(/\b(cart|basket|checkout|kettle|job|post|friend|order|product)\b/iu);
     expect(settleWords([], [])).toBe("");
+    expect(settleWords([{ reason: "baseline", witness: "toggle", location: "loc:card" }, { reason: "name" }], [], { unnamable: true })).toBe("Its control at loc:card was never read before the build acted there, so nothing read can show it put back: no call can settle it in this build; nothing read shows where its effect would be, and no list was read complete before this act, so none can be named for it: no call can settle it in this build, and trials stay refused while it is in place.");
   });
 });

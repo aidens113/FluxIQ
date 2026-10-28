@@ -265,6 +265,8 @@ import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, Aut
  * the hook again.
  */
 export type AutomationStudioSubflowTrialPreparingPort = AutomationStudioSubflowTrialPort & {
+  /** Core's predecessors that the trial runs before its own proposal; checked before preparing the site. */
+  admissionPredecessors?: ((scope: AutomationStudioSubflowScope) => readonly { nodes: readonly AutomationStudioFlowBootstrapNode[] }[]) | undefined;
   prepareStart?: ((input: { scope: AutomationStudioSubflowScope; revision: number; digest: string; signal: AbortSignal }) => Promise<AutomationStudioCandidateTrialPrepared>) | undefined;
   /** The standing nos earlier briefs of this subflow kept in this build, oldest first, read once as the gate is made (header, t634). Core-only. */
   standingNos?: readonly unknown[] | undefined;
@@ -495,6 +497,8 @@ export class AutomationStudioSubflowTrialGate {
     signal.throwIfAborted();
     // An offline trial has no live effects: no start hook, no reset, nothing left on the site (header, Decision 6).
     const offline = automationStudioCandidateTrialOffline(port);
+    const admission = this.input.reset?.admit?.(automationStudioSiteResetTrialSteps([...(port.admissionPredecessors?.(this.input.scope) ?? []), ...latest.subflows]));
+    if (admission?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: admission.evidence, effectApplied: false, targetsUnchanged: true, resultCode: admission.evidence.code, resultReason: RETEST_REASON };
     // The deployment's start hook first, so the check after it finds the site put back (header).
     const prepared = !offline && this.input.reset && port.prepareStart ? await port.prepareStart({ scope: structuredClone(this.input.scope), revision: latest.revision, digest: latest.digest, signal }) : "none";
     signal.throwIfAborted();
@@ -790,3 +794,5 @@ function deepFreeze<T>(value: T): T {
   }
   return value;
 }
+import { automationStudioSiteResetTrialSteps } from "../reset-admission/index.ts";
+import type { AutomationStudioFlowBootstrapNode } from "../plan/index.ts";

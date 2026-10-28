@@ -54,6 +54,24 @@ describe("the project ledger's acts in the build record", () => {
     expect(calls.createBaseline!(declaration, ref)).toEqual({ kind: "admit" });
     expect(project.snapshot().acts).toEqual([]);
   });
+  // t751 (R3 door 2): a plan step's admission reaches the brief's own ledger through the recording adapter, its answer unchanged.
+  it("forwards a plan step's admission to the ledger it wraps, and offers none where the ledger has none", () => {
+    const project = new AutomationStudioSiteResetProjectLedger();
+    const owner = project.forBrief("builder");
+    const asked: Array<{ self: unknown; args: unknown[] }> = [];
+    const stamp = { via: "control" as const };
+    const admitting = { claim: (value: unknown) => owner.claim(value), target: owner.target.bind(owner), explored: owner.explored.bind(owner), admitStep(...args: unknown[]) {
+      asked.push({ self: this, args });
+      return stamp;
+    } };
+    const forwarded = AutomationStudioProjectBuildActsRecord.of(project).calls(admitting) as { admitStep?: (declared: unknown, definitionId: string) => unknown };
+    const declared = { effect: "mutate", consequences: ["modify_existing"], control: { name: null, kind: null, place: "c:save" } };
+    expect(forwarded.admitStep?.(declared, "example.save")).toBe(stamp);
+    expect(asked).toEqual([{ self: admitting, args: [declared, "example.save"] }]);
+    const plain = { claim: (value: unknown) => owner.claim(value), target: owner.target.bind(owner), explored: owner.explored.bind(owner) };
+    expect(AutomationStudioProjectBuildActsRecord.of(project).calls(plain)).not.toHaveProperty("admitStep");
+  });
+
   it("writes each brief's explored and trial acts as they are recorded, with owner and class, readable after a restart", async () => {
     const { projects, store } = await recorded();
     const ledger = new AutomationStudioSiteResetProjectLedger();

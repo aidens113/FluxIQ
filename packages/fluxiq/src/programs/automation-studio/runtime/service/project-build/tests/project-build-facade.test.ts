@@ -164,7 +164,11 @@ async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capa
     if (request.taskKind === "loop_verification") {
       const scoped = JSON.stringify(request.context).includes("This trial ran only the subflow");
       (scoped ? judged.subflow : judged.whole).push(request);
-      return judgeReply(scoped ? "yes" : options.whole ?? "yes");
+      const answer = scoped ? "yes" : options.whole ?? "yes";
+      const reply = judgeReply(answer);
+      // This Start-to-End fixture has no measured task defect. An intentional
+      // negative supplies an empty account and remains unconfirmed, not no.
+      return answer === "no" ? { ...reply, response: { ...reply.response, diagnosis: { ...reply.response.diagnosis, defects: [] } } } : reply;
     }
     const loop = request.context.evidenceLoop!;
     const evidence = loop.evidence as Entry[];
@@ -180,7 +184,7 @@ async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capa
       // One part: its builder's test was the judged whole run, so it completes on the dispatch answer's yes (t679).
       if (shape === "one_part" && supervisorDecisions >= 3) {
         const complete = lastOf(evidence, "project.dispatch")?.complete as JsonObject | undefined;
-        return decision({ kind: "complete", result: complete ?? { ended: "partial", reason: "The whole Flow's trial was judged not to do what was asked." } });
+        return decision({ kind: "complete", result: complete ?? { ended: "partial", reason: options.whole === "no" ? "The whole Flow's trial could not be confirmed." : "The whole Flow's trial was judged not to do what was asked." } });
       }
       switch (supervisorDecisions) {
         case 1: return decision({ kind: "tool_call", callId: "plan", toolId: "project.write_plan", input: planInput(shape) });
@@ -199,6 +203,7 @@ async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capa
     const submitted = lastOf(evidence, "core.submit_subflow");
     const tested = lastOf(evidence, "core.test_subflow");
     if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: `submit-${subflowKey}`, toolId: "core.submit_subflow", input: submission(subflowKey, options.proposedCheck, options.doneWhen) });
+    if (options.whole === "no" && tested?.verdict === "unsure") return decision({ kind: "complete", result: { ended: "partial", reason: "The whole Flow's trial could not be confirmed." } });
     if (tested?.verdict !== "yes") return decision({ kind: "tool_call", callId: `test-${subflowKey}`, toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } });
     return decision({ kind: "complete", result: { subflowKey, revision: submitted.revision as number, digest: submitted.digest as string } });
   });
@@ -274,15 +279,15 @@ describe("a project build through the actual service", () => {
     for (const request of run.judged.subflow) expect(JSON.stringify(request.context)).toContain("Its success check, as its builder proposed it (the plan gives none): ");
   });
 
-  it("keeps the assembled Flow as a draft when the whole trial is judged no, and proposes nothing", async () => {
+  it("keeps the assembled Flow as a draft when a negative names no measured defect, and proposes nothing", async () => {
     const run = await projectBuild({ whole: "no" });
     const seen: ClientGatewayActivity[] = [];
     const unsubscribe = automationStudioActivityHub.subscribe((event) => seen.push(event));
     const result = await run.build().finally(unsubscribe);
-    expect(result).toMatchObject({ status: "draft", verification: "not_performed", promotionAllowed: false, trial: { verdict: "no" } });
+    expect(result).toMatchObject({ status: "draft", verification: "not_performed", promotionAllowed: false, trial: { verdict: "unsure" } });
     // The supervisor ended on a draft: its row says Core's record of the tests beside its checked reason (t738, `../../project-build-ending/`).
     const told = seen.find((event) => event.detail?.title === "FluxIQ stopped with the Flow only partly built.");
-    expect((told?.detail as { text?: string } | undefined)?.text).toBe("The whole Flow's trial was judged not to do what was asked. The one part tested on its own did not pass its own test: it was tested once, and its last test was judged not to do what was asked. The judged test run of the whole Flow from its start ran both of its steps and stored no rows, and was judged not to do what was asked. The build left no change on the site that it knows of.");
+    expect((told?.detail as { text?: string } | undefined)?.text).toBe("The whole Flow's trial could not be confirmed. The one part tested on its own did not pass its own test: it was tested once, and its last test could not be confirmed. The judged test run of the whole Flow from its start ran both of its steps and stored no rows, and could not be confirmed to do what was asked. The build left no change on the site that it knows of.");
     if (result.status !== "draft") throw new Error("expected a draft");
     const store = (run.service as unknown as { candidateDrafts: { get(projectId: string, flowId: string): Promise<unknown> } }).candidateDrafts;
     expect(await store.get(run.projectId, run.flowId)).toMatchObject({ candidateId: result.candidateId, candidate: { revision: result.revision, digest: result.digest } });

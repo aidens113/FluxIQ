@@ -138,14 +138,28 @@ describe("its own toggle's place (photo r4 0151)", () => {
     expect(toggled().target("act-1", aim([], { ...MARK, state: "st:on" }))).toEqual({ kind: "admit", on: "own", allowed: ["modify_existing"] });
   });
 
-  it("already showing the state the build found: undo_already_back, no call, with the act's remaining settle", () => {
+  // t751 R2 (office `run-mvhibit5-e1d3a4f3`): an act already back is answered from settlement, never left listed with no call.
+  it("already showing the state the build found, with no fresh read showing it: undo_already_back, met here by reading the page again", () => {
     const ledger = toggled();
     const listed = ledger.inPlace();
     for (const consequences of [[], ["modify_existing"], ["delete"]] as AutomationStudioActionConsequence[][]) {
-      const evidence = refusedFor(ledger, "act-1", aim(consequences, { ...MARK, state: "st:off" }), { code: "candidate.undo_already_back", failed: "already_back", canMeet: "no_call" });
-      expect(evidence).toMatchObject({ instruction: WORDS.alreadyBack(), actsToUndo: listed });
+      const evidence = refusedFor(ledger, "act-1", aim(consequences, { ...MARK, state: "st:off" }), { code: "candidate.undo_already_back", failed: "already_back", canMeet: "this_page" });
+      expect(evidence).toMatchObject({ instruction: WORDS.alreadyBack(false), actsToUndo: listed });
       expect(evidence.settle).toBe(listed[0]!.settle);
-      expect(evidence.settle).toEqual(expect.any(String));
+      expect(String(evidence.instruction)).toContain("core.run_node");
+    }
+    // The look it asks for settles it: the fresh read shows the control as found.
+    ledger.observed(page("st:off"));
+    expect(ledger.standing("act-1")).toBe("restored");
+    expect(ledger.inPlace()).toEqual([]);
+  });
+
+  it("put back by the site and read fresh: settled, answered undo_already_back by no call, listed nowhere, on claim and on target", () => {
+    const ledger = toggled();
+    ledger.observed(page("st:off"));
+    expect(ledger.standing("act-1")).toBe("restored");
+    for (const answer of [ledger.claim("act-1"), ledger.target("act-1", aim([], { ...MARK, state: "st:off" })), ledger.target("act-1", aim([], { ...MARK, state: "st:on" }))]) {
+      expect(answer).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_already_back", act: "act-1", failed: "already_back", canMeet: "no_call", condition: WORDS.condition("already_back", "no_call"), instruction: WORDS.alreadyBack(true), actsToUndo: [] } });
     }
   });
 

@@ -165,18 +165,18 @@ describe("shape E: the trial's own act, and the retest after a settling look (of
     expect(looked).toEqual(["loc:box"]);
   });
 
-  it("a trial act repeating nothing, while a list it adopted differs, is asked to name its list, settles on a look naming the ref without a resource, and cannotUndo never settles it", async () => {
+  it("a trial act repeating nothing has no witness: while a list read before it differs it is asked to name its list, settles on a look naming the ref without a resource, and cannotUndo never settles it", async () => {
     const ledger = boxed();
     explored(ledger);
-    // Its step ran on the box's own page (t743: a witnessless act adopts the lists named for an act and those of its own page).
+    // Its step ran on the box's own page, which once let it adopt the lists read there; adoption is deleted (t751 R6).
     ledger.trialRan([{ ...trialStep("demo.other"), controls: { page: "p:box-page", location: "loc:box", before: {}, after: {} } }], "trial.1");
-    // With no witness of its own it adopts the lists it could have changed (office r3, `settlement-adopted.test.ts`); one differs,
-    // by whatever cause, so it is never asked to undo there: it is asked to name its list.
+    // One list differs, by whatever cause: with no witness of its own it is never asked to undo there, only to name its list.
     const elsewhere = () => boxPage([list("p:cards", ["s:soup", "s:stew"]), list("p:saved", ["s:pie", "s:tart"])]);
     ledger.observed(elsewhere());
     const refused = await ledger.beforeTrial(compare);
     expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-2" }] } });
-    expect(settleOf(refused, "actsToUndo", "act-2")).toContain("name that list's ref as resetDestination on a look that names this act under undoes (lists read complete before the build acted: destination-1 (2 items at loc:box), destination-2 (1 item at loc:box))");
+    expect(settleOf(refused, "actsToUndo", "act-2")).toContain("name that list's ref as resetDestination on a look that names this act under undoes (lists read complete before this act: destination-1 (2 items at loc:box), destination-2 (1 item at loc:box))");
+    expect(settleOf(refused, "actsToUndo", "act-2")).not.toContain("undo this act there");
     const kept = await ledger.beforeTrial(compare, ["act-2"]);
     expect(kept).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_unproved", actsToRestore: [{ act: "act-2" }] } });
     expect(settleOf(kept, "actsToRestore", "act-2")).toContain("resetDestination");
@@ -248,7 +248,7 @@ describe("shape G: a toggle pressed in a dialog, pressed back on the item's own 
   // t743: each refusal names its failed condition; one already showing the state the build found is its own code (photo r4 0151).
   it.each([
     ["another-place", "candidate.undo_unproved", "control_elsewhere", "another_page"],
-    ["already-back", "candidate.undo_already_back", "already_back", "no_call"],
+    ["already-back", "candidate.undo_already_back", "already_back", "this_page"],
     ["another-class", "candidate.undo_unproved", "consequence_not_inverse", "this_page"]
   ] as const)("refuses unrun a control at %s", (defect, code, failed, canMeet) => {
     const ledger = toggled();
@@ -276,9 +276,11 @@ describe("shape G: a toggle pressed in a dialog, pressed back on the item's own 
     expect(ledger.trialRan([trialStep("st:off", "st:on")], "trial.1").map((act) => act.act)).toEqual(["act-1"]);
     const refused = await ledger.beforeTrial(compare);
     expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required" } });
-    expect(settleOf(refused, "actsToUndo", "act-1")).toBe("Its control at loc:post still shows the state this act set: press that same control back once, naming this act under undoes.");
-    // The model goes to that page and presses the same control back under undoes; the read after it shows the build's start.
+    // The step's own diff is no read of its place (t751 R2): whatever put it back since, the page is to be read first.
+    expect(settleOf(refused, "actsToUndo", "act-1")).toBe("Read the page at loc:post again so its control's state can be seen.");
+    // The model reads that page: it still shows the state the act set, so it is to press the same control back under undoes.
     ledger.observed(post("st:on"));
+    expect(settleOf(await ledger.beforeTrial(compare), "actsToUndo", "act-1")).toBe("Its control at loc:post still shows the state this act set: press that same control back once, naming this act under undoes.");
     expect(ledger.target("act-1", aim([], { ...OWN_PAGE, state: "st:on" }))).toEqual({ kind: "admit", on: "own", allowed: ["modify_existing"] });
     pressBack(ledger);
     ledger.observed(post("st:off"));
@@ -328,16 +330,22 @@ describe("invariants no shape may weaken", () => {
     expect(ledger.standing("act-1")).toBe("in_place");
   });
 
-  it("a toggle that reverts with no press never settles, however fresh the read", async () => {
+  // t751 R2 replaced "a toggle that reverts with no press never settles": the return need not follow a press (office r5).
+  it("a toggle settles only on a fresh read of its place at the build's start, whatever put it back", async () => {
     const ledger = new AutomationStudioSiteResetLedger();
     const controls = (state: string) => ({ "pl:pin": { [state]: 1 } });
+    const PIN: AutomationStudioSiteResetSpot = { scope: "p:card", subject: "s:card", resource: SITE, place: "pl:pin" };
     ledger.observed(page("p:card", "loc:card", undefined, controls("st:off")));
-    ledger.explored(press("pin", ["modify_existing"], { scope: "p:card", subject: "s:card", resource: SITE, place: "pl:pin", state: "st:off" }));
+    ledger.explored(press("pin", ["modify_existing"], { ...PIN, state: "st:off" }));
     ledger.observed(page("p:card", "loc:card", undefined, controls("st:on")));
-    // It shows the state it had before, with nothing pressed: no proof.
-    ledger.observed(page("p:card", "loc:card", undefined, controls("st:off")));
+    // A trial makes every read stale: the site's own revert is not seen yet, so nothing settles.
+    ledger.trialRan([], "trial.1");
     expect(await ledger.beforeTrial(compare)).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-1" }] } });
-    expect(ledger.target("act-1", aim([], { scope: "p:card", subject: "s:card", place: "pl:pin", state: "st:off" }))).toMatchObject({ kind: "refused" });
+    // It shows the state it had before, with nothing pressed: a fresh read of its place at the start settles it.
+    ledger.observed(page("p:card", "loc:card", undefined, controls("st:off")));
+    expect(await ledger.beforeTrial(compare)).toEqual({ kind: "admit" });
+    expect(ledger.standing("act-1")).toBe("restored");
+    expect(ledger.target("act-1", aim([], { ...PIN, state: "st:off" }))).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_already_back", canMeet: "no_call", actsToUndo: [] } });
   });
 
   it("an act whose own press is unread never settles on its lists alone; the read of its page decides", async () => {

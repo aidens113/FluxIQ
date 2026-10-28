@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createBlankAutomationStudioFlowArtifact, type AutomationStudioFlowArtifact } from "../../../model/index.ts";
 import { automationStudioNodeAdaptationIds, decideAutomationStudioChangeConfidence } from "../../flow-change/index.ts";
+import { AUTOMATION_STUDIO_RESET_WITNESS_METADATA_KEY } from "../candidate/index.ts";
 import {
   assertAutomationStudioBootstrapHasNoRecordingProvenance,
   normalizeAutomationStudioFlowBuildPlan,
@@ -116,6 +117,20 @@ describe("Flow Bootstrap normalization provenance", () => {
     expect(recovery![0]!.metadata).not.toHaveProperty("declaredConsequences");
     // A copy, never the plan's own array.
     expect(primary![1]!.metadata?.declaredConsequences).not.toBe(extract!.consequences);
+  });
+
+  // t751 (R3 door 2): a lasting step's reset witness stamp reaches its Flow node's metadata, where a trial's act takes it.
+  it("keeps each plan node's reset witness stamp on its Flow node, and none where the plan node has none or a malformed one", () => {
+    const plan = buildPlan();
+    const [open, extract] = plan.subflows[0]!.nodes;
+    Object.assign(open!, { resetWitness: { via: "destination", ref: "destination-1" } });
+    Object.assign(extract!, { resetWitness: { via: "control", place: "c:opaque" } });
+    const topology = normalizeAutomationStudioFlowBuildPlan({ adaptationId: ADAPTATION_ID, parentFlow: parentFlow(), buildPlan: plan, sourceInstructionIds: [], now: CREATED_AT });
+    const [primary, recovery] = topology.subflows.map((entry) => entry.graphFlow.nodes);
+    expect(primary![0]!.metadata?.[AUTOMATION_STUDIO_RESET_WITNESS_METADATA_KEY]).toEqual({ via: "destination", ref: "destination-1" });
+    expect(primary![0]!.metadata?.[AUTOMATION_STUDIO_RESET_WITNESS_METADATA_KEY]).not.toBe(open!.resetWitness);
+    expect(primary![1]!.metadata).not.toHaveProperty(AUTOMATION_STUDIO_RESET_WITNESS_METADATA_KEY);
+    expect(recovery![0]!.metadata).not.toHaveProperty(AUTOMATION_STUDIO_RESET_WITNESS_METADATA_KEY);
   });
 
   it("stamps every node it creates with the adaptation id", () => {

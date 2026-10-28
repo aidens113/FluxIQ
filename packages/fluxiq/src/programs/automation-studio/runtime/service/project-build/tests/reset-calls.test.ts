@@ -24,6 +24,22 @@ describe("project reset observation routing", () => {
     expect(third.createBaseline!(declaration, ref)).toEqual({ kind: "admit" });
     expect(third.createBaseline!(declaration, "destination-2")).toMatchObject({ kind: "refused" });
   });
+  // t751 (R3 door 2): a plan step's admission is the brief's own ledger's, whoever else's acts its undos are routed to.
+  it("forwards a plan step's admission to the brief's own ledger, its answer unchanged", () => {
+    const project = new AutomationStudioSiteResetProjectLedger();
+    const own = project.forBrief("builder");
+    const asked: Array<{ self: unknown; args: unknown[] }> = [];
+    const stamp = { via: "destination", ref: "destination-1" };
+    Object.assign(own, { admitStep(this: unknown, ...args: unknown[]) {
+      asked.push({ self: this, args });
+      return stamp;
+    } });
+    const calls = automationStudioProjectBuildResetCalls(project, own) as { admitStep?: (declared: unknown, definitionId: string) => unknown };
+    const declared = { effect: "mutate", consequences: ["delete"], control: { name: null, kind: null, scope: "p:destination" } };
+    expect(calls.admitStep?.(declared, "example.remove")).toBe(stamp);
+    expect(asked).toEqual([{ self: own, args: [declared, "example.remove"] }]);
+  });
+
   it("keeps the builder's pre-effect destination witness and routes reset observations back to its owner", async () => {
     const project = new AutomationStudioSiteResetProjectLedger();
     const builder = project.forBrief("builder");

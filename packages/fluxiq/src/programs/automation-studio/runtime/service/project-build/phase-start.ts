@@ -168,13 +168,21 @@ export class AutomationStudioProjectBuildPhaseStart {
     const { phase, scope, own, signal } = request;
     const { environment, ledger, proposals } = this.input;
     signal.throwIfAborted();
+    const admission = phase === "reset" ? undefined : this.reset(own, () => UNLOOKED).admit?.(automationStudioSiteResetTrialSteps(proposals.predecessors(scope).flatMap((proposal) => proposal.subflows)));
+    if (admission?.kind === "refuse") {
+      const record: AutomationStudioProjectBuildPhaseStartRecord = { phase, hook: "none", arrival: "not_run", predecessors: { keys: [...scope.predecessors], prepared: false, code: admission.evidence.code } };
+      return { record, entry: { kind: "unprepared", predecessors: [...scope.predecessors], code: admission.evidence.code, acts: [] }, told: { ...automationStudioProjectBuildPhaseStartTold(record), admission: admission.evidence } };
+    }
     // (a) The hook, for every phase alike (header).
     const start = await this.hook({ candidateId: `start.${phase}.${scope.buildId}.${scope.briefId}`, revision: 0, digest: "phase-start", signal });
     // (b) After it, every ledger counts this build's acts undone and names them; without it, what is still there is told.
     const putBack = start.status === "reset" ? await this.putBack(own, signal) : [];
     const onSite = this.onSite();
     // (d) A reset begins after nothing; a builder or repair after its predecessors, run once from the start location.
-    const entry: AutomationStudioProjectBuildEntry = phase === "reset"
+    const blocked = onSite.still.length > 0 || onSite.unsettleable.length > 0 || onSite.possibly.length > 0;
+    const entry: AutomationStudioProjectBuildEntry = phase !== "reset" && scope.predecessors.length > 0 && blocked
+      ? { kind: "unprepared", predecessors: [...scope.predecessors], code: "project.entry_site_not_reset", acts: [] }
+      : phase === "reset"
       ? { kind: "start" }
       : await automationStudioProjectBuildPrepareEntry({ scope, proposals, environment, start, signal, arrival: this.arrival(), ...(this.input.execute ? { execute: this.input.execute } : {}), ...(this.input.newRunId ? { newRunId: this.input.newRunId } : {}) });
     if (entry.kind !== "start" && entry.acts.length) {
@@ -215,3 +223,4 @@ function withUnsettleable(told: JsonObject, acts: readonly AutomationStudioSiteR
 function isObject(value: JsonValue | undefined): value is JsonObject {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
+import { automationStudioSiteResetTrialSteps } from "../../flow-bootstrap/reset-admission/index.ts";

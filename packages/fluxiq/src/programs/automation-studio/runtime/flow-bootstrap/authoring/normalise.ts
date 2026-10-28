@@ -21,7 +21,7 @@ import { automationStudioMatchWrittenParameterName, type AutomationStudioFlowBoo
 import { automationStudioFlowBootstrapAssembledRecordOutput } from "./assembled-record-output.ts";
 import { isAuthoringConsequenceKey, readAuthoringConsequences } from "./consequences.ts";
 import { authoringError } from "./issue.ts";
-import { authoringKey } from "./keys.ts";
+import { authoringCoreDerivedKey, authoringKey } from "./keys.ts";
 import { matchAuthoringParameter, matchAuthoringParameterContaining } from "./matching.ts";
 import { AUTOMATION_STUDIO_AUTHORING_HANDLE_KEY, isAuthoringHandleToken, isJsonObject } from "./values.ts";
 
@@ -65,6 +65,11 @@ export function normaliseAuthoringNodeParameters(input: {
       const declared = readAuthoringConsequences(value);
       if (declared) consequences = declared;
       else issues.push(authoringError("bootstrap.invalid_consequences", "Step consequences must name the permission classes, or none.", `${input.path}.consequences`));
+      continue;
+    }
+    // A field only Core derives is refused as written, never read as a parameter (`./keys.ts`, t751).
+    if (!parameter && authoringCoreDerivedKey(key)) {
+      issues.push(authoringError("bootstrap.unknown_parameter", "Node parameter is not declared by its definition.", `${input.path}.parameters.${key}`));
       continue;
     }
     if (!parameter) {

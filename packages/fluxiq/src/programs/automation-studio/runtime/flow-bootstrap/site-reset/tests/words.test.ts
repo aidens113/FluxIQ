@@ -31,6 +31,17 @@ describe("site reset words for an undo aimed at another item", () => {
     expect(WORDS.alreadyUndone(true)).toContain("Positive original-state evidence");
   });
 
+  it("keeps a refused undo subject to the current reset obligations", () => {
+    const words = WORDS.undoRefused();
+    expect(words).toContain("nothing was done");
+    expect(words).toContain("Do not repeat the refused effect");
+    expect(words).toContain("current listed reset and settlement conditions");
+    expect(words).toContain("end honestly");
+    expect(words).not.toContain("kept and not asked for again");
+    expect(words).not.toContain("trial run with it in place");
+    expect(words).not.toContain("startedWith.cannotUndo");
+  });
+
   it("tells a reset to undo another listed act or name the acts it cannot undo under cannotUndo, and never to test", () => {
     const said = WORDS.wrongTarget("reset");
     expect(said).toContain("Undo another listed act on its own item with \"undoes\"");
@@ -110,5 +121,32 @@ describe("site reset words after a read issues refs a refused press wants (t748)
     expect(words).toContain("destination-1 (1 item)");
     expect(words).toContain("destination-2 (2 items at loc:elsewhere)");
     expect(words).not.toMatch(REALISTIC);
+  });
+});
+
+// t751 (R1, R3): the admission asks for a witness after any earlier lasting act too, and a list is an original until an act
+// touches it, so the refusal words no longer speak of the build's first change; a plan step, which can carry no
+// resetDestination, is told how its own witness is made while exploring.
+describe("site reset words for a press or step with no witness (t751)", () => {
+  const REALISTIC = /(store|shop|cart|basket|checkout|address|job|save|saved|heart|photo|like|liked|post|friend|order|product|follow|feed|profile|apply)/iu;
+
+  it("ask for the list read before an act changes it, not before the build's first change", () => {
+    for (const said of [WORDS.witnessRequired([]), WORDS.createBaselineRequired()]) {
+      expect(said).not.toContain("first reversible lasting change");
+      expect(said).not.toContain("A first observation after a lasting build effect");
+      expect(said).toContain("before any act of this build changes it");
+    }
+  });
+
+  it("tell a step to press its control once while exploring, naming the ref where its control shows no state", () => {
+    const said = WORDS.stepWitnessRequired([{ ref: "destination-1", count: 2, location: "loc:wall" }]);
+    expect(said).toContain("while exploring");
+    expect(said).toContain("core.run_node");
+    expect(said).toContain("resetDestination");
+    expect(said).toContain("then submit again");
+    expect(said).toContain("destination-1 (2 items at loc:wall)");
+    expect(said).toContain(WORDS.ownUrl());
+    expect(WORDS.stepWitnessRequired([])).not.toContain("Refs already issued");
+    for (const words of [said, WORDS.stepWitnessRequired([]), WORDS.witnessRequired([])]) expect(words).not.toMatch(REALISTIC);
   });
 });

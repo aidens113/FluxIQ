@@ -8,6 +8,8 @@ import { refusalTestSubmission } from "../../../flow-bootstrap/candidate/tests/r
 import type { AutomationStudioCandidateTrialAct, AutomationStudioCandidateTrialPort, AutomationStudioCandidateTrialResult } from "../../../flow-bootstrap/candidate/index.ts";
 import { AutomationStudioSiteResetProjectLedger } from "../../../flow-bootstrap/site-reset/index.ts";
 import { AutomationStudioSubflowScopedSubmissionController, type AutomationStudioSubflowProposal } from "../../../flow-bootstrap/subflow-candidate/index.ts";
+import { automationStudioFlowBootstrapActionPermissions } from "../../../flow-bootstrap/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
 import type { AutomationStudioLlmBuildPurse, AutomationStudioLlmBuildPurseJudging } from "../../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../../../llm/evidence-loop.ts";
 import { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../../service/paths/index.ts";
@@ -143,6 +145,15 @@ export function project(options: {
     const plan = view!.record.plans.at(-1)!.plan;
     const spec = view!.record.taskSpecs.at(-1)!.taskSpec;
     const subflow = plan.plan.subflows.find((candidate) => candidate.key === brief.subflowKey)!;
+    ledger.observed({ state: {}, differs: [], resource: "r:fixture", scope: "p:fixture", collections: [{ scope: "p:holds", group: "g:holds", subjects: [], states: {} }] });
+    const own = ledger.forBrief(brief.briefId);
+    own.destinationReceipts();
+    const permissions = automationStudioFlowBootstrapActionPermissions({ permittedConsequences: brief.permittedActs, instructionIds: [], authoringMode: "project", siteReset: own, executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: {} }) });
+    const resolvePlanNodeParameters: NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["resolvePlanNodeParameters"]> = async (input) => {
+      if (input.declaredConsequences?.length) await input.permission({ consequences: [...input.declaredConsequences], control: { name: "Hold", kind: "button", resource: "r:fixture", scope: "p:holds", subject: "s:new-hold", page: "s:title" }, verb: "press" });
+      return submission.binding.resolvePlanNodeParameters(input);
+    };
+    const binding = { ...submission.binding, resolvePlanNodeParameters };
     const controller = new AutomationStudioSubflowScopedSubmissionController({
       scope: {
         buildId: BUILD.buildId, briefId: brief.briefId, planDigest: brief.planDigest, subflowKey: brief.subflowKey,
@@ -155,7 +166,7 @@ export function project(options: {
         predecessors: brief.entry.predecessors
       },
       siblings: plan.plan.subflows.map((candidate) => candidate.key).filter((key) => key !== brief.subflowKey),
-      submission
+      submission: { ...submission, binding, permissionFor: permissions.planStep }
     });
     const submitted = await controller.submit({ flow: (options.script?.(brief, attempt) ?? SCRIPTS[brief.subflowKey]!).join("\n") });
     if (!submitted.ok) throw new Error(`fixture script refused: ${JSON.stringify(submitted.check.feedback)}`);

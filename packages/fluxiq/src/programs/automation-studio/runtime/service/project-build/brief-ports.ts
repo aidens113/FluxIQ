@@ -274,7 +274,7 @@ export function automationStudioProjectBuildBriefPorts(input: {
     const routing = await startAutomationStudioBuildRouting({ hostRuntime: project.hostRuntime, projectId, flowId, flowInputs: project.flowInputs, start: "first_look", pageless: [AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID] });
     const permittedActs: readonly string[] = request.brief.permittedActs;
     const permittedConsequences = (project.permissions.permittedConsequences ?? []).filter((consequence) => permittedActs.includes(consequence)) as AutomationStudioActionConsequence[];
-    const permissions = automationStudioFlowBootstrapActionPermissions({ ...project.permissions, permittedConsequences, requireCreateBaseline: true, siteReset: input.acts.calls(siteReset), executeTool: project.cancellation.tool(harness.executeTool) });
+    const permissions = automationStudioFlowBootstrapActionPermissions({ ...project.permissions, authoringMode: "project", permittedConsequences, requireCreateBaseline: true, siteReset: input.acts.calls(siteReset), executeTool: project.cancellation.tool(harness.executeTool) });
     AutomationStudioProjectBuildPermissions.of(project).add(permissions);
     const personNeeded = automationStudioFlowBootstrapPersonNeeded({ executeTool: permissions.executeTool, tools: harness.tools, signal: AbortSignal.any([permissions.signal, request.signal]), clearedResultCode: automationStudioFlowDraftReplayClearedCode, ...(project.personAsk ? { ask: project.personAsk } : {}) });
     const denied = binding.deniedEvidenceKeys;
@@ -311,6 +311,7 @@ export function automationStudioProjectBuildBriefPorts(input: {
       let startIsBuilds = false;
       const buildReset = phaseStart.reset(request.ledger, (signal) => ({ compare: startIsBuilds ? () => reader.compare(signal) : async () => ({ moved: false }), compareAt: (place) => reader.compareAt(place, signal), lookAt: looking(reader, calls, signal) }));
       const reset: AutomationStudioSiteResetTrialReset = {
+        ...(buildReset.admit ? { admit: buildReset.admit } : {}),
         beforeTrial: (signal, cannotUndo, options) => buildReset.beforeTrial(signal, cannotUndo, options),
         trialRan: (acts, trialRunId) => {
           const left = buildReset.trialRan(acts, trialRunId);
@@ -384,7 +385,7 @@ function placing<L extends { executeTool: Execute }>(loop: L, ledger: PlacedLedg
     const opening = isOpeningCall(call.callId);
     const signal = call.signal ?? options.signal;
     if (options.capture && !opening) await reader.capture(signal);
-    const ran = opening ? await inner(call) : await automationStudioSiteResetPlacedCall({ call, ledger, reader, signal, run: () => inner(call) });
+    const ran = opening ? await inner(call) : await automationStudioSiteResetPlacedCall({ call, ledger, reader, signal, allTools: true, run: () => inner(call) });
     if (options.capture && opening) await reader.capture(signal);
     const receipts = ledger.destinationReceipts?.() ?? [];
     for (const receipt of receipts) if (!options.issued.has(receipt.ref)) options.issued.set(receipt.ref, { ref: receipt.ref, count: receipt.count });

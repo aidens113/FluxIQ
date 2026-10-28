@@ -1,7 +1,14 @@
+// The build's original list receipts (F1), and the original half of the one admission's port (t751, R1/R3).
+//
+// A complete read of a list group becomes its original, and issues refs the model may name as resetDestination, unless an
+// act of the build already counts that group among its witnesses (`touch`, the per-group seal) or an act whose effect
+// location is unknown is on the site (`seal`, which still seals every group). Originals are immutable once recorded.
+// Whether a press may land is decided by `../reset-admission/` alone; `check` is its exploration door.
+
+import { automationStudioSiteResetAdmission as admission, automationStudioSiteResetIdentifiedCreate as identifiedCreate, type AutomationStudioSiteResetAdmissionDeclared, type AutomationStudioSiteResetAdmissionExplored, type AutomationStudioSiteResetAdmissionKnown } from "../reset-admission/index.ts";
 import { automationStudioSiteResetRefusal as refusal } from "../reset-answers/index.ts";
 import type { AutomationStudioSiteResetDeclared, AutomationStudioSiteResetRead } from "./contracts.ts";
 import { automationStudioSiteResetInvalidCollectionGroups } from "../reset-settlement/index.ts";
-import { automationStudioSiteResetWitnessMissing as witnessMissing } from "./reset-witness.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "./words.ts";
 
 /** The classes the site's own controls can reverse: the acts that may name a destination (F1). */
@@ -17,9 +24,21 @@ export class AutomationStudioSiteResetCreateBaselines {
   private readonly issued = new Set<string>();
   private current: Array<{ ref: string; ordinal: number; count: number }> = [];
   private sealed = false;
+  /** Groups an act of the build already counts among its witnesses: no first read of them becomes original (R1). */
+  private readonly touched = new Set<string>();
 
-  /** Once any known lasting project act lands, a first observation cannot become original authority. */
+  /** Once a lasting act whose effect location is unknown lands, no first observation of any group can become original authority. */
   seal(): void { this.sealed = true; }
+
+  /** Groups whose first act landed (R1, the per-group seal): a first read of one of them never becomes an original. */
+  touch(groups: Iterable<string>): void {
+    for (const group of groups) this.touched.add(group);
+  }
+
+  /** Whether a first read of `group` can no longer become an original: an act touched it, or the whole build is sealed (header). */
+  closed(group: string): boolean {
+    return this.sealed || this.touched.has(group);
+  }
 
   observed(read: AutomationStudioSiteResetRead, original = true): void {
     this.current = [];
@@ -48,7 +67,7 @@ export class AutomationStudioSiteResetCreateBaselines {
     for (const [index, collection] of collections.entries()) {
       if (!this.valid.get(collection.group) || (this.groupResources.has(collection.group) && this.groupResources.get(collection.group) !== resource)) continue;
       let before = this.originals.get(collection.scope);
-      if (!before && original && !this.sealed && this.originals.size < 256) {
+      if (!before && original && !this.closed(collection.group) && this.originals.size < 256) {
         before = { ref: `destination-${this.originals.size + 1}`, resource, group: collection.group, subjects: new Set(collection.subjects), ...(read.location ? { location: read.location } : {}) };
         this.originals.set(collection.scope, before);
         if (!this.groups.has(collection.group)) {
@@ -80,6 +99,12 @@ export class AutomationStudioSiteResetCreateBaselines {
    */
   named(reference: unknown): { scope: string; group: string } | undefined {
     if (typeof reference !== "string" || !this.issued.has(reference)) return undefined;
+    return this.retained(reference);
+  }
+
+  /** Core-derived step stamps may name an original directly; this never issues a ref or admits a model's resetDestination. */
+  retained(reference: unknown): { scope: string; group: string } | undefined {
+    if (typeof reference !== "string") return undefined;
     const found = [...this.originals].find(([, entry]) => entry.ref === reference);
     if (!found || this.valid.get(found[1].group) !== true) return undefined;
     return { scope: found[0], group: found[1].group };
@@ -90,6 +115,9 @@ export class AutomationStudioSiteResetCreateBaselines {
     const original = this.originals.get(scope);
     return original ? { ref: original.ref, count: original.subjects.size, ...(original.location ? { location: original.location } : {}) } : undefined;
   }
+
+  /** Resource provenance for a retained original, used only to bound unknown control locations within that resource. */
+  resourceOf(scope: string): string | undefined { return this.originals.get(scope)?.resource; }
 
   /** Every ref the model was shown, in order, with its count and where it was read (L1: what an act with no witness can name). */
   issuedRefs(): Array<{ ref: string; count: number; location?: string }> {
@@ -107,47 +135,33 @@ export class AutomationStudioSiteResetCreateBaselines {
     return refusal("candidate.reset_destination_unissued", { failed: "destination_unissued", canMeet: "this_page", instruction: WORDS.destinationUnissued() });
   }
 
-  /** Whether no further ref can ever be issued: sealed, with every original already shown (rerun round 2, `./settlement-words.ts`). */
-  refsClosed(): boolean {
-    return this.sealed && [...this.originals.values()].every((entry) => this.issued.has(entry.ref));
-  }
-
   /**
-   * The builder's reset preconditions on one action, before it runs. An
-   * identified creation needs its destination's original, as before. Any
-   * other call naming a ref no receipt printed is refused (rerun round 2,
-   * job steps 0105/0107). Before the seal, a reversible lasting press with no
-   * witness is refused (`./reset-witness.ts`), an unidentified creation
-   * among them (t748); after it, nothing more is asked. A refusal records
-   * nothing and seals nothing.
-   *
-   * Which issued list a creation names is never judged here (t748, C5): a
-   * list on the creation's own page that it can never join (others suggested
-   * beside its subject) and one it does join (replies under what a reply
-   * answers) read the same by list place, subject, page, group and original
-   * subjects. The refusal names the refs read on this page apart from those
-   * read elsewhere, and says which list to name (`./words.ts`).
+   * The exploration door of the one admission (`../reset-admission/admission.ts`, t751): asked of every action before it
+   * runs, after any earlier lasting act as before one. `explored`: the build's explored acts an action may repeat (absent,
+   * none). Admitted, it answers exactly `{ kind: "admit" }`, as before: the witness is the admission's to hand a caller that
+   * keeps it. A refusal records nothing and seals nothing.
    */
-  check(declared: Pick<AutomationStudioSiteResetDeclared, "effect" | "consequences" | "control">, reference: unknown): { kind: "admit" } | { kind: "refused"; evidence: { ok: false; code: string; instruction: string } } {
-    // This necessary precondition is not a classifier for inventory semantics.
-    // Irreversible/mixed operations keep their existing policy; every other press goes to the witness rule.
-    if (!identifiedCreate(declared)) {
-      const unissued = this.unissued(reference);
-      if (unissued) return { kind: "refused", evidence: unissued };
-      const known = { original: (scope: string, resource: string) => this.original(scope, resource), destination: () => this.destination(declared, reference) !== undefined };
-      if (this.sealed || !witnessMissing(declared, known)) return { kind: "admit" };
-      return { kind: "refused", evidence: refusal("candidate.reset_witness_required", { failed: "no_witness", canMeet: "another_page", instruction: WORDS.witnessRequired(this.issuedRefs()) }) };
-    }
-    if (this.destination(declared, reference)) return { kind: "admit" };
-    // The refs already shown, those read on this page apart (t748, C5): which list the creation joins is only said, never judged.
-    const here = new Set(this.current.map((receipt) => receipt.ref));
-    const issued = this.issuedRefs();
-    const instruction = WORDS.createBaselineRequired(issued.filter((entry) => here.has(entry.ref)), issued.filter((entry) => !here.has(entry.ref)));
-    // Sealed with no original at all, no read can ever issue one (t743): no call meets it. Otherwise a complete read where it would show can.
-    return { kind: "refused", evidence: refusal("candidate.create_baseline_required", { failed: "no_destination_original", canMeet: this.sealed && this.originals.size === 0 ? "no_call" : "another_page", instruction }) };
+  check(declared: AutomationStudioSiteResetAdmissionDeclared, reference: unknown, explored: () => ReadonlyArray<AutomationStudioSiteResetAdmissionExplored> = () => []): { kind: "admit" } | { kind: "refused"; evidence: { ok: false; code: string; instruction: string } } {
+    const verdict = admission({ declared, reference, door: "exploration" }, { ...this.known(), explored });
+    return verdict.kind === "admit" ? { kind: "admit" } : verdict;
   }
 
-  /** Whether `scope` is a recorded original of `resource` in a group still valid: a control there sits in a list read complete (`./reset-witness.ts`). */
+  /** Its part of the admission's port (`../reset-admission/contracts.ts`): every part but the explored acts, which the caller's ledger supplies. */
+  known(): Omit<AutomationStudioSiteResetAdmissionKnown, "explored"> {
+    return {
+      unissued: (reference) => reference !== undefined && !(typeof reference === "string" && this.issued.has(reference)),
+      destination: (declared, reference) => {
+        const found = this.destination(declared, reference);
+        const ref = found ? this.originals.get(found.scope)?.ref : undefined;
+        return found && ref !== undefined ? { ref, ...found } : undefined;
+      },
+      original: (scope, resource) => (this.original(scope, resource) ? { scope, group: this.originals.get(scope)!.group } : undefined),
+      issuedRefs: () => this.issuedRefs(),
+      here: () => this.current.map((receipt) => receipt.ref)
+    };
+  }
+
+  /** Whether `scope` is a recorded original of `resource` in a group still valid: a control there sits in a list read complete (the `own_list` witness). */
   private original(scope: string, resource: string): boolean {
     const original = this.originals.get(scope);
     return original !== undefined && original.resource === resource && this.valid.get(original.group) === true;
@@ -156,7 +170,7 @@ export class AutomationStudioSiteResetCreateBaselines {
   /**
    * Where a reversible act's effect would show, as an original of this resource
    * (F1): an identified creation's by its issued ref or its own scope, with its
-   * subject absent there -- none where `check` would refuse it -- and any other
+   * subject absent there -- none where the admission would refuse it -- and any other
    * reversible act's only by an issued ref the call named. The ledger keeps it
    * on the act; it proves nothing until read again after the act.
    */
@@ -169,11 +183,4 @@ export class AutomationStudioSiteResetCreateBaselines {
     if (scope === undefined || !original || control.resource === undefined || original.resource !== control.resource || this.valid.get(original.group) !== true || (created ?? []).some(subject => original.subjects.has(subject))) return undefined;
     return { scope, group: original.group };
   }
-}
-
-/** What an identified reversible creation is about, or none where the creation precondition does not apply. */
-function identifiedCreate(declared: Pick<AutomationStudioSiteResetDeclared, "effect" | "consequences" | "control">): string[] | undefined {
-  const { control, consequences } = declared;
-  const subjects = [...new Set([control.subject, ...(control.item === undefined ? [control.page] : [])].filter((subject): subject is string => subject !== undefined))];
-  return declared.effect !== "mutate" || consequences.length !== 1 || consequences[0] !== "create_new" || subjects.length === 0 ? undefined : subjects;
 }
