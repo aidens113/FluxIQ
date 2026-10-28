@@ -67,7 +67,8 @@ describe("a no blaming a step that chose the request's own words, through the ve
     const { provider } = answering(blaming("Lakeshore"), CAMPSITE_YES, blaming("Lakeshore"), blaming("Lakeshore"));
     const verdict = await judge(provider, REQUEST)({ summary: summary("Lakeshore"), budget: { maxCostUsd: 0.2 } });
     expect(verdict).toMatchObject({ verdict: "unknown" });
-    expect(verdict.spent.calls).toBe(4);
+    // t771: the yes beside the refused no is asked once more; this judge answers nothing usable.
+    expect(verdict.spent.calls).toBe(5);
   });
 
   it("rechecks an unmeasured region restriction even where the option is not the request's words", async () => {
@@ -75,8 +76,9 @@ describe("a no blaming a step that chose the request's own words, through the ve
     const { provider, seen } = answering(blaming("Riverside"), CAMPSITE_YES, blaming("Riverside"), blaming("Riverside"));
     const verdict = await judge(provider, REQUEST)({ summary: summary("Riverside"), budget: { maxCostUsd: 0.2 } });
     expect(verdict).toMatchObject({ verdict: "unknown" });
-    expect(verdict.spent.calls).toBe(4);
-    expect(seen).toHaveLength(4);
+    // t771: the yes beside the refused no is asked once more; this judge answers nothing usable.
+    expect(verdict.spent.calls).toBe(5);
+    expect(seen).toHaveLength(5);
     expect(JSON.stringify(seen[2])).not.toContain("Core did not see the rows such a step removed");
     expect(JSON.stringify(seen[2])).toContain("Answer no only for a defect you name in this result");
   });

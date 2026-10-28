@@ -574,6 +574,13 @@ same capabilities. The ids are:
 - **The page is the start.** `onScreen.pageUrl` (http or https, at most 2048
   characters, no whitespace or control characters) becomes the build's
   `startLocation`. The chat model is shown only its origin and path.
+- **An attached recording is supporting evidence.** On `append-turn`,
+  `onScreen.recordingId` means the recording the person attached to this
+  message. `flow.createHere` takes it from `onScreen` only (never from a
+  model-written argument), refuses before creating a Flow when it is not in
+  the project, not finished or not described, and otherwise links it to the
+  Flow's saved instruction (`linkedRecordingIds`), where a build sends it as
+  untrusted `supplementaryRecordings` and the written message stays the task.
 - **The first reply says what will happen, in plain words** (UI D9, live run
   `run-musp8nz1-dbd3905a`, which read `Doing "Create an automation here".`).
   A command Core runs gives its own first reply (`announce` on

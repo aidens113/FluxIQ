@@ -20,7 +20,7 @@ import {
 import { BOOK_LARKSPUR, LIBRARY_REQUEST, libraryInstruction, libraryRunSummary } from "./library-fixture.ts";
 
 const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 };
-const no = (reading: Record<string, string>) => ({ answersRequest: "no", ...reading, defects: reading === UNREAD_TITLE_NO ? [{ kind: "asked_missing", row: BOOK_LARKSPUR, requestWords: "every mystery novel" }] : [] });
+const no = (reading: Record<string, string>) => ({ answersRequest: "no", ...reading, defects: reading === UNREAD_TITLE_NO ? [{ kind: "asked_missing", row: BOOK_LARKSPUR, column: "availability", value: "Available to borrow today", requestWords: "every mystery novel" }] : [] });
 
 /** A provider answering each call with its own diagnosis, keeping every request it was sent. */
 function answering(...diagnoses: Record<string, unknown>[]): { provider: AutomationStudioLlmProvider; seen: AutomationStudioLlmTaskRequest[] } {
@@ -81,10 +81,13 @@ describe.each(TRIALS)("$trial: nos calling rows missing that a condition testing
     expect(verdict.verdict).not.toBe("no");
   });
 
-  it("a no naming a title the read left out without reading its value still stands: two are a no, asked nothing more", async () => {
-    const { provider, seen } = answering(no(UNREAD_TITLE_NO), no(UNREAD_TITLE_NO), LIBRARY_YES, LIBRARY_YES);
+  // t771: a missing-row claim is held to the row's own cells. Core read no availability of this title, so a no saying it
+  // is available today is one Core cannot bear out: unknown, never a no, and none of its prose is carried on.
+  it("a no naming a title the read left out without reading its value is unknown: Core holds no value of it to bear the no out", async () => {
+    const { provider, seen } = answering(no(UNREAD_TITLE_NO), no(UNREAD_TITLE_NO), no(UNREAD_TITLE_NO), no(UNREAD_TITLE_NO));
     const verdict = await judge(provider)({ summary: libraryRunSummary({ unread: true }), taskChecklist, budget: { maxCostUsd: 0.2 } });
-    expect(verdict).toMatchObject({ verdict: "no", observed: UNREAD_TITLE_NO.observed });
-    expect(seen).toHaveLength(2);
+    expect(verdict).toMatchObject({ verdict: "unknown", unsupportedNo: true });
+    expect(JSON.stringify(verdict)).not.toContain(UNREAD_TITLE_NO.observed);
+    expect(seen).toHaveLength(4);
   });
 });

@@ -64,6 +64,13 @@ export function automationStudioProjectBuildRecordTold(input: {
   const { parts, assembled, whole, wholeRuns } = input;
   const runs = wholeRuns && Number.isSafeInteger(wholeRuns.count) && wholeRuns.count > 0 ? wholeRuns : undefined;
   if (!parts.size && !assembled && !whole && !runs) return undefined;
+  // The only part tested and the whole run are one test when they ended the same way: said once, with how often it was tried (t774).
+  const only = parts.size === 1 ? [...parts.values()][0] : undefined;
+  const last = whole ? whole.verdict : runs?.last;
+  if (only && last !== undefined && only.last === last) {
+    const often = only.count > 1 ? ` It was tried ${times(only.count)}.` : "";
+    return `${wholeSaid(assembled, whole, runs)}${often}`;
+  }
   return [partsSaid(parts), wholeSaid(assembled, whole, runs)].join(" ");
 }
 
@@ -97,13 +104,21 @@ function wholeSaid(assembled: boolean, whole: Whole | undefined, runs: WholeRuns
 
 /** What the judged run did, from its own feedback: how many of its steps ran, and how many rows it stored; empty when it says neither. */
 function ran(feedback: unknown): string {
-  const record = feedback && typeof feedback === "object" ? feedback as { steps?: unknown; stored?: unknown } : {};
-  const steps = Array.isArray(record.steps) ? record.steps.map((step: unknown) => (step && typeof step === "object" ? (step as { status?: unknown }).status : undefined)) : [];
+  const record = feedback && typeof feedback === "object" ? feedback as { steps?: unknown; stepsLeftOut?: unknown; stored?: unknown } : {};
+  const listed: unknown[] = Array.isArray(record.steps) ? record.steps : [];
+  const statuses = listed.map((step: unknown) => (step && typeof step === "object" ? (step as { status?: unknown }).status : undefined));
+  // The listing cuts a long run between its first steps and its last; the cut steps ran too (t774).
+  const cut = typeof record.stepsLeftOut === "number" && Number.isSafeInteger(record.stepsLeftOut) && record.stepsLeftOut > 0 ? record.stepsLeftOut : 0;
+  // A step that appears again is a repeat's next pass: the count is of every pass, not of the Flow's own steps (the panel counts those).
+  const labels = listed.flatMap((step) => (step && typeof step === "object" && typeof (step as { label?: unknown }).label === "string" ? [(step as { label: string }).label] : []));
+  const repeats = new Set(labels).size < labels.length;
   const rows = record.stored && typeof record.stored === "object" ? (record.stored as { rows?: unknown }).rows : undefined;
   const said: string[] = [];
-  if (steps.length) {
-    const succeeded = steps.filter((status) => status === "succeeded").length;
-    said.push(succeeded === steps.length ? (steps.length === 1 ? "ran its one step" : steps.length === 2 ? "ran both of its steps" : `ran all ${steps.length} of its steps`) : `ran ${succeeded} of its ${steps.length} steps`);
+  const total = statuses.length + cut;
+  if (total) {
+    const succeeded = statuses.filter((status) => status === "succeeded").length + cut;
+    const counted = repeats ? ", counting each pass of a repeat" : "";
+    said.push(succeeded === total ? (total === 1 ? "ran its one step" : total === 2 ? "ran both of its steps" : `ran all ${total} of its steps${counted}`) : `ran ${succeeded} of its ${total} steps${counted}`);
   }
   if (typeof rows === "number" && Number.isInteger(rows) && rows >= 0) said.push(rows === 0 ? "stored no rows" : `stored ${rows} ${rows === 1 ? "row" : "rows"}`);
   return said.join(" and ");

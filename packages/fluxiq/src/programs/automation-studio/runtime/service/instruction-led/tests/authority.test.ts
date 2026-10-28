@@ -25,7 +25,7 @@ describe("explicit instruction authority", () => {
     const recording = appendRecordingEntry(createRecordingSession({ recordingId: "r", description: "Demonstrates a generic operation.", initialState: { timestamp: 1, namespaces: {} }, environment: { domainId: "generic" }, metadata: { projectId: "p" } }), { type: "action", actionType: "operate", outputId: "operate", startedAt: 2, origin: "operator", parameters: { privateValue: "not model context" } });
     recording.endedAt = 3;
     const projected = await supportingAutomationRecordings("p", [{ linkedRecordingIds: ["r"] }], async () => recording, (_domain, entry) => entry.type === "action" ? entry.outputId : undefined);
-    expect(projected).toEqual([{ recordingId: "r", description: "Demonstrates a generic operation.", authority: "untrusted_supplementary_demonstration", actionCount: 1, method: ["operate"], methodTruncated: false }]);
+    expect(projected).toEqual([{ recordingId: "r", description: "Demonstrates a generic operation.", authority: "untrusted_supplementary_demonstration", actionCount: 1, method: ["operate"], methodTruncated: false, steps: [{ kind: "operate" }], stepsTruncated: false, withheldSteps: 0 }]);
     expect(automationInstructionTasks([], "p", "f")).toEqual([]);
   });
   it.each(["open", "other_project", "undescribed"])("declines %s supporting evidence", async row => {

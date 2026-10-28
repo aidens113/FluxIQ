@@ -13,6 +13,7 @@ export * from "./store.ts";
 export * from "./writer.ts";
 export * from "./whole-thread.ts";
 export * from "./person-words.ts";
+export * from "./attached-recording/index.ts";
 export * from "./conversations.ts";
 export * from "./instructions/index.ts";
 export * from "./context/index.ts";

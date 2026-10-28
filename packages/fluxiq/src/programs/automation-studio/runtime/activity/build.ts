@@ -56,7 +56,7 @@ function endedAsDraft(built: unknown): boolean {
 }
 
 /** What the activity says of a build that kept only a draft (G2). */
-const DRAFT_TITLE = "Build ended: no Flow was built";
+const DRAFT_TITLE = "Build stopped: only a draft was kept";
 const DRAFT_TEXT = "What it wrote is kept as a draft, and nothing was put into the Flow.";
 
 /** The most of the person's words one build's request carries. */

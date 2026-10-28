@@ -16,13 +16,16 @@ export function automationStudioRuntimeSummaryCandidateTrial(metadata: JsonObjec
   if (candidateId === undefined) return undefined;
   const revision = Number.isSafeInteger(trial.revision) ? trial.revision as number : undefined;
   const digest = boundedString(trial.digest), start = boundedString(trial.start), execution = boundedString(trial.execution), code = boundedString(trial.code);
+  const verdict = boundedString(trial.verdict), verdictCode = boundedString(trial.verdictCode);
   return {
     candidateId,
     ...(revision !== undefined ? { revision } : {}),
     ...(digest !== undefined ? { digest } : {}),
     ...(start !== undefined ? { start } : {}),
     ...(execution !== undefined ? { execution } : {}),
-    ...(code !== undefined ? { code } : {})
+    ...(code !== undefined ? { code } : {}),
+    ...(verdict !== undefined ? { verdict } : {}),
+    ...(verdictCode !== undefined ? { verdictCode } : {})
   };
 }
 

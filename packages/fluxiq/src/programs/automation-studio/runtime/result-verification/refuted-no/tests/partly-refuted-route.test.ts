@@ -26,33 +26,32 @@ function answering(...diagnoses: Record<string, unknown>[]): AutomationStudioLlm
 const judge = (provider: AutomationStudioLlmProvider) =>
   automationStudioBuildTestJudge({ instructions: [campsiteInstruction()], deniedEvidenceKeys: [], projectId: "project-1", flowId: "flow-1", provider });
 
-/** Core's finding on condition 1, as its label carries it. */
-const PROMOTED_FINDING = "Of the 2 rows condition 1 (promoted is absent) left out by itself, 2 are also a row of the result, another copy kept. Removing or loosening it alone brings back no row the request asks for.";
-
 describe("a double no over the exact rows whose advice Core's record refutes in part (t641)", () => {
   it("keeps unmeasured region doubts unsure and labels the refuted condition advice", async () => {
     const verdict = await judge(answering(no(GAP_AND_CHANGE_NO), no(GAP_NO), no(GAP_AND_CHANGE_NO), no(GAP_NO)))({ summary: campsiteRunSummary(), budget: { maxCostUsd: 0.2 } });
     expect(verdict.verdict).toBe("unknown");
     if (verdict.verdict !== "unknown") return;
     expect(verdict.spent.calls).toBe(4);
-    const advice = String(verdict.unconfirmedReading?.advice);
-    expect(advice).toContain(`Judge call 1 (Core's record contradicts part of this reading: ${PROMOTED_FINDING}): ${GAP_AND_CHANGE_NO.changed}`);
-    expect(advice).toContain(`Judge call 2 (no defect Core can find in this result): ${GAP_NO.changed}`);
-    // Neither unmeasured claim stands; both readings remain ordered and explicitly unconfirmed.
-    expect(advice.indexOf("Judge call 1")).toBeLessThan(advice.indexOf("Judge call 2"));
-    expect(advice).not.toContain("contradicted by Core's record");
-    expect(String(verdict.unconfirmedReading?.observed)).toContain(GAP_AND_CHANGE_NO.observed);
+    // t771: nothing of a no Core could not ground -- what it observed or advised -- is carried on; Core's fact recordContradicts is.
+    expect(verdict.unconfirmedReading?.recordContradicts).toBe("part");
+    expect(verdict.unconfirmedReading?.advice).toBeUndefined();
+    expect(verdict.unconfirmedReading?.observed).toBeUndefined();
+    expect(JSON.stringify(verdict)).not.toContain(GAP_AND_CHANGE_NO.changed);
+    expect(JSON.stringify(verdict)).not.toContain(GAP_NO.changed);
   });
 
-  it("labels the one reading of two calls worded alike", async () => {
+  it("marks the one reading of two calls worded alike as refuted in part, carrying none of its advice", async () => {
     const verdict = await judge(answering(no(GAP_AND_CHANGE_NO), no(GAP_AND_CHANGE_NO)))({ summary: campsiteRunSummary(), budget: { maxCostUsd: 0.2 } });
     expect(verdict).toMatchObject({ verdict: "unknown" });
     if (verdict.verdict !== "unknown") return;
-    expect(String(verdict.unconfirmedReading?.advice)).toContain(GAP_AND_CHANGE_NO.changed);
+    expect(verdict.unconfirmedReading?.recordContradicts).toBe("part");
+    expect(JSON.stringify(verdict)).not.toContain(GAP_AND_CHANGE_NO.changed);
   });
 
   it("leaves a no the record refutes nothing of as it was", async () => {
     const verdict = await judge(answering(no(GAP_NO), no(GAP_NO)))({ summary: campsiteRunSummary(), budget: { maxCostUsd: 0.2 } });
-    expect(verdict).toMatchObject({ verdict: "unknown", unsupportedNo: true, unconfirmedReading: { advice: expect.stringContaining(GAP_NO.changed) } });
+    expect(verdict).toMatchObject({ verdict: "unknown", unsupportedNo: true });
+    expect(verdict.verdict === "unknown" && verdict.unconfirmedReading?.recordContradicts).toBeFalsy();
+    expect(JSON.stringify(verdict)).not.toContain(GAP_NO.changed);
   });
 });

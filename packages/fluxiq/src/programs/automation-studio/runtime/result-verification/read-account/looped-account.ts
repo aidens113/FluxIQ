@@ -90,6 +90,8 @@ function mergedConditions(passes: readonly AutomationStudioResultReadAccount[]):
       }))
       : undefined;
     const withRows = each.filter(({ entry }) => entry.leftOutOnlyByThis?.length).map(({ entry }) => entry);
+    // Each row's cells, in the same order, where every pass that left rows out sent them (t771).
+    const cells = withRows.length && withRows.every((entry) => entry.leftOutCells?.length === entry.leftOutOnlyByThis!.length) ? withRows.flatMap((entry) => entry.leftOutCells!) : undefined;
     // A presence test's sentence where every pass that left rows out said one: from a pass that kept rows, as the wording is.
     const presence = withRows.length && withRows.every((entry) => entry.presence !== undefined)
       ? (each.find(({ entry, kept }) => kept > 0 && entry.presence !== undefined) ?? each.find(({ entry }) => entry.presence !== undefined))?.entry.presence
@@ -101,6 +103,7 @@ function mergedConditions(passes: readonly AutomationStudioResultReadAccount[]):
       ...(alone !== undefined && (rejected === undefined || alone <= rejected) ? { alone } : {}),
       ...(leftOut.length ? { leftOutOnlyByThis: leftOut } : {}),
       ...(observations ? { leftOutObservations: observations } : {}),
+      ...(cells ? { leftOutCells: cells } : {}),
       ...(withRows.length && withRows.every((entry) => entry.testedLabel) ? { testedLabel: true as const } : {}),
       ...(presence !== undefined ? { presence } : {})
     });
@@ -110,16 +113,18 @@ function mergedConditions(passes: readonly AutomationStudioResultReadAccount[]):
 
 /** Each set of conditions that left rows out together on any pass, in first-seen order, with every pass's rows in pass order. */
 function mergedTogether(passes: readonly AutomationStudioResultReadAccount[]): NonNullable<AutomationStudioResultReadAccount["leftOutTogether"]> {
-  const bySet = new Map<string, { conditions: number[]; rows: string[] }>();
+  const bySet = new Map<string, { conditions: number[]; rows: string[]; cells?: Array<Record<string, string>> | null }>();
   for (const pass of passes) {
     for (const set of pass.leftOutTogether ?? []) {
       const key = set.conditions.join(",");
-      const merged = bySet.get(key) ?? { conditions: [...set.conditions], rows: [] };
+      const merged = bySet.get(key) ?? { conditions: [...set.conditions], rows: [], cells: [] };
       merged.rows.push(...set.rows);
+      // Each row's cells where every pass's set sent them (t771); none once one did not.
+      merged.cells = merged.cells && set.cells?.length === set.rows.length ? [...merged.cells, ...set.cells] : null;
       bySet.set(key, merged);
     }
   }
-  return [...bySet.values()];
+  return [...bySet.values()].map(({ cells, ...set }) => (cells?.length ? { ...set, cells } : set));
 }
 
 /** The sum of the counts given, or nothing when no pass gave one. */
