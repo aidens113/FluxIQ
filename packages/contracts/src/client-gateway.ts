@@ -1,6 +1,20 @@
 import type { JsonObject, JsonValue } from "./core.js";
 import type { AutomationStudioFailureRecord } from "./failure/index.js";
+import type {
+  ClientGatewayGoingAwayReason,
+  ClientGatewayRevocationReason,
+  ClientGatewayRunContext,
+  ConnectUserSummary,
+  ConnectWorkspaceSummary
+} from "./platform/index.ts";
 
+/**
+ * The version the gateway stamps on its envelopes. Gateway 0.2 (hosted
+ * production plan) is additive over 0.1 and shares its major version; the
+ * versions this contract describes are `CLIENT_GATEWAY_PROTOCOL_VERSIONS`. This
+ * stays `0.1` until the gateway sends the 0.2 messages, since it is also a
+ * recorded trace's contract version.
+ */
 export const CLIENT_GATEWAY_PROTOCOL_VERSION = "0.1";
 
 export type ClientGatewayClientType =
@@ -24,6 +38,18 @@ export type ClientGatewayCapability = {
   metadata?: JsonObject;
 };
 
+/**
+ * A hello's metadata. Open, as in 0.1; gateway 0.2 names `clientLabel`, the
+ * person-readable name of this client ("Work laptop") that the connect
+ * consent page and the account's client list show.
+ */
+export type ClientGatewayHelloMetadata = JsonObject & { clientLabel?: string };
+
+/**
+ * `token` is the client's credential: under gateway 0.2 the connected-client
+ * credential from the connect flow (`ConnectTokenResponse.credential`), under
+ * 0.1 a trusted-client token.
+ */
 export type ClientGatewayClientHello = {
   clientId?: string;
   clientType: ClientGatewayClientType;
@@ -31,7 +57,7 @@ export type ClientGatewayClientHello = {
   version?: string;
   token?: string;
   capabilities?: ClientGatewayCapability[];
-  metadata?: JsonObject;
+  metadata?: ClientGatewayHelloMetadata;
 };
 
 export type ClientGatewayStateUpdate = {
@@ -118,6 +144,11 @@ export type ClientGatewayActionCommand = {
   metadata?: JsonObject;
   /** Absent when no host lease is in force: the command runs as it always has. */
   lease?: ClientGatewayHostLease;
+  /**
+   * Gateway 0.2: who and what the command serves (`ClientGatewayRunContext`).
+   * A 0.2 gateway sets it on every command; absent from a 0.1 gateway.
+   */
+  runContext?: ClientGatewayRunContext;
 };
 
 /**
@@ -593,6 +624,40 @@ export type ClientGatewayEnvelope<TType extends string = string, TPayload = unkn
   payload: TPayload;
 };
 
+/**
+ * `server.pairing_required`. Gateway 0.2 adds `codeEntryUrl`, the same-origin
+ * path where the signed-in person types `referenceCode` (Flow B).
+ */
+export type ClientGatewayPairingRequired = { referenceCode?: string; reason: string; codeEntryUrl?: string };
+
+/**
+ * `server.session_ready`. Gateway 0.2 adds who the session acts as (`user`,
+ * `workspace`) and `credentialExpiresAt` (epoch milliseconds); a connected
+ * client's credential rotates on every connect, and `token` is then the new
+ * credential the client stores in place of the old one.
+ */
+export type ClientGatewaySessionReady = {
+  sessionId: string;
+  token: string;
+  projectId?: string | null;
+  user?: ConnectUserSummary;
+  workspace?: ConnectWorkspaceSummary;
+  credentialExpiresAt?: number;
+};
+
+/**
+ * `server.revoked` (gateway 0.2): the credential this socket connected with is
+ * revoked. The gateway closes the socket after it; the client discards the
+ * credential and must connect again through the connect flow.
+ */
+export type ClientGatewayRevokedNotice = { reason: ClientGatewayRevocationReason; message?: string };
+
+/**
+ * `server.going_away` (gateway 0.2): the server is draining. No new work is
+ * sent; the client keeps its credential and reconnects after `retryAfterMs`.
+ */
+export type ClientGatewayGoingAwayNotice = { reason: ClientGatewayGoingAwayReason; retryAfterMs: number };
+
 export type ClientGatewayClientMessage =
   | ClientGatewayEnvelope<"client.hello", ClientGatewayClientHello>
   // Deprecated compatibility path. New clients wait for web-panel approval.
@@ -609,8 +674,8 @@ export type ClientGatewayClientMessage =
   | ClientGatewayEnvelope<"client.error", { message: string; code?: string; metadata?: JsonObject }>;
 
 export type ClientGatewayServerMessage =
-  | ClientGatewayEnvelope<"server.pairing_required", { referenceCode?: string; reason: string }>
-  | ClientGatewayEnvelope<"server.session_ready", { sessionId: string; token: string; projectId?: string | null }>
+  | ClientGatewayEnvelope<"server.pairing_required", ClientGatewayPairingRequired>
+  | ClientGatewayEnvelope<"server.session_ready", ClientGatewaySessionReady>
   | ClientGatewayEnvelope<"server.start_recording", { recordingId: string; projectId?: string | null; taskId?: string; domainId?: string }>
   | ClientGatewayEnvelope<"server.stop_recording", { recordingId?: string }>
   | ClientGatewayEnvelope<"server.capture_snapshot", { kind?: string; metadata?: JsonObject }>
@@ -620,6 +685,8 @@ export type ClientGatewayServerMessage =
   | ClientGatewayEnvelope<"server.activity", ClientGatewayActivity>
   | ClientGatewayEnvelope<"server.ping", { nonce: string }>
   | ClientGatewayEnvelope<"server.disconnect", { reason: string }>
+  | ClientGatewayEnvelope<"server.revoked", ClientGatewayRevokedNotice>
+  | ClientGatewayEnvelope<"server.going_away", ClientGatewayGoingAwayNotice>
   | ClientGatewayEnvelope<"server.error", { message: string; code?: string; metadata?: JsonObject }>;
 
 export type ClientGatewaySnapshotView = {
