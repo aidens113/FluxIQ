@@ -117,6 +117,19 @@ describe("the runtime session listing", () => {
     await expect(service.listRuntimeSessionSummaries(project.id, { runIds: Array.from({ length: 101 }, (_, index) => `run.${index}`) })).rejects.toMatchObject({ diagnostic: { code: "runtime_sessions.filter_invalid" } });
   });
 
+  it("carries the verdict a trial's session records, and a closed code with it (t773)", async () => {
+    const service = open(tempRoot);
+    const project = await service.createProject({ name: "Listing verdict" });
+    await service.createFlow({ projectId: project.id, flowId: "flow.one", name: "One" });
+    await write(service, project.id, session("run.judged", "flow.one", 5_000, { candidateId: "candidate.v", revision: 1, execution: "succeeded", verdict: "no", verdictCode: "trial.judged_no" }));
+    await write(service, project.id, session("run.plain", "flow.one", 5_001, { candidateId: "candidate.v", revision: 2 }));
+
+    const page = await service.listRuntimeSessionSummaries(project.id, { candidateId: "candidate.v" });
+
+    expect(page.runs.find((run) => run.runId === "run.judged")?.candidateTrial).toMatchObject({ verdict: "no", verdictCode: "trial.judged_no" });
+    expect(page.runs.find((run) => run.runId === "run.plain")?.candidateTrial).not.toHaveProperty("verdict");
+  });
+
   it("rewrites a summary row written before the candidate trial was carried", async () => {
     const service = open(tempRoot);
     const project = await service.createProject({ name: "Listing migration" });

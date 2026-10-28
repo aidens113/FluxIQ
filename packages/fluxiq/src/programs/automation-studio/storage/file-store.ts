@@ -155,6 +155,9 @@ export type AutomationStudioRuntimeRunCandidateTrial = {
   start?: string;
   execution?: string;
   code?: string;
+  /** The verdict the gate gave this trial (`yes`, `no`, `unsure`, `not_judged`, `execution_failed`) and its code, written once the trial ended (t773). Absent on older sessions. */
+  verdict?: string;
+  verdictCode?: string;
 };
 
 /**
