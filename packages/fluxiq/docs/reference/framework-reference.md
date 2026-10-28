@@ -7,11 +7,11 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4225
+- Public declarations: 4230
 - Class: 144
 - Interface: 10
 - Object: 553
-- Type: 2253
+- Type: 2258
 - Type Alias: 1
 - Value: 1264
 
@@ -3013,7 +3013,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `CLIENT_GATEWAY_ACTIVITY_RESOLUTIONS` | Object | `packages/contracts/src/client-gateway.ts` | How a wait on the person ended, on the `ask` row that says so: - `answered`: the person answered (a robot check's Continue, a choice, words); - `allowed`: the person granted a permission ask; - `waited_out`: a check that clears by itself cleared while Core waited; - `declined`: the person refused, or pressed Stop at a robot check; - `timed_out`: nobody answered in time; - `cancelled`: the work stopped before anyone answered -- it was cancelled or failed while it waited, or the question could no longer be read. |
 | `CLIENT_GATEWAY_ACTIVITY_SKIP_REASONS` | Object | `packages/contracts/src/client-gateway.ts` | Why a run step was skipped rather than run, on the `step` row that says so: - `already_done`: the run already completed the step's lasting act for the same row, so it was not done again (the executor's completed-act ledger); - `already_in_state`: the step's control already showed the state it asks for, so it was not pressed (no failure, and not a lasting act this run did); - `optional_absent`: a sometimes-present step whose target was not shown; - `state_routed`: the page was elsewhere, so state routing passed the step over and the run went on at the step the page is at. Additive: a client that does not know a reason reads the row as a plain step. |
 | `CLIENT_GATEWAY_HOST_LEASE_REFUSAL_CODES` | Object | `packages/contracts/src/client-gateway.ts` | Failure codes for a command refused because of its host lease; category `blocked_by_capability_or_policy`, effect `unacted`. |
-| `CLIENT_GATEWAY_PROTOCOL_VERSION` | Object | `packages/contracts/src/client-gateway.ts` | - |
+| `CLIENT_GATEWAY_PROTOCOL_VERSION` | Object | `packages/contracts/src/client-gateway.ts` | The version the gateway stamps on its envelopes. Gateway 0.2 (hosted production plan) is additive over 0.1 and shares its major version; the versions this contract describes are `CLIENT_GATEWAY_PROTOCOL_VERSIONS`. This stays `0.1` until the gateway sends the 0.2 messages, since it is also a recorded trace's contract version. |
 | `CLIENT_GATEWAY_RECONCILE_ANSWER_METADATA_KEY` | Object | `packages/contracts/src/client-gateway.ts` | The capability metadata field a client sets to `true` to say it answers `server.reconcile_command`. Core asks only a session that declared it, on any capability; a session that did not is never asked, and a lost reply to it keeps the outcome it had (`timed_out`). |
 | `CLIENT_GATEWAY_RECONCILE_STATES` | Object | `packages/contracts/src/client-gateway.ts` | What became of one command, as the client that was sent it answers `server.reconcile_command` (state-aware recovery plan, C8 and B3). The client answers from what it kept and never by acting: - `landed`: the command finished there; `result` is the result it kept, the one whose delivery was lost; - `not_seen`: the client has no record of that id, so the act never reached it and making it again is not a second act. A client that answers this refuses the id from then on, so a copy still on its way cannot act later; - `running`: the command is still being carried out; - `unknown`: the client cannot say -- for example its record was cleared by a restart before a result was kept. Core never makes the act again on it. |
 | `CLIENT_GATEWAY_REPORTED_ACTION_STATUSES` | Object | `packages/contracts/src/client-gateway.ts` | The statuses a client may report for an action, in order of the wire: Core's own five, plus `interrupted` -- the client lost the command in flight (its background worker stopped, or its channel to the page closed) and does not know whether the act happened. Core reads `interrupted` the way it reads the wire status a client sent before it existed (state-aware recovery plan, C8 and B3): a committing act is `unknown`, its outcome uncertain (`effect: "ambiguous"`), and every other act is `failed` having done nothing (`effect: "unacted"`). Which acts commit is the domain's fact, so Core takes it from the result's `failure.effect`: only a record stating `unacted` makes it a failure, and a result that states nothing is held uncertain. A client built earlier sends `unknown` or `failed` with `payload.status: "interrupted"`, which Core still accepts and records as interrupted. |
@@ -3056,7 +3056,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ClientGatewayAppendRecordingEntryRequest` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayAuditEntry` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayCapability` | Type | `packages/contracts/src/client-gateway.ts` | - |
-| `ClientGatewayClientHello` | Type | `packages/contracts/src/client-gateway.ts` | - |
+| `ClientGatewayClientHello` | Type | `packages/contracts/src/client-gateway.ts` | `token` is the client's credential: under gateway 0.2 the connected-client credential from the connect flow (`ConnectTokenResponse.credential`), under 0.1 a trusted-client token. |
 | `ClientGatewayClientMessage` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayClientType` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayCommandClosure` | Type | `packages/fluxiq/src/client-gateway/service/command-history.ts` | How Core had stopped waiting for a command when its late result came. |
@@ -3068,11 +3068,14 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ClientGatewayEnvelope` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayEvent` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayEventHandler` | Type | `packages/contracts/src/client-gateway.ts` | - |
+| `ClientGatewayGoingAwayNotice` | Type | `packages/contracts/src/client-gateway.ts` | `server.going_away` (gateway 0.2): the server is draining. No new work is sent; the client keeps its credential and reconnects after `retryAfterMs`. |
+| `ClientGatewayHelloMetadata` | Type | `packages/contracts/src/client-gateway.ts` | A hello's metadata. Open, as in 0.1; gateway 0.2 names `clientLabel`, the person-readable name of this client ("Work laptop") that the connect consent page and the account's client list show. |
 | `ClientGatewayHostLease` | Type | `packages/contracts/src/client-gateway.ts` | The host lease a command is issued under (automation-project-agents-plan, `Host resources and concurrency`). Core's gateway stamps it from the scheduler's scope; a caller never writes it. `resourceKey` is opaque to Core and names the domain's resource (for the web extension, its automation tab); `epoch` rises every time the resource is granted again, so a client refuses a command whose epoch is lower than the highest it has seen for that key. |
 | `ClientGatewayItemKind` | Type | `packages/fluxiq/src/client-gateway/service/types.ts` | - |
 | `ClientGatewayLateActionResult` | Type | `packages/fluxiq/src/client-gateway/service/command-history.ts` | A result that arrived for a command Core no longer awaited. It names the command and how it ended, never what the client said in words: no message, payload or target, so no page data reaches the run's evidence through it. |
 | `ClientGatewayLateActionResultListener` | Type | `packages/fluxiq/src/client-gateway/service/command-history.ts` | - |
 | `ClientGatewayPairingChallenge` | Type | `packages/contracts/src/client-gateway.ts` | - |
+| `ClientGatewayPairingRequired` | Type | `packages/contracts/src/client-gateway.ts` | `server.pairing_required`. Gateway 0.2 adds `codeEntryUrl`, the same-origin path where the signed-in person types `referenceCode` (Flow B). |
 | `ClientGatewayReconcileAnswer` | Type | `packages/contracts/src/client-gateway.ts` | A client's answer to `server.reconcile_command`. `result` is present only on `landed`. |
 | `ClientGatewayReconcileRequest` | Type | `packages/contracts/src/client-gateway.ts` | Core asking a client what became of a command it sent: answered, never executed. |
 | `ClientGatewayReconcileState` | Type | `packages/contracts/src/client-gateway.ts` | - |
@@ -3080,12 +3083,14 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ClientGatewayReportedActionResult` | Type | `packages/contracts/src/client-gateway.ts` | An action result as a client sends it: Core's result, whose status may also be `interrupted`. |
 | `ClientGatewayReportedActionStatus` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayRequiredCommandContext` | Class | `packages/fluxiq/src/client-gateway/service/command-ledger/required-context.ts` | Registration validation and STOP only; the real resolver still enforces live ownership/storage. |
+| `ClientGatewayRevokedNotice` | Type | `packages/contracts/src/client-gateway.ts` | `server.revoked` (gateway 0.2): the credential this socket connected with is revoked. The gateway closes the socket after it; the client discards the credential and must connect again through the connect flow. |
 | `ClientGatewayRuntimeTransport` | Class | `packages/fluxiq/src/runtime/client-gateway-transport.ts` | - |
 | `ClientGatewayRuntimeTransportOptions` | Type | `packages/fluxiq/src/runtime/client-gateway-transport.ts` | - |
 | `ClientGatewayServerMessage` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayService` | Class | `packages/fluxiq/src/client-gateway/service.ts` | The client gateway: pairing, durable client trust, session lifecycle, and the command channel to a paired client. This class is a facade. It holds no gateway state of its own; each method forwards to the collaborator under `service/` that owns the state it touches. Its public surface is the gateway contract every program imports, so a method is added or removed here only when that contract changes — the collaborators behind it can be reshaped freely. |
 | `ClientGatewayServiceOptions` | Type | `packages/fluxiq/src/client-gateway/service/types.ts` | Construction options for `ClientGatewayService`. |
 | `ClientGatewaySession` | Type | `packages/contracts/src/client-gateway.ts` | - |
+| `ClientGatewaySessionReady` | Type | `packages/contracts/src/client-gateway.ts` | `server.session_ready`. Gateway 0.2 adds who the session acts as (`user`, `workspace`) and `credentialExpiresAt` (epoch milliseconds); a connected client's credential rotates on every connect, and `token` is then the new credential the client stores in place of the old one. |
 | `ClientGatewaySessionStatus` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewaySnapshot` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewaySnapshotView` | Type | `packages/contracts/src/client-gateway.ts` | - |

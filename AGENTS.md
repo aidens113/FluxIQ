@@ -233,6 +233,17 @@ only where the before-state cannot make a trial meaningful (a trial that would s
 already in the asked-for end state, or a toggle the next run would flip back), and it
 undoes exactly the build's own lasting acts, never what existed before the build began.
 
+**A stale target is found again from the step that found it** (user, 2026-10-28):
+targets change easily, so a step whose target came from an earlier step (a read
+list's row, a search result, a looked-up control) remembers that source step; after
+its second failed retry the run re-runs the source step internally, finds the same
+item again by its identity (never its old position or handle), and spends the
+remaining retries on the fresh target. An item truly gone is reported as gone. It
+holds on every path retries do (exploration, build trials, playback) and never
+repeats a lasting act whose earlier attempt may have landed. Core owns the generic
+mechanism (source-step lineage, re-run, rebinding, accounting); the web domain owns
+how a web target is matched again.
+
 ## Validation
 
 Before the final response for a code change, run the relevant checks and
