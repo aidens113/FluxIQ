@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4140
+- Public declarations: 4142
 - Class: 141
 - Interface: 10
 - Object: 547
-- Type: 2199
+- Type: 2200
 - Type Alias: 1
-- Value: 1242
+- Value: 1243
 
 ## Public Declarations
 
@@ -1510,6 +1510,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioFlowRegionPort` | Type | `packages/fluxiq/src/programs/automation-studio/model/regions.ts` | - |
 | `automationStudioFlowRepresentationKind` | Value | `packages/fluxiq/src/programs/automation-studio/model/flows.ts` | - |
 | `AutomationStudioFlowRepresentationKind` | Type | `packages/fluxiq/src/programs/automation-studio/model/flows.ts` | - |
+| `automationStudioFlowRequestedOutput` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-version/judged-build-trial/requested-output.ts` | - |
+| `AutomationStudioFlowRequestedOutput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-version/judged-build-trial/contracts.ts` | The records a Flow's parts owe, by the build's own declaration (header, t764). |
 | `AutomationStudioFlowResourceOffsetPage` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts` | - |
 | `AutomationStudioFlowResourcePage` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts` | - |
 | `AutomationStudioFlowRouteGroup` | Type | `packages/fluxiq/src/programs/automation-studio/model/flow-adaptation.ts` | - |

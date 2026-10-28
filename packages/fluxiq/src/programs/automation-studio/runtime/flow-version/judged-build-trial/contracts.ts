@@ -26,6 +26,9 @@ import type { AutomationStudioFlowGraphVersion } from "../contracts.ts";
 /** The metadata key the parent Flow carries the record under. */
 export const AUTOMATION_STUDIO_FLOW_JUDGED_BUILD_TRIAL_METADATA_KEY = "judgedBuildTrial";
 
+/** The records a Flow's parts owe, by the build's own declaration (header, t764). */
+export type AutomationStudioFlowRequestedOutput = { parts: Array<{ part: string; columns: string[] }> };
+
 /** The build's judged-yes trial of the Flow revision apply saved (header). */
 export type AutomationStudioFlowJudgedBuildTrial = {
   trialRunId: string;
@@ -53,6 +56,13 @@ export type AutomationStudioFlowJudgedBuildTrial = {
   /** `automationStudioFlowInstructionDigest` of the Flow's instructions, as the run's result check digests them. */
   instructionDigest: string;
   adaptationId: string;
+  /**
+   * The answers the build's task spec declared its parts owe (`answer`, t757):
+   * each part whose answer is records, by id, with its columns. A finished run
+   * is held to them (`../../result-verification/requested-output/`, t764).
+   * Absent where the build declared none, and the Flow is judged as before.
+   */
+  requestedOutput?: AutomationStudioFlowRequestedOutput;
   /** The orchestration Flow and each Subflow graph apply saved, at the revision it saved them. */
   versions: AutomationStudioFlowGraphVersion[];
 };

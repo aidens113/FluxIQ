@@ -29,6 +29,8 @@ export function automationStudioProjectSupervisorPartChange(now: AutomationStudi
   if (ours.quote.sourceId !== theirs.quote.sourceId) return { change: "changed", what: "it quotes another instruction" };
   const text = ours.quote.text === theirs.quote.text ? "same" : withinEdges(wordsOf(ours.quote.text), wordsOf(theirs.quote.text)) ? "reworded" : "changed";
   if (text === "changed") return { change: "changed", what: "its words changed by more than a word or two at their ends" };
+  // The answer a part declares it owes is what the judge holds a run to, so a proposal built for another one is not carried (t764).
+  if (!same(ours.answer ?? null, theirs.answer ?? null)) return { change: "changed", what: "its declared answer changed" };
   const facts = !same(ours.goalFacts.map(fact), theirs.goalFacts.map(fact));
   const actsNow = [...ours.lastingActs].sort();
   const actsThen = [...theirs.lastingActs].sort();

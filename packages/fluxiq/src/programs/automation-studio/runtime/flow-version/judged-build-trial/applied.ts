@@ -3,7 +3,8 @@ import type { AutomationStudioVersionedFlowDocument } from "../contracts.ts";
 import { automationStudioFlowGraphVersion } from "../flow-graph-version.ts";
 import { automationStudioFlowInstructionDigest } from "../instruction-digest.ts";
 import { automationStudioRunFlowVersions } from "../run-flow-versions.ts";
-import type { AutomationStudioFlowJudgedBuildTrial } from "./contracts.ts";
+import type { AutomationStudioFlowJudgedBuildTrial, AutomationStudioFlowRequestedOutput } from "./contracts.ts";
+import { automationStudioFlowRequestedOutput } from "./requested-output.ts";
 
 /** What apply hands over of the adaptation it is applying: its id, its audit trail and the graphs it saves. */
 export type AutomationStudioAppliedJudgedBuildTrialAdaptation = {
@@ -50,7 +51,14 @@ export async function automationStudioAppliedJudgedBuildTrial(input: {
   if (!versions.some((version) => version.revision !== null)) return undefined;
   const instructionDigest = automationStudioFlowInstructionDigest(await input.instructions());
   if (!instructionDigest) return undefined;
-  return { ...trial, instructionDigest, adaptationId: input.adaptation.adaptationId, versions };
+  const requestedOutput = declaredOutput(input.adaptation);
+  return { ...trial, instructionDigest, adaptationId: input.adaptation.adaptationId, ...(requestedOutput ? { requestedOutput } : {}), versions };
+}
+
+/** The answers the build declared, as the proposal's `created` event carries them (`project-build/promote.ts`, t764); none where absent or malformed. */
+function declaredOutput(adaptation: AutomationStudioAppliedJudgedBuildTrialAdaptation): AutomationStudioFlowRequestedOutput | undefined {
+  const candidateTrial = adaptation.auditEvents?.find((event) => event.eventType === "created")?.detail.candidateTrial;
+  return candidateTrial && typeof candidateTrial === "object" && !Array.isArray(candidateTrial) ? automationStudioFlowRequestedOutput(candidateTrial.requestedOutput) : undefined;
 }
 
 /** The yes trial the proposal's `created` event names, where it names one whole. */

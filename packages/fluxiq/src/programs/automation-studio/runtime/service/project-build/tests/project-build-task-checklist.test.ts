@@ -111,3 +111,44 @@ describe("a subflow trial's checklist", () => {
     });
   });
 });
+
+// t764: the answer a part declares reaches the judge's checklist, as a copy.
+describe("a part's declared answer", () => {
+  it("is copied into the checklist of a whole trial and of a subflow trial, and absent where none is declared", async () => {
+    const answered: AutomationStudioProjectTaskSpec = {
+      parts: [
+        { id: "p1", quote: { sourceId: "instruction", text: "list the volumes" }, goalFacts: [], lastingActs: [], answer: { kind: "records", columns: ["title", "year"] } },
+        { id: "p2", quote: { sourceId: "instruction", text: "open the index" }, goalFacts: [], lastingActs: [] }
+      ],
+      notAsked: [], digest: "spec.9"
+    };
+    const store = { read: async () => ({ record: { taskSpecs: [{ revision: 1, recordedAt: 1, taskSpec: answered }], plans: [{ revision: 1, recordedAt: 1, plan: { taskSpecDigest: "spec.9", digest: "plan.9" } }] }, returns: [] }) } as unknown as Pick<AutomationStudioProjectBuildRecordStore, "read">;
+    const environment = {};
+    AutomationStudioProjectBuildTaskChecklist.bind(environment, { records: store, ref: REF });
+    const whole = await AutomationStudioProjectBuildTaskChecklist.whole(environment);
+    expect(whole?.parts[0]).toEqual({ id: "p1", words: "list the volumes", goalFacts: [], lastingActs: [], answer: { kind: "records", columns: ["title", "year"] } });
+    expect(whole?.parts[1]).not.toHaveProperty("answer");
+    expect(whole?.parts[0]?.answer?.columns).not.toBe(answered.parts[0]!.answer!.columns);
+    const scope: AutomationStudioSubflowScope = { buildId: "build.1", briefId: "b", planDigest: "plan.9", subflowKey: "list", predecessors: [], parts: [{ partId: "p1", sourceId: "instruction", text: "list the volumes" }] };
+    const own = await AutomationStudioProjectBuildTaskChecklist.subflow({ records: store, ref: REF }, scope);
+    expect(own.parts[0]?.answer).toEqual({ kind: "records", columns: ["title", "year"] });
+  });
+});
+
+// t764: what a build saves of the declared answers.
+const partWith = (id: string, answer?: { kind: "records"; columns: string[] }) => ({ id, quote: { sourceId: "instruction", text: `words of ${id}` }, goalFacts: [], lastingActs: [], ...(answer ? { answer } : {}) });
+const specOf = (...parts: ReturnType<typeof partWith>[]): AutomationStudioProjectTaskSpec => ({ parts, notAsked: [], digest: "spec.1" } as AutomationStudioProjectTaskSpec);
+
+describe("the requested output a build saves", () => {
+  it("lists each part that declares records, in order, with a copy of its columns", () => {
+    const declared = specOf(partWith("p1", { kind: "records", columns: ["title", "year"] }), partWith("p2"), partWith("p3", { kind: "records", columns: [] }));
+    const owed = AutomationStudioProjectBuildTaskChecklist.requestedOutput(declared);
+    expect(owed).toEqual({ parts: [{ part: "p1", columns: ["title", "year"] }, { part: "p3", columns: [] }] });
+    expect(owed?.parts[0]?.columns).not.toBe(declared.parts[0]!.answer!.columns);
+  });
+
+  it("is nothing where no part declares one, or there is no task spec", () => {
+    expect(AutomationStudioProjectBuildTaskChecklist.requestedOutput(specOf(partWith("p1")))).toBeUndefined();
+    expect(AutomationStudioProjectBuildTaskChecklist.requestedOutput(undefined)).toBeUndefined();
+  });
+});

@@ -22,7 +22,8 @@ const PLAN_INPUT: JsonObject = {
               id: TEXT,
               quote: { type: "object", properties: { sourceId: TEXT, text: TEXT }, required: ["sourceId", "text"], additionalProperties: false },
               goalFacts: TEXTS,
-              lastingActs: { type: "array", items: { type: "string", enum: [...AUTOMATION_STUDIO_ACTION_CONSEQUENCES] } }
+              lastingActs: { type: "array", items: { type: "string", enum: [...AUTOMATION_STUDIO_ACTION_CONSEQUENCES] } },
+              answer: { type: "object", properties: { kind: { type: "string", enum: ["records"] }, columns: TEXTS }, required: ["kind", "columns"], additionalProperties: false }
             },
             required: ["id", "quote", "goalFacts", "lastingActs"],
             additionalProperties: false

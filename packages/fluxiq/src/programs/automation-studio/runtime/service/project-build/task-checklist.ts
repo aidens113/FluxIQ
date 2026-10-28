@@ -47,6 +47,15 @@ export const AutomationStudioProjectBuildTaskChecklist = Object.freeze({
     BOUND.set(environment, source);
   },
 
+  /**
+   * What a task spec declares its parts owe (`answer`, t757): each part whose answer is records, by id, with its columns. None where no part
+   * declares one, so a build that declared nothing saves nothing and its Flow is judged as it always was (t764; `promote.ts` saves it with the proposal).
+   */
+  requestedOutput(spec: AutomationStudioProjectTaskSpec | undefined): { parts: Array<{ part: string; columns: string[] }> } | undefined {
+    const parts = (spec?.parts ?? []).flatMap((part) => part.answer?.kind === "records" ? [{ part: part.id, columns: [...part.answer.columns] }] : []);
+    return parts.length ? { parts } : undefined;
+  },
+
   /** The checklist a whole trial is judged against: the latest task spec of the record bound to `environment`; none in a candidate build or before a spec is written. */
   async whole(environment: object): Promise<AutomationStudioBuildTestTaskChecklist | undefined> {
     const source = BOUND.get(environment);
@@ -103,5 +112,5 @@ export const AutomationStudioProjectBuildTaskChecklist = Object.freeze({
 });
 
 function checked(part: AutomationStudioProjectTaskPart): AutomationStudioBuildTestTaskChecklist["parts"][number] {
-  return { id: part.id, words: part.quote.text, goalFacts: [...part.goalFacts], lastingActs: [...part.lastingActs] };
+  return { id: part.id, words: part.quote.text, goalFacts: [...part.goalFacts], lastingActs: [...part.lastingActs], ...(part.answer ? { answer: { kind: part.answer.kind, columns: [...part.answer.columns] } } : {}) };
 }
