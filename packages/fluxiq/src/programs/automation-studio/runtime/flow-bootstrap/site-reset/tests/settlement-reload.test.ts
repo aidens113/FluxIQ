@@ -73,3 +73,96 @@ describe("an undo whose list is drawn again only on its next load (job board My 
     expect(ledger.standing("act-1")).not.toBe("restored");
   });
 });
+
+// t772 R1/R2 (rerun round 6 `run-mvrj7qg9-b6dc94f6`, cause 1): three acts witnessed on one list, one undo lands, and the
+// read in place still draws all three rows. That read is stale for settlement and reach alike
+// (`../../reset-settlement/observations.ts`), so no act is called unsettleable on it, and an undo refusal that says another
+// call on this page can meet it never lists its own act, or an act no undo was tried on, as one no call can settle.
+// Made-up fixtures: a library's reservations, opaque tokens only.
+describe("acts on a list read in place after one of their undos landed (t772 R1, R2)", () => {
+  const LIBRARY = "r:library";
+  const reservations = (subjects: string[]): AutomationStudioSiteResetRead => ({ state: {}, differs: [], resource: LIBRARY, scope: "p:reservations-page", location: "loc:reservations", collections: [list("p:reservations", subjects, "g:reservations")] });
+  const bookPage = (n: number): AutomationStudioSiteResetRead => ({ state: {}, differs: [], resource: LIBRARY, scope: `p:book-${n}`, location: `loc:book-${n}` });
+  const row = (n: number): AutomationStudioSiteResetSpot => ({ scope: "p:reservations", subject: `s:book-${n}`, item: `i:book-${n}`, resource: LIBRARY });
+  const ALL = ["s:held-a", "s:book-1", "s:book-2", "s:book-3"];
+  const ids = (entries: unknown): string[] => (Array.isArray(entries) ? entries.map((entry) => (entry as { act: string }).act) : []);
+  /** Three "Reserve" acts from each book's own page, witnessed on the reservations list read complete before them; then the list. */
+  const reserved = () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.observed(reservations(["s:held-a"]));
+    const ref = ledger.destinationReceipts()[0]!.ref;
+    for (const n of [1, 2, 3]) {
+      ledger.observed(bookPage(n));
+      ledger.explored(press(`reserve-${n}`, ["create_new"], { subject: `s:book-${n}`, page: `s:book-${n}`, resource: LIBRARY }, { resetDestination: ref }));
+    }
+    ledger.observed(reservations(ALL));
+    return ledger;
+  };
+  /** Cancels book `n`'s reservation on its row of the list, admitted and landed. */
+  const cancel = (ledger: AutomationStudioSiteResetLedger, n: number) => {
+    const admitted = ledger.target(`act-${n}`, aim(["delete"], row(n)));
+    expect(admitted).toMatchObject({ kind: "admit" });
+    ledger.explored(press(`cancel-${n}`, ["delete"], row(n), { undoes: `act-${n}`, on: (admitted as { on: NonNullable<AutomationStudioSiteResetExplored["on"]> }).on }));
+  };
+
+  it("calls no act unsettleable on the read in place, keeps every act to undo saying to load the list again, and settles them on loads", async () => {
+    const ledger = reserved();
+    cancel(ledger, 1);
+    // The read in place after the undo: the site still draws all three rows.
+    ledger.observed(reservations(ALL));
+    expect(ledger.unsatisfiable()).toEqual([]);
+    const inPlace = ledger.inPlace();
+    expect(ids(inPlace)).toEqual(["act-1", "act-2", "act-3"]);
+    for (const act of inPlace) expect(act.settle).toMatch(/only after it loads again: .*open that list's page again/u);
+    // Core's own look loads the list again: the cancelled row is gone, the other two acts stay to undo and are judged.
+    const { looked, checks } = looking(ledger, { "loc:reservations": reservations(["s:held-a", "s:book-2", "s:book-3"]) });
+    expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "refuse" });
+    expect(looked).toEqual(["loc:reservations"]);
+    expect(ledger.unsatisfiable()).toEqual([]);
+    expect(ids(ledger.inPlace())).toEqual(expect.arrayContaining(["act-2", "act-3"]));
+    for (const act of ledger.inPlace()) expect(act.settle ?? "").not.toMatch(/loads again/u);
+    // The other two undone, and the list loaded again: all three are back.
+    cancel(ledger, 2);
+    cancel(ledger, 3);
+    ledger.observed(reservations(["s:held-a", "s:book-1"]));
+    const again = looking(ledger, { "loc:reservations": reservations(["s:held-a"]) });
+    expect(await ledger.beforeTrial(again.checks)).toMatchObject({ kind: "admit" });
+    expect(again.looked).toEqual(["loc:reservations"]);
+    for (const act of ["act-1", "act-2", "act-3"]) expect(ledger.standing(act)).toBe("restored");
+  });
+
+  it("counts a read after leaving the list's page and opening it again as a load", () => {
+    const ledger = reserved();
+    cancel(ledger, 1);
+    ledger.observed(reservations(ALL));
+    expect(ids(ledger.inPlace())).toEqual(["act-1", "act-2", "act-3"]);
+    ledger.observed(bookPage(2));
+    ledger.observed(reservations(["s:held-a", "s:book-2", "s:book-3"]));
+    for (const act of ledger.inPlace()) expect(act.settle ?? "").not.toMatch(/loads again/u);
+    expect(ledger.unsatisfiable()).toEqual([]);
+  });
+
+  it("leaves a row a spent act's landed undo removed to that act, not to the others", async () => {
+    const ledger = reserved();
+    cancel(ledger, 1);
+    ledger.observed(reservations(ALL));
+    // Loaded again, and the list still holds the cancelled row: it is act-1's, so acts 2 and 3 each still have one to remove.
+    const { checks } = looking(ledger, { "loc:reservations": reservations(ALL) });
+    await ledger.beforeTrial(checks);
+    expect(ledger.unsatisfiable()).toEqual([]);
+    expect(ids(ledger.inPlace())).toEqual(expect.arrayContaining(["act-2", "act-3"]));
+  });
+
+  it("never lists, beside an undo refusal another call on this page can meet, its own act or an untried act as unsettleable", () => {
+    const ledger = reserved();
+    cancel(ledger, 1);
+    ledger.observed(reservations(ALL));
+    // An undo of act-2 declared with no lasting class: refused, and another call on this page can meet it.
+    const refused = ledger.target("act-2", aim([], row(2)));
+    expect(refused).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_unproved", canMeet: "this_page" } });
+    const evidence = (refused as { evidence: { actsUnsettleable?: unknown; actsToUndo?: unknown } }).evidence;
+    expect(ids(evidence.actsUnsettleable)).not.toContain("act-2");
+    expect(ids(evidence.actsUnsettleable)).not.toContain("act-3");
+    expect(ids(evidence.actsToUndo)).toEqual(expect.arrayContaining(["act-2", "act-3"]));
+  });
+});

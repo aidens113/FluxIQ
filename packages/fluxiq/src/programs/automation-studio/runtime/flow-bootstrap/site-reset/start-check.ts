@@ -65,6 +65,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioActionPermissionDenied } from "../../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, runAsAutomationStudioCoreMove, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool } from "../../llm/index.ts";
+import { automationStudioSiteResetValuesOf as valuesOf } from "../reset-settlement/index.ts";
 import type { AutomationStudioSiteResetComparison, AutomationStudioSiteResetLines, AutomationStudioSiteResetPlace, AutomationStudioSiteResetRead, AutomationStudioSiteResetReadAnswer } from "./contracts.ts";
 
 type Execute = (call: { callId: string; toolId: string; value: JsonObject; signal?: AbortSignal }) => Promise<unknown>;
@@ -142,7 +143,7 @@ export class AutomationStudioSiteResetStartCheck {
       const items = stringsOf(read.items);
       const subjects = stringsOf(read.subjects);
       for (const item of items ?? []) this.seen.add(item);
-      return this.steady({ state: structuredClone(read.state), differs: [...read.differs], ...(typeof read.location === "string" && read.location ? { location: read.location } : {}), ...(lines ? { lines } : {}), ...(items ? { items: [...new Set(items)] } : {}), ...(subjects ? { subjects: [...new Set(subjects)] } : {}), ...(typeof read.scope === "string" ? { scope: read.scope } : {}), ...(typeof read.resource === "string" && /^[A-Za-z0-9:_-]{1,128}$/u.test(read.resource) ? { resource: read.resource } : {}), ...(collectionsOf(read.collections) ? { collections: collectionsOf(read.collections)! } : {}), ...(controlsOf(read.controls) ? { controls: controlsOf(read.controls)! } : {}) });
+      return this.steady({ state: structuredClone(read.state), differs: [...read.differs], ...(typeof read.location === "string" && read.location ? { location: read.location } : {}), ...(lines ? { lines } : {}), ...(items ? { items: [...new Set(items)] } : {}), ...(subjects ? { subjects: [...new Set(subjects)] } : {}), ...(typeof read.scope === "string" ? { scope: read.scope } : {}), ...(typeof read.resource === "string" && /^[A-Za-z0-9:_-]{1,128}$/u.test(read.resource) ? { resource: read.resource } : {}), ...(collectionsOf(read.collections) ? { collections: collectionsOf(read.collections)! } : {}), ...(controlsOf(read.controls) ? { controls: controlsOf(read.controls)! } : {}), ...(valuesOf(read.values) ? { values: valuesOf(read.values)! } : {}) });
     } catch (error) {
       if (signal?.aborted) throw error;
       this.lastFailure = error;

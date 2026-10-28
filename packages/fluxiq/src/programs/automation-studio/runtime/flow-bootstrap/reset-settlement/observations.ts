@@ -16,6 +16,21 @@
 //   lasting call or trial landed after it), and where it was read. A malformed
 //   group (`./collection-groups.ts`) is read as holding nothing, so no earlier
 //   witness survives it.
+// - **A list read in place after an undo is stale (t772 R1).** Many sites draw
+//   a removal only on the list's next load, so a read in place just after an
+//   undo landed can still show the removed row (rerun round 6
+//   `run-mvrj7qg9-b6dc94f6`: three acts were called unsettleable on such a
+//   read). A read loads its page when it is made at another location than the
+//   read before it, or during Core's own look there (`loading`, `./judge.ts`
+//   `lookFirst`). A read with no location is judged as read, as before: no one,
+//   Core included, could open its page again, so holding it as in place would
+//   leave its acts open for good. Per group this keeps how many undos had
+//   landed on the acts it witnesses at its latest load (`loads`, counted by the
+//   judge, which knows the acts); a group whose latest read came after more
+//   landed undos than that was read in place after one, and is stale for
+//   settlement and reach alike
+//   (`readInPlace`): the one fact `./judge.ts` (`evaluate`, `lookFirst`) and
+//   `../site-reset/undo-reach.ts` read, with no second copy.
 
 import { automationStudioSiteResetInvalidCollectionGroups as invalidCollectionGroups, type AutomationStudioSiteResetCollection } from "./collection-groups.ts";
 
@@ -36,6 +51,29 @@ export class AutomationStudioSiteResetObservations {
   readonly currentStates = new Map<string, ReadonlyMap<string, string>>();
   readonly currentGroups = new Map<string, string>();
   readonly latestGroupScopes = new Map<string, ReadonlySet<string>>();
+  /** Where the latest read with a location was made, and where Core's own look is loading the page now (header). */
+  private shownAt: string | undefined;
+  private loadingAt: string | undefined;
+  /** Groups the latest read loaded, not yet counted (`loads`). */
+  private loadedNow: string[] = [];
+  /** Per group, the undos landed on the acts it witnesses at its latest load (header). */
+  private readonly loadedUndos = new Map<string, number>();
+
+  /** Core's own look is loading `location` (header): a read there loads it, though the read before was there too. Undefined: the look is over. */
+  loading(location: string | undefined): void {
+    this.loadingAt = location;
+  }
+
+  /** Counts, for each group the latest read loaded, the undos landed on the acts it witnesses now (`undos`, the judge's); after every read (header). */
+  loads(undos: (group: string) => number): void {
+    for (const group of this.loadedNow) this.loadedUndos.set(group, undos(group));
+    this.loadedNow = [];
+  }
+
+  /** Whether `group`'s latest read was made in place after an undo landed on an act it witnesses (`undos` landed now): stale for settlement and reach (header). */
+  readInPlace(group: string, undos: number): boolean {
+    return undos > (this.loadedUndos.get(group) ?? 0);
+  }
 
   /** Original project evidence predates every lasting act; adoption never changes current observations. */
   adopt(collections: readonly AutomationStudioSiteResetCollection[]): void {
@@ -71,6 +109,11 @@ export class AutomationStudioSiteResetObservations {
       this.groupClock.set(group, clock);
       if (read.location) this.groupLocation.set(group, read.location);
     }
+    // A read at another location than the one before it, or during Core's look there, loaded its page (header). A read
+    // with no location is judged as read (header), and leaves the page taken to be where it was.
+    const load = read.location === undefined || read.location !== this.shownAt || read.location === this.loadingAt;
+    this.loadedNow = load ? [...observed.keys()] : [];
+    if (read.location !== undefined) this.shownAt = read.location;
     return new Set(observed.keys());
   }
 

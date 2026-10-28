@@ -51,7 +51,7 @@ describe("an act whose differing list no undo can put back is gate_unsatisfiable
     const acts = apart("rate", "press \"Rate\" button");
     expect(ledger.unsatisfiable()).toEqual(acts);
     expect(ledger.inPlace()).toEqual([]);
-    expect(ledger.standing("act-1")).toBe("in_place");
+    expect(ledger.standing("act-1")).toBe("unsettleable");
     for (let ask = 0; ask < 2; ask += 1) expect(await ledger.beforeTrial(compare)).toEqual(honestExit(acts));
     // cannotUndo never settles it, and an undo of the row is refused unrun, its refusal listing the act apart, not to undo.
     expect(await ledger.beforeTrial(compare, ["act-1"])).toEqual(honestExit(acts));

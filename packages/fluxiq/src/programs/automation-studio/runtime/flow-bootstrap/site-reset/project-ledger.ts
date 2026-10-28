@@ -20,8 +20,11 @@
 //   a write never starts before the one before it ended. Each write holds the
 //   whole snapshot, so a later write still runs after a failed one; the first
 //   failure is kept and thrown from `flushed()`, never dropped.
-// - **A snapshot for the build record**: every act with its owner, and whether
-//   its brief still has it to undo.
+// - **A snapshot for the build record**: every act with its owner, whether
+//   its brief still has it to undo (`inPlace`), and whether it is left on the
+//   site as its brief's settlement answers it (`left`, t772 w7,
+//   `./leftover.ts`): `no` once settled, `possibly` with the condition it
+//   failed (`failed`) once closed as one no call can settle.
 // - **A brief's ledger records possibly lasting acts** (t593, `./ledger.ts`):
 //   a press with an effect that declared no lasting class. The snapshot marks
 //   each `possible`; it is never in place to undo, so it refuses nothing, and
@@ -47,6 +50,7 @@ import { AutomationStudioSiteResetCreateBaselines } from "./create-baselines.ts"
 import { AutomationStudioSiteResetControlWitnesses } from "./control-witnesses.ts";
 import { automationStudioSiteResetWitnessStampValid } from "../reset-admission/index.ts";
 import type { AutomationStudioSiteResetRead, AutomationStudioSiteResetUnsettleableAct } from "./contracts.ts";
+import type { AutomationStudioSiteResetLeftover } from "./leftover.ts";
 import { AutomationStudioSiteResetReach, automationStudioSiteResetInvalidCollectionGroups, type AutomationStudioSiteResetIssuedRef } from "../reset-settlement/index.ts";
 import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetRecordedAct } from "./ledger.ts";
 
@@ -58,7 +62,8 @@ export type AutomationStudioSiteResetProjectAct = Omit<AutomationStudioSiteReset
 
 /** The build's ledger as the build record keeps it. */
 export type AutomationStudioSiteResetProjectSnapshot = {
-  acts: Array<AutomationStudioSiteResetProjectAct & { inPlace: boolean }>;
+  /** `inPlace`: its brief still has it to undo; `left`, and `failed` where it is closed as one no call can settle: whether it is left, as its brief's settlement answers it (header, t772 w7). */
+  acts: Array<AutomationStudioSiteResetProjectAct & { inPlace: boolean; left: AutomationStudioSiteResetLeftover["left"]; failed?: AutomationStudioSiteResetUnsettleableAct["failed"] }>;
   /** The number the next recorded act will take. */
   nextAct: number;
 };
@@ -137,10 +142,16 @@ export class AutomationStudioSiteResetProjectLedger {
     return true;
   }
 
-  /** Every act of the build in the order recorded, with its owner and whether its brief still has it to undo. */
+  /** Every act of the build in the order recorded, with its owner, whether its brief still has it to undo, and whether it is left (header, t772 w7). */
   snapshot(): AutomationStudioSiteResetProjectSnapshot {
-    const inPlace = new Set([...this.briefs.values()].flatMap((ledger) => ledger.inPlace().map((act) => act.act)));
-    return { acts: this.acts.map((act) => ({ ...structuredClone(act), inPlace: inPlace.has(act.act) })), nextAct: this.next };
+    return {
+      acts: this.acts.map((act) => {
+        // Its own brief's one answer, which that brief's acts to undo and acts listed apart read too (`./leftover.ts`).
+        const left = this.briefs.get(act.owner)?.leftover(act.act);
+        return { ...structuredClone(act), inPlace: left?.standing === "in_place", left: left?.left ?? "yes", ...(left?.standing === "unsettleable" ? { failed: left.failed } : {}) };
+      }),
+      nextAct: this.next
+    };
   }
 
   /** Every act of the build no call can settle, each with its closed condition, in brief order (header, t743). */

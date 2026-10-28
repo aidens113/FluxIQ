@@ -5,7 +5,7 @@
 // through `namedAct`.
 
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
-import type { AutomationStudioSiteResetPress } from "../reset-settlement/index.ts";
+import type { AutomationStudioSiteResetPress, AutomationStudioSiteResetValueWitness } from "../reset-settlement/index.ts";
 import type { AutomationStudioSiteResetPlace, AutomationStudioSiteResetSpot } from "./contracts.ts";
 import type { AutomationStudioSiteResetControlOriginal } from "./control-witnesses.ts";
 
@@ -51,6 +51,8 @@ export type AutomationStudioSiteResetLedgerAct = {
   controlOriginal?: AutomationStudioSiteResetControlOriginal;
   /** One control at its place flipped from `from` to `to` (L1); only for an act that declared exactly `modify_existing`. */
   toggle?: { page: string; place: string; from: string; to: string };
+  /** The shown values its press replaced, while nothing else witnesses it (`../reset-settlement/judge.ts`, t772); only for an act that declared exactly `modify_existing`. */
+  value?: AutomationStudioSiteResetValueWitness;
   /** Its own control answered a state that is neither the build's nor the act's, so it cannot be pressed back (`./undo-reach.ts`, t748); cleared once a press back is admitted. */
   pressBackRefused?: true;
   /** A read after it showed one of its witnesses changed. */

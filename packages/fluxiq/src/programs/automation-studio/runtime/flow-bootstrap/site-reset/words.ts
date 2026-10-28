@@ -244,7 +244,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
    */
   retryRefused(call: string, refs: readonly AutomationStudioSiteResetIssuedRef[]): string {
     return `The call ${JSON.stringify(call)} was refused for want of a resetDestination ref, and this complete read issued ${refs.length === 1 ? "a ref" : "refs"}: ${refList(refs, true)}. `
-      + "If what that call makes or changes would show in one of these lists, go back to where it was refused and make that call again, the same as before, naming that list's ref as resetDestination; do not read the list again first. "
+      + "If what that call makes or changes would show in one of these lists, go back to that page, look again, and press the same control by its handle in the newest view, naming that list's ref as resetDestination; do not read the list again first. "
       + `If none of them is where its effect would show, read that list completely, then make the call again naming the ref that read issues. ${SHOWS}`;
   },
   /**

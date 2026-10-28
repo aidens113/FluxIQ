@@ -10,6 +10,7 @@ import {
   type AutomationStudioSiteResetExplored,
   type AutomationStudioSiteResetRead,
   type AutomationStudioSiteResetSpot,
+  type AutomationStudioSiteResetTarget,
   type AutomationStudioSiteResetTrialAct
 } from "../index.ts";
 
@@ -153,6 +154,65 @@ it("witnesses a looped pass that pressed another item by that item's own control
   expect(supervisor.target("act-1", { effect: "mutate", consequences: ["modify_existing"], control: { resource: SITE, place: "pl:star", state: "st:on" } })).toMatchObject({ kind: "admit" });
   supervisor.observed(item("p:b", "loc:b", "st:off"));
   expect(supervisor.standing("act-1")).toBe("restored");
+});
+
+// t772 (rerun round 6 debug, cause 1): the web domain hashes a control's place from its page's address, so two items' controls
+// have distinct place tokens. A looped pass that pressed another item than the receipt's takes its original from its own
+// press at its own place: never the receipt's place, which no read of the pass's item reports. Before t772 its original was
+// filed under the receipt's place while its toggle sat at its own, so settlement asked to press it back forever while the
+// undo admission answered it was already back.
+it("witnesses a looped pass that pressed another item at its own place when items' controls have distinct places", () => {
+  const project = new AutomationStudioSiteResetProjectLedger();
+  const builder = project.forBrief("builder");
+  const item = (scope: string, location: string, place: string, state: string) => page(scope, location, undefined, { [place]: { [state]: 1 } });
+  builder.observed(item("p:a", "loc:a", "pl:star-a", "st:off"));
+  const witness = builder.admitStep({ effect: "mutate", consequences: ["modify_existing"], control: { name: "Star", kind: "button", resource: SITE, subject: "s:item", place: "pl:star-a", state: "st:off" } });
+  expect(witness).toEqual({ via: "control", ref: "control-1" });
+  const supervisor = project.forBrief("supervisor");
+  supervisor.trialRan([{ step: 2, definitionId: "demo.star", consequences: ["modify_existing"], witness: witness!, spot: { resource: SITE, place: "pl:star-b", state: "st:off" }, controls: { page: "p:b", location: "loc:b", before: { "st:off": 1 }, after: { "st:on": 1 } } }]);
+  expect(supervisor.inPlace()[0]?.settle).toContain("loc:b");
+  expect(supervisor.inPlace()[0]?.settle).not.toContain("loc:a");
+  supervisor.observed(item("p:a", "loc:a", "pl:star-a", "st:off"));
+  expect(supervisor.standing("act-1")).toBe("in_place");
+  supervisor.observed(item("p:b", "loc:b", "pl:star-b", "st:on"));
+  expect(supervisor.standing("act-1")).toBe("in_place");
+  // Pressed back at the pass's own place, as the domain declares it there.
+  const undo = { effect: "mutate" as const, consequences: ["modify_existing" as const], control: { name: "Star", kind: "button", resource: SITE, place: "pl:star-b", state: "st:on" } };
+  expect(supervisor.target("act-1", undo)).toMatchObject({ kind: "admit", on: "own" });
+  supervisor.explored({ callId: "back", toolId: "core.run_node", landed: true, undoes: "act-1", on: "own", operation: "demo.press", declared: { permitted: true, effect: "mutate", consequences: ["modify_existing"], control: undo.control, verb: "press" } });
+  supervisor.observed(item("p:b", "loc:b", "pl:star-b", "st:off"));
+  expect(supervisor.standing("act-1")).toBe("restored");
+  expect(supervisor.unsatisfiable()).toEqual([]);
+  // Nothing is owed: a further press there is answered as already back, met by no call.
+  expect(supervisor.target("act-1", { ...undo, control: { ...undo.control, state: "st:off" } })).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_already_back", canMeet: "no_call" } });
+});
+
+// t772 w9 (headed photo-dialog-act): the pass's own counts, read just before the build first pressed that item, are that
+// place's original for the whole build. A later step on the same control -- the item's own page, opened only after the trial
+// -- is stamped by them, never refused unwitnessed (which hid the pass's act still to undo), and never by the read that
+// shows the trial's own press.
+it("stamps a later step on a looped pass's item by that pass's own pre-press counts, never by a read after it", () => {
+  const project = new AutomationStudioSiteResetProjectLedger();
+  const builder = project.forBrief("builder");
+  const item = (scope: string, location: string, place: string, state: string) => page(scope, location, undefined, { [place]: { [state]: 1 } });
+  builder.observed(item("p:a", "loc:a", "pl:star-a", "st:off"));
+  const witness = builder.admitStep({ effect: "mutate", consequences: ["modify_existing"], control: { name: "Star", kind: "button", resource: SITE, subject: "s:item", place: "pl:star-a", state: "st:off" } });
+  builder.trialRan([{ step: 2, definitionId: "demo.star", consequences: ["modify_existing"], witness: witness!, spot: { resource: SITE, place: "pl:star-b", state: "st:off" }, controls: { page: "p:b", location: "loc:b", before: { "st:off": 1 }, after: { "st:on": 1 } } }]);
+  // The item's own page, first read after the trial: it shows the pass's press.
+  builder.observed(item("p:b-own", "loc:b", "pl:star-b", "st:on"));
+  const twin = builder.admitStep({ effect: "mutate", consequences: ["modify_existing"], control: { name: "Star", kind: "button", resource: SITE, subject: "s:item", place: "pl:star-b", state: "st:on" } });
+  expect(twin).toEqual({ via: "control", ref: "control-2" });
+  expect(project.stepWitnessResolves(twin)).toBe(true);
+  // The pass's act is still the one to undo at its item.
+  expect(builder.inPlace().map((act) => act.act)).toEqual(["act-1"]);
+  builder.observed(item("p:b-own", "loc:b", "pl:star-b", "st:off"));
+  expect(builder.standing("act-1")).toBe("restored");
+  // The twin's own trial act is judged against the state the build found: on is in place, off is restored.
+  builder.trialRan([{ step: 2, definitionId: "demo.star", consequences: ["modify_existing"], witness: twin!, spot: { resource: SITE, place: "pl:star-b", state: "st:off" }, controls: { page: "p:b-own", location: "loc:b", before: { "st:off": 1 }, after: { "st:on": 1 } } }]);
+  builder.observed(item("p:b-own", "loc:b", "pl:star-b", "st:on"));
+  expect(builder.standing("act-2")).toBe("in_place");
+  builder.observed(item("p:b-own", "loc:b", "pl:star-b", "st:off"));
+  expect(builder.standing("act-2")).toBe("restored");
 });
 
 it("never settles or infers an inverse from another resource's colliding control tokens", () => {
@@ -368,5 +428,70 @@ describe("a project build's entry and trial acts take their stamps (office round
     expect(project.issuedRefs()).toEqual(issued);
     expect(project.forBrief("brief-1").issuedRefs()).toEqual(issued);
     expect(project.forBrief("brief-2").issuedRefs()).toEqual(issued);
+  });
+});
+
+// The undo admission and the settlement read one act's own control the same way (t772, rerun round 6 debug, cause 1).
+// Whatever the shape of the act -- a looped pass on the explored item or on another one, items whose controls share one
+// place token or have one each, the brief that read the receipt or another, a first trial or a repeat on an item the build
+// already pressed -- once an undo of it landed and a fresh read came in, an undo the admission answers already back must
+// find the act settled `restored`, or listed apart as no call can settle it: never still open and asked to press it back.
+// Made-up fixture: a library catalogue whose entries a reader reserves, on two entries' own pages; opaque tokens only.
+describe("an undo answered already back finds its act settled or closed, never open (t772)", () => {
+  const LIBRARY = "r:library";
+  type Item = { scope: string; location: string; place: string };
+  const read = (item: Item, state: string): AutomationStudioSiteResetRead => ({ state: {}, differs: [], resource: LIBRARY, scope: item.scope, location: item.location, controls: { [item.place]: { [state]: 1 } } });
+  const reserve = (item: Item, state: string) => ({ effect: "mutate" as const, consequences: ["modify_existing" as const], control: { name: "Reserve", kind: "button", resource: LIBRARY, place: item.place, state } });
+  const code = (answer: AutomationStudioSiteResetTarget): string | undefined => (answer.kind === "refused" && typeof answer.evidence.code === "string" ? answer.evidence.code : undefined);
+
+  type Shape = { places: "shared" | "distinct"; pass: "explored" | "other"; brief: "builder" | "supervisor"; trials: 1 | 2; seenSet: boolean; fresh: "st:free" | "st:held" };
+  const shapes: Shape[] = [];
+  for (const places of ["shared", "distinct"] as const)
+    for (const pass of ["explored", "other"] as const)
+      for (const brief of ["builder", "supervisor"] as const)
+        for (const trials of [1, 2] as const)
+          for (const seenSet of [false, true])
+            for (const fresh of ["st:free", "st:held"] as const) shapes.push({ places, pass, brief, trials, seenSet, fresh });
+
+  /** Runs one shape to its last act's fresh read and the admission's answer to a press on what that read showed. */
+  function run(shape: Shape): { ledger: AutomationStudioSiteResetLedger; act: string; answer: AutomationStudioSiteResetTarget } {
+    const explored: Item = { scope: "p:entry-1", location: "loc:entry-1", place: shape.places === "shared" ? "pl:reserve" : "pl:reserve-1" };
+    const other: Item = { scope: "p:entry-2", location: "loc:entry-2", place: shape.places === "shared" ? "pl:reserve" : "pl:reserve-2" };
+    const pressed = shape.pass === "explored" ? explored : other;
+    const project = new AutomationStudioSiteResetProjectLedger();
+    const builder = project.forBrief("builder");
+    builder.observed(read(explored, "st:free"));
+    const witness = builder.admitStep({ ...reserve(explored, "st:free"), control: { ...reserve(explored, "st:free").control, subject: "s:entry" } });
+    expect(witness).toEqual({ via: "control", ref: "control-1" });
+    const ledger = shape.brief === "builder" ? builder : project.forBrief("supervisor");
+    let act = "";
+    for (let trial = 1; trial <= shape.trials; trial += 1) {
+      const named = ledger.trialRan([{ step: 2, definitionId: "demo.reserve", consequences: ["modify_existing"], witness: witness!, spot: { resource: LIBRARY, place: pressed.place, state: "st:free" }, controls: { page: pressed.scope, location: pressed.location, before: { "st:free": 1 }, after: { "st:held": 1 } } }]);
+      act = named.at(-1)!.act;
+      if (shape.seenSet) ledger.observed(read(pressed, "st:held"));
+      // Its undo, pressed back at the pass's own place, lands.
+      const undo = reserve(pressed, "st:held");
+      expect(ledger.target(act, undo)).toMatchObject({ kind: "admit", on: "own" });
+      ledger.explored({ callId: `back-${trial}`, toolId: "core.run_node", landed: true, undoes: act, on: "own", operation: "demo.press", declared: { permitted: true, ...undo, verb: "press" } });
+      // A fresh read of the pressed entry.
+      ledger.observed(read(pressed, trial < shape.trials ? "st:free" : shape.fresh));
+    }
+    return { ledger, act, answer: ledger.target(act, reserve(pressed, shape.fresh)) };
+  }
+
+  it.each(shapes.map((shape) => [JSON.stringify(shape), shape] as const))("%s", (_name, shape) => {
+    const { ledger, act, answer } = run(shape);
+    if (code(answer) !== "candidate.undo_already_back") {
+      // Read still in the state the act set: the press back is its own, and nothing is closed.
+      expect(shape.fresh).toBe("st:held");
+      return;
+    }
+    const closed = ledger.unsatisfiable().some((entry) => entry.act === act);
+    expect(ledger.standing(act) === "restored" || closed).toBe(true);
+    expect(ledger.inPlace().some((entry) => entry.act === act)).toBe(false);
+  });
+
+  it("is not vacuous: every shape whose fresh read shows the entry as found is answered already back", () => {
+    for (const shape of shapes.filter((entry) => entry.fresh === "st:free")) expect(code(run(shape).answer), JSON.stringify(shape)).toBe("candidate.undo_already_back");
   });
 });

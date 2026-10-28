@@ -105,7 +105,7 @@ describe("a list Core's own look cannot read again (photo r4)", () => {
     expect(looked).toEqual(["loc:overlay"]);
     expect(ledger.inPlace()).toEqual([]);
     expect(ledger.unsatisfiable()).toEqual(apart);
-    expect(ledger.standing("act-1")).toBe("in_place");
+    expect(ledger.standing("act-1")).toBe("unsettleable");
     // cannotUndo never settles it either, and every answer listing the acts to undo lists it apart.
     expect(await ledger.beforeTrial(checks, ["act-1"])).toMatchObject({ kind: "refuse", evidence: { failed: "acts_unsettleable", actsUnsettleable: apart } });
     expect(ledger.claim("act-9")).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_unknown_act", actsToUndo: [], actsUnsettleable: apart } });

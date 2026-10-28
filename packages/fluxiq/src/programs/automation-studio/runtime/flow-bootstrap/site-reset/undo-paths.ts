@@ -30,6 +30,7 @@ type Act = {
   spot?: AutomationStudioSiteResetSpot | undefined;
   chain?: "own" | "created" | undefined;
   transfer?: object | undefined;
+  value?: object | undefined;
 };
 
 /** The classes after which a removal on a destination the act named is admitted (t743). */
@@ -65,6 +66,15 @@ export const AUTOMATION_STUDIO_SITE_RESET_UNDO_PATHS = {
   /** `subject`, the removal on a destination (t743): a strict act that created or changed something. */
   removesOnDestination(act: Act): boolean {
     return act.strictReset && act.consequences.some((consequence) => CHANGED.has(consequence));
+  },
+  /** `own` and `step` by a value (t772): the act is witnessed by the shown values its press replaced (`../reset-settlement/judge.ts`). */
+  valued(act: Act): boolean {
+    return act.value !== undefined;
+  },
+  /** `own` by a value (t772): the act's own control has every token a press on it is told apart by -- resource, page, place and state. */
+  ownControl(act: Act): boolean {
+    const spot = act.spot;
+    return spot?.resource !== undefined && spot.scope !== undefined && spot.place !== undefined && spot.state !== undefined;
   },
   /** The removal on a destination (t743): `scope` is a list the act named, or one the explored acts it repeats lend it (`lent`). */
   named(act: Act, lent: ReadonlyArray<{ scope: string }> | undefined, scope: string): boolean {

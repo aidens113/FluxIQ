@@ -5,7 +5,9 @@ import {
   AutomationStudioSiteResetProjectLedger,
   type AutomationStudioSiteResetComparison,
   type AutomationStudioSiteResetExplored,
-  type AutomationStudioSiteResetProjectSnapshot
+  type AutomationStudioSiteResetProjectSnapshot,
+  type AutomationStudioSiteResetRead,
+  type AutomationStudioSiteResetSpot
 } from "../index.ts";
 
 // The build's ledger as a project's briefs drive it: each brief's own ledger,
@@ -40,10 +42,10 @@ describe("project site reset ledger", () => {
     expect(project.snapshot()).toEqual({
       nextAct: 5,
       acts: [
-        { act: "act-1", did: "press \"Save\" button", call: "find.1", owner: "brief.find", ref: "find.1", undoable: true, inPlace: true },
-        { act: "act-2", did: "press \"Save\" button", call: "add.1", owner: "brief.add", ref: "add.1", undoable: true, inPlace: true },
-        { act: "act-3", did: "press \"Save\" button", call: "find.2", owner: "brief.find", ref: "find.2", undoable: true, inPlace: true },
-        { act: "act-4", did: "trial step 2 \"Add\"", owner: "brief.add", ref: "trial.1#step-2", undoable: true, inPlace: true }
+        { act: "act-1", did: "press \"Save\" button", call: "find.1", owner: "brief.find", ref: "find.1", undoable: true, inPlace: true, left: "yes" },
+        { act: "act-2", did: "press \"Save\" button", call: "add.1", owner: "brief.add", ref: "add.1", undoable: true, inPlace: true, left: "yes" },
+        { act: "act-3", did: "press \"Save\" button", call: "find.2", owner: "brief.find", ref: "find.2", undoable: true, inPlace: true, left: "yes" },
+        { act: "act-4", did: "trial step 2 \"Add\"", owner: "brief.add", ref: "trial.1#step-2", undoable: true, inPlace: true, left: "yes" }
       ]
     });
   });
@@ -121,10 +123,11 @@ describe("a project build's possibly lasting acts (t593)", () => {
     const find = project.forBrief("brief.find");
     find.explored(acted("find.1", []));
     find.explored(acted("find.2", ["create_new"]));
-    expect(project.snapshot().acts.map((act) => ({ act: act.act, possible: act.possible, inPlace: act.inPlace }))).toEqual([
-      { act: "act-1", possible: true, inPlace: false },
-      { act: "act-2", possible: undefined, inPlace: true }
+    expect(project.snapshot().acts.map((act) => ({ act: act.act, possible: act.possible, inPlace: act.inPlace, left: act.left }))).toEqual([
+      { act: "act-1", possible: true, inPlace: false, left: "possibly" },
+      { act: "act-2", possible: undefined, inPlace: true, left: "yes" }
     ]);
+    expect(find.leftover("act-1")).toEqual({ left: "possibly", standing: "possible" });
     expect(find.possiblyInPlace().map((act) => act.act)).toEqual(["act-1"]);
   });
 });
@@ -155,4 +158,102 @@ it("rejects duplicate original scopes before project Map normalization without r
     whole.observed({ state: {}, differs: [], collections: [origin, sibling] }, false);
     expect((await whole.beforeTrial(back)).kind).toBe(validFirst ? "admit" : "refuse");
   }
+});
+
+// t772 w7 (rerun round 6 `run-mvrj7qgf-a44a1427`, contributing cause): the ending told the person a change was left that
+// settlement had put back. What the ledger reports as left -- its `leftover`, `standing`, the project snapshot and the acts
+// a trial returns as left -- is decided by the one function its settlement answers (`inPlace`, `unsatisfiable`) read:
+// settled is never left, closed unsatisfiable is possibly left with its failed condition, open is left. Made-up fixtures: a
+// library's reading list and a book's Reserve control, opaque tokens only.
+describe("what the ledger reports as left agrees with settlement (t772 w7)", () => {
+  const LIBRARY = "r:library";
+  type Row = [subject: string, state: string];
+  const ROWS: Row[] = [["s:atlas", "v:unread"], ["s:primer", "v:unread"]];
+  const reading = (rows: Row[]): AutomationStudioSiteResetRead => ({ state: {}, differs: [], resource: LIBRARY, scope: "p:reading-page", location: "loc:reading", collections: [{ scope: "p:reading", group: "g:reading", subjects: rows.map(([subject]) => subject), states: Object.fromEntries(rows) }] });
+  const book = (scope: string, location: string, place: string, state: string): AutomationStudioSiteResetRead => ({ state: {}, differs: [], resource: LIBRARY, scope, location, controls: { [place]: { [state]: 1 } } });
+  const ATLAS: AutomationStudioSiteResetSpot = { subject: "s:atlas", page: "s:atlas", resource: LIBRARY };
+  const pressed = (callId: string, consequences: AutomationStudioActionConsequence[], spot: AutomationStudioSiteResetSpot, extra: Partial<AutomationStudioSiteResetExplored> = {}): AutomationStudioSiteResetExplored =>
+    ({ callId, toolId: "core.run_node", landed: true, operation: "demo.press", declared: { permitted: true, effect: "mutate", consequences, control: { name: "Reserve", kind: "button", ...spot }, verb: "press" }, ...extra });
+  /** Every way the ledger tells where an act stands says the same thing (header). */
+  const agrees = (project: AutomationStudioSiteResetProjectLedger) => {
+    for (const act of project.snapshot().acts) {
+      const brief = project.forBrief(act.owner);
+      const left = brief.leftover(act.act)!;
+      expect(brief.standing(act.act)).toBe(left.standing);
+      expect(act.inPlace).toBe(left.standing === "in_place");
+      expect(act.left).toBe(left.left);
+      expect(brief.inPlace().some((entry) => entry.act === act.act)).toBe(left.standing === "in_place");
+      const apart = brief.unsatisfiable().find((entry) => entry.act === act.act);
+      expect(apart?.failed).toBe(left.standing === "unsettleable" ? left.failed : undefined);
+      expect(act.failed).toBe(apart?.failed);
+    }
+  };
+
+  it("never reports an act undone and settled restored as left", () => {
+    const project = new AutomationStudioSiteResetProjectLedger();
+    const lend = project.forBrief("brief.lend");
+    const RESERVE: AutomationStudioSiteResetSpot = { ...ATLAS, place: "pl:reserve", state: "st:free" };
+    lend.observed(book("p:atlas", "loc:atlas", "pl:reserve", "st:free"));
+    lend.explored(pressed("reserve", ["modify_existing"], RESERVE));
+    lend.observed(book("p:atlas", "loc:atlas", "pl:reserve", "st:held"));
+    expect(lend.leftover("act-1")).toEqual({ left: "yes", standing: "in_place" });
+    agrees(project);
+    const undo = { effect: "mutate" as const, consequences: ["modify_existing" as const], control: { ...RESERVE, state: "st:held" } };
+    expect(lend.target("act-1", undo)).toMatchObject({ kind: "admit", on: "own" });
+    lend.explored(pressed("cancel", ["modify_existing"], undo.control, { undoes: "act-1", on: "own" }));
+    lend.observed(book("p:atlas", "loc:atlas", "pl:reserve", "st:free"));
+    expect(lend.leftover("act-1")).toEqual({ left: "no", standing: "restored" });
+    expect(project.snapshot().acts).toEqual([expect.objectContaining({ act: "act-1", inPlace: false, left: "no" })]);
+    agrees(project);
+    expect(lend.trialRan([], "trial-1")).toEqual([]);
+  });
+
+  it("never reports an act settled unchanged as left: not among the acts a trial returns as left", () => {
+    const project = new AutomationStudioSiteResetProjectLedger();
+    const lend = project.forBrief("brief.lend");
+    lend.observed(reading(ROWS));
+    expect(lend.destinationReceipts().map((receipt) => receipt.ref)).toEqual(["destination-1"]);
+    lend.explored(pressed("keep", ["modify_existing"], ATLAS, { resetDestination: "destination-1" }));
+    lend.observed(reading(ROWS));
+    expect(lend.leftover("act-1")).toEqual({ left: "no", standing: "unchanged" });
+    agrees(project);
+    expect(lend.trialRan([], "trial-1")).toEqual([]);
+  });
+
+  it("never reports a looped pass on another item, at its own place and undone there, as left", () => {
+    const project = new AutomationStudioSiteResetProjectLedger();
+    const builder = project.forBrief("builder");
+    builder.observed(book("p:atlas", "loc:atlas", "pl:reserve-atlas", "st:free"));
+    const witness = builder.admitStep({ effect: "mutate", consequences: ["modify_existing"], control: { name: "Reserve", kind: "button", resource: LIBRARY, subject: "s:atlas", place: "pl:reserve-atlas", state: "st:free" } });
+    expect(witness).toEqual({ via: "control", ref: "control-1" });
+    const supervisor = project.forBrief("supervisor");
+    supervisor.trialRan([{ step: 2, definitionId: "demo.reserve", consequences: ["modify_existing"], witness: witness!, spot: { resource: LIBRARY, place: "pl:reserve-primer", state: "st:free" }, controls: { page: "p:primer", location: "loc:primer", before: { "st:free": 1 }, after: { "st:held": 1 } } }], "trial-1");
+    supervisor.observed(book("p:primer", "loc:primer", "pl:reserve-primer", "st:held"));
+    expect(supervisor.leftover("act-1")).toEqual({ left: "yes", standing: "in_place" });
+    const undo = { effect: "mutate" as const, consequences: ["modify_existing" as const], control: { name: "Reserve", kind: "button", resource: LIBRARY, place: "pl:reserve-primer", state: "st:held" } };
+    expect(supervisor.target("act-1", undo)).toMatchObject({ kind: "admit", on: "own" });
+    supervisor.explored({ callId: "cancel", toolId: "core.run_node", landed: true, undoes: "act-1", on: "own", operation: "demo.reserve", declared: { permitted: true, effect: "mutate", consequences: ["modify_existing"], control: undo.control, verb: "press" } });
+    supervisor.observed(book("p:primer", "loc:primer", "pl:reserve-primer", "st:free"));
+    expect(supervisor.leftover("act-1")).toEqual({ left: "no", standing: "restored" });
+    expect(project.snapshot().acts).toEqual([expect.objectContaining({ act: "act-1", owner: "supervisor", inPlace: false, left: "no" })]);
+    expect(project.unsatisfiable()).toEqual([]);
+    agrees(project);
+    expect(supervisor.trialRan([], "trial-2")).toEqual([]);
+  });
+
+  it("reports an act closed as one no call can settle as possibly left, with the condition it failed", () => {
+    const project = new AutomationStudioSiteResetProjectLedger();
+    const lend = project.forBrief("brief.lend");
+    lend.observed(reading(ROWS));
+    lend.destinationReceipts();
+    lend.explored(pressed("rate", ["modify_existing"], ATLAS, { resetDestination: "destination-1" }));
+    lend.observed(reading([["s:atlas", "v:five-stars"], ["s:primer", "v:unread"]]));
+    expect(lend.unsatisfiable()).toEqual([expect.objectContaining({ act: "act-1", reason: "gate_unsatisfiable", failed: "no_admissible_undo" })]);
+    expect(lend.leftover("act-1")).toEqual({ left: "possibly", standing: "unsettleable", failed: "no_admissible_undo" });
+    expect(lend.standing("act-1")).toBe("unsettleable");
+    expect(project.snapshot().acts).toEqual([expect.objectContaining({ act: "act-1", inPlace: false, left: "possibly", failed: "no_admissible_undo" })]);
+    agrees(project);
+    // Possibly left: still among the acts a trial returns as left.
+    expect(lend.trialRan([], "trial-1").map((act) => act.act)).toEqual(["act-1"]);
+  });
 });

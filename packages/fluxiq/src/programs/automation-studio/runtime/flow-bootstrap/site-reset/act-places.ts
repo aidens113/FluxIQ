@@ -27,10 +27,17 @@
 // A call stayed on its page only when both reads named the same location: two
 // missing locations are not one page. A read that names none says nothing of
 // where the call ran, so it is left to the ledger as an unread target is.
+//
+// **The shown values it replaced (t772 value witness).** Where both reads name
+// the same page (`scope`) and report its shown values (`values`), the values
+// the act replaced there (`../reset-settlement/value-witness.ts`) are kept with
+// its place: a choice confirmed by a press that reloads its page to the same
+// address shows its effect only there. A reload to the same address stayed on
+// its page here, since only the two locations are compared.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../../llm/index.ts";
-import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY } from "../reset-settlement/index.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY, automationStudioSiteResetValueReplacements as replacements } from "../reset-settlement/index.ts";
 import type { AutomationStudioSiteResetPlace, AutomationStudioSiteResetRead, AutomationStudioSiteResetReadAnswer } from "./contracts.ts";
 
 /** The classes whose act the reset may have to look for. */
@@ -100,6 +107,14 @@ export async function automationStudioSiteResetPlacedCall<T>(input: {
     ledger.noEffect?.(act);
     return ran;
   }
-  ledger.placed(act, { state: before.state, location: before.location, changed: after.differs, ...(before.collections && after.collections ? { collections: { before: before.collections, after: after.collections } } : {}), ...(after.lines ? { lines: after.lines } : {}), ...(created.length ? { created } : {}) });
+  const values = valuesReplaced(before, after);
+  ledger.placed(act, { state: before.state, location: before.location, changed: after.differs, ...(before.collections && after.collections ? { collections: { before: before.collections, after: after.collections } } : {}), ...(after.lines ? { lines: after.lines } : {}), ...(created.length ? { created } : {}), ...(values ? { values } : {}) });
   return ran;
+}
+
+/** The shown values an act replaced on one page read before and after it (header, t772); none where the reads name two pages or it replaced none. */
+function valuesReplaced(before: AutomationStudioSiteResetRead, after: AutomationStudioSiteResetRead): AutomationStudioSiteResetPlace["values"] {
+  if (before.scope === undefined || before.scope !== after.scope || !before.values || !after.values || before.location === undefined) return undefined;
+  const replaced = replacements(before.values, after.values);
+  return replaced.length ? { page: before.scope, location: before.location, replaced } : undefined;
 }

@@ -110,8 +110,9 @@ describe("site reset words after a read issues refs a refused press wants (t748)
     const words = WORDS.retryRefused("press.missing", [{ ref: "destination-2", count: 3 }, { ref: "destination-3", count: 0, location: "loc:lists" }]);
     expect(words).toContain("\"press.missing\"");
     expect(words).toContain("destination-2 (3 items), destination-3 (0 items at loc:lists)");
-    expect(words).toContain("make that call again");
     expect(words).toContain("naming that list's ref as resetDestination");
+    expect(words).not.toContain("the same as before");
+    expect(words).toContain("go back to that page, look again, and press the same control by its handle in the newest view");
     expect(words).toContain("If none of them is where its effect would show");
     expect(words).not.toMatch(REALISTIC);
   });

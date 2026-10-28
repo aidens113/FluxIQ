@@ -280,6 +280,60 @@ it("takes a trial act's page address from the run as executed, where the saved t
   expect(acts).toEqual([{ ...withheld[0], controls: { ...withheld[0]!.controls!, location: address } }]);
 });
 
+// t772 value witness: a step's diff carries the shown values its press replaced (`values`); its act carries them with the
+// page's location, and a malformed witness is dropped while the act is kept (`flow-bootstrap/reset-settlement/values-of.ts`).
+it("carries the shown values a step's diff replaced, with its page's location, and drops a malformed witness keeping the act", () => {
+  const values = { page: "p:prefs", location: "https://site.test/settings", replaced: [{ place: "pl:theme", from: "v:light", to: "v:dark", newValue: true }] };
+  const run = (witness: JsonValue) => automationStudioCandidateTrialLandedActs(trace([attempt("add", "succeeded", { stateRefs: { stateDiff: { added: ["saved"], removed: [], documentChanged: false, values: witness } } })]), graph)[0];
+  expect(run(values)?.values).toEqual(values);
+  for (const malformed of [{ ...values, page: "a page, in words" }, { ...values, replaced: [] }, { ...values, replaced: [{ place: "pl:theme", from: "v:light" }] }, ["pl:theme"], "v:dark"] as JsonValue[]) {
+    const act = run(malformed);
+    expect(act?.step).toBe(1);
+    expect(act?.values).toBeUndefined();
+  }
+});
+
+// t772 value witness, as t738 for controls: a step that reached its page by a row-bound address has that address withheld
+// from its saved trace; its act's values carry the address the run executed with, as its controls do
+// (`executor/executed-locations/` pairs a diff's `values` witness as it pairs its `controls`).
+it("carries a trial act's shown values at the address the run executed it with, where the saved trace withheld it", async () => {
+  const address = "https://settings.test/profiles/7";
+  const flow = {
+    schemaVersion: "0.1", flowId: "flow.theme", ownerKind: "task", ownerId: "task.theme", name: "Theme", createdAt: 1, updatedAt: 1,
+    nodes: [
+      { id: "row", definitionId: "builtin.policy.action", parameterValues: { outputId: "web.dom.extract", parameters: { selector: "#profile" } } },
+      { id: "open", definitionId: "builtin.policy.action", parameterValues: { outputId: "web.output.browser-navigate", parameters: { url: { $state: { path: "row.link" } } } } },
+      { id: "save", definitionId: "builtin.policy.action", label: "Save the theme", parameterValues: { outputId: "web.output.dom-click", parameters: { selector: "#save" } }, metadata: { declaredConsequences: ["modify_existing"] } }
+    ],
+    edges: [
+      { id: "row.open", sourceNodeId: "row", sourcePortId: "success", targetNodeId: "open", targetPortId: "in" },
+      { id: "open.save", sourceNodeId: "open", sourcePortId: "success", targetNodeId: "save", targetPortId: "in" }
+    ]
+  } as unknown as AutomationStudioFlowArtifact;
+  let tab = "https://settings.test/", captured = 0;
+  const run = await runAutomationStudioGraph(flow as unknown as Parameters<typeof runAutomationStudioGraph>[0], {
+    effectDispatcher: (effect) => {
+      const payload = (effect.payload ?? {}) as Record<string, JsonValue>, parameters = (payload.parameters ?? {}) as Record<string, JsonValue>;
+      if (payload.outputId === "web.dom.extract") return { status: "success", route: "success", outputs: { link: address } };
+      if (payload.outputId === "web.output.browser-navigate") tab = String(parameters.url);
+      return { status: "success", route: "success", outputs: {} };
+    },
+    hostRuntime: {
+      capabilities: [],
+      captureStateSnapshot: ({ attemptId, point }) => ({ stateSnapshotId: `s.${++captured}`, stateRef: `s.${captured}@${attemptId}:${point}`, capturedAt: captured, summary: {} }),
+      inspectStateDiff: ({ node }) => (node.id === "save"
+        ? { added: ["saved"], removed: [], documentChanged: false, spot: { place: "p:form", state: "v:save" }, controls: { page: "p:prefs", location: tab, before: { "v:save": 1 }, after: { "v:save": 1 } }, values: { page: "p:prefs", location: tab, replaced: [{ place: "pl:theme", from: "v:light", to: "v:dark" }] } }
+        : { added: [], removed: [], documentChanged: node.id === "open" })
+    }
+  });
+  expect(run.status).toBe("succeeded");
+  expect(JSON.stringify(run)).not.toContain(address);
+  const acts = automationStudioCandidateTrialLandedActs(run, flow);
+  expect(acts).toHaveLength(1);
+  expect(acts[0]?.controls?.location).toBe(address);
+  expect(acts[0]?.values).toEqual({ page: "p:prefs", location: address, replaced: [{ place: "pl:theme", from: "v:light", to: "v:dark" }] });
+});
+
 // t748: a step whose target's words are the value it reads (`readsWords`) names its act by the words it read, as the
 // trial feedback does, never by the words saved before an earlier step changed them. A library site.
 it("names a read step's lasting act by the words it read in this trial, as the feedback names its step", () => {

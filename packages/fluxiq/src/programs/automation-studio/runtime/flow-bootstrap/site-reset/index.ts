@@ -9,6 +9,7 @@ export * from "./contracts.ts";
 export * from "./create-baselines.ts";
 export * from "./explored-on-absorbed.ts";
 export * from "./ledger.ts";
+export * from "./leftover.ts";
 export * from "./project-ledger.ts";
 export * from "./project-reset.ts";
 export * from "./settle-ms.ts";

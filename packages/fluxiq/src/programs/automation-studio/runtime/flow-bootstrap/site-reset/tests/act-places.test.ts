@@ -160,3 +160,14 @@ it("carries immediate complete pre/post inventories with an explored effect", as
   await h.run({ callId: "move", value: { node: "demo.move", consequences: ["modify_existing"] } });
   expect(h.placed[0]?.[1].collections).toEqual({ before: before.collections, after: after.collections });
 });
+
+it("carries the shown values a press replaced on a page reloaded to its address, read on both sides (t772)", async () => {
+  const read = (theme: string, scope = "p:prefs"): AutomationStudioSiteResetRead => ({ ...at("loc:prefs", theme === "v:light" ? [] : ["theme"]), scope, values: { "pl:theme": theme, "pl:dark-label": "v:dark" } });
+  const h = harness([read("v:light"), read("v:dark")], "act-1");
+  await h.run({ callId: "save", value: { node: "demo.save", consequences: ["modify_existing"] } });
+  expect(h.placed[0]?.[1].values).toEqual({ page: "p:prefs", location: "loc:prefs", replaced: [{ place: "pl:theme", from: "v:light", to: "v:dark", newValue: true }] });
+  // Two pages' scopes, or nothing replaced: no value witness.
+  const other = harness([read("v:light"), read("v:dark", "p:other")], "act-1");
+  await other.run({ callId: "save", value: { node: "demo.save", consequences: ["modify_existing"] } });
+  expect(other.placed[0]?.[1].values).toBeUndefined();
+});
