@@ -40,7 +40,7 @@ import { automationStudioActivityDecisionReason } from "./decision-reason.ts";
 import { automationStudioActivityDraftEdit, automationStudioActivityNarration, automationStudioActivityRefusedCall } from "./decision-answer/index.ts";
 import { emitAutomationStudioActivity } from "./emit.ts";
 import { automationStudioActivityRepeatedReason } from "./repeated-reason.ts";
-import { automationStudioActivityCandidateResult } from "./candidate/index.ts";
+import { automationStudioActivityCandidateResult, automationStudioActivityRunRefused } from "./candidate/index.ts";
 import { automationStudioActivityCompletionRefusal, automationStudioActivityDecision, automationStudioActivityReasonText, automationStudioActivityToolCall, type AutomationStudioActivityCallWords } from "./wording/index.ts";
 
 type ToolCall = Parameters<AutomationStudioLlmEvidenceLoopInput["executeTool"]>[0];
@@ -337,7 +337,8 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
         const { list, ...answered } = context.answered(call, result);
         const named = namedAtEnd(input.describeCall, call, described);
         // Saving or testing a candidate's steps ends with its own words and status: a test the judge refused is no "done" (t373).
-        const candidate = automationStudioActivityCandidateResult(call.toolId, result);
+        // A call Core refused before running any of it is no "done" either (t774).
+        const candidate: CandidateSaid | undefined = automationStudioActivityCandidateResult(call.toolId, result) ?? automationStudioActivityRunRefused(call.toolId, result);
         narration.ended(call, candidate?.status !== "failed" ? undefined : candidate.unchanged ? "unchanged" : candidate.part === "Declined" ? "declined" : candidate.unconfirmed ? "unconfirmed" : "failed");
         toolActivity(call, candidate?.status ?? "succeeded", { ...ended, reason: causes.of(call, ended), ...answered }, list === undefined ? named : { ...named, list }, said, excusable, candidate);
         return result;

@@ -6,6 +6,7 @@ import {
   CLIENT_GATEWAY_ACTIVITY_RESOLUTIONS,
   CLIENT_GATEWAY_ACTIVITY_SKIP_REASONS
 } from "@fluxiq/contracts/client-gateway";
+import { cutAtWord } from "../../../../ui/index.ts";
 import type { AutomationStudioActivityInput } from "./contracts.ts";
 import { AUTOMATION_STUDIO_ACTIVITY_LIMITS } from "./limits.ts";
 import { boundedAutomationStudioProjectCard } from "./project-card-bounds.ts";
@@ -24,8 +25,9 @@ const DIGEST_LIKE = /[a-f0-9]{32,}/iu;
 /** The roles `ClientGatewayActivityAgent` names; a record, so a role added there fails to compile here until it is bounded. */
 const AGENT_ROLES: Readonly<Record<ClientGatewayActivityAgent["role"], true>> = { supervisor: true, builder: true, repair: true, validator: true };
 
+/** `value` within `max` characters, cut at a word: a row that ended "...so che..." read as broken (t774). */
 function clip(value: string, max: number): string {
-  return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
+  return cutAtWord(value, max);
 }
 
 type Recovery = NonNullable<Detail["recovery"]>;

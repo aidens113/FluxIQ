@@ -61,6 +61,12 @@ const DONE: ReadonlyMap<string, string> = new Map([
 ]);
 /** Verbs that only enter text or move around the page: nothing they do stays by itself. */
 const PASSING = /^(?:type(?: text)?|fill|clear|key|press key|scroll|hover|focus|wait|look|read|navigate|go to)$/u;
+/**
+ * A trial step labelled for getting around or reading the page, not for changing it ("show more of the feed",
+ * "go to the reels page", "find the newest posts"): it saves nothing by itself, so it is never listed as something that
+ * may have stayed (t774: "ran the step 'show more of the feed' ... might have left something behind").
+ */
+const TRIAL_ONLY_MOVES = /^(?:scroll|go to|go back|open the (?:\w+ )?page|navigate|show|see|load|view|next|back|read|look|find|search|browse|collect|get|list)(?![\p{L}\p{N}])/iu;
 /** Verbs that press a control. */
 const PRESSING = /^(?:click|press|tap|double click)$/u;
 /** A link: pressing one goes to another page, which saves nothing by itself (t753). */
@@ -119,7 +125,7 @@ function plainAct(did: string): Plain {
   const trial = TRIAL.exec(bare);
   if (trial) {
     const label = readable(trial[1]);
-    if (label) return { verb: "ran the step", name: label, passing: false, press: false, trial: true };
+    if (label) return { verb: "ran the step", name: label, passing: TRIAL_ONLY_MOVES.test(label.slice(1, -1)), press: false, trial: true };
     const control = readable(trial[2]);
     return { verb: control ? "ran a step on" : "used", name: control, passing: false, press: false, trial: true };
   }
