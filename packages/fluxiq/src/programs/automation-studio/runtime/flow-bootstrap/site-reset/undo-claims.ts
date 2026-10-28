@@ -134,7 +134,7 @@ export class AutomationStudioSiteResetUndoClaims {
     // Acts no call can settle are listed beside the acts to undo wherever those are answered (header, t743).
     const apart = unsettleable(ledger.unsatisfiable());
     if (act && settled === "restored") return { kind: "refused", evidence: back(ledger, act, apart) };
-    if (act && !act.undone && act.undoable && ((act.kept && !act.strictReset) || left)) return { kind: "refused", evidence: refusal("candidate.undo_act_kept", { act: act.id, failed: left ? "act_left" : "act_kept", canMeet: "no_call", instruction: WORDS.keptAct(left), actsToUndo: ledger.inPlace(), ...apart }) };
+    if (act && !act.undone && act.undoable && ((act.kept && !act.strictReset) || left)) return { kind: "refused", evidence: refusal("candidate.undo_act_kept", { act: act.id, failed: left ? "act_left" : "act_kept", canMeet: "no_call", instruction: WORDS.keptAct(left, act.unread), actsToUndo: ledger.inPlace(), ...apart }) };
     if (!act || !ledger.claimable(act)) {
       const actsToUndo = ledger.inPlace();
       return { kind: "refused", evidence: refusal("candidate.undo_unknown_act", { failed: "act_not_listed", canMeet: "this_page", instruction: WORDS.unknownAct(actsToUndo.length > 0), actsToUndo, ...apart }) };
@@ -231,7 +231,7 @@ export class AutomationStudioSiteResetUndoClaims {
 
 /** An act a fresh read settled `restored`, named under `undoes` (header, t751 R2): already back, listed nowhere, nothing owed. */
 function back(ledger: AutomationStudioSiteResetUndoClaimsLedger, act: Act, apart: ReturnType<typeof unsettleable>): JsonObject & { code: string } {
-  return refusal("candidate.undo_already_back", { act: act.id, failed: "already_back", canMeet: "no_call", instruction: WORDS.alreadyBack(true), actsToUndo: ledger.inPlace(), ...apart });
+  return refusal("candidate.undo_already_back", { act: act.id, failed: "already_back", canMeet: "no_call", instruction: WORDS.alreadyBack(true, act.unread), actsToUndo: ledger.inPlace(), ...apart });
 }
 
 /** The acts no call can settle, under `actsUnsettleable` beside `actsToUndo`, or nothing where there are none (header, t743). */

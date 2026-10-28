@@ -643,6 +643,11 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     return act ? this.leftOf(act) : undefined;
   }
 
+  /** The lists named for a settled act that Core could not read again (t743, t783), for words said about it: the same ones its `startedWith` words name; undefined where none, or for an id this ledger never gave. */
+  unreadOf(actId: string): readonly string[] | undefined {
+    return this.acts.find((entry) => entry.id === actId)?.unread;
+  }
+
   /** Whether any read after the act ever showed a change it made, for words said about it (t738); undefined for an id this ledger never gave. */
   changeSeen(actId: string): boolean | undefined {
     return this.acts.find((entry) => entry.id === actId)?.changeSeen;

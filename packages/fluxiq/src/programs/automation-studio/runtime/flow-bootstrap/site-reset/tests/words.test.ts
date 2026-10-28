@@ -50,7 +50,7 @@ describe("site reset words for an undo aimed at another item", () => {
   it("never says acts are undone before a trial, in any answer (t775)", () => {
     for (const said of [WORDS.unprovedUndo(true), WORDS.wrongTarget(), WORDS.wrongTarget("reset"), WORDS.undoRefused(), WORDS.alreadyUndone(true), WORDS.alreadyUndone(false),
       WORDS.keptAct(), WORDS.keptAct(true), WORDS.alreadyBack(), WORDS.alreadyBack(true), WORDS.unknownAct(true), WORDS.startedWith(true), WORDS.actionDeclarations(),
-      WORDS.stepWitnessRequired([]), WORDS.retryRefused("call.1", [{ ref: "destination-1", count: 1 }]), WORDS.settleModel()]) {
+      WORDS.stepWitnessRequired([]), WORDS.settleModel()]) {
       expect(said).not.toMatch(BEFORE_EVERY_TRIAL);
       expect(said).not.toMatch(REALISTIC);
     }
@@ -121,20 +121,6 @@ describe("site reset words for an undo already back (t743)", () => {
     expect(WORDS.alreadyBack()).toContain("nothing to press");
     expect(WORDS.alreadyBack()).not.toMatch(/inspect/iu);
     for (const words of [WORDS.alreadyBack(), WORDS.unprovedUndo(true), WORDS.actionDeclarations()]) expect(words).not.toMatch(REALISTIC);
-  });
-});
-
-// Office rounds 2-4 (t748, C6): after a complete read issued the ref a refused press needed, nothing said to press it
-// again with that ref. The read's answer now says so.
-describe("site reset words after a read issues refs a refused press wants (t748)", () => {
-  it("name the refused call and the refs just issued, and say to press it again naming the one where its effect shows", () => {
-    const words = WORDS.retryRefused("press.missing", [{ ref: "destination-2", count: 3 }, { ref: "destination-3", count: 0, location: "loc:lists" }]);
-    expect(words).toContain("\"press.missing\"");
-    expect(words).toContain("destination-2 (3 items), destination-3 (0 items at loc:lists)");
-    expect(words).toContain("naming that list's ref as resetDestination");
-    expect(words).toContain("pressing the control by its handle in the newest view");
-    expect(words).toContain("If none of them is where its effect would show, make the call again without resetDestination");
-    expect(words).not.toMatch(REALISTIC);
   });
 });
 

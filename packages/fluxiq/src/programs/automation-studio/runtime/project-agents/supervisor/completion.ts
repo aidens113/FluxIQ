@@ -116,13 +116,6 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_COMPLETION_SCHEMA: JsonObject 
  * holds an ending for it: a changed brief could not be tested, and such an
  * act is never `undoable`, so no reset is asked for it. The ending's reason
  * names it after the person's words as left on the target.
- *
- * **A refusal for the reset keeps why (t683).** Each
- * `project.completion_reset_first` refusal sets the state's `resetToEnd`: an
- * ending held, or a completion on the fallback held with its complete object.
- * The answer to the reset then says to end, or complete, again now
- * (`./dispatch-tool.ts`), rather than asking the model to remember why it sent
- * the reset and offering a test it does not need.
  */
 export function automationStudioProjectSupervisorCompletion(context: AutomationStudioProjectSupervisorContext, ended: (ending: AutomationStudioProjectSupervisorEnded) => void): (result: JsonObject, loop?: { turnsLeft?: number | undefined }) => AutomationStudioLlmEvidenceCompletionCheck {
   /** Each subflow a repair-first refusal has named: it never holds an ending again (header, t743). */

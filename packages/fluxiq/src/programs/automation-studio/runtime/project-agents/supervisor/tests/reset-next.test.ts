@@ -7,8 +7,7 @@
 // t775 (user, 2026-10-27: reset as rarely as possible): Core no longer holds an
 // ending or a completion for a reset (`project.completion_reset_first` is
 // retired), so a reset is one the model sends of its own, and it is answered by
-// what is assembled alone. The words for a reset sent because an ending was
-// held for it (t683, `../state.ts` `resetToEnd`) can no longer be reached.
+// what is assembled alone.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE, AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";

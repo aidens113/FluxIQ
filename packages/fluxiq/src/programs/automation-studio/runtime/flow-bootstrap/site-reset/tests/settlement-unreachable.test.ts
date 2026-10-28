@@ -93,6 +93,44 @@ describe("a list Core's own look cannot read again (photo r4)", () => {
     expect(looked).toEqual(["loc:overlay"]);
   });
 
+  it("says the same of an act settled with an unread list in the undo's answer, the repeat refusal and the next trial's startedWith (t783)", async () => {
+    const ledger = shown();
+    ledger.explored(press("star", ["modify_existing"], STAR, { resetDestination: "destination-1" }));
+    ledger.observed(card("st:on"));
+    const { checks } = looking((read) => ledger.observed(read), { "loc:overlay": standalone });
+    await ledger.beforeTrial(checks);
+    ledger.observed(card("st:on"));
+    ledger.explored(press("unstar", ["modify_existing"], { ...STAR, state: "st:on" }, { undoes: "act-1", on: "own" }));
+    ledger.observed(card("st:off"));
+    const started = await ledger.beforeTrial(checks);
+    const told = (started as unknown as { startedWith: { cannotUndo: Array<{ did: string }> } }).startedWith.cannotUndo[0]!.did;
+    expect(ledger.unreadOf("act-1")).toEqual(["destination-1"]);
+    const unread = ledger.unreadOf("act-1");
+    // The undo's own answer and the repeat refusal name the list the start names, and none claims "everything" or a clean put-back.
+    const answers = [WORDS.lookSettled(true, false, unread), WORDS.alreadyBack(true, unread)];
+    for (const said of answers) {
+      expect(said).toContain("the list named for it (destination-1) could not be read again, so whether it is as the build found it is not known");
+      expect(told).toContain("the list named for it (destination-1) could not be read again, so whether it is as the build found it is not known");
+      expect(said).not.toContain("everything it could change");
+    }
+    // Where every list was read again, the clean words stay.
+    expect(WORDS.lookSettled(true, false)).toContain("everything it could change as the build found it");
+    expect(WORDS.alreadyBack(true)).toContain("everything it could change as this build found it");
+  });
+
+  // The ledger fixtures here cannot reach `unchanged` with a list unread (a lost list with no change seen is
+  // gate_unsatisfiable, above), so the four answers are compared at the words every one of them is built from.
+  it("says the same of an act settled unchanged with an unread list in all four answers (t783)", () => {
+    const unread = ["destination-1"];
+    const words = "the list named for it (destination-1) could not be read again, so whether it is as the build found it is not known";
+    const answers = [WORDS.settledAs("unchanged", unread), WORDS.keptAct(true, unread), WORDS.lookSettled(true, false, unread), WORDS.alreadyBack(true, unread)];
+    for (const said of answers) {
+      expect(said).toContain(words);
+      expect(said).not.toContain("everything it could change");
+    }
+    expect(WORDS.keptAct(true)).toContain("everything it could change");
+  });
+
   it("a press whose only witness is that list is gate_unsatisfiable: out of actsToUndo, listed apart, and trials refused with the honest exit", async () => {
     const ledger = shown();
     ledger.explored(press("keep", ["modify_existing"], KEEP, { resetDestination: "destination-1" }));
