@@ -286,13 +286,11 @@ describe("run murwcmx2: the judge's reading reaches the build", () => {
   it("unmeasured negative advice stays unknown even when both calls repeat it, and its long advice survives", async () => {
     const provider = answering({ answersRequest: "no", ...FIRST }, { answersRequest: "no", expected: FIRST.expected, changed: LONG_CHANGED });
     const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
-    // The expectation both calls worded alike is said once; the first call alone said what it observed.
-    expect(verdict).toMatchObject({ verdict: "unknown", unconfirmedReading: { expected: FIRST.expected, observed: expect.stringContaining(FIRST.observed) } });
-    const advice = verdict.verdict === "unknown" ? verdict.unconfirmedReading?.advice ?? "" : "";
-    expect(advice).toContain(FIRST.changed);
-    // The second call's advice is carried, clipped to its bound, never dropped.
-    expect(advice).toContain(LONG_CHANGED.slice(0, 120));
-    expect(advice).not.toContain("contradicted by Core's record");
+    // t771: nothing of a no Core could not ground -- what it observed or advised -- is carried on; Core's fact recordContradicts is.
+    expect(verdict).toMatchObject({ verdict: "unknown", unsupportedNo: true, unconfirmedReading: { expected: FIRST.expected } });
+    expect(JSON.stringify(verdict)).not.toContain(FIRST.observed);
+    expect(JSON.stringify(verdict)).not.toContain(FIRST.changed);
+    expect(JSON.stringify(verdict)).not.toContain(LONG_CHANGED.slice(0, 120));
     expect(verdict.spent.calls).toBe(4);
   });
 
@@ -308,7 +306,9 @@ describe("run murwcmx2: the judge's reading reaches the build", () => {
     const provider = answering(PAGES, { answersRequest: "no", ...FIRST });
     const verdict = await judge(PICKUP_CART, { provider })({ summary: { ...run40Summary(), reads: [ended] }, budget: { maxCostUsd: 0.2 } });
     expect(verdict.verdict).toBe("unknown");
-    expect(verdict).toMatchObject({ unsupportedNo: true, unconfirmedReading: { observed: expect.stringContaining(FIRST.observed) } });
+    // t771: nothing of a no Core could not ground -- what it observed or advised -- is carried on; Core's fact recordContradicts is.
+    expect(verdict).toMatchObject({ unsupportedNo: true, unconfirmedReading: { expected: FIRST.expected } });
+    expect(JSON.stringify(verdict)).not.toContain(FIRST.observed);
     expect(verdict.spent.calls).toBe(4);
   });
 
@@ -362,16 +362,19 @@ describe("run murwcmx2: a build's yes is confirmed by a second call", () => {
 
   it("yes, then no, is unknown carrying the no's reading, so the build repairs instead of finishing", async () => {
     // The split's no is asked once more to name its defect (t725), and says the same no again: it stands, a third call paid for.
+    // t771: the yes beside that refused no is asked once more to confirm; this judge answers nothing usable, so it stays unknown,
+    // and nothing the refused no observed or advised is carried on.
     const { provider } = answering({ answersRequest: "yes" }, NO, NO);
     const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
-    expect(verdict).toMatchObject({ verdict: "unknown", unconfirmedReading: { expected: NO.expected, observed: expect.stringContaining(NO.observed), advice: expect.stringContaining(NO.changed) }, spent: { calls: 4 } });
+    expect(verdict).toMatchObject({ verdict: "unknown", unconfirmedReading: { expected: NO.expected }, spent: { calls: 5 } });
+    expect(JSON.stringify(verdict)).not.toContain(NO.changed);
   });
 
   // Live run run-musp4h2f-72e8ed99 (t193 round 1003): the last judgement was no, then yes. The build must know one
   // call said yes (`oneCallSaidYes`) to measure the repair that got there as progress; a no then unknown never says so.
   it("no, then yes, is unknown with oneCallSaidYes; no, then unknown, is unknown without it", async () => {
     const split = await judge(PICKUP_CART, { provider: answering(NO, { answersRequest: "yes" }).provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
-    expect(split).toMatchObject({ verdict: "unknown", oneCallSaidYes: true, unconfirmedReading: { observed: expect.stringContaining(NO.observed) } });
+    expect(split).toMatchObject({ verdict: "unknown", oneCallSaidYes: true, unconfirmedReading: { expected: NO.expected } });
     const unconfirmed = await judge(PICKUP_CART, { provider: answering(NO, { answersRequest: "unknown" }).provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
     expect(unconfirmed.verdict).toBe("unknown");
     expect(unconfirmed).not.toHaveProperty("oneCallSaidYes");
@@ -382,7 +385,7 @@ describe("run murwcmx2: a build's yes is confirmed by a second call", () => {
   it("no, then yes, carries the yes's reading beside the no's; no, then unknown, carries none", async () => {
     const YES = { answersRequest: "yes", expected: "The cart holds the item for pickup.", observed: "The end view shows the item in the cart for pickup.", changed: "Remove step 4." };
     const split = await judge(PICKUP_CART, { provider: answering(NO, YES).provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
-    expect(split).toMatchObject({ verdict: "unknown", oneCallSaidYes: true, unconfirmedReading: { observed: expect.stringContaining(NO.observed) }, answeredReading: { expected: YES.expected, observed: YES.observed } });
+    expect(split).toMatchObject({ verdict: "unknown", oneCallSaidYes: true, unconfirmedReading: { expected: NO.expected }, answeredReading: { expected: YES.expected, observed: YES.observed } });
     expect(JSON.stringify(split)).not.toContain(YES.changed);
     const unconfirmed = await judge(PICKUP_CART, { provider: answering(NO, { answersRequest: "unknown" }).provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
     expect(unconfirmed).not.toHaveProperty("answeredReading");

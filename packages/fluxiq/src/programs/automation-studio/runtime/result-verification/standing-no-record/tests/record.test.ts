@@ -14,7 +14,7 @@ import { CABIN_KEPT_NO, CAMP_CABIN, cabinKeptSummary, cabinLeftOutSummary } from
 const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 };
 const no = (reading: Record<string, string>) => ({ answersRequest: "no", ...reading,
   defects: reading === CABIN_KEPT_NO ? [{ kind: "kept_not_asked", row: CAMP_CABIN.name, requestWords: "every campsite" }]
-    : reading === WRONGLY_LEFT_OUT_NO ? [{ kind: "asked_missing", row: CAMP_SILVER, requestWords: "every campsite" }]
+    : reading === WRONGLY_LEFT_OUT_NO ? [{ kind: "asked_missing", row: CAMP_SILVER, column: "name", value: "Tent Sites", requestWords: "every campsite" }]
       : [] });
 
 /** A provider answering each call with its own diagnosis. */

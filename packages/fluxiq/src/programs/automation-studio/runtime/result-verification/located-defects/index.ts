@@ -41,10 +41,30 @@
 // defect too, and every row claim -- a row kept, missing or wrong -- still
 // needs its row in the record, exactly as before.
 //
-// A row is named as any no's sentence names one: its whole label, Core's short
-// id, or the start of its label (`../../refuted-no/named-rows.ts`). What a no
-// whose defects Core finds none of comes to is `../unsupported-no.ts`.
+// **A missing row is held to its own cells, and a row is named whole (t771).**
+// Rerun round 6 social `run-mvrj7qg8-c20c132e`: judges gave a friend's own post,
+// which a read left out, a group it does not have and called it missing; Core
+// located the claim because the row existed, a wrong double no stood, and its
+// advice led the build away from the right condition. An `asked_missing` row a
+// read saw is found only where the defect gives the column and that row's own
+// value in it that makes it asked for, and Core's record of the row's cells
+// (`./row-cells.ts`: the cells the read sent beside each left-out row, or
+// the value its condition tested) says that value -- or, where Core holds no
+// cell of that column, the row's own label says it. A row is named by its whole
+// label, Core's id for it, or its whole label first and more words after it,
+// which tell apart rows sharing the label by a cell they name; never by a label
+// found further on in its words (the invented "<author> — <group>, <date>" was
+// taken for the stored row labelled <group>, and the judge told it "is a row the
+// result holds").
+//
+// **And what a build's test would store (t771).** A test stores no record set;
+// Core's record of it holds its answer's labels (`buildTest.stores`) as stored
+// rows (`../refuted-no/record.ts`), so a kept row of a test is found, and a row
+// its answer holds is never found missing.
+//
+// What a no whose defects Core finds none of comes to is `../unsupported-no.ts`.
 
 export * from "./act-located.ts";
 export * from "./act-steps.ts";
+export * from "./row-cells.ts";
 export * from "./located-defects.ts";

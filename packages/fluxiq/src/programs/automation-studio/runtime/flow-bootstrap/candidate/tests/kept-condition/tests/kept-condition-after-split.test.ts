@@ -70,7 +70,7 @@ function readIdOf(subflows: ReadonlyArray<{ key: string; nodes: ReadonlyArray<{ 
   return `node.bootstrap.0a1b2c3d.${subflow.key}.${read.key}`;
 }
 
-/** Each trial of the exact rows' run, judged by the build-test judge: call 1 yes, call 2 no, and the split's no asked again (t725) no again, and so on. */
+/** Each trial of the exact rows' run, judged by the build-test judge: call 1 yes, call 2 no, the split's no asked again (t725) no again, and so on, the lone yes's confirming ask (t771) included. */
 function judging(...diagnoses: Record<string, unknown>[]) {
   let calls = 0;
   const provider: AutomationStudioLlmProvider = { metadata: { provider: "mock", model: "debug-model" }, runTask: async () => ({ response: { kind: "diagnosis", summary: "Judged.", diagnosis: diagnoses[calls++ % diagnoses.length] ?? {} }, usage: USAGE }) };
@@ -93,7 +93,8 @@ function answered(request: { revision: number; digest: string }, verdict: Automa
 
 function build() {
   const controller = new AutomationStudioFlowCandidateSubmissionController(KEPT_CONDITION_SUBMISSION);
-  const judge = judging(YES, NO, NO, NO);
+  // t771: the yes beside the refused no is asked once more to confirm; the fifth call, no, leaves the split unsure.
+  const judge = judging(YES, NO, NO, NO, NO);
   const gate = new AutomationStudioFlowCandidateTrialGate({
     latest: () => controller.latest(),
     trial: { candidateId: "candidate.drills", port: async (request) => answered(request, await judge(request.candidate.buildPlan.plan.subflows)) }
