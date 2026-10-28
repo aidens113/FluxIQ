@@ -79,6 +79,12 @@ export type AutomationStudioConversationCommandContext = {
   /** The page the person has open, as a build's start location. Null when none was sent. */
   startLocation: string | null;
   /**
+   * The recording the person attached to the message that started this
+   * command, taken from the request's `onScreen` and never from a model-written
+   * argument (`create-here.ts`). Absent when none was attached.
+   */
+  attachedRecordingId?: string;
+  /**
    * What the chat's reading of the person's message cost in US dollars, when
    * the model priced it. A build the command runs carries it in the Flow's
    * creation purse, because the call that decided to build the Flow is part of

@@ -15,6 +15,7 @@
 // answer says what its test run came to.
 
 import { applyAutomationStudioConversationAdaptation } from "./apply.ts";
+import { automationStudioConversationAttachedRecordingProblem } from "../attached-recording/index.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS, automationStudioConversationCommandInstruction, automationStudioConversationCommandText, type AutomationStudioConversationCommandInstruction } from "./argument.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_JUDGED, automationStudioConversationAuthorsCandidates, automationStudioConversationCandidateDraftSaid, buildAutomationStudioFlowFromConversation } from "./build.ts";
 import type { AutomationStudioConversationCommand } from "./command.ts";
@@ -55,16 +56,22 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     const instruction = said.text;
     const name = automationStudioConversationCommandText(args, "name") || automationStudioConversationFlowName(instruction);
 
+    // A recording the person attached is checked before anything is made (`../attached-recording/`).
+    const recordingId = context.attachedRecordingId;
+    const recordingProblem = recordingId ? await automationStudioConversationAttachedRecordingProblem(context, recordingId) : null;
+    if (recordingProblem) return progress.failed(recordingProblem);
+
     const created = await context.port.call("create-flow", { projectId: context.projectId, name });
     const flowId = (created.payload as { flow?: { flowId?: unknown } } | undefined)?.flow?.flowId;
     if (!created.ok || typeof flowId !== "string" || !flowId) return progress.failed(automationStudioConversationCallCause("creating the Flow", created.ok ? { ok: false, error: "Core answered without the new Flow's id" } : created));
     progress.carry({ flowId });
     progress.landed(`created the Flow "${name}"`);
 
-    const saved = await context.port.call("save-flow-generation-instruction", { projectId: context.projectId, flowId, authSessionId: context.sessionId, instruction, ...(said.from === "argument" ? { instructionSource: "conversation_argument" } : {}) });
+    const saved = await context.port.call("save-flow-generation-instruction", { projectId: context.projectId, flowId, authSessionId: context.sessionId, instruction, ...(said.from === "argument" ? { instructionSource: "conversation_argument" } : {}), ...(recordingId ? { linkedRecordingIds: [recordingId] } : {}) });
     if (!saved.ok) return progress.failed(automationStudioConversationCallCause("saving what it should do", saved));
     progress.carry({ instructionFrom: said.from });
-    progress.landed(said.from === "person" ? "saved what it should do" : `saved what it should do, ${AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS}`);
+    // The recording, when one was attached, follows the saved instruction at once; where the instruction came from is said after it.
+    progress.landed(`saved what it should do${recordingId ? ", with your recording as supporting evidence" : ""}${said.from === "person" ? "" : `, ${AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS}`}`);
 
     const built = await buildAutomationStudioFlowFromConversation(context, { flowId, mode: "create" });
     // A build that failed leaves the Flow it was making empty, and the ending
