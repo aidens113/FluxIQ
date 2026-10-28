@@ -16,6 +16,7 @@ describe("a run step skipped rather than run", () => {
     expect(activityActionSkipped({ reason: "optional_absent" })).toBe("Skipped: not there, optional");
     expect(activityActionSkipped({ reason: "state_routed" })).toBe("Skipped: the page was already at another step");
     expect(activityActionSkipped({ reason: "already_done" })).toBe("Skipped: already done in this run");
+    expect(activityActionSkipped({ reason: "already_in_state" })).toBe("Not pressed: it already showed the asked state");
   });
 
   it("says nothing for a row with no skip or a reason it does not know", () => {

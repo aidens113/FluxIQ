@@ -14,7 +14,7 @@ import { automationStudioAttemptAlreadyInState } from "../already-in-state.ts";
 const flip = () => ({ ...press("flip", "flip", { declaredConsequences: ["modify_existing"] }), label: "Switch the setting" });
 
 function alreadySaid(rows: readonly ClientGatewayActivity[]): Array<[string, unknown]> {
-  return rows.filter((row) => row.label.startsWith("Already so")).map((row) => [row.label, row.detail?.skipped]);
+  return rows.filter((row) => row.label.startsWith("Not pressed")).map((row) => [row.label, row.detail?.skipped]);
 }
 
 describe("a step the domain found already in its asked state", () => {
@@ -34,7 +34,7 @@ describe("a step the domain found already in its asked state", () => {
     expect(flipped[0]!.effectCheck).toBeUndefined();
     // Not a lasting act this run completed.
     expect([...result.invocation.run.lifecycle.completedActs.values()].map((done) => done.nodeId)).not.toContain("flip");
-    expect(alreadySaid(rows)).toEqual([["Already so: Switch the setting", { reason: "already_done", subject: "Switch the setting" }]]);
+    expect(alreadySaid(rows)).toEqual([["Not pressed: Switch the setting already showed the asked state",{ reason: "already_in_state", subject: "Switch the setting" }]]);
   });
 
   it("is an ordinary press when the domain says nothing of the kind", async () => {

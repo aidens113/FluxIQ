@@ -18,6 +18,7 @@ test("each of the contract's reasons is read, with its subject trimmed", () => {
   expect(stepSkip(stepWith({ reason: "already_done", subject: " Lin Zhao " }))).toStrictEqual({ reason: "already_done", subject: "Lin Zhao" });
   expect(stepSkip(stepWith({ reason: "optional_absent", subject: "Not now" }))).toStrictEqual({ reason: "optional_absent", subject: "Not now" });
   expect(stepSkip(stepWith({ reason: "state_routed" }))).toStrictEqual({ reason: "state_routed" });
+  expect(stepSkip(stepWith({ reason: "already_in_state", subject: "Lin Zhao" }))).toStrictEqual({ reason: "already_in_state", subject: "Lin Zhao" });
 });
 
 test("a blank or non-string subject is left out", () => {

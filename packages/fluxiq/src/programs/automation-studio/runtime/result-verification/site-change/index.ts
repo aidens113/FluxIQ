@@ -21,15 +21,30 @@
 //   exactly the count it asks, is refuted with Core's change line, and the no
 //   whose every reason is refuted is asked once more as any other
 //   (`../refuted-no/weigh.ts`, `../refuted-no/reask.ts`). Closed form: a count
-//   is a numeral followed within two words by a word of the part's `what`, not
-//   a step's, pass's, row's or page's number; a sentence with any clause about
-//   something else is left to the other claims; a row value moved by some
-//   units (a list witness's `changed`) is never matched, since Core does not
-//   parse page quantities.
+//   is a numeral followed within two words by a word of the part's `what` or
+//   of where its change shows, or with such a place's word up to three words
+//   before it, not a step's, pass's, row's or page's number; a sentence with
+//   any clause about something else is left to the other claims.
+// - `line-moves.ts`: a changed row's move, read closed and page-language
+//   neutral from the packet's readable lines: a gone line and an added line
+//   identical except for exactly one whole number moved by (after - before).
+//   No word is read and no unit guessed; lines cut, two numbers moved in one
+//   line, or one line pairing several ways by different moves give no reading.
+// - `witness-move.ts`: a list place's whole move, rows added (+1) and removed
+//   (-1) plus each changed row's line move, where every changed row reads: a
+//   list at 9 that is 10 after a part asking to add 1 has moved by +1 (user,
+//   2026-10-27). `count-claim.ts` matches a place by it, in the asked
+//   direction only.
+// - `count-differs.ts`: a change part whose place reads as a whole move other
+//   than the count it asks (9 to 11 for adds 1), which `held.ts` holds a yes
+//   on; a place Core cannot read is left to the judge.
 //
 // Its own directory, beside `../agreement/` and `../refuted-no/`, because both
 // are at the directory budget; neither is imported from here.
 
 export { automationStudioResultChangeCountClaim } from "./count-claim.ts";
+export { automationStudioResultChangeCountDiffers } from "./count-differs.ts";
 export { automationStudioResultSiteChangeHeld } from "./held.ts";
+export { automationStudioResultLineMoves, type AutomationStudioResultLineMove } from "./line-moves.ts";
 export { automationStudioResultSiteChangeScreened } from "./screened.ts";
+export { automationStudioResultWitnessMove, type AutomationStudioResultWitnessMove } from "./witness-move.ts";

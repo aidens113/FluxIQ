@@ -1,4 +1,5 @@
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
+import { automationStudioResultWitnessMove } from "./witness-move.ts";
 
 type SiteChange = NonNullable<AutomationStudioRunResultSummary["siteChange"]>;
 type Witness = SiteChange["witnesses"][number];
@@ -21,14 +22,14 @@ export function automationStudioResultChangeCountClaim(sentence: string, siteCha
   if (!siteChange) return undefined;
   const clauses = sentence.split(CLAUSE_BREAK).map((clause) => clause.trim()).filter(Boolean);
   for (const part of matchedParts(siteChange)) {
-    const kinds = clauses.map((clause) => clauseKind(clause, part.words, part.count));
+    const kinds = clauses.map((clause) => clauseKind(clause, part.words, part.places, part.count));
     if (!kinds.includes("claim") || kinds.includes("other")) continue;
     return { refuted: true, finding: part.line };
   }
   return undefined;
 }
 
-type Matched = { count: number; words: string[]; line: string };
+type Matched = { count: number; words: string[]; places: string[]; line: string };
 
 /** Each change part with a numeric count whose proof is `shown` and whose every witness changed by exactly that count, with Core's change line. */
 function matchedParts(siteChange: SiteChange): Matched[] {
@@ -41,38 +42,56 @@ function matchedParts(siteChange: SiteChange): Matched[] {
     if (!witnesses.length || said.some((one) => one === undefined)) continue;
     const words = contentStems(effect.what);
     if (!words.length) continue;
-    const places = witnesses.map((witness, index) => `${witness.where ? `"${witness.where}"` : `place ${witness.id}`}: ${said[index]}`).join("; ");
+    const read = witnesses.map((witness, index) => `${witness.where ? `"${witness.where}"` : `place ${witness.id}`}: ${said[index]}`).join("; ");
     matched.push({
       count: effect.count,
       words,
-      line: `Core read where part "${proof.part}"'s change shows just before this trial and just after it -- ${places} -- which is the change it asks for (${effect.direction} ${effect.count} ${effect.what}). What those places held before the trial was already there and is not this trial's doing, so their total after it is not the count asked for.`
+      places: witnesses.flatMap((witness) => contentStems(witness.where ?? "")),
+      line: `Core read where part "${proof.part}"'s change shows just before this trial and just after it -- ${read} -- which is the change it asks for (${effect.direction} ${effect.count} ${effect.what}). What those places held before the trial was already there and is not this trial's doing, so their total after it is not the count asked for.`
     });
   }
   return matched;
 }
 
-/** Core's words for a witness's change where it is exactly `count` in `direction`; nothing otherwise. A control place's direction cannot be told from its states, so any `count` controls moved matches. */
+/**
+ * Core's words for a witness's change where it is exactly `count` in
+ * `direction`; nothing otherwise. A list place's move is its rows added or
+ * removed and each changed row's one moved whole number
+ * (`./witness-move.ts`), all in the asked direction: a list at 9 that is 10
+ * after a part asking to add 1 has had 1 added. A control place's direction
+ * cannot be told from its states, so any `count` controls moved matches.
+ */
 function changeSaid(witness: Witness, direction: "adds" | "removes", count: number): string | undefined {
   const change = witness.change;
   if (typeof change !== "object") return undefined;
   if ("added" in change) {
-    const moved = direction === "adds" ? change.added : change.removed;
-    const other = direction === "adds" ? change.removed : change.added;
-    if (moved !== count || other !== 0 || change.changed !== 0) return undefined;
-    return `${count} row${count === 1 ? "" : "s"} ${direction === "adds" ? "added" : "removed"}, none ${direction === "adds" ? "removed" : "added"} or changed`;
+    const move = automationStudioResultWitnessMove(witness);
+    if (!move) return undefined;
+    const sign = direction === "adds" ? 1 : -1;
+    const against = direction === "adds" ? move.removed : move.added;
+    if (against !== 0 || move.moves.some((one) => Math.sign(one.by) !== sign) || move.total !== sign * count) return undefined;
+    return move.words;
   }
   let moved = 0;
   for (const label of new Set([...Object.keys(change.from), ...Object.keys(change.to)])) moved += Math.max(0, (change.to[label] ?? 0) - (change.from[label] ?? 0));
   return moved === count ? `${count} control${count === 1 ? "" : "s"} moved from one state to another` : undefined;
 }
 
-/** `claim`: a count of what the part asks for other than its own; `restates`: only its own count; `other`: words of something else; `none`: too few words to say anything. */
-function clauseKind(clause: string, words: readonly string[], count: number): "claim" | "restates" | "other" | "none" {
+/**
+ * `claim`: a count of what the part asks for other than its own; `restates`:
+ * only its own count; `other`: words of something else; `none`: too few words
+ * to say anything. A count is a numeral followed within two words by a word of
+ * the part's `what`, or by a word of where its change shows, or that such a
+ * place's word comes within three words before ("the list now has 10").
+ */
+function clauseKind(clause: string, words: readonly string[], places: readonly string[], count: number): "claim" | "restates" | "other" | "none" {
   const tokens = clause.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
   const counts: number[] = [];
   tokens.forEach((token, index) => {
     if (!/^\d+$/u.test(token) || ORDINAL_BEFORE.has(tokens[index - 1]?.toLowerCase() ?? "")) return;
-    if (tokens.slice(index + 1, index + 3).some((next) => words.includes(stem(next)))) counts.push(Number(token));
+    const after = tokens.slice(index + 1, index + 3).map(stem);
+    const before = tokens.slice(Math.max(0, index - 3), index).map(stem);
+    if (after.some((next) => words.includes(next) || places.includes(next)) || before.some((prior) => places.includes(prior))) counts.push(Number(token));
   });
   if (counts.some((stated) => stated !== count)) return "claim";
   if (counts.length) return "restates";

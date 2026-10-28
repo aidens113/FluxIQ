@@ -49,7 +49,7 @@ describe("a no claiming the wrong count where the trial's change is what its par
 
   it("stands where the change is not what the part asks, or the sentence also says something else", () => {
     expect(automationStudioResultChangeCountClaim(WRONG_COUNT.observed!, libraryHoldsChange("carried", { added: 3 }))).toBeUndefined();
-    // A row value moved by some units: Core does not parse page quantities, so it is never matched.
+    // A changed row whose lines do not pair as one whole number moved: no reading, so never matched (`./quantity-moves.test.ts`).
     expect(automationStudioResultChangeCountClaim(WRONG_COUNT.observed!, libraryHoldsChange("carried", { added: 0, changed: 1 }))).toBeUndefined();
     expect(automationStudioResultChangeCountClaim("The holds list now shows 4 holds, but the reading-room alert was never set to email.", libraryHoldsChange())).toBeUndefined();
     expect(automationStudioResultChangeCountClaim("Step 3 placed 1 hold on a book.", libraryHoldsChange())).toBeUndefined();

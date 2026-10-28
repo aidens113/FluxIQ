@@ -37,7 +37,7 @@ describe("emitAutomationStudioActivityStepSkipped", () => {
     expect(seen[0]?.detail?.skipped).toEqual({ reason: "optional_absent" });
   });
 
-  it("names the contract's three reasons", () => {
-    expect([...CLIENT_GATEWAY_ACTIVITY_SKIP_REASONS]).toEqual(["already_done", "optional_absent", "state_routed"]);
+  it("names the contract's four reasons", () => {
+    expect([...CLIENT_GATEWAY_ACTIVITY_SKIP_REASONS]).toEqual(["already_done", "already_in_state", "optional_absent", "state_routed"]);
   });
 });

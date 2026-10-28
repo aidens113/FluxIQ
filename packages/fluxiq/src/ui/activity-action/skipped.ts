@@ -9,7 +9,8 @@
 const SKIP_WORDS: Readonly<Record<string, string>> = {
   optional_absent: "Skipped: not there, optional",
   state_routed: "Skipped: the page was already at another step",
-  already_done: "Skipped: already done in this run"
+  already_done: "Skipped: already done in this run",
+  already_in_state: "Not pressed: it already showed the asked state"
 };
 
 /**

@@ -116,21 +116,22 @@ export function automationStudioStepRecordCompletedAct(ctx: AutomationStudioStep
  * An attempt the domain found already in its asked state (t775,
  * `../node-execution/already-in-state.ts`), as the run keeps and says it: the
  * row of the loop pass it ran in, where it ran in one, joins its `skipped`,
- * and the chat says it was already so -- "Already so for <row>" -- under the
- * closed skip the client draws, `already_done`, whose card says nothing was
- * done again. Any other attempt is returned as it was. Called before the
+ * and the chat says it was not pressed -- "Not pressed for <row>: it already
+ * showed the asked state" -- under its
+ * own closed skip, `already_in_state`, whose card says it was not pressed.
+ * Any other attempt is returned as it was. Called before the
  * attempt joins the run's attempts, as the pass is read from those before it.
  */
 export function automationStudioStepSaidAlreadyInState(ctx: AutomationStudioStepLoopContext, node: AutomationStudioFlowNode, attempt: AutomationStudioNodeAttemptTrace): AutomationStudioNodeAttemptTrace {
   if (attempt.skipped?.reason !== "already_in_state") return attempt;
   const row = ctx.loopWords.passOf(node.id, ctx.attempts)?.row;
-  const said = row ? `Already so for ${row}` : `Already so: ${node.label?.trim() || "this step"}`;
+  const said = row ? `Not pressed for ${row}: it already showed the asked state` : `Not pressed: ${node.label?.trim() || "this step"} already showed the asked state`;
   const index = ctx.stepNumbers.numberOf(node.id);
   const subject = row ?? node.label?.trim();
   emitAutomationStudioActivityStepSkipped({
     nodeId: node.id,
     said,
-    skipped: { reason: "already_done", ...(subject ? { subject } : {}) },
+    skipped: { reason: "already_in_state", ...(subject ? { subject } : {}) },
     ...(index !== undefined ? { step: { index, count: ctx.stepNumbers.count, nodeId: node.id, ...(node.label ? { label: node.label } : {}), ...(row ? { row } : {}) } } : {})
   });
   return { ...attempt, message: `${said}: the page already showed the state this step asks for, so nothing was pressed.`, skipped: { ...attempt.skipped, ...(row ? { row } : {}) } };
