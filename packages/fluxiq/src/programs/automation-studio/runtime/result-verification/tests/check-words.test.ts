@@ -101,3 +101,19 @@ describe("the check's card for a run that stored more than one record set", () =
     expect(automationStudioResultCheckWords(answered("55 records stored, across 2 record sets; the Flow's steps were web.dom.click."))).toMatch(/^Rows were stored in 2 record sets\. /u);
   });
 });
+
+describe("the judge call labels", () => {
+  it("are left off the reading a person sees (t785, run-mvskodlp-9966d618)", () => {
+    const refused = ({
+      ...answered("3 records stored, across 1 record set."),
+      verdict: "does_not_answer",
+      code: "core.result.does_not_answer_request",
+      reason: "The result does not answer the request.",
+      repair: { schemaVersion: "automation-studio.result-repair.v1", findings: [], fix: [], judgement: { expected: "Judge call 1: Every post in the home feed. Judge call 2 (the record disagrees): Every post before the end.", observed: "Judge call 1: Three posts." } }
+    }) as unknown as AutomationStudioResultVerification;
+    const words = automationStudioResultCheckWords(refused);
+    expect(words).toContain("It looked for: Every post in the home feed. Every post before the end.");
+    expect(words).toContain("What it found: Three posts.");
+    expect(words).not.toMatch(/Judge call/u);
+  });
+});

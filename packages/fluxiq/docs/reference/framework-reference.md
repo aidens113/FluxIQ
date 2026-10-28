@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4225
+- Public declarations: 4230
 - Class: 144
 - Interface: 10
-- Object: 550
+- Object: 553
 - Type: 2258
 - Type Alias: 1
-- Value: 1262
+- Value: 1264
 
 ## Public Declarations
 
@@ -39,6 +39,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ACTIVITY_ACTION_REFUSAL_WORDS` | Object | `packages/fluxiq/src/ui/activity-action/refusal-words.ts` | Core's plain words for why it did not do what a decision asked, written once for every client's card and for Core's own wording (`programs/automation-studio/runtime/activity/wording/draft-edit-card.ts`, which checks at compile time that every reason the draft can give has words here). - `amendment`: why an edit to the draft changed nothing, by the draft's own refusal reason (`programs/automation-studio/runtime/flow-draft/amendment/types.ts`). - `repeated`: why a call, or a step asked to run again, was not run, by what the same call came to before (`programs/automation-studio/runtime/llm/repeat-guard/outcomes.ts`). - `resent`: why a whole Flow sent again unchanged (a candidate build's submission) was not taken, by the same. Each finishes "Not done: ...", so each opens in lower case and is no code. |
 | `ACTIVITY_ACTION_VERB_NAMES` | Object | `packages/fluxiq/src/ui/activity-action/verb-names.ts` | The short name a card carries for a verb whose act is narrower than its kind's name (`./names.ts`): "Choose" for an option chosen, which is a click by kind. A verb not here is named by its kind. |
 | `ACTIVITY_DETAIL_INTERVAL_MS` | Object | `packages/fluxiq/src/ui/activity-status/pacer.ts` | The shortest time between two paced changes of the line: more than half of three seconds, so any three seconds show at most two. The overlay used to add this on its own (a 1.6 s dwell over a 1.2 s pace); one pace for both surfaces keeps them in step (D7). |
+| `ACTIVITY_DOUBTED_ENDING_CLOSE` | Object | `packages/fluxiq/src/ui/activity-status/doubted-ending.ts` | The words that close such an ending; shared by the sentence's builder and the headline's reader. |
+| `ACTIVITY_DOUBTED_HEADLINE` | Object | `packages/fluxiq/src/ui/activity-status/doubted-ending.ts` | The headline for such an ending. |
 | `ACTIVITY_FAN_OUT_INTERVAL_MS` | Object | `packages/fluxiq/src/ui/activity-status/fan-out-gate.ts` | Four sends a second. |
 | `ACTIVITY_HEADLINE_DWELL_MS` | Object | `packages/fluxiq/src/ui/activity-status/pacer.ts` | The least time a headline stays up before another that does not settle or wait replaces it (t753). |
 | `ACTIVITY_HISTORY_LIMITS` | Object | `packages/fluxiq/src/ui/activity-status/history-limits.ts` | How much of FluxIQ's work the background keeps for the chat's step messages (`background/activity/unit-history.ts`): the last `units` units of work, and at most `eventsPerUnit` events of each, the newest. A build of 60 decisions is about 250 kept events, so a whole build fits with room to spare; the bound is there so a runaway loop cannot grow the panel's state without end. A build still in progress is held to `buildEventsCeiling` instead, and is never the unit dropped for a newer one: a build with a project supervisor, several builders, the validator and a repair passes 500 events, and can pass ten units, on its own (automation-project-agents-plan, chat presentation). The ceiling is still a bound, for the same runaway loop. |
@@ -146,6 +148,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_ACTION_PERMISSION_CONTROL_NAME_MAX` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/action-permissions/request.ts` | The longest control name a request carries. Past it the name is cut, never widened. |
 | `AUTOMATION_STUDIO_ACTION_PERMISSION_REQUEST_SCHEMA_VERSION` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/action-permissions/request.ts` | - |
 | `AUTOMATION_STUDIO_ACTIVITY_LIMITS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/activity/limits.ts` | The bounds on every activity event (D4 of the live activity plan): string lengths match what `ClientGatewayActivity` promises its readers, and `recent` is how many events one project's snapshot keeps. |
+| `AUTOMATION_STUDIO_ACTIVITY_NOTHING_LEFT` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/activity/wording/left-told.ts` | What is said when the build knows of nothing it left (header). |
 | `AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES` | Object | `packages/contracts/src/failure/adaptive-class.ts` | FluxIQ's one failure-category list. Core names every member and classifies failed attempts into them; a domain decides which member applies and reports it in an `AutomationStudioFailureRecord`. No second list exists in Core or in an importing domain. Adding a member breaks exhaustive consumers, so before 1.0 it is a minor version bump with a migration note. |
 | `AUTOMATION_STUDIO_AES_GCM_PROJECT_CONTENT_PROTECTION_ID` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/content-protection.ts` | - |
 | `AUTOMATION_STUDIO_ARRIVAL_STEP_KEY` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/arrival-node.ts` | The arrival step's key in the subflow it opens. |
@@ -1319,6 +1322,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioFlowBootstrapStepsNotRunInThisBuild` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/not-run.ts` | - |
 | `AutomationStudioFlowBootstrapStillAchievable` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts` | Whether the judge said what was asked can still be had (its diagnosis's `stillAchievable`). Only a `no` ends a build "not doable" (t195-w37: the user's rule, "only if there is absolutely no way"); absent is `unknown`. |
 | `AutomationStudioFlowBootstrapStoodStill` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts` | Why a build with a route still open stopped, as the not-finished ending says it (t240; t195-w37): `no_progress` -- the last round, and `rounds` in a row, measurably did no better than the judged round before (`before`, the judgement before the last); `repeated_unchanged` -- the round ended on refused repeats of the same calls and handed back the Flow it started from, so a second round would only repeat it (run 38, cause C8). |
+| `automationStudioFlowBootstrapStopAnnouncementSaid` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/not-done.ts` | - |
 | `automationStudioFlowBootstrapStopSaid` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/not-done.ts` | - |
 | `AutomationStudioFlowBootstrapSubflow` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/contracts.ts` | - |
 | `AutomationStudioFlowBootstrapSubflowMetadata` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/contracts.ts` | Graph-level declarations of one Subflow: what proves it worked (C2) and what a runtime must support to run it (C10). |
@@ -3463,6 +3467,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `EncryptedSecretValueRecordV1` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | A version 1 seal: scrypt at Node's default cost (N=2^14), recording no parameters, with the base64url salt text itself as the scrypt salt. Still read; never written. It is re-sealed as version 2 at its next successful unlock or reveal. |
 | `EncryptedSecretValueRecordV2` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | A version 2 seal: records its scrypt parameters, which must be in the read allowlist, and derives from the decoded salt bytes. `sealedByUserId` is a non-secret hint naming the account whose password sealed the value, so a login tries only that user's keys; tampering with it affects availability only. |
 | `endingKindOf` | Value | `packages/fluxiq/src/ui/activity-status/ending-kind.ts` | - |
+| `endsOnDoubt` | Value | `packages/fluxiq/src/ui/activity-status/doubted-ending.ts` | - |
 | `EnvironmentDescriptor` | Type | `packages/fluxiq/src/programs/automation-studio/model/descriptors.ts` | - |
 | `estimateAutomationStudioDeepSeekCostUsd` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/pricing.ts` | - |
 | `estimateAutomationStudioDeepSeekInputTokens` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/request-body.ts` | - |

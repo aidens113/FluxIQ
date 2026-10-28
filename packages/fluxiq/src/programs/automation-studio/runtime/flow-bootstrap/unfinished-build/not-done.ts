@@ -400,3 +400,12 @@ function bounded(text: string, most: number): string {
   const folded = text.replace(/[\u0000-\u001f\u007f]+/gu, " ").replace(/\s+/gu, " ").trim();
   return folded.length > most ? `${folded.slice(0, most - 3).trimEnd()}...` : folded;
 }
+
+// A result repair is a build of its own (re-author after a refuted run): the Flow it starts from was finished and is saved.
+// When its round stalled the row read "The build stopped before the Flow was finished", telling the person a working Flow was unfinished (t785).
+/** The row's opening: the stop and its reason, worded for a build or for a result repair. */
+export function automationStudioFlowBootstrapStopAnnouncementSaid(input: { resultRepair: boolean; reason: string }): string {
+  return input.resultRepair
+    ? `The repair stopped before it was finished: ${input.reason}. The saved Flow is unchanged. Running what the repair has so far from the start, to judge what it does and what is left.`
+    : `The build stopped before the Flow was finished: ${input.reason}. Running the Flow as far as it got from its start, to judge what it does and what is left.`;
+}

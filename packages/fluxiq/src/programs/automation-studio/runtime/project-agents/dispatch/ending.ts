@@ -176,6 +176,8 @@ export type AutomationStudioProjectDispatchSpend = {
   trial?: Readonly<AutomationStudioSubflowTrialResult> | undefined;
   /** What the brief started with, where it was sized as it started below what the dispatch sized it at (`./start-allowance.ts`, t627). */
   sizedAtStart?: AutomationStudioProjectDispatchSizedAtStart | undefined;
+  /** True where the brief's one test is the judged whole run (a single-subflow plan, t679): its yes is worded as that test, once. */
+  wholeTest?: true | undefined;
 };
 
 export const automationStudioProjectDispatchEnding = Object.freeze({
@@ -189,7 +191,7 @@ export const automationStudioProjectDispatchEnding = Object.freeze({
     // A standing yes for the latest proposal is done, however the loop stopped (header, t611).
     const passed = passedProposal(outcome.proposal, outcome.trial);
     if (passed) {
-      if (outcome.loop.ok && !outcome.ended) return returned(brief, "done", passedSaid(passed), spend, passed);
+      if (outcome.loop.ok && !outcome.ended) return returned(brief, "done", passedSaid(passed, spend), spend, passed);
       const after = outcome.loop.ok ? `The builder then ended it ${outcome.ended!.outcome}: ${clipped(outcome.ended!.reason, MAX_ENDING_WORDS)}` : stopReason(brief, outcome.loop, spend.allowance);
       return passedDone(brief, passed, after, spend);
     }
@@ -206,7 +208,7 @@ export const automationStudioProjectDispatchEnding = Object.freeze({
     }
     if (outcome.loop.ok && proposal) {
       const verdict = outcome.trial?.verdict;
-      if (verdict === "yes") return returned(brief, "done", `Revision ${proposal.revision} of the subflow was tried on its own and its trial answered yes.`, spend, proposal);
+      if (verdict === "yes") return returned(brief, "done", passedSaid(proposal, spend), spend, proposal);
       const why = verdict === undefined
         ? `The builder completed revision ${proposal.revision}, but no subflow trial could run here, so it stands untried.`
         : `The builder completed revision ${proposal.revision}, but its latest trial answered ${verdict}.`;
@@ -463,13 +465,15 @@ function passedProposal(proposal: Readonly<AutomationStudioSubflowProposal> | un
 }
 
 /** What a passing brief says of its yes. */
-function passedSaid(passed: Readonly<AutomationStudioSubflowProposal>): string {
+function passedSaid(passed: Readonly<AutomationStudioSubflowProposal>, spend: Pick<AutomationStudioProjectDispatchSpend, "wholeTest">): string {
+  // A single-subflow plan's one test is the whole Flow's test run from its start: it is said once, as that (t785).
+  if (spend.wholeTest) return `Revision ${passed.revision} of the subflow, which is the whole Flow here, answered yes in its test run from the start.`;
   return `Revision ${passed.revision} of the subflow was tried on its own and its trial answered yes.`;
 }
 
 /** A brief done on its standing yes though the builder did not complete with it, `after` saying how it stopped. */
 function passedDone(brief: AutomationStudioProjectSubflowBrief, passed: Readonly<AutomationStudioSubflowProposal>, after: string, spend: AutomationStudioProjectDispatchSpend): AutomationStudioProjectBuilderReturn {
-  return returned(brief, "done", `${passedSaid(passed)} The brief is done on that trial's receipt, though the builder did not complete with it. ${after}`, spend, passed);
+  return returned(brief, "done", `${passedSaid(passed, spend)} The brief is done on that trial's receipt, though the builder did not complete with it. ${after}`, spend, passed);
 }
 
 /**

@@ -83,6 +83,12 @@ describe("a brief's return reason", () => {
     expect(ending.built(brief, outcome({ code: "llm_evidence_loop.iteration_limit" }), spend).reason).toBe("The builder stopped before completing (llm_evidence_loop.iteration_limit).");
   });
 
+  it("says a single-subflow plan's one test once, as the whole Flow's test run from its start (t785)", () => {
+    const yes = trial("yes", true, {});
+    expect(ending.built(brief, outcome({ result: {}, trial: yes, lastTrial: yes }), { ...spend, wholeTest: true }).reason)
+      .toBe("Revision 2 of the subflow, which is the whole Flow here, answered yes in its test run from the start.");
+  });
+
   it("names an invalid configuration's check, its figures and its sentence (t584, t588)", () => {
     const configuration = { check: "tool.description_length", values: { toolId: "core.submit_subflow", length: 2140, max: 2000 }, words: "The tool core.submit_subflow describes itself in 2140 characters; a tool may use at most 2000." };
     const returned = ending.built(brief, outcome({ proposal: undefined, code: "llm_evidence_loop.invalid_configuration", failed: { configuration } }), spend);

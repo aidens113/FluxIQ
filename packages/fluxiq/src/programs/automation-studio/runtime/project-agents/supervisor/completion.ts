@@ -174,7 +174,12 @@ export function automationStudioProjectSupervisorCompletion(context: AutomationS
     }
     const checked = context.gate.completion({ revision: candidate.revision, digest: candidate.digest });
     const rescued = checked.ok ? undefined : context.state.rescuedTest(context.controller, context.gate);
-    if (checked.ok || !rescued) return checked;
+    if (checked.ok) {
+      // A build that ends with a Flow says which of its own lasting acts are still on the site (t785): builds no longer clean up at the end (t775). Nothing is said when nothing is left.
+      leftNow().announce();
+      return checked;
+    }
+    if (!rescued) return checked;
     // A pass the run rescued completes once its repair could not be made, and the person is told (header).
     const why = context.state.recoveryRepairsShort.get(rescued.key);
     if (why) {
