@@ -51,9 +51,20 @@ export type AutomationStudioStepLoopContext = {
   /**
    * One arrival at one node: how many times it has been attempted here, which
    * ladder rungs that arrival has already spent, and which arrival at the node
-   * in this frame it is (`ordinal`, 1 for the first).
+   * in this frame it is (`ordinal`, 1 for the first). `reacquired` marks the
+   * arrival whose stale target was already looked for again, once per arrival;
+   * `overlay` is the found value laid over a bound parameter's run path for
+   * this node's remaining attempts (`../target-reacquire/`, t786), gone with
+   * the arrival when the run leaves the node.
    */
-  arrival: { nodeId: string; attempts: number; consumed: Set<AutomationStudioLadderRungKind>; ordinal: number };
+  arrival: {
+    nodeId: string;
+    attempts: number;
+    consumed: Set<AutomationStudioLadderRungKind>;
+    ordinal: number;
+    reacquired?: true;
+    overlay?: Readonly<Record<string, JsonValue>>;
+  };
   /** The retry the ladder planned, stamped on the next attempt and then cleared. */
   pendingRetry: AutomationStudioNodeAttemptTrace["retry"];
 };

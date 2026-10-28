@@ -244,6 +244,8 @@ function runtimeActionAttemptRecord(session: AutomationStudioRuntimeSession, pla
       // is indistinguishable from a Flow that authored the same node twice,
       // and no rung can be attributed to anything.
       ...(attempt.retry ? { retry: { attemptNumber: attempt.retry.attemptNumber, maxAttempts: attempt.retry.maxAttempts, backoffMs: attempt.retry.backoffMs, rung: attempt.retry.rung } } : {}),
+      // A stale target found again from its source step (t786): ids and closed codes only, never the row.
+      ...(attempt.reacquire ? { reacquire: { sourceNodeId: attempt.reacquire.sourceNodeId, kind: attempt.reacquire.kind, outcome: attempt.reacquire.outcome, ...(attempt.reacquire.reason ? { reason: attempt.reacquire.reason } : {}), ...(attempt.reacquire.returned ? { returned: true } : {}) } } : {}),
       // What the run did about the state the node expected to find before it
       // ran. `message` is the host's sentence and stays behind.
       ...(attempt.readiness ? { readiness: { ceilingMs: attempt.readiness.ceilingMs, waitedMs: attempt.readiness.waitedMs, satisfied: attempt.readiness.satisfied, checkedConditionCount: attempt.readiness.checkedConditionCount } } : {}),

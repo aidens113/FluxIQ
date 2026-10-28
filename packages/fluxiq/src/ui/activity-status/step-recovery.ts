@@ -4,7 +4,8 @@
 // Core puts a closed `recovery` on a step row when a lifecycle handler ran, a
 // frame began at an alternative entry, the run took a route, an alternative
 // path was tried, or the extension closed a layer the page put in the way
-// (`interference`, subject "Closed a notice the page put in the way"), so a
+// (`interference`, subject "Closed a notice the page put in the way"), or a
+// step whose target came from an earlier step found it again (`reacquire`, t786), so a
 // card can be drawn from closed fields rather than by parsing Core's sentence.
 // This is the one reader: it keeps the field only on a `step` row and only in
 // the contract's shape, so a panel never draws a card from a value an older or
@@ -19,7 +20,7 @@ export type ActivityStepRecovery = NonNullable<NonNullable<ClientGatewayActivity
 
 // Records over the contract's unions, so a value Core adds or drops fails the
 // typecheck here instead of being silently read.
-const KINDS: Record<ActivityStepRecovery["kind"], true> = { handler: true, entry: true, route: true, alternative: true, interference: true };
+const KINDS: Record<ActivityStepRecovery["kind"], true> = { handler: true, entry: true, route: true, alternative: true, interference: true, reacquire: true };
 const OUTCOMES: Record<ActivityStepRecovery["outcome"], true> = { succeeded: true, failed: true, refused: true };
 const EVENTS: Record<NonNullable<ActivityStepRecovery["event"]>, true> = { start: true, before: true, retry: true, fail: true, before_next: true };
 
