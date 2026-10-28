@@ -446,7 +446,9 @@ export type AutomationStudioNodeAttemptTrace = {
      */
     | { reason: "state_routed"; code: string; toNodeId: string; direction: AutomationStudioStateRouteDirection }
     /** Its lasting act completed earlier in this run (`attemptId`), so it was not dispatched again: it reads `route: "success"`, with that attempt's outputs (`step-loop/already-done.ts`). */
-    | { reason: "already_done"; code: string; attemptId: string; row?: string };
+    | { reason: "already_done"; code: string; attemptId: string; row?: string }
+    /** The domain found its control already in the state the step's `ensureState` asks for and pressed nothing (t775): `route: "success"`, its own outputs (`node-execution/already-in-state.ts`). */
+    | { reason: "already_in_state"; code: string; row?: string };
   /**
    * What the run made of the page when this step could not run: whether it
    * read the page, how many nodes recorded a pre-state to compare, how many

@@ -339,7 +339,7 @@ export function automationStudioProjectBuildBriefPorts(input: {
       // The domain's denied keys, which the dispatcher withholds from a repair's `yourSubflow` (`project-agents/dispatch/run-brief.ts`, t625).
       // `moves`: the reader's count of the times its looks moved the target, so a test refused after one says where it stands (t738).
       // `issuedRefs`: every ref the build issued, with where it was read, which the dispatcher puts on the opening call as `places` (header, t743).
-      const ports: AutomationStudioProjectBuilderPorts & { issuedRefs: () => AutomationStudioSiteResetIssuedRef[] } = { loop, submission: { ...submission, permissionFor: built.permissions.planStep }, trial, reset, moves: () => reader.moves, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...built.submissions.observe(observed), decide: built.decide(observed.completionSchema) }), ended: built.ended, deniedEvidenceKeys: binding.deniedEvidenceKeys, issuedRefs: () => project.ledger.issuedRefs() };
+      const ports: AutomationStudioProjectBuilderPorts & { issuedRefs: () => AutomationStudioSiteResetIssuedRef[] } = { loop, submission: { ...submission, permissionFor: built.permissions.planStep, exploredToggles: built.permissions.exploredToggles }, trial, reset, moves: () => reader.moves, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...built.submissions.observe(observed), decide: built.decide(observed.completionSchema) }), ended: built.ended, deniedEvidenceKeys: binding.deniedEvidenceKeys, issuedRefs: () => project.ledger.issuedRefs() };
       return ports;
     },
     reset: async (request) => {

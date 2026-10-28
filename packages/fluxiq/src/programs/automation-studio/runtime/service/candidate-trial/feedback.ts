@@ -433,6 +433,7 @@ function openerBefore(ran: ReturnType<typeof automationStudioTrialExecutedSteps>
  * skipped (r4b F4, `../../executor/step-skip/act-not-done.ts`).
  */
 function skippedSaid(skipped: NonNullable<AutomationStudioNodeAttemptTrace["skipped"]>): string {
+  if (skipped.reason === "already_in_state") return "Its control already showed the asked state, so it was not pressed.";
   if (skipped.reason !== "target_absent") return "The page was already at another step, so the run went on from there.";
   return skipped.notDone
     ? "Its control was not on the page, so the step was skipped and what it does was not done. If the instruction asks for it, the step must not be optional."

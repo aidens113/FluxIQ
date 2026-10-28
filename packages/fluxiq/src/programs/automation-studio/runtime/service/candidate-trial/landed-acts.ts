@@ -113,6 +113,16 @@
 // on the site carries it and no undo could ever be tied to it. A Core node that
 // does reach outside -- a recorded action (`builtin.policy.action`), a database
 // write -- is read as a domain step is.
+//
+// **A step the page already satisfied is no act, and is said apart (t775).** A
+// step that flips a control carries `ensureState`, and on a page already in
+// that state the domain pressed nothing: its attempt is skipped
+// `already_in_state` (`../../executor/node-execution/already-in-state.ts`). It is
+// never one of the acts above -- a skipped attempt never is -- and
+// `automationStudioCandidateTrialAlreadyInState` lists it on its own, numbered
+// as the feedback numbers it, with its pass among the loop passes its node ran
+// in and the row it ran on, where the run knew them, so a caller can say it
+// was already so rather than that nothing happened.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../model/index.ts";
@@ -159,6 +169,31 @@ export function automationStudioCandidateTrialLandedActs(trace: AutomationStudio
     acts.push({ step: index + 1, definitionId: attempt.definitionId, ...(node.label ? { label: node.label } : {}), ...(control ? { control } : {}), consequences, ...(possible ? { possible: true as const } : {}), ...(spot ? { spot } : {}), ...(collections ? { collections } : {}), ...(controls ? { controls } : {}), ...(created.length ? { created } : {}), ...(passes[index] ? { pass: passes[index] } : {}), ...(automationStudioSiteResetWitnessStampValid(witness) ? { witness: { ...witness } } : {}) });
   });
   return acts;
+}
+
+/** A trial step the domain found already in its asked state: no act, said apart (header, t775). */
+export type AutomationStudioCandidateTrialAlreadyInState = {
+  step: number;
+  definitionId: string;
+  label?: string;
+  control?: string;
+  outcome: "already_in_state";
+  pass?: { number: number; of: number };
+  row?: string;
+};
+
+/** Each step of the trial the domain found already in its asked state, in the order they ran (header, t775). */
+export function automationStudioCandidateTrialAlreadyInState(trace: AutomationStudioGraphExecutionTrace | undefined, graph: AutomationStudioFlowArtifact | undefined): AutomationStudioCandidateTrialAlreadyInState[] {
+  const nodes = new Map((graph?.nodes ?? []).map((node) => [node.id, node]));
+  const steps = automationStudioTrialExecutedSteps(trace?.attempts ?? []);
+  const passes = passesOf(steps);
+  return steps.flatMap(({ attempt }, index) => {
+    const skipped = attempt.skipped;
+    if (skipped?.reason !== "already_in_state") return [];
+    const node = nodes.get(attempt.nodeId);
+    const control = automationStudioTrialStepControl(node, attempt);
+    return [{ step: index + 1, definitionId: attempt.definitionId, ...(node?.label ? { label: node.label } : {}), ...(control ? { control } : {}), outcome: "already_in_state" as const, ...(passes[index] ? { pass: passes[index] } : {}), ...(skipped.row ? { row: skipped.row } : {}) }];
+  });
 }
 
 /** Each step's pass among the loop passes its node ran in this trial, where it ran in more than one (header, t748). */

@@ -1,5 +1,6 @@
 import type { AutomationStudioResultVerdict, AutomationStudioResultVerification } from "../contracts/index.ts";
 import { automationStudioResultReaskRefutedNo, type AutomationStudioResultNoRecord } from "../refuted-no/index.ts";
+import { automationStudioResultSiteChangeHeld } from "../site-change/index.ts";
 import { automationStudioResultDoubtRecheckWords } from "../unsure-doubts/index.ts";
 import { automationStudioResultKeptRowsFlagged } from "../verdict/index.ts";
 import { agree } from "./agree.ts";
@@ -21,8 +22,9 @@ import { automationStudioResultVerificationAgreement } from "./verification-agre
  * outcome is marked `reasked`, and a marked one is returned unchanged.
  */
 export async function automationStudioResultVerificationReaskContradicted(input: ReaskContradictedInput): Promise<AutomationStudioResultVerification> {
-  // Every outcome a re-ask comes to keeps Core's record of the trial, as the agreement's own does (header, t652).
-  return recorded(input, await reaskContradicted(input));
+  // Every outcome a re-ask comes to keeps Core's record of the trial, as the agreement's own does (header, t652),
+  // and a yes it comes to is held to the trial's change as the agreement's own is (t775, `../site-change/held.ts`).
+  return recorded(input, automationStudioResultSiteChangeHeld(await reaskContradicted(input), input.summary));
 }
 
 /** The re-ask itself (`automationStudioResultVerificationReaskContradicted`). */

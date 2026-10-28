@@ -8,6 +8,14 @@ import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "./tool-ids
 const TEXT = { type: "string" } as const;
 const TEXTS = { type: "array", items: TEXT } as const;
 
+const EFFECT: JsonObject = {
+  type: "object",
+  description: "Optional. The change this part asks for, as data. kind change: direction adds or removes, count a whole number from 1 to 1000 or \"each_match\" where the request names a condition and no number, and what is the thing changed; it is judged by the difference between the state before the run and the state after it (placing holds on 2 books is change, adds, 2, \"holds on books\"). kind end_state: state is what must hold after the run; it is judged by the state after the run alone (setting the reading-room alert to email is end_state, \"the reading-room alert is email\"). adds needs create_new or modify_existing in lastingActs, removes needs delete or modify_existing, end_state needs modify_existing. A part that only reads or opens something declares none.",
+  properties: { kind: { type: "string", enum: ["change", "end_state"] }, direction: { type: "string", enum: ["adds", "removes"] }, count: { type: ["integer", "string"] }, what: TEXT, state: TEXT },
+  required: ["kind"],
+  additionalProperties: false
+};
+
 const PLAN_INPUT: JsonObject = {
   type: "object",
   properties: {
@@ -23,13 +31,15 @@ const PLAN_INPUT: JsonObject = {
               quote: { type: "object", properties: { sourceId: TEXT, text: TEXT }, required: ["sourceId", "text"], additionalProperties: false },
               goalFacts: TEXTS,
               lastingActs: { type: "array", items: { type: "string", enum: [...AUTOMATION_STUDIO_ACTION_CONSEQUENCES] } },
-              answer: { type: "object", properties: { kind: { type: "string", enum: ["records"] }, columns: TEXTS }, required: ["kind", "columns"], additionalProperties: false }
+              answer: { type: "object", properties: { kind: { type: "string", enum: ["records"] }, columns: TEXTS }, required: ["kind", "columns"], additionalProperties: false },
+              effect: EFFECT
             },
             required: ["id", "quote", "goalFacts", "lastingActs"],
             additionalProperties: false
           }
         },
-        notAsked: TEXTS
+        notAsked: TEXTS,
+        unchanged: { type: "array", maxItems: 20, items: TEXT, description: "Optional. Things that must show no change, judged relative to the state before the run, for example leave other holds as they are is \"other holds\"." }
       },
       required: ["parts"],
       additionalProperties: false

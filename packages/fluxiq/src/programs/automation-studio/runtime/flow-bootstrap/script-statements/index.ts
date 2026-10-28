@@ -46,4 +46,7 @@ export * from "./repeat-bound.ts";
 export * from "./repeat-pace.ts";
 export * from "./script-spans.ts";
 export * from "./step-done-when.ts";
+// t775: a check on a submitted plan, once the domain resolved each step -- a step that flips a
+// control explored as a toggle is given `ensureState`, or refused for the node that sets the state.
+export * from "./toggle-idempotent.ts";
 export * from "./way-out-steps.ts";

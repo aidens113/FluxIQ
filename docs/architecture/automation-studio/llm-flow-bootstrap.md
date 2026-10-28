@@ -194,7 +194,92 @@ selectable with `FLUXIQ_AUTHORING_MODE=candidate`.
   candidate's trial port, so a Lab Core resets the target before each whole
   trial in project mode as in candidate mode.
 
+### A trial is judged by the change, not by a clean start (t775)
+
+Rule (user, 2026-10-27): reset as rarely as possible and judge the change. A
+trial or judged whole run is judged against the state of the site recorded just
+before it and the change the task asks for. A reset happens only where the
+before-state cannot make a trial meaningful, and it undoes exactly this build's
+own lasting acts. This section is the current design; the section after it
+describes the earlier rule and holds only where this one says so. The wiring of
+the trial gates to this design is pending (phase D); the parts below it that are
+already built are the typed effect, the `trial-change/` module, the idempotent
+toggle and the skip record.
+
+- **Before and after per witness.** Every lasting step names where its change
+  shows (its witness: a list group or a control place). A trial reads each
+  witness twice: before the trial, from the ledger's latest read when nothing
+  landed since, otherwise by Core looking at the witness's location; and after
+  the trial, from the end view when the run ended on that page, otherwise by a
+  second look. The judge's packet gains `siteChange`: per witness the before and
+  after side and the change (added, removed, changed, or none), the acts of the
+  trial with their outcome (`changed`, `already_in_state`, `no_change_seen`),
+  the earlier acts of this build left in place at the start, and one proof per
+  task part. Rows are shown as counts plus bounded readable lines; no opaque
+  token is emitted (`flow-bootstrap/trial-change/`).
+- **A typed effect per part.** The plan's task part says what it must do to the
+  site, never parsed from words: `effect: { kind: "change", direction, count,
+  what }` (adds or removes N, or each match) or `{ kind: "end_state", state }`,
+  and the task lists `unchanged` things that must show no change. A `change`
+  part is met by the delta, whatever the absolute state was: a cart line moving
+  from nine to ten meets "add one" with no reset. An `end_state` part is met when
+  the after-reading shows the state. `unchanged` and every witnessed row no act
+  was attributed to are met when before equals after, so something already liked
+  before the run and still liked after is no violation, while a row that changed
+  with no act is `result.unasked_change`.
+- **Proofs.** Per part: `shown` (a witness changed as declared), `no_change`
+  (every witness read and none changed; finding `result.change_not_seen`, a
+  grounded no, never a yes), `already_in_end_state` (the state held before and
+  after, and no earlier act of that same step was seen to make it), `carried`
+  (the state held before, and the same step was seen to make that change earlier
+  in this build), and `unproven` (a witness unread or none named). A judge yes on
+  `no_change`, `unproven` or `already_in_end_state` is not taken; the verdict is
+  `unknown` with the reason named. A pass that skipped a row as `already_in_state`
+  is still listed with its row, so a Flow that targets a row it must not touch is
+  seen even when nothing changed.
+- **Targeted resets only.** A reset is asked for when an `end_state` part's state
+  already holds because this build's own act put it there through another path,
+  and the Flow's step was never seen to make it: Core asks for an undo of exactly
+  that act (`candidate.trial_starts_in_end_state`). A state that existed before
+  the build began is never touched; the run is judged on leaving it as it is. An
+  undo no call can make never blocks a trial: it runs with the act disclosed and
+  the part `unproven`.
+- **Idempotent toggles.** A step that sets a state must be safe to run on a site
+  already in that state. A control that states its state (checkbox, radio,
+  `aria-pressed`, `aria-checked`, `aria-selected`) uses `web.dom.check`. A control
+  that shows its state only by name is handled by the toggle signature: the
+  domain answers an exploration press with `toggle: { signature,
+  idempotentWith? }`; `flow-bootstrap/explored-toggles.ts` records it, and a
+  `modify_existing` step repeating that press gets the node parameter
+  `ensureState` written by Core, never by the model. The click node then presses
+  only when the target does not already show the signature, and otherwise answers
+  `skipped: "already_in_state"`, which the executor records as a skipped attempt
+  with no landed act. A plain press that repeats a toggle whose signature names
+  `idempotentWith` is refused `candidate.toggle_not_idempotent` at submission
+  (`script-statements/toggle-idempotent.ts`). A toggle with no signature has no
+  idempotent form and falls under the targeted-reset case.
+- **No automatic cleanup.** The build does not put the site back when it ends.
+  The ending row says per witness what the build changed ("held 9, now holds 11"),
+  and the chat offers "Put it back", which runs the reset brief only on request.
+  `project.completion_reset_first` no longer holds completion.
+- **What retires.** `candidate.trial_reset_required` (acts in place, and
+  `acts_unsettleable`), `candidate.trial_reset_unproved`,
+  `candidate.trial_start_differs`, `project.trial_reset_required` and
+  `project.completion_reset_first`; at exploration, `candidate.create_baseline_required`
+  and `candidate.reset_witness_required`. Acts in place at a trial's start are
+  reported as `leftFromEarlier` instead. What stays: `candidate.trial_step_unwitnessed`
+  (a lasting step must name where its change shows), undo admission, settlement,
+  `undoes` and the `lookFirst` port, used only by targeted resets and "Put it
+  back". Offline trials carry no `siteChange`: their acts never happened.
+- **The Lab's acceptance is separate.** The in-build judged run is Core's
+  evidence, judged by delta. The Lab's own oracles stay absolute and judge its own
+  playback after the fixture reset (see the Lab documentation).
+
 ### The site is put back before each trial
+
+Superseded by the section above (t775) once the trial-gate wiring lands: the
+gates below that demand a reset before every trial retire; the targeted reset,
+undo admission and settlement stay.
 
 A candidate trial runs the whole Flow live, so a trial run on what exploration
 or an earlier trial left behind measures nothing (user, 2026-10-12, t462).

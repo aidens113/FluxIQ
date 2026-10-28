@@ -10,7 +10,7 @@ import { automationStudioInstructedActOptionalScriptIssues } from "../instructed
 // Its own barrel, not result-verification's, whose reads import flow-bootstrap back (a module cycle).
 import { automationStudioResultKeptConditionsDropped, type AutomationStudioResultKeptConditionDrop, type AutomationStudioResultKeptConditionsCarrier } from "../../result-verification/standing-no/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
-import { automationStudioFlowScriptWayOutIssues } from "../script-statements/index.ts";
+import { automationStudioFlowPlanToggleSteps, automationStudioFlowScriptWayOutIssues, type AutomationStudioExploredToggle } from "../script-statements/index.ts";
 import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission, AutomationStudioFlowCandidateSubmissionHistory, AutomationStudioCandidateOriginalSourceBinding } from "./contracts.ts";
 import { automationStudioCandidateFingerprint as fingerprint } from "./digest.ts";
 import { AutomationStudioCandidateKeptStepHint } from "./kept-step-hint.ts";
@@ -44,6 +44,15 @@ export class AutomationStudioFlowCandidateSubmissionController {
      * Absent, the candidate loop's.
      */
     refusalTools?: { submit: string; test: string; subject: string } | undefined;
+    /**
+     * The build's explored presses the domain answered as a toggle
+     * (`../explored-toggles.ts`, the permission wrapper's): a model's step on
+     * the same control is given `ensureState`, or refused for the node that
+     * sets the state (`../script-statements/toggle-idempotent.ts`, t775).
+     * Absent, no step is tied to a press, and any `ensureState` a model wrote
+     * is still taken off.
+     */
+    exploredToggles?: { list(): readonly AutomationStudioExploredToggle[] } | undefined;
   }) {
     const descriptor = Object.getOwnPropertyDescriptor(input, "originalSource");
     if (!descriptor) return;
@@ -130,6 +139,13 @@ export class AutomationStudioFlowCandidateSubmissionController {
    * **And once, one that no longer reads the request's words a step chose
    * (t666):** refused `candidate.kept_step_dropped` once, after any kept-condition
    * refusal, and accepted when sent again (`./kept-step-hint.ts`).
+   *
+   * **A step on a control explored as a toggle is safe to run again (t775).**
+   * Once resolved, a model's step that repeats an explored press the domain
+   * answered as a toggle carries `ensureState`, or is refused
+   * `candidate.toggle_not_idempotent` naming the node that sets the state
+   * (`../script-statements/toggle-idempotent.ts`). A composed Flow keeps what
+   * its parts' submissions gave it.
    */
   async submit(result: JsonObject, history: AutomationStudioFlowCandidateSubmissionHistory = {}): Promise<AutomationStudioFlowCandidateSubmission> {
     return this.submitChecked(result, history, () => checkAutomationStudioFlowBootstrapCompletion({ ...this.input, result, handleReach: "view_history" }), true);
@@ -187,7 +203,10 @@ export class AutomationStudioFlowCandidateSubmissionController {
       const code = bindings.length ? "candidate.loop_or_binding_refused" : wayOut.length ? "candidate.way_out_refused" : "candidate.optional_act_refused";
       return { ok: false, revision, check: bindingRefusal([...bindings, ...wayOut, ...optionalActs], verdict.locator, code) };
     }
-    const plan = structuredClone(verdict.buildPlan);
+    // A step on a control explored as a toggle: given `ensureState`, or refused for the node that sets the state (header of `submit`, t775).
+    const toggled = holdKept ? automationStudioFlowPlanToggleSteps({ plan: verdict.buildPlan.plan, handleViews: verdict.handleViews, explored: this.input.exploredToggles?.list() ?? [] }) : undefined;
+    if (toggled?.issues.length) return { ok: false, revision, check: bindingRefusal(toggled.issues, verdict.locator, "candidate.toggle_not_idempotent") };
+    const plan = structuredClone(toggled ? { ...verdict.buildPlan, plan: toggled.plan } : verdict.buildPlan);
     const digest = fingerprint.candidate({ buildPlan: plan, baseDependencyDigest: this.input.baseDependencyDigest, projectId: this.input.projectId, flowId: this.input.flowId, instructionText: this.input.instructionText ?? "",
       ...(this.originalSource ? { originalInstructionsDigest: this.originalSource.originalInstructionsDigest } : {}) });
     // The same plan as the current revision's, written differently, or a Flow

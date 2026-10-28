@@ -127,7 +127,7 @@ export function automationStudioProjectSupervisorPlanInput(value: JsonObject, so
     .filter((key) => key !== "taskSpec" && key !== "subflows" && key !== "reason")
     .map((key) => ({ code: "project.unknown_field", path: key }));
   const rawSpec = isObject(value.taskSpec) ? value.taskSpec : {};
-  const specFields = { parts: rawSpec.parts, notAsked: rawSpec.notAsked ?? [] };
+  const specFields = { parts: rawSpec.parts, notAsked: rawSpec.notAsked ?? [], unchanged: rawSpec.unchanged };
   const spec = automationStudioProjectTaskSpec.parse({ ...rawSpec, notAsked: specFields.notAsked, digest: automationStudioProjectTaskSpec.digest(specFields as Omit<AutomationStudioProjectTaskSpec, "digest">) });
   if (spec.status === "invalid") issues.push({ code: spec.code, path: spec.path });
   else issues.push(...automationStudioProjectTaskSpec.quoteIssues(spec.value, sources), ...(current ? automationStudioProjectTaskSpec.droppedIssues(current, spec.value, sources) : []));

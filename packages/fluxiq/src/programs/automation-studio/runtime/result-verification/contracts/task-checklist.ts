@@ -1,5 +1,10 @@
 import type { AutomationStudioResultRequestedAnswer } from "./requested-output.ts";
 
+/** The change a part asks for (t775): `change`, a number of `what` added or removed; `end_state`, the state that holds once it is done. */
+export type AutomationStudioResultTaskEffect =
+  | { kind: "change"; direction: "adds" | "removes"; count: number | "each_match"; what: string }
+  | { kind: "end_state"; state: string };
+
 /**
  * The task checklist a project build's judge is sent (`taskChecklist`): first
  * its own label, saying the instructions are the only authority and how the
@@ -11,8 +16,11 @@ import type { AutomationStudioResultRequestedAnswer } from "./requested-output.t
  */
 export type AutomationStudioResultTaskChecklist = {
   supplementary: string;
-  asked: Array<{ part: string; words: string; goalFacts: string[]; lastingActs: string[]; answer?: AutomationStudioResultRequestedAnswer }>;
+  /** A part whose task spec types the change it asks for carries it (`effect`, t775): judged by the difference from the state before the run. */
+  asked: Array<{ part: string; words: string; goalFacts: string[]; lastingActs: string[]; answer?: AutomationStudioResultRequestedAnswer; effect?: AutomationStudioResultTaskEffect }>;
   notAsked: string[];
+  /** What the task spec says must show no change (t775), judged by before and after, never by its state. Absent where it names none. */
+  unchanged?: string[];
   /**
    * A subflow trial's only (t594): the other parts of the same instructions,
    * each another subflow's work, which a step of this trial must not do.

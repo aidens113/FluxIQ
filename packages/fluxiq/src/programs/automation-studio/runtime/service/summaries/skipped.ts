@@ -2,7 +2,8 @@
 // onto the run detail: a sometimes-present step that was not shown
 // (`target_absent`), a step state routing passed over (`state_routed`), and a
 // lasting act the run had already completed (`already_done`, t411,
-// `executor/step-loop/already-done.ts`). Each keeps its own reason: an act
+// `executor/step-loop/already-done.ts`), and a press whose control already showed
+// the asked state (`already_in_state`, t775). Each keeps its own reason: an act
 // already done read as `target_absent`, a step that was not there (t415).
 //
 // Session traces are read back from storage, so the record is parsed, not
@@ -32,6 +33,10 @@ export function automationStudioRunDetailSkipped(attempt: AutomationStudioNodeAt
     if (typeof fields.attemptId !== "string" || !ID.test(fields.attemptId)) return undefined;
     const row = typeof fields.row === "string" ? fields.row.trim().slice(0, MAX_ROW_CHARS) : "";
     return { reason: "already_done", code, attemptId: fields.attemptId, ...(row ? { row } : {}) };
+  }
+  if (fields.reason === "already_in_state") {
+    const row = typeof fields.row === "string" ? fields.row.trim().slice(0, MAX_ROW_CHARS) : "";
+    return { reason: "already_in_state", code, ...(row ? { row } : {}) };
   }
   // `target_absent`, and a reason from an older trace that named none; a
   // skipped step that does a lasting act keeps that the act was not done (r4b F4).

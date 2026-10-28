@@ -32,6 +32,7 @@ import {
   automationStudioStepLifecycleRegister,
   automationStudioStepRequiredOutcomeStop,
   automationStudioStepRetryBeforeRouting,
+  automationStudioStepSaidAlreadyInState,
   automationStudioStepStateRoute,
   automationStudioTraceWithLifecycle,
   type AutomationStudioStepLifecycleFrame,
@@ -435,7 +436,9 @@ async function executeAutomationStudioGraph(
         attempts.push(regionId ? { ...stalled, regionId } : stalled);
         return { ...automationStudioEndedTrace(ctx, "failed", node.id, stalled.message ?? "The loop made no progress."), ...(stalled.failure ? { failure: stalled.failure } : {}) };
       }
-      const tracedAttempt = region?.kind === "policy" ? { ...attempt, policyDecision: policyDecisionForAttempt(node, attempt) } : attempt;
+      // A step the domain found already in its asked state is said so, with its pass's row (`step-loop/already-done.ts`, t775).
+      const said = automationStudioStepSaidAlreadyInState(ctx, node, attempt);
+      const tracedAttempt = region?.kind === "policy" ? { ...said, policyDecision: policyDecisionForAttempt(node, said) } : said;
       const attemptIndex = attempts.length;
       attempts.push(regionId ? { ...tracedAttempt, regionId } : tracedAttempt);
       if (outcomeUnknown) return await automationStudioStepRequiredOutcomeStop(ctx, node, attemptIndex);

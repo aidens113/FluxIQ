@@ -102,3 +102,58 @@ describe("task spec", () => {
     expect(automationStudioProjectActiveInstructionSources([instruction("a", "active"), instruction("b", "disabled"), instruction("c", "archived")])).toEqual([{ sourceId: "a", text: "body of a" }]);
   });
 });
+
+describe("task spec effect", () => {
+  type Digestable = Parameters<typeof automationStudioProjectTaskSpec.digest>[0];
+  const sealed = (spec: Digestable) => ({ ...spec, digest: automationStudioProjectTaskSpec.digest(spec) });
+  const withPart = (change: (part: Record<string, unknown>) => void) => {
+    const base = taskSpec();
+    const part = structuredClone(base.parts[1]!) as unknown as Record<string, unknown>;
+    change(part);
+    return sealed({ parts: [base.parts[0]!, part], notAsked: base.notAsked } as unknown as Digestable);
+  };
+
+  it("loads a part with no effect", () => {
+    expect(automationStudioProjectTaskSpec.parse(taskSpec())).toMatchObject({ status: "valid" });
+  });
+
+  it("round-trips a change effect and unchanged with the digest covering both", () => {
+    const spec = withPart((part) => (part.effect = { kind: "change", direction: "adds", count: 2, what: "holds on books" }));
+    expect(automationStudioProjectTaskSpec.parse(spec)).toEqual({ status: "valid", value: spec });
+    expect(spec.digest).not.toBe(taskSpec().digest);
+    const other = withPart((part) => (part.effect = { kind: "change", direction: "adds", count: 3, what: "holds on books" }));
+    expect(other.digest).not.toBe(spec.digest);
+    const withKept = sealed({ parts: spec.parts, notAsked: spec.notAsked, unchanged: ["other holds"] } as unknown as Digestable);
+    expect(automationStudioProjectTaskSpec.parse(withKept)).toEqual({ status: "valid", value: withKept });
+    expect(withKept.digest).not.toBe(spec.digest);
+    expect(automationStudioProjectTaskSpec.parse({ ...withKept, unchanged: ["tampered"] })).toMatchObject({ status: "invalid", code: "project.task_spec_digest_mismatch" });
+  });
+
+  it.each([
+    ["end_state with only create_new", { kind: "end_state", state: "alert is email" }, ["create_new"], true],
+    ["end_state with modify_existing", { kind: "end_state", state: "alert is email" }, ["modify_existing"], false],
+    ["adds with no matching act", { kind: "change", direction: "adds", count: 1, what: "x" }, ["delete"], true],
+    ["removes with delete", { kind: "change", direction: "removes", count: "each_match", what: "x" }, ["delete"], false],
+    ["removes with create_new", { kind: "change", direction: "removes", count: 1, what: "x" }, ["create_new"], true],
+    ["count zero", { kind: "change", direction: "adds", count: 0, what: "x" }, ["create_new"], true],
+    ["count 1001", { kind: "change", direction: "adds", count: 1001, what: "x" }, ["create_new"], true],
+    ["count fraction", { kind: "change", direction: "adds", count: 1.5, what: "x" }, ["create_new"], true],
+    ["blank what", { kind: "change", direction: "adds", count: 1, what: " " }, ["create_new"], true],
+    ["unknown kind", { kind: "other" }, ["create_new"], true]
+  ])("effect: %s", (name, effect, acts, refused) => {
+    const result = automationStudioProjectTaskSpec.parse(withPart((part) => {
+      part.effect = effect;
+      part.lastingActs = acts;
+    }));
+    expect(result).toMatchObject({ status: refused ? "invalid" : "valid" });
+    if (name === "end_state with only create_new") expect(result).toMatchObject({ code: "project.plan_effect_invalid" });
+  });
+
+  it("refuses duplicate, blank or too many unchanged items", () => {
+    const base = taskSpec();
+    const make = (unchanged: string[]) => sealed({ parts: base.parts, notAsked: base.notAsked, unchanged } as unknown as Digestable);
+    expect(automationStudioProjectTaskSpec.parse(make(["a", "a"]))).toMatchObject({ status: "invalid" });
+    expect(automationStudioProjectTaskSpec.parse(make([" "]))).toMatchObject({ status: "invalid" });
+    expect(automationStudioProjectTaskSpec.parse(make(Array.from({ length: 21 }, (_, i) => `t${i}`)))).toMatchObject({ status: "invalid" });
+  });
+});

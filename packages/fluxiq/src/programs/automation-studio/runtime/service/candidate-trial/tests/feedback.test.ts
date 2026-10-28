@@ -283,6 +283,12 @@ describe("trial feedback for a skipped step", () => {
     expect((feedback.steps as JsonObject[])[0]!.skipped).toBe("Its control was not on the page, so the step was skipped and what it does was not done. If the instruction asks for it, the step must not be optional.");
   });
 
+  it("says a press whose control already showed the asked state was not pressed, never a failure or an act done earlier", () => {
+    const trace: AutomationStudioGraphExecutionTrace = { ...skipped(false), attempts: [{ ...skipped(false).attempts[0]!, skipped: { reason: "already_in_state", code: "executor.act.already_in_state" } }] };
+    const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph, trace });
+    expect((feedback.steps as JsonObject[])[0]!.skipped).toBe("Its control already showed the asked state, so it was not pressed.");
+  });
+
   it("says only that the step was skipped for a dismissal", () => {
     const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph, trace: skipped(false) });
     expect((feedback.steps as JsonObject[])[0]!.skipped).toBe("Its control was not on the page, so the step was skipped.");

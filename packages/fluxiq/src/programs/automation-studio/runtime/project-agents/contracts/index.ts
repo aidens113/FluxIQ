@@ -13,4 +13,5 @@ export * from "./role.ts";
 export * from "./structure-plan.ts";
 export * from "./subflow-brief.ts";
 export * from "./subflow-interface.ts";
+export * from "./task-effect.ts";
 export * from "./task-spec.ts";

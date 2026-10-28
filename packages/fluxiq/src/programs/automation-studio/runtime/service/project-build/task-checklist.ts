@@ -61,7 +61,7 @@ export const AutomationStudioProjectBuildTaskChecklist = Object.freeze({
     const source = BOUND.get(environment);
     if (!source) return undefined;
     const spec = (await source.records.read(source.ref))?.record.taskSpecs.at(-1)?.taskSpec;
-    return spec ? { parts: spec.parts.map(checked), notAsked: [...spec.notAsked] } : undefined;
+    return spec ? { parts: spec.parts.map(checked), notAsked: [...spec.notAsked], ...unchangedOf(spec) } : undefined;
   },
 
   /**
@@ -84,6 +84,7 @@ export const AutomationStudioProjectBuildTaskChecklist = Object.freeze({
         return known ? checked(known) : { id: part.partId, words: part.text, goalFacts: [], lastingActs: [] };
       }),
       notAsked: [...(spec?.notAsked ?? [])],
+      ...(spec ? unchangedOf(spec) : {}),
       ...(others.length ? { outOfScope: others } : {}),
       ...(entry?.steps.length ? { entry: { subflows: [...entry.subflows], steps: [...entry.steps] } } : {}),
       ...(possibly.length ? { possiblyLasting: possibly } : {})
@@ -112,5 +113,10 @@ export const AutomationStudioProjectBuildTaskChecklist = Object.freeze({
 });
 
 function checked(part: AutomationStudioProjectTaskPart): AutomationStudioBuildTestTaskChecklist["parts"][number] {
-  return { id: part.id, words: part.quote.text, goalFacts: [...part.goalFacts], lastingActs: [...part.lastingActs], ...(part.answer ? { answer: { kind: part.answer.kind, columns: [...part.answer.columns] } } : {}) };
+  return { id: part.id, words: part.quote.text, goalFacts: [...part.goalFacts], lastingActs: [...part.lastingActs], ...(part.answer ? { answer: { kind: part.answer.kind, columns: [...part.answer.columns] } } : {}), ...(part.effect ? { effect: { ...part.effect } } : {}) };
+}
+
+/** The spec's `unchanged` list (t775), carried when it declares one. */
+function unchangedOf(spec: AutomationStudioProjectTaskSpec): { unchanged?: string[] } {
+  return spec.unchanged?.length ? { unchanged: [...spec.unchanged] } : {};
 }

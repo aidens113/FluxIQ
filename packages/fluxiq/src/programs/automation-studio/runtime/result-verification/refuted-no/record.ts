@@ -92,6 +92,13 @@
 // (`../read-account/working-sets.ts`) is left out of the stored rows, the
 // count stored and the repeats removed; its rows that the answer's condition
 // alone left out are left-out rows like any other.
+//
+// **And what a trial changed (t775).** A build's trial is judged by the change
+// Core read at each place a lasting step's change shows, just before the trial
+// and just after it (`summary.siteChange`). The record carries it, so a no
+// calling the total a place holds after the trial the wrong count, where the
+// place changed by exactly what its part asks, is weighed against that change
+// (`../site-change/count-claim.ts`).
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../contracts/index.ts";
@@ -166,6 +173,8 @@ export function automationStudioResultNoRecord(input: {
     ...(narrowing ? { narrowing } : {}),
     ...(phrases ? { phrases, item: itemOf(storedLabels, phrases) } : {}),
     ...(input.wording ? { says: input.wording.says } : {}),
+    // A trial's change, what a no's count of a change part is held to (header, t775).
+    ...(summary.siteChange ? { siteChange: summary.siteChange } : {}),
     ...(input.other ? { other: input.other } : {})
   };
 }

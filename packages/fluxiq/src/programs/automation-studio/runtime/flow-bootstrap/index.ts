@@ -35,5 +35,6 @@ export * from "./plan.ts";
 export * from "./reachability/index.ts";
 export * from "./review-projection.ts";
 export * from "./start-location.ts";
+export * from "./trial-change/index.ts";
 export * from "./unfinished-build/index.ts";
 export * from "./verification/index.ts";

@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4143
+- Public declarations: 4162
 - Class: 141
 - Interface: 10
 - Object: 547
-- Type: 2200
+- Type: 2215
 - Type Alias: 1
-- Value: 1244
+- Value: 1248
 
 ## Public Declarations
 
@@ -770,6 +770,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioBuildTestStores` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/build-test/stores.ts` | - |
 | `automationStudioBuildTestSummaryWithTaskChecklist` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/build-test/task-checklist.ts` | - |
 | `AutomationStudioBuildTestTaskChecklist` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/build-test/task-checklist.ts` | What the instructions ask, part by part, and what they do not ask: the build's own reading, never the request. |
+| `AutomationStudioBuildTestTaskEffect` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/build-test/task-checklist.ts` | The change a part asks for (t775): a `change` is judged by the difference from the state before the run, an `end_state` by the state after it. |
 | `automationStudioBuildTestUntestedCarried` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/build-test/summary.ts` | - |
 | `AutomationStudioBuildTestVerdict` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/build-test/judge.ts` | The judge's verdict on a build's test. Structurally `AutomationStudioFlowBootstrapTestVerdict` (`flow-bootstrap/unfinished-build/contracts.ts`, t195-w25 section 4.1), declared here so the two could be written at once. TODO(t195 lead): unify with that type at integration. |
 | `automationStudioBuiltinNodeRoots` | Object | `packages/fluxiq/src/programs/automation-studio/nodes/layout.ts` | - |
@@ -2533,6 +2534,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioResultSummaryWithRowIds` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/request-rows/summary-with-row-ids.ts` | - |
 | `automationStudioResultSummaryWithUnreadColumns` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/unread-columns.ts` | - |
 | `AutomationStudioResultTaskChecklist` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/contracts/task-checklist.ts` | The task checklist a project build's judge is sent (`taskChecklist`): first its own label, saying the instructions are the only authority and how the checklist is used, because the judge's standing instruction does not name it; then each part the instructions ask for, in their own words, and what they do not ask for; for a subflow trial, the parts other subflows do. A part whose task spec declares the answer it asks for carries it (`answer`, t757): the obligation a yes is held to (`../requested-output/`). |
+| `AutomationStudioResultTaskEffect` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/contracts/task-checklist.ts` | The change a part asks for (t775): `change`, a number of `what` added or removed; `end_state`, the state that holds once it is done. |
 | `automationStudioResultTextMatch` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/value-readings/text-match.ts` | - |
 | `automationStudioResultValueReadings` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/value-readings/summary-readings.ts` | - |
 | `automationStudioResultVerdict` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/verdict/result-verdict.ts` | - |
@@ -2822,6 +2824,11 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioTransientStatusEffect` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/defensive/transient-status.ts` | - |
 | `AutomationStudioTransitionComparison` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/contracts.ts` | - |
 | `AutomationStudioTransitionComparisonStatus` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/contracts.ts` | - |
+| `AutomationStudioTrialActOutcome` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | What one act of the trial did: the step, the repeat pass and readable row it acted on, whether it changed something, found its target already in the asked state, or showed no change; the witness it shows at and the parts it serves. |
+| `AutomationStudioTrialChangeFinding` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | Core's closed mechanical findings over a trial's change. |
+| `automationStudioTrialChangeFindings` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/findings.ts` | - |
+| `automationStudioTrialDelta` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/delta.ts` | - |
+| `AutomationStudioTrialDelta` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | One witness's delta from before to after. `unread` when either side carried no reading of it. List subjects and control state tokens stay opaque here; the packet reduces them to counts. |
 | `AutomationStudioTrialEvidenceAssertion` | Type | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/types.ts` | One task-goal assertion the trial checked, kept independent of candidate edits. |
 | `AutomationStudioTrialEvidenceAssertionOutcome` | Type | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/types.ts` | - |
 | `AutomationStudioTrialEvidenceExport` | Type | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/types.ts` | A result as it leaves Core: always marked derived. |
@@ -2835,6 +2842,18 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioTrialEvidenceSupport` | Type | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/types.ts` | What the trial's evidence could support. |
 | `AutomationStudioTrialEvidenceValidation` | Type | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/types.ts` | The validator's answer: the normalized result, or every issue found. |
 | `AutomationStudioTrialEvidenceVerdict` | Type | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/types.ts` | - |
+| `AutomationStudioTrialLeftAct` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | An act of this build in place at the trial's start, in the words of what it did. |
+| `AutomationStudioTrialPartEffect` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | A task part's typed effect: structurally Core's `AutomationStudioProjectTaskEffect` (project-agents), written here so this directory imports nothing from it. |
+| `automationStudioTrialPartProof` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/proof.ts` | - |
+| `AutomationStudioTrialPartProof` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | One part's proof, with its effect and the trial steps whose acts serve it. |
+| `AutomationStudioTrialProof` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | What the trial proves of one part: `none` (the part has no typed effect), `shown`, `no_change`, `already_in_end_state`, `carried` (the end state held before, and the same step was seen making it earlier in the build), or `unproven`. |
+| `AutomationStudioTrialReading` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | One reading of a witness's place, before or after a trial: where it came from (the ledger's latest read while still current, a look Core took, or the end view's read), its location, the complete list groups it carried, its controls (place -> state token -> count), and, on an after reading, the domain's readable differences from the before reading. |
+| `AutomationStudioTrialSiteChange` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | The bounded `siteChange` packet the judge sees (design section 2). No group, scope, place, subject or state token appears in it. |
+| `automationStudioTrialSiteChangePacket` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/packet.ts` | - |
+| `AutomationStudioTrialSiteLines` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | Bounded readable lines, with how many were left out on each side. |
+| `AutomationStudioTrialSiteSide` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | A witness's reading as the judge sees it: counts only, never a token. |
+| `AutomationStudioTrialSiteWitnessChange` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | A witness's change as the judge sees it. |
+| `AutomationStudioTrialWitness` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | Where a part's or a step's change shows: a list group, matched across every scope it was read in, or one control place. `steps` are the trial steps attributed to it (`[]` for a list watched only to stay unchanged). |
 | `AutomationStudioUiCacheCompactResult` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/ui-cache-store.ts` | - |
 | `AutomationStudioUiCacheDeleteInput` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/ui-cache-store.ts` | - |
 | `AutomationStudioUiCacheEntry` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/ui-cache-store.ts` | - |

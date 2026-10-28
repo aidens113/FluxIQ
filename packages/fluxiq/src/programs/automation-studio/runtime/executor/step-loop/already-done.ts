@@ -112,6 +112,30 @@ export function automationStudioStepRecordCompletedAct(ctx: AutomationStudioStep
   run.lifecycle.completedActs.set(pending.key, { key: pending.key, nodeId: node.id, attemptId: attempt.attemptId, outputs: attempt.outputs, ...(row ? { row } : {}) });
 }
 
+/**
+ * An attempt the domain found already in its asked state (t775,
+ * `../node-execution/already-in-state.ts`), as the run keeps and says it: the
+ * row of the loop pass it ran in, where it ran in one, joins its `skipped`,
+ * and the chat says it was already so -- "Already so for <row>" -- under the
+ * closed skip the client draws, `already_done`, whose card says nothing was
+ * done again. Any other attempt is returned as it was. Called before the
+ * attempt joins the run's attempts, as the pass is read from those before it.
+ */
+export function automationStudioStepSaidAlreadyInState(ctx: AutomationStudioStepLoopContext, node: AutomationStudioFlowNode, attempt: AutomationStudioNodeAttemptTrace): AutomationStudioNodeAttemptTrace {
+  if (attempt.skipped?.reason !== "already_in_state") return attempt;
+  const row = ctx.loopWords.passOf(node.id, ctx.attempts)?.row;
+  const said = row ? `Already so for ${row}` : `Already so: ${node.label?.trim() || "this step"}`;
+  const index = ctx.stepNumbers.numberOf(node.id);
+  const subject = row ?? node.label?.trim();
+  emitAutomationStudioActivityStepSkipped({
+    nodeId: node.id,
+    said,
+    skipped: { reason: "already_done", ...(subject ? { subject } : {}) },
+    ...(index !== undefined ? { step: { index, count: ctx.stepNumbers.count, nodeId: node.id, ...(node.label ? { label: node.label } : {}), ...(row ? { row } : {}) } } : {})
+  });
+  return { ...attempt, message: `${said}: the page already showed the state this step asks for, so nothing was pressed.`, skipped: { ...attempt.skipped, ...(row ? { row } : {}) } };
+}
+
 /** The way out of a skipped node: its `success` edge, as the step loop would take it after a success. */
 async function leave(ctx: AutomationStudioStepLoopContext, node: AutomationStudioFlowNode, regionId: string | undefined): Promise<Extract<AutomationStudioStepOutcome, { kind: "return" | "next" }>> {
   const edge = chooseAutomationStudioEdge(ctx.flow, node.id, "success", node.definitionId);

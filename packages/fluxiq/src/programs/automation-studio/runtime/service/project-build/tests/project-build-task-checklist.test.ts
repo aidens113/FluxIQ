@@ -152,3 +152,33 @@ describe("the requested output a build saves", () => {
     expect(AutomationStudioProjectBuildTaskChecklist.requestedOutput(undefined)).toBeUndefined();
   });
 });
+
+// t775: a part's declared effect and the spec's unchanged list reach the judges' checklist.
+describe("the effect and unchanged a checklist carries", () => {
+  const effectful = (): AutomationStudioProjectTaskSpec => ({
+    parts: [{ ...partWith("p1"), lastingActs: ["create_new"], effect: { kind: "change", direction: "adds", count: 2, what: "holds on books" } }, partWith("p2")],
+    notAsked: [], unchanged: ["other holds"], digest: "spec.1"
+  } as unknown as AutomationStudioProjectTaskSpec);
+  const store = (): Pick<AutomationStudioProjectBuildRecordStore, "read"> => ({
+    read: async () => ({ record: { taskSpecs: [{ revision: 1, recordedAt: 1, taskSpec: effectful() }], plans: [{ revision: 1, recordedAt: 1, plan: { taskSpecDigest: "spec.1", digest: "plan.1" } }] }, returns: [] })
+  }) as unknown as Pick<AutomationStudioProjectBuildRecordStore, "read">;
+  const environment = {};
+
+  it("carries each part's effect and the spec's unchanged in a whole trial's checklist, and neither where none is declared", async () => {
+    AutomationStudioProjectBuildTaskChecklist.bind(environment, { records: store(), ref: REF });
+    const whole = await AutomationStudioProjectBuildTaskChecklist.whole(environment);
+    expect(whole?.parts[0]?.effect).toEqual({ kind: "change", direction: "adds", count: 2, what: "holds on books" });
+    expect(whole?.parts[1]).not.toHaveProperty("effect");
+    expect(whole?.unchanged).toEqual(["other holds"]);
+    const plain = {};
+    AutomationStudioProjectBuildTaskChecklist.bind(plain, { records: records(), ref: REF });
+    expect(await AutomationStudioProjectBuildTaskChecklist.whole(plain)).not.toHaveProperty("unchanged");
+  });
+
+  it("carries them in a subflow trial's checklist", async () => {
+    const own: AutomationStudioSubflowScope = { buildId: "build.1", briefId: "b", planDigest: "plan.1", subflowKey: "hold", predecessors: [], parts: [{ partId: "p1", sourceId: "instruction", text: "words of p1" }] };
+    const checklist = await AutomationStudioProjectBuildTaskChecklist.subflow({ records: store(), ref: REF }, own);
+    expect(checklist.parts[0]?.effect).toEqual({ kind: "change", direction: "adds", count: 2, what: "holds on books" });
+    expect(checklist.unchanged).toEqual(["other holds"]);
+  });
+});

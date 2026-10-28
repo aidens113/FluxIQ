@@ -216,3 +216,29 @@ describe("a plan's port names, held to the script's rule for a part", () => {
     expect(GUIDANCE.planIssues["project.plan_port_name"]).toContain("and never `item`, the name a loop's row takes");
   });
 });
+
+// t775: a part's typed effect and the spec's unchanged list pass through the planning format, covered by the digest.
+describe("the effect a plan declares", () => {
+  const withEffect = (effect: JsonObject, unchanged?: string[]): JsonObject => {
+    const spec = taskSpecInput([["p1", FIND, ["create_new"]]]);
+    (spec.parts as JsonObject[])[0]!.effect = effect;
+    if (unchanged) spec.unchanged = unchanged;
+    return spec;
+  };
+  const EFFECT = { kind: "change", direction: "adds", count: 2, what: "holds on books" };
+
+  it("keeps the effect and unchanged in the task spec, and changes its digest", () => {
+    const result = read(planInput([subflow("find_titles", ["p1"])], withEffect(EFFECT, ["other holds"])));
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(result.taskSpec.parts[0]?.effect).toEqual(EFFECT);
+    expect(result.taskSpec.unchanged).toEqual(["other holds"]);
+    const plain = read(planInput([subflow("find_titles", ["p1"])], taskSpecInput([["p1", FIND, ["create_new"]]])));
+    if (!plain.ok) throw new Error(JSON.stringify(plain.issues));
+    expect(plain.taskSpec.digest).not.toBe(result.taskSpec.digest);
+  });
+
+  it("refuses an effect the part's lasting acts cannot make, by its path", () => {
+    const result = read(planInput([subflow("find_titles", ["p1"])], withEffect({ kind: "end_state", state: "the alert is email" })));
+    expect(result).toEqual({ ok: false, issues: [{ code: "project.plan_effect_invalid", path: "taskSpec.parts.0.effect" }] });
+  });
+});
