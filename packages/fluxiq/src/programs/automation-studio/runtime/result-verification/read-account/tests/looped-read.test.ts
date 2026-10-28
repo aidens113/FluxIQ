@@ -73,7 +73,7 @@ describe("a read that ran as the passes of a loop", () => {
       paginates: true,
       dedupes: false,
       conditions: [
-        { number: 1, condition: "sponsored is absent", rejected: 15, alone: 15, leftOutOnlyByThis: ["Left A", "Left C"] },
+        { number: 1, condition: "sponsored is absent", rejected: 15, alone: 15, leftOutOnlyByThis: ["Left A", "Left C"], leftOutCells: [{ name: "Left A" }, { name: "Left C" }] },
         { number: 2, condition: "rating atLeast 4", rejected: 5, alone: 0 }
       ],
       attempts: 5,

@@ -16,7 +16,7 @@ import { CAMP_SILVER, CAMPSITE_REQUEST, campsiteInstruction, campsiteRunSummary 
 import { CAMPSITE_YES, DROP_NAME_CONDITIONS_NO, DROPPED_NOT_EXCLUDED_NO, RELAX_ONE_CONDITION_NO, WRONGLY_LEFT_OUT_NO } from "./campsite-readings-fixture.ts";
 
 const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 };
-const no = (reading: Record<string, string>) => ({ answersRequest: "no", ...reading, defects: reading === WRONGLY_LEFT_OUT_NO ? [{ kind: "asked_missing", row: CAMP_SILVER, requestWords: "every campsite" }] : [] });
+const no = (reading: Record<string, string>) => ({ answersRequest: "no", ...reading, defects: reading === WRONGLY_LEFT_OUT_NO ? [{ kind: "asked_missing", row: CAMP_SILVER, column: "name", value: "Tent Sites", requestWords: "every campsite" }] : [] });
 
 /** A provider answering each call with its own diagnosis, keeping every request it was sent. */
 function answering(...diagnoses: Record<string, unknown>[]): { provider: AutomationStudioLlmProvider; seen: AutomationStudioLlmTaskRequest[] } {

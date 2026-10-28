@@ -2,3 +2,4 @@
 // Flow's steps and testing the whole Flow ended, for the closing row of each
 // one's card.
 export { automationStudioActivityCandidateResult } from "./result.ts";
+export { automationStudioActivityRunRefused } from "./run-refused.ts";

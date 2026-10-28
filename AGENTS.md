@@ -222,6 +222,17 @@ Current-state design lives in `docs/architecture/`; task plans live in
 `docs/working/`. Generated docs under `docs/generated/` are inventory, not a
 substitute for authored intent.
 
+## Build Trials And Site Resets
+
+**Reset as rarely as possible; judge the change, not the absolute state** (user,
+2026-10-27, superseding the 2026-10-12 rule that reset before every trial): a build's
+trial or judged run is judged against the site's state recorded just before it (from
+exploration and earlier runs) and the change the task asks for. A cart that held 9 of
+an item and holds 10 after a trial of "add 1" passed, with no reset. A reset happens
+only where the before-state cannot make a trial meaningful (a trial that would start
+already in the asked-for end state, or a toggle the next run would flip back), and it
+undoes exactly the build's own lasting acts, never what existed before the build began.
+
 ## Validation
 
 Before the final response for a code change, run the relevant checks and

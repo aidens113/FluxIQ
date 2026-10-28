@@ -55,10 +55,13 @@ describe("a defect a no lists, located in Core's record (t752)", () => {
   it("locates a missing row a condition alone left out that Core did not settle", () => {
     const unsettled = loanRunSummary({
       answerRead: {
-        conditions: [{ number: 1, condition: DUE_THIS_WEEK, rejected: LOANS_LATER.length, alone: LOANS_LATER.length, leftOutOnlyByThis: LOANS_LATER.map((book) => book.title) }]
+        conditions: [{ number: 1, condition: DUE_THIS_WEEK, rejected: LOANS_LATER.length, alone: LOANS_LATER.length, leftOutOnlyByThis: LOANS_LATER.map((book) => book.title), leftOutCells: LOANS_LATER.map((book) => ({ ...book })) }]
       }
     });
-    expect(located([{ kind: "asked_missing", row: LATER, requestWords: "every book on loan" }], unsettled).located).toHaveLength(1);
+    expect(located([{ kind: "asked_missing", row: LATER, column: "status", value: LOANS_LATER[0]!.status, requestWords: "every book on loan" }], unsettled).located).toHaveLength(1);
+    // Its own cells must bear the no out (t771): a value its status cell does not say, or none, is no defect Core finds.
+    expect(located([{ kind: "asked_missing", row: LATER, column: "status", value: "Due this week", requestWords: "every book on loan" }], unsettled).located).toEqual([]);
+    expect(located([{ kind: "asked_missing", row: LATER, requestWords: "every book on loan" }], unsettled).located).toEqual([]);
   });
 
   it("locates rows not read only where a read's own account says its list goes on past what it read", () => {

@@ -125,10 +125,7 @@ describe("the rows a failed step's recovery opens with", () => {
     expect(seen.some((event) => event.detail?.title === "Recovery started")).toBe(false);
     const repairing = seen.filter((event) => event.phase === "repairing");
     expect(repairing.length).toBeGreaterThan(0);
-    // The live line still says what is being recovered; only the chat row is gone.
-    expect(repairing[0]!.label).toBe("Recovering from a failed step: Get coupons");
-    // Besides the thought, only the row that settles the failed step (no step of
-    // its own, so no chat row of its own: `failed-step-reason.test.ts`).
-    expect(repairing.filter((event) => event.detail !== undefined).every((event) => event.detail!.kind === "thought" || (event.detail!.kind === "step" && event.detail!.status === "failed" && event.step === undefined))).toBe(true);
+    // A retried failure is settled by no failed step row (t774); the thought is the one row, and it names the step.
+    expect(repairing.filter((event) => event.detail !== undefined).every((event) => event.detail!.kind === "thought")).toBe(true);
   });
 });

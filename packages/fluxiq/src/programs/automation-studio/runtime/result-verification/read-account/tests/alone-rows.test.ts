@@ -36,6 +36,8 @@ describe("the rows a condition removed by itself", () => {
       rejected: 16,
       alone: 5,
       leftOutOnlyByThis: [...EARBUDS_REMOVED, ...ACCESSORIES],
+      // Each row's own cells beside it (t771): this read sent each by its name alone.
+      leftOutCells: [...EARBUDS_REMOVED, ...ACCESSORIES].map((name) => ({ name })),
       // Its read is the name column's own, and every row is labelled by the name.
       testedLabel: true
     });

@@ -25,6 +25,13 @@
 // change still writes it); a step named without a condition, where its
 // parameters differ. `unknown` where nothing resolved. Never a model's reading:
 // whether the change was right stays the judges'.
+//
+// **Only a no Core grounded (t771).** Rerun round 6 social
+// `run-mvrj7qg8-c20c132e`: advice resting on rows a judge invented reached every
+// later judge of the build, and the repair dropped the right condition. A trial
+// judged unsure stood on no no Core grounded, so its advice -- a refused no's, or
+// a yes's beside it -- is never told to a later judge; a trial judged no stood
+// on a defect Core found in its record.
 
 import type { AutomationStudioResultEarlierAdvice } from "../contracts/index.ts";
 import { automationStudioResultConditionReferences, automationStudioResultNodeIdsSaid } from "../refuted-no/index.ts";
@@ -51,7 +58,8 @@ type Named = { name: string; changed: boolean };
 
 /** What the judge of `revision`'s trial is told of the build's earlier judged trials (header): oldest first, every earlier revision. */
 export function automationStudioResultEarlierAdvice(input: { trials: readonly Trial[]; revision: number; plan: AutomationStudioResultConditionPlan | undefined }): AutomationStudioResultEarlierAdvice[] {
-  return input.trials.map((trial) => {
+  // Only a no Core grounded advises a later judge: an unsure trial's advice is a no's Core could not ground, or a yes's (header, t771).
+  return input.trials.filter((trial) => trial.verdict === "no").map((trial) => {
     const named = resolved(trial, input.plan);
     const followed = !named.length ? "unknown" : named.some((one) => one.changed) ? "changed" : "unchanged";
     return {

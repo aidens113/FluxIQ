@@ -37,7 +37,7 @@ describe("a build's ending against Core's record", () => {
     expect(automationStudioProjectBuildRecordTold({ parts: new Map([["open_box", PASSED]]), assembled: false }))
       .toBe("The one part tested on its own passed its own test. No whole Flow was assembled, so it was never tested as one.");
     expect(automationStudioProjectBuildRecordTold({ parts: new Map([["save_recipe", { count: 1, last: "execution_failed", passed: false }]]), assembled: true, whole: { verdict: "execution_failed", feedback: { steps: [{ status: "succeeded" }, { status: "failed" }] } } }))
-      .toBe("The one part tested on its own did not pass its own test: it was tested once, and its last test did not run to its end. The judged test run of the whole Flow from its start ran 1 of its 2 steps, and did not run to its end.");
+      .toBe("The judged test run of the whole Flow from its start ran 1 of its 2 steps, and did not run to its end.");
   });
 
   it("never prints a part's failed test the record contradicts, and says the record's facts in its place", () => {
@@ -47,5 +47,38 @@ describe("a build's ending against Core's record", () => {
     expect(said).not.toContain("never passed its own test");
     expect(said).not.toContain("kept failing");
     expect(said).toContain("Of the 2 parts tested on their own, 1 passed its own test;");
+  });
+
+  // t774 round 6: "The one part tested on its own did not pass its own test ... tested 6 times" and "The judged test run of
+  // the whole Flow ... ran 11 of its 12 steps" described one set of tests twice, in build jargon.
+  it("tells one test once when the only part tested and the whole run are the same test", () => {
+    const part = { count: 6, last: "no", passed: false } as const;
+    const told = automationStudioProjectBuildRecordTold({ parts: new Map([["only", part]]), assembled: true, whole: { verdict: "no", feedback: { steps: [{ status: "succeeded" }, { status: "failed" }] } } })!;
+    expect(told).toContain("judged not to do what was asked");
+    expect(told).toContain("6 times");
+    expect(told).not.toMatch(/tested on its own/u);
+    expect(told.match(/judged not/gu)).toHaveLength(1);
+    const runs = automationStudioProjectBuildRecordTold({ parts: new Map([["only", part]]), assembled: false, wholeRuns: { count: 6, last: "no" } })!;
+    expect(runs).not.toMatch(/tested on its own/u);
+  });
+
+  // t774 round 6: the overlay counted the Flow's steps ("Step 3 of 12") while the ending counted every pass of a repeat
+  // ("ran all 13 of its steps"), unexplained, and left out the steps the listing had cut.
+  it("counts the steps the listing cut, and says when a repeat's passes are counted", () => {
+    const ok = (label: string) => ({ status: "succeeded", label });
+    const looped = automationStudioProjectBuildRecordTold({ parts: new Map(), assembled: true, whole: { verdict: "no", feedback: { steps: [ok("open"), ok("read row"), ok("read row"), ok("read row")], stepsLeftOut: 2 } } })!;
+    expect(looped).toContain("ran all 6 of its steps, counting each pass of a repeat");
+    const plain = automationStudioProjectBuildRecordTold({ parts: new Map(), assembled: true, whole: { verdict: "no", feedback: { steps: [ok("open"), ok("read"), ok("save")] } } })!;
+    expect(plain).toContain("ran all 3 of its steps");
+    expect(plain).not.toContain("counting");
+  });
+
+  // t774 round 6 (`run-mvrj7qg8-c20c132e`): the reason said the run "stored too few posts" beside a record that it stored
+  // the three rows the answer needed. A claim of how many rows were stored gives way to the record's count.
+  it("leaves out a claim of how many rows were stored when the record says how many", () => {
+    const reason = "I could not finish this. The whole test was judged not right because it stored too few posts. Nothing was deleted.";
+    expect(automationStudioProjectBuildReasonChecked(reason, true)).toBe("I could not finish this. Nothing was deleted.");
+    expect(automationStudioProjectBuildReasonChecked(reason)).toContain("stored too few posts");
+    expect(automationStudioProjectBuildReasonChecked("The feed stopped loading, so nothing more could be read.", true)).toContain("feed stopped loading");
   });
 });
