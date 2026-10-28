@@ -1,7 +1,8 @@
-// Types of the offline candidate trial (traces and offline trials, P4): what
-// it is asked to run, on which recorded trace and in which build phase, and
-// what it answers -- the candidate trial's own outcome beside the trial
-// evidence result (U5) that says what that outcome rests on.
+// Types of the offline trials (traces and offline trials, P4; a subflow's,
+// t769 P6): what each is asked to run, on which recorded trace and in which
+// build phase, and what it answers -- the trial runner's own outcome (a whole
+// candidate's, or a subflow proposal's partial one) beside the trial evidence
+// result (U5) that says what that outcome rests on.
 
 import type {
   ClientGatewayClientHello,
@@ -12,8 +13,10 @@ import type {
   ClientGatewayTraceStore
 } from "../../../../../client-gateway/index.ts";
 import type { AutomationStudioTrialEvidenceReasonCode, AutomationStudioTrialEvidenceResult } from "../../../model/index.ts";
-import type { AutomationStudioCandidateTrialRequest } from "../../flow-bootstrap/candidate/index.ts";
-import type { AutomationStudioCandidateTrialOutcome, AutomationStudioCandidateTrialPorts } from "../candidate-trial/index.ts";
+import type { AutomationStudioCandidateTrialRequest, AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
+import type { AutomationStudioSubflowTrialRequest } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import type { AutomationStudioCandidateTrialOutcome, AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord } from "../candidate-trial/index.ts";
+import type { AutomationStudioSubflowTrialOutcome, AutomationStudioSubflowTrialPorts } from "../subflow-trial/index.ts";
 
 /**
  * The build phase asking for the trial. Offline trials stay out of
@@ -33,18 +36,17 @@ export type AutomationStudioOfflineTrialSource = {
   sessionRef?: string | undefined;
 };
 
-export type AutomationStudioOfflineCandidateTrialInput = {
-  /** The candidate trial request, exactly as a live trial gets it. */
-  request: AutomationStudioCandidateTrialRequest;
-  /** The trial ports, exactly as a live trial gets them; the trial runs with their `environment` replaced by the trace environment. */
-  ports: AutomationStudioCandidateTrialPorts;
+/**
+ * What every offline trial is given besides what its runner runs: the
+ * recorded trace, the gateway its matcher session is attached to, the build
+ * phase, and how the trace is read (`./matcher-session.ts`).
+ */
+export type AutomationStudioOfflineTrialSessionInput = {
   source: AutomationStudioOfflineTrialSource;
   gateway: AutomationStudioOfflineTrialGateway;
   phase: AutomationStudioOfflineTrialPhase;
   /** The contract versions this reader speaks; default: the versions the host's trace episodes record (`./reader-contracts.ts`). */
   contractVersions?: Readonly<Record<string, string>> | undefined;
-  /** The goal contract the result is bound to; default: the candidate's original instructions digest, as the trial runner binds it. */
-  goalContractVersion?: string | undefined;
   /**
    * The public view of the session the trace stands for, used only when the
    * trace recorded none (no `session.claimed`): in a build, the live session's
@@ -58,6 +60,36 @@ export type AutomationStudioOfflineCandidateTrialInput = {
    * operation. Without it, every changed command is an evidence gap.
    */
   reevaluator?: ClientGatewayTraceReevaluator | undefined;
+};
+
+export type AutomationStudioOfflineCandidateTrialInput = AutomationStudioOfflineTrialSessionInput & {
+  /** The candidate trial request, exactly as a live trial gets it. */
+  request: AutomationStudioCandidateTrialRequest;
+  /** The trial ports, exactly as a live trial gets them; the trial runs with their `environment` replaced by the trace environment. */
+  ports: AutomationStudioCandidateTrialPorts;
+  /** The goal contract the result is bound to; default: the candidate's original instructions digest, as the trial runner binds it. */
+  goalContractVersion?: string | undefined;
+};
+
+export type AutomationStudioOfflineSubflowTrialInput = AutomationStudioOfflineTrialSessionInput & {
+  /** The partial trial request, exactly as a live partial trial gets it. */
+  request: AutomationStudioSubflowTrialRequest;
+  /** The partial trial ports, exactly as a live partial trial gets them; the trial runs with their `environment` replaced by the trace environment. */
+  ports: AutomationStudioSubflowTrialPorts;
+  /** The goal contract the result is bound to; default: the brief's structure plan digest, whose parts and success check the scoped judge asks about. */
+  goalContractVersion?: string | undefined;
+  /** The largest judge prompt an earlier partial trial of this build sent, sizing the judge calls the trial holds before it runs, as a live partial trial is handed it. */
+  judgeInputTokens?: number | undefined;
+};
+
+/**
+ * What the trial evidence result reads of a trial runner's outcome, which a
+ * whole candidate's and a subflow proposal's partial trial both answer: how
+ * the run ended, the revision and digest tried, and the judge's verdict.
+ */
+export type AutomationStudioOfflineTrialRunOutcome = {
+  record: { execution: AutomationStudioCandidateTrialRecord["execution"]; revision: number; digest: string };
+  result: { verdict: AutomationStudioCandidateTrialVerdict };
 };
 
 /** An operation a reevaluator answered in the recorded one's place: its ordinal, action type and the fields that differed, by path; never a value. */
@@ -74,15 +106,17 @@ export type AutomationStudioOfflineTrialNormalization = {
 };
 
 /** Why an offline trial was not run: nothing ran, nothing was judged, and no evidence result exists. */
-export type AutomationStudioOfflineCandidateTrialRefusal = {
+export type AutomationStudioOfflineTrialRefusal = {
   status: "refused";
   reasonCode: AutomationStudioTrialEvidenceReasonCode;
   detail: string;
 };
 
+export type AutomationStudioOfflineCandidateTrialRefusal = AutomationStudioOfflineTrialRefusal;
+
 /**
- * An offline trial that ran: the candidate trial runner's own outcome (what
- * the trial gate reads), the trial evidence result validated against U5 (what
+ * An offline trial that ran: the trial runner's own outcome (what the trial
+ * gate reads), the trial evidence result validated against U5 (what
  * that outcome rests on: recorded evidence and pure computation, never live),
  * the matcher's report it was read from, which session view the matcher's
  * session was attached with (a supplied one is also a declared
@@ -90,9 +124,9 @@ export type AutomationStudioOfflineCandidateTrialRefusal = {
  * which of those a reevaluator answered (each also makes `snapshot_evaluation`
  * one of the result's origins).
  */
-export type AutomationStudioOfflineCandidateTrialRan = {
+export type AutomationStudioOfflineTrialRan<Trial extends AutomationStudioOfflineTrialRunOutcome> = {
   status: "ran";
-  trial: AutomationStudioCandidateTrialOutcome;
+  trial: Trial;
   evidence: AutomationStudioTrialEvidenceResult;
   matcher: ClientGatewayTraceMatcherReport;
   sessionView: ClientGatewayTraceMatcherSessionView["source"];
@@ -101,4 +135,11 @@ export type AutomationStudioOfflineCandidateTrialRan = {
   reevaluated: AutomationStudioOfflineTrialReevaluatedOperation[];
 };
 
-export type AutomationStudioOfflineCandidateTrialOutcome = AutomationStudioOfflineCandidateTrialRefusal | AutomationStudioOfflineCandidateTrialRan;
+export type AutomationStudioOfflineCandidateTrialRan = AutomationStudioOfflineTrialRan<AutomationStudioCandidateTrialOutcome>;
+
+export type AutomationStudioOfflineCandidateTrialOutcome = AutomationStudioOfflineTrialRefusal | AutomationStudioOfflineCandidateTrialRan;
+
+/** An offline subflow trial that ran: the partial trial's own outcome beside its evidence result, as a whole candidate's offline trial answers. */
+export type AutomationStudioOfflineSubflowTrialRan = AutomationStudioOfflineTrialRan<AutomationStudioSubflowTrialOutcome>;
+
+export type AutomationStudioOfflineSubflowTrialOutcome = AutomationStudioOfflineTrialRefusal | AutomationStudioOfflineSubflowTrialRan;

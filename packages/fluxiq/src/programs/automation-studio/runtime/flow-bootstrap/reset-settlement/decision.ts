@@ -3,8 +3,9 @@
 // `subjectRestored`, F1's `leftUnchanged`).
 //
 // An act is settled when every witness it has holds: each complete list group
-// it could change (`./group-witness.ts`) and its own control's
-// toggle (`./control-tracker.ts`). Settled is `restored` when a
+// it could change (`./group-witness.ts`), its own control's
+// toggle (`./control-tracker.ts`), or -- for an act with neither -- the shown
+// values its press replaced (`./value-tracker.ts`, t772). Settled is `restored` when a
 // change was seen at some point or an undo of it landed, and `unchanged` when
 // no read ever showed a change: then it is left, and the judge of every later
 // trial is told so. Otherwise it is open, with a reason per witness, each
@@ -13,10 +14,26 @@
 // - `look`: a witness is stale or was read incomplete: read it completely
 //   again (Core does this itself first, `../site-reset/ledger.ts`, `beforeTrial`);
 // - `undo`: a list it could change still differs: undo it there;
+// - `reload`: a list it could change differs on a read made in place after an
+//   undo landed on an act that list witnesses (`./observations.ts`,
+//   `readInPlace`, t772 R1): many sites draw a removal only on the list's next
+//   load, so the read says nothing yet. Its page is to be opened again (Core
+//   loads it itself before a trial, `./judge.ts` `lookFirst`), and no rule
+//   judges the act unsettleable on that read;
 // - `toggle`: its control still shows the state it set: press it back;
 // - `baseline`: its control's place was never read before the build acted
 //   there (`./control-tracker.ts`, t751 R1): no read can show it put back, so
 //   no call can meet it (`./judge.ts`, `no_baseline`);
+// - `own_back`: a fresh read shows its own control back in the state the build
+//   found (`./own-control.ts`), as the undo admission reads it, while the
+//   control witness it is judged on still does not hold: nothing is left to
+//   press, so no call can meet it (`./judge.ts`, `already_back`, t772). It is
+//   closed, never left open as meetable;
+// - `value`: a fresh read still does not show the value its press replaced at
+//   any place where the build read it first (`./value-tracker.ts`, t772): set
+//   it back where it shows, then look. A stale value is a `look`, and a value
+//   whose place was never read before the build replaced it a `baseline`, as
+//   for a toggle;
 // - `name`: it has no witness at all: nothing read shows where its effect
 //   would be, so a list read completely before it is to be named for it
 //   (`./judge.ts` says when none was);
@@ -31,7 +48,7 @@
 //
 // **Unreachable witnesses (t743, photo `run-mvgw7320-de416190`).** A group
 // Core's own look reaches but cannot read again (`./reach.ts`) is never a
-// `look` again. With another witness that holds, the act settles as it would
+// `look` or a `reload` again. With another witness that holds, the act settles as it would
 // without it, and the settlement says which lists could not be read again
 // (`unread`), so every later trial's judge is told. Where unreachable lists
 // are its only witnesses, it stays open with `unreachable`.
@@ -42,22 +59,26 @@ import type { AutomationStudioSiteResetGroupStanding } from "./group-witness.ts"
 import type { AutomationStudioSiteResetToggleStanding } from "./control-tracker.ts";
 
 /** Why an act is still open, and where (`ref` a destination's issued ref, `location` where to look or act, `group` the opaque group of a list witness, for Core alone). */
-export type AutomationStudioSiteResetOpenReason = { reason: "look" | "undo" | "toggle" | "baseline" | "name" | "unreachable"; witness?: "group" | "toggle"; ref?: string; location?: string; group?: string };
+export type AutomationStudioSiteResetOpenReason = { reason: "look" | "undo" | "reload" | "toggle" | "baseline" | "own_back" | "value" | "name" | "unreachable"; witness?: "group" | "toggle" | "value"; ref?: string; location?: string; group?: string };
 
 /** `unread`: the refs of lists named for the act that Core could not read again (header); present only where there were any. */
 export type AutomationStudioSiteResetSettlement =
   | { kind: "settled"; how: "restored" | "unchanged"; unread?: string[] }
   | { kind: "open"; reasons: AutomationStudioSiteResetOpenReason[] };
 
-/** One group witness as judged, with where it is told by and whether Core could not read it again (`unreachable`). */
-export type AutomationStudioSiteResetJudgedGroup = AutomationStudioSiteResetGroupStanding & { ref?: string | undefined; location?: string | undefined; group?: string | undefined; unreachable?: boolean | undefined };
+/** One group witness as judged, with where it is told by, whether Core could not read it again (`unreachable`), and whether its latest read was made in place after an undo (`inPlace`, header). */
+export type AutomationStudioSiteResetJudgedGroup = AutomationStudioSiteResetGroupStanding & { ref?: string | undefined; location?: string | undefined; group?: string | undefined; unreachable?: boolean | undefined; inPlace?: boolean | undefined };
 
 /** The reason each standing of a toggle that is not back gives (header). */
-const TOGGLE_REASON = { stale: "look", unproven: "baseline", open: "toggle" } as const;
+const TOGGLE_REASON = { stale: "look", unproven: "baseline", open: "toggle", own_back: "own_back" } as const;
+/** The reason each standing of a value witness that is not back gives (header, t772); it never stands `own_back`. */
+const VALUE_REASON = { stale: "look", unproven: "baseline", open: "value", own_back: "value" } as const;
 
 export function automationStudioSiteResetSettleDecision(input: {
   groups: readonly AutomationStudioSiteResetJudgedGroup[];
   toggle?: AutomationStudioSiteResetToggleStanding | undefined;
+  /** Its value witness's standing, for an act with no group and no toggle (header, t772). */
+  value?: AutomationStudioSiteResetToggleStanding | undefined;
   /** A read after the act showed one of its witnesses changed. */
   changeSeen: boolean;
   /** An undo of it landed. */
@@ -65,27 +86,29 @@ export function automationStudioSiteResetSettleDecision(input: {
 }): AutomationStudioSiteResetSettlement {
   const groups = input.groups.filter((group) => group.status !== "none");
   // No witness at all: a list read before it is to be named for it (header); never adopted.
-  if (!groups.length && !input.toggle) return { kind: "open", reasons: [{ reason: "name" }] };
+  if (!groups.length && !input.toggle && !input.value) return { kind: "open", reasons: [{ reason: "name" }] };
   // A list Core could not read again is never a look again (header): only one read fresh says anything of it.
   const unreachable = groups.filter(unreadable);
   const reachable = groups.filter((group) => !unreadable(group));
   const reasons: AutomationStudioSiteResetOpenReason[] = [];
   for (const group of reachable) {
     if (group.status === "holds") continue;
-    reasons.push({ reason: group.status === "differs" ? "undo" : "look", witness: "group", ...where(group) });
+    reasons.push({ reason: group.status === "differs" ? (group.inPlace ? "reload" : "undo") : "look", witness: "group", ...where(group) });
   }
   const toggle = input.toggle;
   if (toggle && toggle.status !== "holds") reasons.push({ reason: TOGGLE_REASON[toggle.status], witness: "toggle", ...(toggle.location ? { location: toggle.location } : {}) });
+  const value = input.value;
+  if (value && value.status !== "holds") reasons.push({ reason: VALUE_REASON[value.status], witness: "value", ...(value.location ? { location: value.location } : {}) });
   if (reasons.length) return { kind: "open", reasons };
   // Its only witnesses are lists no read can reach: nothing can show it put back (header).
-  if (!reachable.length && !toggle) return { kind: "open", reasons: unreachable.map((group): AutomationStudioSiteResetOpenReason => ({ reason: "unreachable", witness: "group", ...where(group) })) };
+  if (!reachable.length && !toggle && !value) return { kind: "open", reasons: unreachable.map((group): AutomationStudioSiteResetOpenReason => ({ reason: "unreachable", witness: "group", ...where(group) })) };
   const how = input.changeSeen || input.undoLanded ? "restored" : "unchanged";
   return unreachable.length ? { kind: "settled", how, unread: unreachable.flatMap((group) => (group.ref ? [group.ref] : [])) } : { kind: "settled", how };
 }
 
-/** A group Core could not read again, as last read: stale or incomplete (header). One read fresh is judged as any. */
+/** A group Core could not read again, as last read: stale, incomplete, or differing on a read made in place (header). One read fresh is judged as any. */
 function unreadable(group: AutomationStudioSiteResetJudgedGroup): boolean {
-  return group.unreachable === true && (group.status === "stale" || group.status === "incomplete");
+  return group.unreachable === true && (group.status === "stale" || group.status === "incomplete" || (group.status === "differs" && group.inPlace === true));
 }
 
 /** Where a group witness is told by: its ref, its location, and its opaque group. */

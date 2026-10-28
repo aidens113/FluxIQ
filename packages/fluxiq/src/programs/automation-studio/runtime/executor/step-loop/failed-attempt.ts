@@ -85,7 +85,11 @@ export async function automationStudioStepFailedAttempt(
   // Settles the step as failed, with its failure's code, so a card can say
   // why ("the page was busy", D8); it opens no "Recovery started" row of
   // its own (D5): the recovery thought below says what recovery chose.
-  emitAutomationStudioActivityStepRecovering({ nodeId: failedNode.id, label: failedNode.label, definitionId: failedNode.definitionId, parameters: failedNode.parameterValues, failureCode: attempts[attemptIndex]!.failure?.code });
+  // A failure the ladder goes on to retry is not settled as failed here: the retry may go through, and a red "Didn't work" card
+  // beside a step that then worked told the person something false (t774). The recovery thought below says it is trying again;
+  // a failure that is not retried is settled before anything else can happen to it.
+  const settleFailed = (): void => emitAutomationStudioActivityStepRecovering({ nodeId: failedNode.id, label: failedNode.label, definitionId: failedNode.definitionId, parameters: failedNode.parameterValues, failureCode: attempts[attemptIndex]!.failure?.code });
+  if (fault?.actUncertain) settleFailed();
   await options.commandRun?.checkpoint();
   // C6 step 4: the effect check, before anything below can make the act again or take the run elsewhere.
   if (fault?.actUncertain) {
@@ -121,6 +125,7 @@ export async function automationStudioStepFailedAttempt(
     }
   });
   const recoveryDecision = ladder.decision;
+  if (!fault?.actUncertain && !(ladder.kind === "retry" && automationStudioAttemptIsRetryable(attempts[attemptIndex]!, failedNode))) settleFailed();
   // A retry's wait, bounded and with a hint's elapsed time credited, settled before the recovery is worded (`defensive/planned-retry-wait.ts`).
   const settled = attempts[attemptIndex]!;
   const { wait, hint, siteAsked } = automationStudioPlannedRetryWait({

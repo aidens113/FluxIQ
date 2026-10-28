@@ -32,6 +32,18 @@
 //   act removes at most one subject this way: once it lands the act is spent,
 //   and a spent act is refused before any admission (`./undo-claims.ts`).
 //
+// **A list read in place after an undo is not judged (t772 R1, rerun round 6
+// `run-mvrj7qg9-b6dc94f6`).** Many sites draw a removal only on the list's next
+// load. A differing list whose latest read was made in place after an undo
+// landed on an act it witnesses (`../reset-settlement/observations.ts`,
+// `readInPlace`, handed here by `differing`) says nothing yet, so nothing is
+// listed apart on it, as for a list the reads could not name; the settlement
+// asks for it to be loaded again (`reload`). And a subject a spent act's landed
+// undo removed (its `subjectUndo`) is that act's: once loaded, a list that
+// still shows it does not leave it for the others to remove, one each. In that
+// run one landed undo's row, still drawn in place, outnumbered the two acts
+// left, and all three acts were called unsettleable.
+//
 // So what the differing lists show is put back only by removing subjects new
 // there. A row the original held that is gone, a value of one it held that
 // changed, or rows out of the original's order (`restored`, row for row and
@@ -46,6 +58,11 @@
 // (`control_state_differs`, `no_call`). The undo claims mark the act at once
 // (`pressBackRefused`), so the refusal that says so already lists it apart;
 // a press back admitted later clears it.
+//
+// **A value its own control cannot set back (`value`, t772).** A value act is
+// set back by a press on its own control (`./undo-admission.ts`); where that
+// control carries no tokens a press on it is told apart by, no press can ever
+// be admitted, so it fails `no_admissible_undo` at once.
 //
 // Nothing here admits a call or weakens the reset rule: an act listed apart
 // still refuses every trial, and the admission still decides every undo.
@@ -69,8 +86,8 @@ type Ledger = {
   lent(act: Act): readonly Scope[];
   /** Its own control's toggle, once read. */
   toggle(act: Act): unknown;
-  /** Its list groups that differ on a fresh complete read, each with its relevant scopes; a group the reads could not name has no `group`. */
-  differing(act: Act): ReadonlyArray<{ group?: string | undefined; scopes: readonly string[] }>;
+  /** Its list groups that differ on a fresh complete read, each with its relevant scopes; a group the reads could not name has no `group`; `inPlace` where that read was made in place after an undo (header, t772 R1). */
+  differing(act: Act): ReadonlyArray<{ group?: string | undefined; scopes: readonly string[]; inPlace?: boolean | undefined }>;
   /** A list scope's receipt, if it has one: a look under `undoes` can name it. */
   described(scope: string): unknown;
 };
@@ -80,6 +97,7 @@ export function automationStudioSiteResetUndoReach(ledger: Ledger, act: Act): (r
   let unreachable: boolean | undefined;
   return (reason) => {
     if (reason.reason === "toggle") return act.pressBackRefused ? "no_admissible_undo" : undefined;
+    if (reason.reason === "value") return PATHS.ownControl(act) ? undefined : "no_admissible_undo";
     if (reason.reason !== "undo") return undefined;
     unreachable ??= noUndoReaches(ledger, act);
     return unreachable ? "no_admissible_undo" : undefined;
@@ -90,12 +108,20 @@ export function automationStudioSiteResetUndoReach(ledger: Ledger, act: Act): (r
 function noUndoReaches(ledger: Ledger, act: Act): boolean {
   const differing = ledger.differing(act);
   const groups = differing.flatMap((entry) => (entry.group === undefined ? [] : [{ group: entry.group, scopes: entry.scopes }]));
-  // A differing list the reads could not name cannot be judged: nothing is listed apart on it.
-  if (!groups.length || groups.length < differing.length) return false;
+  // A differing list the reads could not name, or read in place after an undo, cannot be judged: nothing is listed apart on it (header).
+  if (!groups.length || groups.length < differing.length || differing.some((entry) => entry.inPlace === true)) return false;
   const able = ledger.acts.filter((other) => ledger.claimable(other) && !other.spent);
   if (able.some((other) => unruled(ledger, other))) return false;
   const removals = differences(ledger, act, groups);
-  return removals === undefined || !everyRemoved(removals, able.map((other) => (removal: Removal) => removes(ledger, other, removal)));
+  if (removals === undefined) return true;
+  // A subject a spent act's landed undo removed is that act's, never left for the others (header, t772 R1).
+  const left = removals.filter((removal) => !ledger.acts.some((other) => removedBy(other, removal)));
+  return !everyRemoved(left, able.map((other) => (removal: Removal) => removes(ledger, other, removal)));
+}
+
+/** Whether `removal` is the subject `act`'s one unasked undo, landed and spent, removed (header, t772 R1). */
+function removedBy(act: Act, removal: Removal): boolean {
+  return act.spent && act.attempts > 0 && act.subjectUndo !== undefined && act.subjectUndo.scope === removal.scope && act.subjectUndo.subject === removal.subject;
 }
 
 /** A path of `act`'s that no read rules out (header). */

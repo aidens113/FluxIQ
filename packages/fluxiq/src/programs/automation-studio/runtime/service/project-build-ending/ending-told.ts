@@ -46,7 +46,7 @@ export function automationStudioProjectBuildEndingTold(input: {
   const { left, record } = input;
   // Core's note goes after the model's words in the record: cut, and said last in a person's words (header).
   const own = left?.note && input.reason.endsWith(left.note) ? input.reason.slice(0, -left.note.length) : input.reason;
-  const checked = automationStudioProjectBuildReasonUnrepeated(record ? automationStudioProjectBuildReasonChecked(own) : own);
+  const checked = automationStudioProjectBuildReasonUnrepeated(record ? automationStudioProjectBuildReasonChecked(own, /\bstored (?:\d+ rows?|no rows)\b/u.test(record)) : own);
   const why = checked ? automationStudioActivityEndedReason(checked, MAX_ENDED_REASON) : undefined;
   const leftSaid = left?.note !== undefined ? left.told ?? left.note : NOTHING_LEFT;
   const sentences = [why ? (/[.!?…]$/u.test(why) ? why : `${why}.`) : "", record ?? "", leftSaid].filter((sentence) => sentence);

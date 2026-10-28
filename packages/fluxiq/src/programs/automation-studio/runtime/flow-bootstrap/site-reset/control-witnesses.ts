@@ -41,6 +41,19 @@ export class AutomationStudioSiteResetControlWitnesses {
     return original !== undefined && Object.values(original.before).some((count) => count > 0);
   }
 
+  /**
+   * A trial pass's own counts at its own place, read just before the build's first press there (`./trial-stamp.ts`): that
+   * place's original, where no read or act of the build got there first. Only an original the build could still have read
+   * (`canRead`) is filed, so a later read showing the pass's own press never becomes one, and a step on that control is
+   * stamped by what the build found (t772 w9).
+   */
+  passed(original: AutomationStudioSiteResetControlOriginal): void {
+    const states = Object.keys(original.before);
+    if (!TOKEN.test(original.resource) || !TOKEN.test(original.page) || !TOKEN.test(original.place) || !states.length || states.length > 256 || !states.every((state) => TOKEN.test(state)) || !Object.values(original.before).every((count) => Number.isSafeInteger(count) && count >= 0)) return;
+    if (!this.canRead({ resource: original.resource, place: original.place }) || this.originals.size >= 2000) return;
+    this.originals.set(this.key(original.resource, original.place), { resource: original.resource, page: original.page, place: original.place, before: { ...original.before }, ...(original.location ? { location: original.location } : {}) });
+  }
+
   canRead(spot: AutomationStudioSiteResetSpot): boolean {
     return spot.resource !== undefined && spot.place !== undefined && !this.sealed && !this.blockedResources.has(spot.resource) && !this.touched.has(this.key(spot.resource, spot.place)) && !this.originals.has(this.key(spot.resource, spot.place));
   }

@@ -4,6 +4,8 @@ import type { AutomationStudioSiteResetProjectLedger } from "../../flow-bootstra
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider } from "../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../../result-verification/index.ts";
 import { automationStudioCandidateTrialPort, type AutomationStudioCandidateTrialPorts } from "../candidate-trial/index.ts";
+import { AutomationStudioOfflineTrialInstallation, automationStudioOfflineFirstWhole } from "../offline-first/index.ts";
+import type { AutomationStudioOfflineTrialPhase } from "../offline-trial/index.ts";
 import { automationStudioWholeTrialPorts } from "../trial-ports/index.ts";
 import { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
 import { AutomationStudioProjectBuildPhaseStart } from "./phase-start.ts";
@@ -44,6 +46,15 @@ import { AutomationStudioProjectBuildTaskChecklist } from "./task-checklist.ts";
 // (no start hook, no site reset, its yes evidence only). An offline trial's
 // acts never happened on the site, so they are written to neither ledger
 // (Decision 6).
+//
+// **Offline-first trials (P6, t769; D48, revising D40).** Every whole port
+// carries the offline-first factory's `offlineFirst`, a project build's beside
+// its start hook and environment kind, and the factory's judge spend joins the
+// trials' (`../offline-first/`). The trial gate asks it before admission, the
+// start hook and any reset; a failure the recording shows is kept and never
+// reaches the port, so it writes nothing to either ledger -- nothing happened
+// on the site. An offline yes never stands: the gate runs the trial live
+// after it, so the final judged run is always a live yes.
 
 /** What every trial is run with, from the service: the run, its session and its reads, without the judge. */
 export type AutomationStudioProjectBuildTrialEnvironment = Omit<AutomationStudioCandidateTrialPorts, "judge" | "execute" | "readEndView" | "clearedControlHandles" | "deniedEvidenceKeys">;
@@ -58,6 +69,8 @@ export function automationStudioProjectBuildWholeTrials(input: {
   judge: { provider: AutomationStudioLlmProvider; timeoutMs?: number | undefined; instructions: readonly AutomationStudioFlowInstruction[]; signal?: AbortSignal | undefined };
   /** A project build's lasting-act ledger; absent for a candidate build, whose trial gate keeps its own (`flow-bootstrap/site-reset/`). */
   ledger?: AutomationStudioSiteResetProjectLedger | undefined;
+  /** `repair` for a repair build, else `test` (the default): the phase the offline-first trials run under (header). */
+  phase?: AutomationStudioOfflineTrialPhase | undefined;
 }): AutomationStudioProjectBuildWholeTrials {
   const { environment, binding } = input;
   const { projectId, flowId } = environment;
@@ -67,9 +80,14 @@ export function automationStudioProjectBuildWholeTrials(input: {
     return await asked(taskChecklist ? { ...judged, taskChecklist } : judged);
   };
   // The whole ports, as the trial-ports seam a host uses outside a build makes them (`../trial-ports/whole-ports.ts`).
-  const trials = automationStudioCandidateTrialPort(input.candidateId, automationStudioWholeTrialPorts({ environment, binding, judge }));
+  const ports = automationStudioWholeTrialPorts({ environment, binding, judge });
+  const trials = automationStudioCandidateTrialPort(input.candidateId, ports);
+  // Every build's whole trials are offline-first (header, D48).
+  const offlineFirst = automationStudioOfflineFirstWhole({ candidateId: input.candidateId, ports, installation: AutomationStudioOfflineTrialInstallation.current(), phase: input.phase ?? "test", liveRecords: () => trials.records() });
+  // The offline judge's spend counts with the live trials'; `records` stays the live port's.
+  const spent = () => sumSpend(trials.spent(), offlineFirst.spent());
   const ledger = input.ledger;
-  if (!ledger) return trials;
+  if (!ledger) return { ...trials, port: Object.assign(trials.port, { offlineFirst: offlineFirst.offlineFirst }), spent };
   const arrival = AutomationStudioProjectBuildPhaseStart.arrival(binding.runsNodes?.arrival, environment);
   // An offline trial's acts never happened on the site (header, Decision 6).
   const offline = automationStudioCandidateTrialOffline(trials.port);
@@ -85,9 +103,16 @@ export function automationStudioProjectBuildWholeTrials(input: {
     return { ...result, feedback: { ...result.feedback, phaseStart } };
   };
   // The start hook stays on the port, so the supervisor's trial gate runs it before each whole trial as a candidate build's does.
-  // The inner port's environment kind stays on it too, for the trial gate to read (header, U7).
+  // The inner port's environment kind stays on it too, for the trial gate to read (header, U7), and so does the offline-first check (header, D48).
   const environmentKind = trials.port.environmentKind;
   const prepareStart = trials.port.prepareStart;
-  const port: AutomationStudioCandidateTrialPort = prepareStart ? Object.assign(run, { environmentKind, prepareStart }) : Object.assign(run, { environmentKind });
-  return { ...trials, port };
+  const port: AutomationStudioCandidateTrialPort = Object.assign(run, { environmentKind, offlineFirst: offlineFirst.offlineFirst }, prepareStart ? { prepareStart } : {});
+  return { ...trials, port, spent };
 }
+
+type Spend = AutomationStudioProjectBuildWholeTrials["spent"] extends () => infer S ? S : never;
+
+const sumSpend = (a: Spend, b: Spend): Spend => ({
+  calls: a.calls + b.calls, inputTokens: a.inputTokens + b.inputTokens, outputTokens: a.outputTokens + b.outputTokens,
+  totalTokens: a.totalTokens + b.totalTokens, estimatedCostUsd: a.estimatedCostUsd + b.estimatedCostUsd
+});

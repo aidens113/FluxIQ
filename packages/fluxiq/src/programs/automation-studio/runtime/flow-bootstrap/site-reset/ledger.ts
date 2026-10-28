@@ -100,7 +100,7 @@
 // before one, and a `resetDestination` no receipt printed is refused before
 // its call runs, here under `undoes` (`claim`) too. A plan step is asked at
 // submission (`admitStep`), and its stamp is what its trial act takes
-// (`trialRan`: a destination ref attaches that list, a repeated explored act
+// (`trialRan`, `./trial-stamp.ts`: a destination ref attaches that list, a repeated explored act
 // lends its witnesses).
 //
 // **The seal is per group (t751 R1).** Each act counts its witness groups --
@@ -155,11 +155,27 @@
 // (`unread`), under `startedWith.cannotUndo` as an unchanged act is. A third
 // case (t748, t743 open item 2): an act whose differing lists no undo could
 // ever put back, or whose own control answered a state it cannot be pressed
-// back from, fails `no_admissible_undo` (`./undo-reach.ts`).
+// back from, fails `no_admissible_undo` (`./undo-reach.ts`) -- never on a list
+// read in place after an undo landed, which says nothing yet (t772 R1,
+// `../reset-settlement/observations.ts`). An undo refusal whose own act a call
+// can still meet never lists that act apart (t772 R2,
+// `../reset-answers/agreeing.ts`), checked again in `target` because the acts
+// listed apart are added there after the refusal was built.
+//
+// **A value witness (t772).** An act no list, toggle, transfer or subject
+// witnesses is witnessed by the shown values its press replaced (`placed`,
+// `trialRan`; `../reset-settlement/judge.ts`, `valued`). A choice made under
+// `undoes` before its own control confirms the undo is a step, no attempt.
+//
+// **What is left agrees with settlement (t772 w7).** Whether an act is left --
+// `no` when settled (`restored`, or `unchanged`: never said to be left), `yes`
+// while open, `possibly` once closed as one no call can settle (with what it
+// failed), kept or possibly lasting -- is decided by one function
+// (`./leftover.ts`, `leftOf`) that the acts to undo, the acts listed apart,
+// `standing`, `leftover`, a project snapshot and a trial's acts left all read.
 //
 // A phase runs from the build's start, or from one trial to the next. The
 // policy before a trial (`./trial-policy.ts`) reads it.
-
 
 import { AutomationStudioSiteResetCreateBaselines } from "./create-baselines.ts";
 import {
@@ -169,7 +185,7 @@ import {
   type AutomationStudioSiteResetAdmissionDeclared,
   type AutomationStudioSiteResetWitnessStamp
 } from "../reset-admission/index.ts";
-import { automationStudioSiteResetRefusal as refusal } from "../reset-answers/index.ts";
+import { automationStudioSiteResetAnswerAgreeing as agreeing, automationStudioSiteResetRefusal as refusal } from "../reset-answers/index.ts";
 import {
   AutomationStudioSiteResetControlTracker,
   AutomationStudioSiteResetObservations,
@@ -198,7 +214,9 @@ import type {
   AutomationStudioSiteResetTrialAct,
   AutomationStudioSiteResetUnsettleableAct
 } from "./contracts.ts";
+import { automationStudioSiteResetLeftover as leftoverOf, type AutomationStudioSiteResetLeftover } from "./leftover.ts";
 import { automationStudioSiteResetTrialPolicy, type AutomationStudioSiteResetPhase } from "./trial-policy.ts";
+import { automationStudioSiteResetTrialStamp as takeStamp } from "./trial-stamp.ts";
 import type { AutomationStudioSiteResetLedgerAct } from "./ledger-act.ts";
 import type { AutomationStudioSiteResetUndoDeclared } from "./undo-admission.ts";
 import { AutomationStudioSiteResetUndoClaims } from "./undo-claims.ts";
@@ -214,6 +232,8 @@ const IRREVERSIBLE: ReadonlySet<AutomationStudioActionConsequence> = new Set(["m
 const MAX_ACT = 9999;
 /** Reset attempts before an act with a subject undo is kept unresolved; being strict, it still refuses ordinary trials. */
 const ASKED_BEFORE_KEPT = 2;
+/** Where an act stands when a trial returns it as left on the site (header, t772 w7): open, closed unsettleable, or kept. */
+const LEFT_BY_TRIAL: ReadonlySet<AutomationStudioSiteResetLeftover["standing"]> = new Set(["in_place", "unsettleable", "kept"]);
 /** What a possibly lasting act's words end with (header, t593). */
 const POSSIBLY_LASTING = "declared no lasting act, but had an effect: possibly lasting";
 
@@ -295,10 +315,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       named: (act) => this.named(act),
       plain: namedAct,
       toggle: (act) => this.judge.toggleOf(act),
-      pressed: (place) => {
-        this.clock += 1;
-        if (place !== undefined) this.tracker.press(place, this.clock);
-      }
+      pressed: (place) => this.pressedUnder(place)
     });
     this.reachable = { acts: this.acts, seen: this.seen, clock: () => this.clock, claimable: (act) => this.claimable(act), lent: (act) => this.judge.lent(act), toggle: (act) => this.judge.toggleOf(act), differing: (act) => this.judge.differing(act), described: (scope) => this.createBaselines.described(scope) };
   }
@@ -356,7 +373,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     this.seen.observe(read, baseline, this.acts.length, this.clock, (group) => this.createBaselines.closed(group));
     this.tracker.read(read, this.clock);
     // A read reached this ledger: a look of Core's that ran meanwhile landed (`../reset-settlement/judge.ts`, t743).
-    this.judge.read();
+    this.judge.read(read);
     // Settled by this read, for good: a later trial makes the read stale, not the act open again (header, L1).
     for (const act of this.acts) this.settledNow(act);
   }
@@ -374,7 +391,8 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     const answer = this.undos.target(actId, declared);
     // A subject undo it was admitted on names a list it could change (header, t751 R1).
     if (act && answer.kind === "admit") this.locate(act);
-    return answer;
+    // Its own act, where a call can still meet the refusal, is never listed apart beside it (header, t772 R2).
+    return answer.kind === "refused" ? { ...answer, evidence: agreeing(answer.evidence) } : answer;
   }
 
   explored(call: AutomationStudioSiteResetExplored): void {
@@ -382,6 +400,8 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     const pressed = call.landed && declared?.permitted === true && declared.effect === "mutate";
     // A call naming an act under `undoes`: an undo or a look, never an act of its own (`./undo-claims.ts`).
     if (call.undoes !== undefined) {
+      // A step toward a value act's undo (`./undo-admission.ts`) is no attempt: it changed the page, so earlier reads are stale (header, t772).
+      if (call.on === "step") return pressed ? this.pressedUnder(declared.control.place) : undefined;
       const undone = this.acts.find((entry) => entry.id === call.undoes);
       const attempts = undone?.attempts ?? 0;
       this.undos.ran({ ...call, undoes: call.undoes });
@@ -427,6 +447,14 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     if (place.changed.length > 0) {
       entry.place = { state: structuredClone(place.state), location: place.location, changed: [...place.changed], ...(place.lines ? { lines: { gone: [...place.lines.gone], added: [...place.lines.added] } } : {}) };
     }
+    // The shown values its press replaced witness it where nothing else does (header, t772).
+    if (place.values && onlyModifies(entry.consequences)) this.judge.valued(entry, place.values, "read");
+  }
+
+  /** A landed press under `undoes` changed the site: the clock moves, and its place, if any, gets a press (header, L1). */
+  private pressedUnder(place: string | undefined): void {
+    this.clock += 1;
+    if (place !== undefined) this.tracker.press(place, this.clock);
   }
 
   /**
@@ -551,78 +579,52 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       if (press && onlyModifies(act.consequences)) recorded.press = press;
       // The explored acts it repeats lend it their destinations, named whenever (header, L1).
       if (recorded.strictReset) recorded.repeats = explored.filter((other) => repeats({ consequences: act.consequences, definitionId: act.definitionId, spot: act.spot }, { consequences: other.consequences, operation: other.operation, spot: other.spot })).map((other) => other.id);
-      this.stamped(recorded, act.witness, itemPressed ? undefined : act.controls);
+      takeStamp(recorded, act.witness, { createBaselines: this.createBaselines, controlWitnesses: this.controlWitnesses }, act.controls, itemPressed);
+      // Its step's diff's replaced values witness it where nothing else does; an unread place starts at its from (header, t772).
+      if (act.values && onlyModifies(act.consequences)) this.judge.valued(recorded, act.values, "diff");
       this.locate(recorded);
     }
-    // A possibly lasting act is not answered as left: it is answered under `possiblyInPlace` (header).
-    return this.acts.filter((act) => act.undoable && !act.undone && !act.possible).map((act) => this.named(act));
+    // Left or possibly left, as settlement answers it (header, t772 w7); a possibly lasting act is answered under `possiblyInPlace` (header).
+    return this.acts.filter((act) => LEFT_BY_TRIAL.has(this.leftOf(act).standing)).map((act) => this.named(act));
   }
 
   /** This build's acts still to undo, as the model is shown them; an open strict act says under `settle` what settles it (header, L1). */
   inPlace(): AutomationStudioSiteResetNamedAct[] {
-    return this.acts.filter((act) => this.toUndo(act)).map((act) => this.named(act));
+    return this.acts.filter((act) => this.leftOf(act).standing === "in_place").map((act) => this.named(act));
   }
 
   /** This build's acts no call can settle (`gate_unsatisfiable`, header, t743), each with the closed condition it failed; never among `inPlace`. */
   unsatisfiable(): AutomationStudioSiteResetUnsettleableAct[] {
     return this.acts.flatMap((act) => {
-      const failed = this.unmet(act);
-      return failed ? [{ act: act.id, did: act.did, ...(act.call ? { call: act.call } : {}), reason: "gate_unsatisfiable" as const, failed }] : [];
+      const left = this.leftOf(act);
+      return left.standing === "unsettleable" ? [{ act: act.id, did: act.did, ...(act.call ? { call: act.call } : {}), reason: "gate_unsatisfiable" as const, failed: left.failed }] : [];
     });
   }
 
   /** This build's possibly lasting acts that may still be on the site (header, t593): never asked for, each marked `possible`. */
   possiblyInPlace(): AutomationStudioSiteResetNamedAct[] {
-    return this.acts.filter((act) => act.possible && this.claimable(act)).map(namedAct);
+    return this.acts.filter((act) => this.leftOf(act).standing === "possible").map(namedAct);
   }
 
   /**
-   * Where one act stands (L1), for words said about it: `in_place` still the model's (or possibly lasting), `restored` undone
-   * or taken back, `unchanged` settled with no change seen (or, legacy, its page showed nothing of it), `kept` a legacy act
-   * the site cannot undo, `irreversible` one no control takes back; undefined for an id this ledger never gave.
+   * Where one act stands (L1), for words said about it: `in_place` still the model's, `restored` undone or taken back,
+   * `unchanged` settled with no change seen (or, legacy, its page showed nothing of it), `unsettleable` closed as one no call
+   * can settle (t743), `kept` a legacy act the site cannot undo, `possible` possibly lasting (t593), `irreversible` one no
+   * control takes back; undefined for an id this ledger never gave. Read off `leftover` (header, t772 w7).
    */
-  standing(actId: string): "in_place" | "restored" | "unchanged" | "kept" | "irreversible" | undefined {
+  standing(actId: string): AutomationStudioSiteResetLeftover["standing"] | undefined {
+    return this.leftover(actId)?.standing;
+  }
+
+  /** Whether one act is left on the site, as its settlement answers it (header, t772 w7, `./leftover.ts`); undefined for an id this ledger never gave. */
+  leftover(actId: string): AutomationStudioSiteResetLeftover | undefined {
     const act = this.acts.find((entry) => entry.id === actId);
-    if (!act) return undefined;
-    if (!act.undoable) return act.consequences.some((consequence) => IRREVERSIBLE.has(consequence)) ? "irreversible" : "unchanged";
-    const settled = this.settledNow(act);
-    if (act.undone) return "restored";
-    return settled === "unchanged" ? "unchanged" : act.kept && !act.strictReset ? "kept" : "in_place";
+    return act ? this.leftOf(act) : undefined;
   }
 
   /** Whether any read after the act ever showed a change it made, for words said about it (t738); undefined for an id this ledger never gave. */
   changeSeen(actId: string): boolean | undefined {
     return this.acts.find((entry) => entry.id === actId)?.changeSeen;
-  }
-
-  /**
-   * What a trial act takes of its step's witness stamp (header, t751 R3): a destination ref attaches that issued list, a
-   * repeated explored act lends its witnesses; a control receipt retains its immutable pre-act counts even without the
-   * optional runtime diff. Own-list admission emits a destination stamp. Bare standalone stamps add no authority.
-   *
-   * A control receipt covers only the item it was read on (t751 final acceptance, photo-dialog-act). Items may share
-   * their control's place token, so a looped step carries the explored item's receipt into every pass: a pass whose
-   * own diff (`pass`) shows it pressed another item -- another location, or another page where none is given -- is
-   * witnessed instead by that item's own control as the pass read it just before its press (R1, per pass), judged
-   * only on reads at its location. `pass` is withheld where the build had already pressed that item there: a later
-   * before is never an original (R1), and the receipt stands as it did.
-   */
-  private stamped(act: Act, witness: unknown, pass?: AutomationStudioSiteResetTrialAct["controls"]): void {
-    if (!stampValid(witness)) return;
-    if (witness.via === "destination") {
-      const named = this.createBaselines.retained(witness.ref);
-      if (named && !act.destinations.some((entry) => entry.scope === named.scope)) act.destinations.push(named);
-    } else if (witness.via === "repeats" && act.strictReset && !act.repeats.includes(witness.act)) {
-      act.repeats.push(witness.act);
-    } else if (witness.via === "control") {
-      const stamped = this.controlWitnesses.resolve(witness.ref);
-      const otherItem = stamped !== undefined && pass !== undefined && (pass.location !== undefined && stamped.location !== undefined ? pass.location !== stamped.location : pass.page !== stamped.page);
-      const original = otherItem && pass ? { resource: stamped.resource, page: pass.page, place: stamped.place, before: { ...pass.before }, ...(pass.location !== undefined ? { location: pass.location, at: pass.location } : {}) } : stamped;
-      if (original) {
-        act.controlOriginal = original;
-        act.spot = { ...act.spot, resource: original.resource, scope: original.page, place: original.place };
-      }
-    }
   }
 
   /**
@@ -660,7 +662,13 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
 
   /** Still on the site, and still the model's to undo: never one no call can settle (header, t743). */
   private toUndo(act: Act): boolean {
-    return !this.settledNow(act) && this.claimable(act) && !act.possible && this.unmet(act) === undefined;
+    return this.leftOf(act).standing === "in_place";
+  }
+
+  /** Whether `act` is left, settled first where it can be: the one answer every leftover and settlement answer reads (header, t772 w7). */
+  private leftOf(act: Act): AutomationStudioSiteResetLeftover {
+    this.settledNow(act);
+    return leftoverOf(act, act.consequences.some((consequence) => IRREVERSIBLE.has(consequence)), () => this.unmet(act));
   }
 
   /** The closed condition an open strict act fails where no call can settle it (header, t743, t748); none otherwise. */

@@ -572,4 +572,25 @@ describe("a completion check that throws", () => {
     ]);
     expect(JSON.stringify(seen)).not.toContain("check broke");
   });
+
+  it("says a call Core refused before it ran as not done, never as done or in progress (t774)", async () => {
+    for (const code of ["candidate.undo_unproved", "candidate.create_baseline_required", "candidate.trial_reset_required", "candidate.some_future_refusal"]) {
+      seen = [];
+      const refused = { kind: "llm_evidence_tool_execution", evidence: { ok: false, code, instruction: "internal model-facing text act-15" }, effectApplied: false, targetsUnchanged: true, resultCode: code };
+      const observed = observeAutomationStudioEvidenceLoop(loopInput({ executeTool: async () => refused }));
+      await inScope(() => observed.executeTool(call("core.run_node")));
+      const ended = seen.at(-1)!;
+      expect(ended.detail?.status).toBe("failed");
+      expect(ended.label).toMatch(/— not done$/u);
+      expect(ended.detail?.text).toMatch(/Declined: /u);
+      expect(ended.detail?.text).not.toMatch(/act-15|internal/u);
+      expect(activityActionOf(ended)?.outcome).toBe("failed");
+    }
+  });
+
+  it("still says a call that ran and was done as done", async () => {
+    const observed = observeAutomationStudioEvidenceLoop(loopInput({ executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, targetsUnchanged: false, resultCode: "tool.ok" }) }));
+    await inScope(() => observed.executeTool(call("core.run_node")));
+    expect(seen.at(-1)!.label).toMatch(/— done$/u);
+  });
 });

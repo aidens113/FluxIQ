@@ -87,12 +87,13 @@ function roundFiveTrial(stop: (index: number) => ClientGatewayActivity) {
 const words = (display: ActivityDisplay) => `${display.headline} | ${display.step ? `Step ${display.step.index} of ${display.step.count}` : "-"} | ${display.detail ?? ""}`;
 
 for (const [name, stop] of [["round 5's ladder words", oldStop], ["t366's ladder words", newStop]] as const) {
-  test(`round 5's trial reads "Testing your Flow" throughout, and the build after it is "Building your Flow" with no step count (${name})`, () => {
+  test(`round 5's trial reads "Testing your Flow on the site" throughout, and the build after it is "Building your Flow" with no step count (${name})`, () => {
     const h = harness();
     const before = h.feed(deciding(), look("started"), look("succeeded"), deciding(), decidedToTest());
-    expect(before.at(-1)!.headline, "the decision to test opens the test, before the start is reset").toBe("Testing your Flow");
+    // t769 b13: the decision only begins the call -- the gate may still refuse it -- so nothing is tested on the site yet.
+    expect([before.at(-1)!.headline, before.at(-1)!.detail], "the decision to test says so, under the build's headline").toStrictEqual(["Building your Flow", TEST_TITLE]);
     const during = h.feed(...roundFiveTrial(stop));
-    expect(during.map((display) => display.headline), during.map(words).join("\n")).toStrictEqual(during.map(() => "Testing your Flow"));
+    expect(during.map((display) => display.headline), during.map(words).join("\n")).toStrictEqual(during.map(() => "Testing your Flow on the site"));
     expect(during.every((display) => display.phase !== "repairing"), "a test is coloured as running").toBeTruthy();
     expect(during.at(-1)!.step).toStrictEqual({ index: 9, count: COUNT });
     const after = h.feed(deciding(), look("started"), look("succeeded"));
@@ -117,7 +118,7 @@ test("a trial whose decision gave no reason opens at its first run step", () => 
   const h = harness();
   h.feed(deciding(), look("started"), look("succeeded"), deciding());
   const [first] = h.feed(step(1, "Opening the start page"));
-  expect([first!.headline, first!.step]).toStrictEqual(["Testing your Flow", { index: 1, count: COUNT }]);
+  expect([first!.headline, first!.step]).toStrictEqual(["Testing your Flow on the site", { index: 1, count: COUNT }]);
 });
 
 test("a saved Flow's run never says 'trying again' for a refusal its ladder does not retry", () => {

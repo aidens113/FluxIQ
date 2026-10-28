@@ -46,6 +46,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../../_shared/api.ts";
 import { registerAutomationStudioApi } from "../../../../api/handlers/index.ts";
+import { resolveAutomationStudioAuthoringMode } from "../../../../model/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import { automationStudioActivityHub } from "../../../activity/index.ts";
 import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
@@ -508,6 +509,54 @@ describe("the extension's chat, end to end in Core", () => {
     expect(result?.text).toMatch(/model key is locked/u);
     // How to unlock it: Secret Keys has no unlock control, signing in again is what unlocks (t707).
     expect(result?.text).toMatch(/sign out of FluxIQ and sign in again/u);
+  });
+
+  describe("with a recording attached to the message, in project authoring mode", () => {
+    beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", "project"); });
+
+    /** A finished recording the person described, which the extension attaches by id in `onScreen`. */
+    async function attach(w: World, description: string) {
+      await w.service.createRecording({ projectId: w.project.id, recordingId: "recording.attached", domainId: "example", description, initialState: { timestamp: 1, namespaces: {} } });
+      await w.service.finalizeRecording({ projectId: w.project.id, recordingId: "recording.attached" });
+      return "recording.attached";
+    }
+
+    it("sends the recording beside the written instruction, which stays the task, even when the demonstration shows something else", async () => {
+      world = await createWorld({ unlocked: UNLOCKED_SESSION });
+      const recordingId = await attach(world, "Opens the orders page and exports last month's invoices.");
+      const message = "Find every kettle in the catalog that costs under 30 dollars";
+      const response = await world.say(message, { do: "flow.createHere" }, { pageUrl: PAGE, recordingId });
+      expect(response?.execution).toMatchObject({ capabilityId: "flow.createHere", status: "started" });
+      await automationStudioConversationCommandWork.idle();
+      automationStudioConversationCommandWork.takeUnreported();
+
+      // The build ran in project authoring mode, and the Flow's saved instruction links the attached recording.
+      expect(resolveAutomationStudioAuthoringMode()).toBe("project");
+      const flow = await onlyFlow(world.service, world.project.id);
+      const summaries = (await world.service.listFlowInstructionSummaries({ projectId: world.project.id, flowId: flow.flowId, limit: 50 })).instructions as Array<{ instructionId: string }>;
+      const saved = await Promise.all(summaries.map((entry) => world!.service.getFlowInstruction(world!.project.id, entry.instructionId)));
+      const linked = saved.filter((entry) => entry?.linkedRecordingIds?.includes(recordingId));
+      expect(linked).toHaveLength(1);
+
+      // Every call the build asked the model to make (the judge's own reads aside) carried the recording as untrusted supplementary
+      // evidence, and the task on each was the written message: the demonstration shows something else and changed nothing.
+      const asks = world.buildRequests.filter((request) => request.taskKind !== "loop_verification");
+      expect(asks.length).toBeGreaterThan(0);
+      for (const request of asks) {
+        const context = request.context as { supplementaryRecordings?: Array<Record<string, unknown>>; instructions?: { instructions: Array<{ body: string }> } };
+        expect(context.supplementaryRecordings).toEqual([expect.objectContaining({ recordingId, authority: "untrusted_supplementary_demonstration", description: "Opens the orders page and exports last month's invoices.", method: [] })]);
+        expect(context.instructions?.instructions.map((entry) => entry.body)).toEqual([message]);
+      }
+    });
+
+    it("sends no supplementary recordings when nothing is attached", async () => {
+      world = await createWorld({ unlocked: UNLOCKED_SESSION });
+      await world.say("Find every kettle in the catalog", { do: "flow.createHere" });
+      await automationStudioConversationCommandWork.idle();
+      automationStudioConversationCommandWork.takeUnreported();
+      expect(world.buildRequests.length).toBeGreaterThan(0);
+      expect(world.buildRequests.some((request) => (request.context as { supplementaryRecordings?: unknown }).supplementaryRecordings !== undefined)).toBe(false);
+    });
   });
 
   describe("in the explicit candidate authoring mode", () => {

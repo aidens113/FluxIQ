@@ -56,3 +56,25 @@ describe("the condition words", () => {
     expect(WORDS.condition("no_baseline", "no_call")).toContain("never read before this build acted");
   });
 });
+
+// t772 R2 (rerun round 6 `run-mvrj7qg9-b6dc94f6`, cause 2): one answer never says both that another call can meet its
+// act's condition and that no call can settle that act.
+describe("a refusal whose own act a call can still meet", () => {
+  const unsettleable = (act: string) => ({ act, did: `press "Reserve" button (${act})`, reason: "gate_unsatisfiable", failed: "no_admissible_undo" });
+
+  it("never lists its own act under actsUnsettleable, and lists it to undo instead", () => {
+    for (const canMeet of ["this_page", "another_page"] as const) {
+      const answer = automationStudioSiteResetRefusal("candidate.undo_unproved", { act: "act-2", failed: "undeclared_press", canMeet, instruction: "Declare it.", actsToUndo: [{ act: "act-3", did: "x" }], actsUnsettleable: [unsettleable("act-2"), unsettleable("act-9")] });
+      expect(answer.actsUnsettleable.map((entry) => entry.act)).toEqual(["act-9"]);
+      expect(answer.actsToUndo.map((entry) => entry.act)).toEqual(["act-3", "act-2"]);
+    }
+    const alone = automationStudioSiteResetRefusal("candidate.undo_unproved", { act: "act-2", failed: "undeclared_press", canMeet: "this_page", instruction: "Declare it.", actsToUndo: [], actsUnsettleable: [unsettleable("act-2")] });
+    expect(alone).not.toHaveProperty("actsUnsettleable");
+    expect(alone.actsToUndo).toEqual([{ act: "act-2", did: `press "Reserve" button (act-2)` }]);
+  });
+
+  it("keeps it listed apart where no call can meet the refusal's condition", () => {
+    const answer = automationStudioSiteResetRefusal("candidate.undo_already_done", { act: "act-2", failed: "undo_spent", canMeet: "no_call", instruction: "x", actsToUndo: [], actsUnsettleable: [unsettleable("act-2")] });
+    expect(answer.actsUnsettleable.map((entry) => entry.act)).toEqual(["act-2"]);
+  });
+});

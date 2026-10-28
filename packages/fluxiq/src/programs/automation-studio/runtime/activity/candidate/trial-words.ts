@@ -1,4 +1,5 @@
 import { automationStudioActivityHumanLabel } from "../wording/index.ts";
+import { automationStudioActivityCandidateOfflineWords } from "./offline-words.ts";
 
 /**
  * How a candidate build's test of its Flow ended (`core.test_candidate`,
@@ -101,6 +102,12 @@ function stepsSaid(feedback: Record<string, unknown>): string | undefined {
  * showed the Flow wrong (lane C round 11, `run-mv5yaapy-8c34bf34`, t480).
  */
 export function automationStudioActivityCandidateTrialWords(result: { resultCode?: unknown; evidence?: unknown }): { failed: boolean; declined: boolean; unconfirmed?: true; words: string } | undefined {
+  const said = liveTrialWords(result);
+  const evidence = objectOf(result.evidence);
+  return said && !said.declined && evidence ? { ...said, words: automationStudioActivityCandidateOfflineWords(evidence, said.words) } : said;
+}
+
+function liveTrialWords(result: { resultCode?: unknown; evidence?: unknown }): { failed: boolean; declined: boolean; unconfirmed?: true; words: string } | undefined {
   const evidence = objectOf(result.evidence);
   if (!evidence) return undefined;
   const verdict = evidence.verdict;

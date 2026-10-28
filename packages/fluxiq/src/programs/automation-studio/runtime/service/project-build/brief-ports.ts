@@ -1,11 +1,11 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import { AutomationStudioNodeRegistry } from "../../../nodes/index.ts";
-import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
+import { type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { observeAutomationStudioEvidenceLoop } from "../../activity/index.ts";
 import { automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapPersonNeeded, flowBootstrapEvidenceUnusableDecisionFailure, type AutomationStudioBootstrapAccounting, type AutomationStudioFlowBootstrapActionPermissions, type AutomationStudioFlowBootstrapPersonNeeded } from "../../flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY, AUTOMATION_STUDIO_SITE_RESET_WORDS, AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetCalls, type AutomationStudioSiteResetIssuedRef, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetTarget, type AutomationStudioSiteResetTrialReset } from "../../flow-bootstrap/site-reset/index.ts";
-import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, automationStudioSubflowEntryLeft, type AutomationStudioSubflowEntryLeftAct, type AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, type AutomationStudioSubflowEntryLeftAct, type AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, AUTOMATION_STUDIO_NODE_WRITE_KEY, automationStudioFlowDraftReplayClearedCode, automationStudioHarnessOptionRegistry, automationStudioLlmNodeDescriptions, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceToolExecutionResult, type AutomationStudioLlmHarnessInput } from "../../llm/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_RESET_COMPLETION, type AutomationStudioProjectBriefEnding, type AutomationStudioProjectBriefPortFactory, type AutomationStudioProjectBriefPortRequest, type AutomationStudioProjectBuilderPorts } from "../../project-agents/index.ts";
@@ -14,6 +14,7 @@ import { automationStudioCandidateStallCode, automationStudioCandidateSubmission
 import { automationStudioFlowBootstrapUnusableDecisions, type generateAutomationStudioFlowCandidateDraft } from "../flow-bootstrap-commands/index.ts";
 import type { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
 import type { AutomationStudioProjectBuildDecisions } from "./decisions.ts";
+import { automationStudioProjectBuildBriefTold as told, automationStudioProjectBuildEvidenceBeside as beside } from "../project-build-notes/index.ts";
 import { automationStudioProjectBuildEntryNote } from "./entry-note.ts";
 import { AutomationStudioProjectBuildPermissions } from "./permissions.ts";
 import { AutomationStudioProjectBuildPhaseStart } from "./phase-start.ts";
@@ -492,57 +493,7 @@ function lookingInPlace(tool: Tool): Tool {
   return tool.initialObservation?.arrival ? { ...tool, initialObservation: { input: tool.initialObservation.input } } : tool;
 }
 
-/** The key Core's opening look of a builder on its prepared entry carries, which the web domain reads as its arrival (header). */
-const ARRIVED_KEY = "arrived";
-/** The key beside a brief's opening look that says how its start was made (header, `./phase-start-told.ts`). */
-const PHASE_START_KEY = "phaseStart";
-
-/**
- * `loop` with Core's own words beside two results (header): the opening's,
- * saying how the brief's start was made (`phaseStart`, t593) and whether the
- * entry was prepared, and a landed call's that declared a lasting act its
- * brief's parts do not ask for. The domain's evidence is kept whole; a key is
- * added beside it, never in its place. `arrived`: the opening call is sent
- * marked as the builder's arrival. `role: "reset"`: a call that names an act
- * under `undoes` is the reset's task, never outside it, and the note speaks to
- * a reset, which writes no subflow.
- */
-function told<L extends { executeTool: Execute }>(loop: L, said: { start: JsonObject | undefined; entry: JsonObject | undefined; permittedActs: readonly string[]; arrived: boolean; role?: "reset" }): L {
-  const inner = loop.executeTool;
-  const executeTool: Execute = async (call) => {
-    const opening = isOpeningCall(call.callId);
-    const ran = await inner(said.arrived && opening ? { ...call, value: { ...call.value, [ARRIVED_KEY]: true } } : call);
-    if (opening && (said.start || said.entry)) {
-      const started = said.start ? beside(ran, PHASE_START_KEY, said.start) : ran;
-      return said.entry ? beside(started, automationStudioSubflowEntryLeft.entryKey, said.entry) : started;
-    }
-    if (said.role === "reset" && call.value[AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY] !== undefined) return ran;
-    const outside = landedOutside(call.value, ran, said.permittedActs);
-    if (!outside.length) return ran;
-    if (said.role === "reset") {
-      return beside(ran, "outsideBrief", { consequences: outside, note: `This call declared ${outside.join(", ")} and named no act under ${AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY}, so it was outside this reset, which only undoes the build's listed acts. It ran, and it stays on the site as this build's act: where the site can undo it, it is listed with the acts to undo. Do nothing on the site but undo the listed acts, and do not do it again.` });
-    }
-    const asked = said.permittedActs.length ? `they ask only for ${said.permittedActs.join(", ")}` : "they ask for no lasting act";
-    return beside(ran, "outsideBrief", { consequences: outside, note: `This call declared ${outside.join(", ")}, which your brief's parts do not ask for (${asked}). It ran, and it stays on the site as this build's act until a reset undoes it. Write no step of your subflow that does it, and do not do it again.` });
-  };
-  return { ...loop, executeTool };
-}
-
 type Ran = Awaited<ReturnType<Execute>>;
-
-/** The lasting classes `value` declared that `permitted` leaves out, when its call landed: applied an effect and did not refuse itself. */
-function landedOutside(value: JsonObject, ran: Ran, permitted: readonly string[]): string[] {
-  if (!isExecution(ran) || ran.effectApplied !== true || isObject(ran.evidence) && ran.evidence.ok === false) return [];
-  const declared = Array.isArray(value.consequences) ? value.consequences : [];
-  return AUTOMATION_STUDIO_ACTION_CONSEQUENCES.filter((consequence) => declared.includes(consequence) && !permitted.includes(consequence));
-}
-
-/** `ran` with Core's `key` added beside its evidence: in the evidence object, or holding a non-object evidence under `evidence`. */
-function beside(ran: Ran, key: string, value: JsonObject): Ran {
-  if (!isExecution(ran)) return ran;
-  const evidence = isObject(ran.evidence) ? { ...ran.evidence, [key]: value } : { [key]: value, evidence: ran.evidence };
-  return { ...ran, evidence };
-}
 
 function isExecution(ran: Ran): ran is AutomationStudioLlmEvidenceToolExecutionResult {
   return isObject(ran) && ran.kind === "llm_evidence_tool_execution";

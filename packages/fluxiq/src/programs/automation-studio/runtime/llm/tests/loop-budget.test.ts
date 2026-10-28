@@ -297,6 +297,15 @@ describe("the cost count beside a judging reserve (t254)", () => {
 // t383, lane C (`run-mv0pa79q-ef91811b`): at three decisions left the wrap-up offered no tools, so a candidate that
 // had not submitted lost `core.submit_candidate` and spent its last four decisions on completions refused
 // `candidate.latest_submission_required`. A candidate's wrap-up starts earlier and keeps submitting and testing.
+describe("a candidate's wrap-up words (t772)", () => {
+  it("say what to do when a trial names a step with no witness: nothing explores now, so end blocked naming the step", () => {
+    const said = String(automationStudioLlmEvidenceBudgetEntry(2, { decisionsLeft: 3, limitedBy: "cost" }, undefined, true).value.instruction);
+    expect(said).toContain("candidate.trial_step_unwitnessed");
+    expect(said).toContain("end blocked");
+    expect(said).toContain("naming that step");
+  });
+});
+
 describe("a candidate's wrap-up (t383)", () => {
   const candidateTools = [
     { toolId: "inspect", description: "Collect bounded evidence.", inputSchema: { type: "object" } },
@@ -391,7 +400,7 @@ describe("a discovery-only loop's own finishing tools (t537)", () => {
       const said = automationStudioLlmEvidenceBudgetEntry(2, left(decisionsLeft), undefined, true);
       expect(automationStudioLlmEvidenceBudgetEntry(2, left(decisionsLeft), undefined, true, AUTOMATION_STUDIO_LLM_EVIDENCE_CANDIDATE_FINISHING_TOOLS)).toEqual(said);
     }
-    expect(String(automationStudioLlmEvidenceBudgetEntry(2, left(4), undefined, true).value.instruction)).toBe("Only a few decisions are left, so only core.submit_candidate, core.test_candidate and completing run now: every other tool is still listed, but a call to one is answered without running and spends a decision. A call that names one of this build's own lasting acts under undoes, to undo it before a trial, still runs. If your latest Flow is not submitted, submit the whole candidate now with core.submit_candidate; test that exact revision with core.test_candidate; complete with its revision and digest once the trial answers yes. If a submission or a trial is refused, correct what it names, submit again and test the new revision.");
+    expect(String(automationStudioLlmEvidenceBudgetEntry(2, left(4), undefined, true).value.instruction)).toBe("Only a few decisions are left, so only core.submit_candidate, core.test_candidate and completing run now: every other tool is still listed, but a call to one is answered without running and spends a decision. A call that names one of this build's own lasting acts under undoes, to undo it before a trial, still runs. If a trial is refused as candidate.trial_step_unwitnessed, nothing can give that step a witness now, because exploring is withheld: end blocked, naming that step. If your latest Flow is not submitted, submit the whole candidate now with core.submit_candidate; test that exact revision with core.test_candidate; complete with its revision and digest once the trial answers yes. If a submission or a trial is refused, correct what it names, submit again and test the new revision.");
   });
 
   it("names the loop's own tools in its budget words", () => {

@@ -43,6 +43,7 @@ export * from "./region-compiler.ts";
 export * from "./router-runtime.ts";
 export * from "./service.ts";
 export * from "./service/offline-trial/index.ts";
+export * from "./service/offline-first/index.ts";
 // Traces and offline trials, P5: the public seams a host runs a recorded build's trials through instead of loading
 // Core's build files -- a single-subflow candidate rebuilt from a submitted script, the whole-candidate trial ports a
 // service makes outside a build (and their type), and a project's gateway trace store by its service.

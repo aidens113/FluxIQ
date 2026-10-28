@@ -96,6 +96,9 @@ export type AutomationStudioSiteResetUndoClaimsLedger = {
   receipts: {
     unissued(reference: unknown): { ok: false; code: string; instruction: string } | undefined;
     named(reference: unknown): { scope: string; group: string } | undefined;
+    /** The resource a list scope was read on, and where (`./create-baselines.ts`). */
+    resourceOf(scope: string): string | undefined;
+    described(scope: string): { location?: string } | undefined;
   };
   claimable(act: Act): boolean;
   settledNow(act: Act): "restored" | "unchanged" | undefined;
@@ -172,6 +175,19 @@ export class AutomationStudioSiteResetUndoClaims {
     return { kind: "refused", evidence: { ...answer.evidence, ...apart } };
   }
 
+  /** Whether `list` could show `act`'s effect (t772 w3): read on the act's own resource or page, or one the act already named. */
+  private reads(act: Act, list: { scope: string; group: string }): boolean {
+    const receipts = this.ledger.receipts;
+    if (act.destinations.some((entry) => entry.scope === list.scope || entry.group === list.group)) return true;
+    // An act that records neither a resource nor a location (a trial's act with no witness) says nowhere it ran: nothing shows
+    // the list is elsewhere, so it is named as before (office r2).
+    if (act.spot?.resource === undefined && act.place?.location === undefined) return true;
+    const resource = receipts.resourceOf(list.scope);
+    if (resource !== undefined && act.spot?.resource === resource) return true;
+    const location = receipts.described(list.scope)?.location;
+    return location !== undefined && act.place?.location === location;
+  }
+
   /** An exploration call that named an act under `undoes` ran (header): what it did to that act. */
   ran(call: AutomationStudioSiteResetExplored & { undoes: string }): void {
     const ledger = this.ledger;
@@ -186,7 +202,10 @@ export class AutomationStudioSiteResetUndoClaims {
     if (!act || !ledger.claimable(act)) return;
     // Where its effect would show, named after it: an issued ref, resolved without the act's resource (header, F1, L1); accumulated,
     // and only from a call that landed (t751 R6: office `run-mvhibit5-e1d3a4f3` settled acts on a list a refused call named).
-    const named = !call.landed || call.resetDestination === undefined ? undefined : ledger.receipts.named(call.resetDestination);
+    // t772 w3: only a list the act's effect could show on -- read on the act's own resource or page, or already named for it --
+    // is attached; a list read elsewhere could never show the act, so its staying unchanged settles nothing.
+    const found = !call.landed || call.resetDestination === undefined ? undefined : ledger.receipts.named(call.resetDestination);
+    const named = found !== undefined && this.reads(act, found) ? found : undefined;
     if (named && !act.destinations.some((entry) => entry.scope === named.scope)) act.destinations.push(named);
     // A look leaves the act as it was: the fresh read settles it (header, L1).
     if (look) return;

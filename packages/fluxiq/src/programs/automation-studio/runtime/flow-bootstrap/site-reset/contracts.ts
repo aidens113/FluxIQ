@@ -15,7 +15,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence, AutomationStudioActionEffect } from "../../action-permissions/index.ts";
 import type { AutomationStudioSiteResetAdmissionDeclared, AutomationStudioSiteResetWitnessStamp } from "../reset-admission/index.ts";
-import type { AutomationStudioSiteResetCollection, AutomationStudioSiteResetUnmet } from "../reset-settlement/index.ts";
+import type { AutomationStudioSiteResetCollection, AutomationStudioSiteResetUnmet, AutomationStudioSiteResetValueWitness } from "../reset-settlement/index.ts";
 
 // The `undoes` key moved to `../reset-settlement/undoes-key.ts` (t743), which the settle words say it from; it stays
 // exported here for the callers that import this file directly (`../action-permissions.ts`).
@@ -63,9 +63,13 @@ export type AutomationStudioSiteResetSpot = { item?: string; dialog?: string; su
  * - `subject`: a control about what the act was about (t719), by a positive
  *   match of their `subject` tokens -- the act's `page` too where it sat in no
  *   item -- with a class that reverses the act's; nothing unasked.
+ * - `step`: for an act witnessed by a value its press replaced (t772), a press
+ *   declaring nothing lasting on the act's own page -- choosing the value it
+ *   replaced before its own control confirms it: a step toward the undo, never
+ *   an undo, so it counts no attempt (`./ledger.ts`, `explored`).
  */
 export type AutomationStudioSiteResetTarget =
-  | { kind: "admit"; on: "created" | "own" | "follow_up" | "moving" | "subject"; allowed: readonly AutomationStudioActionConsequence[] }
+  | { kind: "admit"; on: "created" | "own" | "follow_up" | "moving" | "subject" | "step"; allowed: readonly AutomationStudioActionConsequence[] }
   | { kind: "refused"; evidence: JsonObject & { code: string } };
 
 /**
@@ -178,6 +182,12 @@ export type AutomationStudioSiteResetRead = {
    * has no such control on this page now. Opaque tokens and counts only.
    */
   controls?: Record<string, Record<string, number>>;
+  /**
+   * The values the page shows (t772 value witness): for each value's place on this page, an opaque token of what it shows
+   * there now; places and values are opaque tokens (`../reset-settlement/values-of.ts`). Stateful controls are read by
+   * `controls`, not here.
+   */
+  values?: Record<string, string>;
 };
 
 /** A read, or why there is none: the domain has no `startState`, it answered nothing usable, or reading failed (kept on the start check as `failure`). */
@@ -204,6 +214,8 @@ export type AutomationStudioSiteResetPlace = {
    * unasked.
    */
   created?: string[];
+  /** The shown values the act replaced on its page, from the reads just before and after it (`./act-places.ts`, t772). */
+  values?: AutomationStudioSiteResetValueWitness;
 };
 
 /** What the reset may ask of the target before a trial (`./start-check.ts`). */
@@ -290,6 +302,8 @@ export type AutomationStudioSiteResetTrialActPlace = {
    * with the page's `location`, as a read carries it beside its `scope`, so a ledger that has read no page of it knows where to look.
    */
   controls?: { page: string; location?: string; before: Record<string, number>; after: Record<string, number> };
+  /** The shown values the step replaced on its page, off its own diff, with that page's scope and location (t772 value witness). */
+  values?: AutomationStudioSiteResetValueWitness;
   /**
    * Which pass of its loop the act was made in (t748), when its step ran in more than one pass of this trial: `number` the
    * pass among those the step ran in, from 1, of `of`. Each pass is its own step and act; this names them apart where

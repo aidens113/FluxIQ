@@ -287,7 +287,8 @@ describe("a project build through the actual service", () => {
     expect(result).toMatchObject({ status: "draft", verification: "not_performed", promotionAllowed: false, trial: { verdict: "unsure" } });
     // The supervisor ended on a draft: its row says Core's record of the tests beside its checked reason (t738, `../../project-build-ending/`).
     const told = seen.find((event) => event.detail?.title === "FluxIQ stopped with the Flow only partly built.");
-    expect((told?.detail as { text?: string } | undefined)?.text).toBe("The whole Flow's trial could not be confirmed. The one part tested on its own did not pass its own test: it was tested once, and its last test could not be confirmed. The judged test run of the whole Flow from its start ran both of its steps and stored no rows, and could not be confirmed to do what was asked. The build left no change on the site that it knows of.");
+    // A one-part build's part test is its whole test, so the ending tells it once (t774, ffb87fd2).
+    expect((told?.detail as { text?: string } | undefined)?.text).toBe("The whole Flow's trial could not be confirmed. The judged test run of the whole Flow from its start ran both of its steps and stored no rows, and could not be confirmed to do what was asked. The build left no change on the site that it knows of.");
     if (result.status !== "draft") throw new Error("expected a draft");
     const store = (run.service as unknown as { candidateDrafts: { get(projectId: string, flowId: string): Promise<unknown> } }).candidateDrafts;
     expect(await store.get(run.projectId, run.flowId)).toMatchObject({ candidateId: result.candidateId, candidate: { revision: result.revision, digest: result.digest } });

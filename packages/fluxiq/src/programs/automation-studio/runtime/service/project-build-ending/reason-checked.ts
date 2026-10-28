@@ -35,10 +35,20 @@ function claimsPartTest(piece: string): boolean {
   return PART.test(piece) && (TESTED.test(piece) || (FAILED.test(piece) && !EXPLAINS.test(piece)));
 }
 
-/** `reason` with every claim of how a part's test went left out (header); what is left may be empty. */
-export function automationStudioProjectBuildReasonChecked(reason: string): string {
+/**
+ * That rows were stored too few, too many or none (t774): an amount Core's record states exactly
+ * ("stored 3 rows", `./record-told.ts`), so where it does, the model's claim of it gives way.
+ */
+const STORED_AMOUNT = /\bstor(?:ed|es|ing)\b.*\b(?:too (?:few|many|little|much)|not enough|fewer|more than|none|no|zero|only)\b/iu;
+
+/**
+ * `reason` with every claim of how a part's test went left out (header), and, when `recordSaysRows`, every claim of
+ * how many rows were stored; what is left may be empty.
+ */
+export function automationStudioProjectBuildReasonChecked(reason: string, recordSaysRows = false): string {
   const pieces = reason.split(/(?<=[.!?;])\s+/u).map((piece) => piece.trim()).filter((piece) => piece);
   const kept = pieces.flatMap((piece) => {
+    if (recordSaysRows && STORED_AMOUNT.test(piece)) return [];
     if (!claimsPartTest(piece)) return [piece];
     const colon = piece.indexOf(": ");
     const head = colon > 0 ? piece.slice(0, colon).trim() : "";

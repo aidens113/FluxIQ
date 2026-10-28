@@ -422,6 +422,9 @@ reset-settlement's):
     while acts are still to undo;
   - `candidate.trial_start_differs`, once per phase, when nothing is left to
     undo, none is kept, but the start still differs.
+  Before this gate admits a live test, a build trial first checks the
+  recorded run (offline-first): see
+  [Offline trials in builds](./client-gateway.md#offline-trials-in-builds-p6).
 
   Acts no call can settle (`gate_unsatisfiable`, see "How an act settles")
   never admit a trial and never sit under `actsToUndo`. With nothing else in
@@ -480,7 +483,18 @@ reset-settlement's):
   original row on a list the act named is `subject_there_before` with `no_call`.
   An undo pressed on the act's own toggle that already shows the state the
   build found is answered `candidate.undo_already_back` (`already_back`,
-  `no_call`), after fresh evidence settles it; stale evidence asks for a read instead of another press. A
+  `no_call`), after fresh evidence settles it; stale evidence asks for a read instead of another press.
+  An undo of a value act (t772) is admitted `own`, `modify_existing` unasked,
+  only on its own control (the same resource, page, place and state, in the
+  same item and dialog or none, declaring exactly `modify_existing`); a press
+  declaring nothing on the act's own resource is admitted `step` (a choice
+  made before the confirming press), which counts no attempt and only moves
+  the clock; another control declaring a lasting class is refused
+  `value_not_own_control`, and while no call can settle the act every press is
+  refused `no_call`. An act that created nothing, named no list and sat in no
+  item is refused `no_exact_inverse` (`no_call`), never with a subject
+  deletion's condition. Settle words follow the witness kind: a value act is
+  told to set the value back where it shows, then look. A
   source scan (`site-reset/tests/refusal-sites.test.ts`, over site-reset and
   reset-settlement) fails the build on a refusal built by hand: a `code:
   "candidate.` literal, an `ok: false` value, or any other `candidate.*`
@@ -523,7 +537,13 @@ the collection type in `reset-settlement/collection-groups.ts`).
     same page about nothing the act touched (recently viewed, menus) do not
     block it. A relevant scope missing from the read, or a malformed group
     (`collection-groups.ts`), is `incomplete`; a group with no relevant scope
-    read before the act is no witness.
+    read before the act is no witness. An act whose own undo landed also
+    holds (`restored`, never `unchanged`; t772) on a list read again by a load,
+    not in place after an undo, that is back for its own subjects while other
+    rows still differ, when each such row is the own subject of another open
+    act of this ledger that witnesses the same list and came after its first
+    read: a row no act added, an original row gone or changed, or an
+    unexplained reorder still keeps it open.
   - **No adoption.** Trial and entry acts take their step's stamp: a
     destination attaches that original; a repeat lends its explored act's
     witnesses; a control receipt retains its actual original counts across
@@ -550,6 +570,32 @@ the collection type in `reset-settlement/collection-groups.ts`).
     site reverted the control itself. No return press is required. A place's
     start is never seeded after this build pressed it; an unproven start is
     `no_baseline`. A page not read again keeps its act open.
+  - **Value witness** (t772; `reset-settlement/value-witness.ts`,
+    `reset-settlement/value-tracker.ts`, `reset-settlement/values-of.ts`). For
+    an act declaring exactly `modify_existing` that no group, toggle, control
+    original, transfer or subject undo witnesses -- a choice confirmed by a
+    press that reloads its page to the same address, a form's Save -- the
+    shown values its press replaced. Every read may carry `values` (place token
+    to value token, `AutomationStudioSiteResetRead.values`, at most 2,000, all
+    opaque; anything malformed drops the whole map). For an explored act the
+    replacements come from the reads just before and after it on one page
+    (`site-reset/act-places.ts`, `Place.values`); for a trial act from the step
+    diff's `values: { page, location, replaced: [{ place, from, to,
+    newValue? }] }` (`TrialActPlace.values`, at most 256). A place is replaced
+    when its value changed and the old value is gone from the page; one
+    without `newValue` (the new value was already shown, as an option's label)
+    never keeps an act open. It holds when a fresh read shows the build's
+    start value at one of its started places and no `newValue` place still
+    shows the value the act set; a place's start is never seeded after an act
+    replaced it, except that a trial act starts an unread place at its `from`.
+    It is `look` while stale, `baseline` (`no_baseline`) with no started
+    place, and `value` otherwise. The act is set back by its own control
+    (below); after two landed undos, each read fresh still showing the value
+    it set, it is closed `gate_unsatisfiable` with `failed: "value_not_back"`.
+    Core parses the read's and the step diff's fields with
+    `automationStudioSiteResetValuesOf` and
+    `automationStudioSiteResetValueWitnessOf`; a read or a trial act that
+    carries no `values` gives an act no value witness.
 - **Fresh reads and the clock.** The ledger's clock advances on each landed,
   permitted `mutate` that declares a lasting class or is recorded as possibly
   lasting, on any landed `mutate` under `undoes`, and on each `trialRan`; an
@@ -574,7 +620,8 @@ the collection type in `reset-settlement/collection-groups.ts`).
   can meet.
 - **Acts no call can settle (`gate_unsatisfiable`).** An open act whose every
   reason is unmet (`unreachable`, or `name` with no original before that act, or an
-  `undo` or `toggle` reason no undo could meet, below) leaves `inPlace` and
+  `undo` or `toggle` reason no undo could meet, below, or a value never back
+  after two undos, or a value whose own control carries no tokens) leaves `inPlace` and
   `actsToUndo`. Every claim and target refusal that
   carries `actsToUndo`, `trial_reset_unproved` and the trial policy list it
   under `actsUnsettleable: [{act, did, call?, reason: "gate_unsatisfiable",
@@ -614,10 +661,20 @@ the collection type in `reset-settlement/collection-groups.ts`).
   `startedWith.cannotUndo` as left with nothing it could change showing a
   change, which the judge is told. Otherwise the act is **open**: no witness
   at all (`name`), a stale or incompletely read witness (`look`), a group that
-  still differs (`undo`), or its control still showing the state it set
-  (`toggle`). `standing(actId)` answers `in_place`, `restored`, `unchanged`,
-  `kept`, `irreversible` or nothing, and a reset's `done` words say why an act
+  still differs (`undo`), its control still showing the state it set
+  (`toggle`), or a value it replaced still not back (`value`). `standing(actId)` answers `in_place`, `restored`, `unchanged`,
+  `kept`, `irreversible`, `unsettleable`, `possible` or nothing, and a reset's `done` words say why an act
   stayed from it (`project-agents/dispatch/reset-done.ts`).
+- **What is left on the site** (t772, `site-reset/leftover.ts`). One function
+  decides, from an act's settlement, whether it is left: **no** once settled
+  restored or unchanged; **yes** while open or of a class no site control
+  undoes; **possibly** when closed `gate_unsatisfiable` (carrying its `failed`
+  reason), kept, or a press with no lasting class. The ledger settles the act
+  first and then asks it, and `inPlace()`, `unsatisfiable()`,
+  `possiblyInPlace()`, `standing()`, `leftover()`, what `trialRan()` returns
+  and each project-ledger snapshot act (`left`, `failed`) all read that one
+  answer, so an ending never reports as left an act settlement put back, and
+  reports an act no call can settle as possibly left, with its reason.
 - **Core looks first.** Before deciding, `beforeTrial` goes once to each
   location where an open act's witness is stale (`checks.lookAt`): the start
   check takes the target there with the arrival's node, reads it settled, and

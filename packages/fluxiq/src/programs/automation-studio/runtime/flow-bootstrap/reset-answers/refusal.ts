@@ -17,12 +17,15 @@
 //   caller never loses them;
 // - `instruction`: what to do, as each caller words it.
 //
-// Every other field (act, actsToUndo, settle, ...) passes through unchanged.
+// Every other field (act, actsToUndo, settle, ...) passes through unchanged,
+// save one closed check (t772 R2, `./agreeing.ts`): a refusal whose own act a
+// call can still meet never lists that act under `actsUnsettleable`.
 // A test over every site-reset source file (`../site-reset/tests/refusal-sites.test.ts`)
 // fails when a `candidate.*` refusal is written anywhere but through this
 // constructor.
 
 import type { JsonObject } from "../../../../../core/index.ts";
+import { automationStudioSiteResetAnswerAgreeing as agreeing } from "./agreeing.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_CAN_MEET, type AutomationStudioSiteResetCanMeet } from "./can-meet.ts";
 import { automationStudioSiteResetConditionWords } from "./condition-words.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_FAILED, type AutomationStudioSiteResetFailed } from "./failed.ts";
@@ -44,6 +47,6 @@ export function automationStudioSiteResetRefusal<C extends `candidate.${string}`
   if (!FAILED.has(answer.failed)) throw new Error(`site-reset refusal: failed ${JSON.stringify(answer.failed)} is not a known condition`);
   if (!CAN_MEET.has(answer.canMeet)) throw new Error(`site-reset refusal: canMeet ${JSON.stringify(answer.canMeet)} is not one of ${[...CAN_MEET].join(", ")}`);
   if (typeof answer.instruction !== "string" || answer.instruction.trim() === "") throw new Error("site-reset refusal: an instruction is required");
-  const { failed, canMeet, ...rest } = answer;
+  const { failed, canMeet, ...rest } = agreeing(answer);
   return { ok: false, code, failed, canMeet, condition: automationStudioSiteResetConditionWords(failed, canMeet), ...rest } as { ok: false; code: C; condition: string } & A;
 }

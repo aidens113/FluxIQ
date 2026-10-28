@@ -65,6 +65,8 @@ export async function automationStudioCandidateTrialView(input: {
   const { answer } = input;
   const look = input.tools.find((tool) => tool.initialObservation);
   if (!(answer.effectApplied || input.targetMoved === true) || !look || !isJsonObject(answer.evidence)) return answer;
+  // A test answered from the recording of the last live test ran nothing on the site, so the page is where the model left it (t769).
+  if (answer.evidence.checkedAgainst === "recorded_run" && input.targetMoved !== true) return answer;
   // A trial's answer carries its verdict, a refusal only its code: a trial that answered no ran.
   const refused = answer.evidence.ok === false && answer.evidence.verdict === undefined;
   let page: JsonValue | undefined;
