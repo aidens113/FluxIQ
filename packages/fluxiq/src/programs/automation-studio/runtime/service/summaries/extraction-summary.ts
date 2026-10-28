@@ -158,7 +158,8 @@ const PAGINATION_STOP_UNKNOWN = "unknown";
  */
 const CONTINUES_KINDS = new Set(["next_page", "load_more", "infinite_scroll"]);
 // `loader_asked_to_wait`: the list's loader answered the read's reveal with a notice to wait -- paused by the site, not ended (t755).
-const CONTINUES_EVIDENCE = new Set(["next_control", "following_page_number", "load_more_control", "declared_feed", "still_growing", "loader_asked_to_wait"]);
+// `unopened_replies`: the items carry a control that opens more of the list (replies) the page has not had opened (t762).
+const CONTINUES_EVIDENCE = new Set(["next_control", "following_page_number", "load_more_control", "declared_feed", "still_growing", "loader_asked_to_wait", "unopened_replies"]);
 
 /** A value that is an address rather than text: a URL, or a path from an origin. */
 const ADDRESS = /^(?:[a-z][a-z\d+.-]*:\/\/|\/)/iu;
