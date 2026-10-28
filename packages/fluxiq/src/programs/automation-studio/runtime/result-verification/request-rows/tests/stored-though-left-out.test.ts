@@ -109,7 +109,7 @@ describe("a yes over rows another read stored", () => {
     const wording = renewalsWording(RENEWALS_REQUEST_EVERY_LOAN);
     const noBound = "s14 stores Paper Lanterns, The Long Field, North of Nowhere and Glass Harbour because the request asks for \"every loan on the list, renewed or not\".";
     const unquoted = automationStudioResultLeftOutRowsUnquoted(renewalsRunSummary(), noBound, wording);
-    expect(unquoted).toEqual([{ nodeId: RENEWALS_ACT_READ, condition: "condition 1 (daysOverdue atLeast 5)", rows: RENEWALS_LEFT_OUT_ROWS, bound: true }]);
+    expect(unquoted).toEqual([{ nodeId: RENEWALS_ACT_READ, condition: "condition 1 (daysOverdue atLeast 5)", rows: RENEWALS_LEFT_OUT_ROWS, bound: true, boundKind: "bound" }]);
   });
 
   it("is said in Core's line as rows the result keeps, naming the read that stored them", () => {
@@ -213,7 +213,7 @@ describe("a later read's left-out rows that only working rows hold (t752)", () =
 
   it("still owe the settled condition's one quote of its bound, as any left-out row's", () => {
     const unquoted = automationStudioResultLeftOutRowsUnquoted(recipesRunSummary(), "Read s6 stores exactly Lemon Rice, Herb Omelette and Cucumber Salad.", recipesWording());
-    expect(unquoted).toEqual([{ nodeId: RECIPES_ANSWER_READ, condition: "condition 1 (minutes atMost 20)", rows: RECIPES_LEFT_OUT_ROWS, bound: true }]);
+    expect(unquoted).toEqual([{ nodeId: RECIPES_ANSWER_READ, condition: "condition 1 (minutes atMost 20)", rows: RECIPES_LEFT_OUT_ROWS, bound: true, boundKind: "bound" }]);
   });
 
   it("are never flagged as kept rows lacking an answer column", () => {

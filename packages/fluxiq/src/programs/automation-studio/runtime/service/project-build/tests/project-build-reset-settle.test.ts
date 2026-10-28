@@ -5,17 +5,12 @@
 // One generic reading-list site, opaque tokens only. A builder added an item
 // and removed it again, with nothing read after the removal, so its act's
 // witness is stale; another brief pressed a control in no item; a trial's step
-// made an act no list shows. A reset brief's ports, made, have already looked
+// made a stamped act whose list currently shows no change. A reset brief's ports have already looked
 // at the list once themselves (settle first): that read reached every ledger
 // (the builder's, the other brief's and the reset's own), the removed item's
-// act settled with no model decision, and so did the trial's act, which sits
-// in no list and adopted the issued list the same look showed holding (office
-// rerun round 3), read on the page its step ran on (t743: a witnessless act
-// adopts only lists some act named or lists read on its own page). Where a
-// second issued list on that page has changed by then, the trial's
-// act stays open, and the task lists only the two acts still open: the press
-// "page not read", the trial's act by its step, each with what settles it
-// where its ledger says. A builder's trial reset looks the same way.
+// act settled with no model decision, and so did the trial's stamped act.
+// An unrelated changed list on the same page is never adopted as a witness
+// and does not keep that act open. A builder's trial reset looks the same way.
 //
 // The phase start (`../phase-start.ts`) is replaced by its own reset alone, and
 // the harness options by one run-node tool over the stub site: what is under
@@ -67,7 +62,7 @@ vi.mock("../../../llm/index.ts", async (original) => ({
           site.at = String((call.value.parameters as JsonObject).to);
           site.looked.push(site.at);
         }
-        return { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false };
+        return { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: call.value.node === GO };
       }
     })
   })
@@ -123,8 +118,10 @@ function built(options: { shelfMoved?: boolean } = {}) {
   keep.explored(press("remove", ["delete"], { name: "Remove", ...row }, { undoes: "act-1", on: "subject" }));
   site.rows.splice(site.rows.indexOf("s:new"), 1);
   other.explored(press("coupon", ["modify_existing"], { name: "Apply code" }));
-  // Its step ran on the list's page, so the lists read there are the ones it adopts (t743, A1 narrowed).
-  keep.trialRan([{ step: 2, definitionId: "demo.add", consequences: ["create_new"], spot: { subject: "s:extra" }, controls: { page: "p:list-page", location: "loc:list", before: {}, after: {} } }], "trial-run-1");
+  const witness = keep.admitStep({ effect: "mutate", consequences: ["create_new"], control: { name: "Add", kind: "button", subject: "s:extra", scope: "p:items", resource: SITE } });
+  expect(witness).toEqual({ via: "destination", ref: "destination-1" });
+  if (!witness) throw new Error("fixture step needs a witnessed original");
+  keep.trialRan([{ step: 2, definitionId: "demo.add", consequences: ["create_new"], witness, spot: { subject: "s:extra" }, controls: { page: "p:list-page", location: "loc:list", before: {}, after: {} } }], "trial-run-1");
   if (site.shelf) site.shelf.push("s:shelf-moved");
   /** Every request the model was sent, and the decision function the ports built. */
   const sent: AutomationStudioLlmHarnessInput[] = [];
@@ -182,22 +179,20 @@ describe("a reset brief's ports settle first", () => {
     expect(run.keep.standing("act-1")).toBe("restored");
     // Settled before any decision: the model was sent nothing.
     expect(run.sent).toHaveLength(0);
-    // The trial's act in no list adopted the issued list, which the same look showed holding: settled, and told to the judge (office r3).
+    // The trial's stamped list is holding: settled before a model decision.
     expect(run.keep.standing("act-3")).toBe("unchanged");
     const left = await ports.remainingActs!();
     expect(left.map((act) => act.act)).toEqual(["act-2"]);
   });
 
-  it("tell the reset only the acts still open: a press with no page read, a trial's act by its step whose adopted list differs, each with what settles it", async () => {
+  it("does not adopt an unrelated changed list for a stamped trial act", async () => {
     const run = built({ shelfMoved: true });
     await run.ports.reset(run.request("brief.reset", "reset"));
     const task = (await run.firstRequest()).instructions.find((instruction) => instruction.instructionId === "core.project_reset_task")!.body;
-    const settle = run.keep.inPlace().find((act) => act.act === "act-3")!.settle!;
-    expect(settle).toContain("Nothing read shows where its effect would be");
+    expect(run.keep.standing("act-3")).toBe("unchanged");
     expect(task).not.toContain("- act-1:");
-    expect(task).toContain("- act-2: press \"Apply code\" button (by the build's call \"coupon\"), page not read\n");
-    expect(task).toContain(`- act-3: trial step 2 demo.add (made by step 2 of a trial run). What settles it: ${settle}`);
-    expect(task).not.toContain("act-3: trial step 2 demo.add, page not read");
+    expect(task).toContain("- act-2: press \"Apply code\" button (by the build's call \"coupon\"), page not read");
+    expect(task).not.toContain("- act-3:");
     // What cannotUndo truly does.
     expect(task).toContain("name that act under `cannotUndo`, which reports it to the judge as an act the site cannot undo.");
     expect(task).toContain("`cannotUndo` never settles a reversible act whose watched state still differs: such an act stays listed with what settles it, and if the site truly cannot reverse it, complete with an honest unresolved summary naming it, and the build ends without a further trial.");

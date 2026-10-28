@@ -250,6 +250,7 @@ export class AutomationStudioProjectSupervisorWholeTrial {
     // The build's one reset, with no brief of its own and no look (header).
     const shared = automationStudioSiteResetProjectReset({ project: ledger, checks: () => UNLOOKED });
     return {
+      admit: (steps) => shared.admit!(steps),
       beforeTrial: async (signal, cannotUndo, options) => {
         const acts = ledger.snapshot().acts;
         const inPlace = acts.filter((act) => act.inPlace);

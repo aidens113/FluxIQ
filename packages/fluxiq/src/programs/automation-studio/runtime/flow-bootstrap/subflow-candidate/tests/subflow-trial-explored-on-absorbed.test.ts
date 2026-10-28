@@ -29,6 +29,15 @@ function proposalWith(nodes: AutomationStudioFlowBootstrapSubflow["nodes"]): Aut
 /** A project build whose brief explored with `pressed`, a start hook before each trial, and a port answering `overrides`. */
 function built(input: { proposal: AutomationStudioSubflowProposal; pressed: Array<{ brief: string; call: string; name: string }>; overrides?: Partial<AutomationStudioSubflowTrialResult> }) {
   const project = new AutomationStudioSiteResetProjectLedger();
+  project.observed({ state: {}, differs: [], resource: "r:fixture", scope: "p:fixture", collections: [{ scope: "p:controls", group: "g:controls", subjects: [], states: {} }] });
+  const own = project.forBrief(scope.briefId);
+  for (const subflow of input.proposal.subflows) {
+    for (const node of subflow.nodes) {
+      const witness = own.admitStep({ effect: "mutate", consequences: ["modify_existing"], control: { name: "Press", kind: "button", resource: "r:fixture", scope: "p:controls" } }, node.definitionId);
+      if (!witness) throw new Error("fixture step needs a witnessed original");
+      node.resetWitness = witness;
+    }
+  }
   for (const { brief, call, name } of input.pressed) project.forBrief(brief).explored(explored(call, name));
   const reset = automationStudioSiteResetProjectReset({ project, own: project.forBrief(scope.briefId), checks: () => ({ compare: async () => ({ moved: false }) }) });
   const port: AutomationStudioSubflowTrialPreparingPort = async (request: AutomationStudioSubflowTrialRequest) => ({

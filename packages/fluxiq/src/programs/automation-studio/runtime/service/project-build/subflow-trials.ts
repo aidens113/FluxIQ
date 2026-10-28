@@ -114,6 +114,7 @@ export function automationStudioProjectBuildSubflowTrials(input: {
   const port: AutomationStudioSubflowTrialPreparingPort = Object.assign(run, { environmentKind });
   // The start hook, ahead of the gate's reset check, is the inner port's (`../subflow-trial/port.ts`).
   if (trials.port.prepareStart) port.prepareStart = trials.port.prepareStart;
+  port.admissionPredecessors = (scope) => input.proposals.predecessors(scope).flatMap((proposal) => proposal.subflows);
   // The gate's verdict of a trial this port answered is the one the proposals keep (header, t634).
   port.weighed = ({ answer }) => {
     const at = trialKey(answer.identity.briefId, answer.revision, answer.digest);

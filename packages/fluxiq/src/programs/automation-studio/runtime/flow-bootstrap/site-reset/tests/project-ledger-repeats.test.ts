@@ -83,15 +83,16 @@ describe("a trial act repeats an explored act of any brief of its build (L1 buil
     const briefB = project.forBrief("brief:b");
     const route = routing(project, briefB);
     briefB.trialRan([trialStep("demo.press")], "trial.b1");
-    // No list is named for the press yet and its step's page is not known: nothing to adopt, and with every ref shown none can
-    // be issued any more, so no call can settle it as it stands (t743). Core looks at nothing for it.
+    // No list is named for the press yet: B's act has no witness, so Core looks at nothing for it. The box was read complete
+    // before it, so a list can still be named for it (t751: `name` is judged per act), and it is to name one.
     const first = looking(route, elsewhere);
     const refused = await briefB.beforeTrial(first.checks);
     expect(first.looked).toEqual([]);
-    expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", failed: "acts_unsettleable", actsToUndo: [], actsUnsettleable: [{ act: "act-2", reason: "gate_unsatisfiable", failed: "nothing_to_name" }] } });
+    expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", failed: "acts_in_place", actsToUndo: [{ act: "act-2" }] } });
+    expect(settleOf(refused, "act-2")).toContain("name that list's ref");
+    expect(briefB.unsatisfiable()).toEqual([]);
     // A look under `undoes` names the list for A's press, after B's trial: B's act repeats it and shares that list.
     briefA.explored(look("look.box", "act-1", "destination-1"));
-    expect(briefB.unsatisfiable()).toEqual([]);
     // The list named for A's press holds, though the other still differs.
     const { looked, checks } = looking(route, elsewhere);
     expect(await briefB.beforeTrial(checks)).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-2", did: LEFT }] } });
@@ -99,38 +100,25 @@ describe("a trial act repeats an explored act of any brief of its build (L1 buil
     expect(briefB.standing("act-2")).toBe("unchanged");
   });
 
-  it("a trial act matching nothing across the build adopts only the list a press named: a differing list nobody named does not hold it open", async () => {
-    const project = new AutomationStudioSiteResetProjectLedger();
-    const briefA = project.forBrief("brief:a");
-    routing(project, briefA)(boxPage());
-    expect(briefA.destinationReceipts().map((receipt) => receipt.ref)).toEqual(["destination-1", "destination-2"]);
-    briefA.explored(press("start-draft", ["create_new"], { resetDestination: "destination-1" }));
-    const briefB = project.forBrief("brief:b");
-    briefB.trialRan([trialStep("demo.other")], "trial.b1");
-    // `elsewhere` changes destination-2, which no act named: B's act adopts destination-1 alone, which holds (t743).
-    const { looked, checks } = looking(routing(project, briefB), elsewhere);
-    expect(await briefB.beforeTrial(checks)).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-2", did: LEFT }] } });
-    expect(looked).toEqual(["loc:box"]);
-    expect(briefB.standing("act-2")).toBe("unchanged");
-  });
-
-  it("a trial act matching nothing across the build, while the list a press named differs, stays open, asking to name its list and never to undo there", async () => {
-    const project = new AutomationStudioSiteResetProjectLedger();
-    const briefA = project.forBrief("brief:a");
-    routing(project, briefA)(boxPage());
-    // The model is shown the box's refs.
-    expect(briefA.destinationReceipts().map((receipt) => receipt.ref)).toEqual(["destination-1", "destination-2"]);
-    briefA.explored(press("start-draft", ["create_new"], { resetDestination: "destination-2" }));
-    const briefB = project.forBrief("brief:b");
-    const route = routing(project, briefB);
-    briefB.trialRan([trialStep("demo.other")], "trial.b1");
-    const { looked, checks } = looking(route, elsewhere);
-    const refused = await briefB.beforeTrial(checks);
-    expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-2" }] } });
-    expect(settleOf(refused, "act-2")).toContain("name that list's ref");
-    expect(settleOf(refused, "act-2")).not.toContain("undo this act there");
-    // Core read the lists it adopted itself before refusing.
-    expect(looked).toEqual(["loc:box"]);
-    expect(briefB.standing("act-2")).toBe("in_place");
+  // t751 R6 deleted adoption: "adopts only the list a press named" is gone, and this replaces both of its cases.
+  it("a trial act matching nothing across the build is never judged on a list a press named, whether it holds or differs: it is to name its own", async () => {
+    for (const named of ["destination-1", "destination-2"]) {
+      const project = new AutomationStudioSiteResetProjectLedger();
+      const briefA = project.forBrief("brief:a");
+      routing(project, briefA)(boxPage());
+      expect(briefA.destinationReceipts().map((receipt) => receipt.ref)).toEqual(["destination-1", "destination-2"]);
+      briefA.explored(press("start-draft", ["create_new"], { resetDestination: named }));
+      const briefB = project.forBrief("brief:b");
+      briefB.trialRan([trialStep("demo.other")], "trial.b1");
+      // `elsewhere` changes destination-2 alone.
+      const { looked, checks } = looking(routing(project, briefB), elsewhere);
+      const refused = await briefB.beforeTrial(checks);
+      expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-2" }] } });
+      expect(settleOf(refused, "act-2")).toContain("name that list's ref");
+      expect(settleOf(refused, "act-2")).not.toContain("undo this act there");
+      // Core looks at nothing for it: it has no witness of its own.
+      expect(looked).toEqual([]);
+      expect(briefB.standing("act-2")).toBe("in_place");
+    }
   });
 });

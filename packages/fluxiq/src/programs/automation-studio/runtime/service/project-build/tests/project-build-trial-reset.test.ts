@@ -9,18 +9,18 @@
 //    site's own control, naming the act under `undoes`, and its next trial
 //    starts by loading the build's start page. After the yes it adds rye
 //    bread, and completes.
-// 2. Builder "second" runs after it. Its entry is prepared from the start
-//    page. It adds jam; its first trial is refused naming both builders'
-//    acts -- the rye bread "first" left, and its own jam -- and it undoes
-//    both, the first one routed to the ledger that owns it. Its next trial
+// 2. A reset removes the first builder's trial and explored additions before
+//    the second builder's entry may replay its predecessor. Builder "second"
+//    adds jam; its first trial is refused naming its entry's oat milk and its
+//    own jam. It undoes both, the entry act routed to its owning ledger. Its next trial
 //    begins with the tab on the product page the undos were checked on, and
 //    its run loads the start page itself, on the site as the build found it.
 // 3. Each part asks a lasting act, so each subflow adds its own product, the
 //    act declared as a real script must (t597). Every run of it -- a trial,
 //    the second's entry -- leaves that add too, named as a trial step. Such an
-//    act names no cart line, so the site offers no control this build may
-//    take it back with: the second builder names them under `cannotUndo`, and
-//    Core's reset before the ending says the same of the last trial's.
+//    act retains the real admission's resource-bound collection witness even
+//    without a host diff. The ending's reset restores the original cart too;
+//    naming cannotUndo never admits a repeated project act on leftovers.
 //
 // Every run -- both trials and the entry -- loads the start page first, through
 // the domain's arrival node, which declares a fixed output action as the web
@@ -100,7 +100,7 @@ function builderDecision(subflowKey: string, evidence: readonly Entry[]): JsonOb
   const steps = subflowKey === "first"
     ? [run("go.product", GO, { to: PRODUCT }, []), run("add.oat", ADD, { product: "oat-milk" }, ["create_new"]), run("go.away", GO, { to: ELSEWHERE }, []), submit, test("test.1"), run("undo.oat", REMOVE, { line: "oat-milk" }, ["delete"], "act-1"), test("test.2"),
       run("go.product.2", GO, { to: PRODUCT }, []), run("add.rye", ADD, { product: "rye-bread" }, ["create_new"])]
-    : [run("go.product", GO, { to: PRODUCT }, []), run("add.jam", ADD, { product: "jam" }, ["create_new"]), submit, test("test.1"), run("undo.rye", REMOVE, { line: "rye-bread" }, ["delete"], "act-3"), run("undo.jam", REMOVE, { line: "jam" }, ["delete"], "act-5"), test("test.2", ["act-2", "act-4"])];
+    : [run("go.product", GO, { to: PRODUCT }, []), run("add.jam", ADD, { product: "jam" }, ["create_new"]), submit, test("test.1"), run("undo.entry", REMOVE, { line: "oat-milk" }, ["delete"], "act-4"), run("undo.jam", REMOVE, { line: "jam" }, ["delete"], "act-5"), test("test.2")];
   const next = steps.find((step) => !evidence.some((entry) => entry.callId === step.callId));
   if (next) return next.decided();
   return { kind: "complete", result: { subflowKey, revision: submitted!.revision as number, digest: submitted!.digest as string } };
@@ -156,13 +156,13 @@ function shop() {
     deniedEvidenceKeys: [],
     tools: [{ toolId: "shop.look", description: "Look at the page.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
     runsNodes: { arrival: { node: GO, parameter: "to" } },
-    resolvePlanNodeParameters: automationStudioTestDeclaredStepResolution,
+    resolvePlanNodeParameters: (input) => automationStudioTestDeclaredStepResolution(input, { name: input.nodeDefinitionId === ADD ? "Add to cart" : "Remove", kind: "button", resource: "r:shop", scope: "p:cart", page: "s:product", subject: `line:${String(input.parameters.product ?? input.parameters.line)}` }),
     startState: async (input: { start?: JsonObject }) => {
       const now = read();
       const was = Array.isArray(input.start?.lines) ? (input.start!.lines as string[]) : undefined;
       const gone = was ? was.filter((line) => !now.lines.includes(line)) : [];
       const added = was ? now.lines.filter((line) => !was.includes(line)) : [];
-      return { state: { lines: now.lines }, differs: [...gone.map((line) => `gone: ${line}`), ...added.map((line) => `new: ${line}`)], location: site.tab, lines: { gone, added }, items: now.items };
+      return { state: { lines: now.lines }, differs: [...gone.map((line) => `gone: ${line}`), ...added.map((line) => `new: ${line}`)], location: site.tab, lines: { gone, added }, items: now.items, resource: "r:shop", scope: "p:shop", collections: [{ scope: "p:cart", group: "g:cart", subjects: now.items, states: Object.fromEntries(site.cart.map((line) => [`line:${line}`, line])) }] };
     },
     executeTool: async ({ toolId, value, permission }) => {
       inputs.push(structuredClone(value));
@@ -174,7 +174,7 @@ function shop() {
       }
       const line = typeof parameters.line === "string" ? parameters.line : undefined;
       const consequences = (Array.isArray(value.consequences) ? value.consequences : []) as AutomationStudioActionConsequence[];
-      const declaration: AutomationStudioActionDeclaration = { consequences, control: { name: value.node === ADD ? "Add to cart" : "Remove", kind: "button", ...(line ? { item: `line:${line}` } : {}) }, verb: "press", effect: "mutate" };
+      const declaration: AutomationStudioActionDeclaration = { consequences, control: { name: value.node === ADD ? "Add to cart" : "Remove", kind: "button", resource: "r:shop", scope: "p:cart", page: "s:product", subject: `line:${String(parameters.product ?? line)}`, ...(line ? { item: `line:${line}` } : {}) }, verb: "press", effect: "mutate" };
       const verdict = await permission!(declaration);
       if (!verdict.permitted) return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "permission_required" }, effectApplied: false };
       if (value.node === ADD) {
@@ -197,6 +197,7 @@ async function twoBuilders() {
   /** Each builder's evidence at its latest decision. */
   const seen: Record<string, Entry[]> = {};
   let supervisorDecisions = 0;
+  let resetCalls = 0;
   const provider = mockProvider(async (request) => {
     if (request.metadata?.source === "instructionAuthority") return decision({ kind: "tool_call", callId: "read", toolId: "none", input: {} });
     if (request.taskKind === "loop_verification") return judgeReply("yes");
@@ -207,16 +208,17 @@ async function twoBuilders() {
     if (tools.includes("project.write_plan")) {
       supervisorDecisions += 1;
       if (supervisorDecisions === 1) return decision({ kind: "tool_call", callId: "plan", toolId: "project.write_plan", input: PLAN });
-      if (supervisorDecisions === 2) return decision({ kind: "tool_call", callId: "dispatch", toolId: "project.dispatch", input: { reason: "Build each subflow.", briefs: [brief("first", ["p1"], []), brief("second", ["p2"], ["first"])] } });
+      if (supervisorDecisions === 2) return decision({ kind: "tool_call", callId: "dispatch.first", toolId: "project.dispatch", input: { reason: "Build the first part.", briefs: [brief("first", ["p1"], [])] } });
+      if (supervisorDecisions === 3) return decision({ kind: "tool_call", callId: "reset", toolId: "project.dispatch", input: { reason: "Restore this build's effects before replaying its predecessor.", briefs: [{ kind: "reset", subflowKey: "main", parts: [], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.03, maxIterations: 20 }] } });
+      if (supervisorDecisions === 4) return decision({ kind: "tool_call", callId: "dispatch.second", toolId: "project.dispatch", input: { reason: "Build the dependent part on the restored site.", briefs: [brief("second", ["p2"], ["first"])] } });
       return decision({ kind: "complete", result: { ended: "partial", reason: "Only the builders were under test." } });
     }
     const properties = (loop.completionSchema.properties ?? {}) as JsonObject;
     if (properties.subflowKey === undefined) {
-      // Core's reset before the ending (t597): the trials' adds name no cart line, so the site offers no control this
-      // build may take them back with, and the reset says so for every act it is shown.
-      const shown = [...new Set([...JSON.stringify(evidence).matchAll(/"act":"(act-\d+)"/g)].map((match) => match[1]!))];
-      domain.happened.push(`reset names ${JSON.stringify(shown)}`);
-      return decision({ kind: "complete", result: { summary: "The site offers no control that takes back what the trials added.", cannotUndo: shown } });
+      const reversals = [{ line: "oat-milk", act: "act-2" }, { line: "rye-bread", act: "act-3" }, undefined, { line: "oat-milk", act: "act-6" }, { line: "jam", act: "act-7" }];
+      const reversal = reversals[resetCalls++];
+      if (reversal) return decision({ kind: "tool_call", callId: `reset.${reversal.act}`, toolId: "core.run_node", input: { node: REMOVE, parameters: { line: reversal.line }, consequences: ["delete"], undoes: reversal.act } });
+      return decision({ kind: "complete", result: { summary: "The build's cart additions were removed through their own controls." } });
     }
     const subflowKey = (properties.subflowKey as JsonObject).const as string;
     seen[subflowKey] = evidence.map((entry) => structuredClone(entry));
@@ -259,22 +261,23 @@ describe("a builder's subflow trial after the build's acts (t578)", () => {
     expect(firstOfRun(happened, "trial of first"), JSON.stringify(happened)).toEqual({ ranOn: expect.any(String), first: `run loads ${START}`, ended: "succeeded" });
 
     // Builder "second": its entry, prepared from the start page, then its trial refused naming both builders' acts.
-    expect(firstOfRun(happened, "entry for second")).toEqual({ ranOn: expect.any(String), first: `run loads ${START}`, ended: "succeeded" });
+    expect(firstOfRun(happened, "entry for second"), JSON.stringify({ happened, seen: run.seen })).toEqual({ ranOn: expect.any(String), first: `run loads ${START}`, ended: "succeeded" });
     expect(happened.findIndex((line) => line.startsWith("entry for second"))).toBeGreaterThan(happened.indexOf("trial of first succeeded"));
     const second = run.seen.second;
     expect(byCall(second, "test.1"), JSON.stringify(second?.map((item) => item.callId))).toMatchObject({ ok: false, code: "candidate.trial_reset_required" });
-    // act-2: the first's trial add; act-3: the rye bread "first" left; act-4: the entry's add; act-5: its own jam.
-    expect((byCall(second, "test.1")!.actsToUndo as JsonObject[]).map((act) => act.act).sort()).toEqual(["act-2", "act-3", "act-4", "act-5"]);
-    expect(byCall(second, "undo.rye")).toMatchObject({ ok: true });
+    // The first builder's trial and exploration were restored before entry;
+    // only the new entry's add and this builder's jam remain to undo.
+    expect((byCall(second, "test.1")!.actsToUndo as JsonObject[]).map((act) => act.act).sort()).toEqual(["act-4", "act-5"]);
+    expect(byCall(second, "undo.entry")).toMatchObject({ ok: true });
     expect(byCall(second, "undo.jam")).toMatchObject({ ok: true });
     expect(byCall(second, "test.2")).toMatchObject({ ok: true, verdict: "yes" });
     // The tab still showed the product page the undos were checked on when the trial began; the run loaded the start page itself.
     expect(firstOfRun(happened, "trial of second")).toEqual({ ranOn: PRODUCT, first: `run loads ${START}`, ended: "succeeded" });
 
-    // Every explored act was the build's own and undone through the site's controls; the runs' own adds were named as
-    // beyond them (header, 3). The line there before the build was never touched.
-    expect(acted).toEqual(["add oat-milk", "remove oat-milk", "run add oat-milk", "add rye-bread", "run add oat-milk", "add jam", "remove rye-bread", "remove jam", "run add oat-milk", "run add jam"]);
-    expect(site.cart).toEqual(["dish-soap", "oat-milk", "oat-milk", "oat-milk", "jam"]);
+    // Both trials and exploration are reversed through the site's controls.
+    // The line there before the build is never touched or adopted by a reset.
+    expect(acted).toEqual(["add oat-milk", "remove oat-milk", "run add oat-milk", "add rye-bread", "remove oat-milk", "remove rye-bread", "run add oat-milk", "add jam", "remove oat-milk", "remove jam", "run add oat-milk", "run add jam", "remove oat-milk", "remove jam"]);
+    expect(site.cart).toEqual(["dish-soap"]);
     // The domain never saw `undoes`.
     expect(inputs.every((value) => !Object.prototype.hasOwnProperty.call(value, "undoes"))).toBe(true);
   });

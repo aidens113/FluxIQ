@@ -1,4 +1,5 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import type { AutomationStudioSiteResetAdmissionDeclared } from "../../flow-bootstrap/reset-admission/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS, type AutomationStudioSiteResetCalls, type AutomationStudioSiteResetLedger, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetPlace, type AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetRead } from "../../flow-bootstrap/site-reset/index.ts";
 
 // What a reset brief's permission gate tells the ledger (unit A5c). A reset
@@ -35,6 +36,9 @@ import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS, type AutomationStudioSiteR
 // refusal that lists the build's open acts lists the whole build's such acts
 // there too, so the model is told everything of the build still on the site.
 
+/** A ledger's step admission (t751, R3 door 2), read structurally so a ledger without one compiles and forwards nothing. */
+type StepAdmitting = { admitStep?(declared: AutomationStudioSiteResetAdmissionDeclared, definitionId: string): unknown };
+
 /** The refusals whose evidence lists the acts still to undo (header). */
 const LISTING: ReadonlySet<string> = new Set(["candidate.undo_act_kept", "candidate.undo_unknown_act", "candidate.undo_already_done"]);
 
@@ -55,6 +59,7 @@ export function automationStudioProjectBuildResetCalls(project: AutomationStudio
     return found !== undefined ? project.forBrief(found) : own;
   };
   const openActs = () => automationStudioProjectBuildOpenActs(project);
+  const admitting = own as AutomationStudioSiteResetLedger & StepAdmitting;
   /** A refusal's evidence with the whole build's open acts (header); any other evidence unchanged. */
   const buildWide = <E extends JsonObject>(evidence: E, act: unknown): E => {
     if (typeof evidence.code !== "string" || !LISTING.has(evidence.code)) return evidence;
@@ -82,6 +87,8 @@ export function automationStudioProjectBuildResetCalls(project: AutomationStudio
       }
     },
     createBaseline: (declared, reference) => own.createBaseline(declared, reference),
+    // A plan step's admission is the reset brief's own ledger's, as a creation's precondition is (t751).
+    ...(typeof admitting.admitStep === "function" ? { admitStep: admitting.admitStep.bind(own) } : {}),
     destinationReceipts: () => own.destinationReceipts(),
     claim: (undoes, reference) => {
       const claim = owner(undoes).claim(undoes, reference);

@@ -15,7 +15,7 @@ import type { AutomationStudioSiteResetFailed } from "./failed.ts";
  * has to guess at it.
  */
 const CONDITIONS: Readonly<Record<AutomationStudioSiteResetFailed, string>> = {
-  already_back: "The act's own control already shows the state this build found it in, so there is nothing to press back.",
+  already_back: "The act is already back: its own control already shows the state this build found it in, or fresh complete reads show everything it could change as this build found it, so there is nothing to press back or undo.",
   control_state_differs: "The act's own control shows neither the state this build found it in nor the state the act set, so pressing it is not the act's inverse.",
   control_elsewhere: "This control is not the act's own control: that one is at another place.",
   consequence_not_inverse: "The lasting classes this call declared do not reverse the act's: an undo declares only the classes that reverse what the act did, and nothing else lasting.",
@@ -40,8 +40,10 @@ const CONDITIONS: Readonly<Record<AutomationStudioSiteResetFailed, string>> = {
   witness_unreachable: "The only lists that could show this act put back cannot be read again: Core's own look at where they were read does not show them.",
   nothing_to_name: "Nothing read shows where this act's effect would be, and no list can be named for it any more.",
   no_admissible_undo: "No call this build may make can put back what still differs: it is not an item this build added that an undo here may remove, and no control of the act's own can be pressed back to how this build found it.",
+  no_baseline: "The act's own control was never read before this build acted at its place, so no read can show it put back as this build found it.",
   acts_unsettleable: "Acts this build made are still on the site, and no call can settle them: nothing that can still be read would show them put back.",
-  no_witness: "Nothing could ever show this press put back: no list it would show in was read complete, no ref names one, and its control shows no state of its own.",
+  no_witness: "Nothing could ever show this press put back: no list it would show in was read complete, no ref names one, its control shows no state of its own, and it repeats no witnessed press this build made while exploring.",
+  no_target_identity: "The lasting step has no target identity, so nothing identifies what this build would change or restore.",
   no_destination_original: "No complete original read of the list where this creation would show proves its item absent there."
 };
 

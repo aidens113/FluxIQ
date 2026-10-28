@@ -32,13 +32,15 @@ export const AUTOMATION_STUDIO_SITE_RESET_FAILED = [
   "acts_in_place",
   "acts_not_settled",
   "start_differs",
-  // Acts no call can settle (`../reset-settlement/judge.ts`, `gate_unsatisfiable`; `../site-reset/undo-reach.ts`, t748): what each failed on, and the trial refused on them.
+  // Acts no call can settle (`../reset-settlement/judge.ts`, `gate_unsatisfiable`; `../site-reset/undo-reach.ts`, t748; a control's start never read, t751 R1): what each failed on, and the trial refused on them.
   "witness_unreachable",
   "nothing_to_name",
   "no_admissible_undo",
+  "no_baseline",
   "acts_unsettleable",
-  // Presses before the seal (`../create-baselines.ts`, `../reset-witness.ts`).
+  // Presses with no witness (`../reset-admission/admission.ts`, t751; every door asks it).
   "no_witness",
+  "no_target_identity",
   "no_destination_original"
 ] as const;
 

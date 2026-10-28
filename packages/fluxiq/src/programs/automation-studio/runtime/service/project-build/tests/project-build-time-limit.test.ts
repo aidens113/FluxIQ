@@ -190,7 +190,13 @@ describe("a project build its time limit stops", () => {
   it("keeps an assembled candidate as a draft and says the time limit, what was tested and the last whole test", async () => {
     let supervisorDecisions = 0;
     const provider = mockProvider(async (request) => {
-      if (request.taskKind === "loop_verification") return judgeReply(JSON.stringify(request.context).includes("This trial ran only the subflow") ? "yes" : "no");
+      if (request.taskKind === "loop_verification") {
+        const scoped = JSON.stringify(request.context).includes("This trial ran only the subflow");
+        const reply = judgeReply(scoped ? "yes" : "no");
+        // The start/wait/end fixture exposes no measurable whole-task defect.
+        // Its negative is usable but unsupported, so the trial stays unsure.
+        return scoped ? reply : { ...reply, response: { ...reply.response, diagnosis: { ...reply.response.diagnosis, defects: [] } } };
+      }
       const loop = request.context.evidenceLoop!;
       const evidence = loop.evidence as Entry[];
       if (loop.tools.some((tool) => tool.toolId === "project.write_plan")) {
@@ -200,7 +206,7 @@ describe("a project build its time limit stops", () => {
         if (supervisorDecisions === 3) return decision({ kind: "tool_call", callId: "assemble", toolId: "project.assemble", input: {} });
         const assembled = lastOf(evidence, "project.assemble")?.complete as JsonObject | undefined;
         if (supervisorDecisions === 4) return decision({ kind: "tool_call", callId: "test", toolId: "core.test_candidate", input: assembled ?? {} });
-        // The whole test was judged no, and the supervisor is still deciding what to change when its time runs out.
+        // The whole test remains unconfirmed when the supervisor's time runs out.
         return await outlivingTheBound();
       }
       const submitted = lastOf(evidence, "core.submit_subflow");
@@ -215,7 +221,7 @@ describe("a project build its time limit stops", () => {
     expect(clock.held()).toEqual([6_000, 8_000]);
     // The draft's trial keeps its own code first, which every debug and the Lab read, and carries the time limit beside it,
     // which the chat's reply opens with (`conversations/commands/create-here.ts`).
-    expect(result).toMatchObject({ status: "draft", promotionAllowed: false, trial: { verdict: "no", codes: ["candidate.trial_judged_no", "project.build_time_limit", "project.build_ending_told"] } });
+    expect(result).toMatchObject({ status: "draft", promotionAllowed: false, trial: { verdict: "unsure", codes: ["candidate.trial_unconfirmed", "project.build_time_limit", "project.build_ending_told"] } });
     const told = seen.find((event) => event.detail?.title === "The build reached its time limit of 8 seconds before a whole test of the Flow passed.");
     expect(told?.detail, JSON.stringify(seen.map((event) => event.detail?.title).filter(Boolean))).toMatchObject({
       kind: "note", status: "failed",
@@ -257,7 +263,7 @@ describe("a project build its time limit stops", () => {
 
 /** What each case's time limit tells the person (header). */
 const TEST_ONE_TEXT = "None of its 2 parts passed its own test. Left: a part tested once whose last test could not be confirmed; and a part tested once whose last test could not be confirmed. The whole Flow was not assembled, so it was never tested as one. The build left no change on the site that it knows of.";
-const TEST_TWO_TEXT = "Of its 2 parts, 2 passed their own test. A whole Flow was assembled and tested from its start, and its last whole test was judged not to do what was asked; it is kept as a draft, and nothing was put into the Flow. The build left no change on the site that it knows of.";
+const TEST_TWO_TEXT = "Of its 2 parts, 2 passed their own test. A whole Flow was assembled and tested from its start, and its last whole test could not be confirmed; it is kept as a draft, and nothing was put into the Flow. The build left no change on the site that it knows of.";
 const TEST_THREE_TEXT = "Its one part did not pass its own test. Left: a part tested once whose last test could not be confirmed. A whole Flow was assembled and tested from its start, and its last whole test could not be confirmed; it is kept as a draft, and nothing was put into the Flow. The build left no change on the site that it knows of.";
 
 /** The service over `provider`, with a blank project and Flow to build. */

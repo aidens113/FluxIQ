@@ -7,6 +7,7 @@
 // and a plan over one is refused naming the setting that bounds it.
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "./contracts.ts";
 import { automationStudioRouteSignaturesValue } from "../../route-state/signatures/index.ts";
+import { automationStudioSiteResetWitnessStampValid } from "../reset-admission/index.ts";
 import { boundedText, error, identifier, rejectFields, symbolic } from "./issues.ts";
 import { isJsonObject, isRecord, safeByteLength } from "./json-guards.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS } from "./limits.ts";
@@ -120,7 +121,7 @@ function parseNode(value: unknown, path: string, issues: AutomationStudioFlowBoo
     issues.push(error("bootstrap.invalid_node", "Bootstrap node must be an object.", path));
     return;
   }
-  rejectFields(value, ["key", "definitionId", "definitionVersion", "parameters", "outputActionId", "consequences", "routeSignatures", "label", "paceMs", "metadata"], path, issues);
+  rejectFields(value, ["key", "definitionId", "definitionVersion", "parameters", "outputActionId", "consequences", "routeSignatures", "label", "paceMs", "resetWitness", "metadata"], path, issues);
   symbolic(value.key, `${path}.key`, issues);
   identifier(value.definitionId, `${path}.definitionId`, issues);
   boundedText(value.definitionVersion, `${path}.definitionVersion`, issues);
@@ -147,6 +148,10 @@ function parseNode(value: unknown, path: string, issues: AutomationStudioFlowBoo
     && (typeof value.paceMs !== "number" || !Number.isSafeInteger(value.paceMs)
       || value.paceMs < AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS.minPaceMs || value.paceMs > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS.maxPaceMs)) {
     issues.push(error("bootstrap.invalid_pace", `Node paceMs must be a whole number of milliseconds from ${AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS.minPaceMs} to ${AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS.maxPaceMs}.`, `${path}.paceMs`));
+  }
+  // Core-derived (t751): only the exact stamp form the one admission answers, so a plan never carries one a trial would misread.
+  if (value.resetWitness !== undefined && !automationStudioSiteResetWitnessStampValid(value.resetWitness)) {
+    issues.push(error("bootstrap.invalid_reset_witness", "Node resetWitness must be a witness stamp exactly as Core derives it.", `${path}.resetWitness`));
   }
   if (value.metadata !== undefined) parseNodeMetadata(value.metadata, `${path}.metadata`, issues);
 }

@@ -39,7 +39,8 @@
 // call). Its own toggle's place pressed while the control already shows the
 // state the build found is `candidate.undo_already_back`: nothing to press,
 // and pressing would make the act's change again (photo `run-mvgw7320-de416190`
-// 0151). Which condition is named never changes what is admitted.
+// 0151); a look on this page meets it, since its fresh read settles the act
+// (t751 R2). Which condition is named never changes what is admitted.
 //
 // The act's side of each path (what the act must be: a legacy act's created
 // items, its own item, a witnessed transfer, a landed undo's chain, an act that
@@ -118,6 +119,7 @@ export function automationStudioSiteResetUndoAdmission<A extends AutomationStudi
   // Its own toggle pressed back (L1): the same place, still showing the state the act set, declaring nothing else lasting.
   const toggle = ledger.toggle(act);
   if (toggle && declared.control.place === toggle.place) {
+    if (act.spot?.resource !== undefined && declared.control.resource !== act.spot.resource) return unproved(["control_elsewhere", "another_page"]);
     const back = declared.consequences.length === 0 || (declared.consequences.length === 1 && declared.consequences[0] === "modify_existing");
     if (back && declared.control.state === toggle.to) return { kind: "admit", on: "own", allowed: ["modify_existing"] };
     // Already showing the state the build found (t743, photo 0151): nothing to press, and pressing would make the act's change again.
@@ -157,12 +159,14 @@ export function automationStudioSiteResetUndoAdmission<A extends AutomationStudi
 /**
  * Its own toggle's place, already showing the state the build found (t743,
  * photo `run-mvgw7320-de416190` 0151): refused unrun as already back, with the
- * act's remaining settle. The act stays listed as today (`actsToUndo`).
+ * act's remaining settle. The act is still open -- an act a fresh read settled
+ * is answered before this admission (`./undo-claims.ts`, t751 R2) -- so it
+ * stays listed, and a look on this page, whose fresh read settles it, meets it.
  */
 function alreadyBack<A extends AutomationStudioSiteResetAdmittedAct>(ledger: AutomationStudioSiteResetAdmissionLedger<A>, act: A): AutomationStudioSiteResetTarget {
   const actsToUndo = ledger.inPlace();
   const settle = actsToUndo.find((entry) => entry.act === act.id)?.settle;
-  return { kind: "refused", evidence: refusal("candidate.undo_already_back", { act: act.id, failed: "already_back", canMeet: "no_call", instruction: WORDS.alreadyBack(), ...(settle ? { settle } : {}), actsToUndo }) };
+  return { kind: "refused", evidence: refusal("candidate.undo_already_back", { act: act.id, failed: "already_back", canMeet: "this_page", instruction: WORDS.alreadyBack(false), ...(settle ? { settle } : {}), actsToUndo }) };
 }
 
 /**

@@ -292,3 +292,52 @@ describe("a domain refusal that names the field and the names it can use", () =>
     expect(result).toMatchObject({ ok: false, issues: [{ code: CODES.invalid }] });
   });
 });
+
+// A lasting step's reset witness (t751, R3 door 2): the stamp the build's
+// check is told for a step's reversible lasting declaration is written on the
+// node, and resolution is its only writer -- a stamp the plan arrived with is
+// never kept, and a step whose check was told none carries none.
+describe("a lasting step's reset witness", () => {
+  /** Puts `ledger.read_rows` to its check as a reversible lasting press, and every other node to nothing. */
+  const pressing: Resolver = async ({ nodeDefinitionId, permission }) => {
+    if (nodeDefinitionId === "ledger.read_rows") await permission({ consequences: ["modify_existing"], control: { name: "Mark read", place: "c:mark" }, verb: "press" });
+    return { status: "unchanged" };
+  };
+  function resolveStamped(input: AutomationStudioFlowBootstrapPlan, told: (ref: string) => unknown, writtenByModel = false) {
+    return resolveAutomationStudioFlowBootstrapPlanParameters({
+      plan: input, projectId: "project.ledger", flowId: "flow.close", binding: { resolvePlanNodeParameters: pressing }, handlesIssued: true, writtenByModel,
+      permissionFor: ({ ref, witnessed }) => async () => {
+        const stamp = told(ref);
+        if (stamp !== null) witnessed?.(stamp as Parameters<NonNullable<typeof witnessed>>[0]);
+        return { permitted: true };
+      }
+    });
+  }
+
+  it("stamps the node its check was told a stamp for, and no other", async () => {
+    const resolved = await resolveStamped(plan({ maxItems: 3 }), () => ({ via: "control", ref: "control-1" }));
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(resolved.plan.subflows[0]!.nodes.map((node) => node.resetWitness)).toEqual([undefined, { via: "control", ref: "control-1" }, undefined]);
+  });
+
+  it.each([{ via: "destination", ref: "destination-9" }, { via: "control", ref: "control-9" }] as const)("drops an arrived stamp %j, whoever wrote it, unless the check is told one again", async (arrived) => {
+    const written = plan({ maxItems: 3 });
+    for (const node of written.subflows[0]!.nodes) node.resetWitness = arrived;
+    for (const writtenByModel of [true, false]) {
+      const none = await resolveStamped(written, () => undefined, writtenByModel);
+      expect(none.ok && none.plan.subflows[0]!.nodes.some((node) => "resetWitness" in node)).toBe(false);
+      const silent = await resolveStamped(written, () => null, writtenByModel);
+      expect(silent.ok && silent.plan.subflows[0]!.nodes.some((node) => "resetWitness" in node)).toBe(false);
+      const again = await resolveStamped(written, () => ({ via: "own_list" }), writtenByModel);
+      expect(again.ok && again.plan.subflows[0]!.nodes.map((node) => node.resetWitness)).toEqual([undefined, { via: "own_list" }, undefined]);
+    }
+    // The plan passed in is not changed.
+    expect(written.subflows[0]!.nodes[1]!.resetWitness).toEqual(arrived);
+  });
+
+  it("never refuses a step for having no witness", async () => {
+    const resolved = await resolveStamped(plan({ maxItems: 3 }), () => undefined);
+    expect(resolved).toMatchObject({ ok: true });
+  });
+});

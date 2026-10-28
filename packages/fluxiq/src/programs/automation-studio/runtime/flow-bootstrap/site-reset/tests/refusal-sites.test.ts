@@ -162,12 +162,13 @@ describe("each refusal site names its failed condition (trial policy, baselines)
   const declared = (control: AutomationStudioSiteResetSpot, consequences: AutomationStudioActionConsequence[]) => ({ effect: "mutate" as const, consequences, control: { name: "Reserve", kind: "button", ...control } });
   const shelf: AutomationStudioSiteResetRead = { state: {}, differs: [], resource: SITE, scope: "p:shelf-page", location: "loc:shelf", collections: [{ scope: "p:shelf", group: "g:shelf", subjects: ["s:other"], states: { "s:other": "v:other" } }] };
 
-  it("no witness before the seal: no_witness; no original for a creation: no_destination_original, met by no call once sealed with none", () => {
+  // t751 R3: the one admission has no seal check, so a creation with no original is met on another page, sealed or not.
+  it("no witness: no_witness; no original for a creation: no_destination_original, met on another page, sealed or not", () => {
     const baselines = new AutomationStudioSiteResetCreateBaselines();
     expect(baselines.check(declared(ENTRY, ["modify_existing"]), undefined)).toMatchObject({ kind: "refused", evidence: { ...named("candidate.reset_witness_required", "no_witness", "another_page"), instruction: WORDS.witnessRequired([]) } });
     expect(baselines.check(declared(ENTRY, ["create_new"]), undefined)).toMatchObject({ kind: "refused", evidence: { ...named("candidate.create_baseline_required", "no_destination_original", "another_page"), instruction: WORDS.createBaselineRequired() } });
     baselines.seal();
-    expect(baselines.check(declared(ENTRY, ["create_new"]), undefined)).toMatchObject({ kind: "refused", evidence: named("candidate.create_baseline_required", "no_destination_original", "no_call") });
+    expect(baselines.check(declared(ENTRY, ["create_new"]), undefined)).toMatchObject({ kind: "refused", evidence: named("candidate.create_baseline_required", "no_destination_original", "another_page") });
     const read = new AutomationStudioSiteResetCreateBaselines();
     read.observed(shelf);
     read.seal();

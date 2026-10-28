@@ -27,16 +27,13 @@
 // does it, as a real script must (t597). Its own trial of that step is the
 // build's first act (act-1), and its explored press the second (act-2).
 //
-// On the recipe site, which has no start hook, that trial's save is the
-// site's own Save node, and the host runtime's state diff around each step
-// lists the recipes the box showed before and after it (t598). So the trial's
-// act carries the recipe it put in the box, and the reset undoes it by that
-// item, as it undoes the explored save by its own: the whole trial then runs
-// on the box as the build found it. The save is no Core wait: a wait that
-// declares `create_new` acts on nothing outside the run and leaves no act
-// (t598). The shop below has no state diff, so its trial's
-// add names no cart line: no control there takes it back, and the reset
-// names act-1 under `cannotUndo`, as before.
+// Both sites publish complete resource-bound inventories through an ordinary
+// core.run_node read before submission. Recipe Save acts on a source recipe;
+// Unsave removes its new saved-membership row, a distinct item identity. The
+// native save really changes the box, and both trial and exploration effects
+// must be restored before the whole run. The shop's native fixture is a no-op:
+// fresh complete reads settle its declared trial act as unchanged, without
+// pretending it created a line or exempting an unresolved project act.
 //
 // **Nothing here waits on the wall clock (t644).** Under load these builds
 // took up to 45 s against 1-5 s quiet, near the 60 s watchdog, and a timed-out
@@ -207,8 +204,8 @@ async function recipeBuild(options: { ends?: boolean; undeclaredFirst?: boolean;
       // The reset agent: undo the build's own save, named by its act, then complete; where the build ends instead, it finds no way to.
       if (options.ends) return decision({ kind: "tool_call", callId: `look.${evidence.length}`, toolId: "inspect", input: { at: evidence.length } });
       // act-2 is the builder's explored save; act-1 its own trial of the save, which carries the recipe that trial put in the box (t598).
-      if (!evidence.some((entry) => entry.callId === "undo.save")) return decision({ kind: "tool_call", callId: "undo.save", toolId: "press", input: { control: "Unsave", item: "recipe:herb-bread", undoes: "act-2" } });
-      if (!evidence.some((entry) => entry.callId === "undo.trial")) return decision({ kind: "tool_call", callId: "undo.trial", toolId: "press", input: { control: "Unsave", item: TRIAL_RECIPE, undoes: "act-1" } });
+      if (!evidence.some((entry) => entry.callId === "undo.save")) return decision({ kind: "tool_call", callId: "undo.save", toolId: "core.run_node", input: { node: "domain.isolated.unsave-recipe", parameters: { recipe: "recipe:herb-bread" }, consequences: ["delete"], undoes: "act-2" } });
+      if (!evidence.some((entry) => entry.callId === "undo.trial")) return decision({ kind: "tool_call", callId: "undo.trial", toolId: "core.run_node", input: { node: "domain.isolated.unsave-recipe", parameters: { recipe: TRIAL_RECIPE }, consequences: ["delete"], undoes: "act-1" } });
       return decision({ kind: "complete", result: { summary: "The recipes this build saved are out of the box again." } });
     }
     const subflowKey = (properties.subflowKey as JsonObject | undefined)?.const as string;
@@ -217,28 +214,32 @@ async function recipeBuild(options: { ends?: boolean; undeclaredFirst?: boolean;
     // The subflow that acts on nothing (header).
     if (subflowKey === "prepare") return decision(prepareDecision(submitted, tested));
     builderSaw.splice(0, builderSaw.length, ...evidence.map((entry) => structuredClone(entry)));
+    if (!evidence.some((entry) => entry.callId === "read.original")) return decision({ kind: "tool_call", callId: "read.original", toolId: "core.run_node", input: { node: "domain.isolated.look", parameters: {}, consequences: [] } });
     if (!submitted && options.undeclaredFirst) return decision({ kind: "tool_call", callId: "submit.undeclared", toolId: "core.submit_subflow", input: UNDECLARED_RECIPE_SUBMISSION });
     if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: "submit", toolId: "core.submit_subflow", input: RECIPE_SUBMISSION });
     if (tested?.verdict !== "yes") return decision({ kind: "tool_call", callId: "test", toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } });
     // The save comes after the builder's own passing trial, which would otherwise have it undone first (t578), so it is still on the site for the whole trial.
-    if (!lastOf(evidence, "press")) return decision({ kind: "tool_call", callId: "save", toolId: "press", input: { control: "Save", item: "recipe:herb-bread" } });
+    if (!evidence.some((entry) => entry.callId === "save")) return decision({ kind: "tool_call", callId: "save", toolId: "core.run_node", input: { node: SAVE, parameters: { recipe: "recipe:herb-bread" }, consequences: ["create_new"] } });
     return decision({ kind: "complete", result: { subflowKey, revision: submitted.revision as number, digest: submitted.digest as string } });
   });
   const provider = options.resetSentAs ? throughDeepSeek(scripted, { only: isResetRequest, altered: options.resetSentAs }) : scripted;
   const serviceOptions: AutomationStudioServiceOptions = {
     dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 80, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: {
-      domainId: "isolated", deniedEvidenceKeys: [], resolvePlanNodeParameters: automationStudioTestDeclaredStepResolution,
+      domainId: "isolated", deniedEvidenceKeys: [], runsNodes: {},
+      resolvePlanNodeParameters: (input: Parameters<typeof automationStudioTestDeclaredStepResolution>[0]) => automationStudioTestDeclaredStepResolution(input, { name: "Save", kind: "button", scope: "p:box", resource: "r:recipes", subject: String(input.parameters.recipe), page: "s:recipes" }),
+      startState: async () => ({ state: {}, differs: [], location: "https://recipes.test/box", scope: "p:recipes", resource: "r:recipes", collections: [{ scope: "p:box", group: "g:box", subjects: [...box], states: Object.fromEntries([...box].map((recipe) => [recipe, recipe])) }] }),
       tools: [
-        { toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" },
-        { toolId: "press", description: "Press a control on one recipe", inputSchema: { type: "object", properties: { control: { type: "string" }, item: { type: "string" } } }, effect: "mutate" }
+        { toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }
       ],
       executeTool: async (call: { toolId: string; value: JsonObject; permission?: AutomationStudioActionPermissionCheck }) => {
-        if (call.toolId !== "press") return { kind: "llm_evidence_tool_execution", evidence: { box: [...box] }, effectApplied: false, targetsUnchanged: true };
-        const control = String(call.value.control);
-        const item = String(call.value.item);
+        if (call.value.node !== SAVE && call.value.node !== "domain.isolated.unsave-recipe") return { kind: "llm_evidence_tool_execution", evidence: { box: [...box] }, effectApplied: false, targetsUnchanged: true };
+        const control = call.value.node === SAVE ? "Save" : "Unsave";
+        const item = String((call.value.parameters as JsonObject).recipe);
         // As a real domain does, the lasting press is put to the gate first, with the item its control sits in.
-        const declaration: AutomationStudioActionDeclaration = { consequences: control === "Save" ? ["create_new"] : ["modify_existing"], control: { name: control, kind: "button", item }, verb: "press", effect: "mutate" };
+        // Saving acts on a source recipe; removing the saved membership acts
+        // on the new box row, never the underlying recipe's source item.
+        const declaration: AutomationStudioActionDeclaration = { consequences: control === "Save" ? ["create_new"] : ["delete"], control: { name: control, kind: "button", item: control === "Save" ? `source:${item}` : item, subject: item, scope: "p:box", resource: "r:recipes", page: "s:recipes" }, verb: "press", effect: "mutate" };
         const verdict = await call.permission!(declaration);
         if (!verdict.permitted) return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "permission_required" }, effectApplied: false, targetsUnchanged: true };
         pressed.push(`${control} ${item}`);
@@ -327,11 +328,12 @@ describe("a project build whose builder leaves a lasting act", () => {
     expect(told?.detail).toMatchObject({ kind: "note", status: "failed" });
     const text = (told?.detail as { text: string }).text;
     // Core's record of its tests goes between the reason and what is left (t738, `../../project-build-ending/record-told.ts`).
-    // No read showed the save's change, so it is told as acts to check, never as no act at all (t738, `left-on-target.ts` `seen`).
+    // Complete inventories now show both saves' changes, so the ending names
+    // them as still present, rather than claiming no read showed a change.
     // The row is the one account of the ending (t753): why first, and never "no change" beside acts to check. The
     // failure still carries why, for the build's last status line.
     expect(diagnostic!.endedBecause).toBe(ENDED_REASON);
-    expect(text).toBe(`${ENDED_REASON} Both parts tested on their own passed their own test. No whole Flow was assembled, so it was never tested as one. The build ran the step “save the recipe” and pressed 1 control with no label, and nothing read afterwards could show whether they changed anything; check them if you need the site exactly as it was.`);
+    expect(text).toBe(`${ENDED_REASON} Both parts tested on their own passed their own test. No whole Flow was assembled, so it was never tested as one. These changes the build made are still on the site: ran the step “save the recipe” and pressed 1 control with no label.`);
     expect(text).not.toContain("on the target");
     // Its trial's recipe and its explored one, both still there.
     expect([...run.box]).toEqual(["recipe:lentil-soup", TRIAL_RECIPE, "recipe:herb-bread"]);
@@ -342,15 +344,16 @@ describe("a project build whose builder leaves a lasting act", () => {
     const result = await run.build();
     if (result.status !== "proposed") throw new Error(`expected a proposal, got ${JSON.stringify(result)}`);
 
-    // The builder's own trial of its add (t597), and its add.
-    expect(lastOf(run.supervisorSaw[5]!, "core.test_candidate")).toMatchObject({ ok: false, code: "project.trial_reset_required", actsInPlace: [{ act: "act-1", did: "trial step 3 \"add it to the cart\"" }, { act: "act-2", did: "press \"Add to cart\" button" }] });
+    // The native trial changed nothing; only the explored add remains open.
+    expect(lastOf(run.supervisorSaw[5]!, "core.test_candidate")).toMatchObject({ ok: false, code: "project.trial_reset_required", actsInPlace: [{ act: "act-2", did: "press \"Add to cart\" button" }] });
     expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "done" }], lastingActsInPlace: 0 });
-    // Done, and honest: the trial's add it named under cannotUndo stays, so it never says every act is undone (t684).
+    // The changed act is restored; the no-op trial is separately told as
+    // unchanged. Neither is falsely described as a kept, unproved effect.
     const said = ((lastOf(run.supervisorSaw[6]!, "project.dispatch")!.returns as JsonObject[])[0]!.reason as string);
-    expect(said).not.toContain("Every lasting act this build made is undone");
+    expect(said).toContain("Every act of this build that showed a change is undone.");
+    expect(said).toContain("1 act of this build showed no change on the site");
     // Named in a person's words, never by its ledger id (t738, `../../../project-agents/dispatch/reset-done.ts`).
-    // Kept, it is of a reversible class: said as not undone, never as beyond the site (t741 B5) -- the line was in fact removed.
-    expect(said).toContain("1 act of this build could not be undone, so it may still be on the site: ran the step “add it to the cart”.");
+    expect(said).not.toContain("could not be undone");
     expect(said).not.toContain("site offers no way");
     // The add, then the removal of the very line it created; the domain never saw `undoes`.
     expect(run.acted).toEqual(["add herb-tea", "remove herb-tea"]);
@@ -446,22 +449,22 @@ function shopDomain(cart: string[]) {
     deniedEvidenceKeys: [],
     tools: [{ toolId: "shop.look", description: "Look at the page.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
     runsNodes: { arrival: { node: GO, parameter: "to" } },
-    resolvePlanNodeParameters: automationStudioTestDeclaredStepResolution,
+    resolvePlanNodeParameters: (input) => automationStudioTestDeclaredStepResolution(input, { name: input.nodeDefinitionId === ADD ? "Add to cart" : "Remove", kind: "button", resource: "r:shop", scope: "p:cart", page: "s:product", subject: `line:${String(input.parameters.line ?? "herb-tea")}` }),
     startState: async (input: { start?: JsonObject }) => {
       const now = read();
       const was = Array.isArray(input.start?.lines) ? (input.start!.lines as string[]) : undefined;
       const gone = was ? was.filter((line) => !now.lines.includes(line)) : [];
       const added = was ? now.lines.filter((line) => !was.includes(line)) : [];
-      return { state: { lines: now.lines }, differs: [...gone.map((line) => `gone: ${line}`), ...added.map((line) => `new: ${line}`)], location: PRODUCT_PAGE, lines: { gone, added }, items: now.items };
+      return { state: { lines: now.lines }, differs: [...gone.map((line) => `gone: ${line}`), ...added.map((line) => `new: ${line}`)], location: PRODUCT_PAGE, lines: { gone, added }, items: now.items, resource: "r:shop", scope: "p:product", collections: [{ scope: "p:cart", group: "g:cart", subjects: now.items, states: Object.fromEntries(cart.map((line) => [`line:${line}`, line])) }] };
     },
     executeTool: async ({ toolId, value, permission }) => {
       inputs.push(structuredClone(value));
-      if (toolId === "shop.look") return { kind: "llm_evidence_tool_execution", evidence: { page: "Herb tea", cart: [...cart], controls: ["Add to cart", "Remove"] }, effectApplied: false };
+      if (toolId === "shop.look" || value.node === "domain.example.look") return { kind: "llm_evidence_tool_execution", evidence: { page: "Herb tea", cart: [...cart], controls: ["Add to cart", "Remove"] }, effectApplied: false };
       const parameters = (value.parameters ?? {}) as JsonObject;
       if (value.node === GO) return { kind: "llm_evidence_tool_execution", evidence: { ok: true, at: String(parameters.to) }, effectApplied: true };
       const line = typeof parameters.line === "string" ? parameters.line : undefined;
       const consequences = (Array.isArray(value.consequences) ? value.consequences : []) as AutomationStudioActionConsequence[];
-      const declaration: AutomationStudioActionDeclaration = { consequences, control: { name: value.node === ADD ? "Add to cart" : "Remove", kind: "button", ...(line ? { item: `line:${line}` } : {}) }, verb: "press", effect: "mutate" };
+      const declaration: AutomationStudioActionDeclaration = { consequences, control: { name: value.node === ADD ? "Add to cart" : "Remove", kind: "button", resource: "r:shop", scope: "p:cart", page: "s:product", subject: `line:${line ?? "herb-tea"}`, ...(line ? { item: `line:${line}` } : {}) }, verb: "press", effect: "mutate" };
       const verdict = await permission!(declaration);
       if (!verdict.permitted) return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "permission_required" }, effectApplied: false };
       if (value.node === ADD) {
@@ -483,8 +486,8 @@ type ResetScript = (n: number, evidence: readonly Entry[]) => JsonObject;
 /** The reset agent of the cases above: remove the line the build added, naming its act, then complete. */
 const UNDO_THE_ADD: ResetScript = (n) => n === 1
   ? { kind: "tool_call", callId: "undo.add", toolId: "core.run_node", input: { node: REMOVE, parameters: { line: "herb-tea" }, consequences: ["delete"], undoes: "act-2" } }
-  // act-1 is the builder's own trial of its add, which names no cart line, so no control here takes it back (t597).
-  : { kind: "complete", result: { summary: "The line this build added is out of the cart again.", cannotUndo: ["act-1"] } };
+  // Fresh original inventories already settled the no-op native trial.
+  : { kind: "complete", result: { summary: "The line this build added is out of the cart again." } };
 
 /** A reset agent's request: no supervisor's tools, and the reset's completion, a summary with no subflow key. */
 function isResetRequest(request: AutomationStudioLlmTaskRequest): boolean {
@@ -553,7 +556,7 @@ async function cartBuild(resetScript: ResetScript = UNDO_THE_ADD, options: { sta
       return decision(supervisorDecision(supervisorDecisions, evidence));
     }
     const properties = (loop.completionSchema.properties ?? {}) as JsonObject;
-    const ranNode = lastOf(evidence, "core.run_node");
+    const ranNode = evidence.find((entry) => entry.callId === "add")?.value;
     if (properties.summary !== undefined && properties.subflowKey === undefined) {
       resetFirst ??= JSON.stringify(request.context.instructions);
       resetRequests.push(structuredClone(request));
@@ -567,6 +570,7 @@ async function cartBuild(resetScript: ResetScript = UNDO_THE_ADD, options: { sta
     const tested = lastOf(evidence, "core.test_subflow");
     // The subflow that acts on nothing (header).
     if (subflowKey === "prepare") return decision(prepareDecision(submitted, tested));
+    if (!evidence.some((entry) => entry.callId === "read.original")) return decision({ kind: "tool_call", callId: "read.original", toolId: "core.run_node", input: { node: "domain.example.look", parameters: {}, consequences: [] } });
     if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: "submit", toolId: "core.submit_subflow", input: CART_SUBMISSION });
     if (tested?.verdict !== "yes") return decision({ kind: "tool_call", callId: "test", toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } });
     // After its own passing trial, as in the case above (t578).
@@ -603,7 +607,7 @@ describe("a project build told where it starts", () => {
     expect(steps[0]).toMatchObject({ definitionId: GO, status: "succeeded" });
     expect(feedback.phaseStart).toMatchObject({ phase: "whole_trial", startHook: "none", arrival: "loaded", standsOn: `the build's start location (${start})` });
     // The reset's own start told it what was still on the site.
-    expect(run.resetSaw.evidence[0]?.value).toMatchObject({ phaseStart: { phase: "reset", startHook: "none", stillOnSite: [{ act: "act-1" }, { act: "act-2" }] } });
+    expect(run.resetSaw.evidence[0]?.value).toMatchObject({ phaseStart: { phase: "reset", startHook: "none", stillOnSite: [{ act: "act-2" }] } });
   });
 });
 
@@ -615,7 +619,7 @@ describe("a project build told where it starts", () => {
 // at another item's control is refused in the reset's words, never "test
 // again".
 describe("a reset brief", () => {
-  it("offers undoes and no write, tells its own lasting press as outside it, and ends done with the acts it names under cannotUndo kept", async () => {
+  it("offers undoes and no write, tells its own lasting press as outside it, and stays blocked when cannotUndo names unresolved project effects", async () => {
     const kept = vi.spyOn(AutomationStudioSiteResetLedger.prototype, "beforeTrial");
     cleanups.push(async () => kept.mockRestore());
     const run = await cartBuild((n) => {
@@ -639,31 +643,33 @@ describe("a reset brief", () => {
     expect((extra.outsideBrief as JsonObject).note).toContain("outside this reset");
     expect((extra.outsideBrief as JsonObject).note).not.toContain("subflow");
 
-    // Its first completion was refused with both acts; the second named them under cannotUndo, which reached the ledgers, and it came back done.
+    // Naming cannotUndo reaches the ledgers but cannot restore project effects;
+    // completion remains blocked and no whole trial runs on these leftovers.
     expect(JSON.stringify(run.resetSaw.evidence)).toContain("project.reset_acts_in_place");
     expect(kept.mock.calls.some((call) => JSON.stringify(call[1]) === JSON.stringify(["act-1", "act-2"]))).toBe(true);
-    expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "done" }], lastingActsInPlace: 0 });
-    // Kept, not undone: both lines are still in the cart.
+    expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "blocked" }], lastingActsInPlace: 1 });
+    expect(run.cartWhenWholeJudged).toEqual([]);
+    // Both additions remain, with the original line untouched.
     expect(run.cart.filter((line) => line === "herb-tea")).toHaveLength(2);
   });
 
-  it("refuses an undo aimed at another item in a reset's words: undo another act or name it under cannotUndo, never test again", async () => {
+  it("refuses an undo of an original item and blocks while the build's own effect remains", async () => {
     const run = await cartBuild((n) => n === 1
       ? { kind: "tool_call", callId: "undo.wrong", toolId: "core.run_node", input: { node: REMOVE, parameters: { line: "dish-soap" }, consequences: ["delete"], undoes: "act-2" } }
-      // act-1 is named honestly: no act is kept for having been asked for twice (F1 continuation), and act-2 is kept by
-      // its refused undo alone.
+      // Neither this cannotUndo claim nor the refused inverse settles act-2.
       : { kind: "complete", result: { summary: "The act this build made cannot be undone here.", cannotUndo: ["act-1"] } });
     await run.build().catch(() => undefined);
 
     const refused = run.resetSaw.evidence.find((entry) => entry.callId === "undo.wrong")!.value as JsonObject;
     // act-2 is the builder's add (act-1 its trial of it, t597): the dish soap's line is not its own.
-    expect(refused).toMatchObject({ ok: false, code: "candidate.undo_wrong_target", act: "act-2" });
-    expect(refused.instruction).toBe(AUTOMATION_STUDIO_SITE_RESET_WORDS.wrongTarget("reset"));
+    expect(refused).toMatchObject({ ok: false, code: "candidate.undo_unproved", act: "act-2" });
+    expect(refused.instruction).toBe(AUTOMATION_STUDIO_SITE_RESET_WORDS.unprovedUndo(false));
     expect(refused).not.toHaveProperty("outsideBrief");
     // The dish soap the cart held before the build was never touched.
     expect(run.acted).toEqual(["add herb-tea"]);
     expect(run.cart).toEqual(["dish-soap", "herb-tea"]);
-    expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "done" }], lastingActsInPlace: 0 });
+    expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "blocked" }], lastingActsInPlace: 1 });
+    expect(run.cartWhenWholeJudged).toEqual([]);
   });
 });
 

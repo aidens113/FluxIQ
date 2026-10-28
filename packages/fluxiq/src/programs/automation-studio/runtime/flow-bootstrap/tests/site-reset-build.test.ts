@@ -296,7 +296,10 @@ describe("a candidate build puts the site back before each trial, through the re
     ]);
     const refused = latestOf("core.run_node", seen[4]!)!;
     expect(refused).toMatchObject({ ok: false, code: "candidate.undo_refused", act: "act-1", refusal: { code: "permission_required", missing: ["delete"] } });
-    expect(String(refused.instruction)).toContain("this act stays as it is");
+    // t751: a refusal changes nothing and admits no trial by itself; the current reset conditions still decide.
+    expect(String(refused.instruction)).toContain("nothing was done");
+    expect(String(refused.instruction)).toContain("current listed reset and settlement conditions");
+    expect(String(refused.instruction)).not.toContain("kept and not asked for again");
     expect(wrapper.request()?.missing).toEqual(["delete"]);
     expect(state.site.requests.amara).toBe("accepted");
     expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)).toMatchObject({ verdict: "unsure", startedWith: { cannotUndo: [{ act: "act-1" }] } });

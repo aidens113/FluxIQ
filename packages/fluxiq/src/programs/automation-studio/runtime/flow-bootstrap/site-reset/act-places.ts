@@ -48,14 +48,21 @@ export async function automationStudioSiteResetPlacedCall<T>(input: {
     seenItems?(): ReadonlySet<string>;
   };
   signal?: AbortSignal | undefined;
+  /** Project builds apply the same baseline reads to every domain tool; standalone custom-tool compatibility is explicit. */
+  allTools?: boolean;
   run: () => Promise<T>;
 }): Promise<T> {
   const { call, ledger, reader, signal } = input;
-  if (call.toolId !== AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID) return await input.run();
+  if (call.toolId !== AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID && !input.allTools) return await input.run();
   const undoes = call.value[AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY];
   const consequences = call.value.consequences;
   const acts = undoes === undefined && Array.isArray(consequences) && consequences.some((consequence) => typeof consequence === "string" && LOOKED_FOR.has(consequence));
   if (typeof undoes !== "string" && !acts) {
+    // A custom tool may declare its lasting effect only inside its permission call, so project originals must precede it.
+    if (input.allTools && call.toolId !== AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID) {
+      const before = await reader.read(undefined, signal);
+      if (!("unread" in before)) ledger.observed?.(before);
+    }
     const ran = await input.run();
     const observed = await reader.read(undefined, signal);
     if (!("unread" in observed)) ledger.observed?.(observed);

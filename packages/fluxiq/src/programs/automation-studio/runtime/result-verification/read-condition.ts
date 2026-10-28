@@ -59,6 +59,8 @@ export type AutomationStudioResultReadCondition = {
    */
   leftOutSettled?: string[];
   settled?: string;
+  /** What kind of condition settled those rows (`./value-readings/settled-rows.ts`): carried so no later line re-parses its wording to tell. */
+  settledKind?: "bound" | "presence" | "text";
   /**
    * On the judge's copy only (`./request-rows/summary-with-also-in-result.ts`,
    * t624): the rows of `leftOutOnlyByThis`, as given there, whose label is also

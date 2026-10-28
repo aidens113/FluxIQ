@@ -76,7 +76,7 @@ function submission(subflowKey: string, asked: readonly string[] = []): JsonObje
 }
 
 /** The stub domain's nodes: its save, which succeeds and changes nothing a test reads. */
-function saveRuntime(): AutomationStudioNativeNodeRuntime {
+function saveRuntime(saveEffect?: () => void): AutomationStudioNativeNodeRuntime {
   const node: AutomationStudioNodeDefinition = {
     schemaVersion: "0.1", id: SAVE, version: "1.0.0", label: "Save", description: "Save it.", category: "action",
     source: { kind: "importer", domainId: "isolated", packageId: "isolated.stub", implementationKey: SAVE },
@@ -86,7 +86,10 @@ function saveRuntime(): AutomationStudioNativeNodeRuntime {
   };
   return new AutomationStudioNativeNodeRuntime({ permissions: [], runtimeCapabilities: ["isolated.actions"] }).register(
     { schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "isolated.stub", packageVersion: "1.0.0", domainId: "isolated", nodes: [node] },
-    { packageId: "isolated.stub", packageVersion: "1.0.0", implementations: { [SAVE]: () => ({ status: "success" as const, route: "success", outputs: { success: true } }) } }
+    { packageId: "isolated.stub", packageVersion: "1.0.0", implementations: { [SAVE]: () => {
+      saveEffect?.();
+      return { status: "success" as const, route: "success", outputs: { success: true } };
+    } } }
   );
 }
 
@@ -117,6 +120,8 @@ async function build(input: {
   permittedConsequences?: AutomationStudioActionConsequence[];
   prepareStart?: AutomationStudioServiceOptions["prepareCandidateStart"];
   startState?: NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>["startState"];
+  stepControl?: AutomationStudioActionDeclaration["control"];
+  saveEffect?: () => void;
 }) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-project-build-brief-ports-"));
   /** Each builder's evidence at its first decision, by subflow. */
@@ -135,20 +140,21 @@ async function build(input: {
       supervisorDecisions += 1;
       latestSeen[SUPERVISOR] = evidence.map((entry) => structuredClone(entry));
       if (supervisorDecisions === 1) return decision({ kind: "tool_call", callId: "plan", toolId: "project.write_plan", input: input.plan });
-      if (supervisorDecisions === 2) return decision({ kind: "tool_call", callId: "dispatch", toolId: "project.dispatch", input: { reason: "Build each subflow the plan needs.", briefs: input.briefs } });
+      if (supervisorDecisions >= 2 && supervisorDecisions < input.briefs.length + 2) return decision({ kind: "tool_call", callId: `dispatch-${supervisorDecisions - 1}`, toolId: "project.dispatch", input: { reason: "Build the next subflow after its predecessors returned.", briefs: [input.briefs[supervisorDecisions - 2]!] } });
       return decision({ kind: "complete", result: { ended: "partial", reason: "Only the briefs were under test." } });
     }
     const subflowKey = ((loop!.completionSchema.properties as JsonObject | undefined)?.subflowKey as JsonObject | undefined)?.const as string;
     firstSeen[subflowKey] ??= evidence.map((entry) => structuredClone(entry));
     latestSeen[subflowKey] = evidence.map((entry) => structuredClone(entry));
+    if (input.saveEffect && !evidence.some((entry) => entry.callId === "read-original")) return decision({ kind: "tool_call", callId: "read-original", toolId: "core.run_node", input: { node: "example.look", parameters: { inventory: "saves" }, consequences: [] } });
     return decision(builderDecision(subflowKey, evidence, (seen) => input.builderFirst?.(subflowKey, seen), askedActs(input.plan, subflowKey)));
   });
   const service = new AutomationStudioService({
     dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 80, maxEstimatedCostUsd: 0.1 }),
-    llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: input.tools, executeTool: input.executeTool, ...(input.startState ? { startState: input.startState } : {}), resolvePlanNodeParameters: automationStudioTestDeclaredStepResolution } as unknown as NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>,
+    llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: input.tools, executeTool: input.executeTool, ...(input.startState ? { startState: input.startState } : {}), resolvePlanNodeParameters: (request: Parameters<typeof automationStudioTestDeclaredStepResolution>[0]) => automationStudioTestDeclaredStepResolution(request, input.stepControl) } as unknown as NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>,
     ...(input.prepareStart ? { prepareCandidateStart: input.prepareStart } : {})
   });
-  service.bindNativeNodeRuntime(saveRuntime());
+  service.bindNativeNodeRuntime(saveRuntime(input.saveEffect));
   cleanups.push(async () => {
     await service.close();
     await rm(dataDir, { recursive: true, force: true });
@@ -161,6 +167,30 @@ async function build(input: {
 }
 
 describe("a dependent builder's entry", () => {
+  it("refuses an unwitnessed submitted step before preparing its trial", async () => {
+    let hooks = 0;
+    const plan = {
+      taskSpec: { parts: [
+        { id: "p1", quote: { sourceId: "instruction.build", text: "Create a deterministic" }, goalFacts: ["It is saved"], lastingActs: ["create_new"] },
+        { id: "p2", quote: { sourceId: "instruction.build", text: "Start to End Flow." }, goalFacts: ["It is read"], lastingActs: [] }
+      ], notAsked: [] },
+      subflows: [{ key: "first", name: "first", parts: ["p1"] }, { key: "second", name: "second", parts: ["p2"], after: ["first"] }]
+    };
+    const run = await build({
+      plan,
+      briefs: [{ kind: "build", subflowKey: "first", parts: ["p1"], entry: { caseId: "observed-current", predecessors: [] }, permittedActs: ["create_new"], maxIterations: 6 }],
+      tools: [{ toolId: "look", description: "Look", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
+      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: false }),
+      prepareStart: async () => {
+        hooks += 1;
+        return { reset: true };
+      }
+    });
+    await run.run().catch(() => undefined);
+    expect(lastOf(run.latestSeen.first ?? [], "core.test_subflow")).toMatchObject({ ok: false, code: "candidate.trial_step_unwitnessed" });
+    expect(hooks).toBe(1); // Only the builder's opening; no trial preparation.
+  });
+
   it("runs the predecessor's passing proposal before the builder's first look, which looks in place and says so", async () => {
     /** Everything in the order it happened: the domain's calls and the runtime sessions written. */
     const happened: string[] = [];
@@ -216,6 +246,7 @@ describe("a dependent builder's entry", () => {
 
   it("marks the acts its start hook put back undone in their ledgers before the builder looks, and names them at its opening", async () => {
     const happened: string[] = [];
+    const saved = new Set<string>();
     const plan = {
       taskSpec: {
         parts: [
@@ -229,25 +260,29 @@ describe("a dependent builder's entry", () => {
     const brief = (subflowKey: string, parts: string[], predecessors: string[], permittedActs: string[]) => ({ kind: "build", subflowKey, parts, entry: { caseId: "observed-current", predecessors }, allowanceUsd: 0.01, maxIterations: 8, permittedActs });
     const run = await build({
       plan, briefs: [brief("first", ["p1"], [], ["create_new"]), brief("second", ["p2"], ["first"], [])],
+      stepControl: { name: "Save", kind: "button", resource: "r:saves", scope: "p:saves", subject: "s:saved" },
+      saveEffect: () => { saved.add("s:saved"); },
+      startState: async () => ({ state: {}, differs: [], resource: "r:saves", scope: "p:page", collections: [{ scope: "p:saves", group: "g:saves", subjects: [...saved], states: Object.fromEntries([...saved].map((item) => [item, item])) }] }),
       tools: [
-        { toolId: "look", description: "Look at the page, or go somewhere first", inputSchema: { type: "object" }, effect: "mutate", perCallEffect: true, initialObservation: { input: { look: true }, arrival: { go: "start" } } },
-        { toolId: "press", description: "Press a control on one list", inputSchema: { type: "object", properties: { control: { type: "string" }, item: { type: "string" } } }, effect: "mutate" }
+        { toolId: "core.run_node", description: "Read the page or save its item", inputSchema: { type: "object" }, effect: "mutate", perCallEffect: true, initialObservation: { input: { node: "example.look", parameters: {}, consequences: [] }, arrival: { go: "start" } } }
       ],
       executeTool: async (call) => {
-        if (call.toolId !== "press") return { kind: "llm_evidence_tool_execution", evidence: { seen: true }, effectApplied: call.value.go !== undefined, targetsUnchanged: call.value.go === undefined };
-        const declaration: AutomationStudioActionDeclaration = { consequences: ["create_new"], control: { name: "Save", kind: "button", item: "list-1" }, verb: "press", effect: "mutate" };
+        if (call.value.node !== "example.save") return { kind: "llm_evidence_tool_execution", evidence: { seen: true }, effectApplied: call.value.go !== undefined, targetsUnchanged: call.value.go === undefined };
+        const declaration: AutomationStudioActionDeclaration = { consequences: ["create_new"], control: { name: "Save", kind: "button", item: "list-1", resource: "r:saves", scope: "p:saves", subject: "s:explored-saved" }, verb: "press", effect: "mutate" };
         const verdict = await call.permission!(declaration);
+        if (verdict.permitted) saved.add("s:explored-saved");
         return { kind: "llm_evidence_tool_execution", evidence: { ok: verdict.permitted }, effectApplied: verdict.permitted, targetsUnchanged: !verdict.permitted };
       },
-      // The first builder saves once after its own passing trial, so the act is still on the site when the second's entry is prepared.
+      // Exploration and the native trial each save a distinct item. Each later phase must restore the effect before running.
       builderFirst: (subflowKey, evidence) => {
         if (subflowKey === "second" && !happened.includes("second decides")) happened.push("second decides");
-        return subflowKey === "first" && lastOf(evidence, "core.test_subflow")?.verdict === "yes" && !lastOf(evidence, "press")
-          ? { kind: "tool_call", callId: "save", toolId: "press", input: { control: "Save", item: "list-1", consequences: ["create_new"] } }
+        return subflowKey === "first" && !evidence.some((entry) => entry.callId === "save")
+          ? { kind: "tool_call", callId: "save", toolId: "core.run_node", input: { node: "example.save", parameters: {}, consequences: ["create_new"] } }
           : undefined;
       },
       prepareStart: async () => {
         happened.push("start hook");
+        saved.clear();
         return { reset: true };
       }
     });
@@ -272,16 +307,18 @@ describe("a dependent builder's entry", () => {
 
     // The second's start ran the start hook; the ledger holding the first builder's save marked it undone before its predecessor
     // ran to its entry (the build's one start, t593: the reset before the entry), and both before the second builder's first look.
-    // The first's part asks a lasting act, so its subflow declares one (t597): its own passing trial left act-1, and its save
-    // after it is act-2; the hook put back both.
+    // The first trial's hook restores exploration's act-1; its native save is act-2, restored before the dependent entry.
     const entryRan = happened.indexOf("entry for second succeeded");
-    expect(entryRan).toBeGreaterThan(0);
+    expect(entryRan, JSON.stringify(happened)).toBeGreaterThan(0);
     const decides = happened.indexOf("second decides");
     expect(decides).toBeGreaterThan(entryRan);
-    const putBack = happened.indexOf(`ledger put back ${JSON.stringify(["act-1", "act-2"])}, now []`);
+    const exploredPutBack = happened.indexOf(`ledger put back ${JSON.stringify(["act-1"])}, now []`);
+    const putBack = happened.indexOf(`ledger put back ${JSON.stringify(["act-2"])}, now []`);
+    expect(exploredPutBack).toBeGreaterThan(happened.indexOf("start hook"));
+    expect(putBack).toBeGreaterThan(exploredPutBack);
     expect(putBack, JSON.stringify(happened)).toBeGreaterThan(happened.indexOf("start hook"));
     expect(putBack).toBeLessThan(entryRan);
-    expect(run.firstSeen.second?.[0]).toMatchObject({ callId: "initial.look", value: { entry: { prepared: true, absorbedByStartReset: ["act-1", "act-2"] }, phaseStart: { phase: "builder", startHook: "ran", putBack: ["act-1", "act-2"], arrival: "none", predecessors: { ran: ["first"], prepared: true } } } });
+    expect(run.firstSeen.second?.[0]).toMatchObject({ callId: "initial.core.run_node", value: { entry: { prepared: true, absorbedByStartReset: ["act-2"] }, phaseStart: { phase: "builder", startHook: "ran", putBack: ["act-2"], arrival: "none", predecessors: { ran: ["first"], prepared: true } } } });
     // The save the preparation run landed is named as the project ledger holds it, with what to do if a part of the second asks for it (t638).
     const entry = (run.firstSeen.second?.[0]?.value as JsonObject).entry as JsonObject;
     expect(entry.predecessorsLeftOnSite).toEqual([{ act: "act-3", did: expect.stringMatching(/^trial step \d+ /u) }]);
@@ -297,6 +334,7 @@ describe("a brief whose parts ask for no lasting act", () => {
   it("puts its deleting press to the person's gate although the build was permitted it, and tells it a modifying press was outside its brief", async () => {
     const verdicts: Array<{ control: string; permitted: boolean; missing: readonly string[] }> = [];
     const asked: unknown[] = [];
+    let rowState = "v:original";
     const plan = {
       taskSpec: { parts: [{ id: "p1", quote: { sourceId: "instruction.build", text: TASK }, goalFacts: ["The Flow runs from its start to its end"], lastingActs: [] }], notAsked: [] },
       subflows: [{ key: "main", name: "Main", parts: ["p1"] }]
@@ -304,13 +342,15 @@ describe("a brief whose parts ask for no lasting act", () => {
     const run = await build({
       plan, permittedConsequences: ["delete", "modify_existing"],
       briefs: [{ kind: "build", subflowKey: "main", parts: ["p1"], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.01, maxIterations: 8, permittedActs: [] }],
+      startState: async () => ({ state: {}, differs: [], resource: "r:list", scope: "p:list", collections: [{ scope: "p:list", group: "g:list", subjects: ["s:row"], states: { "s:row": rowState } }] }),
       tools: [{ toolId: "press", description: "Press a control on one list", inputSchema: { type: "object", properties: { control: { type: "string" }, item: { type: "string" } } }, effect: "mutate" }],
       executeTool: async (call) => {
         const control = String(call.value.control);
-        const declaration: AutomationStudioActionDeclaration = { consequences: control === "Remove" ? ["delete"] : ["modify_existing"], control: { name: control, kind: "button", item: String(call.value.item) }, verb: "press", effect: "mutate" };
+        const declaration: AutomationStudioActionDeclaration = { consequences: control === "Remove" ? ["delete"] : ["modify_existing"], control: { name: control, kind: "button", item: String(call.value.item), subject: "s:row", scope: "p:list", resource: "r:list" }, verb: "press", effect: "mutate" };
         const verdict = await call.permission!(declaration);
         verdicts.push({ control, permitted: verdict.permitted, missing: verdict.permitted ? [] : verdict.missing });
         if (!verdict.permitted) return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "permission_required" }, effectApplied: false, targetsUnchanged: true };
+        rowState = "v:renamed";
         return { kind: "llm_evidence_tool_execution", evidence: { ok: true, renamed: true }, effectApplied: true, targetsUnchanged: false };
       },
       // The builder presses Remove, then Rename, declaring each, before it submits.
@@ -390,6 +430,7 @@ it("requires a pre-create baseline through normal project ports and recovers via
   const invoke = (callId: string, node: string, consequences: string[] = [], extra: JsonObject = {}): JsonObject => ({ kind: "tool_call", callId, toolId: "core.run_node", input: { node, parameters: {}, consequences, ...extra } });
   const run = await build({
     plan, briefs: [{ kind: "build", subflowKey: "keep", parts: ["p1"], permittedActs: ["create_new"], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.02, maxIterations: 20 }], permittedConsequences: ["create_new"],
+    stepControl: { name: "Save", kind: "button", subject: "s:document", resource: "r:one", scope: "p:destination" },
     tools: [{ toolId: "core.run_node", description: "Run an observed operation", effect: "mutate", perCallEffect: true, inputSchema: { type: "object", properties: { node: { type: "string" }, parameters: { type: "object" }, consequences: { type: "array", items: { type: "string" } } } }, initialObservation: { input: { node: "example.look", parameters: {}, consequences: [] } } }],
     startState: async () => ({ state: { at }, differs: [], location: at, resource: "r:one", scope: `p:${at}`, collections: at === "destination" ? [{ scope: "p:destination", group: "g:destination", subjects: [...rows], states: Object.fromEntries(rows.map(row => [row, `v:${row}`])) }] : [] }),
     executeTool: async (call) => {

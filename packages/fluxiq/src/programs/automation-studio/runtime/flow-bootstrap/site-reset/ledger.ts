@@ -93,10 +93,23 @@
 // A step that ran in several loop passes says its pass (t748): `trial step 6,
 // pass 3 of 3 "<label>"`; one that ran once keeps `trial step N "<label>"`.
 //
-// **No witness, no first lasting press (rerun round 2).** Before the seal a
-// reversible press nothing could ever settle is refused unrun
-// (`./reset-witness.ts`), and a `resetDestination` no receipt printed is
-// refused before its call runs, here under `undoes` (`claim`) too.
+// **No witness, no lasting press (rerun round 2, t751 R3).** A reversible
+// press nothing could ever settle is refused unrun by the one admission
+// (`../reset-admission/`), asked at the exploration door (`createBaseline`,
+// with the build's explored acts it may repeat) after any earlier act as
+// before one, and a `resetDestination` no receipt printed is refused before
+// its call runs, here under `undoes` (`claim`) too. A plan step is asked at
+// submission (`admitStep`), and its stamp is what its trial act takes
+// (`trialRan`: a destination ref attaches that list, a repeated explored act
+// lends its witnesses).
+//
+// **The seal is per group (t751 R1).** Each act counts its witness groups --
+// its destinations, its own list, a transfer's, its subject undo's and those
+// its repeats lend -- and a first read of a group it touched is never an
+// original (`./create-baselines.ts`, `touch`). Only an act whose effect
+// location is unknown -- legacy unscoped, or with no witness at all -- seals
+// every group, as every lasting act once did. A destination named under
+// `undoes` is kept only from a call that landed (`./undo-claims.ts`).
 //
 // **Cross-page inverses need a destination baseline (t719 review).** A
 // subject/title says which item an effect concerns; it never proves that the
@@ -123,7 +136,7 @@
 // groups and its own control's toggle -- `restored` when a change was seen or
 // an undo landed, otherwise `unchanged`, sticky and told to every later
 // trial's judge. The judgement -- the witnesses, the destinations a trial act
-// repeats and the lists a witnessless trial act adopts (narrowed by t743),
+// repeats and the witnesses its plan step's stamp carries,
 // Core's own look at each stale witness's place before a trial, lists that
 // look cannot read again, and the words an open act says under `settle` --
 // lives in `../reset-settlement/judge.ts`, with its header; this ledger hands
@@ -149,6 +162,13 @@
 
 
 import { AutomationStudioSiteResetCreateBaselines } from "./create-baselines.ts";
+import {
+  automationStudioSiteResetAdmission as admission,
+  automationStudioSiteResetWitnessStampOf as stampOf,
+  automationStudioSiteResetWitnessStampValid as stampValid,
+  type AutomationStudioSiteResetAdmissionDeclared,
+  type AutomationStudioSiteResetWitnessStamp
+} from "../reset-admission/index.ts";
 import { automationStudioSiteResetRefusal as refusal } from "../reset-answers/index.ts";
 import {
   AutomationStudioSiteResetControlTracker,
@@ -184,6 +204,7 @@ import type { AutomationStudioSiteResetUndoDeclared } from "./undo-admission.ts"
 import { AutomationStudioSiteResetUndoClaims } from "./undo-claims.ts";
 import { automationStudioSiteResetUndoReach as undoReach } from "./undo-reach.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "./words.ts";
+import { AutomationStudioSiteResetControlWitnesses } from "./control-witnesses.ts";
 
 /** The classes an act may leave that the site's own controls can reverse. */
 const UNDOABLE: ReadonlySet<AutomationStudioActionConsequence> = new Set(["create_new", "modify_existing", "delete"]);
@@ -213,14 +234,18 @@ export type AutomationStudioSiteResetLedgerOptions = {
   possible?: boolean;
   /** Shared original receipts for every owner of one project build. */
   createBaselines?: AutomationStudioSiteResetCreateBaselines;
+  controlWitnesses?: AutomationStudioSiteResetControlWitnesses;
   /** Every explored act of the build this ledger belongs to, asked whenever a trial act is matched or judged (header, L1); absent, this ledger's own. */
   buildExplored?: () => readonly AutomationStudioSiteResetExploredAct[];
   /** The lists Core cannot read again, shared by every ledger of one build (`../reset-settlement/reach.ts`, t743); absent, this ledger's own. */
   reach?: AutomationStudioSiteResetReach;
 };
 
-/** One explored act as a trial act of the same build is matched against and lent destinations by (header, L1). */
-export type AutomationStudioSiteResetExploredAct = { id: string; consequences: readonly AutomationStudioActionConsequence[]; operation?: string; spot?: AutomationStudioSiteResetSpot; destinations: ReadonlyArray<{ scope: string; group: string }> };
+/**
+ * One explored act as a trial act of the same build is matched against and lent destinations by (header, L1); `witnessed`,
+ * it has a witness of its own -- a list group or an observed toggle -- to lend an action that repeats it (t751 R3).
+ */
+export type AutomationStudioSiteResetExploredAct = { id: string; consequences: readonly AutomationStudioActionConsequence[]; operation?: string; spot?: AutomationStudioSiteResetSpot; destinations: ReadonlyArray<{ scope: string; group: string }>; witnessed: boolean };
 
 /** One act as a ledger recorded it, for its sink. */
 export type AutomationStudioSiteResetRecordedAct = AutomationStudioSiteResetNamedAct & { owner?: string; ref: string; undoable: boolean };
@@ -228,6 +253,7 @@ export type AutomationStudioSiteResetRecordedAct = AutomationStudioSiteResetName
 export class AutomationStudioSiteResetLedger implements AutomationStudioSiteResetCalls {
   private readonly acts: Act[] = [];
   private readonly createBaselines: AutomationStudioSiteResetCreateBaselines;
+  private readonly controlWitnesses: AutomationStudioSiteResetControlWitnesses;
   private next = 1;
   /** The complete lists this ledger has seen: originals and latest reads (`../reset-settlement/observations.ts`). */
   private readonly seen = new AutomationStudioSiteResetObservations();
@@ -247,6 +273,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
   constructor(options: AutomationStudioSiteResetLedgerOptions = {}) {
     this.options = { ...options };
     this.createBaselines = options.createBaselines ?? new AutomationStudioSiteResetCreateBaselines();
+    this.controlWitnesses = options.controlWitnesses ?? new AutomationStudioSiteResetControlWitnesses();
     this.judge = new AutomationStudioSiteResetSettlementJudge({
       seen: this.seen,
       tracker: this.tracker,
@@ -276,7 +303,35 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     this.reachable = { acts: this.acts, seen: this.seen, clock: () => this.clock, claimable: (act) => this.claimable(act), lent: (act) => this.judge.lent(act), toggle: (act) => this.judge.toggleOf(act), differing: (act) => this.judge.differing(act), described: (scope) => this.createBaselines.described(scope) };
   }
 
-  createBaseline(declared: Pick<AutomationStudioSiteResetDeclared, "effect" | "consequences" | "control">, reference: unknown) { return this.createBaselines.check(declared, reference); }
+  /** The exploration door of the one admission (header, t751 R3), with the build's explored acts an action may repeat. */
+  createBaseline(declared: Pick<AutomationStudioSiteResetDeclared, "effect" | "consequences" | "control">, reference: unknown) {
+    const verdict = admission({ declared, reference, door: "exploration", requireIdentity: this.options.owner !== undefined }, { ...this.createBaselines.known(), controlOriginal: (control) => this.controlWitnesses.proven(control), controlOriginalCanBeRead: (control) => this.controlWitnesses.canRead(control), explored: () => this.buildExplored() });
+    return verdict.kind === "admit" ? { kind: "admit" as const } : verdict;
+  }
+
+  /**
+   * The step door of the one admission (header, t751 R3): asked of a plan step's declaration at submission, it answers the
+   * witness stamp the step's node carries, or none where the step has no witness or needs none (refusing is the trial's).
+   */
+  admitStep(declared: AutomationStudioSiteResetAdmissionDeclared, operation?: string): AutomationStudioSiteResetWitnessStamp | undefined {
+    const verdict = admission({ declared, door: "step", requireIdentity: this.options.owner !== undefined, ...(operation !== undefined ? { operation } : {}) }, { ...this.createBaselines.known(), controlOriginal: (control) => this.controlWitnesses.proven(control), controlOriginalCanBeRead: (control) => this.controlWitnesses.canRead(control), explored: () => this.buildExplored() });
+    if (verdict.kind !== "admit" || !verdict.witness) return undefined;
+    if (verdict.witness.via === "own_list") {
+      const original = this.createBaselines.described(verdict.witness.scope);
+      return original ? { via: "destination", ref: original.ref } : undefined;
+    }
+    if (verdict.witness.via === "control") return this.controlWitnesses.stamp(declared.control);
+    if (verdict.witness.via === "repeats") {
+      const repeatedId = verdict.witness.act;
+      const repeated = this.buildExplored().find((act) => act.id === repeatedId);
+      if (repeated && !repeated.destinations.length) {
+        // A control-only repeat needs the exact retained place, not merely another control about the same subject.
+        if (declared.control.place === undefined || declared.control.resource === undefined || declared.control.place !== repeated.spot?.place || declared.control.resource !== repeated.spot.resource) return undefined;
+        return this.controlWitnesses.stamp(declared.control);
+      }
+    }
+    return stampOf(verdict.witness);
+  }
 
   destinationReceipts() { return this.createBaselines.receipts(); }
 
@@ -292,11 +347,13 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
 
   /** A passive whole-scope observation; the first read is a baseline only for later acts. It feeds the lists, the controls and the clock's freshness (header, L1). */
   observed(read: AutomationStudioSiteResetRead, baseline = true): void {
+    this.controlWitnesses.observed(read);
     // A read after an act showing one of its witnesses changed is a change seen (`restored`, not `unchanged`): judged on the
     // latest read before this one too, so a witness named since that read counts what it showed.
     for (const act of this.acts) if (this.open(act)) this.judge.evaluate(act);
     this.createBaselines.observed(read, baseline);
-    this.seen.observe(read, baseline, this.acts.length, this.clock);
+    // The per-group seal (header, t751 R1): a group an act touched, or every group once one is sealed, takes no original.
+    this.seen.observe(read, baseline, this.acts.length, this.clock, (group) => this.createBaselines.closed(group));
     this.tracker.read(read, this.clock);
     // A read reached this ledger: a look of Core's that ran meanwhile landed (`../reset-settlement/judge.ts`, t743).
     this.judge.read();
@@ -314,7 +371,10 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     const act = this.acts.find((entry) => entry.id === actId);
     // The destinations its repeats lend it, as the settlement gathers them, for a removal on a destination it named (`./undo-admission.ts`, t743).
     if (act) act.lent = this.judge.lent(act);
-    return this.undos.target(actId, declared);
+    const answer = this.undos.target(actId, declared);
+    // A subject undo it was admitted on names a list it could change (header, t751 R1).
+    if (act && answer.kind === "admit") this.locate(act);
+    return answer;
   }
 
   explored(call: AutomationStudioSiteResetExplored): void {
@@ -327,6 +387,8 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       this.undos.ran({ ...call, undoes: call.undoes });
       // An unasked subject undo that landed is spent whatever class it declared: one on a destination the act named may declare `modify_existing` (`./undo-admission.ts`, t743).
       if (undone && call.on === "subject" && undone.attempts > attempts) undone.spent = true;
+      // A list named for it under `undoes` is one it could change (header, t751 R1).
+      if (undone) this.locate(undone);
       return;
     }
     if (!pressed) return;
@@ -342,6 +404,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     // Its own press, filled by the next read of its page: a toggle only for exactly `modify_existing` (header, L1).
     const press = declared.control.place === undefined ? undefined : this.tracker.press(declared.control.place, this.clock);
     if (press && onlyModifies(declared.consequences)) act.press = press;
+    this.locate(act);
   }
 
   /** The act the exploration call `callId` made, if it made one. */
@@ -351,7 +414,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
 
   /** This ledger's explored acts, each with every destination named for it so far (header, L1). */
   exploredActs(): AutomationStudioSiteResetExploredAct[] {
-    return this.acts.filter((act) => act.call !== undefined).map((act) => ({ id: act.id, consequences: act.consequences, ...(act.operation ? { operation: act.operation } : {}), ...(act.spot ? { spot: act.spot } : {}), destinations: [...act.destinations] }));
+    return this.acts.filter((act) => act.call !== undefined).map((act) => ({ id: act.id, consequences: act.consequences, ...(act.operation ? { operation: act.operation } : {}), ...(act.spot ? { spot: act.spot } : {}), destinations: [...act.destinations], witnessed: this.witnessGroups(act).length > 0 || this.judge.toggleOf(act) !== undefined }));
   }
 
   /** Where `act` was made: its page before it, what it changed there, and the items it created. Nothing changed there, nothing to look for. */
@@ -359,6 +422,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     const entry = this.acts.find((candidate) => candidate.id === act);
     if (!entry) return;
     witnessTransfer(entry, place.collections, this.seen, this.acts.indexOf(entry) + 1);
+    if (entry.transfer) this.locate(entry);
     if (place.created?.length) entry.createdItems = [...new Set([...entry.createdItems, ...place.created])];
     if (place.changed.length > 0) {
       entry.place = { state: structuredClone(place.state), location: place.location, changed: [...place.changed], ...(place.lines ? { lines: { gone: [...place.lines.gone], added: [...place.lines.added] } } : {}) };
@@ -474,16 +538,21 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       // Where its step's control sat and what it made, as exploration records an act (header, t598).
       const recorded = this.record(did, `${trialRunId ?? "trial"}#step-${act.step}`, act.consequences, undefined, spotOf(act.spot), this.options.possible === true && act.possible === true, act.created, act.control, act.definitionId);
       const place = act.spot?.place;
+      // Whether the build pressed this step's own item (its page) at that place before: then its diff's before is no original (t751 R1).
+      const itemPressed = place !== undefined && act.controls !== undefined && this.tracker.pressedAt(act.controls.page, place);
       // Its step's press at its control's place, read on both sides by the step's own diff, with where its page is (L1, d7).
       const press = place !== undefined && act.controls ? this.tracker.landed(act.controls.page, place, act.controls.before, act.controls.after, this.clock, act.controls.location) : undefined;
+      // A lasting act at a place its step read no controls at: a press there, so no later read seeds that place's start (t751 R1).
+      if (place !== undefined && !act.controls && lastingClasses(act.consequences)) this.tracker.touched(place);
       if (!recorded) continue;
-      // Where its own page is: lists read there may be adopted while it has no witness (`../reset-settlement/judge.ts`, t743).
-      const pageLocation = act.controls ? act.controls.location ?? this.tracker.location(act.controls.page) : undefined;
-      if (pageLocation) recorded.pageLocation = pageLocation;
+      // The project admitted this scoped witness before execution; an incomplete diff cannot downgrade it to legacy.
+      if (this.options.owner !== undefined && stampValid(act.witness) && act.witness.via !== "legacy" && lastingClasses(act.consequences)) recorded.strictReset = true;
       witnessTransfer(recorded, act.collections, this.seen, this.acts.indexOf(recorded) + 1);
       if (press && onlyModifies(act.consequences)) recorded.press = press;
       // The explored acts it repeats lend it their destinations, named whenever (header, L1).
       if (recorded.strictReset) recorded.repeats = explored.filter((other) => repeats({ consequences: act.consequences, definitionId: act.definitionId, spot: act.spot }, { consequences: other.consequences, operation: other.operation, spot: other.spot })).map((other) => other.id);
+      this.stamped(recorded, act.witness, itemPressed ? undefined : act.controls);
+      this.locate(recorded);
     }
     // A possibly lasting act is not answered as left: it is answered under `possiblyInPlace` (header).
     return this.acts.filter((act) => act.undoable && !act.undone && !act.possible).map((act) => this.named(act));
@@ -524,6 +593,64 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
   /** Whether any read after the act ever showed a change it made, for words said about it (t738); undefined for an id this ledger never gave. */
   changeSeen(actId: string): boolean | undefined {
     return this.acts.find((entry) => entry.id === actId)?.changeSeen;
+  }
+
+  /**
+   * What a trial act takes of its step's witness stamp (header, t751 R3): a destination ref attaches that issued list, a
+   * repeated explored act lends its witnesses; a control receipt retains its immutable pre-act counts even without the
+   * optional runtime diff. Own-list admission emits a destination stamp. Bare standalone stamps add no authority.
+   *
+   * A control receipt covers only the item it was read on (t751 final acceptance, photo-dialog-act). Items may share
+   * their control's place token, so a looped step carries the explored item's receipt into every pass: a pass whose
+   * own diff (`pass`) shows it pressed another item -- another location, or another page where none is given -- is
+   * witnessed instead by that item's own control as the pass read it just before its press (R1, per pass), judged
+   * only on reads at its location. `pass` is withheld where the build had already pressed that item there: a later
+   * before is never an original (R1), and the receipt stands as it did.
+   */
+  private stamped(act: Act, witness: unknown, pass?: AutomationStudioSiteResetTrialAct["controls"]): void {
+    if (!stampValid(witness)) return;
+    if (witness.via === "destination") {
+      const named = this.createBaselines.retained(witness.ref);
+      if (named && !act.destinations.some((entry) => entry.scope === named.scope)) act.destinations.push(named);
+    } else if (witness.via === "repeats" && act.strictReset && !act.repeats.includes(witness.act)) {
+      act.repeats.push(witness.act);
+    } else if (witness.via === "control") {
+      const stamped = this.controlWitnesses.resolve(witness.ref);
+      const otherItem = stamped !== undefined && pass !== undefined && (pass.location !== undefined && stamped.location !== undefined ? pass.location !== stamped.location : pass.page !== stamped.page);
+      const original = otherItem && pass ? { resource: stamped.resource, page: pass.page, place: stamped.place, before: { ...pass.before }, ...(pass.location !== undefined ? { location: pass.location, at: pass.location } : {}) } : stamped;
+      if (original) {
+        act.controlOriginal = original;
+        act.spot = { ...act.spot, resource: original.resource, scope: original.page, place: original.place };
+      }
+    }
+  }
+
+  /**
+   * Where an act's effect may show (header, t751 R1): its witness groups are touched, so no first read of them becomes an
+   * original; an act whose effect location is unknown -- legacy unscoped, or with no list group and no control place of
+   * its own -- seals every group. A possibly lasting act does neither.
+   */
+  private locate(act: Act): void {
+    if (act.possible) return;
+    const resources = [...new Set(act.destinations.map((destination) => this.createBaselines.resourceOf(destination.scope)).filter((resource): resource is string => resource !== undefined))];
+    if (act.spot?.resource !== undefined || !resources.length) this.controlWitnesses.touchedAt(act.spot);
+    else for (const resource of resources) this.controlWitnesses.touchedAt({ resource });
+    const groups = this.witnessGroups(act);
+    if (!act.strictReset || (!groups.length && !(onlyModifies(act.consequences) && act.spot?.place !== undefined))) this.createBaselines.seal();
+    else this.createBaselines.touch(groups);
+  }
+
+  /** The list groups an act counts among its witnesses (header, t751 R1): destinations, those its repeats lend, a transfer's, its subject undo's and its own list read before it. */
+  private witnessGroups(act: Act): string[] {
+    const groups = [...act.destinations, ...this.judge.lent(act)].map((entry) => entry.group);
+    if (act.transfer) groups.push(act.transfer.group);
+    if (act.subjectUndo) groups.push(act.subjectUndo.group);
+    const scope = act.spot?.scope;
+    const own = scope === undefined ? undefined : this.seen.originals.get(scope);
+    if (own && own.beforeAct < this.acts.indexOf(act) + 1) groups.push(own.group);
+    const original = scope !== undefined && act.spot?.resource !== undefined ? this.createBaselines.known().original(scope, act.spot.resource) : undefined;
+    if (original) groups.push(original.group);
+    return [...new Set(groups)];
   }
 
   /** The build's explored acts, every brief's in a project build (header, L1). */
@@ -578,7 +705,6 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     // Said as possibly lasting wherever it is named, since some answers carry only what an act did (header).
     const words = lasting ? did || "an act" : `${did || "an act"} (${POSSIBLY_LASTING})`;
     const act: Act = { id, did: words, ref, ...(call ? { call } : {}), ...(control?.trim() ? { control: control.trim() } : {}), ...(operation ? { operation } : {}), ...(spot ? { spot } : {}), createdItems: [...new Set(created)], destinations: [], repeats: [], clock: this.clock, changeSeen: false, strictReset: lasting && (spot?.subject !== undefined || spot?.page !== undefined || spot?.scope !== undefined), consequences: [...consequences], undoable, undone: false, attempts: 0, spent: false, askedFor: 0, kept: false, possible: !lasting };
-    if (lasting) this.createBaselines.seal();
     this.acts.push(act);
     this.next += 1;
     // A possibly lasting act never makes a reset due: it refuses no trial (header).
@@ -619,6 +745,11 @@ function spotOf(spot: AutomationStudioSiteResetSpot | undefined): AutomationStud
   const copied: AutomationStudioSiteResetSpot = {};
   for (const key of ["item", "dialog", "subject", "page", "scope", "resource", "place", "state"] as const) if (spot?.[key] !== undefined) copied[key] = spot[key];
   return Object.keys(copied).length > 0 ? copied : undefined;
+}
+
+/** Whether any class declared is lasting: one the site's controls can reverse, or one none takes back. */
+function lastingClasses(consequences: readonly AutomationStudioActionConsequence[]): boolean {
+  return consequences.some((consequence) => UNDOABLE.has(consequence) || IRREVERSIBLE.has(consequence));
 }
 
 /** Whether an act declared exactly `modify_existing`: the only act a toggle witnesses (header, L1). */

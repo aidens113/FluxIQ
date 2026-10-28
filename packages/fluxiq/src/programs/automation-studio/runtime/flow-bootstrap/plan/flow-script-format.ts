@@ -400,6 +400,16 @@ export const AUTOMATION_STUDIO_FLOW_CONDITION_RULES = [
  * the `extractList.where` one names it in that shape. A Flow that still orders
  * a lasting repeat's rows in the process is refused
  * (`../script-statements/listing-order-in-repeat.ts`).
+ *
+ * **Not every listing can reorder (t751).** The web read hands its rows on in
+ * page order and its `extractList.sort` only orders the saved answer, so the
+ * sentence promised an order no web script could give; photo rerun 5
+ * (`run-mvhibis0-b536958b`) ran out between that advice and its refusal. The
+ * sentence now says a reordering is the listing node's to offer, and what the
+ * page-order case does instead -- narrow with `where`, `repeat most: N`, a
+ * limit of the same N and no sort -- which is what the refusal admits for a
+ * node declaring `answersRows: "page_order"`. Its example stays on a kind of
+ * site no realistic scenario is.
  */
 export const AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT = [
   "Repetitive work is a loop, never the same steps written again. A step starts a span that repeats with lines beside its node:",
@@ -413,7 +423,7 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT = [
   "When a trial says a step in a loop met the site's request to slow down -- its feedback names the pass, the row and the wait -- adapt the Flow rather than send it again: `repeat pace:` of at least that wait on the span's first step. When that step's feedback also lists the notice under `interruptions` with the handle of its way out, `wayOut`, add right after the step, inside the span, an `optional: yes` step that presses that handle, and directly after it a `builtin.timing.wait` step with `only after: <that step's label>` that waits at least the wait the feedback named. A notice listed with no `wayOut` was closed by the run itself: write no step for it, and never close it through any other handle.",
   "A value that changes between rows or runs is bound, never typed in: `$row.<field>` is a field the listing reads, of the row the pass is on, and only inside a repeat over that listing; `$input.<name> = <value>` is a Flow input, written with the value the person gave; `$step.<label>.<output>` is an output of an earlier step, by its label.",
   "The rows a `repeat over` acts on are the rows its listing kept. To act on only some, put the condition on the listing step: `extractList.where: [{\"field\": \"amount\", \"atLeast\": 100}]`.",
-  "A `repeat over` visits its listing's rows in the listing's own order, so `repeat most: N` acts on the first N of that order. To act in another order, put the order on the listing step too, `extractList.sort: [{\"field\": \"due\", \"order\": \"asc\", \"as\": \"date\"}]`, where `order` is asc or desc and `as` is number, date or text: to pay the two oldest unpaid invoices, list the unpaid invoices with that sort, then `repeat over:` them with `repeat most: 2`. A sort or limit in `recordOutput.process` orders only the saved answer, never the rows a repeat visits.",
+  "A `repeat over` visits its listing's rows in the listing's own order, so `repeat most: N` acts on the first N of that order. Whether a listing can hand its rows on in another order is its node's: where it can, put the order on the listing step too, `extractList.sort: [{\"field\": \"due\", \"order\": \"asc\", \"as\": \"date\"}]`, where `order` is asc or desc and `as` is number, date or text: to pay the two oldest unpaid invoices, list the unpaid invoices with that sort, then `repeat over:` them with `repeat most: 2`. Where its node hands the rows on in the order the page shows them, nothing reorders them: keep only the rows to act on with `extractList.where`, act on the first N with `repeat most: N`, and to save only those rows give the listing a limit of the same N and no sort; a refusal of a sort says which kind a listing is. A sort or limit in `recordOutput.process` orders only the saved answer, never the rows a repeat visits.",
   `A where condition, on a listing or in \`recordOutput.process\`, names a column by field and must hold for a row to be kept. ${AUTOMATION_STUDIO_FLOW_CONDITION_RULES}`,
   "Rows a Flow reads are also collected over the whole run, and `recordOutput.process` on the reading step only shapes that saved answer at the end -- keep some, drop repeats, sort, limit -- over the columns it stores. It never changes which rows a repeat visits.",
   "In a record output, a schema field with `handling: \"exclude\"` is never stored, for a value that must not be kept, while `process.columns` keeps a field stored but leaves it out of the answer. A sort or dedupe key must be stored: one the answer should not show stays in the schema and out of `process.columns`.",

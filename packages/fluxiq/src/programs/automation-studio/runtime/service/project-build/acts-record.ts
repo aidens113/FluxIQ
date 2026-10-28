@@ -1,4 +1,5 @@
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
+import type { AutomationStudioSiteResetAdmissionDeclared } from "../../flow-bootstrap/reset-admission/index.ts";
 import type { AutomationStudioSiteResetCalls, AutomationStudioSiteResetProjectLedger, AutomationStudioSiteResetTrialAct } from "../../flow-bootstrap/site-reset/index.ts";
 import { AutomationStudioProjectRecordRefusal, type AutomationStudioProjectBuildActOwner, type AutomationStudioProjectBuildRecordStore, type AutomationStudioProjectBuildRef } from "../../project-agents/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER } from "./supervisor-ledger.ts";
@@ -30,6 +31,9 @@ const LASTING: ReadonlySet<AutomationStudioActionConsequence> = new Set(["create
 /** What a record entry's description may hold. */
 const MAX_DESCRIPTION = 500;
 
+/** A ledger's step admission (t751, R3 door 2), read structurally so a ledger without one compiles and forwards nothing. */
+type StepAdmitting = { admitStep?(declared: AutomationStudioSiteResetAdmissionDeclared, definitionId: string): unknown };
+
 const WRITERS = new WeakMap<AutomationStudioSiteResetProjectLedger, AutomationStudioProjectBuildActsRecord>();
 
 type Records = Pick<AutomationStudioProjectBuildRecordStore, "read" | "recordLastingAct">;
@@ -60,10 +64,12 @@ export class AutomationStudioProjectBuildActsRecord {
     this.sync();
   }
 
-  /** `calls`, with each explored call's declared classes kept and the acts it recorded written. */
+  /** `calls`, with each explored call's declared classes kept and the acts it recorded written; a plan step's admission forwarded to the same ledger (t751). */
   calls(calls: AutomationStudioSiteResetCalls): AutomationStudioSiteResetCalls {
+    const admitting = calls as AutomationStudioSiteResetCalls & StepAdmitting;
     return {
       ...(calls.createBaseline ? { createBaseline: (declared, reference) => calls.createBaseline!(declared, reference) } satisfies Pick<AutomationStudioSiteResetCalls, "createBaseline"> : {}),
+      ...(typeof admitting.admitStep === "function" ? { admitStep: admitting.admitStep.bind(calls) } : {}),
       ...(calls.destinationReceipts ? { destinationReceipts: () => calls.destinationReceipts!() } : {}),
       claim: (undoes, reference) => calls.claim(undoes, reference),
       target: (act, declared) => calls.target(act, declared),

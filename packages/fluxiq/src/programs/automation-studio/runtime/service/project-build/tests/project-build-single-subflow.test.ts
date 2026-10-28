@@ -115,6 +115,7 @@ async function plotBuild() {
     }
     const properties = (loop!.completionSchema.properties ?? {}) as JsonObject;
     const subflowKey = (properties.subflowKey as JsonObject | undefined)?.const as string;
+    if (!evidence.some((entry) => entry.callId === "read-bookings")) return decision({ kind: "tool_call", callId: "read-bookings", toolId: "core.run_node", input: { node: "example.read-bookings", parameters: {}, consequences: [] } });
     const submitted = lastOf(evidence, "core.submit_subflow");
     const tested = lastOf(evidence, "core.test_subflow");
     if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: "submit", toolId: "core.submit_subflow", input: SUBMISSION });
@@ -129,8 +130,10 @@ async function plotBuild() {
   const serviceOptions: AutomationStudioServiceOptions = {
     dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 80, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: {
-      domainId: "isolated", deniedEvidenceKeys: [], resolvePlanNodeParameters: automationStudioTestDeclaredStepResolution,
-      tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }],
+      domainId: "isolated", deniedEvidenceKeys: [],
+      resolvePlanNodeParameters: (input: Parameters<typeof automationStudioTestDeclaredStepResolution>[0]) => automationStudioTestDeclaredStepResolution(input, { name: "Book", kind: "button", scope: "p:bookings", resource: "r:plots", subject: String(input.parameters.plot), page: "s:plots" }),
+      startState: async () => ({ state: {}, differs: [], scope: "p:board", resource: "r:plots", collections: [{ scope: "p:bookings", group: "g:bookings", subjects: [...bookings], states: Object.fromEntries([...bookings].map((plot) => [plot, plot])) }] }),
+      tools: [{ toolId: "core.run_node", description: "Inspect the board", inputSchema: { type: "object" }, effect: "mutate", perCallEffect: true, initialObservation: { input: { node: "example.look", parameters: {}, consequences: [] } } }],
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { bookings: [...bookings] }, effectApplied: false, targetsUnchanged: true })
     } as unknown as NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>,
     hostRuntime: { ...bookingDiffs(bookings), hostResources: host }

@@ -61,7 +61,7 @@ import { combineAutomationStudioRouteConditions, readAutomationStudioRouteCondit
 import type { AutomationStudioFlowBootstrapIssueLocator, AutomationStudioFlowScript, AutomationStudioFlowScriptBlock, AutomationStudioFlowScriptStep } from "./contracts.ts";
 import { isAuthoringConsequenceKey, readAuthoringConsequences } from "./consequences.ts";
 import { authoringError, authoringWarning } from "./issue.ts";
-import { authoringKey, authoringSymbol } from "./keys.ts";
+import { authoringCoreDerivedKey, authoringKey, authoringSymbol } from "./keys.ts";
 import { automationStudioFlowBootstrapWordInstead } from "../parameter-words/index.ts";
 import { matchAuthoringDefinition, matchAuthoringParameter, matchAuthoringParameterContaining, matchAuthoringPort } from "./matching.ts";
 import { normaliseAuthoringNodeParameters } from "./normalise.ts";
@@ -554,7 +554,7 @@ function buildNode(input: {
     let parameter = matchAuthoringParameter(head, input.definition);
     // A key that names no parameter but that exactly one structured parameter
     // declares as one of its own is read as having been written inside it.
-    if (!parameter && !(segments.length === 1 && (OUTPUT_ACTION_WORDS.has(authoringKey(head)) || isAuthoringConsequenceKey(head)))) {
+    if (!parameter && !authoringCoreDerivedKey(head) && !(segments.length === 1 && (OUTPUT_ACTION_WORDS.has(authoringKey(head)) || isAuthoringConsequenceKey(head)))) { // a field only Core derives is never a parameter (`./keys.ts`, t751)
       const inside = matchAuthoringParameterContaining(head, input.definition);
       if (inside) {
         parameter = inside;

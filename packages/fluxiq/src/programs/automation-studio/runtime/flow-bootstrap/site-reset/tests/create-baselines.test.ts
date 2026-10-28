@@ -195,3 +195,82 @@ describe("a creation's destination on its own page (t748)", () => {
     expect(instruction).not.toMatch(/(store|shop|cart|basket|checkout|address|job|save|heart|photo|like|post|friend|order|product|follow|feed|profile|apply|recipe|note|plan)/iu);
   });
 });
+
+// t751 (R1, R3): the global seal is replaced by a per-group one, and `check` is the exploration door of the one admission
+// (`../../reset-admission/`), asked every time. Made-up fixtures: a gallery's walls and a print's own page.
+describe("per-group seal and the admission port (t751)", () => {
+  const SITE = "r:gallery";
+  const wall = (group: string, scope: string, resource = SITE): AutomationStudioSiteResetRead => ({ state: {}, differs: [], scope: `p:${group}-page`, resource, location: `loc:${group}`, collections: [
+    { scope, group, subjects: ["s:sketch"], states: { "s:sketch": "v:sketch" } }
+  ] });
+  const pin = (over: Partial<AutomationStudioSiteResetDeclared["control"]> = {}, consequences: AutomationStudioSiteResetDeclared["consequences"] = ["modify_existing"]): AutomationStudioSiteResetDeclared => ({ permitted: true, effect: "mutate", consequences, control: { name: null, kind: null, subject: "s:print", page: "s:print", scope: "p:print-page", resource: SITE, ...over }, verb: "press" });
+  const WITNESS = { kind: "refused", evidence: { code: "candidate.reset_witness_required", failed: "no_witness", canMeet: "another_page" } };
+
+  it("a list first read after an act that touched another group still becomes an original and issues a ref", () => {
+    const baseline = new AutomationStudioSiteResetCreateBaselines();
+    baseline.observed(wall("g:east", "p:east"));
+    baseline.receipts();
+    baseline.touch(["g:east"]);
+    baseline.observed(wall("g:west", "p:west"));
+    expect(baseline.receipts()).toEqual([{ ref: "destination-2", ordinal: 1, count: 1 }]);
+    expect(baseline.check(pin(), "destination-2")).toEqual({ kind: "admit" });
+  });
+
+  it("one first read in a touched group does not, and the originals already there stay as they were", () => {
+    const baseline = new AutomationStudioSiteResetCreateBaselines();
+    baseline.touch(new Set(["g:west"]));
+    baseline.observed(wall("g:west", "p:west"));
+    expect(baseline.receipts()).toEqual([]);
+    expect(baseline.check(pin(), "destination-1")).toMatchObject({ kind: "refused", evidence: { code: "candidate.reset_destination_unissued" } });
+    const kept = new AutomationStudioSiteResetCreateBaselines();
+    kept.observed(wall("g:east", "p:east"));
+    kept.touch(["g:east"]);
+    kept.observed(wall("g:east", "p:east"));
+    expect(kept.receipts()).toEqual([{ ref: "destination-1", ordinal: 1, count: 1 }]);
+  });
+
+  it("an act of unknown location still seals every group", () => {
+    const baseline = new AutomationStudioSiteResetCreateBaselines();
+    baseline.seal();
+    baseline.observed(wall("g:west", "p:west"));
+    expect(baseline.receipts()).toEqual([]);
+  });
+
+  it("after an earlier lasting act a press with no witness is still refused (the seal no longer admits it)", () => {
+    const baseline = new AutomationStudioSiteResetCreateBaselines();
+    expect(baseline.check(pin(), undefined)).toMatchObject(WITNESS);
+    baseline.seal();
+    expect(baseline.check(pin(), undefined)).toMatchObject(WITNESS);
+    expect(baseline.check({ ...pin({}, ["create_new"]), control: { name: null, kind: null, item: "i:untitled", page: "s:print", scope: "p:print-page", resource: SITE } }, undefined)).toMatchObject(WITNESS);
+    // And a creation with no original at all is met on another page, never by no call (t751: a list can always still be read).
+    expect(baseline.check(pin({}, ["create_new"]), undefined)).toMatchObject({ kind: "refused", evidence: { code: "candidate.create_baseline_required", canMeet: "another_page" } });
+  });
+
+  it("admits a press that repeats a witnessed explored act, through the explored acts it is handed", () => {
+    const baseline = new AutomationStudioSiteResetCreateBaselines();
+    const explored = (witnessed: boolean) => () => [{ id: "act-1", consequences: ["modify_existing" as const], operation: "gallery.pin", spot: { subject: "s:print", page: "s:print", resource: SITE }, witnessed }];
+    expect(baseline.check(pin(), undefined, explored(true))).toEqual({ kind: "admit" });
+    expect(baseline.check(pin(), undefined, explored(false))).toMatchObject(WITNESS);
+  });
+
+  it("hands the admission its part of the port: refs with destinations and originals, issued refs and this read's refs", () => {
+    const baseline = new AutomationStudioSiteResetCreateBaselines();
+    const known = baseline.known();
+    expect(known.unissued(undefined)).toBe(false);
+    expect(known.unissued("destination-1")).toBe(true);
+    baseline.observed(wall("g:east", "p:east"));
+    expect(known.here()).toEqual(["destination-1"]);
+    expect(known.issuedRefs()).toEqual([]);
+    baseline.receipts();
+    expect(known.unissued("destination-1")).toBe(false);
+    expect(known.issuedRefs()).toEqual([{ ref: "destination-1", count: 1, location: "loc:g:east" }]);
+    expect(known.destination(pin(), "destination-1")).toEqual({ ref: "destination-1", scope: "p:east", group: "g:east" });
+    expect(known.destination(pin(), undefined)).toBeUndefined();
+    expect(known.destination(pin({ scope: "p:east" }, ["create_new"]), undefined)).toEqual({ ref: "destination-1", scope: "p:east", group: "g:east" });
+    expect(known.original("p:east", SITE)).toEqual({ scope: "p:east", group: "g:east" });
+    expect(known.original("p:east", "r:elsewhere")).toBeUndefined();
+    expect(known.original("p:west", SITE)).toBeUndefined();
+    baseline.observed({ state: {}, differs: [], scope: "p:print-page", resource: SITE, collections: [] });
+    expect(known.here()).toEqual([]);
+  });
+});

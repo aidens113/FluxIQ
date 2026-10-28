@@ -436,6 +436,8 @@ export class AutomationStudioFlowCandidateTrialGate {
     signal.throwIfAborted();
     // An offline trial has no live effects: no start hook, no reset, nothing left on the site (header, Decision 6).
     const offline = automationStudioCandidateTrialOffline(trial.port);
+    const admission = this.input.reset?.admit?.(automationStudioSiteResetTrialSteps(latest.buildPlan?.plan?.subflows ?? []));
+    if (admission?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: admission.evidence, effectApplied: false, targetsUnchanged: true, resultCode: admission.evidence.code, resultReason: RETEST_REASON };
     // The deployment's start hook first, so the check after it finds the site put back (header).
     const prepared = !offline && this.input.reset && trial.port.prepareStart ? await trial.port.prepareStart({ revision: latest.revision, digest: latest.digest, signal }) : "none";
     signal.throwIfAborted();
@@ -794,3 +796,4 @@ function deepFreeze<T>(value: T): T {
   if (value && typeof value === "object") { for (const entry of Object.values(value)) deepFreeze(entry); Object.freeze(value); }
   return value;
 }
+import { automationStudioSiteResetTrialSteps } from "../reset-admission/index.ts";
