@@ -23,7 +23,7 @@ export function ConversationActionCard(props: {
   const { action } = props;
   const said = conversationStepOutcomeWords(action, props.live);
   const Icon = CONVERSATION_ACTION_ICONS[action.kind];
-  const name = ACTIVITY_ACTION_NAMES[action.kind];
+  const name = action.name ?? ACTIVITY_ACTION_NAMES[action.kind];
   const target = action.target ?? "the page";
   return (
     <div

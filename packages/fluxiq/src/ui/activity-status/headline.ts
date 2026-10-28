@@ -55,6 +55,7 @@
 //   "Fixing your Flow" (t753: a repair's headline stayed up through a reset).
 
 import type { ActivityDisplay } from "./activity-display.ts";
+import { ACTIVITY_DOUBTED_HEADLINE } from "./doubted-ending.ts";
 import type { ActivityHostWords } from "./host-words.ts";
 import { ACTIVITY_PAGE_PREPARATION_WORDS, ACTIVITY_RECORDED_CHECK_HEADLINE } from "./steady/index.ts";
 
@@ -64,6 +65,8 @@ export type ActivityWaitReason = "answer" | "check" | "paused";
 export type ActivityHeadlineSituation = {
   /** A terminal cancellation reported by Core. */
   readonly stopped?: boolean;
+  /** A failed run's result check only doubted its rows and the repair changed nothing (`doubted-ending.ts`): the saved Flow is unchanged. */
+  readonly doubted?: boolean;
   /** Core is repairing the Flow in this unit of work. */
   readonly repairing?: boolean;
   /** A build is test-running its Flow, or a part of it, on the site; outweighs `repairing`. */
@@ -110,6 +113,7 @@ export function activityHeadline(kind: ActivityDisplay["subjectKind"], outcome: 
     return reason === "paused" ? PAUSED : words[reason];
   }
   if (outcome === "done") return DONE[kind];
+  if (outcome === "failed" && kind === "run" && situation.doubted) return ACTIVITY_DOUBTED_HEADLINE;
   if (outcome === "failed") return kind === "run" && situation.repairing && !situation.testing ? REPAIR_FAILED : FAILED[kind];
   if (situation.preparing) return ACTIVITY_PAGE_PREPARATION_WORDS;
   if (situation.checkingRecording) return ACTIVITY_RECORDED_CHECK_HEADLINE;

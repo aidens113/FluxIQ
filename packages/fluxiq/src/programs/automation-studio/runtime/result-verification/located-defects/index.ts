@@ -62,9 +62,23 @@
 // rows (`../refuted-no/record.ts`), so a kept row of a test is found, and a row
 // its answer holds is never found missing.
 //
+// **And never by the one value a condition tested and left it out for (t785).**
+// Run `run-mvskodlp-9966d618`: a read kept the rows whose column held one of
+// the values the Flow wrote; both judges of a correct result called a row it
+// left out missing, quoting that row's own value in the tested column, and
+// t771's cell check located it -- the cell said it. The defect only restated
+// that the judge disagreed with the condition's list. Where the row was left
+// out by one `equals` condition of that column alone and the request's own
+// words do not say the quoted value, the defect is not located, in Core's
+// words naming the condition (`./tested-value-only.ts`); where the request
+// says it, it is located as before.
+//
 // What a no whose defects Core finds none of comes to is `../unsupported-no.ts`.
 
 export * from "./act-located.ts";
 export * from "./act-steps.ts";
+export * from "./condition-equals.ts";
 export * from "./row-cells.ts";
+export * from "./tested-cell.ts";
+export * from "./tested-value-only.ts";
 export * from "./located-defects.ts";

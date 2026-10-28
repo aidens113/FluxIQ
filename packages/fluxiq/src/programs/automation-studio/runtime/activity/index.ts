@@ -50,6 +50,7 @@ export {
   automationStudioActivityHumanLabel,
   automationStudioActivityIssuesOf,
   automationStudioActivityIssueWords,
+  AUTOMATION_STUDIO_ACTIVITY_NOTHING_LEFT,
   automationStudioActivityLeftTold,
   automationStudioActivityPersonWords,
   automationStudioActivityReasonText,

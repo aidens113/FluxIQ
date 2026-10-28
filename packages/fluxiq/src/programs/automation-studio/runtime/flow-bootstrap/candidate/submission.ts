@@ -10,7 +10,7 @@ import { automationStudioInstructedActOptionalScriptIssues } from "../instructed
 // Its own barrel, not result-verification's, whose reads import flow-bootstrap back (a module cycle).
 import { automationStudioResultKeptConditionsDropped, type AutomationStudioResultKeptConditionDrop, type AutomationStudioResultKeptConditionsCarrier } from "../../result-verification/standing-no/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
-import { automationStudioFlowPlanToggleSteps, automationStudioFlowScriptWayOutIssues, type AutomationStudioExploredToggle } from "../script-statements/index.ts";
+import { automationStudioFlowPlanListedValuesAdvice, automationStudioFlowPlanToggleSteps, automationStudioFlowScriptWayOutIssues, type AutomationStudioExploredToggle } from "../script-statements/index.ts";
 import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission, AutomationStudioFlowCandidateSubmissionHistory, AutomationStudioCandidateOriginalSourceBinding } from "./contracts.ts";
 import { automationStudioCandidateFingerprint as fingerprint } from "./digest.ts";
 import { AutomationStudioCandidateKeptStepHint } from "./kept-step-hint.ts";
@@ -243,7 +243,9 @@ export class AutomationStudioFlowCandidateSubmissionController {
     this.accepted.push(structuredClone(candidate));
     this.currentText = text;
     const handleViews = (verdict.handleViews ?? []).map((view) => ({ node: view.node, handle: view.handle, view: view.view, location: view.location }));
-    return { ok: true, candidate, handleViews };
+    // Advice, never a refusal: a condition listing values the request never says (t785, `../script-statements/listed-values-advice.ts`).
+    const advice = automationStudioFlowPlanListedValuesAdvice(plan.plan, this.input.instructionText);
+    return { ok: true, candidate, handleViews, ...(advice.length ? { advice } : {}) };
   }
 
   /**

@@ -1,11 +1,7 @@
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import type { AutomationStudioResultNoRecord } from "../refuted-no/index.ts";
 import { automationStudioRequestRowLabel } from "../request-rows/index.ts";
-
-/** A left-out row's tested value said after its label (`../read-account/alone-rows.ts`): `label — column: value`. */
-const SAID_VALUE = / — ([\p{L}\p{N}_.$@-]{1,64}): (.+)$/su;
-/** What an empty tested value reads as (`../read-account/alone-rows.ts`). */
-const NO_VALUE = "(no value)";
+import { automationStudioResultLeftOutTestedCell as testedCell } from "./tested-cell.ts";
 
 /**
  * Each row a read left out, by its folded label, with every record of its own
@@ -39,12 +35,4 @@ export function automationStudioResultLeftOutRowCells(
 /** A label as left-out labels are looked up: lower case, each run of spaces one, no closing stop. */
 export function automationStudioResultLeftOutLabelKey(label: string): string {
   return label.toLowerCase().replace(/\s+/gu, " ").replace(/[\s.,;:]+$/u, "").trim();
-}
-
-/** The one tested value a row is said with, as a cell; nothing where it is said by its label alone. */
-function testedCell(said: string): Record<string, string> | undefined {
-  const found = SAID_VALUE.exec(said);
-  if (!found) return undefined;
-  const value = found[2]!.trim();
-  return { [found[1]!]: value === NO_VALUE ? "" : value };
 }

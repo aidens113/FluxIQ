@@ -40,6 +40,8 @@ export * from "./handler-blocks.ts";
 // listing that sorts or limits only its saved answer. `./loop-body.ts`, which it shares with the
 // replace check, is left out like `./statement-refusal.ts`: it is how both read, not what they offer.
 export * from "./listing-order-in-repeat.ts";
+// t785: advice, never a refusal, for a condition that lists literal values the request never says (`./listed-values-advice.ts`), given beside an accepted submission.
+export * from "./listed-values-advice.ts";
 export * from "./part-port-name.ts";
 export * from "./record-replace-in-repeat.ts";
 export * from "./repeat-bound.ts";
