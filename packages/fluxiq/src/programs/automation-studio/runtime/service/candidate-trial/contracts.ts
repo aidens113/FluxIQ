@@ -55,6 +55,13 @@ export type AutomationStudioCandidateTrialRecord = {
   digest: string;
   /** The trial's own runtime session; absent when the start hook failed before one opened. */
   trialRunId?: string;
+  /**
+   * The gateway trace this trial's run was captured in, when tracing was on
+   * (t769): a build later runs an offline trial against its latest live trace
+   * of a scope, and the trace store reads only by id. Absent without tracing,
+   * and when nothing ran.
+   */
+  traceId?: string;
   start: AutomationStudioCandidateTrialStart;
   execution: "succeeded" | "failed" | "cancelled" | "not_run";
   verdict: AutomationStudioCandidateTrialVerdict;

@@ -105,6 +105,8 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: { m
     ...(trustedClientTtlMs ? { trustedClientTtlMs } : {}),
     ...(process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL ? { publicUrl: process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL } : {})
   });
+  // Offline-first trials in builds (trace plan P6, D44): on whenever tracing is, over this gateway and the trace host's stores; `FLUXIQ_OFFLINE_TRIALS=0` turns them off. The trace host's `uninstall` removes them with its episodes.
+  gatewayTrace.installOfflineTrials(clientGateway);
   const automationStudioClientGateway = new AutomationStudioClientGatewayBridge({ gateway: clientGateway, automationStudio });
   // A late action result is put on its run's evidence and never applied. The write is awaited, so a failed one is audited by the gateway (`command.late_result_unrecorded`), never left unhandled.
   clientGateway.onLateActionResult(async (late) => {

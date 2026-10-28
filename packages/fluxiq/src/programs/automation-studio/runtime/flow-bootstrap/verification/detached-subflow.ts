@@ -65,6 +65,7 @@ import {
   type AutomationStudioFlowBootstrapSubflow,
   type AutomationStudioFlowBuildPlan
 } from "../plan/index.ts";
+import { runAutomationStudioActivityPreparation } from "../../activity/step/index.ts";
 import { automationStudioArrivalPlanNode } from "./arrival-node.ts";
 import type { AutomationStudioCandidateExecutionReceipt, AutomationStudioCandidateStartReceipt, AutomationStudioCandidateVerificationIdentity } from "./contracts.ts";
 import type { runAutomationStudioDetachedCandidate } from "./detached-execution.ts";
@@ -220,7 +221,8 @@ export async function runAutomationStudioDetachedSubflow(input: AutomationStudio
   }
   let before: Ran | undefined;
   if (calls) {
-    before = await run(validated[0]!);
+    // The predecessors' call only gets the page ready for the target: its steps say so, never "testing" (t769, round 6).
+    before = await runAutomationStudioActivityPreparation(async () => await run(validated[0]!));
     const entry = preparedEntry(before.trace, before.candidateGraphs, keys);
     if (before.receipt.status !== "succeeded" || !entry.prepared) return answered(before, { prepared: false, ...(entry.failed ? { failed: entry.failed } : {}) });
   }

@@ -19,7 +19,9 @@ import type { AutomationStudioProjectDispatchWholeTrial } from "../dispatch/inde
 //   read it as they read any subflow trial.
 // - **The start hook still runs first.** The scoped port's `prepareStart` is
 //   kept, so the brief's gate runs the deployment's start hook ahead of its
-//   own site reset, as before (user, 2026-10-12).
+//   own site reset, as before (user, 2026-10-12). It does so even for a test
+//   the whole gate then answers from the recording (P6, D48), which it cannot
+//   know beforehand; the answer's `checkedAgainst` is handed through unchanged.
 // - **A test that did not run is no verdict.** A refused whole test is handed
 //   to the gate as a trial its port did not run (`notRun`,
 //   `flow-bootstrap/subflow-candidate/subflow-trial-gate.ts`), which the gate

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { automationStudioActivityPreparing } from "../../../activity/step/index.ts";
 import type { JsonValue } from "../../../../../../core/index.ts";
 import { createBlankAutomationStudioFlowArtifact } from "../../../../model/index.ts";
 import { automationNodeStateBinding, AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
@@ -178,6 +179,18 @@ describe("detached subflow partial trial", () => {
       expect(result.graph?.nodes.some((node) => node.id.includes(".finish."))).toBe(true);
       expect(result.graph?.nodes.some((node) => node.id.includes(".subflow-trial-root."))).toBe(true);
       expect(accepted.reads()).toBe(0);
+    });
+
+    it("runs the predecessor's call as getting the page ready and the target as its own test (truthful labels, t769)", async () => {
+      const input = routerRun(true);
+      const inner = input.options!.nativeNodeExecutor!;
+      const marks: Array<[JsonValue, boolean]> = [];
+      input.options!.nativeNodeExecutor = async (args) => {
+        marks.push([args.node.parameterValues?.value ?? null, automationStudioActivityPreparing()]);
+        return await inner(args);
+      };
+      await runAutomationStudioDetachedSubflow(input);
+      expect(marks).toEqual([["hub", true], ["done", false]]);
     });
 
     it("never starts the target's run when its predecessor fails", async () => {

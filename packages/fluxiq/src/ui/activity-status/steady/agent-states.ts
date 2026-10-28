@@ -15,6 +15,7 @@ import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { CandidateTrial } from "../candidate-trial.ts";
 import { UnitSituation } from "../unit-situation.ts";
 import { PagePreparation } from "./page-preparation.ts";
+import { RecordedCheck } from "./recorded-check.ts";
 import { RunCount } from "./run-count.ts";
 
 /** One agent's state within a unit of work. */
@@ -22,6 +23,8 @@ export type AgentState = {
   readonly situation: UnitSituation;
   readonly trial: CandidateTrial;
   readonly preparation: PagePreparation;
+  /** A test checked against the recorded run (t769 b13). */
+  readonly recorded: RecordedCheck;
   readonly count: RunCount;
 };
 
@@ -54,7 +57,7 @@ export class AgentStates {
     if (key !== UNIT && event.detail?.kind === "note" && event.detail.project?.kind === "brief") this.states.get(UNIT)?.situation.endRepair();
     let state = this.states.get(key);
     if (state === undefined) {
-      state = { situation: new UnitSituation(), trial: new CandidateTrial(), preparation: new PagePreparation(), count: new RunCount() };
+      state = { situation: new UnitSituation(), trial: new CandidateTrial(), preparation: new PagePreparation(), recorded: new RecordedCheck(), count: new RunCount() };
       this.states.set(key, state);
     }
     return state;

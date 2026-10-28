@@ -82,6 +82,7 @@ import { createHash } from "node:crypto";
 import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import type { AutomationStudioCandidateTrialAct, AutomationStudioCandidateTrialRequest, AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
 import { runAutomationStudioDetachedCandidate, type AutomationStudioCandidateStartReceipt, type AutomationStudioCandidateVerificationIdentity } from "../../flow-bootstrap/verification/index.ts";
+import { AutomationStudioGatewayTraceInstallation } from "../../gateway-trace/index.ts";
 import { AUTOMATION_STUDIO_GATEWAY_TRACE_CONTEXT, withAutomationStudioGatewayTraceTrial } from "../../gateway-trace/wiring/index.ts";
 import { automationStudioEnvironmentExecutorOptions, automationStudioLiveRunEnvironment, type AutomationStudioRunEnvironment } from "../../environment/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
@@ -134,7 +135,12 @@ async function trialIn(environment: AutomationStudioRunEnvironment, request: Aut
   // The trial's episode opens only now, around its own run: the start above stays in the build's trace (header, P3).
   const context = (runId: string) => ({ schema: AUTOMATION_STUDIO_GATEWAY_TRACE_CONTEXT.candidateTrial, value: { kind: "candidate_trial", runId, candidateId: request.candidateId, revision: request.revision, digest: request.digest, start: start.status } });
   return await withAutomationStudioGatewayTraceTrial({ projectId: ports.projectId, flowId: ports.flowId, prefix: "trial", newRunId: ports.newRunId, environment, context },
-    async (traced) => await runIn(environment, request, ports, start, traced?.() ?? ports.newRunId?.() ?? environment.newRunId("trial")));
+    async (traced) => {
+      // The trace this run is captured in, read inside the episode it opened; none without tracing (t769).
+      const traceId = AutomationStudioGatewayTraceInstallation.current()?.current()?.traceId;
+      const outcome = await runIn(environment, request, ports, start, traced?.() ?? ports.newRunId?.() ?? environment.newRunId("trial"));
+      return traceId === undefined ? outcome : { ...outcome, record: { ...outcome.record, traceId } };
+    });
 }
 
 /** The trial's own run from its start, under `runId`: its session, the detached run, its end and its judgement (header). */

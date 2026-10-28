@@ -15,6 +15,7 @@ import { AutomationStudioSiteResetProjectLedger } from "../../../flow-bootstrap/
 import type { AutomationStudioProjectSupervisorContext } from "../context.ts";
 import { AutomationStudioProjectSupervisorState } from "../state.ts";
 import { AutomationStudioProjectSupervisorWholeTrial } from "../whole-trial.ts";
+import { AutomationStudioFlowCandidateTrialGate, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialRequest, type AutomationStudioFlowCandidate } from "../../../flow-bootstrap/candidate/index.ts";
 
 const TWO_PART = planInput([subflow("find_titles", ["p1"], { inputs: ["author"], outputs: ["titles"] }), subflow("place_hold", ["p2"], { inputs: ["titles"], outputs: ["shelf"] })], taskSpecInput([["p1", FIND, []], ["p2", HOLD, ["create_new"]]]));
 const BUILDS = [brief("find_titles", ["p1"]), brief("place_hold", ["p2"], ["find_titles"], { permittedActs: ["create_new"] })];
@@ -292,5 +293,86 @@ describe("a whole test refused for acts no call can settle", () => {
     expect(answered.evidence).toMatchObject({ code: "project.trial_reset_required", actsInPlace: [{ act: "act-2" }], actsUnsettleable: [{ act: "act-1" }] });
     expect(String((answered.evidence as JsonObject).instruction)).toBe(`${GUIDANCE.refusals.resetRequired} ${GUIDANCE.refusals.resetRequiredUnsettleable}`);
     expect(answered.resultReason).toBe("retry_allowed");
+  });
+});
+
+// D48 (t769, P6): a project build's whole port is offline-first, so the supervisor's whole test of a revision not tried
+// yet may be answered by a failure the recording of the build's last live test shows, kept in place of a site trial.
+// Nothing ran on the site: no start hook, no reset, nothing in the ledger. The supervisor takes it as a no -- a receipt
+// naming the offline run, a failed whole test, the Flow tested -- but it took no site time, so it is never the measure
+// of how long a test takes (G2). Completion still needs a live yes. Generic data; the port is a stub.
+describe("a whole test answered from the recording", () => {
+  const candidate = (revision: number) => ({ revision, digest: String(revision).repeat(64), baseDependencyDigest: "b", status: "draft", summary: "s", buildPlan: { plan: { subflows: [] } }, changedPaths: [] }) as unknown as AutomationStudioFlowCandidate;
+
+  it("is a no without a site trial: no hook, reset or ledger entry; a receipt for the offline run, the failure noted, completion refused", async () => {
+    const counted = { live: 0, hooks: 0, resets: 0, offline: 0 };
+    const ledger = new AutomationStudioSiteResetProjectLedger();
+    const state = new AutomationStudioProjectSupervisorState();
+    const whole = new AutomationStudioProjectSupervisorWholeTrial({ ports: { projectLedger: ledger }, state });
+    const port = Object.assign(async (request: AutomationStudioCandidateTrialRequest) => {
+      counted.live += 1;
+      return { revision: request.revision, digest: request.digest, verdict: "no" as const, feedback: { code: "candidate.trial_no" }, trialRunId: `live-${counted.live}` };
+    }, {
+      prepareStart: async () => {
+        counted.hooks += 1;
+        return "reset" as const;
+      },
+      offlineFirst: async (request: AutomationStudioCandidateTrialRequest) => {
+        counted.offline += 1;
+        if (request.revision === 1) return { kind: "live" as const, note: { outcome: "not_tried" as const, why: "no_live_source" } };
+        return { kind: "kept" as const, result: { revision: request.revision, digest: request.digest, verdict: "no" as const, feedback: { code: "candidate.trial_no", summary: "The stored rows are not the ones asked for." }, trialRunId: "offline-run" }, checked: { matched: 2, recorded: 2 } };
+      }
+    }) as unknown as AutomationStudioCandidateTrialPort;
+    let latest: AutomationStudioFlowCandidate | undefined;
+    const reset = { ...whole.reset, beforeTrial: async (...args: Parameters<typeof whole.reset.beforeTrial>) => {
+      counted.resets += 1;
+      return await whole.reset.beforeTrial(...args);
+    } };
+    const gate = new AutomationStudioFlowCandidateTrialGate({ latest: () => latest, trial: { candidateId: "candidate", port }, reset });
+    const receipts: JsonObject[] = [];
+    const ports = { projectLedger: ledger, build: BUILD, record: { recordReceipt: async (_build: unknown, entry: { receipt: JsonObject }) => { receipts.push(entry.receipt); } } };
+    const context = { ports, state, gate, controller: { latest: () => latest }, signal: undefined } as unknown as AutomationStudioProjectSupervisorContext;
+    const test = async (revision: number) => {
+      latest = candidate(revision);
+      return (await whole.test(context, { revision, digest: latest.digest }, undefined)).evidence as JsonObject;
+    };
+
+    expect(await test(1)).toMatchObject({ verdict: "no", trialRunId: "live-1" });
+    expect(counted).toEqual({ live: 1, hooks: 1, resets: 1, offline: 1 });
+    state.wholeTrialFailed = false;
+    const ledgerBefore = ledger.snapshot();
+
+    const kept = await test(2);
+
+    expect(kept).toMatchObject({ ok: false, verdict: "no", revision: 2, trialRunId: "offline-run", checkedAgainst: "recorded_run" });
+    expect(counted).toEqual({ live: 1, hooks: 1, resets: 1, offline: 2 });
+    expect(ledger.snapshot()).toEqual(ledgerBefore);
+    expect(state.wholeTrialFailed).toBe(true);
+    expect(receipts).toEqual([{ kind: "candidate_trial", receiptId: "live-1", digest: candidate(1).digest }, { kind: "candidate_trial", receiptId: "offline-run", digest: candidate(2).digest }]);
+    expect(whole.lastOfFlow(candidate(2).digest)).toEqual({ revision: 2, cutAfter: false });
+    expect(gate.standing(candidate(2))).toMatchObject({ verdict: "no", trialRunId: "offline-run" });
+    expect(gate.completion({ revision: 2, digest: candidate(2).digest }).ok).toBe(false);
+  });
+
+  it("is never the measure of a test's time: a later Flow is still estimated from the last test that ran on the site", async () => {
+    const run = harness({ workMs: 10 * MINUTE, durations: [240_000] });
+    await run.trial.test(run.context, { revision: 1, digest: FIRST }, undefined);
+    // The next revision is answered from the recording in a second.
+    const live = run.gate.test;
+    run.gate.test = async (value: JsonObject) => {
+      run.advance(1_000);
+      return { kind: "llm_evidence_tool_execution", evidence: { ok: false, verdict: "no", revision: value.revision, digest: value.digest, trialRunId: "offline-run", checkedAgainst: "recorded_run" } };
+    };
+    expect((await run.trial.test(run.context, { revision: 2, digest: SECOND }, undefined)).evidence).toMatchObject({ checkedAgainst: "recorded_run" });
+    expect(run.trial.lastOfFlow(SECOND)).toEqual({ revision: 2, cutAfter: false });
+    run.gate.test = live;
+    run.advance(3 * MINUTE);
+
+    // Three minutes left against the four the last site test took: a third Flow is not started, and neither is the second.
+    for (const [revision, digest] of [[3, "c".repeat(64)], [3, SECOND]] as const) {
+      const refused = await run.trial.test(run.context, { revision, digest }, undefined);
+      expect(refused.evidence).toMatchObject({ code: "project.trial_out_of_time", lastTestSeconds: 240, sameFlow: false });
+    }
+    expect(run.ran).toHaveLength(1);
   });
 });

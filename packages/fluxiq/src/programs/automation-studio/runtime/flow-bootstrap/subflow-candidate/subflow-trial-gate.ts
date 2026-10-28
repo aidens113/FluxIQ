@@ -227,13 +227,22 @@
 // the gate keeps each judged trial's advice (`../candidate/earlier-advice-memory.ts`), tells its port each
 // one it kept (`weighed`, `advised`), is seeded from earlier briefs of its subflow (`earlierTrials`), and
 // each request carries Core's finding of whether that revision changed what the advice named.
+//
+// **A failure the recording already shows costs no site trial (trace plan P6, t769; D40-D46).** A port's
+// `offlineFirst` is asked once per revision and digest (its first test only, so every retest is live), after
+// the same-failure and retest checks and before admission, the start hook and the reset
+// (`./subflow-trial-offline-first.ts`). A no or execution_failed the recording of this build's last live test
+// demonstrates is kept as this trial and weighed as any trial is, its stop counting toward the same-failure rule
+// (D43), with nothing done on the site and its instruction said as checked against the recording; anything else
+// runs live in this same call, its evidence carrying the check's note (`offlineCheck`). An offline yes is never kept.
+// A port's own answer from the recording (`checkedAgainst` on its result: the single-subflow whole test the whole gate
+// kept, D48) is said and kept the same way, nothing recorded as left on the site; the hook and reset before it still ran.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import { automationStudioLlmStepLogReset } from "../../llm/step-log/index.ts";
 import {
   AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION,
   AUTOMATION_STUDIO_CANDIDATE_OFFLINE_YES_INSTRUCTION,
-  AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS,
   AutomationStudioCandidateEarlierAdviceMemory,
   automationStudioCandidateNotShownInstruction,
   automationStudioCandidateRecordContradictsPart,
@@ -254,8 +263,11 @@ import {
   type AutomationStudioResultStandingNoContradiction
 } from "../../result-verification/standing-no/index.ts";
 import type { AutomationStudioResultKeptEveryRow } from "../../result-verification/contracts/index.ts";
+import { AUTOMATION_STUDIO_TRIAL_OFFLINE_FIRST_WORDS as OFFLINE_WORDS } from "../offline-first/index.ts";
 import { automationStudioSiteResetExploredOnAbsorbed, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowScopeIdentity, AutomationStudioSubflowTrialPort, AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult } from "./contracts.ts";
+import { automationStudioSubflowTrialOfflineFirstCheck } from "./subflow-trial-offline-first.ts";
+import { automationStudioSubflowTrialResultRead } from "./subflow-trial-result.ts";
 
 /**
  * A partial trial port that can run the deployment's start hook ahead of the
@@ -426,6 +438,8 @@ export class AutomationStudioSubflowTrialGate {
   private readonly verdicts = new Map<string, AutomationStudioSubflowTrialResult & AutomationStudioResultKeptConditionsCarrier>();
   private readonly closedDigests = new Map<string, JsonObject>();
   private readonly trials = new Map<string, number>();
+  /** The revisions and digests whose offline-first check was asked: at most once each (header, P6; D41). */
+  private readonly offlineAsked = new Set<string>();
   /** How each revision's execution-failed trials stopped, and the revisions that stopped the same way twice, with what stopped them (header, lane 3). */
   private readonly stops = new Map<string, Set<string>>();
   private readonly repeatedFailures = new Map<string, JsonObject>();
@@ -495,15 +509,23 @@ export class AutomationStudioSubflowTrialGate {
     }
     const signal = callSignal ?? this.input.signal ?? this.fallbackSignal;
     signal.throwIfAborted();
-    // An offline trial has no live effects: no start hook, no reset, nothing left on the site (header, Decision 6).
+    // A revision's first test asks whether the recording already shows it failing, before anything is done on the site; once,
+    // even where a refusal before the trial left it uncounted (header, P6).
+    const askOffline = tried === 0 && port.offlineFirst !== undefined && !this.offlineAsked.has(key(latest));
+    if (askOffline) this.offlineAsked.add(key(latest));
+    const first = askOffline && port.offlineFirst ? await automationStudioSubflowTrialOfflineFirstCheck({ offlineFirst: port.offlineFirst, request: this.request(latest, signal, [], this.adviceFor(latest)), identity: this.identity(), trialToolId: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID }) : undefined;
+    signal.throwIfAborted();
+    const kept = first?.kind === "keep" ? first : undefined;
+    // An offline trial, or a failure the recording showed, has no live effects: no start hook, no reset, nothing left on the site (header, Decision 6).
     const offline = automationStudioCandidateTrialOffline(port);
-    const admission = this.input.reset?.admit?.(automationStudioSiteResetTrialSteps([...(port.admissionPredecessors?.(this.input.scope) ?? []), ...latest.subflows]));
+    const siteless = offline || kept !== undefined;
+    const admission = kept ? undefined : this.input.reset?.admit?.(automationStudioSiteResetTrialSteps([...(port.admissionPredecessors?.(this.input.scope) ?? []), ...latest.subflows]));
     if (admission?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: admission.evidence, effectApplied: false, targetsUnchanged: true, resultCode: admission.evidence.code, resultReason: RETEST_REASON };
     // The deployment's start hook first, so the check after it finds the site put back (header).
-    const prepared = !offline && this.input.reset && port.prepareStart ? await port.prepareStart({ scope: structuredClone(this.input.scope), revision: latest.revision, digest: latest.digest, signal }) : "none";
+    const prepared = !siteless && this.input.reset && port.prepareStart ? await port.prepareStart({ scope: structuredClone(this.input.scope), revision: latest.revision, digest: latest.digest, signal }) : "none";
     signal.throwIfAborted();
     // The check is timed as its own reset step, so a trial's window no longer hides it (header, t737).
-    const siteReset = offline ? undefined : this.input.reset;
+    const siteReset = siteless ? undefined : this.input.reset;
     const reset = siteReset && await automationStudioLlmStepLogReset({ stage: "site_check", trialToolId: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID },
       () => siteReset.beforeTrial(signal, Array.isArray(cannotUndo) ? cannotUndo as string[] : undefined, prepared === "reset" ? { startReset: true } : undefined), (decision) => decision.kind);
     signal.throwIfAborted();
@@ -513,7 +535,7 @@ export class AutomationStudioSubflowTrialGate {
     const absorbedActs = reset?.kind === "admit" ? reset.absorbedByStartReset ?? [] : [];
     const absorbed = absorbedActs.map(namedAct);
     this.trials.set(key(latest), tried + 1);
-    const asked = await this.ask(port, latest, signal, reset?.kind === "admit" ? automationStudioCandidateStartedWithSaid(reset.startedWith) : [], this.earlierAdvice.advice(latest.revision, latest.subflows ? { subflows: latest.subflows } : undefined));
+    const asked = kept?.asked ?? await this.ask(port, latest, signal, reset?.kind === "admit" ? automationStudioCandidateStartedWithSaid(reset.startedWith) : [], this.adviceFor(latest));
     // Not a trial: the port did not run it, and says why in the builder's terms (header, t679).
     if (asked.notRun) {
       this.trials.set(key(latest), tried);
@@ -525,6 +547,8 @@ export class AutomationStudioSubflowTrialGate {
       this.trials.set(key(latest), tried);
       return refused(UNAFFORDABLE_CODE, UNAFFORDABLE_INSTRUCTION, { notRun: asked.answer.feedback });
     }
+    // The port's answer came from the recording: said and kept as this gate's own kept answer (header, P6 D48).
+    const recorded = !kept && asked.answer.checkedAgainst === "recorded_run";
     // A yes over a read that kept every item it saw after an act over a narrower read is asked again with a row check (header, t692).
     if (asked.answer.verdict === "yes" && asked.answer.entryPrepared && asked.keptEveryRow?.length) {
       asked.answer = await this.checkRows(port, asked.answer, asked.keptEveryRow, signal);
@@ -544,14 +568,14 @@ export class AutomationStudioSubflowTrialGate {
     const advised = answer.entryPrepared ? this.earlierAdvice.remember({ revision: answer.revision, verdict: answer.verdict, feedback: answer.feedback, standingNo: asked.standingNo, plan: latest.subflows ? { subflows: latest.subflows } : undefined }) : undefined;
     port.weighed?.({ answer: structuredClone(answer), ...(stood ? { standingNo: structuredClone(asked.standingNo) } : {}), ...(advised ? { advised } : {}) });
     signal.throwIfAborted();
-    const leftOnSite = offline ? undefined : this.input.reset?.trialRan(answer.acts ?? [], answer.trialRunId);
+    const leftOnSite = siteless || recorded ? undefined : this.input.reset?.trialRan(answer.acts ?? [], answer.trialRunId);
     // What Core's record of this trial shows its conditions kept out, as the proposal that ran wrote them (header, t641).
     if (answer.entryPrepared) this.keptConditions.remember({ revision: answer.revision, standingNo: asked.standingNo, plan: latest.subflows ? { subflows: latest.subflows } : undefined });
     // What another gate found, carried by the port, replaces what it carried before (header, t689).
     if (answer.entryPrepared && asked.keptConditions) this.carriedKept = asked.keptConditions;
     const keptConditions = withCarried(this.keptConditions.conditions(), this.carriedKept);
     // An offline yes is never the verdict kept for completion, and a stale one of this revision goes (header, Decision 3).
-    const offlineYes = offline && answer.verdict === "yes";
+    const offlineYes = (offline || recorded) && answer.verdict === "yes";
     if (offlineYes && this.verdicts.get(key(answer))?.verdict !== "yes") this.verdicts.delete(key(answer));
     if (!offlineYes) this.verdicts.set(key(answer), keptConditions.length ? { ...answer, keptConditions } : answer);
     if (answer.verdict === "no" && answer.entryPrepared) this.closedDigests.set(answer.digest, answer.feedback);
@@ -560,11 +584,14 @@ export class AutomationStudioSubflowTrialGate {
     const evidence: JsonObject = {
       ok: answer.verdict === "yes" && !offlineYes, partial: true, verdict: answer.verdict, subflowKey: answer.identity.subflowKey, revision: answer.revision, digest: answer.digest,
       entryPrepared: answer.entryPrepared, feedback: answer.feedback, promotionCredit: false,
-      instruction: offlineYes ? AUTOMATION_STUDIO_CANDIDATE_OFFLINE_YES_INSTRUCTION : repeatedStep ? repeatedInstruction(repeatedStep) : instructionFor(answer, retestsLeft > 0, this.input.whole === true),
+      instruction: `${kept ? `${kept.said} ` : recorded ? `${OFFLINE_WORDS.kept} ` : ""}${offlineYes ? AUTOMATION_STUDIO_CANDIDATE_OFFLINE_YES_INSTRUCTION : repeatedStep ? repeatedInstruction(repeatedStep) : instructionFor(answer, retestsLeft > 0, this.input.whole === true)}`,
       ...(repeatedStep ? { failedStep: repeatedStep } : {}),
       ...(reset?.kind === "admit" && reset.startedWith ? { startedWith: reset.startedWith } : {}),
       ...(absorbed.length ? { absorbedByStartReset: absorbed } : {}),
-      ...(leftOnSite?.length ? { leftOnSite: leftOnSite.map(namedAct) } : {})
+      ...(leftOnSite?.length ? { leftOnSite: leftOnSite.map(namedAct) } : {}),
+      // Checked against the recording, or the offline check's note for a trial run live (header, P6).
+      ...(first ? structuredClone(first.evidence) : {}),
+      ...(recorded ? { checkedAgainst: "recorded_run" } : {})
     };
     if (answer.trialRunId) evidence.trialRunId = answer.trialRunId;
     if (TRANSIENT.has(answer.verdict) || !answer.entryPrepared || repeatedStep || offlineYes) evidence.retestsLeft = retestsLeft;
@@ -640,74 +667,40 @@ export class AutomationStudioSubflowTrialGate {
   }
 
   /** The trial's answer as the gate keeps it, and Core's record of a no it carried beside it, unread (header, t633). */
-  private async ask(port: AutomationStudioSubflowTrialPort, latest: AutomationStudioSubflowProposal, signal: AbortSignal, startedWith: readonly string[], earlierAdvice: AutomationStudioSubflowTrialRequest["earlierAdvice"] = []): Promise<{ answer: AutomationStudioSubflowTrialResult; standingNo?: unknown; keptConditions?: AutomationStudioResultKeptCondition[]; keptEveryRow?: AutomationStudioSubflowTrialKeptEveryRowRead[]; notRun?: AutomationStudioSubflowTrialNotRun["notRun"] }> {
-    const scope = this.input.scope;
-    const identity: AutomationStudioSubflowScopeIdentity = { buildId: scope.buildId, briefId: scope.briefId, planDigest: scope.planDigest, subflowKey: scope.subflowKey };
-    const failed = (code: string): { answer: AutomationStudioSubflowTrialResult } => ({ answer: { partial: true, scope: "subflow", identity: { ...identity }, revision: latest.revision, digest: latest.digest, verdict: "execution_failed", feedback: { code }, entryPrepared: false } });
+  private async ask(port: AutomationStudioSubflowTrialPort, latest: AutomationStudioSubflowProposal, signal: AbortSignal, startedWith: readonly string[], earlierAdvice: AutomationStudioSubflowTrialRequest["earlierAdvice"] = []): Promise<ReturnType<typeof automationStudioSubflowTrialResultRead>> {
+    const identity = this.identity();
     let raw: unknown;
     try {
-      raw = await port({ scope: structuredClone(scope), proposal: deepFreeze(structuredClone(latest)), signal, ...(startedWith.length ? { startedWith: [...startedWith] } : {}), ...(earlierAdvice?.length ? { earlierAdvice } : {}) });
+      raw = await port(this.request(latest, signal, startedWith, earlierAdvice));
     } catch (error) {
       if (signal.aborted) throw error;
       // The port's own error text may carry page or account detail, so the model is told only its kind (header, lane 3).
-      return { answer: { ...failed("subflow.trial_port_failed").answer, feedback: Stop.portFailed("subflow.trial_port_failed", error) } };
+      return { answer: { partial: true, scope: "subflow", identity, revision: latest.revision, digest: latest.digest, verdict: "execution_failed", feedback: Stop.portFailed("subflow.trial_port_failed", error), entryPrepared: false } };
     }
-    // A trial the port did not run, said as the port says it (header, t679).
-    const notRun = notRunOf(raw);
-    if (notRun) return { answer: failed("subflow.trial_not_run").answer, notRun };
-    const result = raw as Partial<AutomationStudioSubflowTrialResult> | null;
-    if (!result || typeof result !== "object" || result.partial !== true || result.scope !== "subflow" || typeof result.entryPrepared !== "boolean"
-      || !(AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS as readonly unknown[]).includes(result.verdict) || !isJsonObject(result.feedback)
-      || (result.trialRunId !== undefined && typeof result.trialRunId !== "string")) return failed("subflow.trial_result_invalid");
-    // A verdict about another brief, plan, subflow, revision or digest is no verdict about this one.
-    const said = result.identity;
-    if (!said || said.buildId !== identity.buildId || said.briefId !== identity.briefId || said.planDigest !== identity.planDigest || said.subflowKey !== identity.subflowKey
-      || result.revision !== latest.revision || result.digest !== latest.digest) return failed("subflow.trial_result_mismatch");
-    const kept: AutomationStudioSubflowTrialResult = { partial: true, scope: "subflow", identity: { ...identity }, revision: latest.revision, digest: latest.digest, verdict: result.verdict!, feedback: structuredClone(result.feedback), entryPrepared: result.entryPrepared };
-    if (result.trialRunId) kept.trialRunId = result.trialRunId;
-    if (Array.isArray(result.acts) && result.acts.length) kept.acts = structuredClone(result.acts);
-    const standingNo = (result as { standingNo?: unknown }).standingNo;
-    // Kept conditions another gate found, where the port carries them (header, t689).
-    const carried = carriedKept((result as AutomationStudioResultKeptConditionsCarrier).keptConditions);
-    // The reads Core flagged, where the port carries them (header, t692).
-    const flagged = flaggedReads((result as { keptEveryRow?: unknown }).keptEveryRow);
-    return { answer: kept, ...(standingNo !== undefined ? { standingNo } : {}), ...(carried ? { keptConditions: carried } : {}), ...(flagged.length ? { keptEveryRow: flagged } : {}) };
+    // The gate's own checks of what the port answered (`./subflow-trial-result.ts`).
+    return automationStudioSubflowTrialResultRead(raw, identity, latest);
   }
-}
 
-/** The flagged reads a port's result carries (header, t692): copies of the entries of their shape. */
-function flaggedReads(value: unknown): AutomationStudioSubflowTrialKeptEveryRowRead[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry): AutomationStudioSubflowTrialKeptEveryRowRead[] => {
-    if (!isJsonObject(entry) || typeof entry.nodeId !== "string" || !Number.isSafeInteger(entry.kept) || (entry.kept as number) < 1) return [];
-    const flag = entry.keptEveryRow;
-    return isJsonObject(flag) && typeof flag.said === "string" && flag.said ? [structuredClone(entry) as unknown as AutomationStudioSubflowTrialKeptEveryRowRead] : [];
-  });
-}
+  /** The request a trial of `latest` sends: the port's, and the offline-first check's before any reset (header, P6). */
+  private request(latest: AutomationStudioSubflowProposal, signal: AbortSignal, startedWith: readonly string[], earlierAdvice: AutomationStudioSubflowTrialRequest["earlierAdvice"] = []): AutomationStudioSubflowTrialRequest {
+    return { scope: structuredClone(this.input.scope), proposal: deepFreeze(structuredClone(latest)), signal, ...(startedWith.length ? { startedWith: [...startedWith] } : {}), ...(earlierAdvice?.length ? { earlierAdvice } : {}) };
+  }
 
-/** The kept conditions a port's result carries (header, t689): copies of the entries of their shape; undefined where it carries no list. */
-function carriedKept(value: unknown): AutomationStudioResultKeptCondition[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  return value.flatMap((entry): AutomationStudioResultKeptCondition[] => {
-    if (!isJsonObject(entry)) return [];
-    const { name, revision, written, keptOut } = entry;
-    return typeof name === "string" && Number.isSafeInteger(revision) && typeof written === "string" && Array.isArray(keptOut) && keptOut.length ? [structuredClone(entry) as unknown as AutomationStudioResultKeptCondition] : [];
-  });
+  /** What earlier judged trials advised, for the judge of a trial of `latest` (header, t752). */
+  private adviceFor(latest: AutomationStudioSubflowProposal): AutomationStudioSubflowTrialRequest["earlierAdvice"] {
+    return this.earlierAdvice.advice(latest.revision, latest.subflows ? { subflows: latest.subflows } : undefined);
+  }
+
+  private identity(): AutomationStudioSubflowScopeIdentity {
+    const { buildId, briefId, planDigest, subflowKey } = this.input.scope;
+    return { buildId, briefId, planDigest, subflowKey };
+  }
 }
 
 /** This gate's own kept conditions, then each carried one it does not keep as written already (header, t689). */
 function withCarried(own: AutomationStudioResultKeptCondition[], carried: readonly AutomationStudioResultKeptCondition[]): AutomationStudioResultKeptCondition[] {
   const written = new Set(own.map((condition) => condition.written));
   return [...own, ...carried.filter((condition) => !written.has(condition.written)).map((condition) => structuredClone(condition))];
-}
-
-/** The port's own account of a trial it did not run (header, t679), when it gave a well-formed one; undefined otherwise. */
-function notRunOf(raw: unknown): AutomationStudioSubflowTrialNotRun["notRun"] | undefined {
-  const said = raw && typeof raw === "object" ? (raw as { notRun?: unknown }).notRun : undefined;
-  if (!said || typeof said !== "object" || Array.isArray(said)) return undefined;
-  const { code, instruction, detail, retry } = said as Record<string, unknown>;
-  if (typeof code !== "string" || !code || typeof instruction !== "string" || !instruction) return undefined;
-  return { code, instruction, ...(isJsonObject(detail) ? { detail: structuredClone(detail) } : {}), ...(retry === true ? { retry: true } : {}) };
 }
 
 /** What a trial's answer tells the builder to do next (header); `retestable`, whether this revision may still be tested again; `whole`, whether the test was the judged whole run (t679). */
